@@ -115,7 +115,17 @@ export function QuoteCalculator({
   });
 
   const values = watch();
-  const debounced = useDebouncedValue(values, 350);
+  // IMPORTANTE: serializamos el form a JSON antes de pasarlo al debounce.
+  // watch() devuelve un objeto NUEVO en cada render (referencia distinta aunque
+  // los valores sean iguales), lo que provocaría un bucle infinito de debounce
+  // → useEffect → setState → re-render → watch() nuevo objeto → debounce otra vez.
+  // Con string, la comparación es por valor: solo cambia cuando los datos cambian.
+  const valuesJson = JSON.stringify(values);
+  const debouncedJson = useDebouncedValue(valuesJson, 350);
+  const debounced = useMemo<QuoteFormValues>(
+    () => JSON.parse(debouncedJson),
+    [debouncedJson],
+  );
 
   const payload = useMemo<CalculateQuoteRequest | null>(() => {
     if (!debounced.aeronave_id) return null;
