@@ -1,137 +1,87 @@
-import { ClockIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { apiServer } from "@/lib/api/server";
-import { isInvitedError } from "@/lib/api/errors";
-import { signOut } from "../actions/auth";
-import type { MeResponse } from "@/types/me";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  let me: MeResponse;
-  try {
-    me = await apiServer<MeResponse>("/v1/me");
-  } catch (err) {
-    if (isInvitedError(err)) {
-      return <InvitedScreen />;
-    }
-    return <UnknownErrorScreen message={err instanceof Error ? err.message : String(err)} />;
-  }
+  // El layout ya validó que el usuario está ACTIVO. Aquí re-usamos el cache.
+  const me = await getMe();
 
   return (
-    <main className="min-h-screen bg-background px-4 py-12">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <div className="vt-card p-8 space-y-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Bienvenido</p>
-              <h1 className="text-2xl font-semibold">{me.nombre}</h1>
-              <p className="text-sm text-muted-foreground">{me.email}</p>
-            </div>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
-              {me.rol}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Estado</p>
-              <p className="font-medium">{me.estado}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Fondo de caja</p>
-              <p className="font-medium">{me.tiene_fondo_caja ? "Sí" : "No"}</p>
-            </div>
-            {me.tarjeta_terminacion && (
-              <div>
-                <p className="text-muted-foreground">Tarjeta corp.</p>
-                <p className="font-medium">**** {me.tarjeta_terminacion}</p>
-              </div>
-            )}
-            {me.telefono && (
-              <div>
-                <p className="text-muted-foreground">Teléfono</p>
-                <p className="font-medium">{me.telefono}</p>
-              </div>
-            )}
-          </div>
+    <div className="space-y-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm text-muted-foreground">Bienvenido,</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{me.nombre}</h1>
         </div>
-
-        <div className="text-center">
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-            >
-              Cerrar sesión
-            </button>
-          </form>
-        </div>
-
-        <p className="text-center text-xs text-muted-foreground">
-          Esta vista es temporal. El dashboard completo con sidebar viene en FRONT 3.
-        </p>
+        <Badge className="bg-brand-600/15 text-brand-600 hover:bg-brand-600/20 border-brand-600/30">
+          {me.rol}
+        </Badge>
       </div>
-    </main>
-  );
-}
 
-function InvitedScreen() {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="vt-card p-8 space-y-6 text-center">
-          <div className="flex justify-center">
-            <div className="h-14 w-14 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-              <ClockIcon className="h-7 w-7 text-yellow-600 dark:text-yellow-400" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-xl font-semibold">Cuenta pendiente de activación</h1>
-            <p className="text-sm text-muted-foreground">
-              Tu acceso quedó registrado pero un administrador necesita asignarte un rol antes de
-              que puedas usar el sistema.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Avisa a Diego o al admin de Aero Charter Cancún para que te active.
-            </p>
-          </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-            >
-              Cerrar sesión
-            </button>
-          </form>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardDescription>Email</CardDescription>
+            <CardTitle className="text-base font-medium break-all">{me.email}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Estado</CardDescription>
+            <CardTitle className="text-base font-medium">{me.estado}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Fondo de caja</CardDescription>
+            <CardTitle className="text-base font-medium">
+              {me.tiene_fondo_caja ? "Sí" : "No"}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        {me.tarjeta_terminacion && (
+          <Card>
+            <CardHeader>
+              <CardDescription>Tarjeta corp.</CardDescription>
+              <CardTitle className="text-base font-medium">**** {me.tarjeta_terminacion}</CardTitle>
+            </CardHeader>
+          </Card>
+        )}
+        {me.telefono && (
+          <Card>
+            <CardHeader>
+              <CardDescription>Teléfono</CardDescription>
+              <CardTitle className="text-base font-medium">{me.telefono}</CardTitle>
+            </CardHeader>
+          </Card>
+        )}
       </div>
-    </main>
-  );
-}
 
-function UnknownErrorScreen({ message }: { message: string }) {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="vt-card p-8 space-y-6 text-center">
-          <div className="flex justify-center">
-            <div className="h-14 w-14 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
-              <ExclamationTriangleIcon className="h-7 w-7 text-brand-600 dark:text-brand-400" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-xl font-semibold">Algo salió mal</h1>
-            <p className="text-sm text-muted-foreground">{message}</p>
-          </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-            >
-              Cerrar sesión e intentar de nuevo
-            </button>
-          </form>
-        </div>
-      </div>
-    </main>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Próximos pasos</CardTitle>
+          <CardDescription>
+            El sistema está en construcción. Los módulos en gris del sidebar (marcados &ldquo;Próx.&rdquo;)
+            se irán habilitando en las próximas iteraciones.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            <li>· Listado de aeronaves con sus motores, hélices y porcentajes de propiedad</li>
+            <li>· Cotizador con preview en vivo (NM × tarifa + TUAS + IVA)</li>
+            <li>· Calendario operativo con vuelos por aeronave</li>
+            <li>· Gestión de clientes y emisión de cotizaciones PDF</li>
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
