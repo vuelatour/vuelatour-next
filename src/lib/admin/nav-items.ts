@@ -37,7 +37,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Operación",
     items: [
       { label: "Dashboard", href: "/admin", icon: HomeIcon },
-      { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon, comingSoon: true },
+      { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon, comingSoon: true },
       { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon, comingSoon: true },
     ],
