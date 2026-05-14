@@ -2,10 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/auth-error"];
+const ADMIN_PREFIX = "/admin";
 
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function isProtected(pathname: string): boolean {
+  return pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
 }
 
 export async function updateSession(request: NextRequest) {
@@ -26,21 +26,24 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Necesario para refrescar la sesión expirada
+  // Refresca tokens expirados (efecto secundario crítico — no quitar).
   const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
 
-  if (!user && !isPublicPath(pathname)) {
+  // Sin sesión + entrando a área protegida -> /login con next
+  if (!user && isProtected(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 
+  // Con sesión + entrando a /login -> /admin (o al next solicitado)
   if (user && pathname === "/login") {
+    const next = request.nextUrl.searchParams.get("next");
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = next && next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
     url.searchParams.delete("next");
     return NextResponse.redirect(url);
   }

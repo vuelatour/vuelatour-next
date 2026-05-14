@@ -1,137 +1,67 @@
-import { ClockIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { apiServer } from "@/lib/api/server";
-import { isInvitedError } from "@/lib/api/errors";
-import { signOut } from "./actions/auth";
-import type { MeResponse } from "@/types/me";
+import Link from "next/link";
+import { PaperAirplaneIcon, ArrowRightIcon } from "@heroicons/react/24/outline";
 
-export const dynamic = "force-dynamic";
-
-export default async function HomePage() {
-  let me: MeResponse;
-  try {
-    me = await apiServer<MeResponse>("/v1/me");
-  } catch (err) {
-    if (isInvitedError(err)) {
-      return <InvitedScreen />;
-    }
-    return <UnknownErrorScreen message={err instanceof Error ? err.message : String(err)} />;
-  }
-
+/**
+ * Landing pública (placeholder). La landing definitiva se migrará desde
+ * vuelatour.com aplicando el DESIGN_SYSTEM.md. Por ahora un hero simple
+ * con CTA al admin para no bloquear el flujo del equipo interno.
+ */
+export default function LandingPage() {
   return (
-    <main className="min-h-screen bg-background px-4 py-12">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <div className="vt-card p-8 space-y-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Bienvenido</p>
-              <h1 className="text-2xl font-semibold">{me.nombre}</h1>
-              <p className="text-sm text-muted-foreground">{me.email}</p>
+    <main className="min-h-screen flex flex-col bg-background">
+      <header className="border-b border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 md:h-20 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-xl bg-brand-600 flex items-center justify-center text-white text-sm font-bold tracking-tight">
+              VT
             </div>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
-              {me.rol}
+            <span className="text-lg font-semibold tracking-tight">Vuela Tour</span>
+          </div>
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium hover:bg-muted transition-colors"
+          >
+            Ingresar al sistema
+            <ArrowRightIcon className="w-4 h-4" />
+          </Link>
+        </div>
+      </header>
+
+      <section className="flex-1 flex items-center justify-center px-4 py-20 md:py-28">
+        <div className="max-w-3xl text-center space-y-8">
+          <div className="flex justify-center">
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+              <PaperAirplaneIcon className="w-3.5 h-3.5" />
+              Próximamente
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Estado</p>
-              <p className="font-medium">{me.estado}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Fondo de caja</p>
-              <p className="font-medium">{me.tiene_fondo_caja ? "Sí" : "No"}</p>
-            </div>
-            {me.tarjeta_terminacion && (
-              <div>
-                <p className="text-muted-foreground">Tarjeta corp.</p>
-                <p className="font-medium">**** {me.tarjeta_terminacion}</p>
-              </div>
-            )}
-            {me.telefono && (
-              <div>
-                <p className="text-muted-foreground">Teléfono</p>
-                <p className="font-medium">{me.telefono}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="text-center">
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-semibold tracking-tight leading-[1.1]">
+            Volando es <span className="text-brand-600">maravilloso</span>
+          </h1>
+          <p className="text-lg sm:text-xl text-muted-foreground max-w-xl mx-auto">
+            Vuelos privados y tours aéreos desde Cancún. La landing definitiva está en migración —
+            mientras tanto, el equipo puede acceder al sistema operativo.
+          </p>
+          <div className="pt-4 flex justify-center">
+            <Link
+              href="/admin"
+              className="inline-flex items-center gap-2 h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-semibold hover:opacity-90 transition-opacity"
             >
-              Cerrar sesión
-            </button>
-          </form>
+              Acceder al admin
+              <ArrowRightIcon className="w-4 h-4" />
+            </Link>
+          </div>
         </div>
+      </section>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Esta vista es temporal. El dashboard completo con sidebar viene en FRONT 3.
-        </p>
-      </div>
-    </main>
-  );
-}
-
-function InvitedScreen() {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="vt-card p-8 space-y-6 text-center">
-          <div className="flex justify-center">
-            <div className="h-14 w-14 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-              <ClockIcon className="h-7 w-7 text-yellow-600 dark:text-yellow-400" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-xl font-semibold">Cuenta pendiente de activación</h1>
-            <p className="text-sm text-muted-foreground">
-              Tu acceso quedó registrado pero un administrador necesita asignarte un rol antes de
-              que puedas usar el sistema.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Avisa a Diego o al admin de Aero Charter Cancún para que te active.
-            </p>
-          </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-            >
-              Cerrar sesión
-            </button>
-          </form>
+      <footer className="border-t border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
+          <p>© {new Date().getFullYear()} Aero Charter Cancún S.A. de C.V.</p>
+          <p>
+            Hecho con <span className="text-brand-500">♥</span> por EDDCODE
+          </p>
         </div>
-      </div>
-    </main>
-  );
-}
-
-function UnknownErrorScreen({ message }: { message: string }) {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="vt-card p-8 space-y-6 text-center">
-          <div className="flex justify-center">
-            <div className="h-14 w-14 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
-              <ExclamationTriangleIcon className="h-7 w-7 text-brand-600 dark:text-brand-400" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-xl font-semibold">Algo salió mal</h1>
-            <p className="text-sm text-muted-foreground">{message}</p>
-          </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-            >
-              Cerrar sesión e intentar de nuevo
-            </button>
-          </form>
-        </div>
-      </div>
+      </footer>
     </main>
   );
 }

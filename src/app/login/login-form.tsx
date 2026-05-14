@@ -9,7 +9,7 @@ import { GoogleIcon } from "@/components/icons/google";
 
 export function LoginForm() {
   const params = useSearchParams();
-  const next = params.get("next") ?? "/";
+  const next = params.get("next") ?? "/admin";
   const [loading, setLoading] = useState(false);
 
   async function handleGoogle() {
