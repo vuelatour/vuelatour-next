@@ -54,8 +54,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Catálogos",
     items: [
-      { label: "Clientes", href: "/admin/clients", icon: UsersIcon, comingSoon: true },
-      { label: "Proveedores", href: "/admin/providers", icon: BuildingOfficeIcon, comingSoon: true },
+      { label: "Clientes", href: "/admin/clients", icon: UsersIcon },
+      { label: "Proveedores", href: "/admin/providers", icon: BuildingOfficeIcon },
       { label: "Aeropuertos", href: "/admin/airports", icon: MapPinIcon },
       {
         label: "Entidades fiscales",
