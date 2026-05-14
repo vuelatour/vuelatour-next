@@ -45,7 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Flota",
     items: [
-      { label: "Aeronaves", href: "/admin/aircraft", icon: TruckIcon, comingSoon: true },
+      { label: "Aeronaves", href: "/admin/aircraft", icon: TruckIcon },
       { label: "Motores", href: "/admin/engines", icon: CpuChipIcon, comingSoon: true },
       { label: "Hélices", href: "/admin/propellers", icon: CpuChipIcon, comingSoon: true },
       { label: "Rutas", href: "/admin/routes", icon: MapIcon, comingSoon: true },
