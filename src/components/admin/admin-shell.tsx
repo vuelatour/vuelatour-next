@@ -8,10 +8,9 @@ import type { MeResponse } from "@/types/me";
 interface AdminShellProps {
   me: MeResponse;
   children: React.ReactNode;
-  pageTitle?: string;
 }
 
-export function AdminShell({ me, children, pageTitle }: AdminShellProps) {
+export function AdminShell({ me, children }: AdminShellProps) {
   const groups = filterNavGroupsForRole(me.rol);
 
   return (
@@ -25,7 +24,7 @@ export function AdminShell({ me, children, pageTitle }: AdminShellProps) {
 
       {/* Main column con offset por sidebar */}
       <div className="lg:pl-64 flex flex-col min-h-screen">
-        <AdminTopbar me={me} pageTitle={pageTitle} />
+        <AdminTopbar me={me} />
         <main className="flex-1 px-4 lg:px-6 py-6 lg:py-8">{children}</main>
       </div>
     </div>

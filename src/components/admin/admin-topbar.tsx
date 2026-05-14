@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Bars3Icon } from "@heroicons/react/24/outline";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -8,18 +9,21 @@ import { SidebarBrand } from "./sidebar-brand";
 import { SidebarNav } from "./sidebar-nav";
 import { SidebarFooter } from "./sidebar-footer";
 import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
+import { getPageTitleFromPathname } from "@/lib/admin/page-title";
 import type { MeResponse } from "@/types/me";
 
-export function AdminTopbar({ me, pageTitle }: { me: MeResponse; pageTitle?: string }) {
+export function AdminTopbar({ me }: { me: MeResponse }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const pageTitle = getPageTitleFromPathname(pathname);
   const groups = filterNavGroupsForRole(me.rol);
 
   return (
     <header className="h-16 border-b border-border bg-card flex items-center justify-between px-4 lg:px-6 shrink-0">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger
-            className="lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
             aria-label="Abrir menú"
           >
             <Bars3Icon className="h-5 w-5" />
