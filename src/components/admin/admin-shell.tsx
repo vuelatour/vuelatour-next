@@ -2,7 +2,6 @@ import { SidebarBrand } from "./sidebar-brand";
 import { SidebarNav } from "./sidebar-nav";
 import { SidebarFooter } from "./sidebar-footer";
 import { AdminTopbar } from "./admin-topbar";
-import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
 import type { MeResponse } from "@/types/me";
 
 interface AdminShellProps {
@@ -11,14 +10,12 @@ interface AdminShellProps {
 }
 
 export function AdminShell({ me, children }: AdminShellProps) {
-  const groups = filterNavGroupsForRole(me.rol);
-
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar desktop fija */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 flex-col bg-navy-900 border-r border-navy-800 text-white">
         <SidebarBrand />
-        <SidebarNav groups={groups} />
+        <SidebarNav rol={me.rol} />
         <SidebarFooter />
       </aside>
 

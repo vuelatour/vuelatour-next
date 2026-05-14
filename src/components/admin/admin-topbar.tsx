@@ -8,7 +8,6 @@ import { UserMenu } from "./user-menu";
 import { SidebarBrand } from "./sidebar-brand";
 import { SidebarNav } from "./sidebar-nav";
 import { SidebarFooter } from "./sidebar-footer";
-import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
 import { getPageTitleFromPathname } from "@/lib/admin/page-title";
 import type { MeResponse } from "@/types/me";
 
@@ -16,7 +15,6 @@ export function AdminTopbar({ me }: { me: MeResponse }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const pageTitle = getPageTitleFromPathname(pathname);
-  const groups = filterNavGroupsForRole(me.rol);
 
   return (
     <header className="h-16 border-b border-border bg-card flex items-center justify-between px-4 lg:px-6 shrink-0">
@@ -37,7 +35,7 @@ export function AdminTopbar({ me }: { me: MeResponse }) {
             </SheetHeader>
             <div className="flex flex-col h-full">
               <SidebarBrand />
-              <SidebarNav groups={groups} onNavigate={() => setOpen(false)} />
+              <SidebarNav rol={me.rol} onNavigate={() => setOpen(false)} />
               <SidebarFooter />
             </div>
           </SheetContent>

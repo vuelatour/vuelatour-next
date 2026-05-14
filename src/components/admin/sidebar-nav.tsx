@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import type { NavGroup } from "@/lib/admin/nav-items";
+import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
+import type { Rol } from "@/types/me";
 
 interface SidebarNavProps {
-  groups: NavGroup[];
+  rol: Rol;
   onNavigate?: () => void;
 }
 
@@ -15,8 +16,14 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SidebarNav({ groups, onNavigate }: SidebarNavProps) {
+/**
+ * Importa NAV_GROUPS (con sus íconos) localmente en el cliente. El padre
+ * solo pasa el rol como string. Esto evita serializar funciones React
+ * (componentes de Heroicons) por la frontera Server→Client de Next 16/React 19.
+ */
+export function SidebarNav({ rol, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
+  const groups = filterNavGroupsForRole(rol);
 
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
