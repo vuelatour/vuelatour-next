@@ -57,7 +57,6 @@ export function SearchableSelect({
         placeholder={placeholder}
         disabled={disabled}
         className={className}
-        readOnly
       />
       <ComboboxContent>
         <ComboboxEmpty>{emptyText}</ComboboxEmpty>
