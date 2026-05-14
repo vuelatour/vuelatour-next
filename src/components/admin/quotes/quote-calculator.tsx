@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import {
   CalculatorIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   CheckCircleIcon,
   XCircleIcon,
+  BookmarkSquareIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,18 +25,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { createQuoteAction } from "@/app/admin/quotes/actions";
 import type {
   CalculateQuoteRequest,
   MetodoPago,
   QuoteBreakdown,
   TipoTarifa,
 } from "@/types/quote";
+import type { TipoVuelo } from "@/types/quotes-persisted";
 
 interface AircraftOption {
   id: string;
@@ -53,7 +60,17 @@ interface RouteOption {
   num_aterrizajes: number;
 }
 
+interface ClientOption {
+  id: string;
+  nombre: string;
+  es_broker: boolean;
+  rfc: string | null;
+}
+
 interface QuoteFormValues {
+  cliente_id: string;
+  tipo: TipoVuelo;
+  fecha_vuelo: string;
   aeronave_id: string;
   ruta_mode: "predefined" | "manual";
   ruta_id: string;
@@ -69,6 +86,8 @@ interface QuoteFormValues {
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
   iva_pct_override: number | null;
+  notas: string;
+  notas_internas: string;
 }
 
 const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
@@ -79,24 +98,47 @@ const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },
 ];
 
+const TIPOS_VUELO: { value: TipoVuelo; label: string }[] = [
+  { value: "SENCILLO", label: "Sencillo" },
+  { value: "REDONDO", label: "Redondo" },
+  { value: "MULTIESCALA", label: "Multiescala" },
+];
+
 export function QuoteCalculator({
   aircraft,
   routes,
+  clients,
 }: {
   aircraft: AircraftOption[];
   routes: RouteOption[];
+  clients: ClientOption[];
 }) {
+  const router = useRouter();
   const [advanced, setAdvanced] = useState(false);
+  const [saving, startSaving] = useTransition();
+
+  // Default a la primera aeronave con tarifa configurada. Las aeronaves "sin
+  // tarifa" siguen en el dropdown (marcadas como tal) pero no se pre-seleccionan
+  // porque el motor de cálculo las rechaza con 400.
+  const defaultAircraftId = useMemo(
+    () =>
+      aircraft.find((a) => a.tarifa_hora_pub_usd || a.tarifa_hora_broker_usd)?.id ??
+      aircraft[0]?.id ??
+      "",
+    [aircraft],
+  );
 
   const {
     register,
     watch,
     setValue,
-    formState: { isValid },
   } = useForm<QuoteFormValues>({
     mode: "onChange",
     defaultValues: {
-      aeronave_id: aircraft[0]?.id ?? "",
+      cliente_id: "",
+      tipo: "SENCILLO",
+      fecha_vuelo: "",
+      aeronave_id: defaultAircraftId,
       ruta_mode: "predefined",
       ruta_id: routes[0]?.id ?? "",
       origen_iata: "",
@@ -111,6 +153,8 @@ export function QuoteCalculator({
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
       iva_pct_override: null,
+      notas: "",
+      notas_internas: "",
     },
   });
 
@@ -127,7 +171,7 @@ export function QuoteCalculator({
     [debouncedJson],
   );
 
-  const payload = useMemo<CalculateQuoteRequest | null>(() => {
+  const calcPayload = useMemo<CalculateQuoteRequest | null>(() => {
     if (!debounced.aeronave_id) return null;
     const base: CalculateQuoteRequest = {
       aeronave_id: debounced.aeronave_id,
@@ -167,7 +211,7 @@ export function QuoteCalculator({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!payload) {
+    if (!calcPayload) {
       setBreakdown(null);
       setError(null);
       setLoading(false);
@@ -176,7 +220,7 @@ export function QuoteCalculator({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    calculateQuote(payload)
+    calculateQuote(calcPayload)
       .then((data) => {
         if (cancelled) return;
         setBreakdown(data);
@@ -196,12 +240,41 @@ export function QuoteCalculator({
     return () => {
       cancelled = true;
     };
-  }, [payload]);
+  }, [calcPayload]);
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
   const selectedRoute = routes.find((r) => r.id === values.ruta_id);
   const tipoTarifa = values.tipo_tarifa;
   const rutaMode = values.ruta_mode;
+
+  const canSave = !!values.cliente_id && !!calcPayload && !!breakdown && !error;
+
+  const handleSave = () => {
+    if (!calcPayload) {
+      toast.error("Faltan datos para guardar");
+      return;
+    }
+    if (!values.cliente_id) {
+      toast.error("Selecciona un cliente");
+      return;
+    }
+    startSaving(async () => {
+      const res = await createQuoteAction({
+        ...calcPayload,
+        cliente_id: values.cliente_id,
+        tipo: values.tipo,
+        fecha_vuelo: values.fecha_vuelo || undefined,
+        notas: values.notas || undefined,
+        notas_internas: values.notas_internas || undefined,
+      });
+      if (res.ok && res.data) {
+        toast.success(`Cotización #${res.data.folio} creada`);
+        router.push(`/admin/quotes/${res.data.id}`);
+      } else {
+        toast.error(res.error ?? "Error al guardar");
+      }
+    });
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
@@ -215,6 +288,41 @@ export function QuoteCalculator({
           <CardDescription>El total se recalcula en vivo.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Cliente */}
+          <Field label="Cliente" required>
+            <SearchableSelect
+              options={clients.map((c) => ({
+                value: c.id,
+                label: c.nombre,
+                description: [c.rfc, c.es_broker ? "Broker" : null]
+                  .filter(Boolean)
+                  .join(" · "),
+              }))}
+              value={values.cliente_id}
+              onChange={(v) => {
+                setValue("cliente_id", v);
+                // Si el cliente es broker, sugiere tarifa broker.
+                const cli = clients.find((c) => c.id === v);
+                if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
+              }}
+              placeholder="Selecciona cliente"
+              emptyText="Sin clientes activos"
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tipo de vuelo" required>
+              <SearchableSelect
+                options={TIPOS_VUELO.map((t) => ({ value: t.value, label: t.label }))}
+                value={values.tipo}
+                onChange={(v) => setValue("tipo", v as TipoVuelo)}
+              />
+            </Field>
+            <Field label="Fecha de vuelo" hint="Opcional">
+              <Input type="date" {...register("fecha_vuelo")} />
+            </Field>
+          </div>
+
           {/* Aeronave */}
           <Field label="Aeronave" required>
             <SearchableSelect
@@ -362,6 +470,18 @@ export function QuoteCalculator({
             />
           </Field>
 
+          <Field label="Notas (visibles en PDF)" hint="Opcional">
+            <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" {...register("notas")} />
+          </Field>
+
+          <Field label="Notas internas" hint="Opcional · no aparecen en PDF">
+            <Textarea
+              rows={2}
+              placeholder="Solo para el equipo"
+              {...register("notas_internas")}
+            />
+          </Field>
+
           {/* Avanzado */}
           <button
             type="button"
@@ -428,7 +548,7 @@ export function QuoteCalculator({
               <CardDescription className="text-destructive/80">{error}</CardDescription>
             </CardHeader>
           </Card>
-        ) : !payload ? (
+        ) : !calcPayload ? (
           <Card>
             <CardHeader>
               <CardTitle className="text-base text-muted-foreground">
@@ -444,6 +564,27 @@ export function QuoteCalculator({
         ) : (
           <PreviewSkeleton />
         )}
+
+        {/* Save bar */}
+        <Card>
+          <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm">
+              <p className="font-medium">Guardar cotización</p>
+              <p className="text-xs text-muted-foreground">
+                Se crea como v1 en estado COTIZADO. Podrás revisar o confirmar después.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave || saving}
+              className="gap-2"
+            >
+              <BookmarkSquareIcon className="h-4 w-4" />
+              {saving ? "Guardando…" : "Guardar cotización"}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
