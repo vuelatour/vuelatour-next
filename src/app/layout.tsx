@@ -26,9 +26,18 @@ export const viewport: Viewport = {
   ],
 };
 
+// El admin siempre vive en dark (filosofía §8 del DESIGN_SYSTEM). El resto
+// respeta localStorage + prefers-color-scheme. Este script corre antes del
+// paint para evitar FOUC.
 const themeInitScript = `
 (function() {
   try {
+    var path = window.location.pathname;
+    var isAdmin = path === '/admin' || path.indexOf('/admin/') === 0;
+    if (isAdmin) {
+      document.documentElement.classList.add('dark');
+      return;
+    }
     var stored = localStorage.getItem('vt-theme');
     var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     if (stored === 'dark' || (!stored && prefersDark)) {
