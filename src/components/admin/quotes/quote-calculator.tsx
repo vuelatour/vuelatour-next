@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
@@ -206,20 +207,18 @@ export function QuoteCalculator({
         <CardContent className="space-y-4">
           {/* Aeronave */}
           <Field label="Aeronave" required>
-            <select
-              {...register("aeronave_id")}
-              className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {aircraft.map((a) => {
-                const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
-                return (
-                  <option key={a.id} value={a.id}>
-                    {a.matricula} — {a.modelo} ({a.velocidad_crucero_kts} kts)
-                    {sinTarifa ? " · sin tarifa" : ""}
-                  </option>
-                );
-              })}
-            </select>
+            <SearchableSelect
+              options={aircraft.map((a) => ({
+                value: a.id,
+                label: `${a.matricula} — ${a.modelo}`,
+                description: `${a.velocidad_crucero_kts} kts${
+                  !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd ? " · sin tarifa" : ""
+                }`,
+              }))}
+              value={values.aeronave_id}
+              onChange={(v) => setValue("aeronave_id", v)}
+              placeholder="Selecciona aeronave"
+            />
             {selectedAircraft && (
               <p className="text-xs text-muted-foreground mt-1">
                 Tarifa público {fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr · broker{" "}
@@ -245,16 +244,18 @@ export function QuoteCalculator({
 
           {rutaMode === "predefined" ? (
             <Field label="Ruta predefinida" required>
-              <select
-                {...register("ruta_id")}
-                className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {routes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.origen_iata}→{r.destino_iata} · {r.millas_nauticas} NM one-way
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={routes.map((r) => ({
+                  value: r.id,
+                  label: `${r.origen_iata} → ${r.destino_iata}`,
+                  description: `${r.millas_nauticas} NM one-way${
+                    r.es_redondo_auto ? " (× 2 auto)" : ""
+                  }`,
+                }))}
+                value={values.ruta_id}
+                onChange={(v) => setValue("ruta_id", v)}
+                placeholder="Selecciona ruta"
+              />
               {selectedRoute && selectedRoute.es_redondo_auto && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Redondo auto: el motor calcula{" "}
@@ -339,16 +340,16 @@ export function QuoteCalculator({
           </div>
 
           <Field label="Método de pago" required>
-            <select
-              {...register("metodo_pago")}
-              className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {METODOS_PAGO.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label} — {m.hint}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={METODOS_PAGO.map((m) => ({
+                value: m.value,
+                label: m.label,
+                description: m.hint,
+              }))}
+              value={values.metodo_pago}
+              onChange={(v) => setValue("metodo_pago", v as MetodoPago)}
+              placeholder="Selecciona método"
+            />
           </Field>
 
           {/* Avanzado */}

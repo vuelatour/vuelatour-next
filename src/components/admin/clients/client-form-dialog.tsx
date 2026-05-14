@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createClientAction,
   updateClientAction,
@@ -117,17 +118,15 @@ export function ClientFormDialog({ open, onOpenChange, initialClient }: ClientFo
               <Input placeholder="XAXX010101000" maxLength={13} {...register("rfc")} className="font-mono uppercase" />
             </Field>
             <Field label="Canal de origen" error={errors.canal_origen?.message}>
-              <select
-                {...register("canal_origen")}
-                className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">Sin especificar</option>
-                {CANALES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={[
+                  { value: "", label: "Sin especificar" },
+                  ...CANALES.map((c) => ({ value: c.value, label: c.label })),
+                ]}
+                value={(watch("canal_origen") as string | undefined) ?? ""}
+                onChange={(v) => setValue("canal_origen", v as never)}
+                placeholder="Sin especificar"
+              />
             </Field>
           </div>
 

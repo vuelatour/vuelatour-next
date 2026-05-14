@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createRouteAction,
   updateRouteAction,
@@ -167,17 +168,15 @@ export function RouteFormDialog({ open, onOpenChange, initialRoute }: RouteFormD
           </Field>
 
           <Field label="Fuente" hint="Cómo se obtuvo el dato" error={errors.fuente?.message}>
-            <select
-              {...register("fuente")}
-              className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="">Sin especificar</option>
-              {FUENTE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={[
+                { value: "", label: "Sin especificar" },
+                ...FUENTE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+              ]}
+              value={watch("fuente") ?? ""}
+              onChange={(v) => setValue("fuente", v)}
+              placeholder="Sin especificar"
+            />
           </Field>
 
           <Field label="Notas" error={errors.notas?.message}>

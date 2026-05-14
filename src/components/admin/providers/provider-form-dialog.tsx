@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createProviderAction,
   updateProviderAction,
@@ -43,6 +44,8 @@ export function ProviderFormDialog({ open, onOpenChange, initialProvider }: Prov
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<ProviderFormValues>({
     resolver: zodResolver(ProviderFormSchema),
@@ -90,16 +93,12 @@ export function ProviderFormDialog({ open, onOpenChange, initialProvider }: Prov
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Tipo" required error={errors.tipo?.message}>
-              <select
-                {...register("tipo")}
-                className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {TIPOS.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={TIPOS.map((t) => ({ value: t.value, label: t.label }))}
+                value={(watch("tipo") as string | undefined) ?? "NACIONAL"}
+                onChange={(v) => setValue("tipo", v as never)}
+                placeholder="Tipo"
+              />
             </Field>
             <Field label="País" hint="ISO 2 letras" error={errors.pais?.message}>
               <Input
