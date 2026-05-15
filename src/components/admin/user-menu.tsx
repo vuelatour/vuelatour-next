@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRightStartOnRectangleIcon, UserIcon } from "@heroicons/react/24/outline";
+import { ArrowRightStartOnRectangleIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
+import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { signOut } from "@/app/actions/auth";
 import {
@@ -12,7 +13,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -28,6 +28,7 @@ function initials(name: string): string {
 }
 
 export function UserMenu({ me }: { me: MeResponse }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   return (
@@ -47,15 +48,17 @@ export function UserMenu({ me }: { me: MeResponse }) {
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-0.5 px-1.5 py-1.5">
           <span className="font-medium text-sm">{me.nombre}</span>
-          <span className="text-xs text-muted-foreground font-normal">{me.email}</span>
-        </DropdownMenuLabel>
+          <span className="text-xs text-muted-foreground truncate">{me.email}</span>
+        </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled className="gap-2 text-muted-foreground">
-          <UserIcon className="h-4 w-4" />
-          Perfil
-          <span className="ml-auto text-[10px] uppercase">Próx.</span>
+        <DropdownMenuItem
+          onSelect={() => router.push("/admin/account")}
+          className="gap-2"
+        >
+          <Cog6ToothIcon className="h-4 w-4" />
+          Configuración de la cuenta
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

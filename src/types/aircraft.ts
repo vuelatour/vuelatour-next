@@ -69,11 +69,26 @@ export interface OverhaulReserve {
   horas_acumuladas: Decimal;
 }
 
+export interface AeronaveImagen {
+  id: string;
+  aeronave_id: string;
+  storage_path: string;
+  url: string;
+  alt_text: string | null;
+  orden: number;
+  es_principal: boolean;
+  size_bytes: number | null;
+  content_type: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AircraftSnapshot extends Aircraft {
   motors: Motor[];
   propellers: Propeller[];
   owners: AircraftOwner[];
   overhaul_reserves: OverhaulReserve[];
+  imagenes: AeronaveImagen[];
 }
 
 export interface ListResponse<T> {

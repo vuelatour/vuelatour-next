@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-card";
 import { getAircraftSnapshot } from "@/lib/api/aircraft";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtPercent, fmtUsd } from "@/lib/format";
@@ -79,6 +80,12 @@ export default async function AircraftDetailPage({ params }: PageProps) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <AircraftImagesCard
+          aircraftId={aircraft.id}
+          matricula={aircraft.matricula}
+          imagenes={aircraft.imagenes}
+        />
+
         {/* Especificaciones */}
         <Card>
           <CardHeader>
