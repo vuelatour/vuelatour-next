@@ -1,0 +1,80 @@
+import type { ListResponse } from "./aircraft";
+import type { MetodoPago } from "./quote";
+import type { EstadoVuelo } from "./quotes-persisted";
+
+/** Resumen para listas: el backend devuelve solo estos cols en GET /v1/flights. */
+export interface FlightListItem {
+  id: string;
+  folio: number;
+  cliente_id: string;
+  aeronave_id: string | null;
+  piloto_id: string | null;
+  ruta_id: string | null;
+  tipo: "SENCILLO" | "REDONDO" | "MULTIESCALA";
+  estado: EstadoVuelo;
+  es_externo: boolean;
+  operador_externo: string | null;
+  costo_externo_usd: string | null;
+  cotizacion_version: number;
+  origen_iata: string;
+  destino_iata: string;
+  pasajeros: number;
+  monto_total_usd: string;
+  fecha_vuelo: string | null;
+  fecha_confirmacion: string | null;
+  facturado: boolean;
+  cobrado: boolean;
+  notas: string | null;
+  notas_internas: string | null;
+  google_calendar_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlightEscala {
+  id: string;
+  vuelo_id: string;
+  orden: number;
+  origen_iata: string;
+  destino_iata: string;
+  taco_salida: string | null;
+  taco_llegada: string | null;
+  foto_taco_salida_url: string | null;
+  foto_taco_llegada_url: string | null;
+  valor_ia_propuesto: string | null;
+  hora_salida: string | null;
+  hora_llegada: string | null;
+  capturado_offline: boolean;
+  sincronizado_at: string | null;
+  capturado_por: string | null;
+  corregido_por: string | null;
+  nota_correccion: string | null;
+  corregido_at: string | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlightCobro {
+  id: string;
+  vuelo_id: string;
+  monto: string;
+  moneda: "USD" | "MXN";
+  metodo_cobro: MetodoPago;
+  tc_usd_mxn: string | null;
+  referencia: string | null;
+  fecha_cobro: string;
+  registrado_por: string | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Snapshot completo: GET /v1/flights/:id/snapshot. */
+export interface FlightSnapshot extends FlightListItem {
+  escalas: FlightEscala[];
+  cobros: FlightCobro[];
+  total_cobrado: number;
+}
+
+export type FlightListResponse = ListResponse<FlightListItem>;
