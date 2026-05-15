@@ -16,6 +16,7 @@ export interface SearchableSelectOption {
   value: string;
   label: string;
   description?: string;
+  disabled?: boolean;
 }
 
 interface SearchableSelectProps {
@@ -96,7 +97,7 @@ export function SearchableSelect({
         <ComboboxEmpty>{emptyText}</ComboboxEmpty>
         <ComboboxList>
           {(item: SearchableSelectOption) => (
-            <ComboboxItem value={item} key={item.value}>
+            <ComboboxItem value={item} key={item.value} disabled={item.disabled}>
               <div className="flex flex-col">
                 <span>{item.label}</span>
                 {item.description && (

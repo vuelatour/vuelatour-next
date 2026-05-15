@@ -2,8 +2,18 @@ export type TipoTarifa = "PUBLICO" | "BROKER";
 export type MetodoPago = "BILLPOCKET" | "HSBC_LINK" | "TRANSFERENCIA" | "EFECTIVO" | "DOLARES";
 export type PaisAeronave = "MX" | "USA";
 
+export type TipoVuelo = "SENCILLO" | "REDONDO" | "MULTIESCALA";
+
+export interface EscalaInput {
+  origen_iata: string;
+  destino_iata: string;
+  millas_nauticas: number;
+}
+
 export interface CalculateQuoteRequest {
   aeronave_id: string;
+  tipo?: TipoVuelo;
+  escalas?: EscalaInput[];
   ruta_id?: string | null;
   origen_iata?: string;
   destino_iata?: string;
@@ -35,6 +45,7 @@ export interface QuoteBreakdown {
     millas_nauticas_totales: number;
     es_redondo_auto: boolean;
     num_aterrizajes: number;
+    escalas: EscalaInput[] | null;
   };
   tiempos: {
     vuelo_hr: number;
@@ -51,6 +62,8 @@ export interface QuoteBreakdown {
     pasajeros: number;
     origen: { iata: string; aplica: boolean; usd_pax: number; razon: string };
     destino: { iata: string; aplica: boolean; usd_pax: number; razon: string };
+    intermedios?: { iata: string; aplica: boolean; usd_pax: number; razon: string }[];
+    aeropuertos?: { iata: string; aplica: boolean; usd_pax: number; razon: string }[];
     total_usd: number;
   };
   iva: {

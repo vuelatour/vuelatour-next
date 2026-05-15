@@ -11,7 +11,10 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   BookmarkSquareIcon,
+  PlusIcon,
 } from "@heroicons/react/24/outline";
+import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
+import type { Route } from "@/types/routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,19 +30,22 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { createQuoteAction } from "@/app/admin/quotes/actions";
+import { createQuoteAction, reviseQuoteAction } from "@/app/admin/quotes/actions";
 import type {
   CalculateQuoteRequest,
+  EscalaInput,
   MetodoPago,
   QuoteBreakdown,
   TipoTarifa,
+  TipoVuelo,
 } from "@/types/quote";
-import type { TipoVuelo } from "@/types/quotes-persisted";
+import type { PersistedQuote } from "@/types/quotes-persisted";
 
 interface AircraftOption {
   id: string;
@@ -53,11 +59,13 @@ interface AircraftOption {
 
 interface RouteOption {
   id: string;
+  tipo: "SIMPLE" | "MULTIESCALA";
   origen_iata: string;
   destino_iata: string;
   millas_nauticas: number;
   es_redondo_auto: boolean;
   num_aterrizajes: number;
+  tramos: { origen_iata: string; destino_iata: string; millas_nauticas: number }[];
 }
 
 interface ClientOption {
@@ -65,6 +73,11 @@ interface ClientOption {
   nombre: string;
   es_broker: boolean;
   rfc: string | null;
+}
+
+interface AirportOption {
+  iata: string;
+  nombre: string;
 }
 
 interface QuoteFormValues {
@@ -79,6 +92,7 @@ interface QuoteFormValues {
   millas_nauticas: number;
   es_redondo_auto: boolean;
   num_aterrizajes: number;
+  escalas: EscalaInput[];
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
   pase_abordar: boolean;
@@ -88,7 +102,28 @@ interface QuoteFormValues {
   iva_pct_override: number | null;
   notas: string;
   notas_internas: string;
+  // Solo en mode='revise': razon de la revision (requerida).
+  motivo: string;
 }
+
+type QuoteCalculatorProps = {
+  aircraft: AircraftOption[];
+  routes: RouteOption[];
+  airports: AirportOption[];
+} & (
+  | {
+      mode?: "create";
+      clients: ClientOption[];
+      initialQuote?: undefined;
+      clientName?: undefined;
+    }
+  | {
+      mode: "revise";
+      clients?: undefined;
+      initialQuote: PersistedQuote;
+      clientName: string;
+    }
+);
 
 const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
@@ -104,18 +139,27 @@ const TIPOS_VUELO: { value: TipoVuelo; label: string }[] = [
   { value: "MULTIESCALA", label: "Multiescala" },
 ];
 
-export function QuoteCalculator({
-  aircraft,
-  routes,
-  clients,
-}: {
-  aircraft: AircraftOption[];
-  routes: RouteOption[];
-  clients: ClientOption[];
-}) {
+export function QuoteCalculator(props: QuoteCalculatorProps) {
+  const { aircraft, routes, airports } = props;
+  const mode = props.mode ?? "create";
+  const isRevise = mode === "revise";
+  const initialQuote = isRevise ? props.initialQuote : undefined;
+  const clientName = isRevise ? props.clientName : undefined;
+  const clients = isRevise ? [] : props.clients;
+
   const router = useRouter();
   const [advanced, setAdvanced] = useState(false);
   const [saving, startSaving] = useTransition();
+
+  // Rutas creadas inline desde el sheet. Se agregan al dropdown sin esperar
+  // a un revalidate del servidor para que el flujo del cotizador sea continuo.
+  const [extraRoutes, setExtraRoutes] = useState<RouteOption[]>([]);
+  const [routeSheetOpen, setRouteSheetOpen] = useState(false);
+
+  const allRoutes = useMemo(
+    () => [...routes, ...extraRoutes],
+    [routes, extraRoutes],
+  );
 
   // Default a la primera aeronave con tarifa configurada. Las aeronaves "sin
   // tarifa" siguen en el dropdown (marcadas como tal) pero no se pre-seleccionan
@@ -128,24 +172,69 @@ export function QuoteCalculator({
     [aircraft],
   );
 
-  const {
-    register,
-    watch,
-    setValue,
-  } = useForm<QuoteFormValues>({
-    mode: "onChange",
-    defaultValues: {
+  // Default ruta: la primera SIMPLE, porque arrancamos en tipo SENCILLO.
+  const defaultRutaId = useMemo(
+    () => routes.find((r) => r.tipo === "SIMPLE")?.id ?? "",
+    [routes],
+  );
+
+  const formDefaults = useMemo<QuoteFormValues>(() => {
+    if (initialQuote) {
+      const q = initialQuote;
+      // Para revise: en MULTIESCALA arrancamos en modo manual con escalas del
+      // snapshot del vuelo (no del catalogo, que pudo haber cambiado).
+      const isMulti = q.tipo === "MULTIESCALA";
+      return {
+        cliente_id: q.cliente_id,
+        tipo: q.tipo,
+        fecha_vuelo: q.fecha_vuelo ? q.fecha_vuelo.slice(0, 10) : "",
+        aeronave_id: q.aeronave_id ?? defaultAircraftId,
+        ruta_mode: isMulti
+          ? "manual"
+          : q.ruta_id
+            ? "predefined"
+            : "manual",
+        ruta_id: isMulti ? "" : q.ruta_id ?? "",
+        origen_iata: q.origen_iata,
+        destino_iata: q.destino_iata,
+        millas_nauticas: q.millas_nauticas_one_way
+          ? Number(q.millas_nauticas_one_way)
+          : 0,
+        es_redondo_auto: q.es_redondo_auto,
+        num_aterrizajes: q.num_aterrizajes,
+        escalas:
+          isMulti && q.escalas
+            ? q.escalas.map((e) => ({
+                origen_iata: e.origen_iata,
+                destino_iata: e.destino_iata,
+                millas_nauticas: e.millas_nauticas ? Number(e.millas_nauticas) : 0,
+              }))
+            : [],
+        tipo_tarifa: q.tarifa_tipo,
+        pasajeros: q.pasajeros,
+        pase_abordar: q.pase_abordar,
+        metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
+        tarifa_hora_override_usd: null,
+        tuas_override_usd_pax: null,
+        iva_pct_override: null,
+        notas: q.notas ?? "",
+        notas_internas: q.notas_internas ?? "",
+        motivo: "",
+      };
+    }
+    return {
       cliente_id: "",
       tipo: "SENCILLO",
       fecha_vuelo: "",
       aeronave_id: defaultAircraftId,
       ruta_mode: "predefined",
-      ruta_id: routes[0]?.id ?? "",
+      ruta_id: defaultRutaId,
       origen_iata: "",
       destino_iata: "",
       millas_nauticas: 0,
       es_redondo_auto: true,
       num_aterrizajes: 2,
+      escalas: [],
       tipo_tarifa: "PUBLICO",
       pasajeros: 2,
       pase_abordar: false,
@@ -155,7 +244,17 @@ export function QuoteCalculator({
       iva_pct_override: null,
       notas: "",
       notas_internas: "",
-    },
+      motivo: "",
+    };
+  }, [initialQuote, defaultAircraftId, defaultRutaId]);
+
+  const {
+    register,
+    watch,
+    setValue,
+  } = useForm<QuoteFormValues>({
+    mode: "onChange",
+    defaultValues: formDefaults,
   });
 
   const values = watch();
@@ -175,14 +274,29 @@ export function QuoteCalculator({
     if (!debounced.aeronave_id) return null;
     const base: CalculateQuoteRequest = {
       aeronave_id: debounced.aeronave_id,
+      tipo: debounced.tipo,
       tipo_tarifa: debounced.tipo_tarifa,
       pasajeros: Number(debounced.pasajeros) || 0,
       pase_abordar: debounced.pase_abordar,
       metodo_pago: debounced.metodo_pago,
     };
     if (debounced.ruta_mode === "predefined") {
+      // El backend hidrata: si la ruta es MULTIESCALA carga sus tramos, si no
+      // usa origen/destino/NM de la ruta. No necesitamos enviar escalas.
       if (!debounced.ruta_id) return null;
       base.ruta_id = debounced.ruta_id;
+    } else if (debounced.tipo === "MULTIESCALA") {
+      const legs = debounced.escalas ?? [];
+      if (legs.length < 2) return null;
+      const incomplete = legs.some(
+        (l) => !l.origen_iata || !l.destino_iata || !(Number(l.millas_nauticas) > 0),
+      );
+      if (incomplete) return null;
+      base.escalas = legs.map((l) => ({
+        origen_iata: l.origen_iata,
+        destino_iata: l.destino_iata,
+        millas_nauticas: Number(l.millas_nauticas),
+      }));
     } else {
       if (!debounced.origen_iata || !debounced.destino_iata || !debounced.millas_nauticas) {
         return null;
@@ -243,17 +357,45 @@ export function QuoteCalculator({
   }, [calcPayload]);
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
-  const selectedRoute = routes.find((r) => r.id === values.ruta_id);
+  const selectedRoute = allRoutes.find((r) => r.id === values.ruta_id);
   const tipoTarifa = values.tipo_tarifa;
   const rutaMode = values.ruta_mode;
 
-  const canSave = !!values.cliente_id && !!calcPayload && !!breakdown && !error;
+  const motivoTrim = values.motivo?.trim() ?? "";
+  const canSave = isRevise
+    ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
+    : !!values.cliente_id && !!calcPayload && !!breakdown && !error;
 
   const handleSave = () => {
     if (!calcPayload) {
       toast.error("Faltan datos para guardar");
       return;
     }
+
+    if (isRevise) {
+      if (motivoTrim.length < 3) {
+        toast.error("Indica un motivo (mínimo 3 caracteres)");
+        return;
+      }
+      startSaving(async () => {
+        const res = await reviseQuoteAction(initialQuote!.id, {
+          ...calcPayload,
+          motivo: motivoTrim,
+          notas: values.notas || undefined,
+        });
+        if (res.ok && res.data) {
+          toast.success(
+            `Cotización #${res.data.folio} revisada (v${res.data.cotizacion_version})`,
+          );
+          router.push(`/admin/quotes/${res.data.id}`);
+          router.refresh();
+        } else {
+          toast.error(res.error ?? "Error al revisar");
+        }
+      });
+      return;
+    }
+
     if (!values.cliente_id) {
       toast.error("Selecciona un cliente");
       return;
@@ -289,33 +431,60 @@ export function QuoteCalculator({
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Cliente */}
-          <Field label="Cliente" required>
-            <SearchableSelect
-              options={clients.map((c) => ({
-                value: c.id,
-                label: c.nombre,
-                description: [c.rfc, c.es_broker ? "Broker" : null]
-                  .filter(Boolean)
-                  .join(" · "),
-              }))}
-              value={values.cliente_id}
-              onChange={(v) => {
-                setValue("cliente_id", v);
-                // Si el cliente es broker, sugiere tarifa broker.
-                const cli = clients.find((c) => c.id === v);
-                if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
-              }}
-              placeholder="Selecciona cliente"
-              emptyText="Sin clientes activos"
-            />
-          </Field>
+          {isRevise && initialQuote ? (
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 space-y-0.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Cliente · folio
+              </p>
+              <p className="text-sm font-medium">{clientName ?? initialQuote.cliente_id}</p>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-mono">#{initialQuote.folio}</span> ·{" "}
+                <span className="font-mono">v{initialQuote.cotizacion_version}</span>{" "}
+                · revisar genera v{initialQuote.cotizacion_version + 1}
+              </p>
+            </div>
+          ) : (
+            <Field label="Cliente" required>
+              <SearchableSelect
+                options={(clients ?? []).map((c) => ({
+                  value: c.id,
+                  label: c.nombre,
+                  description: [c.rfc, c.es_broker ? "Broker" : null]
+                    .filter(Boolean)
+                    .join(" · "),
+                }))}
+                value={values.cliente_id}
+                onChange={(v) => {
+                  setValue("cliente_id", v);
+                  // Si el cliente es broker, sugiere tarifa broker.
+                  const cli = (clients ?? []).find((c) => c.id === v);
+                  if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
+                }}
+                placeholder="Selecciona cliente"
+                emptyText="Sin clientes activos"
+              />
+            </Field>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Tipo de vuelo" required>
               <SearchableSelect
                 options={TIPOS_VUELO.map((t) => ({ value: t.value, label: t.label }))}
                 value={values.tipo}
-                onChange={(v) => setValue("tipo", v as TipoVuelo)}
+                onChange={(v) => {
+                  const next = v as TipoVuelo;
+                  setValue("tipo", next);
+                  // Si la ruta_id apunta a un tipo que ya no aplica (ej. cambiar
+                  // de Sencillo->Multiescala con una ruta SIMPLE en memoria),
+                  // limpiarla para evitar payloads incoherentes.
+                  const currentRuta = allRoutes.find((r) => r.id === values.ruta_id);
+                  const needsMulti = next === "MULTIESCALA";
+                  const rutaIsMulti = currentRuta?.tipo === "MULTIESCALA";
+                  if (currentRuta && needsMulti !== rutaIsMulti) {
+                    setValue("ruta_id", "");
+                    if (!needsMulti) setValue("escalas", []);
+                  }
+                }}
               />
             </Field>
             <Field label="Fecha de vuelo" hint="Opcional">
@@ -326,13 +495,17 @@ export function QuoteCalculator({
           {/* Aeronave */}
           <Field label="Aeronave" required>
             <SearchableSelect
-              options={aircraft.map((a) => ({
-                value: a.id,
-                label: `${a.matricula} — ${a.modelo}`,
-                description: `${a.velocidad_crucero_kts} kts${
-                  !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd ? " · sin tarifa" : ""
-                }`,
-              }))}
+              options={aircraft.map((a) => {
+                const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
+                return {
+                  value: a.id,
+                  label: `${a.matricula} — ${a.modelo}`,
+                  description: `${a.velocidad_crucero_kts} kts${
+                    sinTarifa ? " · sin tarifa configurada" : ""
+                  }`,
+                  disabled: sinTarifa,
+                };
+              })}
               value={values.aeronave_id}
               onChange={(v) => setValue("aeronave_id", v)}
               placeholder="Selecciona aeronave"
@@ -352,7 +525,15 @@ export function QuoteCalculator({
             </Label>
             <Segmented
               value={rutaMode}
-              onChange={(v) => setValue("ruta_mode", v as "predefined" | "manual")}
+              onChange={(v) => {
+                const next = v as "predefined" | "manual";
+                setValue("ruta_mode", next);
+                if (next === "manual") {
+                  // Al cambiar a manual: olvidar la ruta del catalogo. Si era multi,
+                  // mantenemos las escalas cargadas como base editable.
+                  setValue("ruta_id", "");
+                }
+              }}
               options={[
                 { value: "predefined", label: "Predefinida" },
                 { value: "manual", label: "Manual" },
@@ -361,25 +542,130 @@ export function QuoteCalculator({
           </div>
 
           {rutaMode === "predefined" ? (
-            <Field label="Ruta predefinida" required>
+            <Field
+              label={
+                values.tipo === "MULTIESCALA" ? "Ruta multiescala" : "Ruta predefinida"
+              }
+              required
+            >
               <SearchableSelect
-                options={routes.map((r) => ({
-                  value: r.id,
-                  label: `${r.origen_iata} → ${r.destino_iata}`,
-                  description: `${r.millas_nauticas} NM one-way${
-                    r.es_redondo_auto ? " (× 2 auto)" : ""
-                  }`,
-                }))}
+                options={allRoutes
+                  .filter((r) =>
+                    values.tipo === "MULTIESCALA"
+                      ? r.tipo === "MULTIESCALA"
+                      : r.tipo === "SIMPLE",
+                  )
+                  .map((r) => {
+                    if (r.tipo === "MULTIESCALA") {
+                      const path = [
+                        r.tramos[0]?.origen_iata,
+                        ...r.tramos.map((t) => t.destino_iata),
+                      ]
+                        .filter(Boolean)
+                        .join(" → ");
+                      return {
+                        value: r.id,
+                        label: path,
+                        description: `${r.millas_nauticas} NM · ${r.tramos.length} tramos`,
+                      };
+                    }
+                    return {
+                      value: r.id,
+                      label: `${r.origen_iata} → ${r.destino_iata}`,
+                      description: `${r.millas_nauticas} NM one-way${
+                        r.es_redondo_auto ? " (× 2 auto)" : ""
+                      }`,
+                    };
+                  })}
                 value={values.ruta_id}
-                onChange={(v) => setValue("ruta_id", v)}
-                placeholder="Selecciona ruta"
+                onChange={(v) => {
+                  setValue("ruta_id", v);
+                  const ruta = allRoutes.find((r) => r.id === v);
+                  if (ruta?.tipo === "MULTIESCALA") {
+                    // Auto-sync: el tipo de vuelo y las escalas siguen al catalogo.
+                    setValue("tipo", "MULTIESCALA");
+                    setValue(
+                      "escalas",
+                      ruta.tramos.map((t) => ({
+                        origen_iata: t.origen_iata,
+                        destino_iata: t.destino_iata,
+                        millas_nauticas: Number(t.millas_nauticas),
+                      })),
+                    );
+                  }
+                }}
+                placeholder={
+                  values.tipo === "MULTIESCALA"
+                    ? "Selecciona ruta multiescala"
+                    : "Selecciona ruta"
+                }
+                emptyText={
+                  values.tipo === "MULTIESCALA"
+                    ? "Sin rutas multiescala — crea una abajo"
+                    : "Sin rutas — crea una abajo"
+                }
               />
-              {selectedRoute && selectedRoute.es_redondo_auto && (
+              <button
+                type="button"
+                onClick={() => setRouteSheetOpen(true)}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                {values.tipo === "MULTIESCALA"
+                  ? "Crear ruta multiescala"
+                  : "Crear nueva ruta"}
+              </button>
+              {selectedRoute?.tipo === "MULTIESCALA" && selectedRoute.tramos.length > 0 && (
+                <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Tramos del catálogo · solo lectura
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setValue("ruta_mode", "manual");
+                        setValue("ruta_id", "");
+                      }}
+                      className="text-[11px] font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
+                    >
+                      Personalizar tramos
+                    </button>
+                  </div>
+                  <ol className="space-y-1 text-xs font-mono">
+                    {selectedRoute.tramos.map((t, i) => (
+                      <li key={i} className="flex items-center justify-between gap-2">
+                        <span>
+                          <span className="text-muted-foreground mr-2">{i + 1}.</span>
+                          {t.origen_iata} → {t.destino_iata}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {fmtDecimal(t.millas_nauticas)} NM
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+              {selectedRoute?.tipo === "SIMPLE" && selectedRoute.es_redondo_auto && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Redondo auto: el motor calcula{" "}
                   {fmtDecimal(selectedRoute.millas_nauticas * 2)} NM totales.
                 </p>
               )}
+            </Field>
+          ) : values.tipo === "MULTIESCALA" ? (
+            <Field
+              label="Tramos"
+              required
+              hint="Origen del siguiente tramo queda fijo al destino del anterior."
+            >
+              <QuoteLegsEditor
+                value={values.escalas}
+                onChange={(legs) => setValue("escalas", legs)}
+                routes={allRoutes}
+                airports={airports}
+              />
             </Field>
           ) : (
             <>
@@ -567,25 +853,101 @@ export function QuoteCalculator({
 
         {/* Save bar */}
         <Card>
-          <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
-            <div className="text-sm">
-              <p className="font-medium">Guardar cotización</p>
-              <p className="text-xs text-muted-foreground">
-                Se crea como v1 en estado COTIZADO. Podrás revisar o confirmar después.
-              </p>
-            </div>
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={!canSave || saving}
-              className="gap-2"
-            >
-              <BookmarkSquareIcon className="h-4 w-4" />
-              {saving ? "Guardando…" : "Guardar cotización"}
-            </Button>
+          <CardContent className="p-4 space-y-3">
+            {isRevise && initialQuote ? (
+              <>
+                <div className="text-sm">
+                  <p className="font-medium">
+                    Aplicar revisión v{initialQuote.cotizacion_version + 1}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    La versión actual queda en el historial. El cálculo nuevo
+                    reemplaza el snapshot del vuelo.
+                  </p>
+                </div>
+                <Field label="Motivo de la revisión" required>
+                  <Textarea
+                    rows={2}
+                    placeholder="Ej. Cliente cambió fecha y aumentó pasajeros"
+                    {...register("motivo")}
+                  />
+                </Field>
+                <div className="flex items-center justify-end">
+                  <Button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={!canSave || saving}
+                    className="gap-2"
+                  >
+                    <BookmarkSquareIcon className="h-4 w-4" />
+                    {saving
+                      ? "Guardando…"
+                      : `Aplicar revisión v${initialQuote.cotizacion_version + 1}`}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="text-sm">
+                  <p className="font-medium">Guardar cotización</p>
+                  <p className="text-xs text-muted-foreground">
+                    Se crea como v1 en estado COTIZADO. Podrás revisar o confirmar después.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!canSave || saving}
+                  className="gap-2"
+                >
+                  <BookmarkSquareIcon className="h-4 w-4" />
+                  {saving ? "Guardando…" : "Guardar cotización"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      <RouteFormSheet
+        open={routeSheetOpen}
+        onOpenChange={setRouteSheetOpen}
+        airports={airports}
+        defaultTipo={values.tipo === "MULTIESCALA" ? "MULTIESCALA" : "SIMPLE"}
+        onSaved={(route: Route) => {
+          const opt: RouteOption = {
+            id: route.id,
+            tipo: route.tipo,
+            origen_iata: route.origen_iata,
+            destino_iata: route.destino_iata,
+            millas_nauticas: Number(route.millas_nauticas),
+            es_redondo_auto: route.es_redondo_auto,
+            num_aterrizajes: route.num_aterrizajes,
+            tramos: route.tramos.map((t) => ({
+              origen_iata: t.origen_iata,
+              destino_iata: t.destino_iata,
+              millas_nauticas: Number(t.millas_nauticas),
+            })),
+          };
+          setExtraRoutes((prev) => [...prev, opt]);
+          setValue("ruta_mode", "predefined");
+          setValue("ruta_id", opt.id);
+          if (opt.tipo === "MULTIESCALA") {
+            setValue("tipo", "MULTIESCALA");
+            setValue(
+              "escalas",
+              opt.tramos.map((t) => ({
+                origen_iata: t.origen_iata,
+                destino_iata: t.destino_iata,
+                millas_nauticas: t.millas_nauticas,
+              })),
+            );
+          }
+          // Refresh server data en background para que la próxima carga ya
+          // tenga la ruta nueva sin depender del estado local.
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

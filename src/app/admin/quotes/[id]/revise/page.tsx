@@ -1,19 +1,45 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
+import { getQuote } from "@/lib/api/quotes-server";
+import { getClient } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listRoutes } from "@/lib/api/routes-server";
-import { listClients } from "@/lib/api/clients-server";
 import { listAirports } from "@/lib/api/airports-server";
+import { ApiError } from "@/lib/api/errors";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewQuotePage() {
-  const [aircraftRes, routesRes, clientsRes, airportsRes] = await Promise.all([
+interface RevisePageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function ReviseQuotePage({ params }: RevisePageProps) {
+  const { id } = await params;
+
+  let quote;
+  try {
+    quote = await getQuote(id);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) notFound();
+    throw err;
+  }
+
+  // No se puede revisar fuera de SOLICITUD/COTIZADO — el backend igual rechaza,
+  // pero atajamos en frontend para evitar entrar a un form que no se puede guardar.
+  if (
+    quote.estado !== "SOLICITUD" &&
+    quote.estado !== "COTIZADO"
+  ) {
+    notFound();
+  }
+
+  const [aircraftRes, routesRes, airportsRes, client] = await Promise.all([
     listAircraft({ limit: 100, activa: true }),
     listRoutes({ limit: 200, activa: true }),
-    listClients({ limit: 200, activo: true }),
     listAirports({ limit: 200, activo: true }),
+    getClient(quote.cliente_id).catch(() => null),
   ]);
 
   const aircraft = aircraftRes.data.map((a) => ({
@@ -23,7 +49,9 @@ export default async function NewQuotePage() {
     pais_registro: a.pais_registro,
     velocidad_crucero_kts: Number(a.velocidad_crucero_kts),
     tarifa_hora_pub_usd: a.tarifa_hora_pub_usd ? Number(a.tarifa_hora_pub_usd) : null,
-    tarifa_hora_broker_usd: a.tarifa_hora_broker_usd ? Number(a.tarifa_hora_broker_usd) : null,
+    tarifa_hora_broker_usd: a.tarifa_hora_broker_usd
+      ? Number(a.tarifa_hora_broker_usd)
+      : null,
   }));
 
   const routes = routesRes.data.map((r) => ({
@@ -41,13 +69,6 @@ export default async function NewQuotePage() {
     })),
   }));
 
-  const clients = clientsRes.data.map((c) => ({
-    id: c.id,
-    nombre: c.nombre,
-    es_broker: c.es_broker,
-    rfc: c.rfc,
-  }));
-
   const airports = airportsRes.data.map((a) => ({
     iata: a.iata,
     nombre: a.nombre,
@@ -57,24 +78,27 @@ export default async function NewQuotePage() {
     <div className="space-y-6">
       <div>
         <Link
-          href="/admin/quotes"
+          href={`/admin/quotes/${quote.id}`}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeftIcon className="h-3.5 w-3.5" />
-          Cotizaciones
+          Cotización #{quote.folio}
         </Link>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight mt-2">
-          Nueva cotización
+          Revisar cotización
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Calcula y guarda como v1. El cliente queda asociado al vuelo.
+          Edita parámetros y agrega un motivo. Se generará la versión v
+          {quote.cotizacion_version + 1} y la actual queda en el historial.
         </p>
       </div>
       <QuoteCalculator
+        mode="revise"
         aircraft={aircraft}
         routes={routes}
-        clients={clients}
         airports={airports}
+        initialQuote={quote}
+        clientName={client?.nombre ?? quote.cliente_id}
       />
     </div>
   );

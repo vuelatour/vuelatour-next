@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CheckCircleIcon,
+  PencilSquareIcon,
   XCircleIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -17,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -34,6 +36,7 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
   const [motivoCancel, setMotivoCancel] = useState("");
 
   const canConfirm = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
+  const canRevise = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -63,10 +66,19 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
     });
   };
 
-  if (!canConfirm && !canCancel) return null;
+  if (!canConfirm && !canCancel && !canRevise) return null;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 flex-wrap">
+      {canRevise && (
+        <Link
+          href={`/admin/quotes/${quote.id}/revise`}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          <PencilSquareIcon className="h-4 w-4" />
+          Revisar
+        </Link>
+      )}
       {canConfirm && (
         <Button
           onClick={handleConfirm}

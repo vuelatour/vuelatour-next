@@ -135,27 +135,60 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Ruta</CardTitle>
+                <CardTitle className="text-sm">
+                  {quote.tipo === "MULTIESCALA" ? "Itinerario" : "Ruta"}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <Row
-                  label="Origen → Destino"
-                  value={`${quote.origen_iata} → ${quote.destino_iata}`}
-                />
-                <Row
-                  label="Millas náuticas"
-                  value={
-                    quote.millas_nauticas_one_way
-                      ? `${fmtDecimal(quote.millas_nauticas_one_way)} NM one-way${
-                          quote.es_redondo_auto ? " (× 2)" : ""
-                        }`
-                      : "—"
-                  }
-                />
-                <Row
-                  label="Aterrizajes"
-                  value={String(quote.num_aterrizajes)}
-                />
+                {quote.tipo === "MULTIESCALA" && quote.escalas && quote.escalas.length > 0 ? (
+                  <ol className="space-y-1.5">
+                    {quote.escalas.map((esc) => (
+                      <li
+                        key={esc.id}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <span className="font-mono">
+                          <span className="text-muted-foreground mr-2">
+                            {esc.orden}.
+                          </span>
+                          {esc.origen_iata} → {esc.destino_iata}
+                        </span>
+                        <span className="font-mono text-muted-foreground">
+                          {esc.millas_nauticas
+                            ? `${fmtDecimal(esc.millas_nauticas)} NM`
+                            : "—"}
+                        </span>
+                      </li>
+                    ))}
+                    <li className="pt-2 mt-2 border-t border-border flex items-center justify-between text-xs">
+                      <span className="font-semibold">Total</span>
+                      <span className="font-mono font-bold">
+                        {fmtDecimal(quote.millas_nauticas_one_way)} NM
+                      </span>
+                    </li>
+                  </ol>
+                ) : (
+                  <>
+                    <Row
+                      label="Origen → Destino"
+                      value={`${quote.origen_iata} → ${quote.destino_iata}`}
+                    />
+                    <Row
+                      label="Millas náuticas"
+                      value={
+                        quote.millas_nauticas_one_way
+                          ? `${fmtDecimal(quote.millas_nauticas_one_way)} NM one-way${
+                              quote.es_redondo_auto ? " (× 2)" : ""
+                            }`
+                          : "—"
+                      }
+                    />
+                    <Row
+                      label="Aterrizajes"
+                      value={String(quote.num_aterrizajes)}
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
 

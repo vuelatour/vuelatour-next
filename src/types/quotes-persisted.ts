@@ -2,6 +2,20 @@ import type { ListResponse } from "./aircraft";
 import type { MetodoPago, QuoteBreakdown, TipoTarifa } from "./quote";
 
 export type TipoVuelo = "SENCILLO" | "REDONDO" | "MULTIESCALA";
+
+export interface PersistedEscala {
+  id: string;
+  vuelo_id: string;
+  orden: number;
+  origen_iata: string;
+  destino_iata: string;
+  millas_nauticas: string | null;
+  taco_salida: string | null;
+  taco_llegada: string | null;
+  hora_salida: string | null;
+  hora_llegada: string | null;
+  notas: string | null;
+}
 export type EstadoVuelo =
   | "SOLICITUD"
   | "COTIZADO"
@@ -65,6 +79,9 @@ export interface PersistedQuote {
   notas: string | null;
   notas_internas: string | null;
   calculo_snapshot: QuoteBreakdown | null;
+
+  /** Solo presente cuando se consulta por id (GET /v1/quotes/:id). */
+  escalas?: PersistedEscala[];
 
   created_at: string;
   updated_at: string;
