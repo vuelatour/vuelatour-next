@@ -20,10 +20,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { deleteRouteAction } from "@/app/admin/routes/actions";
-import { RouteFormDialog } from "./route-form-dialog";
+import { RouteFormSheet } from "./route-form-sheet";
 import type { Route } from "@/types/routes";
 
-export function RouteActions({ route }: { route: Route }) {
+interface AirportOption {
+  iata: string;
+  nombre: string;
+}
+
+export function RouteActions({
+  route,
+  airports,
+}: {
+  route: Route;
+  airports: AirportOption[];
+}) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -64,7 +75,12 @@ export function RouteActions({ route }: { route: Route }) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <RouteFormDialog open={openEdit} onOpenChange={setOpenEdit} initialRoute={route} />
+      <RouteFormSheet
+        open={openEdit}
+        onOpenChange={setOpenEdit}
+        initialRoute={route}
+        airports={airports}
+      />
 
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
         <AlertDialogContent>

@@ -3,9 +3,14 @@
 import { useState } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
-import { RouteFormDialog } from "./route-form-dialog";
+import { RouteFormSheet } from "./route-form-sheet";
 
-export function RouteCreateButton() {
+interface AirportOption {
+  iata: string;
+  nombre: string;
+}
+
+export function RouteCreateButton({ airports }: { airports: AirportOption[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -13,7 +18,7 @@ export function RouteCreateButton() {
         <PlusIcon className="h-4 w-4" />
         Nueva ruta
       </Button>
-      <RouteFormDialog open={open} onOpenChange={setOpen} />
+      <RouteFormSheet open={open} onOpenChange={setOpen} airports={airports} />
     </>
   );
 }

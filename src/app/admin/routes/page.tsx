@@ -18,12 +18,21 @@ import {
 import { RouteActions } from "@/components/admin/routes/route-actions";
 import { RouteCreateButton } from "@/components/admin/routes/route-create-button";
 import { listRoutes } from "@/lib/api/routes-server";
+import { listAirports } from "@/lib/api/airports-server";
 import { fmtDecimal } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function RoutesPage() {
-  const { data: routes, count } = await listRoutes({ limit: 200, activa: undefined });
+  const [routesRes, airportsRes] = await Promise.all([
+    listRoutes({ limit: 200, activa: undefined }),
+    listAirports({ limit: 200, activo: true }),
+  ]);
+  const { data: routes, count } = routesRes;
+  const airports = airportsRes.data.map((a) => ({
+    iata: a.iata,
+    nombre: a.nombre,
+  }));
 
   return (
     <div className="space-y-6">
@@ -36,7 +45,7 @@ export default async function RoutesPage() {
             no recalcular millas náuticas.
           </p>
         </div>
-        <RouteCreateButton />
+        <RouteCreateButton airports={airports} />
       </div>
 
       {routes.length === 0 ? (
@@ -60,7 +69,8 @@ export default async function RoutesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Ruta</TableHead>
-                  <TableHead className="text-right">NM one-way</TableHead>
+                  <TableHead className="text-center">Tipo</TableHead>
+                  <TableHead className="text-right">NM</TableHead>
                   <TableHead className="text-center">Redondo auto</TableHead>
                   <TableHead className="text-center">Aterrizajes</TableHead>
                   <TableHead>Fuente</TableHead>
@@ -72,22 +82,56 @@ export default async function RoutesPage() {
                 {routes.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>
-                      <div className="flex items-center gap-2 font-mono font-semibold">
-                        <span>{r.origen_iata}</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span>{r.destino_iata}</span>
-                      </div>
-                      {r.notas && (
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                          {r.notas}
-                        </p>
+                      {r.tipo === "MULTIESCALA" && r.tramos.length > 0 ? (
+                        <div className="space-y-0.5">
+                          <div className="font-mono text-sm font-semibold">
+                            {r.tramos.map((t, i) => (
+                              <span key={t.id}>
+                                {i === 0 ? t.origen_iata : null}
+                                <span className="text-muted-foreground"> → </span>
+                                {t.destino_iata}
+                              </span>
+                            ))}
+                          </div>
+                          {r.notas && (
+                            <p className="text-xs text-muted-foreground line-clamp-1">
+                              {r.notas}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2 font-mono font-semibold">
+                            <span>{r.origen_iata}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span>{r.destino_iata}</span>
+                          </div>
+                          {r.notas && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                              {r.notas}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {r.tipo === "MULTIESCALA" ? (
+                        <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
+                          {r.tramos.length} tramos
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">
+                          Simple
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {fmtDecimal(r.millas_nauticas)}
                     </TableCell>
                     <TableCell className="text-center">
-                      {r.es_redondo_auto ? (
+                      {r.tipo === "MULTIESCALA" ? (
+                        <span className="text-[10px] text-muted-foreground">N/A</span>
+                      ) : r.es_redondo_auto ? (
                         <Badge variant="outline" className="text-xs">× 2 auto</Badge>
                       ) : (
                         <Badge variant="secondary" className="text-xs">Total</Badge>
@@ -115,7 +159,7 @@ export default async function RoutesPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <RouteActions route={r} />
+                      <RouteActions route={r} airports={airports} />
                     </TableCell>
                   </TableRow>
                 ))}
