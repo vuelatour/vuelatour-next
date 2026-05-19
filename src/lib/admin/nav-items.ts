@@ -6,12 +6,17 @@ import {
   UsersIcon,
   BuildingOfficeIcon,
   TruckIcon,
+  ChartBarIcon,
+  ChartPieIcon,
   CpuChipIcon,
+  CubeIcon,
   MapIcon,
   MapPinIcon,
   CreditCardIcon,
   BanknotesIcon,
   DocumentTextIcon,
+  ReceiptPercentIcon,
+  ShieldCheckIcon,
   UserCircleIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
@@ -37,6 +42,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Operación",
     items: [
       { label: "Dashboard", href: "/admin", icon: HomeIcon },
+      {
+        label: "Tablero ejecutivo",
+        href: "/admin/dashboards",
+        icon: ChartBarIcon,
+        roles: ["ADMIN", "ANALISTA"],
+      },
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
       { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon, comingSoon: true },
@@ -49,6 +60,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Motores", href: "/admin/engines", icon: CpuChipIcon, comingSoon: true },
       { label: "Hélices", href: "/admin/propellers", icon: CpuChipIcon, comingSoon: true },
       { label: "Rutas", href: "/admin/routes", icon: MapIcon },
+      { label: "Vencimientos", href: "/admin/expirations", icon: ShieldCheckIcon },
+      { label: "Inventario", href: "/admin/inventory", icon: CubeIcon },
     ],
   },
   {
@@ -66,8 +79,37 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Finanzas",
+    items: [
+      {
+        label: "Gastos",
+        href: "/admin/expenses",
+        icon: ReceiptPercentIcon,
+        roles: ["ADMIN", "COORDINADOR", "ANALISTA", "FACTURACION", "PILOTO"],
+      },
+      {
+        label: "Caja chica",
+        href: "/admin/cash-funds",
+        icon: BanknotesIcon,
+        roles: ["ADMIN", "FACTURACION", "COORDINADOR", "ANALISTA"],
+      },
+      {
+        label: "Reparto de utilidades",
+        href: "/admin/profit-sharing",
+        icon: ChartPieIcon,
+        roles: ["ADMIN", "ANALISTA"],
+      },
+    ],
+  },
+  {
     label: "Tesorería",
     items: [
+      {
+        label: "Bancos y conciliación",
+        href: "/admin/treasury",
+        icon: BanknotesIcon,
+        roles: ["ADMIN", "FACTURACION", "ANALISTA"],
+      },
       {
         label: "Cuentas bancarias",
         href: "/admin/bank-accounts",
@@ -89,6 +131,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Usuarios",
         href: "/admin/users",
         icon: UserCircleIcon,
+        roles: ["ADMIN"],
+      },
+      {
+        label: "Tipos de documento",
+        href: "/admin/document-types",
+        icon: DocumentTextIcon,
         roles: ["ADMIN"],
       },
     ],
