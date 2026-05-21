@@ -1,7 +1,7 @@
 import type { ListResponse } from "./aircraft";
 import type { MetodoPago, QuoteBreakdown, TipoTarifa } from "./quote";
 
-export type TipoVuelo = "SENCILLO" | "REDONDO" | "MULTIESCALA";
+export type TipoVuelo = "REDONDO" | "MULTIESCALA";
 
 export interface PersistedEscala {
   id: string;
@@ -67,6 +67,7 @@ export interface PersistedQuote {
 
   fecha_solicitud: string;
   fecha_vuelo: string | null;
+  fecha_traslado_final: string | null;
   fecha_confirmacion: string | null;
   fecha_cancelacion: string | null;
   motivo_cancelacion: string | null;

@@ -263,10 +263,21 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 })}
               />
               <Cell
-                label="Fecha de vuelo"
+                label="Traslado inicial"
                 value={
                   quote.fecha_vuelo
                     ? new Date(quote.fecha_vuelo).toLocaleString("es-MX", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })
+                    : "—"
+                }
+              />
+              <Cell
+                label="Traslado final"
+                value={
+                  quote.fecha_traslado_final
+                    ? new Date(quote.fecha_traslado_final).toLocaleString("es-MX", {
                         dateStyle: "medium",
                         timeStyle: "short",
                       })

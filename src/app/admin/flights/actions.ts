@@ -80,6 +80,7 @@ export async function completeFlightAction(
 export interface UpdateFlightPayload {
   piloto_id?: string | null;
   fecha_vuelo?: string;
+  fecha_traslado_final?: string;
   notas?: string;
   notas_internas?: string;
   facturado?: boolean;

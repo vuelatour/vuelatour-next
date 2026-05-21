@@ -197,9 +197,19 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     <span className="text-muted-foreground">Sin asignar</span>
                   )}
                 </Row>
-                <Row label="Fecha del vuelo">
+                <Row label="Traslado inicial">
                   {snapshot.fecha_vuelo ? (
                     new Date(snapshot.fecha_vuelo).toLocaleString("es-MX", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })
+                  ) : (
+                    <span className="text-muted-foreground">Sin fecha</span>
+                  )}
+                </Row>
+                <Row label="Traslado final">
+                  {snapshot.fecha_traslado_final ? (
+                    new Date(snapshot.fecha_traslado_final).toLocaleString("es-MX", {
                       dateStyle: "medium",
                       timeStyle: "short",
                     })

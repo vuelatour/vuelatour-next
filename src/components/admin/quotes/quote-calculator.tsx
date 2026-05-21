@@ -84,6 +84,7 @@ interface QuoteFormValues {
   cliente_id: string;
   tipo: TipoVuelo;
   fecha_vuelo: string;
+  fecha_traslado_final: string;
   aeronave_id: string;
   ruta_mode: "predefined" | "manual";
   ruta_id: string;
@@ -134,7 +135,6 @@ const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
 ];
 
 const TIPOS_VUELO: { value: TipoVuelo; label: string }[] = [
-  { value: "SENCILLO", label: "Sencillo" },
   { value: "REDONDO", label: "Redondo" },
   { value: "MULTIESCALA", label: "Multiescala" },
 ];
@@ -172,7 +172,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     [aircraft],
   );
 
-  // Default ruta: la primera SIMPLE, porque arrancamos en tipo SENCILLO.
+  // Default ruta: la primera SIMPLE, porque arrancamos en tipo REDONDO.
   const defaultRutaId = useMemo(
     () => routes.find((r) => r.tipo === "SIMPLE")?.id ?? "",
     [routes],
@@ -188,6 +188,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         cliente_id: q.cliente_id,
         tipo: q.tipo,
         fecha_vuelo: q.fecha_vuelo ? q.fecha_vuelo.slice(0, 10) : "",
+        fecha_traslado_final: q.fecha_traslado_final
+          ? q.fecha_traslado_final.slice(0, 10)
+          : "",
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
         ruta_mode: isMulti
           ? "manual"
@@ -224,8 +227,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }
     return {
       cliente_id: "",
-      tipo: "SENCILLO",
+      tipo: "REDONDO",
       fecha_vuelo: "",
+      fecha_traslado_final: "",
       aeronave_id: defaultAircraftId,
       ruta_mode: "predefined",
       ruta_id: defaultRutaId,
@@ -304,7 +308,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       base.origen_iata = debounced.origen_iata;
       base.destino_iata = debounced.destino_iata;
       base.millas_nauticas = Number(debounced.millas_nauticas);
-      base.es_redondo_auto = debounced.es_redondo_auto;
+      // Todos los vuelos son redondos: el motor siempre multiplica NM × 2.
+      base.es_redondo_auto = true;
       base.num_aterrizajes = Number(debounced.num_aterrizajes) || 2;
     }
     if (base.pasajeros < 1) return null;
@@ -406,6 +411,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         cliente_id: values.cliente_id,
         tipo: values.tipo,
         fecha_vuelo: values.fecha_vuelo || undefined,
+        fecha_traslado_final: values.fecha_traslado_final || undefined,
         notas: values.notas || undefined,
         notas_internas: values.notas_internas || undefined,
       });
@@ -466,29 +472,33 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </Field>
           )}
 
+          <Field label="Tipo de vuelo" required>
+            <SearchableSelect
+              options={TIPOS_VUELO.map((t) => ({ value: t.value, label: t.label }))}
+              value={values.tipo}
+              onChange={(v) => {
+                const next = v as TipoVuelo;
+                setValue("tipo", next);
+                // Si la ruta_id apunta a un tipo que ya no aplica (ej. cambiar
+                // de Redondo->Multiescala con una ruta SIMPLE en memoria),
+                // limpiarla para evitar payloads incoherentes.
+                const currentRuta = allRoutes.find((r) => r.id === values.ruta_id);
+                const needsMulti = next === "MULTIESCALA";
+                const rutaIsMulti = currentRuta?.tipo === "MULTIESCALA";
+                if (currentRuta && needsMulti !== rutaIsMulti) {
+                  setValue("ruta_id", "");
+                  if (!needsMulti) setValue("escalas", []);
+                }
+              }}
+            />
+          </Field>
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Tipo de vuelo" required>
-              <SearchableSelect
-                options={TIPOS_VUELO.map((t) => ({ value: t.value, label: t.label }))}
-                value={values.tipo}
-                onChange={(v) => {
-                  const next = v as TipoVuelo;
-                  setValue("tipo", next);
-                  // Si la ruta_id apunta a un tipo que ya no aplica (ej. cambiar
-                  // de Sencillo->Multiescala con una ruta SIMPLE en memoria),
-                  // limpiarla para evitar payloads incoherentes.
-                  const currentRuta = allRoutes.find((r) => r.id === values.ruta_id);
-                  const needsMulti = next === "MULTIESCALA";
-                  const rutaIsMulti = currentRuta?.tipo === "MULTIESCALA";
-                  if (currentRuta && needsMulti !== rutaIsMulti) {
-                    setValue("ruta_id", "");
-                    if (!needsMulti) setValue("escalas", []);
-                  }
-                }}
-              />
-            </Field>
-            <Field label="Fecha de vuelo" hint="Opcional">
+            <Field label="Fecha de traslado inicial" hint="Opcional · salida">
               <Input type="date" {...register("fecha_vuelo")} />
+            </Field>
+            <Field label="Fecha de traslado final" hint="Opcional · regreso">
+              <Input type="date" {...register("fecha_traslado_final")} />
             </Field>
           </div>
 
@@ -687,7 +697,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   />
                 </Field>
               </div>
-              <Field label="Millas náuticas one-way" required>
+              <Field
+                label="Millas náuticas one-way"
+                hint="El vuelo es redondo: el motor multiplica × 2 automáticamente."
+                required
+              >
                 <Input
                   type="number"
                   step="0.01"
@@ -696,16 +710,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   {...register("millas_nauticas")}
                 />
               </Field>
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <Label className="text-sm font-medium">Redondo automático</Label>
-                  <p className="text-xs text-muted-foreground">Multiplica NM × 2</p>
-                </div>
-                <Switch
-                  checked={values.es_redondo_auto}
-                  onCheckedChange={(c) => setValue("es_redondo_auto", c)}
-                />
-              </div>
               <Field label="Aterrizajes" hint="0.15 hr de calzos por aterrizaje">
                 <Input type="number" min={1} {...register("num_aterrizajes")} />
               </Field>

@@ -30,6 +30,7 @@ interface PilotOption {
 interface MetaFormValues {
   piloto_id: string;
   fecha_vuelo: string;
+  fecha_traslado_final: string;
   notas: string;
   notas_internas: string;
   facturado: boolean;
@@ -40,6 +41,9 @@ function defaults(flight: FlightListItem): MetaFormValues {
   return {
     piloto_id: flight.piloto_id ?? "",
     fecha_vuelo: flight.fecha_vuelo ? flight.fecha_vuelo.slice(0, 16) : "",
+    fecha_traslado_final: flight.fecha_traslado_final
+      ? flight.fecha_traslado_final.slice(0, 16)
+      : "",
     notas: flight.notas ?? "",
     notas_internas: flight.notas_internas ?? "",
     facturado: flight.facturado,
@@ -80,6 +84,7 @@ export function FlightMetaSheet({
     const payload: {
       piloto_id?: string | null;
       fecha_vuelo?: string;
+      fecha_traslado_final?: string;
       notas?: string;
       notas_internas?: string;
       facturado?: boolean;
@@ -96,6 +101,13 @@ export function FlightMetaSheet({
         ? new Date(flight.fecha_vuelo).toISOString()
         : null;
       if (next !== prev) payload.fecha_vuelo = next;
+    }
+    if (values.fecha_traslado_final) {
+      const next = new Date(values.fecha_traslado_final).toISOString();
+      const prev = flight.fecha_traslado_final
+        ? new Date(flight.fecha_traslado_final).toISOString()
+        : null;
+      if (next !== prev) payload.fecha_traslado_final = next;
     }
     if (values.notas !== (flight.notas ?? "")) payload.notas = values.notas;
     if (values.notas_internas !== (flight.notas_internas ?? ""))
@@ -166,8 +178,13 @@ export function FlightMetaSheet({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Fecha y hora del vuelo</Label>
+            <Label className="text-sm font-medium">Fecha de traslado inicial</Label>
             <Input type="datetime-local" {...register("fecha_vuelo")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Fecha de traslado final</Label>
+            <Input type="datetime-local" {...register("fecha_traslado_final")} />
           </div>
 
           <div className="space-y-1.5">

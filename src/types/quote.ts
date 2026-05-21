@@ -2,7 +2,7 @@ export type TipoTarifa = "PUBLICO" | "BROKER";
 export type MetodoPago = "BILLPOCKET" | "HSBC_LINK" | "TRANSFERENCIA" | "EFECTIVO" | "DOLARES";
 export type PaisAeronave = "MX" | "USA";
 
-export type TipoVuelo = "SENCILLO" | "REDONDO" | "MULTIESCALA";
+export type TipoVuelo = "REDONDO" | "MULTIESCALA";
 
 export interface EscalaInput {
   origen_iata: string;

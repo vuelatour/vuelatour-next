@@ -10,7 +10,7 @@ export interface FlightListItem {
   aeronave_id: string | null;
   piloto_id: string | null;
   ruta_id: string | null;
-  tipo: "SENCILLO" | "REDONDO" | "MULTIESCALA";
+  tipo: "REDONDO" | "MULTIESCALA";
   estado: EstadoVuelo;
   es_externo: boolean;
   operador_externo: string | null;
@@ -21,6 +21,7 @@ export interface FlightListItem {
   pasajeros: number;
   monto_total_usd: string;
   fecha_vuelo: string | null;
+  fecha_traslado_final: string | null;
   fecha_confirmacion: string | null;
   facturado: boolean;
   cobrado: boolean;

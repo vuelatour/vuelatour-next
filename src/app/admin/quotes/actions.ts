@@ -19,8 +19,9 @@ function fail<T>(err: unknown): ActionResult<T> {
 
 export interface CreateQuotePayload extends CalculateQuoteRequest {
   cliente_id: string;
-  tipo?: "SENCILLO" | "REDONDO" | "MULTIESCALA";
+  tipo?: "REDONDO" | "MULTIESCALA";
   fecha_vuelo?: string;
+  fecha_traslado_final?: string;
   notas?: string;
   notas_internas?: string;
 }
