@@ -1,39 +1,35 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 /**
- * Logo textual "vuelat[o]ur" donde la "o" se reemplaza por un círculo rojo
- * de marca con una "o" blanca centrada. Sustituye al WebP del proyecto
- * anterior — al ser puro DOM/SVG escala sin pérdida y respeta `currentColor`
- * para encajar en headers claros u oscuros.
+ * Logo Vuelatour. Dos variantes:
+ *  - `variant="dark"`  → logo claro para fondos oscuros (default, igual al header/footer públicos)
+ *  - `variant="light"` → logo oscuro para fondos claros
+ *
+ * Tamaño controlado por `className` (ej: `h-8 w-auto`).
  */
 export function VuelatourLogo({
   className,
-  dotClassName,
+  variant = "dark",
+  priority = false,
 }: {
   className?: string;
-  dotClassName?: string;
+  variant?: "light" | "dark";
+  priority?: boolean;
 }) {
+  const src =
+    variant === "dark"
+      ? "/brand/logo-vuelatour-dark.webp"
+      : "/brand/logo-vuelatour.webp";
+
   return (
-    <span
-      className={cn(
-        "inline-flex items-baseline font-bold tracking-tight text-2xl md:text-3xl leading-none",
-        className,
-      )}
-      aria-label="Vuelatour"
-    >
-      <span>vuelat</span>
-      <span
-        className={cn(
-          "relative inline-flex items-center justify-center mx-[1px] size-[0.78em] rounded-full bg-brand-500 text-white",
-          dotClassName,
-        )}
-        aria-hidden="true"
-      >
-        <span className="text-[0.55em] font-bold leading-none translate-y-[1px]">
-          o
-        </span>
-      </span>
-      <span>ur</span>
-    </span>
+    <Image
+      src={src}
+      alt="Vuelatour"
+      width={800}
+      height={200}
+      priority={priority}
+      className={cn("h-8 w-auto md:h-9", className)}
+    />
   );
 }
