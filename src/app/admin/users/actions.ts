@@ -51,3 +51,37 @@ export async function deactivateUserAction(id: string): Promise<ActionResult> {
     return fail(err);
   }
 }
+
+export interface ResetPasswordResult {
+  created_auth_user: boolean;
+  supabase_auth_id: string;
+}
+
+export async function resetUserPasswordAction(
+  id: string,
+  password: string,
+): Promise<ActionResult<ResetPasswordResult>> {
+  if (!password || password.length < 6) {
+    return { ok: false, error: "La contraseña debe tener al menos 6 caracteres" };
+  }
+  try {
+    const data = await apiServer<{ ok: true } & ResetPasswordResult>(
+      `/v1/users/${id}/reset-password`,
+      {
+        method: "POST",
+        body: { password },
+      },
+    );
+    revalidatePath("/admin/users");
+    revalidatePath("/admin/pilots");
+    return {
+      ok: true,
+      data: {
+        created_auth_user: data.created_auth_user,
+        supabase_auth_id: data.supabase_auth_id,
+      },
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}

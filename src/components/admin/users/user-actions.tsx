@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { EllipsisHorizontalIcon, PencilIcon, NoSymbolIcon } from "@heroicons/react/24/outline";
+import {
+  EllipsisHorizontalIcon,
+  KeyIcon,
+  NoSymbolIcon,
+  PencilIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -21,10 +26,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { deactivateUserAction } from "@/app/admin/users/actions";
 import { UserFormDialog } from "./user-form-dialog";
+import { ResetPasswordDialog } from "./reset-password-dialog";
 import type { User } from "@/types/users";
 
 export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
   const [openEdit, setOpenEdit] = useState(false);
+  const [openReset, setOpenReset] = useState(false);
   const [openDeactivate, setOpenDeactivate] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -48,13 +55,17 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => setOpenEdit(true)} className="gap-2">
+          <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setOpenReset(true)} className="gap-2">
+            <KeyIcon className="h-4 w-4" />
+            {user.supabase_auth_id ? "Restablecer contraseña" : "Crear contraseña"}
+          </DropdownMenuItem>
           {user.estado === "ACTIVO" && !isSelf && (
             <DropdownMenuItem
-              onSelect={() => setOpenDeactivate(true)}
+              onClick={() => setOpenDeactivate(true)}
               className="gap-2 text-destructive focus:text-destructive"
             >
               <NoSymbolIcon className="h-4 w-4" />
@@ -65,6 +76,7 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
       </DropdownMenu>
 
       <UserFormDialog open={openEdit} onOpenChange={setOpenEdit} user={user} />
+      <ResetPasswordDialog open={openReset} onOpenChange={setOpenReset} user={user} />
 
       <AlertDialog open={openDeactivate} onOpenChange={setOpenDeactivate}>
         <AlertDialogContent>

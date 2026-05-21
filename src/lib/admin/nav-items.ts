@@ -13,6 +13,7 @@ import {
   BanknotesIcon,
   DocumentTextIcon,
   UserCircleIcon,
+  RocketLaunchIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
@@ -85,6 +86,12 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Administración",
     items: [
+      {
+        label: "Pilotos",
+        href: "/admin/pilots",
+        icon: RocketLaunchIcon,
+        roles: ["ADMIN", "COORDINADOR"],
+      },
       {
         label: "Usuarios",
         href: "/admin/users",
