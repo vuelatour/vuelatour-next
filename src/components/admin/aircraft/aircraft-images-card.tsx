@@ -263,19 +263,19 @@ function ImageTile({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
-                onSelect={handleSetPrincipal}
+                onClick={handleSetPrincipal}
                 disabled={image.es_principal || pending}
                 className="gap-2"
               >
                 <StarIcon className="h-4 w-4" />
                 Marcar como principal
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setOpenEdit(true)} className="gap-2">
+              <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
                 <PencilIcon className="h-4 w-4" />
                 Editar texto alternativo
               </DropdownMenuItem>
               <DropdownMenuItem
-                onSelect={() => setOpenDelete(true)}
+                onClick={() => setOpenDelete(true)}
                 className="gap-2 text-destructive focus:text-destructive"
               >
                 <TrashIcon className="h-4 w-4" />

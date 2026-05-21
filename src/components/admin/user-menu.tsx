@@ -54,7 +54,7 @@ export function UserMenu({ me }: { me: MeResponse }) {
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onSelect={() => router.push("/admin/account")}
+          onClick={() => router.push("/admin/account")}
           className="gap-2"
         >
           <Cog6ToothIcon className="h-4 w-4" />
@@ -63,8 +63,8 @@ export function UserMenu({ me }: { me: MeResponse }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={pending}
-          onSelect={(e) => {
-            e.preventDefault();
+          closeOnClick={false}
+          onClick={() => {
             startTransition(() => {
               void signOut();
             });

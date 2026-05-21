@@ -221,12 +221,12 @@ function EscalaRowMenu({
           <span className="sr-only">Acciones de la escala</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onEdit} className="gap-2">
+          <DropdownMenuItem onClick={onEdit} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => setOpenDelete(true)}
+            onClick={() => setOpenDelete(true)}
             className="gap-2 text-destructive focus:text-destructive"
             disabled={hasTacos}
           >
