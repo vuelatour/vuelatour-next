@@ -32,6 +32,8 @@ export default async function RoutesPage() {
   const airports = airportsRes.data.map((a) => ({
     iata: a.iata,
     nombre: a.nombre,
+    latitud: a.latitud,
+    longitud: a.longitud,
   }));
 
   return (

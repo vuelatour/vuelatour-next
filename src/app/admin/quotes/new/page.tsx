@@ -51,6 +51,8 @@ export default async function NewQuotePage() {
   const airports = airportsRes.data.map((a) => ({
     iata: a.iata,
     nombre: a.nombre,
+    latitud: a.latitud,
+    longitud: a.longitud,
   }));
 
   return (

@@ -26,6 +26,8 @@ import type { Route } from "@/types/routes";
 interface AirportOption {
   iata: string;
   nombre: string;
+  latitud: number | null;
+  longitud: number | null;
 }
 
 export function RouteActions({

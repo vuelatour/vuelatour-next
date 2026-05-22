@@ -8,6 +8,8 @@ import { RouteFormSheet } from "./route-form-sheet";
 interface AirportOption {
   iata: string;
   nombre: string;
+  latitud: number | null;
+  longitud: number | null;
 }
 
 export function RouteCreateButton({ airports }: { airports: AirportOption[] }) {

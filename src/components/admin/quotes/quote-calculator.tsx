@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
+import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
 import { calculateQuote, getAirportDistance } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
@@ -78,6 +79,8 @@ interface ClientOption {
 interface AirportOption {
   iata: string;
   nombre: string;
+  latitud: number | null;
+  longitud: number | null;
 }
 
 interface QuoteFormValues {
@@ -767,6 +770,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               <Field label="Aterrizajes" hint="0.15 hr de calzos por aterrizaje">
                 <Input type="number" min={1} {...register("num_aterrizajes")} />
               </Field>
+              <div className="hidden xl:block">
+                <RoutePreviewMap
+                  airports={airports}
+                  originIata={values.origen_iata}
+                  destinationIata={values.destino_iata}
+                />
+              </div>
             </>
           )}
 

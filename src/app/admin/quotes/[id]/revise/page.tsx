@@ -72,6 +72,8 @@ export default async function ReviseQuotePage({ params }: RevisePageProps) {
   const airports = airportsRes.data.map((a) => ({
     iata: a.iata,
     nombre: a.nombre,
+    latitud: a.latitud,
+    longitud: a.longitud,
   }));
 
   return (

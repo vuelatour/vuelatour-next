@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
+import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
 import {
   createRouteAction,
@@ -31,6 +32,8 @@ import type { EscalaInput } from "@/types/quote";
 interface AirportOption {
   iata: string;
   nombre: string;
+  latitud: number | null;
+  longitud: number | null;
 }
 
 interface RouteFormSheetProps {
@@ -239,6 +242,14 @@ export function RouteFormSheet({
               >
                 <Input type="number" min={1} {...register("num_aterrizajes")} />
               </Field>
+
+              <div className="hidden xl:block">
+                <RoutePreviewMap
+                  airports={airports}
+                  originIata={origenIata}
+                  destinationIata={destinoIata}
+                />
+              </div>
             </>
           ) : (
             <Field
