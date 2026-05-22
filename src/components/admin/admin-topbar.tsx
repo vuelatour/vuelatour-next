@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Bars3Icon } from "@heroicons/react/24/outline";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { UserMenu } from "./user-menu";
+import { NotificationBell } from "./notifications/notification-bell";
 import { SidebarBrand } from "./sidebar-brand";
 import { SidebarNav } from "./sidebar-nav";
 import { SidebarFooter } from "./sidebar-footer";
@@ -44,7 +45,10 @@ export function AdminTopbar({ me }: { me: MeResponse }) {
           <h1 className="text-base md:text-lg font-semibold truncate">{pageTitle}</h1>
         )}
       </div>
-      <UserMenu me={me} />
+      <div className="flex items-center gap-1">
+        <NotificationBell />
+        <UserMenu me={me} />
+      </div>
     </header>
   );
 }
