@@ -45,6 +45,8 @@ export interface FlightEscala {
   foto_taco_salida_url: string | null;
   foto_taco_llegada_url: string | null;
   valor_ia_propuesto: string | null;
+  revision_requerida: boolean;
+  revision_motivo: string | null;
   hora_salida: string | null;
   hora_llegada: string | null;
   capturado_offline: boolean;
@@ -78,6 +80,22 @@ export interface FlightSnapshot extends FlightListItem {
   escalas: FlightEscala[];
   cobros: FlightCobro[];
   total_cobrado: number;
+}
+
+/** Foto de tacómetro con URL firmada: GET /v1/flights/:id/taco-photos. */
+export interface TacoPhoto {
+  escala_id: string;
+  orden: number;
+  origen_iata: string;
+  destino_iata: string;
+  taco_salida: string | null;
+  taco_llegada: string | null;
+  valor_ia_propuesto: string | null;
+  revision_requerida: boolean;
+  revision_motivo: string | null;
+  foto_salida_url: string | null;
+  foto_llegada_url: string | null;
+  capturado_at: string | null;
 }
 
 export type FlightListResponse = ListResponse<FlightListItem>;

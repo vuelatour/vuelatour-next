@@ -3,6 +3,7 @@ import type {
   FlightListItem,
   FlightListResponse,
   FlightSnapshot,
+  TacoPhoto,
 } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
@@ -31,6 +32,12 @@ export function getFlight(id: string) {
 
 export function getFlightSnapshot(id: string) {
   return apiServer<FlightSnapshot>(`/v1/flights/${id}/snapshot`, {
+    cache: "no-store",
+  });
+}
+
+export function getFlightTacoPhotos(id: string) {
+  return apiServer<TacoPhoto[]>(`/v1/flights/${id}/taco-photos`, {
     cache: "no-store",
   });
 }

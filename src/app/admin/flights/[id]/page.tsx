@@ -16,7 +16,7 @@ import {
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
-import { getFlightSnapshot } from "@/lib/api/flights-server";
+import { getFlightSnapshot, getFlightTacoPhotos } from "@/lib/api/flights-server";
 import { getClient } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -95,12 +95,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes] = await Promise.all([
-    getClient(snapshot.cliente_id).catch(() => null),
-    listAircraft({ limit: 100, activa: true }),
-    listUsers({ rol: "PILOTO", limit: 50 }),
-    listAirports({ limit: 200, activo: true }),
-  ]);
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos] =
+    await Promise.all([
+      getClient(snapshot.cliente_id).catch(() => null),
+      listAircraft({ limit: 100, activa: true }),
+      listUsers({ rol: "PILOTO", limit: 50 }),
+      listAirports({ limit: 200, activo: true }),
+      getFlightTacoPhotos(id).catch(() => []),
+    ]);
 
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
@@ -302,6 +304,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             flightFolio={snapshot.folio}
             flightEstado={snapshot.estado}
             escalas={snapshot.escalas}
+            tacoPhotos={tacoPhotos}
             airports={airportsRes.data.map((a) => ({
               iata: a.iata,
               nombre: a.nombre,
