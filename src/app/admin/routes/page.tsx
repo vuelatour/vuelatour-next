@@ -121,7 +121,7 @@ export default async function RoutesPage() {
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-[10px]">
-                          Simple
+                          Redondo
                         </Badge>
                       )}
                     </TableCell>

@@ -137,7 +137,7 @@ export function RouteFormSheet({
           <SheetDescription>
             {tipo === "MULTIESCALA"
               ? "Define los tramos del itinerario. El cotizador reusará esta ruta sumando millas y aterrizajes automáticamente."
-              : "Define el par origen-destino y las millas náuticas one-way."}
+              : "Define el par origen-destino y las millas náuticas de ida (el regreso se duplica automáticamente)."}
           </SheetDescription>
         </SheetHeader>
 
@@ -152,14 +152,14 @@ export function RouteFormSheet({
               value={tipo}
               onChange={(v) => setValue("tipo", v as TipoRuta)}
               options={[
-                { value: "SIMPLE", label: "Simple" },
+                { value: "SIMPLE", label: "Redondo" },
                 { value: "MULTIESCALA", label: "Multiescala" },
               ]}
             />
             <p className="text-xs text-muted-foreground">
               {tipo === "MULTIESCALA"
                 ? "Itinerario con varios tramos (ej. CUN→HOL→CZM→CUN)."
-                : "Ruta directa origen→destino. Vuelta a CUN se duplica con redondo auto."}
+                : "Ruta directa origen→destino. El regreso a base se duplica automáticamente."}
             </p>
           </div>
 
