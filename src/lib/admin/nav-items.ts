@@ -40,7 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Dashboard", href: "/admin", icon: HomeIcon },
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
-      { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon, comingSoon: true },
+      { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon },
     ],
   },
   {
