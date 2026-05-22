@@ -23,6 +23,8 @@ export interface FlightListItem {
   fecha_vuelo: string | null;
   fecha_traslado_final: string | null;
   fecha_confirmacion: string | null;
+  estado_permiso: "no_aplica" | "pendiente" | "emitido";
+  foto_plan_vuelo_url: string | null;
   facturado: boolean;
   cobrado: boolean;
   notas: string | null;

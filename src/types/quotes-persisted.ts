@@ -68,6 +68,7 @@ export interface PersistedQuote {
   fecha_solicitud: string;
   fecha_vuelo: string | null;
   fecha_traslado_final: string | null;
+  estado_permiso: "no_aplica" | "pendiente" | "emitido";
   fecha_confirmacion: string | null;
   fecha_cancelacion: string | null;
   motivo_cancelacion: string | null;

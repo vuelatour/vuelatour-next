@@ -54,6 +54,7 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
   const aplicaXb = watch("tuas_aplica_xb");
   const aplicaN = watch("tuas_aplica_n");
   const paseExenta = watch("tuas_pase_abordar_exenta");
+  const requierePermiso = watch("requiere_permiso");
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
@@ -163,6 +164,15 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
             />
           </div>
 
+          <div className="rounded-lg border border-border p-4">
+            <SwitchRow
+              label="Requiere permiso de pista"
+              hint="Vuelos hacia/desde esta pista necesitan tramitar permiso antes (ej. HOL, MHL, PTU). Se marcan en el calendario hasta emitirlo."
+              checked={requierePermiso}
+              onCheckedChange={(c) => setValue("requiere_permiso", c)}
+            />
+          </div>
+
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>
@@ -250,6 +260,7 @@ function defaults(airport?: Airport): AirportFormValues {
       tuas_aplica_xb: true,
       tuas_aplica_n: true,
       tuas_pase_abordar_exenta: true,
+      requiere_permiso: false,
       notas: "",
     };
   }
@@ -264,6 +275,7 @@ function defaults(airport?: Airport): AirportFormValues {
     tuas_aplica_xb: airport.tuas_aplica_xb,
     tuas_aplica_n: airport.tuas_aplica_n,
     tuas_pase_abordar_exenta: airport.tuas_pase_abordar_exenta,
+    requiere_permiso: airport.requiere_permiso,
     notas: airport.notas ?? "",
   };
 }

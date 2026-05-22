@@ -24,6 +24,7 @@ export const AirportFormSchema = z.object({
   tuas_aplica_xb: z.boolean().default(true),
   tuas_aplica_n: z.boolean().default(true),
   tuas_pase_abordar_exenta: z.boolean().default(true),
+  requiere_permiso: z.boolean().default(false),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

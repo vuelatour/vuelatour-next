@@ -146,6 +146,22 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   Externo {snapshot.operador_externo ?? ""}
                 </Badge>
               )}
+              {snapshot.estado_permiso === "pendiente" && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                >
+                  ⚠ Permiso pendiente
+                </Badge>
+              )}
+              {snapshot.estado_permiso === "emitido" && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
+                >
+                  Permiso emitido
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {client?.nombre ?? snapshot.cliente_id} ·{" "}

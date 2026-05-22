@@ -81,6 +81,7 @@ export interface UpdateFlightPayload {
   piloto_id?: string | null;
   fecha_vuelo?: string;
   fecha_traslado_final?: string;
+  estado_permiso?: "no_aplica" | "pendiente" | "emitido";
   notas?: string;
   notas_internas?: string;
   facturado?: boolean;

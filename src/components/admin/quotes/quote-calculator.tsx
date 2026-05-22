@@ -187,9 +187,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       return {
         cliente_id: q.cliente_id,
         tipo: q.tipo,
-        fecha_vuelo: q.fecha_vuelo ? q.fecha_vuelo.slice(0, 10) : "",
+        fecha_vuelo: q.fecha_vuelo ? q.fecha_vuelo.slice(0, 16) : "",
         fecha_traslado_final: q.fecha_traslado_final
-          ? q.fecha_traslado_final.slice(0, 10)
+          ? q.fecha_traslado_final.slice(0, 16)
           : "",
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
         ruta_mode: isMulti
@@ -494,11 +494,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Fecha de traslado inicial" hint="Opcional · salida">
-              <Input type="date" {...register("fecha_vuelo")} />
+            <Field label="Fecha de traslado inicial" hint="Opcional · salida (fecha y hora)">
+              <Input type="datetime-local" {...register("fecha_vuelo")} />
             </Field>
-            <Field label="Fecha de traslado final" hint="Opcional · regreso">
-              <Input type="date" {...register("fecha_traslado_final")} />
+            <Field label="Fecha de traslado final" hint="Opcional · regreso (fecha y hora)">
+              <Input type="datetime-local" {...register("fecha_traslado_final")} />
             </Field>
           </div>
 

@@ -27,15 +27,24 @@ interface PilotOption {
   email: string;
 }
 
+type EstadoPermiso = "no_aplica" | "pendiente" | "emitido";
+
 interface MetaFormValues {
   piloto_id: string;
   fecha_vuelo: string;
   fecha_traslado_final: string;
+  estado_permiso: EstadoPermiso;
   notas: string;
   notas_internas: string;
   facturado: boolean;
   cobrado: boolean;
 }
+
+const PERMISO_OPTS: { value: EstadoPermiso; label: string; description: string }[] = [
+  { value: "no_aplica", label: "No aplica", description: "Ruta sin pista que requiera permiso" },
+  { value: "pendiente", label: "Pendiente", description: "Permiso por tramitar (evento en color de alerta)" },
+  { value: "emitido", label: "Emitido", description: "Permiso ya emitido (color normal)" },
+];
 
 function defaults(flight: FlightListItem): MetaFormValues {
   return {
@@ -44,6 +53,7 @@ function defaults(flight: FlightListItem): MetaFormValues {
     fecha_traslado_final: flight.fecha_traslado_final
       ? flight.fecha_traslado_final.slice(0, 16)
       : "",
+    estado_permiso: flight.estado_permiso,
     notas: flight.notas ?? "",
     notas_internas: flight.notas_internas ?? "",
     facturado: flight.facturado,
@@ -77,6 +87,7 @@ export function FlightMetaSheet({
   }, [open, flight, reset]);
 
   const pilotoId = watch("piloto_id");
+  const estadoPermiso = watch("estado_permiso");
   const facturado = watch("facturado");
   const cobrado = watch("cobrado");
 
@@ -85,6 +96,7 @@ export function FlightMetaSheet({
       piloto_id?: string | null;
       fecha_vuelo?: string;
       fecha_traslado_final?: string;
+      estado_permiso?: EstadoPermiso;
       notas?: string;
       notas_internas?: string;
       facturado?: boolean;
@@ -108,6 +120,9 @@ export function FlightMetaSheet({
         ? new Date(flight.fecha_traslado_final).toISOString()
         : null;
       if (next !== prev) payload.fecha_traslado_final = next;
+    }
+    if (values.estado_permiso !== flight.estado_permiso) {
+      payload.estado_permiso = values.estado_permiso;
     }
     if (values.notas !== (flight.notas ?? "")) payload.notas = values.notas;
     if (values.notas_internas !== (flight.notas_internas ?? ""))
@@ -186,6 +201,37 @@ export function FlightMetaSheet({
             <Label className="text-sm font-medium">Fecha de traslado final</Label>
             <Input type="datetime-local" {...register("fecha_traslado_final")} />
           </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Permiso de pista</Label>
+            <SearchableSelect
+              options={PERMISO_OPTS.map((o) => ({
+                value: o.value,
+                label: o.label,
+                description: o.description,
+              }))}
+              value={estadoPermiso}
+              onChange={(v) => setValue("estado_permiso", v as EstadoPermiso)}
+              placeholder="Estado del permiso"
+            />
+            <p className="text-xs text-muted-foreground">
+              Pendiente pinta el evento del calendario en color de alerta hasta emitirlo.
+            </p>
+          </div>
+
+          {flight.foto_plan_vuelo_url && (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Plan de vuelo</Label>
+              <a
+                href={flight.foto_plan_vuelo_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-brand-600 hover:underline break-all"
+              >
+                Ver foto del plan de vuelo
+              </a>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Notas (visibles en PDF)</Label>

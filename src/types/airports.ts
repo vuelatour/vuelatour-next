@@ -12,6 +12,7 @@ export interface Airport {
   tuas_aplica_xb: boolean;
   tuas_aplica_n: boolean;
   tuas_pase_abordar_exenta: boolean;
+  requiere_permiso: boolean;
   notas: string | null;
   activo: boolean;
   created_at: string;
