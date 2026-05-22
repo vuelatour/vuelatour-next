@@ -12,7 +12,7 @@ interface AdminShellProps {
 
 export function AdminShell({ me, children }: AdminShellProps) {
   return (
-    <NotificationsProvider>
+    <NotificationsProvider currentUserId={me.id}>
       <div className="min-h-screen bg-background">
         {/* Sidebar desktop fija */}
         <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 flex-col bg-navy-900 border-r border-navy-800 text-white">

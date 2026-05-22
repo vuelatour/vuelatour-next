@@ -5,7 +5,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { io, type Socket } from "socket.io-client";
@@ -23,6 +22,8 @@ interface NotificationsContextValue {
   notifications: AppNotification[];
   unreadCount: number;
   connected: boolean;
+  socket: Socket | null;
+  currentUserId: string;
   refresh: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
@@ -36,11 +37,17 @@ export function useNotifications(): NotificationsContextValue {
   return ctx;
 }
 
-export function NotificationsProvider({ children }: { children: React.ReactNode }) {
+export function NotificationsProvider({
+  currentUserId,
+  children,
+}: {
+  currentUserId: string;
+  children: React.ReactNode;
+}) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [connected, setConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -86,7 +93,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       .catch(() => {});
 
     const supabase = createSupabaseBrowserClient();
-    const socket = io(env.API_URL, {
+    const sock = io(env.API_URL, {
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -98,11 +105,14 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         });
       },
     });
-    socketRef.current = socket;
+    // Publica el socket al contexto fuera del cuerpo síncrono del efecto.
+    queueMicrotask(() => {
+      if (active) setSocket(sock);
+    });
 
-    socket.on("connect", () => setConnected(true));
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("notification", (payload: Partial<AppNotification>) => {
+    sock.on("connect", () => setConnected(true));
+    sock.on("disconnect", () => setConnected(false));
+    sock.on("notification", (payload: Partial<AppNotification>) => {
       if (payload?.titulo) {
         toast(payload.titulo, { description: payload.cuerpo ?? undefined });
       }
@@ -111,15 +121,24 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
     return () => {
       active = false;
-      socket.removeAllListeners();
-      socket.disconnect();
-      socketRef.current = null;
+      sock.removeAllListeners();
+      sock.disconnect();
+      setSocket(null);
     };
   }, [refresh]);
 
   return (
     <NotificationsContext.Provider
-      value={{ notifications, unreadCount, connected, refresh, markRead, markAllRead }}
+      value={{
+        notifications,
+        unreadCount,
+        connected,
+        socket,
+        currentUserId,
+        refresh,
+        markRead,
+        markAllRead,
+      }}
     >
       {children}
     </NotificationsContext.Provider>

@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { QuoteActionsBar } from "@/components/admin/quotes/quote-actions-bar";
+import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
 import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
 import { getClient } from "@/lib/api/clients-server";
@@ -90,6 +91,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
             </p>
           </div>
           <QuoteActionsBar quote={quote} />
+        </div>
+        <div className="mt-3">
+          <QuotePresenceIndicator quoteId={id} />
         </div>
       </div>
 
