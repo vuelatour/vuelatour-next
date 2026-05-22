@@ -89,6 +89,12 @@ export function RouteFormSheet({
   const tipo = watch("tipo") ?? "SIMPLE";
   const esRedondoAuto = watch("es_redondo_auto");
   const tramos = watch("tramos") ?? [];
+  const origenIata = watch("origen_iata") ?? "";
+  const destinoIata = watch("destino_iata") ?? "";
+  const airportOptions = airports.map((a) => ({
+    value: a.iata,
+    label: `${a.iata} — ${a.nombre}`,
+  }));
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
@@ -171,15 +177,12 @@ export function RouteFormSheet({
                   required
                   error={errors.origen_iata?.message}
                 >
-                  <Input
-                    placeholder="CUN"
-                    maxLength={4}
-                    {...register("origen_iata")}
-                    onChange={(e) => {
-                      e.target.value = e.target.value.toUpperCase();
-                      register("origen_iata").onChange(e);
-                    }}
-                    className="font-mono uppercase"
+                  <SearchableSelect
+                    options={airportOptions}
+                    value={origenIata}
+                    onChange={(v) => setValue("origen_iata", v)}
+                    placeholder="Selecciona origen"
+                    emptyText="Sin aeropuertos"
                   />
                 </Field>
                 <Field
@@ -187,15 +190,12 @@ export function RouteFormSheet({
                   required
                   error={errors.destino_iata?.message}
                 >
-                  <Input
-                    placeholder="CZM"
-                    maxLength={4}
-                    {...register("destino_iata")}
-                    onChange={(e) => {
-                      e.target.value = e.target.value.toUpperCase();
-                      register("destino_iata").onChange(e);
-                    }}
-                    className="font-mono uppercase"
+                  <SearchableSelect
+                    options={airportOptions}
+                    value={destinoIata}
+                    onChange={(v) => setValue("destino_iata", v)}
+                    placeholder="Selecciona destino"
+                    emptyText="Sin aeropuertos"
                   />
                 </Field>
               </div>

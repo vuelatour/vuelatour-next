@@ -161,6 +161,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     [routes, extraRoutes],
   );
 
+  const airportOptions = useMemo(
+    () => airports.map((a) => ({ value: a.iata, label: `${a.iata} — ${a.nombre}` })),
+    [airports],
+  );
+
   // Default a la primera aeronave con tarifa configurada. Las aeronaves "sin
   // tarifa" siguen en el dropdown (marcadas como tal) pero no se pre-seleccionan
   // porque el motor de cálculo las rechaza con 400.
@@ -720,19 +725,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Origen IATA" required>
-                  <Input
-                    maxLength={4}
-                    placeholder="CUN"
-                    className="font-mono uppercase"
-                    {...register("origen_iata")}
+                  <SearchableSelect
+                    options={airportOptions}
+                    value={values.origen_iata}
+                    onChange={(v) => setValue("origen_iata", v)}
+                    placeholder="Selecciona origen"
+                    emptyText="Sin aeropuertos"
                   />
                 </Field>
                 <Field label="Destino IATA" required>
-                  <Input
-                    maxLength={4}
-                    placeholder="CZM"
-                    className="font-mono uppercase"
-                    {...register("destino_iata")}
+                  <SearchableSelect
+                    options={airportOptions}
+                    value={values.destino_iata}
+                    onChange={(v) => setValue("destino_iata", v)}
+                    placeholder="Selecciona destino"
+                    emptyText="Sin aeropuertos"
                   />
                 </Field>
               </div>
