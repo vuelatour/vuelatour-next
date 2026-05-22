@@ -7,6 +7,8 @@ export interface Airport {
   nombre: string;
   ciudad: string | null;
   pais: string;
+  latitud: number | null;
+  longitud: number | null;
   tuas_default_usd_pax: string;
   tuas_aplica_xa: boolean;
   tuas_aplica_xb: boolean;

@@ -19,6 +19,14 @@ export const AirportFormSchema = z.object({
     .length(2, "ISO 2 letras")
     .transform((v) => v.toUpperCase())
     .default("MX"),
+  latitud: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().min(-90, "-90 a 90").max(90, "-90 a 90").optional(),
+  ),
+  longitud: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().min(-180, "-180 a 180").max(180, "-180 a 180").optional(),
+  ),
   tuas_default_usd_pax: z.coerce.number().min(0, "≥ 0").default(25),
   tuas_aplica_xa: z.boolean().default(true),
   tuas_aplica_xb: z.boolean().default(true),

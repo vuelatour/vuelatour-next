@@ -122,6 +122,29 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
             <Input placeholder="Cancún" {...register("ciudad")} />
           </Field>
 
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Latitud"
+              hint="Grados decimales · para calcular millas náuticas"
+              error={errors.latitud?.message}
+            >
+              <Input
+                type="number"
+                step="0.0001"
+                placeholder="21.0365"
+                {...register("latitud")}
+              />
+            </Field>
+            <Field label="Longitud" hint="Grados decimales" error={errors.longitud?.message}>
+              <Input
+                type="number"
+                step="0.0001"
+                placeholder="-86.8771"
+                {...register("longitud")}
+              />
+            </Field>
+          </div>
+
           <Field
             label="TUAS por pasajero"
             hint="USD por pasajero (configurable por aeropuerto)"
@@ -255,6 +278,8 @@ function defaults(airport?: Airport): AirportFormValues {
       nombre: "",
       ciudad: "",
       pais: "MX",
+      latitud: "",
+      longitud: "",
       tuas_default_usd_pax: 25,
       tuas_aplica_xa: true,
       tuas_aplica_xb: true,
@@ -270,6 +295,8 @@ function defaults(airport?: Airport): AirportFormValues {
     nombre: airport.nombre,
     ciudad: airport.ciudad ?? "",
     pais: airport.pais,
+    latitud: airport.latitud ?? "",
+    longitud: airport.longitud ?? "",
     tuas_default_usd_pax: Number(airport.tuas_default_usd_pax),
     tuas_aplica_xa: airport.tuas_aplica_xa,
     tuas_aplica_xb: airport.tuas_aplica_xb,

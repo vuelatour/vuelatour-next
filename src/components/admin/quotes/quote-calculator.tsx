@@ -32,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { cn } from "@/lib/utils";
-import { calculateQuote } from "@/lib/api/quotes-browser";
+import { calculateQuote, getAirportDistance } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -328,6 +328,45 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nmWarning, setNmWarning] = useState<string | null>(null);
+
+  // Autocompleta millas náuticas (great-circle) al fijar origen+destino en modo
+  // manual. Fallback a captura manual con aviso si falta coordenada o falla la API.
+  useEffect(() => {
+    if (debounced.ruta_mode !== "manual" || debounced.tipo === "MULTIESCALA") {
+      setNmWarning(null);
+      return;
+    }
+    const o = (debounced.origen_iata ?? "").trim().toUpperCase();
+    const d = (debounced.destino_iata ?? "").trim().toUpperCase();
+    if (o.length < 3 || d.length < 3 || o === d) {
+      setNmWarning(null);
+      return;
+    }
+    let cancelled = false;
+    getAirportDistance(o, d)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.millas_nauticas != null) {
+          setValue("millas_nauticas", res.millas_nauticas);
+          setNmWarning(null);
+        } else {
+          setNmWarning(
+            `Sin coordenadas para ${res.origen} o ${res.destino}. Captura las millas manualmente.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNmWarning("No se pudo calcular millas automáticamente. Captura manual.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // setValue es estable en RHF; lo omitimos a propósito para no re-disparar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced.ruta_mode, debounced.tipo, debounced.origen_iata, debounced.destino_iata]);
 
   useEffect(() => {
     if (!calcPayload) {
@@ -699,7 +738,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </div>
               <Field
                 label="Millas náuticas one-way"
-                hint="El vuelo es redondo: el motor multiplica × 2 automáticamente."
+                hint={
+                  nmWarning ??
+                  "Se autocompletan al fijar origen y destino. Editable. El motor multiplica × 2 (redondo)."
+                }
                 required
               >
                 <Input
@@ -709,6 +751,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   placeholder="63.14"
                   {...register("millas_nauticas")}
                 />
+                {nmWarning && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    ⚠ {nmWarning}
+                  </p>
+                )}
               </Field>
               <Field label="Aterrizajes" hint="0.15 hr de calzos por aterrizaje">
                 <Input type="number" min={1} {...register("num_aterrizajes")} />
