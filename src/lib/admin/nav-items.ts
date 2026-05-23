@@ -14,6 +14,7 @@ import {
   DocumentTextIcon,
   UserCircleIcon,
   RocketLaunchIcon,
+  BellAlertIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
@@ -96,6 +97,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Usuarios",
         href: "/admin/users",
         icon: UserCircleIcon,
+        roles: ["ADMIN"],
+      },
+      {
+        label: "Alertas",
+        href: "/admin/alertas",
+        icon: BellAlertIcon,
         roles: ["ADMIN"],
       },
     ],
