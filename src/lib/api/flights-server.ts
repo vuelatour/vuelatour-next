@@ -41,3 +41,13 @@ export function getFlightTacoPhotos(id: string) {
     cache: "no-store",
   });
 }
+
+/** Marca, por vuelo, si el tacómetro está incompleto (badge en la lista admin). */
+export function getTacoStatus(ids: string[]) {
+  if (ids.length === 0) return Promise.resolve<Record<string, { falta: boolean }>>({});
+  return apiServer<Record<string, { falta: boolean }>>("/v1/flights/taco-status", {
+    method: "POST",
+    body: { ids },
+    cache: "no-store",
+  });
+}

@@ -119,6 +119,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     email: p.email,
   }));
 
+  // Tacómetro incompleto: vuelos propios en curso/cerrados sin todas las lecturas.
+  const faltaTaco =
+    !snapshot.es_externo &&
+    (snapshot.estado === "EN_VUELO" || snapshot.estado === "COMPLETADO") &&
+    (snapshot.escalas.length === 0 ||
+      snapshot.escalas.some((e) => e.taco_salida == null || e.taco_llegada == null));
+
   const pendingCobro = Math.max(
     0,
     Number(snapshot.monto_total_usd) - snapshot.total_cobrado,
@@ -162,6 +169,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   className="text-xs bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
                 >
                   Permiso emitido
+                </Badge>
+              )}
+              {faltaTaco && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                >
+                  ⚠ Tacómetro incompleto
                 </Badge>
               )}
             </div>

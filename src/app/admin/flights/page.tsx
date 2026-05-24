@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
+import { PaperAirplaneIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { FlightsFilterBar } from "@/components/admin/flights/flights-filter-bar";
 import { NewExternalFlightButton } from "@/components/admin/flights/new-external-flight-button";
-import { listFlights } from "@/lib/api/flights-server";
+import { listFlights, getTacoStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -90,6 +90,15 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     : flightsRes.data.filter(
         (v) => v.estado !== "SOLICITUD" && v.estado !== "COTIZADO",
       );
+
+  // Tacómetro incompleto: solo importa en vuelos propios ya en curso/cerrados.
+  const tacoRelevantes = operativos.filter(
+    (v) => !v.es_externo && (v.estado === "EN_VUELO" || v.estado === "COMPLETADO"),
+  );
+  const tacoStatus = await getTacoStatus(tacoRelevantes.map((v) => v.id)).catch(
+    () => ({}) as Record<string, { falta: boolean }>,
+  );
+  const faltaTaco = (id: string) => tacoStatus[id]?.falta === true;
 
   return (
     <div className="space-y-6">
@@ -233,9 +242,19 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
                         </Link>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline" className={ESTADO_STYLES[v.estado]}>
-                          {ESTADO_LABELS[v.estado]}
-                        </Badge>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {faltaTaco(v.id) && (
+                            <span
+                              title="Tacómetro incompleto"
+                              className="inline-flex items-center text-amber-600 dark:text-amber-400"
+                            >
+                              <ExclamationTriangleIcon className="h-4 w-4" />
+                            </span>
+                          )}
+                          <Badge variant="outline" className={ESTADO_STYLES[v.estado]}>
+                            {ESTADO_LABELS[v.estado]}
+                          </Badge>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
