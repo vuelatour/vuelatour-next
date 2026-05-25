@@ -16,7 +16,11 @@ import {
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
-import { getFlightSnapshot, getFlightTacoPhotos } from "@/lib/api/flights-server";
+import {
+  getFlightSnapshot,
+  getFlightTacoPhotos,
+  getCobroVoucherUrls,
+} from "@/lib/api/flights-server";
 import { getClient } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -118,6 +122,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     nombre: p.nombre,
     email: p.email,
   }));
+
+  const voucherUrls = await getCobroVoucherUrls(
+    snapshot.cobros.map((c) => c.foto_voucher_url).filter((p): p is string => !!p),
+  ).catch(() => ({}) as Record<string, string>);
 
   // Tacómetro incompleto: vuelos propios en curso/cerrados sin todas las lecturas.
   const faltaTaco =
@@ -334,6 +342,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             montoTotalUsd={Number(snapshot.monto_total_usd)}
             pendingUsd={pendingCobro}
             cobros={snapshot.cobros}
+            voucherUrls={voucherUrls}
           />
         </div>
 

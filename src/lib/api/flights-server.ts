@@ -42,6 +42,16 @@ export function getFlightTacoPhotos(id: string) {
   });
 }
 
+/** Firma URLs de vouchers de cobro (bucket privado) para el detalle del vuelo. */
+export function getCobroVoucherUrls(paths: string[]) {
+  if (paths.length === 0) return Promise.resolve<Record<string, string>>({});
+  return apiServer<Record<string, string>>("/v1/flights/cobro-voucher-urls", {
+    method: "POST",
+    body: { paths },
+    cache: "no-store",
+  });
+}
+
 /** Marca, por vuelo, si el tacómetro está incompleto (badge en la lista admin). */
 export function getTacoStatus(ids: string[]) {
   if (ids.length === 0) return Promise.resolve<Record<string, { falta: boolean }>>({});

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +31,7 @@ interface CobrosCardProps {
   montoTotalUsd: number;
   pendingUsd: number;
   cobros: FlightCobro[];
+  voucherUrls?: Record<string, string>;
 }
 
 export function CobrosCard({
@@ -39,6 +41,7 @@ export function CobrosCard({
   montoTotalUsd,
   pendingUsd,
   cobros,
+  voucherUrls = {},
 }: CobrosCardProps) {
   const [open, setOpen] = useState(false);
 
@@ -99,13 +102,32 @@ export function CobrosCard({
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground font-mono shrink-0">
-                    {new Date(c.fecha_cobro).toLocaleDateString("es-MX", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {c.foto_voucher_url && voucherUrls[c.foto_voucher_url] && (
+                      <a
+                        href={voucherUrls[c.foto_voucher_url]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Ver voucher"
+                      >
+                        <Image
+                          src={voucherUrls[c.foto_voucher_url]}
+                          alt="Voucher"
+                          width={36}
+                          height={36}
+                          unoptimized
+                          className="h-9 w-9 rounded-md object-cover ring-1 ring-border"
+                        />
+                      </a>
+                    )}
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      {new Date(c.fecha_cobro).toLocaleDateString("es-MX", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>

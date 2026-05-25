@@ -69,6 +69,7 @@ export interface FlightCobro {
   tc_usd_mxn: string | null;
   referencia: string | null;
   fecha_cobro: string;
+  foto_voucher_url: string | null;
   registrado_por: string | null;
   notas: string | null;
   created_at: string;
