@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-card";
+import { AircraftEngineering } from "@/components/admin/aircraft/aircraft-engineering";
 import { getAircraftSnapshot } from "@/lib/api/aircraft";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtPercent, fmtUsd } from "@/lib/format";
@@ -178,6 +179,9 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             ))}
           </CardContent>
         </Card>
+
+        {/* Ingeniería aeronáutica: mantenimientos, permisos/licencias, servicios próximos */}
+        <AircraftEngineering aircraftId={aircraft.id} />
 
         {/* Reservas overhaul (resumen) */}
         {aircraft.overhaul_reserves.length > 0 && (

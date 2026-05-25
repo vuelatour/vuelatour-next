@@ -1,0 +1,56 @@
+export interface Mantenimiento {
+  id: string;
+  aeronave_id: string;
+  tipo: "PROGRAMADO" | "REALIZADO";
+  descripcion: string;
+  fecha_programada: string | null;
+  fecha_realizada: string | null;
+  horas_aeronave: string | null;
+  costo_usd: string | null;
+  proveedor: string | null;
+  notas: string | null;
+  created_at: string;
+}
+
+export interface Vencimiento {
+  id: string;
+  aeronave_id: string;
+  tipo_documento_id: string;
+  motor_id: string | null;
+  piloto_id: string | null;
+  vence_por: "FECHA" | "HORAS" | "PERMANENTE";
+  fecha_vencimiento: string | null;
+  horas_limite: string | null;
+  umbral_alerta_dias: number | null;
+  referencia: string | null;
+  notas: string | null;
+  created_at: string;
+  tipo_documento?: { nombre: string; es_critico: boolean } | null;
+}
+
+export interface DocumentType {
+  id: string;
+  nombre: string;
+  ambito: string;
+  umbral_alerta_dias: number | null;
+  es_critico: boolean;
+}
+
+export interface FleetUpcoming {
+  vencimientos: Array<{
+    id: string;
+    fecha_vencimiento: string;
+    vence_por: string;
+    referencia: string | null;
+    aeronave_id: string;
+    tipo_documento?: { nombre: string; es_critico: boolean } | null;
+    aeronave?: { matricula: string } | null;
+  }>;
+  mantenimientos: Array<{
+    id: string;
+    descripcion: string;
+    fecha_programada: string;
+    aeronave_id: string;
+    aeronave?: { matricula: string } | null;
+  }>;
+}
