@@ -28,6 +28,7 @@ const ROLES = [
   { value: "FACTURACION", label: "FACTURACION", description: "Mary: CFDI y caja chica" },
   { value: "PILOTO", label: "PILOTO", description: "Operativos: app móvil" },
   { value: "SOCIO", label: "SOCIO", description: "Lectura + PDFs de reparto" },
+  { value: "MECANICO", label: "MECÁNICO", description: "Luis: app, solo cargas de combustible" },
 ];
 
 const ESTADOS = [

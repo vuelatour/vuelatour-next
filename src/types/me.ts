@@ -10,7 +10,8 @@ export type Rol =
   | "ANALISTA"
   | "FACTURACION"
   | "PILOTO"
-  | "SOCIO";
+  | "SOCIO"
+  | "MECANICO";
 
 export type EstadoUsuario = "ACTIVO" | "INACTIVO" | "INVITADO";
 
