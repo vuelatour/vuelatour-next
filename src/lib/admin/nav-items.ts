@@ -78,6 +78,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Tesorería",
     items: [
       {
+        label: "Facturas",
+        href: "/admin/facturas",
+        icon: DocumentTextIcon,
+        roles: ["ADMIN", "FACTURACION"],
+      },
+      {
         label: "Cuentas bancarias",
         href: "/admin/bank-accounts",
         icon: BanknotesIcon,
