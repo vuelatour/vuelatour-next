@@ -4,11 +4,14 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDownTrayIcon,
   CheckCircleIcon,
   PencilSquareIcon,
   XCircleIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { env } from "@/lib/env";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +37,30 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
   const [cancelling, startCancel] = useTransition();
   const [openCancel, setOpenCancel] = useState(false);
   const [motivoCancel, setMotivoCancel] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handlePdf = async () => {
+    setPdfLoading(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${env.API_URL}/v1/quotes/${quote.id}/pdf`, {
+        method: "POST",
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (!res.ok) {
+        toast.error("No se pudo generar el PDF");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("No se pudo generar el PDF");
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const canConfirm = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
   const canRevise = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
@@ -66,10 +93,12 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
     });
   };
 
-  if (!canConfirm && !canCancel && !canRevise) return null;
-
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      <Button variant="outline" onClick={handlePdf} disabled={pdfLoading} className="gap-2">
+        <ArrowDownTrayIcon className="h-4 w-4" />
+        {pdfLoading ? "Generando…" : "PDF"}
+      </Button>
       {canRevise && (
         <Link
           href={`/admin/quotes/${quote.id}/revise`}
