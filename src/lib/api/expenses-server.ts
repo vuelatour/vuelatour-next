@@ -9,6 +9,26 @@ export function listFuelLoads() {
   });
 }
 
+export interface ListGastosQuery {
+  categoria?: string;
+  estatus_comprobante?: string;
+  medio_pago?: string;
+  pendientes?: boolean;
+  duplicados?: boolean;
+  desde?: string;
+  hasta?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Bandeja de gastos para verificación en oficina. */
+export function listGastos(query: ListGastosQuery = {}) {
+  return apiServer<GastoListResponse>("/v1/expenses", {
+    searchParams: query as Record<string, string | number | boolean | undefined>,
+    cache: "no-store",
+  });
+}
+
 /** Firma las fotos de recibos (bucket privado). */
 export function signFuelPhotos(paths: string[]) {
   if (paths.length === 0) return Promise.resolve<Record<string, string>>({});

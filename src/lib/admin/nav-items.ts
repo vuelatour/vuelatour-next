@@ -19,6 +19,7 @@ import {
   WrenchScrewdriverIcon,
   ArchiveBoxIcon,
   WalletIcon,
+  ReceiptPercentIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
@@ -46,6 +47,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
       { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon },
+      {
+        label: "Gastos",
+        href: "/admin/expenses",
+        icon: ReceiptPercentIcon,
+        roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
+      },
       {
         label: "Combustibles",
         href: "/admin/combustibles",
