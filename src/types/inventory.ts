@@ -1,0 +1,61 @@
+export type TipoMovimiento = "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
+
+export interface InventarioItem {
+  id: string;
+  nombre: string;
+  numero_parte: string | null;
+  categoria: string;
+  stock_minimo: number | null;
+  ubicacion: string | null;
+  notas: string | null;
+  activo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Ítem enriquecido con stock y valuación calculados por el API. */
+export interface InventarioItemWithStock extends InventarioItem {
+  stock: number;
+  valor_usd: number;
+  costo_fifo_actual: number;
+  bajo_stock: boolean;
+}
+
+export interface InventarioMovimiento {
+  id: string;
+  item_id: string;
+  tipo: TipoMovimiento;
+  cantidad: number;
+  costo_unitario_usd: number;
+  aeronave_id: string | null;
+  proveedor_id: string | null;
+  fecha_movimiento: string;
+  fecha_orden: string | null;
+  fecha_cargo_banco: string | null;
+  referencia: string | null;
+  notas: string | null;
+  registrado_por: string;
+  created_at: string;
+  aeronave?: { matricula: string } | null;
+  proveedor?: { nombre: string } | null;
+  item?: { nombre: string; numero_parte: string | null; categoria: string } | null;
+}
+
+export interface InventarioListResponse {
+  data: InventarioItemWithStock[];
+  count: number;
+  limit: number;
+  offset: number;
+  valor_total_usd: number;
+}
+
+export interface InventarioItemDetail extends InventarioItemWithStock {
+  movimientos: InventarioMovimiento[];
+}
+
+export interface MovimientoListResponse {
+  data: InventarioMovimiento[];
+  count: number;
+  limit: number;
+  offset: number;
+}

@@ -17,6 +17,7 @@ import {
   BellAlertIcon,
   BeakerIcon,
   WrenchScrewdriverIcon,
+  ArchiveBoxIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
@@ -63,6 +64,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/admin/ingenieria",
         icon: WrenchScrewdriverIcon,
         roles: ["ADMIN", "COORDINADOR"],
+      },
+      {
+        label: "Inventario",
+        href: "/admin/inventory",
+        icon: ArchiveBoxIcon,
+        roles: ["ADMIN", "COORDINADOR", "MECANICO", "SOCIO"],
       },
       { label: "Rutas", href: "/admin/routes", icon: MapIcon },
     ],
