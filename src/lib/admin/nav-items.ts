@@ -18,6 +18,7 @@ import {
   BeakerIcon,
   WrenchScrewdriverIcon,
   ArchiveBoxIcon,
+  WalletIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
@@ -96,6 +97,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/admin/facturas",
         icon: DocumentTextIcon,
         roles: ["ADMIN", "FACTURACION"],
+      },
+      {
+        label: "Caja chica",
+        href: "/admin/caja-chica",
+        icon: WalletIcon,
+        roles: ["ADMIN", "FACTURACION", "SOCIO"],
       },
       {
         label: "Cuentas bancarias",
