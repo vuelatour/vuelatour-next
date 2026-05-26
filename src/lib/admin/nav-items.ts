@@ -6,12 +6,16 @@ import {
   UsersIcon,
   BuildingOfficeIcon,
   TruckIcon,
+  ChartBarIcon,
+  ChartPieIcon,
   CpuChipIcon,
   MapIcon,
   MapPinIcon,
   CreditCardIcon,
   BanknotesIcon,
   DocumentTextIcon,
+  ReceiptPercentIcon,
+  ShieldCheckIcon,
   UserCircleIcon,
   RocketLaunchIcon,
   BellAlertIcon,
@@ -19,7 +23,6 @@ import {
   WrenchScrewdriverIcon,
   ArchiveBoxIcon,
   WalletIcon,
-  ReceiptPercentIcon,
   ArrowsRightLeftIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
@@ -45,6 +48,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Operación",
     items: [
       { label: "Dashboard", href: "/admin", icon: HomeIcon },
+      {
+        label: "Tablero ejecutivo",
+        href: "/admin/dashboards",
+        icon: ChartBarIcon,
+        roles: ["ADMIN", "ANALISTA", "SOCIO"],
+      },
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
       { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon },
@@ -75,6 +84,12 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "COORDINADOR"],
       },
       {
+        label: "Vencimientos",
+        href: "/admin/expirations",
+        icon: ShieldCheckIcon,
+        roles: ["ADMIN", "COORDINADOR", "MECANICO"],
+      },
+      {
         label: "Inventario",
         href: "/admin/inventory",
         icon: ArchiveBoxIcon,
@@ -94,6 +109,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/admin/issuing-entities",
         icon: DocumentTextIcon,
         roles: ["ADMIN", "FACTURACION"],
+      },
+      {
+        label: "Tipos de documento",
+        href: "/admin/document-types",
+        icon: DocumentTextIcon,
+        roles: ["ADMIN", "COORDINADOR"],
       },
     ],
   },
@@ -117,6 +138,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/admin/conciliacion",
         icon: ArrowsRightLeftIcon,
         roles: ["ADMIN", "FACTURACION"],
+      },
+      {
+        label: "Reparto de utilidades",
+        href: "/admin/profit-sharing",
+        icon: ChartPieIcon,
+        roles: ["ADMIN", "ANALISTA", "SOCIO"],
       },
       {
         label: "Cuentas bancarias",
