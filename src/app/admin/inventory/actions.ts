@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { ItemFormSchema, MovimientoFormSchema } from "./schema";
-import type { InventarioItem, InventarioMovimiento } from "@/types/inventory";
+import type {
+  CompraExtraida,
+  InventarioItem,
+  InventarioMovimiento,
+} from "@/types/inventory";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -70,6 +74,46 @@ export async function deleteItemAction(id: string): Promise<ActionResult> {
     await apiServer(`/v1/inventory/items/${id}`, { method: "DELETE" });
     revalidatePath("/admin/inventory");
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function extraerCompraAction(
+  pdfBase64: string,
+): Promise<ActionResult<CompraExtraida>> {
+  try {
+    const data = await apiServer<CompraExtraida>("/v1/inventory/compras/extraer", {
+      method: "POST",
+      body: { pdf_base64: pdfBase64 },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export interface ImportarLinea {
+  nombre: string;
+  numero_parte?: string;
+  categoria: string;
+  cantidad: number;
+  costo_unitario_usd: number;
+}
+
+export async function importarCompraAction(payload: {
+  proveedor_id?: string;
+  fecha_orden?: string;
+  referencia?: string;
+  lineas: ImportarLinea[];
+}): Promise<ActionResult<{ items_creados: number; entradas: number }>> {
+  try {
+    const data = await apiServer<{ items_creados: number; entradas: number }>(
+      "/v1/inventory/compras/importar",
+      { method: "POST", body: payload },
+    );
+    revalidatePath("/admin/inventory");
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

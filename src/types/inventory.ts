@@ -59,3 +59,25 @@ export interface MovimientoListResponse {
   limit: number;
   offset: number;
 }
+
+export interface CompraLineaExtraida {
+  nombre: string;
+  numero_parte: string | null;
+  cantidad: number;
+  precio_unitario_usd: number | null;
+  total_usd: number | null;
+}
+
+export interface CompraExtraida {
+  proveedor: string | null;
+  fecha: string | null;
+  moneda: string;
+  lineas: CompraLineaExtraida[];
+  subtotal_usd: number | null;
+  shipping_usd: number | null;
+  impuestos_usd: number | null;
+  total_usd: number | null;
+  confianza: number;
+  notas: string;
+  modelo: string;
+}

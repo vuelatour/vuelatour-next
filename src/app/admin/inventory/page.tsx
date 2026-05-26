@@ -18,7 +18,9 @@ import {
 } from "@/components/ui/table";
 import { ItemActions } from "@/components/admin/inventory/item-actions";
 import { ItemCreateButton } from "@/components/admin/inventory/item-create-button";
+import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { listInventario } from "@/lib/api/inventory-server";
+import { listProviders } from "@/lib/api/providers-server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,11 @@ const usd = (n: number) =>
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 export default async function InventoryPage() {
-  const { data: items, count, valor_total_usd } = await listInventario({ limit: 500 });
+  const [{ data: items, count, valor_total_usd }, providersRes] = await Promise.all([
+    listInventario({ limit: 500 }),
+    listProviders({ limit: 500 }),
+  ]);
+  const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const bajos = items.filter((i) => i.bajo_stock).length;
 
   return (
@@ -42,7 +48,10 @@ export default async function InventoryPage() {
             El consumo se carga al avión al registrar la salida.
           </p>
         </div>
-        <ItemCreateButton />
+        <div className="flex gap-2 flex-wrap">
+          <ImportCompraButton providers={providers} />
+          <ItemCreateButton />
+        </div>
       </div>
 
       {bajos > 0 && (
