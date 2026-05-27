@@ -39,7 +39,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
   let fondo: CajaFondoDetail;
   let usuarios: { id: string; nombre: string }[];
   try {
-    const [fondoRes, usersRes] = await Promise.all([getFondo(id), listUsers({ limit: 500 })]);
+    const [fondoRes, usersRes] = await Promise.all([getFondo(id), listUsers({ limit: 200 })]);
     fondo = fondoRes;
     usuarios = usersRes.data.map((u) => ({ id: u.id, nombre: u.nombre }));
   } catch (err) {

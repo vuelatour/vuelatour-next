@@ -50,7 +50,7 @@ export default async function ConciliacionPage({
   const [{ data: movs }, cuentasRes, gastosRes] = await Promise.all([
     listMovimientosBancarios(query),
     listBankAccounts({ limit: 100 }),
-    listGastos({ limit: 300 }),
+    listGastos({ limit: 200 }),
   ]);
 
   const cuentas = cuentasRes.data.map((c) => ({

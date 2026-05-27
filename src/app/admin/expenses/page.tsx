@@ -63,7 +63,7 @@ export default async function ExpensesPage({
       listGastos({ pendientes: true, limit: 1 }),
       listGastos({ duplicados: true, limit: 1 }),
       listAircraft({ limit: 100 }),
-      listProviders({ limit: 500 }),
+      listProviders({ limit: 200 }),
     ]);
 
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));

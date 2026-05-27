@@ -47,7 +47,7 @@ export default async function InventoryItemPage({
     const [itemRes, aircraftRes, providersRes] = await Promise.all([
       getInventarioItem(id),
       listAircraft({ limit: 100 }),
-      listProviders({ limit: 500 }),
+      listProviders({ limit: 200 }),
     ]);
     item = itemRes;
     aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));

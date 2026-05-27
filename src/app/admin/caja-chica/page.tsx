@@ -28,7 +28,7 @@ const money = (n: number, moneda: string) =>
 export default async function CajaChicaPage() {
   const [{ data: fondos, count }, usersRes] = await Promise.all([
     listFondos({ limit: 200 }),
-    listUsers({ limit: 500 }),
+    listUsers({ limit: 200 }),
   ]);
 
   const sinFondo = usersRes.data

@@ -32,7 +32,7 @@ const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 
 export default async function InventoryPage() {
   const [{ data: items, count, valor_total_usd }, providersRes] = await Promise.all([
     listInventario({ limit: 500 }),
-    listProviders({ limit: 500 }),
+    listProviders({ limit: 200 }),
   ]);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const bajos = items.filter((i) => i.bajo_stock).length;

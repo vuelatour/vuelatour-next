@@ -28,7 +28,7 @@ const TIPO_LABELS: Record<string, string> = {
 };
 
 export default async function ProvidersPage() {
-  const { data: providers, count } = await listProviders({ limit: 500 });
+  const { data: providers, count } = await listProviders({ limit: 200 });
 
   return (
     <div className="space-y-6">
