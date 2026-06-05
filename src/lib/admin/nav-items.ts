@@ -49,10 +49,10 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Dashboard", href: "/admin", icon: HomeIcon },
       {
-        label: "Tablero ejecutivo",
+        label: "Dashboards",
         href: "/admin/dashboards",
         icon: ChartBarIcon,
-        roles: ["ADMIN", "ANALISTA", "SOCIO"],
+        roles: ["ADMIN", "ANALISTA", "SOCIO", "COORDINADOR"],
       },
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },

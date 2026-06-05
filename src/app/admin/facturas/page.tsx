@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmitirFacturaButton } from "@/components/admin/invoices/emitir-factura-button";
+import { FacturaActions } from "@/components/admin/invoices/factura-actions";
 import { FacturasFilterBar } from "@/components/admin/invoices/facturas-filter-bar";
 import { listPendingInvoices, listFacturas, signFacturaFiles } from "@/lib/api/invoices-server";
 import { listIssuingEntities } from "@/lib/api/issuing-entities-server";
@@ -158,18 +159,42 @@ export default async function FacturasPage({ searchParams }: PageProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Folio fiscal (UUID)</TableHead>
+                  <TableHead>Tipo</TableHead>
                   <TableHead>Vuelo</TableHead>
                   <TableHead>Emisora</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-center">Estado</TableHead>
                   <TableHead>Archivos</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {facturasRes.data.map((f) => (
                   <TableRow key={f.id}>
-                    <TableCell className="font-mono text-[11px]">{f.uuid_fiscal ?? "—"}</TableCell>
+                    <TableCell className="font-mono text-[11px]">
+                      {f.uuid_fiscal ?? "—"}
+                      {f.facturado_a_rfc ? (
+                        <span
+                          className="block text-[10px] text-muted-foreground"
+                          title={`SE FACTURÓ A: ${f.facturado_a_nombre ?? ""} (${f.facturado_a_rfc})`}
+                        >
+                          SE FACTURÓ A: {f.facturado_a_rfc}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          f.tipo_comprobante === "E"
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                            : ""
+                        }
+                      >
+                        {f.tipo_comprobante === "E" ? "Nota crédito" : "Factura"}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
                       {f.vuelo ? `#${f.vuelo.folio} · ${f.vuelo.origen_iata}→${f.vuelo.destino_iata}` : "—"}
                     </TableCell>
@@ -204,6 +229,11 @@ export default async function FacturasPage({ searchParams }: PageProps) {
                           </a>
                         ) : null}
                         {!f.xml_url && !f.pdf_url ? <span className="text-muted-foreground">—</span> : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end">
+                        <FacturaActions factura={f} />
                       </div>
                     </TableCell>
                   </TableRow>
