@@ -98,3 +98,15 @@ export const InsuranceFormSchema = z.object({
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 export type InsuranceFormValues = z.input<typeof InsuranceFormSchema>;
+
+// ===== Discrepancias (squawks) =====
+export const SquawkFormSchema = z.object({
+  descripcion: z.string().min(1, "Requerido").max(2000),
+  severidad: z.enum(["BAJA", "MEDIA", "ALTA"]),
+  estado: z.enum(["ABIERTA", "EN_PROGRESO", "RESUELTA"]),
+  fecha_reporte: z.string().optional().or(z.literal("")),
+  resolucion: z.string().max(2000).optional().or(z.literal("")),
+  fecha_resolucion: z.string().optional().or(z.literal("")),
+  notas: z.string().max(2000).optional().or(z.literal("")),
+});
+export type SquawkFormValues = z.input<typeof SquawkFormSchema>;

@@ -99,6 +99,26 @@ export interface AeronaveSeguro {
   updated_at: string;
 }
 
+export type SeveridadSquawk = "BAJA" | "MEDIA" | "ALTA";
+export type EstadoSquawk = "ABIERTA" | "EN_PROGRESO" | "RESUELTA";
+
+export interface AeronaveDiscrepancia {
+  id: string;
+  aeronave_id: string;
+  vuelo_id: string | null;
+  descripcion: string;
+  severidad: SeveridadSquawk;
+  estado: EstadoSquawk;
+  reportado_por: string | null;
+  fecha_reporte: string;
+  resolucion: string | null;
+  fecha_resolucion: string | null;
+  resuelto_por: string | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AircraftSnapshot extends Aircraft {
   motors: Motor[];
   propellers: Propeller[];
@@ -106,6 +126,7 @@ export interface AircraftSnapshot extends Aircraft {
   overhaul_reserves: OverhaulReserve[];
   imagenes: AeronaveImagen[];
   seguros: AeronaveSeguro[];
+  discrepancias: AeronaveDiscrepancia[];
 }
 
 export interface AircraftMetrics {

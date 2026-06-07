@@ -9,10 +9,12 @@ import {
   InsuranceFormSchema,
   OwnerFormSchema,
   PropellerFormSchema,
+  SquawkFormSchema,
 } from "./schema";
 import type {
   Aircraft,
   AeronaveImagen,
+  AeronaveDiscrepancia,
   AeronaveSeguro,
   AircraftOwner,
   Motor,
@@ -270,6 +272,58 @@ export async function deleteInsuranceAction(
 ): Promise<ActionResult> {
   try {
     await apiServer(`/v1/aircraft/insurance/${seguroId}`, { method: "DELETE" });
+    revalidateAircraft(aircraftId);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Discrepancias (squawks) =====
+
+export async function createSquawkAction(
+  aircraftId: string,
+  raw: unknown,
+): Promise<ActionResult<AeronaveDiscrepancia>> {
+  const parsed = SquawkFormSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const sq = await apiServer<AeronaveDiscrepancia>(`/v1/aircraft/${aircraftId}/squawks`, {
+      method: "POST",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: sq };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateSquawkAction(
+  aircraftId: string,
+  squawkId: string,
+  raw: unknown,
+): Promise<ActionResult<AeronaveDiscrepancia>> {
+  const parsed = SquawkFormSchema.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const sq = await apiServer<AeronaveDiscrepancia>(`/v1/aircraft/squawks/${squawkId}`, {
+      method: "PATCH",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: sq };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deleteSquawkAction(
+  aircraftId: string,
+  squawkId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/aircraft/squawks/${squawkId}`, { method: "DELETE" });
     revalidateAircraft(aircraftId);
     return { ok: true };
   } catch (err) {
