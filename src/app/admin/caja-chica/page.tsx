@@ -30,6 +30,9 @@ export default async function CajaChicaPage() {
     .filter((u) => !u.tiene_fondo_caja)
     .map((u) => ({ id: u.id, nombre: u.nombre, rol: u.rol }));
 
+  // Para el selector "Autorizado por" al registrar movimientos.
+  const usuarios = usersRes.data.map((u) => ({ id: u.id, nombre: u.nombre }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -71,7 +74,7 @@ export default async function CajaChicaPage() {
               </TableHeader>
               <TableBody>
                 {fondos.map((f) => (
-                  <FondoRow key={f.id} fondo={f} />
+                  <FondoRow key={f.id} fondo={f} usuarios={usuarios} />
                 ))}
               </TableBody>
             </Table>

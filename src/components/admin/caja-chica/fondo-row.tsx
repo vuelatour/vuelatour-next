@@ -8,7 +8,13 @@ import type { CajaFondo } from "@/types/caja-chica";
 const money = (n: number, moneda: string) =>
   n.toLocaleString("es-MX", { style: "currency", currency: moneda, maximumFractionDigits: 2 });
 
-export function FondoRow({ fondo }: { fondo: CajaFondo }) {
+export function FondoRow({
+  fondo,
+  usuarios,
+}: {
+  fondo: CajaFondo;
+  usuarios: { id: string; nombre: string }[];
+}) {
   const router = useRouter();
   return (
     <TableRow
@@ -25,7 +31,7 @@ export function FondoRow({ fondo }: { fondo: CajaFondo }) {
       </TableCell>
       {/* La celda de acciones no debe navegar al abrir el menú. */}
       <TableCell onClick={(e) => e.stopPropagation()}>
-        <FondoActions fondo={fondo} />
+        <FondoActions fondo={fondo} usuarios={usuarios} />
       </TableCell>
     </TableRow>
   );

@@ -28,3 +28,13 @@ export const UserFormSchema = z.object({
 });
 
 export type UserFormValues = z.input<typeof UserFormSchema>;
+
+/** Alta/invitación de usuario: requiere el email real con el que usará Google. */
+export const UserInviteSchema = z.object({
+  nombre: z.string().min(1, "Requerido").max(100),
+  email: z.string().email("Email inválido").max(200),
+  rol: RolEnum,
+  estado: EstadoEnum.default("ACTIVO"),
+});
+
+export type UserInviteValues = z.input<typeof UserInviteSchema>;

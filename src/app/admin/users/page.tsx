@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UserActions } from "@/components/admin/users/user-actions";
+import { UserInviteButton } from "@/components/admin/users/user-invite-button";
 import { getMe } from "@/lib/api/me";
 import { listUsers } from "@/lib/api/users-server";
 
@@ -49,13 +50,16 @@ export default async function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Administración</p>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Usuarios</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {count} {count === 1 ? "usuario" : "usuarios"}. Los usuarios se crean automáticamente al
-          loguearse con Google; desde aquí se asigna su rol y estado.
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">Administración</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Usuarios</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {count} {count === 1 ? "usuario" : "usuarios"}. Invita a alguien con su correo de Google
+            o deja que entre solo si es de un dominio de la empresa; desde aquí se asigna rol y estado.
+          </p>
+        </div>
+        <UserInviteButton />
       </div>
 
       {users.length === 0 ? (

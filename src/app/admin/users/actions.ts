@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { UserFormSchema } from "./schema";
+import { UserFormSchema, UserInviteSchema } from "./schema";
 import type { User } from "@/types/users";
 
 export interface ActionResult<T = unknown> {
@@ -25,6 +25,21 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
     out[k as keyof T] = v as T[keyof T];
   }
   return out;
+}
+
+export async function createUserAction(raw: unknown): Promise<ActionResult<User>> {
+  const parsed = UserInviteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const created = await apiServer<User>("/v1/users", {
+      method: "POST",
+      body: stripEmpty(parsed.data),
+    });
+    revalidatePath("/admin/users");
+    return { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 export async function updateUserAction(id: string, raw: unknown): Promise<ActionResult<User>> {
