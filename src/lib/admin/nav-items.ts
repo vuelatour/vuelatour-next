@@ -146,6 +146,12 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "ANALISTA", "SOCIO"],
       },
       {
+        label: "Reportes",
+        href: "/admin/reportes",
+        icon: ArchiveBoxIcon,
+        roles: ["ADMIN", "ANALISTA", "FACTURACION"],
+      },
+      {
         label: "Cuentas bancarias",
         href: "/admin/bank-accounts",
         icon: BanknotesIcon,
