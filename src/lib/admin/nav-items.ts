@@ -95,6 +95,12 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: ArchiveBoxIcon,
         roles: ["ADMIN", "COORDINADOR", "MECANICO", "SOCIO"],
       },
+      {
+        label: "Multas",
+        href: "/admin/multas",
+        icon: ReceiptPercentIcon,
+        roles: ["ADMIN", "COORDINADOR", "ANALISTA", "SOCIO"],
+      },
       { label: "Rutas", href: "/admin/routes", icon: MapIcon },
     ],
   },
