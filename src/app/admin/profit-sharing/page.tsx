@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
+import { ReportDownloads } from "@/components/admin/profit-sharing/report-downloads";
 import { getProfitSharing } from "@/lib/api/profit-sharing-server";
 import { fmtUsd, fmtDecimal } from "@/lib/format";
 import type { AvionReparto } from "@/types/profit-sharing";
@@ -49,15 +50,18 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Finanzas</p>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
-          Reparto de utilidades
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Saldo disponible total del periodo:{" "}
-          <span className="font-medium text-foreground">{fmtUsd(totalSaldo)}</span>.
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">Finanzas</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
+            Reparto de utilidades
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Saldo disponible total del periodo:{" "}
+            <span className="font-medium text-foreground">{fmtUsd(totalSaldo)}</span>.
+          </p>
+        </div>
+        <ReportDownloads desde={desde} hasta={hasta} />
       </div>
 
       <PeriodSelector initial={{ desde, hasta }} />
@@ -73,7 +77,10 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             ({fmtDecimal(result.gastos_sin_tc.monto_mxn)} MXN) quedaron fuera del cálculo.
           </p>
         )}
-        <p>El reporte PDF profesional para socios se generará vía el microservicio Python.</p>
+        <p>
+          Descarga el <strong>PDF para socios</strong> o el <strong>reporte mensual por avión en
+          Excel</strong> con los botones de arriba (se generan en el microservicio Python).
+        </p>
       </div>
 
       {result.aviones.length === 0 ? (
