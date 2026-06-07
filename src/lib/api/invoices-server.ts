@@ -1,5 +1,9 @@
 import { apiServer } from "./server";
-import type { FacturaListResponse, PendingResponse } from "@/types/invoices";
+import type {
+  FacturaListResponse,
+  PendingResponse,
+  RecibidasResponse,
+} from "@/types/invoices";
 
 export function listPendingInvoices(query: {
   desde?: string;
@@ -24,6 +28,13 @@ export function signFacturaFiles(paths: string[]) {
   return apiServer<Record<string, string>>("/v1/invoices/file-urls", {
     method: "POST",
     body: { paths },
+    cache: "no-store",
+  });
+}
+
+export function listRecibidas(query: { estado?: string } = {}) {
+  return apiServer<RecibidasResponse>("/v1/invoices/recibidas", {
+    searchParams: { ...query, limit: 300 },
     cache: "no-store",
   });
 }

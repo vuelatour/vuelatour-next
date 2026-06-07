@@ -63,3 +63,35 @@ export interface FacturaListResponse {
   limit: number;
   offset: number;
 }
+
+export interface FacturaRecibida {
+  id: string;
+  uuid_fiscal: string | null;
+  emisor_rfc: string | null;
+  emisor_nombre: string | null;
+  receptor_rfc: string | null;
+  receptor_nombre: string | null;
+  tipo_comprobante: string | null;
+  subtotal: string | null;
+  total: string | null;
+  moneda: string | null;
+  fecha_emision: string | null;
+  conceptos_resumen: string | null;
+  xml_url: string | null;
+  estado: "SIN_CLASIFICAR" | "CLASIFICADA" | "DESCARTADA";
+  gasto_id: string | null;
+  aeronave_id: string | null;
+  categoria_sugerida: string | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+  gasto?: { id: string; categoria: string; monto: string; moneda: string } | null;
+  aeronave?: { matricula: string } | null;
+}
+
+export interface RecibidasResponse {
+  data: FacturaRecibida[];
+  count: number;
+  limit: number;
+  offset: number;
+}

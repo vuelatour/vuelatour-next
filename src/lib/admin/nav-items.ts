@@ -128,6 +128,12 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "FACTURACION"],
       },
       {
+        label: "Facturas recibidas",
+        href: "/admin/facturas-recibidas",
+        icon: ReceiptPercentIcon,
+        roles: ["ADMIN", "FACTURACION"],
+      },
+      {
         label: "Caja chica",
         href: "/admin/caja-chica",
         icon: WalletIcon,
