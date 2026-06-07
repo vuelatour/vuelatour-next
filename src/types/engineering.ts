@@ -1,6 +1,11 @@
+export type EstadoMantenimiento = "PROGRAMADO" | "EN_TALLER" | "COMPLETADO";
+
 export interface Mantenimiento {
   id: string;
   aeronave_id: string;
+  estado: EstadoMantenimiento;
+  pais: "MX" | "USA" | null;
+  /** Campo legado, derivado de `estado`. */
   tipo: "PROGRAMADO" | "REALIZADO";
   descripcion: string;
   fecha_programada: string | null;

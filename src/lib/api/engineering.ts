@@ -14,6 +14,13 @@ export function createMaintenance(aircraftId: string, body: Record<string, unkno
   });
 }
 
+export function updateMaintenance(maintenanceId: string, body: Record<string, unknown>) {
+  return apiBrowser<Mantenimiento>(`/v1/engineering/maintenance/${maintenanceId}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
 export function listExpirations(aircraftId: string) {
   return apiBrowser<Vencimiento[]>(`/v1/engineering/aircraft/${aircraftId}/expirations`);
 }
