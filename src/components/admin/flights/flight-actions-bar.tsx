@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import {
   completeFlightAction,
   startFlightAction,
+  updatePermisoAction,
 } from "@/app/admin/flights/actions";
 import { FlightAssignSheet } from "./flight-assign-sheet";
 import { FlightMetaSheet } from "./flight-meta-sheet";
@@ -60,6 +61,21 @@ export function FlightActionsBar({
   const [completeOpen, setCompleteOpen] = useState(false);
   const [starting, startStart] = useTransition();
   const [completing, startComplete] = useTransition();
+  const [permiso, startPermiso] = useTransition();
+
+  const permisoPendiente = !flight.es_externo && flight.estado_permiso === "pendiente";
+
+  const handlePermisoEmitido = () => {
+    startPermiso(async () => {
+      const res = await updatePermisoAction(flight.id, "emitido");
+      if (res.ok) {
+        toast.success("Permiso de pista marcado como emitido");
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "No se pudo actualizar el permiso");
+      }
+    });
+  };
 
   const canAssign =
     flight.estado === "CONFIRMADO" || flight.estado === "COTIZADO";
@@ -108,6 +124,18 @@ export function FlightActionsBar({
         >
           <PencilSquareIcon className="h-4 w-4" />
           Editar
+        </Button>
+      )}
+      {permisoPendiente && (
+        <Button
+          variant="outline"
+          onClick={handlePermisoEmitido}
+          disabled={permiso}
+          className="gap-2 border-amber-500/50 text-amber-600 dark:text-amber-400"
+          title="El permiso de pista/operación que requiere un aeropuerto de la ruta ya se tramitó. Márcalo como emitido para quitar la alerta."
+        >
+          <FlagIcon className="h-4 w-4" />
+          {permiso ? "Guardando…" : "Permiso emitido"}
         </Button>
       )}
       {canAssign && (

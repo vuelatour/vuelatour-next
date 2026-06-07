@@ -154,15 +154,23 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
 
 function Legend() {
   const items = [
-    { label: "Vuelo propio", color: "#9CA3AF" },
-    { label: "Sin asignar", color: "#8B5CF6" },
-    { label: "Externo", color: "#FFB6C1" },
-    { label: "Permiso pendiente", color: "#F59E0B" },
+    { label: "Vuelo propio", color: "#9CA3AF", title: "Vuelo con avión asignado; el color es el configurado para esa aeronave." },
+    {
+      label: "Sin asignar",
+      color: "#8B5CF6",
+      title: "Vuelo confirmado al que aún le falta asignar avión y/o piloto.",
+    },
+    { label: "Externo", color: "#FFB6C1", title: "Vuelo operado por un tercero." },
+    {
+      label: "Permiso pendiente",
+      color: "#F59E0B",
+      title: "Un aeropuerto de la ruta requiere permiso de pista/operación y aún no se ha emitido. Se quita al marcarlo como “Emitido” en el vuelo (Editar → Permiso de pista, o el botón “Permiso emitido”).",
+    },
   ];
   return (
     <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
       {items.map((i) => (
-        <span key={i.label} className="inline-flex items-center gap-1.5">
+        <span key={i.label} className="inline-flex items-center gap-1.5 cursor-help" title={i.title}>
           <span className="h-3 w-3 rounded" style={{ backgroundColor: i.color }} />
           {i.label}
         </span>

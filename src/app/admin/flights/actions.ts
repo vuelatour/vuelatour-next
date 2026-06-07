@@ -48,6 +48,22 @@ export async function assignFlightAction(
   }
 }
 
+export async function updatePermisoAction(
+  flightId: string,
+  estado_permiso: "no_aplica" | "pendiente" | "emitido",
+): Promise<ActionResult<FlightListItem>> {
+  try {
+    const data = await apiServer<FlightListItem>(`/v1/flights/${flightId}/permiso`, {
+      method: "PATCH",
+      body: { estado_permiso },
+    });
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface PilotoDisponibilidad {
   id: string;
   nombre: string;
