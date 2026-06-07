@@ -6,12 +6,14 @@ import { isApiError } from "@/lib/api/errors";
 import {
   AircraftFormSchema,
   EngineFormSchema,
+  InsuranceFormSchema,
   OwnerFormSchema,
   PropellerFormSchema,
 } from "./schema";
 import type {
   Aircraft,
   AeronaveImagen,
+  AeronaveSeguro,
   AircraftOwner,
   Motor,
   Propeller,
@@ -218,6 +220,58 @@ export async function updatePropellerAction(
     });
     revalidateAircraft(aircraftId);
     return { ok: true, data: prop };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Seguros =====
+
+export async function createInsuranceAction(
+  aircraftId: string,
+  raw: unknown,
+): Promise<ActionResult<AeronaveSeguro>> {
+  const parsed = InsuranceFormSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const seguro = await apiServer<AeronaveSeguro>(`/v1/aircraft/${aircraftId}/insurance`, {
+      method: "POST",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: seguro };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateInsuranceAction(
+  aircraftId: string,
+  seguroId: string,
+  raw: unknown,
+): Promise<ActionResult<AeronaveSeguro>> {
+  const parsed = InsuranceFormSchema.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const seguro = await apiServer<AeronaveSeguro>(`/v1/aircraft/insurance/${seguroId}`, {
+      method: "PATCH",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: seguro };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deleteInsuranceAction(
+  aircraftId: string,
+  seguroId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/aircraft/insurance/${seguroId}`, { method: "DELETE" });
+    revalidateAircraft(aircraftId);
+    return { ok: true };
   } catch (err) {
     return fail(err);
   }

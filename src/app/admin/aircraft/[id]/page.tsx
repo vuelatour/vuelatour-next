@@ -24,6 +24,7 @@ import {
 } from "@/components/admin/aircraft/aircraft-owners-card";
 import { AircraftEngineButton } from "@/components/admin/aircraft/aircraft-engine-button";
 import { AircraftPropellerButton } from "@/components/admin/aircraft/aircraft-propeller-button";
+import { AircraftInsuranceCard } from "@/components/admin/aircraft/aircraft-insurance-card";
 import { getAircraftSnapshot } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
@@ -199,6 +200,9 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             )}
           </CardContent>
         </Card>
+
+        {/* Seguros */}
+        <AircraftInsuranceCard aircraftId={aircraft.id} seguros={aircraft.seguros} />
 
         {/* Viajes: historial de vuelos de esta aeronave */}
         <AircraftFlightsCard aircraftId={aircraft.id} />

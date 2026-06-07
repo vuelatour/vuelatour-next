@@ -83,12 +83,29 @@ export interface AeronaveImagen {
   updated_at: string;
 }
 
+export interface AeronaveSeguro {
+  id: string;
+  aeronave_id: string;
+  aseguradora: string;
+  num_poliza: string;
+  cobertura: string | null;
+  suma_asegurada_usd: Decimal | null;
+  prima_usd: Decimal | null;
+  vigente_desde: string;
+  vigente_hasta: string;
+  archivo_url: string | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AircraftSnapshot extends Aircraft {
   motors: Motor[];
   propellers: Propeller[];
   owners: AircraftOwner[];
   overhaul_reserves: OverhaulReserve[];
   imagenes: AeronaveImagen[];
+  seguros: AeronaveSeguro[];
 }
 
 export interface ListResponse<T> {

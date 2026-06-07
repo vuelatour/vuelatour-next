@@ -84,3 +84,17 @@ export const PropellerFormSchema = z.object({
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 export type PropellerFormValues = z.input<typeof PropellerFormSchema>;
+
+// ===== Seguros =====
+export const InsuranceFormSchema = z.object({
+  aseguradora: z.string().min(1, "Requerido").max(120),
+  num_poliza: z.string().min(1, "Requerido").max(80),
+  cobertura: z.string().max(2000).optional().or(z.literal("")),
+  suma_asegurada_usd: optionalNonNegative,
+  prima_usd: optionalNonNegative,
+  vigente_desde: z.string().min(1, "Requerido"),
+  vigente_hasta: z.string().min(1, "Requerido"),
+  archivo_url: z.string().max(1000).optional().or(z.literal("")),
+  notas: z.string().max(2000).optional().or(z.literal("")),
+});
+export type InsuranceFormValues = z.input<typeof InsuranceFormSchema>;
