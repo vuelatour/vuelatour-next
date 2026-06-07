@@ -20,6 +20,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -54,7 +64,7 @@ interface Props {
 export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AircraftOwner | undefined>(undefined);
-  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closing, setClosing] = useState<AircraftOwner | null>(null);
   const [pending, startTransition] = useTransition();
 
   const total = owners.reduce((sum, o) => sum + Number(o.porcentaje), 0);
@@ -68,13 +78,17 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
     setDialogOpen(true);
   };
 
-  const closeOwner = (o: AircraftOwner) => {
-    setClosingId(o.id);
+  const confirmClose = () => {
+    if (!closing) return;
+    const id = closing.id;
     startTransition(async () => {
-      const res = await closeOwnerAction(aircraftId, o.id);
-      if (res.ok) toast.success("Régimen cerrado");
-      else toast.error(res.error ?? "No se pudo cerrar");
-      setClosingId(null);
+      const res = await closeOwnerAction(aircraftId, id);
+      if (res.ok) {
+        toast.success("Régimen cerrado");
+        setClosing(null);
+      } else {
+        toast.error(res.error ?? "No se pudo cerrar");
+      }
     });
   };
 
@@ -131,8 +145,7 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 text-destructive"
-                  onClick={() => closeOwner(o)}
-                  disabled={pending && closingId === o.id}
+                  onClick={() => setClosing(o)}
                   title="Cerrar régimen (vigente_hasta = hoy)"
                 >
                   <XMarkIcon className="h-4 w-4" />
@@ -150,6 +163,33 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
         socios={socios}
         initialOwner={editing}
       />
+
+      <AlertDialog open={!!closing} onOpenChange={(v) => !v && setClosing(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Cerrar el régimen de {closing?.usuario?.nombre ?? "este propietario"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se marcará <span className="font-mono">vigente_hasta = hoy</span> y dejará de contar
+              como propietario activo. El historial se conserva (no se borra nada).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmClose();
+              }}
+              disabled={pending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {pending ? "Cerrando…" : "Cerrar régimen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

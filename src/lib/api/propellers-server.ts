@@ -1,27 +1,25 @@
 import { apiServer } from "./server";
 import type { ListResponse } from "@/types/aircraft";
 
-export interface Engine {
+export interface Propeller {
   id: string;
   aeronave_id: string;
   posicion: string;
   numero_serie: string;
-  tipo: string;
   fabricante: string | null;
   modelo: string | null;
   horas_totales: string;
-  turm: string;
-  tbo_horas: string;
+  tbo_horas: string | null;
 }
 
-export interface ListEnginesQuery {
+export interface ListPropellersQuery {
   aeronave_id?: string;
   limit?: number;
   offset?: number;
 }
 
-export function listEngines(query: ListEnginesQuery = {}) {
-  return apiServer<ListResponse<Engine>>("/v1/engines", {
+export function listPropellers(query: ListPropellersQuery = {}) {
+  return apiServer<ListResponse<Propeller>>("/v1/propellers", {
     searchParams: query as Record<string, string | number | boolean | undefined>,
     cache: "no-store",
   });
