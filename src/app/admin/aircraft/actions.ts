@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import type { AeronaveImagen } from "@/types/aircraft";
+import { AircraftFormSchema } from "./schema";
+import type { Aircraft, AeronaveImagen } from "@/types/aircraft";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+  fieldErrors?: Record<string, string[]>;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
@@ -19,9 +21,65 @@ function fail<T>(err: unknown): ActionResult<T> {
   };
 }
 
-function revalidateAircraft(id: string) {
+function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === "" || v === undefined) continue;
+    out[k as keyof T] = v as T[keyof T];
+  }
+  return out;
+}
+
+function revalidateAircraft(id?: string) {
   revalidatePath("/admin/aircraft");
-  revalidatePath(`/admin/aircraft/${id}`);
+  if (id) revalidatePath(`/admin/aircraft/${id}`);
+}
+
+export async function createAircraftAction(raw: unknown): Promise<ActionResult<Aircraft>> {
+  const parsed = AircraftFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const created = await apiServer<Aircraft>("/v1/aircraft", {
+      method: "POST",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft();
+    return { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateAircraftAction(
+  id: string,
+  raw: unknown,
+): Promise<ActionResult<Aircraft>> {
+  const parsed = AircraftFormSchema.partial().safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const updated = await apiServer<Aircraft>(`/v1/aircraft/${id}`, {
+      method: "PATCH",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(id);
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deleteAircraftAction(id: string): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/aircraft/${id}`, { method: "DELETE" });
+    revalidateAircraft(id);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 export interface RegisterAircraftImagePayload {

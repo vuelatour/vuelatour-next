@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/card";
 import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-card";
 import { AircraftEngineering } from "@/components/admin/aircraft/aircraft-engineering";
+import { AircraftEditButton } from "@/components/admin/aircraft/aircraft-edit-button";
+import { AircraftFlightsCard } from "@/components/admin/aircraft/aircraft-flights-card";
 import { getAircraftSnapshot } from "@/lib/api/aircraft";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtPercent, fmtUsd } from "@/lib/format";
@@ -65,7 +67,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             </h1>
             <p className="text-base text-muted-foreground">{aircraft.modelo}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Badge variant="outline" className="font-mono">
               {aircraft.pais_registro}
             </Badge>
@@ -76,6 +78,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             ) : (
               <Badge variant="secondary">Inactiva</Badge>
             )}
+            <AircraftEditButton aircraft={aircraft} />
           </div>
         </div>
       </div>
@@ -179,6 +182,9 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             ))}
           </CardContent>
         </Card>
+
+        {/* Viajes: historial de vuelos de esta aeronave */}
+        <AircraftFlightsCard aircraftId={aircraft.id} />
 
         {/* Ingeniería aeronáutica: mantenimientos, permisos/licencias, servicios próximos */}
         <AircraftEngineering aircraftId={aircraft.id} />

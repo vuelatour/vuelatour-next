@@ -1,0 +1,251 @@
+"use client";
+
+import { useEffect, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  createAircraftAction,
+  updateAircraftAction,
+} from "@/app/admin/aircraft/actions";
+import {
+  AircraftFormSchema,
+  type AircraftFormValues,
+} from "@/app/admin/aircraft/schema";
+import type { Aircraft } from "@/types/aircraft";
+
+interface AircraftFormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialAircraft?: Aircraft;
+}
+
+export function AircraftFormDialog({
+  open,
+  onOpenChange,
+  initialAircraft,
+}: AircraftFormDialogProps) {
+  const [pending, startTransition] = useTransition();
+  const isEdit = !!initialAircraft;
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<AircraftFormValues>({
+    resolver: zodResolver(AircraftFormSchema),
+    defaultValues: defaults(initialAircraft),
+  });
+
+  useEffect(() => {
+    if (open) reset(defaults(initialAircraft));
+  }, [open, initialAircraft, reset]);
+
+  const activa = watch("activa");
+
+  const onSubmit = handleSubmit((values) => {
+    startTransition(async () => {
+      const result = isEdit
+        ? await updateAircraftAction(initialAircraft!.id, values)
+        : await createAircraftAction(values);
+
+      if (result.ok) {
+        toast.success(isEdit ? "Aeronave actualizada" : "Aeronave creada");
+        onOpenChange(false);
+      } else if (result.fieldErrors) {
+        const firstField = Object.keys(result.fieldErrors)[0];
+        const firstError = result.fieldErrors[firstField]?.[0] ?? "Validación falló";
+        toast.error(`${firstField}: ${firstError}`);
+      } else {
+        toast.error(result.error ?? "Error desconocido");
+      }
+    });
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Editar aeronave" : "Nueva aeronave"}</DialogTitle>
+          <DialogDescription>
+            Datos maestros del avión. Las tarifas y velocidad alimentan el cotizador; la
+            reserva overhaul se acumula por hora volada.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Matrícula" required error={errors.matricula?.message}>
+              <Input
+                placeholder="XB-PEV"
+                maxLength={10}
+                className="font-mono uppercase"
+                {...register("matricula")}
+              />
+            </Field>
+            <Field label="País de registro" required error={errors.pais_registro?.message}>
+              <SearchableSelect
+                options={[
+                  { value: "MX", label: "México (MX)" },
+                  { value: "USA", label: "Estados Unidos (USA)" },
+                ]}
+                value={(watch("pais_registro") as string | undefined) ?? ""}
+                onChange={(v) => setValue("pais_registro", v as never)}
+                placeholder="Selecciona"
+              />
+            </Field>
+          </div>
+
+          <Field label="Modelo" required error={errors.modelo?.message}>
+            <Input placeholder="Cessna 206" {...register("modelo")} />
+          </Field>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Motores" required hint="1 o 2" error={errors.num_motores?.message}>
+              <Input type="number" min={1} max={2} {...register("num_motores")} />
+            </Field>
+            <Field
+              label="Vel. crucero"
+              required
+              hint="nudos"
+              error={errors.velocidad_crucero_kts?.message}
+            >
+              <Input type="number" min={1} placeholder="120" {...register("velocidad_crucero_kts")} />
+            </Field>
+            <Field label="Asientos" required hint="sin piloto" error={errors.asientos?.message}>
+              <Input type="number" min={1} placeholder="5" {...register("asientos")} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="USD/hr público" error={errors.tarifa_hora_pub_usd?.message}>
+              <Input type="number" min={0} step="0.01" placeholder="750" {...register("tarifa_hora_pub_usd")} />
+            </Field>
+            <Field label="USD/hr broker" error={errors.tarifa_hora_broker_usd?.message}>
+              <Input type="number" min={0} step="0.01" placeholder="650" {...register("tarifa_hora_broker_usd")} />
+            </Field>
+            <Field
+              label="Reserva OH/hr"
+              hint="USD"
+              error={errors.reserva_overhaul_hr_usd?.message}
+            >
+              <Input type="number" min={0} step="0.01" placeholder="55" {...register("reserva_overhaul_hr_usd")} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Base (IATA)" hint="default CUN" error={errors.ubicacion_base?.message}>
+              <Input placeholder="CUN" maxLength={4} className="font-mono uppercase" {...register("ubicacion_base")} />
+            </Field>
+            <Field label="Color calendario" hint="#RRGGBB" error={errors.color_calendario?.message}>
+              <Input type="text" placeholder="#FFB6C1" {...register("color_calendario")} />
+            </Field>
+            <div className="flex flex-col justify-end">
+              <div className="flex items-center justify-between rounded-lg border border-border px-3 h-[42px]">
+                <Label className="text-sm font-medium">Activa</Label>
+                <Switch
+                  checked={activa ?? true}
+                  onCheckedChange={(c) => setValue("activa", c)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <Field label="Notas" error={errors.notas?.message}>
+            <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
+          </Field>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Guardando…" : isEdit ? "Guardar cambios" : "Crear aeronave"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  required,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-sm font-medium">
+        {label}
+        {required && <span className="text-destructive ml-0.5">*</span>}
+      </Label>
+      {children}
+      {(hint || error) && (
+        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
+          {error ?? hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function defaults(a?: Aircraft): AircraftFormValues {
+  if (!a) {
+    return {
+      matricula: "",
+      modelo: "",
+      pais_registro: "MX",
+      num_motores: 1,
+      velocidad_crucero_kts: "" as unknown as number,
+      asientos: "" as unknown as number,
+      tarifa_hora_pub_usd: "",
+      tarifa_hora_broker_usd: "",
+      reserva_overhaul_hr_usd: "",
+      color_calendario: "",
+      ubicacion_base: "CUN",
+      activa: true,
+      notas: "",
+    };
+  }
+  return {
+    matricula: a.matricula,
+    modelo: a.modelo,
+    pais_registro: a.pais_registro,
+    num_motores: a.num_motores,
+    velocidad_crucero_kts: a.velocidad_crucero_kts as unknown as number,
+    asientos: a.asientos,
+    tarifa_hora_pub_usd: a.tarifa_hora_pub_usd ?? "",
+    tarifa_hora_broker_usd: a.tarifa_hora_broker_usd ?? "",
+    reserva_overhaul_hr_usd: a.reserva_overhaul_hr_usd ?? "",
+    color_calendario: a.color_calendario ?? "",
+    ubicacion_base: a.ubicacion_base ?? "",
+    activa: a.activa,
+    notas: a.notas ?? "",
+  };
+}

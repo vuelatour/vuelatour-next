@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AircraftCreateButton } from "@/components/admin/aircraft/aircraft-create-button";
 import { listAircraft } from "@/lib/api/aircraft";
 import { fmtUsd } from "@/lib/format";
 
@@ -28,6 +29,7 @@ export default async function AircraftListPage() {
             {count} {count === 1 ? "avión" : "aviones"} en la flota
           </p>
         </div>
+        <AircraftCreateButton />
       </div>
 
       {aircraft.length === 0 ? (
