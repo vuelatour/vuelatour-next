@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDate as sharedFmtDate, fmtDateTime as sharedFmtDateTime } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import {
   ArrowLeftIcon,
@@ -32,24 +33,8 @@ function initials(name: string): string {
     .join("");
 }
 
-function fmtDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("es-MX", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function fmtDate(s: string | null): string {
-  if (!s) return "—";
-  return new Date(s).toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const fmtDateTime = sharedFmtDateTime;
+const fmtDate = sharedFmtDate;
 
 export default async function PilotDetailPage({
   params,

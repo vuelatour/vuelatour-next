@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { fmtDateOnly } from "@/lib/datetime";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -50,10 +51,7 @@ function daysUntil(iso: string): number {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
 }
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
-}
+const fmtDate = fmtDateOnly;
 
 export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
   const [mant, setMant] = useState<Mantenimiento[]>([]);

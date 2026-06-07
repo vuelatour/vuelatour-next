@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { fmtDateOnly } from "@/lib/datetime";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -65,12 +66,7 @@ const ESTADO: Record<EstadoSquawk, { label: string; cls: string }> = {
   RESUELTA: { label: "Resuelta", cls: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30" },
 };
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(d);
-}
+const fmtDate = fmtDateOnly;
 
 export function AircraftSquawksCard({
   aircraftId,

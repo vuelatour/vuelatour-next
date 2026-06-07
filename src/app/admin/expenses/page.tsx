@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateOnly } from "@/lib/datetime";
 import { BanknotesIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,14 +31,7 @@ type Filtro = "todos" | "pendientes" | "duplicados";
 const fmtMoney = (monto: string, moneda: string) =>
   Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
 
-const fmtDate = (s: string | null) =>
-  s
-    ? new Date(`${s}T00:00:00`).toLocaleDateString("es-MX", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      })
-    : "—";
+const fmtDate = fmtDateOnly;
 
 const ESTATUS_STYLE: Record<string, string> = {
   FACTURA: "border-emerald-500/50 text-emerald-600",

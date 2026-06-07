@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
+import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
 import {
@@ -259,32 +260,22 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 </Row>
                 <Row label="Traslado inicial">
                   {snapshot.fecha_vuelo ? (
-                    new Date(snapshot.fecha_vuelo).toLocaleString("es-MX", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })
+                    fmtDateTime(snapshot.fecha_vuelo)
                   ) : (
                     <span className="text-muted-foreground">Sin fecha</span>
                   )}
                 </Row>
                 <Row label="Traslado final">
                   {snapshot.fecha_traslado_final ? (
-                    new Date(snapshot.fecha_traslado_final).toLocaleString("es-MX", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })
+                    fmtDateTime(snapshot.fecha_traslado_final)
                   ) : (
                     <span className="text-muted-foreground">Sin fecha</span>
                   )}
                 </Row>
                 {snapshot.fecha_confirmacion && (
-                  <Row label="Confirmado">
-                    {new Date(snapshot.fecha_confirmacion).toLocaleString(
-                      "es-MX",
-                      { dateStyle: "short", timeStyle: "short" },
-                    )}
-                  </Row>
+                  <Row label="Confirmado">{fmtDateTime(snapshot.fecha_confirmacion)}</Row>
                 )}
+                <p className="px-1 pt-1 text-[11px] text-muted-foreground">{TZ_LABEL}</p>
               </CardContent>
             </Card>
 

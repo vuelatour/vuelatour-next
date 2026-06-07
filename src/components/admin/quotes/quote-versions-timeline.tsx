@@ -1,4 +1,5 @@
 import { fmtUsd } from "@/lib/format";
+import { fmtDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { CotizacionVersion } from "@/types/quotes-persisted";
 
@@ -44,10 +45,7 @@ export function QuoteVersionsTimeline({
                 )}
               </p>
               <p className="text-xs text-muted-foreground">
-                {new Date(v.created_at).toLocaleString("es-MX", {
-                  dateStyle: "short",
-                  timeStyle: "short",
-                })}
+                {fmtDateTime(v.created_at)}
               </p>
             </div>
             <p className="text-sm font-mono font-semibold mt-0.5">

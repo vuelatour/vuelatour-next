@@ -17,6 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { cancunInputToIso, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import {
   assignFlightAction,
   getPilotosDisponibilidadAction,
@@ -55,7 +56,7 @@ function defaults(flight: FlightListItem): AssignFormValues {
   return {
     aeronave_id: flight.aeronave_id ?? "",
     piloto_id: flight.piloto_id ?? "",
-    fecha_vuelo: flight.fecha_vuelo ? flight.fecha_vuelo.slice(0, 16) : "",
+    fecha_vuelo: isoToCancunInput(flight.fecha_vuelo),
   };
 }
 
@@ -133,7 +134,7 @@ export function FlightAssignSheet({
       payload.piloto_id = values.piloto_id || undefined;
     }
     if (values.fecha_vuelo) {
-      payload.fecha_vuelo = new Date(values.fecha_vuelo).toISOString();
+      payload.fecha_vuelo = cancunInputToIso(values.fecha_vuelo);
     }
     if (Object.keys(payload).length === 0) {
       toast.info("No hay cambios que aplicar");
@@ -236,7 +237,7 @@ export function FlightAssignSheet({
             <Label className="text-sm font-medium">Fecha y hora del vuelo</Label>
             <Input type="datetime-local" {...register("fecha_vuelo")} />
             <p className="text-xs text-muted-foreground">
-              Fecha programada. La hora real se registra en escalas.
+              Fecha programada en {TZ_LABEL}. La hora real se registra en escalas.
             </p>
           </div>
         </form>

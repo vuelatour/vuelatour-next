@@ -20,6 +20,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { cancunInputToIso, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import {
   createEscalaAction,
   updateEscalaAction,
@@ -90,15 +91,8 @@ function nextOrden(taken: number[]): number {
 }
 
 function toLocalDatetime(iso: string | null): string {
-  if (!iso) return "";
-  // datetime-local espera YYYY-MM-DDTHH:mm (sin zona).
-  const d = new Date(iso);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  // datetime-local en HORA DE CANCÚN.
+  return isoToCancunInput(iso);
 }
 
 function defaults(
@@ -189,10 +183,10 @@ export function EscalaFormSheet({
         origen_iata: values.origen_iata.toUpperCase(),
         destino_iata: values.destino_iata.toUpperCase(),
         hora_salida: values.hora_salida
-          ? new Date(values.hora_salida).toISOString()
+          ? cancunInputToIso(values.hora_salida)
           : undefined,
         hora_llegada: values.hora_llegada
-          ? new Date(values.hora_llegada).toISOString()
+          ? cancunInputToIso(values.hora_llegada)
           : undefined,
         notas: values.notas?.trim() || undefined,
       };
@@ -269,10 +263,14 @@ export function EscalaFormSheet({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Hora salida" hint="Programada o real" error={errors.hora_salida?.message}>
+            <Field
+              label="Hora salida"
+              hint={`Programada o real · ${TZ_LABEL}`}
+              error={errors.hora_salida?.message}
+            >
               <Input type="datetime-local" {...register("hora_salida")} />
             </Field>
-            <Field label="Hora llegada" error={errors.hora_llegada?.message}>
+            <Field label="Hora llegada" hint={TZ_LABEL} error={errors.hora_llegada?.message}>
               <Input type="datetime-local" {...register("hora_llegada")} />
             </Field>
           </div>

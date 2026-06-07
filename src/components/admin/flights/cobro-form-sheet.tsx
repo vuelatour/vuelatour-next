@@ -19,6 +19,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { cancunInputToIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { fmtUsd } from "@/lib/format";
 import { registerCobroAction } from "@/app/admin/flights/actions";
@@ -156,7 +157,7 @@ export function CobroFormSheet({
             : undefined,
         referencia: values.referencia?.trim() || undefined,
         fecha_cobro: values.fecha_cobro
-          ? new Date(values.fecha_cobro).toISOString()
+          ? cancunInputToIso(`${values.fecha_cobro.slice(0, 10)}T12:00`)
           : undefined,
         notas: values.notas?.trim() || undefined,
       });

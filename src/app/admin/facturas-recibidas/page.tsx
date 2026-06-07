@@ -1,4 +1,5 @@
 import { InboxArrowDownIcon } from "@heroicons/react/24/outline";
+import { fmtDateOnly } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -35,12 +36,7 @@ const ESTADO: Record<FacturaRecibida["estado"], { label: string; cls: string }> 
   DESCARTADA: { label: "Descartada", cls: "bg-muted text-muted-foreground border-border" },
 };
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(d);
-}
+const fmtDate = fmtDateOnly;
 
 function fmtMoney(v: string | null, moneda: string | null): string {
   if (v == null) return "—";

@@ -1,4 +1,5 @@
 import { ShieldCheckIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { fmtDateOnly } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -190,10 +191,7 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
                     <TableCell className="text-sm font-mono">{targetLabel(e)}</TableCell>
                     <TableCell className="text-xs">
                       {e.vence_por === "FECHA" && e.fecha_vencimiento
-                        ? new Date(`${e.fecha_vencimiento}T00:00:00`).toLocaleDateString(
-                            "es-MX",
-                            { day: "2-digit", month: "short", year: "numeric" },
-                          )
+                        ? fmtDateOnly(e.fecha_vencimiento)
                         : e.vence_por === "HORAS" && e.horas_limite
                           ? `${fmtDecimal(e.horas_limite)} hrs`
                           : "Permanente"}

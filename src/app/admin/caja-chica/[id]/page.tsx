@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateOnly } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
@@ -26,12 +27,7 @@ const CONCEPTO: Record<string, string> = {
   GASTO: "Gasto en efectivo",
 };
 
-const fmtDate = (s: string) =>
-  new Date(`${s}T00:00:00`).toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+const fmtDate = fmtDateOnly;
 
 export default async function CajaFondoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

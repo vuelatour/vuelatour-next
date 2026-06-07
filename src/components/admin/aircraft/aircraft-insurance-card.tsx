@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { fmtDateOnly } from "@/lib/datetime";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -49,16 +50,7 @@ import { InsuranceFormSchema, type InsuranceFormValues } from "@/app/admin/aircr
 import { fmtUsd } from "@/lib/format";
 import type { AeronaveSeguro } from "@/types/aircraft";
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(d);
-}
+const fmtDate = fmtDateOnly;
 
 function vigente(hasta: string): boolean {
   const d = new Date(hasta);

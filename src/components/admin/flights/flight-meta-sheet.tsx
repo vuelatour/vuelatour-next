@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { cancunInputToIso, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import { updateFlightAction } from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
 
@@ -49,9 +50,9 @@ const PERMISO_OPTS: { value: EstadoPermiso; label: string; description: string }
 function defaults(flight: FlightListItem): MetaFormValues {
   return {
     piloto_id: flight.piloto_id ?? "",
-    fecha_vuelo: flight.fecha_vuelo ? flight.fecha_vuelo.slice(0, 16) : "",
+    fecha_vuelo: isoToCancunInput(flight.fecha_vuelo),
     fecha_traslado_final: flight.fecha_traslado_final
-      ? flight.fecha_traslado_final.slice(0, 16)
+      ? isoToCancunInput(flight.fecha_traslado_final)
       : "",
     estado_permiso: flight.estado_permiso,
     notas: flight.notas ?? "",
@@ -108,14 +109,14 @@ export function FlightMetaSheet({
       payload.piloto_id = values.piloto_id || null;
     }
     if (values.fecha_vuelo) {
-      const next = new Date(values.fecha_vuelo).toISOString();
+      const next = cancunInputToIso(values.fecha_vuelo);
       const prev = flight.fecha_vuelo
         ? new Date(flight.fecha_vuelo).toISOString()
         : null;
       if (next !== prev) payload.fecha_vuelo = next;
     }
     if (values.fecha_traslado_final) {
-      const next = new Date(values.fecha_traslado_final).toISOString();
+      const next = cancunInputToIso(values.fecha_traslado_final);
       const prev = flight.fecha_traslado_final
         ? new Date(flight.fecha_traslado_final).toISOString()
         : null;
@@ -195,11 +196,13 @@ export function FlightMetaSheet({
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Fecha de traslado inicial</Label>
             <Input type="datetime-local" {...register("fecha_vuelo")} />
+            <p className="text-xs text-muted-foreground">{TZ_LABEL}</p>
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Fecha de traslado final</Label>
             <Input type="datetime-local" {...register("fecha_traslado_final")} />
+            <p className="text-xs text-muted-foreground">{TZ_LABEL}</p>
           </div>
 
           <div className="space-y-1.5">

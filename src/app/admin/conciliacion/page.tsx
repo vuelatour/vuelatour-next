@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateOnly } from "@/lib/datetime";
 import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -32,8 +33,7 @@ type Filtro = "todos" | "pendientes" | "conciliados";
 
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
-const fmtDate = (s: string | null) =>
-  s ? new Date(`${s}T00:00:00`).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDate = fmtDateOnly;
 
 export default async function ConciliacionPage({
   searchParams,

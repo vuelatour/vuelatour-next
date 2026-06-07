@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { fmtDate } from "@/lib/datetime";
 import {
   Card,
   CardContent,
@@ -120,11 +121,7 @@ export default async function FacturasPage({ searchParams }: PageProps) {
                     </TableCell>
                     <TableCell className="text-xs">
                       {v.fecha_vuelo
-                        ? new Date(v.fecha_vuelo).toLocaleDateString("es-MX", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })
+                        ? fmtDate(v.fecha_vuelo)
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
@@ -201,11 +198,7 @@ export default async function FacturasPage({ searchParams }: PageProps) {
                     <TableCell className="text-xs">{f.emisora?.codigo ?? "—"}</TableCell>
                     <TableCell className="text-xs">
                       {f.fecha_timbrado
-                        ? new Date(f.fecha_timbrado).toLocaleDateString("es-MX", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })
+                        ? fmtDate(f.fecha_timbrado)
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cancunInputToIso, TZ_LABEL } from "@/lib/datetime";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -133,7 +134,7 @@ export function ExternalFlightFormSheet({
         destino_iata: values.destino_iata.toUpperCase(),
         pasajeros: Number(values.pasajeros),
         fecha_vuelo: values.fecha_vuelo
-          ? new Date(values.fecha_vuelo).toISOString()
+          ? cancunInputToIso(values.fecha_vuelo)
           : undefined,
         notas: values.notas?.trim() || undefined,
         notas_internas: values.notas_internas?.trim() || undefined,
@@ -286,7 +287,7 @@ export function ExternalFlightFormSheet({
             <Field label="Pasajeros" required error={errors.pasajeros?.message}>
               <Input type="number" min={1} {...register("pasajeros")} />
             </Field>
-            <Field label="Fecha y hora" error={errors.fecha_vuelo?.message}>
+            <Field label="Fecha y hora" hint={TZ_LABEL} error={errors.fecha_vuelo?.message}>
               <Input type="datetime-local" {...register("fecha_vuelo")} />
             </Field>
           </div>

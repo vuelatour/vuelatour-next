@@ -59,11 +59,15 @@ function currentMonth(): { desde: string; hasta: string } {
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
-  return new Date(s).toLocaleDateString("es-MX", {
+  // Columna `date`: fija a mediodía UTC para no correr el día por zona horaria.
+  const d = new Date(`${s.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return s;
+  return new Intl.DateTimeFormat("es-MX", {
     weekday: "short",
     day: "2-digit",
     month: "short",
-  });
+    timeZone: "UTC",
+  }).format(d);
 }
 
 interface PageProps {

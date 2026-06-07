@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDate } from "@/lib/datetime";
 import { ChevronRightIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -44,16 +45,7 @@ function estadoClass(estado: EstadoVuelo): string {
   }
 }
 
-function fmtFecha(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(d);
-}
+const fmtFecha = fmtDate;
 
 const LIMIT = 25;
 

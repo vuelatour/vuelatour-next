@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateOnly } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +24,7 @@ export const dynamic = "force-dynamic";
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
-const fmtDate = (s: string | null) =>
-  s ? new Date(`${s}T00:00:00`).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDate = fmtDateOnly;
 
 const TIPO_STYLE: Record<TipoMovimiento, { label: string; cls: string }> = {
   ENTRADA: { label: "Entrada", cls: "border-emerald-500/50 text-emerald-600" },

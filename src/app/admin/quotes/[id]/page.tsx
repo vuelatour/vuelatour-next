@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { buttonVariants } from "@/components/ui/button";
@@ -293,19 +294,13 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
               />
               <Cell
                 label="Fecha solicitud"
-                value={new Date(quote.fecha_solicitud).toLocaleString("es-MX", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
+                value={fmtDateTime(quote.fecha_solicitud)}
               />
               <Cell
                 label="Traslado inicial"
                 value={
                   quote.fecha_vuelo
-                    ? new Date(quote.fecha_vuelo).toLocaleString("es-MX", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })
+                    ? fmtDateTime(quote.fecha_vuelo)
                     : "—"
                 }
               />
@@ -313,32 +308,24 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 label="Traslado final"
                 value={
                   quote.fecha_traslado_final
-                    ? new Date(quote.fecha_traslado_final).toLocaleString("es-MX", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })
+                    ? fmtDateTime(quote.fecha_traslado_final)
                     : "—"
                 }
               />
               {quote.fecha_confirmacion && (
                 <Cell
                   label="Confirmado"
-                  value={new Date(quote.fecha_confirmacion).toLocaleString("es-MX", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                  value={fmtDateTime(quote.fecha_confirmacion)}
                 />
               )}
               {quote.fecha_cancelacion && (
                 <Cell
                   label="Cancelado"
-                  value={new Date(quote.fecha_cancelacion).toLocaleString("es-MX", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                  value={fmtDateTime(quote.fecha_cancelacion)}
                   hint={quote.motivo_cancelacion ?? undefined}
                 />
               )}
+              <p className="px-1 pt-1 text-[11px] text-muted-foreground">{TZ_LABEL}</p>
             </CardContent>
           </Card>
         </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDate } from "@/lib/datetime";
 import { CalculatorIcon, PlusIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -168,11 +169,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
                       <TableCell className="text-xs">
                         <Link href={`/admin/quotes/${q.id}`} className="block">
                           {q.fecha_vuelo
-                            ? new Date(q.fecha_vuelo).toLocaleDateString("es-MX", {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                              })
+                            ? fmtDate(q.fecha_vuelo)
                             : <span className="text-muted-foreground">—</span>}
                         </Link>
                       </TableCell>

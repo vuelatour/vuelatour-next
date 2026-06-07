@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateOnly } from "@/lib/datetime";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,11 +82,7 @@ export default async function IngenieriaPage() {
                       {r.critico ? " ⚠" : ""}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {new Date(r.fecha).toLocaleDateString("es-MX", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {fmtDateOnly(r.fecha)}
                     </p>
                   </div>
                   <Badge variant="outline" className={diasBadge(r.dias)}>

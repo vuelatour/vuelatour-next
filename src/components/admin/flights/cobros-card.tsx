@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fmtDate } from "@/lib/datetime";
 import Image from "next/image";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
@@ -121,11 +122,7 @@ export function CobrosCard({
                       </a>
                     )}
                     <p className="text-[11px] text-muted-foreground font-mono">
-                      {new Date(c.fecha_cobro).toLocaleDateString("es-MX", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {fmtDate(c.fecha_cobro)}
                     </p>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDate } from "@/lib/datetime";
 import { PaperAirplaneIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -226,11 +227,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
                       <TableCell className="text-xs">
                         <Link href={`/admin/flights/${v.id}`} className="block">
                           {v.fecha_vuelo ? (
-                            new Date(v.fecha_vuelo).toLocaleDateString("es-MX", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })
+                            fmtDate(v.fecha_vuelo)
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}

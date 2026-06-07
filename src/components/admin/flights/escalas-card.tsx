@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { fmtDateTime } from "@/lib/datetime";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -207,17 +208,11 @@ export function EscalasCard({
                     {(esc.hora_salida || esc.hora_llegada) && (
                       <p className="text-[11px] text-muted-foreground font-mono">
                         {esc.hora_salida
-                          ? new Date(esc.hora_salida).toLocaleString("es-MX", {
-                              dateStyle: "short",
-                              timeStyle: "short",
-                            })
+                          ? fmtDateTime(esc.hora_salida)
                           : "—"}
                         {" → "}
                         {esc.hora_llegada
-                          ? new Date(esc.hora_llegada).toLocaleString("es-MX", {
-                              dateStyle: "short",
-                              timeStyle: "short",
-                            })
+                          ? fmtDateTime(esc.hora_llegada)
                           : "—"}
                       </p>
                     )}

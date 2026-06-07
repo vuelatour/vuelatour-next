@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { fmtDateOnly } from "@/lib/datetime";
 import Link from "next/link";
 import { BeakerIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,11 +76,7 @@ export default async function CombustiblesPage() {
                       </TableCell>
                       <TableCell className="text-xs">
                         {l.fecha_gasto
-                          ? new Date(l.fecha_gasto).toLocaleDateString("es-MX", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })
+                          ? fmtDateOnly(l.fecha_gasto)
                           : "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono">
