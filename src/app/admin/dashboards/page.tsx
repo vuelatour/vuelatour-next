@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
+import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { getMe } from "@/lib/api/me";
 import {
   getDashboardGastos,
@@ -600,6 +601,14 @@ async function HorasPiloto({ desde, hasta }: { desde: string; hasta: string }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <ExcelExportButton
+          path="/v1/dashboards/horas-piloto/export"
+          filename="horas-por-piloto.xlsx"
+          label="Exportar Excel"
+          query={{ desde, hasta }}
+        />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Kpi
           label="Horas del periodo"

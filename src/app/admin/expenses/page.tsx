@@ -21,6 +21,7 @@ import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { listGastos, type ListGastosQuery } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
+import { ExcelExportButton } from "@/components/admin/excel-export-button";
 
 export const dynamic = "force-dynamic";
 
@@ -77,13 +78,16 @@ export default async function ExpensesPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Operación</p>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Gastos</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Verifica los gastos capturados: asigna avión, confirma comprobante y descarta duplicados.
-          La bandeja de pendientes debe quedar siempre vacía.
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">Operación</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Gastos</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Verifica los gastos capturados: asigna avión, confirma comprobante y descarta
+            duplicados. La bandeja de pendientes debe quedar siempre vacía.
+          </p>
+        </div>
+        <ExcelExportButton path="/v1/expenses/export" filename="gastos.xlsx" label="Exportar Excel" />
       </div>
 
       <div className="flex gap-2 flex-wrap">

@@ -53,7 +53,12 @@ export default async function InventoryPage() {
           <ExcelExportButton
             path="/v1/inventory/items/export"
             filename="inventario-valorizado.xlsx"
-            label="Exportar Excel"
+            label="Valorizado"
+          />
+          <ExcelExportButton
+            path="/v1/inventory/movimientos/export"
+            filename="cardex.xlsx"
+            label="Cardex"
           />
           <ImportCompraButton providers={providers} />
           <ItemCreateButton />
