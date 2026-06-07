@@ -98,27 +98,36 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
         </div>
       </div>
 
-      {quote.estado === "CONFIRMADO" && !quote.es_externo && !quote.aeronave_id && (
-        <div className="flex items-start gap-3 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-700 dark:text-violet-300">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 mt-0.5" />
-          <div className="space-y-2">
-            <div>
-              <p className="font-medium">Falta asignar este vuelo.</p>
-              <p className="text-violet-600/90 dark:text-violet-300/80">
-                La cotización está confirmada pero aún no tiene avión ni piloto. Asígnalos en{" "}
-                <span className="font-medium">Vuelos</span>; mientras tanto aparece en el calendario
-                en morado (“Sin asignar”).
-              </p>
+      {quote.estado === "CONFIRMADO" &&
+        !quote.es_externo &&
+        (!quote.piloto_id || !quote.aeronave_id) &&
+        (() => {
+          const faltaPiloto = !quote.piloto_id;
+          const faltaAvion = !quote.aeronave_id;
+          const queFalta =
+            faltaPiloto && faltaAvion ? "avión y piloto" : faltaPiloto ? "piloto" : "avión";
+          return (
+            <div className="flex items-start gap-3 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-700 dark:text-violet-300">
+              <ExclamationTriangleIcon className="h-5 w-5 shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <div>
+                  <p className="font-medium">Falta asignar el {queFalta} de este vuelo.</p>
+                  <p className="text-violet-600/90 dark:text-violet-300/80">
+                    La cotización está confirmada. Asigna el {queFalta} en{" "}
+                    <span className="font-medium">Vuelos</span>; mientras tanto el vuelo aparece en
+                    el calendario en morado (“Sin asignar”).
+                  </p>
+                </div>
+                <Link
+                  href="/admin/flights?estado=CONFIRMADO"
+                  className={buttonVariants({ size: "sm" })}
+                >
+                  Ir a Vuelos para asignar
+                </Link>
+              </div>
             </div>
-            <Link
-              href="/admin/flights?estado=CONFIRMADO"
-              className={buttonVariants({ size: "sm" })}
-            >
-              Ir a Vuelos para asignar
-            </Link>
-          </div>
-        </div>
-      )}
+          );
+        })()}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">

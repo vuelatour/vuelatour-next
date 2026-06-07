@@ -67,7 +67,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const { data: quotes, count } = quotesRes;
   const sinAsignar = quotes.filter(
-    (q) => q.estado === "CONFIRMADO" && !q.es_externo && !q.aeronave_id,
+    (q) => q.estado === "CONFIRMADO" && !q.es_externo && (!q.piloto_id || !q.aeronave_id),
   ).length;
 
   return (
@@ -91,8 +91,8 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
           <span>
             {sinAsignar === 1
-              ? "Hay 1 vuelo confirmado sin asignar avión y piloto."
-              : `Hay ${sinAsignar} vuelos confirmados sin asignar avión y piloto.`}{" "}
+              ? "Hay 1 vuelo confirmado sin asignar piloto/avión."
+              : `Hay ${sinAsignar} vuelos confirmados sin asignar piloto/avión.`}{" "}
             Asígnalos en{" "}
             <Link href="/admin/flights?estado=CONFIRMADO" className="underline font-medium">
               Vuelos
@@ -194,12 +194,14 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
                           <Badge variant="outline" className={ESTADO_STYLES[q.estado]}>
                             {ESTADO_LABELS[q.estado]}
                           </Badge>
-                          {q.estado === "CONFIRMADO" && !q.es_externo && !q.aeronave_id && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-600 dark:text-violet-400">
-                              <ExclamationTriangleIcon className="h-3 w-3" />
-                              Falta asignar
-                            </span>
-                          )}
+                          {q.estado === "CONFIRMADO" &&
+                            !q.es_externo &&
+                            (!q.piloto_id || !q.aeronave_id) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-600 dark:text-violet-400">
+                                <ExclamationTriangleIcon className="h-3 w-3" />
+                                {!q.piloto_id ? "Falta piloto" : "Falta avión"}
+                              </span>
+                            )}
                         </Link>
                       </TableCell>
                     </TableRow>
