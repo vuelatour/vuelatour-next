@@ -22,6 +22,7 @@ export default async function NewQuotePage() {
     modelo: a.modelo,
     pais_registro: a.pais_registro,
     velocidad_crucero_kts: Number(a.velocidad_crucero_kts),
+    asientos: Number(a.asientos) || 0,
     tarifa_hora_pub_usd: a.tarifa_hora_pub_usd ? Number(a.tarifa_hora_pub_usd) : null,
     tarifa_hora_broker_usd: a.tarifa_hora_broker_usd ? Number(a.tarifa_hora_broker_usd) : null,
   }));

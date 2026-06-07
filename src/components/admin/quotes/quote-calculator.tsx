@@ -54,6 +54,7 @@ interface AircraftOption {
   modelo: string;
   pais_registro: "MX" | "USA";
   velocidad_crucero_kts: number;
+  asientos: number;
   tarifa_hora_pub_usd: number | null;
   tarifa_hora_broker_usd: number | null;
 }
@@ -409,14 +410,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   }, [calcPayload]);
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
+  const capacidadExcedida =
+    !!selectedAircraft &&
+    !!selectedAircraft.asientos &&
+    Number(values.pasajeros) > selectedAircraft.asientos;
   const selectedRoute = allRoutes.find((r) => r.id === values.ruta_id);
   const tipoTarifa = values.tipo_tarifa;
   const rutaMode = values.ruta_mode;
 
   const motivoTrim = values.motivo?.trim() ?? "";
-  const canSave = isRevise
-    ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
-    : !!values.cliente_id && !!calcPayload && !!breakdown && !error;
+  const canSave =
+    !capacidadExcedida &&
+    (isRevise
+      ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
+      : !!values.cliente_id && !!calcPayload && !!breakdown && !error);
 
   const handleSave = () => {
     if (!calcPayload) {
@@ -795,7 +802,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Pasajeros" required>
-              <Input type="number" min={1} {...register("pasajeros")} />
+              <Input
+                type="number"
+                min={1}
+                max={selectedAircraft?.asientos || undefined}
+                {...register("pasajeros")}
+              />
+              {selectedAircraft && selectedAircraft.asientos > 0 && (
+                <p
+                  className={cn(
+                    "text-xs mt-1",
+                    capacidadExcedida ? "text-destructive font-medium" : "text-muted-foreground",
+                  )}
+                >
+                  {capacidadExcedida
+                    ? `Excede la capacidad: máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`
+                    : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
+                </p>
+              )}
             </Field>
             <div className="flex flex-col gap-1">
               <Label className="text-sm font-medium">Pase de abordar</Label>
