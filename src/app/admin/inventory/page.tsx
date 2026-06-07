@@ -19,6 +19,7 @@ import {
 import { ItemActions } from "@/components/admin/inventory/item-actions";
 import { ItemCreateButton } from "@/components/admin/inventory/item-create-button";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
+import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 
@@ -49,6 +50,11 @@ export default async function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <ExcelExportButton
+            path="/v1/inventory/items/export"
+            filename="inventario-valorizado.xlsx"
+            label="Exportar Excel"
+          />
           <ImportCompraButton providers={providers} />
           <ItemCreateButton />
         </div>
