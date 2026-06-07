@@ -3,8 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { AircraftFormSchema } from "./schema";
-import type { Aircraft, AeronaveImagen } from "@/types/aircraft";
+import {
+  AircraftFormSchema,
+  EngineFormSchema,
+  OwnerFormSchema,
+  PropellerFormSchema,
+} from "./schema";
+import type {
+  Aircraft,
+  AeronaveImagen,
+  AircraftOwner,
+  Motor,
+  Propeller,
+} from "@/types/aircraft";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -77,6 +88,136 @@ export async function deleteAircraftAction(id: string): Promise<ActionResult> {
     await apiServer(`/v1/aircraft/${id}`, { method: "DELETE" });
     revalidateAircraft(id);
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Dueños / socios =====
+
+export async function createOwnerAction(
+  aircraftId: string,
+  raw: unknown,
+): Promise<ActionResult<AircraftOwner>> {
+  const parsed = OwnerFormSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const owner = await apiServer<AircraftOwner>(`/v1/aircraft/${aircraftId}/owners`, {
+      method: "POST",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: owner };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateOwnerAction(
+  aircraftId: string,
+  ownerId: string,
+  raw: unknown,
+): Promise<ActionResult<AircraftOwner>> {
+  const parsed = OwnerFormSchema.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const owner = await apiServer<AircraftOwner>(`/v1/aircraft/owners/${ownerId}`, {
+      method: "PATCH",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: owner };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function closeOwnerAction(
+  aircraftId: string,
+  ownerId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/aircraft/owners/${ownerId}`, { method: "DELETE" });
+    revalidateAircraft(aircraftId);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Motores =====
+
+export async function createEngineAction(
+  aircraftId: string,
+  raw: unknown,
+): Promise<ActionResult<Motor>> {
+  const parsed = EngineFormSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const engine = await apiServer<Motor>("/v1/engines", {
+      method: "POST",
+      body: { ...stripEmpty(parsed.data), aeronave_id: aircraftId },
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: engine };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateEngineAction(
+  aircraftId: string,
+  engineId: string,
+  raw: unknown,
+): Promise<ActionResult<Motor>> {
+  const parsed = EngineFormSchema.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const engine = await apiServer<Motor>(`/v1/engines/${engineId}`, {
+      method: "PATCH",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: engine };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Hélices =====
+
+export async function createPropellerAction(
+  aircraftId: string,
+  raw: unknown,
+): Promise<ActionResult<Propeller>> {
+  const parsed = PropellerFormSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const prop = await apiServer<Propeller>("/v1/propellers", {
+      method: "POST",
+      body: { ...stripEmpty(parsed.data), aeronave_id: aircraftId },
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: prop };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updatePropellerAction(
+  aircraftId: string,
+  propellerId: string,
+  raw: unknown,
+): Promise<ActionResult<Propeller>> {
+  const parsed = PropellerFormSchema.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const prop = await apiServer<Propeller>(`/v1/propellers/${propellerId}`, {
+      method: "PATCH",
+      body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true, data: prop };
   } catch (err) {
     return fail(err);
   }

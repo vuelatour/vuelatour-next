@@ -8,6 +8,12 @@ const optionalNonNegative = z.preprocess(
   z.coerce.number().min(0, "No puede ser negativo").optional(),
 );
 
+/** Number opcional positivo (> 0): "" → se omite. */
+const optionalPositive = z.preprocess(
+  (v) => (v === "" || v === null || v === undefined ? undefined : v),
+  z.coerce.number().min(1, "Debe ser mayor a 0").optional(),
+);
+
 export const AircraftFormSchema = z.object({
   matricula: z
     .string()
@@ -39,3 +45,42 @@ export const AircraftFormSchema = z.object({
 });
 
 export type AircraftFormValues = z.input<typeof AircraftFormSchema>;
+
+// ===== Dueños / socios =====
+export const OwnerFormSchema = z.object({
+  socio_id: z.string().uuid("Selecciona un socio"),
+  porcentaje: z.coerce.number().min(0.001, "Mayor a 0").max(100, "Máximo 100"),
+  vigente_desde: z.string().min(1, "Requerido"),
+  vigente_hasta: z.string().optional().or(z.literal("")),
+  notas: z.string().max(2000).optional().or(z.literal("")),
+});
+export type OwnerFormValues = z.input<typeof OwnerFormSchema>;
+
+// ===== Motores =====
+const PosicionMotorEnum = z.enum(["UNICO", "IZQUIERDO", "DERECHO"]);
+const TipoMotorEnum = z.enum(["PISTON", "TURBINA"]);
+export const EngineFormSchema = z.object({
+  posicion: PosicionMotorEnum,
+  numero_serie: z.string().min(1, "Requerido").max(50),
+  tipo: TipoMotorEnum,
+  fabricante: z.string().max(50).optional().or(z.literal("")),
+  modelo: z.string().max(50).optional().or(z.literal("")),
+  horas_totales: optionalNonNegative,
+  turm: optionalNonNegative,
+  tbo_horas: z.coerce.number().min(1, "Debe ser mayor a 0"),
+  notas: z.string().max(2000).optional().or(z.literal("")),
+});
+export type EngineFormValues = z.input<typeof EngineFormSchema>;
+
+// ===== Hélices =====
+const PosicionHeliceEnum = z.enum(["UNICA", "IZQUIERDA", "DERECHA"]);
+export const PropellerFormSchema = z.object({
+  posicion: PosicionHeliceEnum,
+  numero_serie: z.string().min(1, "Requerido").max(50),
+  fabricante: z.string().max(50).optional().or(z.literal("")),
+  modelo: z.string().max(50).optional().or(z.literal("")),
+  horas_totales: optionalNonNegative,
+  tbo_horas: optionalPositive,
+  notas: z.string().max(2000).optional().or(z.literal("")),
+});
+export type PropellerFormValues = z.input<typeof PropellerFormSchema>;

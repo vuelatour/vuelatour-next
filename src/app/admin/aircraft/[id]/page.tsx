@@ -4,7 +4,6 @@ import {
   ArrowLeftIcon,
   CogIcon,
   CpuChipIcon,
-  UsersIcon,
   BanknotesIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
@@ -19,15 +18,17 @@ import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-
 import { AircraftEngineering } from "@/components/admin/aircraft/aircraft-engineering";
 import { AircraftEditButton } from "@/components/admin/aircraft/aircraft-edit-button";
 import { AircraftFlightsCard } from "@/components/admin/aircraft/aircraft-flights-card";
+import {
+  AircraftOwnersCard,
+  type SocioOption,
+} from "@/components/admin/aircraft/aircraft-owners-card";
+import { AircraftEngineButton } from "@/components/admin/aircraft/aircraft-engine-button";
+import { AircraftPropellerButton } from "@/components/admin/aircraft/aircraft-propeller-button";
 import { getAircraftSnapshot } from "@/lib/api/aircraft";
+import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
-import { fmtDecimal, fmtPercent, fmtUsd } from "@/lib/format";
-import type {
-  AircraftOwner,
-  Motor,
-  OverhaulReserve,
-  Propeller,
-} from "@/types/aircraft";
+import { fmtDecimal, fmtUsd } from "@/lib/format";
+import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -49,6 +50,16 @@ export default async function AircraftDetailPage({ params }: PageProps) {
   const motorsSorted = [...aircraft.motors].sort(motorOrden);
   const propsSorted = [...aircraft.propellers].sort(propellerOrden);
   const reservesByMotor = new Map(aircraft.overhaul_reserves.map((r) => [r.motor_id, r]));
+
+  // Socios candidatos para asignar como propietarios. Best-effort: si falla,
+  // la tarjeta sigue funcionando para editar/cerrar los existentes.
+  let socios: SocioOption[] = [];
+  try {
+    const u = await listUsers({ estado: "ACTIVO", limit: 200 });
+    socios = u.data.map((x) => ({ id: x.id, nombre: x.nombre }));
+  } catch {
+    socios = [];
+  }
 
   return (
     <div className="space-y-6">
@@ -131,55 +142,61 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Propietarios */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <UsersIcon className="h-4 w-4 text-muted-foreground" />
-              Propietarios actuales
-            </CardTitle>
-            <CardDescription>
-              {aircraft.owners.length} {aircraft.owners.length === 1 ? "propietario" : "propietarios"} vigentes
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {aircraft.owners.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin propietarios registrados.</p>
-            ) : (
-              aircraft.owners.map((o) => <OwnerRow key={o.id} owner={o} />)
-            )}
-          </CardContent>
-        </Card>
+        {/* Propietarios (gestionable) */}
+        <AircraftOwnersCard
+          aircraftId={aircraft.id}
+          owners={aircraft.owners}
+          socios={socios}
+        />
 
         {/* Motores */}
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CpuChipIcon className="h-4 w-4 text-muted-foreground" />
-              Motores
-            </CardTitle>
-            <CardDescription>{motorsSorted.length} unidades</CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+            <div className="space-y-1">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CpuChipIcon className="h-4 w-4 text-muted-foreground" />
+                Motores
+              </CardTitle>
+              <CardDescription>{motorsSorted.length} unidades</CardDescription>
+            </div>
+            <AircraftEngineButton aircraftId={aircraft.id} />
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            {motorsSorted.map((m) => (
-              <MotorCard key={m.id} motor={m} reserve={reservesByMotor.get(m.id)} />
-            ))}
+            {motorsSorted.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin motores registrados.</p>
+            ) : (
+              motorsSorted.map((m) => (
+                <MotorCard
+                  key={m.id}
+                  motor={m}
+                  reserve={reservesByMotor.get(m.id)}
+                  aircraftId={aircraft.id}
+                />
+              ))
+            )}
           </CardContent>
         </Card>
 
         {/* Hélices */}
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CogIcon className="h-4 w-4 text-muted-foreground" />
-              Hélices
-            </CardTitle>
-            <CardDescription>{propsSorted.length} unidades</CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+            <div className="space-y-1">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CogIcon className="h-4 w-4 text-muted-foreground" />
+                Hélices
+              </CardTitle>
+              <CardDescription>{propsSorted.length} unidades</CardDescription>
+            </div>
+            <AircraftPropellerButton aircraftId={aircraft.id} />
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            {propsSorted.map((p) => (
-              <PropellerCard key={p.id} propeller={p} />
-            ))}
+            {propsSorted.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin hélices registradas.</p>
+            ) : (
+              propsSorted.map((p) => (
+                <PropellerCard key={p.id} propeller={p} aircraftId={aircraft.id} />
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -222,34 +239,26 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function OwnerRow({ owner }: { owner: AircraftOwner }) {
-  const nombre = owner.usuario?.nombre ?? "—";
-  const esEmpresa = owner.usuario?.es_empresa ?? false;
-  return (
-    <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-muted/50">
-      <div className="min-w-0">
-        <p className="text-sm font-medium truncate">{nombre}</p>
-        <p className="text-xs text-muted-foreground">
-          {esEmpresa ? "Empresa" : owner.usuario?.rol ?? "Socio"} · desde{" "}
-          {owner.vigente_desde}
-        </p>
-      </div>
-      <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 font-mono">
-        {fmtPercent(owner.porcentaje)}
-      </Badge>
-    </div>
-  );
-}
-
-function MotorCard({ motor, reserve }: { motor: Motor; reserve?: OverhaulReserve }) {
+function MotorCard({
+  motor,
+  reserve,
+  aircraftId,
+}: {
+  motor: Motor;
+  reserve?: OverhaulReserve;
+  aircraftId: string;
+}) {
   const restantes = Number(motor.tbo_horas) - (Number(motor.horas_totales) - Number(motor.turm));
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">{motor.posicion}</p>
-        <Badge variant="outline" className="text-xs">
-          {motor.tipo}
-        </Badge>
+        <div className="flex items-center gap-1">
+          <Badge variant="outline" className="text-xs">
+            {motor.tipo}
+          </Badge>
+          <AircraftEngineButton aircraftId={aircraftId} engine={motor} />
+        </div>
       </div>
       <p className="font-mono text-xs text-muted-foreground break-all">{motor.numero_serie}</p>
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
@@ -271,10 +280,19 @@ function MotorCard({ motor, reserve }: { motor: Motor; reserve?: OverhaulReserve
   );
 }
 
-function PropellerCard({ propeller }: { propeller: Propeller }) {
+function PropellerCard({
+  propeller,
+  aircraftId,
+}: {
+  propeller: Propeller;
+  aircraftId: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-      <p className="text-sm font-semibold">{propeller.posicion}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">{propeller.posicion}</p>
+        <AircraftPropellerButton aircraftId={aircraftId} propeller={propeller} />
+      </div>
       <p className="font-mono text-xs text-muted-foreground break-all">{propeller.numero_serie}</p>
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini label="Horas totales" value={fmtDecimal(propeller.horas_totales)} />
