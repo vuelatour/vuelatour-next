@@ -23,7 +23,7 @@ const TIPOS = [
   { value: "ENTRADA", label: "Entrada (compra / alta de stock)" },
   { value: "SALIDA", label: "Salida (consumo, se carga a un avión)" },
   { value: "DEVOLUCION", label: "Devolución (regresa a bodega)" },
-  { value: "AJUSTE", label: "Ajuste (corrección de inventario)" },
+  { value: "AJUSTE", label: "Ajuste / merma (corrección o desecho)" },
 ];
 
 interface MovimientoDialogProps {

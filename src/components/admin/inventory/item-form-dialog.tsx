@@ -79,10 +79,14 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
             <Field label="Categoría" required hint="Libre: aceites, filtros…" error={errors.categoria?.message}>
               <Input placeholder="filtros" {...register("categoria", { required: "Requerido" })} />
             </Field>
-            <Field label="Número de parte" error={errors.numero_parte?.message}>
+            <Field label="Número de parte" hint="P/N del fabricante" error={errors.numero_parte?.message}>
               <Input placeholder="108-1" {...register("numero_parte")} className="font-mono" />
             </Field>
           </div>
+
+          <Field label="Código (SKU / código de barras)" hint="Código interno de bodega" error={errors.codigo?.message}>
+            <Input placeholder="SKU-00123" {...register("codigo")} className="font-mono" />
+          </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Stock mínimo" hint="Alerta por email al bajar" error={errors.stock_minimo?.message}>
@@ -142,11 +146,12 @@ function Field({
 
 function defaults(item?: InventarioItem): ItemFormValues {
   if (!item) {
-    return { nombre: "", numero_parte: "", categoria: "", stock_minimo: "", ubicacion: "", notas: "" };
+    return { nombre: "", numero_parte: "", codigo: "", categoria: "", stock_minimo: "", ubicacion: "", notas: "" };
   }
   return {
     nombre: item.nombre,
     numero_parte: item.numero_parte ?? "",
+    codigo: item.codigo ?? "",
     categoria: item.categoria,
     stock_minimo: item.stock_minimo != null ? String(item.stock_minimo) : "",
     ubicacion: item.ubicacion ?? "",

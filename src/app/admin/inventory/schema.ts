@@ -13,6 +13,7 @@ const requiredPositive = z.preprocess(
 export const ItemFormSchema = z.object({
   nombre: z.string().min(1, "Requerido").max(200),
   numero_parte: z.string().max(50).optional().or(z.literal("")),
+  codigo: z.string().max(60).optional().or(z.literal("")),
   categoria: z.string().min(1, "Requerido").max(50),
   stock_minimo: optionalNumber,
   ubicacion: z.string().max(50).optional().or(z.literal("")),
@@ -46,6 +47,7 @@ export const MovimientoFormSchema = z
 export type ItemFormValues = {
   nombre: string;
   numero_parte: string;
+  codigo: string;
   categoria: string;
   stock_minimo: string;
   ubicacion: string;

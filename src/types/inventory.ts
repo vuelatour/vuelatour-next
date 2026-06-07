@@ -4,6 +4,7 @@ export interface InventarioItem {
   id: string;
   nombre: string;
   numero_parte: string | null;
+  codigo: string | null;
   categoria: string;
   stock_minimo: number | null;
   ubicacion: string | null;

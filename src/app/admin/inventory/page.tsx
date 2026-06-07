@@ -98,9 +98,9 @@ export default async function InventoryPage() {
                       >
                         {it.nombre}
                       </Link>
-                      {it.numero_parte && (
+                      {(it.numero_parte || it.codigo) && (
                         <span className="block text-xs text-muted-foreground font-mono">
-                          {it.numero_parte}
+                          {[it.numero_parte, it.codigo].filter(Boolean).join(" · ")}
                         </span>
                       )}
                     </TableCell>

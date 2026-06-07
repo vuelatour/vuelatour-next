@@ -73,6 +73,7 @@ export default async function InventoryItemPage({
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{item.nombre}</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {item.numero_parte ? `Parte ${item.numero_parte} · ` : ""}
+              {item.codigo ? `SKU ${item.codigo} · ` : ""}
               {item.ubicacion ?? "Bodega Cancún"}
             </p>
           </div>
