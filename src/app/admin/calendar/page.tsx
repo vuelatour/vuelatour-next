@@ -155,6 +155,7 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
 function Legend() {
   const items = [
     { label: "Vuelo propio", color: "#9CA3AF" },
+    { label: "Sin asignar", color: "#8B5CF6" },
     { label: "Externo", color: "#FFB6C1" },
     { label: "Permiso pendiente", color: "#F59E0B" },
   ];

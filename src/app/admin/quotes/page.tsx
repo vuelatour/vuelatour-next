@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalculatorIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { CalculatorIcon, PlusIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -66,6 +66,9 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const { data: quotes, count } = quotesRes;
+  const sinAsignar = quotes.filter(
+    (q) => q.estado === "CONFIRMADO" && !q.es_externo && !q.aeronave_id,
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -82,6 +85,22 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           Nueva cotización
         </Link>
       </div>
+
+      {sinAsignar > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-700 dark:text-violet-300">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>
+            {sinAsignar === 1
+              ? "Hay 1 vuelo confirmado sin asignar avión y piloto."
+              : `Hay ${sinAsignar} vuelos confirmados sin asignar avión y piloto.`}{" "}
+            Asígnalos en{" "}
+            <Link href="/admin/flights?estado=CONFIRMADO" className="underline font-medium">
+              Vuelos
+            </Link>
+            ; en el calendario aparecen en morado.
+          </span>
+        </div>
+      )}
 
       <QuotesFilterBar
         clients={clientsRes.data.map((c) => ({ id: c.id, nombre: c.nombre }))}
@@ -168,9 +187,20 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
                         </Link>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline" className={ESTADO_STYLES[q.estado]}>
-                          {ESTADO_LABELS[q.estado]}
-                        </Badge>
+                        <Link
+                          href={`/admin/quotes/${q.id}`}
+                          className="inline-flex flex-col items-center gap-1"
+                        >
+                          <Badge variant="outline" className={ESTADO_STYLES[q.estado]}>
+                            {ESTADO_LABELS[q.estado]}
+                          </Badge>
+                          {q.estado === "CONFIRMADO" && !q.es_externo && !q.aeronave_id && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-600 dark:text-violet-400">
+                              <ExclamationTriangleIcon className="h-3 w-3" />
+                              Falta asignar
+                            </span>
+                          )}
+                        </Link>
                       </TableCell>
                     </TableRow>
                   );
