@@ -184,16 +184,18 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 <Badge
                   variant="outline"
                   className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  title="Un aeropuerto de la ruta requiere permiso de pista/operación y aún no se ha emitido. Trámitalo y márcalo como “Emitido” en Editar → Permiso de pista."
                 >
-                  ⚠ Permiso pendiente
+                  ⚠ Permiso de pista pendiente
                 </Badge>
               )}
               {snapshot.estado_permiso === "emitido" && (
                 <Badge
                   variant="outline"
                   className="text-xs bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
+                  title="El permiso de pista/operación requerido por la ruta ya fue emitido."
                 >
-                  Permiso emitido
+                  Permiso de pista emitido
                 </Badge>
               )}
               {faltaTaco && (
