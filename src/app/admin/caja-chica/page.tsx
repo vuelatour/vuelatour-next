@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { WalletIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -10,20 +9,16 @@ import {
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FondoActions } from "@/components/admin/caja-chica/fondo-actions";
+import { FondoRow } from "@/components/admin/caja-chica/fondo-row";
 import { FondoCreateButton } from "@/components/admin/caja-chica/fondo-create-button";
 import { listFondos } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
 
 export const dynamic = "force-dynamic";
-
-const money = (n: number, moneda: string) =>
-  n.toLocaleString("es-MX", { style: "currency", currency: moneda, maximumFractionDigits: 2 });
 
 export default async function CajaChicaPage() {
   const [{ data: fondos, count }, usersRes] = await Promise.all([
@@ -76,26 +71,7 @@ export default async function CajaChicaPage() {
               </TableHeader>
               <TableBody>
                 {fondos.map((f) => (
-                  <TableRow key={f.id}>
-                    <TableCell>
-                      <Link
-                        href={`/admin/caja-chica/${f.id}`}
-                        className="font-medium hover:text-brand-600 hover:underline"
-                      >
-                        {f.usuario?.nombre ?? "—"}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{f.usuario?.rol ?? "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{f.moneda}</TableCell>
-                    <TableCell
-                      className={`text-right tabular-nums font-medium ${f.saldo < 0 ? "text-destructive" : ""}`}
-                    >
-                      {money(f.saldo, f.moneda)}
-                    </TableCell>
-                    <TableCell>
-                      <FondoActions fondo={f} />
-                    </TableCell>
-                  </TableRow>
+                  <FondoRow key={f.id} fondo={f} />
                 ))}
               </TableBody>
             </Table>
