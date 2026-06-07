@@ -1,6 +1,7 @@
 import { apiServer } from "./server";
 import type {
   Aircraft,
+  AircraftMetrics,
   AircraftSnapshot,
   ListResponse,
   PaisAeronave,
@@ -23,6 +24,12 @@ export function listAircraft(query: ListAircraftQuery = {}) {
 
 export function getAircraftSnapshot(id: string) {
   return apiServer<AircraftSnapshot>(`/v1/aircraft/${id}/snapshot`, {
+    cache: "no-store",
+  });
+}
+
+export function getAircraftMetrics(id: string) {
+  return apiServer<AircraftMetrics>(`/v1/aircraft/${id}/metrics`, {
     cache: "no-store",
   });
 }

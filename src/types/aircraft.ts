@@ -108,6 +108,29 @@ export interface AircraftSnapshot extends Aircraft {
   seguros: AeronaveSeguro[];
 }
 
+export interface AircraftMetrics {
+  airworthiness: {
+    apto: boolean;
+    documentos_vencidos: { id: string; tipo_nombre: string; objetivo: string }[];
+    en_taller: boolean;
+    componentes_vencidos: { posicion: string; numero_serie: string; restantes: number }[];
+  };
+  utilizacion: {
+    horas_total: number;
+    horas_mes: number;
+    horas_anio: number;
+    vuelos_total: number;
+    vuelos_mes: number;
+    vuelos_anio: number;
+  };
+  finanzas: {
+    moneda: string;
+    ingresos: number;
+    gastos: number;
+    utilidad: number;
+  }[];
+}
+
 export interface ListResponse<T> {
   data: T[];
   count: number;

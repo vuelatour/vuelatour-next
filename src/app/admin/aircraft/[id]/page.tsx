@@ -25,7 +25,8 @@ import {
 import { AircraftEngineButton } from "@/components/admin/aircraft/aircraft-engine-button";
 import { AircraftPropellerButton } from "@/components/admin/aircraft/aircraft-propeller-button";
 import { AircraftInsuranceCard } from "@/components/admin/aircraft/aircraft-insurance-card";
-import { getAircraftSnapshot } from "@/lib/api/aircraft";
+import { AircraftMetricsCard } from "@/components/admin/aircraft/aircraft-metrics-card";
+import { getAircraftMetrics, getAircraftSnapshot } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
@@ -62,6 +63,14 @@ export default async function AircraftDetailPage({ params }: PageProps) {
     socios = [];
   }
 
+  // Métricas operativas (apto-para-volar, utilización, finanzas). Best-effort.
+  let metrics: Awaited<ReturnType<typeof getAircraftMetrics>> | null = null;
+  try {
+    metrics = await getAircraftMetrics(id);
+  } catch {
+    metrics = null;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -96,6 +105,8 @@ export default async function AircraftDetailPage({ params }: PageProps) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {metrics && <AircraftMetricsCard metrics={metrics} />}
+
         <AircraftImagesCard
           aircraftId={aircraft.id}
           matricula={aircraft.matricula}
