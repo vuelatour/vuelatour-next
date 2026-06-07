@@ -48,6 +48,31 @@ export async function assignFlightAction(
   }
 }
 
+export interface PilotoDisponibilidad {
+  id: string;
+  nombre: string;
+  horas_mes: number;
+  limite_horas_mes: number;
+  excede_limite: boolean;
+  cerca_limite: boolean;
+  conflicto: boolean;
+  conflicto_folio: number | null;
+}
+
+export async function getPilotosDisponibilidadAction(
+  flightId: string,
+): Promise<ActionResult<PilotoDisponibilidad[]>> {
+  try {
+    const data = await apiServer<PilotoDisponibilidad[]>(
+      `/v1/flights/${flightId}/pilotos-disponibilidad`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function startFlightAction(
   id: string,
 ): Promise<ActionResult<FlightListItem>> {
