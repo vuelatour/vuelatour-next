@@ -114,10 +114,12 @@ export function FlightActionsBar({
         <Button
           variant="outline"
           onClick={() => setAssignOpen(true)}
-          className="gap-2"
+          className={`gap-2 ${
+            missingAssignment ? "border-violet-500/50 text-violet-600 dark:text-violet-400" : ""
+          }`}
         >
           <UserPlusIcon className="h-4 w-4" />
-          Asignar
+          {missingAssignment ? "Asignar" : "Reasignar"}
         </Button>
       )}
       {canStart && (

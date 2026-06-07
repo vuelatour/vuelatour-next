@@ -163,6 +163,23 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   Externo {snapshot.operador_externo ?? ""}
                 </Badge>
               )}
+              {!snapshot.es_externo &&
+                snapshot.estado === "CONFIRMADO" &&
+                (!snapshot.piloto_id || !snapshot.aeronave_id ? (
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30"
+                  >
+                    ⚠ {!snapshot.piloto_id ? "Falta piloto" : "Falta avión"}
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
+                  >
+                    ✓ Asignado
+                  </Badge>
+                ))}
               {snapshot.estado_permiso === "pendiente" && (
                 <Badge
                   variant="outline"
