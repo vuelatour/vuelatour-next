@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
-import { Card, CardContent } from "@/components/ui/card";
 import { listCalendar } from "@/lib/api/calendar-server";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
+import { CalendarGrid, type CalendarDay } from "@/components/admin/calendar/calendar-grid";
 import type { CalendarEvent } from "@/types/calendar";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,6 @@ const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
-const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 function localKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -58,6 +57,18 @@ export default async function CalendarPage({
   const next = month === 11 ? { y: year + 1, m: 1 } : { y: year, m: month + 2 };
   const todayKey = localKey(now);
 
+  const days: CalendarDay[] = cells.map((date) => {
+    const key = localKey(date);
+    return {
+      key,
+      iso: key,
+      dayNum: date.getDate(),
+      inMonth: date.getMonth() === month,
+      isToday: key === todayKey,
+      events: byDay.get(key) ?? [],
+    };
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -94,65 +105,8 @@ export default async function CalendarPage({
 
       <Legend />
 
-      <Card>
-        <CardContent className="p-2 sm:p-3">
-          <div className="grid grid-cols-7 gap-1">
-            {DIAS.map((d) => (
-              <div
-                key={d}
-                className="text-center text-[11px] uppercase tracking-wider text-muted-foreground py-1.5"
-              >
-                {d}
-              </div>
-            ))}
-            {cells.map((date) => {
-              const inMonth = date.getMonth() === month;
-              const key = localKey(date);
-              const dayEvents = byDay.get(key) ?? [];
-              const isToday = key === todayKey;
-              return (
-                <div
-                  key={key}
-                  className={`min-h-24 rounded-lg border p-1.5 flex flex-col gap-1 ${
-                    inMonth ? "border-border" : "border-transparent opacity-40"
-                  } ${isToday ? "ring-1 ring-brand-500" : ""}`}
-                >
-                  <span
-                    className={`text-xs font-medium ${
-                      isToday ? "text-brand-500" : "text-muted-foreground"
-                    }`}
-                  >
-                    {date.getDate()}
-                  </span>
-                  <div className="flex flex-col gap-1">
-                    {dayEvents.map((e) => (
-                      <EventChip key={e.id} ev={e} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      <CalendarGrid days={days} />
     </div>
-  );
-}
-
-function EventChip({ ev }: { ev: CalendarEvent }) {
-  const esRegreso = ev.tramo === "regreso";
-  const vueloId = ev.id.split(":")[0];
-  const label = `${ev.hora ? `${ev.hora} ` : ""}${ev.aeronave_matricula ?? ev.operador_externo ?? ""} ${ev.origen_iata}-${ev.destino_iata}`;
-  return (
-    <Link
-      href={`/admin/flights/${vueloId}`}
-      title={ev.title}
-      className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate hover:opacity-90 transition-opacity"
-      style={{ backgroundColor: ev.color }}
-    >
-      {esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
-      {label}
-    </Link>
   );
 }
 

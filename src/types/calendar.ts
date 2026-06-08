@@ -22,6 +22,8 @@ export interface CalendarEvent {
   google_calendar_id: string | null;
   /** "ida" o "regreso" (los redondos pintan dos eventos). */
   tramo?: "ida" | "regreso";
+  /** Vuelo confirmado al que aún le falta avión o piloto. */
+  sin_asignar?: boolean;
 }
 
 export interface CalendarResponse {
