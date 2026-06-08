@@ -34,6 +34,26 @@ interface AircraftFormDialogProps {
   initialAircraft?: Aircraft;
 }
 
+/**
+ * Tonos sugeridos para el color de calendario de la aeronave. NO incluye los
+ * colores reservados del sistema (sin asignar #8B5CF6, permiso #F59E0B, externo
+ * #FFB6C1, respaldo #9CA3AF) para evitar que un vuelo se confunda con un estado.
+ */
+const SUGGESTED_AIRCRAFT_COLORS = [
+  "#3B82F6", // azul
+  "#0EA5E9", // celeste
+  "#06B6D4", // cian
+  "#10B981", // esmeralda
+  "#84CC16", // lima
+  "#EAB308", // amarillo
+  "#EF4444", // rojo
+  "#EC4899", // rosa fuerte
+  "#D946EF", // fucsia
+  "#14B8A6", // verde azulado
+  "#6366F1", // índigo
+  "#F97316", // naranja fuerte
+];
+
 export function AircraftFormDialog({
   open,
   onOpenChange,
@@ -59,6 +79,7 @@ export function AircraftFormDialog({
   }, [open, initialAircraft, reset]);
 
   const activa = watch("activa");
+  const colorValue = watch("color_calendario") ?? "";
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
@@ -155,7 +176,30 @@ export function AircraftFormDialog({
               <Input placeholder="CUN" maxLength={4} className="font-mono uppercase" {...register("ubicacion_base")} />
             </Field>
             <Field label="Color calendario" hint="#RRGGBB" error={errors.color_calendario?.message}>
-              <Input type="text" placeholder="#FFB6C1" {...register("color_calendario")} />
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-[42px] w-9 shrink-0 rounded-lg border border-border"
+                  style={{ backgroundColor: /^#[0-9A-Fa-f]{6}$/.test(colorValue) ? colorValue : "transparent" }}
+                  aria-hidden
+                />
+                <Input type="text" placeholder="#3B82F6" {...register("color_calendario")} />
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {SUGGESTED_AIRCRAFT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() =>
+                      setValue("color_calendario", c, { shouldValidate: true })
+                    }
+                    title={c}
+                    className={`h-5 w-5 rounded-full border transition-transform hover:scale-110 ${
+                      colorValue.toUpperCase() === c ? "ring-2 ring-offset-1 ring-offset-background ring-foreground/50" : "border-border"
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
             </Field>
             <div className="flex flex-col justify-end">
               <div className="flex items-center justify-between rounded-lg border border-border px-3 h-[42px]">

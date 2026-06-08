@@ -2,6 +2,18 @@ import { z } from "zod";
 
 const PaisEnum = z.enum(["MX", "USA"]);
 
+/**
+ * Colores reservados del calendario para estados de vuelo (sin asignar, permiso
+ * pendiente, externo, fallback). Una aeronave NO puede usarlos como su color, o
+ * sus vuelos se confundirían con esos estados en el calendario.
+ */
+export const RESERVED_CALENDAR_COLORS: Record<string, string> = {
+  "#8B5CF6": "Sin asignar",
+  "#F59E0B": "Permiso pendiente",
+  "#FFB6C1": "Externo",
+  "#9CA3AF": "color de respaldo del sistema",
+};
+
 /** Number opcional: "" o undefined → se omite; en otro caso coacciona a número ≥ 0. */
 const optionalNonNegative = z.preprocess(
   (v) => (v === "" || v === null || v === undefined ? undefined : v),
@@ -31,6 +43,10 @@ export const AircraftFormSchema = z.object({
   color_calendario: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, "Formato #RRGGBB")
+    .refine(
+      (v) => !RESERVED_CALENDAR_COLORS[v.toUpperCase()],
+      "Color reservado por el sistema (sin asignar / permiso / externo). Elige otro tono.",
+    )
     .optional()
     .or(z.literal("")),
   ubicacion_base: z
