@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { listCalendar } from "@/lib/api/calendar-server";
+import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
 import type { CalendarEvent } from "@/types/calendar";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +68,7 @@ export default async function CalendarPage({
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          <ResyncGoogleButton />
           <Link
             href={`/admin/calendar?y=${prev.y}&m=${prev.m}`}
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
