@@ -40,6 +40,16 @@ export interface FlightEscala {
   orden: number;
   origen_iata: string;
   destino_iata: string;
+  // Asignación por tramo (ida/regreso independientes).
+  aeronave_id: string | null;
+  piloto_id: string | null;
+  estado_permiso: "no_aplica" | "pendiente" | "emitido";
+  fecha_salida_plan: string | null;
+  foto_plan_vuelo_url: string | null;
+  google_calendar_id: string | null;
+  // Resueltos por el backend en snapshot() para mostrar la asignación del tramo.
+  aeronave_matricula?: string | null;
+  piloto_nombre?: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;
   foto_taco_salida_url: string | null;

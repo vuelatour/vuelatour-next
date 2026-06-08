@@ -204,6 +204,48 @@ export async function createEscalaAction(
   }
 }
 
+export interface AssignEscalaPayload {
+  aeronave_id?: string;
+  piloto_id?: string;
+  fecha_salida_plan?: string;
+}
+
+/** Asigna aeronave/piloto a UN tramo (ida o regreso por separado). */
+export async function assignEscalaAction(
+  flightId: string,
+  escalaId: string,
+  payload: AssignEscalaPayload,
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const escala = await apiServer<FlightEscala>(
+      `/v1/flights/${flightId}/legs/${escalaId}/assign`,
+      { method: "POST", body: payload },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data: escala };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Actualiza el permiso de pista de un tramo. */
+export async function updateEscalaPermisoAction(
+  flightId: string,
+  escalaId: string,
+  estado_permiso: "no_aplica" | "pendiente" | "emitido",
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const escala = await apiServer<FlightEscala>(
+      `/v1/flights/legs/${escalaId}/permiso`,
+      { method: "PATCH", body: { estado_permiso } },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data: escala };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function updateEscalaAction(
   flightId: string,
   escalaId: string,

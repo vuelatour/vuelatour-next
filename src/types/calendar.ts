@@ -1,5 +1,9 @@
 export interface CalendarEvent {
   id: string;
+  /** Vuelo al que pertenece el evento (ida y regreso comparten vuelo_id). */
+  vuelo_id?: string;
+  /** Escala/tramo concreto del evento (para navegar al tramo). */
+  escala_id?: string | null;
   folio: number;
   fecha_vuelo: string | null;
   hora: string | null;

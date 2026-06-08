@@ -17,6 +17,7 @@ import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar"
 import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
+import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card";
 import {
   getFlightSnapshot,
   getFlightTacoPhotos,
@@ -227,109 +228,134 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Asignación */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <PaperAirplaneIcon className="h-4 w-4 text-muted-foreground" />
-                  Asignación
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <Row label="Aeronave">
-                  {snapshot.es_externo ? (
-                    <span className="text-muted-foreground">N/A (externo)</span>
-                  ) : aircraft ? (
+          {/* Cobro (reutilizado en ambos layouts) */}
+          {(() => {
+            const cobroCard = (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <BanknotesIcon className="h-4 w-4 text-muted-foreground" />
+                    Cobro
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <Row label="Monto total">
                     <span className="font-mono font-semibold">
-                      {aircraft.matricula}{" "}
-                      <span className="text-muted-foreground font-normal">
-                        {aircraft.modelo}
-                      </span>
+                      {fmtUsd(snapshot.monto_total_usd)}
                     </span>
-                  ) : (
-                    <span className="text-muted-foreground">Sin asignar</span>
-                  )}
-                </Row>
-                <Row label="Piloto">
-                  {piloto ? (
-                    <span>{piloto.nombre}</span>
-                  ) : (
-                    <span className="text-muted-foreground">Sin asignar</span>
-                  )}
-                </Row>
-                <Row label="Traslado inicial">
-                  {snapshot.fecha_vuelo ? (
-                    fmtDateTime(snapshot.fecha_vuelo)
-                  ) : (
-                    <span className="text-muted-foreground">Sin fecha</span>
-                  )}
-                </Row>
-                <Row label="Traslado final">
-                  {snapshot.fecha_traslado_final ? (
-                    fmtDateTime(snapshot.fecha_traslado_final)
-                  ) : (
-                    <span className="text-muted-foreground">Sin fecha</span>
-                  )}
-                </Row>
-                {snapshot.fecha_confirmacion && (
-                  <Row label="Confirmado">{fmtDateTime(snapshot.fecha_confirmacion)}</Row>
-                )}
-                <p className="px-1 pt-1 text-[11px] text-muted-foreground">{TZ_LABEL}</p>
-              </CardContent>
-            </Card>
+                  </Row>
+                  <Row label="Cobrado">
+                    <span className="font-mono">
+                      {fmtUsd(snapshot.total_cobrado)}
+                    </span>
+                  </Row>
+                  <Row label="Pendiente">
+                    <span
+                      className={`font-mono ${pendingCobro > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}
+                    >
+                      {fmtUsd(pendingCobro)}
+                    </span>
+                  </Row>
+                  <Row label="Estado">
+                    <div className="flex gap-1">
+                      {snapshot.cobrado ? (
+                        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 text-[10px]">
+                          Cobrado
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">
+                          Por cobrar
+                        </Badge>
+                      )}
+                      {snapshot.facturado ? (
+                        <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
+                          Facturado
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">
+                          Sin factura
+                        </Badge>
+                      )}
+                    </div>
+                  </Row>
+                </CardContent>
+              </Card>
+            );
 
-            {/* Cobro */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BanknotesIcon className="h-4 w-4 text-muted-foreground" />
-                  Cobro
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <Row label="Monto total">
-                  <span className="font-mono font-semibold">
-                    {fmtUsd(snapshot.monto_total_usd)}
-                  </span>
-                </Row>
-                <Row label="Cobrado">
-                  <span className="font-mono">
-                    {fmtUsd(snapshot.total_cobrado)}
-                  </span>
-                </Row>
-                <Row label="Pendiente">
-                  <span
-                    className={`font-mono ${pendingCobro > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}
-                  >
-                    {fmtUsd(pendingCobro)}
-                  </span>
-                </Row>
-                <Row label="Estado">
-                  <div className="flex gap-1">
-                    {snapshot.cobrado ? (
-                      <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 text-[10px]">
-                        Cobrado
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px]">
-                        Por cobrar
-                      </Badge>
+            // Con tramos (REDONDO/MULTIESCALA ya inicializados): asignación por tramo.
+            if (snapshot.escalas.length > 0) {
+              return (
+                <div className="space-y-4">
+                  <FlightTramosCard
+                    flightId={snapshot.id}
+                    flightFolio={snapshot.folio}
+                    esExterno={snapshot.es_externo}
+                    estado={snapshot.estado}
+                    escalas={snapshot.escalas}
+                    aircraft={aircraftOptions}
+                    pilots={pilotOptions}
+                  />
+                  {cobroCard}
+                </div>
+              );
+            }
+
+            // Fallback (sin tramos, p. ej. externo): asignación a nivel de vuelo.
+            return (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <PaperAirplaneIcon className="h-4 w-4 text-muted-foreground" />
+                      Asignación
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <Row label="Aeronave">
+                      {snapshot.es_externo ? (
+                        <span className="text-muted-foreground">N/A (externo)</span>
+                      ) : aircraft ? (
+                        <span className="font-mono font-semibold">
+                          {aircraft.matricula}{" "}
+                          <span className="text-muted-foreground font-normal">
+                            {aircraft.modelo}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Sin asignar</span>
+                      )}
+                    </Row>
+                    <Row label="Piloto">
+                      {piloto ? (
+                        <span>{piloto.nombre}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Sin asignar</span>
+                      )}
+                    </Row>
+                    <Row label="Traslado inicial">
+                      {snapshot.fecha_vuelo ? (
+                        fmtDateTime(snapshot.fecha_vuelo)
+                      ) : (
+                        <span className="text-muted-foreground">Sin fecha</span>
+                      )}
+                    </Row>
+                    <Row label="Traslado final">
+                      {snapshot.fecha_traslado_final ? (
+                        fmtDateTime(snapshot.fecha_traslado_final)
+                      ) : (
+                        <span className="text-muted-foreground">Sin fecha</span>
+                      )}
+                    </Row>
+                    {snapshot.fecha_confirmacion && (
+                      <Row label="Confirmado">{fmtDateTime(snapshot.fecha_confirmacion)}</Row>
                     )}
-                    {snapshot.facturado ? (
-                      <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
-                        Facturado
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px]">
-                        Sin factura
-                      </Badge>
-                    )}
-                  </div>
-                </Row>
-              </CardContent>
-            </Card>
-          </div>
+                    <p className="px-1 pt-1 text-[11px] text-muted-foreground">{TZ_LABEL}</p>
+                  </CardContent>
+                </Card>
+                {cobroCard}
+              </div>
+            );
+          })()}
 
           {/* Escalas */}
           <EscalasCard

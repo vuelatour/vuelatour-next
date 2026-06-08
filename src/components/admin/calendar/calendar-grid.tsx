@@ -132,13 +132,20 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
   );
 }
 
+function eventHref(ev: CalendarEvent): string {
+  const vueloId = ev.vuelo_id ?? ev.id.split(":")[0];
+  // Navega al tramo concreto (ancla por escala) para abrir su ida/regreso.
+  return ev.escala_id
+    ? `/admin/flights/${vueloId}#tramo-${ev.escala_id}`
+    : `/admin/flights/${vueloId}`;
+}
+
 function EventChip({ ev }: { ev: CalendarEvent }) {
   const esRegreso = ev.tramo === "regreso";
-  const vueloId = ev.id.split(":")[0];
   const label = `${ev.hora ? `${ev.hora} ` : ""}${ev.aeronave_matricula ?? ev.operador_externo ?? ""} ${ev.origen_iata}-${ev.destino_iata}`;
   return (
     <Link
-      href={`/admin/flights/${vueloId}`}
+      href={eventHref(ev)}
       title={ev.title}
       className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate hover:opacity-90 transition-opacity"
       style={{ backgroundColor: ev.color }}
@@ -151,10 +158,9 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
 
 function DayEvent({ ev }: { ev: CalendarEvent }) {
   const esRegreso = ev.tramo === "regreso";
-  const vueloId = ev.id.split(":")[0];
   return (
     <Link
-      href={`/admin/flights/${vueloId}`}
+      href={eventHref(ev)}
       className="block rounded-lg border border-border p-2.5 hover:border-brand-600/40 hover:bg-muted/40 transition-colors"
     >
       <div className="flex items-center justify-between gap-2">
