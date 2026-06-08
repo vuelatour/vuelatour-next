@@ -20,6 +20,8 @@ export interface CalendarEvent {
   pasajeros: number;
   monto_total_usd: number;
   google_calendar_id: string | null;
+  /** "ida" o "regreso" (los redondos pintan dos eventos). */
+  tramo?: "ida" | "regreso";
 }
 
 export interface CalendarResponse {

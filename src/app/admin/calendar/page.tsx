@@ -138,15 +138,17 @@ export default async function CalendarPage({
 }
 
 function EventChip({ ev }: { ev: CalendarEvent }) {
+  const esRegreso = ev.tramo === "regreso";
+  const vueloId = ev.id.split(":")[0];
   const label = `${ev.hora ? `${ev.hora} ` : ""}${ev.aeronave_matricula ?? ev.operador_externo ?? ""} ${ev.origen_iata}-${ev.destino_iata}`;
   return (
     <Link
-      href={`/admin/flights/${ev.id}`}
+      href={`/admin/flights/${vueloId}`}
       title={ev.title}
       className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate hover:opacity-90 transition-opacity"
       style={{ backgroundColor: ev.color }}
     >
-      {ev.estado_permiso === "pendiente" ? "⚠ " : ""}
+      {esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
       {label}
     </Link>
   );
