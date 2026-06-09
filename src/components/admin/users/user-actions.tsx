@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   EllipsisHorizontalIcon,
+  EnvelopeIcon,
   KeyIcon,
   NoSymbolIcon,
   PencilIcon,
@@ -24,7 +25,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deactivateUserAction } from "@/app/admin/users/actions";
+import {
+  deactivateUserAction,
+  resendInvitationAction,
+} from "@/app/admin/users/actions";
 import { UserFormDialog } from "./user-form-dialog";
 import { ResetPasswordDialog } from "./reset-password-dialog";
 import type { User } from "@/types/users";
@@ -34,6 +38,22 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
   const [openReset, setOpenReset] = useState(false);
   const [openDeactivate, setOpenDeactivate] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [resending, startResend] = useTransition();
+
+  const handleResend = () => {
+    startResend(async () => {
+      const result = await resendInvitationAction(user.id);
+      if (result.ok && result.data?.sent) {
+        toast.success(`Invitación reenviada a ${result.data.email}`);
+      } else if (result.ok && !result.data?.sent) {
+        toast.warning(
+          "No se envió: el correo (Resend) no está configurado en el servidor.",
+        );
+      } else {
+        toast.error(result.error ?? "No se pudo reenviar la invitación");
+      }
+    });
+  };
 
   const handleDeactivate = () => {
     startTransition(async () => {
@@ -63,6 +83,19 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
             <KeyIcon className="h-4 w-4" />
             {user.supabase_auth_id ? "Restablecer contraseña" : "Crear contraseña"}
           </DropdownMenuItem>
+          {user.estado !== "INACTIVO" && (
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.preventDefault();
+                handleResend();
+              }}
+              disabled={resending}
+              className="gap-2"
+            >
+              <EnvelopeIcon className="h-4 w-4" />
+              {resending ? "Enviando…" : "Reenviar invitación"}
+            </DropdownMenuItem>
+          )}
           {user.estado === "ACTIVO" && !isSelf && (
             <DropdownMenuItem
               onClick={() => setOpenDeactivate(true)}

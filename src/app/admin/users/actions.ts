@@ -67,6 +67,25 @@ export async function deactivateUserAction(id: string): Promise<ActionResult> {
   }
 }
 
+export interface ResendInvitationResult {
+  sent: boolean;
+  email: string;
+}
+
+export async function resendInvitationAction(
+  id: string,
+): Promise<ActionResult<ResendInvitationResult>> {
+  try {
+    const data = await apiServer<ResendInvitationResult>(
+      `/v1/users/${id}/resend-invitation`,
+      { method: "POST" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface ResetPasswordResult {
   created_auth_user: boolean;
   supabase_auth_id: string;
