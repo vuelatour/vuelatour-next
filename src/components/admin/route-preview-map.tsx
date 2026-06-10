@@ -15,6 +15,9 @@ import peninsulaGeoJSON from "@/components/public/yucatan-peninsula.json";
  *   número de secuencia, tramos ferry punteados, y marca pernocta/servicio en
  *   la parada correspondiente.
  *
+ * El mapa hace ZOOM AUTOMÁTICO al área que cubren los puntos del itinerario
+ * (con animación); sin tramos/selección se muestra la península completa.
+ *
  * Pensado para desktop: el contenedor padre debe ocultarlo en móvil
  * (ej. `hidden lg:block`).
  */
@@ -52,6 +55,10 @@ interface Pt {
   x: number;
   y: number;
 }
+
+/** Transición compartida entre el <g> del SVG y los overlays HTML. */
+const ZOOM_MS = 700;
+const ZOOM_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
 
 /**
  * Arco cuadrático entre dos puntos. `lift` controla qué tanto se separa de la
@@ -137,11 +144,10 @@ export function RoutePreviewMap({
     if (!legs) return null;
     const out: Array<{
       idx: number;
-      d: string;
-      mid: Pt;
       esFerry: boolean;
       from: { iata: string; x: number; y: number };
       to: { iata: string; x: number; y: number };
+      lift: number;
     }> = [];
     // Cuenta repeticiones del mismo par (sin importar sentido) para separar arcos.
     const pairSeen = new Map<string, number>();
@@ -153,8 +159,7 @@ export function RoutePreviewMap({
       const seen = pairSeen.get(key) ?? 0;
       pairSeen.set(key, seen + 1);
       // Cada repetición del par eleva un poco más el arco para no encimarse.
-      const { d, mid } = arc(from, to, 0.22 + seen * 0.05);
-      out.push({ idx, d, mid, esFerry: leg.es_ferry === true, from, to });
+      out.push({ idx, esFerry: leg.es_ferry === true, from, to, lift: 0.22 + seen * 0.05 });
     });
     return out;
   }, [legs, byIata]);
@@ -193,8 +198,6 @@ export function RoutePreviewMap({
   const destination = destinationIata
     ? byIata.get(destinationIata.toUpperCase())
     : undefined;
-  const simplePath =
-    !legs && origin && destination ? arc(origin, destination).d : null;
 
   const multiMode = !!legs;
   const hasDrawn = multiMode
@@ -205,6 +208,49 @@ export function RoutePreviewMap({
       ? (drawnLegs ?? []).flatMap((l) => [l.from.iata, l.to.iata])
       : [origin?.iata, destination?.iata].filter((v): v is string => !!v),
   );
+
+  // ----- Zoom automático al área del itinerario -----
+  // Encuadra los puntos visitados con padding; sin puntos = península completa.
+  const zoom = useMemo(() => {
+    const focus: Pt[] = multiMode
+      ? (drawnLegs ?? []).flatMap((l) => [l.from, l.to])
+      : ([origin, destination].filter(Boolean) as Pt[]);
+    if (focus.length === 0) return { k: 1, tx: 0, ty: 0 };
+
+    const PAD = 55; // margen alrededor del encuadre (en unidades del viewBox)
+    const MIN_W = 220; // encuadre mínimo: evita sobre-acercar pares muy próximos
+    const MIN_H = 180;
+    let minX = Math.min(...focus.map((p) => p.x)) - PAD;
+    let maxX = Math.max(...focus.map((p) => p.x)) + PAD;
+    let minY = Math.min(...focus.map((p) => p.y)) - PAD;
+    let maxY = Math.max(...focus.map((p) => p.y)) + PAD;
+    if (maxX - minX < MIN_W) {
+      const cx = (minX + maxX) / 2;
+      minX = cx - MIN_W / 2;
+      maxX = cx + MIN_W / 2;
+    }
+    if (maxY - minY < MIN_H) {
+      const cy = (minY + maxY) / 2;
+      minY = cy - MIN_H / 2;
+      maxY = cy + MIN_H / 2;
+    }
+    const k = Math.min(2.6, Math.min(VIEW_W / (maxX - minX), VIEW_H / (maxY - minY)));
+    // Si el itinerario abarca casi todo el mapa, quédate en vista completa.
+    if (k <= 1.05) return { k: 1, tx: 0, ty: 0 };
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    return {
+      k: Math.round(k * 1000) / 1000,
+      tx: Math.round((VIEW_W / 2 - k * cx) * 10) / 10,
+      ty: Math.round((VIEW_H / 2 - k * cy) * 10) / 10,
+    };
+  }, [multiMode, drawnLegs, origin, destination]);
+
+  /** Aplica el zoom a un punto (para los overlays HTML, que viven fuera del <g>). */
+  const tp = (p: Pt): Pt => ({ x: p.x * zoom.k + zoom.tx, y: p.y * zoom.k + zoom.ty });
+  const k = zoom.k;
+
+  const simplePath = !legs && origin && destination ? arc(origin, destination).d : null;
 
   return (
     <div className="relative aspect-[6/5] w-full overflow-hidden rounded-xl bg-gradient-to-br from-navy-900/40 to-navy-950 ring-1 ring-navy-800">
@@ -221,95 +267,120 @@ export function RoutePreviewMap({
           </linearGradient>
         </defs>
 
-        <g fill="url(#rp-land)" stroke="#2d5a8a" strokeWidth="1" strokeLinejoin="round">
-          {STATE_PATHS.map((d, i) => (
-            <path key={`s-${i}`} d={d} />
-          ))}
-        </g>
-
-        {/* aeropuertos tenues */}
-        <g>
-          {points.map((p) => (
-            <circle key={p.iata} cx={p.x} cy={p.y} r={2} fill="#9fb3c8" opacity={0.5} />
-          ))}
-        </g>
-
-        {/* arco simple origen → destino */}
-        {simplePath && (
-          <path
-            d={simplePath}
-            fill="none"
-            stroke={LEG_COLOR}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            pathLength={100}
-            strokeDasharray="100"
-            strokeDashoffset="100"
-            style={{ animation: "rpDraw 0.8s ease-out forwards" }}
-          />
-        )}
-
-        {/* itinerario multiescala: un arco por tramo, dibujado en secuencia */}
-        {(drawnLegs ?? []).map((l) => (
-          <path
-            key={`leg-${l.idx}`}
-            d={l.d}
-            fill="none"
-            stroke={l.esFerry ? FERRY_COLOR : LEG_COLOR}
-            strokeWidth={l.esFerry ? 2 : 2.5}
-            strokeLinecap="round"
-            pathLength={100}
-            // El dash de ferry se aplica tras la animación (ver rpDrawDash).
-            strokeDasharray="100"
-            strokeDashoffset="100"
-            style={{
-              animation: `${l.esFerry ? "rpDrawDash" : "rpDraw"} 0.5s ease-out ${l.idx * 0.18}s forwards`,
-            }}
-          />
-        ))}
-
-        {/* número de secuencia de cada tramo */}
-        {(drawnLegs ?? []).map((l) => (
+        {/* Todo el contenido geográfico vive en este <g>: el zoom anima parejo. */}
+        <g
+          style={{
+            transform: `translate(${zoom.tx}px, ${zoom.ty}px) scale(${k})`,
+            transformOrigin: "0 0",
+            transition: `transform ${ZOOM_MS}ms ${ZOOM_EASE}`,
+          }}
+        >
           <g
-            key={`seq-${l.idx}`}
-            style={{
-              opacity: 0,
-              animation: `rpFade 0.3s ease-out ${l.idx * 0.18 + 0.35}s forwards`,
-            }}
+            fill="url(#rp-land)"
+            stroke="#2d5a8a"
+            strokeWidth={1 / k}
+            strokeLinejoin="round"
           >
-            <circle
-              cx={l.mid.x}
-              cy={l.mid.y}
-              r={9}
-              fill={l.esFerry ? "#33506b" : "#a4161a"}
-              stroke={l.esFerry ? FERRY_COLOR : "#ff8c94"}
-              strokeWidth={1}
-            />
-            <text
-              x={l.mid.x}
-              y={l.mid.y + 3.5}
-              textAnchor="middle"
-              fontSize="10"
-              fontWeight="700"
-              fill="#fff"
-            >
-              {l.idx + 1}
-            </text>
+            {STATE_PATHS.map((d, i) => (
+              <path key={`s-${i}`} d={d} />
+            ))}
           </g>
-        ))}
+
+          {/* aeropuertos tenues */}
+          <g>
+            {points.map((p) => (
+              <circle key={p.iata} cx={p.x} cy={p.y} r={2 / k} fill="#9fb3c8" opacity={0.5} />
+            ))}
+          </g>
+
+          {/* arco simple origen → destino */}
+          {simplePath && (
+            <path
+              d={simplePath}
+              fill="none"
+              stroke={LEG_COLOR}
+              strokeWidth={2.5 / k}
+              strokeLinecap="round"
+              pathLength={100}
+              strokeDasharray="100"
+              strokeDashoffset="100"
+              style={{ animation: "rpDraw 0.8s ease-out forwards" }}
+            />
+          )}
+
+          {/* itinerario multiescala: un arco por tramo, dibujado en secuencia */}
+          {(drawnLegs ?? []).map((l) => {
+            const { d } = arc(l.from, l.to, l.lift);
+            return (
+              <path
+                key={`leg-${l.idx}`}
+                d={d}
+                fill="none"
+                stroke={l.esFerry ? FERRY_COLOR : LEG_COLOR}
+                strokeWidth={(l.esFerry ? 2 : 2.5) / k}
+                strokeLinecap="round"
+                pathLength={100}
+                // El dash de ferry se aplica tras la animación (ver rpDrawDash).
+                strokeDasharray="100"
+                strokeDashoffset="100"
+                style={{
+                  animation: `${l.esFerry ? "rpDrawDash" : "rpDraw"} 0.5s ease-out ${l.idx * 0.18}s forwards`,
+                }}
+              />
+            );
+          })}
+
+          {/* número de secuencia de cada tramo */}
+          {(drawnLegs ?? []).map((l) => {
+            const { mid } = arc(l.from, l.to, l.lift);
+            return (
+              <g
+                key={`seq-${l.idx}`}
+                style={{
+                  opacity: 0,
+                  animation: `rpFade 0.3s ease-out ${l.idx * 0.18 + 0.35}s forwards`,
+                }}
+              >
+                <circle
+                  cx={mid.x}
+                  cy={mid.y}
+                  r={9 / k}
+                  fill={l.esFerry ? "#33506b" : "#a4161a"}
+                  stroke={l.esFerry ? FERRY_COLOR : "#ff8c94"}
+                  strokeWidth={1 / k}
+                />
+                <text
+                  x={mid.x}
+                  y={mid.y + 3.5 / k}
+                  textAnchor="middle"
+                  fontSize={10 / k}
+                  fontWeight="700"
+                  fill="#fff"
+                >
+                  {l.idx + 1}
+                </text>
+              </g>
+            );
+          })}
+        </g>
       </svg>
 
       {/* labels de aeropuertos */}
       {points.map((p) => {
         const isVisited = visitedIatas.has(p.iata);
-        const pct = toPct(p.x, p.y);
+        const q = tp(p);
+        const pct = toPct(q.x, q.y);
         return (
           <span
             key={`lbl-${p.iata}`}
             className={`pointer-events-none absolute -translate-x-1/2 translate-y-1.5 whitespace-nowrap text-[9px] font-medium ${
               isVisited ? "font-bold text-white" : "text-navy-400"
             }`}
-            style={{ left: `${pct.left}%`, top: `${pct.top}%` }}
+            style={{
+              left: `${pct.left}%`,
+              top: `${pct.top}%`,
+              transition: `left ${ZOOM_MS}ms ${ZOOM_EASE}, top ${ZOOM_MS}ms ${ZOOM_EASE}`,
+            }}
           >
             {p.iata}
           </span>
@@ -318,17 +389,24 @@ export function RoutePreviewMap({
 
       {/* marcadores: modo simple (origen/destino) */}
       {!multiMode &&
-        [origin, destination].map((p, idx) =>
-          p ? (
+        [origin, destination].map((p, idx) => {
+          if (!p) return null;
+          const q = tp(p);
+          const pct = toPct(q.x, q.y);
+          return (
             <span
               key={`mk-${idx}-${p.iata}`}
               className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${toPct(p.x, p.y).left}%`, top: `${toPct(p.x, p.y).top}%` }}
+              style={{
+                left: `${pct.left}%`,
+                top: `${pct.top}%`,
+                transition: `left ${ZOOM_MS}ms ${ZOOM_EASE}, top ${ZOOM_MS}ms ${ZOOM_EASE}`,
+              }}
             >
               <span className="block size-3 rounded-full bg-brand-500 ring-2 ring-white shadow-[0_0_12px_rgba(230,57,70,0.7)]" />
             </span>
-          ) : null,
-        )}
+          );
+        })}
 
       {/* marcadores: modo multiescala (paradas con flags) */}
       {multiMode &&
@@ -336,6 +414,8 @@ export function RoutePreviewMap({
         [...stops.entries()].map(([iata, info]) => {
           const p = byIata.get(iata);
           if (!p) return null;
+          const q = tp(p);
+          const pct = toPct(q.x, q.y);
           const ring = info.pernocta
             ? "ring-amber-400"
             : info.servicio
@@ -345,7 +425,11 @@ export function RoutePreviewMap({
             <span
               key={`mk-${iata}`}
               className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${toPct(p.x, p.y).left}%`, top: `${toPct(p.x, p.y).top}%` }}
+              style={{
+                left: `${pct.left}%`,
+                top: `${pct.top}%`,
+                transition: `left ${ZOOM_MS}ms ${ZOOM_EASE}, top ${ZOOM_MS}ms ${ZOOM_EASE}`,
+              }}
             >
               <span
                 className={`block rounded-full bg-brand-500 ring-2 ${ring} shadow-[0_0_12px_rgba(230,57,70,0.7)] ${
