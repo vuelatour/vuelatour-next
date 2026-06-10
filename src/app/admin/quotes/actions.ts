@@ -41,6 +41,41 @@ export async function createQuoteAction(payload: CreateQuotePayload): Promise<Ac
   }
 }
 
+/** Ruta sugerida del historial del cliente (grupo de itinerarios iguales). */
+export interface RutaSugerida {
+  clave: string;
+  etiqueta: string;
+  veces: number;
+  ultima_fecha: string | null;
+  ruta_id: string | null;
+  tramos: {
+    origen_iata: string;
+    destino_iata: string;
+    millas_nauticas: number;
+    pasajeros: number | null;
+    es_ferry: boolean;
+    requiere_pernocta: boolean;
+    pernocta_costo_usd: number | null;
+    tipo_parada: "NORMAL" | "SERVICIO";
+    servicio_notas: string | null;
+  }[];
+}
+
+/** Rutas que el cliente suele pedir, según su historial real de vuelos. */
+export async function getRutasSugeridasAction(
+  clienteId: string,
+): Promise<ActionResult<RutaSugerida[]>> {
+  try {
+    const data = await apiServer<RutaSugerida[]>(
+      `/v1/quotes/rutas-sugeridas?cliente_id=${clienteId}`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface QuickAdjustPayload {
   extras?: { concepto: string; monto_usd: number; aplica_iva?: boolean }[];
   pasajeros?: number;

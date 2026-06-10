@@ -39,7 +39,12 @@ import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { createQuoteAction, reviseQuoteAction } from "@/app/admin/quotes/actions";
+import {
+  createQuoteAction,
+  getRutasSugeridasAction,
+  reviseQuoteAction,
+  type RutaSugerida,
+} from "@/app/admin/quotes/actions";
 import { createRouteAction } from "@/app/admin/routes/actions";
 import type {
   CalculateQuoteRequest,
@@ -266,6 +271,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Clientes creados inline desde el cotizador (sin ir a "Clientes").
   const [extraClients, setExtraClients] = useState<ClientOption[]>([]);
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
+
+  // Rutas que el cliente suele pedir (historial agrupado): se cargan al
+  // seleccionar cliente, para no perderse entre todas las rutas del catálogo.
+  const [rutasSugeridas, setRutasSugeridas] = useState<RutaSugerida[]>([]);
 
   // Rutas creadas inline desde el sheet. Se agregan al dropdown sin esperar
   // a un revalidate del servidor para que el flujo del cotizador sea continuo.
@@ -567,6 +576,30 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.ruta_id, values.escalas.length, allRoutes]);
 
+  // Carga las sugerencias de ruta al cambiar de cliente (solo al crear).
+  useEffect(() => {
+    if (isRevise || !values.cliente_id) {
+      setRutasSugeridas([]);
+      return;
+    }
+    let alive = true;
+    getRutasSugeridasAction(values.cliente_id).then((r) => {
+      if (alive) setRutasSugeridas(r.ok && r.data ? r.data : []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [values.cliente_id, isRevise]);
+
+  /** Aplica una ruta sugerida: tramos del historial + plantilla si aún existe. */
+  const aplicarSugerencia = (s: RutaSugerida) => {
+    setValue("escalas", s.tramos.map(tramoToEscala));
+    setValue(
+      "ruta_id",
+      s.ruta_id && allRoutes.some((r) => r.id === s.ruta_id) ? s.ruta_id : "",
+    );
+  };
+
   const motivoTrim = values.motivo?.trim() ?? "";
   const canSave =
     !capacidadExcedida &&
@@ -763,6 +796,45 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
           {/* Ruta */}
           <Field label="Ruta guardada" required>
+            {/* Sugeridas por historial: lo que este cliente suele pedir. */}
+            {rutasSugeridas.length > 0 && (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Suele pedir:
+                </span>
+                {rutasSugeridas.map((s) => {
+                  const activa =
+                    values.escalas.length > 0 &&
+                    s.clave ===
+                      values.escalas
+                        .map((l) => `${l.origen_iata}-${l.destino_iata}`)
+                        .join("|");
+                  return (
+                    <button
+                      key={s.clave}
+                      type="button"
+                      onClick={() => aplicarSugerencia(s)}
+                      title={
+                        s.ultima_fecha
+                          ? `Última vez: ${new Date(s.ultima_fecha).toLocaleDateString("es-MX", { dateStyle: "medium" })}`
+                          : undefined
+                      }
+                      className={cn(
+                        "max-w-[16rem] truncate rounded-full border px-2.5 py-1 font-mono text-xs transition-colors",
+                        activa
+                          ? "border-brand-500 bg-brand-500/10 font-medium text-brand-600"
+                          : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                      )}
+                    >
+                      {s.etiqueta}
+                      {s.veces > 1 && (
+                        <span className="ml-1 opacity-70">×{s.veces}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <SearchableSelect
               options={allRoutes.map((r) => {
                 const path =
