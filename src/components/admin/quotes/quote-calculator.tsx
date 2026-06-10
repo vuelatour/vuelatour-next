@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { cancunInputToIso, isoToCancunInput } from "@/lib/datetime";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   createQuoteAction,
@@ -254,7 +255,7 @@ function tramoToEscala(t: {
     tipo_parada: t.tipo_parada ?? "NORMAL",
     servicio_notas: t.servicio_notas ?? null,
     // datetime-local (sin segundos) para el input del editor de tramos.
-    fecha_salida_plan: t.fecha_salida_plan ? t.fecha_salida_plan.slice(0, 16) : null,
+    fecha_salida_plan: t.fecha_salida_plan ? isoToCancunInput(t.fecha_salida_plan) : null,
   };
 }
 
@@ -344,9 +345,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       return {
         cliente_id: q.cliente_id,
         tipo: "MULTIESCALA" as TipoVuelo,
-        fecha_vuelo: q.fecha_vuelo ? q.fecha_vuelo.slice(0, 16) : "",
+        // ISO (UTC) -> input datetime-local en hora de Cancún. slice(0,16)
+        // mostraba la hora UTC (5h adelantada) y al guardar se corría doble.
+        fecha_vuelo: isoToCancunInput(q.fecha_vuelo),
         fecha_traslado_final: q.fecha_traslado_final
-          ? q.fecha_traslado_final.slice(0, 16)
+          ? isoToCancunInput(q.fecha_traslado_final)
           : "",
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
         ruta_id: "",
@@ -453,7 +456,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pernocta_costo_usd: l.pernocta_costo_usd ?? null,
         tipo_parada: l.tipo_parada ?? "NORMAL",
         servicio_notas: l.servicio_notas ?? null,
-        fecha_salida_plan: l.fecha_salida_plan || null,
+        fecha_salida_plan: l.fecha_salida_plan ? cancunInputToIso(l.fecha_salida_plan) : null,
       }));
       // La ruta guardada queda solo como referencia de la plantilla usada.
       if (debounced.ruta_id) base.ruta_id = debounced.ruta_id;
@@ -632,8 +635,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           pasajeros_nombres: parseNombres(values.pasajeros_nombres),
           // Las fechas del vuelo también se actualizan al revisar (antes no
           // viajaban y la cotización no aparecía en el calendario).
-          fecha_vuelo: values.fecha_vuelo || undefined,
-          fecha_traslado_final: values.fecha_traslado_final || undefined,
+          fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
+          fecha_traslado_final: values.fecha_traslado_final
+            ? cancunInputToIso(values.fecha_traslado_final)
+            : undefined,
         });
         if (res.ok && res.data) {
           toast.success(
@@ -657,8 +662,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         ...calcPayload,
         cliente_id: values.cliente_id,
         tipo: values.tipo,
-        fecha_vuelo: values.fecha_vuelo || undefined,
-        fecha_traslado_final: values.fecha_traslado_final || undefined,
+        fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
+        fecha_traslado_final: values.fecha_traslado_final
+          ? cancunInputToIso(values.fecha_traslado_final)
+          : undefined,
         notas: values.notas || undefined,
         notas_internas: values.notas_internas || undefined,
         pasajeros_nombres: parseNombres(values.pasajeros_nombres),
