@@ -103,6 +103,8 @@ export async function quickAdjustQuoteAction(
 
 export interface ReviseQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
+  fecha_vuelo?: string;
+  fecha_traslado_final?: string;
   motivo: string;
   notas?: string;
 }

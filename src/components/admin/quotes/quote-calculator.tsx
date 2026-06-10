@@ -624,6 +624,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           motivo: motivoTrim,
           notas: values.notas || undefined,
           pasajeros_nombres: parseNombres(values.pasajeros_nombres),
+          // Las fechas del vuelo también se actualizan al revisar (antes no
+          // viajaban y la cotización no aparecía en el calendario).
+          fecha_vuelo: values.fecha_vuelo || undefined,
+          fecha_traslado_final: values.fecha_traslado_final || undefined,
         });
         if (res.ok && res.data) {
           toast.success(
