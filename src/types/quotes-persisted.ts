@@ -73,6 +73,8 @@ export interface PersistedQuote {
 
   metodo_cobro: MetodoPago | null;
   pago_anticipado_req: boolean;
+  /** Nombres de los pasajeros (manifiesto, para tramitar permisos). */
+  pasajeros_nombres?: string[];
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
 

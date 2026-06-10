@@ -120,6 +120,7 @@ export async function completeFlightAction(
 
 export interface UpdateFlightPayload {
   piloto_id?: string | null;
+  pasajeros_nombres?: string[];
   fecha_vuelo?: string;
   fecha_traslado_final?: string;
   estado_permiso?: "no_aplica" | "pendiente" | "emitido";
@@ -303,6 +304,7 @@ export interface CreateReservaPayload {
   aeronave_id?: string;
   piloto_id?: string;
   cotizacion_abierta?: boolean;
+  pasajeros_nombres?: string[];
   notas?: string;
   notas_internas?: string;
 }

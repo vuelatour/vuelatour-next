@@ -64,6 +64,7 @@ const ReservaSchema = z
     aeronave_id: z.string().optional().or(z.literal("")),
     piloto_id: z.string().optional().or(z.literal("")),
     cotizacion_abierta: z.boolean().default(false),
+    pasajeros_nombres: z.string().max(4000).optional().or(z.literal("")),
     notas: z.string().max(2000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
@@ -88,6 +89,7 @@ const defaultValues: FormValues = {
   aeronave_id: "",
   piloto_id: "",
   cotizacion_abierta: false,
+  pasajeros_nombres: "",
   notas: "",
 };
 
@@ -147,6 +149,10 @@ export function ReservaFormSheet({
         aeronave_id: values.aeronave_id || undefined,
         piloto_id: values.piloto_id || undefined,
         cotizacion_abierta: values.cotizacion_abierta ?? false,
+        pasajeros_nombres: (values.pasajeros_nombres ?? "")
+          .split("\n")
+          .map((n) => n.trim())
+          .filter(Boolean),
         notas: values.notas?.trim() || undefined,
       });
       if (res.ok && res.data) {
@@ -289,6 +295,17 @@ export function ReservaFormSheet({
               onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
             />
           </div>
+
+          <Field
+            label="Nombres de pasajeros"
+            hint="Uno por línea (si ya se conocen). Necesarios para tramitar permisos."
+          >
+            <Textarea
+              rows={3}
+              placeholder={"Juan Pérez\nMaría López"}
+              {...register("pasajeros_nombres")}
+            />
+          </Field>
 
           <Field label="Notas internas" error={errors.notas?.message}>
             <Textarea

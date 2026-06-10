@@ -450,6 +450,40 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             </CardContent>
           </Card>
 
+          {/* Pasajeros (manifiesto) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Pasajeros</CardTitle>
+              <CardDescription className="text-xs">
+                {snapshot.pasajeros}{" "}
+                {snapshot.pasajeros === 1 ? "pasajero declarado" : "pasajeros declarados"}.
+                Los nombres son necesarios para tramitar permisos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(snapshot.pasajeros_nombres?.length ?? 0) > 0 ? (
+                <ol className="space-y-1 text-sm list-decimal list-inside">
+                  {snapshot.pasajeros_nombres!.map((n, i) => (
+                    <li key={`${n}-${i}`}>{n}</li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Sin nombres registrados. Agrégalos en{" "}
+                  <span className="font-medium">Editar → Nombres de pasajeros</span>.
+                </p>
+              )}
+              {(snapshot.pasajeros_nombres?.length ?? 0) > 0 &&
+                snapshot.pasajeros_nombres!.length !== snapshot.pasajeros && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    ⚠ {snapshot.pasajeros_nombres!.length}{" "}
+                    {snapshot.pasajeros_nombres!.length === 1 ? "nombre" : "nombres"} vs{" "}
+                    {snapshot.pasajeros} pax declarados.
+                  </p>
+                )}
+            </CardContent>
+          </Card>
+
           {(snapshot.notas || snapshot.notas_internas) && (
             <Card>
               <CardHeader>

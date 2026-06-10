@@ -107,6 +107,8 @@ interface QuoteFormValues {
   escalas: EscalaInput[];
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
+  /** Nombres de pasajeros, uno por línea (se envían como arreglo). */
+  pasajeros_nombres: string;
   pase_abordar: boolean;
   cotizacion_abierta: boolean;
   metodo_pago: MetodoPago;
@@ -145,6 +147,14 @@ const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "EFECTIVO", label: "Efectivo", hint: "Sin IVA" },
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },
 ];
+
+/** Convierte el textarea (un nombre por línea) al arreglo que espera la API. */
+function parseNombres(v: string): string[] {
+  return v
+    .split("\n")
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
 
 /** Mapea una Route del API a la opción local del dropdown (con detalle por tramo). */
 function routeToOption(route: Route): RouteOption {
@@ -315,6 +325,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             : legacyLegs,
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
+        pasajeros_nombres: (q.pasajeros_nombres ?? []).join("\n"),
         pase_abordar: q.pase_abordar,
         cotizacion_abierta: q.cotizacion_abierta ?? false,
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
@@ -336,6 +347,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       escalas: [],
       tipo_tarifa: "PUBLICO",
       pasajeros: 2,
+      pasajeros_nombres: "",
       pase_abordar: false,
       cotizacion_abierta: false,
       metodo_pago: "TRANSFERENCIA",
@@ -550,6 +562,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ...calcPayload,
           motivo: motivoTrim,
           notas: values.notas || undefined,
+          pasajeros_nombres: parseNombres(values.pasajeros_nombres),
         });
         if (res.ok && res.data) {
           toast.success(
@@ -577,6 +590,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         fecha_traslado_final: values.fecha_traslado_final || undefined,
         notas: values.notas || undefined,
         notas_internas: values.notas_internas || undefined,
+        pasajeros_nombres: parseNombres(values.pasajeros_nombres),
       });
       if (res.ok && res.data) {
         toast.success(`Cotización #${res.data.folio} creada`);
@@ -827,6 +841,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
             />
           </div>
+
+          <Field
+            label="Nombres de pasajeros"
+            hint="Uno por línea. Itzel los necesita para tramitar los permisos; el piloto los ve en su app."
+          >
+            <Textarea
+              rows={3}
+              placeholder={"Juan Pérez\nMaría López"}
+              {...register("pasajeros_nombres")}
+            />
+          </Field>
 
           <Field label="Método de pago" required>
             <SearchableSelect

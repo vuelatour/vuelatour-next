@@ -18,6 +18,7 @@ function fail<T>(err: unknown): ActionResult<T> {
 }
 
 export interface CreateQuotePayload extends CalculateQuoteRequest {
+  pasajeros_nombres?: string[];
   cliente_id: string;
   tipo?: "REDONDO" | "MULTIESCALA";
   fecha_vuelo?: string;
@@ -41,6 +42,7 @@ export async function createQuoteAction(payload: CreateQuotePayload): Promise<Ac
 }
 
 export interface ReviseQuotePayload extends CalculateQuoteRequest {
+  pasajeros_nombres?: string[];
   motivo: string;
   notas?: string;
 }
