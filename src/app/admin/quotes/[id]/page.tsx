@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { QuoteActionsBar } from "@/components/admin/quotes/quote-actions-bar";
+import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
@@ -192,6 +193,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
               )}
             </CardContent>
           </Card>
+
+          {/* Desglose canónico para el balance (Jimmy): cajoncito por concepto. */}
+          <QuoteDesgloseCard quote={quote} />
 
           {/* Ajuste rápido: extras y pasajeros sin rearmar el cotizador. */}
           {quote.estado !== "CANCELADO" &&

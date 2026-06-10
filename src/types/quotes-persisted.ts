@@ -69,6 +69,8 @@ export interface PersistedQuote {
   iva_pct: Decimal;
   iva_usd: Decimal;
   monto_total_usd: Decimal;
+  viaticos_pernocta_usd?: Decimal;
+  extras_total_usd?: Decimal;
   tc_usd_mxn: Decimal | null;
   monto_total_mxn: Decimal | null;
 
@@ -126,6 +128,8 @@ export interface CotizacionVersion {
   iva_pct: Decimal | null;
   iva_usd: Decimal | null;
   monto_total_usd: Decimal;
+  viaticos_pernocta_usd?: Decimal;
+  extras_total_usd?: Decimal;
   tc_usd_mxn: Decimal | null;
   metodo_cobro: MetodoPago | null;
   calculo_snapshot: QuoteBreakdown | null;

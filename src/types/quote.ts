@@ -108,6 +108,8 @@ export interface QuoteBreakdown {
   tramos: TramoBreakdown[] | null;
   /** Conceptos extra aplicados (null si no hay). */
   extras?: ExtraConcepto[] | null;
+  /** Desglose canónico para el balance: las líneas suman exactamente el total. */
+  desglose?: { clave: string; concepto: string; monto_usd: number }[];
   iva: {
     aplica_por_metodo_pago: boolean;
     porcentaje: number;
