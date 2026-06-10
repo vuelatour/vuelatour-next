@@ -13,14 +13,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RoutePreviewMap } from "@/components/admin/route-preview-map";
-import { cn } from "@/lib/utils";
 import {
   createRouteAction,
   updateRouteAction,
@@ -41,11 +38,7 @@ interface RouteFormSheetProps {
   onOpenChange: (open: boolean) => void;
   initialRoute?: Route;
   airports: AirportOption[];
-  /**
-   * Tipo de ruta forzado al abrir. Útil cuando se invoca desde el cotizador
-   * para que la persona caiga directo en el modo Multiescala sin tener que
-   * cambiar el segmented manualmente.
-   */
+  /** Conservado por compatibilidad con callers; ya no hay tipos de ruta. */
   defaultTipo?: TipoRuta;
   /**
    * Callback que recibe la ruta recién creada/actualizada. Permite al caller
@@ -67,7 +60,6 @@ export function RouteFormSheet({
   onOpenChange,
   initialRoute,
   airports,
-  defaultTipo,
   onSaved,
 }: RouteFormSheetProps) {
   const [pending, startTransition] = useTransition();
@@ -82,22 +74,14 @@ export function RouteFormSheet({
     formState: { errors },
   } = useForm<RouteFormValues>({
     resolver: zodResolver(RouteFormSchema),
-    defaultValues: defaults(initialRoute, defaultTipo),
+    defaultValues: defaults(initialRoute),
   });
 
   useEffect(() => {
-    if (open) reset(defaults(initialRoute, defaultTipo));
-  }, [open, initialRoute, defaultTipo, reset]);
+    if (open) reset(defaults(initialRoute));
+  }, [open, initialRoute, reset]);
 
-  const tipo = watch("tipo") ?? "SIMPLE";
-  const esRedondoAuto = watch("es_redondo_auto");
   const tramos = watch("tramos") ?? [];
-  const origenIata = watch("origen_iata") ?? "";
-  const destinoIata = watch("destino_iata") ?? "";
-  const airportOptions = airports.map((a) => ({
-    value: a.iata,
-    label: `${a.iata} — ${a.nombre}`,
-  }));
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
@@ -144,9 +128,9 @@ export function RouteFormSheet({
         <SheetHeader className="border-b border-border">
           <SheetTitle>{isEdit ? "Editar ruta" : "Nueva ruta"}</SheetTitle>
           <SheetDescription>
-            {tipo === "MULTIESCALA"
-              ? "Define los tramos del itinerario. El cotizador reusará esta ruta sumando millas y aterrizajes automáticamente."
-              : "Define el par origen-destino y las millas náuticas de ida (el regreso se duplica automáticamente)."}
+            Arma el itinerario tramo por tramo, incluido el regreso si aplica
+            (decisión operativa). El cotizador reusará esta ruta sumando millas y
+            aterrizajes automáticamente.
           </SheetDescription>
         </SheetHeader>
 
@@ -154,109 +138,18 @@ export function RouteFormSheet({
           <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             {/* Columna izquierda: formulario */}
             <div className="space-y-4">
-              {/* Tipo de ruta */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Tipo de ruta</Label>
-                <Segmented
-                  value={tipo}
-                  onChange={(v) => setValue("tipo", v as TipoRuta)}
-                  options={[
-                    { value: "SIMPLE", label: "Redondo" },
-                    { value: "MULTIESCALA", label: "Multiescala" },
-                  ]}
+              <Field
+                label="Tramos"
+                required
+                hint="Origen del siguiente tramo queda fijo al destino del anterior. Recuerda agregar el regreso a base si aplica."
+                error={errors.tramos?.message}
+              >
+                <QuoteLegsEditor
+                  value={tramos as EscalaInput[]}
+                  onChange={(legs) => setValue("tramos", legs, { shouldValidate: true })}
+                  airports={airports}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {tipo === "MULTIESCALA"
-                    ? "Itinerario con varios tramos (ej. CUN→HOL→CZM→CUN)."
-                    : "Ruta directa origen→destino. El regreso a base se duplica automáticamente."}
-                </p>
-              </div>
-
-              {tipo === "SIMPLE" ? (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field
-                      label="Origen (IATA)"
-                      required
-                      error={errors.origen_iata?.message}
-                    >
-                      <SearchableSelect
-                        options={airportOptions}
-                        value={origenIata}
-                        onChange={(v) => setValue("origen_iata", v)}
-                        placeholder="Selecciona origen"
-                        emptyText="Sin aeropuertos"
-                      />
-                    </Field>
-                    <Field
-                      label="Destino (IATA)"
-                      required
-                      error={errors.destino_iata?.message}
-                    >
-                      <SearchableSelect
-                        options={airportOptions}
-                        value={destinoIata}
-                        onChange={(v) => setValue("destino_iata", v)}
-                        placeholder="Selecciona destino"
-                        emptyText="Sin aeropuertos"
-                      />
-                    </Field>
-                  </div>
-
-                  <Field
-                    label="Millas náuticas"
-                    hint={esRedondoAuto ? "One-way; el motor multiplica × 2" : "Total del recorrido"}
-                    required
-                    error={errors.millas_nauticas?.message}
-                  >
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="63.14"
-                      {...register("millas_nauticas")}
-                    />
-                  </Field>
-
-                  <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="es_redondo_auto" className="text-sm font-medium">
-                        Redondo automático
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Multiplica las NM × 2 al cotizar (CUN-X-CUN).
-                      </p>
-                    </div>
-                    <Switch
-                      id="es_redondo_auto"
-                      checked={esRedondoAuto}
-                      onCheckedChange={(c) => setValue("es_redondo_auto", c)}
-                    />
-                  </div>
-
-                  <Field
-                    label="Número de aterrizajes"
-                    hint="Cada aterrizaje suma 0.15 hrs de calzos"
-                    required
-                    error={errors.num_aterrizajes?.message}
-                  >
-                    <Input type="number" min={1} {...register("num_aterrizajes")} />
-                  </Field>
-                </>
-              ) : (
-                <Field
-                  label="Tramos"
-                  required
-                  hint="Origen del siguiente tramo queda fijo al destino del anterior."
-                  error={errors.tramos?.message}
-                >
-                  <QuoteLegsEditor
-                    value={tramos as EscalaInput[]}
-                    onChange={(legs) => setValue("tramos", legs, { shouldValidate: true })}
-                    airports={airports}
-                  />
-                </Field>
-              )}
+              </Field>
 
               <Field label="Fuente" hint="Cómo se obtuvo el dato" error={errors.fuente?.message}>
                 <SearchableSelect
@@ -278,31 +171,21 @@ export function RouteFormSheet({
             {/* Columna derecha: mapa del itinerario (sticky, se actualiza en vivo) */}
             <div className="hidden lg:block">
               <div className="sticky top-0 space-y-2">
-                <Label className="text-sm font-medium">
-                  {tipo === "MULTIESCALA" ? "Itinerario planeado" : "Ruta planeada"}
-                </Label>
+                <Label className="text-sm font-medium">Itinerario planeado</Label>
                 <RoutePreviewMap
                   airports={airports}
-                  originIata={tipo === "SIMPLE" ? origenIata : undefined}
-                  destinationIata={tipo === "SIMPLE" ? destinoIata : undefined}
-                  legs={
-                    tipo === "MULTIESCALA"
-                      ? (tramos as EscalaInput[]).map((t) => ({
-                          origen_iata: t.origen_iata,
-                          destino_iata: t.destino_iata,
-                          es_ferry: t.es_ferry,
-                          requiere_pernocta: t.requiere_pernocta,
-                          tipo_parada: t.tipo_parada,
-                        }))
-                      : undefined
-                  }
+                  legs={(tramos as EscalaInput[]).map((t) => ({
+                    origen_iata: t.origen_iata,
+                    destino_iata: t.destino_iata,
+                    es_ferry: t.es_ferry,
+                    requiere_pernocta: t.requiere_pernocta,
+                    tipo_parada: t.tipo_parada,
+                  }))}
                 />
-                {tipo === "MULTIESCALA" && (
-                  <p className="text-xs text-muted-foreground">
-                    Cada tramo se numera en orden; los ferry se dibujan punteados y
-                    las paradas con pernocta o servicio se marcan en su aeropuerto.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Cada tramo se numera en orden; los ferry se dibujan punteados y
+                  las paradas con pernocta o servicio se marcan en su aeropuerto.
+                </p>
               </div>
             </div>
           </div>
@@ -355,75 +238,43 @@ function Field({
   );
 }
 
-function Segmented({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div className="inline-flex w-full rounded-lg border border-border bg-muted/30 p-1">
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            type="button"
-            key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
-              active
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function defaults(route: Route | undefined, defaultTipo?: TipoRuta): RouteFormValues {
+function defaults(route: Route | undefined): RouteFormValues {
   if (!route) {
+    return { tramos: [], fuente: "", notas: "" };
+  }
+  // Ruta legacy SIMPLE (redondo automático): se prellenan los 2 tramos
+  // equivalentes (ida + regreso) para editarla como personalizada.
+  if (route.tipo === "SIMPLE") {
+    const nm = Number(route.millas_nauticas);
+    const ida = {
+      origen_iata: route.origen_iata,
+      destino_iata: route.destino_iata,
+      millas_nauticas: nm,
+    };
+    const regreso = {
+      origen_iata: route.destino_iata,
+      destino_iata: route.origen_iata,
+      millas_nauticas: nm,
+    };
     return {
-      tipo: defaultTipo ?? "SIMPLE",
-      origen_iata: "",
-      destino_iata: "",
-      millas_nauticas: 0,
-      es_redondo_auto: true,
-      num_aterrizajes: 2,
-      tramos: [],
-      fuente: "",
-      notas: "",
+      tramos: route.es_redondo_auto ? [ida, regreso] : [ida],
+      fuente: route.fuente ?? "",
+      notas: route.notas ?? "",
     };
   }
   return {
-    tipo: route.tipo,
-    origen_iata: route.origen_iata,
-    destino_iata: route.destino_iata,
-    millas_nauticas: Number(route.millas_nauticas),
-    es_redondo_auto: route.es_redondo_auto,
-    num_aterrizajes: route.num_aterrizajes,
-    tramos:
-      route.tipo === "MULTIESCALA"
-        ? route.tramos.map((t) => ({
-            origen_iata: t.origen_iata,
-            destino_iata: t.destino_iata,
-            millas_nauticas: Number(t.millas_nauticas),
-            pasajeros: t.pasajeros,
-            es_ferry: t.es_ferry,
-            requiere_pernocta: t.requiere_pernocta,
-            pernocta_costo_usd:
-              t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
-            tipo_parada: t.tipo_parada,
-            servicio_notas: t.servicio_notas,
-          }))
-        : [],
+    tramos: route.tramos.map((t) => ({
+      origen_iata: t.origen_iata,
+      destino_iata: t.destino_iata,
+      millas_nauticas: Number(t.millas_nauticas),
+      pasajeros: t.pasajeros,
+      es_ferry: t.es_ferry,
+      requiere_pernocta: t.requiere_pernocta,
+      pernocta_costo_usd:
+        t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
+      tipo_parada: t.tipo_parada,
+      servicio_notas: t.servicio_notas,
+    })),
     fuente: route.fuente ?? "",
     notas: route.notas ?? "",
   };

@@ -16,6 +16,8 @@ export interface EscalaInput {
   pernocta_costo_usd?: number | null;
   tipo_parada?: TipoParada;
   servicio_notas?: string | null;
+  /** Fecha/hora planeada del tramo. El 1er/último tramo heredan las fechas del vuelo si se omite. */
+  fecha_salida_plan?: string | null;
 }
 
 /** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */

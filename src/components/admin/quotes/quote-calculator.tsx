@@ -33,7 +33,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
-import { calculateQuote, getAirportDistance } from "@/lib/api/quotes-browser";
+import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -104,11 +104,6 @@ interface QuoteFormValues {
   aeronave_id: string;
   ruta_mode: "predefined" | "manual";
   ruta_id: string;
-  origen_iata: string;
-  destino_iata: string;
-  millas_nauticas: number;
-  es_redondo_auto: boolean;
-  num_aterrizajes: number;
   escalas: EscalaInput[];
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
@@ -150,11 +145,6 @@ const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },
 ];
 
-const TIPOS_VUELO: { value: TipoVuelo; label: string }[] = [
-  { value: "REDONDO", label: "Redondo" },
-  { value: "MULTIESCALA", label: "Multiescala" },
-];
-
 /** Convierte un tramo de ruta (o escala persistida) a EscalaInput con su detalle. */
 function tramoToEscala(t: {
   origen_iata: string;
@@ -166,6 +156,7 @@ function tramoToEscala(t: {
   pernocta_costo_usd?: number | string | null;
   tipo_parada?: "NORMAL" | "SERVICIO" | null;
   servicio_notas?: string | null;
+  fecha_salida_plan?: string | null;
 }): EscalaInput {
   return {
     origen_iata: t.origen_iata,
@@ -178,6 +169,8 @@ function tramoToEscala(t: {
       t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
     tipo_parada: t.tipo_parada ?? "NORMAL",
     servicio_notas: t.servicio_notas ?? null,
+    // datetime-local (sin segundos) para el input del editor de tramos.
+    fecha_salida_plan: t.fecha_salida_plan ? t.fecha_salida_plan.slice(0, 16) : null,
   };
 }
 
@@ -203,11 +196,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     [routes, extraRoutes],
   );
 
-  const airportOptions = useMemo(
-    () => airports.map((a) => ({ value: a.iata, label: `${a.iata} — ${a.nombre}` })),
-    [airports],
-  );
-
   // Default a la primera aeronave con tarifa configurada. Las aeronaves "sin
   // tarifa" siguen en el dropdown (marcadas como tal) pero no se pre-seleccionan
   // porque el motor de cálculo las rechaza con 400.
@@ -228,31 +216,44 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const formDefaults = useMemo<QuoteFormValues>(() => {
     if (initialQuote) {
       const q = initialQuote;
-      // Para revise: en MULTIESCALA arrancamos en modo manual con escalas del
-      // snapshot del vuelo (no del catalogo, que pudo haber cambiado).
-      const isMulti = q.tipo === "MULTIESCALA";
+      // Para revise arrancamos en modo manual con las escalas del snapshot del
+      // vuelo (no del catalogo, que pudo haber cambiado). Una cotización legacy
+      // REDONDO sin escalas se traduce a sus 2 tramos equivalentes (ida+regreso).
+      const nmOneWay = q.millas_nauticas_one_way
+        ? Number(q.millas_nauticas_one_way)
+        : 0;
+      const legacyLegs: EscalaInput[] = [
+        tramoToEscala({
+          origen_iata: q.origen_iata,
+          destino_iata: q.destino_iata,
+          millas_nauticas: nmOneWay,
+          pasajeros: q.pasajeros,
+        }),
+        ...(q.es_redondo_auto
+          ? [
+              tramoToEscala({
+                origen_iata: q.destino_iata,
+                destino_iata: q.origen_iata,
+                millas_nauticas: nmOneWay,
+                pasajeros: q.pasajeros,
+              }),
+            ]
+          : []),
+      ];
       return {
         cliente_id: q.cliente_id,
-        tipo: q.tipo,
+        tipo: "MULTIESCALA" as TipoVuelo,
         fecha_vuelo: q.fecha_vuelo ? q.fecha_vuelo.slice(0, 16) : "",
         fecha_traslado_final: q.fecha_traslado_final
           ? q.fecha_traslado_final.slice(0, 16)
           : "",
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
-        ruta_mode: isMulti
-          ? "manual"
-          : q.ruta_id
-            ? "predefined"
-            : "manual",
-        ruta_id: isMulti ? "" : q.ruta_id ?? "",
-        origen_iata: q.origen_iata,
-        destino_iata: q.destino_iata,
-        millas_nauticas: q.millas_nauticas_one_way
-          ? Number(q.millas_nauticas_one_way)
-          : 0,
-        es_redondo_auto: q.es_redondo_auto,
-        num_aterrizajes: q.num_aterrizajes,
-        escalas: isMulti && q.escalas ? q.escalas.map(tramoToEscala) : [],
+        ruta_mode: "manual" as const,
+        ruta_id: "",
+        escalas:
+          q.escalas && q.escalas.length > 0
+            ? q.escalas.map(tramoToEscala)
+            : legacyLegs,
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
         pase_abordar: q.pase_abordar,
@@ -267,17 +268,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }
     return {
       cliente_id: "",
-      tipo: "REDONDO",
+      tipo: "MULTIESCALA",
       fecha_vuelo: "",
       fecha_traslado_final: "",
       aeronave_id: defaultAircraftId,
       ruta_mode: "predefined",
       ruta_id: defaultRutaId,
-      origen_iata: "",
-      destino_iata: "",
-      millas_nauticas: 0,
-      es_redondo_auto: true,
-      num_aterrizajes: 2,
       escalas: [],
       tipo_tarifa: "PUBLICO",
       pasajeros: 2,
@@ -318,20 +314,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     if (!debounced.aeronave_id) return null;
     const base: CalculateQuoteRequest = {
       aeronave_id: debounced.aeronave_id,
-      tipo: debounced.tipo,
+      tipo: "MULTIESCALA",
       tipo_tarifa: debounced.tipo_tarifa,
       pasajeros: Number(debounced.pasajeros) || 0,
       pase_abordar: debounced.pase_abordar,
       metodo_pago: debounced.metodo_pago,
     };
     if (debounced.ruta_mode === "predefined") {
-      // El backend hidrata: si la ruta es MULTIESCALA carga sus tramos, si no
-      // usa origen/destino/NM de la ruta. No necesitamos enviar escalas.
+      // El backend hidrata los tramos de la ruta guardada (con sus defaults).
       if (!debounced.ruta_id) return null;
       base.ruta_id = debounced.ruta_id;
-    } else if (debounced.tipo === "MULTIESCALA") {
+    } else {
       const legs = debounced.escalas ?? [];
-      if (legs.length < 2) return null;
+      if (legs.length < 1) return null;
       const incomplete = legs.some(
         (l) => !l.origen_iata || !l.destino_iata || !(Number(l.millas_nauticas) > 0),
       );
@@ -346,17 +341,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pernocta_costo_usd: l.pernocta_costo_usd ?? null,
         tipo_parada: l.tipo_parada ?? "NORMAL",
         servicio_notas: l.servicio_notas ?? null,
+        fecha_salida_plan: l.fecha_salida_plan || null,
       }));
-    } else {
-      if (!debounced.origen_iata || !debounced.destino_iata || !debounced.millas_nauticas) {
-        return null;
-      }
-      base.origen_iata = debounced.origen_iata;
-      base.destino_iata = debounced.destino_iata;
-      base.millas_nauticas = Number(debounced.millas_nauticas);
-      // Todos los vuelos son redondos: el motor siempre multiplica NM × 2.
-      base.es_redondo_auto = true;
-      base.num_aterrizajes = Number(debounced.num_aterrizajes) || 2;
     }
     if (base.pasajeros < 1) return null;
     if (debounced.tarifa_hora_override_usd) {
@@ -374,45 +360,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nmWarning, setNmWarning] = useState<string | null>(null);
-
-  // Autocompleta millas náuticas (great-circle) al fijar origen+destino en modo
-  // manual. Fallback a captura manual con aviso si falta coordenada o falla la API.
-  useEffect(() => {
-    if (debounced.ruta_mode !== "manual" || debounced.tipo === "MULTIESCALA") {
-      setNmWarning(null);
-      return;
-    }
-    const o = (debounced.origen_iata ?? "").trim().toUpperCase();
-    const d = (debounced.destino_iata ?? "").trim().toUpperCase();
-    if (o.length < 3 || d.length < 3 || o === d) {
-      setNmWarning(null);
-      return;
-    }
-    let cancelled = false;
-    getAirportDistance(o, d)
-      .then((res) => {
-        if (cancelled) return;
-        if (res.millas_nauticas != null) {
-          setValue("millas_nauticas", res.millas_nauticas);
-          setNmWarning(null);
-        } else {
-          setNmWarning(
-            `Sin coordenadas para ${res.origen} o ${res.destino}. Captura las millas manualmente.`,
-          );
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setNmWarning("No se pudo calcular millas automáticamente. Captura manual.");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-    // setValue es estable en RHF; lo omitimos a propósito para no re-disparar.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced.ruta_mode, debounced.tipo, debounced.origen_iata, debounced.destino_iata]);
 
   useEffect(() => {
     if (!calcPayload) {
@@ -447,9 +394,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   }, [calcPayload]);
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
-  // En MULTIESCALA un tramo posterior puede subir más pax: valida contra el máximo.
+  // Un tramo posterior puede subir más pax: valida contra el máximo del itinerario.
   const maxPasajeros =
-    values.tipo === "MULTIESCALA" && values.escalas.length > 0
+    values.escalas.length > 0
       ? Math.max(
           Number(values.pasajeros) || 0,
           ...values.escalas
@@ -573,27 +520,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </Field>
           )}
 
-          <Field label="Tipo de vuelo" required>
-            <SearchableSelect
-              options={TIPOS_VUELO.map((t) => ({ value: t.value, label: t.label }))}
-              value={values.tipo}
-              onChange={(v) => {
-                const next = v as TipoVuelo;
-                setValue("tipo", next);
-                // Si la ruta_id apunta a un tipo que ya no aplica (ej. cambiar
-                // de Redondo->Multiescala con una ruta SIMPLE en memoria),
-                // limpiarla para evitar payloads incoherentes.
-                const currentRuta = allRoutes.find((r) => r.id === values.ruta_id);
-                const needsMulti = next === "MULTIESCALA";
-                const rutaIsMulti = currentRuta?.tipo === "MULTIESCALA";
-                if (currentRuta && needsMulti !== rutaIsMulti) {
-                  setValue("ruta_id", "");
-                  if (!needsMulti) setValue("escalas", []);
-                }
-              }}
-            />
-          </Field>
-
           <div className="grid grid-cols-2 gap-3">
             <Field label="Fecha de traslado inicial" hint="Opcional · salida (fecha y hora)">
               <Input type="datetime-local" {...register("fecha_vuelo")} />
@@ -653,62 +579,38 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </div>
 
           {rutaMode === "predefined" ? (
-            <Field
-              label={
-                values.tipo === "MULTIESCALA" ? "Ruta multiescala" : "Ruta predefinida"
-              }
-              required
-            >
+            <Field label="Ruta guardada" required>
               <SearchableSelect
-                options={allRoutes
-                  .filter((r) =>
-                    values.tipo === "MULTIESCALA"
-                      ? r.tipo === "MULTIESCALA"
-                      : r.tipo === "SIMPLE",
-                  )
-                  .map((r) => {
-                    if (r.tipo === "MULTIESCALA") {
-                      const path = [
-                        r.tramos[0]?.origen_iata,
-                        ...r.tramos.map((t) => t.destino_iata),
-                      ]
-                        .filter(Boolean)
-                        .join(" → ");
-                      return {
-                        value: r.id,
-                        label: path,
-                        description: `${r.millas_nauticas} NM · ${r.tramos.length} tramos`,
-                      };
-                    }
-                    return {
-                      value: r.id,
-                      label: `${r.origen_iata} → ${r.destino_iata}`,
-                      description: `${r.millas_nauticas} NM one-way${
-                        r.es_redondo_auto ? " (× 2 auto)" : ""
-                      }`,
-                    };
-                  })}
+                options={allRoutes.map((r) => {
+                  const path =
+                    r.tramos.length > 0
+                      ? [
+                          r.tramos[0]?.origen_iata,
+                          ...r.tramos.map((t) => t.destino_iata),
+                        ]
+                          .filter(Boolean)
+                          .join(" → ")
+                      : `${r.origen_iata} → ${r.destino_iata}`;
+                  return {
+                    value: r.id,
+                    label: path,
+                    description: `${r.millas_nauticas} NM · ${r.tramos.length} ${
+                      r.tramos.length === 1 ? "tramo" : "tramos"
+                    }`,
+                  };
+                })}
                 value={values.ruta_id}
                 onChange={(v) => {
                   setValue("ruta_id", v);
                   const ruta = allRoutes.find((r) => r.id === v);
-                  if (ruta?.tipo === "MULTIESCALA") {
-                    // Auto-sync: el tipo de vuelo y las escalas siguen al catalogo,
-                    // incluyendo el detalle por tramo (defaults de plantilla).
-                    setValue("tipo", "MULTIESCALA");
+                  if (ruta && ruta.tramos.length > 0) {
+                    // Hidrata las escalas con los defaults de la plantilla para
+                    // poder "Personalizar tramos" sin rearmar desde cero.
                     setValue("escalas", ruta.tramos.map(tramoToEscala));
                   }
                 }}
-                placeholder={
-                  values.tipo === "MULTIESCALA"
-                    ? "Selecciona ruta multiescala"
-                    : "Selecciona ruta"
-                }
-                emptyText={
-                  values.tipo === "MULTIESCALA"
-                    ? "Sin rutas multiescala — crea una abajo"
-                    : "Sin rutas — crea una abajo"
-                }
+                placeholder="Selecciona ruta"
+                emptyText="Sin rutas — crea una abajo"
               />
               <button
                 type="button"
@@ -716,11 +618,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
               >
                 <PlusIcon className="h-3.5 w-3.5" />
-                {values.tipo === "MULTIESCALA"
-                  ? "Crear ruta multiescala"
-                  : "Crear nueva ruta"}
+                Crear nueva ruta
               </button>
-              {selectedRoute?.tipo === "MULTIESCALA" && selectedRoute.tramos.length > 0 && (
+              {selectedRoute && selectedRoute.tramos.length > 0 && (
                 <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -752,19 +652,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   </ol>
                 </div>
               )}
-              {selectedRoute?.tipo === "SIMPLE" && selectedRoute.es_redondo_auto && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Redondo auto: el motor calcula{" "}
-                  {fmtDecimal(selectedRoute.millas_nauticas * 2)} NM totales.
-                </p>
-              )}
             </Field>
-          ) : values.tipo === "MULTIESCALA" ? (
+          ) : (
             <>
               <Field
                 label="Tramos"
                 required
-                hint="Origen del siguiente tramo queda fijo al destino del anterior."
+                hint="Origen del siguiente tramo queda fijo al destino del anterior. Agrega el regreso a base si aplica."
               >
                 <QuoteLegsEditor
                   value={values.escalas}
@@ -783,60 +677,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     requiere_pernocta: l.requiere_pernocta,
                     tipo_parada: l.tipo_parada,
                   }))}
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Origen IATA" required>
-                  <SearchableSelect
-                    options={airportOptions}
-                    value={values.origen_iata}
-                    onChange={(v) => setValue("origen_iata", v)}
-                    placeholder="Selecciona origen"
-                    emptyText="Sin aeropuertos"
-                  />
-                </Field>
-                <Field label="Destino IATA" required>
-                  <SearchableSelect
-                    options={airportOptions}
-                    value={values.destino_iata}
-                    onChange={(v) => setValue("destino_iata", v)}
-                    placeholder="Selecciona destino"
-                    emptyText="Sin aeropuertos"
-                  />
-                </Field>
-              </div>
-              <Field
-                label="Millas náuticas one-way"
-                hint={
-                  nmWarning ??
-                  "Se autocompletan al fijar origen y destino. Editable. El motor multiplica × 2 (redondo)."
-                }
-                required
-              >
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="63.14"
-                  {...register("millas_nauticas")}
-                />
-                {nmWarning && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                    ⚠ {nmWarning}
-                  </p>
-                )}
-              </Field>
-              <Field label="Aterrizajes" hint="0.15 hr de calzos por aterrizaje">
-                <Input type="number" min={1} {...register("num_aterrizajes")} />
-              </Field>
-              <div className="hidden xl:block">
-                <RoutePreviewMap
-                  airports={airports}
-                  originIata={values.origen_iata}
-                  destinationIata={values.destino_iata}
                 />
               </div>
             </>
@@ -1060,7 +900,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         open={routeSheetOpen}
         onOpenChange={setRouteSheetOpen}
         airports={airports}
-        defaultTipo={values.tipo === "MULTIESCALA" ? "MULTIESCALA" : "SIMPLE"}
         onSaved={(route: Route) => {
           const opt: RouteOption = {
             id: route.id,

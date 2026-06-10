@@ -21,21 +21,10 @@ function fail<T>(err: unknown): ActionResult<T> {
 }
 
 function buildPayload(parsed: RouteFormOutput) {
-  if (parsed.tipo === "MULTIESCALA") {
-    return {
-      tipo: parsed.tipo,
-      tramos: parsed.tramos,
-      ...(parsed.fuente && { fuente: parsed.fuente }),
-      ...(parsed.notas && { notas: parsed.notas }),
-    };
-  }
+  // Las rutas son siempre personalizadas: se guardan como MULTIESCALA con tramos.
   return {
-    tipo: parsed.tipo,
-    origen_iata: parsed.origen_iata,
-    destino_iata: parsed.destino_iata,
-    millas_nauticas: parsed.millas_nauticas,
-    es_redondo_auto: parsed.es_redondo_auto,
-    num_aterrizajes: parsed.num_aterrizajes,
+    tipo: "MULTIESCALA" as const,
+    tramos: parsed.tramos,
     ...(parsed.fuente && { fuente: parsed.fuente }),
     ...(parsed.notas && { notas: parsed.notas }),
   };
@@ -68,7 +57,8 @@ export async function updateRouteAction(id: string, raw: unknown): Promise<Actio
   try {
     const updated = await apiServer<Route>(`/v1/routes/${id}`, {
       method: "PATCH",
-      body: buildPayload(parsed.data),
+      // Guardar cambios reactiva la ruta (es como se "restaura" una inactiva).
+      body: { ...buildPayload(parsed.data), activa: true },
     });
     revalidatePath("/admin/routes");
     return { ok: true, data: updated };

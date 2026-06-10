@@ -19,6 +19,8 @@ interface RouteOption {
   origen_iata: string;
   destino_iata: string;
   millas_nauticas: number;
+  /** Tramos de la ruta guardada: fuente preferida para autocompletar NM por par. */
+  tramos?: { origen_iata: string; destino_iata: string; millas_nauticas: number }[];
 }
 
 interface AirportOption {
@@ -63,14 +65,26 @@ export function QuoteLegsEditor({
     [airports],
   );
 
+  // Mapa par origen-destino → NM, construido desde los tramos de las rutas
+  // guardadas (cada tramo es one-way). Ambos sentidos comparten millas.
+  const nmByPair = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of routes ?? []) {
+      for (const t of r.tramos ?? []) {
+        const o = t.origen_iata.toUpperCase();
+        const d = t.destino_iata.toUpperCase();
+        const nm = Number(t.millas_nauticas);
+        if (!nm) continue;
+        if (!map.has(`${o}-${d}`)) map.set(`${o}-${d}`, nm);
+        if (!map.has(`${d}-${o}`)) map.set(`${d}-${o}`, nm);
+      }
+    }
+    return map;
+  }, [routes]);
+
   const lookupNm = (origen: string, destino: string): number | null => {
-    if (!origen || !destino || !routes) return null;
-    const r = routes.find(
-      (r) =>
-        r.origen_iata.toUpperCase() === origen.toUpperCase() &&
-        r.destino_iata.toUpperCase() === destino.toUpperCase(),
-    );
-    return r ? r.millas_nauticas : null;
+    if (!origen || !destino) return null;
+    return nmByPair.get(`${origen.toUpperCase()}-${destino.toUpperCase()}`) ?? null;
   };
 
   const updateLeg = (idx: number, patch: Partial<EscalaInput>) => {
@@ -206,6 +220,21 @@ export function QuoteLegsEditor({
                     placeholder="usa global"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Fecha y hora del tramo (opcional)
+                </Label>
+                <Input
+                  type="datetime-local"
+                  value={leg.fecha_salida_plan ?? ""}
+                  onChange={(e) =>
+                    updateLeg(idx, {
+                      fecha_salida_plan: e.target.value || null,
+                    })
+                  }
+                />
               </div>
 
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}

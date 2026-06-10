@@ -70,10 +70,9 @@ export default async function RoutesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Ruta</TableHead>
-                  <TableHead className="text-center">Tipo</TableHead>
-                  <TableHead className="text-right">NM</TableHead>
-                  <TableHead className="text-center">Redondo auto</TableHead>
+                  <TableHead>Itinerario</TableHead>
+                  <TableHead className="text-center">Tramos</TableHead>
+                  <TableHead className="text-right">NM totales</TableHead>
                   <TableHead className="text-center">Aterrizajes</TableHead>
                   <TableHead>Fuente</TableHead>
                   <TableHead className="text-center">Estado</TableHead>
@@ -117,26 +116,20 @@ export default async function RoutesPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      {r.tipo === "MULTIESCALA" ? (
+                      {r.tramos.length > 0 ? (
                         <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
-                          {r.tramos.length} tramos
+                          {r.tramos.length} {r.tramos.length === 1 ? "tramo" : "tramos"}
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[10px]">
-                          Redondo
+                        <Badge variant="secondary" className="text-[10px]">
+                          Legacy
                         </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {fmtDecimal(r.millas_nauticas)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {r.tipo === "MULTIESCALA" ? (
-                        <span className="text-[10px] text-muted-foreground">N/A</span>
-                      ) : r.es_redondo_auto ? (
-                        <Badge variant="outline" className="text-xs">× 2 auto</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-xs">Total</Badge>
+                      {r.tipo === "SIMPLE" && r.es_redondo_auto && (
+                        <span className="text-[10px] text-muted-foreground"> ×2</span>
                       )}
                     </TableCell>
                     <TableCell className="text-center font-mono text-sm">
