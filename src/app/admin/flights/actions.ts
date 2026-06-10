@@ -291,6 +291,41 @@ export interface CreateExternalFlightPayload {
   notas_internas?: string;
 }
 
+// ============ Reserva tentativa ============
+
+export interface CreateReservaPayload {
+  cliente_id: string;
+  origen_iata: string;
+  destino_iata: string;
+  fecha_vuelo: string;
+  fecha_traslado_final?: string;
+  pasajeros?: number;
+  aeronave_id?: string;
+  piloto_id?: string;
+  cotizacion_abierta?: boolean;
+  notas?: string;
+  notas_internas?: string;
+}
+
+/** Aparta el espacio en el calendario SIN cotización (vuelo propio tentativo). */
+export async function createReservaAction(
+  payload: CreateReservaPayload,
+): Promise<ActionResult<FlightListItem>> {
+  if (!payload.cliente_id) return { ok: false, error: "Cliente requerido" };
+  if (!payload.fecha_vuelo) return { ok: false, error: "Fecha requerida" };
+  try {
+    const flight = await apiServer<FlightListItem>("/v1/flights/reserva", {
+      method: "POST",
+      body: payload,
+    });
+    revalidatePath("/admin/flights");
+    revalidatePath("/admin/calendar");
+    return { ok: true, data: flight };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function createExternalFlightAction(
   payload: CreateExternalFlightPayload,
 ): Promise<ActionResult<FlightListItem>> {

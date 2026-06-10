@@ -77,9 +77,17 @@ export function FlightActionsBar({
     });
   };
 
+  // Operación independiente de lo administrativo: asignar e iniciar no exigen
+  // cotización confirmada.
   const canAssign =
-    flight.estado === "CONFIRMADO" || flight.estado === "COTIZADO";
-  const canStart = flight.estado === "CONFIRMADO";
+    flight.estado === "RESERVA" ||
+    flight.estado === "SOLICITUD" ||
+    flight.estado === "COTIZADO" ||
+    flight.estado === "CONFIRMADO";
+  const canStart =
+    flight.estado === "RESERVA" ||
+    flight.estado === "COTIZADO" ||
+    flight.estado === "CONFIRMADO";
   const canComplete = flight.estado === "EN_VUELO";
   const canEditMeta = flight.estado !== "CANCELADO";
 

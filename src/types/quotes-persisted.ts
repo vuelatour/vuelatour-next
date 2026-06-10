@@ -25,6 +25,7 @@ export interface PersistedEscala {
   notas: string | null;
 }
 export type EstadoVuelo =
+  | "RESERVA"
   | "SOLICITUD"
   | "COTIZADO"
   | "CONFIRMADO"
@@ -72,6 +73,8 @@ export interface PersistedQuote {
 
   metodo_cobro: MetodoPago | null;
   pago_anticipado_req: boolean;
+  /** Vuelo abierto: el itinerario/precio se cierra al final. */
+  cotizacion_abierta?: boolean;
 
   fecha_solicitud: string;
   fecha_vuelo: string | null;

@@ -108,6 +108,7 @@ interface QuoteFormValues {
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
   pase_abordar: boolean;
+  cotizacion_abierta: boolean;
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
@@ -315,6 +316,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
         pase_abordar: q.pase_abordar,
+        cotizacion_abierta: q.cotizacion_abierta ?? false,
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
@@ -335,6 +337,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       tipo_tarifa: "PUBLICO",
       pasajeros: 2,
       pase_abordar: false,
+      cotizacion_abierta: false,
       metodo_pago: "TRANSFERENCIA",
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
@@ -375,6 +378,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       tipo_tarifa: debounced.tipo_tarifa,
       pasajeros: Number(debounced.pasajeros) || 0,
       pase_abordar: debounced.pase_abordar,
+      cotizacion_abierta: debounced.cotizacion_abierta,
       metodo_pago: debounced.metodo_pago,
     };
     const legs = debounced.escalas ?? [];
@@ -808,6 +812,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 </span>
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Cotización abierta</Label>
+              <p className="text-xs text-muted-foreground">
+                El itinerario/precio se cierra al final: permite re-cotizar con
+                los tramos reales hasta antes de cobrar/facturar.
+              </p>
+            </div>
+            <Switch
+              checked={values.cotizacion_abierta}
+              onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
+            />
           </div>
 
           <Field label="Método de pago" required>

@@ -63,7 +63,16 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
   };
 
   const canConfirm = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
-  const canRevise = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
+  // Revisable: estados tempranos (cotizar una RESERVA la convierte en COTIZADO)
+  // o cotización ABIERTA aún sin cobrar/facturar (cierre con tramos reales).
+  const canRevise =
+    quote.estado === "RESERVA" ||
+    quote.estado === "COTIZADO" ||
+    quote.estado === "SOLICITUD" ||
+    (quote.cotizacion_abierta === true &&
+      quote.estado !== "CANCELADO" &&
+      !quote.cobrado &&
+      !quote.facturado);
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 

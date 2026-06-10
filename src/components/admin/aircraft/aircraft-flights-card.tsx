@@ -23,6 +23,7 @@ import type { FlightListItem } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 const ESTADO_LABEL: Record<EstadoVuelo, string> = {
+  RESERVA: "Reserva tentativa",
   SOLICITUD: "Solicitud",
   COTIZADO: "Cotizado",
   CONFIRMADO: "Confirmado",

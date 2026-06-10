@@ -49,6 +49,8 @@ export interface CalculateQuoteRequest {
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
   pase_abordar?: boolean;
+  /** Vuelo abierto: el itinerario/precio se cierra al final. */
+  cotizacion_abierta?: boolean;
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;

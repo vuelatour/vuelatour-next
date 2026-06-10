@@ -34,6 +34,7 @@ import type { EstadoVuelo } from "@/types/quotes-persisted";
 export const dynamic = "force-dynamic";
 
 const ESTADO_STYLES: Record<EstadoVuelo, string> = {
+  RESERVA: "bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30",
   SOLICITUD: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
   COTIZADO: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
   CONFIRMADO: "bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30",
@@ -43,6 +44,7 @@ const ESTADO_STYLES: Record<EstadoVuelo, string> = {
 };
 
 const ESTADO_LABELS: Record<EstadoVuelo, string> = {
+  RESERVA: "Reserva tentativa",
   SOLICITUD: "Solicitud",
   COTIZADO: "Cotizado",
   CONFIRMADO: "Confirmado",
@@ -165,6 +167,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   Externo {snapshot.operador_externo ?? ""}
                 </Badge>
               )}
+              {snapshot.cotizacion_abierta && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                  title="Vuelo abierto: el itinerario/precio se cierra al final re-cotizando con los tramos reales."
+                >
+                  Cotización abierta
+                </Badge>
+              )}
               {!snapshot.es_externo &&
                 snapshot.estado === "CONFIRMADO" &&
                 (!snapshot.piloto_id || !snapshot.aeronave_id ? (
@@ -218,11 +229,37 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               {snapshot.pasajeros === 1 ? "pasajero" : "pasajeros"}
             </p>
           </div>
-          <FlightActionsBar
-            flight={snapshot}
-            aircraft={aircraftOptions}
-            pilots={pilotOptions}
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            {snapshot.estado === "RESERVA" && (
+              <Link
+                href={`/admin/quotes/${snapshot.id}/revise`}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-600/90 transition-colors"
+              >
+                <BanknotesIcon className="h-4 w-4" />
+                Cotizar
+              </Link>
+            )}
+            {snapshot.cotizacion_abierta &&
+              snapshot.estado !== "RESERVA" &&
+              snapshot.estado !== "CANCELADO" &&
+              !snapshot.cobrado &&
+              !snapshot.facturado && (
+                <Link
+                  href={`/admin/quotes/${snapshot.id}/revise`}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  <BanknotesIcon className="h-4 w-4" />
+                  {snapshot.estado === "COMPLETADO"
+                    ? "Cerrar cotización"
+                    : "Ajustar cotización"}
+                </Link>
+              )}
+            <FlightActionsBar
+              flight={snapshot}
+              aircraft={aircraftOptions}
+              pilots={pilotOptions}
+            />
+          </div>
         </div>
       </div>
 

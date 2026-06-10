@@ -20,6 +20,8 @@ export interface FlightListItem {
   destino_iata: string;
   pasajeros: number;
   monto_total_usd: string;
+  /** Vuelo abierto: el itinerario/precio se cierra al final. */
+  cotizacion_abierta?: boolean;
   fecha_vuelo: string | null;
   fecha_traslado_final: string | null;
   fecha_confirmacion: string | null;

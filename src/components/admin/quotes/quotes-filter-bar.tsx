@@ -11,6 +11,7 @@ import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 const ESTADOS: { value: EstadoVuelo | ""; label: string }[] = [
   { value: "", label: "Todos los estados" },
+  { value: "RESERVA", label: "Reserva tentativa" },
   { value: "SOLICITUD", label: "Solicitud" },
   { value: "COTIZADO", label: "Cotizado" },
   { value: "CONFIRMADO", label: "Confirmado" },
