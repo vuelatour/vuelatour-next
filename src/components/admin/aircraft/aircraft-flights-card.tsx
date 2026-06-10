@@ -21,30 +21,8 @@ import { listFlights } from "@/lib/api/flights-server";
 import { fmtUsd } from "@/lib/format";
 import type { FlightListItem } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 
-const ESTADO_LABEL: Record<EstadoVuelo, string> = {
-  RESERVA: "Reserva tentativa",
-  SOLICITUD: "Solicitud",
-  COTIZADO: "Cotizado",
-  CONFIRMADO: "Confirmado",
-  EN_VUELO: "En vuelo",
-  COMPLETADO: "Completado",
-  CANCELADO: "Cancelado",
-};
-
-function estadoClass(estado: EstadoVuelo): string {
-  switch (estado) {
-    case "COMPLETADO":
-      return "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30";
-    case "EN_VUELO":
-    case "CONFIRMADO":
-      return "bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30";
-    case "CANCELADO":
-      return "bg-destructive/15 text-destructive border-destructive/30";
-    default:
-      return "";
-  }
-}
 
 const fmtFecha = fmtDate;
 
@@ -110,8 +88,8 @@ export async function AircraftFlightsCard({ aircraftId }: { aircraftId: string }
                     {fmtUsd(f.monto_total_usd)}
                   </TableCell>
                   <TableCell className="text-center">
-                    <Badge variant="outline" className={estadoClass(f.estado)}>
-                      {ESTADO_LABEL[f.estado]}
+                    <Badge variant="outline" className={ESTADO_STYLES[f.estado]}>
+                      {ESTADO_LABELS[f.estado]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
