@@ -11,6 +11,11 @@ export interface Gasto {
   proveedor_id: string | null;
   medio_pago: string;
   tarjeta_terminacion: string | null;
+  /** Detalle de cargas de combustible (categoria GAS). */
+  litros: string | null;
+  tipo_combustible: "TURBOSINA" | "AVGAS" | null;
+  lugar: string | null;
+  fecha_hora_carga: string | null;
   estatus_comprobante: string;
   foto_url: string | null;
   conciliado: boolean;

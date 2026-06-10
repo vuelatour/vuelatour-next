@@ -56,6 +56,55 @@ export async function dismissDuplicadoAction(id: string): Promise<ActionResult<G
   }
 }
 
+export interface VueloSugerido {
+  vuelo_id: string;
+  folio: number | null;
+  origen_iata: string | null;
+  destino_iata: string | null;
+  estado: string | null;
+  fecha_vuelo: string | null;
+  razon?: string | null;
+}
+
+export interface SugerirVueloResult {
+  sugerido: VueloSugerido | null;
+  candidatos: VueloSugerido[];
+}
+
+/** Sugiere el vuelo de una carga de combustible (aeronave + momento). */
+export async function sugerirVueloAction(
+  aeronaveId: string,
+  fechaHora: string,
+): Promise<ActionResult<SugerirVueloResult>> {
+  try {
+    const data = await apiServer<SugerirVueloResult>(
+      `/v1/expenses/sugerir-vuelo?aeronave_id=${aeronaveId}&fecha_hora=${encodeURIComponent(fechaHora)}`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Liga (o desliga) una carga de combustible a un vuelo/cotización. */
+export async function assignVueloGastoAction(
+  gastoId: string,
+  vueloId: string | null,
+): Promise<ActionResult<Gasto>> {
+  try {
+    const data = await apiServer<Gasto>(`/v1/expenses/${gastoId}`, {
+      method: "PATCH",
+      body: { vuelo_id: vueloId },
+    });
+    revalidatePath("/admin/combustibles");
+    revalidatePath("/admin/expenses");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function deleteGastoAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/expenses/${id}`, { method: "DELETE" });
