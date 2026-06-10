@@ -14,6 +14,8 @@ import {
   PlusIcon,
 } from "@heroicons/react/24/outline";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
+import { ClientFormDialog } from "@/components/admin/clients/client-form-dialog";
+import type { Client } from "@/types/clients";
 import type { Route } from "@/types/routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -132,12 +134,15 @@ type QuoteCalculatorProps = {
   | {
       mode?: "create";
       clients: ClientOption[];
+      /** Clientes más recurrentes (ids), para mostrarlos como accesos de un tap. */
+      frequentClientIds?: string[];
       initialQuote?: undefined;
       clientName?: undefined;
     }
   | {
       mode: "revise";
       clients?: undefined;
+      frequentClientIds?: undefined;
       initialQuote: PersistedQuote;
       clientName: string;
     }
@@ -252,10 +257,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const initialQuote = isRevise ? props.initialQuote : undefined;
   const clientName = isRevise ? props.clientName : undefined;
   const clients = isRevise ? [] : props.clients;
+  const frequentClientIds = isRevise ? [] : (props.frequentClientIds ?? []);
 
   const router = useRouter();
   const [advanced, setAdvanced] = useState(false);
   const [saving, startSaving] = useTransition();
+
+  // Clientes creados inline desde el cotizador (sin ir a "Clientes").
+  const [extraClients, setExtraClients] = useState<ClientOption[]>([]);
+  const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
   // Rutas creadas inline desde el sheet. Se agregan al dropdown sin esperar
   // a un revalidate del servidor para que el flujo del cotizador sea continuo.
@@ -264,6 +274,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   // Dedupe por id: tras crear una ruta inline, router.refresh() la trae también
   // del servidor y sin esto aparecería duplicada en el dropdown.
+  const allClients = useMemo(() => {
+    const base = clients ?? [];
+    const seen = new Set(base.map((c) => c.id));
+    return [...base, ...extraClients.filter((c) => !seen.has(c.id))];
+  }, [clients, extraClients]);
+
   const allRoutes = useMemo(() => {
     const seen = new Set(routes.map((r) => r.id));
     return [...routes, ...extraRoutes.filter((r) => !seen.has(r.id))];
@@ -640,24 +656,73 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </div>
           ) : (
             <Field label="Cliente" required>
-              <SearchableSelect
-                options={(clients ?? []).map((c) => ({
-                  value: c.id,
-                  label: c.nombre,
-                  description: [c.rfc, c.es_broker ? "Broker" : null]
-                    .filter(Boolean)
-                    .join(" · "),
-                }))}
-                value={values.cliente_id}
-                onChange={(v) => {
-                  setValue("cliente_id", v);
-                  // Si el cliente es broker, sugiere tarifa broker.
-                  const cli = (clients ?? []).find((c) => c.id === v);
-                  if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
-                }}
-                placeholder="Selecciona cliente"
-                emptyText="Sin clientes activos"
-              />
+              <div className="space-y-2">
+                {/* Nombre destacado: Itzel identifica el tipo de vuelo por el
+                    nombre del cliente (ej. "Punta Pájaros"). */}
+                {(() => {
+                  const sel = allClients.find((c) => c.id === values.cliente_id);
+                  if (!sel) return null;
+                  return (
+                    <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2">
+                      <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[sel.es_broker ? "Broker · tarifa broker" : null, sel.rfc]
+                          .filter(Boolean)
+                          .join(" · ") || "Cliente directo"}
+                      </p>
+                    </div>
+                  );
+                })()}
+                <SearchableSelect
+                  options={allClients.map((c) => ({
+                    value: c.id,
+                    label: c.nombre,
+                    description: [c.rfc, c.es_broker ? "Broker" : null]
+                      .filter(Boolean)
+                      .join(" · "),
+                  }))}
+                  value={values.cliente_id}
+                  onChange={(v) => {
+                    setValue("cliente_id", v);
+                    // Si el cliente es broker, sugiere tarifa broker.
+                    const cli = allClients.find((c) => c.id === v);
+                    if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
+                  }}
+                  placeholder="Selecciona cliente"
+                  emptyText="Sin clientes activos"
+                />
+                {/* Frecuentes de un tap + alta inline (la mayoría son recurrentes). */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {frequentClientIds
+                    .map((id) => allClients.find((c) => c.id === id))
+                    .filter((c): c is ClientOption => !!c)
+                    .map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setValue("cliente_id", c.id);
+                          if (c.es_broker) setValue("tipo_tarifa", "BROKER");
+                        }}
+                        className={cn(
+                          "max-w-[12rem] truncate rounded-full border px-2.5 py-1 text-xs transition-colors",
+                          values.cliente_id === c.id
+                            ? "border-brand-500 bg-brand-500/10 font-medium text-brand-600"
+                            : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                        )}
+                      >
+                        {c.nombre}
+                      </button>
+                    ))}
+                  <button
+                    type="button"
+                    onClick={() => setClientDialogOpen(true)}
+                    className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600"
+                  >
+                    + Nuevo cliente
+                  </button>
+                </div>
+              </div>
             </Field>
           )}
 
@@ -1036,6 +1101,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </CardContent>
         </Card>
       </div>
+
+      {!isRevise && (
+        <ClientFormDialog
+          open={clientDialogOpen}
+          onOpenChange={setClientDialogOpen}
+          onCreated={(client: Client) => {
+            const opt: ClientOption = {
+              id: client.id,
+              nombre: client.nombre,
+              es_broker: client.es_broker,
+              rfc: client.rfc,
+            };
+            setExtraClients((prev) => [...prev.filter((c) => c.id !== opt.id), opt]);
+            // Auto-selecciona al cliente recién creado.
+            setValue("cliente_id", opt.id);
+            if (opt.es_broker) setValue("tipo_tarifa", "BROKER");
+            router.refresh();
+          }}
+        />
+      )}
 
       <RouteFormSheet
         open={routeSheetOpen}

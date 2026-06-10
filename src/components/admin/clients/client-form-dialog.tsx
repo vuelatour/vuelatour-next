@@ -37,9 +37,11 @@ interface ClientFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialClient?: Client;
+  /** Al crear (no editar): permite seleccionar al cliente recién creado in situ (ej. desde el cotizador). */
+  onCreated?: (client: Client) => void;
 }
 
-export function ClientFormDialog({ open, onOpenChange, initialClient }: ClientFormDialogProps) {
+export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated }: ClientFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialClient;
 
@@ -69,6 +71,7 @@ export function ClientFormDialog({ open, onOpenChange, initialClient }: ClientFo
 
       if (result.ok) {
         toast.success(isEdit ? "Cliente actualizado" : "Cliente creado");
+        if (!isEdit && result.data) onCreated?.(result.data);
         onOpenChange(false);
       } else if (result.fieldErrors) {
         const firstField = Object.keys(result.fieldErrors)[0];
