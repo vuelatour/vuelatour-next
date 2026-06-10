@@ -33,7 +33,7 @@ const ROUTES = [
     pax: "1-6 pax",
     from: 1_650,
     description:
-      "Door-to-island in under an hour. We land you directly at Holbox's small strip — no taxi, no ferry.",
+      "Door-to-island in under an hour. We land you directly at Holbox's small strip. no taxi, no ferry.",
   },
   {
     name: "Cancún → Chichén Itzá",
@@ -49,12 +49,12 @@ const ROUTES = [
     pax: "1-9 pax",
     from: null,
     description:
-      "Tulum, Mérida, Bacalar, Belize. Tell us where and when — we build the route around you.",
+      "Tulum, Mérida, Bacalar, Belize. Tell us where and when. we build the route around you.",
   },
 ];
 
 const INCLUDED = [
-  { icon: Plane, title: "Certified aircraft", body: "Cessna 206 & 208 Caravan — full maintenance log on request." },
+  { icon: Plane, title: "Certified aircraft", body: "Cessna 206 & 208 Caravan. full maintenance log on request." },
   { icon: ShieldCheck, title: "TAI & TAN licensed", body: "Operating under Mexican civil aviation taxi-aéreo permits." },
   { icon: Users, title: "FBO assistance", body: "We meet you at Terminal FBO Cancún and handle boarding." },
   { icon: Wifi, title: "Real-time tracking", body: "Share your flight with anyone via a public tracking link." },
@@ -67,7 +67,7 @@ export default function CharterFlightsPage() {
         kicker="Charter Flights"
         title={
           <>
-            Fly private from Cancún —{" "}
+            Fly private from Cancún -{" "}
             <span className="text-brand-500">on your schedule.</span>
           </>
         }

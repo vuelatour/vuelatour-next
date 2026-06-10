@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 type FaqItem = { q: string; a: string };
 
 export function FaqAccordion({ items }: { items: FaqItem[] }) {
-  // El primer item abierto por defecto — pequeño truco de UX para mostrar el
+  // El primer item abierto por defecto. pequeño truco de UX para mostrar el
   // patrón sin que el usuario tenga que tantear.
   const [open, setOpen] = useState(0);
 

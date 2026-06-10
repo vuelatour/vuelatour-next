@@ -117,7 +117,7 @@ export default function AirToursPage() {
 
       <CtaBanner
         title="Build a custom tour"
-        description="Combining destinations or chartering for a special date? We tailor the route — proposal, contract and digital boarding pass in 24 h."
+        description="Combining destinations or chartering for a special date? We tailor the route and send proposal, contract and digital boarding pass within 24 hours."
         primary={{ href: "/quote", label: "Get a Quote" }}
         secondary={{ href: "/contact", label: "Contact us" }}
       />

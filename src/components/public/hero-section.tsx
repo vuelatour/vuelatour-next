@@ -377,7 +377,7 @@ function YucatanMap({
           </filter>
         </defs>
 
-        {/* Sea grid — atmósfera carta aeronáutica. */}
+        {/* Sea grid. atmósfera carta aeronáutica. */}
         <g opacity="0.06" stroke="#9fb3c8" strokeWidth="0.5">
           {[100, 200, 300, 400].map((y) => (
             <line key={`h-${y}`} x1="0" y1={y} x2={VIEW_W} y2={y} />
@@ -394,7 +394,7 @@ function YucatanMap({
           ))}
         </g>
 
-        {/* Estados — donde dos paths comparten frontera el stroke se duplica
+        {/* Estados. donde dos paths comparten frontera el stroke se duplica
             sutilmente y se ve la frontera estatal. */}
         <g
           fill="url(#land)"
@@ -420,7 +420,7 @@ function YucatanMap({
           ))}
         </g>
 
-        {/* Ghost network — todas las rutas desde Cancún muy tenues. */}
+        {/* Ghost network. todas las rutas desde Cancún muy tenues. */}
         <g
           opacity="0.18"
           fill="none"
@@ -449,7 +449,7 @@ function YucatanMap({
         />
       </svg>
 
-      {/* === Overlays HTML — labels y marcadores siempre crujientes === */}
+      {/* === Overlays HTML. labels y marcadores siempre crujientes === */}
 
       <div
         className="pointer-events-none absolute size-32 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-500/25 blur-2xl"
@@ -534,7 +534,7 @@ function DestinationMarker({
       onFocus={onHover}
       className="group absolute -translate-x-1/2 -translate-y-1/2 rounded-full p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-950"
       style={{ left: `${pct.left}%`, top: `${pct.top}%` }}
-      aria-label={`Fly Cancún to ${dest.name} — ${dest.duration}, from $${dest.priceFrom.toLocaleString()} USD`}
+      aria-label={`Fly Cancún to ${dest.name}. ${dest.duration}, from $${dest.priceFrom.toLocaleString()} USD`}
       aria-pressed={isActive}
     >
       <span

@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Sub-hero compacto que abre cada página interna. No es el hero principal
- * (ése vive solo en la landing) — sigue el patrón "kicker + título + sub" del
+ * (ése vive solo en la landing). sigue el patrón "kicker + título + sub" del
  * DESIGN_SYSTEM §2.4 sobre fondo navy con un velo radial sutil.
  */
 export function PageHeader({

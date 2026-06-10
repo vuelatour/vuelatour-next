@@ -49,7 +49,7 @@ export function SiteHeader() {
         <Link
           href="/"
           className="shrink-0"
-          aria-label="Vuelatour — Inicio"
+          aria-label="Vuelatour. Inicio"
           onClick={() => setOpen(false)}
         >
           <VuelatourLogo />

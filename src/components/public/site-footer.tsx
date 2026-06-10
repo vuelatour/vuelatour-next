@@ -59,7 +59,7 @@ export function SiteFooter() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-10 py-12 md:py-16 md:grid-cols-2 lg:grid-cols-5 lg:gap-8">
           <div className="lg:col-span-2">
-            <Link href="/" aria-label="Vuelatour — Inicio">
+            <Link href="/" aria-label="Vuelatour. Inicio">
               <VuelatourLogo className="text-white" />
             </Link>
 

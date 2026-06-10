@@ -13,7 +13,7 @@ import { ContactForm } from "./contact-form";
 export const metadata: Metadata = {
   title: "Contact",
   description:
-    "Get in touch with Vuelatour. Cancún International Airport, Terminal FBO. Phone, email and WhatsApp — we answer within 2 hours.",
+    "Get in touch with Vuelatour. Cancún International Airport, Terminal FBO. Phone, email and WhatsApp. we answer within 2 hours.",
 };
 
 const SOCIALS = [
@@ -30,7 +30,7 @@ export default function ContactPage() {
         kicker="Contact"
         title={
           <>
-            Tell us where you want to go —{" "}
+            Tell us where you want to go -{" "}
             <span className="text-brand-500">we handle the rest.</span>
           </>
         }
@@ -43,7 +43,7 @@ export default function ContactPage() {
             <div className="lg:col-span-2">
               <h2 className="text-2xl font-bold tracking-tight">Reach us</h2>
               <p className="mt-2 text-muted-foreground">
-                Operating hours 7 am – 9 pm CST, 7 days a week.
+                Operating hours 7 am - 9 pm CST, 7 days a week.
               </p>
 
               <ul className="mt-8 space-y-6">

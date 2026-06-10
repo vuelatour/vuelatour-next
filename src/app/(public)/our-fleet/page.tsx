@@ -27,7 +27,7 @@ const FLEET: Aircraft[] = [
     model: "Cessna 206 Stationair",
     tagline: "The workhorse of the Caribbean",
     description:
-      "Single-engine high-wing — every passenger gets an unobstructed window. Ideal for short hops and panoramic tours where altitude matters less than the view.",
+      "Single-engine high-wing. every passenger gets an unobstructed window. Ideal for short hops and panoramic tours where altitude matters less than the view.",
     seats: "5 passengers",
     range: "1,350 km",
     cruise: "260 km/h",
@@ -78,7 +78,7 @@ export default function OurFleetPage() {
             />
             <SpecBlock
               title="Licensing"
-              body="TAI (Taxi Aéreo Internacional) and TAN (Taxi Aéreo Nacional) permits — required for legal commercial air taxi in Mexico."
+              body="TAI (Taxi Aéreo Internacional) and TAN (Taxi Aéreo Nacional) permits. required for legal commercial air taxi in Mexico."
             />
             <SpecBlock
               title="Crew"
@@ -90,7 +90,7 @@ export default function OurFleetPage() {
 
       <CtaBanner
         title="Charter the right aircraft for your route"
-        description="Not sure which one fits? Send your route and pax count — we'll recommend the aircraft and quote both options."
+        description="Not sure which one fits? Send your route and pax count. we'll recommend the aircraft and quote both options."
         primary={{ href: "/quote", label: "Get a Quote" }}
         secondary={{ href: "/contact", label: "Talk to us" }}
       />

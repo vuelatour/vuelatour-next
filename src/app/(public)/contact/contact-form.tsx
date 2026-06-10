@@ -26,7 +26,7 @@ export function ContactForm() {
         </div>
         <h3 className="mt-4 text-xl font-semibold">Message sent</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Thanks — we'll reply within 2 hours during operating hours.
+          Thanks! We'll reply within 2 hours during operating hours.
         </p>
       </div>
     );

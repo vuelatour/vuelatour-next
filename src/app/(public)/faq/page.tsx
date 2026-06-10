@@ -21,7 +21,7 @@ const FAQS = [
   },
   {
     q: "How many passengers fit per flight?",
-    a: "Our Cessna 206 takes up to 5 passengers. Our Cessna 208 Caravan takes up to 9 passengers. Total weight matters more than the head count — when you request a quote we'll ask for approximate weights to confirm the right aircraft.",
+    a: "Our Cessna 206 takes up to 5 passengers. Our Cessna 208 Caravan takes up to 9 passengers. Total weight matters more than the head count. when you request a quote we'll ask for approximate weights to confirm the right aircraft.",
   },
   {
     q: "What happens if the weather doesn't cooperate?",
@@ -33,7 +33,7 @@ const FAQS = [
   },
   {
     q: "Are your operators certified?",
-    a: "Yes. We operate under TAI (Taxi Aéreo Internacional) and TAN (Taxi Aéreo Nacional) permits issued by Mexican civil aviation authority — the licenses required for legal commercial air taxi service in Mexico. Maintenance logs are available on request.",
+    a: "Yes. We operate under TAI (Taxi Aéreo Internacional) and TAN (Taxi Aéreo Nacional) permits issued by Mexican civil aviation authority. the licenses required for legal commercial air taxi service in Mexico. Maintenance logs are available on request.",
   },
   {
     q: "Can I bring my pet on board?",
@@ -56,7 +56,7 @@ export default function FaqPage() {
             <span className="text-brand-500">before you fly.</span>
           </>
         }
-        description="Booking, pricing, certifications, weather policy and the small print. If your question isn't here, send it our way — we answer within 2 hours."
+        description="Booking, pricing, certifications, weather policy and the small print. If your question isn't here, send it our way. We answer within 2 hours."
       />
 
       <section className="bg-background py-16 md:py-24">
@@ -67,7 +67,7 @@ export default function FaqPage() {
 
       <CtaBanner
         title="Still have questions?"
-        description="Send us a message — humans answer within 2 hours during operating hours (7 am - 9 pm CST)."
+        description="Send us a message. Humans answer within 2 hours during operating hours (7 am - 9 pm CST)."
         primary={{ href: "/contact", label: "Contact us" }}
         secondary={{ href: "/quote", label: "Request a quote" }}
       />
