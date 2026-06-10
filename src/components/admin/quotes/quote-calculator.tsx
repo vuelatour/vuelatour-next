@@ -248,10 +248,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const [extraRoutes, setExtraRoutes] = useState<RouteOption[]>([]);
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
 
-  const allRoutes = useMemo(
-    () => [...routes, ...extraRoutes],
-    [routes, extraRoutes],
-  );
+  // Dedupe por id: tras crear una ruta inline, router.refresh() la trae también
+  // del servidor y sin esto aparecería duplicada en el dropdown.
+  const allRoutes = useMemo(() => {
+    const seen = new Set(routes.map((r) => r.id));
+    return [...routes, ...extraRoutes.filter((r) => !seen.has(r.id))];
+  }, [routes, extraRoutes]);
 
   // Default a la primera aeronave con tarifa configurada. Las aeronaves "sin
   // tarifa" siguen en el dropdown (marcadas como tal) pero no se pre-seleccionan

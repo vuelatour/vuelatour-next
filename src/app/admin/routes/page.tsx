@@ -129,9 +129,6 @@ export default async function RoutesPage() {
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {fmtDecimal(r.millas_nauticas)}
-                      {r.tipo === "SIMPLE" && r.es_redondo_auto && (
-                        <span className="text-[10px] text-muted-foreground"> ×2</span>
-                      )}
                     </TableCell>
                     <TableCell className="text-center font-mono text-sm">
                       {r.num_aterrizajes}
