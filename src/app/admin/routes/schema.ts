@@ -10,6 +10,13 @@ const TramoSchema = z.object({
   origen_iata: IataSchema,
   destino_iata: IataSchema,
   millas_nauticas: z.coerce.number().positive("Debe ser mayor a 0"),
+  // Detalle por tramo (defaults de plantilla).
+  pasajeros: z.coerce.number().int().min(0).nullish(),
+  es_ferry: z.boolean().default(false),
+  requiere_pernocta: z.boolean().default(false),
+  pernocta_costo_usd: z.coerce.number().min(0).nullish(),
+  tipo_parada: z.enum(["NORMAL", "SERVICIO"]).default("NORMAL"),
+  servicio_notas: z.string().max(500).nullish(),
 });
 
 /**

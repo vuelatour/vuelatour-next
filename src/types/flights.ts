@@ -50,6 +50,13 @@ export interface FlightEscala {
   // Resueltos por el backend en snapshot() para mostrar la asignación del tramo.
   aeronave_matricula?: string | null;
   piloto_nombre?: string | null;
+  // Detalle por tramo.
+  pasajeros: number | null;
+  es_ferry: boolean;
+  requiere_pernocta: boolean;
+  pernocta_costo_usd: string | null;
+  tipo_parada: "NORMAL" | "SERVICIO";
+  servicio_notas: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;
   foto_taco_salida_url: string | null;

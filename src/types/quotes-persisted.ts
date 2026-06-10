@@ -10,6 +10,13 @@ export interface PersistedEscala {
   origen_iata: string;
   destino_iata: string;
   millas_nauticas: string | null;
+  // Detalle por tramo.
+  pasajeros: number | null;
+  es_ferry: boolean;
+  requiere_pernocta: boolean;
+  pernocta_costo_usd: string | null;
+  tipo_parada: "NORMAL" | "SERVICIO";
+  servicio_notas: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;
   hora_salida: string | null;

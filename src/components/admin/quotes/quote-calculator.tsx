@@ -59,6 +59,18 @@ interface AircraftOption {
   tarifa_hora_broker_usd: number | null;
 }
 
+interface RouteOptionTramo {
+  origen_iata: string;
+  destino_iata: string;
+  millas_nauticas: number;
+  pasajeros?: number | null;
+  es_ferry?: boolean;
+  requiere_pernocta?: boolean;
+  pernocta_costo_usd?: number | null;
+  tipo_parada?: "NORMAL" | "SERVICIO";
+  servicio_notas?: string | null;
+}
+
 interface RouteOption {
   id: string;
   tipo: "SIMPLE" | "MULTIESCALA";
@@ -67,7 +79,7 @@ interface RouteOption {
   millas_nauticas: number;
   es_redondo_auto: boolean;
   num_aterrizajes: number;
-  tramos: { origen_iata: string; destino_iata: string; millas_nauticas: number }[];
+  tramos: RouteOptionTramo[];
 }
 
 interface ClientOption {
@@ -143,6 +155,32 @@ const TIPOS_VUELO: { value: TipoVuelo; label: string }[] = [
   { value: "MULTIESCALA", label: "Multiescala" },
 ];
 
+/** Convierte un tramo de ruta (o escala persistida) a EscalaInput con su detalle. */
+function tramoToEscala(t: {
+  origen_iata: string;
+  destino_iata: string;
+  millas_nauticas: number | string | null;
+  pasajeros?: number | null;
+  es_ferry?: boolean | null;
+  requiere_pernocta?: boolean | null;
+  pernocta_costo_usd?: number | string | null;
+  tipo_parada?: "NORMAL" | "SERVICIO" | null;
+  servicio_notas?: string | null;
+}): EscalaInput {
+  return {
+    origen_iata: t.origen_iata,
+    destino_iata: t.destino_iata,
+    millas_nauticas: Number(t.millas_nauticas) || 0,
+    pasajeros: t.pasajeros ?? null,
+    es_ferry: t.es_ferry ?? false,
+    requiere_pernocta: t.requiere_pernocta ?? false,
+    pernocta_costo_usd:
+      t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
+    tipo_parada: t.tipo_parada ?? "NORMAL",
+    servicio_notas: t.servicio_notas ?? null,
+  };
+}
+
 export function QuoteCalculator(props: QuoteCalculatorProps) {
   const { aircraft, routes, airports } = props;
   const mode = props.mode ?? "create";
@@ -214,14 +252,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           : 0,
         es_redondo_auto: q.es_redondo_auto,
         num_aterrizajes: q.num_aterrizajes,
-        escalas:
-          isMulti && q.escalas
-            ? q.escalas.map((e) => ({
-                origen_iata: e.origen_iata,
-                destino_iata: e.destino_iata,
-                millas_nauticas: e.millas_nauticas ? Number(e.millas_nauticas) : 0,
-              }))
-            : [],
+        escalas: isMulti && q.escalas ? q.escalas.map(tramoToEscala) : [],
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
         pase_abordar: q.pase_abordar,
@@ -309,6 +340,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         origen_iata: l.origen_iata,
         destino_iata: l.destino_iata,
         millas_nauticas: Number(l.millas_nauticas),
+        pasajeros: l.es_ferry ? 0 : (l.pasajeros ?? null),
+        es_ferry: l.es_ferry ?? false,
+        requiere_pernocta: l.requiere_pernocta ?? false,
+        pernocta_costo_usd: l.pernocta_costo_usd ?? null,
+        tipo_parada: l.tipo_parada ?? "NORMAL",
+        servicio_notas: l.servicio_notas ?? null,
       }));
     } else {
       if (!debounced.origen_iata || !debounced.destino_iata || !debounced.millas_nauticas) {
@@ -410,10 +447,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   }, [calcPayload]);
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
+  // En MULTIESCALA un tramo posterior puede subir más pax: valida contra el máximo.
+  const maxPasajeros =
+    values.tipo === "MULTIESCALA" && values.escalas.length > 0
+      ? Math.max(
+          Number(values.pasajeros) || 0,
+          ...values.escalas
+            .filter((l) => !l.es_ferry)
+            .map((l) => Number(l.pasajeros) || 0),
+        )
+      : Number(values.pasajeros) || 0;
   const capacidadExcedida =
     !!selectedAircraft &&
     !!selectedAircraft.asientos &&
-    Number(values.pasajeros) > selectedAircraft.asientos;
+    maxPasajeros > selectedAircraft.asientos;
   const selectedRoute = allRoutes.find((r) => r.id === values.ruta_id);
   const tipoTarifa = values.tipo_tarifa;
   const rutaMode = values.ruta_mode;
@@ -646,16 +693,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   setValue("ruta_id", v);
                   const ruta = allRoutes.find((r) => r.id === v);
                   if (ruta?.tipo === "MULTIESCALA") {
-                    // Auto-sync: el tipo de vuelo y las escalas siguen al catalogo.
+                    // Auto-sync: el tipo de vuelo y las escalas siguen al catalogo,
+                    // incluyendo el detalle por tramo (defaults de plantilla).
                     setValue("tipo", "MULTIESCALA");
-                    setValue(
-                      "escalas",
-                      ruta.tramos.map((t) => ({
-                        origen_iata: t.origen_iata,
-                        destino_iata: t.destino_iata,
-                        millas_nauticas: Number(t.millas_nauticas),
-                      })),
-                    );
+                    setValue("escalas", ruta.tramos.map(tramoToEscala));
                   }
                 }}
                 placeholder={
@@ -1019,6 +1060,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               origen_iata: t.origen_iata,
               destino_iata: t.destino_iata,
               millas_nauticas: Number(t.millas_nauticas),
+              pasajeros: t.pasajeros,
+              es_ferry: t.es_ferry,
+              requiere_pernocta: t.requiere_pernocta,
+              pernocta_costo_usd:
+                t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
+              tipo_parada: t.tipo_parada,
+              servicio_notas: t.servicio_notas,
             })),
           };
           setExtraRoutes((prev) => [...prev, opt]);
@@ -1026,14 +1074,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           setValue("ruta_id", opt.id);
           if (opt.tipo === "MULTIESCALA") {
             setValue("tipo", "MULTIESCALA");
-            setValue(
-              "escalas",
-              opt.tramos.map((t) => ({
-                origen_iata: t.origen_iata,
-                destino_iata: t.destino_iata,
-                millas_nauticas: t.millas_nauticas,
-              })),
-            );
+            setValue("escalas", opt.tramos.map(tramoToEscala));
           }
           // Refresh server data en background para que la próxima carga ya
           // tenga la ruta nueva sin depender del estado local.
@@ -1068,7 +1109,14 @@ function Preview({
               {breakdown.tarifa.tipo}
             </Badge>
           </div>
-          <div className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-3 text-sm">
+          <div
+            className={cn(
+              "mt-4 pt-4 border-t border-border grid gap-3 text-sm",
+              breakdown.totales.viaticos_pernocta_usd
+                ? "grid-cols-2 sm:grid-cols-4"
+                : "grid-cols-3",
+            )}
+          >
             <Cell label="Subtotal" value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)} />
             <Cell
               label="TUAS"
@@ -1084,9 +1132,81 @@ function Preview({
                   : "0%"
               }
             />
+            {!!breakdown.totales.viaticos_pernocta_usd && (
+              <Cell
+                label="Pernocta"
+                value={fmtUsd(breakdown.totales.viaticos_pernocta_usd)}
+                hint="viáticos · sin IVA"
+              />
+            )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Detalle por tramo (MULTIESCALA) */}
+      {breakdown.tramos && breakdown.tramos.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Detalle por tramo</CardTitle>
+            <CardDescription className="text-xs">
+              Pasajeros, TUAS, ferry, pernocta y paradas de servicio por tramo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {breakdown.tramos.map((t) => (
+              <div
+                key={t.orden}
+                className="rounded-lg border border-border p-2.5 text-sm space-y-1"
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-mono">
+                    <span className="text-muted-foreground mr-1">{t.orden}.</span>
+                    {t.origen} → {t.destino}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {t.es_ferry ? (
+                      <Badge variant="outline" className="text-[10px]">
+                        Ferry · vacío
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">
+                        {t.pasajeros} pax
+                      </Badge>
+                    )}
+                    {t.requiere_pernocta && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                      >
+                        Pernocta · {fmtUsd(t.pernocta_usd)}
+                      </Badge>
+                    )}
+                    {t.tipo_parada === "SERVICIO" && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                      >
+                        Servicio
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {fmtDecimal(t.millas)} NM · {fmtDecimal(t.tiempo_hr, 4)} hr
+                  </span>
+                  <span>TUAS {fmtUsd(t.tuas_usd)}</span>
+                </div>
+                {t.tipo_parada === "SERVICIO" && t.servicio_notas && (
+                  <p className="text-xs text-sky-700 dark:text-sky-300">
+                    {t.servicio_notas}
+                  </p>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tiempos + Tarifa */}
       <div className="grid gap-4 sm:grid-cols-2">

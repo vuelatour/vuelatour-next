@@ -390,6 +390,13 @@ function defaults(route: Route | undefined, defaultTipo?: TipoRuta): RouteFormVa
             origen_iata: t.origen_iata,
             destino_iata: t.destino_iata,
             millas_nauticas: Number(t.millas_nauticas),
+            pasajeros: t.pasajeros,
+            es_ferry: t.es_ferry,
+            requiere_pernocta: t.requiere_pernocta,
+            pernocta_costo_usd:
+              t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
+            tipo_parada: t.tipo_parada,
+            servicio_notas: t.servicio_notas,
           }))
         : [],
     fuente: route.fuente ?? "",

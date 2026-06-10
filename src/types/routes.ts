@@ -1,6 +1,7 @@
 import type { ListResponse } from "./aircraft";
 
 export type TipoRuta = "SIMPLE" | "MULTIESCALA";
+export type TipoParada = "NORMAL" | "SERVICIO";
 
 export interface RouteTramo {
   id: string;
@@ -9,6 +10,13 @@ export interface RouteTramo {
   origen_iata: string;
   destino_iata: string;
   millas_nauticas: string;
+  // Detalle por tramo (defaults de plantilla).
+  pasajeros: number | null;
+  es_ferry: boolean;
+  requiere_pernocta: boolean;
+  pernocta_costo_usd: string | null;
+  tipo_parada: TipoParada;
+  servicio_notas: string | null;
   created_at: string;
   updated_at: string;
 }

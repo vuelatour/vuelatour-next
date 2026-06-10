@@ -5,10 +5,14 @@ import { PlusIcon, TrashIcon, ArrowRightIcon } from "@heroicons/react/24/outline
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { fmtDecimal } from "@/lib/format";
 import type { EscalaInput } from "@/types/quote";
+
+const PERNOCTA_COSTO_DEFAULT_USD = 150;
 
 interface RouteOption {
   id: string;
@@ -163,25 +167,125 @@ export function QuoteLegsEditor({
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Millas náuticas
-                </Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={leg.millas_nauticas || ""}
-                  onChange={(e) =>
-                    updateLeg(idx, {
-                      millas_nauticas: Number(e.target.value) || 0,
-                    })
-                  }
-                  placeholder="0.00"
-                  className={cn(
-                    leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Millas náuticas
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={leg.millas_nauticas || ""}
+                    onChange={(e) =>
+                      updateLeg(idx, {
+                        millas_nauticas: Number(e.target.value) || 0,
+                      })
+                    }
+                    placeholder="0.00"
+                    className={cn(
+                      leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
+                    )}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Pasajeros
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    disabled={leg.es_ferry}
+                    value={leg.es_ferry ? 0 : (leg.pasajeros ?? "")}
+                    onChange={(e) =>
+                      updateLeg(idx, {
+                        pasajeros: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    placeholder="usa global"
+                  />
+                </div>
+              </div>
+
+              {/* Detalle del tramo: ferry, pernocta, parada de servicio */}
+              <div className="rounded-md bg-background/60 border border-border/60 p-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-medium">Ferry (vacío)</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Cobra tiempo y calzos, sin pasajeros ni TUAS.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={leg.es_ferry ?? false}
+                    onCheckedChange={(c) =>
+                      updateLeg(idx, { es_ferry: c, ...(c ? { pasajeros: 0 } : {}) })
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs font-medium">Pernocta</Label>
+                  <div className="flex items-center gap-2">
+                    {leg.requiere_pernocta && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={leg.pernocta_costo_usd ?? ""}
+                          onChange={(e) =>
+                            updateLeg(idx, {
+                              pernocta_costo_usd:
+                                e.target.value === "" ? null : Number(e.target.value),
+                            })
+                          }
+                          placeholder={String(PERNOCTA_COSTO_DEFAULT_USD)}
+                          className="h-8 w-24"
+                        />
+                      </div>
+                    )}
+                    <Switch
+                      checked={leg.requiere_pernocta ?? false}
+                      onCheckedChange={(c) =>
+                        updateLeg(idx, {
+                          requiere_pernocta: c,
+                          ...(c && leg.pernocta_costo_usd == null
+                            ? { pernocta_costo_usd: PERNOCTA_COSTO_DEFAULT_USD }
+                            : {}),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Parada de servicio</Label>
+                    <Switch
+                      checked={leg.tipo_parada === "SERVICIO"}
+                      onCheckedChange={(c) =>
+                        updateLeg(idx, {
+                          tipo_parada: c ? "SERVICIO" : "NORMAL",
+                          ...(c ? {} : { servicio_notas: null }),
+                        })
+                      }
+                    />
+                  </div>
+                  {leg.tipo_parada === "SERVICIO" && (
+                    <Textarea
+                      rows={2}
+                      value={leg.servicio_notas ?? ""}
+                      onChange={(e) =>
+                        updateLeg(idx, { servicio_notas: e.target.value })
+                      }
+                      placeholder="Ej. aterriza en Toledo a cambiar llanta"
+                      className="text-sm"
+                    />
                   )}
-                />
+                </div>
               </div>
             </div>
           );

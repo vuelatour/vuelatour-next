@@ -168,6 +168,45 @@ export function EscalasCard({
                       </div>
                     </div>
 
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {esc.es_ferry ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          Ferry · vacío
+                        </Badge>
+                      ) : (
+                        esc.pasajeros != null && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {esc.pasajeros} pax
+                          </Badge>
+                        )
+                      )}
+                      {esc.requiere_pernocta && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                        >
+                          Pernocta
+                          {esc.pernocta_costo_usd
+                            ? ` · $${fmtDecimal(esc.pernocta_costo_usd, 2)}`
+                            : ""}
+                        </Badge>
+                      )}
+                      {esc.tipo_parada === "SERVICIO" && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                        >
+                          Servicio
+                        </Badge>
+                      )}
+                    </div>
+
+                    {esc.tipo_parada === "SERVICIO" && esc.servicio_notas && (
+                      <p className="text-[11px] text-sky-700 dark:text-sky-300">
+                        {esc.servicio_notas}
+                      </p>
+                    )}
+
                     {esc.valor_ia_propuesto && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                         <SparklesIcon className="h-3 w-3" />

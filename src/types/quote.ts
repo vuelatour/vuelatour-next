@@ -3,11 +3,35 @@ export type MetodoPago = "BILLPOCKET" | "HSBC_LINK" | "TRANSFERENCIA" | "EFECTIV
 export type PaisAeronave = "MX" | "USA";
 
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
+export type TipoParada = "NORMAL" | "SERVICIO";
 
 export interface EscalaInput {
   origen_iata: string;
   destino_iata: string;
   millas_nauticas: number;
+  // Detalle por tramo (opcional al enviar; el motor aplica defaults).
+  pasajeros?: number | null;
+  es_ferry?: boolean;
+  requiere_pernocta?: boolean;
+  pernocta_costo_usd?: number | null;
+  tipo_parada?: TipoParada;
+  servicio_notas?: string | null;
+}
+
+/** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */
+export interface TramoBreakdown {
+  orden: number;
+  origen: string;
+  destino: string;
+  millas: number;
+  pasajeros: number;
+  es_ferry: boolean;
+  tiempo_hr: number;
+  tuas_usd: number;
+  requiere_pernocta: boolean;
+  pernocta_usd: number;
+  tipo_parada: TipoParada;
+  servicio_notas: string | null;
 }
 
 export interface CalculateQuoteRequest {
@@ -66,6 +90,8 @@ export interface QuoteBreakdown {
     aeropuertos?: { iata: string; aplica: boolean; usd_pax: number; razon: string }[];
     total_usd: number;
   };
+  // Desglose por tramo (null en single-leg/REDONDO simple).
+  tramos: TramoBreakdown[] | null;
   iva: {
     aplica_por_metodo_pago: boolean;
     porcentaje: number;
@@ -76,6 +102,7 @@ export interface QuoteBreakdown {
   totales: {
     subtotal_vuelo_usd: number;
     tuas_total_usd: number;
+    viaticos_pernocta_usd?: number;
     iva_usd: number;
     total_usd: number;
   };
