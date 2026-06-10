@@ -57,7 +57,7 @@ export function QuotesFilterBar({ clients, initial }: QuotesFilterBarProps) {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               defaultValue={initial.q}
-              placeholder="Folio, ruta IATA…"
+              placeholder="Cliente, folio, ruta IATA…"
               className="pl-9"
               onChange={(e) => pushQuery({ q: e.target.value })}
             />

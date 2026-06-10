@@ -111,6 +111,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Proveedores", href: "/admin/providers", icon: BuildingOfficeIcon },
       { label: "Aeropuertos", href: "/admin/airports", icon: MapPinIcon },
       {
+        label: "Distancias",
+        href: "/admin/distancias",
+        icon: ArrowsRightLeftIcon,
+        roles: ["ADMIN", "COORDINADOR"],
+      },
+      {
         label: "Entidades fiscales",
         href: "/admin/issuing-entities",
         icon: DocumentTextIcon,

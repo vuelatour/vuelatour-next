@@ -146,6 +146,27 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
           </AlertDialogHeader>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Motivo (opcional)</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "Cliente canceló",
+                "Clima",
+                "Cambio de aeronave",
+                "Sin confirmación del cliente",
+              ].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMotivoCancel(m)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    motivoCancel === m
+                      ? "border-destructive bg-destructive/10 text-destructive"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
             <Textarea
               rows={3}
               placeholder="Ej. Cliente reagendó para próxima temporada"

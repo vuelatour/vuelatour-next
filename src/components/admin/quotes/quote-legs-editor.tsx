@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getDistanciasAction } from "@/app/admin/distancias/actions";
 import { PlusIcon, TrashIcon, ArrowRightIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +88,40 @@ export function QuoteLegsEditor({
   );
 
   // Mapa par origen-destino → NM, construido desde los tramos de las rutas
+  // Catálogo de distancias por aerovía (fuente prioritaria del autollenado:
+  // la distancia directa queda corta cuando hay que volar por aerovía).
+  const [distanciasCatalogo, setDistanciasCatalogo] = useState<
+    Map<string, number>
+  >(new Map());
+  useEffect(() => {
+    let alive = true;
+    getDistanciasAction().then((r) => {
+      if (!alive || !r.ok || !r.data) return;
+      const map = new Map<string, number>();
+      for (const d of r.data) {
+        const o = d.origen_iata.toUpperCase();
+        const dd = d.destino_iata.toUpperCase();
+        const nm = Number(d.millas_nauticas);
+        if (!nm) continue;
+        map.set(`${o}-${dd}`, nm);
+        // La aerovía de regreso puede diferir: solo se asume simétrica si el
+        // par inverso no está cargado explícitamente.
+        if (!map.has(`${dd}-${o}`)) map.set(`${dd}-${o}`, nm);
+      }
+      // Reaplica los pares explícitos por si el inverso pisó alguno.
+      for (const d of r.data) {
+        map.set(
+          `${d.origen_iata.toUpperCase()}-${d.destino_iata.toUpperCase()}`,
+          Number(d.millas_nauticas),
+        );
+      }
+      setDistanciasCatalogo(map);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // guardadas (cada tramo es one-way). Ambos sentidos comparten millas.
   const nmByPair = useMemo(() => {
     const map = new Map<string, number>();
@@ -125,6 +160,9 @@ export function QuoteLegsEditor({
     if (!origen || !destino) return null;
     const o = origen.toUpperCase();
     const d = destino.toUpperCase();
+    // 1) Catálogo de distancias por aerovía (dato validado por operaciones).
+    const catalogo = distanciasCatalogo.get(`${o}-${d}`);
+    if (catalogo != null) return catalogo;
     const saved = nmByPair.get(`${o}-${d}`);
     if (saved != null) return saved;
     const co = coordByIata.get(o);
@@ -150,9 +188,10 @@ export function QuoteLegsEditor({
       return { ...l, millas_nauticas: nm };
     });
     if (changed) onChange(next);
-    // lookupNm depende de nmByPair/coordByIata (incluidos); value se cubre con endpointsKey.
+    // lookupNm depende de nmByPair/coordByIata/distanciasCatalogo (incluidos);
+    // value se cubre con endpointsKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpointsKey, nmByPair, coordByIata]);
+  }, [endpointsKey, nmByPair, coordByIata, distanciasCatalogo]);
 
   const updateLeg = (idx: number, patch: Partial<EscalaInput>) => {
     const next = [...value];

@@ -178,6 +178,37 @@ export async function registerCobroAction(
   }
 }
 
+/** Elimina un vuelo SIN actividad (solicitud fantasma). El backend rechaza si tiene cobros/gastos/tacos. */
+export async function deleteFlightAction(id: string): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/flights/${id}`, { method: "DELETE" });
+    revalidatePath("/admin/flights");
+    revalidatePath("/admin/quotes");
+    revalidatePath("/admin/calendar");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Cambio de aeronave de último minuto: clona el vuelo (cobros se mueven) y el original queda CANCELADO con sus gastos. */
+export async function reassignAircraftAction(
+  id: string,
+  payload: { aeronave_id: string; motivo?: string },
+): Promise<ActionResult<FlightListItem>> {
+  try {
+    const clon = await apiServer<FlightListItem>(`/v1/flights/${id}/reassign-aircraft`, {
+      method: "POST",
+      body: payload,
+    });
+    revalidateFlight(id);
+    revalidatePath("/admin/calendar");
+    return { ok: true, data: clon };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ============ Escalas ============
 
 export interface EscalaPayload {

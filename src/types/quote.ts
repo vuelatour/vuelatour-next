@@ -61,6 +61,8 @@ export interface CalculateQuoteRequest {
   cotizacion_abierta?: boolean;
   /** Conceptos extra (se suman al total; los gravados entran a la base de IVA). */
   extras?: ExtraConcepto[];
+  /** Ajuste final: negativo = descuento, positivo = redondeo. Fuera de IVA. */
+  ajuste_final_usd?: number;
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;
@@ -122,6 +124,7 @@ export interface QuoteBreakdown {
     tuas_total_usd: number;
     viaticos_pernocta_usd?: number;
     extras_total_usd?: number;
+    ajuste_final_usd?: number;
     iva_usd: number;
     total_usd: number;
   };

@@ -71,6 +71,7 @@ export interface PersistedQuote {
   monto_total_usd: Decimal;
   viaticos_pernocta_usd?: Decimal;
   extras_total_usd?: Decimal;
+  ajuste_final_usd?: Decimal;
   tc_usd_mxn: Decimal | null;
   monto_total_mxn: Decimal | null;
 

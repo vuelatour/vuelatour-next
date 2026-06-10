@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { EllipsisHorizontalIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
+import Link from "next/link";
+import {
+  CalculatorIcon,
+  EllipsisHorizontalIcon,
+  PencilIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -48,6 +54,10 @@ export function ClientActions({ client }: { client: Client }) {
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem render={<Link href={`/admin/quotes?cliente_id=${client.id}`} />} className="gap-2">
+            <CalculatorIcon className="h-4 w-4" />
+            Ver cotizaciones
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar

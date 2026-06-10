@@ -27,6 +27,7 @@ import {
   updatePermisoAction,
 } from "@/app/admin/flights/actions";
 import { FlightAssignSheet } from "./flight-assign-sheet";
+import { FlightDangerActions } from "./flight-danger-actions";
 import { FlightMetaSheet } from "./flight-meta-sheet";
 import type { FlightListItem } from "@/types/flights";
 
@@ -182,6 +183,8 @@ export function FlightActionsBar({
           Cerrar vuelo
         </Button>
       )}
+
+      <FlightDangerActions flight={flight} aircraft={aircraft} />
 
       <FlightAssignSheet
         open={assignOpen}

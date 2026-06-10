@@ -121,6 +121,8 @@ interface QuoteFormValues {
   cotizacion_abierta: boolean;
   /** Conceptos extra (handler, comisariato, extensión…). */
   extras: ExtraConcepto[];
+  /** Ajuste final: negativo = descuento, positivo = redondeo. */
+  ajuste_final_usd: number | null;
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
@@ -357,6 +359,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pase_abordar: q.pase_abordar,
         cotizacion_abierta: q.cotizacion_abierta ?? false,
         extras: q.extras ?? [],
+        ajuste_final_usd: Number(q.ajuste_final_usd) || null,
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
@@ -380,6 +383,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pase_abordar: false,
       cotizacion_abierta: false,
       extras: [],
+      ajuste_final_usd: null,
       metodo_pago: "TRANSFERENCIA",
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
@@ -428,6 +432,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           monto_usd: Number(e.monto_usd),
           aplica_iva: e.aplica_iva ?? true,
         })),
+      ajuste_final_usd: Number(debounced.ajuste_final_usd) || 0,
       metodo_pago: debounced.metodo_pago,
     };
     const legs = debounced.escalas ?? [];
@@ -1012,6 +1017,73 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onChange={(extras) => setValue("extras", extras)}
           />
 
+          {/* Ajuste final: cerrar el total en un número negociado/redondo. */}
+          <Field
+            label="Ajuste final del total"
+            hint="Negativo = descuento (ej. “ciérramelo en 750”) · positivo = redondeo hacia arriba. Fuera de IVA; queda como línea del desglose."
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                className="w-32"
+                value={values.ajuste_final_usd ?? ""}
+                onChange={(e) =>
+                  setValue(
+                    "ajuste_final_usd",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )
+                }
+              />
+              {breakdown && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const sinAjuste =
+                      breakdown.totales.total_usd -
+                      (breakdown.totales.ajuste_final_usd ?? 0);
+                    const redondeado = Math.ceil(sinAjuste / 10) * 10;
+                    setValue(
+                      "ajuste_final_usd",
+                      Math.round((redondeado - sinAjuste) * 100) / 100,
+                    );
+                  }}
+                >
+                  Redondear ↑
+                </Button>
+              )}
+              {(values.ajuste_final_usd ?? 0) !== 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setValue("ajuste_final_usd", null)}
+                >
+                  Quitar
+                </Button>
+              )}
+            </div>
+            {breakdown && (breakdown.totales.ajuste_final_usd ?? 0) !== 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Cotizado{" "}
+                {fmtUsd(
+                  breakdown.totales.total_usd -
+                    (breakdown.totales.ajuste_final_usd ?? 0),
+                )}{" "}
+                {(breakdown.totales.ajuste_final_usd ?? 0) < 0
+                  ? "− descuento"
+                  : "+ redondeo"}{" "}
+                {fmtUsd(Math.abs(breakdown.totales.ajuste_final_usd ?? 0))} ={" "}
+                <span className="font-semibold">
+                  {fmtUsd(breakdown.totales.total_usd)}
+                </span>
+              </p>
+            )}
+          </Field>
+
           <Field label="Método de pago" required>
             <SearchableSelect
               options={METODOS_PAGO.map((m) => ({
@@ -1271,6 +1343,17 @@ function Preview({
                 label="Pernocta"
                 value={fmtUsd(breakdown.totales.viaticos_pernocta_usd)}
                 hint="viáticos · sin IVA"
+              />
+            )}
+            {!!breakdown.totales.ajuste_final_usd && (
+              <Cell
+                label={
+                  (breakdown.totales.ajuste_final_usd ?? 0) < 0
+                    ? "Descuento"
+                    : "Redondeo"
+                }
+                value={fmtUsd(breakdown.totales.ajuste_final_usd!)}
+                hint="fuera de IVA"
               />
             )}
             {!!breakdown.totales.extras_total_usd && (

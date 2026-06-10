@@ -63,6 +63,14 @@ function buildLineas(quote: PersistedQuote): Linea[] {
       monto_usd: Number(quote.viaticos_pernocta_usd),
     });
   }
+  const ajuste = Number(quote.ajuste_final_usd ?? 0);
+  if (ajuste !== 0) {
+    lineas.push({
+      clave: "AJUSTE",
+      concepto: ajuste < 0 ? "Descuento" : "Redondeo",
+      monto_usd: ajuste,
+    });
+  }
   return lineas;
 }
 
@@ -72,6 +80,7 @@ const CLAVE_LABEL: Record<string, string> = {
   EXTRA: "Extra",
   IVA: "IVA",
   PERNOCTA: "Pernocta",
+  AJUSTE: "Ajuste",
 };
 
 /**
