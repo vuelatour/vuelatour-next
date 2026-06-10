@@ -26,6 +26,27 @@ interface RouteOption {
 interface AirportOption {
   iata: string;
   nombre: string;
+  /** Coordenadas del catálogo: permiten autocompletar las millas náuticas. */
+  latitud?: number | string | null;
+  longitud?: number | string | null;
+}
+
+const EARTH_RADIUS_NM = 3440.065;
+
+/** Distancia ortodrómica (great-circle) en millas náuticas entre dos coordenadas. */
+function haversineNm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_NM * Math.asin(Math.sqrt(a));
 }
 
 /**
@@ -82,10 +103,56 @@ export function QuoteLegsEditor({
     return map;
   }, [routes]);
 
+  // Coordenadas por IATA (para calcular distancia cuando no hay ruta guardada).
+  const coordByIata = useMemo(() => {
+    const map = new Map<string, { lat: number; lon: number }>();
+    for (const a of airports) {
+      const lat = Number(a.latitud);
+      const lon = Number(a.longitud);
+      if (a.latitud == null || a.longitud == null) continue;
+      if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
+      map.set(a.iata.toUpperCase(), { lat, lon });
+    }
+    return map;
+  }, [airports]);
+
+  /**
+   * Millas náuticas del par: primero busca en los tramos de rutas guardadas
+   * (dato medido); si no existe, calcula la distancia ortodrómica con las
+   * coordenadas del catálogo (editable después).
+   */
   const lookupNm = (origen: string, destino: string): number | null => {
     if (!origen || !destino) return null;
-    return nmByPair.get(`${origen.toUpperCase()}-${destino.toUpperCase()}`) ?? null;
+    const o = origen.toUpperCase();
+    const d = destino.toUpperCase();
+    const saved = nmByPair.get(`${o}-${d}`);
+    if (saved != null) return saved;
+    const co = coordByIata.get(o);
+    const cd = coordByIata.get(d);
+    if (!co || !cd) return null;
+    return Math.round(haversineNm(co.lat, co.lon, cd.lat, cd.lon) * 100) / 100;
   };
+
+  // Rellena millas faltantes en tramos ya completos (origen+destino) — p. ej.
+  // al hidratar una plantilla o al cargar el catálogo de coordenadas. Se dispara
+  // solo cuando cambian los EXTREMOS, no al teclear millas (no pelea con la
+  // captura manual).
+  const endpointsKey = value
+    .map((l) => `${l.origen_iata}-${l.destino_iata}`)
+    .join("|");
+  useEffect(() => {
+    let changed = false;
+    const next = value.map((l) => {
+      if (Number(l.millas_nauticas) > 0 || !l.origen_iata || !l.destino_iata) return l;
+      const nm = lookupNm(l.origen_iata, l.destino_iata);
+      if (nm === null) return l;
+      changed = true;
+      return { ...l, millas_nauticas: nm };
+    });
+    if (changed) onChange(next);
+    // lookupNm depende de nmByPair/coordByIata (incluidos); value se cubre con endpointsKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpointsKey, nmByPair, coordByIata]);
 
   const updateLeg = (idx: number, patch: Partial<EscalaInput>) => {
     const next = [...value];
