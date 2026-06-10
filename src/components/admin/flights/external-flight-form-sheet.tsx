@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cancunInputToIso, TZ_LABEL } from "@/lib/datetime";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
@@ -22,6 +21,7 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fmtUsd } from "@/lib/format";
 import { createExternalFlightAction } from "@/app/admin/flights/actions";
+import { Field } from "@/components/admin/form-field";
 
 interface ClientOption {
   id: string;
@@ -327,31 +327,3 @@ export function ExternalFlightFormSheet({
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}

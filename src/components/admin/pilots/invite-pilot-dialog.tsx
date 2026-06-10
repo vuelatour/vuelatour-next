@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { invitePilotAction } from "@/app/admin/pilots/actions";
 import { InvitePilotSchema, type InvitePilotValues } from "@/app/admin/pilots/schema";
+import { Field } from "@/components/admin/form-field";
 
 export function InvitePilotDialog() {
   const [open, setOpen] = useState(false);
@@ -162,31 +163,3 @@ export function InvitePilotDialog() {
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}

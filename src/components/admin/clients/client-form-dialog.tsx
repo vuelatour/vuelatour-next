@@ -24,6 +24,7 @@ import {
 } from "@/app/admin/clients/actions";
 import { ClientFormSchema, type ClientFormValues } from "@/app/admin/clients/schema";
 import type { Client } from "@/types/clients";
+import { Field } from "@/components/admin/form-field";
 
 const CANALES = [
   { value: "WHATSAPP", label: "WhatsApp" },
@@ -169,34 +170,6 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(client?: Client): ClientFormValues {
   if (!client) {

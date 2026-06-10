@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { fmtUsd } from "@/lib/format";
 import { registerCobroAction } from "@/app/admin/flights/actions";
 import type { MetodoPago } from "@/types/quote";
+import { Field } from "@/components/admin/form-field";
 
 type Moneda = "USD" | "MXN";
 
@@ -318,34 +319,6 @@ export function CobroFormSheet({
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function Segmented({
   value,

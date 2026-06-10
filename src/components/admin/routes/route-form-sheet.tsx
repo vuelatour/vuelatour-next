@@ -25,6 +25,7 @@ import {
 import { RouteFormSchema, type RouteFormValues } from "@/app/admin/routes/schema";
 import type { Route, TipoRuta } from "@/types/routes";
 import type { EscalaInput } from "@/types/quote";
+import { Field } from "@/components/admin/form-field";
 
 interface AirportOption {
   iata: string;
@@ -219,34 +220,6 @@ export function RouteFormSheet({
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(route: Route | undefined): RouteFormValues {
   if (!route) {

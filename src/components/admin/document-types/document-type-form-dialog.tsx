@@ -29,6 +29,7 @@ import {
   type DocumentTypeFormValues,
 } from "@/app/admin/document-types/schema";
 import type { DocumentType } from "@/types/expirations";
+import { Field } from "@/components/admin/form-field";
 
 interface Props {
   open: boolean;
@@ -163,34 +164,6 @@ export function DocumentTypeFormDialog({ open, onOpenChange, initialType }: Prop
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(t?: DocumentType): DocumentTypeFormValues {
   if (!t) {

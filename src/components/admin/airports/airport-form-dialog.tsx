@@ -23,6 +23,7 @@ import {
 } from "@/app/admin/airports/actions";
 import { AirportFormSchema, type AirportFormValues } from "@/app/admin/airports/schema";
 import type { Airport } from "@/types/airports";
+import { Field } from "@/components/admin/form-field";
 
 interface AirportFormDialogProps {
   open: boolean;
@@ -219,34 +220,6 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function SwitchRow({
   label,

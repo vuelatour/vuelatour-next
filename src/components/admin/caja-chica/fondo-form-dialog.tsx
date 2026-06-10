@@ -12,11 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createFondoAction } from "@/app/admin/caja-chica/actions";
 import type { FondoFormValues } from "@/app/admin/caja-chica/schema";
+import { Field } from "@/components/admin/form-field";
 
 const MONEDAS = [
   { value: "MXN", label: "Pesos (MXN)" },
@@ -109,25 +109,3 @@ export function FondoFormDialog({ open, onOpenChange, usuarios }: FondoFormDialo
   );
 }
 
-function Field({
-  label,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}

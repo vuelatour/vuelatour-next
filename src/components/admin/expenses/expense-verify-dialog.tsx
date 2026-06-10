@@ -12,12 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { verifyGastoAction } from "@/app/admin/expenses/actions";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import type { Gasto } from "@/types/expenses";
+import { Field } from "@/components/admin/form-field";
 
 const CATEGORIAS = [
   "GAS",
@@ -169,14 +169,6 @@ export function ExpenseVerifyDialog({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">{label}</Label>
-      {children}
-    </div>
-  );
-}
 
 function defaults(g: Gasto): GastoVerifyValues {
   return {

@@ -20,6 +20,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { updateUserAction } from "@/app/admin/users/actions";
 import { UserFormSchema, type UserFormValues } from "@/app/admin/users/schema";
 import type { User } from "@/types/users";
+import { Field } from "@/components/admin/form-field";
 
 const ROLES = [
   { value: "ADMIN", label: "ADMIN", description: "Acceso total" },
@@ -168,34 +169,6 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(user: User): UserFormValues {
   return {

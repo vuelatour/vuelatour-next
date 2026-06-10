@@ -39,7 +39,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createInsuranceAction,
@@ -49,6 +48,7 @@ import {
 import { InsuranceFormSchema, type InsuranceFormValues } from "@/app/admin/aircraft/schema";
 import { fmtUsd } from "@/lib/format";
 import type { AeronaveSeguro } from "@/types/aircraft";
+import { Field } from "@/components/admin/form-field";
 
 const fmtDate = fmtDateOnly;
 
@@ -296,28 +296,6 @@ function InsuranceDialog({
   );
 }
 
-function Field({
-  label,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
 
 function defaults(s?: AeronaveSeguro): InsuranceFormValues {
   if (!s) {

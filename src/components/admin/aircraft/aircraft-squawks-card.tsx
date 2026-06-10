@@ -39,7 +39,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -48,6 +47,7 @@ import {
   updateSquawkAction,
 } from "@/app/admin/aircraft/actions";
 import { SquawkFormSchema, type SquawkFormValues } from "@/app/admin/aircraft/schema";
+import { Field } from "@/components/admin/form-field";
 import type {
   AeronaveDiscrepancia,
   EstadoSquawk,
@@ -330,28 +330,6 @@ function SquawkDialog({
   );
 }
 
-function Field({
-  label,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
 
 function defaults(d?: AeronaveDiscrepancia): SquawkFormValues {
   if (!d) {

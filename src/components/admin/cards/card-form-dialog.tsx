@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -23,6 +22,7 @@ import {
 } from "@/app/admin/cards/actions";
 import { CardFormSchema, type CardFormValues } from "@/app/admin/cards/schema";
 import type { Card } from "@/types/cards";
+import { Field } from "@/components/admin/form-field";
 
 export interface UserOption {
   id: string;
@@ -170,34 +170,6 @@ export function CardFormDialog({ open, onOpenChange, initialCard, users, bankAcc
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(card?: Card): CardFormValues {
   if (!card) {

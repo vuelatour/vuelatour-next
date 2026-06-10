@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -24,6 +23,7 @@ import {
 } from "@/app/admin/aircraft/actions";
 import { PropellerFormSchema, type PropellerFormValues } from "@/app/admin/aircraft/schema";
 import type { Propeller } from "@/types/aircraft";
+import { Field } from "@/components/admin/form-field";
 
 export function AircraftPropellerButton({
   aircraftId,
@@ -155,34 +155,6 @@ function PropellerDialog({
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(p?: Propeller): PropellerFormValues {
   if (!p) {

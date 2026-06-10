@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createIssuingEntityAction,
@@ -25,6 +24,7 @@ import {
   type IssuingEntityFormValues,
 } from "@/app/admin/issuing-entities/schema";
 import type { IssuingEntity } from "@/types/issuing-entities";
+import { Field } from "@/components/admin/form-field";
 
 interface Props {
   open: boolean;
@@ -141,34 +141,6 @@ export function IssuingEntityFormDialog({ open, onOpenChange, initialEntity }: P
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(entity?: IssuingEntity): IssuingEntityFormValues {
   if (!entity) {

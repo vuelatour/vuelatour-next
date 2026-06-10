@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -26,6 +25,7 @@ import {
   type BankAccountFormValues,
 } from "@/app/admin/bank-accounts/schema";
 import type { BankAccount } from "@/types/bank-accounts";
+import { Field } from "@/components/admin/form-field";
 
 const MONEDAS = [
   { value: "MXN", label: "Pesos mexicanos (MXN)" },
@@ -147,34 +147,6 @@ export function BankAccountFormDialog({ open, onOpenChange, initialAccount }: Pr
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {(hint || error) && (
-        <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error ?? hint}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function defaults(account?: BankAccount): BankAccountFormValues {
   if (!account) {

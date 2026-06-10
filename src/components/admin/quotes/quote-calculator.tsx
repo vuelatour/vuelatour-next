@@ -56,6 +56,7 @@ import type {
   TipoVuelo,
 } from "@/types/quote";
 import type { PersistedQuote } from "@/types/quotes-persisted";
+import { Field } from "@/components/admin/form-field";
 
 interface AircraftOption {
   id: string;
@@ -1648,28 +1649,6 @@ function Row({
   );
 }
 
-function Field({
-  label,
-  hint,
-  required,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
 
 function Segmented({
   value,
