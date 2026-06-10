@@ -1,4 +1,5 @@
 import type { ListResponse } from "./aircraft";
+import type { ExtraConcepto } from "./quote";
 import type { MetodoPago, QuoteBreakdown, TipoTarifa } from "./quote";
 
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
@@ -77,6 +78,8 @@ export interface PersistedQuote {
   pasajeros_nombres?: string[];
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
+  /** Conceptos extra de la cotización. */
+  extras?: ExtraConcepto[];
 
   fecha_solicitud: string;
   fecha_vuelo: string | null;

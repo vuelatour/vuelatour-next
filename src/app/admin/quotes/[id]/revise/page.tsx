@@ -26,21 +26,9 @@ export default async function ReviseQuotePage({ params }: RevisePageProps) {
     throw err;
   }
 
-  // Revisable: RESERVA (cotizarla), SOLICITUD/COTIZADO, o cualquier vuelo con
-  // cotización ABIERTA que aún no se cobre/facture (cierre del precio con los
-  // tramos reales). El backend valida lo mismo; atajamos para no entrar a un
-  // form que no se puede guardar.
-  const esAbiertaAjustable =
-    quote.cotizacion_abierta === true &&
-    quote.estado !== "CANCELADO" &&
-    !quote.cobrado &&
-    !quote.facturado;
-  if (
-    quote.estado !== "RESERVA" &&
-    quote.estado !== "SOLICITUD" &&
-    quote.estado !== "COTIZADO" &&
-    !esAbiertaAjustable
-  ) {
+  // Revisable mientras no se haya cobrado/facturado (el backend valida lo
+  // mismo); atajamos para no entrar a un form que no se puede guardar.
+  if (quote.estado === "CANCELADO" || quote.cobrado || quote.facturado) {
     notFound();
   }
 

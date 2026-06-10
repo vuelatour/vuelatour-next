@@ -41,6 +41,31 @@ export async function createQuoteAction(payload: CreateQuotePayload): Promise<Ac
   }
 }
 
+export interface QuickAdjustPayload {
+  extras?: { concepto: string; monto_usd: number; aplica_iva?: boolean }[];
+  pasajeros?: number;
+  motivo?: string;
+}
+
+/** Ajuste rápido (extras/pasajeros) desde el detalle; versiona como revisión. */
+export async function quickAdjustQuoteAction(
+  id: string,
+  payload: QuickAdjustPayload,
+): Promise<ActionResult<PersistedQuote>> {
+  try {
+    const updated = await apiServer<PersistedQuote>(`/v1/quotes/${id}/ajuste`, {
+      method: "POST",
+      body: payload,
+    });
+    revalidatePath("/admin/quotes");
+    revalidatePath(`/admin/quotes/${id}`);
+    revalidatePath(`/admin/flights/${id}`);
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface ReviseQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
   motivo: string;

@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { QuoteActionsBar } from "@/components/admin/quotes/quote-actions-bar";
+import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
 import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
@@ -168,8 +169,35 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   hint={`${(Number(quote.iva_pct) * 100).toFixed(0)}%`}
                 />
               </div>
+              {(quote.extras?.length ?? 0) > 0 && (
+                <div className="mt-3 pt-3 border-t border-border space-y-1">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Conceptos extra
+                  </p>
+                  {quote.extras!.map((e, i) => (
+                    <div
+                      key={`${e.concepto}-${i}`}
+                      className="flex items-center justify-between text-xs"
+                    >
+                      <span className="text-muted-foreground">
+                        {e.concepto}
+                        {e.aplica_iva === false && (
+                          <span className="ml-1 text-[10px]">(sin IVA)</span>
+                        )}
+                      </span>
+                      <span className="font-mono">{fmtUsd(e.monto_usd)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* Ajuste rápido: extras y pasajeros sin rearmar el cotizador. */}
+          {quote.estado !== "CANCELADO" &&
+            quote.estado !== "RESERVA" &&
+            !quote.cobrado &&
+            !quote.facturado && <QuoteQuickAdjustCard quote={quote} />}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>

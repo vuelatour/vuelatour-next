@@ -42,6 +42,7 @@ import { createRouteAction } from "@/app/admin/routes/actions";
 import type {
   CalculateQuoteRequest,
   EscalaInput,
+  ExtraConcepto,
   MetodoPago,
   QuoteBreakdown,
   TipoTarifa,
@@ -111,6 +112,8 @@ interface QuoteFormValues {
   pasajeros_nombres: string;
   pase_abordar: boolean;
   cotizacion_abierta: boolean;
+  /** Conceptos extra (handler, comisariato, extensión…). */
+  extras: ExtraConcepto[];
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
@@ -328,6 +331,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pasajeros_nombres: (q.pasajeros_nombres ?? []).join("\n"),
         pase_abordar: q.pase_abordar,
         cotizacion_abierta: q.cotizacion_abierta ?? false,
+        extras: q.extras ?? [],
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
@@ -350,6 +354,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pasajeros_nombres: "",
       pase_abordar: false,
       cotizacion_abierta: false,
+      extras: [],
       metodo_pago: "TRANSFERENCIA",
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
@@ -391,6 +396,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pasajeros: Number(debounced.pasajeros) || 0,
       pase_abordar: debounced.pase_abordar,
       cotizacion_abierta: debounced.cotizacion_abierta,
+      extras: (debounced.extras ?? [])
+        .filter((e) => e.concepto.trim() && Number(e.monto_usd) > 0)
+        .map((e) => ({
+          concepto: e.concepto.trim(),
+          monto_usd: Number(e.monto_usd),
+          aplica_iva: e.aplica_iva ?? true,
+        })),
       metodo_pago: debounced.metodo_pago,
     };
     const legs = debounced.escalas ?? [];
@@ -853,6 +865,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             />
           </Field>
 
+          {/* Conceptos extra */}
+          <ExtrasEditor
+            value={values.extras}
+            onChange={(extras) => setValue("extras", extras)}
+          />
+
           <Field label="Método de pago" required>
             <SearchableSelect
               options={METODOS_PAGO.map((m) => ({
@@ -1094,7 +1112,34 @@ function Preview({
                 hint="viáticos · sin IVA"
               />
             )}
+            {!!breakdown.totales.extras_total_usd && (
+              <Cell
+                label="Extras"
+                value={fmtUsd(breakdown.totales.extras_total_usd)}
+                hint={`${breakdown.extras?.length ?? 0} ${
+                  (breakdown.extras?.length ?? 0) === 1 ? "concepto" : "conceptos"
+                }`}
+              />
+            )}
           </div>
+          {(breakdown.extras?.length ?? 0) > 0 && (
+            <div className="mt-3 pt-3 border-t border-border space-y-1">
+              {breakdown.extras!.map((e, i) => (
+                <div
+                  key={`${e.concepto}-${i}`}
+                  className="flex items-center justify-between text-xs"
+                >
+                  <span className="text-muted-foreground">
+                    {e.concepto}
+                    {e.aplica_iva === false && (
+                      <span className="ml-1 text-[10px]">(sin IVA)</span>
+                    )}
+                  </span>
+                  <span className="font-mono">{fmtUsd(e.monto_usd)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1411,6 +1456,103 @@ function Segmented({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+
+const EXTRAS_SUGERIDOS = ["Handler", "Comisariato", "Extensión de servicios"];
+
+/** Editor de conceptos extra: agrega, edita y quita líneas en la misma pantalla. */
+function ExtrasEditor({
+  value,
+  onChange,
+}: {
+  value: ExtraConcepto[];
+  onChange: (extras: ExtraConcepto[]) => void;
+}) {
+  const update = (idx: number, patch: Partial<ExtraConcepto>) => {
+    const next = [...value];
+    next[idx] = { ...next[idx], ...patch };
+    onChange(next);
+  };
+  const add = (concepto = "") =>
+    onChange([...value, { concepto, monto_usd: 0, aplica_iva: true }]);
+  const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm font-medium">Conceptos extra</Label>
+      {value.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Handler, comisariato, extensión de servicios… se suman al total sin
+          salir de esta pantalla.
+        </p>
+      )}
+      {value.map((e, idx) => (
+        <div
+          key={idx}
+          className="rounded-lg border border-border bg-muted/20 p-2.5 space-y-2"
+        >
+          <div className="grid grid-cols-[1fr_110px] gap-2">
+            <Input
+              placeholder="Concepto (ej. Handler)"
+              value={e.concepto}
+              onChange={(ev) => update(idx, { concepto: ev.target.value })}
+            />
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              placeholder="USD"
+              value={e.monto_usd || ""}
+              onChange={(ev) =>
+                update(idx, { monto_usd: Number(ev.target.value) || 0 })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Switch
+                checked={e.aplica_iva ?? true}
+                onCheckedChange={(c) => update(idx, { aplica_iva: c })}
+              />
+              Entra a la base de IVA
+            </label>
+            <button
+              type="button"
+              onClick={() => remove(idx)}
+              className="text-xs text-destructive hover:opacity-80 transition-opacity"
+            >
+              Quitar
+            </button>
+          </div>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => add()}
+          className="gap-1.5"
+        >
+          <PlusIcon className="h-3.5 w-3.5" />
+          Agregar concepto
+        </Button>
+        {EXTRAS_SUGERIDOS.filter(
+          (sug) => !value.some((e) => e.concepto.toLowerCase() === sug.toLowerCase()),
+        ).map((sug) => (
+          <button
+            key={sug}
+            type="button"
+            onClick={() => add(sug)}
+            className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+          >
+            + {sug}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

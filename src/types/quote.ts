@@ -5,6 +5,14 @@ export type PaisAeronave = "MX" | "USA";
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
 export type TipoParada = "NORMAL" | "SERVICIO";
 
+/** Concepto extra de la cotización (handler, comisariato, extensión, etc.). */
+export interface ExtraConcepto {
+  concepto: string;
+  monto_usd: number;
+  /** Si entra a la base de IVA (default true). */
+  aplica_iva?: boolean;
+}
+
 export interface EscalaInput {
   origen_iata: string;
   destino_iata: string;
@@ -51,6 +59,8 @@ export interface CalculateQuoteRequest {
   pase_abordar?: boolean;
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
+  /** Conceptos extra (se suman al total; los gravados entran a la base de IVA). */
+  extras?: ExtraConcepto[];
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;
@@ -96,6 +106,8 @@ export interface QuoteBreakdown {
   };
   // Desglose por tramo (null en single-leg/REDONDO simple).
   tramos: TramoBreakdown[] | null;
+  /** Conceptos extra aplicados (null si no hay). */
+  extras?: ExtraConcepto[] | null;
   iva: {
     aplica_por_metodo_pago: boolean;
     porcentaje: number;
@@ -107,6 +119,7 @@ export interface QuoteBreakdown {
     subtotal_vuelo_usd: number;
     tuas_total_usd: number;
     viaticos_pernocta_usd?: number;
+    extras_total_usd?: number;
     iva_usd: number;
     total_usd: number;
   };
