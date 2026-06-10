@@ -139,7 +139,7 @@ export function RouteFormSheet({
     >
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl sm:w-[560px] flex flex-col p-0"
+        className="data-[side=right]:w-full data-[side=right]:sm:w-[80vw] data-[side=right]:sm:max-w-[80vw] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
           <SheetTitle>{isEdit ? "Editar ruta" : "Nueva ruta"}</SheetTitle>
@@ -150,137 +150,162 @@ export function RouteFormSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <form
-          onSubmit={onSubmit}
-          className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
-        >
-          {/* Tipo de ruta */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Tipo de ruta</Label>
-            <Segmented
-              value={tipo}
-              onChange={(v) => setValue("tipo", v as TipoRuta)}
-              options={[
-                { value: "SIMPLE", label: "Redondo" },
-                { value: "MULTIESCALA", label: "Multiescala" },
-              ]}
-            />
-            <p className="text-xs text-muted-foreground">
-              {tipo === "MULTIESCALA"
-                ? "Itinerario con varios tramos (ej. CUN→HOL→CZM→CUN)."
-                : "Ruta directa origen→destino. El regreso a base se duplica automáticamente."}
-            </p>
-          </div>
-
-          {tipo === "SIMPLE" ? (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field
-                  label="Origen (IATA)"
-                  required
-                  error={errors.origen_iata?.message}
-                >
-                  <SearchableSelect
-                    options={airportOptions}
-                    value={origenIata}
-                    onChange={(v) => setValue("origen_iata", v)}
-                    placeholder="Selecciona origen"
-                    emptyText="Sin aeropuertos"
-                  />
-                </Field>
-                <Field
-                  label="Destino (IATA)"
-                  required
-                  error={errors.destino_iata?.message}
-                >
-                  <SearchableSelect
-                    options={airportOptions}
-                    value={destinoIata}
-                    onChange={(v) => setValue("destino_iata", v)}
-                    placeholder="Selecciona destino"
-                    emptyText="Sin aeropuertos"
-                  />
-                </Field>
+        <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            {/* Columna izquierda: formulario */}
+            <div className="space-y-4">
+              {/* Tipo de ruta */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Tipo de ruta</Label>
+                <Segmented
+                  value={tipo}
+                  onChange={(v) => setValue("tipo", v as TipoRuta)}
+                  options={[
+                    { value: "SIMPLE", label: "Redondo" },
+                    { value: "MULTIESCALA", label: "Multiescala" },
+                  ]}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {tipo === "MULTIESCALA"
+                    ? "Itinerario con varios tramos (ej. CUN→HOL→CZM→CUN)."
+                    : "Ruta directa origen→destino. El regreso a base se duplica automáticamente."}
+                </p>
               </div>
 
-              <Field
-                label="Millas náuticas"
-                hint={esRedondoAuto ? "One-way; el motor multiplica × 2" : "Total del recorrido"}
-                required
-                error={errors.millas_nauticas?.message}
-              >
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="63.14"
-                  {...register("millas_nauticas")}
+              {tipo === "SIMPLE" ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field
+                      label="Origen (IATA)"
+                      required
+                      error={errors.origen_iata?.message}
+                    >
+                      <SearchableSelect
+                        options={airportOptions}
+                        value={origenIata}
+                        onChange={(v) => setValue("origen_iata", v)}
+                        placeholder="Selecciona origen"
+                        emptyText="Sin aeropuertos"
+                      />
+                    </Field>
+                    <Field
+                      label="Destino (IATA)"
+                      required
+                      error={errors.destino_iata?.message}
+                    >
+                      <SearchableSelect
+                        options={airportOptions}
+                        value={destinoIata}
+                        onChange={(v) => setValue("destino_iata", v)}
+                        placeholder="Selecciona destino"
+                        emptyText="Sin aeropuertos"
+                      />
+                    </Field>
+                  </div>
+
+                  <Field
+                    label="Millas náuticas"
+                    hint={esRedondoAuto ? "One-way; el motor multiplica × 2" : "Total del recorrido"}
+                    required
+                    error={errors.millas_nauticas?.message}
+                  >
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="63.14"
+                      {...register("millas_nauticas")}
+                    />
+                  </Field>
+
+                  <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="es_redondo_auto" className="text-sm font-medium">
+                        Redondo automático
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Multiplica las NM × 2 al cotizar (CUN-X-CUN).
+                      </p>
+                    </div>
+                    <Switch
+                      id="es_redondo_auto"
+                      checked={esRedondoAuto}
+                      onCheckedChange={(c) => setValue("es_redondo_auto", c)}
+                    />
+                  </div>
+
+                  <Field
+                    label="Número de aterrizajes"
+                    hint="Cada aterrizaje suma 0.15 hrs de calzos"
+                    required
+                    error={errors.num_aterrizajes?.message}
+                  >
+                    <Input type="number" min={1} {...register("num_aterrizajes")} />
+                  </Field>
+                </>
+              ) : (
+                <Field
+                  label="Tramos"
+                  required
+                  hint="Origen del siguiente tramo queda fijo al destino del anterior."
+                  error={errors.tramos?.message}
+                >
+                  <QuoteLegsEditor
+                    value={tramos as EscalaInput[]}
+                    onChange={(legs) => setValue("tramos", legs, { shouldValidate: true })}
+                    airports={airports}
+                  />
+                </Field>
+              )}
+
+              <Field label="Fuente" hint="Cómo se obtuvo el dato" error={errors.fuente?.message}>
+                <SearchableSelect
+                  options={[
+                    { value: "", label: "Sin especificar" },
+                    ...FUENTE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                  ]}
+                  value={watch("fuente") ?? ""}
+                  onChange={(v) => setValue("fuente", v)}
+                  placeholder="Sin especificar"
                 />
               </Field>
 
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="space-y-0.5">
-                  <Label htmlFor="es_redondo_auto" className="text-sm font-medium">
-                    Redondo automático
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Multiplica las NM × 2 al cotizar (CUN-X-CUN).
-                  </p>
-                </div>
-                <Switch
-                  id="es_redondo_auto"
-                  checked={esRedondoAuto}
-                  onCheckedChange={(c) => setValue("es_redondo_auto", c)}
-                />
-              </div>
-
-              <Field
-                label="Número de aterrizajes"
-                hint="Cada aterrizaje suma 0.15 hrs de calzos"
-                required
-                error={errors.num_aterrizajes?.message}
-              >
-                <Input type="number" min={1} {...register("num_aterrizajes")} />
+              <Field label="Notas" error={errors.notas?.message}>
+                <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
               </Field>
+            </div>
 
-              <div className="hidden xl:block">
+            {/* Columna derecha: mapa del itinerario (sticky, se actualiza en vivo) */}
+            <div className="hidden lg:block">
+              <div className="sticky top-0 space-y-2">
+                <Label className="text-sm font-medium">
+                  {tipo === "MULTIESCALA" ? "Itinerario planeado" : "Ruta planeada"}
+                </Label>
                 <RoutePreviewMap
                   airports={airports}
-                  originIata={origenIata}
-                  destinationIata={destinoIata}
+                  originIata={tipo === "SIMPLE" ? origenIata : undefined}
+                  destinationIata={tipo === "SIMPLE" ? destinoIata : undefined}
+                  legs={
+                    tipo === "MULTIESCALA"
+                      ? (tramos as EscalaInput[]).map((t) => ({
+                          origen_iata: t.origen_iata,
+                          destino_iata: t.destino_iata,
+                          es_ferry: t.es_ferry,
+                          requiere_pernocta: t.requiere_pernocta,
+                          tipo_parada: t.tipo_parada,
+                        }))
+                      : undefined
+                  }
                 />
+                {tipo === "MULTIESCALA" && (
+                  <p className="text-xs text-muted-foreground">
+                    Cada tramo se numera en orden; los ferry se dibujan punteados y
+                    las paradas con pernocta o servicio se marcan en su aeropuerto.
+                  </p>
+                )}
               </div>
-            </>
-          ) : (
-            <Field
-              label="Tramos"
-              required
-              hint="Origen del siguiente tramo queda fijo al destino del anterior."
-              error={errors.tramos?.message}
-            >
-              <QuoteLegsEditor
-                value={tramos as EscalaInput[]}
-                onChange={(legs) => setValue("tramos", legs, { shouldValidate: true })}
-                airports={airports}
-              />
-            </Field>
-          )}
-
-          <Field label="Fuente" hint="Cómo se obtuvo el dato" error={errors.fuente?.message}>
-            <SearchableSelect
-              options={[
-                { value: "", label: "Sin especificar" },
-                ...FUENTE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-              ]}
-              value={watch("fuente") ?? ""}
-              onChange={(v) => setValue("fuente", v)}
-              placeholder="Sin especificar"
-            />
-          </Field>
-
-          <Field label="Notas" error={errors.notas?.message}>
-            <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
-          </Field>
+            </div>
+          </div>
         </form>
 
         <SheetFooter className="border-t border-border flex-row justify-end gap-2 mt-0">

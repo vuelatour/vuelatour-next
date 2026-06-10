@@ -760,18 +760,32 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               )}
             </Field>
           ) : values.tipo === "MULTIESCALA" ? (
-            <Field
-              label="Tramos"
-              required
-              hint="Origen del siguiente tramo queda fijo al destino del anterior."
-            >
-              <QuoteLegsEditor
-                value={values.escalas}
-                onChange={(legs) => setValue("escalas", legs)}
-                routes={allRoutes}
-                airports={airports}
-              />
-            </Field>
+            <>
+              <Field
+                label="Tramos"
+                required
+                hint="Origen del siguiente tramo queda fijo al destino del anterior."
+              >
+                <QuoteLegsEditor
+                  value={values.escalas}
+                  onChange={(legs) => setValue("escalas", legs)}
+                  routes={allRoutes}
+                  airports={airports}
+                />
+              </Field>
+              <div className="hidden xl:block">
+                <RoutePreviewMap
+                  airports={airports}
+                  legs={values.escalas.map((l) => ({
+                    origen_iata: l.origen_iata,
+                    destino_iata: l.destino_iata,
+                    es_ferry: l.es_ferry,
+                    requiere_pernocta: l.requiere_pernocta,
+                    tipo_parada: l.tipo_parada,
+                  }))}
+                />
+              </div>
+            </>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3">
