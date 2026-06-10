@@ -44,7 +44,8 @@ export default async function RoutesPage() {
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Rutas predefinidas</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {count} {count === 1 ? "ruta guardada" : "rutas guardadas"}. El cotizador las reusa para
-            no recalcular millas náuticas.
+            no recalcular millas náuticas. Editar una ruta aquí afecta solo a
+            cotizaciones futuras: las existentes conservan sus tramos y precios.
           </p>
         </div>
         <RouteCreateButton airports={airports} />

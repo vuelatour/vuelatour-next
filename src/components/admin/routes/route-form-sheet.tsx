@@ -134,6 +134,16 @@ export function RouteFormSheet({
           </SheetDescription>
         </SheetHeader>
 
+        {isEdit && (
+          <div className="mx-4 mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2">
+            <p className="text-xs text-sky-700 dark:text-sky-300">
+              Los cambios a esta ruta aplican solo a <strong>cotizaciones
+              futuras</strong>. Las cotizaciones existentes que la usan conservan
+              sus tramos y precios (cada una guarda su propia copia).
+            </p>
+          </div>
+        )}
+
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             {/* Columna izquierda: formulario */}
