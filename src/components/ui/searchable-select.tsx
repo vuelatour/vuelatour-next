@@ -98,10 +98,12 @@ export function SearchableSelect({
         <ComboboxList>
           {(item: SearchableSelectOption) => (
             <ComboboxItem value={item} key={item.value} disabled={item.disabled}>
-              <div className="flex flex-col">
-                <span>{item.label}</span>
+              {/* min-w-0 + truncate: si la opción excede el tope del popup,
+                  corta con elipsis en vez de desbordar o partirse. */}
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate">{item.label}</span>
                 {item.description && (
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="truncate text-[10px] text-muted-foreground">
                     {item.description}
                   </span>
                 )}
