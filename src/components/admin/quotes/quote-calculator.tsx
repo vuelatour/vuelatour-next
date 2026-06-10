@@ -38,6 +38,7 @@ import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { createQuoteAction, reviseQuoteAction } from "@/app/admin/quotes/actions";
+import { createRouteAction } from "@/app/admin/routes/actions";
 import type {
   CalculateQuoteRequest,
   EscalaInput,
@@ -143,6 +144,63 @@ const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "EFECTIVO", label: "Efectivo", hint: "Sin IVA" },
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },
 ];
+
+/** Mapea una Route del API a la opción local del dropdown (con detalle por tramo). */
+function routeToOption(route: Route): RouteOption {
+  return {
+    id: route.id,
+    tipo: route.tipo,
+    origen_iata: route.origen_iata,
+    destino_iata: route.destino_iata,
+    millas_nauticas: Number(route.millas_nauticas),
+    es_redondo_auto: route.es_redondo_auto,
+    num_aterrizajes: route.num_aterrizajes,
+    tramos: route.tramos.map((t) => ({
+      origen_iata: t.origen_iata,
+      destino_iata: t.destino_iata,
+      millas_nauticas: Number(t.millas_nauticas),
+      pasajeros: t.pasajeros,
+      es_ferry: t.es_ferry,
+      requiere_pernocta: t.requiere_pernocta,
+      pernocta_costo_usd:
+        t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
+      tipo_parada: t.tipo_parada,
+      servicio_notas: t.servicio_notas,
+    })),
+  };
+}
+
+/**
+ * Firma comparable de un itinerario (sin fechas, que son propias de cada
+ * cotización): sirve para detectar si los tramos difieren de la plantilla.
+ */
+function legsSignature(
+  legs: Array<{
+    origen_iata: string;
+    destino_iata: string;
+    millas_nauticas: number | string | null;
+    pasajeros?: number | null;
+    es_ferry?: boolean | null;
+    requiere_pernocta?: boolean | null;
+    pernocta_costo_usd?: number | string | null;
+    tipo_parada?: "NORMAL" | "SERVICIO" | null;
+    servicio_notas?: string | null;
+  }>,
+): string {
+  return JSON.stringify(
+    legs.map((l) => [
+      l.origen_iata?.toUpperCase() ?? "",
+      l.destino_iata?.toUpperCase() ?? "",
+      Number(l.millas_nauticas) || 0,
+      l.pasajeros ?? null,
+      l.es_ferry === true,
+      l.requiere_pernocta === true,
+      l.pernocta_costo_usd != null ? Number(l.pernocta_costo_usd) : null,
+      l.tipo_parada === "SERVICIO" ? "SERVICIO" : "NORMAL",
+      l.servicio_notas ?? null,
+    ]),
+  );
+}
 
 /** Convierte un tramo de ruta (o escala persistida) a EscalaInput con su detalle. */
 function tramoToEscala(t: {
@@ -410,6 +468,47 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     maxPasajeros > selectedAircraft.asientos;
   const tipoTarifa = values.tipo_tarifa;
 
+  // ¿El itinerario de esta cotización difiere de la plantilla seleccionada?
+  // (Las fechas por tramo no cuentan: son propias de cada cotización.)
+  const selectedRouteOpt = allRoutes.find((r) => r.id === values.ruta_id);
+  const itinerarioAjustado =
+    values.escalas.length > 0 &&
+    (!selectedRouteOpt ||
+      selectedRouteOpt.tramos.length === 0 ||
+      legsSignature(values.escalas) !== legsSignature(selectedRouteOpt.tramos));
+
+  const [savingRoute, startSavingRoute] = useTransition();
+  // Guarda el itinerario ajustado como NUEVA ruta del catálogo (la original no
+  // se toca: otras cotizaciones que la usan no se ven afectadas) y la vincula
+  // a esta cotización.
+  const handleSaveAsRoute = () => {
+    startSavingRoute(async () => {
+      const res = await createRouteAction({
+        tramos: values.escalas.map((l) => ({
+          origen_iata: l.origen_iata,
+          destino_iata: l.destino_iata,
+          millas_nauticas: Number(l.millas_nauticas) || 0,
+          pasajeros: l.es_ferry ? 0 : (l.pasajeros ?? null),
+          es_ferry: l.es_ferry ?? false,
+          requiere_pernocta: l.requiere_pernocta ?? false,
+          pernocta_costo_usd: l.pernocta_costo_usd ?? null,
+          tipo_parada: l.tipo_parada ?? "NORMAL",
+          servicio_notas: l.servicio_notas ?? null,
+        })),
+        fuente: "MANUAL",
+        notas: "",
+      });
+      if (res.ok && res.data) {
+        setExtraRoutes((prev) => [...prev, routeToOption(res.data!)]);
+        setValue("ruta_id", res.data.id);
+        toast.success("Itinerario guardado como nueva ruta del catálogo");
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "No se pudo guardar la ruta");
+      }
+    });
+  };
+
   // Hidrata los tramos de la ruta preseleccionada (default) al cargar; el
   // onChange del selector cubre los cambios posteriores.
   useEffect(() => {
@@ -622,6 +721,25 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   airports={airports}
                 />
               </Field>
+              {itinerarioAjustado && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-2.5">
+                  <p className="text-xs text-muted-foreground">
+                    Este itinerario difiere de la ruta guardada. Si se va a
+                    repetir, guárdalo en el catálogo (la ruta original no se
+                    toca).
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSaveAsRoute}
+                    disabled={savingRoute}
+                    className="shrink-0"
+                  >
+                    {savingRoute ? "Guardando…" : "Guardar como nueva ruta"}
+                  </Button>
+                </div>
+              )}
               <div className="hidden xl:block">
                 <RoutePreviewMap
                   airports={airports}
@@ -861,27 +979,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         onOpenChange={setRouteSheetOpen}
         airports={airports}
         onSaved={(route: Route) => {
-          const opt: RouteOption = {
-            id: route.id,
-            tipo: route.tipo,
-            origen_iata: route.origen_iata,
-            destino_iata: route.destino_iata,
-            millas_nauticas: Number(route.millas_nauticas),
-            es_redondo_auto: route.es_redondo_auto,
-            num_aterrizajes: route.num_aterrizajes,
-            tramos: route.tramos.map((t) => ({
-              origen_iata: t.origen_iata,
-              destino_iata: t.destino_iata,
-              millas_nauticas: Number(t.millas_nauticas),
-              pasajeros: t.pasajeros,
-              es_ferry: t.es_ferry,
-              requiere_pernocta: t.requiere_pernocta,
-              pernocta_costo_usd:
-                t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
-              tipo_parada: t.tipo_parada,
-              servicio_notas: t.servicio_notas,
-            })),
-          };
+          const opt = routeToOption(route);
           setExtraRoutes((prev) => [...prev, opt]);
           // Auto-selecciona la ruta recién creada y carga sus tramos.
           setValue("ruta_id", opt.id);
