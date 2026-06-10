@@ -18,6 +18,7 @@ import {
 import { IssuingEntityActions } from "@/components/admin/issuing-entities/issuing-entity-actions";
 import { IssuingEntityCreateButton } from "@/components/admin/issuing-entities/issuing-entity-create-button";
 import { listIssuingEntities } from "@/lib/api/issuing-entities-server";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -38,17 +39,11 @@ export default async function IssuingEntitiesPage() {
       </div>
 
       {entities.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <DocumentTextIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin entidades registradas</CardTitle>
-            <CardDescription>Crea la entidad para empezar a emitir facturas.</CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={DocumentTextIcon}
+            title="Sin entidades registradas"
+            description="Crea la entidad para empezar a emitir facturas."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

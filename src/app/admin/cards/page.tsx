@@ -20,6 +20,7 @@ import { CardCreateButton } from "@/components/admin/cards/card-create-button";
 import { apiServer } from "@/lib/api/server";
 import { listCards } from "@/lib/api/cards-server";
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -69,19 +70,11 @@ export default async function CardsPage() {
       </div>
 
       {cards.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <CreditCardIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin tarjetas registradas</CardTitle>
-            <CardDescription>
-              Registra la primera tarjeta y vincúlala a un titular.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={CreditCardIcon}
+            title="Sin tarjetas registradas"
+            description="Registra la primera tarjeta y vincúlala a un titular."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

@@ -26,6 +26,7 @@ import { listUsers } from "@/lib/api/users-server";
 import { listEngines } from "@/lib/api/engines-server";
 import { fmtDecimal } from "@/lib/format";
 import type { EstadoVencimiento } from "@/types/expirations";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -143,19 +144,11 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
       />
 
       {expiraciones.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <ShieldCheckIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin vencimientos en el rango</CardTitle>
-            <CardDescription>
-              Registra el primer documento o ajusta los filtros.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={ShieldCheckIcon}
+            title="Sin vencimientos en el rango"
+            description="Registra el primer documento o ajusta los filtros."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

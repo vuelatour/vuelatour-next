@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
 import Link from "next/link";
 import { BeakerIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { FuelAssignFlight } from "@/components/admin/expenses/fuel-assign-flight
 import { listFuelLoads, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listCards } from "@/lib/api/cards-server";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -44,20 +45,11 @@ export default async function CombustiblesPage() {
       </div>
 
       {loads.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <BeakerIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin cargas de combustible</CardTitle>
-            <CardDescription>
-              Las cargas que registre el mecánico (o los pilotos) aparecerán aquí, vinculadas a su
-              aeronave y vuelo.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={BeakerIcon}
+            title="Sin cargas de combustible"
+            description="Las cargas que registre el mecánico (o los pilotos) aparecerán aquí, vinculadas a su aeronave y vuelo."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -93,13 +85,7 @@ export default async function CombustiblesPage() {
                       </TableCell>
                       <TableCell className="text-xs">
                         {l.fecha_hora_carga
-                          ? new Date(l.fecha_hora_carga).toLocaleString("es-MX", {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              timeZone: "America/Cancun",
-                            })
+                          ? fmtDateTimeShort(l.fecha_hora_carga)
                           : l.fecha_gasto
                             ? fmtDateOnly(l.fecha_gasto)
                             : "—"}
@@ -147,7 +133,7 @@ export default async function CombustiblesPage() {
                       </TableCell>
                       <TableCell>
                         {url ? (
-                          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block">
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block" aria-label="Ver recibo en tamano completo">
                             <Image
                               src={url}
                               alt="Recibo"

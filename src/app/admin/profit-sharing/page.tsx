@@ -19,6 +19,7 @@ import { ReportDownloads } from "@/components/admin/profit-sharing/report-downlo
 import { getProfitSharing } from "@/lib/api/profit-sharing-server";
 import { fmtUsd, fmtDecimal } from "@/lib/format";
 import type { AvionReparto } from "@/types/profit-sharing";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -84,17 +85,11 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
       </div>
 
       {result.aviones.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <ChartPieIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin aeronaves activas</CardTitle>
-            <CardDescription>No hay datos para repartir en el periodo.</CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={ChartPieIcon}
+            title="Sin aeronaves activas"
+            description="No hay datos para repartir en el periodo."
+          />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {result.aviones.map((a) => (

@@ -19,6 +19,7 @@ import { DocumentTypeActions } from "@/components/admin/document-types/document-
 import { DocumentTypeCreateButton } from "@/components/admin/document-types/document-type-create-button";
 import { listDocumentTypes } from "@/lib/api/document-types-server";
 import { AMBITO_OPTIONS, FORMA_OPTIONS, labelOf } from "./schema";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -47,19 +48,11 @@ export default async function DocumentTypesPage() {
       </div>
 
       {tipos.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <DocumentTextIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin tipos de documento</CardTitle>
-            <CardDescription>
-              Crea el primer tipo para empezar a registrar vencimientos.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={DocumentTextIcon}
+            title="Sin tipos de documento"
+            description="Crea el primer tipo para empezar a registrar vencimientos."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

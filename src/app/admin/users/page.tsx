@@ -24,6 +24,7 @@ import { UserActions } from "@/components/admin/users/user-actions";
 import { UserInviteButton } from "@/components/admin/users/user-invite-button";
 import { getMe } from "@/lib/api/me";
 import { listUsers } from "@/lib/api/users-server";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -63,19 +64,11 @@ export default async function UsersPage() {
       </div>
 
       {users.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <UserCircleIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin usuarios</CardTitle>
-            <CardDescription>
-              Cuando alguien se loguee con Google aparecerá aquí.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={UserCircleIcon}
+            title="Sin usuarios"
+            description="Cuando alguien se loguee con Google aparecerá aquí."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

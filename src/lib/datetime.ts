@@ -30,6 +30,18 @@ export function fmtDateTime(iso?: string | null): string {
 }
 
 /** timestamptz → "08 jun 2026" (el día calendario en Cancún). */
+/** Fecha + hora cortas en TZ Cancun ("12 jun, 14:30"). Para celdas de tabla. */
+export function fmtDateTimeShort(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("es-MX", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Cancun",
+  });
+}
+
 export function fmtDate(iso?: string | null): string {
   const d = valid(iso);
   if (!d) return "—";

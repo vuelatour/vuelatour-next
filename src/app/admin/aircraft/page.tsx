@@ -13,6 +13,7 @@ import {
 import { AircraftCreateButton } from "@/components/admin/aircraft/aircraft-create-button";
 import { listAircraft } from "@/lib/api/aircraft";
 import { fmtUsd } from "@/lib/format";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -33,19 +34,11 @@ export default async function AircraftListPage() {
       </div>
 
       {aircraft.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <PaperAirplaneIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin aeronaves registradas</CardTitle>
-            <CardDescription>
-              Cuando agregues aeronaves al sistema aparecerán aquí.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={PaperAirplaneIcon}
+            title="Sin aeronaves registradas"
+            description="Cuando agregues aeronaves al sistema aparecerán aquí."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

@@ -243,6 +243,7 @@ export function DistanciasManager({ initial }: { initial: DistanciaTramo[] }) {
                         onClick={() => setToDelete(d)}
                         className="text-muted-foreground hover:text-destructive transition-colors"
                         title="Eliminar"
+                        aria-label={`Eliminar distancia ${d.origen_iata} a ${d.destino_iata}`}
                       >
                         <TrashIcon className="h-4 w-4" />
                       </button>

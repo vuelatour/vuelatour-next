@@ -18,6 +18,7 @@ import {
 import { ClientActions } from "@/components/admin/clients/client-actions";
 import { ClientCreateButton } from "@/components/admin/clients/client-create-button";
 import { listClients } from "@/lib/api/clients-server";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -46,20 +47,11 @@ export default async function ClientsPage() {
       </div>
 
       {clients.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <UsersIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin clientes registrados</CardTitle>
-            <CardDescription>
-              Cuando llegue la primera solicitud, regístrala aquí para reusar sus datos en futuras
-              cotizaciones.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={UsersIcon}
+            title="Sin clientes registrados"
+            description="Cuando llegue la primera solicitud, regístrala aquí para reusar sus datos en futuras cotizaciones."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">

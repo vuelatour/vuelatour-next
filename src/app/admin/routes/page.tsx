@@ -20,6 +20,7 @@ import { RouteCreateButton } from "@/components/admin/routes/route-create-button
 import { listRoutes } from "@/lib/api/routes-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { fmtDecimal } from "@/lib/format";
+import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -52,19 +53,11 @@ export default async function RoutesPage() {
       </div>
 
       {routes.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                <MapIcon className="h-7 w-7 text-muted-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-lg">Sin rutas registradas</CardTitle>
-            <CardDescription>
-              Crea la primera ruta para que el cotizador la reuse.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+            icon={MapIcon}
+            title="Sin rutas registradas"
+            description="Crea la primera ruta para que el cotizador la reuse."
+          />
       ) : (
         <Card>
           <CardContent className="p-0">
