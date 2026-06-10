@@ -102,7 +102,6 @@ interface QuoteFormValues {
   fecha_vuelo: string;
   fecha_traslado_final: string;
   aeronave_id: string;
-  ruta_mode: "predefined" | "manual";
   ruta_id: string;
   escalas: EscalaInput[];
   tipo_tarifa: TipoTarifa;
@@ -248,7 +247,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ? q.fecha_traslado_final.slice(0, 16)
           : "",
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
-        ruta_mode: "manual" as const,
         ruta_id: "",
         escalas:
           q.escalas && q.escalas.length > 0
@@ -272,7 +270,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       fecha_vuelo: "",
       fecha_traslado_final: "",
       aeronave_id: defaultAircraftId,
-      ruta_mode: "predefined",
       ruta_id: defaultRutaId,
       escalas: [],
       tipo_tarifa: "PUBLICO",
@@ -320,13 +317,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pase_abordar: debounced.pase_abordar,
       metodo_pago: debounced.metodo_pago,
     };
-    if (debounced.ruta_mode === "predefined") {
-      // El backend hidrata los tramos de la ruta guardada (con sus defaults).
-      if (!debounced.ruta_id) return null;
-      base.ruta_id = debounced.ruta_id;
-    } else {
-      const legs = debounced.escalas ?? [];
-      if (legs.length < 1) return null;
+    const legs = debounced.escalas ?? [];
+    if (legs.length >= 1) {
+      // Itinerario propio de la cotización (plantilla hidratada y ajustable).
       const incomplete = legs.some(
         (l) => !l.origen_iata || !l.destino_iata || !(Number(l.millas_nauticas) > 0),
       );
@@ -343,6 +336,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         servicio_notas: l.servicio_notas ?? null,
         fecha_salida_plan: l.fecha_salida_plan || null,
       }));
+      // La ruta guardada queda solo como referencia de la plantilla usada.
+      if (debounced.ruta_id) base.ruta_id = debounced.ruta_id;
+    } else if (debounced.ruta_id) {
+      // Sin tramos locales: el backend hidrata los de la ruta guardada.
+      base.ruta_id = debounced.ruta_id;
+    } else {
+      return null;
     }
     if (base.pasajeros < 1) return null;
     if (debounced.tarifa_hora_override_usd) {
@@ -408,9 +408,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !!selectedAircraft &&
     !!selectedAircraft.asientos &&
     maxPasajeros > selectedAircraft.asientos;
-  const selectedRoute = allRoutes.find((r) => r.id === values.ruta_id);
   const tipoTarifa = values.tipo_tarifa;
-  const rutaMode = values.ruta_mode;
+
+  // Hidrata los tramos de la ruta preseleccionada (default) al cargar; el
+  // onChange del selector cubre los cambios posteriores.
+  useEffect(() => {
+    if (!values.ruta_id || values.escalas.length > 0) return;
+    const ruta = allRoutes.find((r) => r.id === values.ruta_id);
+    if (ruta && ruta.tramos.length > 0) {
+      setValue("escalas", ruta.tramos.map(tramoToEscala));
+    }
+    // setValue es estable en RHF.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.ruta_id, values.escalas.length, allRoutes]);
 
   const motivoTrim = values.motivo?.trim() ?? "";
   const canSave =
@@ -556,109 +566,54 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </Field>
 
           {/* Ruta */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">
-              Ruta<span className="text-destructive ml-0.5">*</span>
-            </Label>
-            <Segmented
-              value={rutaMode}
+          <Field label="Ruta guardada" required>
+            <SearchableSelect
+              options={allRoutes.map((r) => {
+                const path =
+                  r.tramos.length > 0
+                    ? [
+                        r.tramos[0]?.origen_iata,
+                        ...r.tramos.map((t) => t.destino_iata),
+                      ]
+                        .filter(Boolean)
+                        .join(" → ")
+                    : `${r.origen_iata} → ${r.destino_iata}`;
+                return {
+                  value: r.id,
+                  label: path,
+                  description: `${r.millas_nauticas} NM · ${r.tramos.length} ${
+                    r.tramos.length === 1 ? "tramo" : "tramos"
+                  }`,
+                };
+              })}
+              value={values.ruta_id}
               onChange={(v) => {
-                const next = v as "predefined" | "manual";
-                setValue("ruta_mode", next);
-                if (next === "manual") {
-                  // Al cambiar a manual: olvidar la ruta del catalogo. Si era multi,
-                  // mantenemos las escalas cargadas como base editable.
-                  setValue("ruta_id", "");
+                setValue("ruta_id", v);
+                const ruta = allRoutes.find((r) => r.id === v);
+                if (ruta && ruta.tramos.length > 0) {
+                  // Carga los tramos de la plantilla como itinerario editable
+                  // de ESTA cotización (la ruta guardada no se modifica).
+                  setValue("escalas", ruta.tramos.map(tramoToEscala));
                 }
               }}
-              options={[
-                { value: "predefined", label: "Predefinida" },
-                { value: "manual", label: "Manual" },
-              ]}
+              placeholder="Selecciona ruta"
+              emptyText="Sin rutas — crea una abajo"
             />
-          </div>
+            <button
+              type="button"
+              onClick={() => setRouteSheetOpen(true)}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              Crear nueva ruta
+            </button>
+          </Field>
 
-          {rutaMode === "predefined" ? (
-            <Field label="Ruta guardada" required>
-              <SearchableSelect
-                options={allRoutes.map((r) => {
-                  const path =
-                    r.tramos.length > 0
-                      ? [
-                          r.tramos[0]?.origen_iata,
-                          ...r.tramos.map((t) => t.destino_iata),
-                        ]
-                          .filter(Boolean)
-                          .join(" → ")
-                      : `${r.origen_iata} → ${r.destino_iata}`;
-                  return {
-                    value: r.id,
-                    label: path,
-                    description: `${r.millas_nauticas} NM · ${r.tramos.length} ${
-                      r.tramos.length === 1 ? "tramo" : "tramos"
-                    }`,
-                  };
-                })}
-                value={values.ruta_id}
-                onChange={(v) => {
-                  setValue("ruta_id", v);
-                  const ruta = allRoutes.find((r) => r.id === v);
-                  if (ruta && ruta.tramos.length > 0) {
-                    // Hidrata las escalas con los defaults de la plantilla para
-                    // poder "Personalizar tramos" sin rearmar desde cero.
-                    setValue("escalas", ruta.tramos.map(tramoToEscala));
-                  }
-                }}
-                placeholder="Selecciona ruta"
-                emptyText="Sin rutas — crea una abajo"
-              />
-              <button
-                type="button"
-                onClick={() => setRouteSheetOpen(true)}
-                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                Crear nueva ruta
-              </button>
-              {selectedRoute && selectedRoute.tramos.length > 0 && (
-                <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Tramos del catálogo · solo lectura
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setValue("ruta_mode", "manual");
-                        setValue("ruta_id", "");
-                      }}
-                      className="text-[11px] font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
-                    >
-                      Personalizar tramos
-                    </button>
-                  </div>
-                  <ol className="space-y-1 text-xs font-mono">
-                    {selectedRoute.tramos.map((t, i) => (
-                      <li key={i} className="flex items-center justify-between gap-2">
-                        <span>
-                          <span className="text-muted-foreground mr-2">{i + 1}.</span>
-                          {t.origen_iata} → {t.destino_iata}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {fmtDecimal(t.millas_nauticas)} NM
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-            </Field>
-          ) : (
+          {values.escalas.length > 0 ? (
             <>
               <Field
-                label="Tramos"
-                required
-                hint="Origen del siguiente tramo queda fijo al destino del anterior. Agrega el regreso a base si aplica."
+                label="Tramos de esta cotización"
+                hint="Los ajustes (pax, ferry, pernocta, fechas) aplican solo a esta cotización; la ruta guardada no se modifica."
               >
                 <QuoteLegsEditor
                   value={values.escalas}
@@ -680,6 +635,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 />
               </div>
             </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Selecciona una ruta guardada (o crea una nueva) para cargar su
+              itinerario y ajustarlo aquí.
+            </p>
           )}
 
           {/* Tarifa tipo */}
@@ -923,10 +883,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             })),
           };
           setExtraRoutes((prev) => [...prev, opt]);
-          setValue("ruta_mode", "predefined");
+          // Auto-selecciona la ruta recién creada y carga sus tramos.
           setValue("ruta_id", opt.id);
-          if (opt.tipo === "MULTIESCALA") {
-            setValue("tipo", "MULTIESCALA");
+          if (opt.tramos.length > 0) {
             setValue("escalas", opt.tramos.map(tramoToEscala));
           }
           // Refresh server data en background para que la próxima carga ya
