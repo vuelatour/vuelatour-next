@@ -123,8 +123,10 @@ interface QuoteFormValues {
   cotizacion_abierta: boolean;
   /** Conceptos extra (handler, comisariato, extensión…). */
   extras: ExtraConcepto[];
-  /** Ajuste final: negativo = descuento, positivo = redondeo. */
-  ajuste_final_usd: number | null;
+  /** Redondeo hacia arriba (casi siempre lo aplican; números cerrados). */
+  redondeo_usd: number | null;
+  /** Descuento negociado ("ciérramelo en 750"). Se captura en positivo. */
+  descuento_usd: number | null;
   metodo_pago: MetodoPago;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
@@ -363,7 +365,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pase_abordar: q.pase_abordar,
         cotizacion_abierta: q.cotizacion_abierta ?? false,
         extras: q.extras ?? [],
-        ajuste_final_usd: Number(q.ajuste_final_usd) || null,
+        redondeo_usd:
+          Number(q.ajuste_final_usd) > 0 ? Number(q.ajuste_final_usd) : null,
+        descuento_usd:
+          Number(q.ajuste_final_usd) < 0 ? Math.abs(Number(q.ajuste_final_usd)) : null,
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
@@ -387,7 +392,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pase_abordar: false,
       cotizacion_abierta: false,
       extras: [],
-      ajuste_final_usd: null,
+      redondeo_usd: null,
+      descuento_usd: null,
       metodo_pago: "TRANSFERENCIA",
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
@@ -436,7 +442,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           monto_usd: Number(e.monto_usd),
           aplica_iva: e.aplica_iva ?? true,
         })),
-      ajuste_final_usd: Number(debounced.ajuste_final_usd) || 0,
+      ajuste_final_usd:
+        (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
       metodo_pago: debounced.metodo_pago,
     };
     const legs = debounced.escalas ?? [];
@@ -1025,72 +1032,106 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onChange={(extras) => setValue("extras", extras)}
           />
 
-          {/* Ajuste final: cerrar el total en un número negociado/redondo. */}
-          <Field
-            label="Ajuste final del total"
-            hint="Negativo = descuento (ej. “ciérramelo en 750”) · positivo = redondeo hacia arriba. Fuera de IVA; queda como línea del desglose."
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                className="w-32"
-                value={values.ajuste_final_usd ?? ""}
-                onChange={(e) =>
-                  setValue(
-                    "ajuste_final_usd",
-                    e.target.value === "" ? null : Number(e.target.value),
-                  )
-                }
-              />
-              {breakdown && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const sinAjuste =
-                      breakdown.totales.total_usd -
-                      (breakdown.totales.ajuste_final_usd ?? 0);
-                    const redondeado = Math.ceil(sinAjuste / 10) * 10;
+          {/* Cierre del total: redondeo (casi siempre) y descuento por separado,
+              con la suma en vivo. Hacia el motor viajan como UNA línea de
+              ajuste (redondeo − descuento) para que el desglose siga cuadrando. */}
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <p className="text-sm font-medium">Cierre del total</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Redondeo hacia arriba" hint="Números cerrados (pagan en efectivo).">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="0.00"
+                    className="w-24"
+                    value={values.redondeo_usd ?? ""}
+                    onChange={(e) =>
+                      setValue(
+                        "redondeo_usd",
+                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                      )
+                    }
+                  />
+                  {breakdown && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      title="Calcula el redondeo a la siguiente decena del total"
+                      onClick={() => {
+                        const cotizado =
+                          breakdown.totales.total_usd -
+                          (breakdown.totales.ajuste_final_usd ?? 0);
+                        const base = cotizado - (Number(values.descuento_usd) || 0);
+                        const target = Math.ceil(base / 10) * 10;
+                        setValue(
+                          "redondeo_usd",
+                          Math.round((target - base) * 100) / 100 || null,
+                        );
+                      }}
+                    >
+                      Redondear ↑
+                    </Button>
+                  )}
+                </div>
+              </Field>
+              <Field label="Descuento" hint="Negociado: “ciérramelo en 750”.">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  placeholder="0.00"
+                  className="w-28"
+                  value={values.descuento_usd ?? ""}
+                  onChange={(e) =>
                     setValue(
-                      "ajuste_final_usd",
-                      Math.round((redondeado - sinAjuste) * 100) / 100,
-                    );
-                  }}
-                >
-                  Redondear ↑
-                </Button>
-              )}
-              {(values.ajuste_final_usd ?? 0) !== 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setValue("ajuste_final_usd", null)}
-                >
-                  Quitar
-                </Button>
-              )}
+                      "descuento_usd",
+                      e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                    )
+                  }
+                />
+              </Field>
             </div>
-            {breakdown && (breakdown.totales.ajuste_final_usd ?? 0) !== 0 && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Cotizado{" "}
-                {fmtUsd(
-                  breakdown.totales.total_usd -
-                    (breakdown.totales.ajuste_final_usd ?? 0),
-                )}{" "}
-                {(breakdown.totales.ajuste_final_usd ?? 0) < 0
-                  ? "− descuento"
-                  : "+ redondeo"}{" "}
-                {fmtUsd(Math.abs(breakdown.totales.ajuste_final_usd ?? 0))} ={" "}
-                <span className="font-semibold">
-                  {fmtUsd(breakdown.totales.total_usd)}
-                </span>
-              </p>
-            )}
-          </Field>
+            {breakdown &&
+              ((Number(values.redondeo_usd) || 0) > 0 ||
+                (Number(values.descuento_usd) || 0) > 0) && (
+                (() => {
+                  const cotizado =
+                    breakdown.totales.total_usd -
+                    (breakdown.totales.ajuste_final_usd ?? 0);
+                  const redondeo = Number(values.redondeo_usd) || 0;
+                  const descuento = Number(values.descuento_usd) || 0;
+                  return (
+                    <div className="rounded-md bg-muted/40 px-3 py-2 text-sm space-y-0.5">
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Cotizado</span>
+                        <span className="font-mono">{fmtUsd(cotizado)}</span>
+                      </div>
+                      {redondeo > 0 && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>+ Redondeo</span>
+                          <span className="font-mono">{fmtUsd(redondeo)}</span>
+                        </div>
+                      )}
+                      {descuento > 0 && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>− Descuento</span>
+                          <span className="font-mono">−{fmtUsd(descuento)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-border pt-1 font-semibold">
+                        <span>Total a cobrar</span>
+                        <span className="font-mono">
+                          {fmtUsd(cotizado + redondeo - descuento)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+          </div>
 
           <Field label="Método de pago" required>
             <SearchableSelect
