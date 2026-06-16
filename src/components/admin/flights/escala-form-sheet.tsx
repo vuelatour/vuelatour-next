@@ -275,8 +275,16 @@ export function EscalaFormSheet({
             </Field>
           </div>
 
-          <Field label="Notas" error={errors.notas?.message}>
-            <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
+          <Field
+            label="Nota para el piloto"
+            hint="Se muestra al piloto en su app, sobre este tramo (ej. “cargar gasolina aquí”, “revisar llanta en…”)."
+            error={errors.notas?.message}
+          >
+            <Textarea
+              rows={2}
+              placeholder="Ej. Cargar turbosina aprovechando la escala"
+              {...register("notas")}
+            />
           </Field>
         </form>
 
