@@ -42,6 +42,24 @@ export function getFlightTacoPhotos(id: string) {
   });
 }
 
+export interface BitacoraEvento {
+  id: string;
+  tipo: "recordatorio_taco" | "taco_capturado";
+  titulo: string;
+  cuerpo: string | null;
+  umbral: number | null;
+  destinatario: string | null;
+  destinatario_rol: string | null;
+  created_at: string;
+}
+
+/** Bitácora: recordatorios de tacómetro enviados + capturas registradas. */
+export function getFlightBitacora(id: string) {
+  return apiServer<BitacoraEvento[]>(`/v1/flights/${id}/bitacora`, {
+    cache: "no-store",
+  }).catch(() => [] as BitacoraEvento[]);
+}
+
 /** Firma URLs de vouchers de cobro (bucket privado) para el detalle del vuelo. */
 export function getCobroVoucherUrls(paths: string[]) {
   if (paths.length === 0) return Promise.resolve<Record<string, string>>({});

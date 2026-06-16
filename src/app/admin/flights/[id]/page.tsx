@@ -18,10 +18,12 @@ import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
 import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card";
+import { FlightBitacoraCard } from "@/components/admin/flights/flight-bitacora-card";
 import {
   getFlightSnapshot,
   getFlightTacoPhotos,
   getCobroVoucherUrls,
+  getFlightBitacora,
 } from "@/lib/api/flights-server";
 import { getClient } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -29,7 +31,6 @@ import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtUsd } from "@/lib/format";
-import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 
 export const dynamic = "force-dynamic";
@@ -85,13 +86,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
       listUsers({ rol: "PILOTO", limit: 50 }),
       listAirports({ limit: 200, activo: true }),
       getFlightTacoPhotos(id).catch(() => []),
+      getFlightBitacora(id),
     ]);
 
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
@@ -399,6 +401,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             cobros={snapshot.cobros}
             voucherUrls={voucherUrls}
           />
+
+          {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
+          <FlightBitacoraCard eventos={bitacora} />
         </div>
 
         <div className="space-y-6">
