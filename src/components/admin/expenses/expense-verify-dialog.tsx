@@ -22,6 +22,7 @@ import { Field } from "@/components/admin/form-field";
 const CATEGORIAS = [
   "GAS",
   "ATERRIZAJE",
+  "OPERACIONES",
   "TUAS",
   "FBO",
   "COMIDA",

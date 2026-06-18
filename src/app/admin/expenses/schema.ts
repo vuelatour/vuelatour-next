@@ -3,6 +3,7 @@ import { z } from "zod";
 export const CategoriaEnum = z.enum([
   "GAS",
   "ATERRIZAJE",
+  "OPERACIONES",
   "TUAS",
   "FBO",
   "COMIDA",
