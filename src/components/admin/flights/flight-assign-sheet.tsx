@@ -41,6 +41,7 @@ interface PilotOption {
 interface AssignFormValues {
   aeronave_id: string;
   piloto_id: string;
+  copiloto_id: string;
   fecha_vuelo: string;
 }
 
@@ -56,6 +57,7 @@ function defaults(flight: FlightListItem): AssignFormValues {
   return {
     aeronave_id: flight.aeronave_id ?? "",
     piloto_id: flight.piloto_id ?? "",
+    copiloto_id: flight.copiloto_id ?? "",
     fecha_vuelo: isoToCancunInput(flight.fecha_vuelo),
   };
 }
@@ -95,6 +97,7 @@ export function FlightAssignSheet({
 
   const aeronaveId = watch("aeronave_id");
   const pilotoId = watch("piloto_id");
+  const copilotoId = watch("copiloto_id");
   const dispoById = new Map(dispo.map((d) => [d.id, d]));
   const selectedPiloto = pilotoId ? dispoById.get(pilotoId) : undefined;
 
@@ -125,6 +128,7 @@ export function FlightAssignSheet({
     const payload: {
       aeronave_id?: string;
       piloto_id?: string;
+      copiloto_id?: string | null;
       fecha_vuelo?: string;
     } = {};
     if (!flight.es_externo && values.aeronave_id !== (flight.aeronave_id ?? "")) {
@@ -132,6 +136,10 @@ export function FlightAssignSheet({
     }
     if (values.piloto_id !== (flight.piloto_id ?? "")) {
       payload.piloto_id = values.piloto_id || undefined;
+    }
+    if (values.copiloto_id !== (flight.copiloto_id ?? "")) {
+      // null explícito para quitar el copiloto (string vacío).
+      payload.copiloto_id = values.copiloto_id || null;
     }
     if (values.fecha_vuelo) {
       payload.fecha_vuelo = cancunInputToIso(values.fecha_vuelo);
@@ -231,6 +239,22 @@ export function FlightAssignSheet({
             <p className="text-[11px] text-muted-foreground">
               El estado muestra conflicto de horario ese día y horas voladas del mes (límite
               informativo 90 h; no bloquea).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Copiloto (opcional)</Label>
+            <SearchableSelect
+              options={[
+                { value: "", label: "Sin copiloto" },
+                ...pilotOptions.filter((o) => o.value !== pilotoId),
+              ]}
+              value={copilotoId}
+              onChange={(v) => setValue("copiloto_id", v)}
+              placeholder="Selecciona copiloto"
+              emptyText="Sin pilotos activos"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Cuando van 2 pilotos. El copiloto ve todo el vuelo en su app igual que el piloto.
             </p>
           </div>
           <div className="space-y-1.5">

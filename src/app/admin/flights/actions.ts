@@ -29,6 +29,8 @@ function revalidateFlight(id: string) {
 export interface AssignFlightPayload {
   aeronave_id?: string;
   piloto_id?: string;
+  /** Copiloto del viaje (segundo piloto). null = quitarlo. */
+  copiloto_id?: string | null;
   fecha_vuelo?: string;
 }
 

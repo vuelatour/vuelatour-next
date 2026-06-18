@@ -250,15 +250,16 @@ export function FlightMetaSheet({
           )}
 
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Nombres de pasajeros</Label>
+            <Label className="text-sm font-medium">Nombres de pasajeros (opcional)</Label>
             <Textarea
               rows={3}
               placeholder={"Juan Pérez\nMaría López"}
               {...register("pasajeros_nombres")}
             />
             <p className="text-xs text-muted-foreground">
-              Uno por línea. Necesarios para tramitar permisos; el piloto los ve
-              en su app.
+              Opcional: uno por línea. Útiles para tramitar permisos y el piloto
+              los ve en su app, pero no son obligatorios — si no los tienes,
+              déjalo vacío. La cantidad de pasajeros se define en cada escala.
             </p>
           </div>
 

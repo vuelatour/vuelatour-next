@@ -98,6 +98,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
+  const copiloto = pilotsRes.data.find((p) => p.id === snapshot.copiloto_id);
 
   const aircraftOptions = aircraftRes.data.map((a) => ({
     id: a.id,
@@ -353,6 +354,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                         <span className="text-muted-foreground">Sin asignar</span>
                       )}
                     </Row>
+                    {copiloto && <Row label="Copiloto">{copiloto.nombre}</Row>}
                     <Row label="Traslado inicial">
                       {snapshot.fecha_vuelo ? (
                         fmtDateTime(snapshot.fecha_vuelo)

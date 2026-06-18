@@ -9,6 +9,8 @@ export interface FlightListItem {
   cliente_id: string;
   aeronave_id: string | null;
   piloto_id: string | null;
+  /** Copiloto del viaje (segundo piloto): ve todo el vuelo igual que el piloto. */
+  copiloto_id: string | null;
   ruta_id: string | null;
   tipo: "REDONDO" | "MULTIESCALA";
   estado: EstadoVuelo;
