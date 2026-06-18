@@ -18,6 +18,7 @@ export interface PersistedEscala {
   pernocta_costo_usd: string | null;
   tipo_parada: "NORMAL" | "SERVICIO";
   servicio_notas: string | null;
+  solo_operativa?: boolean;
   fecha_salida_plan: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;

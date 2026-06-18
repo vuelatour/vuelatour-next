@@ -236,6 +236,36 @@ export async function createEscalaAction(
   }
 }
 
+export interface OperationalLegPayload {
+  origen_iata: string;
+  destino_iata: string;
+  pasajeros?: number;
+  es_ferry?: boolean;
+  requiere_pernocta?: boolean;
+  tipo_parada?: "NORMAL" | "SERVICIO";
+  servicio_notas?: string;
+  fecha_salida_plan?: string;
+  notas?: string;
+}
+
+/** Agrega un tramo operativo interno (ruta real) sin tocar la cotización. */
+export async function createOperationalLegAction(
+  flightId: string,
+  payload: OperationalLegPayload,
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const escala = await apiServer<FlightEscala>(
+      `/v1/flights/${flightId}/operational-legs`,
+      { method: "POST", body: payload },
+    );
+    revalidateFlight(flightId);
+    revalidatePath("/admin/calendar");
+    return { ok: true, data: escala };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface AssignEscalaPayload {
   aeronave_id?: string;
   piloto_id?: string;

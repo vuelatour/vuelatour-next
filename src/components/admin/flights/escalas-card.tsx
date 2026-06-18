@@ -44,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EscalaFormSheet } from "./escala-form-sheet";
+import { OperationalLegSheet } from "./operational-leg-sheet";
 import { deleteEscalaAction } from "@/app/admin/flights/actions";
 import { fmtDecimal } from "@/lib/format";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
@@ -72,6 +73,7 @@ export function EscalasCard({
   airports,
 }: EscalasCardProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [opSheetOpen, setOpSheetOpen] = useState(false);
   const [editing, setEditing] = useState<FlightEscala | undefined>();
   const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(
     null,
@@ -99,23 +101,35 @@ export function EscalasCard({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
           <div className="space-y-1">
-            <CardTitle className="text-sm">Escalas e itinerario</CardTitle>
+            <CardTitle className="text-sm">Operación de vuelo · ruta real</CardTitle>
             <CardDescription className="text-xs">
               {escalas.length === 0
-                ? "Sin escalas registradas todavía."
-                : `${escalas.length} ${escalas.length === 1 ? "tramo registrado" : "tramos registrados"}. Tacómetros se capturan desde la app móvil del piloto.`}
+                ? "Sin tramos registrados todavía."
+                : `${escalas.length} ${escalas.length === 1 ? "tramo" : "tramos"}. Incluye los tramos comerciales (cotizados) y los operativos internos. Tacómetros desde la app del piloto.`}
             </CardDescription>
           </div>
           {canManage && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={openCreate}
-              className="gap-1.5 shrink-0"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              Añadir
-            </Button>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openCreate}
+                className="gap-1.5"
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                Añadir
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setOpSheetOpen(true)}
+                className="gap-1.5"
+                title="Movimiento real que NO se cobra al cliente (ferry, parada técnica, pernocta operativa)."
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                Tramo operativo
+              </Button>
+            </div>
           )}
         </CardHeader>
         <CardContent>
@@ -143,9 +157,18 @@ export function EscalasCard({
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono font-semibold text-sm">
                         <span className="text-muted-foreground mr-2">
-                          {esc.orden}.
+                          {esc.solo_operativa ? "·" : `${esc.orden}.`}
                         </span>
                         {esc.origen_iata} → {esc.destino_iata}
+                        {esc.solo_operativa && (
+                          <Badge
+                            variant="outline"
+                            className="ml-2 text-[10px] bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30 align-middle"
+                            title="Tramo operativo interno: no se cotiza ni se cobra; no aparece en la cotización del cliente."
+                          >
+                            Interno
+                          </Badge>
+                        )}
                       </span>
                       <div className="flex items-center gap-2">
                         {esc.taco_salida && esc.taco_llegada ? (
@@ -276,6 +299,15 @@ export function EscalasCard({
         airports={airports}
         takenOrdenes={takenOrdenes}
         initialEscala={editing}
+      />
+
+      {/* key por apertura: remonta con campos limpios sin resetear en efecto. */}
+      <OperationalLegSheet
+        key={opSheetOpen ? "op-open" : "op-closed"}
+        open={opSheetOpen}
+        onOpenChange={setOpSheetOpen}
+        flightId={flightId}
+        airports={airports}
       />
 
       <Dialog

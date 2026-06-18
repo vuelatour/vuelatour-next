@@ -356,8 +356,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
         ruta_id: "",
         escalas:
-          q.escalas && q.escalas.length > 0
-            ? q.escalas.map(tramoToEscala)
+          q.escalas && q.escalas.filter((e) => !e.solo_operativa).length > 0
+            ? q.escalas.filter((e) => !e.solo_operativa).map(tramoToEscala)
             : legacyLegs,
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,

@@ -193,9 +193,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                {quote.tipo === "MULTIESCALA" && quote.escalas && quote.escalas.length > 0 ? (
+                {quote.tipo === "MULTIESCALA" && (quote.escalas?.filter((e) => !e.solo_operativa).length ?? 0) > 0 ? (
                   <ol className="space-y-1.5">
-                    {quote.escalas.map((esc) => (
+                    {quote.escalas!.filter((e) => !e.solo_operativa).map((esc) => (
                       <li
                         key={esc.id}
                         className="flex items-center justify-between gap-3 text-xs"

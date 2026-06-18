@@ -61,6 +61,8 @@ export interface FlightEscala {
   pernocta_costo_usd: string | null;
   tipo_parada: "NORMAL" | "SERVICIO";
   servicio_notas: string | null;
+  /** true = tramo operativo interno (no cotizado/cobrado, no visible al cliente). */
+  solo_operativa: boolean;
   taco_salida: string | null;
   taco_llegada: string | null;
   foto_taco_salida_url: string | null;
