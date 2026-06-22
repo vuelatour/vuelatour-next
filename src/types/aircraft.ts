@@ -59,6 +59,10 @@ export interface Motor {
   horas_totales: Decimal;
   turm: Decimal;
   tbo_horas: Decimal;
+  /** Horas de vida vivas (acumulan con lo volado). Lo calcula el snapshot. */
+  horas_actuales?: number;
+  /** Horas restantes para el próximo overhaul (TBO). null si no hay TBO. */
+  tbo_restante?: number | null;
 }
 
 export interface Propeller {
@@ -67,6 +71,8 @@ export interface Propeller {
   numero_serie: string;
   horas_totales: Decimal;
   tbo_horas: Decimal | null;
+  horas_actuales?: number;
+  tbo_restante?: number | null;
 }
 
 export interface AircraftOwner {

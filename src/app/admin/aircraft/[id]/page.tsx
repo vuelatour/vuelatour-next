@@ -275,7 +275,10 @@ function MotorCard({
   reserve?: OverhaulReserve;
   aircraftId: string;
 }) {
-  const restantes = Number(motor.tbo_horas) - (Number(motor.horas_totales) - Number(motor.turm));
+  const restantes =
+    motor.tbo_restante ??
+    Number(motor.tbo_horas) - (Number(motor.horas_totales) - Number(motor.turm));
+  const horasVida = motor.horas_actuales ?? Number(motor.horas_totales);
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
       <div className="flex items-center justify-between">
@@ -289,13 +292,13 @@ function MotorCard({
       </div>
       <p className="font-mono text-xs text-muted-foreground break-all">{motor.numero_serie}</p>
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
-        <Mini label="Horas totales" value={fmtDecimal(motor.horas_totales)} />
-        <Mini label="TURM" value={fmtDecimal(motor.turm)} />
+        <Mini label="Horas de vida" value={`${fmtDecimal(horasVida)} hrs`} />
+        <Mini label="TURM (últ. overhaul)" value={fmtDecimal(motor.turm)} />
         <Mini label="TBO" value={`${fmtDecimal(motor.tbo_horas)} hrs`} />
         <Mini
-          label="Restantes"
+          label="Restantes a overhaul"
           value={`${fmtDecimal(restantes)} hrs`}
-          className={restantes <= 0 ? "text-destructive font-semibold" : ""}
+          className={restantes <= 0 ? "text-destructive font-semibold" : restantes <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
         />
       </dl>
       {reserve && (
@@ -322,8 +325,18 @@ function PropellerCard({
       </div>
       <p className="font-mono text-xs text-muted-foreground break-all">{propeller.numero_serie}</p>
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
-        <Mini label="Horas totales" value={fmtDecimal(propeller.horas_totales)} />
+        <Mini
+          label="Horas de vida"
+          value={`${fmtDecimal(propeller.horas_actuales ?? Number(propeller.horas_totales))} hrs`}
+        />
         <Mini label="TBO" value={propeller.tbo_horas ? `${fmtDecimal(propeller.tbo_horas)} hrs` : "—"} />
+        {propeller.tbo_restante != null && (
+          <Mini
+            label="Restantes a overhaul"
+            value={`${fmtDecimal(propeller.tbo_restante)} hrs`}
+            className={propeller.tbo_restante <= 0 ? "text-destructive font-semibold" : propeller.tbo_restante <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
+          />
+        )}
       </dl>
     </div>
   );
