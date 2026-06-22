@@ -147,7 +147,9 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                         ? `Completado ${fmtDate(m.fecha_realizada)}`
                         : `Programado ${fmtDate(m.fecha_programada)}`}
                       {m.pais ? ` · ${m.pais}` : ""}
-                      {m.horas_aeronave ? ` · ${m.horas_aeronave} hrs` : ""}
+                      {m.horas_aeronave
+                        ? ` · entró a ${m.horas_aeronave} h${m.horas_programadas ? ` (debía ${m.horas_programadas} h)` : ""}`
+                        : ""}
                       {m.proveedor ? ` · ${m.proveedor}` : ""}
                     </p>
                   </div>
@@ -299,6 +301,7 @@ function MantenimientoDialog({
   const [fechaProg, setFechaProg] = useState(initial?.fecha_programada ?? "");
   const [fechaReal, setFechaReal] = useState(initial?.fecha_realizada ?? "");
   const [horas, setHoras] = useState(initial?.horas_aeronave ?? "");
+  const [horasProg, setHorasProg] = useState(initial?.horas_programadas ?? "");
   const [costo, setCosto] = useState(initial?.costo_usd ?? "");
   const [proveedor, setProveedor] = useState(initial?.proveedor ?? "");
   const [saving, setSaving] = useState(false);
@@ -317,6 +320,7 @@ function MantenimientoDialog({
         fecha_programada: fechaProg || undefined,
         fecha_realizada: estado === "COMPLETADO" && fechaReal ? fechaReal : undefined,
         horas_aeronave: horas ? Number(horas) : undefined,
+        horas_programadas: horasProg ? Number(horasProg) : undefined,
         costo_usd: costo ? Number(costo) : undefined,
         proveedor: proveedor.trim() || undefined,
       };
@@ -381,10 +385,30 @@ function MantenimientoDialog({
             )}
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} type="number" placeholder="Horas aeronave" value={horas} onChange={(e) => setHoras(e.target.value)} />
-            <input className={inputCls} type="number" placeholder="Costo USD" value={costo} onChange={(e) => setCosto(e.target.value)} />
+            <label className="block text-xs text-muted-foreground">
+              Horas de entrada (real)
+              <input className={`${inputCls} mt-1`} type="number" placeholder="A las que entró" value={horas} onChange={(e) => setHoras(e.target.value)} />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Horas programadas (debía)
+              <input className={`${inputCls} mt-1`} type="number" placeholder="A las que tocaba" value={horasProg} onChange={(e) => setHorasProg(e.target.value)} />
+            </label>
           </div>
-          <input className={inputCls} placeholder="Taller / proveedor (opcional)" value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
+          {horas && horasProg && Number.isFinite(Number(horas)) && Number.isFinite(Number(horasProg)) && (
+            <p className="text-xs text-muted-foreground">
+              {(() => {
+                const d = Number(horas) - Number(horasProg);
+                if (Math.abs(d) < 0.05) return "Entró justo a las horas programadas.";
+                return d > 0
+                  ? `Entró ${d.toFixed(1)} h DESPUÉS de lo programado.`
+                  : `Entró ${Math.abs(d).toFixed(1)} h ANTES de lo programado.`;
+              })()}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <input className={inputCls} type="number" placeholder="Costo USD" value={costo} onChange={(e) => setCosto(e.target.value)} />
+            <input className={inputCls} placeholder="Taller / proveedor" value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar

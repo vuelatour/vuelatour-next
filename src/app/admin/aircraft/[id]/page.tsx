@@ -26,6 +26,7 @@ import { AircraftEngineButton } from "@/components/admin/aircraft/aircraft-engin
 import { AircraftPropellerButton } from "@/components/admin/aircraft/aircraft-propeller-button";
 import { AircraftInsuranceCard } from "@/components/admin/aircraft/aircraft-insurance-card";
 import { AircraftMetricsCard } from "@/components/admin/aircraft/aircraft-metrics-card";
+import { AircraftTacometrosCard } from "@/components/admin/aircraft/aircraft-tacometros-card";
 import { AircraftSquawksCard } from "@/components/admin/aircraft/aircraft-squawks-card";
 import { getAircraftMetrics, getAircraftSnapshot } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -221,6 +222,13 @@ export default async function AircraftDetailPage({ params }: PageProps) {
 
         {/* Viajes: historial de vuelos de esta aeronave */}
         <AircraftFlightsCard aircraftId={aircraft.id} />
+
+        {/* Tacómetros: histórico por aeronave + programa de servicio por horas */}
+        <AircraftTacometrosCard
+          aircraftId={aircraft.id}
+          intervalos={aircraft.servicio_intervalos ?? []}
+          horasBase={aircraft.servicio_horas_base ?? 0}
+        />
 
         {/* Ingeniería aeronáutica: mantenimientos, permisos/licencias, servicios próximos */}
         <AircraftEngineering aircraftId={aircraft.id} />

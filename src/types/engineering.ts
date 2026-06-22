@@ -10,7 +10,10 @@ export interface Mantenimiento {
   descripcion: string;
   fecha_programada: string | null;
   fecha_realizada: string | null;
+  /** Horas a las que ENTRÓ realmente (Hobbs). */
   horas_aeronave: string | null;
+  /** Horas a las que DEBÍA entrar (umbral programado). */
+  horas_programadas: string | null;
   costo_usd: string | null;
   proveedor: string | null;
   notas: string | null;

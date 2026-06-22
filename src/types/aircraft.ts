@@ -26,8 +26,29 @@ export interface Aircraft {
   ubicacion_base: string;
   activa: boolean;
   notas: string | null;
+  /** Programa de servicio: secuencia cíclica de intervalos en horas (ej. [50,100,200]). */
+  servicio_intervalos: number[];
+  /** Horómetro (Hobbs) donde arranca la secuencia de servicios. */
+  servicio_horas_base: number;
   created_at: string;
   updated_at: string;
+}
+
+/** Histórico de tacómetros + estatus de servicio de una aeronave. */
+export interface TacometroHistorial {
+  horas_actuales: number;
+  servicio_intervalos: number[];
+  servicio_horas_base: number;
+  proximo_servicio: { a_las: number; intervalo: number; faltan: number } | null;
+  historial: {
+    escala_id: string;
+    folio: number | null;
+    fecha: string | null;
+    ruta: string;
+    taco_salida: number | null;
+    taco_llegada: number | null;
+    horas: number | null;
+  }[];
 }
 
 export interface Motor {

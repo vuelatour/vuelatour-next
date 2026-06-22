@@ -9,6 +9,7 @@ import {
   InsuranceFormSchema,
   OwnerFormSchema,
   PropellerFormSchema,
+  ServicioProgramaSchema,
   SquawkFormSchema,
 } from "./schema";
 import type {
@@ -19,6 +20,7 @@ import type {
   AircraftOwner,
   Motor,
   Propeller,
+  TacometroHistorial,
 } from "@/types/aircraft";
 
 export interface ActionResult<T = unknown> {
@@ -79,6 +81,39 @@ export async function updateAircraftAction(
     const updated = await apiServer<Aircraft>(`/v1/aircraft/${id}`, {
       method: "PATCH",
       body: stripEmpty(parsed.data),
+    });
+    revalidateAircraft(id);
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Histórico de tacómetros + horas actuales y próximo servicio de la aeronave. */
+export async function aircraftTacometrosAction(
+  id: string,
+): Promise<ActionResult<TacometroHistorial>> {
+  try {
+    const data = await apiServer<TacometroHistorial>(`/v1/aircraft/${id}/tacometros`);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Guarda el programa de servicio por horas (secuencia de intervalos + base). */
+export async function updateServicioProgramaAction(
+  id: string,
+  raw: unknown,
+): Promise<ActionResult<Aircraft>> {
+  const parsed = ServicioProgramaSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const updated = await apiServer<Aircraft>(`/v1/aircraft/${id}`, {
+      method: "PATCH",
+      body: parsed.data,
     });
     revalidateAircraft(id);
     return { ok: true, data: updated };

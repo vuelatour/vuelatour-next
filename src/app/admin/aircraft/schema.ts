@@ -58,9 +58,19 @@ export const AircraftFormSchema = z.object({
     .or(z.literal("")),
   activa: z.boolean().default(true),
   notas: z.string().max(2000).optional().or(z.literal("")),
+  // Programa de servicio por horas (secuencia cíclica de intervalos).
+  servicio_intervalos: z.array(z.coerce.number().min(1)).optional(),
+  servicio_horas_base: optionalNonNegative,
 });
 
 export type AircraftFormValues = z.input<typeof AircraftFormSchema>;
+
+/** Editor del programa de servicio por horas (separado del form principal). */
+export const ServicioProgramaSchema = z.object({
+  servicio_intervalos: z.array(z.coerce.number().min(1, "Cada intervalo > 0")),
+  servicio_horas_base: z.coerce.number().min(0, "No puede ser negativo"),
+});
+export type ServicioProgramaValues = z.input<typeof ServicioProgramaSchema>;
 
 // ===== Dueños / socios =====
 export const OwnerFormSchema = z.object({
