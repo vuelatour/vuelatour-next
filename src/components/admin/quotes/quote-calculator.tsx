@@ -234,6 +234,7 @@ function tramoToEscala(t: {
   pernocta_costo_usd?: number | string | null;
   tipo_parada?: "NORMAL" | "SERVICIO" | null;
   servicio_notas?: string | null;
+  notas?: string | null;
   fecha_salida_plan?: string | null;
 }): EscalaInput {
   return {
@@ -248,6 +249,7 @@ function tramoToEscala(t: {
       t.pernocta_costo_usd != null ? Number(t.pernocta_costo_usd) : null,
     tipo_parada: t.tipo_parada ?? "NORMAL",
     servicio_notas: t.servicio_notas ?? null,
+    notas: t.notas ?? null,
     // datetime-local (sin segundos) para el input del editor de tramos.
     fecha_salida_plan: t.fecha_salida_plan ? isoToCancunInput(t.fecha_salida_plan) : null,
   };
@@ -456,6 +458,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pernocta_costo_usd: l.pernocta_costo_usd ?? null,
         tipo_parada: l.tipo_parada ?? "NORMAL",
         servicio_notas: l.servicio_notas ?? null,
+        notas: l.notas?.trim() ? l.notas.trim() : null,
         fecha_salida_plan: l.fecha_salida_plan ? cancunInputToIso(l.fecha_salida_plan) : null,
       }));
       // La ruta guardada queda solo como referencia de la plantilla usada.

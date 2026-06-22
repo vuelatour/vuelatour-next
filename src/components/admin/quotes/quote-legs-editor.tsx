@@ -343,6 +343,21 @@ export function QuoteLegsEditor({
                 />
               </div>
 
+              {/* Nota operativa de este tramo para el piloto (la ve en su app). */}
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Nota del tramo para el piloto (opcional)
+                </Label>
+                <Textarea
+                  rows={2}
+                  value={leg.notas ?? ""}
+                  onChange={(e) =>
+                    updateLeg(idx, { notas: e.target.value || null })
+                  }
+                  placeholder='Ej. "Cargar gasolina aquí", "revisar llanta"…'
+                />
+              </div>
+
               {/* Manifiesto por tramo: los pasajeros pueden cambiar entre escalas. */}
               {!leg.es_ferry && (
                 <div className="space-y-1">
