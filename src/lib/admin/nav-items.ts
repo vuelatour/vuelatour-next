@@ -5,7 +5,6 @@ import {
   CalendarIcon,
   UsersIcon,
   BuildingOfficeIcon,
-  TruckIcon,
   ChartBarIcon,
   ChartPieIcon,
   CpuChipIcon,
@@ -74,7 +73,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Flota",
     items: [
-      { label: "Aeronaves", href: "/admin/aircraft", icon: TruckIcon },
+      { label: "Aeronaves", href: "/admin/aircraft", icon: PaperAirplaneIcon },
       { label: "Motores", href: "/admin/engines", icon: CpuChipIcon },
       { label: "Hélices", href: "/admin/propellers", icon: CpuChipIcon },
       {
