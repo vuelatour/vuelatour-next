@@ -343,6 +343,28 @@ export function QuoteLegsEditor({
                 />
               </div>
 
+              {/* Manifiesto por tramo: los pasajeros pueden cambiar entre escalas. */}
+              {!leg.es_ferry && (
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Nombres de pasajeros (opcional)
+                  </Label>
+                  <Textarea
+                    rows={3}
+                    value={(leg.pasajeros_nombres ?? []).join("\n")}
+                    onChange={(e) =>
+                      updateLeg(idx, {
+                        pasajeros_nombres: e.target.value.split("\n"),
+                      })
+                    }
+                    placeholder={"Uno por línea (puede ir vacío)\nJuan Pérez\nMaría López"}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Específico de este tramo. Útil para permisos; puede ir vacío.
+                  </p>
+                </div>
+              )}
+
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}
               <div className="rounded-md bg-background/60 border border-border/60 p-2 space-y-2">
                 <div className="flex items-center justify-between">

@@ -58,6 +58,8 @@ export interface FlightEscala {
   piloto_nombre?: string | null;
   // Detalle por tramo.
   pasajeros: number | null;
+  /** Manifiesto de nombres de ESTE tramo (por escala, puede ir vacío). */
+  pasajeros_nombres?: string[];
   es_ferry: boolean;
   requiere_pernocta: boolean;
   pernocta_costo_usd: string | null;

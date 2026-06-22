@@ -19,6 +19,8 @@ export interface EscalaInput {
   millas_nauticas: number;
   // Detalle por tramo (opcional al enviar; el motor aplica defaults).
   pasajeros?: number | null;
+  /** Nombres de pasajeros de ESTE tramo (manifiesto por escala, opcional). */
+  pasajeros_nombres?: string[];
   es_ferry?: boolean;
   requiere_pernocta?: boolean;
   pernocta_costo_usd?: number | null;

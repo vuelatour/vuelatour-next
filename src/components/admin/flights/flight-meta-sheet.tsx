@@ -35,8 +35,6 @@ interface MetaFormValues {
   fecha_vuelo: string;
   fecha_traslado_final: string;
   estado_permiso: EstadoPermiso;
-  /** Un nombre por línea (se envía como arreglo). */
-  pasajeros_nombres: string;
   notas: string;
   notas_internas: string;
   facturado: boolean;
@@ -57,7 +55,6 @@ function defaults(flight: FlightListItem): MetaFormValues {
       ? isoToCancunInput(flight.fecha_traslado_final)
       : "",
     estado_permiso: flight.estado_permiso,
-    pasajeros_nombres: (flight.pasajeros_nombres ?? []).join("\n"),
     notas: flight.notas ?? "",
     notas_internas: flight.notas_internas ?? "",
     facturado: flight.facturado,
@@ -101,7 +98,6 @@ export function FlightMetaSheet({
       fecha_vuelo?: string;
       fecha_traslado_final?: string;
       estado_permiso?: EstadoPermiso;
-      pasajeros_nombres?: string[];
       notas?: string;
       notas_internas?: string;
       facturado?: boolean;
@@ -128,15 +124,6 @@ export function FlightMetaSheet({
     }
     if (values.estado_permiso !== flight.estado_permiso) {
       payload.estado_permiso = values.estado_permiso;
-    }
-    const nombres = values.pasajeros_nombres
-      .split("\n")
-      .map((n) => n.trim())
-      .filter(Boolean);
-    if (
-      JSON.stringify(nombres) !== JSON.stringify(flight.pasajeros_nombres ?? [])
-    ) {
-      payload.pasajeros_nombres = nombres;
     }
     if (values.notas !== (flight.notas ?? "")) payload.notas = values.notas;
     if (values.notas_internas !== (flight.notas_internas ?? ""))
@@ -248,20 +235,6 @@ export function FlightMetaSheet({
               </a>
             </div>
           )}
-
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Nombres de pasajeros (opcional)</Label>
-            <Textarea
-              rows={3}
-              placeholder={"Juan Pérez\nMaría López"}
-              {...register("pasajeros_nombres")}
-            />
-            <p className="text-xs text-muted-foreground">
-              Opcional: uno por línea. Útiles para tramitar permisos y el piloto
-              los ve en su app, pero no son obligatorios — si no los tienes,
-              déjalo vacío. La cantidad de pasajeros se define en cada escala.
-            </p>
-          </div>
 
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Notas (visibles en PDF)</Label>
