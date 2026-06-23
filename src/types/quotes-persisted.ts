@@ -57,6 +57,8 @@ export interface PersistedQuote {
 
   origen_iata: string;
   destino_iata: string;
+  /** Ruta COMPLETA (origen → escalas → destino), p. ej. ["CUN","CTM","CUN"]. */
+  ruta_iatas?: string[];
   millas_nauticas_one_way: Decimal | null;
   es_redondo_auto: boolean;
   num_aterrizajes: number;

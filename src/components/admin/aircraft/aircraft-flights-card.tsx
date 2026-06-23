@@ -78,7 +78,10 @@ export async function AircraftFlightsCard({ aircraftId }: { aircraftId: string }
                 <TableRow key={f.id} className="group">
                   <TableCell className="font-mono text-sm">#{f.folio}</TableCell>
                   <TableCell className="font-medium">
-                    {f.origen_iata} → {f.destino_iata}
+                    {(f.ruta_iatas && f.ruta_iatas.length > 0
+                      ? f.ruta_iatas
+                      : [f.origen_iata, f.destino_iata]
+                    ).join(" → ")}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {fmtFecha(f.fecha_vuelo)}

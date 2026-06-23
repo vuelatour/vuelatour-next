@@ -20,6 +20,8 @@ export interface FlightListItem {
   cotizacion_version: number;
   origen_iata: string;
   destino_iata: string;
+  /** Ruta COMPLETA (origen → escalas → destino), p. ej. ["CUN","CTM","CUN"]. */
+  ruta_iatas?: string[];
   pasajeros: number;
   monto_total_usd: string;
   /** Nombres de los pasajeros (manifiesto, para tramitar permisos). */

@@ -140,7 +140,10 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         <Link href={`/admin/quotes/${q.id}`} className="block">
-                          {q.origen_iata} → {q.destino_iata}
+                          {(q.ruta_iatas && q.ruta_iatas.length > 0
+                            ? q.ruta_iatas
+                            : [q.origen_iata, q.destino_iata]
+                          ).join(" → ")}
                         </Link>
                       </TableCell>
                       <TableCell className="text-xs">

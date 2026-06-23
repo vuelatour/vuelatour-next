@@ -194,7 +194,10 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         <Link href={`/admin/flights/${v.id}`} className="block">
-                          {v.origen_iata} → {v.destino_iata}
+                          {(v.ruta_iatas && v.ruta_iatas.length > 0
+                            ? v.ruta_iatas
+                            : [v.origen_iata, v.destino_iata]
+                          ).join(" → ")}
                         </Link>
                       </TableCell>
                       <TableCell className="text-xs">
