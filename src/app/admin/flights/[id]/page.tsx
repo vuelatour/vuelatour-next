@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
+import { FlightReportButtons } from "@/components/admin/flights/flight-report-buttons";
 import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
@@ -215,6 +216,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <FlightReportButtons flightId={snapshot.id} folio={snapshot.folio} />
             {snapshot.estado === "RESERVA" && (
               <Link
                 href={`/admin/quotes/${snapshot.id}/revise`}

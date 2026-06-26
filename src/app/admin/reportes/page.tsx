@@ -8,6 +8,11 @@ import {
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
 import { ReportDownloads } from "@/components/admin/profit-sharing/report-downloads";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import {
+  FlightReportPicker,
+  type FlightPickItem,
+} from "@/components/admin/flights/flight-report-picker";
+import { listFlights } from "@/lib/api/flights-server";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +34,21 @@ export default async function ReportesPage({ searchParams }: PageProps) {
   const fb = currentMonth();
   const desde = sp.desde || fb.desde;
   const hasta = sp.hasta || fb.hasta;
+
+  // Vuelos recientes para el selector del reporte por vuelo.
+  let flightsPick: FlightPickItem[] = [];
+  try {
+    const res = await listFlights({ limit: 100, offset: 0 });
+    flightsPick = res.data.map((f) => {
+      const ruta =
+        f.ruta_iatas && f.ruta_iatas.length > 0
+          ? f.ruta_iatas.join(" → ")
+          : `${f.origen_iata} → ${f.destino_iata}`;
+      return { id: f.id, folio: f.folio, label: `#${f.folio} · ${ruta}` };
+    });
+  } catch {
+    flightsPick = [];
+  }
 
   return (
     <div className="space-y-6">
@@ -53,6 +73,19 @@ export default async function ReportesPage({ searchParams }: PageProps) {
         </CardHeader>
         <CardContent>
           <ReportDownloads desde={desde} hasta={hasta} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Reporte por vuelo</CardTitle>
+          <CardDescription>
+            Reporte consolidado de un vuelo (cotización, ingreso, tacómetro,
+            combustible y gastos) en PDF y Excel. Independiente del periodo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FlightReportPicker flights={flightsPick} />
         </CardContent>
       </Card>
 
