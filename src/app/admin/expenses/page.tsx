@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { fmtDateOnly } from "@/lib/datetime";
 import { BanknotesIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
@@ -195,16 +196,35 @@ export default async function ExpensesPage({
                       {g.captura?.nombre ?? "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={ESTATUS_STYLE[g.estatus_comprobante] ?? ""}
-                      >
-                        {g.estatus_comprobante === "SIN_COMPROBANTE"
-                          ? "Sin comp."
-                          : g.estatus_comprobante === "VALE"
-                            ? "Vale"
-                            : "Factura"}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {g.foto_url && fotoUrls[g.foto_url] && (
+                          <a
+                            href={fotoUrls[g.foto_url]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Ver comprobante"
+                          >
+                            <Image
+                              src={fotoUrls[g.foto_url]}
+                              alt="Comprobante"
+                              width={32}
+                              height={32}
+                              unoptimized
+                              className="h-8 w-8 rounded-md object-cover ring-1 ring-border hover:ring-brand-500"
+                            />
+                          </a>
+                        )}
+                        <Badge
+                          variant="outline"
+                          className={ESTATUS_STYLE[g.estatus_comprobante] ?? ""}
+                        >
+                          {g.estatus_comprobante === "SIN_COMPROBANTE"
+                            ? "Sin comp."
+                            : g.estatus_comprobante === "VALE"
+                              ? "Vale"
+                              : "Factura"}
+                        </Badge>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <ExpenseActions
