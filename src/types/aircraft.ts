@@ -48,6 +48,9 @@ export interface TacometroHistorial {
     taco_salida: number | null;
     taco_llegada: number | null;
     horas: number | null;
+    /** URLs firmadas de las fotos del tacómetro (bucket privado), si tiene. */
+    foto_salida_url?: string | null;
+    foto_llegada_url?: string | null;
   }[];
 }
 

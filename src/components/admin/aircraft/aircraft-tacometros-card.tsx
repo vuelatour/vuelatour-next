@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ClockIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
@@ -154,6 +155,7 @@ export function AircraftTacometrosCard({
                     <th className="px-3 py-2 text-right">Salida</th>
                     <th className="px-3 py-2 text-right">Llegada</th>
                     <th className="px-3 py-2 text-right">Horas</th>
+                    <th className="px-3 py-2 text-center">Fotos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -175,6 +177,15 @@ export function AircraftTacometrosCard({
                       <td className="px-3 py-2 text-right tabular-nums">
                         {h.horas != null ? `${h.horas} h` : "—"}
                       </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-center gap-1">
+                          <TacoFoto url={h.foto_salida_url} label="Salida" />
+                          <TacoFoto url={h.foto_llegada_url} label="Llegada" />
+                          {!h.foto_salida_url && !h.foto_llegada_url && (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -184,6 +195,24 @@ export function AircraftTacometrosCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/// Miniatura clickable de la foto del tacómetro (salida/llegada). Abre la imagen
+/// en grande en otra pestaña. Si no hay foto, no renderiza nada.
+function TacoFoto({ url, label }: { url?: string | null; label: string }) {
+  if (!url) return null;
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" title={`Foto ${label}`}>
+      <Image
+        src={url}
+        alt={`Tacómetro ${label}`}
+        width={32}
+        height={32}
+        unoptimized
+        className="h-8 w-8 rounded-md object-cover ring-1 ring-border hover:ring-brand-500"
+      />
+    </a>
   );
 }
 
