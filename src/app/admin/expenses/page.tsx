@@ -19,7 +19,11 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
-import { listGastos, type ListGastosQuery } from "@/lib/api/expenses-server";
+import {
+  listGastos,
+  signFuelPhotos,
+  type ListGastosQuery,
+} from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
@@ -63,6 +67,17 @@ export default async function ExpensesPage({
 
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
+
+  // Firma las fotos de los comprobantes (bucket privado) para verlas en el admin.
+  const fotoPaths = gastos.map((g) => g.foto_url).filter((p): p is string => !!p);
+  let fotoUrls: Record<string, string> = {};
+  if (fotoPaths.length > 0) {
+    try {
+      fotoUrls = await signFuelPhotos(fotoPaths);
+    } catch {
+      fotoUrls = {};
+    }
+  }
 
   const tabs: { key: Filtro; label: string; count?: number }[] = [
     { key: "todos", label: "Todos" },
@@ -192,7 +207,12 @@ export default async function ExpensesPage({
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <ExpenseActions gasto={g} aircraft={aircraft} providers={providers} />
+                      <ExpenseActions
+                        gasto={g}
+                        aircraft={aircraft}
+                        providers={providers}
+                        fotoUrl={g.foto_url ? fotoUrls[g.foto_url] : undefined}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -54,6 +55,8 @@ interface ExpenseVerifyDialogProps {
   gasto: Gasto;
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  /** URL firmada de la foto del comprobante para validar contra el dato. */
+  fotoUrl?: string;
 }
 
 export function ExpenseVerifyDialog({
@@ -62,6 +65,7 @@ export function ExpenseVerifyDialog({
   gasto,
   aircraft,
   providers,
+  fotoUrl,
 }: ExpenseVerifyDialogProps) {
   const [pending, startTransition] = useTransition();
 
@@ -103,6 +107,30 @@ export function ExpenseVerifyDialog({
             bandeja de pendientes.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Comprobante: foto subida con el registro, para validar el dato. */}
+        {fotoUrl ? (
+          <a
+            href={fotoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-lg border border-border overflow-hidden bg-muted/30"
+            title="Abrir comprobante en grande"
+          >
+            <Image
+              src={fotoUrl}
+              alt="Comprobante del gasto"
+              width={800}
+              height={1000}
+              unoptimized
+              className="w-full h-auto max-h-[45vh] object-contain"
+            />
+          </a>
+        ) : (
+          <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+            Este gasto no tiene foto de comprobante.
+          </p>
+        )}
 
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="Avión (resuelve pendiente)">

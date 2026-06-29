@@ -32,9 +32,11 @@ interface ExpenseActionsProps {
   gasto: Gasto;
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  /** URL firmada de la foto del comprobante (bucket privado), si tiene. */
+  fotoUrl?: string;
 }
 
-export function ExpenseActions({ gasto, aircraft, providers }: ExpenseActionsProps) {
+export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -93,6 +95,7 @@ export function ExpenseActions({ gasto, aircraft, providers }: ExpenseActionsPro
         gasto={gasto}
         aircraft={aircraft}
         providers={providers}
+        fotoUrl={fotoUrl}
       />
 
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
