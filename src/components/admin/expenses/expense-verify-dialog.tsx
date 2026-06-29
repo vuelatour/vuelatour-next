@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -19,6 +18,7 @@ import { verifyGastoAction } from "@/app/admin/expenses/actions";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import type { Gasto } from "@/types/expenses";
 import { Field } from "@/components/admin/form-field";
+import { ImagePreview } from "@/components/admin/image-preview";
 
 const CATEGORIAS = [
   "GAS",
@@ -110,22 +110,13 @@ export function ExpenseVerifyDialog({
 
         {/* Comprobante: foto subida con el registro, para validar el dato. */}
         {fotoUrl ? (
-          <a
-            href={fotoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block rounded-lg border border-border overflow-hidden bg-muted/30"
-            title="Abrir comprobante en grande"
-          >
-            <Image
+          <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
+            <ImagePreview
               src={fotoUrl}
               alt="Comprobante del gasto"
-              width={800}
-              height={1000}
-              unoptimized
-              className="w-full h-auto max-h-[45vh] object-contain"
+              thumbClassName="w-full h-auto max-h-[45vh] object-contain"
             />
-          </a>
+          </div>
         ) : (
           <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
             Este gasto no tiene foto de comprobante.

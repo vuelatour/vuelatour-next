@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { fmtDateTime } from "@/lib/datetime";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   EllipsisHorizontalIcon,
@@ -32,11 +31,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ImagePreview } from "@/components/admin/image-preview";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,9 +70,6 @@ export function EscalasCard({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [opSheetOpen, setOpSheetOpen] = useState(false);
   const [editing, setEditing] = useState<FlightEscala | undefined>();
-  const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(
-    null,
-  );
 
   const photosByEscala = new Map(tacoPhotos.map((p) => [p.escala_id, p]));
 
@@ -253,7 +245,6 @@ export function EscalasCard({
                             url={fotoSalida}
                             label={`Escala ${esc.orden} · tacómetro salida`}
                             caption="Salida"
-                            onOpen={setLightbox}
                           />
                         )}
                         {fotoLlegada && (
@@ -261,7 +252,6 @@ export function EscalasCard({
                             url={fotoLlegada}
                             label={`Escala ${esc.orden} · tacómetro llegada`}
                             caption="Llegada"
-                            onOpen={setLightbox}
                           />
                         )}
                       </div>
@@ -310,26 +300,6 @@ export function EscalasCard({
         airports={airports}
       />
 
-      <Dialog
-        open={lightbox !== null}
-        onOpenChange={(open) => {
-          if (!open) setLightbox(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogTitle className="text-sm">{lightbox?.label}</DialogTitle>
-          {lightbox && (
-            <Image
-              src={lightbox.url}
-              alt={lightbox.label}
-              width={1200}
-              height={1200}
-              unoptimized
-              className="h-auto w-full rounded-lg object-contain"
-            />
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
@@ -338,31 +308,22 @@ function TacoThumb({
   url,
   label,
   caption,
-  onOpen,
 }: {
   url: string;
   label: string;
   caption: string;
-  onOpen: (v: { url: string; label: string }) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpen({ url, label })}
-      className="group relative overflow-hidden rounded-md border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Image
+    <div className="relative overflow-hidden rounded-md border border-border">
+      <ImagePreview
         src={url}
         alt={label}
-        width={64}
-        height={64}
-        unoptimized
-        className="h-14 w-14 object-cover transition-transform group-hover:scale-105"
+        thumbClassName="h-14 w-14 object-cover transition-transform hover:scale-105"
       />
-      <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-center text-[9px] font-medium text-white">
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-center text-[9px] font-medium text-white">
         {caption}
       </span>
-    </button>
+    </div>
   );
 }
 

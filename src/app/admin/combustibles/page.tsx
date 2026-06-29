@@ -1,5 +1,5 @@
-import Image from "next/image";
 import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
+import { ImagePreview } from "@/components/admin/image-preview";
 import Link from "next/link";
 import { BeakerIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,16 +133,11 @@ export default async function CombustiblesPage() {
                       </TableCell>
                       <TableCell>
                         {url ? (
-                          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block" aria-label="Ver recibo en tamano completo">
-                            <Image
-                              src={url}
-                              alt="Recibo"
-                              width={40}
-                              height={40}
-                              unoptimized
-                              className="h-10 w-10 rounded-md object-cover ring-1 ring-border"
-                            />
-                          </a>
+                          <ImagePreview
+                            src={url}
+                            alt="Recibo de combustible"
+                            thumbClassName="h-10 w-10 rounded-md object-cover ring-1 ring-border hover:ring-brand-500"
+                          />
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ClockIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
@@ -12,6 +11,7 @@ import {
   updateServicioProgramaAction,
 } from "@/app/admin/aircraft/actions";
 import type { TacometroHistorial } from "@/types/aircraft";
+import { ImagePreview } from "@/components/admin/image-preview";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -32,7 +32,8 @@ export function AircraftTacometrosCard({
   const [saving, startSaving] = useTransition();
 
   const reload = useCallback(async () => {
-    setLoading(true);
+    // No se hace setLoading(true) síncrono aquí: el estado inicial ya es `true`
+    // y así la carga dentro del efecto no dispara render en cascada (lint).
     const res = await aircraftTacometrosAction(aircraftId);
     if (res.ok && res.data) {
       setData(res.data);
@@ -43,8 +44,20 @@ export function AircraftTacometrosCard({
   }, [aircraftId]);
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    let active = true;
+    aircraftTacometrosAction(aircraftId).then((res) => {
+      if (!active) return;
+      if (res.ok && res.data) {
+        setData(res.data);
+        setIntervalosStr(res.data.servicio_intervalos.join(", "));
+        setBase(String(res.data.servicio_horas_base ?? 0));
+      }
+      setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [aircraftId]);
 
   const guardar = () => {
     const parsed = intervalosStr
@@ -202,18 +215,7 @@ export function AircraftTacometrosCard({
 /// en grande en otra pestaña. Si no hay foto, no renderiza nada.
 function TacoFoto({ url, label }: { url?: string | null; label: string }) {
   if (!url) return null;
-  return (
-    <a href={url} target="_blank" rel="noopener noreferrer" title={`Foto ${label}`}>
-      <Image
-        src={url}
-        alt={`Tacómetro ${label}`}
-        width={32}
-        height={32}
-        unoptimized
-        className="h-8 w-8 rounded-md object-cover ring-1 ring-border hover:ring-brand-500"
-      />
-    </a>
-  );
+  return <ImagePreview src={url} alt={`Tacómetro ${label}`} />;
 }
 
 function Metric({

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { fmtDate } from "@/lib/datetime";
-import Image from "next/image";
 import { PlusIcon } from "@heroicons/react/24/outline";
+import { ImagePreview } from "@/components/admin/image-preview";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -105,21 +105,11 @@ export function CobrosCard({
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     {c.foto_voucher_url && voucherUrls[c.foto_voucher_url] && (
-                      <a
-                        href={voucherUrls[c.foto_voucher_url]}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Ver voucher"
-                      >
-                        <Image
-                          src={voucherUrls[c.foto_voucher_url]}
-                          alt="Voucher"
-                          width={36}
-                          height={36}
-                          unoptimized
-                          className="h-9 w-9 rounded-md object-cover ring-1 ring-border"
-                        />
-                      </a>
+                      <ImagePreview
+                        src={voucherUrls[c.foto_voucher_url]}
+                        alt="Voucher de cobro"
+                        thumbClassName="h-9 w-9 rounded-md object-cover ring-1 ring-border hover:ring-brand-500"
+                      />
                     )}
                     <p className="text-[11px] text-muted-foreground font-mono">
                       {fmtDate(c.fecha_cobro)}
