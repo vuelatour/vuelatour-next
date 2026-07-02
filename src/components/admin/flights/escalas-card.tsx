@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { fmtDateTime } from "@/lib/datetime";
 import { useRouter } from "next/navigation";
 import {
+  CheckCircleIcon,
   EllipsisHorizontalIcon,
   ExclamationTriangleIcon,
   PencilIcon,
@@ -38,9 +39,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { EscalaFormSheet } from "./escala-form-sheet";
 import { OperationalLegSheet } from "./operational-leg-sheet";
-import { deleteEscalaAction } from "@/app/admin/flights/actions";
+import {
+  confirmTacoAction,
+  deleteEscalaAction,
+  fillTacoGapsAction,
+} from "@/app/admin/flights/actions";
 import { fmtDecimal } from "@/lib/format";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
@@ -100,8 +107,13 @@ export function EscalasCard({
                 : `${escalas.length} ${escalas.length === 1 ? "tramo" : "tramos"}. Incluye los tramos comerciales (cotizados) y los operativos internos. Tacómetros desde la app del piloto.`}
             </CardDescription>
           </div>
+          <div className="flex shrink-0 gap-2">
+            {escalas.length > 0 &&
+              escalas.some((e) => !e.taco_salida || !e.taco_llegada) && (
+                <FillTacoGapsButton flightId={flightId} />
+              )}
           {canManage && (
-            <div className="flex shrink-0 gap-2">
+            <>
               <Button
                 size="sm"
                 variant="outline"
@@ -121,8 +133,9 @@ export function EscalasCard({
                 <PlusIcon className="h-3.5 w-3.5" />
                 Tramo operativo
               </Button>
-            </div>
+            </>
           )}
+          </div>
         </CardHeader>
         <CardContent>
           {escalas.length === 0 ? (
@@ -230,12 +243,15 @@ export function EscalasCard({
                     )}
 
                     {esc.revision_requerida && (
-                      <p className="flex items-start gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                        <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-px" />
-                        <span>
-                          {esc.revision_motivo ?? "Lectura por revisar"}
-                        </span>
-                      </p>
+                      <div className="space-y-1.5">
+                        <p className="flex items-start gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                          <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-px" />
+                          <span>
+                            {esc.revision_motivo ?? "Lectura por revisar"}
+                          </span>
+                        </p>
+                        <TacoConfirmDialog flightId={flightId} escala={esc} />
+                      </div>
                     )}
 
                     {(fotoSalida || fotoLlegada) && (
@@ -300,6 +316,177 @@ export function EscalasCard({
         airports={airports}
       />
 
+    </>
+  );
+}
+
+/**
+ * Botón de cierre operativo: rellena los huecos de tacómetro del vuelo con el
+ * promedio histórico del tramo. Lo calculado queda en amarillo hasta
+ * confirmarse (el cron nocturno hace lo mismo automáticamente).
+ */
+function FillTacoGapsButton({ flightId }: { flightId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  const handleFill = () => {
+    startTransition(async () => {
+      const res = await fillTacoGapsAction(flightId);
+      if (res.ok) {
+        const n = res.data?.escalas_actualizadas ?? 0;
+        toast.success(
+          n > 0
+            ? `${n} ${n === 1 ? "tramo completado" : "tramos completados"} con el promedio del tramo · revisar en amarillo`
+            : "No hay huecos que se puedan calcular todavía",
+        );
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Error al completar huecos");
+      }
+    });
+  };
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={handleFill}
+      disabled={pending}
+      className="gap-1.5"
+      title="Calcula las lecturas faltantes con el promedio histórico del tramo. Quedan en amarillo hasta que las confirmes."
+    >
+      <SparklesIcon className="h-3.5 w-3.5" />
+      {pending ? "Calculando…" : "Completar huecos"}
+    </Button>
+  );
+}
+
+/**
+ * Confirmación de oficina de una lectura en amarillo: muestra los valores
+ * (editables por si hay que corregir) y una nota opcional. Al confirmar, la
+ * escala pasa de amarillo a verde.
+ */
+function TacoConfirmDialog({
+  flightId,
+  escala,
+}: {
+  flightId: string;
+  escala: FlightEscala;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [salida, setSalida] = useState(escala.taco_salida ?? "");
+  const [llegada, setLlegada] = useState(escala.taco_llegada ?? "");
+  const [nota, setNota] = useState("");
+
+  const handleConfirm = () => {
+    const payload: {
+      taco_salida?: number;
+      taco_llegada?: number;
+      nota?: string;
+    } = {};
+    const s = String(salida).trim();
+    const l = String(llegada).trim();
+    if (s !== "" && s !== String(escala.taco_salida ?? "")) {
+      const n = Number(s);
+      if (!Number.isFinite(n)) {
+        toast.error("Lectura de salida inválida");
+        return;
+      }
+      payload.taco_salida = n;
+    }
+    if (l !== "" && l !== String(escala.taco_llegada ?? "")) {
+      const n = Number(l);
+      if (!Number.isFinite(n)) {
+        toast.error("Lectura de llegada inválida");
+        return;
+      }
+      payload.taco_llegada = n;
+    }
+    if (nota.trim()) payload.nota = nota.trim();
+
+    startTransition(async () => {
+      const res = await confirmTacoAction(flightId, escala.id, payload);
+      if (res.ok) {
+        toast.success("Lectura confirmada");
+        setOpen(false);
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Error al confirmar");
+      }
+    });
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+        className="h-7 gap-1.5 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+      >
+        <CheckCircleIcon className="h-3.5 w-3.5" />
+        Confirmar lectura
+      </Button>
+
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Confirmar tacómetro · {escala.origen_iata} → {escala.destino_iata}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {escala.revision_motivo ?? "Lectura marcada para revisión."}{" "}
+              Revisa contra la foto; corrige el valor si hace falta y confirma
+              para pasarla de amarillo a verde.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={`taco-salida-${escala.id}`}>Salida</Label>
+              <Input
+                id={`taco-salida-${escala.id}`}
+                inputMode="decimal"
+                value={salida}
+                onChange={(e) => setSalida(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`taco-llegada-${escala.id}`}>Llegada</Label>
+              <Input
+                id={`taco-llegada-${escala.id}`}
+                inputMode="decimal"
+                value={llegada}
+                onChange={(e) => setLlegada(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label htmlFor={`taco-nota-${escala.id}`}>Nota (opcional)</Label>
+              <Input
+                id={`taco-nota-${escala.id}`}
+                value={nota}
+                onChange={(e) => setNota(e.target.value)}
+                placeholder="Ej. verificado contra la foto"
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirm();
+              }}
+              disabled={pending}
+            >
+              {pending ? "Confirmando…" : "Confirmar lectura"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

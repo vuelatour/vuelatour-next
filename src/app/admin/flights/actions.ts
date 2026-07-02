@@ -340,6 +340,48 @@ export async function deleteEscalaAction(
   }
 }
 
+// ============ Tacómetros: revisión de oficina ============
+
+export interface ConfirmTacoPayload {
+  taco_salida?: number;
+  taco_llegada?: number;
+  nota?: string;
+}
+
+/** Oficina confirma una lectura marcada para revisión (amarillo → verde). */
+export async function confirmTacoAction(
+  flightId: string,
+  escalaId: string,
+  payload: ConfirmTacoPayload = {},
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const data = await apiServer<FlightEscala>(
+      `/v1/flights/legs/${escalaId}/taco/confirm`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Rellena huecos de tacómetro del vuelo con el promedio del tramo (queda amarillo). */
+export async function fillTacoGapsAction(
+  flightId: string,
+): Promise<ActionResult<{ escalas_actualizadas: number }>> {
+  try {
+    const data = await apiServer<{ escalas_actualizadas: number }>(
+      `/v1/flights/${flightId}/taco/fill-gaps`,
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ============ Vuelos externos ============
 
 export interface CreateExternalFlightPayload {
