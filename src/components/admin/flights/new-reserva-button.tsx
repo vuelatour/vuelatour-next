@@ -43,7 +43,7 @@ export function NewReservaButton({
     <>
       <Button onClick={() => setOpen(true)} className="gap-2">
         <CalendarDaysIcon className="h-4 w-4" />
-        Apartar espacio
+        Vuelo rápido
       </Button>
       <ReservaFormSheet
         open={open}
