@@ -52,6 +52,10 @@ export type ItemFormValues = {
   stock_minimo: string;
   ubicacion: string;
   notas: string;
+  // Solo al CREAR: entrada inicial opcional (cantidad + costo de compra) para
+  // que el alta no quede en stock 0 sin precio. Genera una ENTRADA de cardex.
+  cantidad_inicial: string;
+  costo_inicial_usd: string;
 };
 
 export type MovimientoFormValues = {

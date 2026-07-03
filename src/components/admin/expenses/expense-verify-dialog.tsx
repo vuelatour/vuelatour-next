@@ -41,6 +41,7 @@ const MEDIOS = [
   { value: "PERSONAL_PABLO", label: "Dinero personal Pablo" },
   { value: "PERSONAL_ALE", label: "Dinero personal Ale" },
   { value: "TRANSFERENCIA", label: "Transferencia" },
+  { value: "BODEGA", label: "Bodega (salida de inventario)" },
 ];
 
 const ESTATUS = [

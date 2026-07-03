@@ -33,6 +33,8 @@ interface MovimientoDialogProps {
   itemNombre: string;
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  /** Tipo preseleccionado al abrir (ej. SALIDA desde el listado). */
+  initialTipo?: MovimientoFormValues["tipo"];
 }
 
 export function MovimientoDialog({
@@ -42,6 +44,7 @@ export function MovimientoDialog({
   itemNombre,
   aircraft,
   providers,
+  initialTipo,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
 
@@ -52,11 +55,11 @@ export function MovimientoDialog({
     watch,
     setValue,
     formState: { errors },
-  } = useForm<MovimientoFormValues>({ defaultValues: defaults() });
+  } = useForm<MovimientoFormValues>({ defaultValues: defaults(initialTipo) });
 
   useEffect(() => {
-    if (open) reset(defaults());
-  }, [open, reset]);
+    if (open) reset(defaults(initialTipo));
+  }, [open, reset, initialTipo]);
 
   const tipo = watch("tipo");
   const esSalida = tipo === "SALIDA";
@@ -65,7 +68,13 @@ export function MovimientoDialog({
     startTransition(async () => {
       const result = await createMovimientoAction(itemId, values);
       if (result.ok) {
-        toast.success("Movimiento registrado");
+        const conGasto = (result.data as { gasto_generado?: unknown } | undefined)
+          ?.gasto_generado;
+        toast.success(
+          conGasto
+            ? "Salida registrada · el costo se cargó como gasto del avión"
+            : "Movimiento registrado",
+        );
         onOpenChange(false);
       } else if (result.fieldErrors) {
         const firstField = Object.keys(result.fieldErrors)[0];
@@ -111,12 +120,32 @@ export function MovimientoDialog({
           </div>
 
           {esSalida && (
-            <Field label="Avión (se le carga la pieza)" required error={errors.aeronave_id?.message}>
+            <Field
+              label="Avión (se le carga la pieza)"
+              required
+              hint="El costo FIFO se registra automáticamente como gasto de refacción del avión y sale en su reporte mensual."
+              error={errors.aeronave_id?.message}
+            >
               <SearchableSelect
                 options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
                 value={watch("aeronave_id")}
                 onChange={(v) => setValue("aeronave_id", v)}
                 placeholder="Matrícula"
+              />
+            </Field>
+          )}
+
+          {tipo === "DEVOLUCION" && (
+            <Field
+              label="Avión (si venía cargada a uno)"
+              hint="Al elegirlo, se revierte el gasto de refacción que generó la salida."
+              error={errors.aeronave_id?.message}
+            >
+              <SearchableSelect
+                options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
+                value={watch("aeronave_id")}
+                onChange={(v) => setValue("aeronave_id", v)}
+                placeholder="Matrícula (opcional)"
               />
             </Field>
           )}
@@ -160,9 +189,9 @@ export function MovimientoDialog({
 }
 
 
-function defaults(): MovimientoFormValues {
+function defaults(tipo: MovimientoFormValues["tipo"] = "ENTRADA"): MovimientoFormValues {
   return {
-    tipo: "ENTRADA",
+    tipo,
     cantidad: "",
     costo_unitario_usd: "",
     aeronave_id: "",

@@ -21,6 +21,8 @@ export const MedioPagoEnum = z.enum([
   "PERSONAL_PABLO",
   "PERSONAL_ALE",
   "TRANSFERENCIA",
+  // Cargo automático por salida de bodega (no es egreso bancario).
+  "BODEGA",
 ]);
 
 export const EstatusEnum = z.enum(["FACTURA", "VALE", "SIN_COMPROBANTE"]);

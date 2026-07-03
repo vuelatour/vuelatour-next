@@ -14,7 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { createItemAction, updateItemAction } from "@/app/admin/inventory/actions";
+import {
+  createItemAction,
+  createMovimientoAction,
+  updateItemAction,
+} from "@/app/admin/inventory/actions";
 import type { ItemFormValues } from "@/app/admin/inventory/schema";
 import type { InventarioItem } from "@/types/inventory";
 import { Field } from "@/components/admin/form-field";
@@ -47,6 +51,26 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
         : await createItemAction(values);
 
       if (result.ok) {
+        // Entrada inicial opcional al crear: registra la compra (cantidad +
+        // costo) como ENTRADA de cardex para que el ítem no quede en 0 sin
+        // precio. Best-effort: si falla, el ítem ya existe y se avisa.
+        const cant = values.cantidad_inicial?.trim();
+        const costo = values.costo_inicial_usd?.trim();
+        if (!isEdit && result.data && cant && costo) {
+          const mov = await createMovimientoAction(result.data.id, {
+            tipo: "ENTRADA",
+            cantidad: cant,
+            costo_unitario_usd: costo,
+            notas: "Stock inicial (alta del ítem)",
+          });
+          if (!mov.ok) {
+            toast.warning(
+              `Ítem creado, pero la entrada inicial falló: ${mov.error ?? "regístrala desde el detalle"}`,
+            );
+            onOpenChange(false);
+            return;
+          }
+        }
         toast.success(isEdit ? "Ítem actualizado" : "Ítem creado");
         onOpenChange(false);
       } else if (result.fieldErrors) {
@@ -101,6 +125,24 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
             <Textarea rows={2} {...register("notas")} />
           </Field>
 
+          {!isEdit && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Entrada inicial (opcional):</span>{" "}
+                si ya tienes la pieza comprada, captura cuántas y su costo para que el ítem no
+                quede en stock 0. Queda registrada como compra en el cardex.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Cantidad inicial">
+                  <Input type="number" step="any" min="0" placeholder="0" {...register("cantidad_inicial")} />
+                </Field>
+                <Field label="Costo unitario (USD)">
+                  <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_inicial_usd")} />
+                </Field>
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
               Cancelar
@@ -118,7 +160,17 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
 
 function defaults(item?: InventarioItem): ItemFormValues {
   if (!item) {
-    return { nombre: "", numero_parte: "", codigo: "", categoria: "", stock_minimo: "", ubicacion: "", notas: "" };
+    return {
+      nombre: "",
+      numero_parte: "",
+      codigo: "",
+      categoria: "",
+      stock_minimo: "",
+      ubicacion: "",
+      notas: "",
+      cantidad_inicial: "",
+      costo_inicial_usd: "",
+    };
   }
   return {
     nombre: item.nombre,
@@ -128,5 +180,7 @@ function defaults(item?: InventarioItem): ItemFormValues {
     stock_minimo: item.stock_minimo != null ? String(item.stock_minimo) : "",
     ubicacion: item.ubicacion ?? "",
     notas: item.notas ?? "",
+    cantidad_inicial: "",
+    costo_inicial_usd: "",
   };
 }

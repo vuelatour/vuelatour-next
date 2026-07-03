@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { EllipsisHorizontalIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
+import {
+  EllipsisHorizontalIcon,
+  PaperAirplaneIcon,
+  PencilIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -21,10 +26,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { deleteItemAction } from "@/app/admin/inventory/actions";
 import { ItemFormDialog } from "./item-form-dialog";
+import { MovimientoDialog } from "./movimiento-dialog";
 import type { InventarioItem } from "@/types/inventory";
 
-export function ItemActions({ item }: { item: InventarioItem }) {
+interface ItemActionsProps {
+  item: InventarioItem;
+  aircraft: { id: string; matricula: string }[];
+  providers: { id: string; nombre: string }[];
+}
+
+export function ItemActions({ item, aircraft, providers }: ItemActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
+  const [openSalida, setOpenSalida] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -48,6 +61,12 @@ export function ItemActions({ item }: { item: InventarioItem }) {
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {item.activo && (
+            <DropdownMenuItem onClick={() => setOpenSalida(true)} className="gap-2">
+              <PaperAirplaneIcon className="h-4 w-4" />
+              Registrar salida (cargar a avión)
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar
@@ -65,6 +84,16 @@ export function ItemActions({ item }: { item: InventarioItem }) {
       </DropdownMenu>
 
       <ItemFormDialog open={openEdit} onOpenChange={setOpenEdit} initialItem={item} />
+
+      <MovimientoDialog
+        open={openSalida}
+        onOpenChange={setOpenSalida}
+        itemId={item.id}
+        itemNombre={item.nombre}
+        aircraft={aircraft}
+        providers={providers}
+        initialTipo="SALIDA"
+      />
 
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
         <AlertDialogContent>

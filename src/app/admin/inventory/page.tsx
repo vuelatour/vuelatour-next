@@ -22,6 +22,7 @@ import { ImportCompraButton } from "@/components/admin/inventory/import-compra-b
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
+import { listAircraft } from "@/lib/api/aircraft";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +32,14 @@ const usd = (n: number) =>
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 export default async function InventoryPage() {
-  const [{ data: items, count, valor_total_usd }, providersRes] = await Promise.all([
-    listInventario({ limit: 500 }),
-    listProviders({ limit: 200 }),
-  ]);
+  const [{ data: items, count, valor_total_usd }, providersRes, aircraftRes] =
+    await Promise.all([
+      listInventario({ limit: 500 }),
+      listProviders({ limit: 200 }),
+      listAircraft({ limit: 100 }),
+    ]);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
+  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
 
   return (
@@ -134,7 +138,7 @@ export default async function InventoryPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{usd(it.valor_usd)}</TableCell>
                     <TableCell>
-                      <ItemActions item={it} />
+                      <ItemActions item={it} aircraft={aircraft} providers={providers} />
                     </TableCell>
                   </TableRow>
                 ))}
