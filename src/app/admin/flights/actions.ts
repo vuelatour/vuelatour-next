@@ -399,10 +399,24 @@ export interface CreateExternalFlightPayload {
 
 // ============ Reserva tentativa ============
 
-export interface CreateReservaPayload {
-  cliente_id: string;
+/** Tramo del itinerario de OPERACIÓN (la ruta real que ve el piloto). */
+export interface ReservaEscalaPayload {
   origen_iata: string;
   destino_iata: string;
+  hora_salida?: string;
+  es_ferry?: boolean;
+  pasajeros?: number;
+  pasajeros_nombres?: string[];
+  notas?: string;
+}
+
+export interface CreateReservaPayload {
+  cliente_id: string;
+  /** Requeridos solo si NO se envía escalas_operacion. */
+  origen_iata?: string;
+  destino_iata?: string;
+  /** Itinerario de operación completo (creación rápida). */
+  escalas_operacion?: ReservaEscalaPayload[];
   fecha_vuelo: string;
   fecha_traslado_final?: string;
   pasajeros?: number;

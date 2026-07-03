@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,53 +44,28 @@ interface PilotOption {
   nombre: string;
 }
 
-const ReservaSchema = z
-  .object({
-    cliente_id: z.string().uuid("Cliente requerido"),
-    origen_iata: z
-      .string()
-      .min(3)
-      .max(4)
-      .transform((v) => v.toUpperCase()),
-    destino_iata: z
-      .string()
-      .min(3, "Destino requerido")
-      .max(4)
-      .transform((v) => v.toUpperCase()),
-    fecha_vuelo: z.string().min(1, "Fecha requerida"),
-    fecha_traslado_final: z.string().optional().or(z.literal("")),
-    pasajeros: z.coerce.number().int().min(1, "Mínimo 1"),
-    aeronave_id: z.string().optional().or(z.literal("")),
-    piloto_id: z.string().optional().or(z.literal("")),
-    cotizacion_abierta: z.boolean().default(false),
-    pasajeros_nombres: z.string().max(4000).optional().or(z.literal("")),
-    notas: z.string().max(2000).optional().or(z.literal("")),
-  })
-  .superRefine((val, ctx) => {
-    if (val.origen_iata === val.destino_iata) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["destino_iata"],
-        message: "Origen y destino no pueden ser iguales",
-      });
-    }
-  });
+/**
+ * Tramo del itinerario de OPERACIÓN: la ruta real que vuela el avión y ve el
+ * piloto. NO es la ruta comercial de la cotización (esa siempre abre y cierra
+ * en Cancún y se arma después en el cotizador).
+ */
+interface LegRow {
+  origen: string;
+  destino: string;
+  hora: string; // datetime-local; el 1er tramo usa "Fecha y hora" si va vacío
+  esFerry: boolean;
+  pasajeros: string;
+  notas: string;
+}
 
-type FormValues = z.input<typeof ReservaSchema>;
-
-const defaultValues: FormValues = {
-  cliente_id: "",
-  origen_iata: "CUN",
-  destino_iata: "",
-  fecha_vuelo: "",
-  fecha_traslado_final: "",
-  pasajeros: 1,
-  aeronave_id: "",
-  piloto_id: "",
-  cotizacion_abierta: false,
-  pasajeros_nombres: "",
+const emptyLeg = (origen = ""): LegRow => ({
+  origen,
+  destino: "",
+  hora: "",
+  esFerry: false,
+  pasajeros: "",
   notas: "",
-};
+});
 
 interface ReservaFormSheetProps {
   open: boolean;
@@ -103,6 +76,13 @@ interface ReservaFormSheetProps {
   pilots: PilotOption[];
 }
 
+/**
+ * Creación rápida de vuelo, en el orden pedido por el cliente:
+ * avión → itinerario de OPERACIÓN → piloto → hora → cliente → opcionales.
+ * La cotización (ruta comercial CUN→…→CUN, precio) es opcional y se arma
+ * después desde el detalle del vuelo; los vuelos "salen de la nada" y esto
+ * captura lo mínimo operable en segundos.
+ */
 export function ReservaFormSheet({
   open,
   onOpenChange,
@@ -114,21 +94,27 @@ export function ReservaFormSheet({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm<FormValues>({
-    resolver: zodResolver(ReservaSchema),
-    defaultValues,
-  });
+  const [aeronaveId, setAeronaveId] = useState("");
+  const [legs, setLegs] = useState<LegRow[]>([emptyLeg("CUN")]);
+  const [pilotoId, setPilotoId] = useState("");
+  const [fechaVuelo, setFechaVuelo] = useState("");
+  const [clienteId, setClienteId] = useState("");
+  const [cotizacionAbierta, setCotizacionAbierta] = useState(false);
+  const [notas, setNotas] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) reset(defaultValues);
-  }, [open, reset]);
+    if (open) {
+      setAeronaveId("");
+      setLegs([emptyLeg("CUN")]);
+      setPilotoId("");
+      setFechaVuelo("");
+      setClienteId("");
+      setCotizacionAbierta(false);
+      setNotas("");
+      setError(null);
+    }
+  }, [open]);
 
   const airportOptions = airports.map((a) => ({
     value: a.iata,
@@ -136,35 +122,52 @@ export function ReservaFormSheet({
     description: a.nombre,
   }));
 
-  const onSubmit = handleSubmit((values) => {
+  const updateLeg = (i: number, patch: Partial<LegRow>) =>
+    setLegs((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  const addLeg = () =>
+    setLegs((prev) => [...prev, emptyLeg(prev[prev.length - 1]?.destino ?? "")]);
+
+  const removeLeg = (i: number) =>
+    setLegs((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)));
+
+  const submit = () => {
+    setError(null);
+    if (!aeronaveId) return setError("Elige el avión.");
+    if (legs.some((l) => !l.origen || !l.destino))
+      return setError("Cada tramo necesita origen y destino.");
+    if (legs.some((l) => l.origen === l.destino))
+      return setError("Un tramo no puede tener el mismo origen y destino.");
+    if (!pilotoId) return setError("Elige el piloto.");
+    if (!fechaVuelo) return setError("Captura la fecha y hora de salida.");
+    if (!clienteId) return setError("Elige el cliente (responsable del vuelo).");
+
     startTransition(async () => {
       const res = await createReservaAction({
-        cliente_id: values.cliente_id,
-        origen_iata: values.origen_iata.toUpperCase(),
-        destino_iata: values.destino_iata.toUpperCase(),
-        fecha_vuelo: cancunInputToIso(values.fecha_vuelo),
-        fecha_traslado_final: values.fecha_traslado_final
-          ? cancunInputToIso(values.fecha_traslado_final)
-          : undefined,
-        pasajeros: Number(values.pasajeros) || 1,
-        aeronave_id: values.aeronave_id || undefined,
-        piloto_id: values.piloto_id || undefined,
-        cotizacion_abierta: values.cotizacion_abierta ?? false,
-        pasajeros_nombres: (values.pasajeros_nombres ?? "")
-          .split("\n")
-          .map((n) => n.trim())
-          .filter(Boolean),
-        notas: values.notas?.trim() || undefined,
+        cliente_id: clienteId,
+        aeronave_id: aeronaveId,
+        piloto_id: pilotoId,
+        fecha_vuelo: cancunInputToIso(fechaVuelo),
+        cotizacion_abierta: cotizacionAbierta,
+        notas: notas.trim() || undefined,
+        escalas_operacion: legs.map((l) => ({
+          origen_iata: l.origen,
+          destino_iata: l.destino,
+          hora_salida: l.hora ? cancunInputToIso(l.hora) : undefined,
+          es_ferry: l.esFerry,
+          pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
+          notas: l.notas.trim() || undefined,
+        })),
       });
       if (res.ok && res.data) {
-        toast.success(`Espacio apartado · vuelo #${res.data.folio}`);
+        toast.success(`Vuelo creado · #${res.data.folio}. La cotización se arma cuando gustes.`);
         onOpenChange(false);
         router.push(`/admin/flights/${res.data.id}`);
       } else {
-        toast.error(res.error ?? "Error al apartar el espacio");
+        setError(res.error ?? "Error al crear el vuelo");
       }
     });
-  });
+  };
 
   return (
     <Sheet
@@ -186,136 +189,184 @@ export function ReservaFormSheet({
         className="w-full sm:max-w-xl sm:w-[560px] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
-          <SheetTitle>Apartar espacio (reserva tentativa)</SheetTitle>
+          <SheetTitle>Vuelo rápido (sin cotización)</SheetTitle>
           <SheetDescription>
-            Bloquea el día y horario en el calendario SIN cotización — para no
-            vender el mismo espacio dos veces mientras el cliente confirma o se
-            consiguen costos. Se cotiza después desde el detalle del vuelo.
+            Captura la OPERACIÓN real — de dónde sale el avión y sus escalas; es
+            lo que ve el piloto. La cotización al cliente (CUN → … → CUN) es
+            opcional y se arma después desde el detalle del vuelo.
           </SheetDescription>
         </SheetHeader>
 
-        <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          <Field label="Cliente" required error={errors.cliente_id?.message}>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* 1. Avión */}
+          <Field label="Avión" required>
+            <SearchableSelect
+              options={aircraft.map((a) => ({
+                value: a.id,
+                label: a.matricula,
+                description: a.modelo,
+              }))}
+              value={aeronaveId}
+              onChange={setAeronaveId}
+              placeholder="Matrícula"
+            />
+          </Field>
+
+          {/* 2. Ruta de operación */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">
+                Ruta de operación <span className="text-destructive">*</span>
+              </Label>
+              <Button type="button" size="sm" variant="outline" onClick={addLeg} className="gap-1">
+                <PlusIcon className="h-3.5 w-3.5" />
+                Tramo
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              La ruta real del avión (puede salir de otra base). Marca como
+              ferry los tramos sin pasajeros: el piloto los ve, el cliente no.
+            </p>
+            <div className="space-y-2">
+              {legs.map((leg, i) => (
+                <div key={i} className="rounded-lg border border-border p-3 space-y-2">
+                  <div className="grid grid-cols-[1fr_auto_1fr_auto] items-end gap-2">
+                    <Field label={i === 0 ? "Sale de" : "Origen"}>
+                      <SearchableSelect
+                        options={airportOptions}
+                        value={leg.origen}
+                        onChange={(v) => updateLeg(i, { origen: v })}
+                        placeholder="IATA"
+                      />
+                    </Field>
+                    <span className="text-muted-foreground mb-2">→</span>
+                    <Field label="Destino">
+                      <SearchableSelect
+                        options={airportOptions}
+                        value={leg.destino}
+                        onChange={(v) => {
+                          updateLeg(i, { destino: v });
+                          // Encadena el origen del siguiente tramo si está vacío.
+                          setLegs((prev) =>
+                            prev.map((l, idx) =>
+                              idx === i + 1 && !l.origen ? { ...l, origen: v } : l,
+                            ),
+                          );
+                        }}
+                        placeholder="IATA"
+                      />
+                    </Field>
+                    {legs.length > 1 ? (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="mb-1 h-8 w-8 text-muted-foreground"
+                        onClick={() => removeLeg(i)}
+                        title="Quitar tramo"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <span className="w-8" />
+                    )}
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
+                    <label className="flex items-center gap-2 text-xs">
+                      <Switch
+                        checked={leg.esFerry}
+                        onCheckedChange={(c) =>
+                          updateLeg(i, { esFerry: c, pasajeros: c ? "" : leg.pasajeros })
+                        }
+                      />
+                      Ferry (vacío)
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="Pax"
+                      disabled={leg.esFerry}
+                      value={leg.pasajeros}
+                      onChange={(e) => updateLeg(i, { pasajeros: e.target.value })}
+                    />
+                    <Input
+                      type="datetime-local"
+                      title={i === 0 ? "Opcional: usa la fecha/hora general" : "Hora del tramo (opcional)"}
+                      value={leg.hora}
+                      onChange={(e) => updateLeg(i, { hora: e.target.value })}
+                    />
+                  </div>
+                  <Input
+                    placeholder='Nota del tramo (opcional) · ej. "ellos pagan sus TUAs"'
+                    value={leg.notas}
+                    onChange={(e) => updateLeg(i, { notas: e.target.value })}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Piloto */}
+          <Field label="Piloto" required>
+            <SearchableSelect
+              options={pilots.map((p) => ({ value: p.id, label: p.nombre }))}
+              value={pilotoId}
+              onChange={setPilotoId}
+              placeholder="Selecciona piloto"
+            />
+          </Field>
+
+          {/* 4. Hora */}
+          <Field label="Fecha y hora de salida" hint={TZ_LABEL} required>
+            <Input
+              type="datetime-local"
+              value={fechaVuelo}
+              onChange={(e) => setFechaVuelo(e.target.value)}
+            />
+          </Field>
+
+          {/* 5. Cliente (responsable del vuelo) */}
+          <Field label="Cliente (responsable del vuelo)" required>
             <SearchableSelect
               options={clients.map((c) => ({
                 value: c.id,
                 label: c.nombre,
                 description: c.rfc ?? undefined,
               }))}
-              value={watch("cliente_id")}
-              onChange={(v) => setValue("cliente_id", v)}
+              value={clienteId}
+              onChange={setClienteId}
               placeholder="Selecciona cliente"
               emptyText="Sin clientes activos"
             />
           </Field>
 
-          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-            <Field label="Origen" required error={errors.origen_iata?.message}>
-              <SearchableSelect
-                options={airportOptions}
-                value={watch("origen_iata")}
-                onChange={(v) => setValue("origen_iata", v)}
-                placeholder="IATA"
-              />
-            </Field>
-            <span className="text-muted-foreground mb-2">→</span>
-            <Field
-              label="Destino tentativo"
-              required
-              error={errors.destino_iata?.message}
-            >
-              <SearchableSelect
-                options={airportOptions}
-                value={watch("destino_iata")}
-                onChange={(v) => setValue("destino_iata", v)}
-                placeholder="IATA"
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Fecha y hora"
-              hint={TZ_LABEL}
-              required
-              error={errors.fecha_vuelo?.message}
-            >
-              <Input type="datetime-local" {...register("fecha_vuelo")} />
-            </Field>
-            <Field
-              label="Regreso (opcional)"
-              hint="Si se conoce"
-              error={errors.fecha_traslado_final?.message}
-            >
-              <Input type="datetime-local" {...register("fecha_traslado_final")} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Pasajeros" required error={errors.pasajeros?.message}>
-              <Input type="number" min={1} {...register("pasajeros")} />
-            </Field>
-            <Field label="Aeronave (opcional)">
-              <SearchableSelect
-                options={[
-                  { value: "", label: "Sin asignar" },
-                  ...aircraft.map((a) => ({
-                    value: a.id,
-                    label: a.matricula,
-                    description: a.modelo,
-                  })),
-                ]}
-                value={watch("aeronave_id") ?? ""}
-                onChange={(v) => setValue("aeronave_id", v)}
-                placeholder="Sin asignar"
-              />
-            </Field>
-            <Field label="Piloto (opcional)">
-              <SearchableSelect
-                options={[
-                  { value: "", label: "Sin asignar" },
-                  ...pilots.map((p) => ({ value: p.id, label: p.nombre })),
-                ]}
-                value={watch("piloto_id") ?? ""}
-                onChange={(v) => setValue("piloto_id", v)}
-                placeholder="Sin asignar"
-              />
-            </Field>
-          </div>
-
+          {/* Opcionales */}
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div className="space-y-0.5">
               <Label className="text-sm font-medium">Cotización abierta</Label>
               <p className="text-xs text-muted-foreground">
-                &ldquo;Llévame y de ahí vemos&rdquo;: el piloto registra los tramos en
-                el camino y el precio se cierra al final.
+                &ldquo;Llévame y de ahí vemos&rdquo;: el piloto registra tramos en el
+                camino y el precio se cierra al final.
               </p>
             </div>
-            <Switch
-              checked={watch("cotizacion_abierta") ?? false}
-              onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
-            />
+            <Switch checked={cotizacionAbierta} onCheckedChange={setCotizacionAbierta} />
           </div>
 
-          <Field
-            label="Nombres de pasajeros"
-            hint="Uno por línea (si ya se conocen). Necesarios para tramitar permisos."
-          >
+          <Field label="Notas internas">
             <Textarea
-              rows={3}
-              placeholder={"Juan Pérez\nMaría López"}
-              {...register("pasajeros_nombres")}
+              rows={2}
+              placeholder='Opcional · ej. "va a pagar con BillPocket"'
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
             />
           </Field>
 
-          <Field label="Notas internas" error={errors.notas?.message}>
-            <Textarea
-              rows={2}
-              placeholder='Opcional · ej. "espera confirmación del cliente el jueves"'
-              {...register("notas")}
-            />
-          </Field>
-        </form>
+          {error && (
+            <p className="text-sm font-medium text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
 
         <SheetFooter className="border-t border-border flex-row justify-end gap-2 mt-0">
           <Button
@@ -326,12 +377,11 @@ export function ReservaFormSheet({
           >
             Cancelar
           </Button>
-          <Button type="button" onClick={onSubmit} disabled={pending}>
-            {pending ? "Apartando…" : "Apartar espacio"}
+          <Button type="button" onClick={submit} disabled={pending}>
+            {pending ? "Creando…" : "Crear vuelo"}
           </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
   );
 }
-
