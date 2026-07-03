@@ -291,8 +291,22 @@ export function ReservaFormSheet({
                     />
                     <Input
                       type="datetime-local"
-                      title={i === 0 ? "Opcional: usa la fecha/hora general" : "Hora del tramo (opcional)"}
+                      title={
+                        i === 0
+                          ? "Opcional: usa la fecha/hora general"
+                          : "Hora del tramo (opcional). Si sale otro día, se marca pernocta."
+                      }
                       value={leg.hora}
+                      // Al tocar el campo vacío, precarga la fecha del vuelo (o la
+                      // del tramo anterior) para que el selector no arranque en
+                      // "ahora" y solo se ajuste la hora.
+                      onFocus={() => {
+                        if (leg.hora) return;
+                        const base =
+                          [...legs.slice(0, i)].reverse().find((l) => l.hora)?.hora ||
+                          fechaVuelo;
+                        if (base) updateLeg(i, { hora: base });
+                      }}
                       onChange={(e) => updateLeg(i, { hora: e.target.value })}
                     />
                   </div>
