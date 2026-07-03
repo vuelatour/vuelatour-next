@@ -150,10 +150,11 @@ export function ReservaFormSheet({
         fecha_vuelo: cancunInputToIso(fechaVuelo),
         cotizacion_abierta: cotizacionAbierta,
         notas: notas.trim() || undefined,
-        escalas_operacion: legs.map((l) => ({
+        escalas_operacion: legs.map((l, idx) => ({
           origen_iata: l.origen,
           destino_iata: l.destino,
-          hora_salida: l.hora ? cancunInputToIso(l.hora) : undefined,
+          // El tramo 1 siempre sale a la fecha/hora general del vuelo.
+          hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
           es_ferry: l.esFerry,
           pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
           notas: l.notas.trim() || undefined,
@@ -289,26 +290,36 @@ export function ReservaFormSheet({
                       value={leg.pasajeros}
                       onChange={(e) => updateLeg(i, { pasajeros: e.target.value })}
                     />
-                    <Input
-                      type="datetime-local"
-                      title={
-                        i === 0
-                          ? "Opcional: usa la fecha/hora general"
-                          : "Hora del tramo (opcional). Si sale otro día, se marca pernocta."
-                      }
-                      value={leg.hora}
-                      // Al tocar el campo vacío, precarga la fecha del vuelo (o la
-                      // del tramo anterior) para que el selector no arranque en
-                      // "ahora" y solo se ajuste la hora.
-                      onFocus={() => {
-                        if (leg.hora) return;
-                        const base =
-                          [...legs.slice(0, i)].reverse().find((l) => l.hora)?.hora ||
-                          fechaVuelo;
-                        if (base) updateLeg(i, { hora: base });
-                      }}
-                      onChange={(e) => updateLeg(i, { hora: e.target.value })}
-                    />
+                    {i === 0 ? (
+                      <Input
+                        value="Usa la fecha y hora general"
+                        disabled
+                        readOnly
+                        className="text-muted-foreground text-xs"
+                        title="El primer tramo sale a la fecha y hora general del vuelo (se captura abajo)."
+                      />
+                    ) : (
+                      <Input
+                        type="datetime-local"
+                        disabled={!fechaVuelo}
+                        title={
+                          !fechaVuelo
+                            ? "Primero captura la fecha y hora general (abajo)."
+                            : "Hora del tramo (opcional). Si sale otro día, se marca pernocta."
+                        }
+                        value={leg.hora}
+                        // Precarga desde el tramo anterior o la fecha general para
+                        // que el selector nunca arranque en "ahora".
+                        onFocus={() => {
+                          if (leg.hora) return;
+                          const base =
+                            [...legs.slice(0, i)].reverse().find((l) => l.hora)?.hora ||
+                            fechaVuelo;
+                          if (base) updateLeg(i, { hora: base });
+                        }}
+                        onChange={(e) => updateLeg(i, { hora: e.target.value })}
+                      />
+                    )}
                   </div>
                   <Input
                     placeholder='Nota del tramo (opcional) · ej. "ellos pagan sus TUAs"'

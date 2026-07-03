@@ -63,7 +63,10 @@ export function FlightTramosCard({
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
   const [permisoPending, startPermiso] = useTransition();
-  const canAssign = estado === "CONFIRMADO" || estado === "COTIZADO";
+  // Espejo del API: la operación (avión/piloto/fecha del tramo) se edita en
+  // cualquier estado operable — incluida la RESERVA del vuelo rápido; solo se
+  // cierra al COMPLETAR o CANCELAR.
+  const canAssign = estado !== "COMPLETADO" && estado !== "CANCELADO";
 
   const ordered = [...escalas].sort((a, b) => a.orden - b.orden);
 
