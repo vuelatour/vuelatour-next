@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { listCalendar } from "@/lib/api/calendar-server";
+import { listPilots } from "@/lib/api/pilots-server";
+import { MarkRestButton } from "@/components/admin/calendar/descansos";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
 import { CalendarGrid, type CalendarDay } from "@/components/admin/calendar/calendar-grid";
 import type { CalendarEvent } from "@/types/calendar";
@@ -30,10 +32,14 @@ export default async function CalendarPage({
   const monthStart = new Date(year, month, 1, 0, 0, 0);
   const monthEnd = new Date(year, month + 1, 0, 23, 59, 59);
 
-  const { events } = await listCalendar({
-    from: monthStart.toISOString(),
-    to: monthEnd.toISOString(),
-  });
+  const [{ events }, pilotsRes] = await Promise.all([
+    listCalendar({ from: monthStart.toISOString(), to: monthEnd.toISOString() }),
+    listPilots({ estado: "ACTIVO", limit: 200 }).catch(() => ({ data: [] })),
+  ]);
+  const pilots = (pilotsRes.data as { id: string; nombre: string }[]).map((p) => ({
+    id: p.id,
+    nombre: p.nombre,
+  }));
 
   // Agrupa eventos por día local.
   const byDay = new Map<string, CalendarEvent[]>();
@@ -79,6 +85,7 @@ export default async function CalendarPage({
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          <MarkRestButton pilots={pilots} />
           <ResyncGoogleButton />
           <Link
             href={`/admin/calendar?y=${prev.y}&m=${prev.m}`}
@@ -124,6 +131,11 @@ function Legend() {
       title: "Vuelo confirmado al que aún le falta asignar avión y/o piloto.",
     },
     { label: "Externo", color: "#FFB6C1", title: "Vuelo operado por un tercero." },
+    {
+      label: "Descanso",
+      color: "#14B8A6",
+      title: "Día de descanso de un piloto (botón “Marcar descanso”). Al asignar vuelos, el piloto aparece con aviso esos días.",
+    },
     {
       label: "Permiso pendiente",
       color: "#F59E0B",

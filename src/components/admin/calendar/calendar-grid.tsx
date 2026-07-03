@@ -5,6 +5,7 @@ import Link from "next/link";
 import { XMarkIcon, ArrowUpRightIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import type { CalendarEvent } from "@/types/calendar";
+import { RemoveDescansoButton } from "./descansos";
 
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
@@ -141,6 +142,17 @@ function eventHref(ev: CalendarEvent): string {
 }
 
 function EventChip({ ev }: { ev: CalendarEvent }) {
+  if (ev.tipo_evento === "descanso") {
+    return (
+      <span
+        title={ev.title}
+        className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate"
+        style={{ backgroundColor: ev.color }}
+      >
+        😴 {ev.piloto_nombre ?? "Descanso"}
+      </span>
+    );
+  }
   const esRegreso = ev.tramo === "regreso";
   const label = `${ev.hora ? `${ev.hora} ` : ""}${ev.aeronave_matricula ?? ev.operador_externo ?? ""} ${ev.origen_iata}-${ev.destino_iata}`;
   return (
@@ -157,6 +169,21 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
 }
 
 function DayEvent({ ev }: { ev: CalendarEvent }) {
+  if (ev.tipo_evento === "descanso") {
+    return (
+      <div className="rounded-lg border border-border p-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+            <span className="font-medium text-sm truncate">😴 {ev.title}</span>
+          </div>
+          {ev.descanso_id && (
+            <RemoveDescansoButton descansoId={ev.descanso_id} label={ev.title} />
+          )}
+        </div>
+      </div>
+    );
+  }
   const esRegreso = ev.tramo === "regreso";
   return (
     <Link
