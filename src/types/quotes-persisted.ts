@@ -86,6 +86,9 @@ export interface PersistedQuote {
   pasajeros_nombres?: string[];
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
+  /** true = las escalas del vuelo son el itinerario OPERATIVO (lo vuela el
+   *  piloto); el cotizador no las gestiona — la ruta comercial es aparte. */
+  itinerario_operativo?: boolean;
   /** Conceptos extra de la cotización. */
   extras?: ExtraConcepto[];
 

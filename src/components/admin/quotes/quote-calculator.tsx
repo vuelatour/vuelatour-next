@@ -223,6 +223,28 @@ function legsSignature(
 }
 
 /** Convierte un tramo de ruta (o escala persistida) a EscalaInput con su detalle. */
+/**
+ * Sugerencia de ruta COMERCIAL para un vuelo con itinerario operativo: abre en
+ * CUN y va al último destino comercial (tramos con pasajeros, excluye CUN),
+ * ida y vuelta. Es solo un punto de partida editable.
+ */
+function comercialSugerida(q: PersistedQuote): EscalaInput[] {
+  const comerciales = (q.escalas ?? []).filter(
+    (e) => !e.solo_operativa && !e.es_ferry,
+  );
+  const destino =
+    [...comerciales].reverse().find((e) => e.destino_iata !== "CUN")
+      ?.destino_iata ??
+    comerciales[comerciales.length - 1]?.destino_iata ??
+    q.destino_iata;
+  if (!destino || destino === "CUN") return [];
+  const pax = q.pasajeros || 1;
+  return [
+    tramoToEscala({ origen_iata: "CUN", destino_iata: destino, millas_nauticas: 0, pasajeros: pax }),
+    tramoToEscala({ origen_iata: destino, destino_iata: "CUN", millas_nauticas: 0, pasajeros: pax }),
+  ];
+}
+
 function tramoToEscala(t: {
   origen_iata: string;
   destino_iata: string;
@@ -349,8 +371,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           : "",
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
         ruta_id: "",
-        escalas:
-          q.escalas && q.escalas.filter((e) => !e.solo_operativa).length > 0
+        escalas: q.itinerario_operativo
+          ? // Itinerario operativo capturado: esas escalas son la ruta REAL del
+            // piloto, no la comercial. Sugerimos la convención CUN→destino→CUN
+            // (editable); las millas las completa el editor o la ruta guardada.
+            comercialSugerida(q)
+          : q.escalas && q.escalas.filter((e) => !e.solo_operativa).length > 0
             ? q.escalas.filter((e) => !e.solo_operativa).map(tramoToEscala)
             : legacyLegs,
         tipo_tarifa: q.tarifa_tipo,
@@ -894,6 +920,31 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               Crear nueva ruta
             </button>
           </Field>
+
+          {initialQuote?.itinerario_operativo && (
+            <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 space-y-1">
+              <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                RUTA OPERATIVA (la vuela el piloto — aquí no se cotiza)
+              </p>
+              <p className="font-mono text-sm">
+                {(() => {
+                  const ops = initialQuote.escalas ?? [];
+                  if (ops.length === 0) return "—";
+                  return [ops[0].origen_iata, ...ops.map((e) => e.destino_iata)].join(" → ");
+                })()}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {(initialQuote.escalas ?? [])
+                  .map((e, i) =>
+                    e.es_ferry || e.solo_operativa ? `T${i + 1} ferry` : null,
+                  )
+                  .filter(Boolean)
+                  .join(" · ") || "Todos los tramos con pasajeros"}
+                {" · "}Los tramos de abajo son la ruta COMERCIAL (lo que paga el
+                cliente, abre y cierra en CUN); la operativa no se toca al cotizar.
+              </p>
+            </div>
+          )}
 
           {values.escalas.length > 0 ? (
             <>
