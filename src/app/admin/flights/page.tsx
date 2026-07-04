@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/table";
 import { FlightsFilterBar } from "@/components/admin/flights/flights-filter-bar";
 import { NewExternalFlightButton } from "@/components/admin/flights/new-external-flight-button";
-import { NewReservaButton } from "@/components/admin/flights/new-reserva-button";
 import { listFlights, getTacoStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -110,23 +109,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
               nombre: a.nombre,
             }))}
           />
-          <NewReservaButton
-            clients={clientsRes.data.map((c) => ({
-              id: c.id,
-              nombre: c.nombre,
-              rfc: c.rfc,
-            }))}
-            airports={airportsRes.data.map((a) => ({
-              iata: a.iata,
-              nombre: a.nombre,
-            }))}
-            aircraft={aircraftRes.data.map((a) => ({
-              id: a.id,
-              matricula: a.matricula,
-              modelo: a.modelo,
-            }))}
-            pilots={pilotsRes.data.map((p) => ({ id: p.id, nombre: p.nombre }))}
-          />
+{/* La creación operativa (antes "Vuelo rápido") vive ahora en Cotizaciones. */}
         </div>
       </div>
 

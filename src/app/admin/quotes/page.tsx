@@ -21,6 +21,10 @@ import {
 import { QuotesFilterBar } from "@/components/admin/quotes/quotes-filter-bar";
 import { listQuotes } from "@/lib/api/quotes-server";
 import { listClients } from "@/lib/api/clients-server";
+import { listAircraft } from "@/lib/api/aircraft";
+import { listPilots } from "@/lib/api/pilots-server";
+import { listAirports } from "@/lib/api/airports-server";
+import { NewReservaButton } from "@/components/admin/flights/new-reserva-button";
 import { fmtUsd } from "@/lib/format";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -40,15 +44,19 @@ interface QuotesPageProps {
 export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const sp = await searchParams;
 
-  const [quotesRes, clientsRes] = await Promise.all([
-    listQuotes({
-      estado: sp.estado || undefined,
-      cliente_id: sp.cliente_id || undefined,
-      q: sp.q || undefined,
-      limit: 200,
-    }),
-    listClients({ limit: 200, activo: true }),
-  ]);
+  const [quotesRes, clientsRes, aircraftRes, pilotsRes, airportsRes] =
+    await Promise.all([
+      listQuotes({
+        estado: sp.estado || undefined,
+        cliente_id: sp.cliente_id || undefined,
+        q: sp.q || undefined,
+        limit: 200,
+      }),
+      listClients({ limit: 200, activo: true }),
+      listAircraft({ limit: 100, activa: true }),
+      listPilots({ estado: "ACTIVO", limit: 200 }),
+      listAirports({ limit: 200, activo: true }),
+    ]);
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const { data: quotes, count } = quotesRes;
@@ -66,10 +74,37 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
             {count} {count === 1 ? "cotización" : "cotizaciones"} en el rango.
           </p>
         </div>
-        <Link href="/admin/quotes/new" className={buttonVariants({ size: "lg" })}>
-          <PlusIcon className="h-4 w-4" />
-          Nueva cotización
-        </Link>
+        <div className="flex items-center gap-2">
+          {/* Flujo principal (acuerdo con cliente): primero la estructura base
+              OPERATIVA (avión, ruta real, piloto, hora, cliente); el precio se
+              arma después con "Cotizar" desde el detalle — o nunca, si el
+              vuelo no lo necesita aún. */}
+          <NewReservaButton
+            clients={clientsRes.data.map((c) => ({
+              id: c.id,
+              nombre: c.nombre,
+              rfc: c.rfc,
+            }))}
+            airports={airportsRes.data.map((a) => ({
+              iata: a.iata,
+              nombre: a.nombre,
+            }))}
+            aircraft={aircraftRes.data.map((a) => ({
+              id: a.id,
+              matricula: a.matricula,
+              modelo: a.modelo,
+            }))}
+            pilots={pilotsRes.data.map((p) => ({ id: p.id, nombre: p.nombre }))}
+          />
+          <Link
+            href="/admin/quotes/new"
+            className={buttonVariants({ variant: "outline" })}
+            title="Cotizador clásico: capturar ruta comercial y precio directamente, sin estructura operativa previa."
+          >
+            <CalculatorIcon className="h-4 w-4" />
+            Cotización directa
+          </Link>
+        </div>
       </div>
 
       {sinAsignar > 0 && (

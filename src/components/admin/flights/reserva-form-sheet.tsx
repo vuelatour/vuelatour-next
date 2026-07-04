@@ -161,7 +161,7 @@ export function ReservaFormSheet({
         })),
       });
       if (res.ok && res.data) {
-        toast.success(`Vuelo creado · #${res.data.folio}. La cotización se arma cuando gustes.`);
+        toast.success(`Operación guardada · vuelo #${res.data.folio}. Usa "Cotizar" cuando quieras ponerle precio.`);
         onOpenChange(false);
         router.push(`/admin/flights/${res.data.id}`);
       } else {
@@ -190,11 +190,12 @@ export function ReservaFormSheet({
         className="w-full sm:max-w-xl sm:w-[560px] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
-          <SheetTitle>Vuelo rápido (sin cotización)</SheetTitle>
+          <SheetTitle>Nueva cotización · paso 1: operación</SheetTitle>
           <SheetDescription>
-            Captura la OPERACIÓN real — de dónde sale el avión y sus escalas; es
-            lo que ve el piloto. La cotización al cliente (CUN → … → CUN) es
-            opcional y se arma después desde el detalle del vuelo.
+            Captura la OPERACIÓN real — de dónde sale el avión y sus escalas;
+            es lo que ve el piloto y lo que aparta el espacio. El precio al
+            cliente (CUN → … → CUN) es el paso 2: botón &ldquo;Cotizar&rdquo; en el
+            detalle, cuando gustes.
           </SheetDescription>
         </SheetHeader>
 
