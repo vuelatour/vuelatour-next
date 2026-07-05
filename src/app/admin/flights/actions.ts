@@ -357,7 +357,7 @@ export async function confirmTacoAction(
   try {
     const data = await apiServer<FlightEscala>(
       `/v1/flights/legs/${escalaId}/taco/confirm`,
-      { method: "POST", body: JSON.stringify(payload) },
+      { method: "POST", body: payload },
     );
     revalidateFlight(flightId);
     return { ok: true, data };
@@ -373,7 +373,7 @@ export async function fillTacoGapsAction(
   try {
     const data = await apiServer<{ escalas_actualizadas: number }>(
       `/v1/flights/${flightId}/taco/fill-gaps`,
-      { method: "POST", body: JSON.stringify({}) },
+      { method: "POST", body: {} },
     );
     revalidateFlight(flightId);
     return { ok: true, data };
