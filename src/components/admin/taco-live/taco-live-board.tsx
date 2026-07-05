@@ -182,9 +182,13 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-sm font-semibold">
+          <Link
+            href={`/admin/flights/${vueloId}`}
+            className="font-mono text-sm font-semibold hover:text-brand-600 hover:underline"
+            title="Abrir el vuelo de esta escala"
+          >
             {escala.orden}. {escala.origen_iata} → {escala.destino_iata}
-          </span>
+          </Link>
           {escala.es_ferry && (
             <Badge variant="outline" className="text-[10px]">
               Ferry
@@ -202,9 +206,7 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
         <div className="flex items-center gap-6">
           <Lectura escala={escala} lado="salida" />
           <Lectura escala={escala} lado="llegada" />
-          {escala.revision_requerida && (
-            <RevisionActions vueloId={vueloId} escala={escala} />
-          )}
+          <RevisionActions vueloId={vueloId} escala={escala} />
         </div>
       </div>
       {escala.revision_motivo && escala.revision_requerida && (
@@ -271,6 +273,9 @@ function RevisionActions({
 
   return (
     <div className="flex items-center gap-2">
+      {/* Comprobar solo aplica a lecturas en amarillo; Ajustar SIEMPRE está
+          disponible — la oficina puede corregir aunque la escala esté OK. */}
+      {escala.revision_requerida && (
       <Button
         size="sm"
         variant="outline"
@@ -282,6 +287,7 @@ function RevisionActions({
         <CheckCircleIcon className="h-3.5 w-3.5" />
         Comprobar
       </Button>
+      )}
       <Button
         size="sm"
         variant="outline"
