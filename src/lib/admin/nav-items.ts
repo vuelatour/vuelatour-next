@@ -23,6 +23,7 @@ import {
   ArchiveBoxIcon,
   WalletIcon,
   ArrowsRightLeftIcon,
+  ClockIcon as GaugeIconAlias,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
@@ -56,6 +57,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
       { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon },
+      // Tablero del día: cada escala espera su tacómetro; lo vencido se
+      // deduce solo y oficina confirma/ajusta — la operación no se detiene.
+      { label: "Tacómetros en vivo", href: "/admin/taco-live", icon: GaugeIconAlias },
       {
         label: "Gastos",
         href: "/admin/expenses",
