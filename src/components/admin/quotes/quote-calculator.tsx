@@ -383,10 +383,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         aeronave_id: q.aeronave_id ?? defaultAircraftId,
         ruta_id: "",
         escalas: q.itinerario_operativo
-          ? // Itinerario operativo capturado: esas escalas son la ruta REAL del
-            // piloto, no la comercial. Sugerimos la convención CUN→destino→CUN
-            // (editable); las millas las completa el editor o la ruta guardada.
-            comercialSugerida(q)
+          ? // Itinerario operativo: las escalas del vuelo son la ruta REAL del
+            // piloto, no la comercial. La comercial COTIZADA vive en el
+            // snapshot del cálculo — si ya se cotizó, se prefill con ESOS
+            // tramos (revisar debe partir de lo pactado); la convención
+            // CUN→destino→CUN solo aplica la primera vez (sin snapshot).
+            (q.calculo_snapshot?.tramos?.length ?? 0) > 0
+            ? q.calculo_snapshot!.tramos!.map((t) =>
+                tramoToEscala({
+                  origen_iata: t.origen,
+                  destino_iata: t.destino,
+                  millas_nauticas: t.millas,
+                  pasajeros: t.pasajeros,
+                  es_ferry: t.es_ferry,
+                  requiere_pernocta: t.requiere_pernocta,
+                  pernocta_costo_usd: t.pernocta_usd,
+                  tipo_parada: t.tipo_parada,
+                  servicio_notas: t.servicio_notas,
+                }),
+              )
+            : comercialSugerida(q)
           : q.escalas && q.escalas.filter((e) => !e.solo_operativa).length > 0
             ? q.escalas.filter((e) => !e.solo_operativa).map(tramoToEscala)
             : legacyLegs,
