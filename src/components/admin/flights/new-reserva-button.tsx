@@ -45,7 +45,10 @@ export function NewReservaButton({
         <CalendarDaysIcon className="h-4 w-4" />
         Nueva cotización
       </Button>
+      {/* key por apertura: remonta con el formulario limpio (mismo patrón
+          que OperationalLegSheet) sin setState dentro de un efecto. */}
       <ReservaFormSheet
+        key={open ? "reserva-open" : "reserva-closed"}
         open={open}
         onOpenChange={setOpen}
         clients={clients}

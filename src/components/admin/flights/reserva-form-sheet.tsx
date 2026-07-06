@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -102,19 +102,6 @@ export function ReservaFormSheet({
   const [cotizacionAbierta, setCotizacionAbierta] = useState(false);
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setAeronaveId("");
-      setLegs([emptyLeg("CUN")]);
-      setPilotoId("");
-      setFechaVuelo("");
-      setClienteId("");
-      setCotizacionAbierta(false);
-      setNotas("");
-      setError(null);
-    }
-  }, [open]);
 
   const airportOptions = airports.map((a) => ({
     value: a.iata,
