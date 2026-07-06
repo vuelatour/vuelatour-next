@@ -187,7 +187,7 @@ export function ReservaFormSheet({
     >
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl sm:w-[560px] flex flex-col p-0"
+        className="w-full sm:max-w-3xl sm:w-[720px] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
           <SheetTitle>Nueva cotización · paso 1: operación</SheetTitle>
