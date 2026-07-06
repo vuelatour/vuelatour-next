@@ -230,7 +230,35 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                       </p>
                     </div>
                   )}
-                {quote.tipo === "MULTIESCALA" && (quote.escalas?.filter((e) => !e.solo_operativa).length ?? 0) > 0 ? (
+                {/* Con itinerario OPERATIVO, "Cotizar" NO toca las escalas del
+                    piloto (candado a propósito): la ruta COMERCIAL cotizada
+                    vive en el snapshot del cálculo. Leer las escalas aquí
+                    mostraba la ruta vieja/operativa como si fuera la cotizada. */}
+                {quote.itinerario_operativo === true &&
+                (quote.calculo_snapshot?.tramos?.length ?? 0) > 0 ? (
+                  <ol className="space-y-1.5">
+                    {quote.calculo_snapshot!.tramos!.map((t) => (
+                      <li
+                        key={`${t.orden}-${t.origen}-${t.destino}`}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <span className="font-mono">
+                          <span className="text-muted-foreground mr-2">{t.orden}.</span>
+                          {t.origen} → {t.destino}
+                        </span>
+                        <span className="font-mono text-muted-foreground">
+                          {t.millas ? `${fmtDecimal(t.millas)} NM` : "—"}
+                        </span>
+                      </li>
+                    ))}
+                    <li className="pt-2 mt-2 border-t border-border flex items-center justify-between text-xs">
+                      <span className="font-semibold">Total</span>
+                      <span className="font-mono font-bold">
+                        {fmtDecimal(quote.millas_nauticas_one_way)} NM
+                      </span>
+                    </li>
+                  </ol>
+                ) : quote.tipo === "MULTIESCALA" && (quote.escalas?.filter((e) => !e.solo_operativa).length ?? 0) > 0 ? (
                   <ol className="space-y-1.5">
                     {quote.escalas!.filter((e) => !e.solo_operativa).map((esc) => (
                       <li
