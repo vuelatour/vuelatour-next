@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,12 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { verifyGastoAction } from "@/app/admin/expenses/actions";
+import {
+  assignVueloGastoAction,
+  sugerirAsignacionGastoAction,
+  verifyGastoAction,
+  type SugerenciaAsignacion,
+} from "@/app/admin/expenses/actions";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import type { Gasto } from "@/types/expenses";
 import { Field } from "@/components/admin/form-field";
@@ -69,6 +74,10 @@ export function ExpenseVerifyDialog({
   fotoUrl,
 }: ExpenseVerifyDialogProps) {
   const [pending, startTransition] = useTransition();
+  // Sugerencia IA/regla de a qué vuelo pertenece (solo gastos sin avión).
+  const [sugerencia, setSugerencia] = useState<SugerenciaAsignacion | null>(null);
+  const [sugiriendo, setSugiriendo] = useState(false);
+  const [vueloAplicado, setVueloAplicado] = useState<string | null>(null);
 
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoVerifyValues>({
     defaultValues: defaults(gasto),
@@ -78,10 +87,46 @@ export function ExpenseVerifyDialog({
     if (open) reset(defaults(gasto));
   }, [open, gasto, reset]);
 
+  // Al abrir un gasto SIN avión: buscar el match probable (piloto + fecha ±3d;
+  // IA si hay varios). Best-effort: si falla, la asignación sigue manual.
+  useEffect(() => {
+    if (!open || gasto.aeronave_id) {
+      setSugerencia(null);
+      setVueloAplicado(null);
+      return;
+    }
+    let cancel = false;
+    setSugiriendo(true);
+    setVueloAplicado(null);
+    sugerirAsignacionGastoAction(gasto.id)
+      .then((res) => {
+        if (!cancel) setSugerencia(res.ok ? (res.data ?? null) : null);
+      })
+      .finally(() => {
+        if (!cancel) setSugiriendo(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open, gasto.id, gasto.aeronave_id]);
+
+  const aplicarCandidato = (c: NonNullable<SugerenciaAsignacion["sugerido"]>) => {
+    if (c.aeronave_id) setValue("aeronave_id", c.aeronave_id);
+    setVueloAplicado(c.vuelo_id);
+    toast.info(
+      `Se aplicará: vuelo #${c.folio ?? "?"} · ${c.matricula ?? "sin matrícula"}. Guarda para confirmar.`,
+    );
+  };
+
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
       const result = await verifyGastoAction(gasto.id, values);
       if (result.ok) {
+        // Si se aplicó una sugerencia, liga también el vuelo (no solo el avión).
+        if (vueloAplicado) {
+          const link = await assignVueloGastoAction(gasto.id, vueloAplicado);
+          if (!link.ok) toast.error("Avión guardado, pero no se pudo ligar el vuelo.");
+        }
         toast.success("Gasto verificado");
         onOpenChange(false);
       } else if (result.fieldErrors) {
@@ -122,6 +167,62 @@ export function ExpenseVerifyDialog({
           <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
             Este gasto no tiene foto de comprobante.
           </p>
+        )}
+
+        {/* Match automático piloto+fecha (IA si es ambiguo): propone, el humano confirma. */}
+        {!gasto.aeronave_id && (
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs space-y-1.5">
+            {sugiriendo ? (
+              <p className="text-muted-foreground">Buscando a qué vuelo pertenece…</p>
+            ) : sugerencia?.sugerido ? (
+              <>
+                <p>
+                  <span className="font-medium">✨ Sugerencia{sugerencia.fuente === "ia" ? " (IA)" : ""}:</span>{" "}
+                  vuelo <span className="font-mono">#{sugerencia.sugerido.folio ?? "?"}</span>
+                  {sugerencia.sugerido.matricula && (
+                    <> · <span className="font-mono">{sugerencia.sugerido.matricula}</span></>
+                  )}
+                  {sugerencia.sugerido.ruta && <> · {sugerencia.sugerido.ruta}</>}
+                  {sugerencia.confianza > 0 && (
+                    <span className="text-muted-foreground"> · {Math.round(sugerencia.confianza * 100)}%</span>
+                  )}
+                </p>
+                <p className="text-muted-foreground">{sugerencia.razon}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={vueloAplicado === sugerencia.sugerido.vuelo_id ? "secondary" : "outline"}
+                  className="h-7 text-xs"
+                  onClick={() => aplicarCandidato(sugerencia.sugerido!)}
+                >
+                  {vueloAplicado === sugerencia.sugerido.vuelo_id ? "✓ Aplicado (guarda para confirmar)" : "Aplicar sugerencia"}
+                </Button>
+              </>
+            ) : sugerencia && sugerencia.candidatos.length > 0 ? (
+              <>
+                <p className="font-medium">Sin match claro — candidatos del piloto:</p>
+                <p className="text-muted-foreground">{sugerencia.razon}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {sugerencia.candidatos.slice(0, 4).map((c) => (
+                    <Button
+                      key={c.vuelo_id}
+                      type="button"
+                      size="sm"
+                      variant={vueloAplicado === c.vuelo_id ? "secondary" : "outline"}
+                      className="h-7 text-xs"
+                      onClick={() => aplicarCandidato(c)}
+                    >
+                      #{c.folio ?? "?"} · {c.matricula ?? "—"}{c.ruta ? ` · ${c.ruta}` : ""}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : sugerencia ? (
+              <p className="text-muted-foreground">
+                <span className="font-medium">Sin match:</span> {sugerencia.razon}
+              </p>
+            ) : null}
+          </div>
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">

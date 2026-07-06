@@ -87,6 +87,38 @@ export async function sugerirVueloAction(
   }
 }
 
+export interface AsignacionCandidato {
+  vuelo_id: string;
+  folio: number | null;
+  fecha_vuelo: string | null;
+  aeronave_id: string | null;
+  matricula: string | null;
+  ruta: string | null;
+}
+
+export interface SugerenciaAsignacion {
+  sugerido: AsignacionCandidato | null;
+  confianza: number;
+  razon: string;
+  fuente: "regla" | "ia";
+  candidatos: AsignacionCandidato[];
+}
+
+/** Sugiere a qué vuelo/avión pertenece un gasto de la bandeja (piloto+fecha; IA si es ambiguo). */
+export async function sugerirAsignacionGastoAction(
+  gastoId: string,
+): Promise<ActionResult<SugerenciaAsignacion>> {
+  try {
+    const data = await apiServer<SugerenciaAsignacion>(
+      `/v1/expenses/${gastoId}/sugerir-asignacion`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Liga (o desliga) una carga de combustible a un vuelo/cotización. */
 export async function assignVueloGastoAction(
   gastoId: string,
