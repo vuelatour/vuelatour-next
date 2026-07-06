@@ -389,14 +389,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
           {/* Escalas */}
           <EscalasCard
             flightId={snapshot.id}
-            flightFolio={snapshot.folio}
-            flightEstado={snapshot.estado}
             escalas={snapshot.escalas}
             tacoPhotos={tacoPhotos}
-            airports={airportsRes.data.map((a) => ({
-              iata: a.iata,
-              nombre: a.nombre,
-            }))}
           />
 
           {/* Cobros */}
