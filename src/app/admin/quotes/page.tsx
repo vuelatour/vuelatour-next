@@ -1,15 +1,8 @@
 import Link from "next/link";
 import { fmtDate } from "@/lib/datetime";
-import { CalculatorIcon, PlusIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { CalculatorIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -26,7 +19,6 @@ import { listPilots } from "@/lib/api/pilots-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { NewReservaButton } from "@/components/admin/flights/new-reserva-button";
 import { fmtUsd } from "@/lib/format";
-import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { EmptyState } from "@/components/admin/empty-state";
 
@@ -96,14 +88,6 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
             }))}
             pilots={pilotsRes.data.map((p) => ({ id: p.id, nombre: p.nombre }))}
           />
-          <Link
-            href="/admin/quotes/new"
-            className={buttonVariants({ variant: "outline" })}
-            title="Cotizador clásico: capturar ruta comercial y precio directamente, sin estructura operativa previa."
-          >
-            <CalculatorIcon className="h-4 w-4" />
-            Cotización directa
-          </Link>
         </div>
       </div>
 
