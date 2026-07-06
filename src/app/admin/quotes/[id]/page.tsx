@@ -20,7 +20,6 @@ import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
 import { getClient } from "@/lib/api/clients-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
-import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 
 export const dynamic = "force-dynamic";
@@ -193,6 +192,44 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
+                {/* Ruta OPERATIVA (la vuela el piloto): visible aquí mismo,
+                    no solo en "Revisar". Es distinta de la comercial cuando
+                    el vuelo salió de otra base o lleva ferries. */}
+                {(quote.itinerario_operativo === true ||
+                  (quote.escalas?.some((e) => e.solo_operativa || e.es_ferry) ??
+                    false)) &&
+                  (quote.escalas?.length ?? 0) > 0 && (
+                    <div className="mb-3 rounded-lg border border-sky-500/40 bg-sky-500/10 p-2.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+                        Ruta operativa (la vuela el piloto — no se cotiza)
+                      </p>
+                      <ol className="mt-1.5 space-y-1">
+                        {[...quote.escalas!]
+                          .sort((a, b) => a.orden - b.orden)
+                          .map((esc) => (
+                            <li key={esc.id} className="flex items-center gap-2 text-xs font-mono">
+                              <span className="text-muted-foreground">{esc.orden}.</span>
+                              {esc.origen_iata} → {esc.destino_iata}
+                              {esc.es_ferry && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0">
+                                  ferry
+                                </Badge>
+                              )}
+                              {esc.solo_operativa && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 border-sky-500/40 text-sky-600 dark:text-sky-400">
+                                  operativo
+                                </Badge>
+                              )}
+                            </li>
+                          ))}
+                      </ol>
+                      <p className="mt-1.5 text-[10px] text-muted-foreground">
+                        Abajo está la ruta COMERCIAL (lo que paga el cliente,
+                        abre y cierra en CUN). Los tramos se editan en el
+                        detalle del vuelo.
+                      </p>
+                    </div>
+                  )}
                 {quote.tipo === "MULTIESCALA" && (quote.escalas?.filter((e) => !e.solo_operativa).length ?? 0) > 0 ? (
                   <ol className="space-y-1.5">
                     {quote.escalas!.filter((e) => !e.solo_operativa).map((esc) => (

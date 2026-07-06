@@ -4,7 +4,11 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  EllipsisHorizontalIcon,
   PaperAirplaneIcon,
+  PencilIcon,
+  PlusIcon,
+  TrashIcon,
   UserPlusIcon,
   FlagIcon,
 } from "@heroicons/react/24/outline";
@@ -16,9 +20,28 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
-import { updateEscalaPermisoAction } from "@/app/admin/flights/actions";
+import {
+  deleteEscalaAction,
+  updateEscalaPermisoAction,
+} from "@/app/admin/flights/actions";
 import { EscalaAssignSheet } from "./escala-assign-sheet";
+import { EscalaFormSheet } from "./escala-form-sheet";
+import { OperationalLegSheet } from "./operational-leg-sheet";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import type { FlightEscala } from "@/types/flights";
 
@@ -35,6 +58,11 @@ interface PilotOption {
   email: string;
 }
 
+interface AirportOption {
+  iata: string;
+  nombre: string;
+}
+
 interface FlightTramosCardProps {
   flightId: string;
   flightFolio: number;
@@ -43,6 +71,7 @@ interface FlightTramosCardProps {
   escalas: FlightEscala[];
   aircraft: AircraftOption[];
   pilots: PilotOption[];
+  airports?: AirportOption[];
 }
 
 /** Etiqueta del tramo: 2 tramos = Ida/Regreso (redondo); más = Tramo N. */
@@ -59,9 +88,14 @@ export function FlightTramosCard({
   escalas,
   aircraft,
   pilots,
+  airports = [],
 }: FlightTramosCardProps) {
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
+  const [editEscala, setEditEscala] = useState<FlightEscala | null>(null);
+  const [toDelete, setToDelete] = useState<FlightEscala | null>(null);
+  const [opSheetOpen, setOpSheetOpen] = useState(false);
+  const [deleting, startDelete] = useTransition();
   const [permisoPending, startPermiso] = useTransition();
   // Espejo del API: la operación (avión/piloto/fecha del tramo) se edita en
   // cualquier estado operable — incluida la RESERVA del vuelo rápido; solo se
@@ -84,11 +118,23 @@ export function FlightTramosCard({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
         <CardTitle className="text-sm flex items-center gap-2">
           <PaperAirplaneIcon className="h-4 w-4 text-muted-foreground" />
           Asignación por tramo
         </CardTitle>
+        {canAssign && !esExterno && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setOpSheetOpen(true)}
+            className="h-7 gap-1 text-xs shrink-0"
+            title="Movimiento real que NO se cobra al cliente (ferry, parada técnica, pernocta operativa)."
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            Agregar tramo
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {ordered.map((escala) => {
@@ -165,6 +211,36 @@ export function FlightTramosCard({
                       {sinAsignar ? "Asignar" : "Reasignar"}
                     </Button>
                   )}
+                  {canAssign && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <EllipsisHorizontalIcon className="h-4 w-4" />
+                        <span className="sr-only">Acciones del tramo</span>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => setEditEscala(escala)}
+                          className="gap-2"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                          Editar tramo (ruta, fecha, notas)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setToDelete(escala)}
+                          disabled={!!(escala.taco_salida || escala.taco_llegada)}
+                          title={
+                            escala.taco_salida || escala.taco_llegada
+                              ? "Tiene tacómetro capturado: no se puede borrar (auditoría)."
+                              : undefined
+                          }
+                          className="gap-2 text-destructive focus:text-destructive"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          Eliminar tramo
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-1 text-sm">
@@ -213,6 +289,69 @@ export function FlightTramosCard({
           pilots={pilots}
         />
       )}
+
+      {editEscala && (
+        <EscalaFormSheet
+          open={!!editEscala}
+          onOpenChange={(o) => !o && setEditEscala(null)}
+          flightId={flightId}
+          flightFolio={flightFolio}
+          airports={airports}
+          takenOrdenes={ordered.map((e) => e.orden)}
+          initialEscala={editEscala}
+        />
+      )}
+
+      <OperationalLegSheet
+        open={opSheetOpen}
+        onOpenChange={setOpSheetOpen}
+        flightId={flightId}
+        airports={airports}
+      />
+
+      <Dialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar este tramo?</DialogTitle>
+            <DialogDescription>
+              {toDelete
+                ? `${toDelete.origen_iata} → ${toDelete.destino_iata}. `
+                : ""}
+              Úsalo cuando el tramo ya no se va a volar. Se quita de la ruta
+              operativa, del calendario y de la app del piloto. Esta acción no
+              se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setToDelete(null)}
+              disabled={deleting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => {
+                if (!toDelete) return;
+                startDelete(async () => {
+                  const res = await deleteEscalaAction(flightId, toDelete.id);
+                  if (res.ok) {
+                    toast.success("Tramo eliminado");
+                    setToDelete(null);
+                    router.refresh();
+                  } else {
+                    toast.error(res.error ?? "No se pudo eliminar");
+                  }
+                });
+              }}
+            >
+              {deleting ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
