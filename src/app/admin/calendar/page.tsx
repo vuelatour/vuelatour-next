@@ -18,6 +18,16 @@ function localKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Los EVENTOS se agrupan por día de CANCÚN, no del servidor: en Vercel (UTC)
+// un vuelo del 1 jul 21:30 Cancún es 2 jul 02:30 UTC y caía en la celda
+// equivocada. localKey se mantiene solo para las celdas sintéticas del grid.
+const CANCUN_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Cancun",
+});
+function cancunKey(d: Date): string {
+  return CANCUN_DAY.format(d);
+}
+
 export default async function CalendarPage({
   searchParams,
 }: {
@@ -45,7 +55,7 @@ export default async function CalendarPage({
   const byDay = new Map<string, CalendarEvent[]>();
   for (const e of events) {
     if (!e.fecha_vuelo) continue;
-    const key = localKey(new Date(e.fecha_vuelo));
+    const key = cancunKey(new Date(e.fecha_vuelo));
     const list = byDay.get(key);
     if (list) list.push(e);
     else byDay.set(key, [e]);
@@ -61,7 +71,7 @@ export default async function CalendarPage({
 
   const prev = month === 0 ? { y: year - 1, m: 12 } : { y: year, m: month };
   const next = month === 11 ? { y: year + 1, m: 1 } : { y: year, m: month + 2 };
-  const todayKey = localKey(now);
+  const todayKey = cancunKey(now);
 
   const days: CalendarDay[] = cells.map((date) => {
     const key = localKey(date);
