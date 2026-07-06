@@ -174,7 +174,9 @@ export function ReservaFormSheet({
     >
       <SheetContent
         side="right"
-        className="w-full sm:max-w-3xl sm:w-[720px] flex flex-col p-0"
+        // El Sheet base trae data-[side=right]:sm:max-w-sm (384px): hay que
+        // sobreescribir con el MISMO prefijo de variante o gana el base.
+        className="data-[side=right]:w-full data-[side=right]:sm:w-[50vw] data-[side=right]:sm:max-w-[880px] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
           <SheetTitle>Nueva cotización · paso 1: operación</SheetTitle>
