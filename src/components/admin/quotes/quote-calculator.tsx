@@ -128,6 +128,8 @@ interface QuoteFormValues {
   metodo_pago: MetodoPago;
   /** TC MXN por USD con el que entrará el pago (BillPocket/transferencia en pesos). */
   tc_usd_mxn: number | null;
+  /** Comisión BillPocket % (custom por operación, tope 20). */
+  comision_billpocket_pct: number | null;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
   iva_pct_override: number | null;
@@ -385,13 +387,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pasajeros: q.pasajeros,
         pase_abordar: q.pase_abordar,
         cotizacion_abierta: q.cotizacion_abierta ?? false,
-        extras: q.extras ?? [],
+        // La comisión BillPocket la sintetiza el motor: no se edita como extra.
+        extras: (q.extras ?? []).filter(
+          (e) => !e.concepto?.startsWith("Comisión BillPocket"),
+        ),
         redondeo_usd:
           Number(q.ajuste_final_usd) > 0 ? Number(q.ajuste_final_usd) : null,
         descuento_usd:
           Number(q.ajuste_final_usd) < 0 ? Math.abs(Number(q.ajuste_final_usd)) : null,
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
         tc_usd_mxn: Number(q.tc_usd_mxn) > 0 ? Number(q.tc_usd_mxn) : null,
+        comision_billpocket_pct:
+          q.calculo_snapshot?.meta?.comision_billpocket_pct ?? null,
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
         iva_pct_override: null,
@@ -417,6 +424,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       descuento_usd: null,
       metodo_pago: "TRANSFERENCIA",
       tc_usd_mxn: null,
+      comision_billpocket_pct: null,
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
       iva_pct_override: null,
@@ -469,6 +477,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       metodo_pago: debounced.metodo_pago,
       tc_usd_mxn:
         Number(debounced.tc_usd_mxn) > 0 ? Number(debounced.tc_usd_mxn) : undefined,
+      comision_billpocket_pct:
+        debounced.metodo_pago === "BILLPOCKET" &&
+        Number(debounced.comision_billpocket_pct) > 0
+          ? Math.min(Number(debounced.comision_billpocket_pct), 20)
+          : undefined,
     };
     const legs = debounced.escalas ?? [];
     if (legs.length >= 1) {
@@ -1185,6 +1198,40 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               placeholder="Selecciona método"
             />
           </Field>
+
+          {/* BillPocket no factura (sin IVA) pero cobra comisión CUSTOM por
+              operación (5%, 9%… tope 20%): entra al total como línea sin IVA. */}
+          {values.metodo_pago === "BILLPOCKET" && (
+            <Field
+              label="Comisión BillPocket (%)"
+              hint="Custom por operación · tope 20% · sin IVA"
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={20}
+                  placeholder="Ej. 9"
+                  className="w-32"
+                  value={values.comision_billpocket_pct ?? ""}
+                  onChange={(e) =>
+                    setValue(
+                      "comision_billpocket_pct",
+                      e.target.value === ""
+                        ? null
+                        : Math.min(20, Math.max(0, Number(e.target.value))),
+                    )
+                  }
+                />
+                {Number(values.comision_billpocket_pct) > 0 && breakdown && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    la línea aparece en el desglose como “Comisión BillPocket”
+                  </span>
+                )}
+              </div>
+            </Field>
+          )}
 
           {/* El pago puede entrar en pesos (BillPocket/transferencia): el TC
               pactado fija el total MXN y convierte los cobros MXN sin TC. */}

@@ -70,6 +70,8 @@ export interface CalculateQuoteRequest {
   metodo_pago: MetodoPago;
   /** TC MXN por USD pactado (pago en pesos). Persiste tc_usd_mxn + monto_total_mxn. */
   tc_usd_mxn?: number;
+  /** Comisión BillPocket en % (custom, tope 20). Solo con metodo_pago=BILLPOCKET. */
+  comision_billpocket_pct?: number;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;
   iva_pct_override?: number;
@@ -137,5 +139,7 @@ export interface QuoteBreakdown {
   meta: {
     calculado_at: string;
     version_motor: string;
+    /** % de comisión BillPocket sintetizada por el motor (null si no aplica). */
+    comision_billpocket_pct?: number | null;
   };
 }
