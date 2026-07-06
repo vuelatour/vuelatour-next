@@ -17,9 +17,20 @@ function fail<T>(err: unknown): ActionResult<T> {
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
+export interface OperationalLegInput {
+  origen_iata: string;
+  destino_iata: string;
+  es_ferry?: boolean;
+  pasajeros?: number;
+  hora_salida?: string;
+  notas?: string;
+}
+
 export interface CreateQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
   cliente_id: string;
+  /** Ruta OPERATIVA real (opcional): escalas del piloto; la cotización no las pisa. */
+  escalas_operacion?: OperationalLegInput[];
   tipo?: "REDONDO" | "MULTIESCALA";
   fecha_vuelo?: string;
   fecha_traslado_final?: string;

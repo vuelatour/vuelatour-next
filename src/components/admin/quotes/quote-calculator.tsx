@@ -285,6 +285,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const { aircraft, routes, airports } = props;
   const mode = props.mode ?? "create";
   const isRevise = mode === "revise";
+
+  // Ruta OPERATIVA opcional al crear: SIEMPRE existe una ruta real del avión
+  // (gastos/avión); la comercial de abajo es la que se cobra. Se persiste con
+  // itinerario_operativo=true y el cotizador nunca la pisa.
+  const [opsLegs, setOpsLegs] = useState<
+    Array<{ origen: string; destino: string; ferry: boolean; pax: string }>
+  >([]);
   const initialQuote = isRevise ? props.initialQuote : undefined;
   const clientName = isRevise ? props.clientName : undefined;
   const clients = isRevise ? [] : props.clients;
@@ -705,9 +712,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       return;
     }
     startSaving(async () => {
+      const opsValidos = opsLegs.filter((l) => l.origen && l.destino);
       const res = await createQuoteAction({
         ...calcPayload,
         cliente_id: values.cliente_id,
+        escalas_operacion:
+          opsValidos.length > 0
+            ? opsValidos.map((l) => ({
+                origen_iata: l.origen,
+                destino_iata: l.destino,
+                es_ferry: l.ferry,
+                pasajeros:
+                  !l.ferry && l.pax !== "" ? Math.max(0, Number(l.pax)) : undefined,
+              }))
+            : undefined,
         tipo: values.tipo,
         fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
         fecha_traslado_final: values.fecha_traslado_final
@@ -1185,6 +1203,124 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 })()
               )}
           </div>
+
+          {/* Ruta OPERATIVA opcional (solo al crear): la ruta real del avión
+              para gastos/tacómetros; puede salir de otra base y llevar ferries.
+              Es independiente de los tramos comerciales de arriba (el dinero). */}
+          {!isRevise && (
+            <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+                  Ruta operativa (opcional · no se cotiza)
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() =>
+                    setOpsLegs((prev) => [
+                      ...prev,
+                      {
+                        origen: prev.length
+                          ? prev[prev.length - 1].destino
+                          : "",
+                        destino: "",
+                        ferry: prev.length === 0,
+                        pax: "",
+                      },
+                    ])
+                  }
+                >
+                  + Tramo
+                </Button>
+              </div>
+              {opsLegs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  La ruta REAL del avión (puede salir de otra base, con
+                  ferries). Aquí se cargan los gastos y tacómetros; los tramos
+                  de arriba son solo lo que paga el cliente. Si la dejas
+                  vacía, la operación usa la ruta comercial.
+                </p>
+              ) : (
+                opsLegs.map((l, i) => (
+                  <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
+                    <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                      <SearchableSelect
+                        options={airports.map((a) => ({
+                          value: a.iata,
+                          label: a.iata,
+                          description: a.nombre,
+                        }))}
+                        value={l.origen}
+                        onChange={(v) =>
+                          setOpsLegs((prev) =>
+                            prev.map((x, j) => (j === i ? { ...x, origen: v } : x)),
+                          )
+                        }
+                        placeholder="Sale de"
+                      />
+                      <SearchableSelect
+                        options={airports.map((a) => ({
+                          value: a.iata,
+                          label: a.iata,
+                          description: a.nombre,
+                        }))}
+                        value={l.destino}
+                        onChange={(v) =>
+                          setOpsLegs((prev) =>
+                            prev.map((x, j) => (j === i ? { ...x, destino: v } : x)),
+                          )
+                        }
+                        placeholder="Destino"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2 text-destructive"
+                        onClick={() =>
+                          setOpsLegs((prev) => prev.filter((_, j) => j !== i))
+                        }
+                      >
+                        Quitar
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs">
+                        <Switch
+                          checked={l.ferry}
+                          onCheckedChange={(c) =>
+                            setOpsLegs((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, ferry: c, pax: c ? "" : x.pax } : x,
+                              ),
+                            )
+                          }
+                        />
+                        Ferry (vacío)
+                      </label>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="Pax"
+                        disabled={l.ferry}
+                        className="w-20 h-8"
+                        value={l.pax}
+                        onChange={(e) =>
+                          setOpsLegs((prev) =>
+                            prev.map((x, j) =>
+                              j === i ? { ...x, pax: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
 
           <Field label="Método de pago" required>
             <SearchableSelect
