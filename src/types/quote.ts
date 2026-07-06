@@ -68,6 +68,8 @@ export interface CalculateQuoteRequest {
   /** Ajuste final: negativo = descuento, positivo = redondeo. Fuera de IVA. */
   ajuste_final_usd?: number;
   metodo_pago: MetodoPago;
+  /** TC MXN por USD pactado (pago en pesos). Persiste tc_usd_mxn + monto_total_mxn. */
+  tc_usd_mxn?: number;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;
   iva_pct_override?: number;

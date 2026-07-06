@@ -126,6 +126,8 @@ interface QuoteFormValues {
   /** Descuento negociado ("ciérramelo en 750"). Se captura en positivo. */
   descuento_usd: number | null;
   metodo_pago: MetodoPago;
+  /** TC MXN por USD con el que entrará el pago (BillPocket/transferencia en pesos). */
+  tc_usd_mxn: number | null;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
   iva_pct_override: number | null;
@@ -389,6 +391,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         descuento_usd:
           Number(q.ajuste_final_usd) < 0 ? Math.abs(Number(q.ajuste_final_usd)) : null,
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
+        tc_usd_mxn: Number(q.tc_usd_mxn) > 0 ? Number(q.tc_usd_mxn) : null,
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
         iva_pct_override: null,
@@ -413,6 +416,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       redondeo_usd: null,
       descuento_usd: null,
       metodo_pago: "TRANSFERENCIA",
+      tc_usd_mxn: null,
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
       iva_pct_override: null,
@@ -463,6 +467,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       ajuste_final_usd:
         (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
       metodo_pago: debounced.metodo_pago,
+      tc_usd_mxn:
+        Number(debounced.tc_usd_mxn) > 0 ? Number(debounced.tc_usd_mxn) : undefined,
     };
     const legs = debounced.escalas ?? [];
     if (legs.length >= 1) {
@@ -1179,6 +1185,41 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               placeholder="Selecciona método"
             />
           </Field>
+
+          {/* El pago puede entrar en pesos (BillPocket/transferencia): el TC
+              pactado fija el total MXN y convierte los cobros MXN sin TC. */}
+          {values.metodo_pago !== "DOLARES" && (
+            <Field
+              label="Tipo de cambio (MXN por USD)"
+              hint="Opcional · si el pago entrará en pesos"
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  step="0.0001"
+                  min={0}
+                  placeholder="Ej. 18.50"
+                  className="w-32"
+                  value={values.tc_usd_mxn ?? ""}
+                  onChange={(e) =>
+                    setValue(
+                      "tc_usd_mxn",
+                      e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                    )
+                  }
+                />
+                {Number(values.tc_usd_mxn) > 0 && breakdown && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    ≈ $
+                    {(
+                      Number(breakdown.totales.total_usd) * Number(values.tc_usd_mxn)
+                    ).toLocaleString("es-MX", { minimumFractionDigits: 2 })}{" "}
+                    MXN
+                  </span>
+                )}
+              </div>
+            </Field>
+          )}
 
           <Field label="Notas (visibles en PDF)" hint="Opcional">
             <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" {...register("notas")} />
