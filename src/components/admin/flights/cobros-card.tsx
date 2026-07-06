@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { fmtDate } from "@/lib/datetime";
-import { PlusIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
+import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { CobroFormSheet } from "./cobro-form-sheet";
 import { fmtUsd } from "@/lib/format";
 import type { FlightCobro } from "@/types/flights";
@@ -45,6 +55,8 @@ export function CobrosCard({
   voucherUrls = {},
 }: CobrosCardProps) {
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const canRegister = flightEstado !== "CANCELADO";
 
@@ -114,6 +126,15 @@ export function CobrosCard({
                     <p className="text-[11px] text-muted-foreground font-mono">
                       {fmtDate(c.fecha_cobro)}
                     </p>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      title="Eliminar cobro (capturado por error)"
+                      onClick={() => setToDelete(c)}
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -121,6 +142,44 @@ export function CobrosCard({
           </CardContent>
         )}
       </Card>
+
+      <Dialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar este cobro?</DialogTitle>
+            <DialogDescription>
+              {toDelete
+                ? `${fmtUsd(toDelete.monto)} ${toDelete.moneda} · ${METODO_LABELS[toDelete.metodo_cobro] ?? toDelete.metodo_cobro}. `
+                : ""}
+              Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula
+              al instante y esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setToDelete(null)} disabled={deleting}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                if (!toDelete) return;
+                setDeleting(true);
+                const res = await deleteCobroAction(flightId, toDelete.id);
+                setDeleting(false);
+                if (res.ok) {
+                  toast.success("Cobro eliminado; saldo recalculado.");
+                  setToDelete(null);
+                } else {
+                  toast.error(res.error);
+                }
+              }}
+            >
+              {deleting ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CobroFormSheet
         open={open}

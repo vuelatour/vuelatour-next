@@ -180,6 +180,20 @@ export async function registerCobroAction(
   }
 }
 
+/** Elimina un cobro capturado por error (oficina). El backend recalcula la bandera cobrado. */
+export async function deleteCobroAction(
+  flightId: string,
+  cobroId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/flights/cobros/${cobroId}`, { method: "DELETE" });
+    revalidateFlight(flightId);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Elimina un vuelo SIN actividad (solicitud fantasma). El backend rechaza si tiene cobros/gastos/tacos. */
 export async function deleteFlightAction(id: string): Promise<ActionResult> {
   try {

@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { ImportButton } from "@/components/admin/conciliacion/import-button";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import {
+  conciliacionResumen,
   listMovimientosBancarios,
   type ListConciliacionQuery,
 } from "@/lib/api/conciliacion-server";
@@ -47,10 +48,11 @@ export default async function ConciliacionPage({
   if (filtro === "pendientes") query.conciliado = false;
   if (filtro === "conciliados") query.conciliado = true;
 
-  const [{ data: movs }, cuentasRes, gastosRes] = await Promise.all([
+  const [{ data: movs }, cuentasRes, gastosRes, resumen] = await Promise.all([
     listMovimientosBancarios(query),
     listBankAccounts({ limit: 100 }),
     listGastos({ limit: 200 }),
+    conciliacionResumen().catch(() => []),
   ]);
 
   const cuentas = cuentasRes.data.map((c) => ({
@@ -83,6 +85,36 @@ export default async function ConciliacionPage({
         </div>
         <ImportButton cuentas={cuentas} />
       </div>
+
+      {resumen.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {resumen.map((c) => (
+            <Card key={c.cuenta_bancaria_id}>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground truncate">
+                  {c.alias ?? "Cuenta"} · {c.banco ?? ""} ({c.moneda ?? ""})
+                </p>
+                <p className="text-lg font-semibold mt-1">
+                  {c.conciliados}/{c.total}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    conciliados
+                  </span>
+                </p>
+                {c.pendientes > 0 ? (
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Faltan {c.pendientes} · $
+                    {c.monto_pendiente.toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </p>
+                ) : (
+                  <p className="text-xs text-emerald-600 mt-0.5">Al corriente</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap">
         {tabs.map((t) => (
@@ -152,8 +184,10 @@ export default async function ConciliacionPage({
                         <span className="text-sm text-emerald-600">
                           {m.gasto.categoria} · ${fmtMoney(m.gasto.monto)}
                         </span>
-                      ) : m.tipo === "ABONO" ? (
-                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : m.conciliado && m.cobro_id ? (
+                        <span className="text-sm text-emerald-600">
+                          Cobro de vuelo
+                        </span>
                       ) : (
                         <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                           Pendiente

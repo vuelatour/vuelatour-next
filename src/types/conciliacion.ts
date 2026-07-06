@@ -18,10 +18,22 @@ export interface MovimientoBancario {
   referencia: string | null;
   conciliado: boolean;
   gasto_id: string | null;
+  cobro_id: string | null;
   origen: string;
   notas: string | null;
   created_at: string;
   gasto?: MovimientoGasto | null;
+}
+
+export interface ConciliacionResumenCuenta {
+  cuenta_bancaria_id: string;
+  alias: string | null;
+  banco: string | null;
+  moneda: string | null;
+  total: number;
+  conciliados: number;
+  pendientes: number;
+  monto_pendiente: number;
 }
 
 export interface MovimientoListResponse {

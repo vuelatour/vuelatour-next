@@ -13,16 +13,17 @@ import {
   type FlightPickItem,
 } from "@/components/admin/flights/flight-report-picker";
 import { listFlights } from "@/lib/api/flights-server";
+import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
 
 export const dynamic = "force-dynamic";
 
 function currentMonth(): { desde: string; hasta: string } {
-  const now = new Date();
-  const desde = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  return {
-    desde: desde.toISOString().slice(0, 10),
-    hasta: now.toISOString().slice(0, 10),
-  };
+  // Mes corriente en hora Cancún (no UTC): el día 1 en la madrugada UTC aún
+  // es el mes anterior para la operación.
+  const hoy = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Cancun",
+  }).format(new Date());
+  return { desde: `${hoy.slice(0, 7)}-01`, hasta: hoy };
 }
 
 interface PageProps {
@@ -61,6 +62,8 @@ export default async function ReportesPage({ searchParams }: PageProps) {
       </div>
 
       <PeriodSelector initial={{ desde, hasta }} />
+
+      <PreCierreCard desde={desde} hasta={hasta} />
 
       <Card>
         <CardHeader>
