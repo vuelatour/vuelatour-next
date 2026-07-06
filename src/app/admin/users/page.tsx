@@ -109,9 +109,20 @@ export default async function UsersPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {u.rol}
-                        </Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {u.rol}
+                          </Badge>
+                          {u.es_piloto && u.rol !== "PILOTO" && (
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                              title="Doble rol: también vuela — aparece en los selectores de piloto y suma horas."
+                            >
+                              +PILOTO
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge className={ESTADO_STYLES[u.estado] ?? ""}>{u.estado}</Badge>

@@ -10,6 +10,8 @@ export interface User {
   estado: EstadoUsuario;
   tiene_fondo_caja: boolean;
   tarjeta_terminacion: string | null;
+  /** También vuela (doble rol): entra a selectores de piloto y horas. */
+  es_piloto: boolean;
   es_piloto_externo: boolean;
   telefono: string | null;
   avatar_url: string | null;

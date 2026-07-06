@@ -22,6 +22,7 @@ export const UserFormSchema = z.object({
     .regex(/^\d{4}$/, "Deben ser 4 dígitos")
     .optional()
     .or(z.literal("")),
+  es_piloto: z.boolean().default(false),
   es_piloto_externo: z.boolean().default(false),
   telefono: z.string().max(20).optional().or(z.literal("")),
   avatar_url: z.string().url("URL inválida").optional().or(z.literal("")),

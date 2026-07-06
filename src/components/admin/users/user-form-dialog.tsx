@@ -144,6 +144,21 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
 
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div className="space-y-0.5">
+              <Label className="text-sm font-medium">También es piloto</Label>
+              <p className="text-xs text-muted-foreground">
+                Doble rol (ej. admin que vuela): aparece en los selectores de
+                piloto, disponibilidad y horas. Sus permisos siguen siendo los
+                del rol principal.
+              </p>
+            </div>
+            <Switch
+              checked={watch("es_piloto") ?? false}
+              onCheckedChange={(c) => setValue("es_piloto", c)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="space-y-0.5">
               <Label className="text-sm font-medium">Piloto externo</Label>
               <p className="text-xs text-muted-foreground">
                 Marcar si no tiene app móvil (Itzel sube sus tacómetros).
@@ -177,6 +192,7 @@ function defaults(user: User): UserFormValues {
     estado: user.estado,
     tiene_fondo_caja: user.tiene_fondo_caja,
     tarjeta_terminacion: user.tarjeta_terminacion ?? "",
+    es_piloto: user.es_piloto,
     es_piloto_externo: user.es_piloto_externo,
     telefono: user.telefono ?? "",
     avatar_url: user.avatar_url ?? "",
