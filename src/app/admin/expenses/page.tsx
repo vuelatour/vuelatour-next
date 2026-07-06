@@ -28,6 +28,7 @@ import {
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +98,10 @@ export default async function ExpensesPage({
             duplicados. La bandeja de pendientes debe quedar siempre vacía.
           </p>
         </div>
-        <ExcelExportButton path="/v1/expenses/export" filename="gastos.xlsx" label="Exportar Excel" />
+        <div className="flex gap-2 flex-wrap">
+          <SuggestAssignmentsButton pendientes={pendientesRes.count} />
+          <ExcelExportButton path="/v1/expenses/export" filename="gastos.xlsx" label="Exportar Excel" />
+        </div>
       </div>
 
       <div className="flex gap-2 flex-wrap">

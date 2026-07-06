@@ -119,6 +119,67 @@ export async function sugerirAsignacionGastoAction(
   }
 }
 
+export interface SugerenciaBandeja {
+  gasto: {
+    id: string;
+    fecha_gasto: string | null;
+    monto: number | null;
+    moneda: string | null;
+    categoria: string | null;
+    capturo_nombre: string | null;
+  };
+  sugerido: AsignacionCandidato | null;
+  confianza: number;
+  razon: string;
+  fuente: "regla" | "ia";
+  candidatos: AsignacionCandidato[];
+}
+
+export interface SugerenciasBandejaResult {
+  total_pendientes: number;
+  resultados: SugerenciaBandeja[];
+}
+
+/** Barrido de TODA la bandeja de pendientes: sugerencia por cada gasto sin avión. */
+export async function sugerirAsignacionesBandejaAction(): Promise<
+  ActionResult<SugerenciasBandejaResult>
+> {
+  try {
+    const data = await apiServer<SugerenciasBandejaResult>(
+      "/v1/expenses/sugerir-asignaciones",
+      { method: "POST", body: {} },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Aplica en lote las sugerencias palomeadas: avión + vuelo por gasto. */
+export async function aplicarAsignacionesAction(
+  items: Array<{ gasto_id: string; aeronave_id: string | null; vuelo_id: string }>,
+): Promise<ActionResult<{ aplicados: number; fallidos: number }>> {
+  let aplicados = 0;
+  let fallidos = 0;
+  for (const it of items) {
+    try {
+      await apiServer(`/v1/expenses/${it.gasto_id}`, {
+        method: "PATCH",
+        body: {
+          vuelo_id: it.vuelo_id,
+          ...(it.aeronave_id ? { aeronave_id: it.aeronave_id } : {}),
+        },
+      });
+      aplicados += 1;
+    } catch {
+      fallidos += 1;
+    }
+  }
+  revalidatePath("/admin/expenses");
+  revalidatePath("/admin/combustibles");
+  return { ok: true, data: { aplicados, fallidos } };
+}
+
 /** Liga (o desliga) una carga de combustible a un vuelo/cotización. */
 export async function assignVueloGastoAction(
   gastoId: string,
