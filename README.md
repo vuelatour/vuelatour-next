@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# vuelatour-next
 
-## Getting Started
+Panel administrativo de **VuelaTour** (`/admin`, tema oscuro). Next.js App
+Router (server components + server actions) + Tailwind. Desplegado en
+**Vercel** (deploy automático al hacer push a `main`). Habla con
+`vuelatour-api` vía `apiServer` (inyecta el JWT de la sesión Supabase).
 
-First, run the development server:
+> ⚠️ Esta versión de Next.js tiene breaking changes vs versiones anteriores:
+> lee `AGENTS.md` y `node_modules/next/dist/docs/` antes de escribir código.
+> Convenciones del proyecto: también en `AGENTS.md` (CLAUDE.md lo referencia).
+
+## Secciones principales (`src/app/admin/`)
+
+- **Operación**: dashboard con KPIs, vuelos (detalle con tramos, cobros con
+  eliminación, tacómetros, permisos), cotizaciones (motor v1.3, "Nueva
+  cotización" = paso 1 operación), calendario (colores por avión, descansos
+  de pilotos), **Tacómetros en vivo** (`/admin/taco-live`: estados por
+  escala, leyendas de origen PILOTO/IA/DEDUCIDO/OFICINA, Comprobar/Ajustar
+  viendo la foto).
+- **Tesorería**: gastos (bandeja de pendientes, verificación, Excel),
+  conciliación (KPIs por cuenta, import de estados de cuenta, sugerencia IA,
+  abonos↔cobros), facturas emitidas y recibidas (buzón XML), caja chica,
+  **Reportes** (`/admin/reportes`: **pre-cierre con semáforo**, reparto PDF,
+  Excel mensual, cierre .zip, reporte por vuelo, exports).
+- **Flota**: aeronaves (expediente: motores/hélices con horas derivadas,
+  reserva overhaul, seguros, squawks, semáforo apto), motores, hélices,
+  vencimientos, mantenimientos, inventario (FIFO), multas.
+- **Sistema**: usuarios/invitaciones, roles, alertas.
+
+## Setup
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Verificación
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx tsc --noEmit
+npx eslint src/...   # sobre los archivos tocados
+```
