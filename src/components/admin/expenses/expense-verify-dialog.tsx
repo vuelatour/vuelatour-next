@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -226,6 +227,33 @@ export function ExpenseVerifyDialog({
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* Si el enriquecimiento IA marcó ⚠ (piloto vs documento), aquí se corrige. */}
+          {(gasto.notas ?? "").includes("⚠") && (
+            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              La IA detectó discrepancias entre lo capturado y el comprobante (ver ⚠ en
+              notas). Corrige aquí el dato correcto — monto, fecha y moneda son editables.
+            </p>
+          )}
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Monto">
+              <Input type="number" step="0.01" min="0" inputMode="decimal" {...register("monto")} />
+            </Field>
+            <Field label="Moneda">
+              <SearchableSelect
+                options={[
+                  { value: "MXN", label: "MXN" },
+                  { value: "USD", label: "USD" },
+                ]}
+                value={watch("moneda")}
+                onChange={(v) => setValue("moneda", v)}
+                placeholder="Moneda"
+              />
+            </Field>
+            <Field label="Fecha del gasto">
+              <Input type="date" {...register("fecha_gasto")} />
+            </Field>
+          </div>
+
           <Field label="Avión (resuelve pendiente)">
             <SearchableSelect
               options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
@@ -294,6 +322,11 @@ export function ExpenseVerifyDialog({
 
 function defaults(g: Gasto): GastoVerifyValues {
   return {
+    monto: g.monto != null ? String(g.monto) : "",
+    moneda: g.moneda ?? "MXN",
+    // fecha_gasto es columna date (YYYY-MM-DD, sin zona) — el corte por 10
+    // chars aquí no es el slice prohibido de timestamps.
+    fecha_gasto: (g.fecha_gasto ?? "").slice(0, 10),
     categoria: g.categoria,
     medio_pago: g.medio_pago,
     estatus_comprobante: g.estatus_comprobante,

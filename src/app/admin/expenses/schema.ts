@@ -28,6 +28,18 @@ export const MedioPagoEnum = z.enum([
 export const EstatusEnum = z.enum(["FACTURA", "VALE", "SIN_COMPROBANTE"]);
 
 export const GastoVerifySchema = z.object({
+  // Monto/moneda/fecha editables: si la IA marcó ⚠ discrepancia contra lo
+  // que capturó el piloto, la oficina corrige aquí el dato bueno.
+  monto: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+    z.number().positive().optional(),
+  ),
+  moneda: z.enum(["MXN", "USD"]).optional(),
+  fecha_gasto: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .or(z.literal("")),
   categoria: CategoriaEnum.optional(),
   medio_pago: MedioPagoEnum.optional(),
   estatus_comprobante: EstatusEnum.optional(),
@@ -38,6 +50,9 @@ export const GastoVerifySchema = z.object({
 });
 
 export type GastoVerifyValues = {
+  monto: string;
+  moneda: string;
+  fecha_gasto: string;
   categoria: string;
   medio_pago: string;
   estatus_comprobante: string;
