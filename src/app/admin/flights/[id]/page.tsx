@@ -27,6 +27,7 @@ import {
   getFlightBitacora,
 } from "@/lib/api/flights-server";
 import { getClient } from "@/lib/api/clients-server";
+import { getQuote } from "@/lib/api/quotes-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
@@ -87,7 +88,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, quote] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -95,7 +96,24 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       listAirports({ limit: 200, activo: true }),
       getFlightTacoPhotos(id).catch(() => []),
       getFlightBitacora(id),
+      // Solo para pintar la ruta COMERCIAL cotizada (vive en el snapshot del
+      // cálculo, no en las escalas, que son la operación). Best-effort.
+      getQuote(id).catch(() => null),
     ]);
+
+  // Ruta OPERATIVA (lo que se vuela), derivada de las escalas. El
+  // origen/destino del vuelo es el espejo comercial (CUN→CUN) y engaña
+  // cuando la operación sale de otra base.
+  const escalasOrden = [...snapshot.escalas].sort((a, b) => a.orden - b.orden);
+  const rutaOperativa =
+    escalasOrden.length > 0
+      ? [escalasOrden[0].origen_iata, ...escalasOrden.map((e) => e.destino_iata)].join(" → ")
+      : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
+  const tramosCotizados = quote?.calculo_snapshot?.tramos;
+  const rutaComercial =
+    tramosCotizados && tramosCotizados.length > 0
+      ? [tramosCotizados[0].origen, ...tramosCotizados.map((t) => t.destino)].join(" → ")
+      : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
 
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
@@ -208,10 +226,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {client?.nombre ?? snapshot.cliente_id} ·{" "}
-              <span className="font-mono">
-                {snapshot.origen_iata} → {snapshot.destino_iata}
-              </span>{" "}
-              · {snapshot.pasajeros}{" "}
+              <span className="font-mono">{rutaOperativa}</span> ·{" "}
+              {snapshot.pasajeros}{" "}
               {snapshot.pasajeros === 1 ? "pasajero" : "pasajeros"}
             </p>
           </div>
@@ -420,10 +436,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <Row label="Tipo">{snapshot.tipo}</Row>
-              <Row label="Ruta">
-                <span className="font-mono">
-                  {snapshot.origen_iata} → {snapshot.destino_iata}
-                </span>
+              <Row label="Ruta cotizada">
+                <span className="font-mono">{rutaComercial}</span>
               </Row>
               <Row label="Total USD">
                 <span className="font-mono font-semibold">
