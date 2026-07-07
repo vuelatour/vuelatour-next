@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  PencilSquareIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -117,6 +118,16 @@ export function EscalasCard({
                           <Badge variant="outline" className="text-[10px]">
                             Sin tacómetros
                           </Badge>
+                        )}
+                        {/* Corrección de oficina SIEMPRE disponible (origen
+                            OFICINA + nota); el flujo amarillo de abajo es solo
+                            para lecturas marcadas por revisar. */}
+                        {!esc.revision_requerida && (
+                          <TacoConfirmDialog
+                            flightId={flightId}
+                            escala={esc}
+                            modo="correccion"
+                          />
                         )}
                       </div>
                     </div>
@@ -276,10 +287,14 @@ function FillTacoGapsButton({ flightId }: { flightId: string }) {
 function TacoConfirmDialog({
   flightId,
   escala,
+  modo = "revision",
 }: {
   flightId: string;
   escala: FlightEscala;
+  /** revision: flujo amarillo→verde; correccion: editar una lectura ya guardada. */
+  modo?: "revision" | "correccion";
 }) {
+  const esCorreccion = modo === "correccion";
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -313,40 +328,59 @@ function TacoConfirmDialog({
     }
     if (nota.trim()) payload.nota = nota.trim();
 
+    if (esCorreccion && !payload.taco_salida && !payload.taco_llegada) {
+      toast.info("No cambiaste ninguna lectura.");
+      return;
+    }
+
     startTransition(async () => {
       const res = await confirmTacoAction(flightId, escala.id, payload);
       if (res.ok) {
-        toast.success("Lectura confirmada");
+        toast.success(esCorreccion ? "Lectura corregida" : "Lectura confirmada");
         setOpen(false);
         router.refresh();
       } else {
-        toast.error(res.error ?? "Error al confirmar");
+        toast.error(res.error ?? "Error al guardar");
       }
     });
   };
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => setOpen(true)}
-        className="h-7 gap-1.5 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-      >
-        <CheckCircleIcon className="h-3.5 w-3.5" />
-        Confirmar lectura
-      </Button>
+      {esCorreccion ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setOpen(true)}
+          className="h-6 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+          title="Corregir las lecturas de tacómetro de este tramo (queda registrado como corrección de oficina)"
+        >
+          <PencilSquareIcon className="h-3.5 w-3.5" />
+          Corregir
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setOpen(true)}
+          className="h-7 gap-1.5 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+        >
+          <CheckCircleIcon className="h-3.5 w-3.5" />
+          Confirmar lectura
+        </Button>
+      )}
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Confirmar tacómetro · {escala.origen_iata} → {escala.destino_iata}
+              {esCorreccion ? "Corregir tacómetro" : "Confirmar tacómetro"} ·{" "}
+              {escala.origen_iata} → {escala.destino_iata}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {escala.revision_motivo ?? "Lectura marcada para revisión."}{" "}
-              Revisa contra la foto; corrige el valor si hace falta y confirma
-              para pasarla de amarillo a verde.
+              {esCorreccion
+                ? "Ajusta la lectura equivocada contra la foto. La corrección queda con origen OFICINA, se registra quién la hizo, y si cambias la llegada se propaga como salida del siguiente tramo."
+                : `${escala.revision_motivo ?? "Lectura marcada para revisión."} Revisa contra la foto; corrige el valor si hace falta y confirma para pasarla de amarillo a verde.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid grid-cols-2 gap-3">
@@ -389,7 +423,11 @@ function TacoConfirmDialog({
               }}
               disabled={pending}
             >
-              {pending ? "Confirmando…" : "Confirmar lectura"}
+              {pending
+                ? "Guardando…"
+                : esCorreccion
+                  ? "Guardar corrección"
+                  : "Confirmar lectura"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
