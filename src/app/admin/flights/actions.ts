@@ -231,8 +231,8 @@ export interface EscalaPayload {
   orden: number;
   origen_iata: string;
   destino_iata: string;
-  hora_salida?: string;
-  hora_llegada?: string;
+  /** Salida PROGRAMADA (la que ve el piloto). Las horas reales las pone el sistema al capturar tacos. */
+  fecha_salida_plan?: string;
   notas?: string;
 }
 

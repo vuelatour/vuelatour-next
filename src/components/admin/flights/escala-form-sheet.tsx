@@ -45,8 +45,10 @@ const EscalaSchema = z
       .min(3, "IATA requerido")
       .max(4)
       .transform((v) => v.toUpperCase()),
-    hora_salida: z.string().optional().or(z.literal("")),
-    hora_llegada: z.string().optional().or(z.literal("")),
+    // Salida PROGRAMADA del tramo (fecha_salida_plan): es la que ve el piloto
+    // en su app. Las horas REALES (hora_salida/llegada) las pone el sistema
+    // al capturar tacómetros — no se editan aquí.
+    fecha_salida_plan: z.string().optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
@@ -56,17 +58,6 @@ const EscalaSchema = z
         path: ["destino_iata"],
         message: "Origen y destino no pueden ser iguales",
       });
-    }
-    if (val.hora_salida && val.hora_llegada) {
-      const a = new Date(val.hora_salida).getTime();
-      const b = new Date(val.hora_llegada).getTime();
-      if (Number.isFinite(a) && Number.isFinite(b) && b <= a) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["hora_llegada"],
-          message: "Hora de llegada debe ser posterior a la de salida",
-        });
-      }
     }
   });
 
@@ -104,8 +95,7 @@ function defaults(
       orden: initialEscala.orden,
       origen_iata: initialEscala.origen_iata,
       destino_iata: initialEscala.destino_iata,
-      hora_salida: toLocalDatetime(initialEscala.hora_salida),
-      hora_llegada: toLocalDatetime(initialEscala.hora_llegada),
+      fecha_salida_plan: toLocalDatetime(initialEscala.fecha_salida_plan),
       notas: initialEscala.notas ?? "",
     };
   }
@@ -113,8 +103,7 @@ function defaults(
     orden: nextOrden(taken),
     origen_iata: "",
     destino_iata: "",
-    hora_salida: "",
-    hora_llegada: "",
+    fecha_salida_plan: "",
     notas: "",
   };
 }
@@ -182,11 +171,8 @@ export function EscalaFormSheet({
         orden: Number(values.orden),
         origen_iata: values.origen_iata.toUpperCase(),
         destino_iata: values.destino_iata.toUpperCase(),
-        hora_salida: values.hora_salida
-          ? cancunInputToIso(values.hora_salida)
-          : undefined,
-        hora_llegada: values.hora_llegada
-          ? cancunInputToIso(values.hora_llegada)
+        fecha_salida_plan: values.fecha_salida_plan
+          ? cancunInputToIso(values.fecha_salida_plan)
           : undefined,
         notas: values.notas?.trim() || undefined,
       };
@@ -262,18 +248,13 @@ export function EscalaFormSheet({
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Hora salida"
-              hint={`Programada o real · ${TZ_LABEL}`}
-              error={errors.hora_salida?.message}
-            >
-              <Input type="datetime-local" {...register("hora_salida")} />
-            </Field>
-            <Field label="Hora llegada" hint={TZ_LABEL} error={errors.hora_llegada?.message}>
-              <Input type="datetime-local" {...register("hora_llegada")} />
-            </Field>
-          </div>
+          <Field
+            label="Salida (plan)"
+            hint={`Hora programada del tramo — es la que ve el piloto en su app · ${TZ_LABEL}. En el tramo 1 también actualiza la fecha del vuelo.`}
+            error={errors.fecha_salida_plan?.message}
+          >
+            <Input type="datetime-local" {...register("fecha_salida_plan")} />
+          </Field>
 
           <Field
             label="Nota para el piloto"
