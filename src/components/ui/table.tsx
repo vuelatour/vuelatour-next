@@ -6,9 +6,12 @@ import { cn } from "@/lib/utils"
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
+    // Scroll vertical propio (además del horizontal): es lo que permite que
+    // el thead sticky quede fijo — pegado a la ventana no funciona porque
+    // overflow-x ya hace de este div el contenedor de scroll.
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative w-full overflow-auto max-h-[calc(100dvh-8rem)]"
     >
       <table
         data-slot="table"
@@ -21,9 +24,14 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
 
 function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
+    // Sticky + fondo opaco; la línea inferior va como sombra porque el
+    // border-b del <tr> no viaja con el thead al hacer scroll.
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn(
+        "sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)] [&_tr]:border-b",
+        className
+      )}
       {...props}
     />
   )
