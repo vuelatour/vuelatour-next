@@ -29,6 +29,8 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
+import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
+import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,13 @@ const ESTATUS_STYLE: Record<string, string> = {
   FACTURA: "border-emerald-500/50 text-emerald-600",
   VALE: "border-amber-500/50 text-amber-600",
   SIN_COMPROBANTE: "border-navy-400/50 text-muted-foreground",
+};
+
+// Distintivo pedido por el cliente: los gastos que sube administración (o que
+// genera el sistema, p.ej. pistas) se distinguen de los capturados en campo.
+const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
+  OFICINA: { label: "Oficina", cls: "border-sky-500/50 text-sky-600" },
+  SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
 };
 
 export default async function ExpensesPage({
@@ -99,6 +108,8 @@ export default async function ExpensesPage({
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <ExpenseCreateDialog aircraft={aircraft} providers={providers} />
+          <PistasDialog />
           <SuggestAssignmentsButton pendientes={pendientesRes.count} />
           <ExcelExportButton path="/v1/expenses/export" filename="gastos.xlsx" label="Exportar Excel" />
         </div>
@@ -197,7 +208,14 @@ export default async function ExpensesPage({
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {g.captura?.nombre ?? "—"}
+                      <span className="inline-flex items-center gap-1.5">
+                        {g.captura?.nombre ?? "—"}
+                        {g.origen && ORIGEN_BADGE[g.origen] && (
+                          <Badge variant="outline" className={ORIGEN_BADGE[g.origen].cls}>
+                            {ORIGEN_BADGE[g.origen].label}
+                          </Badge>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

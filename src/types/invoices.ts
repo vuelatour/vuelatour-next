@@ -87,6 +87,16 @@ export interface FacturaRecibida {
   updated_at: string;
   gasto?: { id: string; categoria: string; monto: string; moneda: string } | null;
   aeronave?: { matricula: string } | null;
+  /** Gastos amparados por esta factura (amarre 1 factura → N gastos). */
+  gastos?: Array<{
+    id: string;
+    categoria: string;
+    monto: string;
+    moneda: string;
+    fecha_gasto: string | null;
+    vuelo_id: string | null;
+    lugar: string | null;
+  }>;
 }
 
 export interface RecibidasResponse {

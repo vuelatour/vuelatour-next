@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { GastoVerifySchema } from "./schema";
-import type { Gasto } from "@/types/expenses";
+import { GastoCreateSchema, GastoVerifySchema } from "./schema";
+import type { Gasto, PistaPendiente, TarifaAerodromo } from "@/types/expenses";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -25,6 +25,113 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
     out[k as keyof T] = v as T[keyof T];
   }
   return out;
+}
+
+/** Alta manual de gasto desde el panel (la oficina captura gastos operativos). */
+export async function createGastoAction(raw: unknown): Promise<ActionResult<Gasto>> {
+  const parsed = GastoCreateSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const created = await apiServer<Gasto>("/v1/expenses", {
+      method: "POST",
+      body: stripEmpty(parsed.data),
+    });
+    revalidatePath("/admin/expenses");
+    return { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Gastos de pista (cuotas de aeródromo VIP SAESA) =====
+
+/** Aterrizajes del periodo sin gasto de pista, con tarifa sugerida. */
+export async function pistasPendientesAction(
+  desde: string,
+  hasta: string,
+): Promise<ActionResult<{ data: PistaPendiente[] }>> {
+  try {
+    const data = await apiServer<{ data: PistaPendiente[] }>(
+      `/v1/expenses/pistas/pendientes?desde=${desde}&hasta=${hasta}`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export interface GenerarPistaItem {
+  escala_id: string;
+  monto: number;
+  moneda?: string;
+  categoria?: string;
+  notas?: string;
+}
+
+/** Crea los gastos de pista confirmados (origen SISTEMA, uno por aterrizaje). */
+export async function generarPistasAction(
+  items: GenerarPistaItem[],
+): Promise<ActionResult<{ creados: number; resultados: Array<{ escala_id: string; ok: boolean; error?: string }> }>> {
+  try {
+    const data = await apiServer<{
+      creados: number;
+      resultados: Array<{ escala_id: string; ok: boolean; error?: string }>;
+    }>("/v1/expenses/pistas/generar", { method: "POST", body: { items } });
+    revalidatePath("/admin/expenses");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Tarifario de aeródromos =====
+
+export async function listTarifasAction(): Promise<ActionResult<TarifaAerodromo[]>> {
+  try {
+    const data = await apiServer<TarifaAerodromo[]>("/v1/expenses/tarifas-aerodromo", {
+      cache: "no-store",
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function saveTarifaAction(
+  id: string | null,
+  body: {
+    codigo_iata?: string;
+    modelo?: string;
+    monto: number;
+    moneda?: string;
+    variable?: boolean;
+    activo?: boolean;
+  },
+): Promise<ActionResult<TarifaAerodromo>> {
+  try {
+    const data = id
+      ? await apiServer<TarifaAerodromo>(`/v1/expenses/tarifas-aerodromo/${id}`, {
+          method: "PATCH",
+          body,
+        })
+      : await apiServer<TarifaAerodromo>("/v1/expenses/tarifas-aerodromo", {
+          method: "POST",
+          body,
+        });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deleteTarifaAction(id: string): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/expenses/tarifas-aerodromo/${id}`, { method: "DELETE" });
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 export async function verifyGastoAction(id: string, raw: unknown): Promise<ActionResult<Gasto>> {

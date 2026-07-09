@@ -37,39 +37,82 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  amarrarGastosAction,
   deleteRecibidaAction,
   signRecibidaAction,
   updateRecibidaAction,
 } from "@/app/admin/facturas-recibidas/actions";
 import type { FacturaRecibida } from "@/types/invoices";
 
+export interface GastoOption {
+  id: string;
+  label: string;
+  monto: number;
+  moneda: string;
+}
+
 export function RecibidaActions({
   recibida,
   gastos,
 }: {
   recibida: FacturaRecibida;
-  gastos: { id: string; label: string }[];
+  gastos: GastoOption[];
 }) {
   const [pending, startTransition] = useTransition();
   const [linkOpen, setLinkOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [gastoId, setGastoId] = useState(recibida.gasto_id ?? "");
+  // Una factura puede amparar VARIOS gastos (VIP SAESA: varios aterrizajes).
+  const [gastoIds, setGastoIds] = useState<string[]>(
+    recibida.gastos?.map((g) => g.id) ?? (recibida.gasto_id ? [recibida.gasto_id] : []),
+  );
+  const [filtro, setFiltro] = useState("");
   const [categoria, setCategoria] = useState(recibida.categoria_sugerida ?? "");
   const [notas, setNotas] = useState(recibida.notas ?? "");
 
+  const toggle = (id: string) =>
+    setGastoIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+
+  // Los gastos ya amarrados a esta factura pueden no venir en la lista general
+  // (p.ej. ya tienen estatus FACTURA); se muestran igual para poder quitarlos.
+  const amarrados: GastoOption[] = (recibida.gastos ?? [])
+    .filter((g) => !gastos.some((o) => o.id === g.id))
+    .map((g) => ({
+      id: g.id,
+      label: `${g.fecha_gasto ?? ""} · ${g.categoria} · ${Number(g.monto).toLocaleString("es-MX")} ${g.moneda}${g.lugar ? ` · ${g.lugar}` : ""}`,
+      monto: Number(g.monto),
+      moneda: g.moneda,
+    }));
+  const opciones = [...amarrados, ...gastos];
+  const visibles = filtro
+    ? opciones.filter((g) => g.label.toLowerCase().includes(filtro.toLowerCase()))
+    : opciones;
+
+  const suma = opciones
+    .filter((g) => gastoIds.includes(g.id))
+    .reduce((acc, g) => acc + g.monto, 0);
+  const totalFactura = recibida.total != null ? Number(recibida.total) : null;
+  const cuadra = totalFactura != null && Math.abs(suma - totalFactura) < 0.01;
+
   const link = () => {
     startTransition(async () => {
-      const res = await updateRecibidaAction(recibida.id, {
-        gasto_id: gastoId || undefined,
-        categoria_sugerida: categoria || undefined,
-        notas: notas || undefined,
-      });
-      if (res.ok) {
-        toast.success("Factura amarrada");
-        setLinkOpen(false);
-      } else toast.error(res.error ?? "Error");
+      const res = await amarrarGastosAction(recibida.id, gastoIds);
+      if (!res.ok) {
+        toast.error(res.error ?? "Error");
+        return;
+      }
+      if (categoria !== (recibida.categoria_sugerida ?? "") || notas !== (recibida.notas ?? "")) {
+        await updateRecibidaAction(recibida.id, {
+          categoria_sugerida: categoria || undefined,
+          notas: notas || undefined,
+        });
+      }
+      toast.success(
+        gastoIds.length === 0
+          ? "Factura desamarrada"
+          : `Factura amarrada a ${gastoIds.length} gasto${gastoIds.length === 1 ? "" : "s"}`,
+      );
+      setLinkOpen(false);
     });
   };
 
@@ -110,7 +153,7 @@ export function RecibidaActions({
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => setLinkOpen(true)} className="gap-2">
             <LinkIcon className="h-4 w-4" />
-            Amarrar a gasto
+            Amarrar a gastos
           </DropdownMenuItem>
           {recibida.xml_url && (
             <DropdownMenuItem onClick={descargar} className="gap-2">
@@ -135,23 +178,69 @@ export function RecibidaActions({
       </DropdownMenu>
 
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Amarrar factura a un gasto</DialogTitle>
+            <DialogTitle>Amarrar factura a gastos</DialogTitle>
             <DialogDescription>
               {recibida.emisor_nombre ?? recibida.emisor_rfc ?? "Proveedor"} ·{" "}
-              {recibida.total ?? "—"} {recibida.moneda ?? ""}
+              {recibida.total ?? "—"} {recibida.moneda ?? ""}. Una factura puede amparar
+              varios gastos (p.ej. varios aterrizajes); los amarrados quedan con
+              comprobante FACTURA.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Gasto</Label>
-              <SearchableSelect
-                options={[{ value: "", label: "Sin amarrar" }, ...gastos.map((g) => ({ value: g.id, label: g.label }))]}
-                value={gastoId}
-                onChange={setGastoId}
-                placeholder="Busca el gasto correspondiente"
+              <Label className="text-sm font-medium">Gastos amparados</Label>
+              <Input
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                placeholder="Filtra por fecha, categoría, monto o lugar…"
               />
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                {visibles.length === 0 ? (
+                  <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+                    Sin gastos que coincidan con el filtro.
+                  </p>
+                ) : (
+                  visibles.map((g) => (
+                    <label
+                      key={g.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={gastoIds.includes(g.id)}
+                        onChange={() => toggle(g.id)}
+                        className="h-4 w-4 accent-brand-600"
+                      />
+                      <span className="truncate">{g.label}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {gastoIds.length > 0 && (
+                <p
+                  className={
+                    "text-xs " +
+                    (totalFactura == null
+                      ? "text-muted-foreground"
+                      : cuadra
+                        ? "text-emerald-600"
+                        : "text-amber-600")
+                  }
+                >
+                  Suma de {gastoIds.length} gasto{gastoIds.length === 1 ? "" : "s"}:{" "}
+                  {suma.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                  {totalFactura != null && (
+                    <>
+                      {" "}
+                      / total factura:{" "}
+                      {totalFactura.toLocaleString("es-MX", { minimumFractionDigits: 2 })}{" "}
+                      {cuadra ? "✓ cuadra" : "— no cuadra (revisa montos o gastos faltantes)"}
+                    </>
+                  )}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Categoría sugerida</Label>

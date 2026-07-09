@@ -58,7 +58,11 @@ export default async function FacturasRecibidasPage() {
     id: g.id,
     label:
       `${fmtDate(g.fecha_gasto)} · ${g.categoria} · ${fmtMoney(g.monto, g.moneda)}` +
+      (g.aeronave?.matricula ? ` · ${g.aeronave.matricula}` : "") +
+      (g.lugar ? ` · ${g.lugar}` : "") +
       (g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""),
+    monto: Number(g.monto),
+    moneda: g.moneda,
   }));
 
   return (
@@ -115,9 +119,21 @@ export default async function FacturasRecibidasPage() {
                       {fmtMoney(r.total, r.moneda)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {r.gasto
-                        ? `${r.gasto.categoria} · ${fmtMoney(r.gasto.monto, r.gasto.moneda)}`
-                        : "—"}
+                      {r.gastos && r.gastos.length > 1 ? (
+                        <span title={r.gastos.map((g) => `${g.categoria} · ${fmtMoney(g.monto, g.moneda)}`).join("\n")}>
+                          {r.gastos.length} gastos ·{" "}
+                          {fmtMoney(
+                            String(r.gastos.reduce((acc, g) => acc + Number(g.monto), 0)),
+                            r.gastos[0]?.moneda ?? r.moneda,
+                          )}
+                        </span>
+                      ) : r.gastos && r.gastos.length === 1 ? (
+                        `${r.gastos[0].categoria} · ${fmtMoney(r.gastos[0].monto, r.gastos[0].moneda)}`
+                      ) : r.gasto ? (
+                        `${r.gasto.categoria} · ${fmtMoney(r.gasto.monto, r.gasto.moneda)}`
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline" className={ESTADO[r.estado].cls}>

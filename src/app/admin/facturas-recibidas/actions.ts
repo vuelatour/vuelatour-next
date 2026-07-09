@@ -55,6 +55,27 @@ export async function updateRecibidaAction(
   }
 }
 
+/**
+ * Amarra la factura a VARIOS gastos (VIP SAESA: una factura ampara varios
+ * aterrizajes/servicios). Reemplaza el amarre anterior; lista vacía = desamarrar.
+ */
+export async function amarrarGastosAction(
+  id: string,
+  gastoIds: string[],
+): Promise<ActionResult<FacturaRecibida>> {
+  try {
+    const data = await apiServer<FacturaRecibida>(
+      `/v1/invoices/recibidas/${id}/amarrar-gastos`,
+      { method: "POST", body: { gasto_ids: gastoIds } },
+    );
+    revalidatePath(PATH);
+    revalidatePath("/admin/expenses");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function deleteRecibidaAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/invoices/recibidas/${id}`, { method: "DELETE" });

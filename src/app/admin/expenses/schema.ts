@@ -49,6 +49,35 @@ export const GastoVerifySchema = z.object({
   duplicado_sospechado: z.boolean().optional(),
 });
 
+/** Alta manual de gasto desde el panel (gastos operativos que sube la oficina). */
+export const GastoCreateSchema = z.object({
+  categoria: CategoriaEnum,
+  monto: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+    z.number().positive("El monto debe ser mayor a 0"),
+  ),
+  moneda: z.enum(["MXN", "USD"]),
+  fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
+  medio_pago: MedioPagoEnum,
+  estatus_comprobante: EstatusEnum.optional(),
+  aeronave_id: z.string().uuid().optional().or(z.literal("")),
+  vuelo_id: z.string().uuid().optional().or(z.literal("")),
+  proveedor_id: z.string().uuid().optional().or(z.literal("")),
+  notas: z.string().max(2000).optional().or(z.literal("")),
+});
+
+export type GastoCreateValues = {
+  categoria: string;
+  monto: string;
+  moneda: string;
+  fecha_gasto: string;
+  medio_pago: string;
+  estatus_comprobante: string;
+  aeronave_id: string;
+  proveedor_id: string;
+  notas: string;
+};
+
 export type GastoVerifyValues = {
   monto: string;
   moneda: string;
