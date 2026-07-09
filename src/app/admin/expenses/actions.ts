@@ -143,6 +143,7 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
       body: stripEmpty(parsed.data),
     });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/flights", "layout");
     return { ok: true, data: updated };
   } catch (err) {
     return fail(err);
@@ -299,6 +300,7 @@ export async function assignVueloGastoAction(
     });
     revalidatePath("/admin/combustibles");
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/flights", "layout");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -309,7 +311,67 @@ export async function deleteGastoAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/expenses/${id}`, { method: "DELETE" });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/flights", "layout");
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export interface VueloCercano {
+  id: string;
+  folio: number | null;
+  matricula: string | null;
+  aeronave_id: string | null;
+  ruta: string | null;
+  fecha: string | null;
+  estado: string | null;
+}
+
+/**
+ * Vuelos alrededor de la fecha del gasto (±15 días) para asignar A MANO
+ * cuando la sugerencia automática no encuentra match.
+ */
+export async function buscarVuelosCercanosAction(
+  fechaGasto: string | null,
+): Promise<ActionResult<VueloCercano[]>> {
+  try {
+    const base = fechaGasto
+      ? new Date(`${fechaGasto.slice(0, 10)}T12:00:00-05:00`)
+      : new Date();
+    const dia = (offset: number) =>
+      new Date(base.getTime() + offset * 86400000).toISOString().slice(0, 10);
+    const res = await apiServer<{
+      data: Array<{
+        id: string;
+        folio: number | null;
+        estado: string;
+        aeronave_id: string | null;
+        aeronave_matricula?: string | null;
+        origen_iata: string;
+        destino_iata: string;
+        ruta_iatas?: string[];
+        fecha_vuelo: string | null;
+      }>;
+    }>("/v1/flights", {
+      searchParams: { desde: dia(-15), hasta: dia(15), limit: 100 },
+      cache: "no-store",
+    });
+    const data = res.data
+      .filter((v) => v.estado !== "CANCELADO")
+      .map((v) => ({
+        id: v.id,
+        folio: v.folio,
+        matricula: v.aeronave_matricula ?? null,
+        aeronave_id: v.aeronave_id,
+        ruta:
+          v.ruta_iatas && v.ruta_iatas.length > 0
+            ? v.ruta_iatas.join("→")
+            : `${v.origen_iata}→${v.destino_iata}`,
+        fecha: v.fecha_vuelo,
+        estado: v.estado,
+      }));
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

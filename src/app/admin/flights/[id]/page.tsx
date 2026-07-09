@@ -27,6 +27,7 @@ import {
   getFlightBitacora,
 } from "@/lib/api/flights-server";
 import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
+import { listProviders } from "@/lib/api/providers-server";
 import { FlightGastosCard } from "@/components/admin/flights/flight-gastos-card";
 import { getClient } from "@/lib/api/clients-server";
 import { getQuote } from "@/lib/api/quotes-server";
@@ -107,9 +108,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ),
     ]);
   const gastos = gastosRes.data;
-  const gastoFotoUrls = await signFuelPhotos(
-    gastos.map((g) => g.foto_url).filter((p): p is string => !!p),
-  ).catch(() => ({}) as Record<string, string>);
+  const [gastoFotoUrls, providersRes] = await Promise.all([
+    signFuelPhotos(gastos.map((g) => g.foto_url).filter((p): p is string => !!p)).catch(
+      () => ({}) as Record<string, string>,
+    ),
+    listProviders({ limit: 200 }).catch(() => ({ data: [] })),
+  ]);
+  const providerOptions = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
   // Ruta OPERATIVA (lo que se vuela), derivada de las escalas. El
   // origen/destino del vuelo es el espejo comercial (CUN→CUN) y engaña
@@ -432,7 +437,12 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;
               oficina revisa aquí Operación/FBO, combustible, viáticos...) */}
-          <FlightGastosCard gastos={gastos} fotoUrls={gastoFotoUrls} />
+          <FlightGastosCard
+            gastos={gastos}
+            fotoUrls={gastoFotoUrls}
+            aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
+            providers={providerOptions}
+          />
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
           <FlightBitacoraCard eventos={bitacora} />

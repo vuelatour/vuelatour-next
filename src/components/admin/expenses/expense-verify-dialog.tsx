@@ -17,10 +17,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   assignVueloGastoAction,
+  buscarVuelosCercanosAction,
   sugerirAsignacionGastoAction,
   verifyGastoAction,
   type SugerenciaAsignacion,
+  type VueloCercano,
 } from "@/app/admin/expenses/actions";
+import { fmtDateOnly } from "@/lib/datetime";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import type { Gasto } from "@/types/expenses";
 import { Field } from "@/components/admin/form-field";
@@ -78,7 +81,10 @@ export function ExpenseVerifyDialog({
   // Sugerencia IA/regla de a qué vuelo pertenece (solo gastos sin avión).
   const [sugerencia, setSugerencia] = useState<SugerenciaAsignacion | null>(null);
   const [sugiriendo, setSugiriendo] = useState(false);
-  const [vueloAplicado, setVueloAplicado] = useState<string | null>(null);
+  // Vuelo elegido (sugerencia aplicada O selección manual). Sin match
+  // automático, la oficina lo asigna a mano de esta lista (±15 días).
+  const [vueloSel, setVueloSel] = useState<string>(gasto.vuelo_id ?? "");
+  const [vuelos, setVuelos] = useState<VueloCercano[]>([]);
 
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoVerifyValues>({
     defaultValues: defaults(gasto),
@@ -88,17 +94,28 @@ export function ExpenseVerifyDialog({
     if (open) reset(defaults(gasto));
   }, [open, gasto, reset]);
 
+  // Vuelos alrededor de la fecha del gasto, para asignar/corregir a mano.
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    setVueloSel(gasto.vuelo_id ?? "");
+    buscarVuelosCercanosAction(gasto.fecha_gasto).then((res) => {
+      if (!cancel && res.ok && res.data) setVuelos(res.data);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open, gasto.id, gasto.vuelo_id, gasto.fecha_gasto]);
+
   // Al abrir un gasto SIN avión: buscar el match probable (piloto + fecha ±3d;
   // IA si hay varios). Best-effort: si falla, la asignación sigue manual.
   useEffect(() => {
     if (!open || gasto.aeronave_id) {
       setSugerencia(null);
-      setVueloAplicado(null);
       return;
     }
     let cancel = false;
     setSugiriendo(true);
-    setVueloAplicado(null);
     sugerirAsignacionGastoAction(gasto.id)
       .then((res) => {
         if (!cancel) setSugerencia(res.ok ? (res.data ?? null) : null);
@@ -113,7 +130,7 @@ export function ExpenseVerifyDialog({
 
   const aplicarCandidato = (c: NonNullable<SugerenciaAsignacion["sugerido"]>) => {
     if (c.aeronave_id) setValue("aeronave_id", c.aeronave_id);
-    setVueloAplicado(c.vuelo_id);
+    setVueloSel(c.vuelo_id);
     toast.info(
       `Se aplicará: vuelo #${c.folio ?? "?"} · ${c.matricula ?? "sin matrícula"}. Guarda para confirmar.`,
     );
@@ -123,10 +140,11 @@ export function ExpenseVerifyDialog({
     startTransition(async () => {
       const result = await verifyGastoAction(gasto.id, values);
       if (result.ok) {
-        // Si se aplicó una sugerencia, liga también el vuelo (no solo el avión).
-        if (vueloAplicado) {
-          const link = await assignVueloGastoAction(gasto.id, vueloAplicado);
-          if (!link.ok) toast.error("Avión guardado, pero no se pudo ligar el vuelo.");
+        // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
+        // desligarlo junto con el resto de la verificación.
+        if (vueloSel !== (gasto.vuelo_id ?? "")) {
+          const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
+          if (!link.ok) toast.error("Gasto guardado, pero no se pudo ligar el vuelo.");
         }
         toast.success("Gasto verificado");
         onOpenChange(false);
@@ -192,11 +210,11 @@ export function ExpenseVerifyDialog({
                 <Button
                   type="button"
                   size="sm"
-                  variant={vueloAplicado === sugerencia.sugerido.vuelo_id ? "secondary" : "outline"}
+                  variant={vueloSel === sugerencia.sugerido.vuelo_id ? "secondary" : "outline"}
                   className="h-7 text-xs"
                   onClick={() => aplicarCandidato(sugerencia.sugerido!)}
                 >
-                  {vueloAplicado === sugerencia.sugerido.vuelo_id ? "✓ Aplicado (guarda para confirmar)" : "Aplicar sugerencia"}
+                  {vueloSel === sugerencia.sugerido.vuelo_id ? "✓ Aplicado (guarda para confirmar)" : "Aplicar sugerencia"}
                 </Button>
               </>
             ) : sugerencia && sugerencia.candidatos.length > 0 ? (
@@ -209,7 +227,7 @@ export function ExpenseVerifyDialog({
                       key={c.vuelo_id}
                       type="button"
                       size="sm"
-                      variant={vueloAplicado === c.vuelo_id ? "secondary" : "outline"}
+                      variant={vueloSel === c.vuelo_id ? "secondary" : "outline"}
                       className="h-7 text-xs"
                       onClick={() => aplicarCandidato(c)}
                     >
@@ -260,6 +278,31 @@ export function ExpenseVerifyDialog({
               value={watch("aeronave_id")}
               onChange={(v) => setValue("aeronave_id", v)}
               placeholder="Sin asignar"
+            />
+          </Field>
+
+          {/* Asignación MANUAL del vuelo (±15 días de la fecha del gasto):
+              cubre cuando la sugerencia automática no encuentra match o el
+              gasto quedó ligado al vuelo equivocado. */}
+          <Field label="Vuelo (asignar o corregir a mano)">
+            <SearchableSelect
+              options={[
+                { value: "", label: "Sin vuelo" },
+                ...vuelos.map((v) => ({
+                  value: v.id,
+                  label:
+                    `#${v.folio ?? "?"} · ${v.matricula ?? "sin avión"} · ${v.ruta ?? ""}` +
+                    (v.fecha ? ` · ${fmtDateOnly(v.fecha)}` : ""),
+                })),
+              ]}
+              value={vueloSel}
+              onChange={(v) => {
+                setVueloSel(v);
+                // El avión del vuelo elegido se refleja de inmediato.
+                const opt = vuelos.find((x) => x.id === v);
+                if (opt?.aeronave_id) setValue("aeronave_id", opt.aeronave_id);
+              }}
+              placeholder="Busca por folio, matrícula o ruta"
             />
           </Field>
 

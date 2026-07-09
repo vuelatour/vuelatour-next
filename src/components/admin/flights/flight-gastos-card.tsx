@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ImagePreview } from "@/components/admin/image-preview";
+import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { fmtDateOnly } from "@/lib/datetime";
 import type { Gasto } from "@/types/expenses";
 
@@ -41,9 +42,13 @@ const fmtMoney = (monto: string, moneda: string) =>
 export function FlightGastosCard({
   gastos,
   fotoUrls,
+  aircraft,
+  providers,
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
+  aircraft: { id: string; matricula: string }[];
+  providers: { id: string; nombre: string }[];
 }) {
   // Totales por moneda (no se mezclan MXN y USD).
   const totales = new Map<string, number>();
@@ -95,6 +100,7 @@ export function FlightGastosCard({
                   <TableHead>Desglose / notas</TableHead>
                   <TableHead>Capturó</TableHead>
                   <TableHead>Comp.</TableHead>
+                  <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -150,6 +156,16 @@ export function FlightGastosCard({
                               : "Factura"}
                         </Badge>
                       </div>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      {/* Mismas acciones que en Gastos: verificar/editar,
+                          corregir el vuelo y eliminar, sin salir del vuelo. */}
+                      <ExpenseActions
+                        gasto={g}
+                        aircraft={aircraft}
+                        providers={providers}
+                        fotoUrl={g.foto_url ? fotoUrls[g.foto_url] : undefined}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
