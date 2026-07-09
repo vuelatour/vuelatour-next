@@ -54,6 +54,19 @@ const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
   SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
 };
 
+// Vista general en dos columnas (pedido del cliente): gastos OPERATIVOS
+// (ligados a operar el vuelo: combustible, pistas, TUAS, FBO, permisos) vs
+// GENERALES (viáticos, refacciones, fijos...). El desglose completo de cada
+// vuelo vive en su detalle (/admin/flights/{id}).
+const CATEGORIAS_OPERATIVAS = new Set([
+  "GAS",
+  "OPERACIONES",
+  "ATERRIZAJE",
+  "TUAS",
+  "FBO",
+  "PERMISO",
+]);
+
 export default async function ExpensesPage({
   searchParams,
 }: {
@@ -163,18 +176,70 @@ export default async function ExpensesPage({
           </CardHeader>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
+        // Vista general en dos columnas; el desglose completo por vuelo está
+        // en el detalle del vuelo (link en la columna Vuelo).
+        <div className="grid gap-6 xl:grid-cols-2 items-start">
+          <GastosCard
+            titulo="Gastos generales"
+            descripcion="Viáticos, refacciones, fijos y otros."
+            gastos={gastos.filter((g) => !CATEGORIAS_OPERATIVAS.has(g.categoria))}
+            aircraft={aircraft}
+            providers={providers}
+            fotoUrls={fotoUrls}
+          />
+          <GastosCard
+            titulo="Gastos operativos"
+            descripcion="Combustible, pistas/aterrizajes, TUAS, FBO y permisos."
+            gastos={gastos.filter((g) => CATEGORIAS_OPERATIVAS.has(g.categoria))}
+            aircraft={aircraft}
+            providers={providers}
+            fotoUrls={fotoUrls}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GastosCard({
+  titulo,
+  descripcion,
+  gastos,
+  aircraft,
+  providers,
+  fotoUrls,
+}: {
+  titulo: string;
+  descripcion: string;
+  gastos: Awaited<ReturnType<typeof listGastos>>["data"];
+  aircraft: { id: string; matricula: string }[];
+  providers: { id: string; nombre: string }[];
+  fotoUrls: Record<string, string>;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">
+          {titulo}{" "}
+          <span className="text-sm font-normal text-muted-foreground">({gastos.length})</span>
+        </CardTitle>
+        <CardDescription>{descripcion}</CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        {gastos.length === 0 ? (
+          <p className="px-6 pb-6 text-sm text-muted-foreground">Sin gastos en esta vista.</p>
+        ) : (
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Categoría</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Proveedor</TableHead>
                   <TableHead>Avión</TableHead>
+                  <TableHead>Vuelo</TableHead>
                   <TableHead>Capturó</TableHead>
-                  <TableHead>Comprobante</TableHead>
+                  <TableHead>Comp.</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -192,11 +257,8 @@ export default async function ExpensesPage({
                         )}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="text-right tabular-nums whitespace-nowrap">
                       {fmtMoney(g.monto, g.moneda)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {g.proveedor?.nombre ?? "—"}
                     </TableCell>
                     <TableCell>
                       {g.aeronave?.matricula ? (
@@ -205,6 +267,18 @@ export default async function ExpensesPage({
                         <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                           Pendiente
                         </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {g.vuelo_id ? (
+                        <Link
+                          href={`/admin/flights/${g.vuelo_id}`}
+                          className="font-mono text-brand-600 hover:underline"
+                        >
+                          #{g.vuelo?.folio ?? "ver"}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -249,9 +323,9 @@ export default async function ExpensesPage({
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -26,6 +26,8 @@ import {
   getCobroVoucherUrls,
   getFlightBitacora,
 } from "@/lib/api/flights-server";
+import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
+import { FlightGastosCard } from "@/components/admin/flights/flight-gastos-card";
 import { getClient } from "@/lib/api/clients-server";
 import { getQuote } from "@/lib/api/quotes-server";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -88,7 +90,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, quote] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, quote, gastosRes] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -99,7 +101,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       // Solo para pintar la ruta COMERCIAL cotizada (vive en el snapshot del
       // cálculo, no en las escalas, que son la operación). Best-effort.
       getQuote(id).catch(() => null),
+      // Gastos del vuelo (operativos y generales) con su desglose.
+      listGastos({ vuelo_id: id, limit: 200 }).catch(
+        () => ({ data: [], count: 0, limit: 0, offset: 0 }),
+      ),
     ]);
+  const gastos = gastosRes.data;
+  const gastoFotoUrls = await signFuelPhotos(
+    gastos.map((g) => g.foto_url).filter((p): p is string => !!p),
+  ).catch(() => ({}) as Record<string, string>);
 
   // Ruta OPERATIVA (lo que se vuela), derivada de las escalas. El
   // origen/destino del vuelo es el espejo comercial (CUN→CUN) y engaña
@@ -419,6 +429,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             cobros={snapshot.cobros}
             voucherUrls={voucherUrls}
           />
+
+          {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;
+              oficina revisa aquí Operación/FBO, combustible, viáticos...) */}
+          <FlightGastosCard gastos={gastos} fotoUrls={gastoFotoUrls} />
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
           <FlightBitacoraCard eventos={bitacora} />

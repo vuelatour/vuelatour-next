@@ -31,6 +31,7 @@ export interface Gasto {
   proveedor?: { nombre: string } | null;
   aeronave?: { matricula: string } | null;
   captura?: { nombre: string } | null;
+  vuelo?: { folio: string | null } | null;
 }
 
 export interface GastoListResponse {
