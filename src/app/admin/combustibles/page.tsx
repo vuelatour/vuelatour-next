@@ -99,7 +99,7 @@ export default async function CombustiblesPage() {
                                 : "bg-amber-500/15 text-amber-600 dark:text-amber-300"
                             }`}
                           >
-                            {l.tipo_combustible === "TURBOSINA" ? "Turbosina" : "Avgas"}
+                            {l.tipo_combustible === "TURBOSINA" ? "Turbosina" : "Gasavión"}
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
