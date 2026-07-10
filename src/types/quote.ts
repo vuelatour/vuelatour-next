@@ -72,6 +72,9 @@ export interface CalculateQuoteRequest {
   tc_usd_mxn?: number;
   /** Comisión BillPocket en % (custom, tope 20). Solo con metodo_pago=BILLPOCKET. */
   comision_billpocket_pct?: number;
+  /** Comisión del VENDEDOR en USD (interna): sale del precio, no se suma al cliente. */
+  comision_vendedor_usd?: number;
+  comision_vendedor_nombre?: string;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;
   iva_pct_override?: number;
@@ -141,5 +144,10 @@ export interface QuoteBreakdown {
     version_motor: string;
     /** % de comisión BillPocket sintetizada por el motor (null si no aplica). */
     comision_billpocket_pct?: number | null;
+    /** Comisión del vendedor (interna): no altera el total que paga el cliente. */
+    comision_vendedor_usd?: number | null;
+    comision_vendedor_nombre?: string | null;
+    /** Total − comisión del vendedor: lo que queda a VuelaTour (reparto/reportes). */
+    neto_vuelatour_usd?: number | null;
   };
 }

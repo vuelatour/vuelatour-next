@@ -130,6 +130,9 @@ interface QuoteFormValues {
   tc_usd_mxn: number | null;
   /** Comisión BillPocket % (custom por operación, tope 20). */
   comision_billpocket_pct: number | null;
+  /** Comisión del VENDEDOR en USD (interna): sale del precio, no del cliente. */
+  comision_vendedor_usd: number | null;
+  comision_vendedor_nombre: string;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
   iva_pct_override: number | null;
@@ -422,6 +425,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         tc_usd_mxn: Number(q.tc_usd_mxn) > 0 ? Number(q.tc_usd_mxn) : null,
         comision_billpocket_pct:
           q.calculo_snapshot?.meta?.comision_billpocket_pct ?? null,
+        comision_vendedor_usd:
+          q.calculo_snapshot?.meta?.comision_vendedor_usd ?? null,
+        comision_vendedor_nombre:
+          q.calculo_snapshot?.meta?.comision_vendedor_nombre ?? "",
         tarifa_hora_override_usd: null,
         tuas_override_usd_pax: null,
         iva_pct_override: null,
@@ -448,6 +455,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       metodo_pago: "TRANSFERENCIA",
       tc_usd_mxn: null,
       comision_billpocket_pct: null,
+      comision_vendedor_usd: null,
+      comision_vendedor_nombre: "",
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
       iva_pct_override: null,
@@ -504,6 +513,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         debounced.metodo_pago === "BILLPOCKET" &&
         Number(debounced.comision_billpocket_pct) > 0
           ? Math.min(Number(debounced.comision_billpocket_pct), 20)
+          : undefined,
+      comision_vendedor_usd:
+        Number(debounced.comision_vendedor_usd) > 0
+          ? Number(debounced.comision_vendedor_usd)
+          : undefined,
+      comision_vendedor_nombre:
+        Number(debounced.comision_vendedor_usd) > 0 &&
+        debounced.comision_vendedor_nombre.trim()
+          ? debounced.comision_vendedor_nombre.trim()
           : undefined,
     };
     const legs = debounced.escalas ?? [];
@@ -1420,6 +1438,47 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </Field>
           )}
 
+          {/* Comisión del VENDEDOR (Itzy/Pablo/broker): sale del precio de
+              venta, NO se suma al cliente. El cliente paga el total completo;
+              el neto (total − comisión) fluye a reparto/reportes. INTERNA:
+              jamás aparece en el PDF del cliente. */}
+          <Field
+            label="Comisión del vendedor (interna)"
+            hint="Opcional · sale del precio, no del cliente · no aparece en el PDF"
+          >
+            <div className="flex items-center gap-3 flex-wrap">
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                placeholder="USD · Ej. 50"
+                className="w-32"
+                value={values.comision_vendedor_usd ?? ""}
+                onChange={(e) =>
+                  setValue(
+                    "comision_vendedor_usd",
+                    e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                  )
+                }
+              />
+              <Input
+                placeholder="Quién vendió (Itzy, Pablo…)"
+                className="w-48"
+                value={values.comision_vendedor_nombre}
+                onChange={(e) => setValue("comision_vendedor_nombre", e.target.value)}
+              />
+              {Number(values.comision_vendedor_usd) > 0 && breakdown && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  Neto VuelaTour: $
+                  {(
+                    Number(breakdown.totales.total_usd) -
+                    Number(values.comision_vendedor_usd)
+                  ).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                </span>
+              )}
+            </div>
+          </Field>
+
           <Field label="Notas (visibles en PDF)" hint="Opcional">
             <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" {...register("notas")} />
           </Field>
@@ -1633,6 +1692,25 @@ function Preview({
                 {fmtUsd(breakdown.totales.total_usd)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">USD</p>
+              {/* Comisión del vendedor: el cliente paga el total completo; el
+                  neto es lo que queda a VuelaTour (reparto/reportes). */}
+              {!!breakdown.meta?.comision_vendedor_usd && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Comisión vendedor
+                  {breakdown.meta.comision_vendedor_nombre
+                    ? ` (${breakdown.meta.comision_vendedor_nombre})`
+                    : ""}
+                  : −{fmtUsd(breakdown.meta.comision_vendedor_usd)} ·{" "}
+                  <span className="font-semibold text-foreground">
+                    Neto VuelaTour:{" "}
+                    {fmtUsd(
+                      breakdown.meta.neto_vuelatour_usd ??
+                        breakdown.totales.total_usd -
+                          breakdown.meta.comision_vendedor_usd,
+                    )}
+                  </span>
+                </p>
+              )}
             </div>
             <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30">
               {breakdown.tarifa.tipo}

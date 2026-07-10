@@ -163,6 +163,34 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
             <span className="font-semibold">Total cobrado al cliente</span>
             <span className="font-mono font-bold">{fmtUsd(total)}</span>
           </div>
+          {/* Comisión del vendedor (interna): el cliente paga el total
+              completo; el neto es lo que queda a VuelaTour (reparto). */}
+          {Number(quote.calculo_snapshot?.meta?.comision_vendedor_usd ?? 0) > 0 && (
+            <>
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>
+                  Comisión vendedor
+                  {quote.calculo_snapshot?.meta?.comision_vendedor_nombre
+                    ? ` (${quote.calculo_snapshot.meta.comision_vendedor_nombre})`
+                    : ""}{" "}
+                  · interna
+                </span>
+                <span className="font-mono">
+                  −{fmtUsd(Number(quote.calculo_snapshot!.meta!.comision_vendedor_usd))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-semibold">Neto VuelaTour</span>
+                <span className="font-mono font-bold">
+                  {fmtUsd(
+                    quote.calculo_snapshot?.meta?.neto_vuelatour_usd ??
+                      total -
+                        Number(quote.calculo_snapshot!.meta!.comision_vendedor_usd),
+                  )}
+                </span>
+              </div>
+            </>
+          )}
           {cuadra ? (
             <p className="text-[11px] text-green-600 dark:text-green-400">
               ✓ Las líneas suman exactamente el total.
