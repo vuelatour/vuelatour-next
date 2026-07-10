@@ -11,6 +11,7 @@ export function listFuelLoads() {
 
 export interface ListGastosQuery {
   vuelo_id?: string;
+  usuario_captura_id?: string;
   categoria?: string;
   estatus_comprobante?: string;
   medio_pago?: string;

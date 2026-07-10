@@ -15,8 +15,13 @@ import {
 import { isApiError } from "@/lib/api/errors";
 import { getFondo } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
+import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
+import { listAircraft } from "@/lib/api/aircraft";
+import { listProviders } from "@/lib/api/providers-server";
 import { MovimientoButton } from "@/components/admin/caja-chica/movimiento-button";
+import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import type { CajaFondoDetail } from "@/types/caja-chica";
+import type { Gasto } from "@/types/expenses";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +47,25 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
   }
+
+  // Los gastos en efectivo del historial son EDITABLES aquí mismo (pedido de
+  // oficina): si el piloto capturó mal el medio de pago (era tarjeta), al
+  // corregirlo el movimiento sale solo del fondo — el saldo es en vivo.
+  const [gastosRes, aircraftRes, providersRes] = await Promise.all([
+    listGastos({
+      usuario_captura_id: fondo.usuario_id,
+      medio_pago: "EFECTIVO",
+      limit: 200,
+    }).catch(() => ({ data: [] as Gasto[], count: 0, limit: 0, offset: 0 })),
+    listAircraft({ limit: 100 }).catch(() => ({ data: [] })),
+    listProviders({ limit: 200 }).catch(() => ({ data: [] })),
+  ]);
+  const gastosById = new Map(gastosRes.data.map((g) => [g.id, g]));
+  const fotoUrls = await signFuelPhotos(
+    gastosRes.data.map((g) => g.foto_url).filter((p): p is string => !!p),
+  ).catch(() => ({}) as Record<string, string>);
+  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
   const money = (n: number) =>
     n.toLocaleString("es-MX", { style: "currency", currency: fondo.moneda, maximumFractionDigits: 2 });
@@ -102,6 +126,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
                   <TableHead>Concepto</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead className="text-right">Saldo</TableHead>
+                  <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -131,6 +156,23 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {money(e.saldo)}
+                    </TableCell>
+                    <TableCell>
+                      {/* Editar/eliminar el gasto sin salir de caja chica; al
+                          cambiar el medio de pago (p.ej. era tarjeta), el
+                          movimiento desaparece del fondo automáticamente. */}
+                      {e.origen === "gasto" && gastosById.has(e.id) && (
+                        <ExpenseActions
+                          gasto={gastosById.get(e.id)!}
+                          aircraft={aircraft}
+                          providers={providers}
+                          fotoUrl={
+                            gastosById.get(e.id)!.foto_url
+                              ? fotoUrls[gastosById.get(e.id)!.foto_url!]
+                              : undefined
+                          }
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

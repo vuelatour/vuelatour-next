@@ -37,6 +37,7 @@ export async function createGastoAction(raw: unknown): Promise<ActionResult<Gast
       body: stripEmpty(parsed.data),
     });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
     return { ok: true, data: created };
   } catch (err) {
     return fail(err);
@@ -79,6 +80,7 @@ export async function generarPistasAction(
       resultados: Array<{ escala_id: string; ok: boolean; error?: string }>;
     }>("/v1/expenses/pistas/generar", { method: "POST", body: { items } });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -143,6 +145,7 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
       body: stripEmpty(parsed.data),
     });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/flights", "layout");
     return { ok: true, data: updated };
   } catch (err) {
@@ -158,6 +161,7 @@ export async function dismissDuplicadoAction(id: string): Promise<ActionResult<G
       body: { duplicado_sospechado: false },
     });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
     return { ok: true, data: updated };
   } catch (err) {
     return fail(err);
@@ -284,6 +288,7 @@ export async function aplicarAsignacionesAction(
     }
   }
   revalidatePath("/admin/expenses");
+  revalidatePath("/admin/caja-chica", "layout");
   revalidatePath("/admin/combustibles");
   return { ok: true, data: { aplicados, fallidos } };
 }
@@ -300,6 +305,7 @@ export async function assignVueloGastoAction(
     });
     revalidatePath("/admin/combustibles");
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/flights", "layout");
     return { ok: true, data };
   } catch (err) {
@@ -311,6 +317,7 @@ export async function deleteGastoAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/expenses/${id}`, { method: "DELETE" });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/flights", "layout");
     return { ok: true };
   } catch (err) {
