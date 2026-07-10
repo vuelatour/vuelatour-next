@@ -132,9 +132,12 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
               <TableBody>
                 {fondo.historial.map((e) => (
                   <TableRow key={`${e.origen}-${e.id}`}>
-                    <TableCell className="whitespace-nowrap">{fmtDate(e.fecha)}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
+                    <TableCell className="whitespace-nowrap align-top">{fmtDate(e.fecha)}</TableCell>
+                    {/* La descripción (desglose del gasto) ENVUELVE con sus
+                        saltos de línea en vez de alargar la tabla: todo se lee
+                        sin scroll horizontal. */}
+                    <TableCell className="align-top max-w-xl">
+                      <div className="flex flex-col gap-0.5">
                         <span className="inline-flex items-center gap-1.5">
                           {CONCEPTO[e.tipo] ?? e.tipo}
                           {e.origen === "gasto" && (
@@ -144,17 +147,19 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
                           )}
                         </span>
                         {e.descripcion && (
-                          <span className="text-xs text-muted-foreground">{e.descripcion}</span>
+                          <span className="text-xs text-muted-foreground whitespace-pre-line break-words">
+                            {e.descripcion}
+                          </span>
                         )}
                       </div>
                     </TableCell>
                     <TableCell
-                      className={`text-right tabular-nums ${e.monto < 0 ? "text-destructive" : "text-emerald-600"}`}
+                      className={`text-right tabular-nums whitespace-nowrap align-top ${e.monto < 0 ? "text-destructive" : "text-emerald-600"}`}
                     >
                       {e.monto < 0 ? "−" : "+"}
                       {money(Math.abs(e.monto)).replace(/^-/, "")}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                    <TableCell className="text-right tabular-nums whitespace-nowrap align-top text-muted-foreground">
                       {money(e.saldo)}
                     </TableCell>
                     <TableCell>
