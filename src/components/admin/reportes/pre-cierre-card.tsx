@@ -42,6 +42,8 @@ const LINK_POR_CLAVE: Record<string, string> = {
   gastos_sin_avion: "/admin/expenses",
   gastos_sin_tc: "/admin/expenses",
   gastos_sin_comprobante: "/admin/facturas-recibidas",
+  // Cuotas de aeródromo sin provisionar: Gastos → "Pistas por pagar".
+  pistas_sin_gasto: "/admin/expenses",
   sin_conciliar: "/admin/conciliacion",
 };
 
