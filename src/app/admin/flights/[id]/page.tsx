@@ -108,6 +108,17 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ),
     ]);
   const gastos = gastosRes.data;
+  // Resumen para el aviso al cancelar el vuelo (los gastos se conservan).
+  const gastosPorMoneda = new Map<string, number>();
+  for (const g of gastos) {
+    gastosPorMoneda.set(g.moneda, (gastosPorMoneda.get(g.moneda) ?? 0) + Number(g.monto));
+  }
+  const gastosResumen =
+    gastos.length > 0
+      ? `${gastos.length} gasto${gastos.length === 1 ? "" : "s"} · ${[...gastosPorMoneda.entries()]
+          .map(([m, t]) => `${t.toLocaleString("es-MX", { style: "currency", currency: m })} ${m}`)
+          .join(" · ")}`
+      : null;
   const [gastoFotoUrls, providersRes] = await Promise.all([
     signFuelPhotos(gastos.map((g) => g.foto_url).filter((p): p is string => !!p)).catch(
       () => ({}) as Record<string, string>,
@@ -276,6 +287,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               flight={snapshot}
               aircraft={aircraftOptions}
               pilots={pilotOptions}
+              gastosResumen={gastosResumen}
             />
           </div>
         </div>

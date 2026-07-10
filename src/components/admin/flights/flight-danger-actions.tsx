@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowsRightLeftIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { ArrowsRightLeftIcon, NoSymbolIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  cancelFlightAction,
   deleteFlightAction,
   reassignAircraftAction,
 } from "@/app/admin/flights/actions";
@@ -49,15 +50,20 @@ interface AircraftOption {
 export function FlightDangerActions({
   flight,
   aircraft,
+  gastosResumen,
 }: {
   flight: FlightListItem;
   aircraft: AircraftOption[];
+  /** Resumen de gastos ligados (para el aviso al cancelar), ej. "2 gastos · $8,911.28 MXN". */
+  gastosResumen?: string | null;
 }) {
   const router = useRouter();
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [nuevaAeronave, setNuevaAeronave] = useState("");
   const [motivo, setMotivo] = useState("");
+  const [motivoCancel, setMotivoCancel] = useState("");
   const [pending, startTransition] = useTransition();
 
   const operable =
@@ -105,6 +111,23 @@ export function FlightDangerActions({
     });
   };
 
+  const handleCancel = () => {
+    if (!motivoCancel.trim()) {
+      toast.error("Escribe el motivo de la cancelación");
+      return;
+    }
+    startTransition(async () => {
+      const res = await cancelFlightAction(flight.id, motivoCancel.trim());
+      if (res.ok) {
+        toast.success(`Vuelo #${flight.folio} cancelado (sus gastos se conservan)`);
+        setCancelOpen(false);
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "No se pudo cancelar");
+      }
+    });
+  };
+
   return (
     <>
       {flight.aeronave_id && (
@@ -118,6 +141,15 @@ export function FlightDangerActions({
           Cambiar aeronave
         </Button>
       )}
+      <Button
+        variant="outline"
+        onClick={() => setCancelOpen(true)}
+        className="gap-2 text-destructive hover:text-destructive"
+        title="El vuelo no se hace: queda CANCELADO conservando cobros y gastos registrados."
+      >
+        <NoSymbolIcon className="h-4 w-4" />
+        Cancelar vuelo
+      </Button>
       {borrable && (
         <Button
           variant="outline"
@@ -128,6 +160,57 @@ export function FlightDangerActions({
           Eliminar
         </Button>
       )}
+
+      {/* Cancelar vuelo */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar el vuelo #{flight.folio}</DialogTitle>
+            <DialogDescription>
+              El vuelo queda <strong>CANCELADO</strong> (sale del calendario) y
+              conserva su historial.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              {gastosResumen ? (
+                <>
+                  Este vuelo tiene <strong>{gastosResumen}</strong>.{" "}
+                </>
+              ) : null}
+              Los gastos ya capturados (operación, combustible…) <strong>se
+              conservan y siguen sumando en los reportes</strong> — la operación
+              pagada cuenta aunque el vuelo no se haga. Si el proveedor SÍ
+              canceló la factura, elimina ese gasto en la sección Gastos.
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Motivo</Label>
+              <Textarea
+                rows={2}
+                placeholder="Ej. el cliente canceló; clima; falla mecánica"
+                value={motivoCancel}
+                onChange={(e) => setMotivoCancel(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelOpen(false)}
+              disabled={pending}
+            >
+              Volver
+            </Button>
+            <Button
+              onClick={handleCancel}
+              disabled={pending || !motivoCancel.trim()}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {pending ? "Cancelando…" : "Cancelar vuelo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cambiar aeronave */}
       <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>

@@ -48,12 +48,15 @@ interface FlightActionsBarProps {
   flight: FlightListItem;
   aircraft: AircraftOption[];
   pilots: PilotOption[];
+  /** Resumen de gastos ligados (aviso al cancelar el vuelo). */
+  gastosResumen?: string | null;
 }
 
 export function FlightActionsBar({
   flight,
   aircraft,
   pilots,
+  gastosResumen,
 }: FlightActionsBarProps) {
   const router = useRouter();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -184,7 +187,11 @@ export function FlightActionsBar({
         </Button>
       )}
 
-      <FlightDangerActions flight={flight} aircraft={aircraft} />
+      <FlightDangerActions
+        flight={flight}
+        aircraft={aircraft}
+        gastosResumen={gastosResumen}
+      />
 
       <FlightAssignSheet
         open={assignOpen}

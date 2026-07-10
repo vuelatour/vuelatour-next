@@ -207,6 +207,29 @@ export async function deleteFlightAction(id: string): Promise<ActionResult> {
   }
 }
 
+/**
+ * Cancela el vuelo (con motivo). Los gastos ya capturados SE CONSERVAN y
+ * siguen sumando en reportes/reparto (regla del cliente: la operación pagada
+ * de un vuelo que no se hizo cuenta, salvo que el proveedor cancele la
+ * factura — en ese caso oficina elimina el gasto).
+ */
+export async function cancelFlightAction(
+  id: string,
+  motivo: string,
+): Promise<ActionResult<FlightListItem>> {
+  try {
+    const data = await apiServer<FlightListItem>(`/v1/flights/${id}/cancel`, {
+      method: "POST",
+      body: { motivo },
+    });
+    revalidateFlight(id);
+    revalidatePath("/admin/calendar");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Cambio de aeronave de último minuto: clona el vuelo (cobros se mueven) y el original queda CANCELADO con sus gastos. */
 export async function reassignAircraftAction(
   id: string,
