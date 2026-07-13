@@ -127,6 +127,28 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
             </Field>
           </div>
 
+          {/* Presentación del stock: en qué se cuenta (el cardex y las alertas
+              hablan en esta unidad). Texto libre con sugerencias comunes. */}
+          <Field label="Unidad" hint="En qué se cuenta el stock" error={errors.unidad?.message}>
+            <>
+              <Input
+                placeholder="pieza, caja, bote, galón, litro, bolsa…"
+                list="unidades-sugeridas"
+                {...register("unidad")}
+              />
+              <datalist id="unidades-sugeridas">
+                <option value="pieza" />
+                <option value="caja" />
+                <option value="bote" />
+                <option value="galón" />
+                <option value="litro" />
+                <option value="bolsa" />
+                <option value="juego" />
+                <option value="metro" />
+              </datalist>
+            </>
+          </Field>
+
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} {...register("notas")} />
           </Field>
@@ -207,6 +229,7 @@ function defaults(item?: InventarioItem): ItemFormValues {
       categoria: "",
       stock_minimo: "",
       ubicacion: "",
+      unidad: "",
       notas: "",
       cantidad_inicial: "",
       costo_inicial_usd: "",
@@ -221,6 +244,7 @@ function defaults(item?: InventarioItem): ItemFormValues {
     categoria: item.categoria,
     stock_minimo: item.stock_minimo != null ? String(item.stock_minimo) : "",
     ubicacion: item.ubicacion ?? "",
+    unidad: item.unidad ?? "",
     notas: item.notas ?? "",
     cantidad_inicial: "",
     costo_inicial_usd: "",

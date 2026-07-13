@@ -7,6 +7,8 @@ export interface InventarioItem {
   codigo: string | null;
   categoria: string;
   stock_minimo: number | null;
+  /** Presentación del stock: pieza, caja, bote, galón, litro, bolsa… */
+  unidad?: string | null;
   ubicacion: string | null;
   notas: string | null;
   activo: boolean;

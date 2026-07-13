@@ -123,6 +123,9 @@ export default async function InventoryPage() {
                     <TableCell className="text-right tabular-nums">
                       <span className="inline-flex items-center gap-1.5">
                         {num(it.stock)}
+                        {it.unidad && (
+                          <span className="ml-1 text-xs text-muted-foreground">{it.unidad}</span>
+                        )}
                         {it.bajo_stock && (
                           <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                             Bajo

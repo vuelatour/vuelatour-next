@@ -86,7 +86,7 @@ export default async function InventoryItemPage({
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Stat label="Stock actual" value={num(item.stock)} highlight={item.bajo_stock} />
+          <Stat label="Stock actual" value={`${num(item.stock)}${item.unidad ? ` ${item.unidad}` : ""}`} highlight={item.bajo_stock} />
           <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
           <Stat label="Costo FIFO" value={item.costo_fifo_actual ? usd(item.costo_fifo_actual) : "—"} />
           <Stat label="Valorizado" value={usd(item.valor_usd)} />

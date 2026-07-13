@@ -17,6 +17,7 @@ export const ItemFormSchema = z.object({
   categoria: z.string().min(1, "Requerido").max(50),
   stock_minimo: optionalNumber,
   ubicacion: z.string().max(50).optional().or(z.literal("")),
+  unidad: z.string().max(30).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 
@@ -71,6 +72,7 @@ export type ItemFormValues = {
   categoria: string;
   stock_minimo: string;
   ubicacion: string;
+  unidad: string;
   notas: string;
   // Solo al CREAR: entrada inicial opcional (cantidad + costo de compra) para
   // que el ítem no quede en stock 0 sin precio. Genera una ENTRADA de cardex.
