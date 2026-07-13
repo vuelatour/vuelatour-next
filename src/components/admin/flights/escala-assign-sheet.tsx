@@ -54,11 +54,19 @@ interface EscalaAssignSheetProps {
   escala: FlightEscala;
   aircraft: AircraftOption[];
   pilots: PilotOption[];
+  /** Aeronave del vuelo (de la cotización): default cuando el tramo no tiene una. */
+  vueloAeronaveId?: string | null;
 }
 
-function defaults(escala: FlightEscala): EscalaAssignFormValues {
+function defaults(
+  escala: FlightEscala,
+  vueloAeronaveId?: string | null,
+): EscalaAssignFormValues {
   return {
-    aeronave_id: escala.aeronave_id ?? "",
+    // Si el tramo aún no tiene avión, se propone el de la cotización (el que
+    // ya eligió quien cotizó): la oficina solo confirma. La ida y el regreso
+    // pueden cambiarse a otro avión si hace falta.
+    aeronave_id: escala.aeronave_id ?? vueloAeronaveId ?? "",
     piloto_id: escala.piloto_id ?? "",
     fecha_salida_plan: isoToCancunInput(escala.fecha_salida_plan),
   };
@@ -74,6 +82,7 @@ export function EscalaAssignSheet({
   escala,
   aircraft,
   pilots,
+  vueloAeronaveId,
 }: EscalaAssignSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -81,12 +90,12 @@ export function EscalaAssignSheet({
 
   const { register, handleSubmit, watch, setValue, reset } =
     useForm<EscalaAssignFormValues>({
-      defaultValues: defaults(escala),
+      defaultValues: defaults(escala, vueloAeronaveId),
     });
 
   useEffect(() => {
-    if (open) reset(defaults(escala));
-  }, [open, escala, reset]);
+    if (open) reset(defaults(escala, vueloAeronaveId));
+  }, [open, escala, vueloAeronaveId, reset]);
 
   // Disponibilidad de pilotos (conflicto de día + horas del mes) al abrir.
   useEffect(() => {
@@ -206,6 +215,13 @@ export function EscalaAssignSheet({
                 onChange={(v) => setValue("aeronave_id", v)}
                 placeholder="Selecciona aeronave"
               />
+              {/* El avión viene de la cotización; solo se cambia si este tramo
+                  lo vuela otra matrícula. */}
+              {!escala.aeronave_id && vueloAeronaveId && aeronaveId === vueloAeronaveId && (
+                <p className="text-xs text-muted-foreground">
+                  Propuesta de la cotización · cámbiala solo si este tramo vuela con otro avión.
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-1.5">

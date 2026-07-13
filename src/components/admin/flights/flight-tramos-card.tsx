@@ -72,6 +72,8 @@ interface FlightTramosCardProps {
   aircraft: AircraftOption[];
   pilots: PilotOption[];
   airports?: AirportOption[];
+  /** Aeronave del vuelo (cotización): default al asignar tramos sin avión. */
+  vueloAeronaveId?: string | null;
 }
 
 /** Etiqueta del tramo: 2 tramos = Ida/Regreso (redondo); más = Tramo N. */
@@ -89,6 +91,7 @@ export function FlightTramosCard({
   aircraft,
   pilots,
   airports = [],
+  vueloAeronaveId,
 }: FlightTramosCardProps) {
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
@@ -287,6 +290,7 @@ export function FlightTramosCard({
           escala={assignEscala}
           aircraft={aircraft}
           pilots={pilots}
+          vueloAeronaveId={vueloAeronaveId}
         />
       )}
 
