@@ -46,6 +46,10 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
   const [proveedorId, setProveedorId] = useState("");
   const [fechaOrden, setFechaOrden] = useState("");
   const [referencia, setReferencia] = useState("");
+  // Moneda de la factura completa: MXN default (compras locales); USD para
+  // Aircraft Spruce. Con MXN el TC de la compra es obligatorio.
+  const [moneda, setMoneda] = useState<"MXN" | "USD">("MXN");
+  const [tc, setTc] = useState("");
 
   const reset = () => {
     setLineas([]);
@@ -110,11 +114,17 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
       toast.error("No hay líneas válidas para importar");
       return;
     }
+    if (moneda === "MXN" && !(Number(tc) > 0)) {
+      toast.error("Captura el tipo de cambio de la compra (MXN por USD)");
+      return;
+    }
     startImport(async () => {
       const res = await importarCompraAction({
         proveedor_id: proveedorId || undefined,
         fecha_orden: fechaOrden || undefined,
         referencia: referencia || undefined,
+        moneda,
+        tc_usd_mxn: moneda === "MXN" ? Number(tc) || undefined : undefined,
         lineas: lineasValidas,
       });
       if (res.ok && res.data) {
@@ -180,6 +190,36 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
                 </div>
               </div>
 
+              {/* Moneda de TODA la factura + TC si es MXN (se convierte a USD
+                  para el balance; se guarda el precio original en pesos). */}
+              <div className="flex items-end gap-3 flex-wrap">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Moneda de la factura</Label>
+                  <select
+                    value={moneda}
+                    onChange={(e) => setMoneda(e.target.value as "MXN" | "USD")}
+                    className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30 block"
+                  >
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+                {moneda === "MXN" && (
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Tipo de cambio (MXN por USD)</Label>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      placeholder="Ej. 18.50"
+                      className="w-32"
+                      value={tc}
+                      onChange={(e) => setTc(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 {lineas.map((l, i) => (
                   <div key={i} className="grid grid-cols-12 gap-2 items-center">
@@ -213,7 +253,7 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
                       type="number"
                       step="any"
                       value={l.costo_unitario_usd}
-                      placeholder="USD"
+                      placeholder={moneda}
                       onChange={(e) => setLinea(i, { costo_unitario_usd: e.target.value })}
                     />
                     <button

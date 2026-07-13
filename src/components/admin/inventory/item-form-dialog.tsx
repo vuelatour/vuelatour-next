@@ -37,6 +37,8 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<ItemFormValues>({ defaultValues: defaults(initialItem) });
 
@@ -57,10 +59,14 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
         const cant = values.cantidad_inicial?.trim();
         const costo = values.costo_inicial_usd?.trim();
         if (!isEdit && result.data && cant && costo) {
+          const esMxn = values.moneda_inicial === "MXN";
           const mov = await createMovimientoAction(result.data.id, {
             tipo: "ENTRADA",
             cantidad: cant,
-            costo_unitario_usd: costo,
+            moneda: values.moneda_inicial,
+            ...(esMxn
+              ? { costo_unitario_mxn: costo, tc_usd_mxn: values.tc_inicial }
+              : { costo_unitario_usd: costo }),
             notas: "Stock inicial (alta del ítem)",
           });
           if (!mov.ok) {
@@ -136,10 +142,44 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
                 <Field label="Cantidad inicial">
                   <Input type="number" step="any" min="0" placeholder="0" {...register("cantidad_inicial")} />
                 </Field>
-                <Field label="Costo unitario (USD)">
-                  <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_inicial_usd")} />
+                <Field label="Costo unitario">
+                  <div className="flex gap-2">
+                    <select
+                      value={watch("moneda_inicial")}
+                      onChange={(e) =>
+                        setValue("moneda_inicial", e.target.value as ItemFormValues["moneda_inicial"])
+                      }
+                      className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                    >
+                      <option value="MXN">MXN</option>
+                      <option value="USD">USD</option>
+                    </select>
+                    <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_inicial_usd")} />
+                  </div>
                 </Field>
               </div>
+              {watch("moneda_inicial") === "MXN" && (
+                <Field
+                  label="Tipo de cambio (MXN por USD)"
+                  hint="El de la compra. El costo se convierte a USD para el balance."
+                >
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      placeholder="Ej. 18.50"
+                      className="w-32"
+                      {...register("tc_inicial")}
+                    />
+                    {Number(watch("costo_inicial_usd")) > 0 && Number(watch("tc_inicial")) > 0 && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ≈ ${(Number(watch("costo_inicial_usd")) / Number(watch("tc_inicial"))).toFixed(2)} USD c/u
+                      </span>
+                    )}
+                  </div>
+                </Field>
+              )}
             </div>
           )}
 
@@ -170,6 +210,8 @@ function defaults(item?: InventarioItem): ItemFormValues {
       notas: "",
       cantidad_inicial: "",
       costo_inicial_usd: "",
+      moneda_inicial: "MXN",
+      tc_inicial: "",
     };
   }
   return {
@@ -182,5 +224,7 @@ function defaults(item?: InventarioItem): ItemFormValues {
     notas: item.notas ?? "",
     cantidad_inicial: "",
     costo_inicial_usd: "",
+    moneda_inicial: "MXN",
+    tc_inicial: "",
   };
 }

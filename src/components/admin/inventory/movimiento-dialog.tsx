@@ -113,11 +113,62 @@ export function MovimientoDialog({
                 <Input value="FIFO automático" disabled readOnly className="text-muted-foreground" />
               </Field>
             ) : (
-              <Field label="Costo unitario (USD)" required error={errors.costo_unitario_usd?.message}>
-                <Input type="number" step="any" min="0" {...register("costo_unitario_usd")} />
+              <Field
+                label="Costo unitario"
+                required
+                error={
+                  watch("moneda") === "MXN"
+                    ? errors.costo_unitario_mxn?.message
+                    : errors.costo_unitario_usd?.message
+                }
+              >
+                <div className="flex gap-2">
+                  <select
+                    value={watch("moneda")}
+                    onChange={(e) =>
+                      setValue("moneda", e.target.value as MovimientoFormValues["moneda"])
+                    }
+                    className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                  >
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                  {watch("moneda") === "MXN" ? (
+                    <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_unitario_mxn")} />
+                  ) : (
+                    <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_unitario_usd")} />
+                  )}
+                </div>
               </Field>
             )}
           </div>
+
+          {/* Con captura en pesos, el TC de la compra convierte a USD (la
+              contabilidad del inventario y el balance corren en dólares). */}
+          {!esSalida && watch("moneda") === "MXN" && (
+            <Field
+              label="Tipo de cambio (MXN por USD)"
+              required
+              hint="El de la compra (estado de cuenta / factura). El costo se convierte a USD para el balance."
+              error={errors.tc_usd_mxn?.message}
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  placeholder="Ej. 18.50"
+                  className="w-32"
+                  {...register("tc_usd_mxn")}
+                />
+                {Number(watch("costo_unitario_mxn")) > 0 && Number(watch("tc_usd_mxn")) > 0 && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    ≈ ${(Number(watch("costo_unitario_mxn")) / Number(watch("tc_usd_mxn"))).toFixed(2)} USD c/u
+                  </span>
+                )}
+              </div>
+            </Field>
+          )}
 
           {esSalida && (
             <Field
@@ -193,7 +244,12 @@ function defaults(tipo: MovimientoFormValues["tipo"] = "ENTRADA"): MovimientoFor
   return {
     tipo,
     cantidad: "",
+    // Pesos por default: es la moneda operativa del cliente (USD para
+    // compras tipo Aircraft Spruce).
+    moneda: "MXN",
     costo_unitario_usd: "",
+    costo_unitario_mxn: "",
+    tc_usd_mxn: "",
     aeronave_id: "",
     proveedor_id: "",
     fecha_movimiento: "",

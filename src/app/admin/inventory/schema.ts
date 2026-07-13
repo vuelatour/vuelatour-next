@@ -26,7 +26,12 @@ export const MovimientoFormSchema = z
   .object({
     tipo: TipoMovimientoEnum,
     cantidad: requiredPositive,
+    // Captura en MXN (default operativo) o USD; con MXN el TC es obligatorio
+    // (la contabilidad interna del inventario sigue en USD).
+    moneda: z.enum(["MXN", "USD"]).optional(),
     costo_unitario_usd: optionalNumber,
+    costo_unitario_mxn: optionalNumber,
+    tc_usd_mxn: optionalNumber,
     aeronave_id: z.string().uuid().optional().or(z.literal("")),
     proveedor_id: z.string().uuid().optional().or(z.literal("")),
     fecha_movimiento: z.string().optional().or(z.literal("")),
@@ -39,10 +44,25 @@ export const MovimientoFormSchema = z
     message: "La salida debe registrar el avión",
     path: ["aeronave_id"],
   })
-  .refine((d) => d.tipo === "SALIDA" || d.costo_unitario_usd != null, {
-    message: "El costo unitario es requerido",
-    path: ["costo_unitario_usd"],
-  });
+  .refine(
+    (d) => d.tipo === "SALIDA" || d.moneda !== "MXN" || d.costo_unitario_mxn != null,
+    { message: "El costo unitario es requerido", path: ["costo_unitario_mxn"] },
+  )
+  .refine(
+    (d) =>
+      d.tipo === "SALIDA" || d.moneda === "MXN" || d.costo_unitario_usd != null,
+    { message: "El costo unitario es requerido", path: ["costo_unitario_usd"] },
+  )
+  .refine(
+    (d) =>
+      d.tipo === "SALIDA" ||
+      d.moneda !== "MXN" ||
+      (d.tc_usd_mxn != null && d.tc_usd_mxn > 0),
+    {
+      message: "Captura el tipo de cambio de la compra",
+      path: ["tc_usd_mxn"],
+    },
+  );
 
 export type ItemFormValues = {
   nombre: string;
@@ -53,15 +73,21 @@ export type ItemFormValues = {
   ubicacion: string;
   notas: string;
   // Solo al CREAR: entrada inicial opcional (cantidad + costo de compra) para
-  // que el alta no quede en stock 0 sin precio. Genera una ENTRADA de cardex.
+  // que el ítem no quede en stock 0 sin precio. Genera una ENTRADA de cardex.
   cantidad_inicial: string;
+  /** Costo unitario inicial EN LA MONEDA elegida (moneda_inicial). */
   costo_inicial_usd: string;
+  moneda_inicial: "MXN" | "USD";
+  tc_inicial: string;
 };
 
 export type MovimientoFormValues = {
   tipo: "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
   cantidad: string;
+  moneda: "MXN" | "USD";
   costo_unitario_usd: string;
+  costo_unitario_mxn: string;
+  tc_usd_mxn: string;
   aeronave_id: string;
   proveedor_id: string;
   fecha_movimiento: string;

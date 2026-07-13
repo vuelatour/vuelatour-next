@@ -105,6 +105,9 @@ export async function importarCompraAction(payload: {
   proveedor_id?: string;
   fecha_orden?: string;
   referencia?: string;
+  /** Moneda de los costos de las líneas (MXN default operativo); con MXN, tc obligatorio. */
+  moneda?: "MXN" | "USD";
+  tc_usd_mxn?: number;
   lineas: ImportarLinea[];
 }): Promise<ActionResult<{ items_creados: number; entradas: number }>> {
   try {
