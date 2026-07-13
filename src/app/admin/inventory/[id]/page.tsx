@@ -21,6 +21,8 @@ import type { InventarioItemDetail, TipoMovimiento } from "@/types/inventory";
 
 export const dynamic = "force-dynamic";
 
+const mxn = (n: number) =>
+  n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
@@ -88,8 +90,8 @@ export default async function InventoryItemPage({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Stat label="Stock actual" value={`${num(item.stock)}${item.unidad ? ` ${item.unidad}` : ""}`} highlight={item.bajo_stock} />
           <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
-          <Stat label="Costo FIFO" value={item.costo_fifo_actual ? `${usd(item.costo_fifo_actual)} USD` : "—"} />
-          <Stat label="Valorizado" value={`${usd(item.valor_usd)} USD`} />
+          <Stat label="Costo FIFO" value={item.costo_fifo_mxn_actual ? `${mxn(item.costo_fifo_mxn_actual)} MXN` : "—"} />
+          <Stat label="Valorizado" value={`${mxn(item.valor_mxn)} MXN`} />
         </div>
 
         <Card>
@@ -129,17 +131,17 @@ export default async function InventoryItemPage({
                           {num(m.cantidad)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {usd(m.costo_unitario_usd)} USD
-                          {/* Captura original en pesos: precio y TC de la compra. */}
-                          {m.moneda === "MXN" && m.costo_unitario_mxn != null && (
-                            <p className="text-[11px]">
-                              $
-                              {Number(m.costo_unitario_mxn).toLocaleString("es-MX", {
-                                minimumFractionDigits: 2,
-                              })}{" "}
-                              MXN{m.tc_usd_mxn ? ` · TC ${Number(m.tc_usd_mxn)}` : ""}
-                            </p>
-                          )}
+                          {/* Se muestra en pesos (moneda operativa); el USD
+                              interno alimenta el reparto y va como referencia. */}
+                          {m.moneda === "MXN" && m.costo_unitario_mxn != null
+                            ? `${mxn(Number(m.costo_unitario_mxn))} MXN`
+                            : m.tc_usd_mxn
+                              ? `${mxn(Number(m.costo_unitario_usd) * Number(m.tc_usd_mxn))} MXN`
+                              : `${mxn(m.costo_unitario_usd)} MXN`}
+                          <p className="text-[11px]">
+                            {usd(m.costo_unitario_usd)} USD
+                            {m.tc_usd_mxn ? ` · TC ${Number(m.tc_usd_mxn)}` : ""}
+                          </p>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"}

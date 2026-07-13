@@ -21,6 +21,9 @@ export interface InventarioItemWithStock extends InventarioItem {
   stock: number;
   valor_usd: number;
   costo_fifo_actual: number;
+  /** Valorizado en pesos (moneda operativa del cliente); el USD es para el reparto. */
+  valor_mxn: number;
+  costo_fifo_mxn_actual: number;
   bajo_stock: boolean;
 }
 
@@ -54,6 +57,7 @@ export interface InventarioListResponse {
   limit: number;
   offset: number;
   valor_total_usd: number;
+  valor_total_mxn: number;
 }
 
 export interface InventarioItemDetail extends InventarioItemWithStock {

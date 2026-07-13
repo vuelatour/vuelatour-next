@@ -29,10 +29,13 @@ export const dynamic = "force-dynamic";
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
+const mxn = (n: number) =>
+  n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
+
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 export default async function InventoryPage() {
-  const [{ data: items, count, valor_total_usd }, providersRes, aircraftRes] =
+  const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes] =
     await Promise.all([
       listInventario({ limit: 500 }),
       listProviders({ limit: 200 }),
@@ -49,7 +52,7 @@ export default async function InventoryPage() {
           <p className="text-sm text-muted-foreground">Bodega</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado {usd(valor_total_usd)} USD (FIFO).
+            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado {mxn(valor_total_mxn)} MXN (FIFO).
             El consumo se carga al avión al registrar la salida.
           </p>
         </div>
@@ -137,9 +140,9 @@ export default async function InventoryPage() {
                       {it.stock_minimo != null ? num(it.stock_minimo) : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {it.costo_fifo_actual ? `${usd(it.costo_fifo_actual)} USD` : "—"}
+                      {it.costo_fifo_mxn_actual ? `${mxn(it.costo_fifo_mxn_actual)} MXN` : "—"}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{usd(it.valor_usd)} USD</TableCell>
+                    <TableCell className="text-right tabular-nums">{mxn(it.valor_mxn)} MXN</TableCell>
                     <TableCell>
                       <ItemActions item={it} aircraft={aircraft} providers={providers} />
                     </TableCell>
