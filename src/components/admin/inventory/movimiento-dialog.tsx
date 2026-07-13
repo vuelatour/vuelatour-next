@@ -70,10 +70,13 @@ export function MovimientoDialog({
       if (result.ok) {
         const conGasto = (result.data as { gasto_generado?: unknown } | undefined)
           ?.gasto_generado;
+        const prorrateado = (conGasto as { prorrateado?: boolean } | null)?.prorrateado;
         toast.success(
-          conGasto
-            ? "Salida registrada · el costo se cargó como gasto del avión"
-            : "Movimiento registrado",
+          prorrateado
+            ? "Salida registrada · el costo se prorrateó entre toda la flota"
+            : conGasto
+              ? "Salida registrada · el costo se cargó como gasto del avión"
+              : "Movimiento registrado",
         );
         onOpenChange(false);
       } else if (result.fieldErrors) {
@@ -171,19 +174,42 @@ export function MovimientoDialog({
           )}
 
           {esSalida && (
-            <Field
-              label="Avión (se le carga la pieza)"
-              required
-              hint="El costo FIFO se registra automáticamente como gasto de refacción del avión y sale en su reporte mensual."
-              error={errors.aeronave_id?.message}
-            >
-              <SearchableSelect
-                options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
-                value={watch("aeronave_id")}
-                onChange={(v) => setValue("aeronave_id", v)}
-                placeholder="Matrícula"
-              />
-            </Field>
+            <>
+              {/* Aceites/consumibles de flota: el costo FIFO se prorratea en
+                  partes iguales entre los aviones activos (un gasto por avión). */}
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={watch("para_flota") ?? false}
+                  onChange={(e) => {
+                    setValue("para_flota", e.target.checked);
+                    if (e.target.checked) setValue("aeronave_id", "");
+                  }}
+                  className="h-4 w-4 accent-brand-600"
+                />
+                <span>
+                  Para todas las matrículas{" "}
+                  <span className="text-xs text-muted-foreground">
+                    (el costo se reparte en partes iguales entre la flota activa)
+                  </span>
+                </span>
+              </label>
+              {!watch("para_flota") && (
+                <Field
+                  label="Avión (se le carga la pieza)"
+                  required
+                  hint="El costo FIFO se registra automáticamente como gasto de refacción del avión y sale en su reporte mensual."
+                  error={errors.aeronave_id?.message}
+                >
+                  <SearchableSelect
+                    options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
+                    value={watch("aeronave_id")}
+                    onChange={(v) => setValue("aeronave_id", v)}
+                    placeholder="Matrícula"
+                  />
+                </Field>
+              )}
+            </>
           )}
 
           {tipo === "DEVOLUCION" && (
@@ -244,6 +270,7 @@ function defaults(tipo: MovimientoFormValues["tipo"] = "ENTRADA"): MovimientoFor
   return {
     tipo,
     cantidad: "",
+    para_flota: false,
     // Pesos por default: es la moneda operativa del cliente (USD para
     // compras tipo Aircraft Spruce).
     moneda: "MXN",

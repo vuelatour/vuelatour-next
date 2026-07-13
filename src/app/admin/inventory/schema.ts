@@ -34,6 +34,7 @@ export const MovimientoFormSchema = z
     costo_unitario_mxn: optionalNumber,
     tc_usd_mxn: optionalNumber,
     aeronave_id: z.string().uuid().optional().or(z.literal("")),
+    para_flota: z.boolean().optional(),
     proveedor_id: z.string().uuid().optional().or(z.literal("")),
     fecha_movimiento: z.string().optional().or(z.literal("")),
     fecha_orden: z.string().optional().or(z.literal("")),
@@ -41,10 +42,16 @@ export const MovimientoFormSchema = z
     referencia: z.string().max(100).optional().or(z.literal("")),
     notas: z.string().max(2000).optional().or(z.literal("")),
   })
-  .refine((d) => d.tipo !== "SALIDA" || (!!d.aeronave_id && d.aeronave_id !== ""), {
-    message: "La salida debe registrar el avión",
-    path: ["aeronave_id"],
-  })
+  .refine(
+    (d) =>
+      d.tipo !== "SALIDA" ||
+      d.para_flota === true ||
+      (!!d.aeronave_id && d.aeronave_id !== ""),
+    {
+      message: "Registra el avión o marca 'Para todas las matrículas'",
+      path: ["aeronave_id"],
+    },
+  )
   .refine(
     (d) => d.tipo === "SALIDA" || d.moneda !== "MXN" || d.costo_unitario_mxn != null,
     { message: "El costo unitario es requerido", path: ["costo_unitario_mxn"] },
@@ -86,6 +93,7 @@ export type ItemFormValues = {
 export type MovimientoFormValues = {
   tipo: "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
   cantidad: string;
+  para_flota: boolean;
   moneda: "MXN" | "USD";
   costo_unitario_usd: string;
   costo_unitario_mxn: string;
