@@ -67,6 +67,8 @@ export interface CalculateQuoteRequest {
   extras?: ExtraConcepto[];
   /** Ajuste final: negativo = descuento, positivo = redondeo. Fuera de IVA. */
   ajuste_final_usd?: number;
+  /** Redondeo automático del total al siguiente múltiplo de $10 (siempre arriba). */
+  redondeo_automatico?: boolean;
   metodo_pago: MetodoPago;
   /** TC MXN por USD pactado (pago en pesos). Persiste tc_usd_mxn + monto_total_mxn. */
   tc_usd_mxn?: number;
@@ -149,5 +151,9 @@ export interface QuoteBreakdown {
     comision_vendedor_nombre?: string | null;
     /** Total − comisión del vendedor: lo que queda a VuelaTour (reparto/reportes). */
     neto_vuelatour_usd?: number | null;
+    /** Redondeo automático a número cerrado: si aplicó, cuánto agregó y el descuento base. */
+    redondeo_automatico?: boolean | null;
+    redondeo_auto_usd?: number | null;
+    descuento_usd?: number | null;
   };
 }

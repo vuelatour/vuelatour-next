@@ -121,7 +121,9 @@ interface QuoteFormValues {
   cotizacion_abierta: boolean;
   /** Conceptos extra (handler, comisariato, extensión…). */
   extras: ExtraConcepto[];
-  /** Redondeo hacia arriba (casi siempre lo aplican; números cerrados). */
+  /** Redondeo AUTOMÁTICO al siguiente múltiplo de $10 (regla del cliente). */
+  redondeo_auto: boolean;
+  /** Redondeo manual (solo con el automático apagado). */
   redondeo_usd: number | null;
   /** Descuento negociado ("ciérramelo en 750"). Se captura en positivo. */
   descuento_usd: number | null;
@@ -417,10 +419,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         extras: (q.extras ?? []).filter(
           (e) => !e.concepto?.startsWith("Comisión BillPocket"),
         ),
+        // Con redondeo automático activo (default), el ajuste guardado es
+        // redondeo_auto − descuento: se re-hidrata el descuento BASE desde
+        // meta y el redondeo se vuelve a resolver en el motor.
+        redondeo_auto: q.calculo_snapshot?.meta?.redondeo_automatico ?? true,
         redondeo_usd:
-          Number(q.ajuste_final_usd) > 0 ? Number(q.ajuste_final_usd) : null,
+          q.calculo_snapshot?.meta?.redondeo_automatico ?? true
+            ? null
+            : Number(q.ajuste_final_usd) > 0
+              ? Number(q.ajuste_final_usd)
+              : null,
         descuento_usd:
-          Number(q.ajuste_final_usd) < 0 ? Math.abs(Number(q.ajuste_final_usd)) : null,
+          q.calculo_snapshot?.meta?.descuento_usd ??
+          (Number(q.ajuste_final_usd) < 0 ? Math.abs(Number(q.ajuste_final_usd)) : null),
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
         tc_usd_mxn: Number(q.tc_usd_mxn) > 0 ? Number(q.tc_usd_mxn) : null,
         comision_billpocket_pct:
@@ -450,6 +461,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pase_abordar: false,
       cotizacion_abierta: false,
       extras: [],
+      redondeo_auto: true,
       redondeo_usd: null,
       descuento_usd: null,
       metodo_pago: "TRANSFERENCIA",
@@ -504,8 +516,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           monto_usd: Number(e.monto_usd),
           aplica_iva: e.aplica_iva ?? true,
         })),
-      ajuste_final_usd:
-        (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
+      // Con redondeo automático solo viaja el descuento; el motor resuelve el
+      // redondeo exacto al siguiente múltiplo de $10.
+      ajuste_final_usd: debounced.redondeo_auto
+        ? -(Number(debounced.descuento_usd) || 0)
+        : (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
+      redondeo_automatico: debounced.redondeo_auto || undefined,
       metodo_pago: debounced.metodo_pago,
       tc_usd_mxn:
         Number(debounced.tc_usd_mxn) > 0 ? Number(debounced.tc_usd_mxn) : undefined,
@@ -1137,51 +1153,46 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onChange={(extras) => setValue("extras", extras)}
           />
 
-          {/* Cierre del total: redondeo (casi siempre) y descuento por separado,
-              con la suma en vivo. Hacia el motor viajan como UNA línea de
-              ajuste (redondeo − descuento) para que el desglose siga cuadrando. */}
+          {/* Cierre del total: el redondeo es AUTOMÁTICO (regla del cliente:
+              siempre arriba al siguiente múltiplo de $10; 976→980, 991→1000)
+              — lo resuelve el motor con el IVA considerado. El descuento se
+              aplica antes. Hacia el motor viaja UNA línea de ajuste para que
+              el desglose siga cuadrando. */}
           <div className="space-y-3 rounded-lg border border-border p-3">
             <p className="text-sm font-medium">Cierre del total</p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm">Redondeo automático a número cerrado</p>
+                <p className="text-xs text-muted-foreground">
+                  Siempre hacia arriba al siguiente múltiplo de $10 (976→980, 991→1000).
+                </p>
+              </div>
+              <Switch
+                checked={values.redondeo_auto}
+                onCheckedChange={(c) => setValue("redondeo_auto", c)}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Redondeo hacia arriba" hint="Números cerrados (pagan en efectivo).">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="0.00"
-                    className="w-24"
-                    value={values.redondeo_usd ?? ""}
-                    onChange={(e) =>
-                      setValue(
-                        "redondeo_usd",
-                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                  {breakdown && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      title="Calcula el redondeo a la siguiente decena del total"
-                      onClick={() => {
-                        const cotizado =
-                          breakdown.totales.total_usd -
-                          (breakdown.totales.ajuste_final_usd ?? 0);
-                        const base = cotizado - (Number(values.descuento_usd) || 0);
-                        const target = Math.ceil(base / 10) * 10;
+              {!values.redondeo_auto && (
+                <Field label="Redondeo manual" hint="Solo con el automático apagado.">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="0.00"
+                      className="w-24"
+                      value={values.redondeo_usd ?? ""}
+                      onChange={(e) =>
                         setValue(
                           "redondeo_usd",
-                          Math.round((target - base) * 100) / 100 || null,
-                        );
-                      }}
-                    >
-                      Redondear ↑
-                    </Button>
-                  )}
-                </div>
-              </Field>
+                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                    />
+                  </div>
+                </Field>
+              )}
               <Field label="Descuento" hint="Negociado: “ciérramelo en 750”.">
                 <Input
                   type="number"
@@ -1200,14 +1211,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </Field>
             </div>
             {breakdown &&
-              ((Number(values.redondeo_usd) || 0) > 0 ||
+              ((breakdown.totales.ajuste_final_usd ?? 0) !== 0 ||
                 (Number(values.descuento_usd) || 0) > 0) && (
                 (() => {
                   const cotizado =
                     breakdown.totales.total_usd -
                     (breakdown.totales.ajuste_final_usd ?? 0);
-                  const redondeo = Number(values.redondeo_usd) || 0;
                   const descuento = Number(values.descuento_usd) || 0;
+                  // Con auto: el redondeo real lo reporta el motor; manual: lo del campo.
+                  const redondeo = values.redondeo_auto
+                    ? (breakdown.meta?.redondeo_auto_usd ?? 0)
+                    : Number(values.redondeo_usd) || 0;
                   return (
                     <div className="rounded-md bg-muted/40 px-3 py-2 text-sm space-y-0.5">
                       <div className="flex justify-between text-muted-foreground">
@@ -1229,7 +1243,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       <div className="flex justify-between border-t border-border pt-1 font-semibold">
                         <span>Total a cobrar</span>
                         <span className="font-mono">
-                          {fmtUsd(cotizado + redondeo - descuento)}
+                          {fmtUsd(breakdown.totales.total_usd)}
                         </span>
                       </div>
                     </div>
