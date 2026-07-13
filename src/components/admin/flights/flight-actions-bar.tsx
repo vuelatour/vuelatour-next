@@ -88,11 +88,16 @@ export function FlightActionsBar({
     flight.estado === "SOLICITUD" ||
     flight.estado === "COTIZADO" ||
     flight.estado === "CONFIRMADO";
+  // Iniciar/Cerrar a mano SOLO para vuelos EXTERNOS: no tienen tacómetros, así
+  // que su estado no puede derivarse. Los vuelos propios ya NO se inician ni
+  // cierran a mano — el estado se deriva de la captura de tacómetros (primera
+  // lectura → EN_VUELO; todas las llegadas → COMPLETADO).
   const canStart =
-    flight.estado === "RESERVA" ||
-    flight.estado === "COTIZADO" ||
-    flight.estado === "CONFIRMADO";
-  const canComplete = flight.estado === "EN_VUELO";
+    flight.es_externo &&
+    (flight.estado === "RESERVA" ||
+      flight.estado === "COTIZADO" ||
+      flight.estado === "CONFIRMADO");
+  const canComplete = flight.es_externo && flight.estado === "EN_VUELO";
   const canEditMeta = flight.estado !== "CANCELADO";
 
   const missingAssignment =
@@ -216,9 +221,8 @@ export function FlightActionsBar({
               ¿Iniciar vuelo #{flight.folio}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              El vuelo pasa a estado <strong>EN_VUELO</strong>. El piloto podrá
-              capturar tacómetros por escala. Asegúrate de que ya hizo el check
-              pre-vuelo.
+              Vuelo con operador <strong>externo</strong> (sin tacómetros en la
+              app): su estado se marca a mano. Pasa a <strong>EN_VUELO</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -245,9 +249,9 @@ export function FlightActionsBar({
               ¿Cerrar vuelo #{flight.folio}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Marca el vuelo como <strong>COMPLETADO</strong>. Después solo se
-              podrán registrar cobros y emitir factura. Confirma que el piloto
-              capturó todos los tacómetros antes de cerrar.
+              Vuelo con operador <strong>externo</strong>: márcalo como{" "}
+              <strong>COMPLETADO</strong> para que entre al cierre. Después solo
+              se podrán registrar cobros y emitir factura.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
