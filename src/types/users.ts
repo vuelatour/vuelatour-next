@@ -4,7 +4,8 @@ import type { EstadoUsuario, Rol } from "./me";
 export interface User {
   id: string;
   supabase_auth_id: string | null;
-  email: string;
+  /** Null en pilotos externos sin correo de contacto. */
+  email: string | null;
   nombre: string;
   rol: Rol;
   estado: EstadoUsuario;

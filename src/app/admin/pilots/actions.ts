@@ -29,9 +29,11 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
 }
 
 /**
- * Crea un usuario con rol=PILOTO y estado=INVITADO. Cuando entre por primera
- * vez con Google se le enlazará el supabase_auth_id automáticamente y queda
- * como ACTIVO cuando un admin lo apruebe.
+ * Alta de piloto. Dos flujos según es_piloto_externo:
+ * - Base (app móvil): usuario INVITADO con email obligatorio; al entrar con
+ *   Google se enlaza su supabase_auth_id y un admin lo activa.
+ * - EXTERNO: freelance SIN acceso — POST /v1/pilots/externo lo deja ACTIVO
+ *   directo, sin invitación por correo; la oficina captura tacos y gastos.
  */
 export async function invitePilotAction(raw: unknown): Promise<ActionResult<User>> {
   const parsed = InvitePilotSchema.safeParse(raw);
@@ -39,6 +41,19 @@ export async function invitePilotAction(raw: unknown): Promise<ActionResult<User
     return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
   }
   try {
+    if (parsed.data.es_piloto_externo) {
+      const created = await apiServer<User>("/v1/pilots/externo", {
+        method: "POST",
+        body: stripEmpty({
+          nombre: parsed.data.nombre,
+          email: parsed.data.email,
+          telefono: parsed.data.telefono,
+        }),
+      });
+      revalidatePath("/admin/pilots");
+      revalidatePath("/admin/users");
+      return { ok: true, data: created };
+    }
     const body = stripEmpty({ ...parsed.data, rol: "PILOTO", estado: "INVITADO" });
     const created = await apiServer<User>("/v1/users", {
       method: "POST",

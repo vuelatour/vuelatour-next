@@ -86,7 +86,11 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
               matricula: a.matricula,
               modelo: a.modelo,
             }))}
-            pilots={pilotsRes.data.map((p) => ({ id: p.id, nombre: p.nombre }))}
+            pilots={pilotsRes.data.map((p) => ({
+              id: p.id,
+              nombre: p.nombre,
+              es_piloto_externo: p.es_piloto_externo,
+            }))}
           />
         </div>
       </div>

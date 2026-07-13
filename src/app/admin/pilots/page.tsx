@@ -177,7 +177,13 @@ function PilotCard({ pilot }: { pilot: PilotListItem }) {
           </div>
         </div>
 
-        <AccessToggle id={pilot.id} estado={pilot.estado} size="sm" />
+        {pilot.es_piloto_externo ? (
+          <p className="text-xs text-muted-foreground rounded-lg border border-border px-3 py-2">
+            Sin acceso al sistema: la oficina captura sus tacómetros y gastos.
+          </p>
+        ) : (
+          <AccessToggle id={pilot.id} estado={pilot.estado} size="sm" />
+        )}
 
         <div className="grid grid-cols-4 gap-2 pt-2 border-t border-border">
           <Metric icon={PaperAirplaneIcon} value={pilot.stats.vuelos_mes} label="vuelos mes" />

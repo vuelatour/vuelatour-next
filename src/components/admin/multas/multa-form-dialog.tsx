@@ -33,7 +33,7 @@ export function MultaFormDialog({
   onOpenChange: (v: boolean) => void;
   multa?: Multa;
   aircraft: { id: string; matricula: string }[];
-  pilots: { id: string; nombre: string }[];
+  pilots: { id: string; nombre: string; es_piloto_externo?: boolean }[];
 }) {
   const [pending, startTransition] = useTransition();
   const [aeronaveId, setAeronaveId] = useState(multa?.aeronave_id ?? "");
@@ -101,7 +101,10 @@ export function MultaFormDialog({
             <SearchableSelect
               options={[
                 { value: "", label: "Sin piloto" },
-                ...pilots.map((p) => ({ value: p.id, label: p.nombre })),
+                ...pilots.map((p) => ({
+                  value: p.id,
+                  label: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
+                })),
               ]}
               value={pilotoId}
               onChange={setPilotoId}

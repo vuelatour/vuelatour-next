@@ -32,6 +32,7 @@ export function InvitePilotDialog() {
     reset,
     watch,
     setValue,
+    clearErrors,
     formState: { errors },
   } = useForm<InvitePilotValues>({
     resolver: zodResolver(InvitePilotSchema),
@@ -45,11 +46,17 @@ export function InvitePilotDialog() {
     },
   });
 
+  const esExterno = watch("es_piloto_externo") ?? false;
+
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
       const result = await invitePilotAction(values);
       if (result.ok) {
-        toast.success("Piloto invitado. Ya puede iniciar sesión con Google.");
+        toast.success(
+          values.es_piloto_externo
+            ? "Piloto externo registrado. Ya puedes asignarle vuelos; la oficina captura sus tacómetros y gastos."
+            : "Piloto invitado. Ya puede iniciar sesión con Google.",
+        );
         reset();
         setOpen(false);
       } else if (result.fieldErrors) {
@@ -70,13 +77,22 @@ export function InvitePilotDialog() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Invitar piloto</DialogTitle>
+          <DialogTitle>{esExterno ? "Registrar piloto externo" : "Invitar piloto"}</DialogTitle>
           <DialogDescription>
-            Crea el registro del piloto antes de que se loguee por primera vez. Queda en estado
-            <span className="font-mono mx-1 px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-xs">
-              INVITADO
-            </span>
-            hasta que ingrese con Google y un admin lo active.
+            {esExterno ? (
+              <>
+                Freelance sin acceso al sistema: queda ACTIVO al instante para asignarle
+                vuelos. Sus tacómetros y gastos los captura la oficina desde el admin.
+              </>
+            ) : (
+              <>
+                Crea el registro del piloto antes de que se loguee por primera vez. Queda en estado
+                <span className="font-mono mx-1 px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-xs">
+                  INVITADO
+                </span>
+                hasta que ingrese con Google y un admin lo active.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -87,8 +103,12 @@ export function InvitePilotDialog() {
 
           <Field
             label="Correo electrónico"
-            required
-            hint="Debe coincidir con su cuenta de Google"
+            required={!esExterno}
+            hint={
+              esExterno
+                ? "Opcional, solo contacto: NO le da acceso al sistema"
+                : "Debe coincidir con su cuenta de Google"
+            }
             error={errors.email?.message}
           >
             <Input
@@ -96,7 +116,7 @@ export function InvitePilotDialog() {
               autoCapitalize="off"
               autoCorrect="off"
               {...register("email")}
-              placeholder="piloto@vuelatour.com"
+              placeholder={esExterno ? "Opcional" : "piloto@vuelatour.com"}
             />
           </Field>
 
@@ -107,45 +127,53 @@ export function InvitePilotDialog() {
                 onChange={(v) => setValue("telefono", v, { shouldValidate: true, shouldDirty: true })}
               />
             </Field>
-            <Field
-              label="Terminación tarjeta"
-              hint="4 dígitos"
-              error={errors.tarjeta_terminacion?.message}
-            >
-              <Input
-                maxLength={4}
-                {...register("tarjeta_terminacion")}
-                className="font-mono"
-                placeholder="1234"
-              />
-            </Field>
+            {!esExterno && (
+              <Field
+                label="Terminación tarjeta"
+                hint="4 dígitos"
+                error={errors.tarjeta_terminacion?.message}
+              >
+                <Input
+                  maxLength={4}
+                  {...register("tarjeta_terminacion")}
+                  className="font-mono"
+                  placeholder="1234"
+                />
+              </Field>
+            )}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div className="space-y-0.5">
               <Label className="text-sm font-medium">Piloto externo</Label>
               <p className="text-xs text-muted-foreground">
-                Marcar si NO usa la app móvil (Itzel sube sus tacómetros).
+                Freelance sin usuario ni app: la oficina captura sus tacómetros y gastos.
               </p>
             </div>
             <Switch
-              checked={watch("es_piloto_externo") ?? false}
-              onCheckedChange={(c) => setValue("es_piloto_externo", c)}
+              checked={esExterno}
+              onCheckedChange={(c) => {
+                setValue("es_piloto_externo", c);
+                // El requisito de email depende del modo: limpiar el error viejo.
+                if (c) clearErrors("email");
+              }}
             />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
-            <div className="space-y-0.5">
-              <Label className="text-sm font-medium">Fondo de caja chica</Label>
-              <p className="text-xs text-muted-foreground">
-                Marca si tendrá asignado fondo administrado por Mary.
-              </p>
+          {!esExterno && (
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">Fondo de caja chica</Label>
+                <p className="text-xs text-muted-foreground">
+                  Marca si tendrá asignado fondo administrado por Mary.
+                </p>
+              </div>
+              <Switch
+                checked={watch("tiene_fondo_caja") ?? false}
+                onCheckedChange={(c) => setValue("tiene_fondo_caja", c)}
+              />
             </div>
-            <Switch
-              checked={watch("tiene_fondo_caja") ?? false}
-              onCheckedChange={(c) => setValue("tiene_fondo_caja", c)}
-            />
-          </div>
+          )}
 
           <DialogFooter>
             <Button
@@ -157,7 +185,11 @@ export function InvitePilotDialog() {
               Cancelar
             </Button>
             <Button type="submit" disabled={pending}>
-              {pending ? "Invitando…" : "Invitar"}
+              {pending
+                ? "Guardando…"
+                : esExterno
+                  ? "Registrar externo"
+                  : "Invitar"}
             </Button>
           </DialogFooter>
         </form>

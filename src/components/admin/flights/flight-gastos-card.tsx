@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
+import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { fmtDateOnly } from "@/lib/datetime";
 import type { Gasto } from "@/types/expenses";
 
@@ -44,11 +45,18 @@ export function FlightGastosCard({
   fotoUrls,
   aircraft,
   providers,
+  vueloId,
+  vueloFolio,
+  aeronaveId,
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  /** Para capturar un gasto YA ligado a este vuelo (ej. honorario del piloto externo). */
+  vueloId?: string;
+  vueloFolio?: number;
+  aeronaveId?: string | null;
 }) {
   // Totales por moneda (no se mezclan MXN y USD).
   const totales = new Map<string, number>();
@@ -70,6 +78,16 @@ export function FlightGastosCard({
               .
             </CardDescription>
           </div>
+          <div className="flex items-center gap-3">
+            {vueloId && (
+              <ExpenseCreateDialog
+                aircraft={aircraft}
+                providers={providers}
+                defaultVueloId={vueloId}
+                defaultVueloFolio={vueloFolio}
+                defaultAeronaveId={aeronaveId ?? undefined}
+              />
+            )}
           {gastos.length > 0 && (
             <div className="text-right">
               {[...totales.entries()].map(([moneda, total]) => (
@@ -82,6 +100,7 @@ export function FlightGastosCard({
               </p>
             </div>
           )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">

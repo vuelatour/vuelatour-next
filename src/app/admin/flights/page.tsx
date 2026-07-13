@@ -118,7 +118,10 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
           id: a.id,
           label: `${a.matricula} — ${a.modelo}`,
         }))}
-        pilots={pilotsRes.data.map((p) => ({ id: p.id, nombre: p.nombre }))}
+        pilots={pilotsRes.data.map((p) => ({
+          id: p.id,
+          nombre: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
+        }))}
         initial={{
           estado: sp.estado ?? "",
           piloto_id: sp.piloto_id ?? "",

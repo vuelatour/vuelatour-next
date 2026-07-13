@@ -153,7 +153,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   }));
   const pilotOptions = pilotsRes.data.map((p) => ({
     id: p.id,
-    nombre: p.nombre,
+    // El sufijo distingue a los freelance sin app en TODOS los selects de
+    // asignación (vuelo, tramo y meta): la oficina captura por ellos.
+    nombre: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
     email: p.email,
   }));
 
@@ -435,6 +437,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             flightId={snapshot.id}
             escalas={snapshot.escalas}
             tacoPhotos={tacoPhotos}
+            pilotoExterno={piloto?.es_piloto_externo === true}
           />
 
           {/* Cobros */}
@@ -455,6 +458,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             fotoUrls={gastoFotoUrls}
             aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
             providers={providerOptions}
+            vueloId={snapshot.id}
+            vueloFolio={snapshot.folio}
+            aeronaveId={snapshot.aeronave_id}
           />
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}

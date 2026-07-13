@@ -165,7 +165,9 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
             <div className="space-y-0.5">
               <Label className="text-sm font-medium">Piloto externo</Label>
               <p className="text-xs text-muted-foreground">
-                Marcar si no tiene app móvil (Itzel sube sus tacómetros).
+                Freelance SIN acceso al sistema (no puede iniciar sesión ni recibe
+                avisos); la oficina captura sus tacómetros y gastos. Al desmarcar,
+                vuelve al flujo normal de invitación.
               </p>
             </div>
             <Switch

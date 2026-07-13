@@ -35,7 +35,7 @@ import {
 export function MarkRestButton({
   pilots,
 }: {
-  pilots: { id: string; nombre: string }[];
+  pilots: { id: string; nombre: string; es_piloto_externo?: boolean }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -88,7 +88,10 @@ export function MarkRestButton({
           <div className="space-y-3">
             <Field label="Piloto" required>
               <SearchableSelect
-                options={pilots.map((p) => ({ value: p.id, label: p.nombre }))}
+                options={pilots.map((p) => ({
+                  value: p.id,
+                  label: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
+                }))}
                 value={pilotoId}
                 onChange={setPilotoId}
                 placeholder="Selecciona piloto"

@@ -91,7 +91,13 @@ export default async function PilotDetailPage({
             </div>
           </div>
         </div>
-        <AccessToggle id={pilot.id} estado={pilot.estado} />
+        {pilot.es_piloto_externo ? (
+          <p className="text-xs text-muted-foreground rounded-lg border border-border px-3 py-2">
+            Piloto externo: sin acceso al sistema.
+          </p>
+        ) : (
+          <AccessToggle id={pilot.id} estado={pilot.estado} />
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

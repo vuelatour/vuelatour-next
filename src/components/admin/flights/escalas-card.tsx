@@ -43,12 +43,15 @@ interface EscalasCardProps {
   flightId: string;
   escalas: FlightEscala[];
   tacoPhotos?: TacoPhoto[];
+  /** Piloto EXTERNO sin app (doc 3.7): la oficina captura las lecturas aquí. */
+  pilotoExterno?: boolean;
 }
 
 export function EscalasCard({
   flightId,
   escalas,
   tacoPhotos = [],
+  pilotoExterno = false,
 }: EscalasCardProps) {
   const photosByEscala = new Map(tacoPhotos.map((p) => [p.escala_id, p]));
 
@@ -61,7 +64,9 @@ export function EscalasCard({
             <CardDescription className="text-xs">
               {escalas.length === 0
                 ? "Sin tramos registrados todavía."
-                : "Lecturas, fotos y revisiones de cada tramo (las captura el piloto). La ruta, fechas y tramos se gestionan arriba en «Asignación por tramo»."}
+                : pilotoExterno
+                  ? "Piloto EXTERNO (sin app): la oficina captura aquí las lecturas de cada tramo con «Capturar» — el vuelo avanza solo (EN VUELO → COMPLETADO) al guardarlas."
+                  : "Lecturas, fotos y revisiones de cada tramo (las captura el piloto). La ruta, fechas y tramos se gestionan arriba en «Asignación por tramo»."}
             </CardDescription>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -127,6 +132,7 @@ export function EscalasCard({
                             flightId={flightId}
                             escala={esc}
                             modo="correccion"
+                            captura={pilotoExterno}
                           />
                         )}
                       </div>
@@ -288,11 +294,14 @@ function TacoConfirmDialog({
   flightId,
   escala,
   modo = "revision",
+  captura = false,
 }: {
   flightId: string;
   escala: FlightEscala;
   /** revision: flujo amarillo→verde; correccion: editar una lectura ya guardada. */
   modo?: "revision" | "correccion";
+  /** Piloto externo: el botón se vuelve un CTA visible de captura de oficina. */
+  captura?: boolean;
 }) {
   const esCorreccion = modo === "correccion";
   const router = useRouter();
@@ -348,6 +357,18 @@ function TacoConfirmDialog({
   return (
     <>
       {esCorreccion ? (
+        captura ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen(true)}
+            className="h-6 gap-1 px-2 text-[11px]"
+            title="Capturar las lecturas de tacómetro de este tramo (piloto externo: las sube la oficina)"
+          >
+            <PencilSquareIcon className="h-3.5 w-3.5" />
+            Capturar lecturas
+          </Button>
+        ) : (
         <Button
           size="sm"
           variant="ghost"
@@ -358,6 +379,7 @@ function TacoConfirmDialog({
           <PencilSquareIcon className="h-3.5 w-3.5" />
           Corregir
         </Button>
+        )
       ) : (
         <Button
           size="sm"

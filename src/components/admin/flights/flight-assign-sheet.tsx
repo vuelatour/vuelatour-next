@@ -35,7 +35,7 @@ interface AircraftOption {
 interface PilotOption {
   id: string;
   nombre: string;
-  email: string;
+  email: string | null;
 }
 
 interface AssignFormValues {
@@ -104,7 +104,7 @@ export function FlightAssignSheet({
   const pilotOptions = pilots
     .map((p) => {
       const d = dispoById.get(p.id);
-      let description = p.email;
+      let description = p.email ?? undefined;
       let rank = 0;
       if (d) {
         if (d.conflicto) {

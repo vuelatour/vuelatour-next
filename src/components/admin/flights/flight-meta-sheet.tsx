@@ -25,7 +25,7 @@ import type { FlightListItem } from "@/types/flights";
 interface PilotOption {
   id: string;
   nombre: string;
-  email: string;
+  email: string | null;
 }
 
 type EstadoPermiso = "no_aplica" | "pendiente" | "emitido";
@@ -183,7 +183,7 @@ export function FlightMetaSheet({
                 ...pilots.map((p) => ({
                   value: p.id,
                   label: p.nombre,
-                  description: p.email,
+                  description: p.email ?? undefined,
                 })),
               ]}
               value={pilotoId}

@@ -30,19 +30,21 @@ import { Field } from "@/components/admin/form-field";
 import { ImagePreview } from "@/components/admin/image-preview";
 
 const CATEGORIAS = [
-  "GAS",
-  "ATERRIZAJE",
-  "OPERACIONES",
-  "TUAS",
-  "FBO",
-  "COMIDA",
-  "HOTEL",
-  "TAXI",
-  "REFACCION",
-  "PERMISO",
-  "FIJO",
-  "OTRO",
-].map((c) => ({ value: c, label: c }));
+  ...[
+    "GAS",
+    "ATERRIZAJE",
+    "OPERACIONES",
+    "TUAS",
+    "FBO",
+    "COMIDA",
+    "HOTEL",
+    "TAXI",
+    "REFACCION",
+    "PERMISO",
+  ].map((c) => ({ value: c, label: c })),
+  { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
+  ...["FIJO", "OTRO"].map((c) => ({ value: c, label: c })),
+];
 
 const MEDIOS = [
   { value: "EFECTIVO", label: "Efectivo (caja chica)" },
@@ -272,6 +274,22 @@ export function ExpenseVerifyDialog({
             </Field>
           </div>
 
+          {watch("moneda") === "MXN" && (
+            <Field
+              label="Tipo de cambio (MXN por USD)"
+              hint="Sin TC, el gasto queda fuera del balance USD del reparto (bloquea el pre-cierre)."
+            >
+              <Input
+                type="number"
+                step="0.0001"
+                min="0"
+                inputMode="decimal"
+                placeholder="Ej. 18.50"
+                {...register("tc_gasto")}
+              />
+            </Field>
+          )}
+
           <Field label="Avión (resuelve pendiente)">
             <SearchableSelect
               options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
@@ -375,6 +393,7 @@ function defaults(g: Gasto): GastoVerifyValues {
     estatus_comprobante: g.estatus_comprobante,
     aeronave_id: g.aeronave_id ?? "",
     proveedor_id: g.proveedor_id ?? "",
+    tc_gasto: g.tc_gasto != null ? String(g.tc_gasto) : "",
     notas: g.notas ?? "",
   };
 }

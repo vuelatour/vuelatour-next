@@ -79,11 +79,14 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
             <PencilIcon className="h-4 w-4" />
             Editar
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setOpenReset(true)} className="gap-2">
-            <KeyIcon className="h-4 w-4" />
-            {user.supabase_auth_id ? "Restablecer contraseña" : "Crear contraseña"}
-          </DropdownMenuItem>
-          {user.estado !== "INACTIVO" && (
+          {/* Externos (doc 3.7): sin acceso — ni contraseña ni invitación. */}
+          {!user.es_piloto_externo && (
+            <DropdownMenuItem onClick={() => setOpenReset(true)} className="gap-2">
+              <KeyIcon className="h-4 w-4" />
+              {user.supabase_auth_id ? "Restablecer contraseña" : "Crear contraseña"}
+            </DropdownMenuItem>
+          )}
+          {user.estado !== "INACTIVO" && !user.es_piloto_externo && (
             <DropdownMenuItem
               onClick={(e) => {
                 e.preventDefault();

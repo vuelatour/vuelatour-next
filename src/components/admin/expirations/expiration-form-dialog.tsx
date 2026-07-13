@@ -36,6 +36,7 @@ export interface AircraftOption {
 export interface PilotOption {
   id: string;
   nombre: string;
+  es_piloto_externo?: boolean;
 }
 export interface EngineOption {
   id: string;
@@ -164,7 +165,10 @@ export function ExpirationFormDialog({
           {ambito === "PILOTO" && (
             <Field label="Piloto" required error={errors.piloto_id?.message}>
               <SearchableSelect
-                options={pilots.map((p) => ({ value: p.id, label: p.nombre }))}
+                options={pilots.map((p) => ({
+                  value: p.id,
+                  label: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
+                }))}
                 value={watch("piloto_id") ?? ""}
                 onChange={(v) => setValue("piloto_id", v)}
                 placeholder="Selecciona piloto"

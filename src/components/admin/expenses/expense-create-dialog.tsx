@@ -21,18 +21,21 @@ import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import { Field } from "@/components/admin/form-field";
 
 const CATEGORIAS = [
-  "GAS",
-  "OPERACIONES",
-  "TUAS",
-  "FBO",
-  "COMIDA",
-  "HOTEL",
-  "TAXI",
-  "REFACCION",
-  "PERMISO",
-  "FIJO",
-  "OTRO",
-].map((c) => ({ value: c, label: c }));
+  { value: "GAS", label: "GAS" },
+  { value: "OPERACIONES", label: "OPERACIONES" },
+  { value: "TUAS", label: "TUAS" },
+  { value: "FBO", label: "FBO" },
+  { value: "COMIDA", label: "COMIDA" },
+  { value: "HOTEL", label: "HOTEL" },
+  { value: "TAXI", label: "TAXI" },
+  { value: "REFACCION", label: "REFACCION" },
+  { value: "PERMISO", label: "PERMISO" },
+  // Honorario del freelance que voló el avión (doc 3.7): resta en el reparto
+  // como gasto directo del vuelo.
+  { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
+  { value: "FIJO", label: "FIJO" },
+  { value: "OTRO", label: "OTRO" },
+];
 
 const MEDIOS = [
   { value: "TRANSFERENCIA", label: "Transferencia" },
@@ -53,16 +56,22 @@ function hoyCancun(): string {
   return new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-function emptyValues(): GastoCreateValues {
+function emptyValues(defaults?: {
+  vueloId?: string;
+  aeronaveId?: string;
+  categoria?: string;
+}): GastoCreateValues {
   return {
-    categoria: "OPERACIONES",
+    categoria: defaults?.categoria ?? "OPERACIONES",
     monto: "",
     moneda: "MXN",
     fecha_gasto: hoyCancun(),
     medio_pago: "TRANSFERENCIA",
     estatus_comprobante: "SIN_COMPROBANTE",
-    aeronave_id: "",
+    aeronave_id: defaults?.aeronaveId ?? "",
+    vuelo_id: defaults?.vueloId ?? "",
     proveedor_id: "",
+    tc_gasto: "",
     notas: "",
   };
 }
@@ -71,14 +80,28 @@ function emptyValues(): GastoCreateValues {
 export function ExpenseCreateDialog({
   aircraft,
   providers,
+  defaultVueloId,
+  defaultVueloFolio,
+  defaultAeronaveId,
+  defaultCategoria,
 }: {
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  /** Con vuelo: el gasto queda LIGADO (reporte por vuelo, reparto, pre-cierre). */
+  defaultVueloId?: string;
+  defaultVueloFolio?: number;
+  defaultAeronaveId?: string;
+  defaultCategoria?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const formDefaults = {
+    vueloId: defaultVueloId,
+    aeronaveId: defaultAeronaveId,
+    categoria: defaultCategoria,
+  };
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoCreateValues>({
-    defaultValues: emptyValues(),
+    defaultValues: emptyValues(formDefaults),
   });
 
   const onSubmit = handleSubmit((values) => {
@@ -86,7 +109,7 @@ export function ExpenseCreateDialog({
       const result = await createGastoAction(values);
       if (result.ok) {
         toast.success("Gasto registrado");
-        reset(emptyValues());
+        reset(emptyValues(formDefaults));
         setOpen(false);
       } else if (result.fieldErrors) {
         const f = Object.keys(result.fieldErrors)[0];
@@ -101,7 +124,7 @@ export function ExpenseCreateDialog({
     <>
       <Button variant="outline" onClick={() => setOpen(true)} className="gap-2">
         <PlusIcon className="h-4 w-4" />
-        Nuevo gasto
+        {defaultVueloId ? "Registrar gasto" : "Nuevo gasto"}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -109,8 +132,17 @@ export function ExpenseCreateDialog({
           <DialogHeader>
             <DialogTitle>Nuevo gasto (oficina)</DialogTitle>
             <DialogDescription>
-              Captura manual de un gasto operativo. Queda marcado como subido por
-              administración; si la factura llega después, se amarra en Facturas recibidas.
+              {defaultVueloId ? (
+                <>
+                  Se liga al vuelo{defaultVueloFolio != null ? ` #${defaultVueloFolio}` : ""}:
+                  entra a su reporte y resta en el reparto (ej. honorario del piloto externo).
+                </>
+              ) : (
+                <>
+                  Captura manual de un gasto operativo. Queda marcado como subido por
+                  administración; si la factura llega después, se amarra en Facturas recibidas.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -140,6 +172,22 @@ export function ExpenseCreateDialog({
                 <Input type="date" {...register("fecha_gasto")} />
               </Field>
             </div>
+
+            {watch("moneda") === "MXN" && (
+              <Field
+                label="Tipo de cambio (MXN por USD)"
+                hint="Sin TC, el gasto queda fuera del balance USD del reparto y bloquea el pre-cierre."
+              >
+                <Input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  inputMode="decimal"
+                  placeholder="Ej. 18.50"
+                  {...register("tc_gasto")}
+                />
+              </Field>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Categoría">

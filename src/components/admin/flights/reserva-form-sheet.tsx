@@ -42,6 +42,8 @@ interface AircraftOption {
 interface PilotOption {
   id: string;
   nombre: string;
+  /** Freelance sin app (doc 3.7): la oficina captura sus tacos y gastos. */
+  es_piloto_externo?: boolean;
 }
 
 /**
@@ -324,7 +326,10 @@ export function ReservaFormSheet({
           {/* 3. Piloto */}
           <Field label="Piloto" required>
             <SearchableSelect
-              options={pilots.map((p) => ({ value: p.id, label: p.nombre }))}
+              options={pilots.map((p) => ({
+                value: p.id,
+                label: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
+              }))}
               value={pilotoId}
               onChange={setPilotoId}
               placeholder="Selecciona piloto"

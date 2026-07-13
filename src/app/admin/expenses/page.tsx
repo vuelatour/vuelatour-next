@@ -65,6 +65,8 @@ const CATEGORIAS_OPERATIVAS = new Set([
   "TUAS",
   "FBO",
   "PERMISO",
+  // Honorario del piloto externo: es costo de operar el vuelo.
+  "PILOTO_EXTERNO",
 ]);
 
 export default async function ExpensesPage({
@@ -189,7 +191,7 @@ export default async function ExpensesPage({
           />
           <GastosCard
             titulo="Gastos operativos"
-            descripcion="Combustible, pistas/aterrizajes, TUAS, FBO y permisos."
+            descripcion="Combustible, pistas/aterrizajes, TUAS, FBO, permisos y piloto externo."
             gastos={gastos.filter((g) => CATEGORIAS_OPERATIVAS.has(g.categoria))}
             aircraft={aircraft}
             providers={providers}

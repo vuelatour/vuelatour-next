@@ -41,7 +41,7 @@ interface AircraftOption {
 interface PilotOption {
   id: string;
   nombre: string;
-  email: string;
+  email: string | null;
 }
 
 interface FlightActionsBarProps {
