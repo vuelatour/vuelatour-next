@@ -49,7 +49,7 @@ export default async function InventoryPage() {
           <p className="text-sm text-muted-foreground">Bodega</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado {usd(valor_total_usd)} (FIFO).
+            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado {usd(valor_total_usd)} USD (FIFO).
             El consumo se carga al avión al registrar la salida.
           </p>
         </div>
@@ -137,9 +137,9 @@ export default async function InventoryPage() {
                       {it.stock_minimo != null ? num(it.stock_minimo) : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {it.costo_fifo_actual ? usd(it.costo_fifo_actual) : "—"}
+                      {it.costo_fifo_actual ? `${usd(it.costo_fifo_actual)} USD` : "—"}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{usd(it.valor_usd)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{usd(it.valor_usd)} USD</TableCell>
                     <TableCell>
                       <ItemActions item={it} aircraft={aircraft} providers={providers} />
                     </TableCell>

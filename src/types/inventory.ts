@@ -30,6 +30,10 @@ export interface InventarioMovimiento {
   tipo: TipoMovimiento;
   cantidad: number;
   costo_unitario_usd: number;
+  /** Moneda en la que se CAPTURÓ el costo (la contabilidad interna es USD). */
+  moneda?: "MXN" | "USD";
+  costo_unitario_mxn?: number | null;
+  tc_usd_mxn?: number | null;
   aeronave_id: string | null;
   proveedor_id: string | null;
   fecha_movimiento: string;
