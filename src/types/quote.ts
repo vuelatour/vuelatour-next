@@ -50,6 +50,8 @@ export interface TramoBreakdown {
 
 export interface CalculateQuoteRequest {
   aeronave_id: string;
+  /** Cliente: si tiene tarifa preferencial para la aeronave, esa manda sobre la default. */
+  cliente_id?: string;
   tipo?: TipoVuelo;
   escalas?: EscalaInput[];
   ruta_id?: string | null;
@@ -104,11 +106,15 @@ export interface QuoteBreakdown {
     vuelo_hr: number;
     calzos_hr: number;
     cobrable_hr: number;
+    /** Vuelo corto: se facturó la hora completa (cobrable_hr = 1.0). */
+    minimo_hora_aplicado?: boolean;
   };
   tarifa: {
     tipo: TipoTarifa;
     usd_por_hora: number;
     proviene_de_override: boolean;
+    /** La tarifa aplicada es la preferencial pactada con el cliente para esta aeronave. */
+    preferencial_cliente?: boolean;
   };
   tuas: {
     usd_pax_default: number | undefined;

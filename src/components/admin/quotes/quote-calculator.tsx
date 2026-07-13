@@ -504,6 +504,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     if (!debounced.aeronave_id) return null;
     const base: CalculateQuoteRequest = {
       aeronave_id: debounced.aeronave_id,
+      // Con cliente, el motor aplica su tarifa preferencial si la tiene pactada.
+      cliente_id: debounced.cliente_id || undefined,
       tipo: "MULTIESCALA",
       tipo_tarifa: debounced.tipo_tarifa,
       pasajeros: Number(debounced.pasajeros) || 0,
@@ -715,8 +717,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   };
 
   const motivoTrim = values.motivo?.trim() ?? "";
+  // El cliente ahora AFECTA el precio (tarifa preferencial): no se puede
+  // guardar mientras el preview corresponda a otro cliente o siga recalculando
+  // — lo persistido debe ser exactamente lo que el operador vio.
+  const previewFresco =
+    !loading && calcPayload?.cliente_id === (values.cliente_id || undefined);
   const canSave =
     !capacidadExcedida &&
+    previewFresco &&
     (isRevise
       ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
       : !!values.cliente_id && !!calcPayload && !!breakdown && !error);
@@ -1889,6 +1897,11 @@ function Preview({
               value={`${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`}
               bold
             />
+            {breakdown.tiempos.minimo_hora_aplicado && (
+              <p className="text-xs text-amber-600">
+                Vuelo corto: se cobra la hora completa (mínimo 1 hr).
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -1900,8 +1913,20 @@ function Preview({
             <Row
               label="USD / hr"
               value={fmtUsd(breakdown.tarifa.usd_por_hora)}
-              hint={breakdown.tarifa.proviene_de_override ? "Override manual" : "Del avión"}
+              hint={
+                breakdown.tarifa.proviene_de_override
+                  ? "Override manual"
+                  : breakdown.tarifa.preferencial_cliente
+                    ? "Preferencial del cliente"
+                    : "Del avión"
+              }
             />
+            {breakdown.tarifa.preferencial_cliente && (
+              <p className="text-xs text-emerald-600">
+                Este cliente tiene tarifa preferencial pactada para este avión; manda
+                sobre la tarifa {breakdown.tarifa.tipo === "PUBLICO" ? "público" : "broker"} default.
+              </p>
+            )}
             <Row
               label="Subtotal"
               value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}

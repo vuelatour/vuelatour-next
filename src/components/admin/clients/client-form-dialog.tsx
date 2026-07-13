@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -22,6 +22,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createClientAction,
   updateClientAction,
+  getClientTarifasAction,
+  listAircraftTarifaOptionsAction,
+  setClientTarifasAction,
+  type AeronaveTarifaOption,
 } from "@/app/admin/clients/actions";
 import { ClientFormSchema, type ClientFormValues } from "@/app/admin/clients/schema";
 import type { Client } from "@/types/clients";
@@ -59,19 +63,109 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
     defaultValues: defaults(initialClient),
   });
 
+  // Tarifa preferencial por avión (USD/hr): vacío = usa la default del avión.
+  const [aircraft, setAircraft] = useState<AeronaveTarifaOption[]>([]);
+  const [tarifas, setTarifas] = useState<Record<string, string>>({});
+  // Matrícula por aeronave según el GET de tarifas: pinta también las pactadas
+  // sobre aviones hoy INACTIVOS (si no, quedarían invisibles pero vigentes).
+  const [tarifasMeta, setTarifasMeta] = useState<Record<string, string>>({});
+  // Candado: al EDITAR no se manda el PUT de tarifas hasta tener cargado el
+  // set actual — si no, guardar rápido las borraría (el PUT reemplaza todo).
+  const [tarifasReady, setTarifasReady] = useState(false);
+  const [tarifasError, setTarifasError] = useState(false);
+  // Si el PUT de tarifas falla DESPUÉS de crear el cliente, el reintento debe
+  // actualizar al ya creado, no crear un duplicado.
+  const createdIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (open) reset(defaults(initialClient));
+    if (!open) return;
+    reset(defaults(initialClient));
+    setTarifas({});
+    setTarifasMeta({});
+    setTarifasReady(!initialClient);
+    setTarifasError(false);
+    createdIdRef.current = null;
+    let cancelled = false;
+    listAircraftTarifaOptionsAction().then((r) => {
+      if (!cancelled && r.ok && r.data) setAircraft(r.data);
+    });
+    if (initialClient) {
+      getClientTarifasAction(initialClient.id).then((r) => {
+        if (cancelled) return;
+        if (!r.ok || !r.data) {
+          setTarifasError(true);
+          return;
+        }
+        setTarifas(
+          Object.fromEntries(
+            r.data.map((t) => [t.aeronave_id, String(t.tarifa_hora_usd)]),
+          ),
+        );
+        setTarifasMeta(
+          Object.fromEntries(
+            r.data.map((t) => [t.aeronave_id, t.aeronave?.matricula ?? "Avión"]),
+          ),
+        );
+        setTarifasReady(true);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [open, initialClient, reset]);
 
   const esBroker = watch("es_broker");
+  // Tarifas pactadas sobre aviones que ya no están activos: se muestran aparte
+  // para poder verlas y quitarlas (si el avión se reactiva, volverían a aplicar).
+  const tarifasInactivas = Object.keys(tarifas).filter(
+    (id) => tarifas[id]?.trim() && !aircraft.some((a) => a.id === id),
+  );
 
   const onSubmit = handleSubmit((values) => {
+    // Solo cuentan las filas con monto; se valida ANTES de guardar el cliente.
+    const tarifasPayload: Array<{ aeronave_id: string; tarifa_hora_usd: number }> = [];
+    for (const [aeronaveId, raw] of Object.entries(tarifas)) {
+      if (!raw.trim()) continue;
+      const monto = Number(raw);
+      if (!Number.isFinite(monto) || monto <= 0) {
+        const av = aircraft.find((a) => a.id === aeronaveId);
+        toast.error(
+          `Tarifa preferencial inválida para ${av?.matricula ?? tarifasMeta[aeronaveId] ?? "avión"}`,
+        );
+        return;
+      }
+      tarifasPayload.push({ aeronave_id: aeronaveId, tarifa_hora_usd: monto });
+    }
+    // Nunca descartar en silencio lo tecleado: si el set actual no cargó, no
+    // se puede reemplazar sin riesgo de perder tarifas ya pactadas.
+    if (isEdit && !tarifasReady && tarifasPayload.length > 0) {
+      toast.error(
+        tarifasError
+          ? "No se pudieron cargar las tarifas actuales del cliente; reabre el formulario para guardar tarifas."
+          : "Las tarifas actuales siguen cargando; espera un momento y vuelve a guardar.",
+      );
+      return;
+    }
+
     startTransition(async () => {
-      const result = isEdit
-        ? await updateClientAction(initialClient!.id, values)
+      const existingId = isEdit ? initialClient!.id : createdIdRef.current;
+      const result = existingId
+        ? await updateClientAction(existingId, values)
         : await createClientAction(values);
 
       if (result.ok) {
+        const clienteId = existingId ?? result.data?.id ?? null;
+        if (!existingId && result.data) createdIdRef.current = result.data.id;
+        // Las tarifas se guardan aparte (reemplazan el set completo).
+        if (clienteId && tarifasReady && (tarifasPayload.length > 0 || isEdit)) {
+          const tarifasRes = await setClientTarifasAction(clienteId, tarifasPayload);
+          if (!tarifasRes.ok) {
+            toast.error(
+              `Cliente guardado, pero las tarifas preferenciales no: ${tarifasRes.error ?? "error desconocido"}. Vuelve a intentar guardar.`,
+            );
+            return;
+          }
+        }
         toast.success(isEdit ? "Cliente actualizado" : "Cliente creado");
         if (!isEdit && result.data) onCreated?.(result.data);
         onOpenChange(false);
@@ -150,6 +244,91 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
               onCheckedChange={(c) => setValue("es_broker", c)}
             />
           </div>
+
+          {aircraft.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <div>
+                <Label className="text-sm font-medium">
+                  Tarifa preferencial por avión (USD/hr)
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Pactada con este cliente: al cotizar manda sobre la tarifa default
+                  del avión y puede ser mayor o menor. Vacío = usa la default.
+                </p>
+              </div>
+              {isEdit && !tarifasReady && (
+                <p className={`text-xs ${tarifasError ? "text-destructive" : "text-muted-foreground"}`}>
+                  {tarifasError
+                    ? "No se pudieron cargar las tarifas actuales; reabre el formulario para editarlas."
+                    : "Cargando tarifas actuales…"}
+                </p>
+              )}
+              <div className="space-y-1.5">
+                {aircraft.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3">
+                    <div className="w-40 shrink-0">
+                      <p className="text-sm font-medium">{a.matricula}</p>
+                      {a.modelo && (
+                        <p className="text-[11px] text-muted-foreground truncate">{a.modelo}</p>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      min={0.01}
+                      step={0.01}
+                      inputMode="decimal"
+                      disabled={isEdit && !tarifasReady}
+                      placeholder={
+                        esBroker
+                          ? a.tarifa_hora_broker_usd
+                            ? `Default broker: $${a.tarifa_hora_broker_usd}`
+                            : "Sin tarifa broker"
+                          : a.tarifa_hora_pub_usd
+                            ? `Default: $${a.tarifa_hora_pub_usd}`
+                            : "Sin tarifa configurada"
+                      }
+                      value={tarifas[a.id] ?? ""}
+                      onChange={(e) =>
+                        setTarifas((prev) => ({ ...prev, [a.id]: e.target.value }))
+                      }
+                    />
+                  </div>
+                ))}
+                {/* Pactadas sobre aviones hoy inactivos: visibles para poder
+                    quitarlas (si el avión se reactiva, volverían a aplicar). */}
+                {tarifasInactivas.map((id) => (
+                  <div key={id} className="flex items-center gap-3">
+                    <div className="w-40 shrink-0">
+                      <p className="text-sm font-medium">{tarifasMeta[id] ?? "Avión"}</p>
+                      <p className="text-[11px] text-amber-600">Avión inactivo</p>
+                    </div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        inputMode="decimal"
+                        value={tarifas[id] ?? ""}
+                        onChange={(e) =>
+                          setTarifas((prev) => ({ ...prev, [id]: e.target.value }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setTarifas((prev) => ({ ...prev, [id]: "" }))
+                        }
+                      >
+                        Quitar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
