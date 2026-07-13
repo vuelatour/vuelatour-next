@@ -181,13 +181,35 @@ export default async function ConciliacionPage({
                     <TableCell className="text-right tabular-nums">{fmtMoney(m.monto)}</TableCell>
                     <TableCell>
                       {m.conciliado && m.gasto ? (
-                        <span className="text-sm text-emerald-600">
+                        // Verificable de un clic: al vuelo del gasto (donde se
+                        // ve su desglose) o, sin vuelo, a la lista de gastos.
+                        <Link
+                          href={
+                            m.gasto.vuelo_id
+                              ? `/admin/flights/${m.gasto.vuelo_id}`
+                              : "/admin/expenses"
+                          }
+                          className="text-sm text-emerald-600 hover:underline"
+                          title="Ver el gasto con el que se concilió"
+                        >
                           {m.gasto.categoria} · ${fmtMoney(m.gasto.monto)}
-                        </span>
+                          {m.gasto.vuelo?.folio != null && (
+                            <span className="text-muted-foreground"> · vuelo #{m.gasto.vuelo.folio}</span>
+                          )}
+                        </Link>
                       ) : m.conciliado && m.cobro_id ? (
-                        <span className="text-sm text-emerald-600">
-                          Cobro de vuelo
-                        </span>
+                        m.cobro?.vuelo_id ? (
+                          <Link
+                            href={`/admin/flights/${m.cobro.vuelo_id}`}
+                            className="text-sm text-emerald-600 hover:underline"
+                            title="Ver el vuelo cuyo cobro se concilió"
+                          >
+                            Cobro de vuelo
+                            {m.cobro.vuelo?.folio != null && <> #{m.cobro.vuelo.folio}</>}
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-emerald-600">Cobro de vuelo</span>
+                        )
                       ) : (
                         <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                           Pendiente
