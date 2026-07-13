@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -16,7 +16,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { createGastoAction } from "@/app/admin/expenses/actions";
+import {
+  createGastoAction,
+  buscarVuelosCercanosAction,
+  type VueloCercano,
+} from "@/app/admin/expenses/actions";
+import { fmtDateOnly } from "@/lib/datetime";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import { Field } from "@/components/admin/form-field";
@@ -99,6 +104,9 @@ export function ExpenseCreateDialog({
   // Factura/recibo adjunto (foto o PDF): se sube al bucket privado al guardar.
   const [factura, setFactura] = useState<File | null>(null);
   const facturaRef = useRef<HTMLInputElement>(null);
+  // Vuelos alrededor de la fecha del gasto (±15 días), para dejarlo LIGADO al
+  // vuelo desde el alta — pedido del cliente: los gastos viven en su vuelo.
+  const [vuelos, setVuelos] = useState<VueloCercano[]>([]);
   const formDefaults = {
     vueloId: defaultVueloId,
     aeronaveId: defaultAeronaveId,
@@ -107,6 +115,19 @@ export function ExpenseCreateDialog({
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoCreateValues>({
     defaultValues: emptyValues(formDefaults),
   });
+
+  const fechaGasto = watch("fecha_gasto");
+  useEffect(() => {
+    // Con vuelo prefijado (alta desde el detalle del vuelo) no hace falta lista.
+    if (!open || defaultVueloId) return;
+    let cancel = false;
+    buscarVuelosCercanosAction(fechaGasto).then((res) => {
+      if (!cancel && res.ok && res.data) setVuelos(res.data);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open, defaultVueloId, fechaGasto]);
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
@@ -223,6 +244,33 @@ export function ExpenseCreateDialog({
                 />
               </Field>
             </div>
+
+            {!defaultVueloId && (
+              <Field
+                label="Vuelo"
+                hint="Ligado al vuelo entra a su reporte y resta en el reparto; elige por folio, matrícula o ruta (±15 días de la fecha)."
+              >
+                <SearchableSelect
+                  options={[
+                    { value: "", label: "Sin vuelo" },
+                    ...vuelos.map((v) => ({
+                      value: v.id,
+                      label:
+                        `#${v.folio ?? "?"} · ${v.matricula ?? "sin avión"} · ${v.ruta ?? ""}` +
+                        (v.fecha ? ` · ${fmtDateOnly(v.fecha)}` : ""),
+                    })),
+                  ]}
+                  value={watch("vuelo_id")}
+                  onChange={(v) => {
+                    setValue("vuelo_id", v);
+                    // El avión del vuelo elegido se refleja de inmediato.
+                    const opt = vuelos.find((x) => x.id === v);
+                    if (opt?.aeronave_id) setValue("aeronave_id", opt.aeronave_id);
+                  }}
+                  placeholder="Busca por folio, matrícula o ruta"
+                />
+              </Field>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Medio de pago">
