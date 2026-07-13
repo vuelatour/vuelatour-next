@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PhoneField } from "@/components/admin/phone-field";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -124,7 +125,10 @@ export function ProviderFormDialog({ open, onOpenChange, initialProvider }: Prov
               <Input type="email" {...register("email")} />
             </Field>
             <Field label="Teléfono" error={errors.telefono?.message}>
-              <Input {...register("telefono")} />
+              <PhoneField
+                value={watch("telefono")}
+                onChange={(v) => setValue("telefono", v, { shouldValidate: true, shouldDirty: true })}
+              />
             </Field>
           </div>
 

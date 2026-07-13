@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PhoneField } from "@/components/admin/phone-field";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { invitePilotAction } from "@/app/admin/pilots/actions";
@@ -101,7 +102,10 @@ export function InvitePilotDialog() {
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Teléfono" error={errors.telefono?.message}>
-              <Input {...register("telefono")} placeholder="+52 998 ..." />
+              <PhoneField
+                value={watch("telefono")}
+                onChange={(v) => setValue("telefono", v, { shouldValidate: true, shouldDirty: true })}
+              />
             </Field>
             <Field
               label="Terminación tarjeta"

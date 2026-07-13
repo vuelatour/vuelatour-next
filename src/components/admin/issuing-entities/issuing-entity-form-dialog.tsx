@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PhoneField } from "@/components/admin/phone-field";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createIssuingEntityAction,
@@ -40,6 +41,8 @@ export function IssuingEntityFormDialog({ open, onOpenChange, initialEntity }: P
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<IssuingEntityFormValues>({
     resolver: zodResolver(IssuingEntityFormSchema),
@@ -119,7 +122,10 @@ export function IssuingEntityFormDialog({ open, onOpenChange, initialEntity }: P
               <Input type="email" {...register("email_facturacion")} />
             </Field>
             <Field label="Teléfono" error={errors.telefono?.message}>
-              <Input {...register("telefono")} />
+              <PhoneField
+                value={watch("telefono")}
+                onChange={(v) => setValue("telefono", v, { shouldValidate: true, shouldDirty: true })}
+              />
             </Field>
           </div>
 

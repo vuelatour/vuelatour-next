@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PhoneField } from "@/components/admin/phone-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -102,7 +103,10 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Teléfono" hint="WhatsApp preferente" error={errors.telefono?.message}>
-              <Input placeholder="+52 998..." {...register("telefono")} />
+              <PhoneField
+                value={watch("telefono")}
+                onChange={(v) => setValue("telefono", v, { shouldValidate: true, shouldDirty: true })}
+              />
             </Field>
             <Field label="Email" error={errors.email?.message}>
               <Input type="email" placeholder="cliente@ejemplo.com" {...register("email")} />

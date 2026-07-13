@@ -7,6 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneField } from "@/components/admin/phone-field";
 import { updateAccountAction } from "@/app/admin/account/actions";
 import { Field } from "@/components/admin/form-field";
 
@@ -18,8 +19,7 @@ const AccountFormSchema = z.object({
     .max(100, "Máximo 100 caracteres"),
   telefono: z
     .string()
-    .trim()
-    .max(20, "Máximo 20 caracteres")
+    .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")
     .optional()
     .or(z.literal("")),
 });
@@ -37,6 +37,8 @@ export function AccountForm({
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<AccountFormValues>({
     resolver: zodResolver(AccountFormSchema),
@@ -69,13 +71,14 @@ export function AccountForm({
       </Field>
       <Field
         label="Teléfono"
-        hint="Opcional. Útil para WhatsApp y avisos urgentes."
+        hint="Opcional · lada + 10 dígitos. Útil para WhatsApp y avisos urgentes."
         error={errors.telefono?.message}
       >
-        <Input
-          {...register("telefono")}
-          placeholder="+52 998..."
-          inputMode="tel"
+        <PhoneField
+          value={watch("telefono")}
+          onChange={(v) =>
+            setValue("telefono", v, { shouldValidate: true, shouldDirty: true })
+          }
         />
       </Field>
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">

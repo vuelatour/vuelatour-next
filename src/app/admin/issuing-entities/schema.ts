@@ -18,7 +18,11 @@ export const IssuingEntityFormSchema = z.object({
   codigo_postal: z.string().length(5, "CP de 5 dígitos").optional().or(z.literal("")),
   direccion: z.string().max(2000).optional().or(z.literal("")),
   email_facturacion: z.string().email("Email inválido").optional().or(z.literal("")),
-  telefono: z.string().max(20).optional().or(z.literal("")),
+  telefono: z
+    .string()
+    .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")
+    .optional()
+    .or(z.literal("")),
   pac_proveedor: z.string().max(50).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });

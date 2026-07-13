@@ -5,7 +5,7 @@ export const InvitePilotSchema = z.object({
   email: z.string().email("Correo inválido"),
   telefono: z
     .string()
-    .max(20)
+    .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")
     .optional()
     .or(z.literal("")),
   tarjeta_terminacion: z

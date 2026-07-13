@@ -4,7 +4,11 @@ const CanalEnum = z.enum(["WHATSAPP", "EMAIL", "LANDING", "LLAMADA", "REFERIDO"]
 
 export const ClientFormSchema = z.object({
   nombre: z.string().min(1, "Requerido").max(200),
-  telefono: z.string().max(20).optional().or(z.literal("")),
+  telefono: z
+    .string()
+    .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")
+    .optional()
+    .or(z.literal("")),
   email: z.string().email("Email inválido").optional().or(z.literal("")),
   razon_social_default: z.string().max(200).optional().or(z.literal("")),
   rfc: z

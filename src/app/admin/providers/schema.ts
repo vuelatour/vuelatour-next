@@ -19,7 +19,11 @@ export const ProviderFormSchema = z.object({
     .optional()
     .or(z.literal("")),
   email: z.string().email("Email inválido").optional().or(z.literal("")),
-  telefono: z.string().max(20).optional().or(z.literal("")),
+  telefono: z
+    .string()
+    .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")
+    .optional()
+    .or(z.literal("")),
   direccion: z.string().max(2000).optional().or(z.literal("")),
   contacto: z.string().max(100).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),

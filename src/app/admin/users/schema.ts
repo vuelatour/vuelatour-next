@@ -24,7 +24,11 @@ export const UserFormSchema = z.object({
     .or(z.literal("")),
   es_piloto: z.boolean().default(false),
   es_piloto_externo: z.boolean().default(false),
-  telefono: z.string().max(20).optional().or(z.literal("")),
+  telefono: z
+    .string()
+    .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")
+    .optional()
+    .or(z.literal("")),
   avatar_url: z.string().url("URL inválida").optional().or(z.literal("")),
 });
 
