@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ImagePreview } from "@/components/admin/image-preview";
+import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -159,8 +159,9 @@ export function FlightGastosCard({
                     <TableCell className="align-top">
                       <div className="flex items-center gap-2">
                         {g.foto_url && fotoUrls[g.foto_url] && (
-                          <ImagePreview
-                            src={fotoUrls[g.foto_url]}
+                          <ComprobantePreview
+                            path={g.foto_url}
+                            url={fotoUrls[g.foto_url]}
                             alt={`Comprobante · ${g.categoria}`}
                           />
                         )}

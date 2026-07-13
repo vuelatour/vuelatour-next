@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { fmtDateOnly } from "@/lib/datetime";
-import { ImagePreview } from "@/components/admin/image-preview";
+import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { BanknotesIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -296,8 +296,9 @@ function GastosCard({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {g.foto_url && fotoUrls[g.foto_url] && (
-                          <ImagePreview
-                            src={fotoUrls[g.foto_url]}
+                          <ComprobantePreview
+                            path={g.foto_url}
+                            url={fotoUrls[g.foto_url]}
                             alt={`Comprobante · ${g.categoria}`}
                           />
                         )}

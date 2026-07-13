@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createGastoAction } from "@/app/admin/expenses/actions";
+import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import { Field } from "@/components/admin/form-field";
 
@@ -95,6 +96,9 @@ export function ExpenseCreateDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Factura/recibo adjunto (foto o PDF): se sube al bucket privado al guardar.
+  const [factura, setFactura] = useState<File | null>(null);
+  const facturaRef = useRef<HTMLInputElement>(null);
   const formDefaults = {
     vueloId: defaultVueloId,
     aeronaveId: defaultAeronaveId,
@@ -106,9 +110,21 @@ export function ExpenseCreateDialog({
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
-      const result = await createGastoAction(values);
+      // Primero el archivo: si la subida falla, no se crea el gasto a medias.
+      let fotoPath = "";
+      if (factura) {
+        try {
+          fotoPath = await uploadGastoComprobante(factura);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "No se pudo subir la factura");
+          return;
+        }
+      }
+      const result = await createGastoAction({ ...values, foto_url: fotoPath });
       if (result.ok) {
-        toast.success("Gasto registrado");
+        toast.success(factura ? "Gasto registrado con su factura" : "Gasto registrado");
+        setFactura(null);
+        if (facturaRef.current) facturaRef.current.value = "";
         reset(emptyValues(formDefaults));
         setOpen(false);
       } else if (result.fieldErrors) {
@@ -233,6 +249,24 @@ export function ExpenseCreateDialog({
                 value={watch("proveedor_id")}
                 onChange={(v) => setValue("proveedor_id", v)}
                 placeholder="Sin proveedor"
+              />
+            </Field>
+
+            <Field
+              label="Factura / recibo (foto o PDF)"
+              hint="Se guarda como comprobante del gasto; al adjuntar, el estatus pasa a Factura."
+            >
+              <Input
+                ref={facturaRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setFactura(file);
+                  if (file && watch("estatus_comprobante") === "SIN_COMPROBANTE") {
+                    setValue("estatus_comprobante", "FACTURA");
+                  }
+                }}
               />
             </Field>
 

@@ -74,6 +74,8 @@ export const GastoCreateSchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().positive("TC inválido").optional(),
   ),
+  /** Path en el bucket gasto-fotos del comprobante subido por la oficina. */
+  foto_url: z.string().max(500).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

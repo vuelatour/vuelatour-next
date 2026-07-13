@@ -27,7 +27,7 @@ import { fmtDateOnly } from "@/lib/datetime";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import type { Gasto } from "@/types/expenses";
 import { Field } from "@/components/admin/form-field";
-import { ImagePreview } from "@/components/admin/image-preview";
+import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 
 const CATEGORIAS = [
   ...[
@@ -178,8 +178,9 @@ export function ExpenseVerifyDialog({
         {/* Comprobante: foto subida con el registro, para validar el dato. */}
         {fotoUrl ? (
           <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
-            <ImagePreview
-              src={fotoUrl}
+            <ComprobantePreview
+              path={gasto.foto_url ?? ""}
+              url={fotoUrl}
               alt="Comprobante del gasto"
               thumbClassName="w-full h-auto max-h-[45vh] object-contain"
             />
