@@ -110,17 +110,29 @@ export default async function InventoryPage() {
                 {items.map((it) => (
                   <TableRow key={it.id}>
                     <TableCell>
-                      <Link
-                        href={`/admin/inventory/${it.id}`}
-                        className="font-medium hover:text-brand-600 hover:underline"
-                      >
-                        {it.nombre}
-                      </Link>
-                      {(it.numero_parte || it.codigo) && (
-                        <span className="block text-xs text-muted-foreground font-mono">
-                          {[it.numero_parte, it.codigo].filter(Boolean).join(" · ")}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2.5">
+                        {it.foto_url && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={it.foto_url}
+                            alt={it.nombre}
+                            className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-border"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <Link
+                            href={`/admin/inventory/${it.id}`}
+                            className="font-medium hover:text-brand-600 hover:underline"
+                          >
+                            {it.nombre}
+                          </Link>
+                          {(it.numero_parte || it.codigo) && (
+                            <span className="block text-xs text-muted-foreground font-mono">
+                              {[it.numero_parte, it.codigo].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{it.categoria}</TableCell>
                     <TableCell className="text-right tabular-nums">

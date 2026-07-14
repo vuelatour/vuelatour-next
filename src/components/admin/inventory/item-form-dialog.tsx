@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
 import type { ItemFormValues } from "@/app/admin/inventory/schema";
 import type { InventarioItem } from "@/types/inventory";
 import { Field } from "@/components/admin/form-field";
+import { uploadInventarioFoto } from "@/lib/storage/inventario-fotos";
 
 interface ItemFormDialogProps {
   open: boolean;
@@ -32,6 +33,11 @@ interface ItemFormDialogProps {
 export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialItem;
+  // Foto del producto: archivo nuevo elegido, o quitar la existente.
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [quitarFoto, setQuitarFoto] = useState(false);
+  const fotoRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -43,14 +49,33 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
   } = useForm<ItemFormValues>({ defaultValues: defaults(initialItem) });
 
   useEffect(() => {
-    if (open) reset(defaults(initialItem));
+    if (open) {
+      reset(defaults(initialItem));
+      setFotoFile(null);
+      setFotoPreview(null);
+      setQuitarFoto(false);
+    }
   }, [open, initialItem, reset]);
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // La foto primero: si la subida falla, no se guarda el ítem a medias.
+      let fotoPayload: { foto_url: string | null; foto_storage_path: string | null } | undefined;
+      if (fotoFile) {
+        try {
+          const subida = await uploadInventarioFoto(fotoFile);
+          fotoPayload = { foto_url: subida.url, foto_storage_path: subida.storage_path };
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "No se pudo subir la foto");
+          return;
+        }
+      } else if (quitarFoto && isEdit) {
+        fotoPayload = { foto_url: null, foto_storage_path: null };
+      }
+      const payload = fotoPayload ? { ...values, ...fotoPayload } : values;
       const result = isEdit
-        ? await updateItemAction(initialItem!.id, values)
-        : await createItemAction(values);
+        ? await updateItemAction(initialItem!.id, payload)
+        : await createItemAction(payload);
 
       if (result.ok) {
         // Entrada inicial opcional al crear: registra la compra (cantidad +
@@ -101,6 +126,68 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* Foto del producto: se ve en la app del mecánico y en el listado. */}
+          <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+            {fotoPreview || (initialItem?.foto_url && !quitarFoto) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={fotoPreview ?? initialItem?.foto_url ?? ""}
+                alt="Foto del producto"
+                className="h-16 w-16 shrink-0 rounded-md object-cover ring-1 ring-border"
+              />
+            ) : (
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground text-[10px] text-center">
+                Sin foto
+              </div>
+            )}
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-medium">Foto del producto</p>
+              <p className="text-xs text-muted-foreground">
+                JPG/PNG/WebP · se muestra en la app y el listado.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fotoRef.current?.click()}
+                >
+                  {fotoPreview || initialItem?.foto_url ? "Cambiar" : "Subir foto"}
+                </Button>
+                {(fotoPreview || (initialItem?.foto_url && !quitarFoto)) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setFotoFile(null);
+                      setFotoPreview(null);
+                      setQuitarFoto(true);
+                      if (fotoRef.current) fotoRef.current.value = "";
+                    }}
+                  >
+                    Quitar
+                  </Button>
+                )}
+              </div>
+            </div>
+            <input
+              ref={fotoRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                setFotoFile(file);
+                setQuitarFoto(false);
+                setFotoPreview((prev) => {
+                  if (prev) URL.revokeObjectURL(prev);
+                  return file ? URL.createObjectURL(file) : null;
+                });
+              }}
+            />
+          </div>
+
           <Field label="Nombre" required error={errors.nombre?.message}>
             <Input placeholder="Filtro de aceite 108-1" {...register("nombre", { required: "Requerido" })} />
           </Field>

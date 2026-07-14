@@ -9,6 +9,9 @@ export interface InventarioItem {
   stock_minimo: number | null;
   /** Presentación del stock: pieza, caja, bote, galón, litro, bolsa… */
   unidad?: string | null;
+  /** Foto del producto (URL pública del bucket inventario-fotos). */
+  foto_url?: string | null;
+  foto_storage_path?: string | null;
   ubicacion: string | null;
   notas: string | null;
   activo: boolean;

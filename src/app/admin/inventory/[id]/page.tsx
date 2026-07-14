@@ -70,6 +70,15 @@ export default async function InventoryItemPage({
         </Link>
 
         <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            {item.foto_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.foto_url}
+                alt={item.nombre}
+                className="h-20 w-20 shrink-0 rounded-lg object-cover ring-1 ring-border"
+              />
+            )}
           <div>
             <p className="text-sm text-muted-foreground">{item.categoria}</p>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{item.nombre}</h1>
@@ -78,6 +87,7 @@ export default async function InventoryItemPage({
               {item.codigo ? `SKU ${item.codigo} · ` : ""}
               {item.ubicacion ?? "Bodega Cancún"}
             </p>
+          </div>
           </div>
           <MovimientoButton
             itemId={item.id}

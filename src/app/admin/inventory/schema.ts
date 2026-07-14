@@ -19,6 +19,9 @@ export const ItemFormSchema = z.object({
   ubicacion: z.string().max(50).optional().or(z.literal("")),
   unidad: z.string().max(30).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
+  // Foto del producto: null explícito = quitarla (stripEmpty deja pasar null).
+  foto_url: z.string().max(1000).nullable().optional().or(z.literal("")),
+  foto_storage_path: z.string().max(500).nullable().optional().or(z.literal("")),
 });
 
 export const TipoMovimientoEnum = z.enum(["ENTRADA", "SALIDA", "DEVOLUCION", "AJUSTE"]);
