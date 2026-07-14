@@ -432,6 +432,8 @@ export interface CreateExternalFlightPayload {
   fecha_vuelo?: string;
   notas?: string;
   notas_internas?: string;
+  /** MULTIESCALA opcional: tramos ordenados (algunas rutas externas lo piden). */
+  escalas?: { origen_iata: string; destino_iata: string }[];
 }
 
 // ============ Reserva tentativa ============

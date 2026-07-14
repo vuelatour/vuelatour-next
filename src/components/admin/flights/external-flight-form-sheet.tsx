@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,7 +21,9 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fmtUsd } from "@/lib/format";
 import { createExternalFlightAction } from "@/app/admin/flights/actions";
+import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import { Field } from "@/components/admin/form-field";
+import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 
 interface ClientOption {
   id: string;
@@ -44,29 +46,10 @@ const ExternalFlightSchema = z
       .max(100, "Máximo 100 caracteres"),
     costo_externo_usd: z.coerce.number().min(0, "Mínimo 0"),
     monto_total_usd: z.coerce.number().positive("Debe ser > 0"),
-    origen_iata: z
-      .string()
-      .min(3)
-      .max(4)
-      .transform((v) => v.toUpperCase()),
-    destino_iata: z
-      .string()
-      .min(3)
-      .max(4)
-      .transform((v) => v.toUpperCase()),
     pasajeros: z.coerce.number().int().min(1, "Mínimo 1"),
     fecha_vuelo: z.string().optional().or(z.literal("")),
     notas: z.string().max(2000).optional().or(z.literal("")),
     notas_internas: z.string().max(2000).optional().or(z.literal("")),
-  })
-  .superRefine((val, ctx) => {
-    if (val.origen_iata === val.destino_iata) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["destino_iata"],
-        message: "Origen y destino no pueden ser iguales",
-      });
-    }
   });
 
 type FormValues = z.input<typeof ExternalFlightSchema>;
@@ -76,13 +59,17 @@ const defaultValues: FormValues = {
   operador_externo: "",
   costo_externo_usd: 0,
   monto_total_usd: 0,
-  origen_iata: "CUN",
-  destino_iata: "",
   pasajeros: 1,
   fecha_vuelo: "",
   notas: "",
   notas_internas: "",
 };
+
+/** Tramo de la ruta externa (MULTIESCALA con "+ Tramo"). */
+interface LegRow {
+  origen: string;
+  destino: string;
+}
 
 interface ExternalFlightFormSheetProps {
   open: boolean;
@@ -99,6 +86,11 @@ export function ExternalFlightFormSheet({
 }: ExternalFlightFormSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [legs, setLegs] = useState<LegRow[]>([{ origen: "CUN", destino: "" }]);
+  const [rutaError, setRutaError] = useState<string | null>(null);
+  // Alta rápida de cliente sin salir del flujo (solo nombre).
+  const [quickClientOpen, setQuickClientOpen] = useState(false);
+  const [extraClients, setExtraClients] = useState<ClientOption[]>([]);
 
   const {
     register,
@@ -113,25 +105,37 @@ export function ExternalFlightFormSheet({
   });
 
   useEffect(() => {
-    if (open) reset(defaultValues);
+    if (open) {
+      reset(defaultValues);
+      setLegs([{ origen: "CUN", destino: "" }]);
+      setRutaError(null);
+    }
   }, [open, reset]);
 
   const clienteId = watch("cliente_id");
-  const origenIata = watch("origen_iata");
-  const destinoIata = watch("destino_iata");
   const monto = Number(watch("monto_total_usd")) || 0;
   const costo = Number(watch("costo_externo_usd")) || 0;
   const margen = monto - costo;
 
   const onSubmit = handleSubmit((values) => {
+    setRutaError(null);
+    if (legs.some((l) => !l.origen || !l.destino)) {
+      setRutaError("Cada tramo necesita origen y destino.");
+      return;
+    }
+    if (legs.some((l) => l.origen === l.destino)) {
+      setRutaError("Un tramo no puede tener el mismo origen y destino.");
+      return;
+    }
     startTransition(async () => {
       const res = await createExternalFlightAction({
         cliente_id: values.cliente_id,
         operador_externo: values.operador_externo.trim(),
         costo_externo_usd: Number(values.costo_externo_usd),
         monto_total_usd: Number(values.monto_total_usd),
-        origen_iata: values.origen_iata.toUpperCase(),
-        destino_iata: values.destino_iata.toUpperCase(),
+        origen_iata: legs[0].origen,
+        destino_iata: legs[legs.length - 1].destino,
+        escalas: legs.map((l) => ({ origen_iata: l.origen, destino_iata: l.destino })),
         pasajeros: Number(values.pasajeros),
         fecha_vuelo: values.fecha_vuelo
           ? cancunInputToIso(values.fecha_vuelo)
@@ -180,16 +184,25 @@ export function ExternalFlightFormSheet({
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           <Field label="Cliente" required error={errors.cliente_id?.message}>
             <SearchableSelect
-              options={clients.map((c) => ({
-                value: c.id,
-                label: c.nombre,
-                description: c.rfc ?? undefined,
-              }))}
+              options={[...extraClients, ...clients.filter((c) => !extraClients.some((e) => e.id === c.id))].map(
+                (c) => ({
+                  value: c.id,
+                  label: c.nombre,
+                  description: c.rfc ?? undefined,
+                }),
+              )}
               value={clienteId}
               onChange={(v) => setValue("cliente_id", v)}
               placeholder="Selecciona cliente"
               emptyText="Sin clientes activos"
             />
+            <button
+              type="button"
+              onClick={() => setQuickClientOpen(true)}
+              className="mt-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600"
+            >
+              + Nuevo cliente
+            </button>
           </Field>
 
           <Field
@@ -255,32 +268,76 @@ export function ExternalFlightFormSheet({
             </div>
           )}
 
-          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-            <Field label="Origen" required error={errors.origen_iata?.message}>
-              <SearchableSelect
-                options={airports.map((a) => ({
-                  value: a.iata,
-                  label: a.iata,
-                  description: a.nombre,
-                }))}
-                value={origenIata}
-                onChange={(v) => setValue("origen_iata", v)}
-                placeholder="IATA"
-              />
-            </Field>
-            <span className="text-muted-foreground mb-2">→</span>
-            <Field label="Destino" required error={errors.destino_iata?.message}>
-              <SearchableSelect
-                options={airports.map((a) => ({
-                  value: a.iata,
-                  label: a.iata,
-                  description: a.nombre,
-                }))}
-                value={destinoIata}
-                onChange={(v) => setValue("destino_iata", v)}
-                placeholder="IATA"
-              />
-            </Field>
+          {/* Ruta: uno o VARIOS tramos (multiescala para rutas externas). */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">
+                Ruta <span className="text-destructive">*</span>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                onClick={() =>
+                  setLegs((prev) => [
+                    ...prev,
+                    { origen: prev[prev.length - 1]?.destino ?? "", destino: "" },
+                  ])
+                }
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                Tramo
+              </Button>
+            </div>
+            {legs.map((leg, i) => (
+              <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                <SearchableSelect
+                  options={airports.map((a) => ({
+                    value: a.iata,
+                    label: a.iata,
+                    description: a.nombre,
+                  }))}
+                  value={leg.origen}
+                  onChange={(v) =>
+                    setLegs((prev) => prev.map((l, idx) => (idx === i ? { ...l, origen: v } : l)))
+                  }
+                  placeholder="IATA"
+                />
+                <span className="text-muted-foreground">→</span>
+                <SearchableSelect
+                  options={airports.map((a) => ({
+                    value: a.iata,
+                    label: a.iata,
+                    description: a.nombre,
+                  }))}
+                  value={leg.destino}
+                  onChange={(v) =>
+                    setLegs((prev) =>
+                      prev.map((l, idx) => {
+                        if (idx === i) return { ...l, destino: v };
+                        // El siguiente tramo encadena su origen automáticamente.
+                        if (idx === i + 1 && !l.origen) return { ...l, origen: v };
+                        return l;
+                      }),
+                    )
+                  }
+                  placeholder="IATA"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground"
+                  disabled={legs.length === 1}
+                  onClick={() => setLegs((prev) => prev.filter((_, idx) => idx !== i))}
+                  aria-label="Quitar tramo"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            {rutaError && <p className="text-xs text-destructive">{rutaError}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -323,6 +380,17 @@ export function ExternalFlightFormSheet({
           </Button>
         </SheetFooter>
       </SheetContent>
+
+      <QuickClientDialog
+        open={quickClientOpen}
+        onOpenChange={setQuickClientOpen}
+        onCreated={(client) => {
+          const opt: ClientOption = { id: client.id, nombre: client.nombre, rfc: client.rfc };
+          setExtraClients((prev) => [...prev.filter((c) => c.id !== opt.id), opt]);
+          setValue("cliente_id", opt.id);
+          router.refresh();
+        }}
+      />
     </Sheet>
   );
 }
