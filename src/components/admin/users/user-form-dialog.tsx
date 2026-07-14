@@ -165,13 +165,14 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
             <div className="space-y-0.5">
               <Label className="text-sm font-medium">Piloto externo</Label>
               <p className="text-xs text-muted-foreground">
-                Freelance SIN acceso al sistema (no puede iniciar sesión ni recibe
-                avisos); la oficina captura sus tacómetros y gastos. Al desmarcar,
-                vuelve al flujo normal de invitación.
+                {user.supabase_auth_id && !user.es_piloto_externo
+                  ? "No disponible: este usuario ya tiene cuenta con acceso — marcarlo como externo lo bloquearía por completo (el flag es solo para freelance sin usuario)."
+                  : "Freelance SIN acceso al sistema (no puede iniciar sesión ni recibe avisos); la oficina captura sus tacómetros y gastos. Al desmarcar, vuelve al flujo normal de invitación."}
               </p>
             </div>
             <Switch
               checked={watch("es_piloto_externo") ?? false}
+              disabled={!!user.supabase_auth_id && !user.es_piloto_externo}
               onCheckedChange={(c) => setValue("es_piloto_externo", c)}
             />
           </div>
