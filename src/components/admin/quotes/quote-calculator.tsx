@@ -169,6 +169,7 @@ type QuoteCalculatorProps = {
 const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
   { value: "HSBC_LINK", label: "HSBC link", hint: "Con factura · IVA 16%" },
+  { value: "CHEQUE", label: "Cheque", hint: "Con factura · IVA 16%" },
   { value: "BILLPOCKET", label: "BillPocket", hint: "Sin factura" },
   { value: "EFECTIVO", label: "Efectivo", hint: "Sin IVA" },
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },

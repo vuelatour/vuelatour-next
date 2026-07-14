@@ -7,6 +7,11 @@ export interface PendingFlight {
   monto_total_usd: string;
   monto_total_mxn: string | null;
   fecha_vuelo: string | null;
+  /** ¿Ya se cobró? false = factura solicitada ANTES del pago (método facturable). */
+  cobrado?: boolean;
+  metodo_cobro?: string | null;
+  /** Ruta completa con escalas comerciales (ej. "CUN → PCE → CZM → CUN"). */
+  ruta?: string | null;
   cliente: { nombre: string; rfc: string | null } | { nombre: string; rfc: string | null }[] | null;
 }
 

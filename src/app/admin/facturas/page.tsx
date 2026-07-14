@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate } from "@/lib/datetime";
 import {
@@ -93,7 +94,7 @@ export default async function FacturasPage({ searchParams }: PageProps) {
         <CardHeader>
           <CardTitle className="text-sm">Pendientes de facturar</CardTitle>
           <CardDescription className="text-xs">
-            {pendientesRes.count} {pendientesRes.count === 1 ? "vuelo pagado" : "vuelos pagados"} sin factura.
+            {pendientesRes.count} {pendientesRes.count === 1 ? "vuelo" : "vuelos"} sin factura: pagados o por cobrar con método facturable (transferencia, link, terminal o cheque — hay clientes que piden la factura antes de pagar).
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -114,10 +115,32 @@ export default async function FacturasPage({ searchParams }: PageProps) {
               <TableBody>
                 {pendientesRes.data.map((v) => (
                   <TableRow key={v.id}>
-                    <TableCell className="font-mono text-xs">#{v.folio}</TableCell>
-                    <TableCell className="text-sm">{clienteNombre(v.cliente)}</TableCell>
                     <TableCell className="font-mono text-xs">
-                      {v.origen_iata} → {v.destino_iata}
+                      <Link
+                        href={`/admin/flights/${v.id}`}
+                        className="hover:text-brand-600 hover:underline"
+                        title="Ver el vuelo"
+                      >
+                        #{v.folio}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {/* Al cliente: para completar RFC/razón social sin buscarlo. */}
+                      <Link
+                        href={`/admin/clients?q=${encodeURIComponent(clienteNombre(v.cliente))}`}
+                        className="hover:text-brand-600 hover:underline"
+                        title="Abrir en Clientes (completar datos de facturación)"
+                      >
+                        {clienteNombre(v.cliente)}
+                      </Link>
+                      {v.cobrado === false && (
+                        <span className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-600">
+                          Por cobrar{v.metodo_cobro ? ` · ${v.metodo_cobro}` : ""}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {v.ruta ?? `${v.origen_iata} → ${v.destino_iata}`}
                     </TableCell>
                     <TableCell className="text-xs">
                       {v.fecha_vuelo

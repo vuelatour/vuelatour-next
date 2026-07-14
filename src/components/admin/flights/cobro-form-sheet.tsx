@@ -31,6 +31,7 @@ type Moneda = "USD" | "MXN";
 const METODOS: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
   { value: "HSBC_LINK", label: "HSBC link", hint: "Con factura · IVA 16%" },
+  { value: "CHEQUE", label: "Cheque", hint: "Con factura · lo deposita oficina" },
   { value: "BILLPOCKET", label: "BillPocket", hint: "Terminal · sin factura" },
   { value: "EFECTIVO", label: "Efectivo (MXN)", hint: "Sin IVA" },
   { value: "DOLARES", label: "Dólares en mano", hint: "Sin IVA" },
@@ -43,6 +44,7 @@ const CobroFormSchema = z
     metodo_cobro: z.enum([
       "TRANSFERENCIA",
       "HSBC_LINK",
+      "CHEQUE",
       "BILLPOCKET",
       "EFECTIVO",
       "DOLARES",

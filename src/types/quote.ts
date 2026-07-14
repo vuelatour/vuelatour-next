@@ -1,5 +1,11 @@
 export type TipoTarifa = "PUBLICO" | "BROKER";
-export type MetodoPago = "BILLPOCKET" | "HSBC_LINK" | "TRANSFERENCIA" | "EFECTIVO" | "DOLARES";
+export type MetodoPago =
+  | "BILLPOCKET"
+  | "HSBC_LINK"
+  | "TRANSFERENCIA"
+  | "CHEQUE"
+  | "EFECTIVO"
+  | "DOLARES";
 export type PaisAeronave = "MX" | "USA";
 
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";

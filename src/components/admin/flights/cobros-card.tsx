@@ -30,6 +30,7 @@ import type { EstadoVuelo } from "@/types/quotes-persisted";
 const METODO_LABELS: Record<string, string> = {
   TRANSFERENCIA: "Transferencia",
   HSBC_LINK: "HSBC link",
+  CHEQUE: "Cheque",
   BILLPOCKET: "BillPocket",
   EFECTIVO: "Efectivo",
   DOLARES: "Dólares",

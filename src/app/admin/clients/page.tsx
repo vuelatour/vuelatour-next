@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { UsersIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,8 +31,15 @@ const CANAL_LABELS: Record<string, string> = {
   REFERIDO: "Referido",
 };
 
-export default async function ClientsPage() {
-  const { data: clients, count } = await listClients({ limit: 200 });
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  // ?q= permite enlazar directo a un cliente desde otras pantallas (ej.
+  // Facturas → completar datos de facturación sin buscarlo a mano).
+  const { data: clients, count } = await listClients({ limit: 200, q: q || undefined });
 
   return (
     <div className="space-y-6">
@@ -41,6 +49,15 @@ export default async function ClientsPage() {
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Clientes</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {count} {count === 1 ? "cliente registrado" : "clientes registrados"}.
+            {q && (
+              <>
+                {" "}
+                Filtrado por &ldquo;{q}&rdquo; ·{" "}
+                <Link href="/admin/clients" className="text-brand-600 hover:underline">
+                  ver todos
+                </Link>
+              </>
+            )}
           </p>
         </div>
         <ClientCreateButton />
