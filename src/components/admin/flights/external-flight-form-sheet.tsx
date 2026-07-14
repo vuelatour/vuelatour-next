@@ -69,6 +69,8 @@ const defaultValues: FormValues = {
 interface LegRow {
   origen: string;
   destino: string;
+  /** Ferry: tramo vacío (posicionamiento), sin pasajeros. */
+  esFerry: boolean;
 }
 
 interface ExternalFlightFormSheetProps {
@@ -86,7 +88,7 @@ export function ExternalFlightFormSheet({
 }: ExternalFlightFormSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [legs, setLegs] = useState<LegRow[]>([{ origen: "CUN", destino: "" }]);
+  const [legs, setLegs] = useState<LegRow[]>([{ origen: "CUN", destino: "", esFerry: false }]);
   const [rutaError, setRutaError] = useState<string | null>(null);
   // Alta rápida de cliente sin salir del flujo (solo nombre).
   const [quickClientOpen, setQuickClientOpen] = useState(false);
@@ -107,7 +109,7 @@ export function ExternalFlightFormSheet({
   useEffect(() => {
     if (open) {
       reset(defaultValues);
-      setLegs([{ origen: "CUN", destino: "" }]);
+      setLegs([{ origen: "CUN", destino: "", esFerry: false }]);
       setRutaError(null);
     }
   }, [open, reset]);
@@ -127,6 +129,10 @@ export function ExternalFlightFormSheet({
       setRutaError("Un tramo no puede tener el mismo origen y destino.");
       return;
     }
+    if (legs.every((l) => l.esFerry)) {
+      setRutaError("Al menos un tramo debe llevar pasajeros (no todo puede ser ferry).");
+      return;
+    }
     startTransition(async () => {
       const res = await createExternalFlightAction({
         cliente_id: values.cliente_id,
@@ -135,7 +141,11 @@ export function ExternalFlightFormSheet({
         monto_total_usd: Number(values.monto_total_usd),
         origen_iata: legs[0].origen,
         destino_iata: legs[legs.length - 1].destino,
-        escalas: legs.map((l) => ({ origen_iata: l.origen, destino_iata: l.destino })),
+        escalas: legs.map((l) => ({
+          origen_iata: l.origen,
+          destino_iata: l.destino,
+          es_ferry: l.esFerry,
+        })),
         pasajeros: Number(values.pasajeros),
         fecha_vuelo: values.fecha_vuelo
           ? cancunInputToIso(values.fecha_vuelo)
@@ -282,7 +292,7 @@ export function ExternalFlightFormSheet({
                 onClick={() =>
                   setLegs((prev) => [
                     ...prev,
-                    { origen: prev[prev.length - 1]?.destino ?? "", destino: "" },
+                    { origen: prev[prev.length - 1]?.destino ?? "", destino: "", esFerry: false },
                   ])
                 }
               >
@@ -324,17 +334,36 @@ export function ExternalFlightFormSheet({
                   }
                   placeholder="IATA"
                 />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-muted-foreground"
-                  disabled={legs.length === 1}
-                  onClick={() => setLegs((prev) => prev.filter((_, idx) => idx !== i))}
-                  aria-label="Quitar tramo"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLegs((prev) =>
+                        prev.map((l, idx) => (idx === i ? { ...l, esFerry: !l.esFerry } : l)),
+                      )
+                    }
+                    title="Ferry: tramo vacío (posicionamiento), sin pasajeros"
+                    className={
+                      "rounded-full border px-2 py-0.5 text-[11px] transition-colors " +
+                      (leg.esFerry
+                        ? "border-slate-500/60 bg-slate-500/15 font-medium text-slate-600 dark:text-slate-300"
+                        : "border-dashed border-border text-muted-foreground hover:border-foreground/40")
+                    }
+                  >
+                    Ferry
+                  </button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground"
+                    disabled={legs.length === 1}
+                    onClick={() => setLegs((prev) => prev.filter((_, idx) => idx !== i))}
+                    aria-label="Quitar tramo"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ))}
             {rutaError && <p className="text-xs text-destructive">{rutaError}</p>}
