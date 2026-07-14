@@ -14,7 +14,7 @@ import {
   PlusIcon,
 } from "@heroicons/react/24/outline";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
-import { ClientFormDialog } from "@/components/admin/clients/client-form-dialog";
+import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import type { Client } from "@/types/clients";
 import type { Route } from "@/types/routes";
 import { Badge } from "@/components/ui/badge";
@@ -1655,7 +1655,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       </div>
 
       {!isRevise && (
-        <ClientFormDialog
+        <QuickClientDialog
           open={clientDialogOpen}
           onOpenChange={setClientDialogOpen}
           onCreated={(client: Client) => {

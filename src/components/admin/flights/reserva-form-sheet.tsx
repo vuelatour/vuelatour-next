@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createReservaAction } from "@/app/admin/flights/actions";
+import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import { Field } from "@/components/admin/form-field";
 
 interface ClientOption {
@@ -101,6 +102,9 @@ export function ReservaFormSheet({
   const [pilotoId, setPilotoId] = useState("");
   const [fechaVuelo, setFechaVuelo] = useState("");
   const [clienteId, setClienteId] = useState("");
+  // Alta rápida de cliente sin salir del flujo (solo nombre).
+  const [quickClientOpen, setQuickClientOpen] = useState(false);
+  const [extraClients, setExtraClients] = useState<ClientOption[]>([]);
   const [cotizacionAbierta, setCotizacionAbierta] = useState(false);
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -348,16 +352,25 @@ export function ReservaFormSheet({
           {/* 5. Cliente (responsable del vuelo) */}
           <Field label="Cliente (responsable del vuelo)" required>
             <SearchableSelect
-              options={clients.map((c) => ({
-                value: c.id,
-                label: c.nombre,
-                description: c.rfc ?? undefined,
-              }))}
+              options={[...extraClients, ...clients.filter((c) => !extraClients.some((e) => e.id === c.id))].map(
+                (c) => ({
+                  value: c.id,
+                  label: c.nombre,
+                  description: c.rfc ?? undefined,
+                }),
+              )}
               value={clienteId}
               onChange={setClienteId}
               placeholder="Selecciona cliente"
               emptyText="Sin clientes activos"
             />
+            <button
+              type="button"
+              onClick={() => setQuickClientOpen(true)}
+              className="mt-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600"
+            >
+              + Nuevo cliente
+            </button>
           </Field>
 
           {/* Opcionales */}
@@ -402,6 +415,22 @@ export function ReservaFormSheet({
           </Button>
         </SheetFooter>
       </SheetContent>
+
+      <QuickClientDialog
+        open={quickClientOpen}
+        onOpenChange={setQuickClientOpen}
+        onCreated={(client) => {
+          const opt: ClientOption = {
+            id: client.id,
+            nombre: client.nombre,
+            rfc: client.rfc,
+          };
+          setExtraClients((prev) => [...prev.filter((c) => c.id !== opt.id), opt]);
+          // Auto-selecciona al cliente recién creado.
+          setClienteId(opt.id);
+          router.refresh();
+        }}
+      />
     </Sheet>
   );
 }
