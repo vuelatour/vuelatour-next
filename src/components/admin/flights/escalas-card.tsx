@@ -84,7 +84,7 @@ export function EscalasCard({
             </p>
           ) : (
             <ol className="space-y-2">
-              {escalas.map((esc) => {
+              {escalas.map((esc, idx) => {
                 const photos = photosByEscala.get(esc.id);
                 const fotoSalida = photos?.foto_salida_url ?? null;
                 const fotoLlegada = photos?.foto_llegada_url ?? null;
@@ -100,7 +100,7 @@ export function EscalasCard({
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono font-semibold text-sm">
                         <span className="text-muted-foreground mr-2">
-                          {esc.solo_operativa ? "·" : `${esc.orden}.`}
+                          {esc.solo_operativa ? "·" : `${idx + 1}.`}
                         </span>
                         {esc.origen_iata} → {esc.destino_iata}
                         {esc.solo_operativa && (
@@ -201,14 +201,14 @@ export function EscalasCard({
                         {fotoSalida && (
                           <TacoThumb
                             url={fotoSalida}
-                            label={`Escala ${esc.orden} · tacómetro salida`}
+                            label={`Escala ${idx + 1} · tacómetro salida`}
                             caption="Salida"
                           />
                         )}
                         {fotoLlegada && (
                           <TacoThumb
                             url={fotoLlegada}
-                            label={`Escala ${esc.orden} · tacómetro llegada`}
+                            label={`Escala ${idx + 1} · tacómetro llegada`}
                             caption="Llegada"
                           />
                         )}

@@ -76,10 +76,12 @@ interface FlightTramosCardProps {
   vueloAeronaveId?: string | null;
 }
 
-/** Etiqueta del tramo: 2 tramos = Ida/Regreso (redondo); más = Tramo N. */
-function tramoLabel(escala: FlightEscala, total: number): string {
-  if (total === 2) return escala.orden === 1 ? "Ida" : "Regreso";
-  return `Tramo ${escala.orden}`;
+/** Etiqueta del tramo por POSICIÓN visible (1..N): el orden interno puede
+ * ser >=100 (tramos operativos agregados a mano, rango reservado para que el
+ * cotizador no los pise) y "Tramo 100" confundía. 2 tramos = Ida/Regreso. */
+function tramoLabel(posicion: number, total: number): string {
+  if (total === 2) return posicion === 1 ? "Ida" : "Regreso";
+  return `Tramo ${posicion}`;
 }
 
 export function FlightTramosCard({
@@ -140,8 +142,8 @@ export function FlightTramosCard({
         )}
       </CardHeader>
       <CardContent className="space-y-3">
-        {ordered.map((escala) => {
-          const label = tramoLabel(escala, ordered.length);
+        {ordered.map((escala, idx) => {
+          const label = tramoLabel(idx + 1, ordered.length);
           const sinAvion = !esExterno && !escala.aeronave_id;
           const sinPiloto = !escala.piloto_id;
           const sinAsignar = sinAvion || sinPiloto;
@@ -286,7 +288,10 @@ export function FlightTramosCard({
           flightId={flightId}
           flightFolio={flightFolio}
           esExterno={esExterno}
-          tramoLabel={tramoLabel(assignEscala, ordered.length)}
+          tramoLabel={tramoLabel(
+            ordered.findIndex((e) => e.id === assignEscala.id) + 1,
+            ordered.length,
+          )}
           escala={assignEscala}
           aircraft={aircraft}
           pilots={pilots}
