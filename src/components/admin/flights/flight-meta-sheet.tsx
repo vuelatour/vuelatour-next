@@ -21,6 +21,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cancunInputToIso, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import { updateFlightAction } from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
+import type { MetodoPago } from "@/types/quote";
 
 interface PilotOption {
   id: string;
@@ -35,11 +36,21 @@ interface MetaFormValues {
   fecha_vuelo: string;
   fecha_traslado_final: string;
   estado_permiso: EstadoPermiso;
+  metodo_cobro: string;
   notas: string;
   notas_internas: string;
   facturado: boolean;
   cobrado: boolean;
 }
+
+const METODO_COBRO_OPTS: { value: MetodoPago; label: string; description: string }[] = [
+  { value: "TRANSFERENCIA", label: "Transferencia", description: "Facturable · entra a Facturas antes de cobrar" },
+  { value: "HSBC_LINK", label: "HSBC link", description: "Facturable · entra a Facturas antes de cobrar" },
+  { value: "BILLPOCKET", label: "BillPocket (terminal)", description: "Facturable · entra a Facturas antes de cobrar" },
+  { value: "CHEQUE", label: "Cheque", description: "Facturable · entra a Facturas antes de cobrar" },
+  { value: "EFECTIVO", label: "Efectivo", description: "Entra a Facturas hasta que se cobra" },
+  { value: "DOLARES", label: "Dólares directo", description: "Entra a Facturas hasta que se cobra" },
+];
 
 const PERMISO_OPTS: { value: EstadoPermiso; label: string; description: string }[] = [
   { value: "no_aplica", label: "No aplica", description: "Ruta sin pista que requiera permiso" },
@@ -55,6 +66,7 @@ function defaults(flight: FlightListItem): MetaFormValues {
       ? isoToCancunInput(flight.fecha_traslado_final)
       : "",
     estado_permiso: flight.estado_permiso,
+    metodo_cobro: flight.metodo_cobro ?? "",
     notas: flight.notas ?? "",
     notas_internas: flight.notas_internas ?? "",
     facturado: flight.facturado,
@@ -67,6 +79,9 @@ interface FlightMetaSheetProps {
   onOpenChange: (open: boolean) => void;
   flight: FlightListItem;
   pilots: PilotOption[];
+  /** Externos SIN desglose de cotización: el método de cobro se edita aquí
+      (en vuelos cotizados se cambia revisando — el método define el IVA). */
+  metodoCobroEditable?: boolean;
 }
 
 export function FlightMetaSheet({
@@ -74,6 +89,7 @@ export function FlightMetaSheet({
   onOpenChange,
   flight,
   pilots,
+  metodoCobroEditable = false,
 }: FlightMetaSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -89,6 +105,7 @@ export function FlightMetaSheet({
 
   const pilotoId = watch("piloto_id");
   const estadoPermiso = watch("estado_permiso");
+  const metodoCobro = watch("metodo_cobro");
   const facturado = watch("facturado");
   const cobrado = watch("cobrado");
 
@@ -98,6 +115,7 @@ export function FlightMetaSheet({
       fecha_vuelo?: string;
       fecha_traslado_final?: string;
       estado_permiso?: EstadoPermiso;
+      metodo_cobro?: MetodoPago;
       notas?: string;
       notas_internas?: string;
       facturado?: boolean;
@@ -124,6 +142,13 @@ export function FlightMetaSheet({
     }
     if (values.estado_permiso !== flight.estado_permiso) {
       payload.estado_permiso = values.estado_permiso;
+    }
+    if (
+      metodoCobroEditable &&
+      values.metodo_cobro &&
+      values.metodo_cobro !== (flight.metodo_cobro ?? "")
+    ) {
+      payload.metodo_cobro = values.metodo_cobro as MetodoPago;
     }
     if (values.notas !== (flight.notas ?? "")) payload.notas = values.notas;
     if (values.notas_internas !== (flight.notas_internas ?? ""))
@@ -221,6 +246,27 @@ export function FlightMetaSheet({
               Pendiente pinta el evento del calendario en color de alerta hasta emitirlo.
             </p>
           </div>
+
+          {metodoCobroEditable && (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Método de cobro</Label>
+              <SearchableSelect
+                options={METODO_COBRO_OPTS.map((o) => ({
+                  value: o.value,
+                  label: o.label,
+                  description: o.description,
+                }))}
+                value={metodoCobro}
+                onChange={(v) => setValue("metodo_cobro", v)}
+                placeholder="Sin definir"
+              />
+              <p className="text-xs text-muted-foreground">
+                Con método facturable (transferencia, link, terminal o cheque)
+                el vuelo aparece en Facturas antes de cobrarse. Sin método, no
+                aparece hasta que se registre el cobro.
+              </p>
+            </div>
+          )}
 
           {flight.foto_plan_vuelo_url && (
             <div className="space-y-1.5">

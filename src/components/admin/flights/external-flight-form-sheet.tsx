@@ -46,6 +46,14 @@ const ExternalFlightSchema = z
       .max(100, "Máximo 100 caracteres"),
     costo_externo_usd: z.coerce.number().min(0, "Mínimo 0"),
     monto_total_usd: z.coerce.number().positive("Debe ser > 0"),
+    metodo_cobro: z.enum([
+      "TRANSFERENCIA",
+      "HSBC_LINK",
+      "BILLPOCKET",
+      "CHEQUE",
+      "EFECTIVO",
+      "DOLARES",
+    ]),
     pasajeros: z.coerce.number().int().min(1, "Mínimo 1"),
     fecha_vuelo: z.string().optional().or(z.literal("")),
     notas: z.string().max(2000).optional().or(z.literal("")),
@@ -59,6 +67,7 @@ const defaultValues: FormValues = {
   operador_externo: "",
   costo_externo_usd: 0,
   monto_total_usd: 0,
+  metodo_cobro: "TRANSFERENCIA",
   pasajeros: 1,
   fecha_vuelo: "",
   notas: "",
@@ -139,6 +148,7 @@ export function ExternalFlightFormSheet({
         operador_externo: values.operador_externo.trim(),
         costo_externo_usd: Number(values.costo_externo_usd),
         monto_total_usd: Number(values.monto_total_usd),
+        metodo_cobro: values.metodo_cobro,
         origen_iata: legs[0].origen,
         destino_iata: legs[legs.length - 1].destino,
         escalas: legs.map((l) => ({
@@ -277,6 +287,27 @@ export function ExternalFlightFormSheet({
               )}
             </div>
           )}
+
+          <Field
+            label="Método de cobro"
+            hint="Facturable (transferencia/link/terminal/cheque) = el vuelo aparece en Facturas antes de cobrarse"
+            required
+            error={errors.metodo_cobro?.message}
+          >
+            <SearchableSelect
+              options={[
+                { value: "TRANSFERENCIA", label: "Transferencia", description: "Facturable antes de cobrar" },
+                { value: "HSBC_LINK", label: "HSBC link", description: "Facturable antes de cobrar" },
+                { value: "BILLPOCKET", label: "BillPocket (terminal)", description: "Facturable antes de cobrar" },
+                { value: "CHEQUE", label: "Cheque", description: "Facturable antes de cobrar" },
+                { value: "EFECTIVO", label: "Efectivo", description: "Entra a Facturas al cobrarse" },
+                { value: "DOLARES", label: "Dólares directo", description: "Entra a Facturas al cobrarse" },
+              ]}
+              value={watch("metodo_cobro") ?? "TRANSFERENCIA"}
+              onChange={(v) => setValue("metodo_cobro", v as FormValues["metodo_cobro"])}
+              placeholder="Método de cobro"
+            />
+          </Field>
 
           {/* Ruta: uno o VARIOS tramos (multiescala para rutas externas). */}
           <div className="space-y-2">

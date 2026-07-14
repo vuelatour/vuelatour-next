@@ -290,6 +290,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               aircraft={aircraftOptions}
               pilots={pilotOptions}
               gastosResumen={gastosResumen}
+              // Externos SIN desglose de cotización (creados con el form
+              // externo viejo): el método de cobro se captura en Editar para
+              // que entren a la bandeja de Facturas. Con desglose, el método
+              // se cambia revisando la cotización (recalcula IVA).
+              metodoCobroEditable={
+                snapshot.es_externo && !quote?.calculo_snapshot && !snapshot.facturado
+              }
             />
           </div>
         </div>

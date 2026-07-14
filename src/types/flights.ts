@@ -17,6 +17,8 @@ export interface FlightListItem {
   es_externo: boolean;
   operador_externo: string | null;
   costo_externo_usd: string | null;
+  /** Método de cobro pactado (define si entra a Facturas antes de cobrar). */
+  metodo_cobro?: MetodoPago | null;
   cotizacion_version: number;
   origen_iata: string;
   destino_iata: string;

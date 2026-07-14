@@ -51,6 +51,8 @@ interface FlightActionsBarProps {
   pilots: PilotOption[];
   /** Resumen de gastos ligados (aviso al cancelar el vuelo). */
   gastosResumen?: string | null;
+  /** Externo sin desglose de cotización: puede editar método de cobro aquí. */
+  metodoCobroEditable?: boolean;
 }
 
 export function FlightActionsBar({
@@ -58,6 +60,7 @@ export function FlightActionsBar({
   aircraft,
   pilots,
   gastosResumen,
+  metodoCobroEditable,
 }: FlightActionsBarProps) {
   const router = useRouter();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -233,6 +236,7 @@ export function FlightActionsBar({
         onOpenChange={setMetaOpen}
         flight={flight}
         pilots={pilots}
+        metodoCobroEditable={metodoCobroEditable}
       />
 
       {externoOpen && (

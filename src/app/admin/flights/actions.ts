@@ -147,6 +147,8 @@ export interface UpdateFlightPayload {
   fecha_vuelo?: string;
   fecha_traslado_final?: string;
   estado_permiso?: "no_aplica" | "pendiente" | "emitido";
+  /** Solo vuelos externos sin desglose de cotización (el API lo valida). */
+  metodo_cobro?: string;
   notas?: string;
   notas_internas?: string;
   facturado?: boolean;
@@ -447,6 +449,8 @@ export interface CreateExternalFlightPayload {
   operador_externo: string;
   costo_externo_usd: number;
   monto_total_usd: number;
+  /** Con método facturable el vuelo entra a Facturas antes de cobrarse. */
+  metodo_cobro?: string;
   origen_iata: string;
   destino_iata: string;
   pasajeros: number;
