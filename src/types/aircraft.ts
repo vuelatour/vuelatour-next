@@ -32,6 +32,8 @@ export interface Aircraft {
   servicio_horas_base: number;
   created_at: string;
   updated_at: string;
+  /** Foto principal de la galería (para el avatar del listado). */
+  imagen_principal_url?: string | null;
 }
 
 /** Histórico de tacómetros + estatus de servicio de una aeronave. */
