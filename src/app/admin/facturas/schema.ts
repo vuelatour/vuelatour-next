@@ -25,6 +25,8 @@ export const EmitirFacturaSchema = z
       .optional()
       .or(z.literal("")),
     facturado_a_uso_cfdi: optionalStr(5),
+    publico_en_general: z.boolean().optional(),
+    periodicidad: z.enum(["01", "02", "03", "04"]).optional(),
   })
   .superRefine((val, ctx) => {
     if (val.facturado_a_rfc && val.facturado_a_rfc.length > 0) {

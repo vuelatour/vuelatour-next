@@ -45,10 +45,13 @@ export function EmitirFacturaButton({
 }) {
   const [emisoraId, setEmisoraId] = useState(emisoras[0]?.id ?? "");
   const [openOtro, setOpenOtro] = useState(false);
+  const [openPublico, setOpenPublico] = useState(false);
+  // c_Periodicidad de la factura global (default mensual del mes en curso).
+  const [periodicidad, setPeriodicidad] = useState("04");
   const [facturadoA, setFacturadoA] = useState<FacturadoAState>(EMPTY_FACTURADO_A);
   const [pending, startTransition] = useTransition();
 
-  const emitir = (payload: Record<string, string>, onDone?: () => void) => {
+  const emitir = (payload: Record<string, string | boolean>, onDone?: () => void) => {
     if (!emisoraId) {
       toast.error("Selecciona la entidad emisora");
       return;
@@ -104,6 +107,60 @@ export function EmitirFacturaButton({
       >
         Otro receptor
       </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setOpenPublico(true)}
+        disabled={pending || emisoras.length === 0}
+        title="El cliente no pide factura: CFDI a PÚBLICO EN GENERAL (XAXX010101000)"
+      >
+        Público en gral.
+      </Button>
+
+      <Dialog open={openPublico} onOpenChange={setOpenPublico}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Factura a PÚBLICO EN GENERAL</DialogTitle>
+            <DialogDescription>
+              El cliente no pide factura: el CFDI se emite al receptor genérico
+              (RFC XAXX010101000, uso S01) con la periodicidad indicada — los
+              datos fiscales del cliente no se usan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Periodicidad</Label>
+            <select
+              value={periodicidad}
+              onChange={(e) => setPeriodicidad(e.target.value)}
+              className="h-9 w-full rounded-lg border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="01">Diaria</option>
+              <option value="02">Semanal</option>
+              <option value="03">Quincenal</option>
+              <option value="04">Mensual (recomendada)</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Mes y año se toman del día de hoy (hora Cancún).
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenPublico(false)} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() =>
+                emitir(
+                  { publico_en_general: true, periodicidad },
+                  () => setOpenPublico(false),
+                )
+              }
+              disabled={pending}
+            >
+              {pending ? "Emitiendo…" : "Emitir a público en general"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={openOtro} onOpenChange={setOpenOtro}>
         <DialogContent className="sm:max-w-lg">
