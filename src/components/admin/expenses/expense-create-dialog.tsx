@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
-import { PlusIcon } from "@heroicons/react/24/outline";
+import {
+  CheckCircleIcon,
+  PlusIcon,
+  SparklesIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +32,16 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import { Field } from "@/components/admin/form-field";
+import { cn } from "@/lib/utils";
+
+const TIPOS_FACTURA = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
+];
 
 const CATEGORIAS = [
   { value: "GAS", label: "GAS" },
@@ -109,6 +124,7 @@ export function ExpenseCreateDialog({
   // Lectura IA del adjunto: autollenado best-effort (siempre revisable a mano).
   const [leyendoIA, setLeyendoIA] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
+  const [arrastrando, setArrastrando] = useState(false);
   // Vuelos alrededor de la fecha del gasto (±15 días), para dejarlo LIGADO al
   // vuelo desde el alta — pedido del cliente: los gastos viven en su vuelo.
   const [vuelos, setVuelos] = useState<VueloCercano[]>([]);
@@ -226,6 +242,24 @@ export function ExpenseCreateDialog({
     }
   };
 
+  const seleccionarFactura = (file: File | null) => {
+    if (file && !TIPOS_FACTURA.includes(file.type)) {
+      toast.error(
+        `Formato no soportado (${file.type || "desconocido"}). Usa foto (JPG/PNG/WebP), PDF, Excel (.xlsx) o CSV.`,
+      );
+      return;
+    }
+    setFactura(file);
+    setAiRaw(null);
+    if (file && watch("estatus_comprobante") === "SIN_COMPROBANTE") {
+      setValue("estatus_comprobante", "FACTURA");
+    }
+    if (!file && watch("estatus_comprobante") === "FACTURA") {
+      setValue("estatus_comprobante", "SIN_COMPROBANTE");
+    }
+    if (file) void leerConIA(file);
+  };
+
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
       // Primero el archivo: si la subida falla, no se crea el gasto a medias.
@@ -286,6 +320,98 @@ export function ExpenseCreateDialog({
           </DialogHeader>
 
           <form onSubmit={onSubmit} className="space-y-4">
+            {/* Zona IA: lo primero que se ve — arrastra la factura y la IA
+                llena el gasto. El input oculto cubre el click. */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (!leyendoIA && !factura) facturaRef.current?.click();
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && !leyendoIA && !factura) {
+                  e.preventDefault();
+                  facturaRef.current?.click();
+                }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!leyendoIA) setArrastrando(true);
+              }}
+              onDragLeave={() => setArrastrando(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setArrastrando(false);
+                if (leyendoIA) return;
+                const file = e.dataTransfer.files?.[0] ?? null;
+                if (file) seleccionarFactura(file);
+              }}
+              className={cn(
+                "rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
+                arrastrando
+                  ? "border-brand-500 bg-brand-500/15"
+                  : leyendoIA
+                    ? "border-brand-500/70 bg-brand-500/10 animate-pulse"
+                    : factura
+                      ? "border-emerald-500/60 bg-emerald-500/10"
+                      : "cursor-pointer border-brand-500/50 bg-brand-500/5 hover:border-brand-500 hover:bg-brand-500/10",
+              )}
+            >
+              {leyendoIA ? (
+                <div className="flex flex-col items-center gap-1.5">
+                  <SparklesIcon className="h-8 w-8 animate-bounce text-brand-500" />
+                  <p className="text-sm font-medium">Leyendo la factura con IA…</p>
+                  <p className="text-xs text-muted-foreground truncate max-w-full">
+                    {factura?.name}
+                  </p>
+                </div>
+              ) : factura ? (
+                <div className="flex items-center justify-center gap-2">
+                  <CheckCircleIcon className="h-6 w-6 shrink-0 text-emerald-500" />
+                  <div className="min-w-0 text-left">
+                    <p className="truncate text-sm font-medium">{factura.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {aiRaw
+                        ? "La IA llenó los campos — revísalos antes de guardar."
+                        : "Adjunta como comprobante (captura los datos a mano)."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    title="Quitar el archivo"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      seleccionarFactura(null);
+                    }}
+                    className="ml-1 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <XMarkIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1.5">
+                  <SparklesIcon className="h-8 w-8 text-brand-500" />
+                  <p className="text-sm font-semibold">
+                    Arrastra aquí la factura y la IA llena el gasto
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    o haz clic para elegirla · foto, PDF o Excel — monto, fecha,
+                    categoría y proveedor se llenan solos
+                  </p>
+                </div>
+              )}
+            </div>
+            <input
+              ref={facturaRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                seleccionarFactura(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+
             <div className="grid grid-cols-3 gap-3">
               <Field label="Monto">
                 <Input
@@ -399,45 +525,6 @@ export function ExpenseCreateDialog({
                 value={watch("proveedor_id")}
                 onChange={(v) => setValue("proveedor_id", v)}
                 placeholder="Sin proveedor"
-              />
-            </Field>
-
-            <Field
-              label="Factura / recibo (foto, PDF o Excel)"
-              hint={
-                leyendoIA
-                  ? "Leyendo la factura con IA…"
-                  : "Al adjuntar, la IA prellena monto, fecha, categoría y proveedor (revísalos); el archivo queda como comprobante."
-              }
-            >
-              <Input
-                ref={facturaRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,text/csv"
-                disabled={leyendoIA}
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setFactura(file);
-                  setAiRaw(null);
-                  if (file && watch("estatus_comprobante") === "SIN_COMPROBANTE") {
-                    setValue("estatus_comprobante", "FACTURA");
-                  }
-                  // Solo tipos que la visión soporta (HEIC arrastrado se sube
-                  // como comprobante pero se captura manual).
-                  if (
-                    file &&
-                    [
-                      "image/jpeg",
-                      "image/png",
-                      "image/webp",
-                      "application/pdf",
-                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                      "text/csv",
-                    ].includes(file.type)
-                  ) {
-                    void leerConIA(file);
-                  }
-                }}
               />
             </Field>
 
