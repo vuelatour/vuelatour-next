@@ -5,7 +5,7 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { ItemFormDialog } from "./item-form-dialog";
 
-export function ItemCreateButton() {
+export function ItemCreateButton({ categorias }: { categorias?: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -13,7 +13,7 @@ export function ItemCreateButton() {
         <PlusIcon className="h-4 w-4" />
         Nuevo ítem
       </Button>
-      <ItemFormDialog open={open} onOpenChange={setOpen} />
+      <ItemFormDialog open={open} onOpenChange={setOpen} categorias={categorias} />
     </>
   );
 }

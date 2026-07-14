@@ -33,9 +33,10 @@ interface ItemActionsProps {
   item: InventarioItem;
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  categorias?: string[];
 }
 
-export function ItemActions({ item, aircraft, providers }: ItemActionsProps) {
+export function ItemActions({ item, aircraft, providers, categorias }: ItemActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openSalida, setOpenSalida] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
@@ -83,7 +84,12 @@ export function ItemActions({ item, aircraft, providers }: ItemActionsProps) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ItemFormDialog open={openEdit} onOpenChange={setOpenEdit} initialItem={item} />
+      <ItemFormDialog
+        open={openEdit}
+        onOpenChange={setOpenEdit}
+        initialItem={item}
+        categorias={categorias}
+      />
 
       <MovimientoDialog
         open={openSalida}

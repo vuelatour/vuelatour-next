@@ -44,6 +44,9 @@ export default async function InventoryPage() {
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
+  // Categorías existentes (únicas) para el selector del formulario: elegir
+  // una evita fragmentar el catálogo ("Aceite" vs "Aceites").
+  const categorias = [...new Set(items.map((i) => i.categoria).filter(Boolean))].sort();
 
   return (
     <div className="space-y-6">
@@ -68,7 +71,7 @@ export default async function InventoryPage() {
             label="Cardex"
           />
           <ImportCompraButton providers={providers} />
-          <ItemCreateButton />
+          <ItemCreateButton categorias={categorias} />
         </div>
       </div>
 
@@ -156,7 +159,12 @@ export default async function InventoryPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{mxn(it.valor_mxn)} MXN</TableCell>
                     <TableCell>
-                      <ItemActions item={it} aircraft={aircraft} providers={providers} />
+                      <ItemActions
+                        item={it}
+                        aircraft={aircraft}
+                        providers={providers}
+                        categorias={categorias}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

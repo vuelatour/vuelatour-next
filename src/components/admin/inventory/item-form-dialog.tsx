@@ -28,9 +28,16 @@ interface ItemFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialItem?: InventarioItem;
+  /** Categorías existentes: el campo las sugiere y teclear una nueva la crea. */
+  categorias?: string[];
 }
 
-export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDialogProps) {
+export function ItemFormDialog({
+  open,
+  onOpenChange,
+  initialItem,
+  categorias,
+}: ItemFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialItem;
   // Foto del producto: archivo nuevo elegido, o quitar la existente.
@@ -193,8 +200,24 @@ export function ItemFormDialog({ open, onOpenChange, initialItem }: ItemFormDial
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Categoría" required hint="Libre: aceites, filtros…" error={errors.categoria?.message}>
-              <Input placeholder="filtros" {...register("categoria", { required: "Requerido" })} />
+            <Field
+              label="Categoría"
+              required
+              hint="Elige una existente o escribe una nueva para crearla"
+              error={errors.categoria?.message}
+            >
+              <>
+                <Input
+                  placeholder="filtros"
+                  list="categorias-existentes"
+                  {...register("categoria", { required: "Requerido" })}
+                />
+                <datalist id="categorias-existentes">
+                  {(categorias ?? []).map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </>
             </Field>
             <Field label="Número de parte" hint="P/N del fabricante" error={errors.numero_parte?.message}>
               <Input placeholder="108-1" {...register("numero_parte")} className="font-mono" />
