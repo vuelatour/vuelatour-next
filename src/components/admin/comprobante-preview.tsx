@@ -17,17 +17,25 @@ export function ComprobantePreview({
   alt: string;
   thumbClassName?: string;
 }) {
-  if (path.toLowerCase().endsWith(".pdf")) {
+  const lower = path.toLowerCase();
+  const etiqueta = lower.endsWith(".pdf")
+    ? "PDF"
+    : lower.endsWith(".xlsx")
+      ? "XLSX"
+      : lower.endsWith(".csv")
+        ? "CSV"
+        : null;
+  if (etiqueta) {
     return (
       <a
         href={url}
         target="_blank"
         rel="noreferrer"
-        title={`${alt} (PDF)`}
+        title={`${alt} (${etiqueta})`}
         className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground ring-1 ring-border hover:text-foreground hover:ring-brand-500"
       >
         <DocumentTextIcon className="h-4 w-4" />
-        PDF
+        {etiqueta}
       </a>
     );
   }

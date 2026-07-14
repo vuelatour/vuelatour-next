@@ -197,10 +197,15 @@ export function ExpenseCreateDialog({
         reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
         reader.readAsDataURL(file);
       });
+      const esExcel =
+        file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        file.type === "text/csv";
       const res = await leerFacturaIAAction(
         file.type === "application/pdf"
           ? { pdfBase64: b64 }
-          : { imageBase64: b64, mediaType: file.type },
+          : esExcel
+            ? { excelBase64: b64, excelFilename: file.name }
+            : { imageBase64: b64, mediaType: file.type },
       );
       if (!res.ok || !res.data) {
         toast.info(`La IA no pudo leer la factura${res.error ? `: ${res.error}` : ""}; captura manual.`);
@@ -398,7 +403,7 @@ export function ExpenseCreateDialog({
             </Field>
 
             <Field
-              label="Factura / recibo (foto o PDF)"
+              label="Factura / recibo (foto, PDF o Excel)"
               hint={
                 leyendoIA
                   ? "Leyendo la factura con IA…"
@@ -408,7 +413,7 @@ export function ExpenseCreateDialog({
               <Input
                 ref={facturaRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
+                accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,text/csv"
                 disabled={leyendoIA}
                 onChange={(e) => {
                   const file = e.target.files?.[0] ?? null;
@@ -421,7 +426,14 @@ export function ExpenseCreateDialog({
                   // como comprobante pero se captura manual).
                   if (
                     file &&
-                    ["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)
+                    [
+                      "image/jpeg",
+                      "image/png",
+                      "image/webp",
+                      "application/pdf",
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                      "text/csv",
+                    ].includes(file.type)
                   ) {
                     void leerConIA(file);
                   }

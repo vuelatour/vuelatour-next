@@ -73,6 +73,8 @@ export async function leerFacturaIAAction(input: {
   imageBase64?: string;
   mediaType?: string;
   pdfBase64?: string;
+  excelBase64?: string;
+  excelFilename?: string;
 }): Promise<ActionResult<GastoTicketIA>> {
   try {
     const data = await apiServer<GastoTicketIA>("/v1/vision/gasto-ticket", {

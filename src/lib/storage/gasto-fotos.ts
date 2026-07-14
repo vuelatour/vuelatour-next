@@ -2,14 +2,16 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const BUCKET = "gasto-fotos";
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-// Facturas y recibos: fotos o PDF. El bucket es PRIVADO (se muestra con URLs
-// firmadas por el API, igual que las fotos que sube el piloto desde la app).
+// Facturas y recibos: fotos, PDF o Excel/CSV. DEBE coincidir con
+// allowed_mime_types del bucket (migración 20260714000003) — un tipo fuera de
+// esa lista lo rechaza Storage aunque aquí pase.
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
-  "image/heic",
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
 ]);
 
 /**
@@ -25,7 +27,7 @@ export async function uploadGastoComprobante(file: File): Promise<string> {
   }
   if (!ALLOWED_TYPES.has(file.type)) {
     throw new Error(
-      `Formato no soportado (${file.type || "desconocido"}). Permitidos: JPG, PNG, WebP, HEIC o PDF.`,
+      `Formato no soportado (${file.type || "desconocido"}). Permitidos: JPG, PNG, WebP, PDF, XLSX o CSV.`,
     );
   }
 
@@ -65,7 +67,9 @@ function sanitizeExt(name: string, contentType: string): string {
   if (contentType === "image/jpeg") return "jpg";
   if (contentType === "image/png") return "png";
   if (contentType === "image/webp") return "webp";
-  if (contentType === "image/heic") return "heic";
   if (contentType === "application/pdf") return "pdf";
+  if (contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return "xlsx";
+  if (contentType === "text/csv") return "csv";
   return "bin";
 }
