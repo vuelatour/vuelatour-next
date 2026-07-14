@@ -452,16 +452,51 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
           />
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;
-              oficina revisa aquí Operación/FBO, combustible, viáticos...) */}
-          <FlightGastosCard
-            gastos={gastos}
-            fotoUrls={gastoFotoUrls}
-            aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
-            providers={providerOptions}
-            vueloId={snapshot.id}
-            vueloFolio={snapshot.folio}
-            aeronaveId={snapshot.aeronave_id}
-          />
+              oficina revisa aquí Operación/FBO, combustible, viáticos...).
+              En vuelos CUBIERTOS por externo no hay gastos ni tacómetros: el
+              único costo es lo que cobra el apoyo. */}
+          {snapshot.es_externo ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Apoyo externo</CardTitle>
+                <CardDescription className="text-xs">
+                  Este vuelo lo opera un tercero: no se capturan gastos ni
+                  tacómetros.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <Row label="Operador">
+                  {snapshot.operador_externo ?? (
+                    <span className="text-muted-foreground">Sin registrar</span>
+                  )}
+                </Row>
+                <Row label="Costo del apoyo">
+                  <span className="font-semibold">
+                    {fmtUsd(Number(snapshot.costo_externo_usd) || 0)}
+                  </span>
+                </Row>
+                <Row label="Margen vs cobro">
+                  {fmtUsd(
+                    Number(snapshot.monto_total_usd) -
+                      (Number(snapshot.costo_externo_usd) || 0),
+                  )}
+                </Row>
+                <p className="text-xs text-muted-foreground pt-1">
+                  Edita operador/costo con el botón «Editar externo» de arriba.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <FlightGastosCard
+              gastos={gastos}
+              fotoUrls={gastoFotoUrls}
+              aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
+              providers={providerOptions}
+              vueloId={snapshot.id}
+              vueloFolio={snapshot.folio}
+              aeronaveId={snapshot.aeronave_id}
+            />
+          )}
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
           <FlightBitacoraCard eventos={bitacora} />

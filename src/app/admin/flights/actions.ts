@@ -120,6 +120,27 @@ export async function completeFlightAction(
   }
 }
 
+/**
+ * Convierte un vuelo propio en CUBIERTO por operador externo (suelta avión,
+ * piloto y tacómetros; el cobro al cliente no cambia). Sobre un vuelo ya
+ * externo solo actualiza operador/costo.
+ */
+export async function cubrirExternoAction(
+  id: string,
+  payload: { operador_externo: string; costo_externo_usd: number },
+): Promise<ActionResult<FlightListItem>> {
+  try {
+    const updated = await apiServer<FlightListItem>(
+      `/v1/flights/${id}/cubrir-externo`,
+      { method: "POST", body: payload },
+    );
+    revalidateFlight(id);
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface UpdateFlightPayload {
   piloto_id?: string | null;
   pasajeros_nombres?: string[];

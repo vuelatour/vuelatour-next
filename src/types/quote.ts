@@ -69,6 +69,8 @@ export interface CalculateQuoteRequest {
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
   pase_abordar?: boolean;
+  /** Horas de SOBREVUELO (reconocimiento/foto): se suman al tiempo cobrable. */
+  sobrevuelo_hr?: number;
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
   /** Conceptos extra (se suman al total; los gravados entran a la base de IVA). */
@@ -111,6 +113,8 @@ export interface QuoteBreakdown {
   tiempos: {
     vuelo_hr: number;
     calzos_hr: number;
+    /** Horas de sobrevuelo solicitadas (0 si no aplica). */
+    sobrevuelo_hr?: number;
     cobrable_hr: number;
     /** Vuelo corto: se facturó la hora completa (cobrable_hr = 1.0). */
     minimo_hora_aplicado?: boolean;

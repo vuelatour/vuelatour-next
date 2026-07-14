@@ -118,7 +118,16 @@ interface QuoteFormValues {
   tipo_tarifa: TipoTarifa;
   pasajeros: number;
   pase_abordar: boolean;
+  /** Horas de sobrevuelo (reconocimiento/foto): se suman al tiempo cobrable. */
+  sobrevuelo_hr: number | null;
+  /** Switch rápido de TUAS: apagado = no se cobra (override $0/pax). */
+  cobrar_tuas: boolean;
   cotizacion_abierta: boolean;
+  /** Vuelo CUBIERTO por operador externo (sin avión propio ni tacómetros). */
+  es_externo: boolean;
+  operador_externo: string;
+  /** Lo que cobra el apoyo externo (costo para VuelaTour). */
+  costo_externo_usd: number | null;
   /** Conceptos extra (handler, comisariato, extensión…). */
   extras: ExtraConcepto[];
   /** Redondeo AUTOMÁTICO al siguiente múltiplo de $10 (regla del cliente). */
@@ -386,7 +395,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         fecha_traslado_final: q.fecha_traslado_final
           ? isoToCancunInput(q.fecha_traslado_final)
           : "",
-        aeronave_id: q.aeronave_id ?? defaultAircraftId,
+        // Externo: el vuelo no tiene avión propio; la referencia de tarifa con
+        // la que se cotizó vive en el snapshot.
+        aeronave_id:
+          q.aeronave_id ?? q.calculo_snapshot?.aeronave?.id ?? defaultAircraftId,
         ruta_id: "",
         escalas: q.itinerario_operativo
           ? // Itinerario operativo: las escalas del vuelo son la ruta REAL del
@@ -415,7 +427,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
         pase_abordar: q.pase_abordar,
+        sobrevuelo_hr:
+          Number(q.calculo_snapshot?.tiempos?.sobrevuelo_hr) > 0
+            ? Number(q.calculo_snapshot!.tiempos.sobrevuelo_hr)
+            : null,
+        // El switch de TUAS apagado se guardó como override $0/pax; un override
+        // distinto de 0 se re-hidrata en el campo avanzado para no perderlo.
+        cobrar_tuas: q.calculo_snapshot?.tuas?.usd_pax_default !== 0,
         cotizacion_abierta: q.cotizacion_abierta ?? false,
+        es_externo: q.es_externo ?? false,
+        operador_externo: q.operador_externo ?? "",
+        costo_externo_usd:
+          q.costo_externo_usd != null ? Number(q.costo_externo_usd) : null,
         // La comisión BillPocket la sintetiza el motor: no se edita como extra.
         extras: (q.extras ?? []).filter(
           (e) => !e.concepto?.startsWith("Comisión BillPocket"),
@@ -442,7 +465,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         comision_vendedor_nombre:
           q.calculo_snapshot?.meta?.comision_vendedor_nombre ?? "",
         tarifa_hora_override_usd: null,
-        tuas_override_usd_pax: null,
+        tuas_override_usd_pax:
+          Number(q.calculo_snapshot?.tuas?.usd_pax_default) > 0
+            ? Number(q.calculo_snapshot!.tuas.usd_pax_default)
+            : null,
         iva_pct_override: null,
         notas: q.notas ?? "",
         notas_internas: q.notas_internas ?? "",
@@ -460,7 +486,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       tipo_tarifa: "PUBLICO",
       pasajeros: 2,
       pase_abordar: false,
+      sobrevuelo_hr: null,
+      cobrar_tuas: true,
       cotizacion_abierta: false,
+      es_externo: false,
+      operador_externo: "",
+      costo_externo_usd: null,
       extras: [],
       redondeo_auto: true,
       redondeo_usd: null,
@@ -511,6 +542,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       tipo_tarifa: debounced.tipo_tarifa,
       pasajeros: Number(debounced.pasajeros) || 0,
       pase_abordar: debounced.pase_abordar,
+      sobrevuelo_hr:
+        Number(debounced.sobrevuelo_hr) > 0
+          ? Number(debounced.sobrevuelo_hr)
+          : undefined,
       cotizacion_abierta: debounced.cotizacion_abierta,
       extras: (debounced.extras ?? [])
         .filter((e) => e.concepto.trim() && Number(e.monto_usd) > 0)
@@ -578,7 +613,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     if (debounced.tarifa_hora_override_usd) {
       base.tarifa_hora_override_usd = Number(debounced.tarifa_hora_override_usd);
     }
-    if (debounced.tuas_override_usd_pax !== null && debounced.tuas_override_usd_pax !== undefined) {
+    if (!debounced.cobrar_tuas) {
+      // Switch rápido apagado: la TUAS no se cobra en esta cotización.
+      base.tuas_override_usd_pax = 0;
+    } else if (debounced.tuas_override_usd_pax !== null && debounced.tuas_override_usd_pax !== undefined) {
       base.tuas_override_usd_pax = Number(debounced.tuas_override_usd_pax);
     }
     if (debounced.iva_pct_override !== null && debounced.iva_pct_override !== undefined) {
@@ -723,8 +761,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // — lo persistido debe ser exactamente lo que el operador vio.
   const previewFresco =
     !loading && calcPayload?.cliente_id === (values.cliente_id || undefined);
+  // Vuelo cubierto por externo: el operador es obligatorio (identifica quién vuela).
+  const externoIncompleto =
+    !isRevise && values.es_externo && !values.operador_externo.trim();
   const canSave =
     !capacidadExcedida &&
+    !externoIncompleto &&
     previewFresco &&
     (isRevise
       ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
@@ -792,6 +834,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           : undefined,
         notas: values.notas || undefined,
         notas_internas: values.notas_internas || undefined,
+        ...(values.es_externo
+          ? {
+              es_externo: true,
+              operador_externo: values.operador_externo.trim(),
+              costo_externo_usd:
+                Number(values.costo_externo_usd) > 0
+                  ? Number(values.costo_externo_usd)
+                  : 0,
+            }
+          : {}),
       });
       if (res.ok && res.data) {
         toast.success(`Cotización #${res.data.folio} creada`);
@@ -1142,6 +1194,36 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Sobrevuelo (hr)"
+              hint="Tiempo extra sobre la zona; se suma al cobrable"
+            >
+              <Input
+                type="number"
+                step="0.1"
+                min={0}
+                max={24}
+                placeholder="0"
+                {...register("sobrevuelo_hr")}
+              />
+            </Field>
+            <div className="flex flex-col gap-1">
+              <Label className="text-sm font-medium">Cobrar TUAS</Label>
+              <div className="flex items-center h-9">
+                <Switch
+                  checked={values.cobrar_tuas}
+                  onCheckedChange={(c) => setValue("cobrar_tuas", c)}
+                />
+                <span className="text-xs text-muted-foreground ml-3">
+                  {values.cobrar_tuas
+                    ? "Se cobra según aeropuerto"
+                    : "No se cobra en esta cotización"}
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div className="space-y-0.5">
               <Label className="text-sm font-medium">Cotización abierta</Label>
@@ -1155,6 +1237,73 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
             />
           </div>
+
+          {/* Vuelo cubierto por operador externo: el cliente recibe su
+              cotización normal; VuelaTour paga al apoyo y no captura
+              tacómetros ni gastos (el vuelo nace sin avión propio). */}
+          {isRevise ? (
+            initialQuote?.es_externo && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                Vuelo cubierto por <strong>{initialQuote.operador_externo}</strong>.
+                El avión de arriba es solo la referencia de tarifa; el operador y
+                el costo del apoyo se editan desde el detalle del vuelo.
+              </div>
+            )
+          ) : (
+            <div className="rounded-lg border border-border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">
+                    Cubierto por operador externo
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Otro operador vuela por nosotros: sin avión propio, sin
+                    tacómetros ni gastos. El cliente recibe su cotización normal.
+                  </p>
+                </div>
+                <Switch
+                  checked={values.es_externo}
+                  onCheckedChange={(c) => setValue("es_externo", c)}
+                />
+              </div>
+              {values.es_externo && (
+                <div className="space-y-3 pt-1">
+                  <Field label="Operador externo" required>
+                    <Input
+                      placeholder="Ej. Aerocharter del Caribe"
+                      {...register("operador_externo")}
+                    />
+                  </Field>
+                  <Field
+                    label="Costo del apoyo (USD)"
+                    hint="Lo que nos cobra el operador por cubrir el vuelo"
+                  >
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="0.00"
+                      {...register("costo_externo_usd")}
+                    />
+                  </Field>
+                  <p className="text-xs text-muted-foreground">
+                    El avión seleccionado arriba solo define la tarifa por hora
+                    para cotizar al cliente.
+                  </p>
+                  {breakdown && Number(values.costo_externo_usd) > 0 && (
+                    <p className="text-xs font-medium text-emerald-600">
+                      Margen estimado (sin IVA):{" "}
+                      {fmtUsd(
+                        breakdown.totales.total_usd -
+                          breakdown.iva.monto_usd -
+                          Number(values.costo_externo_usd),
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Conceptos extra */}
           <ExtrasEditor
@@ -1544,13 +1693,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </Field>
               <Field
                 label="TUAS USD/pax (override)"
-                hint="Vacío = usa la del aeropuerto"
+                hint={
+                  values.cobrar_tuas
+                    ? "Vacío = usa la del aeropuerto"
+                    : "Sin efecto: el switch «Cobrar TUAS» está apagado"
+                }
               >
                 <Input
                   type="number"
                   step="0.01"
                   min={0}
                   placeholder="Auto"
+                  disabled={!values.cobrar_tuas}
                   {...register("tuas_override_usd_pax")}
                 />
               </Field>
@@ -1893,6 +2047,13 @@ function Preview({
               value={`${fmtDecimal(breakdown.tiempos.calzos_hr, 4)} hr`}
               hint={`${breakdown.ruta.num_aterrizajes} aterrizajes × 0.15 hr`}
             />
+            {Number(breakdown.tiempos.sobrevuelo_hr) > 0 && (
+              <Row
+                label="Sobrevuelo"
+                value={`${fmtDecimal(breakdown.tiempos.sobrevuelo_hr!, 4)} hr`}
+                hint="Tiempo extra sobre la zona"
+              />
+            )}
             <Row
               label="Cobrable"
               value={`${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`}

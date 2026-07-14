@@ -26,6 +26,7 @@ import {
   startFlightAction,
   updatePermisoAction,
 } from "@/app/admin/flights/actions";
+import { CubrirExternoDialog } from "./cubrir-externo-dialog";
 import { FlightAssignSheet } from "./flight-assign-sheet";
 import { FlightDangerActions } from "./flight-danger-actions";
 import { FlightMetaSheet } from "./flight-meta-sheet";
@@ -63,6 +64,7 @@ export function FlightActionsBar({
   const [metaOpen, setMetaOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
+  const [externoOpen, setExternoOpen] = useState(false);
   const [starting, startStart] = useTransition();
   const [completing, startComplete] = useTransition();
   const [permiso, startPermiso] = useTransition();
@@ -99,6 +101,11 @@ export function FlightActionsBar({
       flight.estado === "CONFIRMADO");
   const canComplete = flight.es_externo && flight.estado === "EN_VUELO";
   const canEditMeta = flight.estado !== "CANCELADO";
+  // Cubrir con externo (Alejandro): una cotización con avión propio se puede
+  // pasar a un operador externo mientras el vuelo no haya cerrado. Sobre un
+  // externo, el mismo diálogo edita operador/costo.
+  const canCubrirExterno =
+    flight.estado !== "CANCELADO" && flight.estado !== "COMPLETADO";
 
   const missingAssignment =
     !flight.es_externo && (!flight.aeronave_id || !flight.piloto_id);
@@ -191,6 +198,21 @@ export function FlightActionsBar({
           Cerrar vuelo
         </Button>
       )}
+      {canCubrirExterno && (
+        <Button
+          variant="outline"
+          onClick={() => setExternoOpen(true)}
+          className="gap-2 border-amber-500/50 text-amber-600 dark:text-amber-400"
+          title={
+            flight.es_externo
+              ? "Editar quién cubre el vuelo y cuánto nos cobra"
+              : "Pasar este vuelo a un operador externo: suelta avión, piloto y tacómetros sin tocar la cotización del cliente"
+          }
+        >
+          <PaperAirplaneIcon className="h-4 w-4" />
+          {flight.es_externo ? "Editar externo" : "Cubrir con externo"}
+        </Button>
+      )}
 
       <FlightDangerActions
         flight={flight}
@@ -212,6 +234,14 @@ export function FlightActionsBar({
         flight={flight}
         pilots={pilots}
       />
+
+      {externoOpen && (
+        <CubrirExternoDialog
+          open={externoOpen}
+          onOpenChange={setExternoOpen}
+          flight={flight}
+        />
+      )}
 
       <AlertDialog open={startOpen} onOpenChange={setStartOpen}>
         <AlertDialogContent>

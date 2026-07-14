@@ -36,6 +36,12 @@ export interface CreateQuotePayload extends CalculateQuoteRequest {
   fecha_traslado_final?: string;
   notas?: string;
   notas_internas?: string;
+  /** Vuelo CUBIERTO por operador externo: nace sin avión propio ni tacómetros;
+      el avión seleccionado queda solo como referencia de tarifa. */
+  es_externo?: boolean;
+  operador_externo?: string;
+  /** Lo que cobra el apoyo (costo del vuelo para VuelaTour). */
+  costo_externo_usd?: number;
 }
 
 export async function createQuoteAction(payload: CreateQuotePayload): Promise<ActionResult<PersistedQuote>> {
