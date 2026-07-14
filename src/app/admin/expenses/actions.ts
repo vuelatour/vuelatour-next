@@ -44,6 +44,47 @@ export async function createGastoAction(raw: unknown): Promise<ActionResult<Gast
   }
 }
 
+// ===== Lectura IA de facturas (autollenado del alta de gasto) =====
+
+export interface GastoTicketIA {
+  disponible: boolean;
+  motivo?: string;
+  monto?: number | null;
+  moneda?: "MXN" | "USD" | null;
+  fecha?: string | null;
+  proveedor?: string | null;
+  concepto?: string | null;
+  categoria_sugerida?: string | null;
+  medio_pago?: string | null;
+  tarjeta_terminacion?: string | null;
+  conceptos?: { concepto: string; monto: number }[];
+  matricula?: string | null;
+  confianza?: number;
+  legible?: boolean;
+  notas?: string;
+}
+
+/**
+ * Lee la factura adjunta (foto o PDF en base64) con la IA de visión y devuelve
+ * los datos para prellenar el formulario. Best-effort: disponible=false si la
+ * IA no está configurada o el documento no se distingue.
+ */
+export async function leerFacturaIAAction(input: {
+  imageBase64?: string;
+  mediaType?: string;
+  pdfBase64?: string;
+}): Promise<ActionResult<GastoTicketIA>> {
+  try {
+    const data = await apiServer<GastoTicketIA>("/v1/vision/gasto-ticket", {
+      method: "POST",
+      body: input,
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ===== Gastos de pista (cuotas de aeródromo VIP SAESA) =====
 
 /** Aterrizajes del periodo sin gasto de pista, con tarifa sugerida. */

@@ -76,6 +76,8 @@ export const GastoCreateSchema = z.object({
   ),
   /** Path en el bucket gasto-fotos del comprobante subido por la oficina. */
   foto_url: z.string().max(500).optional().or(z.literal("")),
+  /** Lectura cruda de la IA (auditoría/desglose server-side), si la hubo. */
+  valor_ia_extraido: z.record(z.string(), z.unknown()).optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

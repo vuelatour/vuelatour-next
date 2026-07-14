@@ -19,6 +19,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createGastoAction,
   buscarVuelosCercanosAction,
+  leerFacturaIAAction,
+  type GastoTicketIA,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -104,6 +106,9 @@ export function ExpenseCreateDialog({
   // Factura/recibo adjunto (foto o PDF): se sube al bucket privado al guardar.
   const [factura, setFactura] = useState<File | null>(null);
   const facturaRef = useRef<HTMLInputElement>(null);
+  // Lectura IA del adjunto: autollenado best-effort (siempre revisable a mano).
+  const [leyendoIA, setLeyendoIA] = useState(false);
+  const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
   // Vuelos alrededor de la fecha del gasto (±15 días), para dejarlo LIGADO al
   // vuelo desde el alta — pedido del cliente: los gastos viven en su vuelo.
   const [vuelos, setVuelos] = useState<VueloCercano[]>([]);
@@ -129,6 +134,93 @@ export function ExpenseCreateDialog({
     };
   }, [open, defaultVueloId, fechaGasto]);
 
+  const aplicarIA = (ai: GastoTicketIA) => {
+    const llenado: string[] = [];
+    if (ai.monto != null && ai.monto > 0) {
+      setValue("monto", String(ai.monto));
+      llenado.push(`$${ai.monto}`);
+    }
+    if (ai.moneda === "MXN" || ai.moneda === "USD") setValue("moneda", ai.moneda);
+    if (ai.fecha && /^\d{4}-\d{2}-\d{2}$/.test(ai.fecha)) {
+      setValue("fecha_gasto", ai.fecha);
+      llenado.push(ai.fecha);
+    }
+    if (ai.categoria_sugerida && CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)) {
+      setValue("categoria", ai.categoria_sugerida);
+      llenado.push(ai.categoria_sugerida);
+    }
+    if (ai.medio_pago && MEDIOS.some((m) => m.value === ai.medio_pago)) {
+      setValue("medio_pago", ai.medio_pago);
+    }
+    // Proveedor: match laxo contra el catálogo por nombre.
+    if (ai.proveedor) {
+      const needle = ai.proveedor.toLowerCase();
+      const match = providers.find(
+        (p) =>
+          p.nombre.toLowerCase().includes(needle) || needle.includes(p.nombre.toLowerCase()),
+      );
+      if (match) {
+        setValue("proveedor_id", match.id);
+        llenado.push(match.nombre);
+      }
+    }
+    // Matrícula leída → avión (solo si el vuelo no lo fijó ya).
+    if (ai.matricula && !watch("aeronave_id")) {
+      const av = aircraft.find(
+        (a) => a.matricula.replace(/-/g, "") === ai.matricula!.replace(/-/g, ""),
+      );
+      if (av) setValue("aeronave_id", av.id);
+    }
+    const notas: string[] = [];
+    if (ai.concepto) notas.push(ai.concepto);
+    if (ai.proveedor && !providers.some((p) => p.nombre.toLowerCase() === ai.proveedor!.toLowerCase()))
+      notas.push(`Proveedor: ${ai.proveedor}`);
+    if (ai.matricula) notas.push(`Matrícula: ${ai.matricula}`);
+    if (notas.length > 0 && !watch("notas")) setValue("notas", notas.join(" · "));
+    toast.success(
+      llenado.length > 0
+        ? `IA leyó la factura: ${llenado.join(" · ")}. Revisa antes de guardar.`
+        : "IA leyó la factura; revisa los campos.",
+    );
+  };
+
+  const leerConIA = async (file: File) => {
+    if (file.size > 8 * 1024 * 1024) {
+      toast.info("Archivo muy grande para la lectura IA (máx 8 MB); captura manual.");
+      return;
+    }
+    setLeyendoIA(true);
+    try {
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+        reader.readAsDataURL(file);
+      });
+      const res = await leerFacturaIAAction(
+        file.type === "application/pdf"
+          ? { pdfBase64: b64 }
+          : { imageBase64: b64, mediaType: file.type },
+      );
+      if (!res.ok || !res.data) {
+        toast.info(`La IA no pudo leer la factura${res.error ? `: ${res.error}` : ""}; captura manual.`);
+        return;
+      }
+      if (!res.data.disponible || !res.data.legible) {
+        toast.info(
+          res.data.motivo
+            ? `IA no disponible: ${res.data.motivo}`
+            : "La factura no se distingue bien; captura manual.",
+        );
+        return;
+      }
+      setAiRaw(res.data);
+      aplicarIA(res.data);
+    } finally {
+      setLeyendoIA(false);
+    }
+  };
+
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
       // Primero el archivo: si la subida falla, no se crea el gasto a medias.
@@ -141,10 +233,15 @@ export function ExpenseCreateDialog({
           return;
         }
       }
-      const result = await createGastoAction({ ...values, foto_url: fotoPath });
+      const result = await createGastoAction({
+        ...values,
+        foto_url: fotoPath,
+        valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
+      });
       if (result.ok) {
         toast.success(factura ? "Gasto registrado con su factura" : "Gasto registrado");
         setFactura(null);
+        setAiRaw(null);
         if (facturaRef.current) facturaRef.current.value = "";
         reset(emptyValues(formDefaults));
         setOpen(false);
@@ -302,17 +399,31 @@ export function ExpenseCreateDialog({
 
             <Field
               label="Factura / recibo (foto o PDF)"
-              hint="Se guarda como comprobante del gasto; al adjuntar, el estatus pasa a Factura."
+              hint={
+                leyendoIA
+                  ? "Leyendo la factura con IA…"
+                  : "Al adjuntar, la IA prellena monto, fecha, categoría y proveedor (revísalos); el archivo queda como comprobante."
+              }
             >
               <Input
                 ref={facturaRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                disabled={leyendoIA}
                 onChange={(e) => {
                   const file = e.target.files?.[0] ?? null;
                   setFactura(file);
+                  setAiRaw(null);
                   if (file && watch("estatus_comprobante") === "SIN_COMPROBANTE") {
                     setValue("estatus_comprobante", "FACTURA");
+                  }
+                  // Solo tipos que la visión soporta (HEIC arrastrado se sube
+                  // como comprobante pero se captura manual).
+                  if (
+                    file &&
+                    ["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)
+                  ) {
+                    void leerConIA(file);
                   }
                 }}
               />
@@ -335,8 +446,8 @@ export function ExpenseCreateDialog({
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? "Guardando…" : "Guardar gasto"}
+              <Button type="submit" disabled={pending || leyendoIA}>
+                {pending ? "Guardando…" : leyendoIA ? "Leyendo factura…" : "Guardar gasto"}
               </Button>
             </DialogFooter>
           </form>
