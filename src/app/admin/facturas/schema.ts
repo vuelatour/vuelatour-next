@@ -27,6 +27,11 @@ export const EmitirFacturaSchema = z
     facturado_a_uso_cfdi: optionalStr(5),
     publico_en_general: z.boolean().optional(),
     periodicidad: z.enum(["01", "02", "03", "04"]).optional(),
+    /** MXN por USD — requerido por el API cuando el vuelo no tiene monto MXN. */
+    tc_usd_mxn: z.coerce
+      .number({ error: "Tipo de cambio inválido" })
+      .positive({ message: "El tipo de cambio debe ser mayor a 0" })
+      .optional(),
   })
   .superRefine((val, ctx) => {
     if (val.facturado_a_rfc && val.facturado_a_rfc.length > 0) {

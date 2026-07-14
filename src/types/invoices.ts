@@ -34,7 +34,13 @@ export interface Factura {
   motivo_cancelacion: string | null;
   cancelada_at: string | null;
   created_at: string;
-  vuelo: { folio: number; origen_iata: string; destino_iata: string } | null;
+  vuelo: {
+    folio: number;
+    origen_iata: string;
+    destino_iata: string;
+    /** RFC del cliente del vuelo: distingue el caso 9.7 "SE FACTURÓ A". */
+    cliente?: { rfc: string | null } | { rfc: string | null }[] | null;
+  } | null;
   emisora: { codigo: string; razon_social: string } | null;
 }
 

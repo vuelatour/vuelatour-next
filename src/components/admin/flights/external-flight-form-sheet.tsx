@@ -54,6 +54,8 @@ const ExternalFlightSchema = z
       "EFECTIVO",
       "DOLARES",
     ]),
+    // TC pactado (opcional): sin él, el vuelo en USD no se puede facturar.
+    tc_usd_mxn: z.string().optional().or(z.literal("")),
     pasajeros: z.coerce.number().int().min(1, "Mínimo 1"),
     fecha_vuelo: z.string().optional().or(z.literal("")),
     notas: z.string().max(2000).optional().or(z.literal("")),
@@ -68,6 +70,7 @@ const defaultValues: FormValues = {
   costo_externo_usd: 0,
   monto_total_usd: 0,
   metodo_cobro: "TRANSFERENCIA",
+  tc_usd_mxn: "",
   pasajeros: 1,
   fecha_vuelo: "",
   notas: "",
@@ -149,6 +152,8 @@ export function ExternalFlightFormSheet({
         costo_externo_usd: Number(values.costo_externo_usd),
         monto_total_usd: Number(values.monto_total_usd),
         metodo_cobro: values.metodo_cobro,
+        tc_usd_mxn:
+          Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : undefined,
         origen_iata: legs[0].origen,
         destino_iata: legs[legs.length - 1].destino,
         escalas: legs.map((l) => ({
@@ -287,6 +292,19 @@ export function ExternalFlightFormSheet({
               )}
             </div>
           )}
+
+          <Field
+            label="Tipo de cambio (MXN por USD)"
+            hint="Opcional aquí, pero sin TC el vuelo no se puede facturar (el CFDI se emite en MXN); también se puede capturar al emitir"
+          >
+            <Input
+              type="number"
+              step="0.0001"
+              min={0}
+              placeholder="Ej. 18.50"
+              {...register("tc_usd_mxn")}
+            />
+          </Field>
 
           <Field
             label="Método de cobro"

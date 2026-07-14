@@ -38,6 +38,12 @@ function clienteNombre(c: PendingFlight["cliente"]): string {
   return x?.nombre ?? "—";
 }
 
+function clienteRfc(c: PendingFlight["cliente"]): string | null {
+  if (!c) return null;
+  const x = Array.isArray(c) ? c[0] : c;
+  return x?.rfc ?? null;
+}
+
 interface PageProps {
   searchParams: Promise<{
     desde?: string;
@@ -62,11 +68,17 @@ export default async function FacturasPage({ searchParams }: PageProps) {
     label: `${e.codigo} — ${e.razon_social}`,
   }));
 
-  const fileUrls = await signFacturaFiles(
+  // Si la firma de URLs falla, se avisa en la card (antes el error se tragaba
+  // y los enlaces XML/PDF simplemente desaparecían).
+  const firma = await signFacturaFiles(
     facturasRes.data
       .flatMap((f) => [f.xml_url, f.pdf_url])
       .filter((p): p is string => !!p),
-  ).catch(() => ({}) as Record<string, string>);
+  )
+    .then((urls) => ({ urls, fallo: false }))
+    .catch(() => ({ urls: {} as Record<string, string>, fallo: true }));
+  const fileUrls = firma.urls;
+  const firmaUrlsFallo = firma.fallo;
 
   return (
     <div className="space-y-6">
@@ -74,7 +86,7 @@ export default async function FacturasPage({ searchParams }: PageProps) {
         <p className="text-sm text-muted-foreground">Facturación</p>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Facturas</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Vuelos pagados pendientes de facturar y CFDI emitidos (timbrado con FEL).
+          Vuelos pagados o por cobrar con método facturable, y CFDI emitidos.
         </p>
       </div>
 
@@ -133,9 +145,22 @@ export default async function FacturasPage({ searchParams }: PageProps) {
                       >
                         {clienteNombre(v.cliente)}
                       </Link>
+                      {!clienteRfc(v.cliente) && (
+                        <span
+                          className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-600"
+                          title="Captura RFC/régimen/CP en Clientes, o factura a Público en general / Otro receptor"
+                        >
+                          Sin datos fiscales
+                        </span>
+                      )}
                       {v.cobrado === false && (
                         <span className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-600">
                           Por cobrar{v.metodo_cobro ? ` · ${v.metodo_cobro}` : ""}
+                        </span>
+                      )}
+                      {v.cobrado === true && (
+                        <span className="ml-2 rounded-full border border-green-500/50 px-1.5 py-0.5 text-[10px] text-green-600 dark:text-green-400">
+                          Pagado{v.metodo_cobro ? ` · ${v.metodo_cobro}` : ""}
                         </span>
                       )}
                     </TableCell>
@@ -151,9 +176,24 @@ export default async function FacturasPage({ searchParams }: PageProps) {
                       {v.monto_total_mxn
                         ? `$${Number(v.monto_total_mxn).toLocaleString("es-MX")} MXN`
                         : `$${Number(v.monto_total_usd).toLocaleString("en-US")} USD`}
+                      {!v.monto_total_mxn && (
+                        <span
+                          className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 font-sans text-[10px] text-amber-600"
+                          title="Cotizado en USD sin tipo de cambio: se pedirá el TC al emitir (el CFDI se timbra en MXN)"
+                        >
+                          Falta TC
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <EmitirFacturaButton vueloId={v.id} emisoras={emisoras} />
+                      <EmitirFacturaButton
+                        vueloId={v.id}
+                        emisoras={emisoras}
+                        clienteNombre={clienteNombre(v.cliente)}
+                        clienteRfc={clienteRfc(v.cliente)}
+                        montoTotalMxn={v.monto_total_mxn}
+                        montoTotalUsd={v.monto_total_usd}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -170,6 +210,11 @@ export default async function FacturasPage({ searchParams }: PageProps) {
           <CardDescription className="text-xs">
             {facturasRes.count} {facturasRes.count === 1 ? "factura" : "facturas"}.
           </CardDescription>
+          {firmaUrlsFallo && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              No se pudieron generar los enlaces de descarga; recarga la página.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {facturasRes.data.length === 0 ? (
@@ -194,14 +239,36 @@ export default async function FacturasPage({ searchParams }: PageProps) {
                   <TableRow key={f.id}>
                     <TableCell className="font-mono text-[11px]">
                       {f.uuid_fiscal ?? "—"}
-                      {f.facturado_a_rfc ? (
-                        <span
-                          className="block text-[10px] text-muted-foreground"
-                          title={`SE FACTURÓ A: ${f.facturado_a_nombre ?? ""} (${f.facturado_a_rfc})`}
-                        >
-                          SE FACTURÓ A: {f.facturado_a_rfc}
-                        </span>
-                      ) : null}
+                      {/* facturado_a_* ahora se persiste en TODAS las facturas
+                          (lo exige la cancelación): la leyenda 9.7 "SE FACTURÓ
+                          A" solo aplica cuando el receptor difiere del cliente
+                          del vuelo; público en general tiene su propia nota. */}
+                      {(() => {
+                        if (!f.facturado_a_rfc) return null;
+                        if (f.facturado_a_rfc === "XAXX010101000") {
+                          return (
+                            <span className="block text-[10px] text-muted-foreground">
+                              PÚBLICO EN GENERAL
+                            </span>
+                          );
+                        }
+                        const cli = f.vuelo?.cliente;
+                        const clienteRfcVuelo = (Array.isArray(cli) ? cli[0] : cli)?.rfc ?? null;
+                        if (
+                          clienteRfcVuelo &&
+                          f.facturado_a_rfc.toUpperCase() === clienteRfcVuelo.toUpperCase()
+                        ) {
+                          return null;
+                        }
+                        return (
+                          <span
+                            className="block text-[10px] text-muted-foreground"
+                            title={`SE FACTURÓ A: ${f.facturado_a_nombre ?? ""} (${f.facturado_a_rfc})`}
+                          >
+                            SE FACTURÓ A: {f.facturado_a_rfc}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <Badge

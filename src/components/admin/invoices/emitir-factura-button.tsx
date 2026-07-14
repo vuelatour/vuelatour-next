@@ -36,12 +36,29 @@ const EMPTY_FACTURADO_A: FacturadoAState = {
   facturado_a_uso_cfdi: "",
 };
 
+/** Paso de confirmación previo al timbrado (acción fiscal irreversible). */
+interface ConfirmState {
+  payload: Record<string, string | boolean>;
+  receptorNombre: string;
+  receptorRfc: string;
+  /** Cierra/limpia el diálogo de origen tras timbrar con éxito. */
+  onDone?: () => void;
+}
+
 export function EmitirFacturaButton({
   vueloId,
   emisoras,
+  clienteNombre,
+  clienteRfc,
+  montoTotalMxn,
+  montoTotalUsd,
 }: {
   vueloId: string;
   emisoras: EmisoraOption[];
+  clienteNombre: string;
+  clienteRfc: string | null;
+  montoTotalMxn: string | null;
+  montoTotalUsd: string;
 }) {
   const [emisoraId, setEmisoraId] = useState(emisoras[0]?.id ?? "");
   const [openOtro, setOpenOtro] = useState(false);
@@ -49,12 +66,38 @@ export function EmitirFacturaButton({
   // c_Periodicidad de la factura global (default mensual del mes en curso).
   const [periodicidad, setPeriodicidad] = useState("04");
   const [facturadoA, setFacturadoA] = useState<FacturadoAState>(EMPTY_FACTURADO_A);
+  // Nada se timbra sin pasar por este paso de confirmación.
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [tc, setTc] = useState("");
   const [pending, startTransition] = useTransition();
 
-  const emitir = (payload: Record<string, string | boolean>, onDone?: () => void) => {
+  // Vuelo cotizado en USD sin importe MXN: el CFDI se emite en MXN y exige TC.
+  const requiereTc = !montoTotalMxn;
+  const tcNum = Number(tc);
+  const tcValido = Number.isFinite(tcNum) && tcNum > 0;
+
+  const abrirConfirmacion = (c: ConfirmState) => {
     if (!emisoraId) {
       toast.error("Selecciona la entidad emisora");
       return;
+    }
+    setConfirm(c);
+  };
+
+  const cerrarConfirmacion = () => {
+    setConfirm(null);
+    setTc("");
+  };
+
+  const timbrar = () => {
+    if (!confirm) return;
+    const payload: Record<string, string | boolean | number> = { ...confirm.payload };
+    if (requiereTc) {
+      if (!tcValido) {
+        toast.error("Captura el tipo de cambio (MXN por USD)");
+        return;
+      }
+      payload.tc_usd_mxn = tcNum;
     }
     startTransition(async () => {
       const result = await emitirFacturaAction({
@@ -64,7 +107,8 @@ export function EmitirFacturaButton({
       });
       if (result.ok) {
         toast.success("Factura timbrada");
-        onDone?.();
+        confirm.onDone?.();
+        cerrarConfirmacion();
       } else if (result.fieldErrors) {
         const f = Object.keys(result.fieldErrors)[0];
         toast.error(`${f}: ${result.fieldErrors[f]?.[0] ?? "Inválido"}`);
@@ -76,6 +120,11 @@ export function EmitirFacturaButton({
 
   const setField = (k: keyof FacturadoAState) => (v: string) =>
     setFacturadoA((s) => ({ ...s, [k]: v }));
+
+  const emisoraLabel = emisoras.find((e) => e.id === emisoraId)?.label ?? "—";
+  const totalLabel = montoTotalMxn
+    ? `$${Number(montoTotalMxn).toLocaleString("es-MX")} MXN`
+    : `$${Number(montoTotalUsd).toLocaleString("en-US")} USD`;
 
   return (
     <div className="flex items-center gap-2 justify-end">
@@ -93,7 +142,13 @@ export function EmitirFacturaButton({
       </select>
       <Button
         size="sm"
-        onClick={() => emitir({})}
+        onClick={() =>
+          abrirConfirmacion({
+            payload: {},
+            receptorNombre: clienteNombre,
+            receptorRfc: clienteRfc ?? "—",
+          })
+        }
         disabled={pending || emisoras.length === 0}
       >
         {pending ? "Emitiendo…" : "Emitir factura"}
@@ -149,14 +204,16 @@ export function EmitirFacturaButton({
             </Button>
             <Button
               onClick={() =>
-                emitir(
-                  { publico_en_general: true, periodicidad },
-                  () => setOpenPublico(false),
-                )
+                abrirConfirmacion({
+                  payload: { publico_en_general: true, periodicidad },
+                  receptorNombre: "PÚBLICO EN GENERAL",
+                  receptorRfc: "XAXX010101000",
+                  onDone: () => setOpenPublico(false),
+                })
               }
               disabled={pending}
             >
-              {pending ? "Emitiendo…" : "Emitir a público en general"}
+              Continuar
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -178,7 +235,7 @@ export function EmitirFacturaButton({
                 <Label className="text-sm font-medium">RFC</Label>
                 <Input
                   value={facturadoA.facturado_a_rfc}
-                  onChange={(e) => setField("facturado_a_rfc")(e.target.value)}
+                  onChange={(e) => setField("facturado_a_rfc")(e.target.value.toUpperCase().trim())}
                   className="font-mono uppercase"
                   maxLength={13}
                   placeholder="XAXX010101000"
@@ -188,7 +245,7 @@ export function EmitirFacturaButton({
                 <Label className="text-sm font-medium">CP</Label>
                 <Input
                   value={facturadoA.facturado_a_cp}
-                  onChange={(e) => setField("facturado_a_cp")(e.target.value)}
+                  onChange={(e) => setField("facturado_a_cp")(e.target.value.trim())}
                   className="font-mono"
                   maxLength={5}
                   placeholder="77500"
@@ -217,7 +274,9 @@ export function EmitirFacturaButton({
                 <Label className="text-sm font-medium">Uso CFDI</Label>
                 <Input
                   value={facturadoA.facturado_a_uso_cfdi}
-                  onChange={(e) => setField("facturado_a_uso_cfdi")(e.target.value)}
+                  onChange={(e) =>
+                    setField("facturado_a_uso_cfdi")(e.target.value.toUpperCase().trim())
+                  }
                   className="uppercase"
                   maxLength={5}
                   placeholder="G03"
@@ -237,15 +296,117 @@ export function EmitirFacturaButton({
             </Button>
             <Button
               type="button"
-              onClick={() =>
-                emitir({ ...facturadoA }, () => {
-                  setOpenOtro(false);
-                  setFacturadoA(EMPTY_FACTURADO_A);
-                })
-              }
+              onClick={() => {
+                if (!facturadoA.facturado_a_rfc.trim()) {
+                  toast.error("Captura el RFC del receptor");
+                  return;
+                }
+                abrirConfirmacion({
+                  payload: { ...facturadoA },
+                  receptorNombre: facturadoA.facturado_a_nombre || "(sin razón social)",
+                  receptorRfc: facturadoA.facturado_a_rfc,
+                  onDone: () => {
+                    setOpenOtro(false);
+                    setFacturadoA(EMPTY_FACTURADO_A);
+                  },
+                });
+              }}
               disabled={pending}
             >
-              {pending ? "Emitiendo…" : "Emitir a este receptor"}
+              Continuar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmación previa al timbrado: acción fiscal irreversible. */}
+      <Dialog
+        open={confirm !== null}
+        onOpenChange={(v) => {
+          if (!v && !pending) cerrarConfirmacion();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar timbrado</DialogTitle>
+            <DialogDescription>
+              Se timbrará un CFDI ante el SAT. Verifica los datos: cancelarlo después
+              requiere un trámite ante el SAT.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-start justify-between gap-4">
+              <span className="text-muted-foreground">Receptor</span>
+              <span className="text-right font-medium">
+                {confirm?.receptorNombre}
+                <span className="block font-mono text-xs text-muted-foreground">
+                  RFC: {confirm?.receptorRfc}
+                </span>
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-mono">{totalLabel}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <span className="text-muted-foreground">Emisora</span>
+              <span className="text-right">{emisoraLabel}</span>
+            </div>
+          </div>
+
+          {requiereTc && (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Tipo de cambio (MXN por USD)
+                <span className="text-destructive ml-0.5">*</span>
+              </Label>
+              <Input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.0001"
+                value={tc}
+                onChange={(e) => setTc(e.target.value)}
+                className="font-mono"
+                placeholder="17.50"
+                disabled={pending}
+              />
+              <p className="text-xs text-muted-foreground">
+                El vuelo está cotizado en USD; el CFDI se emite en MXN.
+              </p>
+              {tcValido && (
+                <p className="text-xs">
+                  Total a facturar:{" "}
+                  <span className="font-mono font-medium">
+                    $
+                    {(Number(montoTotalUsd) * tcNum).toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    MXN
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={cerrarConfirmacion}
+              disabled={pending}
+            >
+              Volver
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={timbrar}
+              disabled={pending || (requiereTc && !tcValido)}
+            >
+              {pending ? "Timbrando…" : "Timbrar factura"}
             </Button>
           </DialogFooter>
         </DialogContent>

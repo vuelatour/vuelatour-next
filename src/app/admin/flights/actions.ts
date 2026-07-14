@@ -127,7 +127,12 @@ export async function completeFlightAction(
  */
 export async function cubrirExternoAction(
   id: string,
-  payload: { operador_externo: string; costo_externo_usd: number },
+  payload: {
+    operador_externo: string;
+    costo_externo_usd: number;
+    /** TC MXN/USD pactado (opcional): habilita facturar el vuelo en MXN. */
+    tc_usd_mxn?: number;
+  },
 ): Promise<ActionResult<FlightListItem>> {
   try {
     const updated = await apiServer<FlightListItem>(
@@ -451,6 +456,8 @@ export interface CreateExternalFlightPayload {
   monto_total_usd: number;
   /** Con método facturable el vuelo entra a Facturas antes de cobrarse. */
   metodo_cobro?: string;
+  /** TC MXN/USD pactado: sin él, el vuelo (en USD) no se puede facturar. */
+  tc_usd_mxn?: number;
   origen_iata: string;
   destino_iata: string;
   pasajeros: number;

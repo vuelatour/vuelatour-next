@@ -87,11 +87,18 @@ function CancelarDialog({
   const [folioSustitucion, setFolioSustitucion] = useState("");
   const [pending, startTransition] = useTransition();
 
+  const esNota = factura.tipo_comprobante === "E";
+  const referencia = factura.uuid_fiscal
+    ? `…${factura.uuid_fiscal.slice(-8)}`
+    : (factura.fel_referencia ?? "");
+  const totalFmt = `$${Number(factura.total).toLocaleString("es-MX")} ${factura.moneda}`;
+
   const handleCancelar = () => {
     startTransition(async () => {
       const result = await cancelarFacturaAction(factura.id, {
         motivo,
-        folio_sustitucion: folioSustitucion,
+        // El folio de sustitución solo aplica al motivo 01; para el resto se descarta.
+        folio_sustitucion: motivo === "01" ? folioSustitucion : "",
       });
       if (result.ok) {
         toast.success("CFDI cancelado ante el SAT");
@@ -109,9 +116,21 @@ function CancelarDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Cancelar CFDI</DialogTitle>
+          <DialogTitle>{esNota ? "Cancelar nota de crédito" : "Cancelar CFDI"}</DialogTitle>
           <DialogDescription>
-            Solicita la cancelación ante el SAT. El vuelo quedará disponible para refacturar.
+            {esNota ? (
+              <>
+                Se cancelará ante el SAT la nota de crédito{" "}
+                <span className="font-mono">{referencia}</span> por {totalFmt}. No afecta el
+                estado del vuelo.
+              </>
+            ) : (
+              <>
+                Se solicitará ante el SAT la cancelación del CFDI{" "}
+                <span className="font-mono">{referencia}</span> por {totalFmt}. El vuelo
+                quedará disponible para refacturar.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -120,7 +139,11 @@ function CancelarDialog({
             <Label className="text-sm font-medium">Motivo de cancelación</Label>
             <select
               value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setMotivo(v);
+                if (v !== "01") setFolioSustitucion("");
+              }}
               disabled={pending}
               className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -182,7 +205,16 @@ function NotaCreditoDialog({
   const [descripcion, setDescripcion] = useState("");
   const [pending, startTransition] = useTransition();
 
+  const totalFactura = Number(factura.total);
+  const excedeTotal = monto !== "" && Number(monto) > totalFactura;
+
   const handleEmitir = () => {
+    if (excedeTotal) {
+      toast.error(
+        `No puede exceder el total de la factura ($${totalFactura.toLocaleString("es-MX")})`,
+      );
+      return;
+    }
     startTransition(async () => {
       const result = await emitirNotaCreditoAction({
         factura_id: factura.id,
@@ -222,12 +254,19 @@ function NotaCreditoDialog({
               type="number"
               inputMode="decimal"
               min="0"
+              max={totalFactura}
               step="0.01"
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
               className="font-mono"
-              placeholder={`${Number(factura.total)}`}
+              placeholder={`${totalFactura}`}
             />
+            {excedeTotal && (
+              <p className="text-xs text-destructive">
+                No puede exceder el total de la factura ($
+                {totalFactura.toLocaleString("es-MX")})
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Descripción (opcional)</Label>
@@ -245,7 +284,7 @@ function NotaCreditoDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancelar
           </Button>
-          <Button type="button" onClick={handleEmitir} disabled={pending}>
+          <Button type="button" onClick={handleEmitir} disabled={pending || excedeTotal}>
             {pending ? "Emitiendo…" : "Emitir nota de crédito"}
           </Button>
         </DialogFooter>

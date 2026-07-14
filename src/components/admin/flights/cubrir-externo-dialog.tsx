@@ -42,6 +42,8 @@ export function CubrirExternoDialog({
   const [costo, setCosto] = useState(
     Number(flight.costo_externo_usd) > 0 ? String(flight.costo_externo_usd) : "",
   );
+  // TC pactado: sin él, un vuelo cotizado en USD no se puede facturar.
+  const [tc, setTc] = useState("");
 
   const handleSave = () => {
     if (operador.trim().length < 2) {
@@ -52,6 +54,7 @@ export function CubrirExternoDialog({
       const res = await cubrirExternoAction(flight.id, {
         operador_externo: operador.trim(),
         costo_externo_usd: Math.max(0, Number(costo) || 0),
+        tc_usd_mxn: Number(tc) > 0 ? Number(tc) : undefined,
       });
       if (res.ok) {
         toast.success(
@@ -109,6 +112,23 @@ export function CubrirExternoDialog({
             <p className="text-xs text-muted-foreground">
               Lo que nos cobra el operador por cubrir el vuelo (costo interno;
               no aparece al cliente).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">
+              Tipo de cambio (MXN por USD)
+            </Label>
+            <Input
+              type="number"
+              step="0.0001"
+              min={0}
+              placeholder="Ej. 18.50"
+              value={tc}
+              onChange={(e) => setTc(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Opcional: sin TC el vuelo no se puede facturar (el CFDI se emite
+              en MXN); también se puede capturar al emitir la factura.
             </p>
           </div>
           {!yaExterno && (flight.aeronave_id || flight.piloto_id) && (
