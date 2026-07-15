@@ -78,6 +78,9 @@ export const GastoCreateSchema = z.object({
   foto_url: z.string().max(500).optional().or(z.literal("")),
   /** Lectura cruda de la IA (auditoría/desglose server-side), si la hubo. */
   valor_ia_extraido: z.record(z.string(), z.unknown()).optional(),
+  /** Backfill de oficina: registrar el gasto COMO SI lo subiera el piloto del
+   *  vuelo (usuario_captura + origen = PILOTO). Requiere vuelo_id con piloto. */
+  capturar_como_piloto: z.boolean().optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

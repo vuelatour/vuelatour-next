@@ -48,6 +48,7 @@ export function FlightGastosCard({
   vueloId,
   vueloFolio,
   aeronaveId,
+  pilotoNombre,
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
@@ -57,6 +58,8 @@ export function FlightGastosCard({
   vueloId?: string;
   vueloFolio?: number;
   aeronaveId?: string | null;
+  /** Piloto del vuelo (para "simular como piloto"). null = sin piloto. */
+  pilotoNombre?: string | null;
 }) {
   // Totales por moneda (no se mezclan MXN y USD).
   const totales = new Map<string, number>();
@@ -86,6 +89,7 @@ export function FlightGastosCard({
                 defaultVueloId={vueloId}
                 defaultVueloFolio={vueloFolio}
                 defaultAeronaveId={aeronaveId ?? undefined}
+                defaultPilotoNombre={pilotoNombre ?? null}
               />
             )}
           {gastos.length > 0 && (

@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createGastoAction,
@@ -107,6 +109,7 @@ export function ExpenseCreateDialog({
   defaultVueloFolio,
   defaultAeronaveId,
   defaultCategoria,
+  defaultPilotoNombre,
 }: {
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
@@ -115,9 +118,14 @@ export function ExpenseCreateDialog({
   defaultVueloFolio?: number;
   defaultAeronaveId?: string;
   defaultCategoria?: string;
+  /** Piloto del vuelo prefijado (para "simular como piloto"). null = sin piloto. */
+  defaultPilotoNombre?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Backfill de oficina: guardar el gasto COMO SI lo subiera el piloto del
+  // vuelo (mismo switch que la app). Solo con un vuelo LIGADO.
+  const [comoPiloto, setComoPiloto] = useState(false);
   // Factura/recibo adjunto (foto o PDF): se sube al bucket privado al guardar.
   const [factura, setFactura] = useState<File | null>(null);
   const facturaRef = useRef<HTMLInputElement>(null);
@@ -133,6 +141,8 @@ export function ExpenseCreateDialog({
     aeronaveId: defaultAeronaveId,
     categoria: defaultCategoria,
   };
+  // Vuelo prefijado (alta desde el detalle) SIN piloto: no se puede atribuir.
+  const vueloSinPiloto = !!defaultVueloId && !defaultPilotoNombre;
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoCreateValues>({
     defaultValues: emptyValues(formDefaults),
   });
@@ -272,15 +282,25 @@ export function ExpenseCreateDialog({
           return;
         }
       }
+      // "Como piloto" solo aplica con un vuelo ligado y con piloto.
+      const aplicarComoPiloto = comoPiloto && !!values.vuelo_id && !vueloSinPiloto;
       const result = await createGastoAction({
         ...values,
         foto_url: fotoPath,
         valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
+        capturar_como_piloto: aplicarComoPiloto,
       });
       if (result.ok) {
-        toast.success(factura ? "Gasto registrado con su factura" : "Gasto registrado");
+        toast.success(
+          aplicarComoPiloto
+            ? "Gasto registrado como del piloto del vuelo"
+            : factura
+              ? "Gasto registrado con su factura"
+              : "Gasto registrado",
+        );
         setFactura(null);
         setAiRaw(null);
+        setComoPiloto(false);
         if (facturaRef.current) facturaRef.current.value = "";
         reset(emptyValues(formDefaults));
         setOpen(false);
@@ -300,7 +320,13 @@ export function ExpenseCreateDialog({
         {defaultVueloId ? "Registrar gasto" : "Nuevo gasto"}
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setComoPiloto(false);
+        }}
+      >
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nuevo gasto (oficina)</DialogTitle>
@@ -494,11 +520,50 @@ export function ExpenseCreateDialog({
                     // El avión del vuelo elegido se refleja de inmediato.
                     const opt = vuelos.find((x) => x.id === v);
                     if (opt?.aeronave_id) setValue("aeronave_id", opt.aeronave_id);
+                    // Sin vuelo, "como piloto" no aplica.
+                    if (!v) setComoPiloto(false);
                   }}
                   placeholder="Busca por folio, matrícula o ruta"
                 />
               </Field>
             )}
+
+            {/* Simular captura del piloto (backfill de oficina): solo con un
+                vuelo LIGADO. Igual que el switch de la app. */}
+            {(() => {
+              const hayVuelo = !!watch("vuelo_id");
+              if (!hayVuelo) return null;
+              const sinPiloto = vueloSinPiloto;
+              return (
+                <div className="rounded-lg border border-border p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-sm font-medium">
+                      Simular operación como piloto
+                    </Label>
+                    <Switch
+                      checked={comoPiloto && !sinPiloto}
+                      disabled={sinPiloto}
+                      onCheckedChange={setComoPiloto}
+                    />
+                  </div>
+                  {sinPiloto ? (
+                    <p className="text-xs text-amber-600">
+                      Este vuelo no tiene piloto asignado; asígnalo para poder
+                      registrarlo a su nombre.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Queda registrado como si lo hubiera subido el piloto del
+                      vuelo, dentro de su operación
+                      {comoPiloto && defaultPilotoNombre
+                        ? ` (${defaultPilotoNombre})`
+                        : ""}
+                      . La auditoría conserva quién lo cargó en realidad.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Medio de pago">

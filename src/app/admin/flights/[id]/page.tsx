@@ -502,6 +502,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               vueloId={snapshot.id}
               vueloFolio={snapshot.folio}
               aeronaveId={snapshot.aeronave_id}
+              pilotoNombre={piloto?.nombre ?? null}
             />
           )}
 
