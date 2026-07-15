@@ -284,6 +284,8 @@ export interface EscalaPayload {
   destino_iata: string;
   /** Salida PROGRAMADA (la que ve el piloto). Las horas reales las pone el sistema al capturar tacos. */
   fecha_salida_plan?: string;
+  /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
+  es_sobrevuelo?: boolean;
   notas?: string;
 }
 
@@ -308,6 +310,7 @@ export interface OperationalLegPayload {
   destino_iata: string;
   pasajeros?: number;
   es_ferry?: boolean;
+  es_sobrevuelo?: boolean;
   requiere_pernocta?: boolean;
   tipo_parada?: "NORMAL" | "SERVICIO";
   servicio_notas?: string;
@@ -476,6 +479,7 @@ export interface ReservaEscalaPayload {
   destino_iata: string;
   hora_salida?: string;
   es_ferry?: boolean;
+  es_sobrevuelo?: boolean;
   pasajeros?: number;
   pasajeros_nombres?: string[];
   notas?: string;
@@ -493,6 +497,8 @@ export interface CreateReservaPayload {
   pasajeros?: number;
   aeronave_id?: string;
   piloto_id?: string;
+  /** Copiloto (2do piloto): ve todo el vuelo igual que el piloto. */
+  copiloto_id?: string;
   cotizacion_abierta?: boolean;
   pasajeros_nombres?: string[];
   notas?: string;

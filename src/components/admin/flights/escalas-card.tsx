@@ -150,6 +150,14 @@ export function EscalasCard({
                           </Badge>
                         )
                       )}
+                      {esc.es_sobrevuelo && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30"
+                        >
+                          Sobrevuelo
+                        </Badge>
+                      )}
                       {esc.requiere_pernocta && (
                         <Badge
                           variant="outline"

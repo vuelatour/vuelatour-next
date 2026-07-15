@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { ArrowRightIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
@@ -49,6 +51,7 @@ const EscalaSchema = z
     // en su app. Las horas REALES (hora_salida/llegada) las pone el sistema
     // al capturar tacómetros — no se editan aquí.
     fecha_salida_plan: z.string().optional().or(z.literal("")),
+    es_sobrevuelo: z.boolean().default(false),
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
@@ -96,6 +99,7 @@ function defaults(
       origen_iata: initialEscala.origen_iata,
       destino_iata: initialEscala.destino_iata,
       fecha_salida_plan: toLocalDatetime(initialEscala.fecha_salida_plan),
+      es_sobrevuelo: initialEscala.es_sobrevuelo ?? false,
       notas: initialEscala.notas ?? "",
     };
   }
@@ -104,6 +108,7 @@ function defaults(
     origen_iata: "",
     destino_iata: "",
     fecha_salida_plan: "",
+    es_sobrevuelo: false,
     notas: "",
   };
 }
@@ -157,6 +162,7 @@ export function EscalaFormSheet({
   const orden = watch("orden");
   const origenIata = watch("origen_iata");
   const destinoIata = watch("destino_iata");
+  const esSobrevuelo = watch("es_sobrevuelo");
 
   const ordenCollision =
     typeof orden === "number" && collisionSet.has(orden);
@@ -174,6 +180,7 @@ export function EscalaFormSheet({
         fecha_salida_plan: values.fecha_salida_plan
           ? cancunInputToIso(values.fecha_salida_plan)
           : undefined,
+        es_sobrevuelo: values.es_sobrevuelo,
         notas: values.notas?.trim() || undefined,
       };
       const res = isEdit
@@ -255,6 +262,20 @@ export function EscalaFormSheet({
           >
             <Input type="datetime-local" {...register("fecha_salida_plan")} />
           </Field>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <Label className="text-sm font-medium">Sobrevuelo</Label>
+              <p className="text-xs text-muted-foreground">
+                El avión sobrevuela una zona (recorrido/reconocimiento) en vez
+                de un traslado normal.
+              </p>
+            </div>
+            <Switch
+              checked={esSobrevuelo}
+              onCheckedChange={(c) => setValue("es_sobrevuelo", c)}
+            />
+          </div>
 
           <Field
             label="Nota para el piloto"

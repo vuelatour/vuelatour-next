@@ -47,6 +47,7 @@ export function OperationalLegSheet({
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
   const [esFerry, setEsFerry] = useState(true);
+  const [esSobrevuelo, setEsSobrevuelo] = useState(false);
   const [pasajeros, setPasajeros] = useState("");
   const [requierePernocta, setRequierePernocta] = useState(false);
   const [esServicio, setEsServicio] = useState(false);
@@ -70,6 +71,7 @@ export function OperationalLegSheet({
         origen_iata: origen.toUpperCase(),
         destino_iata: destino.toUpperCase(),
         es_ferry: esFerry,
+        es_sobrevuelo: esSobrevuelo,
         pasajeros: esFerry ? 0 : Number(pasajeros) || 0,
         requiere_pernocta: requierePernocta,
         tipo_parada: esServicio ? "SERVICIO" : "NORMAL",
@@ -143,6 +145,17 @@ export function OperationalLegSheet({
               </p>
             </div>
             <Switch checked={esFerry} onCheckedChange={setEsFerry} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <Label className="text-sm font-medium">Sobrevuelo</Label>
+              <p className="text-xs text-muted-foreground">
+                El avión sobrevuela una zona (recorrido/reconocimiento) en vez
+                de un traslado normal.
+              </p>
+            </div>
+            <Switch checked={esSobrevuelo} onCheckedChange={setEsSobrevuelo} />
           </div>
 
           {!esFerry && (

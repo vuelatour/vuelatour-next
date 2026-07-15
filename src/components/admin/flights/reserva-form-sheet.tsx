@@ -57,6 +57,8 @@ interface LegRow {
   destino: string;
   hora: string; // datetime-local; el 1er tramo usa "Fecha y hora" si va vacío
   esFerry: boolean;
+  /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
+  esSobrevuelo: boolean;
   pasajeros: string;
   notas: string;
 }
@@ -66,6 +68,7 @@ const emptyLeg = (origen = ""): LegRow => ({
   destino: "",
   hora: "",
   esFerry: false,
+  esSobrevuelo: false,
   pasajeros: "",
   notas: "",
 });
@@ -100,6 +103,7 @@ export function ReservaFormSheet({
   const [aeronaveId, setAeronaveId] = useState("");
   const [legs, setLegs] = useState<LegRow[]>([emptyLeg("CUN")]);
   const [pilotoId, setPilotoId] = useState("");
+  const [copilotoId, setCopilotoId] = useState("");
   const [fechaVuelo, setFechaVuelo] = useState("");
   const [clienteId, setClienteId] = useState("");
   // Alta rápida de cliente sin salir del flujo (solo nombre).
@@ -132,6 +136,8 @@ export function ReservaFormSheet({
     if (legs.some((l) => l.origen === l.destino))
       return setError("Un tramo no puede tener el mismo origen y destino.");
     if (!pilotoId) return setError("Elige el piloto.");
+    if (copilotoId && copilotoId === pilotoId)
+      return setError("El copiloto debe ser distinto del piloto.");
     if (!fechaVuelo) return setError("Captura la fecha y hora de salida.");
     if (!clienteId) return setError("Elige el cliente (responsable del vuelo).");
 
@@ -140,6 +146,7 @@ export function ReservaFormSheet({
         cliente_id: clienteId,
         aeronave_id: aeronaveId,
         piloto_id: pilotoId,
+        copiloto_id: copilotoId || undefined,
         fecha_vuelo: cancunInputToIso(fechaVuelo),
         cotizacion_abierta: cotizacionAbierta,
         notas: notas.trim() || undefined,
@@ -149,6 +156,7 @@ export function ReservaFormSheet({
           // El tramo 1 siempre sale a la fecha/hora general del vuelo.
           hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
           es_ferry: l.esFerry,
+          es_sobrevuelo: l.esSobrevuelo,
           pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
           notas: l.notas.trim() || undefined,
         })),
@@ -268,7 +276,7 @@ export function ReservaFormSheet({
                       <span className="w-8" />
                     )}
                   </div>
-                  <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
+                  <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 text-xs">
                       <Switch
                         checked={leg.esFerry}
@@ -278,6 +286,18 @@ export function ReservaFormSheet({
                       />
                       Ferry (vacío)
                     </label>
+                    <label
+                      className="flex items-center gap-2 text-xs"
+                      title="El avión sobrevuela una zona (recorrido/reconocimiento) en vez de un traslado normal."
+                    >
+                      <Switch
+                        checked={leg.esSobrevuelo}
+                        onCheckedChange={(c) => updateLeg(i, { esSobrevuelo: c })}
+                      />
+                      Sobrevuelo
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-[1fr_1fr] items-center gap-3">
                     <Input
                       type="number"
                       min={0}
@@ -337,6 +357,27 @@ export function ReservaFormSheet({
               value={pilotoId}
               onChange={setPilotoId}
               placeholder="Selecciona piloto"
+            />
+          </Field>
+
+          {/* Copiloto opcional (cuando van 2 pilotos, p. ej. Saab + Zamora) */}
+          <Field
+            label="Copiloto (opcional)"
+            hint="Cuando el vuelo va con 2 pilotos. Ve todo el vuelo en su app igual que el piloto."
+          >
+            <SearchableSelect
+              options={[
+                { value: "", label: "Sin copiloto" },
+                ...pilots
+                  .filter((p) => p.id !== pilotoId)
+                  .map((p) => ({
+                    value: p.id,
+                    label: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
+                  })),
+              ]}
+              value={copilotoId}
+              onChange={setCopilotoId}
+              placeholder="Sin copiloto"
             />
           </Field>
 

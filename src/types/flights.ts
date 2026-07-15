@@ -65,6 +65,8 @@ export interface FlightEscala {
   /** Manifiesto de nombres de ESTE tramo (por escala, puede ir vacío). */
   pasajeros_nombres?: string[];
   es_ferry: boolean;
+  /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
+  es_sobrevuelo?: boolean;
   requiere_pernocta: boolean;
   pernocta_costo_usd: string | null;
   tipo_parada: "NORMAL" | "SERVICIO";
