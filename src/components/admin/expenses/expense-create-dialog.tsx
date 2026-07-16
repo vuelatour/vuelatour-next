@@ -59,6 +59,9 @@ const CATEGORIAS = [
   // como gasto directo del vuelo.
   { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
   { value: "FIJO", label: "FIJO" },
+  // Gasto de la operación que NO pertenece a un vuelo (servicios,
+  // mantenimientos, honorarios — hoja "gastos indirectos" del equipo).
+  { value: "INDIRECTO", label: "Gasto indirecto (sin vuelo)" },
   { value: "OTRO", label: "OTRO" },
 ];
 
@@ -483,9 +486,22 @@ export function ExpenseCreateDialog({
             <div className="grid grid-cols-2 gap-3">
               <Field label="Categoría">
                 <SearchableSelect
-                  options={CATEGORIAS}
+                  // Un gasto DEL VUELO no puede ser indirecto (contradicción):
+                  // la opción solo existe en el alta global.
+                  options={
+                    defaultVueloId
+                      ? CATEGORIAS.filter((c) => c.value !== "INDIRECTO")
+                      : CATEGORIAS
+                  }
                   value={watch("categoria")}
-                  onChange={(v) => setValue("categoria", v)}
+                  onChange={(v) => {
+                    setValue("categoria", v);
+                    // INDIRECTO = sin vuelo: se limpia el enlace si lo había.
+                    if (v === "INDIRECTO" && watch("vuelo_id")) {
+                      setValue("vuelo_id", "");
+                      setComoPiloto(false);
+                    }
+                  }}
                   placeholder="Categoría"
                 />
               </Field>
@@ -499,7 +515,14 @@ export function ExpenseCreateDialog({
               </Field>
             </div>
 
-            {!defaultVueloId && (
+            {!defaultVueloId && watch("categoria") === "INDIRECTO" && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Gasto <span className="font-medium">indirecto</span>: no se liga a
+                ningún vuelo (avión opcional). Por ahora queda fuera del reparto;
+                su tratamiento se definirá con el equipo.
+              </p>
+            )}
+            {!defaultVueloId && watch("categoria") !== "INDIRECTO" && (
               <Field
                 label="Vuelo"
                 hint="Ligado al vuelo entra a su reporte y resta en el reparto; elige por folio, matrícula o ruta (±15 días de la fecha)."

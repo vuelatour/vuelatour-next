@@ -13,6 +13,9 @@ export const CategoriaEnum = z.enum([
   "PERMISO",
   "PILOTO_EXTERNO",
   "FIJO",
+  // Gasto de la operación SIN vuelo (avión opcional). Por ahora fuera del
+  // reparto y de la bandeja de pendientes (tratamiento por decidir).
+  "INDIRECTO",
   "OTRO",
 ]);
 
