@@ -121,7 +121,11 @@ export function OperationalLegSheet({
               <SearchableSelect
                 options={airportOptions}
                 value={origen}
-                onChange={setOrigen}
+                onChange={(v) => {
+                  setOrigen(v);
+                  // Sobrevuelo: el destino sigue al origen (mismo punto).
+                  if (esSobrevuelo) setDestino(v);
+                }}
                 placeholder="IATA"
               />
             </div>
@@ -152,10 +156,18 @@ export function OperationalLegSheet({
               <Label className="text-sm font-medium">Sobrevuelo</Label>
               <p className="text-xs text-muted-foreground">
                 El avión sobrevuela una zona (recorrido/reconocimiento) en vez
-                de un traslado normal.
+                de un traslado normal. Regresa al mismo punto: el destino se
+                iguala al origen.
               </p>
             </div>
-            <Switch checked={esSobrevuelo} onCheckedChange={setEsSobrevuelo} />
+            <Switch
+              checked={esSobrevuelo}
+              onCheckedChange={(c) => {
+                setEsSobrevuelo(c);
+                // Sobrevuelo: sale y regresa al mismo punto.
+                if (c && origen) setDestino(origen);
+              }}
+            />
           </div>
 
           {!esFerry && (

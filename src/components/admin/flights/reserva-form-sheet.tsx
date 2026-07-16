@@ -133,8 +133,12 @@ export function ReservaFormSheet({
     if (!aeronaveId) return setError("Elige el avión.");
     if (legs.some((l) => !l.origen || !l.destino))
       return setError("Cada tramo necesita origen y destino.");
-    if (legs.some((l) => l.origen === l.destino))
-      return setError("Un tramo no puede tener el mismo origen y destino.");
+    // Sobrevuelo: sale y regresa al mismo punto — la igualdad solo se
+    // prohíbe en tramos de traslado normales.
+    if (legs.some((l) => l.origen === l.destino && !l.esSobrevuelo))
+      return setError(
+        "Un tramo no puede tener el mismo origen y destino (salvo sobrevuelo).",
+      );
     if (!pilotoId) return setError("Elige el piloto.");
     if (copilotoId && copilotoId === pilotoId)
       return setError("El copiloto debe ser distinto del piloto.");
@@ -240,7 +244,13 @@ export function ReservaFormSheet({
                       <SearchableSelect
                         options={airportOptions}
                         value={leg.origen}
-                        onChange={(v) => updateLeg(i, { origen: v })}
+                        onChange={(v) =>
+                          // Sobrevuelo: el destino sigue al origen (mismo punto).
+                          updateLeg(i, {
+                            origen: v,
+                            ...(leg.esSobrevuelo ? { destino: v } : {}),
+                          })
+                        }
                         placeholder="IATA"
                       />
                     </Field>
@@ -288,11 +298,18 @@ export function ReservaFormSheet({
                     </label>
                     <label
                       className="flex items-center gap-2 text-xs"
-                      title="El avión sobrevuela una zona (recorrido/reconocimiento) en vez de un traslado normal."
+                      title="El avión sobrevuela una zona (recorrido/reconocimiento) en vez de un traslado normal. Regresa al mismo punto: el destino se iguala al origen."
                     >
                       <Switch
                         checked={leg.esSobrevuelo}
-                        onCheckedChange={(c) => updateLeg(i, { esSobrevuelo: c })}
+                        onCheckedChange={(c) =>
+                          // Sobrevuelo: sale y regresa al mismo punto — el
+                          // destino se espeja del origen en automático.
+                          updateLeg(i, {
+                            esSobrevuelo: c,
+                            ...(c && leg.origen ? { destino: leg.origen } : {}),
+                          })
+                        }
                       />
                       Sobrevuelo
                     </label>

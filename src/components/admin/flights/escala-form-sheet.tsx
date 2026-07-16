@@ -55,11 +55,18 @@ const EscalaSchema = z
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
-    if (val.origen_iata && val.destino_iata && val.origen_iata === val.destino_iata) {
+    // Un SOBREVUELO sale y regresa al mismo punto (CUN → CUN): la igualdad
+    // solo se prohíbe en tramos de traslado normales.
+    if (
+      val.origen_iata &&
+      val.destino_iata &&
+      val.origen_iata === val.destino_iata &&
+      !val.es_sobrevuelo
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["destino_iata"],
-        message: "Origen y destino no pueden ser iguales",
+        message: "Origen y destino no pueden ser iguales (salvo sobrevuelo)",
       });
     }
   });
@@ -240,7 +247,13 @@ export function EscalaFormSheet({
               <SearchableSelect
                 options={airportOptions}
                 value={origenIata}
-                onChange={(v) => setValue("origen_iata", v)}
+                onChange={(v) => {
+                  setValue("origen_iata", v);
+                  // Sobrevuelo: el destino sigue al origen (mismo punto).
+                  if (esSobrevuelo) {
+                    setValue("destino_iata", v, { shouldValidate: true });
+                  }
+                }}
                 placeholder="IATA"
               />
             </Field>
@@ -268,12 +281,20 @@ export function EscalaFormSheet({
               <Label className="text-sm font-medium">Sobrevuelo</Label>
               <p className="text-xs text-muted-foreground">
                 El avión sobrevuela una zona (recorrido/reconocimiento) en vez
-                de un traslado normal.
+                de un traslado normal. Regresa al mismo punto: el destino se
+                iguala al origen.
               </p>
             </div>
             <Switch
               checked={esSobrevuelo}
-              onCheckedChange={(c) => setValue("es_sobrevuelo", c)}
+              onCheckedChange={(c) => {
+                setValue("es_sobrevuelo", c);
+                // Sobrevuelo: sale y regresa al mismo punto — el destino se
+                // espeja del origen en automático.
+                if (c && origenIata) {
+                  setValue("destino_iata", origenIata, { shouldValidate: true });
+                }
+              }}
             />
           </div>
 
