@@ -29,6 +29,10 @@ import { listBankAccounts } from "@/lib/api/bank-accounts-server";
 import { listGastos } from "@/lib/api/expenses-server";
 
 export const dynamic = "force-dynamic";
+// Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
+// las server actions de este segmento heredan el límite — sin esto Vercel
+// cortaba antes de que el API respondiera.
+export const maxDuration = 300;
 
 type Filtro = "todos" | "pendientes" | "conciliados";
 
