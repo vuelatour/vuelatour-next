@@ -29,6 +29,7 @@ import {
   cancelQuoteAction,
   confirmQuoteAction,
 } from "@/app/admin/quotes/actions";
+import { cotizacionEditablePorFecha } from "@/lib/datetime";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
 export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
@@ -64,9 +65,20 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
 
   const canConfirm = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
   // Revisable mientras no se haya cobrado/facturado (ajustes de última hora);
-  // cotizar una RESERVA la convierte en COTIZADO.
+  // cotizar una RESERVA la convierte en COTIZADO. Además, solo dentro de la
+  // ventana de edición: vuelo del mes corriente o anterior (hora Cancún) —
+  // más atrás pertenece a cierres pasados.
+  const enVentana = cotizacionEditablePorFecha(quote.fecha_vuelo);
   const canRevise =
-    quote.estado !== "CANCELADO" && !quote.cobrado && !quote.facturado;
+    quote.estado !== "CANCELADO" &&
+    !quote.cobrado &&
+    !quote.facturado &&
+    enVentana;
+  const bloqueadaPorMes =
+    quote.estado !== "CANCELADO" &&
+    !quote.cobrado &&
+    !quote.facturado &&
+    !enVentana;
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -110,6 +122,17 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
           <PencilSquareIcon className="h-4 w-4" />
           Revisar
         </Link>
+      )}
+      {bloqueadaPorMes && (
+        <Button
+          variant="outline"
+          disabled
+          className="gap-2"
+          title="El vuelo es de un mes ya cerrado (anterior al mes pasado): la cotización ya no puede ajustarse."
+        >
+          <PencilSquareIcon className="h-4 w-4" />
+          Revisar · mes cerrado
+        </Button>
       )}
       {canConfirm && (
         <Button

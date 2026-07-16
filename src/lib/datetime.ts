@@ -120,3 +120,21 @@ export function todayCancun(): string {
 export function startOfMonthCancun(): string {
   return `${todayCancun().slice(0, 7)}-01`;
 }
+
+/**
+ * Ventana de edición de cotizaciones (regla del cliente, jul 2026): una
+ * cotización —aún CONFIRMADA— solo se ajusta mientras su vuelo sea del MES
+ * CORRIENTE o el ANTERIOR (hora Cancún). Más atrás pertenece a cierres
+ * pasados. Sin fecha de vuelo = editable (aún no se programa).
+ */
+export function cotizacionEditablePorFecha(
+  fechaVuelo: string | null | undefined,
+): boolean {
+  if (!fechaVuelo) return true;
+  const ahoraCancun = new Date(Date.now() - CANCUN_OFFSET_MIN * 60_000);
+  // 00:00 Cancún del día 1 del mes ANTERIOR, expresado en ms UTC.
+  const inicioMesAnterior =
+    Date.UTC(ahoraCancun.getUTCFullYear(), ahoraCancun.getUTCMonth() - 1, 1) +
+    CANCUN_OFFSET_MIN * 60_000;
+  return new Date(fechaVuelo).getTime() >= inicioMesAnterior;
+}

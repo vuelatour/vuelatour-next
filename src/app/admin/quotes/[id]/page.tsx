@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import { cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { buttonVariants } from "@/components/ui/button";
@@ -178,11 +178,16 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
           {/* Desglose canónico para el balance (Jimmy): cajoncito por concepto. */}
           <QuoteDesgloseCard quote={quote} />
 
-          {/* Ajuste rápido: extras y pasajeros sin rearmar el cotizador. */}
+          {/* Ajuste rápido: extras y pasajeros sin rearmar el cotizador.
+              Solo dentro de la ventana de edición (vuelo del mes corriente o
+              anterior, hora Cancún): más atrás son cierres pasados. */}
           {quote.estado !== "CANCELADO" &&
             quote.estado !== "RESERVA" &&
             !quote.cobrado &&
-            !quote.facturado && <QuoteQuickAdjustCard quote={quote} />}
+            !quote.facturado &&
+            cotizacionEditablePorFecha(quote.fecha_vuelo) && (
+              <QuoteQuickAdjustCard quote={quote} />
+            )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
 import { FlightReportButtons } from "@/components/admin/flights/flight-report-buttons";
-import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import { cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
 import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card";
@@ -261,20 +261,33 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <FlightReportButtons flightId={snapshot.id} folio={snapshot.folio} />
-            {snapshot.estado === "RESERVA" && (
-              <Link
-                href={`/admin/quotes/${snapshot.id}/revise`}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-600/90 transition-colors"
-              >
-                <BanknotesIcon className="h-4 w-4" />
-                Cotizar
-              </Link>
-            )}
+            {/* Ventana de edición (regla del cliente): la cotización solo se
+                ajusta con vuelo del mes corriente o anterior (hora Cancún);
+                más atrás pertenece a cierres pasados. */}
+            {snapshot.estado === "RESERVA" &&
+              (cotizacionEditablePorFecha(snapshot.fecha_vuelo) ? (
+                <Link
+                  href={`/admin/quotes/${snapshot.id}/revise`}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-600/90 transition-colors"
+                >
+                  <BanknotesIcon className="h-4 w-4" />
+                  Cotizar
+                </Link>
+              ) : (
+                <span
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground cursor-not-allowed"
+                  title="El vuelo es de un mes ya cerrado (anterior al mes pasado): la cotización ya no puede ajustarse."
+                >
+                  <BanknotesIcon className="h-4 w-4" />
+                  Cotizar · mes cerrado
+                </span>
+              ))}
             {snapshot.cotizacion_abierta &&
               snapshot.estado !== "RESERVA" &&
               snapshot.estado !== "CANCELADO" &&
               !snapshot.cobrado &&
-              !snapshot.facturado && (
+              !snapshot.facturado &&
+              (cotizacionEditablePorFecha(snapshot.fecha_vuelo) ? (
                 <Link
                   href={`/admin/quotes/${snapshot.id}/revise`}
                   className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted transition-colors"
@@ -284,7 +297,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     ? "Cerrar cotización"
                     : "Ajustar cotización"}
                 </Link>
-              )}
+              ) : (
+                <span
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground cursor-not-allowed"
+                  title="El vuelo es de un mes ya cerrado (anterior al mes pasado): la cotización ya no puede ajustarse."
+                >
+                  <BanknotesIcon className="h-4 w-4" />
+                  Cotización · mes cerrado
+                </span>
+              ))}
             <FlightActionsBar
               flight={snapshot}
               aircraft={aircraftOptions}
