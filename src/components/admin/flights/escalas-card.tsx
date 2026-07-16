@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import {
   confirmTacoAction,
   fillTacoGapsAction,
+  getUltimoTacoAction,
 } from "@/app/admin/flights/actions";
 import { fmtDecimal } from "@/lib/format";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
@@ -45,6 +46,22 @@ interface EscalasCardProps {
   tacoPhotos?: TacoPhoto[];
   /** Piloto EXTERNO sin app (doc 3.7): la oficina captura las lecturas aquí. */
   pilotoExterno?: boolean;
+}
+
+/**
+ * Llegada del tramo ANTERIOR (por orden): el horómetro es continuo, así que
+ * es la salida esperada de este tramo. null si es el primero o no hay lectura.
+ */
+function llegadaAnterior(
+  escalas: FlightEscala[],
+  esc: FlightEscala,
+): number | null {
+  let mejor: FlightEscala | null = null;
+  for (const e of escalas) {
+    if (e.orden >= esc.orden || e.taco_llegada == null) continue;
+    if (mejor == null || e.orden > mejor.orden) mejor = e;
+  }
+  return mejor?.taco_llegada != null ? Number(mejor.taco_llegada) : null;
 }
 
 export function EscalasCard({
@@ -133,6 +150,9 @@ export function EscalasCard({
                             escala={esc}
                             modo="correccion"
                             captura={pilotoExterno}
+                            // Salida sugerida: la llegada del tramo ANTERIOR
+                            // (por orden) — el horómetro es continuo.
+                            salidaSugerida={llegadaAnterior(escalas, esc)}
                           />
                         )}
                       </div>
@@ -200,7 +220,11 @@ export function EscalasCard({
                             {esc.revision_motivo ?? "Lectura por revisar"}
                           </span>
                         </p>
-                        <TacoConfirmDialog flightId={flightId} escala={esc} />
+                        <TacoConfirmDialog
+                          flightId={flightId}
+                          escala={esc}
+                          salidaSugerida={llegadaAnterior(escalas, esc)}
+                        />
                       </div>
                     )}
 
@@ -303,6 +327,7 @@ function TacoConfirmDialog({
   escala,
   modo = "revision",
   captura = false,
+  salidaSugerida = null,
 }: {
   flightId: string;
   escala: FlightEscala;
@@ -310,6 +335,8 @@ function TacoConfirmDialog({
   modo?: "revision" | "correccion";
   /** Piloto externo: el botón se vuelve un CTA visible de captura de oficina. */
   captura?: boolean;
+  /** Salida sugerida del propio vuelo (llegada del tramo anterior). */
+  salidaSugerida?: number | null;
 }) {
   const esCorreccion = modo === "correccion";
   const router = useRouter();
@@ -318,6 +345,29 @@ function TacoConfirmDialog({
   const [salida, setSalida] = useState(escala.taco_salida ?? "");
   const [llegada, setLlegada] = useState(escala.taco_llegada ?? "");
   const [nota, setNota] = useState("");
+  // Procedencia de la salida precargada (leyenda bajo el campo). El historial
+  // del tacómetro ya lo conoce el sistema: no hay que ir a buscarlo a mano.
+  const [sugerenciaOrigen, setSugerenciaOrigen] = useState<string | null>(null);
+
+  const handleOpen = () => {
+    setOpen(true);
+    // Solo se precarga cuando el tramo NO tiene salida capturada.
+    if (escala.taco_salida != null || String(salida).trim() !== "") return;
+    if (salidaSugerida != null) {
+      setSalida(String(salidaSugerida));
+      setSugerenciaOrigen("llegada del tramo anterior");
+      return;
+    }
+    // Primer tramo (o sin llegada previa): último taco histórico del avión.
+    void getUltimoTacoAction(flightId).then((res) => {
+      if (res.ok && res.data?.ultimo_taco != null) {
+        setSalida((prev) =>
+          String(prev).trim() === "" ? String(res.data!.ultimo_taco) : prev,
+        );
+        setSugerenciaOrigen("último tacómetro registrado del avión");
+      }
+    });
+  };
 
   const handleConfirm = () => {
     const payload: {
@@ -369,7 +419,7 @@ function TacoConfirmDialog({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setOpen(true)}
+            onClick={handleOpen}
             className="h-6 gap-1 px-2 text-[11px]"
             title="Capturar las lecturas de tacómetro de este tramo (piloto externo: las sube la oficina)"
           >
@@ -380,7 +430,7 @@ function TacoConfirmDialog({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => setOpen(true)}
+          onClick={handleOpen}
           className="h-6 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
           title="Corregir las lecturas de tacómetro de este tramo (queda registrado como corrección de oficina)"
         >
@@ -392,7 +442,7 @@ function TacoConfirmDialog({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => setOpen(true)}
+          onClick={handleOpen}
           className="h-7 gap-1.5 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
         >
           <CheckCircleIcon className="h-3.5 w-3.5" />
@@ -420,9 +470,18 @@ function TacoConfirmDialog({
                 id={`taco-salida-${escala.id}`}
                 inputMode="decimal"
                 value={salida}
-                onChange={(e) => setSalida(e.target.value)}
+                onChange={(e) => {
+                  setSalida(e.target.value);
+                  setSugerenciaOrigen(null);
+                }}
                 placeholder="—"
               />
+              {sugerenciaOrigen && (
+                <p className="text-[11px] text-muted-foreground">
+                  Precargada del historial ({sugerenciaOrigen}). Ajústala si la
+                  foto dice otra cosa.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`taco-llegada-${escala.id}`}>Llegada</Label>

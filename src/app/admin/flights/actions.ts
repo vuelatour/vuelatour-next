@@ -437,6 +437,23 @@ export async function confirmTacoAction(
 }
 
 /** Rellena huecos de tacómetro del vuelo con el promedio del tramo (queda amarillo). */
+/**
+ * Última lectura de tacómetro del avión del vuelo (historial): el diálogo de
+ * captura/corrección la precarga como salida sugerida.
+ */
+export async function getUltimoTacoAction(
+  flightId: string,
+): Promise<ActionResult<{ ultimo_taco: number | null }>> {
+  try {
+    const data = await apiServer<{ ultimo_taco: number | null }>(
+      `/v1/flights/${flightId}/ultimo-taco`,
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function fillTacoGapsAction(
   flightId: string,
 ): Promise<ActionResult<{ escalas_actualizadas: number }>> {
