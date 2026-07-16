@@ -76,6 +76,13 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     : flightsRes.data.filter(
         (v) => v.estado !== "SOLICITUD" && v.estado !== "COTIZADO",
       );
+  // Los folios ocultos por estar en cotización dejan "huecos" en la lista
+  // (#16 → #14) que parecen vuelos borrados: se avisa dónde viven.
+  const enCotizacion = estadoFilter
+    ? []
+    : flightsRes.data.filter(
+        (v) => v.estado === "SOLICITUD" || v.estado === "COTIZADO",
+      );
 
   // Tacómetro incompleto: solo importa en vuelos propios ya en curso/cerrados.
   const tacoRelevantes = operativos.filter(
@@ -95,6 +102,22 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
           <p className="text-sm text-muted-foreground mt-1">
             {operativos.length}{" "}
             {operativos.length === 1 ? "vuelo" : "vuelos"} en el rango.
+            {enCotizacion.length > 0 && (
+              <>
+                {" "}
+                {enCotizacion.length === 1 ? "El folio" : "Los folios"}{" "}
+                {enCotizacion
+                  .map((v) => `#${v.folio}`)
+                  .slice(0, 6)
+                  .join(", ")}
+                {enCotizacion.length > 6 ? "…" : ""}{" "}
+                {enCotizacion.length === 1 ? "está" : "están"} en{" "}
+                <Link href="/admin/quotes" className="underline text-brand-600">
+                  Cotizaciones
+                </Link>{" "}
+                (aún sin confirmar).
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
