@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowDownTrayIcon,
   CheckCircleIcon,
+  PaperAirplaneIcon,
   PencilSquareIcon,
   XCircleIcon,
 } from "@heroicons/react/24/outline";
@@ -108,8 +109,24 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
     });
   };
 
+  // La cotización y el vuelo son la MISMA entidad (mismo folio): el detalle
+  // operativo (tramos, tacómetros, cobros, gastos) vive en /admin/flights.
+  // En SOLICITUD/COTIZADO aún no es un vuelo operativo (esa página rebota de
+  // regreso a Cotizaciones), así que el acceso directo no se muestra.
+  const canVerVuelo =
+    quote.estado !== "SOLICITUD" && quote.estado !== "COTIZADO";
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      {canVerVuelo && (
+        <Link
+          href={`/admin/flights/${quote.id}`}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          <PaperAirplaneIcon className="h-4 w-4" />
+          Ver vuelo
+        </Link>
+      )}
       <Button variant="outline" onClick={handlePdf} disabled={pdfLoading} className="gap-2">
         <ArrowDownTrayIcon className="h-4 w-4" />
         {pdfLoading ? "Generando…" : "PDF"}
