@@ -53,6 +53,18 @@ const CobroFormSchema = z
       .union([z.coerce.number(), z.literal("")])
       .optional()
       .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
+    // % que retiene el banco (terminal/transferencia): el banco deposita
+    // monto − comisión; sin esto el reporte no cuadra con el estado de cuenta.
+    comision_banco_pct: z
+      .union([
+        z.coerce
+          .number()
+          .min(0, "No puede ser negativa")
+          .max(20, "Máximo 20%"),
+        z.literal(""),
+      ])
+      .optional()
+      .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
     referencia: z.string().max(100).optional().or(z.literal("")),
     fecha_cobro: z.string().optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
@@ -95,6 +107,7 @@ function defaults(pendingUsd: number): CobroFormValues {
     moneda: "USD",
     metodo_cobro: "TRANSFERENCIA",
     tc_usd_mxn: undefined,
+    comision_banco_pct: undefined,
     referencia: "",
     fecha_cobro: todayLocal(),
     notas: "",
@@ -132,6 +145,7 @@ export function CobroFormSheet({
   const metodo = watch("metodo_cobro");
   const monto = watch("monto");
   const tc = watch("tc_usd_mxn");
+  const comisionPct = watch("comision_banco_pct");
 
   // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD, EFECTIVO→MXN).
   const handleMetodoChange = (v: string) => {
@@ -157,6 +171,11 @@ export function CobroFormSheet({
         tc_usd_mxn:
           values.tc_usd_mxn !== undefined && Number(values.tc_usd_mxn) > 0
             ? Number(values.tc_usd_mxn)
+            : undefined,
+        comision_banco_pct:
+          values.comision_banco_pct !== undefined &&
+          Number(values.comision_banco_pct) > 0
+            ? Number(values.comision_banco_pct)
             : undefined,
         referencia: values.referencia?.trim() || undefined,
         fecha_cobro: values.fecha_cobro
@@ -279,6 +298,47 @@ export function CobroFormSheet({
                   Quedará pendiente {fmtUsd(pendingUsd - usdEquivalente)} USD.
                 </span>
               )}
+            </div>
+          )}
+
+          <Field
+            label="Comisión del banco (%)"
+            hint="Lo que retiene el banco (terminal/transferencia). El cliente pagó el monto completo; el banco deposita monto − comisión."
+            error={errors.comision_banco_pct?.message}
+          >
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              max={20}
+              placeholder="Opcional · ej. 2.9"
+              {...register("comision_banco_pct")}
+            />
+          </Field>
+
+          {Number(comisionPct) > 0 && Number(monto) > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+              {(() => {
+                // Mismo redondeo que el API: comisión a 2 decimales y el neto
+                // se deriva de ELLA (no del producto crudo) — sin ±1 centavo.
+                const comision =
+                  Math.round(Number(monto) * (Number(comisionPct) / 100) * 100) / 100;
+                return (
+                  <>
+                    <span className="text-muted-foreground">Comisión: </span>
+                    <span className="font-mono font-semibold">
+                      −{fmtUsd(comision)} {moneda}
+                    </span>
+                    <span className="text-muted-foreground"> · El banco depositará </span>
+                    <span className="font-mono font-semibold">
+                      {fmtUsd(Number(monto) - comision)} {moneda}
+                    </span>
+                    <span className="text-muted-foreground">
+                      . El vuelo se acredita por el monto completo.
+                    </span>
+                  </>
+                );
+              })()}
             </div>
           )}
 

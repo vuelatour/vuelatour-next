@@ -115,6 +115,14 @@ export function CobrosCard({
                       {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
+                    {Number(c.comision_banco_monto) > 0 && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                        Comisión banco {Number(c.comision_banco_pct ?? 0)}% −
+                        {fmtUsd(Number(c.comision_banco_monto))} {c.moneda} · neto al
+                        banco {fmtUsd(Number(c.monto) - Number(c.comision_banco_monto))}{" "}
+                        {c.moneda}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     {c.foto_voucher_url && voucherUrls[c.foto_voucher_url] && (

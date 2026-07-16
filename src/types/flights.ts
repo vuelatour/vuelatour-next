@@ -100,6 +100,10 @@ export interface FlightCobro {
   moneda: "USD" | "MXN";
   metodo_cobro: MetodoPago;
   tc_usd_mxn: string | null;
+  /** % comisión del banco sobre este cobro (null = sin comisión). */
+  comision_banco_pct?: string | null;
+  /** Comisión en la moneda del cobro; el banco depositó monto − esto. */
+  comision_banco_monto?: string | null;
   referencia: string | null;
   fecha_cobro: string;
   foto_voucher_url: string | null;
