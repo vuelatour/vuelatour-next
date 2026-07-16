@@ -109,6 +109,19 @@ export function FlightTramosCard({
 
   const ordered = [...escalas].sort((a, b) => a.orden - b.orden);
 
+  // Tramo que "sale" antes que el tramo anterior (dedazo al capturar la
+  // fecha, caso real: folio 10): descuadra el calendario del piloto y los
+  // reportes — se señala en ámbar en vez de pasar en silencio.
+  const saleAntesQueElAnterior = (idx: number): boolean => {
+    const cur = ordered[idx]?.fecha_salida_plan;
+    if (!cur) return false;
+    for (let i = idx - 1; i >= 0; i--) {
+      const prev = ordered[i].fecha_salida_plan;
+      if (prev) return new Date(cur).getTime() < new Date(prev).getTime();
+    }
+    return false;
+  };
+
   const handlePermisoEmitido = (escala: FlightEscala) => {
     startPermiso(async () => {
       const res = await updateEscalaPermisoAction(flightId, escala.id, "emitido");
@@ -183,6 +196,14 @@ export function FlightTramosCard({
                       className="text-[10px] bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
                     >
                       Permiso emitido
+                    </Badge>
+                  )}
+                  {saleAntesQueElAnterior(idx) && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    >
+                      ⚠ Sale antes que el tramo anterior — revisa la fecha
                     </Badge>
                   )}
                 </div>
