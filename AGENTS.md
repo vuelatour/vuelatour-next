@@ -20,6 +20,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Estados de vuelo: `estado-vuelo.ts` + `estadoVueloStyle` (labels/colores).
 - Formularios: componente `form-field`; etiquetas: `VtLabel`; vacíos:
   `empty-state`. No inventar variantes locales.
+- **Tablas de LISTA**: `components/admin/data-table.tsx` (`DataTable`) —
+  paginado 10/20/50/100, búsqueda rápida opcional y encabezado sticky. La
+  página (server) arma filas-viewmodel SERIALIZABLES y un componente cliente
+  delgado `<área>-table.tsx` define las columnas (ejemplar:
+  `airports/airports-table.tsx`). Tablas de RESUMEN (matrices con totales,
+  reportes) siguen con los primitivos de `ui/table`. Columnas con
+  botones/menús llevan `noLink: true` si la fila tiene `rowHref`.
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
 

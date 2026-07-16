@@ -1,6 +1,4 @@
-import Link from "next/link";
 import { ArchiveBoxIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -8,15 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ItemActions } from "@/components/admin/inventory/item-actions";
+import { ItemsTable } from "@/components/admin/inventory/items-table";
 import { ItemCreateButton } from "@/components/admin/inventory/item-create-button";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
@@ -26,13 +16,8 @@ import { listAircraft } from "@/lib/api/aircraft";
 
 export const dynamic = "force-dynamic";
 
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
-
 const mxn = (n: number) =>
   n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
-
-const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 export default async function InventoryPage() {
   const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes] =
@@ -97,79 +82,12 @@ export default async function InventoryPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ítem</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  <TableHead className="text-right">Mínimo</TableHead>
-                  <TableHead className="text-right">Costo FIFO</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((it) => (
-                  <TableRow key={it.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        {it.foto_url && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={it.foto_url}
-                            alt={it.nombre}
-                            className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-border"
-                          />
-                        )}
-                        <div className="min-w-0">
-                          <Link
-                            href={`/admin/inventory/${it.id}`}
-                            className="font-medium hover:text-brand-600 hover:underline"
-                          >
-                            {it.nombre}
-                          </Link>
-                          {(it.numero_parte || it.codigo) && (
-                            <span className="block text-xs text-muted-foreground font-mono">
-                              {[it.numero_parte, it.codigo].filter(Boolean).join(" · ")}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{it.categoria}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <span className="inline-flex items-center gap-1.5">
-                        {num(it.stock)}
-                        {it.unidad && (
-                          <span className="ml-1 text-xs text-muted-foreground">{it.unidad}</span>
-                        )}
-                        {it.bajo_stock && (
-                          <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-                            Bajo
-                          </Badge>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {it.stock_minimo != null ? num(it.stock_minimo) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {it.costo_fifo_mxn_actual ? `${mxn(it.costo_fifo_mxn_actual)} MXN` : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{mxn(it.valor_mxn)} MXN</TableCell>
-                    <TableCell>
-                      <ItemActions
-                        item={it}
-                        aircraft={aircraft}
-                        providers={providers}
-                        categorias={categorias}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <ItemsTable
+              items={items}
+              aircraft={aircraft}
+              providers={providers}
+              categorias={categorias}
+            />
           </CardContent>
         </Card>
       )}

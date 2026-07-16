@@ -19,14 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import {
   deleteDistanciaAction,
   importDistanciasAction,
@@ -49,13 +42,6 @@ export function DistanciasManager({ initial }: { initial: DistanciaTramo[] }) {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [toDelete, setToDelete] = useState<DistanciaTramo | null>(null);
-  const [filtro, setFiltro] = useState("");
-
-  const filtradas = initial.filter((d) => {
-    if (!filtro) return true;
-    const f = filtro.toUpperCase();
-    return d.origen_iata.includes(f) || d.destino_iata.includes(f);
-  });
 
   const handleAdd = () => {
     const millas = Number(nm.replace(",", "."));
@@ -139,6 +125,53 @@ export function DistanciasManager({ initial }: { initial: DistanciaTramo[] }) {
     });
   };
 
+  const columns: Array<DataTableColumn<DistanciaTramo>> = [
+    {
+      key: "origen",
+      header: "Origen",
+      cellClassName: "font-mono text-sm",
+      cell: (d) => d.origen_iata,
+    },
+    {
+      key: "destino",
+      header: "Destino",
+      cellClassName: "font-mono text-sm",
+      cell: (d) => d.destino_iata,
+    },
+    {
+      key: "nm",
+      header: "NM (aerovía)",
+      headClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      cell: (d) =>
+        Number(d.millas_nauticas).toLocaleString("en-US", {
+          maximumFractionDigits: 2,
+        }),
+    },
+    {
+      key: "fuente",
+      header: "Fuente",
+      cellClassName: "text-xs text-muted-foreground",
+      cell: (d) => d.fuente,
+    },
+    {
+      key: "eliminar",
+      header: "",
+      headClassName: "w-10",
+      cell: (d) => (
+        <button
+          type="button"
+          onClick={() => setToDelete(d)}
+          className="text-muted-foreground hover:text-destructive transition-colors"
+          title="Eliminar"
+          aria-label={`Eliminar distancia ${d.origen_iata} a ${d.destino_iata}`}
+        >
+          <TrashIcon className="h-4 w-4" />
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <Card>
@@ -195,64 +228,25 @@ export function DistanciasManager({ initial }: { initial: DistanciaTramo[] }) {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-sm">
-              {initial.length} {initial.length === 1 ? "tramo" : "tramos"} en catálogo
-            </CardTitle>
-          </div>
-          <Input
-            value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-            placeholder="Filtrar por IATA…"
-            className="w-44"
-          />
+        <CardHeader>
+          <CardTitle className="text-sm">
+            {initial.length} {initial.length === 1 ? "tramo" : "tramos"} en catálogo
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Origen</TableHead>
-                <TableHead>Destino</TableHead>
-                <TableHead className="text-right">NM (aerovía)</TableHead>
-                <TableHead>Fuente</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtradas.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
-                    Sin tramos{filtro ? " que coincidan" : " — importa la lista de referencia"}.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filtradas.map((d) => (
-                  <TableRow key={d.id}>
-                    <TableCell className="font-mono text-sm">{d.origen_iata}</TableCell>
-                    <TableCell className="font-mono text-sm">{d.destino_iata}</TableCell>
-                    <TableCell className="text-right font-mono">
-                      {Number(d.millas_nauticas).toLocaleString("en-US", {
-                        maximumFractionDigits: 2,
-                      })}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{d.fuente}</TableCell>
-                    <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => setToDelete(d)}
-                        className="text-muted-foreground hover:text-destructive transition-colors"
-                        title="Eliminar"
-                        aria-label={`Eliminar distancia ${d.origen_iata} a ${d.destino_iata}`}
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          {initial.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Sin tramos — importa la lista de referencia.
+            </p>
+          ) : (
+            <DataTable
+              columns={columns}
+              rows={initial}
+              rowKey={(d) => d.id}
+              searchText={(d) => `${d.origen_iata} ${d.destino_iata}`}
+              searchPlaceholder="Filtrar por IATA…"
+            />
+          )}
         </CardContent>
       </Card>
 

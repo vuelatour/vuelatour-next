@@ -1,25 +1,9 @@
 import { MapIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { RouteActions } from "@/components/admin/routes/route-actions";
+import { Card, CardContent } from "@/components/ui/card";
+import { RoutesTable } from "@/components/admin/routes/routes-table";
 import { RouteCreateButton } from "@/components/admin/routes/route-create-button";
 import { listRoutes } from "@/lib/api/routes-server";
 import { listAirports } from "@/lib/api/airports-server";
-import { fmtDecimal } from "@/lib/format";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -61,96 +45,7 @@ export default async function RoutesPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Itinerario</TableHead>
-                  <TableHead className="text-center">Tramos</TableHead>
-                  <TableHead className="text-right">NM totales</TableHead>
-                  <TableHead className="text-center">Aterrizajes</TableHead>
-                  <TableHead>Fuente</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {routes.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      {r.tipo === "MULTIESCALA" && r.tramos.length > 0 ? (
-                        <div className="space-y-0.5">
-                          <div className="font-mono text-sm font-semibold">
-                            {r.tramos.map((t, i) => (
-                              <span key={t.id}>
-                                {i === 0 ? t.origen_iata : null}
-                                <span className="text-muted-foreground"> → </span>
-                                {t.destino_iata}
-                              </span>
-                            ))}
-                          </div>
-                          {r.notas && (
-                            <p className="text-xs text-muted-foreground line-clamp-1">
-                              {r.notas}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-2 font-mono font-semibold">
-                            <span>{r.origen_iata}</span>
-                            <span className="text-muted-foreground">→</span>
-                            <span>{r.destino_iata}</span>
-                          </div>
-                          {r.notas && (
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                              {r.notas}
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {r.tramos.length > 0 ? (
-                        <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
-                          {r.tramos.length} {r.tramos.length === 1 ? "tramo" : "tramos"}
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-[10px]">
-                          Legacy
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {fmtDecimal(r.millas_nauticas)}
-                    </TableCell>
-                    <TableCell className="text-center font-mono text-sm">
-                      {r.num_aterrizajes}
-                    </TableCell>
-                    <TableCell>
-                      {r.fuente ? (
-                        <Badge variant="outline" className="font-mono text-[10px]">
-                          {r.fuente}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {r.activa ? (
-                        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-                          Activa
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Inactiva</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <RouteActions route={r} airports={airports} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <RoutesTable routes={routes} airports={airports} />
           </CardContent>
         </Card>
       )}

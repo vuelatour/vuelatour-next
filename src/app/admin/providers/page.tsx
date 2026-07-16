@@ -1,32 +1,11 @@
 import { BuildingOfficeIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ProviderActions } from "@/components/admin/providers/provider-actions";
+import { Card, CardContent } from "@/components/ui/card";
+import { ProvidersTable } from "@/components/admin/providers/providers-table";
 import { ProviderCreateButton } from "@/components/admin/providers/provider-create-button";
 import { listProviders } from "@/lib/api/providers-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
-
-const TIPO_LABELS: Record<string, string> = {
-  NACIONAL: "Nacional",
-  EXTRANJERO: "Extranjero",
-  GENERICO_LOCAL: "Genérico",
-};
 
 export default async function ProvidersPage() {
   const { data: providers, count } = await listProviders({ limit: 200 });
@@ -54,61 +33,7 @@ export default async function ProvidersPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>RFC</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>País</TableHead>
-                  <TableHead>Contacto</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {providers.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.nombre}</TableCell>
-                    <TableCell className="font-mono text-xs">{p.rfc ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {TIPO_LABELS[p.tipo] ?? p.tipo}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {p.pais ? (
-                        <span className="font-mono text-xs">{p.pais}</span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-xs space-y-0.5">
-                        {p.contacto && <div>{p.contacto}</div>}
-                        {p.email && <div className="text-muted-foreground break-all">{p.email}</div>}
-                        {p.telefono && <div className="text-muted-foreground">{p.telefono}</div>}
-                        {!p.contacto && !p.email && !p.telefono && (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {p.activo ? (
-                        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-                          Activo
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Inactivo</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <ProviderActions provider={p} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <ProvidersTable providers={providers} />
           </CardContent>
         </Card>
       )}

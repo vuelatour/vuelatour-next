@@ -1,41 +1,14 @@
 import { InboxArrowDownIcon } from "@heroicons/react/24/outline";
 import { fmtDateOnly } from "@/lib/datetime";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { listRecibidas } from "@/lib/api/invoices-server";
 import { listGastos } from "@/lib/api/expenses-server";
 import { RecibidaUploadButton } from "@/components/admin/recibidas/recibida-upload-button";
-import { RecibidaActions } from "@/components/admin/recibidas/recibida-actions";
+import { RecibidasTable } from "@/components/admin/recibidas/recibidas-table";
 import type { FacturaRecibida } from "@/types/invoices";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
-
-const ESTADO: Record<FacturaRecibida["estado"], { label: string; cls: string }> = {
-  SIN_CLASIFICAR: {
-    label: "Sin clasificar",
-    cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  },
-  CLASIFICADA: {
-    label: "Clasificada",
-    cls: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
-  },
-  DESCARTADA: { label: "Descartada", cls: "bg-muted text-muted-foreground border-border" },
-};
 
 const fmtDate = fmtDateOnly;
 
@@ -90,63 +63,7 @@ export default async function FacturasRecibidasPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Emisor</TableHead>
-                  <TableHead>Conceptos</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Gasto</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recibidas.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      <p className="font-medium">{r.emisor_nombre ?? "—"}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono">{r.emisor_rfc ?? ""}</p>
-                    </TableCell>
-                    <TableCell className="max-w-xs">
-                      <p className="text-sm truncate">{r.conceptos_resumen ?? "—"}</p>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {fmtDate(r.fecha_emision)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {fmtMoney(r.total, r.moneda)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {r.gastos && r.gastos.length > 1 ? (
-                        <span title={r.gastos.map((g) => `${g.categoria} · ${fmtMoney(g.monto, g.moneda)}`).join("\n")}>
-                          {r.gastos.length} gastos ·{" "}
-                          {fmtMoney(
-                            String(r.gastos.reduce((acc, g) => acc + Number(g.monto), 0)),
-                            r.gastos[0]?.moneda ?? r.moneda,
-                          )}
-                        </span>
-                      ) : r.gastos && r.gastos.length === 1 ? (
-                        `${r.gastos[0].categoria} · ${fmtMoney(r.gastos[0].monto, r.gastos[0].moneda)}`
-                      ) : r.gasto ? (
-                        `${r.gasto.categoria} · ${fmtMoney(r.gasto.monto, r.gasto.moneda)}`
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className={ESTADO[r.estado].cls}>
-                        {ESTADO[r.estado].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <RecibidaActions recibida={r} gastos={gastos} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <RecibidasTable recibidas={recibidas} gastos={gastos} />
           </CardContent>
         </Card>
       )}

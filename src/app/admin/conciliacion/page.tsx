@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { fmtDateOnly } from "@/lib/datetime";
 import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -9,17 +8,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { ImportButton } from "@/components/admin/conciliacion/import-button";
-import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
+import { MovimientosTable } from "@/components/admin/conciliacion/movimientos-table";
 import {
   conciliacionResumen,
   listMovimientosBancarios,
@@ -152,81 +143,7 @@ export default async function ConciliacionPage({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Conciliación</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {movs.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="whitespace-nowrap">{fmtDate(m.fecha)}</TableCell>
-                    <TableCell className="text-muted-foreground truncate max-w-[280px]">
-                      {m.descripcion ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          m.tipo === "CARGO"
-                            ? "border-brand-600/50 text-brand-600"
-                            : "border-emerald-500/50 text-emerald-600"
-                        }
-                      >
-                        {m.tipo === "CARGO" ? "Cargo" : "Abono"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtMoney(m.monto)}</TableCell>
-                    <TableCell>
-                      {m.conciliado && m.gasto ? (
-                        // Verificable de un clic: al vuelo del gasto (donde se
-                        // ve su desglose) o, sin vuelo, a la lista de gastos.
-                        <Link
-                          href={
-                            m.gasto.vuelo_id
-                              ? `/admin/flights/${m.gasto.vuelo_id}`
-                              : "/admin/expenses"
-                          }
-                          className="text-sm text-emerald-600 hover:underline"
-                          title="Ver el gasto con el que se concilió"
-                        >
-                          {m.gasto.categoria} · ${fmtMoney(m.gasto.monto)}
-                          {m.gasto.vuelo?.folio != null && (
-                            <span className="text-muted-foreground"> · vuelo #{m.gasto.vuelo.folio}</span>
-                          )}
-                        </Link>
-                      ) : m.conciliado && m.cobro_id ? (
-                        m.cobro?.vuelo_id ? (
-                          <Link
-                            href={`/admin/flights/${m.cobro.vuelo_id}`}
-                            className="text-sm text-emerald-600 hover:underline"
-                            title="Ver el vuelo cuyo cobro se concilió"
-                          >
-                            Cobro de vuelo
-                            {m.cobro.vuelo?.folio != null && <> #{m.cobro.vuelo.folio}</>}
-                          </Link>
-                        ) : (
-                          <span className="text-sm text-emerald-600">Cobro de vuelo</span>
-                        )
-                      ) : (
-                        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-                          Pendiente
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {m.tipo === "CARGO" && <MovimientoActions movimiento={m} gastos={gastosOpts} />}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <MovimientosTable movimientos={movs} gastos={gastosOpts} />
           </CardContent>
         </Card>
       )}

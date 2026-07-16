@@ -1,33 +1,11 @@
-import { DocumentTextIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { DocumentTypeActions } from "@/components/admin/document-types/document-type-actions";
+import { DocumentTextIcon } from "@heroicons/react/24/outline";
+import { Card, CardContent } from "@/components/ui/card";
+import { DocumentTypesTable } from "@/components/admin/document-types/document-types-table";
 import { DocumentTypeCreateButton } from "@/components/admin/document-types/document-type-create-button";
 import { listDocumentTypes } from "@/lib/api/document-types-server";
-import { AMBITO_OPTIONS, FORMA_OPTIONS, labelOf } from "./schema";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
-
-const AMBITO_STYLES: Record<string, string> = {
-  AERONAVE: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
-  PILOTO: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30",
-  MOTOR: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-};
 
 export default async function DocumentTypesPage() {
   const { data: tipos, count } = await listDocumentTypes({ limit: 200 });
@@ -56,61 +34,7 @@ export default async function DocumentTypesPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Ámbito</TableHead>
-                  <TableHead>Forma</TableHead>
-                  <TableHead className="text-right">Umbral alerta</TableHead>
-                  <TableHead className="text-center">Crítico</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tipos.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="text-sm font-medium">{t.nombre}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={AMBITO_STYLES[t.ambito]}>
-                        {labelOf(AMBITO_OPTIONS, t.ambito)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {labelOf(FORMA_OPTIONS, t.forma_default)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-mono">
-                      {t.forma_default === "PERMANENTE" ? "—" : `${t.umbral_alerta_dias} días`}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {t.es_critico ? (
-                        <span
-                          title="Vencido bloquea asignación de vuelos"
-                          className="inline-flex items-center text-destructive"
-                        >
-                          <ExclamationTriangleIcon className="h-4 w-4" />
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {t.activo ? (
-                        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-                          Activo
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Inactivo</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DocumentTypeActions documentType={t} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DocumentTypesTable tipos={tipos} />
           </CardContent>
         </Card>
       )}

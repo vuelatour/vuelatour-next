@@ -1,21 +1,6 @@
 import { CreditCardIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { CardActions } from "@/components/admin/cards/card-actions";
+import { Card, CardContent } from "@/components/ui/card";
+import { CardsTable } from "@/components/admin/cards/cards-table";
 import { CardCreateButton } from "@/components/admin/cards/card-create-button";
 import { apiServer } from "@/lib/api/server";
 import { listCards } from "@/lib/api/cards-server";
@@ -53,9 +38,6 @@ export default async function CardsPage() {
     banco: a.banco,
   }));
 
-  const userById = new Map(users.map((u) => [u.id, u]));
-  const accountById = new Map(bankAccounts.map((b) => [b.id, b]));
-
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -78,65 +60,7 @@ export default async function CardsPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Terminación</TableHead>
-                  <TableHead>Titular</TableHead>
-                  <TableHead>Usuario vinculado</TableHead>
-                  <TableHead>Banco / Cuenta</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cards.map((c) => {
-                  const linkedUser = c.usuario_id ? userById.get(c.usuario_id) : null;
-                  const linkedAccount = c.cuenta_bancaria_id
-                    ? accountById.get(c.cuenta_bancaria_id)
-                    : null;
-                  return (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-mono font-semibold">**** {c.terminacion}</TableCell>
-                      <TableCell>{c.nombre_titular}</TableCell>
-                      <TableCell>
-                        {linkedUser ? (
-                          <div className="text-xs">
-                            <div className="font-medium">{linkedUser.nombre}</div>
-                            <div className="text-muted-foreground">{linkedUser.email}</div>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Sin vincular</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs space-y-0.5">
-                          {c.banco && <div>{c.banco}</div>}
-                          {linkedAccount && (
-                            <div className="text-muted-foreground">{linkedAccount.alias}</div>
-                          )}
-                          {!c.banco && !linkedAccount && (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {c.activa ? (
-                          <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-                            Activa
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">Inactiva</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <CardActions card={c} users={users} bankAccounts={bankAccounts} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <CardsTable cards={cards} users={users} bankAccounts={bankAccounts} />
           </CardContent>
         </Card>
       )}

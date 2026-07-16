@@ -1,51 +1,14 @@
 import { ReceiptPercentIcon } from "@heroicons/react/24/outline";
-import { fmtDateOnly } from "@/lib/datetime";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { listMultas } from "@/lib/api/multas-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
 import { MultaCreateButton } from "@/components/admin/multas/multa-create-button";
-import { MultaActions } from "@/components/admin/multas/multa-actions";
-import type { Multa, MultaEstado } from "@/types/multas";
+import { MultasTable } from "@/components/admin/multas/multas-table";
+import type { Multa } from "@/types/multas";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
-
-const ESTADO: Record<MultaEstado, { label: string; cls: string }> = {
-  PENDIENTE: {
-    label: "Pendiente",
-    cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  },
-  PAGADA: {
-    label: "Pagada",
-    cls: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
-  },
-  CANCELADA: { label: "Cancelada", cls: "bg-muted text-muted-foreground border-border" },
-};
-
-const fmtDate = fmtDateOnly;
-
-function fmtMoney(v: string | null, moneda: string): string {
-  if (v == null) return "—";
-  const n = Number(v);
-  if (Number.isNaN(n)) return "—";
-  return `${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moneda}`;
-}
 
 export default async function MultasPage() {
   const [multasRes, aircraftRes, pilotsRes] = await Promise.all([
@@ -79,46 +42,7 @@ export default async function MultasPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead>Avión</TableHead>
-                  <TableHead>Piloto</TableHead>
-                  <TableHead>Autoridad</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {multas.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {fmtDate(m.fecha)}
-                    </TableCell>
-                    <TableCell className="max-w-xs">
-                      <p className="text-sm truncate">{m.descripcion}</p>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{m.aeronave?.matricula ?? "—"}</TableCell>
-                    <TableCell className="text-sm">{m.piloto?.nombre ?? "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{m.autoridad ?? "—"}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {fmtMoney(m.monto, m.moneda)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className={ESTADO[m.estado].cls}>
-                        {ESTADO[m.estado].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <MultaActions multa={m} aircraft={aircraft} pilots={pilots} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <MultasTable multas={multas} aircraft={aircraft} pilots={pilots} />
           </CardContent>
         </Card>
       )}

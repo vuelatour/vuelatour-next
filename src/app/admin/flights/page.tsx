@@ -1,32 +1,18 @@
 import Link from "next/link";
-import { fmtDate } from "@/lib/datetime";
-import { PaperAirplaneIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
+import { Card, CardContent } from "@/components/ui/card";
 import { FlightsFilterBar } from "@/components/admin/flights/flights-filter-bar";
 import { NewExternalFlightButton } from "@/components/admin/flights/new-external-flight-button";
+import {
+  FlightsTable,
+  type FlightRow,
+} from "@/components/admin/flights/flights-table";
 import { listFlights, getTacoStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
-import { fmtUsd } from "@/lib/format";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
-import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -92,6 +78,29 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     () => ({}) as Record<string, { falta: boolean }>,
   );
   const faltaTaco = (id: string) => tacoStatus[id]?.falta === true;
+
+  // Filas-viewmodel serializables para el componente cliente (sin Maps).
+  const rows: FlightRow[] = operativos.map((v) => ({
+    id: v.id,
+    folio: v.folio,
+    cliente_nombre: clientsById.get(v.cliente_id)?.nombre ?? null,
+    es_externo: v.es_externo,
+    operador_externo: v.operador_externo,
+    ruta: (v.ruta_iatas && v.ruta_iatas.length > 0
+      ? v.ruta_iatas
+      : [v.origen_iata, v.destino_iata]
+    ).join(" → "),
+    matricula: v.aeronave_id
+      ? (aircraftById.get(v.aeronave_id)?.matricula ?? null)
+      : null,
+    piloto_nombre: v.piloto_id
+      ? (pilotsById.get(v.piloto_id)?.nombre ?? null)
+      : null,
+    fecha_vuelo: v.fecha_vuelo,
+    monto_total_usd: v.monto_total_usd,
+    estado: v.estado,
+    falta_taco: faltaTaco(v.id),
+  }));
 
   return (
     <div className="space-y-6">
@@ -163,106 +172,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-20">Folio</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Ruta</TableHead>
-                  <TableHead>Aeronave</TableHead>
-                  <TableHead>Piloto</TableHead>
-                  <TableHead>Fecha vuelo</TableHead>
-                  <TableHead className="text-right">Total USD</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {operativos.map((v) => {
-                  const cli = clientsById.get(v.cliente_id);
-                  const ac = v.aeronave_id ? aircraftById.get(v.aeronave_id) : null;
-                  const piloto = v.piloto_id ? pilotsById.get(v.piloto_id) : null;
-                  return (
-                    <TableRow
-                      key={v.id}
-                      className="cursor-pointer hover:bg-muted/40"
-                    >
-                      <TableCell className="font-mono text-xs">
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          #{v.folio}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          <p className="font-medium text-sm">{cli?.nombre ?? "—"}</p>
-                          {v.es_externo && (
-                            <p className="text-[10px] text-muted-foreground">
-                              Externo {v.operador_externo ?? ""}
-                            </p>
-                          )}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          {(v.ruta_iatas && v.ruta_iatas.length > 0
-                            ? v.ruta_iatas
-                            : [v.origen_iata, v.destino_iata]
-                          ).join(" → ")}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          {v.es_externo ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              Externo
-                            </Badge>
-                          ) : ac ? (
-                            <span className="font-mono">{ac.matricula}</span>
-                          ) : (
-                            <span className="text-muted-foreground">Sin asignar</span>
-                          )}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          {piloto?.nombre ?? (
-                            <span className="text-muted-foreground">Sin asignar</span>
-                          )}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          {v.fecha_vuelo ? (
-                            fmtDate(v.fecha_vuelo)
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        <Link href={`/admin/flights/${v.id}`} className="block">
-                          {fmtUsd(v.monto_total_usd)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {faltaTaco(v.id) && (
-                            <span
-                              title="Tacómetro incompleto"
-                              className="inline-flex items-center text-amber-600 dark:text-amber-400"
-                            >
-                              <ExclamationTriangleIcon className="h-4 w-4" />
-                            </span>
-                          )}
-                          <Badge variant="outline" className={ESTADO_STYLES[v.estado]}>
-                            {ESTADO_LABELS[v.estado]}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <FlightsTable rows={rows} />
           </CardContent>
         </Card>
       )}

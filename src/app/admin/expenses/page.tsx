@@ -1,8 +1,5 @@
 import Link from "next/link";
-import { fmtDateOnly } from "@/lib/datetime";
-import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { BanknotesIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -10,16 +7,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
+import { ExpensesTable } from "@/components/admin/expenses/expenses-table";
 import {
   listGastos,
   signFuelPhotos,
@@ -35,24 +24,6 @@ import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
 export const dynamic = "force-dynamic";
 
 type Filtro = "todos" | "pendientes" | "duplicados";
-
-const fmtMoney = (monto: string, moneda: string) =>
-  Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
-
-const fmtDate = fmtDateOnly;
-
-const ESTATUS_STYLE: Record<string, string> = {
-  FACTURA: "border-emerald-500/50 text-emerald-600",
-  VALE: "border-amber-500/50 text-amber-600",
-  SIN_COMPROBANTE: "border-navy-400/50 text-muted-foreground",
-};
-
-// Distintivo pedido por el cliente: los gastos que sube administración (o que
-// genera el sistema, p.ej. pistas) se distinguen de los capturados en campo.
-const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
-  OFICINA: { label: "Oficina", cls: "border-sky-500/50 text-sky-600" },
-  SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
-};
 
 // Vista general en dos columnas (pedido del cliente): gastos OPERATIVOS
 // (ligados a operar el vuelo: combustible, pistas, TUAS, FBO, permisos) vs
@@ -231,102 +202,12 @@ function GastosCard({
         {gastos.length === 0 ? (
           <p className="px-6 pb-6 text-sm text-muted-foreground">Sin gastos en esta vista.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Avión</TableHead>
-                  <TableHead>Vuelo</TableHead>
-                  <TableHead>Capturó</TableHead>
-                  <TableHead>Comp.</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {gastos.map((g) => (
-                  <TableRow key={g.id}>
-                    <TableCell className="whitespace-nowrap">{fmtDate(g.fecha_gasto)}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1.5">
-                        {g.categoria}
-                        {g.duplicado_sospechado && (
-                          <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-                            Duplicado?
-                          </Badge>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums whitespace-nowrap">
-                      {fmtMoney(g.monto, g.moneda)}
-                    </TableCell>
-                    <TableCell>
-                      {g.aeronave?.matricula ? (
-                        <span className="font-mono">{g.aeronave.matricula}</span>
-                      ) : (
-                        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-                          Pendiente
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {g.vuelo_id ? (
-                        <Link
-                          href={`/admin/flights/${g.vuelo_id}`}
-                          className="font-mono text-brand-600 hover:underline"
-                        >
-                          #{g.vuelo?.folio ?? "ver"}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        {g.captura?.nombre ?? "—"}
-                        {g.origen && ORIGEN_BADGE[g.origen] && (
-                          <Badge variant="outline" className={ORIGEN_BADGE[g.origen].cls}>
-                            {ORIGEN_BADGE[g.origen].label}
-                          </Badge>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {g.foto_url && fotoUrls[g.foto_url] && (
-                          <ComprobantePreview
-                            path={g.foto_url}
-                            url={fotoUrls[g.foto_url]}
-                            alt={`Comprobante · ${g.categoria}`}
-                          />
-                        )}
-                        <Badge
-                          variant="outline"
-                          className={ESTATUS_STYLE[g.estatus_comprobante] ?? ""}
-                        >
-                          {g.estatus_comprobante === "SIN_COMPROBANTE"
-                            ? "Sin comp."
-                            : g.estatus_comprobante === "VALE"
-                              ? "Vale"
-                              : "Factura"}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <ExpenseActions
-                        gasto={g}
-                        aircraft={aircraft}
-                        providers={providers}
-                        fotoUrl={g.foto_url ? fotoUrls[g.foto_url] : undefined}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <ExpensesTable
+            gastos={gastos}
+            aircraft={aircraft}
+            providers={providers}
+            fotoUrls={fotoUrls}
+          />
         )}
       </CardContent>
     </Card>

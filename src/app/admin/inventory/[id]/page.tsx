@@ -1,39 +1,20 @@
 import Link from "next/link";
-import { fmtDateOnly } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { isApiError } from "@/lib/api/errors";
 import { getInventarioItem } from "@/lib/api/inventory-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
-import type { InventarioItemDetail, TipoMovimiento } from "@/types/inventory";
+import { CardexTable } from "@/components/admin/inventory/cardex-table";
+import type { InventarioItemDetail } from "@/types/inventory";
 
 export const dynamic = "force-dynamic";
 
 const mxn = (n: number) =>
   n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
-const fmtDate = fmtDateOnly;
-
-const TIPO_STYLE: Record<TipoMovimiento, { label: string; cls: string }> = {
-  ENTRADA: { label: "Entrada", cls: "border-emerald-500/50 text-emerald-600" },
-  SALIDA: { label: "Salida", cls: "border-brand-600/50 text-brand-600" },
-  DEVOLUCION: { label: "Devolución", cls: "border-sky-500/50 text-sky-600" },
-  AJUSTE: { label: "Ajuste", cls: "border-navy-400/50 text-muted-foreground" },
-};
 
 export default async function InventoryItemPage({
   params,
@@ -114,56 +95,7 @@ export default async function InventoryItemPage({
                 Sin movimientos todavía. Registra una entrada para dar de alta stock.
               </p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead className="text-right">Costo unit.</TableHead>
-                    <TableHead>Avión / Proveedor</TableHead>
-                    <TableHead>Ref.</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {item.movimientos.map((m) => {
-                    const style = TIPO_STYLE[m.tipo];
-                    return (
-                      <TableRow key={m.id}>
-                        <TableCell className="whitespace-nowrap">{fmtDate(m.fecha_movimiento)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={style.cls}>
-                            {style.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {m.tipo === "SALIDA" ? "−" : "+"}
-                          {num(m.cantidad)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {/* Se muestra en pesos (moneda operativa); el USD
-                              interno alimenta el reparto y va como referencia. */}
-                          {m.moneda === "MXN" && m.costo_unitario_mxn != null
-                            ? `${mxn(Number(m.costo_unitario_mxn))} MXN`
-                            : m.tc_usd_mxn
-                              ? `${mxn(Number(m.costo_unitario_usd) * Number(m.tc_usd_mxn))} MXN`
-                              : `${mxn(m.costo_unitario_usd)} MXN`}
-                          <p className="text-[11px]">
-                            {usd(m.costo_unitario_usd)} USD
-                            {m.tc_usd_mxn ? ` · TC ${Number(m.tc_usd_mxn)}` : ""}
-                          </p>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground font-mono text-xs">
-                          {m.referencia ?? "—"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <CardexTable movimientos={item.movimientos} />
             )}
           </CardContent>
         </Card>

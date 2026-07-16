@@ -2,16 +2,7 @@ import Link from "next/link";
 import { fmtDateOnly } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { isApiError } from "@/lib/api/errors";
 import { getFondo } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
@@ -19,7 +10,10 @@ import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { MovimientoButton } from "@/components/admin/caja-chica/movimiento-button";
-import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
+import {
+  FondoHistorialTable,
+  type MovimientoFondoRow,
+} from "@/components/admin/caja-chica/fondo-historial-table";
 import type { CajaFondoDetail } from "@/types/caja-chica";
 import type { Gasto } from "@/types/expenses";
 
@@ -70,6 +64,24 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
   const money = (n: number) =>
     n.toLocaleString("es-MX", { style: "currency", currency: fondo.moneda, maximumFractionDigits: 2 });
 
+  // Filas-viewmodel serializables para la tabla cliente (nada de Maps ni
+  // funciones cruzando la frontera server→cliente).
+  const historial: MovimientoFondoRow[] = fondo.historial.map((e) => {
+    const gasto = e.origen === "gasto" ? (gastosById.get(e.id) ?? null) : null;
+    return {
+      key: `${e.origen}-${e.id}`,
+      fechaFmt: fmtDate(e.fecha),
+      tipoLabel: CONCEPTO[e.tipo] ?? e.tipo,
+      esGasto: e.origen === "gasto",
+      descripcion: e.descripcion,
+      negativo: e.monto < 0,
+      montoAbsFmt: money(Math.abs(e.monto)).replace(/^-/, ""),
+      saldoFmt: money(e.saldo),
+      gasto,
+      fotoUrl: gasto?.foto_url ? fotoUrls[gasto.foto_url] : undefined,
+    };
+  });
+
   return (
     <div className="space-y-6">
       <Link
@@ -119,70 +131,11 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
               Sin movimientos. Registra una reposición para fondear la caja.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Concepto</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead className="text-right">Saldo</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {fondo.historial.map((e) => (
-                  <TableRow key={`${e.origen}-${e.id}`}>
-                    <TableCell className="whitespace-nowrap align-top">{fmtDate(e.fecha)}</TableCell>
-                    {/* La descripción (desglose del gasto) ENVUELVE con sus
-                        saltos de línea en vez de alargar la tabla: todo se lee
-                        sin scroll horizontal. */}
-                    <TableCell className="align-top max-w-xl">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="inline-flex items-center gap-1.5">
-                          {CONCEPTO[e.tipo] ?? e.tipo}
-                          {e.origen === "gasto" && (
-                            <Badge variant="outline" className="text-muted-foreground">
-                              gasto
-                            </Badge>
-                          )}
-                        </span>
-                        {e.descripcion && (
-                          <span className="text-xs text-muted-foreground whitespace-pre-line break-words">
-                            {e.descripcion}
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className={`text-right tabular-nums whitespace-nowrap align-top ${e.monto < 0 ? "text-destructive" : "text-emerald-600"}`}
-                    >
-                      {e.monto < 0 ? "−" : "+"}
-                      {money(Math.abs(e.monto)).replace(/^-/, "")}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums whitespace-nowrap align-top text-muted-foreground">
-                      {money(e.saldo)}
-                    </TableCell>
-                    <TableCell>
-                      {/* Editar/eliminar el gasto sin salir de caja chica; al
-                          cambiar el medio de pago (p.ej. era tarjeta), el
-                          movimiento desaparece del fondo automáticamente. */}
-                      {e.origen === "gasto" && gastosById.has(e.id) && (
-                        <ExpenseActions
-                          gasto={gastosById.get(e.id)!}
-                          aircraft={aircraft}
-                          providers={providers}
-                          fotoUrl={
-                            gastosById.get(e.id)!.foto_url
-                              ? fotoUrls[gastosById.get(e.id)!.foto_url!]
-                              : undefined
-                          }
-                        />
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <FondoHistorialTable
+              movimientos={historial}
+              aircraft={aircraft}
+              providers={providers}
+            />
           )}
         </CardContent>
       </Card>

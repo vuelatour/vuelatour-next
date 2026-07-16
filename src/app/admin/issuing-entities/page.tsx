@@ -1,21 +1,6 @@
 import { DocumentTextIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { IssuingEntityActions } from "@/components/admin/issuing-entities/issuing-entity-actions";
+import { Card, CardContent } from "@/components/ui/card";
+import { IssuingEntitiesTable } from "@/components/admin/issuing-entities/issuing-entities-table";
 import { IssuingEntityCreateButton } from "@/components/admin/issuing-entities/issuing-entity-create-button";
 import { listIssuingEntities } from "@/lib/api/issuing-entities-server";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -47,48 +32,7 @@ export default async function IssuingEntitiesPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Razón social</TableHead>
-                  <TableHead>RFC</TableHead>
-                  <TableHead>CP</TableHead>
-                  <TableHead>Régimen</TableHead>
-                  <TableHead>PAC</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entities.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell>
-                      <Badge variant="outline" className="font-mono">
-                        {e.codigo}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-medium">{e.razon_social}</TableCell>
-                    <TableCell className="font-mono text-xs">{e.rfc ?? "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{e.codigo_postal ?? "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{e.regimen_fiscal_sat ?? "—"}</TableCell>
-                    <TableCell className="text-xs">{e.pac_proveedor ?? "—"}</TableCell>
-                    <TableCell className="text-center">
-                      {e.activa ? (
-                        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-                          Activa
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Inactiva</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <IssuingEntityActions entity={e} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <IssuingEntitiesTable entities={entities} />
           </CardContent>
         </Card>
       )}

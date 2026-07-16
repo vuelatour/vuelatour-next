@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
+import { VuelosSemanaTable } from "@/components/admin/dashboards/vuelos-semana-table";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { getMe } from "@/lib/api/me";
 import {
@@ -55,19 +56,6 @@ function currentMonth(): { desde: string; hasta: string } {
     desde: desde.toISOString().slice(0, 10),
     hasta: now.toISOString().slice(0, 10),
   };
-}
-
-function fmtDate(s: string | null): string {
-  if (!s) return "—";
-  // Columna `date`: fija a mediodía UTC para no correr el día por zona horaria.
-  const d = new Date(`${s.slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(d.getTime())) return s;
-  return new Intl.DateTimeFormat("es-MX", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    timeZone: "UTC",
-  }).format(d);
 }
 
 interface PageProps {
@@ -341,34 +329,7 @@ async function Operativo({ desde, hasta }: { desde: string; hasta: string }) {
           {vuelos_semana.length === 0 ? (
             <Empty>Sin vuelos programados para la semana.</Empty>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Folio</TableHead>
-                  <TableHead>Ruta</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead className="text-right">Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {vuelos_semana.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell className="font-mono text-sm">
-                      {v.folio != null ? `#${v.folio}` : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {v.origen_iata ?? "—"} → {v.destino_iata ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">{fmtDate(v.fecha_vuelo)}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge variant={v.estado === "EN_VUELO" ? "default" : "secondary"}>
-                        {v.estado}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <VuelosSemanaTable vuelos={vuelos_semana} />
           )}
         </CardContent>
       </Card>

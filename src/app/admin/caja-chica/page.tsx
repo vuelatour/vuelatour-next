@@ -6,14 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { FondoRow } from "@/components/admin/caja-chica/fondo-row";
+import { FondosTable } from "@/components/admin/caja-chica/fondos-table";
 import { FondoCreateButton } from "@/components/admin/caja-chica/fondo-create-button";
 import { listFondos } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
@@ -62,22 +55,7 @@ export default async function CajaChicaPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Persona</TableHead>
-                  <TableHead>Rol</TableHead>
-                  <TableHead>Moneda</TableHead>
-                  <TableHead className="text-right">Saldo</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {fondos.map((f) => (
-                  <FondoRow key={f.id} fondo={f} usuarios={usuarios} />
-                ))}
-              </TableBody>
-            </Table>
+            <FondosTable fondos={fondos} usuarios={usuarios} />
           </CardContent>
         </Card>
       )}

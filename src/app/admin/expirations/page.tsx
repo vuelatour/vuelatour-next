@@ -1,50 +1,19 @@
-import { ShieldCheckIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { fmtDateOnly } from "@/lib/datetime";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ExpirationActions } from "@/components/admin/expirations/expiration-actions";
+import { ShieldCheckIcon } from "@heroicons/react/24/outline";
+import { Card, CardContent } from "@/components/ui/card";
 import { ExpirationCreateButton } from "@/components/admin/expirations/expiration-create-button";
 import { ExpirationsFilterBar } from "@/components/admin/expirations/expirations-filter-bar";
+import {
+  ExpirationsTable,
+  type ExpirationRow,
+} from "@/components/admin/expirations/expirations-table";
 import { listExpirations } from "@/lib/api/expirations-server";
 import { listDocumentTypes } from "@/lib/api/document-types-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { listEngines } from "@/lib/api/engines-server";
-import { fmtDecimal } from "@/lib/format";
-import type { EstadoVencimiento } from "@/types/expirations";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
-
-const ESTADO_STYLES: Record<EstadoVencimiento, string> = {
-  VIGENTE: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
-  PROXIMO: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  VENCIDO: "bg-destructive/15 text-destructive border-destructive/30",
-  PERMANENTE: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
-  INDETERMINADO: "bg-muted text-muted-foreground border-border",
-};
-
-const ESTADO_LABELS: Record<EstadoVencimiento, string> = {
-  VIGENTE: "Vigente",
-  PROXIMO: "Próximo",
-  VENCIDO: "Vencido",
-  PERMANENTE: "Permanente",
-  INDETERMINADO: "Sin dato",
-};
 
 interface ExpirationsPageProps {
   searchParams: Promise<{
@@ -99,6 +68,12 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
     return "—";
   };
 
+  // Filas-viewmodel serializables: el objetivo va resuelto (sin Maps al cliente).
+  const rows: ExpirationRow[] = expiraciones.map((e) => ({
+    ...e,
+    objetivo: targetLabel(e),
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -152,70 +127,13 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Objetivo</TableHead>
-                  <TableHead>Vence</TableHead>
-                  <TableHead className="text-right">Restante</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {expiraciones.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="text-sm">
-                      <div className="flex items-center gap-1.5">
-                        {e.tipo?.es_critico && (
-                          <span title="Documento crítico" className="text-destructive">
-                            <ExclamationTriangleIcon className="h-3.5 w-3.5" />
-                          </span>
-                        )}
-                        <span className="font-medium">{e.tipo?.nombre ?? "—"}</span>
-                      </div>
-                      {e.referencia && (
-                        <div className="text-[10px] text-muted-foreground">
-                          Ref. {e.referencia}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm font-mono">{targetLabel(e)}</TableCell>
-                    <TableCell className="text-xs">
-                      {e.vence_por === "FECHA" && e.fecha_vencimiento
-                        ? fmtDateOnly(e.fecha_vencimiento)
-                        : e.vence_por === "HORAS" && e.horas_limite
-                          ? `${fmtDecimal(e.horas_limite)} hrs`
-                          : "Permanente"}
-                    </TableCell>
-                    <TableCell className="text-right text-xs font-mono">
-                      {e.dias_restantes !== null
-                        ? e.dias_restantes < 0
-                          ? `hace ${Math.abs(e.dias_restantes)} d`
-                          : `${e.dias_restantes} d`
-                        : e.horas_restantes !== null
-                          ? `${fmtDecimal(e.horas_restantes)} hrs`
-                          : "—"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className={ESTADO_STYLES[e.estado]}>
-                        {ESTADO_LABELS[e.estado]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <ExpirationActions
-                        expiration={e}
-                        documentTypes={typesRes.data}
-                        aircraft={aircraftOpts}
-                        pilots={pilotOpts}
-                        engines={engineOpts}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <ExpirationsTable
+              rows={rows}
+              documentTypes={typesRes.data}
+              aircraft={aircraftOpts}
+              pilots={pilotOpts}
+              engines={engineOpts}
+            />
           </CardContent>
         </Card>
       )}

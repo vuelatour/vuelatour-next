@@ -1,25 +1,14 @@
 import Link from "next/link";
-import { fmtDate } from "@/lib/datetime";
 import { CalculatorIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { QuotesFilterBar } from "@/components/admin/quotes/quotes-filter-bar";
+import { QuotesTable, type QuoteListRow } from "@/components/admin/quotes/quotes-table";
 import { listQuotes } from "@/lib/api/quotes-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { NewReservaButton } from "@/components/admin/flights/new-reserva-button";
-import { fmtUsd } from "@/lib/format";
-import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -52,9 +41,27 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const { data: quotes, count } = quotesRes;
-  const sinAsignar = quotes.filter(
-    (q) => q.estado === "CONFIRMADO" && !q.es_externo && (!q.piloto_id || !q.aeronave_id),
-  ).length;
+
+  // Filas planas y serializables para el componente cliente (lookups resueltos).
+  const rows: QuoteListRow[] = quotes.map((q) => ({
+    id: q.id,
+    folio: q.folio,
+    clienteNombre: clientsById.get(q.cliente_id)?.nombre ?? null,
+    esExterno: q.es_externo,
+    operadorExterno: q.operador_externo,
+    ruta: (q.ruta_iatas && q.ruta_iatas.length > 0
+      ? q.ruta_iatas
+      : [q.origen_iata, q.destino_iata]
+    ).join(" → "),
+    fechaVuelo: q.fecha_vuelo,
+    montoTotalUsd: q.monto_total_usd,
+    version: q.cotizacion_version,
+    estado: q.estado,
+    sinAsignar:
+      q.estado === "CONFIRMADO" && !q.es_externo && (!q.piloto_id || !q.aeronave_id),
+    faltaPiloto: !q.piloto_id,
+  }));
+  const sinAsignar = rows.filter((r) => r.sinAsignar).length;
 
   return (
     <div className="space-y-6">
@@ -129,86 +136,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-20">Folio</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Ruta</TableHead>
-                  <TableHead>Fecha vuelo</TableHead>
-                  <TableHead className="text-right">Total USD</TableHead>
-                  <TableHead>v</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {quotes.map((q) => {
-                  const cli = clientsById.get(q.cliente_id);
-                  return (
-                    <TableRow key={q.id} className="cursor-pointer hover:bg-muted/40">
-                      <TableCell className="font-mono text-xs">
-                        <Link href={`/admin/quotes/${q.id}`} className="block">
-                          #{q.folio}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/admin/quotes/${q.id}`} className="block">
-                          <p className="font-medium text-sm">{cli?.nombre ?? "—"}</p>
-                          {q.es_externo && (
-                            <p className="text-[10px] text-muted-foreground">
-                              Externo {q.operador_externo ?? ""}
-                            </p>
-                          )}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        <Link href={`/admin/quotes/${q.id}`} className="block">
-                          {(q.ruta_iatas && q.ruta_iatas.length > 0
-                            ? q.ruta_iatas
-                            : [q.origen_iata, q.destino_iata]
-                          ).join(" → ")}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Link href={`/admin/quotes/${q.id}`} className="block">
-                          {q.fecha_vuelo
-                            ? fmtDate(q.fecha_vuelo)
-                            : <span className="text-muted-foreground">—</span>}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        <Link href={`/admin/quotes/${q.id}`} className="block">
-                          {fmtUsd(q.monto_total_usd)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        <Link href={`/admin/quotes/${q.id}`} className="block">
-                          v{q.cotizacion_version}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Link
-                          href={`/admin/quotes/${q.id}`}
-                          className="inline-flex flex-col items-center gap-1"
-                        >
-                          <Badge variant="outline" className={ESTADO_STYLES[q.estado]}>
-                            {ESTADO_LABELS[q.estado]}
-                          </Badge>
-                          {q.estado === "CONFIRMADO" &&
-                            !q.es_externo &&
-                            (!q.piloto_id || !q.aeronave_id) && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-600 dark:text-violet-400">
-                                <ExclamationTriangleIcon className="h-3 w-3" />
-                                {!q.piloto_id ? "Falta piloto" : "Falta avión"}
-                              </span>
-                            )}
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <QuotesTable quotes={rows} />
           </CardContent>
         </Card>
       )}

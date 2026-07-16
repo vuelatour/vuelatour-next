@@ -1,7 +1,4 @@
-import Link from "next/link";
-import { fmtDate } from "@/lib/datetime";
-import { ChevronRightIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
-import { Badge } from "@/components/ui/badge";
+import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import {
   Card,
   CardContent,
@@ -9,22 +6,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { AircraftFlightsTable } from "@/components/admin/aircraft/aircraft-flights-table";
 import { listFlights } from "@/lib/api/flights-server";
-import { fmtUsd } from "@/lib/format";
 import type { FlightListItem } from "@/types/flights";
-import type { EstadoVuelo } from "@/types/quotes-persisted";
-import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
-
-
-const fmtFecha = fmtDate;
 
 const LIMIT = 25;
 
@@ -61,53 +45,7 @@ export async function AircraftFlightsCard({ aircraftId }: { aircraftId: string }
             Cuando se asignen vuelos a esta aeronave aparecerán aquí.
           </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Folio</TableHead>
-                <TableHead>Ruta</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead className="text-center">Pax</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead className="text-center">Estado</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {flights.map((f) => (
-                <TableRow key={f.id} className="group">
-                  <TableCell className="font-mono text-sm">#{f.folio}</TableCell>
-                  <TableCell className="font-medium">
-                    {(f.ruta_iatas && f.ruta_iatas.length > 0
-                      ? f.ruta_iatas
-                      : [f.origen_iata, f.destino_iata]
-                    ).join(" → ")}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {fmtFecha(f.fecha_vuelo)}
-                  </TableCell>
-                  <TableCell className="text-center">{f.pasajeros}</TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    {fmtUsd(f.monto_total_usd)}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="outline" className={ESTADO_STYLES[f.estado]}>
-                      {ESTADO_LABELS[f.estado]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link
-                      href={`/admin/flights/${f.id}`}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Ver
-                      <ChevronRightIcon className="h-3.5 w-3.5" />
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <AircraftFlightsTable flights={flights} />
         )}
       </CardContent>
     </Card>
