@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { UsersIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -20,6 +14,7 @@ import { ClientActions } from "@/components/admin/clients/client-actions";
 import { ClientCreateButton } from "@/components/admin/clients/client-create-button";
 import { listClients } from "@/lib/api/clients-server";
 import { EmptyState } from "@/components/admin/empty-state";
+import { datosFiscalesCompletos, RFC_EXTRANJERO } from "@/types/clients";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +72,7 @@ export default async function ClientsPage({
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Contacto</TableHead>
-                  <TableHead>RFC</TableHead>
+                  <TableHead>RFC / Datos fiscales</TableHead>
                   <TableHead>Canal</TableHead>
                   <TableHead className="text-center">Tipo</TableHead>
                   <TableHead className="text-center">Estado</TableHead>
@@ -99,7 +94,27 @@ export default async function ClientsPage({
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{c.rfc ?? "—"}</TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="font-mono text-xs">
+                          {c.rfc ?? "—"}
+                          {c.rfc === RFC_EXTRANJERO && (
+                            <span className="ml-1 font-sans text-[11px] text-muted-foreground">
+                              (extranjero{c.pais_residencia ? `: ${c.pais_residencia}` : ""})
+                            </span>
+                          )}
+                        </div>
+                        {datosFiscalesCompletos(c) ? (
+                          <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20 text-[11px]">
+                            Datos fiscales completos
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20 text-[11px]">
+                            Faltan datos fiscales
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {c.canal_origen ? (
                         <Badge variant="outline" className="text-xs">

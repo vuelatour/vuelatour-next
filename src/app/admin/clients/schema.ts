@@ -18,6 +18,21 @@ export const ClientFormSchema = z.object({
     .transform((v) => v.toUpperCase())
     .optional()
     .or(z.literal("")),
+  // Datos fiscales para el CFDI (todos opcionales: se completan cuando el
+  // cliente pide factura; el badge de la tabla avisa si faltan).
+  regimen_fiscal_receptor: z
+    .string()
+    .regex(/^\d{3}$/, "Código SAT de 3 dígitos")
+    .optional()
+    .or(z.literal("")),
+  uso_cfdi: z.string().max(5).optional().or(z.literal("")),
+  codigo_postal: z
+    .string()
+    .regex(/^\d{5}$/, "CP de 5 dígitos")
+    .optional()
+    .or(z.literal("")),
+  domicilio_fiscal: z.string().max(500).optional().or(z.literal("")),
+  pais_residencia: z.string().max(100).optional().or(z.literal("")),
   canal_origen: CanalEnum.optional().or(z.literal("")),
   es_broker: z.boolean().default(false),
   notas: z.string().max(2000).optional().or(z.literal("")),

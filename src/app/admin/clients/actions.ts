@@ -71,6 +71,49 @@ export async function deleteClientAction(id: string): Promise<ActionResult> {
   }
 }
 
+// ===== Constancia de situación fiscal (lectura con IA) =====
+
+/** Respuesta de /v1/vision/constancia-fiscal (pyservices vía API). */
+export interface ConstanciaFiscalIA {
+  disponible: boolean;
+  legible: boolean;
+  rfc: string | null;
+  razon_social: string | null;
+  /** Código SAT de 3 dígitos (601, 612, …). */
+  regimen_fiscal: string | null;
+  regimen_descripcion: string | null;
+  cp: string | null;
+  domicilio: string | null;
+  confianza: number | null;
+  motivo: string | null;
+}
+
+/**
+ * Lee una constancia de situación fiscal (PDF o foto) con IA para autollenar
+ * los datos fiscales del cliente. Best-effort: el operador siempre revisa.
+ */
+export async function leerConstanciaIAAction(input: {
+  pdfBase64?: string;
+  imageBase64?: string;
+  mediaType?: string;
+}): Promise<ActionResult<ConstanciaFiscalIA>> {
+  try {
+    // El módulo de visión del API usa camelCase (forbidNonWhitelisted rechaza
+    // snake_case); pyservices recibe snake pero el API hace el mapeo.
+    const data = await apiServer<ConstanciaFiscalIA>("/v1/vision/constancia-fiscal", {
+      method: "POST",
+      body: {
+        pdfBase64: input.pdfBase64,
+        imageBase64: input.imageBase64,
+        mediaType: input.mediaType,
+      },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ===== Tarifas preferenciales por avión =====
 // Tarifa por hora pactada con el cliente para una aeronave: al cotizar manda
 // sobre la default (público/broker) y puede ser mayor o menor que esta.

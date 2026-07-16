@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { env } from "@/lib/env";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -70,6 +72,7 @@ export function EmitirFacturaButton({
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [tc, setTc] = useState("");
   const [pending, startTransition] = useTransition();
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // Vuelo cotizado en USD sin importe MXN: el CFDI se emite en MXN y exige TC.
   const requiereTc = !montoTotalMxn;
@@ -116,6 +119,61 @@ export function EmitirFacturaButton({
         toast.error(result.error ?? "No se pudo emitir la factura");
       }
     });
+  };
+
+  /**
+   * Vista previa del PDF SIN timbrar: mismo payload que el timbrado, contra
+   * /v1/invoices/preview (responde el PDF binario). Es fetch nativo (no
+   * apiFetch): aquí SÍ va JSON.stringify + Content-Type explícito, y la
+   * respuesta se abre como blob (patrón handlePdf del cotizador).
+   */
+  const vistaPrevia = async () => {
+    if (!confirm) return;
+    const payload: Record<string, string | boolean | number> = {
+      vuelo_id: vueloId,
+      entidad_fiscal_emisora_id: emisoraId,
+      ...confirm.payload,
+    };
+    if (requiereTc) {
+      if (!tcValido) {
+        toast.error("Captura el tipo de cambio (MXN por USD)");
+        return;
+      }
+      payload.tc_usd_mxn = tcNum;
+    }
+    setPreviewLoading(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${env.API_URL}/v1/invoices/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        // El error de Nest suele venir como JSON con .message (string o array).
+        let msg = "No se pudo generar la vista previa";
+        try {
+          const err = (await res.json()) as { message?: string | string[] };
+          const m = Array.isArray(err?.message) ? err.message.join(", ") : err?.message;
+          if (m) msg = m;
+        } catch {
+          // cuerpo no-JSON: se queda el mensaje genérico
+        }
+        toast.error(msg);
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("No se pudo generar la vista previa");
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const setField = (k: keyof FacturadoAState) => (v: string) =>
@@ -396,15 +454,24 @@ export function EmitirFacturaButton({
               type="button"
               variant="outline"
               onClick={cerrarConfirmacion}
-              disabled={pending}
+              disabled={pending || previewLoading}
             >
               Volver
             </Button>
             <Button
               type="button"
+              variant="outline"
+              onClick={vistaPrevia}
+              disabled={pending || previewLoading || (requiereTc && !tcValido)}
+              title="Ver el PDF tal como quedaría, sin timbrar ante el SAT"
+            >
+              {previewLoading ? "Generando…" : "Vista previa PDF"}
+            </Button>
+            <Button
+              type="button"
               variant="destructive"
               onClick={timbrar}
-              disabled={pending || (requiereTc && !tcValido)}
+              disabled={pending || previewLoading || (requiereTc && !tcValido)}
             >
               {pending ? "Timbrando…" : "Timbrar factura"}
             </Button>

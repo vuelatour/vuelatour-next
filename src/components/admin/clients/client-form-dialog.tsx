@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { SparklesIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,13 +24,15 @@ import {
   createClientAction,
   updateClientAction,
   getClientTarifasAction,
+  leerConstanciaIAAction,
   listAircraftTarifaOptionsAction,
   setClientTarifasAction,
   type AeronaveTarifaOption,
 } from "@/app/admin/clients/actions";
 import { ClientFormSchema, type ClientFormValues } from "@/app/admin/clients/schema";
-import type { Client } from "@/types/clients";
+import { RFC_EXTRANJERO, type Client } from "@/types/clients";
 import { Field } from "@/components/admin/form-field";
+import { cn } from "@/lib/utils";
 
 const CANALES = [
   { value: "WHATSAPP", label: "WhatsApp" },
@@ -38,6 +41,31 @@ const CANALES = [
   { value: "LLAMADA", label: "Llamada" },
   { value: "REFERIDO", label: "Referido" },
 ];
+
+// Regímenes SAT más comunes entre los clientes del chárter (código = valor
+// que viaja en el CFDI). La constancia trae el código exacto.
+const REGIMENES_SAT = [
+  { value: "601", label: "601 — General de Ley Personas Morales" },
+  { value: "603", label: "603 — Personas Morales con Fines no Lucrativos" },
+  { value: "605", label: "605 — Sueldos y Salarios" },
+  { value: "606", label: "606 — Arrendamiento" },
+  { value: "608", label: "608 — Demás ingresos" },
+  { value: "612", label: "612 — Personas Físicas con Actividades Empresariales y Profesionales" },
+  { value: "616", label: "616 — Sin obligaciones fiscales" },
+  { value: "621", label: "621 — Incorporación Fiscal" },
+  { value: "625", label: "625 — Plataformas Tecnológicas" },
+  { value: "626", label: "626 — Régimen Simplificado de Confianza (RESICO)" },
+];
+
+const USOS_CFDI = [
+  { value: "G03", label: "G03 — Gastos en general (el más común)" },
+  { value: "G01", label: "G01 — Adquisición de mercancías" },
+  { value: "S01", label: "S01 — Sin efectos fiscales" },
+  { value: "I08", label: "I08 — Otra maquinaria y equipo" },
+  { value: "D10", label: "D10 — Pagos por servicios educativos" },
+];
+
+const TIPOS_CONSTANCIA = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
 interface ClientFormDialogProps {
   open: boolean;
@@ -77,6 +105,13 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
   // actualizar al ya creado, no crear un duplicado.
   const createdIdRef = useRef<string | null>(null);
 
+  // Cliente extranjero: se factura con el RFC genérico del SAT; el API aplica
+  // régimen 616, uso S01 y CP de la emisora en automático.
+  const [esExtranjero, setEsExtranjero] = useState(false);
+  // Constancia de situación fiscal → IA llena los datos fiscales.
+  const [leyendoConstancia, setLeyendoConstancia] = useState(false);
+  const constanciaRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!open) return;
     reset(defaults(initialClient));
@@ -84,6 +119,7 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
     setTarifasMeta({});
     setTarifasReady(!initialClient);
     setTarifasError(false);
+    setEsExtranjero(initialClient?.rfc === RFC_EXTRANJERO);
     createdIdRef.current = null;
     let cancelled = false;
     listAircraftTarifaOptionsAction().then((r) => {
@@ -120,6 +156,90 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
   const tarifasInactivas = Object.keys(tarifas).filter(
     (id) => tarifas[id]?.trim() && !aircraft.some((a) => a.id === id),
   );
+
+  const toggleExtranjero = (activo: boolean) => {
+    setEsExtranjero(activo);
+    if (activo) {
+      setValue("rfc", RFC_EXTRANJERO, { shouldValidate: true, shouldDirty: true });
+    } else {
+      // Solo se limpia si sigue siendo el genérico (no pisar un RFC real tecleado).
+      if (watch("rfc") === RFC_EXTRANJERO) {
+        setValue("rfc", "", { shouldValidate: true, shouldDirty: true });
+      }
+      setValue("pais_residencia", "", { shouldDirty: true });
+    }
+  };
+
+  // Lee la constancia con IA y autollena los datos fiscales (siempre revisables).
+  const leerConstancia = async (file: File) => {
+    if (!TIPOS_CONSTANCIA.includes(file.type)) {
+      toast.error(
+        `Formato no soportado (${file.type || "desconocido"}). Usa PDF o foto (JPG/PNG/WebP).`,
+      );
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.info("Archivo muy grande para la lectura IA (máx 8 MB); captura manual.");
+      return;
+    }
+    setLeyendoConstancia(true);
+    try {
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+        reader.readAsDataURL(file);
+      });
+      const res = await leerConstanciaIAAction(
+        file.type === "application/pdf"
+          ? { pdfBase64: b64 }
+          : { imageBase64: b64, mediaType: file.type },
+      );
+      if (!res.ok || !res.data) {
+        toast.info(
+          `La IA no pudo leer la constancia${res.error ? `: ${res.error}` : ""}; captura manual.`,
+        );
+        return;
+      }
+      if (!res.data.disponible || !res.data.legible) {
+        toast.info(
+          res.data.motivo
+            ? `No se pudo leer la constancia: ${res.data.motivo}. Captura manual.`
+            : "La constancia no se distingue bien; captura manual.",
+        );
+        return;
+      }
+      const ai = res.data;
+      const llenado: string[] = [];
+      if (ai.razon_social) {
+        setValue("razon_social_default", ai.razon_social, { shouldDirty: true });
+        llenado.push(ai.razon_social);
+      }
+      if (ai.rfc) {
+        setValue("rfc", ai.rfc.toUpperCase().trim(), { shouldValidate: true, shouldDirty: true });
+        llenado.push(ai.rfc.toUpperCase().trim());
+      }
+      // Solo códigos del catálogo: un código desconocido rompería el CFDI.
+      if (ai.regimen_fiscal && REGIMENES_SAT.some((r) => r.value === ai.regimen_fiscal)) {
+        setValue("regimen_fiscal_receptor", ai.regimen_fiscal, { shouldDirty: true });
+        llenado.push(`régimen ${ai.regimen_fiscal}`);
+      }
+      if (ai.cp && /^\d{5}$/.test(ai.cp.trim())) {
+        setValue("codigo_postal", ai.cp.trim(), { shouldValidate: true, shouldDirty: true });
+        llenado.push(`CP ${ai.cp.trim()}`);
+      }
+      if (ai.domicilio) {
+        setValue("domicilio_fiscal", ai.domicilio, { shouldDirty: true });
+      }
+      toast.success(
+        llenado.length > 0
+          ? `IA leyó la constancia: ${llenado.join(" · ")}. Revisa antes de guardar.`
+          : "IA leyó la constancia pero no encontró datos claros; revisa los campos.",
+      );
+    } finally {
+      setLeyendoConstancia(false);
+    }
+  };
 
   const onSubmit = handleSubmit((values) => {
     // Solo cuentan las filas con monto; se valida ANTES de guardar el cliente.
@@ -207,29 +327,165 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
             </Field>
           </div>
 
-          <Field
-            label="Razón social default"
-            hint="Para 'factúrame como la última vez'"
-            error={errors.razon_social_default?.message}
-          >
-            <Input {...register("razon_social_default")} />
+          <Field label="Canal de origen" error={errors.canal_origen?.message}>
+            <SearchableSelect
+              options={[
+                { value: "", label: "Sin especificar" },
+                ...CANALES.map((c) => ({ value: c.value, label: c.label })),
+              ]}
+              value={(watch("canal_origen") as string | undefined) ?? ""}
+              onChange={(v) => setValue("canal_origen", v as never)}
+              placeholder="Sin especificar"
+            />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="RFC" error={errors.rfc?.message}>
-              <Input placeholder="XAXX010101000" maxLength={13} {...register("rfc")} className="font-mono uppercase" />
+          {/* ===== Datos fiscales para el CFDI del cliente ===== */}
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <div>
+              <Label className="text-sm font-medium">Datos fiscales (facturación)</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Se usan al timbrar el CFDI. Puedes llenarlos después, cuando el
+                cliente pida factura.
+              </p>
+            </div>
+
+            {/* Constancia de situación fiscal → la IA llena los campos.
+                Oculta para extranjeros: no tienen constancia del SAT. */}
+            {!esExtranjero && (
+              <>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (!leyendoConstancia) constanciaRef.current?.click();
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === " ") && !leyendoConstancia) {
+                      e.preventDefault();
+                      constanciaRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (leyendoConstancia) return;
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) void leerConstancia(file);
+                  }}
+                  className={cn(
+                    "rounded-lg border border-dashed px-3 py-2.5 transition-colors",
+                    leyendoConstancia
+                      ? "border-brand-500/70 bg-brand-500/10 animate-pulse"
+                      : "cursor-pointer border-brand-500/50 bg-brand-500/5 hover:border-brand-500 hover:bg-brand-500/10",
+                  )}
+                >
+                  <div className="flex items-center justify-center gap-2 text-xs font-medium">
+                    <SparklesIcon className="h-4 w-4 shrink-0 text-brand-500" />
+                    {leyendoConstancia
+                      ? "Leyendo la constancia con IA…"
+                      : "Subir constancia (PDF o foto) — la IA llena los campos"}
+                  </div>
+                </div>
+                <input
+                  ref={constanciaRef}
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void leerConstancia(file);
+                    e.target.value = "";
+                  }}
+                />
+              </>
+            )}
+
+            <Field
+              label="Razón social"
+              hint="EXACTA como la constancia, sin régimen societario (S.A. de C.V.)"
+              error={errors.razon_social_default?.message}
+            >
+              <Input {...register("razon_social_default")} />
             </Field>
-            <Field label="Canal de origen" error={errors.canal_origen?.message}>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="RFC" error={errors.rfc?.message}>
+                <Input
+                  placeholder="XAXX010101000"
+                  maxLength={13}
+                  className="font-mono uppercase"
+                  value={watch("rfc") ?? ""}
+                  readOnly={esExtranjero}
+                  onChange={(e) =>
+                    setValue("rfc", e.target.value.toUpperCase(), {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Código postal" error={errors.codigo_postal?.message}>
+                <Input
+                  placeholder="77500"
+                  maxLength={5}
+                  inputMode="numeric"
+                  className="font-mono"
+                  disabled={esExtranjero}
+                  {...register("codigo_postal")}
+                />
+              </Field>
+            </div>
+
+            <Field label="Régimen fiscal" error={errors.regimen_fiscal_receptor?.message}>
               <SearchableSelect
-                options={[
-                  { value: "", label: "Sin especificar" },
-                  ...CANALES.map((c) => ({ value: c.value, label: c.label })),
-                ]}
-                value={(watch("canal_origen") as string | undefined) ?? ""}
-                onChange={(v) => setValue("canal_origen", v as never)}
+                options={[{ value: "", label: "Sin especificar" }, ...REGIMENES_SAT]}
+                value={watch("regimen_fiscal_receptor") ?? ""}
+                onChange={(v) =>
+                  setValue("regimen_fiscal_receptor", v, {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  })
+                }
                 placeholder="Sin especificar"
+                disabled={esExtranjero}
               />
             </Field>
+
+            <Field label="Uso CFDI" error={errors.uso_cfdi?.message}>
+              <SearchableSelect
+                options={[{ value: "", label: "Sin especificar" }, ...USOS_CFDI]}
+                value={watch("uso_cfdi") ?? ""}
+                onChange={(v) => setValue("uso_cfdi", v, { shouldDirty: true })}
+                placeholder="Sin especificar"
+                disabled={esExtranjero}
+              />
+            </Field>
+
+            <Field
+              label="Domicilio fiscal"
+              hint="El CFDI solo usa el CP; el domicilio queda de referencia."
+              error={errors.domicilio_fiscal?.message}
+            >
+              <Textarea rows={2} placeholder="Opcional" disabled={esExtranjero} {...register("domicilio_fiscal")} />
+            </Field>
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">Cliente extranjero</Label>
+                <p className="text-xs text-muted-foreground">
+                  {esExtranjero
+                    ? "Se factura con el RFC genérico de extranjeros: régimen 616, uso S01 y CP de la emisora se aplican en automático."
+                    : "Reside fuera de México y no tiene RFC del SAT."}
+                </p>
+              </div>
+              <Switch checked={esExtranjero} onCheckedChange={toggleExtranjero} />
+            </div>
+
+            {esExtranjero && (
+              <Field label="País de residencia" error={errors.pais_residencia?.message}>
+                <Input placeholder="Estados Unidos" {...register("pais_residencia")} />
+              </Field>
+            )}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
@@ -362,6 +618,11 @@ function defaults(client?: Client): ClientFormValues {
       email: "",
       razon_social_default: "",
       rfc: "",
+      regimen_fiscal_receptor: "",
+      uso_cfdi: "",
+      codigo_postal: "",
+      domicilio_fiscal: "",
+      pais_residencia: "",
       canal_origen: "",
       es_broker: false,
       notas: "",
@@ -373,6 +634,11 @@ function defaults(client?: Client): ClientFormValues {
     email: client.email ?? "",
     razon_social_default: client.razon_social_default ?? "",
     rfc: client.rfc ?? "",
+    regimen_fiscal_receptor: client.regimen_fiscal_receptor ?? "",
+    uso_cfdi: client.uso_cfdi ?? "",
+    codigo_postal: client.codigo_postal ?? "",
+    domicilio_fiscal: client.domicilio_fiscal ?? "",
+    pais_residencia: client.pais_residencia ?? "",
     canal_origen: client.canal_origen ?? "",
     es_broker: client.es_broker,
     notas: client.notas ?? "",
