@@ -83,7 +83,7 @@ export function CubrirExternoDialog({
           <DialogDescription>
             {yaExterno
               ? "Actualiza quién vuela y cuánto nos cobra ese apoyo."
-              : "Otro operador vuela por nosotros: se sueltan avión, piloto y tacómetros. La cotización del cliente NO cambia."}
+              : "Otro operador vuela por nosotros: se sueltan avión, piloto y tacómetros. La cotización del cliente NO cambia — si el precio al cliente cambia por el operador, revisa después la cotización y captura ahí el precio pactado."}
           </DialogDescription>
         </DialogHeader>
 

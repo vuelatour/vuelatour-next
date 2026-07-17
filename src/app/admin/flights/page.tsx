@@ -2,7 +2,6 @@ import Link from "next/link";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { FlightsFilterBar } from "@/components/admin/flights/flights-filter-bar";
-import { NewExternalFlightButton } from "@/components/admin/flights/new-external-flight-button";
 import {
   FlightsTable,
   type FlightRow,
@@ -125,10 +124,8 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <NewExternalFlightButton />
-{/* La creación operativa (antes "Vuelo rápido") vive ahora en Cotizaciones. */}
-        </div>
+        {/* TODOS los vuelos nacen igual (cotización normal en Cotizaciones);
+            cubrir con externo se decide después, desde el detalle del vuelo. */}
       </div>
 
       <FlightsFilterBar

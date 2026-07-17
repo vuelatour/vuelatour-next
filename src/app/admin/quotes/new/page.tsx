@@ -9,15 +9,7 @@ import { listQuotes } from "@/lib/api/quotes-server";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewQuotePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ externo?: string }>;
-}) {
-  // ?externo=1: el botón "Nuevo vuelo externo" abre el cotizador con el
-  // switch «Cubierto por operador externo» ya activo (todo externo lleva
-  // cotización — regla del cliente).
-  const sp = await searchParams;
+export default async function NewQuotePage() {
   const [aircraftRes, routesRes, clientsRes, airportsRes, quotesRes] = await Promise.all([
     listAircraft({ limit: 100, activa: true }),
     listRoutes({ limit: 200, activa: true }),
@@ -108,7 +100,6 @@ export default async function NewQuotePage({
         clients={clients}
         airports={airports}
         frequentClientIds={frequentClientIds}
-        initialExterno={sp.externo === "1"}
       />
     </div>
   );

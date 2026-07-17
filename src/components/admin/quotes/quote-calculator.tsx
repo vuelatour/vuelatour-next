@@ -165,8 +165,6 @@ type QuoteCalculatorProps = {
       clients: ClientOption[];
       /** Clientes más recurrentes (ids), para mostrarlos como accesos de un tap. */
       frequentClientIds?: string[];
-      /** Preactiva "Cubierto por operador externo" (botón Nuevo vuelo externo). */
-      initialExterno?: boolean;
       initialQuote?: undefined;
       clientName?: undefined;
     }
@@ -499,7 +497,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       sobrevuelo_hr: null,
       cobrar_tuas: true,
       cotizacion_abierta: false,
-      es_externo: props.mode !== "revise" && props.initialExterno === true,
+      es_externo: false,
       operador_externo: "",
       costo_externo_usd: null,
       total_pactado_usd: null,
@@ -519,7 +517,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       notas_internas: "",
       motivo: "",
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- props.mode/initialExterno son estables por carga de página
   }, [initialQuote, defaultAircraftId, defaultRutaId]);
 
   const {
@@ -778,12 +775,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // — lo persistido debe ser exactamente lo que el operador vio.
   const previewFresco =
     !loading && calcPayload?.cliente_id === (values.cliente_id || undefined);
-  // Vuelo cubierto por externo: el operador es obligatorio (identifica quién vuela).
-  const externoIncompleto =
-    !isRevise && values.es_externo && !values.operador_externo.trim();
   const canSave =
     !capacidadExcedida &&
-    !externoIncompleto &&
     previewFresco &&
     (isRevise
       ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
@@ -1255,9 +1248,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             />
           </div>
 
-          {/* Vuelo cubierto por operador externo: el cliente recibe su
-              cotización normal; VuelaTour paga al apoyo y no captura
-              tacómetros ni gastos (el vuelo nace sin avión propio). */}
+          {/* Vuelo cubierto por operador externo: TODOS los vuelos nacen
+              igual (cotización normal); cubrirlo se decide después desde el
+              detalle del vuelo («Cubrir con externo»). Aquí solo se muestra
+              el estado y se edita el precio pactado al revisar. */}
           {isRevise ? (
             initialQuote?.es_externo && (
               <div className="space-y-3">
@@ -1288,81 +1282,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 </Field>
               </div>
             )
-          ) : (
-            <div className="rounded-lg border border-border p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">
-                    Cubierto por operador externo
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Otro operador vuela por nosotros: sin avión propio, sin
-                    tacómetros ni gastos. El cliente recibe su cotización normal.
-                  </p>
-                </div>
-                <Switch
-                  checked={values.es_externo}
-                  onCheckedChange={(c) => setValue("es_externo", c)}
-                />
-              </div>
-              {values.es_externo && (
-                <div className="space-y-3 pt-1">
-                  <Field label="Operador externo" required>
-                    <Input
-                      placeholder="Ej. Aerocharter del Caribe"
-                      {...register("operador_externo")}
-                    />
-                  </Field>
-                  <Field
-                    label="Costo del apoyo (USD)"
-                    hint="Lo que nos cobra el operador por cubrir el vuelo"
-                  >
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="0.00"
-                      {...register("costo_externo_usd")}
-                    />
-                  </Field>
-                  <Field
-                    label="Precio pactado con el cliente (total, USD)"
-                    hint="Opcional: hay operadores más caros o más económicos. El total aterriza EXACTO en lo pactado (el motor genera la línea de ajuste) y el desglose sigue cuadrando."
-                  >
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="Ej. 800.00 — vacío = usar el cálculo normal"
-                      value={values.total_pactado_usd ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "total_pactado_usd",
-                          e.target.value === ""
-                            ? null
-                            : Math.max(0, Number(e.target.value)),
-                        )
-                      }
-                    />
-                  </Field>
-                  <p className="text-xs text-muted-foreground">
-                    El avión seleccionado arriba solo define la tarifa por hora
-                    para cotizar al cliente.
-                  </p>
-                  {breakdown && Number(values.costo_externo_usd) > 0 && (
-                    <p className="text-xs font-medium text-emerald-600">
-                      Margen estimado (sin IVA):{" "}
-                      {fmtUsd(
-                        breakdown.totales.total_usd -
-                          breakdown.iva.monto_usd -
-                          Number(values.costo_externo_usd),
-                      )}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          ) : null}
 
           {/* Conceptos extra */}
           <ExtrasEditor
