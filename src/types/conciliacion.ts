@@ -63,3 +63,15 @@ export interface ParsedStatement {
   notas: string;
   modelo: string | null;
 }
+
+/** Estado de cuenta importado: el archivo original queda archivado para
+ *  consultarlo/descargarlo después (GET /v1/conciliacion/estados-cuenta). */
+export interface EstadoCuentaArchivo {
+  id: string;
+  cuenta_bancaria_id: string;
+  filename: string;
+  formato: string | null;
+  movimientos_importados: number | null;
+  created_at: string;
+  cuenta?: { banco: string | null; alias: string | null; moneda: string | null } | null;
+}

@@ -38,6 +38,12 @@ export const GastoVerifySchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().positive().optional(),
   ),
+  // Propina incluida en monto (monto = ticket + propina; monto es lo que
+  // llega al banco). 0 explícito = quitar la propina.
+  propina: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+    z.number().min(0, "Propina inválida").optional(),
+  ),
   moneda: z.enum(["MXN", "USD"]).optional(),
   fecha_gasto: z
     .string()
@@ -66,6 +72,12 @@ export const GastoCreateSchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().positive("El monto debe ser mayor a 0"),
   ),
+  // REGLA SAGRADA: monto = TOTAL PAGADO (ticket + propina, lo que llega al
+  // banco). propina es sub-parte informativa; monto − propina = ticket.
+  propina: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+    z.number().min(0, "Propina inválida").optional(),
+  ),
   moneda: z.enum(["MXN", "USD"]),
   fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
   medio_pago: MedioPagoEnum,
@@ -89,7 +101,10 @@ export const GastoCreateSchema = z.object({
 
 export type GastoCreateValues = {
   categoria: string;
+  /** En el FORMULARIO este campo es el monto del TICKET (sin propina); al
+   *  guardar se envía monto = ticket + propina (total pagado). */
   monto: string;
+  propina: string;
   moneda: string;
   fecha_gasto: string;
   medio_pago: string;
@@ -102,7 +117,10 @@ export type GastoCreateValues = {
 };
 
 export type GastoVerifyValues = {
+  /** En el FORMULARIO: monto del TICKET (monto − propina); al guardar se
+   *  recompone monto = ticket + propina. */
   monto: string;
+  propina: string;
   moneda: string;
   fecha_gasto: string;
   categoria: string;

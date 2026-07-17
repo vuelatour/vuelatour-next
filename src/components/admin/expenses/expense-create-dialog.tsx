@@ -92,6 +92,7 @@ function emptyValues(defaults?: {
   return {
     categoria: defaults?.categoria ?? "OPERACIONES",
     monto: "",
+    propina: "",
     moneda: "MXN",
     fecha_gasto: hoyCancun(),
     medio_pago: "TRANSFERENCIA",
@@ -166,8 +167,20 @@ export function ExpenseCreateDialog({
   const aplicarIA = (ai: GastoTicketIA) => {
     const llenado: string[] = [];
     if (ai.monto != null && ai.monto > 0) {
-      setValue("monto", String(ai.monto));
-      llenado.push(`$${ai.monto}`);
+      // ai.monto = TOTAL del ticket. Si la IA leyó una propina impresa, se
+      // separa: ticket = total − propina y la propina va a su campo (al
+      // guardar se recompone el total, que es lo que llega al banco).
+      const propinaIA =
+        ai.propina != null && ai.propina > 0 && ai.propina < ai.monto ? ai.propina : null;
+      if (propinaIA != null) {
+        setValue("monto", String(Math.round((ai.monto - propinaIA) * 100) / 100));
+        setValue("propina", String(propinaIA));
+        llenado.push(`$${ai.monto} (incl. propina $${propinaIA})`);
+      } else {
+        setValue("monto", String(ai.monto));
+        setValue("propina", "");
+        llenado.push(`$${ai.monto}`);
+      }
     }
     if (ai.moneda === "MXN" || ai.moneda === "USD") setValue("moneda", ai.moneda);
     if (ai.fecha && /^\d{4}-\d{2}-\d{2}$/.test(ai.fecha)) {
@@ -275,6 +288,20 @@ export function ExpenseCreateDialog({
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // monto guardado = TOTAL PAGADO (ticket + propina): es lo que llega al
+      // banco y lo que usan reparto/reportes/conciliación. La propina queda
+      // aparte como sub-parte informativa.
+      const ticket = Number(values.monto);
+      const propina = values.propina === "" ? 0 : Number(values.propina);
+      if (!(ticket > 0)) {
+        toast.error("Captura el monto del ticket.");
+        return;
+      }
+      if (!(propina >= 0)) {
+        toast.error("La propina no es válida.");
+        return;
+      }
+      const totalPagado = Math.round((ticket + propina) * 100) / 100;
       // Primero el archivo: si la subida falla, no se crea el gasto a medias.
       let fotoPath = "";
       if (factura) {
@@ -289,6 +316,8 @@ export function ExpenseCreateDialog({
       const aplicarComoPiloto = comoPiloto && !!values.vuelo_id && !vueloSinPiloto;
       const result = await createGastoAction({
         ...values,
+        monto: totalPagado,
+        propina,
         foto_url: fotoPath,
         valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
         capturar_como_piloto: aplicarComoPiloto,
@@ -441,8 +470,8 @@ export function ExpenseCreateDialog({
               }}
             />
 
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Monto">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Monto del ticket">
                 <Input
                   type="number"
                   step="0.01"
@@ -451,6 +480,42 @@ export function ExpenseCreateDialog({
                   {...register("monto")}
                 />
               </Field>
+              <Field label="Propina" hint="Solo si se agregó en la terminal (opcional).">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  {...register("propina")}
+                />
+              </Field>
+            </div>
+
+            {/* Total pagado EN VIVO (ticket + propina): es el monto que se
+                guarda y el que aparece en el estado de cuenta del banco. */}
+            <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+              <span className="font-medium">
+                Total pagado:{" "}
+                {(() => {
+                  const t = Number(watch("monto"));
+                  const p = Number(watch("propina"));
+                  const total =
+                    Math.round(
+                      ((Number.isFinite(t) ? t : 0) + (Number.isFinite(p) ? p : 0)) * 100,
+                    ) / 100;
+                  return total.toLocaleString("es-MX", {
+                    style: "currency",
+                    currency: watch("moneda") === "USD" ? "USD" : "MXN",
+                  });
+                })()}
+              </span>{" "}
+              <span className="text-muted-foreground">
+                — esto es lo que llega al estado de cuenta
+              </span>
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Moneda">
                 <SearchableSelect
                   options={[

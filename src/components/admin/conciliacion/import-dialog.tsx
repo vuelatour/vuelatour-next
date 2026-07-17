@@ -40,14 +40,22 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
   const [parsing, setParsing] = useState(false);
   const [importing, startImport] = useTransition();
   const [parsed, setParsed] = useState<ParsedStatement | null>(null);
+  // Archivo original (nombre + base64): al importar se manda también para que
+  // el API lo archive y se pueda consultar/descargar después.
+  const [archivo, setArchivo] = useState<{ filename: string; base64: string } | null>(null);
 
   const reset = () => {
     setCuentaId("");
     setParsed(null);
+    setArchivo(null);
   };
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
+    // Limpia el intento anterior: si este parse falla, no debe quedar el
+    // archivo viejo precargado con el nombre del nuevo en pantalla.
+    setParsed(null);
+    setArchivo(null);
     setParsing(true);
     try {
       const b64 = await readBase64(file);
@@ -57,6 +65,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         return;
       }
       setParsed(res.data);
+      setArchivo({ filename: file.name, base64: b64 });
       if (res.data.total === 0) {
         toast.warning(res.data.notas || "No se reconocieron movimientos");
       } else {
@@ -88,7 +97,19 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
       return;
     }
     startImport(async () => {
-      const res = await importarMovimientosAction({ cuenta_bancaria_id: cuentaId, movimientos });
+      // La action captura errores del API, pero un fallo de transporte (red,
+      // body sobre el límite) rechazaría la promesa sin aviso al usuario.
+      const res = await importarMovimientosAction({
+        cuenta_bancaria_id: cuentaId,
+        movimientos,
+        // Archivo original: queda archivado para consultarlo después.
+        filename: archivo?.filename,
+        file_base64: archivo?.base64,
+      }).catch((err: unknown) => ({
+        ok: false as const,
+        data: undefined,
+        error: err instanceof Error ? err.message : "No se pudo enviar la importación",
+      }));
       if (res.ok && res.data) {
         toast.success(
           `Importados ${res.data.importados} · conciliados automáticamente ${res.data.conciliados_auto}`,
@@ -171,7 +192,17 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={importing}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              // Mismo comportamiento que ESC/overlay: cancelar descarta el
+              // archivo parseado (no debe quedar precargado al reabrir).
+              reset();
+              onOpenChange(false);
+            }}
+            disabled={importing}
+          >
             Cancelar
           </Button>
           <Button

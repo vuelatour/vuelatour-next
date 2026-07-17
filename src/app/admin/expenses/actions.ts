@@ -50,6 +50,9 @@ export interface GastoTicketIA {
   disponible: boolean;
   motivo?: string;
   monto?: number | null;
+  /** Propina impresa en el ticket (solo si aparece); monto = total del
+   *  ticket CON la propina incluida cuando el total impreso la incluye. */
+  propina?: number | null;
   moneda?: "MXN" | "USD" | null;
   fecha?: string | null;
   proveedor?: string | null;

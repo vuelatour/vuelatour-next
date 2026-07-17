@@ -1,6 +1,7 @@
 import { apiServer } from "./server";
 import type {
   ConciliacionResumenCuenta,
+  EstadoCuentaArchivo,
   MovimientoListResponse,
 } from "@/types/conciliacion";
 
@@ -21,6 +22,13 @@ export function listMovimientosBancarios(query: ListConciliacionQuery = {}) {
 export function conciliacionResumen(desde?: string, hasta?: string) {
   return apiServer<ConciliacionResumenCuenta[]>("/v1/conciliacion/resumen", {
     searchParams: { desde, hasta },
+    cache: "no-store",
+  });
+}
+
+/** Estados de cuenta importados (archivo original archivado en el bucket). */
+export function listEstadosCuenta() {
+  return apiServer<{ data: EstadoCuentaArchivo[] }>("/v1/conciliacion/estados-cuenta", {
     cache: "no-store",
   });
 }

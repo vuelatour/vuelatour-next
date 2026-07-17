@@ -57,7 +57,18 @@ export function FlightGastosTable({
       header: "Monto",
       headClassName: "text-right",
       cellClassName: "text-right tabular-nums whitespace-nowrap align-top",
-      cell: (g) => fmtMoney(g.monto, g.moneda),
+      // El monto ES el total pagado (ticket + propina): lo que llega al
+      // banco. La propina solo se anota como sub-línea informativa.
+      cell: (g) => (
+        <>
+          {fmtMoney(g.monto, g.moneda)}
+          {Number(g.propina ?? 0) > 0 && (
+            <p className="text-[10px] text-muted-foreground">
+              incl. propina {fmtMoney(g.propina!, g.moneda)}
+            </p>
+          )}
+        </>
+      ),
     },
     {
       key: "desglose",

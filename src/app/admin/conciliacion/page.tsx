@@ -9,10 +9,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { EstadosCuentaTable } from "@/components/admin/conciliacion/estados-cuenta-table";
 import { ImportButton } from "@/components/admin/conciliacion/import-button";
 import { MovimientosTable } from "@/components/admin/conciliacion/movimientos-table";
 import {
   conciliacionResumen,
+  listEstadosCuenta,
   listMovimientosBancarios,
   type ListConciliacionQuery,
 } from "@/lib/api/conciliacion-server";
@@ -43,12 +45,15 @@ export default async function ConciliacionPage({
   if (filtro === "pendientes") query.conciliado = false;
   if (filtro === "conciliados") query.conciliado = true;
 
-  const [{ data: movs }, cuentasRes, gastosRes, resumen] = await Promise.all([
+  const [{ data: movs }, cuentasRes, gastosRes, resumen, estadosRes] = await Promise.all([
     listMovimientosBancarios(query),
     listBankAccounts({ limit: 100 }),
     listGastos({ limit: 200 }),
     conciliacionResumen().catch(() => []),
+    // Best-effort: la página no se cae si el archivado aún no responde.
+    listEstadosCuenta().catch(() => ({ data: [] })),
   ]);
+  const estadosCuenta = estadosRes.data;
 
   const cuentas = cuentasRes.data.map((c) => ({
     id: c.id,
@@ -144,6 +149,24 @@ export default async function ConciliacionPage({
         <Card>
           <CardContent className="p-0">
             <MovimientosTable movimientos={movs} gastos={gastosOpts} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Archivo histórico: cada importación guarda el archivo original del
+          banco para volver a consultarlo. Sin importaciones archivadas la
+          sección no aparece (no hay nada que mostrar). */}
+      {estadosCuenta.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Estados de cuenta importados</CardTitle>
+            <CardDescription>
+              El archivo original de cada importación queda guardado; descárgalo cuando
+              necesites revisarlo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <EstadosCuentaTable estados={estadosCuenta} />
           </CardContent>
         </Card>
       )}

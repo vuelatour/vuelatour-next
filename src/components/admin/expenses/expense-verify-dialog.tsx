@@ -140,7 +140,29 @@ export function ExpenseVerifyDialog({
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
-      const result = await verifyGastoAction(gasto.id, values);
+      // monto guardado = TOTAL PAGADO (ticket + propina): lo que llega al
+      // banco. En el formulario se edita el ticket y la propina por separado
+      // y aquí se recompone. Ticket vacío + propina vacía = no tocar el monto.
+      const ticket = Number(values.monto);
+      const propina = values.propina === "" ? 0 : Number(values.propina);
+      let payload: Record<string, unknown> = { ...values };
+      if (values.monto !== "" || values.propina !== "") {
+        if (!(ticket > 0)) {
+          toast.error("Captura el monto del ticket.");
+          return;
+        }
+        if (!(propina >= 0)) {
+          toast.error("La propina no es válida.");
+          return;
+        }
+        payload = {
+          ...values,
+          monto: Math.round((ticket + propina) * 100) / 100,
+          // 0 explícito: quitar la propina también debe guardarse.
+          propina,
+        };
+      }
+      const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
         // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
         // desligarlo junto con el resto de la verificación.
@@ -255,10 +277,46 @@ export function ExpenseVerifyDialog({
               notas). Corrige aquí el dato correcto — monto, fecha y moneda son editables.
             </p>
           )}
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Monto">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Monto del ticket">
               <Input type="number" step="0.01" min="0" inputMode="decimal" {...register("monto")} />
             </Field>
+            <Field label="Propina" hint="Solo si se agregó en la terminal (opcional).">
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                inputMode="decimal"
+                placeholder="0.00"
+                {...register("propina")}
+              />
+            </Field>
+          </div>
+
+          {/* Total pagado EN VIVO (ticket + propina): es el monto que se
+              guarda y el que aparece en el estado de cuenta del banco. */}
+          <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+            <span className="font-medium">
+              Total pagado:{" "}
+              {(() => {
+                const t = Number(watch("monto"));
+                const p = Number(watch("propina"));
+                const total =
+                  Math.round(
+                    ((Number.isFinite(t) ? t : 0) + (Number.isFinite(p) ? p : 0)) * 100,
+                  ) / 100;
+                return total.toLocaleString("es-MX", {
+                  style: "currency",
+                  currency: watch("moneda") === "USD" ? "USD" : "MXN",
+                });
+              })()}
+            </span>{" "}
+            <span className="text-muted-foreground">
+              — esto es lo que llega al estado de cuenta
+            </span>
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Moneda">
               <SearchableSelect
                 options={[
@@ -383,8 +441,14 @@ export function ExpenseVerifyDialog({
 
 
 function defaults(g: Gasto): GastoVerifyValues {
+  // El formulario separa ticket y propina; en BD monto = TOTAL PAGADO
+  // (ticket + propina), así que el ticket mostrado = monto − propina.
+  const propina = Number(g.propina ?? 0);
+  const ticket =
+    g.monto != null ? Math.round((Number(g.monto) - propina) * 100) / 100 : null;
   return {
-    monto: g.monto != null ? String(g.monto) : "",
+    monto: ticket != null ? String(ticket) : "",
+    propina: propina > 0 ? String(propina) : "",
     moneda: g.moneda ?? "MXN",
     // fecha_gasto es columna date (YYYY-MM-DD, sin zona) — el corte por 10
     // chars aquí no es el slice prohibido de timestamps.

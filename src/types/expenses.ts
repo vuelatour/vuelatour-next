@@ -4,7 +4,12 @@ export interface Gasto {
   aeronave_id: string | null;
   usuario_captura_id: string | null;
   categoria: string;
+  /** TOTAL PAGADO (ticket + propina): lo que llega al banco. Fuente única
+   *  para reparto/reportes/conciliación. */
   monto: string;
+  /** Propina incluida en monto (sub-parte informativa). monto − propina =
+   *  importe del ticket/factura. */
+  propina: string | null;
   moneda: "MXN" | "USD";
   tc_gasto: string | null;
   fecha_gasto: string | null;

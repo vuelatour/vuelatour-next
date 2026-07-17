@@ -42,6 +42,10 @@ export interface MovimientoImport {
 export async function importarMovimientosAction(payload: {
   cuenta_bancaria_id: string;
   movimientos: MovimientoImport[];
+  /** Archivo original del estado de cuenta: el API lo archiva en el bucket
+   *  para poder consultarlo/descargarlo después (opcional, best-effort). */
+  filename?: string;
+  file_base64?: string;
 }): Promise<ActionResult<{ importados: number; conciliados_auto: number }>> {
   try {
     const data = await apiServer<{ importados: number; conciliados_auto: number }>(
@@ -49,6 +53,21 @@ export async function importarMovimientosAction(payload: {
       { method: "POST", body: payload },
     );
     revalidatePath("/admin/conciliacion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** URL firmada (1 h, con descarga) del estado de cuenta archivado. */
+export async function estadoCuentaUrlAction(
+  id: string,
+): Promise<ActionResult<{ url: string; filename: string }>> {
+  try {
+    const data = await apiServer<{ url: string; filename: string }>(
+      `/v1/conciliacion/estados-cuenta/${id}/url`,
+      { method: "POST", body: {} },
+    );
     return { ok: true, data };
   } catch (err) {
     return fail(err);
