@@ -146,6 +146,22 @@ export async function cubrirExternoAction(
   }
 }
 
+/** Regresa un vuelo cubierto por externo a vuelo PROPIO (asignable de nuevo). */
+export async function revertirExternoAction(
+  id: string,
+): Promise<ActionResult<FlightListItem>> {
+  try {
+    const updated = await apiServer<FlightListItem>(
+      `/v1/flights/${id}/revertir-externo`,
+      { method: "POST" },
+    );
+    revalidateFlight(id);
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface UpdateFlightPayload {
   piloto_id?: string | null;
   pasajeros_nombres?: string[];

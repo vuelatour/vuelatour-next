@@ -83,6 +83,14 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
               <Badge variant="secondary" className="font-mono">
                 v{quote.cotizacion_version}
               </Badge>
+              {quote.es_externo && (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 text-amber-600 dark:text-amber-400"
+                >
+                  Externo{quote.operador_externo ? ` · ${quote.operador_externo}` : ""}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {clientNombre ?? quote.cliente_id} · {quote.origen_iata} → {quote.destino_iata} ·{" "}
@@ -438,6 +446,73 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
         </div>
 
         <div className="space-y-6">
+          {/* Vuelo CUBIERTO por externo: la cotización debe decirlo y mostrar
+              los datos del apoyo (operador, costo, margen) sin ir al vuelo. */}
+          {quote.es_externo && (
+            <Card className="border-amber-500/40">
+              <CardHeader>
+                <CardTitle className="text-sm">Cubierto por operador externo</CardTitle>
+                <CardDescription className="text-xs">
+                  Otro operador vuela este servicio; VuelaTour cobra al cliente
+                  y paga al apoyo. Sin avión propio, tacómetros ni gastos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Operador</span>
+                  <span className="font-medium">{quote.operador_externo ?? "—"}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Costo del apoyo</span>
+                  <span className="font-mono">
+                    {Number(quote.costo_externo_usd) > 0
+                      ? fmtUsd(Number(quote.costo_externo_usd))
+                      : "Sin capturar"}
+                  </span>
+                </div>
+                {Number(quote.calculo_snapshot?.meta?.total_pactado_usd) > 0 && (
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Precio pactado</span>
+                    <span className="font-mono">
+                      {fmtUsd(Number(quote.calculo_snapshot!.meta!.total_pactado_usd))}
+                    </span>
+                  </div>
+                )}
+                {Number(quote.costo_externo_usd) > 0 && (
+                  <div className="flex justify-between gap-2 border-t border-border pt-2">
+                    <span className="text-muted-foreground">
+                      Margen (total − apoyo)
+                    </span>
+                    <span
+                      className={
+                        Number(quote.monto_total_usd) -
+                          Number(quote.costo_externo_usd) >=
+                        0
+                          ? "font-mono font-semibold text-emerald-600"
+                          : "font-mono font-semibold text-destructive"
+                      }
+                    >
+                      {fmtUsd(
+                        Number(quote.monto_total_usd) -
+                          Number(quote.costo_externo_usd),
+                      )}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Antes de IVA/comisiones y otros costos. El operador y su costo
+                  se editan en{" "}
+                  <Link
+                    href={`/admin/flights/${quote.id}`}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    el vuelo → Editar externo
+                  </Link>{" "}
+                  (ahí también se regresa a vuelo propio).
+                </p>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Historial</CardTitle>

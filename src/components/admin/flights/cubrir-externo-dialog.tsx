@@ -15,7 +15,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cubrirExternoAction } from "@/app/admin/flights/actions";
+import {
+  cubrirExternoAction,
+  revertirExternoAction,
+} from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
 
 interface CubrirExternoDialogProps {
@@ -44,6 +47,25 @@ export function CubrirExternoDialog({
   );
   // TC pactado: sin él, un vuelo cotizado en USD no se puede facturar.
   const [tc, setTc] = useState("");
+  // Regreso a vuelo propio: paso de confirmación inline (acción significativa).
+  const [confirmRevert, setConfirmRevert] = useState(false);
+  const [reverting, startRevert] = useTransition();
+
+  const handleRevert = () => {
+    startRevert(async () => {
+      const res = await revertirExternoAction(flight.id);
+      if (res.ok) {
+        toast.success(
+          `Vuelo #${flight.folio} regresó a vuelo propio: asigna avión y piloto.`,
+        );
+        setConfirmRevert(false);
+        onOpenChange(false);
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "No se pudo regresar a vuelo propio");
+      }
+    });
+  };
 
   const handleSave = () => {
     if (operador.trim().length < 2) {
@@ -136,6 +158,50 @@ export function CubrirExternoDialog({
               El avión y el piloto asignados quedarán libres; el estado del
               vuelo pasará a marcarse a mano (Iniciar / Cerrar).
             </p>
+          )}
+          {yaExterno && (
+            <div className="rounded-lg border border-border p-3 space-y-2">
+              <p className="text-sm font-medium">
+                ¿Al final sí sale con avión de la casa?
+              </p>
+              {confirmRevert ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-amber-600">
+                    Se quita al operador {flight.operador_externo ?? "externo"} y
+                    su costo del apoyo; el vuelo queda listo para asignar avión
+                    y piloto propios (tacómetros y gastos vuelven a aplicar).
+                    La cotización del cliente no cambia.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConfirmRevert(false)}
+                      disabled={reverting}
+                    >
+                      No, sigue cubierto
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleRevert}
+                      disabled={reverting}
+                      className="bg-emerald-600 hover:bg-emerald-600/90 text-white"
+                    >
+                      {reverting ? "Regresando…" : "Sí, regresar a vuelo propio"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmRevert(true)}
+                  disabled={saving || reverting}
+                >
+                  Regresar a vuelo propio
+                </Button>
+              )}
+            </div>
           )}
         </div>
 
