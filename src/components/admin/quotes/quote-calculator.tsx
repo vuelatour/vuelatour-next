@@ -905,6 +905,47 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           .filter(Boolean)
                           .join(" · ") || "Cliente directo"}
                       </p>
+                      {/* Lo que se le cobra por hora A ESTE cliente (resuelto
+                          por el motor: preferencial pactada > default del
+                          avión > override), visible al momento de elegirlo. */}
+                      {breakdown && (
+                        <p className="mt-1 text-xs">
+                          <span className="font-mono font-semibold">
+                            {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
+                          </span>{" "}
+                          <span
+                            className={
+                              breakdown.tarifa.proviene_de_override
+                                ? "text-amber-600 dark:text-amber-400"
+                                : breakdown.tarifa.preferencial_cliente
+                                  ? "text-emerald-600"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {breakdown.tarifa.proviene_de_override
+                              ? "· cambiada SOLO para esta cotización"
+                              : breakdown.tarifa.preferencial_cliente
+                                ? "· tarifa pactada con este cliente"
+                                : `· tarifa ${breakdown.tarifa.tipo === "PUBLICO" ? "público" : "broker"} del avión`}
+                          </span>{" "}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = document.getElementById(
+                                "tarifa-override-field",
+                              );
+                              el?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "center",
+                              });
+                              el?.querySelector("input")?.focus();
+                            }}
+                            className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
+                          >
+                            ¿cobrar diferente en esta cotización?
+                          </button>
+                        </p>
+                      )}
                     </div>
                   );
                 })()}
@@ -1687,18 +1728,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
           {advanced && (
             <div className="space-y-3 pl-6 border-l-2 border-border">
-              <Field
-                label="Tarifa USD/hr (override)"
-                hint="Vacío = usa la del avión"
-              >
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="Auto"
-                  {...register("tarifa_hora_override_usd")}
-                />
-              </Field>
+              <div id="tarifa-override-field" className="scroll-mt-24">
+                <Field
+                  label="Tarifa USD/hr — SOLO esta cotización"
+                  hint="Por tiempos u otro acuerdo se cobra más o menos. Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
+                >
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="Auto"
+                    {...register("tarifa_hora_override_usd")}
+                  />
+                </Field>
+              </div>
               <Field
                 label="TUAS USD/pax (override)"
                 hint={
