@@ -131,10 +131,13 @@ export function EscalasCard({
                         )}
                       </span>
                       <div className="flex items-center gap-2">
-                        {esc.taco_salida && esc.taco_llegada ? (
+                        {esc.taco_salida || esc.taco_llegada ? (
+                          // Lectura parcial visible ("1,572.00 → —"): decir
+                          // "Sin tacómetros" con la salida ya propagada
+                          // ocultaba que solo falta la llegada.
                           <span className="text-xs font-mono text-muted-foreground">
-                            {fmtDecimal(esc.taco_salida, 2)} →{" "}
-                            {fmtDecimal(esc.taco_llegada, 2)}
+                            {esc.taco_salida ? fmtDecimal(esc.taco_salida, 2) : "—"} →{" "}
+                            {esc.taco_llegada ? fmtDecimal(esc.taco_llegada, 2) : "—"}
                           </span>
                         ) : (
                           <Badge variant="outline" className="text-[10px]">
@@ -351,8 +354,19 @@ function TacoConfirmDialog({
 
   const handleOpen = () => {
     setOpen(true);
+    // Re-sembrar SIEMPRE desde los props al abrir: el estado local puede ser
+    // más viejo que los datos (p.ej. corregir la llegada del tramo anterior
+    // propaga la salida de ESTE tramo y refresca la página, pero el useState
+    // inicial no se re-ejecuta — el guard veía la salida en el prop y el
+    // input pintaba el estado vacío: diálogo en blanco).
+    const salidaActual =
+      escala.taco_salida != null ? String(escala.taco_salida) : "";
+    setSalida(salidaActual);
+    setLlegada(escala.taco_llegada != null ? String(escala.taco_llegada) : "");
+    setNota("");
+    setSugerenciaOrigen(null);
     // Solo se precarga cuando el tramo NO tiene salida capturada.
-    if (escala.taco_salida != null || String(salida).trim() !== "") return;
+    if (salidaActual !== "") return;
     if (salidaSugerida != null) {
       setSalida(String(salidaSugerida));
       setSugerenciaOrigen("llegada del tramo anterior");
