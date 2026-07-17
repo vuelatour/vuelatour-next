@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
-import { fmtDateOnly } from "@/lib/datetime";
+import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import type { MovimientoBancario } from "@/types/conciliacion";
 
 const fmtMoney = (monto: string) =>
@@ -68,23 +68,44 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
                   ? `/admin/flights/${m.gasto.vuelo_id}`
                   : "/admin/expenses"
               }
-              className="text-sm text-emerald-600 hover:underline"
+              className="block text-sm text-emerald-600 hover:underline"
               title="Ver el gasto con el que se concilió"
             >
               {m.gasto.categoria} · ${fmtMoney(m.gasto.monto)}
               {m.gasto.vuelo?.folio != null && (
                 <span className="text-muted-foreground"> · vuelo #{m.gasto.vuelo.folio}</span>
               )}
+              <span className="block text-[10px] text-muted-foreground">
+                {[
+                  m.gasto.proveedor?.nombre,
+                  m.gasto.fecha_gasto ? fmtDate(m.gasto.fecha_gasto) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "Gasto conciliado"}
+              </span>
             </Link>
           ) : m.conciliado && m.cobro_id ? (
             m.cobro?.vuelo_id ? (
               <Link
                 href={`/admin/flights/${m.cobro.vuelo_id}`}
-                className="text-sm text-emerald-600 hover:underline"
+                className="block text-sm text-emerald-600 hover:underline"
                 title="Ver el vuelo cuyo cobro se concilió"
               >
                 Cobro de vuelo
                 {m.cobro.vuelo?.folio != null && <> #{m.cobro.vuelo.folio}</>}
+                {m.cobro.monto != null && (
+                  <span className="text-muted-foreground"> · ${fmtMoney(m.cobro.monto)}</span>
+                )}
+                <span className="block text-[10px] text-muted-foreground">
+                  {[
+                    m.cobro.metodo_cobro?.replaceAll("_", " "),
+                    // fecha_cobro es timestamptz: formatear en hora Cancún
+                    // (recortar la fecha UTC correría el día en la noche).
+                    m.cobro.fecha_cobro ? fmtDateCancun(m.cobro.fecha_cobro) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Ver vuelo"}
+                </span>
               </Link>
             ) : (
               <span className="text-sm text-emerald-600">Cobro de vuelo</span>

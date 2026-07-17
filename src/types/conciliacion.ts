@@ -6,6 +6,7 @@ export interface MovimientoGasto {
   moneda: string;
   categoria: string;
   fecha_gasto: string | null;
+  proveedor?: { nombre: string | null } | null;
   /** Vuelo al que pertenece el gasto conciliado (para verificar de un clic). */
   vuelo_id?: string | null;
   vuelo?: { folio: number | null } | null;
@@ -26,8 +27,15 @@ export interface MovimientoBancario {
   notas: string | null;
   created_at: string;
   gasto?: MovimientoGasto | null;
-  /** Cobro de vuelo conciliado (ABONOS): para navegar al vuelo. */
-  cobro?: { vuelo_id: string | null; vuelo?: { folio: number | null } | null } | null;
+  /** Cobro de vuelo conciliado (ABONOS): detalle + navegación al vuelo. */
+  cobro?: {
+    monto?: string | null;
+    moneda?: string | null;
+    metodo_cobro?: string | null;
+    fecha_cobro?: string | null;
+    vuelo_id: string | null;
+    vuelo?: { folio: number | null } | null;
+  } | null;
 }
 
 export interface ConciliacionResumenCuenta {
