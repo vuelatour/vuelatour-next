@@ -40,6 +40,7 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
   const [openCancel, setOpenCancel] = useState(false);
   const [motivoCancel, setMotivoCancel] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [openCobradoInfo, setOpenCobradoInfo] = useState(false);
 
   const handlePdf = async () => {
     setPdfLoading(true);
@@ -80,6 +81,11 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
     !quote.cobrado &&
     !quote.facturado &&
     !enVentana;
+  // Cobrado (sin factura): la revisión cambiaría un total YA cobrado. En vez
+  // de esconder el botón, se explica el porqué y se lleva al cobro para
+  // eliminarlo (la card de cobros vive abajo en esta misma página).
+  const bloqueadaPorCobro =
+    quote.estado !== "CANCELADO" && quote.cobrado && !quote.facturado;
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -149,6 +155,17 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
         >
           <PencilSquareIcon className="h-4 w-4" />
           Revisar · mes cerrado
+        </Button>
+      )}
+      {bloqueadaPorCobro && (
+        <Button
+          variant="outline"
+          onClick={() => setOpenCobradoInfo(true)}
+          className="gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400"
+          title="El vuelo ya tiene cobros registrados: la cotización no puede revisarse."
+        >
+          <PencilSquareIcon className="h-4 w-4" />
+          Revisar · vuelo cobrado
         </Button>
       )}
       {canConfirm && (
@@ -226,6 +243,33 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
             >
               {cancelling ? "Cancelando…" : "Cancelar cotización"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={openCobradoInfo} onOpenChange={setOpenCobradoInfo}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              El vuelo ya tiene cobros registrados
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Revisar la cotización cambiaría un total que el cliente YA pagó,
+              y los números dejarían de cuadrar. Para poder ajustarla: elimina
+              primero el cobro registrado (abajo en esta página, sección
+              &ldquo;Cobros registrados en el vuelo&rdquo;), revisa la
+              cotización y vuelve a registrar el cobro con el monto correcto.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Entendido</AlertDialogCancel>
+            <a
+              href="#cobros-vuelo"
+              onClick={() => setOpenCobradoInfo(false)}
+              className={buttonVariants({})}
+            >
+              Ir a los cobros
+            </a>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -12,7 +12,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { QuoteActionsBar } from "@/components/admin/quotes/quote-actions-bar";
+import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
 import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
+import { getFlightSnapshot } from "@/lib/api/flights-server";
+import type { FlightSnapshot } from "@/types/flights";
 import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
@@ -47,6 +50,15 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
     clientNombre = cli.nombre;
   } catch {
     // ignorar — el id queda visible si no hay nombre
+  }
+
+  // Cobros del vuelo (misma entidad): visibles desde la cotización porque el
+  // desglose "no cambiaba" al registrarse un cobro, y porque un cobro bloquea
+  // la revisión — desde aquí se elimina para desbloquear. Best-effort: en
+  // SOLICITUD/COTIZADO aún no hay vuelo operativo con cobros.
+  let cobrosVuelo: FlightSnapshot | null = null;
+  if (quote.estado !== "SOLICITUD" && quote.estado !== "COTIZADO") {
+    cobrosVuelo = await getFlightSnapshot(id).catch(() => null);
   }
 
   return (
@@ -177,6 +189,15 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
 
           {/* Desglose canónico para el balance (Jimmy): cajoncito por concepto. */}
           <QuoteDesgloseCard quote={quote} />
+
+          {cobrosVuelo && cobrosVuelo.cobros.length > 0 && (
+            <QuoteCobrosCard
+              quoteId={quote.id}
+              montoTotalUsd={Number(quote.monto_total_usd)}
+              totalCobrado={cobrosVuelo.total_cobrado}
+              cobros={cobrosVuelo.cobros}
+            />
+          )}
 
           {/* Ajuste rápido: extras y pasajeros sin rearmar el cotizador.
               Solo dentro de la ventana de edición (vuelo del mes corriente o

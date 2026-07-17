@@ -27,7 +27,7 @@ import { fmtUsd } from "@/lib/format";
 import type { FlightCobro } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
-const METODO_LABELS: Record<string, string> = {
+export const METODO_LABELS: Record<string, string> = {
   TRANSFERENCIA: "Transferencia",
   HSBC_LINK: "HSBC link",
   CHEQUE: "Cheque",
@@ -63,7 +63,7 @@ export function CobrosCard({
 
   return (
     <>
-      <Card>
+      <Card id="cobros" className="scroll-mt-24">
         <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
           <div className="space-y-1">
             <CardTitle className="text-sm">Cobros registrados</CardTitle>
