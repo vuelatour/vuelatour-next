@@ -11,7 +11,6 @@ import { listFlights, getTacoStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
-import { listAirports } from "@/lib/api/airports-server";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { EmptyState } from "@/components/admin/empty-state";
 
@@ -35,7 +34,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   // Si el user no pasa estado, mostramos todos los operativos (CONFIRMADO+).
   const estadoFilter = sp.estado as EstadoVuelo | undefined;
 
-  const [flightsRes, clientsRes, aircraftRes, pilotsRes, airportsRes] =
+  const [flightsRes, clientsRes, aircraftRes, pilotsRes] =
     await Promise.all([
       listFlights({
         estado: estadoFilter,
@@ -48,7 +47,6 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       listClients({ limit: 200, activo: true }),
       listAircraft({ limit: 100, activa: true }),
       listUsers({ rol: "PILOTO", limit: 50 }),
-      listAirports({ limit: 200, activo: true }),
     ]);
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
@@ -128,17 +126,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <NewExternalFlightButton
-            clients={clientsRes.data.map((c) => ({
-              id: c.id,
-              nombre: c.nombre,
-              rfc: c.rfc,
-            }))}
-            airports={airportsRes.data.map((a) => ({
-              iata: a.iata,
-              nombre: a.nombre,
-            }))}
-          />
+          <NewExternalFlightButton />
 {/* La creación operativa (antes "Vuelo rápido") vive ahora en Cotizaciones. */}
         </div>
       </div>

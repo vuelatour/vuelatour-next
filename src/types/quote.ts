@@ -79,6 +79,8 @@ export interface CalculateQuoteRequest {
   ajuste_final_usd?: number;
   /** Redondeo automático del total al siguiente múltiplo de $10 (siempre arriba). */
   redondeo_automatico?: boolean;
+  /** Precio TOTAL pactado (externos): el motor ajusta para aterrizar exacto. */
+  total_pactado_usd?: number;
   metodo_pago: MetodoPago;
   /** TC MXN por USD pactado (pago en pesos). Persiste tc_usd_mxn + monto_total_mxn. */
   tc_usd_mxn?: number;
@@ -171,5 +173,7 @@ export interface QuoteBreakdown {
     redondeo_automatico?: boolean | null;
     redondeo_auto_usd?: number | null;
     descuento_usd?: number | null;
+    /** Precio pactado (externos): persiste para que revisar/ajustar no lo pise. */
+    total_pactado_usd?: number | null;
   };
 }

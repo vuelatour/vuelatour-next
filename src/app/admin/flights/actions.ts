@@ -471,25 +471,6 @@ export async function fillTacoGapsAction(
 
 // ============ Vuelos externos ============
 
-export interface CreateExternalFlightPayload {
-  cliente_id: string;
-  operador_externo: string;
-  costo_externo_usd: number;
-  monto_total_usd: number;
-  /** Con método facturable el vuelo entra a Facturas antes de cobrarse. */
-  metodo_cobro?: string;
-  /** TC MXN/USD pactado: sin él, el vuelo (en USD) no se puede facturar. */
-  tc_usd_mxn?: number;
-  origen_iata: string;
-  destino_iata: string;
-  pasajeros: number;
-  fecha_vuelo?: string;
-  notas?: string;
-  notas_internas?: string;
-  /** MULTIESCALA opcional: tramos ordenados (algunas rutas externas lo piden). */
-  escalas?: { origen_iata: string; destino_iata: string; es_ferry?: boolean }[];
-}
-
 // ============ Reserva tentativa ============
 
 /** Tramo del itinerario de OPERACIÓN (la ruta real que ve el piloto). */
@@ -543,22 +524,3 @@ export async function createReservaAction(
   }
 }
 
-export async function createExternalFlightAction(
-  payload: CreateExternalFlightPayload,
-): Promise<ActionResult<FlightListItem>> {
-  if (!payload.cliente_id) return { ok: false, error: "Cliente requerido" };
-  if (!(payload.monto_total_usd > 0))
-    return { ok: false, error: "Monto total debe ser > 0" };
-  if (!(payload.costo_externo_usd >= 0))
-    return { ok: false, error: "Costo externo debe ser >= 0" };
-  try {
-    const flight = await apiServer<FlightListItem>("/v1/flights/external", {
-      method: "POST",
-      body: payload,
-    });
-    revalidatePath("/admin/flights");
-    return { ok: true, data: flight };
-  } catch (err) {
-    return fail(err);
-  }
-}
