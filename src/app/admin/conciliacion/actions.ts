@@ -46,9 +46,9 @@ export async function importarMovimientosAction(payload: {
    *  para poder consultarlo/descargarlo después (opcional, best-effort). */
   filename?: string;
   file_base64?: string;
-}): Promise<ActionResult<{ importados: number; conciliados_auto: number }>> {
+}): Promise<ActionResult<{ importados: number; conciliados_auto: number; duplicados_omitidos?: number }>> {
   try {
-    const data = await apiServer<{ importados: number; conciliados_auto: number }>(
+    const data = await apiServer<{ importados: number; conciliados_auto: number; duplicados_omitidos?: number }>(
       "/v1/conciliacion/importar",
       { method: "POST", body: payload },
     );

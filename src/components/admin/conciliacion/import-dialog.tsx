@@ -111,9 +111,19 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         error: err instanceof Error ? err.message : "No se pudo enviar la importación",
       }));
       if (res.ok && res.data) {
-        toast.success(
-          `Importados ${res.data.importados} · conciliados automáticamente ${res.data.conciliados_auto}`,
-        );
+        const dups = res.data.duplicados_omitidos ?? 0;
+        if (res.data.importados === 0 && dups > 0) {
+          // Re-importación del mismo estado de cuenta: nada nuevo, sin duplicar.
+          toast.info(
+            `Los ${dups} movimientos ya estaban importados: no se duplicó nada. El archivo quedó archivado.`,
+            { duration: 8000 },
+          );
+        } else {
+          toast.success(
+            `Importados ${res.data.importados} · conciliados automáticamente ${res.data.conciliados_auto}` +
+              (dups > 0 ? ` · ${dups} ya existían (omitidos)` : ""),
+          );
+        }
         reset();
         onOpenChange(false);
       } else {
