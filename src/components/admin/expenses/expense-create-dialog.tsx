@@ -459,6 +459,31 @@ export function ExpenseCreateDialog({
                 </div>
               )}
             </div>
+            {/* Desglose compuesto con la MISMA regla que se guardará en las
+                notas (FBO/TUA con IVA): visible ANTES de guardar para que la
+                oficina vea si la separación cuadró. */}
+            {aiRaw && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs">
+                {aiRaw.desglose_lineas && aiRaw.desglose_lineas.length >= 2 ? (
+                  <>
+                    <p className="mb-1 font-medium">
+                      Desglose leído (así se guardará en las notas):
+                    </p>
+                    <ul className="space-y-0.5 font-mono text-muted-foreground">
+                      {aiRaw.desglose_lineas.map((l) => (
+                        <li key={l}>{l}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    La IA no distinguió un desglose que cuadre con el total: el
+                    gasto se guarda solo con el monto (revisa la factura si
+                    esperabas Operación/FBO/TUA por separado).
+                  </p>
+                )}
+              </div>
+            )}
             <input
               ref={facturaRef}
               type="file"

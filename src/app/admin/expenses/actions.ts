@@ -61,6 +61,8 @@ export interface GastoTicketIA {
   medio_pago?: string | null;
   tarjeta_terminacion?: string | null;
   conceptos?: { concepto: string; monto: number }[];
+  /** Desglose compuesto por el API (regla FBO/TUA) tal como irá en notas. */
+  desglose_lineas?: string[];
   matricula?: string | null;
   confianza?: number;
   legible?: boolean;
