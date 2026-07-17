@@ -287,6 +287,14 @@ export function QuoteLegsEditor({
                   />
                 </div>
               </div>
+              {leg.origen_iata &&
+                leg.origen_iata === leg.destino_iata && (
+                  <p className="text-[11px] text-sky-600 dark:text-sky-400">
+                    Mismo aeropuerto: tramo de <strong>sobrevuelo</strong> (ej.
+                    Zona Hotelera / Isla Mujeres). Las millas definen el tiempo
+                    cobrado.
+                  </p>
+                )}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">

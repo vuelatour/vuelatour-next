@@ -45,18 +45,8 @@ export const RouteFormSchema = z
         });
       }
     }
-    for (let i = 0; i < val.tramos.length; i++) {
-      if (
-        val.tramos[i].origen_iata.toUpperCase() ===
-        val.tramos[i].destino_iata.toUpperCase()
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["tramos", i, "destino_iata"],
-          message: "Origen y destino no pueden ser iguales",
-        });
-      }
-    }
+    // Mismo aeropuerto en un tramo = SOBREVUELO (CUN→CUN): permitido — las
+    // millas definen el tiempo cobrado y la escala nace marcada sobrevuelo.
   });
 
 export type RouteFormValues = z.input<typeof RouteFormSchema>;
