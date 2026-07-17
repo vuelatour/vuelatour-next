@@ -359,7 +359,9 @@ export function ExpenseCreateDialog({
           if (!o) setComoPiloto(false);
         }}
       >
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        {/* overflow-x-hidden: los nombres de archivo/inputs de fecha no deben
+            provocar scroll horizontal (molesto con datos largos). */}
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Nuevo gasto (oficina)</DialogTitle>
             <DialogDescription>
@@ -495,7 +497,7 @@ export function ExpenseCreateDialog({
               }}
             />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field label="Monto del ticket">
                 <Input
                   type="number"
@@ -540,7 +542,7 @@ export function ExpenseCreateDialog({
               </span>
             </p>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field label="Moneda">
                 <SearchableSelect
                   options={[
@@ -573,7 +575,7 @@ export function ExpenseCreateDialog({
               </Field>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field label="Categoría">
                 <SearchableSelect
                   // Un gasto DEL VUELO no puede ser indirecto (contradicción):
@@ -678,7 +680,7 @@ export function ExpenseCreateDialog({
               );
             })()}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field label="Medio de pago">
                 <SearchableSelect
                   options={MEDIOS}
