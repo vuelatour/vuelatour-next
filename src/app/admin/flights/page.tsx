@@ -55,20 +55,18 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const aircraftById = new Map(aircraftRes.data.map((a) => [a.id, a]));
   const pilotsById = new Map(pilotsRes.data.map((p) => [p.id, p]));
 
-  // Vuelos = lifecycle operativo (CONFIRMADO en adelante).
-  // Lo que está en SOLICITUD o COTIZADO vive en /admin/quotes.
+  // Vuelos = lifecycle operativo (CONFIRMADO en adelante). Lo que sigue en
+  // SOLICITUD/COTIZADO se administra en /admin/quotes, pero se LISTA aquí en
+  // azul para que la numeración de folios no tenga "huecos" (#16 → #14
+  // parecía un vuelo borrado).
+  const esCotizacion = (v: { estado: string }) =>
+    v.estado === "SOLICITUD" || v.estado === "COTIZADO";
   const operativos = estadoFilter
     ? flightsRes.data
-    : flightsRes.data.filter(
-        (v) => v.estado !== "SOLICITUD" && v.estado !== "COTIZADO",
-      );
-  // Los folios ocultos por estar en cotización dejan "huecos" en la lista
-  // (#16 → #14) que parecen vuelos borrados: se avisa dónde viven.
+    : flightsRes.data.filter((v) => !esCotizacion(v));
   const enCotizacion = estadoFilter
     ? []
-    : flightsRes.data.filter(
-        (v) => v.estado === "SOLICITUD" || v.estado === "COTIZADO",
-      );
+    : flightsRes.data.filter(esCotizacion);
 
   // Tacómetro incompleto: solo importa en vuelos propios ya en curso/cerrados.
   const tacoRelevantes = operativos.filter(
@@ -80,7 +78,9 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const faltaTaco = (id: string) => tacoStatus[id]?.falta === true;
 
   // Filas-viewmodel serializables para el componente cliente (sin Maps).
-  const rows: FlightRow[] = operativos.map((v) => ({
+  // La tabla incluye TAMBIÉN las filas en cotización (azules): el orden del
+  // API las intercala por folio/fecha natural.
+  const rows: FlightRow[] = flightsRes.data.map((v) => ({
     id: v.id,
     folio: v.folio,
     cliente_nombre: clientsById.get(v.cliente_id)?.nombre ?? null,
@@ -100,6 +100,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     monto_total_usd: v.monto_total_usd,
     estado: v.estado,
     falta_taco: faltaTaco(v.id),
+    en_cotizacion: esCotizacion(v),
   }));
 
   return (
@@ -114,17 +115,14 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
             {enCotizacion.length > 0 && (
               <>
                 {" "}
-                {enCotizacion.length === 1 ? "El folio" : "Los folios"}{" "}
-                {enCotizacion
-                  .map((v) => `#${v.folio}`)
-                  .slice(0, 6)
-                  .join(", ")}
-                {enCotizacion.length > 6 ? "…" : ""}{" "}
-                {enCotizacion.length === 1 ? "está" : "están"} en{" "}
+                {enCotizacion.length === 1
+                  ? "1 más sigue en cotización"
+                  : `${enCotizacion.length} más siguen en cotización`}{" "}
+                (fila azul — el clic abre su{" "}
                 <Link href="/admin/quotes" className="underline text-brand-600">
-                  Cotizaciones
-                </Link>{" "}
-                (aún sin confirmar).
+                  cotización
+                </Link>
+                ).
               </>
             )}
           </p>

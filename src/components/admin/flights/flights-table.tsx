@@ -23,6 +23,8 @@ export interface FlightRow {
   monto_total_usd: string;
   estado: EstadoVuelo;
   falta_taco: boolean;
+  /** SOLICITUD/COTIZADO: fila azul y el clic abre la cotización, no el vuelo. */
+  en_cotizacion: boolean;
 }
 
 const columns: Array<DataTableColumn<FlightRow>> = [
@@ -122,7 +124,12 @@ export function FlightsTable({ rows }: { rows: FlightRow[] }) {
       columns={columns}
       rows={rows}
       rowKey={(v) => v.id}
-      rowHref={(v) => `/admin/flights/${v.id}`}
+      rowHref={(v) =>
+        v.en_cotizacion ? `/admin/quotes/${v.id}` : `/admin/flights/${v.id}`
+      }
+      // Azul = aún en cotización (sin confirmar): identificable de un vistazo
+      // sin sacarlo de la numeración de folios.
+      rowClassName={(v) => (v.en_cotizacion ? "bg-sky-500/[0.07]" : undefined)}
       searchText={(v) =>
         `#${v.folio} ${v.cliente_nombre ?? ""} ${v.operador_externo ?? ""} ${v.ruta} ${v.matricula ?? ""} ${v.piloto_nombre ?? ""}`
       }
