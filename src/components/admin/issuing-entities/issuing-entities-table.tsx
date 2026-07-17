@@ -46,6 +46,25 @@ const columns: Array<DataTableColumn<IssuingEntity>> = [
     cell: (e) => e.pac_proveedor ?? "—",
   },
   {
+    key: "csd",
+    header: "CSD",
+    headClassName: "text-center",
+    cellClassName: "text-center",
+    cell: (e) =>
+      e.csd_cer_url && e.csd_key_url ? (
+        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20 text-[11px]">
+          Cargado
+        </Badge>
+      ) : (
+        <Badge
+          title="Sin sello digital no se puede timbrar: súbelo en Editar → CSD."
+          className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20 text-[11px]"
+        >
+          Falta
+        </Badge>
+      ),
+  },
+  {
     key: "estado",
     header: "Estado",
     headClassName: "text-center",

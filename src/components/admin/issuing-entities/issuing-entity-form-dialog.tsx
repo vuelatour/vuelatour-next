@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createIssuingEntityAction,
   updateIssuingEntityAction,
+  uploadCsdAction,
 } from "@/app/admin/issuing-entities/actions";
 import {
   IssuingEntityFormSchema,
@@ -49,8 +51,13 @@ export function IssuingEntityFormDialog({ open, onOpenChange, initialEntity }: P
     defaultValues: defaults(initialEntity),
   });
 
+  // Resetear SOLO al abrir (flanco false→true): subir el CSD revalida la
+  // página y entrega un initialEntity nuevo con el diálogo abierto — resetear
+  // ahí pisaría en silencio lo que el operador lleva escrito sin guardar.
+  const estabaAbierto = useRef(false);
   useEffect(() => {
-    if (open) reset(defaults(initialEntity));
+    if (open && !estabaAbierto.current) reset(defaults(initialEntity));
+    estabaAbierto.current = open;
   }, [open, initialEntity, reset]);
 
   const onSubmit = handleSubmit((values) => {
@@ -133,6 +140,8 @@ export function IssuingEntityFormDialog({ open, onOpenChange, initialEntity }: P
             <Textarea rows={2} {...register("notas")} />
           </Field>
 
+          {isEdit && <CsdSection entity={initialEntity!} />}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
               Cancelar
@@ -147,6 +156,110 @@ export function IssuingEntityFormDialog({ open, onOpenChange, initialEntity }: P
   );
 }
 
+
+/**
+ * Sello digital (CSD) del SAT: sube el .cer/.key al bucket privado y guarda
+ * las rutas en la emisora. La contraseña de la llave NUNCA pasa por aquí:
+ * vive como CSD_PASSWORD en el entorno del API. Facturama recibe el CSD
+ * automáticamente en el primer timbrado.
+ */
+function CsdSection({ entity }: { entity: IssuingEntity }) {
+  const [cerFile, setCerFile] = useState<File | null>(null);
+  const [keyFile, setKeyFile] = useState<File | null>(null);
+  const [subido, setSubido] = useState(false);
+  // Remonta los <input type=file> tras subir: son no-controlados y seguirían
+  // mostrando el nombre del archivo con el botón apagado.
+  const [inputsKey, setInputsKey] = useState(0);
+  const [subiendo, startUpload] = useTransition();
+  const cargado = subido || !!(entity.csd_cer_url && entity.csd_key_url);
+
+  const subir = () => {
+    if (!cerFile || !keyFile) {
+      toast.error("Selecciona ambos archivos del CSD: el .cer y el .key");
+      return;
+    }
+    // Un CSD real pesa ~2 KB; algo mucho mayor es el archivo equivocado.
+    if (cerFile.size > 30_000 || keyFile.size > 30_000) {
+      toast.error(
+        "Ese archivo no parece un CSD del SAT (pesa demasiado). Verifica que sean el .cer y el .key del certificado de sello digital.",
+      );
+      return;
+    }
+    startUpload(async () => {
+      const [cer_b64, key_b64] = await Promise.all([toB64(cerFile), toB64(keyFile)]);
+      const res = await uploadCsdAction(entity.id, { cer_b64, key_b64 });
+      if (res.ok) {
+        setSubido(true);
+        setCerFile(null);
+        setKeyFile(null);
+        setInputsKey((k) => k + 1);
+        toast.success(
+          "CSD validado y cargado. Si el timbrado marca error de contraseña, falta configurar CSD_PASSWORD en el servidor (avisa al administrador).",
+          { duration: 8000 },
+        );
+      } else {
+        toast.error(res.error ?? "No se pudo subir el CSD", { duration: 10000 });
+      }
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-border p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">CSD (sello digital del SAT)</p>
+        {cargado ? (
+          <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
+            CSD cargado
+          </Badge>
+        ) : (
+          <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20">
+            Falta CSD
+          </Badge>
+        )}
+      </div>
+      <div key={inputsKey} className="grid grid-cols-2 gap-3">
+        <Field label="Certificado (.cer)">
+          <Input
+            type="file"
+            accept=".cer"
+            onChange={(e) => setCerFile(e.target.files?.[0] ?? null)}
+          />
+        </Field>
+        <Field label="Llave privada (.key)">
+          <Input
+            type="file"
+            accept=".key"
+            onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
+          />
+        </Field>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] text-muted-foreground">
+          Son los archivos del SAT (formato DER). La contraseña de la llave no
+          se guarda aquí: va en la variable CSD_PASSWORD del API. Subir de
+          nuevo reemplaza el CSD anterior (renovación).
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={subir}
+          disabled={subiendo || !cerFile || !keyFile}
+          className="shrink-0"
+        >
+          {subiendo ? "Subiendo…" : "Subir CSD"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+async function toB64(f: File): Promise<string> {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
 
 function defaults(entity?: IssuingEntity): IssuingEntityFormValues {
   if (!entity) {

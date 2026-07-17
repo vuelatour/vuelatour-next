@@ -69,3 +69,20 @@ export async function deleteIssuingEntityAction(id: string): Promise<ActionResul
     return fail(err);
   }
 }
+
+/** Sube el CSD del SAT (.cer/.key en base64) de la emisora. */
+export async function uploadCsdAction(
+  id: string,
+  payload: { cer_b64: string; key_b64: string },
+): Promise<ActionResult<IssuingEntity>> {
+  try {
+    const updated = await apiServer<IssuingEntity>(`/v1/issuing-entities/${id}/csd`, {
+      method: "POST",
+      body: payload,
+    });
+    revalidatePath("/admin/issuing-entities");
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}

@@ -83,3 +83,20 @@ export async function emitirNotaCreditoAction(raw: unknown): Promise<ActionResul
     return fail(err);
   }
 }
+
+export interface PacHealth {
+  ok: boolean;
+  pac?: string;
+  modo?: string;
+  detalle?: string;
+}
+
+/** Prueba la conexión/credenciales con el PAC sin consumir timbres. */
+export async function pacHealthAction(): Promise<ActionResult<PacHealth>> {
+  try {
+    const data = await apiServer<PacHealth>("/v1/invoices/pac-health");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}

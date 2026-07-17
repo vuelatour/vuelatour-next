@@ -8,6 +8,7 @@ import {
 import { FacturasEmitidasTable } from "@/components/admin/invoices/facturas-emitidas-table";
 import { FacturasFilterBar } from "@/components/admin/invoices/facturas-filter-bar";
 import { FacturasPendientesTable } from "@/components/admin/invoices/facturas-pendientes-table";
+import { PacHealthButton } from "@/components/admin/invoices/pac-health-button";
 import { listPendingInvoices, listFacturas, signFacturaFiles } from "@/lib/api/invoices-server";
 import { listIssuingEntities } from "@/lib/api/issuing-entities-server";
 import { listClients } from "@/lib/api/clients-server";
@@ -52,12 +53,15 @@ export default async function FacturasPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Facturación</p>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Facturas</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Vuelos pagados o por cobrar con método facturable, y CFDI emitidos.
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">Facturación</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Facturas</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Vuelos pagados o por cobrar con método facturable, y CFDI emitidos.
+          </p>
+        </div>
+        <PacHealthButton />
       </div>
 
       <FacturasFilterBar

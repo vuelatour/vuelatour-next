@@ -13,6 +13,9 @@ export interface IssuingEntity {
   pac_proveedor: string | null;
   notas: string | null;
   activa: boolean;
+  /** Rutas dentro del bucket privado `csd` (null = CSD sin cargar). */
+  csd_cer_url: string | null;
+  csd_key_url: string | null;
   created_at: string;
   updated_at: string;
 }
