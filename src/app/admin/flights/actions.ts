@@ -199,6 +199,8 @@ export interface RegisterCobroPayload {
   tc_usd_mxn?: number;
   /** % que el banco retiene de este cobro; el banco deposita monto − comisión. */
   comision_banco_pct?: number;
+  /** Comisión como MONTO directo (moneda del cobro): manda sobre el %. */
+  comision_banco_monto?: number;
   referencia?: string;
   fecha_cobro?: string;
   notas?: string;

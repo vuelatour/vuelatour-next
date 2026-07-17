@@ -65,6 +65,12 @@ const CobroFormSchema = z
       ])
       .optional()
       .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
+    // Alternativa por MONTO directo (el estado de cuenta trae pesos, no %):
+    // si se llena, manda sobre el % y el % se deriva como referencia.
+    comision_banco_monto: z
+      .union([z.coerce.number().min(0, "No puede ser negativa"), z.literal("")])
+      .optional()
+      .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
     referencia: z.string().max(100).optional().or(z.literal("")),
     fecha_cobro: z.string().optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
@@ -108,6 +114,7 @@ function defaults(pendingUsd: number): CobroFormValues {
     metodo_cobro: "TRANSFERENCIA",
     tc_usd_mxn: undefined,
     comision_banco_pct: undefined,
+    comision_banco_monto: undefined,
     referencia: "",
     fecha_cobro: todayLocal(),
     notas: "",
@@ -146,6 +153,7 @@ export function CobroFormSheet({
   const monto = watch("monto");
   const tc = watch("tc_usd_mxn");
   const comisionPct = watch("comision_banco_pct");
+  const comisionMontoDirecto = watch("comision_banco_monto");
 
   // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD, EFECTIVO→MXN).
   const handleMetodoChange = (v: string) => {
@@ -172,11 +180,19 @@ export function CobroFormSheet({
           values.tc_usd_mxn !== undefined && Number(values.tc_usd_mxn) > 0
             ? Number(values.tc_usd_mxn)
             : undefined,
-        comision_banco_pct:
-          values.comision_banco_pct !== undefined &&
-          Number(values.comision_banco_pct) > 0
-            ? Number(values.comision_banco_pct)
+        // Monto directo manda sobre el % (el API deriva el % de referencia).
+        comision_banco_monto:
+          values.comision_banco_monto !== undefined &&
+          Number(values.comision_banco_monto) > 0
+            ? Number(values.comision_banco_monto)
             : undefined,
+        comision_banco_pct:
+          Number(values.comision_banco_monto) > 0
+            ? undefined
+            : values.comision_banco_pct !== undefined &&
+                Number(values.comision_banco_pct) > 0
+              ? Number(values.comision_banco_pct)
+              : undefined,
         referencia: values.referencia?.trim() || undefined,
         fecha_cobro: values.fecha_cobro
           ? cancunInputToIso(`${values.fecha_cobro.slice(0, 10)}T12:00`)
@@ -301,34 +317,71 @@ export function CobroFormSheet({
             </div>
           )}
 
-          <Field
-            label="Comisión del banco (%)"
-            hint="Lo que retiene el banco (terminal/transferencia). El cliente pagó el monto completo; el banco deposita monto − comisión."
-            error={errors.comision_banco_pct?.message}
-          >
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              max={20}
-              placeholder="Opcional · ej. 2.9"
-              {...register("comision_banco_pct")}
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+            <Field
+              label="Comisión del banco (%)"
+              hint="Si conoces el porcentaje."
+              error={errors.comision_banco_pct?.message}
+            >
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                max={20}
+                placeholder="Ej. 2.9"
+                disabled={Number(comisionMontoDirecto) > 0}
+                {...register("comision_banco_pct")}
+              />
+            </Field>
+            <Field
+              label={`… o comisión en ${moneda}`}
+              hint="Lo que retuvo el banco, tal como viene en el estado de cuenta. Manda sobre el %."
+              error={errors.comision_banco_monto?.message}
+            >
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                placeholder="Ej. 589.05"
+                {...register("comision_banco_monto")}
+              />
+            </Field>
+          </div>
+          <p className="-mt-2 text-xs text-muted-foreground">
+            El cliente pagó el monto completo; el banco deposita monto −
+            comisión. Ambos campos son opcionales.
+          </p>
 
-          {Number(comisionPct) > 0 && Number(monto) > 0 && (
+          {Number(monto) > 0 &&
+            (Number(comisionMontoDirecto) > 0 || Number(comisionPct) > 0) && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
               {(() => {
                 // Mismo redondeo que el API: comisión a 2 decimales y el neto
                 // se deriva de ELLA (no del producto crudo) — sin ±1 centavo.
                 const comision =
-                  Math.round(Number(monto) * (Number(comisionPct) / 100) * 100) / 100;
+                  Number(comisionMontoDirecto) > 0
+                    ? Math.round(Number(comisionMontoDirecto) * 100) / 100
+                    : Math.round(
+                        Number(monto) * (Number(comisionPct) / 100) * 100,
+                      ) / 100;
+                const pctRef =
+                  Math.round((comision / Number(monto)) * 100 * 100) / 100;
+                if (comision >= Number(monto)) {
+                  return (
+                    <span className="text-destructive">
+                      La comisión no puede ser mayor o igual al monto del cobro.
+                    </span>
+                  );
+                }
                 return (
                   <>
                     <span className="text-muted-foreground">Comisión: </span>
                     <span className="font-mono font-semibold">
                       −{fmtUsd(comision)} {moneda}
                     </span>
+                    {Number(comisionMontoDirecto) > 0 && (
+                      <span className="text-muted-foreground"> (≈{pctRef}%)</span>
+                    )}
                     <span className="text-muted-foreground"> · El banco depositará </span>
                     <span className="font-mono font-semibold">
                       {fmtUsd(Number(monto) - comision)} {moneda}
