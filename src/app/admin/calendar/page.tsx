@@ -35,12 +35,23 @@ export default async function CalendarPage({
 }) {
   const params = await searchParams;
   const now = new Date();
-  const year = params.y ? Number(params.y) : now.getFullYear();
+  // Mes por defecto en CANCÚN, no en la TZ del servidor: en Vercel (UTC), de
+  // las 19:00 Cancún del último día del mes en adelante ya corre el mes
+  // siguiente y el calendario abría en un mes "vacío".
+  const hoyCancun = cancunKey(now); // YYYY-MM-DD
+  const year = params.y ? Number(params.y) : Number(hoyCancun.slice(0, 4));
   // m: 1-12. Default mes actual.
-  const month = params.m ? Number(params.m) - 1 : now.getMonth();
+  const month = params.m ? Number(params.m) - 1 : Number(hoyCancun.slice(5, 7)) - 1;
 
-  const monthStart = new Date(year, month, 1, 0, 0, 0);
-  const monthEnd = new Date(year, month + 1, 0, 23, 59, 59);
+  // Rango del fetch ANCLADO a Cancún (UTC−5): con new Date(year, month, …) en
+  // la TZ del servidor, los vuelos de 19:00–23:59 Cancún del último día del
+  // mes quedaban fuera de /v1/calendar y no aparecían en su celda.
+  const mes = String(month + 1).padStart(2, "0");
+  const ultimoDia = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const monthStart = new Date(`${year}-${mes}-01T00:00:00-05:00`);
+  const monthEnd = new Date(
+    `${year}-${mes}-${String(ultimoDia).padStart(2, "0")}T23:59:59-05:00`,
+  );
 
   const [{ events }, pilotsRes] = await Promise.all([
     listCalendar({ from: monthStart.toISOString(), to: monthEnd.toISOString() }),
@@ -62,7 +73,9 @@ export default async function CalendarPage({
   }
 
   // Grilla de 6 semanas (42 celdas) arrancando en lunes de la semana del día 1.
-  const firstWeekday = (monthStart.getDay() + 6) % 7; // 0 = lunes
+  // Día de la semana por componentes UTC (determinista): monthStart ahora es
+  // un instante −05:00 y su .getDay() dependería de la TZ del servidor.
+  const firstWeekday = (new Date(Date.UTC(year, month, 1)).getUTCDay() + 6) % 7; // 0 = lunes
   const gridStart = new Date(year, month, 1 - firstWeekday);
   const cells: Date[] = [];
   for (let i = 0; i < 42; i++) {

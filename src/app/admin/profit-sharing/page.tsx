@@ -17,6 +17,7 @@ import {
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
 import { ReportDownloads } from "@/components/admin/profit-sharing/report-downloads";
 import { getProfitSharing } from "@/lib/api/profit-sharing-server";
+import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { fmtUsd, fmtDecimal } from "@/lib/format";
 import type { AvionReparto } from "@/types/profit-sharing";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -24,12 +25,9 @@ import { EmptyState } from "@/components/admin/empty-state";
 export const dynamic = "force-dynamic";
 
 function currentMonth(): { desde: string; hasta: string } {
-  const now = new Date();
-  const desde = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  return {
-    desde: desde.toISOString().slice(0, 10),
-    hasta: now.toISOString().slice(0, 10),
-  };
+  // Mes corriente en hora CANCÚN (no UTC): de 19:00 a 24:00 Cancún el UTC ya
+  // va en el día/mes siguiente y el reparto abría en un periodo vacío.
+  return { desde: startOfMonthCancun(), hasta: todayCancun() };
 }
 
 interface PageProps {

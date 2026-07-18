@@ -27,6 +27,7 @@ import {
   getDashboardTarjetas,
 } from "@/lib/api/dashboards-server";
 import { fmtUsd, fmtInt, fmtDecimal, fmtPercent } from "@/lib/format";
+import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { Rol } from "@/types/me";
 
@@ -50,12 +51,9 @@ const TABS: TabDef[] = [
 ];
 
 function currentMonth(): { desde: string; hasta: string } {
-  const now = new Date();
-  const desde = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  return {
-    desde: desde.toISOString().slice(0, 10),
-    hasta: now.toISOString().slice(0, 10),
-  };
+  // Mes corriente en hora CANCÚN (no UTC): de 19:00 a 24:00 Cancún el UTC ya
+  // va en el día/mes siguiente y los tableros abrían en un periodo vacío.
+  return { desde: startOfMonthCancun(), hasta: todayCancun() };
 }
 
 interface PageProps {

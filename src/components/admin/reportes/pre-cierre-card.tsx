@@ -76,9 +76,28 @@ export async function PreCierreCard({
       cache: "no-store",
     });
   } catch {
-    return null;
+    // data queda null: abajo se muestra la card de error.
   }
-  if (!data) return null;
+  // Si la verificación FALLA, el checklist no puede desaparecer en silencio:
+  // el operador generaría el cierre creyendo que no había pendientes.
+  if (!data) {
+    return (
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ExclamationTriangleIcon className="h-5 w-5 text-destructive" />
+            Pre-cierre del periodo
+          </CardTitle>
+          <CardDescription>
+            No se pudo verificar el pre-cierre (falló la consulta al servidor).
+            No generes el cierre hasta que este checklist cargue: sin él no hay
+            garantía de que el periodo esté completo. Recarga la página para
+            reintentar.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   const pendientes = data.items.filter((i) => i.count > 0);
 

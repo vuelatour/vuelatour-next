@@ -7,16 +7,19 @@ import { MultaCreateButton } from "@/components/admin/multas/multa-create-button
 import { MultasTable } from "@/components/admin/multas/multas-table";
 import type { Multa } from "@/types/multas";
 import { EmptyState } from "@/components/admin/empty-state";
+import { ErrorState } from "@/components/admin/error-state";
 
 export const dynamic = "force-dynamic";
 
 export default async function MultasPage() {
   const [multasRes, aircraftRes, pilotsRes] = await Promise.all([
-    listMultas().catch(() => ({ data: [] as Multa[], count: 0, limit: 0, offset: 0 })),
+    // Si el API falla NO se disfraza de "Sin multas registradas" (es dinero):
+    // null dispara el aviso rojo de abajo.
+    listMultas().catch(() => null),
     listAircraft({ limit: 100 }).catch(() => ({ data: [], count: 0, limit: 0, offset: 0 })),
     listPilots({ limit: 100 }).catch(() => ({ data: [], count: 0, limit: 0, offset: 0 })),
   ]);
-  const multas = multasRes.data;
+  const multas: Multa[] = multasRes?.data ?? [];
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const pilots = pilotsRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
@@ -33,7 +36,12 @@ export default async function MultasPage() {
         <MultaCreateButton aircraft={aircraft} pilots={pilots} />
       </div>
 
-      {multas.length === 0 ? (
+      {multasRes === null ? (
+        <ErrorState
+          title="No se pudieron cargar las multas"
+          description="Falló la consulta al servidor: el registro NO está vacío, solo no se pudo leer. Recarga la página para reintentar."
+        />
+      ) : multas.length === 0 ? (
         <EmptyState
             icon={ReceiptPercentIcon}
             title="Sin multas registradas"

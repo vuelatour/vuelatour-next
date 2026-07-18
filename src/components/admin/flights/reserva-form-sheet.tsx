@@ -153,7 +153,10 @@ export function ReservaFormSheet({
         copiloto_id: copilotoId || undefined,
         fecha_vuelo: cancunInputToIso(fechaVuelo),
         cotizacion_abierta: cotizacionAbierta,
-        notas: notas.trim() || undefined,
+        // El campo del form es "Notas internas": va en notas_internas —
+        // vuelo.notas es "Notas (visibles en PDF)" y una nota interna
+        // (p. ej. cómo va a pagar) no debe salir en el PDF del cliente.
+        notas_internas: notas.trim() || undefined,
         escalas_operacion: legs.map((l, idx) => ({
           origen_iata: l.origen,
           destino_iata: l.destino,

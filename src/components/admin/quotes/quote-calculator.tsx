@@ -1853,13 +1853,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" {...register("notas")} />
           </Field>
 
-          <Field label="Notas internas" hint="Opcional · no aparecen en PDF">
-            <Textarea
-              rows={2}
-              placeholder="Solo para el equipo"
-              {...register("notas_internas")}
-            />
-          </Field>
+          {/* En REVISE no se muestra: el DTO de revisión no acepta
+              notas_internas (forbidNonWhitelisted) y lo editado se descartaba
+              en silencio. Se editan desde el detalle del vuelo (Editar datos). */}
+          {!isRevise && (
+            <Field label="Notas internas" hint="Opcional · no aparecen en PDF">
+              <Textarea
+                rows={2}
+                placeholder="Solo para el equipo"
+                {...register("notas_internas")}
+              />
+            </Field>
+          )}
 
           {/* Avanzado */}
           <button

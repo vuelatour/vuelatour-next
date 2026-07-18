@@ -19,10 +19,10 @@ function diasBadge(dias: number) {
 }
 
 export default async function IngenieriaPage() {
-  const { vencimientos, mantenimientos } = await getFleetUpcoming(90).catch(() => ({
-    vencimientos: [],
-    mantenimientos: [],
-  }));
+  // SIN catch silencioso: si el API falla debe verse el error (error.tsx con
+  // reintento), no un "Nada próximo en 90 días" que oculta vencimientos
+  // críticos de aeronavegabilidad.
+  const { vencimientos, mantenimientos } = await getFleetUpcoming(90);
 
   type Row = { id: string; matricula: string; concepto: string; fecha: string; dias: number; critico?: boolean; href: string };
   const rows: Row[] = [

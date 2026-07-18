@@ -1,11 +1,11 @@
 import { DistanciasManager } from "@/components/admin/distancias/distancias-manager";
+import { ErrorState } from "@/components/admin/error-state";
 import { getDistanciasAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function DistanciasPage() {
   const res = await getDistanciasAction();
-  const distancias = res.ok && res.data ? res.data : [];
 
   return (
     <div className="space-y-6">
@@ -21,7 +21,19 @@ export default async function DistanciasPage() {
           las rutas autocompletan las millas usando este catálogo primero.
         </p>
       </div>
-      <DistanciasManager initial={distancias} />
+      {/* Si el API falla NO se muestra el catálogo vacío: el cotizador
+          depende de estas millas y un "vacío" falso invita a recapturarlas. */}
+      {res.ok && res.data ? (
+        <DistanciasManager initial={res.data} />
+      ) : (
+        <ErrorState
+          title="No se pudo cargar el catálogo de distancias"
+          description={
+            res.error ??
+            "Falló la consulta al servidor. Recarga la página para reintentar."
+          }
+        />
+      )}
     </div>
   );
 }

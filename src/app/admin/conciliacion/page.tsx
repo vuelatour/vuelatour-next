@@ -59,12 +59,17 @@ export default async function ConciliacionPage({
     id: c.id,
     label: `${c.alias} · ${c.banco} (${c.moneda})`,
   }));
-  const gastosOpts = gastosRes.data.map((g) => ({
-    value: g.id,
-    label: `${g.categoria} · $${fmtMoney(g.monto)} · ${fmtDate(g.fecha_gasto)}${
-      g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""
-    }`,
-  }));
+  const gastosOpts = gastosRes.data
+    // Los gastos BODEGA (salida de inventario) NO son egresos bancarios: la
+    // conciliación los excluye por diseño (igual que el auto-cruce del API),
+    // así que tampoco se ofrecen para vincular a mano un cargo del banco.
+    .filter((g) => g.medio_pago !== "BODEGA")
+    .map((g) => ({
+      value: g.id,
+      label: `${g.categoria} · $${fmtMoney(g.monto)} · ${fmtDate(g.fecha_gasto)}${
+        g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""
+      }`,
+    }));
 
   const tabs: { key: Filtro; label: string }[] = [
     { key: "todos", label: "Todos" },
