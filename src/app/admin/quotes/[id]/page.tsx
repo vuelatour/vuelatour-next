@@ -22,7 +22,7 @@ import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-
 import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
 import { getClient } from "@/lib/api/clients-server";
 import { ApiError } from "@/lib/api/errors";
-import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 
 export const dynamic = "force-dynamic";
@@ -155,7 +155,7 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">
                       MXN
                     </p>
-                    <p className="text-xl font-semibold">{fmtUsd(quote.monto_total_mxn)}</p>
+                    <p className="text-xl font-semibold">{fmtMxn(quote.monto_total_mxn)}</p>
                     <p className="text-[10px] text-muted-foreground">
                       tc {fmtDecimal(quote.tc_usd_mxn, 4)}
                     </p>
@@ -171,6 +171,26 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   hint={`${(Number(quote.iva_pct) * 100).toFixed(0)}%`}
                 />
               </div>
+              {/* TUAS capturadas en pesos: el detalle nativo por aeropuerto
+                  (entran al total MXN tal cual, sin re-convertir). */}
+              {(() => {
+                const filasMxn =
+                  quote.calculo_snapshot?.tuas?.filas?.filter(
+                    (f) => f.moneda === "MXN",
+                  ) ?? [];
+                if (filasMxn.length === 0) return null;
+                return (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    TUAS pagadas en pesos (entran al total MXN tal cual):{" "}
+                    {filasMxn
+                      .map(
+                        (f) =>
+                          `TUA ${f.iata} $${f.monto_pax.toFixed(2)} MXN × ${f.pax}`,
+                      )
+                      .join(" · ")}
+                  </p>
+                );
+              })()}
               {(quote.extras?.length ?? 0) > 0 && (
                 <div className="mt-3 pt-3 border-t border-border space-y-1">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -179,15 +199,27 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   {quote.extras!.map((e, i) => (
                     <div
                       key={`${e.concepto}-${i}`}
-                      className="flex items-center justify-between text-xs"
+                      className="flex items-center justify-between gap-3 text-xs"
                     >
-                      <span className="text-muted-foreground">
+                      <span className="text-muted-foreground min-w-0 break-words">
                         {e.concepto}
                         {e.aplica_iva === false && (
                           <span className="ml-1 text-[10px]">(sin IVA)</span>
                         )}
                       </span>
-                      <span className="font-mono">{fmtUsd(e.monto_usd)}</span>
+                      {/* Renglón MXN: nativo primero, canon USD como hint. */}
+                      <span className="font-mono shrink-0">
+                        {e.moneda === "MXN" && e.monto_nativo != null ? (
+                          <>
+                            {fmtMxn(e.monto_nativo)}
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              = {fmtUsd(e.monto_usd)}
+                            </span>
+                          </>
+                        ) : (
+                          fmtUsd(e.monto_usd)
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>

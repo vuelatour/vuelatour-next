@@ -94,7 +94,13 @@ export async function getRutasSugeridasAction(
 }
 
 export interface QuickAdjustPayload {
-  extras?: { concepto: string; monto_usd: number; aplica_iva?: boolean }[];
+  /** monto_usd = monto NATIVO en la moneda del renglón (nombre legado). */
+  extras?: {
+    concepto: string;
+    monto_usd: number;
+    moneda?: "USD" | "MXN";
+    aplica_iva?: boolean;
+  }[];
   pasajeros?: number;
   motivo?: string;
 }

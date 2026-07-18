@@ -32,12 +32,13 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
-import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cancunInputToIso, isoToCancunInput } from "@/lib/datetime";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
@@ -55,6 +56,9 @@ import type {
   QuoteBreakdown,
   TipoTarifa,
   TipoVuelo,
+  TuaLinea,
+  TuasAeropuerto,
+  TuasFila,
 } from "@/types/quote";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import { Field } from "@/components/admin/form-field";
@@ -122,6 +126,8 @@ interface QuoteFormValues {
   sobrevuelo_hr: number | null;
   /** Switch rápido de TUAS: apagado = no se cobra (override $0/pax). */
   cobrar_tuas: boolean;
+  /** TUAS capturadas POR AEROPUERTO (pass-through): mandan sobre el catálogo. */
+  tuas_lineas: TuaLinea[];
   cotizacion_abierta: boolean;
   /** Vuelo CUBIERTO por operador externo (sin avión propio ni tacómetros). */
   es_externo: boolean;
@@ -176,6 +182,16 @@ type QuoteCalculatorProps = {
       clientName: string;
     }
 );
+
+/**
+ * Lleva al operador al campo de TC (se monta siempre que hay renglones MXN,
+ * aunque el método sea DÓLARES). Fuente única del scroll+focus.
+ */
+function focusTcField() {
+  const el = document.getElementById("tc-usd-mxn-field");
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  el?.querySelector("input")?.focus();
+}
 
 const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
@@ -436,6 +452,27 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // El switch de TUAS apagado se guardó como override $0/pax; un override
         // distinto de 0 se re-hidrata en el campo avanzado para no perderlo.
         cobrar_tuas: q.calculo_snapshot?.tuas?.usd_pax_default !== 0,
+        // TUAS capturadas por aeropuerto: el snapshot guarda las líneas tal
+        // cual (lineas_capturadas, motor ≥1.3.1); fallback para snapshots que
+        // solo traen filas (las capturadas llevan "monto capturado" en razon).
+        // Las de monto 0 se CONSERVAN: significan "TUA en $0" (pass-through
+        // cero), no "volver al catálogo".
+        tuas_lineas:
+          (q.calculo_snapshot?.tuas?.lineas_capturadas?.length ?? 0) > 0
+            ? q.calculo_snapshot!.tuas!.lineas_capturadas!.map((l) => ({
+                iata: l.iata,
+                monto_pax: Number(l.monto_pax) || 0,
+                moneda: l.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
+              }))
+            : (q.calculo_snapshot?.tuas?.filas ?? [])
+                .filter(
+                  (f) => f.monto_pax > 0 && f.razon?.includes("monto capturado"),
+                )
+                .map((f) => ({
+                  iata: f.iata,
+                  monto_pax: f.monto_pax,
+                  moneda: f.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
+                })),
         cotizacion_abierta: q.cotizacion_abierta ?? false,
         es_externo: q.es_externo ?? false,
         operador_externo: q.operador_externo ?? "",
@@ -448,9 +485,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             ? Number(q.calculo_snapshot?.meta?.total_pactado_usd)
             : null,
         // La comisión BillPocket la sintetiza el motor: no se edita como extra.
-        extras: (q.extras ?? []).filter(
-          (e) => !e.concepto?.startsWith("Comisión BillPocket"),
-        ),
+        // El editor trabaja con el monto NATIVO del renglón (monto_usd es
+        // nombre legado): un extra MXN persistido trae el canon convertido en
+        // monto_usd y los pesos reales en monto_nativo — rehidratar el canon
+        // como nativo re-interpretaría dólares como pesos.
+        extras: (q.extras ?? [])
+          .filter((e) => !e.concepto?.startsWith("Comisión BillPocket"))
+          .map((e) => ({
+            concepto: e.concepto,
+            monto_usd: Number(e.monto_nativo ?? e.monto_usd) || 0,
+            moneda: e.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
+            aplica_iva: e.aplica_iva ?? true,
+          })),
         // Con redondeo automático activo (default), el ajuste guardado es
         // redondeo_auto − descuento: se re-hidrata el descuento BASE desde
         // meta y el redondeo se vuelve a resolver en el motor.
@@ -496,6 +542,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pase_abordar: false,
       sobrevuelo_hr: null,
       cobrar_tuas: true,
+      tuas_lineas: [],
       cotizacion_abierta: false,
       es_externo: false,
       operador_externo: "",
@@ -557,10 +604,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           : undefined,
       cotizacion_abierta: debounced.cotizacion_abierta,
       extras: (debounced.extras ?? [])
-        .filter((e) => e.concepto.trim() && Number(e.monto_usd) > 0)
+        .filter(
+          (e) =>
+            e.concepto.trim() &&
+            Number(e.monto_usd) > 0 &&
+            // Un extra MXN sin TC no puede convertirse (el motor lo rechaza
+            // con 400 y tiraría el preview): se retiene fuera del cálculo —
+            // el editor avisa en ámbar y guardar queda bloqueado (mxnSinTc).
+            (e.moneda !== "MXN" || Number(debounced.tc_usd_mxn) > 0),
+        )
         .map((e) => ({
           concepto: e.concepto.trim(),
+          // Monto NATIVO en la moneda del renglón (nombre legado monto_usd).
           monto_usd: Number(e.monto_usd),
+          moneda: e.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
           aplica_iva: e.aplica_iva ?? true,
         })),
       // Con redondeo automático solo viaja el descuento; el motor resuelve el
@@ -630,8 +687,37 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     if (!debounced.cobrar_tuas) {
       // Switch rápido apagado: la TUAS no se cobra en esta cotización.
       base.tuas_override_usd_pax = 0;
-    } else if (debounced.tuas_override_usd_pax !== null && debounced.tuas_override_usd_pax !== undefined) {
-      base.tuas_override_usd_pax = Number(debounced.tuas_override_usd_pax);
+    } else {
+      if (debounced.tuas_override_usd_pax !== null && debounced.tuas_override_usd_pax !== undefined) {
+        base.tuas_override_usd_pax = Number(debounced.tuas_override_usd_pax);
+      }
+      // TUAS capturadas por aeropuerto (mandan sobre catálogo y override).
+      // Monto 0 CAPTURADO = pass-through cero (el aeropuerto no cobra):
+      // viaja al motor, que lo trata como TUA $0 — no es "volver al catálogo"
+      // (eso es dejar el campo vacío = sin línea). Una línea MXN >0 sin TC
+      // no puede convertirse (el motor la rechaza con 400): se retiene fuera
+      // del cálculo — la card lo avisa en ámbar y guardar se bloquea.
+      const lineas = (debounced.tuas_lineas ?? []).filter(
+        (l) =>
+          l.iata &&
+          Number(l.monto_pax) >= 0 &&
+          (Number(l.monto_pax) === 0 ||
+            l.moneda !== "MXN" ||
+            Number(debounced.tc_usd_mxn) > 0),
+      );
+      if (lineas.length > 0) {
+        base.tuas_lineas = lineas.map((l) => {
+          // El DTO rechaza 3+ decimales: redondear a centavos antes de enviar.
+          const monto = Math.round(Number(l.monto_pax) * 100) / 100;
+          return {
+            iata: l.iata.toUpperCase(),
+            monto_pax: monto,
+            // $0 no necesita conversión: viaja como USD para que el motor no
+            // exija TC por una línea que de todos modos vale cero.
+            moneda: monto > 0 && l.moneda === "MXN" ? "MXN" : "USD",
+          };
+        });
+      }
     }
     if (debounced.iva_pct_override !== null && debounced.iva_pct_override !== undefined) {
       base.iva_pct_override = Number(debounced.iva_pct_override);
@@ -769,6 +855,56 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     );
   };
 
+  // Upsert de una línea de TUA por aeropuerto; monto null = quitar la línea
+  // (vuelve al monto del catálogo).
+  const setTuaLinea = (
+    iata: string,
+    monto: number | null,
+    moneda: "USD" | "MXN",
+  ) => {
+    const rest = (values.tuas_lineas ?? []).filter((l) => l.iata !== iata);
+    setValue(
+      "tuas_lineas",
+      monto == null ? rest : [...rest, { iata, monto_pax: monto, moneda }],
+    );
+  };
+
+  // ¿La TUA de este aeropuerto APLICA según el motor? Un aeropuerto exento
+  // (aplica=false, p.ej. pase de abordar) no cobra la línea aunque esté
+  // capturada — no debe atorar el candado ni forzar el campo de TC. Fuera del
+  // itinerario el motor la ignora por completo. Sin breakdown se asume que
+  // aplica (conservador; guardar ya está bloqueado sin breakdown).
+  const tuaAplicaEnBreakdown = (iata: string): boolean => {
+    if (!breakdown) return true;
+    const aps =
+      breakdown.tuas.aeropuertos ??
+      [
+        breakdown.tuas.origen,
+        ...(breakdown.tuas.intermedios ?? []),
+        breakdown.tuas.destino,
+      ].filter(Boolean);
+    const a = aps.find((x) => x?.iata === iata);
+    return a ? a.aplica : false;
+  };
+  // Líneas MXN que realmente cobrarían: monto > 0 y aeropuerto que aplica.
+  const hayTuasMxnActivas = (values.tuas_lineas ?? []).some(
+    (l) =>
+      l.moneda === "MXN" &&
+      Number(l.monto_pax) > 0 &&
+      tuaAplicaEnBreakdown(l.iata),
+  );
+  const hayExtrasMxn = (values.extras ?? []).some(
+    (e) => e.moneda === "MXN" && Number(e.monto_usd) > 0,
+  );
+  // ¿Hay renglones nativos en MXN (TUAS o extras)? Fuerza a mostrar el campo
+  // de TC aunque el método sea DOLARES: sin TC el motor no puede convertirlos.
+  const hayLineasMxn = hayTuasMxnActivas || hayExtrasMxn;
+  // Renglones MXN sin TC (TUAS o extras): se retienen fuera del cálculo (el
+  // preview sigue vivo) y se bloquea guardar — el total aún no los incluye.
+  const mxnSinTc =
+    !(Number(values.tc_usd_mxn) > 0) &&
+    ((values.cobrar_tuas && hayTuasMxnActivas) || hayExtrasMxn);
+
   const motivoTrim = values.motivo?.trim() ?? "";
   // El cliente ahora AFECTA el precio (tarifa preferencial): no se puede
   // guardar mientras el preview corresponda a otro cliente o siga recalculando
@@ -777,6 +913,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !loading && calcPayload?.cliente_id === (values.cliente_id || undefined);
   const canSave =
     !capacidadExcedida &&
+    !mxnSinTc &&
     previewFresco &&
     (isRevise
       ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
@@ -1329,6 +1466,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           <ExtrasEditor
             value={values.extras}
             onChange={(extras) => setValue("extras", extras)}
+            tcCapturado={Number(values.tc_usd_mxn) > 0}
           />
 
           {/* Cierre del total: el redondeo es AUTOMÁTICO (regla del cliente:
@@ -1625,11 +1763,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           )}
 
           {/* El pago puede entrar en pesos (BillPocket/transferencia): el TC
-              pactado fija el total MXN y convierte los cobros MXN sin TC. */}
-          {values.metodo_pago !== "DOLARES" && (
+              pactado fija el total MXN y convierte los cobros MXN sin TC.
+              Con renglones nativos en MXN (TUAS/extras) el campo también
+              aparece con método DOLARES: sin TC no pueden convertirse. */}
+          {(values.metodo_pago !== "DOLARES" || hayLineasMxn) && (
+            <div id="tc-usd-mxn-field" className="scroll-mt-24">
             <Field
               label="Tipo de cambio (MXN por USD)"
-              hint="Opcional · si el pago entrará en pesos"
+              hint={
+                hayLineasMxn
+                  ? "Requerido: hay TUAS/extras capturados en pesos"
+                  : "Opcional · si el pago entrará en pesos"
+              }
             >
               <div className="flex items-center gap-3">
                 <Input
@@ -1648,15 +1793,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 />
                 {Number(values.tc_usd_mxn) > 0 && breakdown && (
                   <span className="text-xs text-muted-foreground font-mono">
-                    ≈ $
-                    {(
-                      Number(breakdown.totales.total_usd) * Number(values.tc_usd_mxn)
-                    ).toLocaleString("es-MX", { minimumFractionDigits: 2 })}{" "}
-                    MXN
+                    {/* total_mxn del motor = EXACTO por composición (USD×tc +
+                        nativos MXN tal cual); el producto local es respaldo. */}
+                    {breakdown.totales.total_mxn != null
+                      ? `= ${fmtMxn(breakdown.totales.total_mxn)}`
+                      : `≈ ${fmtMxn(
+                          Number(breakdown.totales.total_usd) *
+                            Number(values.tc_usd_mxn),
+                        )}`}
                   </span>
                 )}
               </div>
             </Field>
+            </div>
           )}
 
           {/* Comisión del VENDEDOR (Itzy/Pablo/broker): sale del precio de
@@ -1797,7 +1946,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </CardHeader>
           </Card>
         ) : breakdown ? (
-          <Preview breakdown={breakdown} loading={loading} />
+          <Preview
+            breakdown={breakdown}
+            loading={loading}
+            tuasLineas={values.tuas_lineas ?? []}
+            onTuaChange={setTuaLinea}
+            cobrarTuas={values.cobrar_tuas}
+            tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
+          />
         ) : (
           <PreviewSkeleton />
         )}
@@ -1805,6 +1961,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         {/* Save bar */}
         <Card>
           <CardContent className="p-4 space-y-3">
+            {mxnSinTc && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                Hay TUAS o extras capturados en MXN sin tipo de cambio: el
+                total mostrado aún NO los incluye. Captura el TC (MXN por USD)
+                arriba para aplicarlos y poder guardar.
+              </p>
+            )}
             {isRevise && initialQuote ? (
               <>
                 <div className="text-sm">
@@ -1904,10 +2067,58 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 function Preview({
   breakdown,
   loading,
+  tuasLineas,
+  onTuaChange,
+  cobrarTuas,
+  tcUsdMxn,
 }: {
   breakdown: QuoteBreakdown;
   loading: boolean;
+  tuasLineas: TuaLinea[];
+  onTuaChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
+  cobrarTuas: boolean;
+  tcUsdMxn: number | null;
 }) {
+  // Aeropuertos ÚNICOS del itinerario (todos, no solo origen/destino).
+  const aeropuertos = (() => {
+    const list =
+      breakdown.tuas.aeropuertos ??
+      [
+        breakdown.tuas.origen,
+        ...(breakdown.tuas.intermedios ?? []),
+        breakdown.tuas.destino,
+      ].filter(Boolean);
+    const seen = new Set<string>();
+    return list.filter((a) => {
+      if (!a || seen.has(a.iata)) return false;
+      seen.add(a.iata);
+      return true;
+    });
+  })();
+  const filaPorIata = new Map(
+    (breakdown.tuas.filas ?? []).map((f) => [f.iata, f]),
+  );
+  const lineaPorIata = new Map(tuasLineas.map((l) => [l.iata, l]));
+
+  // Composición del total MXN (motor): componentes USD × tc + nativos MXN.
+  const mxnNativos = Number(breakdown.totales.mxn_nativos) || 0;
+  const usdDeMxn =
+    Math.round(
+      ((breakdown.tuas.filas ?? [])
+        .filter((f) => f.moneda === "MXN")
+        .reduce((acc, f) => acc + f.total_usd, 0) +
+        (breakdown.extras ?? [])
+          .filter((e) => e.moneda === "MXN")
+          .reduce((acc, e) => acc + e.monto_usd, 0)) *
+        100,
+    ) / 100;
+  const componentesUsd =
+    Math.round((breakdown.totales.total_usd - usdDeMxn) * 100) / 100;
+  const componentesUsdEnMxn =
+    breakdown.totales.total_mxn != null
+      ? Math.round((breakdown.totales.total_mxn - mxnNativos) * 100) / 100
+      : null;
+
   return (
     <>
       {/* TOTAL */}
@@ -1956,7 +2167,9 @@ function Preview({
             <Cell
               label="TUAS"
               value={fmtUsd(breakdown.totales.tuas_total_usd)}
-              hint={`${breakdown.tuas.pasajeros} pax`}
+              hint={`${breakdown.tuas.pasajeros} pax${
+                Number(breakdown.tuas.total_mxn_nativo) > 0 ? " · incluye MXN" : ""
+              }`}
             />
             <Cell
               label="IVA"
@@ -2000,17 +2213,64 @@ function Preview({
               {breakdown.extras!.map((e, i) => (
                 <div
                   key={`${e.concepto}-${i}`}
-                  className="flex items-center justify-between text-xs"
+                  className="flex items-center justify-between gap-3 text-xs"
                 >
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground min-w-0 break-words">
                     {e.concepto}
                     {e.aplica_iva === false && (
                       <span className="ml-1 text-[10px]">(sin IVA)</span>
                     )}
                   </span>
-                  <span className="font-mono">{fmtUsd(e.monto_usd)}</span>
+                  <span className="font-mono shrink-0">
+                    {/* Renglón MXN: pesos nativos primero, canon USD al lado. */}
+                    {e.moneda === "MXN" && e.monto_nativo != null && (
+                      <span className="mr-1.5 text-muted-foreground">
+                        {fmtMxn(e.monto_nativo)} =
+                      </span>
+                    )}
+                    {fmtUsd(e.monto_usd)}
+                  </span>
                 </div>
               ))}
+            </div>
+          )}
+          {/* Total consolidado en MXN (motor ≥1.3.1): EXACTO por composición
+              — componentes USD × tc + renglones nativos MXN tal cual. */}
+          {breakdown.totales.total_mxn != null && (
+            <div className="mt-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+              {mxnNativos > 0 ? (
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Total por moneda
+                  </p>
+                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>
+                      Componentes USD: {fmtUsd(componentesUsd)}
+                      {tcUsdMxn ? ` × tc ${fmtDecimal(tcUsdMxn, 4)}` : ""}
+                    </span>
+                    <span className="font-mono shrink-0">
+                      {componentesUsdEnMxn != null ? fmtMxn(componentesUsdEnMxn) : "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>Nativos MXN (TUAS/extras en pesos, tal cual)</span>
+                    <span className="font-mono shrink-0">{fmtMxn(mxnNativos)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-t border-border pt-1 font-semibold">
+                    <span>Total MXN</span>
+                    <span className="font-mono">{fmtMxn(breakdown.totales.total_mxn)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    Total MXN{tcUsdMxn ? ` (tc ${fmtDecimal(tcUsdMxn, 4)})` : ""}
+                  </span>
+                  <span className="font-mono font-semibold">
+                    {fmtMxn(breakdown.totales.total_mxn)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -2150,30 +2410,53 @@ function Preview({
         </Card>
       </div>
 
-      {/* TUAS desglose */}
-      <Card>
+      {/* TUAS desglose EDITABLE: todos los aeropuertos del itinerario, con
+          monto por pax capturable + moneda propia (pass-through de lo que el
+          aeropuerto cobra; manda sobre el catálogo). */}
+      <Card className={cn("transition-opacity", !cobrarTuas && "opacity-60")}>
         <CardHeader>
           <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
           <CardDescription className="text-xs">
-            {breakdown.tuas.pasajeros} {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"}.
+            {breakdown.tuas.pasajeros} {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} global.
             Regla aplicada por matrícula {breakdown.aeronave.matricula.startsWith("XA")
               ? "XA"
               : breakdown.aeronave.matricula.startsWith("XB")
                 ? "XB"
                 : "N"}
-            .
+            . Edita el monto por pasajero si el aeropuerto cobra distinto
+            (USD o MXN); vacío = monto del catálogo.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <TuasRow tuas={breakdown.tuas.origen} pasajeros={breakdown.tuas.pasajeros} label="Origen" />
-          <TuasRow
-            tuas={breakdown.tuas.destino}
-            pasajeros={breakdown.tuas.pasajeros}
-            label="Destino"
-          />
-          <div className="pt-3 border-t border-border flex items-center justify-between text-sm">
-            <span className="font-semibold">Total TUAS</span>
-            <span className="font-bold font-mono">{fmtUsd(breakdown.tuas.total_usd)}</span>
+          {!cobrarTuas && (
+            <p className="text-xs text-muted-foreground">
+              El switch «Cobrar TUAS» está apagado: no se cobran en esta
+              cotización.
+            </p>
+          )}
+          {aeropuertos.map((air) => (
+            <TuasAirportRow
+              key={air.iata}
+              air={air}
+              fila={filaPorIata.get(air.iata)}
+              linea={lineaPorIata.get(air.iata)}
+              paxGlobal={breakdown.tuas.pasajeros}
+              disabled={!cobrarTuas}
+              tcCapturado={tcUsdMxn != null}
+              onChange={onTuaChange}
+            />
+          ))}
+          <div className="pt-3 border-t border-border space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold">Total TUAS</span>
+              <span className="font-bold font-mono">{fmtUsd(breakdown.tuas.total_usd)}</span>
+            </div>
+            {Number(breakdown.tuas.total_mxn_nativo) > 0 && (
+              <p className="text-right text-xs text-muted-foreground">
+                incluye {fmtMxn(breakdown.tuas.total_mxn_nativo)} nativos —
+                entran al total MXN en pesos tal cual
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -2228,33 +2511,121 @@ function PreviewSkeleton() {
   );
 }
 
-function TuasRow({
-  tuas,
-  pasajeros,
-  label,
+/**
+ * Fila editable de TUA por aeropuerto: monto por pax capturable + moneda
+ * propia. Vacío = monto del catálogo (placeholder gris); lo capturado manda.
+ */
+function TuasAirportRow({
+  air,
+  fila,
+  linea,
+  paxGlobal,
+  disabled,
+  tcCapturado,
+  onChange,
 }: {
-  tuas: { iata: string; aplica: boolean; usd_pax: number; razon: string };
-  pasajeros: number;
-  label: string;
+  air: TuasAeropuerto;
+  fila?: TuasFila;
+  linea?: TuaLinea;
+  paxGlobal: number;
+  disabled: boolean;
+  tcCapturado: boolean;
+  onChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
 }) {
+  // Moneda elegida antes de capturar monto (sin monto aún no viaja la línea).
+  const [monedaDraft, setMonedaDraft] = useState<"USD" | "MXN">(
+    linea?.moneda ?? (air.moneda === "MXN" ? "MXN" : "USD"),
+  );
+  const moneda = linea?.moneda ?? monedaDraft;
+  const capturada = !!linea;
+  const montoCatalogo = air.monto_pax ?? air.usd_pax;
+  const pax = fila?.pax ?? (air.aplica ? paxGlobal : 0);
+  const editable = !disabled && air.aplica;
+
+  const handleMonto = (raw: string) => {
+    // Vacío = des-capturar (vuelve al catálogo). "0" = TUA capturada en $0
+    // (pass-through cero: el aeropuerto no cobra) — SÍ viaja al motor.
+    if (raw.trim() === "") {
+      onChange(air.iata, null, moneda);
+      return;
+    }
+    const n = Number(raw);
+    onChange(air.iata, Number.isFinite(n) && n >= 0 ? n : null, moneda);
+  };
+  const handleMoneda = (m: "USD" | "MXN") => {
+    setMonedaDraft(m);
+    if (linea) onChange(air.iata, linea.monto_pax, m);
+  };
+
   return (
-    <div className="flex items-start gap-3 text-sm">
-      {tuas.aplica ? (
-        <CheckCircleIcon className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
-      ) : (
-        <XCircleIcon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+    <div
+      className={cn(
+        "rounded-lg border border-border p-2.5 space-y-1.5",
+        !air.aplica && "opacity-70",
       )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-medium">
-            {label} <span className="font-mono">{tuas.iata}</span>
-          </span>
-          <span className="font-mono">
-            {tuas.aplica ? fmtUsd(tuas.usd_pax * pasajeros) : "$0"}
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">{tuas.razon}</p>
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {air.aplica ? (
+            <CheckCircleIcon className="h-4 w-4 text-green-600 shrink-0" />
+          ) : (
+            <XCircleIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+          )}
+          <span className="font-mono">{air.iata}</span>
+          {capturada && (
+            <Badge variant="outline" className="text-[10px]">
+              {linea!.monto_pax === 0 ? "TUA en $0 (capturada)" : "monto capturado"}
+            </Badge>
+          )}
+        </span>
+        {/* Total de la fila, NATIVO en su moneda (canon USD al lado si es MXN). */}
+        <span className="font-mono text-sm">
+          {fila ? (
+            fila.moneda === "MXN" ? (
+              <>
+                {fmtMxn(fila.total_nativo)}
+                <span className="ml-1.5 text-xs text-muted-foreground">
+                  = {fmtUsd(fila.total_usd)}
+                </span>
+              </>
+            ) : (
+              fmtUsd(fila.total_usd)
+            )
+          ) : (
+            "$0"
+          )}
+        </span>
       </div>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          step="0.01"
+          min={0}
+          className="h-8 w-28"
+          disabled={!editable}
+          defaultValue={linea ? String(linea.monto_pax) : ""}
+          placeholder={montoCatalogo > 0 ? montoCatalogo.toFixed(2) : "0.00"}
+          aria-label={`TUA por pasajero en ${air.iata}`}
+          onChange={(ev) => handleMonto(ev.target.value)}
+        />
+        <MonedaSelect value={moneda} onChange={handleMoneda} disabled={!editable} />
+        <span className="text-xs text-muted-foreground">
+          por pax × {pax} pax
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">{air.razon}</p>
+      {/* Solo con línea CAPTURADA >0 en MXN: con puro select flipeado (sin
+          monto) no viaja nada, y el campo de TC ni estaría montado. */}
+      {capturada && linea!.monto_pax > 0 && moneda === "MXN" && !tcCapturado && editable && (
+        <button
+          type="button"
+          onClick={focusTcField}
+          className="text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
+        >
+          Captura el TC arriba — sin tipo de cambio esta TUA en MXN no entra
+          al total.
+        </button>
+      )}
     </div>
   );
 }
@@ -2342,9 +2713,12 @@ const EXTRAS_SUGERIDOS = ["Handler", "Comisariato", "Extensión de servicios"];
 function ExtrasEditor({
   value,
   onChange,
+  tcCapturado,
 }: {
   value: ExtraConcepto[];
   onChange: (extras: ExtraConcepto[]) => void;
+  /** Hay TC (MXN por USD) capturado: sin él los renglones MXN no entran al total. */
+  tcCapturado: boolean;
 }) {
   const update = (idx: number, patch: Partial<ExtraConcepto>) => {
     const next = [...value];
@@ -2352,7 +2726,7 @@ function ExtrasEditor({
     onChange(next);
   };
   const add = (concepto = "") =>
-    onChange([...value, { concepto, monto_usd: 0, aplica_iva: true }]);
+    onChange([...value, { concepto, monto_usd: 0, moneda: "USD", aplica_iva: true }]);
   const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
 
   return (
@@ -2369,7 +2743,7 @@ function ExtrasEditor({
           key={idx}
           className="rounded-lg border border-border bg-muted/20 p-2.5 space-y-2"
         >
-          <div className="grid grid-cols-[1fr_110px] gap-2">
+          <div className="grid grid-cols-[1fr_96px_76px] gap-2">
             <Input
               placeholder="Concepto (ej. Handler)"
               value={e.concepto}
@@ -2379,13 +2753,31 @@ function ExtrasEditor({
               type="number"
               step="0.01"
               min={0}
-              placeholder="USD"
+              // El monto es NATIVO en la moneda del renglón (MXN entra al
+              // total en pesos tal cual; requiere TC capturado).
+              placeholder={e.moneda === "MXN" ? "MXN" : "USD"}
               value={e.monto_usd || ""}
               onChange={(ev) =>
                 update(idx, { monto_usd: Number(ev.target.value) || 0 })
               }
             />
+            <MonedaSelect
+              value={e.moneda === "MXN" ? "MXN" : "USD"}
+              onChange={(m) => update(idx, { moneda: m })}
+            />
           </div>
+          {/* Extra MXN sin TC: se retiene fuera del cálculo (no tira el
+              preview con el 400 del motor) y guardar queda bloqueado. */}
+          {e.moneda === "MXN" && Number(e.monto_usd) > 0 && !tcCapturado && (
+            <button
+              type="button"
+              onClick={focusTcField}
+              className="text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
+            >
+              Captura el TC arriba — sin tipo de cambio este extra en MXN no
+              entra al total.
+            </button>
+          )}
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Switch

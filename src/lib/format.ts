@@ -17,6 +17,21 @@ export function fmtUsd(value: string | number | null | undefined): string {
   return usd.format(n);
 }
 
+const mxn = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Monto en pesos con etiqueta explícita ("$1,322.40 MXN") para no confundirlo con USD. */
+export function fmtMxn(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n)) return "—";
+  return `${mxn.format(n)} MXN`;
+}
+
 export function fmtDecimal(
   value: string | number | null | undefined,
   fractionDigits = 2,

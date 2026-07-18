@@ -14,9 +14,56 @@ export type TipoParada = "NORMAL" | "SERVICIO";
 /** Concepto extra de la cotización (handler, comisariato, extensión, etc.). */
 export interface ExtraConcepto {
   concepto: string;
+  /**
+   * Monto NATIVO en la moneda del renglón (nombre legado: antes siempre era
+   * USD). Con moneda=MXN el motor lo convierte con el TC de la cotización.
+   */
   monto_usd: number;
+  /** Moneda del renglón (default USD). MXN entra al total MXN en pesos tal cual. */
+  moneda?: "USD" | "MXN";
+  /** Eco del motor en el breakdown: monto nativo del renglón. */
+  monto_nativo?: number;
+  /** TC congelado con el que se convirtió un renglón MXN (null = USD puro). */
+  tc_aplicado?: number | null;
   /** Si entra a la base de IVA (default true). */
   aplica_iva?: boolean;
+}
+
+/** TUA capturada POR AEROPUERTO: monto unitario editable + moneda propia. */
+export interface TuaLinea {
+  iata: string;
+  /** Monto por pasajero en la moneda de la línea. */
+  monto_pax: number;
+  moneda: "USD" | "MXN";
+}
+
+/** Estado de TUA de un aeropuerto en el breakdown (catálogo o capturada). */
+export interface TuasAeropuerto {
+  iata: string;
+  aplica: boolean;
+  /** Por pasajero en USD (canon; convertido si la línea es MXN). */
+  usd_pax: number;
+  /** Por pasajero NATIVO en la moneda de la línea (motor ≥1.3.1). */
+  monto_pax?: number;
+  moneda?: "USD" | "MXN";
+  /** TC congelado con el que se convirtió una línea MXN (null = USD puro). */
+  tc_aplicado?: number | null;
+  razon: string;
+}
+
+/** Fila CONTABLE de TUAS por aeropuerto (motor ≥1.3.1). */
+export interface TuasFila {
+  iata: string;
+  aplica: boolean;
+  moneda: "USD" | "MXN";
+  /** Monto por pax NATIVO en la moneda de la línea. */
+  monto_pax: number;
+  usd_pax: number;
+  pax: number;
+  total_nativo: number;
+  total_usd: number;
+  tc_aplicado: number | null;
+  razon: string;
 }
 
 export interface EscalaInput {
@@ -91,6 +138,11 @@ export interface CalculateQuoteRequest {
   comision_vendedor_nombre?: string;
   tarifa_hora_override_usd?: number;
   tuas_override_usd_pax?: number;
+  /**
+   * TUAS capturadas POR AEROPUERTO (monto unitario + moneda): mandan sobre el
+   * catálogo y sobre tuas_override_usd_pax para ese aeropuerto.
+   */
+  tuas_lineas?: TuaLinea[];
   iva_pct_override?: number;
 }
 
@@ -131,11 +183,17 @@ export interface QuoteBreakdown {
   tuas: {
     usd_pax_default: number | undefined;
     pasajeros: number;
-    origen: { iata: string; aplica: boolean; usd_pax: number; razon: string };
-    destino: { iata: string; aplica: boolean; usd_pax: number; razon: string };
-    intermedios?: { iata: string; aplica: boolean; usd_pax: number; razon: string }[];
-    aeropuertos?: { iata: string; aplica: boolean; usd_pax: number; razon: string }[];
+    origen: TuasAeropuerto;
+    destino: TuasAeropuerto;
+    intermedios?: TuasAeropuerto[];
+    aeropuertos?: TuasAeropuerto[];
+    /** Filas CONTABLES por aeropuerto (unitario, moneda, pax, totales, TC). */
+    filas?: TuasFila[];
+    /** Líneas capturadas tal cual (para rehidratar revisiones sin perderlas). */
+    lineas_capturadas?: TuaLinea[];
     total_usd: number;
+    /** Suma NATIVA de las filas MXN (entra al total MXN en pesos tal cual). */
+    total_mxn_nativo?: number;
   };
   // Desglose por tramo (null en single-leg/REDONDO simple).
   tramos: TramoBreakdown[] | null;
@@ -158,6 +216,13 @@ export interface QuoteBreakdown {
     ajuste_final_usd?: number;
     iva_usd: number;
     total_usd: number;
+    /**
+     * TOTAL MXN EXACTO por composición (motor ≥1.3.1): componentes USD × TC +
+     * renglones nativos MXN tal cual. null si no hay TC capturado.
+     */
+    total_mxn?: number | null;
+    /** Suma de renglones NATIVOS en MXN (TUAS + extras en pesos). */
+    mxn_nativos?: number;
   };
   meta: {
     calculado_at: string;

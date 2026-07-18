@@ -148,9 +148,11 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
           {lineas.map((l, i) => (
             <div
               key={`${l.clave}-${i}`}
-              className="flex items-center justify-between gap-3 text-sm"
+              className="flex items-start justify-between gap-3 text-sm"
             >
-              <span className="text-muted-foreground min-w-0 truncate">
+              {/* Las líneas de TUAS por aeropuerto son largas ("TUA PCE ·
+                  $330.60 MXN × 4 pax = $1322.40 MXN"): wrap, no truncar. */}
+              <span className="text-muted-foreground min-w-0 break-words">
                 <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                   {CLAVE_LABEL[l.clave] ?? l.clave}
                 </span>
