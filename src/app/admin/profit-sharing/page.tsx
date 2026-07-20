@@ -1,25 +1,15 @@
-import { ChartPieIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ChartPieIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+} from "@heroicons/react/24/outline";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
 import { ReportDownloads } from "@/components/admin/profit-sharing/report-downloads";
+import { KpiStrip } from "@/components/admin/profit-sharing/kpi-strip";
+import { AvionRepartoCard } from "@/components/admin/profit-sharing/avion-reparto-card";
 import { getProfitSharing } from "@/lib/api/profit-sharing-server";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
-import { fmtUsd, fmtDecimal } from "@/lib/format";
-import type { AvionReparto } from "@/types/profit-sharing";
+import { fmtDecimal } from "@/lib/format";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -42,11 +32,6 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
 
   const result = await getProfitSharing({ desde, hasta });
 
-  const totalSaldo = result.aviones.reduce(
-    (acc, a) => acc + a.saldo_disponible_usd,
-    0,
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -56,8 +41,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             Reparto de utilidades
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Saldo disponible total del periodo:{" "}
-            <span className="font-medium text-foreground">{fmtUsd(totalSaldo)}</span>.
+            Cascada del saldo, desglose y reparto a socios por aeronave.
           </p>
         </div>
         <ReportDownloads desde={desde} hasta={hasta} />
@@ -65,153 +49,47 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
 
       <PeriodSelector initial={{ desde, hasta }} />
 
-      <div className="rounded-lg border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-        <p>
-          <strong>Cálculo en vivo</strong> — solo se reparte lo cobrado. La reserva de
-          overhaul se mostrará completa cuando se capturen horas de tacómetro (FASE 3).
-        </p>
-        {result.gastos_sin_tc.count > 0 && (
-          <p className="text-amber-600 dark:text-amber-400">
-            {result.gastos_sin_tc.count} gasto(s) fijo(s) en MXN sin tipo de cambio
-            ({fmtDecimal(result.gastos_sin_tc.monto_mxn)} MXN) quedaron fuera del cálculo.
+      <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+        <InformationCircleIcon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+        <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">Cálculo en vivo</span>{" "}
+            — solo se reparte lo cobrado; la reserva de overhaul sale de las
+            horas de tacómetro del periodo. Descarga el PDF para socios o los
+            Excel con los botones de arriba y de cada avión.
           </p>
-        )}
-        <p>
-          Descarga el <strong>PDF para socios</strong> o el <strong>reporte mensual por avión en
-          Excel</strong> con los botones de arriba (se generan en el microservicio Python).
-        </p>
+          {result.gastos_sin_tc.count > 0 && (
+            <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+              <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
+              {result.gastos_sin_tc.count} gasto(s) fijo(s) en MXN sin tipo de
+              cambio ({fmtDecimal(result.gastos_sin_tc.monto_mxn)} MXN) quedaron
+              fuera del cálculo.
+            </p>
+          )}
+        </div>
       </div>
 
       {result.aviones.length === 0 ? (
         <EmptyState
-            icon={ChartPieIcon}
-            title="Sin aeronaves activas"
-            description="No hay datos para repartir en el periodo."
-          />
+          icon={ChartPieIcon}
+          title="Sin aeronaves activas"
+          description="No hay datos para repartir en el periodo."
+        />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {result.aviones.map((a) => (
-            <AvionCard key={a.aeronave.id} avion={a} />
-          ))}
-        </div>
+        <>
+          <KpiStrip aviones={result.aviones} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            {result.aviones.map((a) => (
+              <AvionRepartoCard
+                key={a.aeronave.id}
+                avion={a}
+                desde={desde}
+                hasta={hasta}
+              />
+            ))}
+          </div>
+        </>
       )}
-    </div>
-  );
-}
-
-function AvionCard({ avion }: { avion: AvionReparto }) {
-  const positivo = avion.saldo_disponible_usd >= 0;
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base font-mono">
-              {avion.aeronave.matricula}
-            </CardTitle>
-            <CardDescription>{avion.aeronave.modelo}</CardDescription>
-          </div>
-          <div className="text-right">
-            <p className="text-[11px] text-muted-foreground">Saldo disponible</p>
-            <p
-              className={`text-lg font-semibold ${
-                positivo ? "" : "text-destructive"
-              }`}
-            >
-              {fmtUsd(avion.saldo_disponible_usd)}
-            </p>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-1 text-sm">
-          <Row label="Ingresos cobrados" value={avion.ingresos.cobrado_usd} positive />
-          <Row label="Gastos directos" value={-avion.gastos.directos_usd} />
-          <Row label="Gastos indirectos" value={-avion.gastos.indirectos_usd} />
-          <Row label="Permisos" value={-avion.gastos.permisos_usd} />
-          <Row
-            label="Otros gastos (prorrateados)"
-            value={-avion.gastos.otros_prorrateados_usd}
-          />
-          <Row label="Reserva overhaul" value={-avion.reserva_overhaul_usd} />
-          <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
-            <span>Saldo disponible</span>
-            <span className={positivo ? "" : "text-destructive"}>
-              {fmtUsd(avion.saldo_disponible_usd)}
-            </span>
-          </div>
-        </div>
-
-        {avion.ingresos.pendiente_cobro_usd > 0 && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
-            Pendiente de cobro (no se reparte aún):{" "}
-            {fmtUsd(avion.ingresos.pendiente_cobro_usd)} ·{" "}
-            {avion.ingresos.vuelos_pendientes} vuelo(s).
-          </p>
-        )}
-        {avion.gastos.gastos_sin_tc_count > 0 && (
-          <p className="text-xs text-amber-600 dark:text-amber-400 inline-flex items-center gap-1">
-            <ExclamationTriangleIcon className="h-3.5 w-3.5" />
-            {avion.gastos.gastos_sin_tc_count} gasto(s) en MXN sin TC, excluidos.
-          </p>
-        )}
-
-        <div>
-          <p className="text-xs font-semibold mb-1.5">Reparto a socios</p>
-          {avion.reparto.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Sin porcentajes de socio configurados para esta aeronave.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Socio</TableHead>
-                  <TableHead className="text-right">%</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {avion.reparto.map((r) => (
-                  <TableRow key={r.socio_id}>
-                    <TableCell className="text-sm">{r.socio_nombre}</TableCell>
-                    <TableCell className="text-right font-mono text-xs">
-                      {fmtDecimal(r.porcentaje)}%
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {fmtUsd(r.monto_usd)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          {avion.reparto.length > 0 && avion.reparto_porcentaje_total !== 100 && (
-            <p className="text-xs text-destructive mt-1">
-              Los porcentajes suman {fmtDecimal(avion.reparto_porcentaje_total)}% (no 100%).
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Row({
-  label,
-  value,
-  positive,
-}: {
-  label: string;
-  value: number;
-  positive?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono ${positive ? "text-green-600 dark:text-green-400" : ""}`}>
-        {fmtUsd(value)}
-      </span>
     </div>
   );
 }
