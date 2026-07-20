@@ -25,6 +25,7 @@ import {
   getFlightTacoPhotos,
   getCobroVoucherUrls,
   getFlightBitacora,
+  getFlightPlanUrl,
 } from "@/lib/api/flights-server";
 import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listProviders } from "@/lib/api/providers-server";
@@ -91,7 +92,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, quote, gastosRes] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -99,6 +100,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       listAirports({ limit: 200, activo: true }),
       getFlightTacoPhotos(id).catch(() => []),
       getFlightBitacora(id),
+      // Foto del plan de vuelo: el bucket es privado, así que se firma en el
+      // backend (guarda el path; con URLs viejas completas también resuelve).
+      snapshot.foto_plan_vuelo_url
+        ? getFlightPlanUrl(id).catch(() => ({ url: null }))
+        : Promise.resolve({ url: null }),
       // Solo para pintar la ruta COMERCIAL cotizada (vive en el snapshot del
       // cálculo, no en las escalas, que son la operación). Best-effort.
       getQuote(id).catch(() => null),
@@ -311,6 +317,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               aircraft={aircraftOptions}
               pilots={pilotOptions}
               gastosResumen={gastosResumen}
+              planVueloUrl={planVuelo.url}
               // Externos SIN desglose de cotización (creados con el form
               // externo viejo): el método de cobro se captura en Editar para
               // que entren a la bandeja de Facturas. Con desglose, el método

@@ -34,6 +34,8 @@ export interface FlightListItem {
   fecha_traslado_final: string | null;
   fecha_confirmacion: string | null;
   estado_permiso: "no_aplica" | "pendiente" | "emitido";
+  /** PATH en el bucket privado planes-vuelo (filas viejas: URL completa).
+      NO sirve como href — firmar vía getFlightPlanUrl(). */
   foto_plan_vuelo_url: string | null;
   facturado: boolean;
   cobrado: boolean;

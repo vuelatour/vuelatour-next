@@ -60,6 +60,16 @@ export function getFlightBitacora(id: string) {
   }).catch(() => [] as BitacoraEvento[]);
 }
 
+/**
+ * URL firmada (1 h) de la foto del plan de vuelo (bucket privado
+ * planes-vuelo). El backend resuelve tanto paths como URLs viejas completas.
+ */
+export function getFlightPlanUrl(id: string) {
+  return apiServer<{ url: string | null }>(`/v1/flights/${id}/plan-vuelo-url`, {
+    cache: "no-store",
+  });
+}
+
 /** Firma URLs de vouchers de cobro (bucket privado) para el detalle del vuelo. */
 export function getCobroVoucherUrls(paths: string[]) {
   if (paths.length === 0) return Promise.resolve<Record<string, string>>({});

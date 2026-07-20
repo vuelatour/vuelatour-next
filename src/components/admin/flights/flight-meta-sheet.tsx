@@ -82,6 +82,10 @@ interface FlightMetaSheetProps {
   /** Externos SIN desglose de cotización: el método de cobro se edita aquí
       (en vuelos cotizados se cambia revisando — el método define el IVA). */
   metodoCobroEditable?: boolean;
+  /** URL FIRMADA (1 h) de la foto del plan de vuelo. El bucket planes-vuelo
+      es privado: `flight.foto_plan_vuelo_url` guarda solo el path y no sirve
+      como href; la página firma vía GET :id/plan-vuelo-url y la pasa aquí. */
+  planVueloUrl?: string | null;
 }
 
 export function FlightMetaSheet({
@@ -90,6 +94,7 @@ export function FlightMetaSheet({
   flight,
   pilots,
   metodoCobroEditable = false,
+  planVueloUrl = null,
 }: FlightMetaSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -268,11 +273,11 @@ export function FlightMetaSheet({
             </div>
           )}
 
-          {flight.foto_plan_vuelo_url && (
+          {planVueloUrl && (
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Plan de vuelo</Label>
               <a
-                href={flight.foto_plan_vuelo_url}
+                href={planVueloUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-brand-600 hover:underline break-all"

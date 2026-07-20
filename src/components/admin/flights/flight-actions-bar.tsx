@@ -53,6 +53,8 @@ interface FlightActionsBarProps {
   gastosResumen?: string | null;
   /** Externo sin desglose de cotización: puede editar método de cobro aquí. */
   metodoCobroEditable?: boolean;
+  /** URL FIRMADA de la foto del plan de vuelo (bucket privado); null = sin foto. */
+  planVueloUrl?: string | null;
 }
 
 export function FlightActionsBar({
@@ -61,6 +63,7 @@ export function FlightActionsBar({
   pilots,
   gastosResumen,
   metodoCobroEditable,
+  planVueloUrl,
 }: FlightActionsBarProps) {
   const router = useRouter();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -237,6 +240,7 @@ export function FlightActionsBar({
         flight={flight}
         pilots={pilots}
         metodoCobroEditable={metodoCobroEditable}
+        planVueloUrl={planVueloUrl}
       />
 
       {externoOpen && (
