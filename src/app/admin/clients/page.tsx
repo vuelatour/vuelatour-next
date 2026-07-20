@@ -16,7 +16,24 @@ export default async function ClientsPage({
   const { q } = await searchParams;
   // ?q= permite enlazar directo a un cliente desde otras pantallas (ej.
   // Facturas → completar datos de facturación sin buscarlo a mano).
-  const { data: clients, count } = await listClients({ limit: 200, q: q || undefined });
+  // /v1/clients está restringido por rol (PII fiscal): un rol operativo que
+  // llegue por URL directa ve un aviso en lugar del error boundary.
+  let clients: Awaited<ReturnType<typeof listClients>>["data"];
+  let count: number;
+  try {
+    ({ data: clients, count } = await listClients({
+      limit: 200,
+      q: q || undefined,
+    }));
+  } catch {
+    return (
+      <EmptyState
+        icon={UsersIcon}
+        title="Sin acceso a clientes"
+        description="Tu rol no tiene permiso para ver el catálogo de clientes (contiene datos fiscales). Pide acceso a un administrador si lo necesitas."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

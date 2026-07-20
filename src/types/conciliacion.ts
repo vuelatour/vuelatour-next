@@ -38,6 +38,22 @@ export interface MovimientoBancario {
   } | null;
 }
 
+/** Cobro de vuelo candidato para conciliar un ABONO a mano. */
+export interface CobroCandidato {
+  /** id del cobro (cobro_vuelo) que se manda a PATCH movimientos/:id/cobro. */
+  id: string;
+  vuelo_id: string;
+  folio: number | null;
+  cliente: string | null;
+  /** timestamptz: formatear en hora Cancún al mostrar. */
+  fecha_cobro: string;
+  monto: string;
+  moneda: string;
+  metodo_cobro: string;
+  /** Lo que depositó el banco (monto − comisión); igual al monto sin comisión. */
+  neto: number;
+}
+
 export interface ConciliacionResumenCuenta {
   cuenta_bancaria_id: string;
   alias: string | null;

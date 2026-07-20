@@ -110,7 +110,13 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Catálogos",
     items: [
-      { label: "Clientes", href: "/admin/clients", icon: UsersIcon },
+      {
+        label: "Clientes",
+        href: "/admin/clients",
+        icon: UsersIcon,
+        // Espejo de @Roles de GET /v1/clients (PII fiscal): sin MECANICO/PILOTO.
+        roles: ["ADMIN", "COORDINADOR", "FACTURACION", "ANALISTA", "SOCIO"],
+      },
       { label: "Proveedores", href: "/admin/providers", icon: BuildingOfficeIcon },
       { label: "Aeropuertos", href: "/admin/airports", icon: MapPinIcon },
       {

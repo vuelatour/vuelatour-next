@@ -84,8 +84,8 @@ export default async function ConciliacionPage({
           <p className="text-sm text-muted-foreground">Tesorería</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Conciliación</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Sube el estado de cuenta: los cargos se cruzan automáticamente con los gastos por monto
-            y fecha. Los ambiguos se vinculan a mano.
+            Sube el estado de cuenta: los cargos se cruzan automáticamente con los gastos y los
+            abonos con los cobros de vuelos, por monto y fecha. Los ambiguos se vinculan a mano.
           </p>
         </div>
         <ImportButton cuentas={cuentas} />

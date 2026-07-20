@@ -121,8 +121,9 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
         header: "",
         headClassName: "w-10",
         noLink: true,
-        cell: (m) =>
-          m.tipo === "CARGO" && <MovimientoActions movimiento={m} gastos={gastos} />,
+        // CARGO vincula gastos y ABONO vincula cobros de vuelo: ambos tienen
+        // camino manual (el auto-cruce solo resuelve los montos exactos).
+        cell: (m) => <MovimientoActions movimiento={m} gastos={gastos} />,
       },
     ],
     [gastos],

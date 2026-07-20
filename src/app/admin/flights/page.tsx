@@ -43,7 +43,11 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
         hasta: sp.hasta || undefined,
         limit: 200,
       }),
-      listClients({ limit: 200, activo: true }),
+      // Best-effort: /v1/clients está restringido por rol (PII fiscal); un
+      // rol operativo sin acceso ve la lista de vuelos sin nombre de cliente.
+      listClients({ limit: 200, activo: true }).catch(() => ({
+        data: [] as Awaited<ReturnType<typeof listClients>>["data"],
+      })),
       listAircraft({ limit: 100, activa: true }),
       listUsers({ rol: "PILOTO", limit: 50 }),
     ]);
