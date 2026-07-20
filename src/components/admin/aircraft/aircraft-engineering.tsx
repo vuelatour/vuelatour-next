@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { fmtDateOnly } from "@/lib/datetime";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { daysUntilCancun, fmtDateOnly } from "@/lib/datetime";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -13,7 +16,18 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Field } from "@/components/admin/form-field";
+import { ErrorState } from "@/components/admin/error-state";
 import {
   createExpiration,
   createMaintenance,
@@ -28,9 +42,6 @@ import type {
   Mantenimiento,
   Vencimiento,
 } from "@/types/engineering";
-
-const inputCls =
-  "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 const ESTADO_MANT: Record<EstadoMantenimiento, { label: string; cls: string }> = {
   PROGRAMADO: {
@@ -47,16 +58,14 @@ const ESTADO_MANT: Record<EstadoMantenimiento, { label: string; cls: string }> =
   },
 };
 
-function daysUntil(iso: string): number {
-  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
-}
-
 const fmtDate = fmtDateOnly;
 
 export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
   const [mant, setMant] = useState<Mantenimiento[]>([]);
   const [venc, setVenc] = useState<Vencimiento[]>([]);
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
+  const [error, setError] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [mantOpen, setMantOpen] = useState(false);
   const [editingMant, setEditingMant] = useState<Mantenimiento | undefined>(undefined);
   const [vencOpen, setVencOpen] = useState(false);
@@ -71,8 +80,10 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
       setMant(m);
       setVenc(v);
       setDocTypes(d);
+      setError(false);
     } catch {
-      // silencioso
+      // NUNCA disfrazar la caída de "sin registros": se pinta el aviso rojo.
+      setError(true);
     }
   }, [aircraftId]);
 
@@ -84,14 +95,24 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
         setMant(m);
         setVenc(v);
         setDocTypes(d);
+        setError(false);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active) setError(true);
+      });
     return () => {
       active = false;
     };
   }, [aircraftId]);
 
+  const retry = async () => {
+    setRetrying(true);
+    await reload();
+    setRetrying(false);
+  };
+
   // Servicios próximos: vencimientos por fecha (≤120 d) + mantenimientos programados futuros.
+  // Días contados en hora Cancún: 0 = vence hoy, negativo = ya venció.
   const proximos = [
     ...venc
       .filter((v) => v.vence_por === "FECHA" && v.fecha_vencimiento)
@@ -104,9 +125,30 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
       .filter((m) => m.estado !== "COMPLETADO" && m.fecha_programada)
       .map((m) => ({ id: `m-${m.id}`, label: m.descripcion, fecha: m.fecha_programada as string })),
   ]
-    .map((x) => ({ ...x, dias: daysUntil(x.fecha) }))
+    .map((x) => ({ ...x, dias: daysUntilCancun(x.fecha) ?? Number.POSITIVE_INFINITY }))
     .filter((x) => x.dias <= 120)
     .sort((a, b) => a.dias - b.dias);
+
+  if (error) {
+    return (
+      <div className="lg:col-span-2">
+        <ErrorState
+          title="No se pudo cargar ingeniería"
+          description={
+            <span className="flex flex-col items-center gap-3">
+              <span>
+                Falló la consulta de mantenimientos y permisos: NO están vacíos, solo no se
+                pudieron leer.
+              </span>
+              <Button size="sm" variant="outline" onClick={() => void retry()} disabled={retrying}>
+                {retrying ? "Reintentando…" : "Reintentar"}
+              </Button>
+            </span>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -166,6 +208,7 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                         setMantOpen(true);
                       }}
                       title="Editar / cambiar estado"
+                      aria-label="Editar mantenimiento"
                     >
                       <PencilSquareIcon className="h-4 w-4" />
                     </Button>
@@ -249,7 +292,7 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                           : ""
                     }
                   >
-                    {p.dias <= 0 ? "Vencido" : `${p.dias} d`}
+                    {p.dias < 0 ? "Vencido" : p.dias === 0 ? "Vence hoy" : `${p.dias} d`}
                   </Badge>
                 </div>
               ))}
@@ -268,15 +311,50 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
           initial={editingMant}
         />
       )}
-      <VencimientoDialog
-        open={vencOpen}
-        onOpenChange={setVencOpen}
-        onSaved={reload}
-        aircraftId={aircraftId}
-        docTypes={docTypes}
-      />
+      {vencOpen && (
+        <VencimientoDialog
+          open
+          onOpenChange={setVencOpen}
+          onSaved={reload}
+          aircraftId={aircraftId}
+          docTypes={docTypes}
+        />
+      )}
     </>
   );
+}
+
+/** Number opcional: "" o undefined → se omite; en otro caso coacciona a número ≥ 0. */
+const numeroOpcional = z.preprocess(
+  (v) => (v === "" || v === null || v === undefined ? undefined : v),
+  z.coerce.number().min(0, "No puede ser negativo").optional(),
+);
+
+const MantenimientoFormSchema = z.object({
+  estado: z.enum(["PROGRAMADO", "EN_TALLER", "COMPLETADO"]),
+  pais: z.enum(["MX", "USA"]).optional().or(z.literal("")),
+  descripcion: z.string().min(1, "Requerido").max(2000),
+  fecha_programada: z.string().optional().or(z.literal("")),
+  fecha_realizada: z.string().optional().or(z.literal("")),
+  horas_aeronave: numeroOpcional,
+  horas_programadas: numeroOpcional,
+  costo_usd: numeroOpcional,
+  proveedor: z.string().max(200).optional().or(z.literal("")),
+});
+type MantenimientoFormValues = z.input<typeof MantenimientoFormSchema>;
+
+function mantDefaults(m?: Mantenimiento): MantenimientoFormValues {
+  return {
+    estado: m?.estado ?? "PROGRAMADO",
+    pais: m?.pais ?? "",
+    descripcion: m?.descripcion ?? "",
+    fecha_programada: m?.fecha_programada ?? "",
+    fecha_realizada: m?.fecha_realizada ?? "",
+    horas_aeronave: m?.horas_aeronave ?? "",
+    horas_programadas: m?.horas_programadas ?? "",
+    costo_usd: m?.costo_usd ?? "",
+    proveedor: m?.proveedor ?? "",
+  };
 }
 
 function MantenimientoDialog({
@@ -293,36 +371,50 @@ function MantenimientoDialog({
   initial?: Mantenimiento;
 }) {
   const isEdit = !!initial;
-  // El padre remonta este diálogo con `key`, así que basta inicializar desde
-  // props (sin useEffect, que dispararía set-state-in-effect en Next 16).
-  const [estado, setEstado] = useState<EstadoMantenimiento>(initial?.estado ?? "PROGRAMADO");
-  const [pais, setPais] = useState<"" | "MX" | "USA">((initial?.pais as "" | "MX" | "USA") ?? "");
-  const [descripcion, setDescripcion] = useState(initial?.descripcion ?? "");
-  const [fechaProg, setFechaProg] = useState(initial?.fecha_programada ?? "");
-  const [fechaReal, setFechaReal] = useState(initial?.fecha_realizada ?? "");
-  const [horas, setHoras] = useState(initial?.horas_aeronave ?? "");
-  const [horasProg, setHorasProg] = useState(initial?.horas_programadas ?? "");
-  const [costo, setCosto] = useState(initial?.costo_usd ?? "");
-  const [proveedor, setProveedor] = useState(initial?.proveedor ?? "");
   const [saving, setSaving] = useState(false);
 
-  const save = async () => {
-    if (!descripcion.trim()) {
-      toast.error("Descripción requerida");
-      return;
-    }
+  // El padre remonta este diálogo con `key`, así que basta inicializar desde
+  // props (sin useEffect, que dispararía set-state-in-effect en Next 16).
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<MantenimientoFormValues>({
+    resolver: zodResolver(MantenimientoFormSchema),
+    defaultValues: mantDefaults(initial),
+  });
+
+  const estado = watch("estado");
+  const horas = watch("horas_aeronave");
+  const horasProg = watch("horas_programadas");
+  const showDiff =
+    horas !== "" &&
+    horas != null &&
+    horasProg !== "" &&
+    horasProg != null &&
+    Number.isFinite(Number(horas)) &&
+    Number.isFinite(Number(horasProg));
+
+  const onSubmit = handleSubmit(async (raw) => {
     setSaving(true);
     try {
+      const values = MantenimientoFormSchema.parse(raw);
+      // Mismo contrato que siempre ha recibido el API (no cambia).
       const body = {
-        estado,
-        descripcion: descripcion.trim(),
-        pais: pais || undefined,
-        fecha_programada: fechaProg || undefined,
-        fecha_realizada: estado === "COMPLETADO" && fechaReal ? fechaReal : undefined,
-        horas_aeronave: horas ? Number(horas) : undefined,
-        horas_programadas: horasProg ? Number(horasProg) : undefined,
-        costo_usd: costo ? Number(costo) : undefined,
-        proveedor: proveedor.trim() || undefined,
+        estado: values.estado,
+        descripcion: values.descripcion.trim(),
+        pais: values.pais || undefined,
+        fecha_programada: values.fecha_programada || undefined,
+        fecha_realizada:
+          values.estado === "COMPLETADO" && values.fecha_realizada
+            ? values.fecha_realizada
+            : undefined,
+        horas_aeronave: values.horas_aeronave,
+        horas_programadas: values.horas_programadas,
+        costo_usd: values.costo_usd,
+        proveedor: values.proveedor?.trim() || undefined,
       };
       if (isEdit) {
         await updateMaintenance(initial!.id, body);
@@ -333,68 +425,71 @@ function MantenimientoDialog({
       }
       onOpenChange(false);
       await onSaved();
-    } catch {
-      toast.error("No se pudo guardar");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo guardar");
     } finally {
       setSaving(false);
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogTitle>{isEdit ? "Editar servicio" : "Nuevo servicio"}</DialogTitle>
-        <div className="space-y-3">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Editar servicio" : "Nuevo servicio"}</DialogTitle>
+          <DialogDescription>
+            Mantenimiento de la aeronave: programado, en taller o completado.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs text-muted-foreground">
-              Estado
-              <select
-                value={estado}
-                onChange={(e) => setEstado(e.target.value as EstadoMantenimiento)}
-                className={`${inputCls} mt-1`}
-              >
-                <option value="PROGRAMADO">Programado</option>
-                <option value="EN_TALLER">En taller</option>
-                <option value="COMPLETADO">Completado</option>
-              </select>
-            </label>
-            <label className="block text-xs text-muted-foreground">
-              País
-              <select
-                value={pais}
-                onChange={(e) => setPais(e.target.value as "" | "MX" | "USA")}
-                className={`${inputCls} mt-1`}
-              >
-                <option value="">Sin especificar</option>
-                <option value="MX">México (MX)</option>
-                <option value="USA">Estados Unidos (USA)</option>
-              </select>
-            </label>
+            <Field label="Estado" required error={errors.estado?.message}>
+              <SearchableSelect
+                options={[
+                  { value: "PROGRAMADO", label: "Programado" },
+                  { value: "EN_TALLER", label: "En taller" },
+                  { value: "COMPLETADO", label: "Completado" },
+                ]}
+                value={(watch("estado") as string | undefined) ?? "PROGRAMADO"}
+                onChange={(v) => setValue("estado", v as never)}
+                placeholder="Estado"
+              />
+            </Field>
+            <Field label="País" error={errors.pais?.message}>
+              <SearchableSelect
+                options={[
+                  { value: "", label: "Sin especificar" },
+                  { value: "MX", label: "México (MX)" },
+                  { value: "USA", label: "Estados Unidos (USA)" },
+                ]}
+                value={(watch("pais") as string | undefined) ?? ""}
+                onChange={(v) => setValue("pais", v as never)}
+                placeholder="Sin especificar"
+              />
+            </Field>
           </div>
-          <input className={inputCls} placeholder="Descripción" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+          <Field label="Descripción" required error={errors.descripcion?.message}>
+            <Input placeholder="Ej. Servicio de 100 h" {...register("descripcion")} />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs text-muted-foreground">
-              Fecha programada
-              <input type="date" className={`${inputCls} mt-1`} value={fechaProg} onChange={(e) => setFechaProg(e.target.value)} />
-            </label>
+            <Field label="Fecha programada" error={errors.fecha_programada?.message}>
+              <Input type="date" {...register("fecha_programada")} />
+            </Field>
             {estado === "COMPLETADO" && (
-              <label className="block text-xs text-muted-foreground">
-                Fecha realizada
-                <input type="date" className={`${inputCls} mt-1`} value={fechaReal} onChange={(e) => setFechaReal(e.target.value)} />
-              </label>
+              <Field label="Fecha realizada" error={errors.fecha_realizada?.message}>
+                <Input type="date" {...register("fecha_realizada")} />
+              </Field>
             )}
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs text-muted-foreground">
-              Horas de entrada (real)
-              <input className={`${inputCls} mt-1`} type="number" placeholder="A las que entró" value={horas} onChange={(e) => setHoras(e.target.value)} />
-            </label>
-            <label className="block text-xs text-muted-foreground">
-              Horas programadas (debía)
-              <input className={`${inputCls} mt-1`} type="number" placeholder="A las que tocaba" value={horasProg} onChange={(e) => setHorasProg(e.target.value)} />
-            </label>
+            <Field label="Horas de entrada (real)" error={errors.horas_aeronave?.message}>
+              <Input type="number" step="0.1" min={0} placeholder="A las que entró" {...register("horas_aeronave")} />
+            </Field>
+            <Field label="Horas programadas (debía)" error={errors.horas_programadas?.message}>
+              <Input type="number" step="0.1" min={0} placeholder="A las que tocaba" {...register("horas_programadas")} />
+            </Field>
           </div>
-          {horas && horasProg && Number.isFinite(Number(horas)) && Number.isFinite(Number(horasProg)) && (
+          {showDiff && (
             <p className="text-xs text-muted-foreground">
               {(() => {
                 const d = Number(horas) - Number(horasProg);
@@ -406,22 +501,35 @@ function MantenimientoDialog({
             </p>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} type="number" placeholder="Costo USD" value={costo} onChange={(e) => setCosto(e.target.value)} />
-            <input className={inputCls} placeholder="Taller / proveedor" value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
+            <Field label="Costo (USD)" error={errors.costo_usd?.message}>
+              <Input type="number" step="0.01" min={0} placeholder="0.00" {...register("costo_usd")} />
+            </Field>
+            <Field label="Taller / proveedor" error={errors.proveedor?.message}>
+              <Input placeholder="Opcional" {...register("proveedor")} />
+            </Field>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button size="sm" onClick={save} disabled={saving}>
+            <Button type="submit" disabled={saving}>
               {saving ? "Guardando…" : isEdit ? "Guardar cambios" : "Guardar"}
             </Button>
-          </div>
-        </div>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
 }
+
+const VencimientoFormSchema = z.object({
+  tipo_documento_id: z.string().min(1, "Selecciona el tipo de documento"),
+  vence_por: z.enum(["FECHA", "HORAS", "PERMANENTE"]),
+  fecha_vencimiento: z.string().optional().or(z.literal("")),
+  horas_limite: numeroOpcional,
+  referencia: z.string().max(200).optional().or(z.literal("")),
+});
+type VencimientoFormValues = z.input<typeof VencimientoFormSchema>;
 
 function VencimientoDialog({
   open,
@@ -436,78 +544,109 @@ function VencimientoDialog({
   aircraftId: string;
   docTypes: DocumentType[];
 }) {
-  const [tipoDoc, setTipoDoc] = useState("");
-  const [vencePor, setVencePor] = useState<"FECHA" | "HORAS" | "PERMANENTE">("FECHA");
-  const [fecha, setFecha] = useState("");
-  const [horas, setHoras] = useState("");
-  const [referencia, setReferencia] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const save = async () => {
-    if (!tipoDoc) {
-      toast.error("Selecciona el tipo de documento");
-      return;
-    }
+  // El padre monta este diálogo solo mientras está abierto, así que basta
+  // inicializar los defaults una vez (se descartan al cerrar).
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<VencimientoFormValues>({
+    resolver: zodResolver(VencimientoFormSchema),
+    defaultValues: {
+      tipo_documento_id: "",
+      vence_por: "FECHA",
+      fecha_vencimiento: "",
+      horas_limite: "",
+      referencia: "",
+    },
+  });
+
+  const vencePor = watch("vence_por");
+
+  const onSubmit = handleSubmit(async (raw) => {
     setSaving(true);
     try {
+      const values = VencimientoFormSchema.parse(raw);
+      // Mismo contrato que siempre ha recibido el API (no cambia).
       await createExpiration(aircraftId, {
-        tipo_documento_id: tipoDoc,
-        vence_por: vencePor,
-        fecha_vencimiento: vencePor === "FECHA" && fecha ? fecha : undefined,
-        horas_limite: vencePor === "HORAS" && horas ? Number(horas) : undefined,
-        referencia: referencia.trim() || undefined,
+        tipo_documento_id: values.tipo_documento_id,
+        vence_por: values.vence_por,
+        fecha_vencimiento:
+          values.vence_por === "FECHA" && values.fecha_vencimiento
+            ? values.fecha_vencimiento
+            : undefined,
+        horas_limite:
+          values.vence_por === "HORAS" && values.horas_limite != null
+            ? values.horas_limite
+            : undefined,
+        referencia: values.referencia?.trim() || undefined,
       });
       toast.success("Vencimiento registrado");
       onOpenChange(false);
-      setTipoDoc("");
-      setFecha("");
-      setHoras("");
-      setReferencia("");
       await onSaved();
-    } catch {
-      toast.error("No se pudo guardar");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo guardar");
     } finally {
       setSaving(false);
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <DialogTitle>Nuevo permiso / licencia</DialogTitle>
-        <div className="space-y-3">
-          <select value={tipoDoc} onChange={(e) => setTipoDoc(e.target.value)} className={inputCls}>
-            <option value="">Tipo de documento…</option>
-            {docTypes.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.nombre}
-              </option>
-            ))}
-          </select>
-          <select value={vencePor} onChange={(e) => setVencePor(e.target.value as "FECHA" | "HORAS" | "PERMANENTE")} className={inputCls}>
-            <option value="FECHA">Vence por fecha</option>
-            <option value="HORAS">Vence por horas</option>
-            <option value="PERMANENTE">Permanente</option>
-          </select>
+        <DialogHeader>
+          <DialogTitle>Nuevo permiso / licencia</DialogTitle>
+          <DialogDescription>
+            Documento de la aeronave con vencimiento por fecha, por horas o permanente.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <Field label="Tipo de documento" required error={errors.tipo_documento_id?.message}>
+            <SearchableSelect
+              options={docTypes.map((d) => ({ value: d.id, label: d.nombre }))}
+              value={(watch("tipo_documento_id") as string | undefined) ?? ""}
+              onChange={(v) => setValue("tipo_documento_id", v, { shouldValidate: true })}
+              placeholder="Selecciona el tipo"
+            />
+          </Field>
+          <Field label="Vence por" required error={errors.vence_por?.message}>
+            <SearchableSelect
+              options={[
+                { value: "FECHA", label: "Vence por fecha" },
+                { value: "HORAS", label: "Vence por horas" },
+                { value: "PERMANENTE", label: "Permanente" },
+              ]}
+              value={(watch("vence_por") as string | undefined) ?? "FECHA"}
+              onChange={(v) => setValue("vence_por", v as never)}
+              placeholder="Vence por"
+            />
+          </Field>
           {vencePor === "FECHA" && (
-            <label className="block text-xs text-muted-foreground">
-              Fecha de vencimiento
-              <input type="date" className={`${inputCls} mt-1`} value={fecha} onChange={(e) => setFecha(e.target.value)} />
-            </label>
+            <Field label="Fecha de vencimiento" error={errors.fecha_vencimiento?.message}>
+              <Input type="date" {...register("fecha_vencimiento")} />
+            </Field>
           )}
           {vencePor === "HORAS" && (
-            <input className={inputCls} type="number" placeholder="Horas límite" value={horas} onChange={(e) => setHoras(e.target.value)} />
+            <Field label="Horas límite" error={errors.horas_limite?.message}>
+              <Input type="number" step="0.1" min={0} placeholder="Ej. 1200" {...register("horas_limite")} />
+            </Field>
           )}
-          <input className={inputCls} placeholder="Referencia (opcional)" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
+          <Field label="Referencia" hint="opcional" error={errors.referencia?.message}>
+            <Input placeholder="Folio, número de permiso…" {...register("referencia")} />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button size="sm" onClick={save} disabled={saving}>
+            <Button type="submit" disabled={saving}>
               {saving ? "Guardando…" : "Guardar"}
             </Button>
-          </div>
-        </div>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

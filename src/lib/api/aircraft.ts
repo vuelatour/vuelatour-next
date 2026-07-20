@@ -28,8 +28,32 @@ export function getAircraftSnapshot(id: string) {
   });
 }
 
+/**
+ * Contrato ampliado de `/v1/aircraft/:id/metrics` (jul 2026). Los campos
+ * nuevos se tipan OPCIONALES a propósito: el API se despliega en paralelo y
+ * la UI debe degradar a "—" mientras tanto — nunca inventar un 0 falso.
+ */
+export interface AircraftMetricsDetalle extends AircraftMetrics {
+  airworthiness: AircraftMetrics["airworthiness"] & {
+    /** Razones de no-apto ya redactadas por el API (incluyen discrepancias ALTA). */
+    razones?: string[];
+    /** Discrepancias abiertas de severidad ALTA, si el API las desglosa. */
+    discrepancias_altas?: { id?: string; descripcion: string }[];
+  };
+  /** Horómetro (Hobbs) actual de la aeronave. */
+  horas_actuales?: number | null;
+  /** true si la aeronave tiene un vuelo EN_VUELO en este momento. */
+  en_vuelo?: boolean;
+  /** Próximo servicio del programa por horas. */
+  proximo_servicio?: {
+    titulo: string;
+    horas_objetivo: number;
+    faltan_hr: number;
+  } | null;
+}
+
 export function getAircraftMetrics(id: string) {
-  return apiServer<AircraftMetrics>(`/v1/aircraft/${id}/metrics`, {
+  return apiServer<AircraftMetricsDetalle>(`/v1/aircraft/${id}/metrics`, {
     cache: "no-store",
   });
 }

@@ -38,7 +38,14 @@ export function AircraftEngineButton({
   return (
     <>
       {isEdit ? (
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setOpen(true)} title="Editar motor">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          onClick={() => setOpen(true)}
+          title="Editar motor"
+          aria-label="Editar motor"
+        >
           <PencilSquareIcon className="h-4 w-4" />
         </Button>
       ) : (
@@ -72,7 +79,7 @@ function EngineDialog({
     reset,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<EngineFormValues>({
     resolver: zodResolver(EngineFormSchema),
     defaultValues: defaults(engine),
@@ -84,8 +91,18 @@ function EngineDialog({
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // En edición, los campos de horas se mandan SOLO si el usuario los tocó:
+      // reenviar `horas_totales` sin cambios re-ancla la referencia del Hobbs
+      // en el API y borra las horas vivas acumuladas del motor.
+      let payload: Partial<EngineFormValues> = values;
+      if (isEdit) {
+        payload = { ...values };
+        if (!dirtyFields.horas_totales) delete payload.horas_totales;
+        if (!dirtyFields.turm) delete payload.turm;
+        if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
+      }
       const res = isEdit
-        ? await updateEngineAction(aircraftId, engine!.id, values)
+        ? await updateEngineAction(aircraftId, engine!.id, payload)
         : await createEngineAction(aircraftId, values);
       if (res.ok) {
         toast.success(isEdit ? "Motor actualizado" : "Motor agregado");
@@ -157,6 +174,10 @@ function EngineDialog({
               <Input type="number" step="0.01" min={1} placeholder="1700" {...register("tbo_horas")} />
             </Field>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Solo captura horas si estás corrigiendo la base; las horas vivas se calculan solas con
+            el tacómetro.
+          </p>
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>

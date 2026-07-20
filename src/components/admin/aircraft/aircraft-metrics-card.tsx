@@ -1,8 +1,9 @@
+import Link from "next/link";
 import {
+  BanknotesIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  ClockIcon,
-  BanknotesIcon,
+  XCircleIcon,
 } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -10,21 +11,48 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { fmtDecimal } from "@/lib/format";
-import type { AircraftMetrics } from "@/types/aircraft";
+import { fmtMxn, fmtUsd } from "@/lib/format";
+import type { AircraftMetricsDetalle } from "@/lib/api/aircraft";
 
-function money(n: number, moneda: string): string {
-  return `${new Intl.NumberFormat("en-US", { style: "currency", currency: moneda === "MXN" ? "MXN" : "USD", maximumFractionDigits: 0 }).format(n)}`;
+/** Monto en la moneda del renglón vía los formateadores únicos de @/lib/format. */
+function monto(n: number, moneda: string): string {
+  return moneda === "MXN" ? fmtMxn(n) : fmtUsd(n);
 }
 
-export function AircraftMetricsCard({ metrics }: { metrics: AircraftMetrics }) {
-  const { airworthiness: aw, utilizacion: u, finanzas } = metrics;
-
+/**
+ * Razones de no-apto. Fuente ÚNICA para esta card y para el badge del header
+ * del expediente. Prefiere las razones redactadas por el API (contrato nuevo,
+ * ya incluyen discrepancias ALTA); si aún no vienen, se arman del desglose.
+ */
+export function razonesNoApto(
+  aw: AircraftMetricsDetalle["airworthiness"],
+): string[] {
+  if (aw.razones && aw.razones.length > 0) return aw.razones;
   const razones: string[] = [];
   if (aw.en_taller) razones.push("Servicio en taller");
-  for (const d of aw.documentos_vencidos) razones.push(`Documento vencido: ${d.tipo_nombre}`);
+  for (const d of aw.documentos_vencidos)
+    razones.push(`Documento vencido: ${d.tipo_nombre}`);
   for (const c of aw.componentes_vencidos)
     razones.push(`TBO agotado: ${c.posicion} (${c.numero_serie})`);
+  for (const q of aw.discrepancias_altas ?? [])
+    razones.push(`Discrepancia ALTA abierta: ${q.descripcion}`);
+  return razones;
+}
+
+/**
+ * Resumen operativo: semáforo apto-para-volar + cobrado vs gastos. Las horas
+ * (actuales, mes/año, próximo servicio) viven en el KPI strip de arriba —
+ * aquí no se repiten para que cada dato tenga una sola casa.
+ */
+export function AircraftMetricsCard({
+  metrics,
+  aircraftId,
+}: {
+  metrics: AircraftMetricsDetalle;
+  aircraftId: string;
+}) {
+  const { airworthiness: aw, finanzas } = metrics;
+  const razones = razonesNoApto(aw);
 
   return (
     <Card className="lg:col-span-2">
@@ -54,26 +82,16 @@ export function AircraftMetricsCard({ metrics }: { metrics: AircraftMetrics }) {
               {aw.apto ? "Apto para volar" : "No apto para volar"}
             </p>
           </div>
-          {!aw.apto && (
-            <ul className="mt-2 ml-7 list-disc text-xs text-destructive space-y-0.5">
+          {!aw.apto && razones.length > 0 && (
+            <ul className="mt-2 ml-7 space-y-1 text-xs text-destructive">
               {razones.map((r, i) => (
-                <li key={i}>{r}</li>
+                <li key={i} className="flex items-start gap-1.5">
+                  <XCircleIcon className="mt-px h-3.5 w-3.5 shrink-0" />
+                  <span>{r}</span>
+                </li>
               ))}
             </ul>
           )}
-        </div>
-
-        {/* Utilización */}
-        <div>
-          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-2">
-            <ClockIcon className="h-3.5 w-3.5" />
-            Utilización (horas voladas · vuelos)
-          </p>
-          <div className="grid grid-cols-3 gap-3">
-            <Stat label="Mes" value={`${fmtDecimal(u.horas_mes)} h`} sub={`${u.vuelos_mes} vuelos`} />
-            <Stat label="Año" value={`${fmtDecimal(u.horas_anio)} h`} sub={`${u.vuelos_anio} vuelos`} />
-            <Stat label="Total" value={`${fmtDecimal(u.horas_total)} h`} sub={`${u.vuelos_total} vuelos`} />
-          </div>
         </div>
 
         {/* Finanzas */}
@@ -92,12 +110,25 @@ export function AircraftMetricsCard({ metrics }: { metrics: AircraftMetrics }) {
                   className="grid grid-cols-4 gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm"
                 >
                   <span className="font-mono font-semibold">{f.moneda}</span>
-                  <Mini label="Cobrado" value={money(f.ingresos, f.moneda)} />
-                  <Mini label="Gastos" value={money(f.gastos, f.moneda)} />
+                  <Mini label="Cobrado" value={monto(f.ingresos, f.moneda)} />
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Gastos</p>
+                    <Link
+                      href={`/admin/expenses?aeronave_id=${aircraftId}`}
+                      className="font-medium underline decoration-dotted underline-offset-2 hover:text-foreground"
+                      title="Ver los gastos de esta aeronave"
+                    >
+                      {monto(f.gastos, f.moneda)}
+                    </Link>
+                  </div>
                   <Mini
                     label="Utilidad"
-                    value={money(f.utilidad, f.moneda)}
-                    className={f.utilidad < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}
+                    value={monto(f.utilidad, f.moneda)}
+                    className={
+                      f.utilidad < 0
+                        ? "text-destructive"
+                        : "text-green-600 dark:text-green-400"
+                    }
                   />
                 </div>
               ))}
@@ -110,16 +141,6 @@ export function AircraftMetricsCard({ metrics }: { metrics: AircraftMetrics }) {
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold">{value}</p>
-      <p className="text-[11px] text-muted-foreground">{sub}</p>
-    </div>
   );
 }
 

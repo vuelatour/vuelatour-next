@@ -109,6 +109,9 @@ export function AircraftSquawksCard({
             {abiertas > 0 && (
               <span className="text-destructive"> · {abiertas} sin resolver</span>
             )}
+            <span className="block mt-0.5">
+              Una discrepancia ALTA sin resolver bloquea asignar el avión a vuelos.
+            </span>
           </CardDescription>
         </div>
         <Button
@@ -162,6 +165,7 @@ export function AircraftSquawksCard({
                       setDialogOpen(true);
                     }}
                     title="Editar / resolver"
+                    aria-label="Editar o resolver discrepancia"
                   >
                     <PencilSquareIcon className="h-4 w-4" />
                   </Button>
@@ -171,6 +175,7 @@ export function AircraftSquawksCard({
                     className="h-7 w-7 text-destructive"
                     onClick={() => setDeleting(d)}
                     title="Eliminar"
+                    aria-label="Eliminar discrepancia"
                   >
                     <TrashIcon className="h-4 w-4" />
                   </Button>

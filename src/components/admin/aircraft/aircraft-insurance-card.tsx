@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { fmtDateOnly } from "@/lib/datetime";
+import { daysUntilCancun, fmtDateOnly } from "@/lib/datetime";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -52,9 +52,29 @@ import { Field } from "@/components/admin/form-field";
 
 const fmtDate = fmtDateOnly;
 
-function vigente(hasta: string): boolean {
-  const d = new Date(hasta);
-  return !Number.isNaN(d.getTime()) && d.getTime() >= Date.now();
+/** Días para pintar el aviso ámbar de "vence pronto". */
+const AVISO_VENCIMIENTO_DIAS = 30;
+
+/**
+ * Estado de la póliza por días de CALENDARIO en Cancún. `vigente_hasta` es
+ * date-only: con `new Date()` crudo se parsea a medianoche UTC y la póliza
+ * aparecía "Vencida" desde las 19:00 del día anterior en Cancún.
+ */
+function estadoPoliza({ vigente_hasta }: AeronaveSeguro) {
+  const dias = daysUntilCancun(vigente_hasta);
+  if (dias === null || dias < 0) {
+    return { label: "Vencida", clase: "bg-destructive/15 text-destructive border-destructive/30" };
+  }
+  if (dias <= AVISO_VENCIMIENTO_DIAS) {
+    return {
+      label: dias === 0 ? "Vence hoy" : `Vence en ${dias} ${dias === 1 ? "día" : "días"}`,
+      clase: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    };
+  }
+  return {
+    label: "Vigente",
+    clase: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
+  };
 }
 
 export function AircraftInsuranceCard({
@@ -129,15 +149,14 @@ export function AircraftInsuranceCard({
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {vigente(s.vigente_hasta) ? (
-                    <Badge variant="outline" className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30">
-                      Vigente
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">
-                      Vencida
-                    </Badge>
-                  )}
+                  {(() => {
+                    const estado = estadoPoliza(s);
+                    return (
+                      <Badge variant="outline" className={estado.clase}>
+                        {estado.label}
+                      </Badge>
+                    );
+                  })()}
                   <Button
                     size="icon"
                     variant="ghost"

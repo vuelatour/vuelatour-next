@@ -47,6 +47,7 @@ import {
 } from "@/app/admin/aircraft/actions";
 import { OwnerFormSchema, type OwnerFormValues } from "@/app/admin/aircraft/schema";
 import { fmtPercent } from "@/lib/format";
+import { fmtDateOnly } from "@/lib/datetime";
 import type { AircraftOwner } from "@/types/aircraft";
 import { Field } from "@/components/admin/form-field";
 
@@ -113,6 +114,11 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
+        {owners.length > 0 && Math.abs(total - 100) > 0.01 && (
+          <p role="alert" className="text-xs text-destructive">
+            Los porcentajes vigentes suman {fmtPercent(total)}; deberían sumar 100%.
+          </p>
+        )}
         {owners.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sin propietarios registrados.</p>
         ) : (
@@ -125,10 +131,18 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
                 <p className="text-sm font-medium truncate">{o.usuario?.nombre ?? "—"}</p>
                 <p className="text-xs text-muted-foreground">
                   {o.usuario?.es_empresa ? "Empresa" : o.usuario?.rol ?? "Socio"} · desde{" "}
-                  {o.vigente_desde}
+                  {fmtDateOnly(o.vigente_desde)}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {o.vigente_hasta && (
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  >
+                    termina el {fmtDateOnly(o.vigente_hasta)}
+                  </Badge>
+                )}
                 <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 font-mono">
                   {fmtPercent(o.porcentaje)}
                 </Badge>
@@ -137,7 +151,8 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
                   variant="ghost"
                   className="h-7 w-7"
                   onClick={() => openEdit(o)}
-                  title="Editar"
+                  title="Editar propietario"
+                  aria-label="Editar propietario"
                 >
                   <PencilSquareIcon className="h-4 w-4" />
                 </Button>
@@ -147,6 +162,7 @@ export function AircraftOwnersCard({ aircraftId, owners, socios }: Props) {
                   className="h-7 w-7 text-destructive"
                   onClick={() => setClosing(o)}
                   title="Cerrar régimen (vigente_hasta = hoy)"
+                  aria-label="Cerrar régimen del propietario"
                 >
                   <XMarkIcon className="h-4 w-4" />
                 </Button>

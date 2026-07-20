@@ -340,7 +340,10 @@ function AltTextSheet({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [value, setValue] = useState(image.alt_text ?? "");
+  const original = image.alt_text ?? "";
+  const [value, setValue] = useState(original);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dirty = value.trim() !== original.trim();
 
   const handleSave = () => {
     startTransition(async () => {
@@ -357,58 +360,80 @@ function AltTextSheet({
     });
   };
 
+  // Cierre normal (clic fuera, Escape, botón X). Solo si hay cambios sin
+  // guardar se pide confirmación antes de descartarlos.
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && dirty && !pending) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(nextOpen, details) => {
-        if (
-          !nextOpen &&
-          (details.reason === "outside-press" ||
-            details.reason === "escape-key" ||
-            details.reason === "focus-out")
-        ) {
-          return;
-        }
-        onOpenChange(nextOpen);
-      }}
-    >
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-md sm:w-[420px] flex flex-col p-0"
-      >
-        <SheetHeader className="border-b border-border">
-          <SheetTitle>Texto alternativo</SheetTitle>
-          <SheetDescription>
-            Descripción accesible de la imagen. Se muestra cuando la imagen no
-            puede cargarse y la usan lectores de pantalla.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-          <Label className="text-sm font-medium">Alt text</Label>
-          <Input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            maxLength={200}
-            placeholder="Ej. N621TX en pista de Cancún al atardecer"
-          />
-          <p className="text-xs text-muted-foreground">
-            {value.length}/200
-          </p>
-        </div>
-        <SheetFooter className="border-t border-border flex-row justify-end gap-2 mt-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
-            Cancelar
-          </Button>
-          <Button type="button" onClick={handleSave} disabled={pending}>
-            {pending ? "Guardando…" : "Guardar"}
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+    <>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetContent
+          side="right"
+          className="w-full sm:max-w-md sm:w-[420px] flex flex-col p-0"
+        >
+          <SheetHeader className="border-b border-border">
+            <SheetTitle>Texto alternativo</SheetTitle>
+            <SheetDescription>
+              Descripción accesible de la imagen. Se muestra cuando la imagen no
+              puede cargarse y la usan lectores de pantalla.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+            <Label className="text-sm font-medium">Alt text</Label>
+            <Input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              maxLength={200}
+              placeholder="Ej. N621TX en pista de Cancún al atardecer"
+            />
+            <p className="text-xs text-muted-foreground">
+              {value.length}/200
+            </p>
+          </div>
+          <SheetFooter className="border-t border-border flex-row justify-end gap-2 mt-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+              disabled={pending}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={pending}>
+              {pending ? "Guardando…" : "Guardar"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Descartar los cambios?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Editaste el texto alternativo sin guardarlo. Si cierras ahora, se pierde lo escrito.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmDiscard(false);
+                setValue(original);
+                onOpenChange(false);
+              }}
+            >
+              Descartar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -38,6 +40,14 @@ export async function AircraftFlightsCard({ aircraftId }: { aircraftId: string }
             : `${count} ${count === 1 ? "vuelo" : "vuelos"} en total` +
               (count > LIMIT ? ` · mostrando los ${LIMIT} más recientes` : "")}
         </CardDescription>
+        <CardAction>
+          <Link
+            href={`/admin/flights?aeronave_id=${aircraftId}`}
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Ver todos →
+          </Link>
+        </CardAction>
       </CardHeader>
       <CardContent className={flights.length === 0 ? "" : "p-0"}>
         {flights.length === 0 ? (

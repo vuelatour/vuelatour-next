@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BanknotesIcon } from "@heroicons/react/24/outline";
+import { BanknotesIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import {
   Card,
   CardContent,
@@ -43,27 +43,41 @@ const CATEGORIAS_OPERATIVAS = new Set([
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ f?: string }>;
+  searchParams: Promise<{ f?: string; aeronave_id?: string }>;
 }) {
   const sp = await searchParams;
   const filtro: Filtro =
     sp.f === "pendientes" || sp.f === "duplicados" ? sp.f : "todos";
+  // Filtro por avión (link desde el expediente del avión). El API lo soporta
+  // nativo en /v1/expenses; los contadores de las pestañas lo respetan.
+  const aeronaveId = sp.aeronave_id || undefined;
 
-  const query: ListGastosQuery = { limit: 200 };
+  const query: ListGastosQuery = { limit: 200, aeronave_id: aeronaveId };
   if (filtro === "pendientes") query.pendientes = true;
   if (filtro === "duplicados") query.duplicados = true;
 
   const [{ data: gastos }, pendientesRes, duplicadosRes, aircraftRes, providersRes] =
     await Promise.all([
       listGastos(query),
-      listGastos({ pendientes: true, limit: 1 }),
-      listGastos({ duplicados: true, limit: 1 }),
+      listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId }),
+      listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId }),
       listAircraft({ limit: 100 }),
       listProviders({ limit: 200 }),
     ]);
 
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
+  const aeronaveFiltro = aeronaveId
+    ? (aircraft.find((a) => a.id === aeronaveId)?.matricula ?? "desconocido")
+    : null;
+
+  const hrefTab = (key: Filtro) => {
+    const params = new URLSearchParams();
+    if (key !== "todos") params.set("f", key);
+    if (aeronaveId) params.set("aeronave_id", aeronaveId);
+    const qs = params.toString();
+    return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
+  };
 
   // Firma las fotos de los comprobantes (bucket privado) para verlas en el admin.
   const fotoPaths = gastos.map((g) => g.foto_url).filter((p): p is string => !!p);
@@ -101,11 +115,11 @@ export default async function ExpensesPage({
         </div>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {tabs.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "todos" ? "/admin/expenses" : `/admin/expenses?f=${t.key}`}
+            href={hrefTab(t.key)}
             className={cn(
               "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
               filtro === t.key
@@ -126,6 +140,16 @@ export default async function ExpensesPage({
             )}
           </Link>
         ))}
+        {aeronaveFiltro && (
+          <Link
+            href={filtro === "todos" ? "/admin/expenses" : `/admin/expenses?f=${filtro}`}
+            title="Quitar el filtro de avión"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-1.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-600/20"
+          >
+            Avión: <span className="font-mono">{aeronaveFiltro}</span>
+            <XMarkIcon className="h-3.5 w-3.5" />
+          </Link>
+        )}
       </div>
 
       {gastos.length === 0 ? (

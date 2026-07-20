@@ -25,10 +25,20 @@ import {
 import { AircraftEngineButton } from "@/components/admin/aircraft/aircraft-engine-button";
 import { AircraftPropellerButton } from "@/components/admin/aircraft/aircraft-propeller-button";
 import { AircraftInsuranceCard } from "@/components/admin/aircraft/aircraft-insurance-card";
-import { AircraftMetricsCard } from "@/components/admin/aircraft/aircraft-metrics-card";
+import {
+  AircraftMetricsCard,
+  razonesNoApto,
+} from "@/components/admin/aircraft/aircraft-metrics-card";
+import { AircraftKpiStrip } from "@/components/admin/aircraft/aircraft-kpi-strip";
 import { AircraftTacometrosCard } from "@/components/admin/aircraft/aircraft-tacometros-card";
 import { AircraftSquawksCard } from "@/components/admin/aircraft/aircraft-squawks-card";
-import { getAircraftMetrics, getAircraftSnapshot } from "@/lib/api/aircraft";
+import { ErrorState } from "@/components/admin/error-state";
+import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import {
+  getAircraftMetrics,
+  getAircraftSnapshot,
+  type AircraftMetricsDetalle,
+} from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
@@ -65,13 +75,19 @@ export default async function AircraftDetailPage({ params }: PageProps) {
     socios = [];
   }
 
-  // Métricas operativas (apto-para-volar, utilización, finanzas). Best-effort.
-  let metrics: Awaited<ReturnType<typeof getAircraftMetrics>> | null = null;
+  // Métricas operativas (apto-para-volar, utilización, finanzas).
+  // 403 = rol sin permiso: se ocultan en silencio (comportamiento de siempre).
+  // CUALQUIER otra falla se pinta con ErrorState — nunca disfrazar una caída
+  // del API de "sin datos" (regla de fiabilidad del cierre).
+  let metrics: AircraftMetricsDetalle | null = null;
+  let metricsError = false;
   try {
     metrics = await getAircraftMetrics(id);
-  } catch {
-    metrics = null;
+  } catch (err) {
+    if (!(isApiError(err) && err.status === 403)) metricsError = true;
   }
+
+  const razones = metrics ? razonesNoApto(metrics.airworthiness) : [];
 
   return (
     <div className="space-y-6">
@@ -83,39 +99,84 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           <ArrowLeftIcon className="h-3.5 w-3.5" />
           Volver a la flota
         </Link>
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
             <h1 className="text-2xl md:text-3xl font-mono font-semibold tracking-tight">
               {aircraft.matricula}
             </h1>
-            <p className="text-base text-muted-foreground">{aircraft.modelo}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono">
-              {aircraft.pais_registro}
-            </Badge>
-            {aircraft.activa ? (
-              <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-                Activa
+            <p className="text-base text-muted-foreground">
+              {aircraft.modelo} · Base {aircraft.ubicacion_base}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Badge variant="outline" className="font-mono">
+                {aircraft.pais_registro}
               </Badge>
-            ) : (
-              <Badge variant="secondary">Inactiva</Badge>
-            )}
+              {!aircraft.activa && <Badge variant="secondary">Inactiva</Badge>}
+              {metrics?.en_vuelo && (
+                <Badge className="bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/20">
+                  En vuelo ahora
+                </Badge>
+              )}
+              {metrics &&
+                (metrics.airworthiness.apto ? (
+                  <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
+                    Apto para volar
+                  </Badge>
+                ) : (
+                  <Badge
+                    className="bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/20 cursor-help"
+                    title={razones.join("\n")}
+                  >
+                    No apto
+                  </Badge>
+                ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExcelExportButton
+              path={`/v1/aircraft/${aircraft.id}/balance.xlsx`}
+              filename={`balance-${aircraft.matricula}.xlsx`}
+              label="Balance (Excel)"
+            />
             <AircraftEditButton aircraft={aircraft} />
           </div>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {metrics && <AircraftMetricsCard metrics={metrics} />}
+      {/* KPI strip: horas actuales, mes/año, próximo servicio, utilidad. */}
+      {metrics && <AircraftKpiStrip metrics={metrics} />}
 
-        <AircraftImagesCard
+      {/* Expediente en columna única, ordenado por prioridad del operador:
+          lo operativo (semáforo, tacos, discrepancias, viajes) arriba; la
+          ficha técnica y lo administrativo después. */}
+      <div className="space-y-6">
+        {/* 1. Resumen operativo (semáforo apto-para-volar + finanzas) */}
+        {metricsError ? (
+          <ErrorState
+            title="No se pudo cargar el resumen operativo"
+            description="El resto del expediente sigue disponible. Recarga la página; si el problema persiste, avisa al administrador."
+          />
+        ) : (
+          metrics && <AircraftMetricsCard metrics={metrics} aircraftId={aircraft.id} />
+        )}
+
+        {/* 2. Tacómetros: histórico por aeronave + programa de servicio por horas */}
+        <AircraftTacometrosCard
           aircraftId={aircraft.id}
-          matricula={aircraft.matricula}
-          imagenes={aircraft.imagenes}
+          intervalos={aircraft.servicio_intervalos ?? []}
+          horasBase={aircraft.servicio_horas_base ?? 0}
         />
 
-        {/* Especificaciones */}
+        {/* 3. Bitácora de discrepancias (squawks) */}
+        <AircraftSquawksCard aircraftId={aircraft.id} discrepancias={aircraft.discrepancias} />
+
+        {/* 4. Viajes: historial de vuelos de esta aeronave */}
+        <AircraftFlightsCard aircraftId={aircraft.id} />
+
+        {/* 5. Ingeniería aeronáutica: mantenimientos, permisos, servicios próximos */}
+        <AircraftEngineering aircraftId={aircraft.id} />
+
+        {/* 6. Especificaciones */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -124,7 +185,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
               <Field label="Velocidad crucero" value={`${fmtDecimal(aircraft.velocidad_crucero_kts, 0)} kts`} />
               <Field label="Motores" value={String(aircraft.num_motores)} />
               <Field label="Asientos" value={String(aircraft.asientos)} />
@@ -134,6 +195,16 @@ export default async function AircraftDetailPage({ params }: PageProps) {
               <Field
                 label="Reserva overhaul"
                 value={`${fmtUsd(aircraft.reserva_overhaul_hr_usd)} / hr`}
+              />
+              <Field
+                label="Aportación AFAC"
+                value={
+                  aircraft.permiso_afac_usd_hr != null &&
+                  aircraft.permiso_afac_usd_hr !== "" &&
+                  Number(aircraft.permiso_afac_usd_hr) > 0
+                    ? `${fmtUsd(aircraft.permiso_afac_usd_hr)} / hr cobrada`
+                    : "No aplica"
+                }
               />
               {aircraft.color_calendario && (
                 <div>
@@ -156,14 +227,24 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Propietarios (gestionable) */}
-        <AircraftOwnersCard
+        {/* 7. Imágenes */}
+        <AircraftImagesCard
           aircraftId={aircraft.id}
-          owners={aircraft.owners}
-          socios={socios}
+          matricula={aircraft.matricula}
+          imagenes={aircraft.imagenes}
         />
 
-        {/* Motores */}
+        {/* 8-9. Propietarios y Seguros: cards angostas, emparejadas en desktop */}
+        <div className="grid gap-6 lg:grid-cols-2 [&>*]:!col-span-1">
+          <AircraftOwnersCard
+            aircraftId={aircraft.id}
+            owners={aircraft.owners}
+            socios={socios}
+          />
+          <AircraftInsuranceCard aircraftId={aircraft.id} seguros={aircraft.seguros} />
+        </div>
+
+        {/* 10. Motores */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
             <div className="space-y-1">
@@ -191,7 +272,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Hélices */}
+        {/* 11. Hélices */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
             <div className="space-y-1">
@@ -214,26 +295,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Seguros */}
-        <AircraftInsuranceCard aircraftId={aircraft.id} seguros={aircraft.seguros} />
-
-        {/* Bitácora de discrepancias (squawks) */}
-        <AircraftSquawksCard aircraftId={aircraft.id} discrepancias={aircraft.discrepancias} />
-
-        {/* Viajes: historial de vuelos de esta aeronave */}
-        <AircraftFlightsCard aircraftId={aircraft.id} />
-
-        {/* Tacómetros: histórico por aeronave + programa de servicio por horas */}
-        <AircraftTacometrosCard
-          aircraftId={aircraft.id}
-          intervalos={aircraft.servicio_intervalos ?? []}
-          horasBase={aircraft.servicio_horas_base ?? 0}
-        />
-
-        {/* Ingeniería aeronáutica: mantenimientos, permisos/licencias, servicios próximos */}
-        <AircraftEngineering aircraftId={aircraft.id} />
-
-        {/* Reservas overhaul (resumen) */}
+        {/* 12. Reservas overhaul (resumen) */}
         {aircraft.overhaul_reserves.length > 0 && (
           <Card className="lg:col-span-2">
             <CardHeader>

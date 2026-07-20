@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { ClockIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ClockIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { fmtDateTime } from "@/lib/datetime";
@@ -30,6 +30,7 @@ export function AircraftTacometrosCard({
   const [intervalosStr, setIntervalosStr] = useState(intervalos.join(", "));
   const [base, setBase] = useState(String(horasBase ?? 0));
   const [saving, startSaving] = useTransition();
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const reload = useCallback(async () => {
     // No se hace setLoading(true) síncrono aquí: el estado inicial ya es `true`
@@ -71,6 +72,7 @@ export function AircraftTacometrosCard({
       });
       if (res.ok) {
         toast.success("Programa de servicio guardado");
+        setEditorOpen(false);
         void reload();
       } else {
         toast.error(res.error ?? "No se pudo guardar");
@@ -82,10 +84,10 @@ export function AircraftTacometrosCard({
   const vencido = prox != null && prox.faltan <= 0;
 
   return (
-    <Card>
+    <Card className="lg:col-span-2">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ClockIcon className="h-5 w-5" /> Tacómetros y servicio por horas
+          <ClockIcon className="h-4 w-4 text-muted-foreground" /> Tacómetros y servicio por horas
         </CardTitle>
         <CardDescription>
           Conteo de horas del avión (último Hobbs) y cada cuándo le toca servicio.
@@ -107,46 +109,70 @@ export function AircraftTacometrosCard({
           />
         </div>
 
-        {/* Editor del programa */}
+        {/* Programa de servicio (editor colapsado tras "Editar programa") */}
         <div className="rounded-lg border border-border p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <WrenchScrewdriverIcon className="h-4 w-4" /> Programa de servicio
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Secuencia de intervalos en horas que se repite. Ej. Cessna:{" "}
-            <span className="font-mono">50, 100, 200</span> (servicios a +50, +150,
-            +350 y vuelve a empezar). Seneca/Kodiak: <span className="font-mono">100</span>.
-          </p>
-          <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Intervalos (separados por coma)
-              </label>
-              <input
-                className={inputCls}
-                value={intervalosStr}
-                onChange={(e) => setIntervalosStr(e.target.value)}
-                placeholder="50, 100, 200"
-              />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <WrenchScrewdriverIcon className="h-4 w-4" /> Programa de servicio
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Horas base (Hobbs)
-              </label>
-              <input
-                className={inputCls}
-                type="number"
-                min={0}
-                value={base}
-                onChange={(e) => setBase(e.target.value)}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1"
+              onClick={() => setEditorOpen((v) => !v)}
+              aria-expanded={editorOpen}
+            >
+              Editar programa
+              <ChevronDownIcon
+                className={`h-3.5 w-3.5 transition-transform ${editorOpen ? "rotate-180" : ""}`}
               />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button size="sm" onClick={guardar} disabled={saving}>
-              {saving ? "Guardando…" : "Guardar programa"}
             </Button>
           </div>
+          {!editorOpen ? (
+            <p className="text-xs text-muted-foreground">
+              Intervalos:{" "}
+              <span className="font-mono">{intervalosStr || "sin programa"}</span> · base{" "}
+              <span className="font-mono">{base || 0} h</span>
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Secuencia de intervalos en horas que se repite. Ej. Cessna:{" "}
+                <span className="font-mono">50, 100, 200</span> (servicios a +50, +150,
+                +350 y vuelve a empezar). Seneca/Kodiak: <span className="font-mono">100</span>.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
+                <div className="space-y-1">
+                  <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Intervalos (separados por coma)
+                  </label>
+                  <input
+                    className={inputCls}
+                    value={intervalosStr}
+                    onChange={(e) => setIntervalosStr(e.target.value)}
+                    placeholder="50, 100, 200"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Horas base (Hobbs)
+                  </label>
+                  <input
+                    className={inputCls}
+                    type="number"
+                    min={0}
+                    value={base}
+                    onChange={(e) => setBase(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button size="sm" onClick={guardar} disabled={saving}>
+                  {saving ? "Guardando…" : "Guardar programa"}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Histórico */}
@@ -172,7 +198,16 @@ export function AircraftTacometrosCard({
                   </tr>
                 </thead>
                 <tbody>
-                  {data.historial.map((h) => (
+                  {data.historial.map((h, i) => {
+                    // El histórico viene del más reciente al más antiguo: el tramo
+                    // anterior en el tiempo es la fila SIGUIENTE. Si la salida no
+                    // coincide con la llegada anterior, hay un salto en la cadena.
+                    const anterior = data.historial[i + 1];
+                    const salto =
+                      h.taco_salida != null &&
+                      anterior?.taco_llegada != null &&
+                      h.taco_salida !== anterior.taco_llegada;
+                    return (
                     <tr key={h.escala_id} className="border-t border-border">
                       <td className="px-3 py-2">{h.fecha ? fmtDateTime(h.fecha) : "—"}</td>
                       <td className="px-3 py-2">
@@ -181,7 +216,14 @@ export function AircraftTacometrosCard({
                           <span className="ml-1 text-xs text-muted-foreground">#{h.folio}</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          salto
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium"
+                            : ""
+                        }`}
+                        title={salto ? "Salto en la cadena de tacómetros" : undefined}
+                      >
                         {h.taco_salida ?? "—"}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
@@ -200,7 +242,8 @@ export function AircraftTacometrosCard({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

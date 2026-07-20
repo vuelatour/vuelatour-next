@@ -38,7 +38,14 @@ export function AircraftPropellerButton({
   return (
     <>
       {isEdit ? (
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setOpen(true)} title="Editar hélice">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          onClick={() => setOpen(true)}
+          title="Editar hélice"
+          aria-label="Editar hélice"
+        >
           <PencilSquareIcon className="h-4 w-4" />
         </Button>
       ) : (
@@ -72,7 +79,7 @@ function PropellerDialog({
     reset,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<PropellerFormValues>({
     resolver: zodResolver(PropellerFormSchema),
     defaultValues: defaults(propeller),
@@ -84,8 +91,17 @@ function PropellerDialog({
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // En edición, los campos de horas se mandan SOLO si el usuario los tocó:
+      // reenviar `horas_totales` sin cambios re-ancla la referencia del Hobbs
+      // en el API y borra las horas vivas acumuladas de la hélice.
+      let payload: Partial<PropellerFormValues> = values;
+      if (isEdit) {
+        payload = { ...values };
+        if (!dirtyFields.horas_totales) delete payload.horas_totales;
+        if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
+      }
       const res = isEdit
-        ? await updatePropellerAction(aircraftId, propeller!.id, values)
+        ? await updatePropellerAction(aircraftId, propeller!.id, payload)
         : await createPropellerAction(aircraftId, values);
       if (res.ok) {
         toast.success(isEdit ? "Hélice actualizada" : "Hélice agregada");
@@ -138,6 +154,10 @@ function PropellerDialog({
               <Input type="number" step="0.01" min={1} {...register("tbo_horas")} />
             </Field>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Solo captura horas si estás corrigiendo la base; las horas vivas se calculan solas con
+            el tacómetro.
+          </p>
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>

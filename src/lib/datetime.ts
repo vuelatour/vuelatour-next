@@ -122,6 +122,23 @@ export function startOfMonthCancun(): string {
 }
 
 /**
+ * Días de calendario que faltan para una fecha date-only (YYYY-MM-DD),
+ * contados desde HOY en Cancún. 0 = vence hoy; negativo = ya venció.
+ * Nunca usar `new Date(iso) - Date.now()` con date-only: parsea medianoche
+ * UTC y en Cancún (UTC−5) corre el vencimiento un día (pólizas "vencidas"
+ * desde las 19:00 del día anterior).
+ */
+export function daysUntilCancun(dateStr?: string | null): number | null {
+  if (!dateStr) return null;
+  const target = dateStr.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) return null;
+  // Ambas como UTC-medianoche: la diferencia de días de calendario es exacta.
+  const a = Date.parse(`${target}T00:00:00Z`);
+  const b = Date.parse(`${todayCancun()}T00:00:00Z`);
+  return Math.round((a - b) / 86_400_000);
+}
+
+/**
  * Ventana de edición de cotizaciones (regla del cliente, jul 2026): una
  * cotización —aún CONFIRMADA— solo se ajusta mientras su vuelo sea del MES
  * CORRIENTE o el ANTERIOR (hora Cancún). Más atrás pertenece a cierres
