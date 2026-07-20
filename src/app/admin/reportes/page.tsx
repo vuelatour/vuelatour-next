@@ -12,7 +12,12 @@ import {
   FlightReportPicker,
   type FlightPickItem,
 } from "@/components/admin/flights/flight-report-picker";
+import {
+  AircraftBalancePicker,
+  type AircraftPickItem,
+} from "@/components/admin/reportes/aircraft-balance-picker";
 import { listFlights } from "@/lib/api/flights-server";
+import { listAircraft } from "@/lib/api/aircraft";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +54,20 @@ export default async function ReportesPage({ searchParams }: PageProps) {
     });
   } catch {
     flightsPick = [];
+  }
+
+  // Aeronaves para el balance por avión (todas: un avión inactivo puede
+  // necesitar su libro histórico).
+  let aircraftPick: AircraftPickItem[] = [];
+  try {
+    const res = await listAircraft({ limit: 100, offset: 0 });
+    aircraftPick = res.data.map((a) => ({
+      id: a.id,
+      matricula: a.matricula,
+      modelo: a.modelo,
+    }));
+  } catch {
+    aircraftPick = [];
   }
 
   return (
@@ -89,6 +108,24 @@ export default async function ReportesPage({ searchParams }: PageProps) {
         </CardHeader>
         <CardContent>
           <FlightReportPicker flights={flightsPick} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Balance por avión</CardTitle>
+          <CardDescription>
+            Libro completo del avión en el periodo: ventas, tacómetros,
+            combustible, costos, cobranza, gastos indirectos y balance con
+            socios. Incluye hoja de pendientes de captura.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AircraftBalancePicker
+            aircraft={aircraftPick}
+            desde={desde}
+            hasta={hasta}
+          />
         </CardContent>
       </Card>
 

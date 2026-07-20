@@ -22,6 +22,8 @@ export interface Aircraft {
   tarifa_hora_pub_usd: Decimal | null;
   tarifa_hora_broker_usd: Decimal | null;
   reserva_overhaul_hr_usd: Decimal | null;
+  /** Aportación AFAC (USD por hora cobrada): provisión por volar con matrícula extranjera. null = no aplica. */
+  permiso_afac_usd_hr?: Decimal | null;
   color_calendario: string | null;
   ubicacion_base: string;
   activa: boolean;

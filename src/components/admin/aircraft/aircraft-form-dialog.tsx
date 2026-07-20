@@ -83,10 +83,21 @@ export function AircraftFormDialog({
   const colorValue = watch("color_calendario") ?? "";
 
   const onSubmit = handleSubmit((values) => {
+    const payload: AircraftFormValues = { ...values };
+    // Aportación AFAC: el update descarta los campos vacíos (""), así que si
+    // el avión TENÍA valor y el usuario vació el campo, mandamos null
+    // explícito para borrar la provisión. Nunca viaja "" al API.
+    if (
+      isEdit &&
+      initialAircraft?.permiso_afac_usd_hr != null &&
+      (payload.permiso_afac_usd_hr === "" || payload.permiso_afac_usd_hr == null)
+    ) {
+      payload.permiso_afac_usd_hr = null;
+    }
     startTransition(async () => {
       const result = isEdit
-        ? await updateAircraftAction(initialAircraft!.id, values)
-        : await createAircraftAction(values);
+        ? await updateAircraftAction(initialAircraft!.id, payload)
+        : await createAircraftAction(payload);
 
       if (result.ok) {
         toast.success(isEdit ? "Aeronave actualizada" : "Aeronave creada");
@@ -172,6 +183,22 @@ export function AircraftFormDialog({
             </Field>
           </div>
 
+          {isEdit && (
+            <Field
+              label="Aportación AFAC (USD por hora cobrada)"
+              hint="Provisión por volar con matrícula extranjera (p. ej. 100). Vacío = no aplica."
+              error={errors.permiso_afac_usd_hr?.message}
+            >
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="100"
+                {...register("permiso_afac_usd_hr")}
+              />
+            </Field>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <Field label="Base (IATA)" hint="default CUN" error={errors.ubicacion_base?.message}>
               <Input placeholder="CUN" maxLength={4} className="font-mono uppercase" {...register("ubicacion_base")} />
@@ -244,6 +271,7 @@ function defaults(a?: Aircraft): AircraftFormValues {
       tarifa_hora_pub_usd: "",
       tarifa_hora_broker_usd: "",
       reserva_overhaul_hr_usd: "",
+      permiso_afac_usd_hr: "",
       color_calendario: "",
       ubicacion_base: "CUN",
       activa: true,
@@ -260,6 +288,7 @@ function defaults(a?: Aircraft): AircraftFormValues {
     tarifa_hora_pub_usd: a.tarifa_hora_pub_usd ?? "",
     tarifa_hora_broker_usd: a.tarifa_hora_broker_usd ?? "",
     reserva_overhaul_hr_usd: a.reserva_overhaul_hr_usd ?? "",
+    permiso_afac_usd_hr: a.permiso_afac_usd_hr ?? "",
     color_calendario: a.color_calendario ?? "",
     ubicacion_base: a.ubicacion_base ?? "",
     activa: a.activa,

@@ -26,6 +26,16 @@ const optionalPositive = z.preprocess(
   z.coerce.number().min(1, "Debe ser mayor a 0").optional(),
 );
 
+/**
+ * Number opcional que ADMITE null explícito: "" → se omite (el action lo
+ * descarta), null pasa tal cual (= borrar el valor en el PATCH). El z.null()
+ * va primero: z.coerce.number() convertiría null en 0.
+ */
+const optionalNonNegativeNullable = z.preprocess(
+  (v) => (v === "" || v === undefined ? undefined : v),
+  z.null().or(z.coerce.number().min(0, "No puede ser negativo")).optional(),
+);
+
 export const AircraftFormSchema = z.object({
   matricula: z
     .string()
@@ -40,6 +50,9 @@ export const AircraftFormSchema = z.object({
   tarifa_hora_pub_usd: optionalNonNegative,
   tarifa_hora_broker_usd: optionalNonNegative,
   reserva_overhaul_hr_usd: optionalNonNegative,
+  // Aportación AFAC (USD/hr cobrada): provisión por matrícula extranjera.
+  // Nullable: en edición, vaciar el campo manda null para borrar la config.
+  permiso_afac_usd_hr: optionalNonNegativeNullable,
   color_calendario: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, "Formato #RRGGBB")
