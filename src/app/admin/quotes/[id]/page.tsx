@@ -97,7 +97,17 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
               {quote.pasajeros} {quote.pasajeros === 1 ? "pasajero" : "pasajeros"}
             </p>
           </div>
-          <QuoteActionsBar quote={quote} />
+          <div className="flex items-center gap-2 flex-wrap">
+            {quote.estado !== "SOLICITUD" && (
+              <Link
+                href={`/admin/flights/${quote.id}`}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                Ver detalle del vuelo
+              </Link>
+            )}
+            <QuoteActionsBar quote={quote} />
+          </div>
         </div>
         <div className="mt-3">
           <QuotePresenceIndicator quoteId={id} />

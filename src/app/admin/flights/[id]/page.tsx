@@ -57,9 +57,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     throw err;
   }
 
-  // Si está aún en SOLICITUD/COTIZADO, redirigir mentalmente al usuario:
-  // este módulo es para vuelos operativos.
-  if (snapshot.estado === "SOLICITUD" || snapshot.estado === "COTIZADO") {
+  // Solo SOLICITUD queda fuera (aún no hay nada operativo que ver). Un
+  // vuelo COTIZADO SÍ abre su detalle (petición del cliente, jul 2026):
+  // escalas, asignación y datos operativos son visibles desde que existe
+  // la cotización — con un banner que recuerda que el precio sigue abierto.
+  if (snapshot.estado === "SOLICITUD") {
     return (
       <div className="space-y-6">
         <Link
@@ -183,6 +185,21 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
   return (
     <div className="space-y-6">
+      {snapshot.estado === "COTIZADO" && (
+        <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sky-700 dark:text-sky-300">
+            <span className="font-semibold">Vuelo en cotización</span> — el
+            precio sigue abierto hasta que el cliente confirme; la operación
+            (escalas, asignación) ya se puede preparar desde aquí.
+          </p>
+          <Link
+            href={`/admin/quotes/${snapshot.id}`}
+            className="shrink-0 text-sm font-medium text-sky-700 dark:text-sky-300 underline underline-offset-2 hover:opacity-80"
+          >
+            Editar cotización →
+          </Link>
+        </div>
+      )}
       <div>
         <Link
           href="/admin/flights"

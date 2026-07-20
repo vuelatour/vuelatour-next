@@ -1,6 +1,10 @@
 "use client";
 
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import Link from "next/link";
+import {
+  ExclamationTriangleIcon,
+  PaperAirplaneIcon,
+} from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDate } from "@/lib/datetime";
@@ -94,6 +98,27 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
         )}
       </span>
     ),
+  },
+  {
+    key: "vuelo",
+    header: "",
+    headClassName: "w-12",
+    cellClassName: "text-center",
+    // La fila abre la COTIZACIÓN (acción principal); este atajo abre el
+    // DETALLE DEL VUELO (escalas, asignación, tacos) desde COTIZADO en
+    // adelante. SOLICITUD aún no tiene nada operativo que ver.
+    noLink: true,
+    cell: (q) =>
+      q.estado !== "SOLICITUD" ? (
+        <Link
+          href={`/admin/flights/${q.id}`}
+          aria-label={`Ver detalle del vuelo #${q.folio}`}
+          title="Ver detalle del vuelo"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <PaperAirplaneIcon className="h-4 w-4" />
+        </Link>
+      ) : null,
   },
 ];
 
