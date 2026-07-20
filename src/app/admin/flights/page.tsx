@@ -119,9 +119,10 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
                 {enCotizacion.length === 1
                   ? "1 más sigue en cotización"
                   : `${enCotizacion.length} más siguen en cotización`}{" "}
-                (fila azul — el clic abre su{" "}
+                (fila azul — los cotizados abren su detalle de vuelo; edita el
+                precio en{" "}
                 <Link href="/admin/quotes" className="underline text-brand-600">
-                  cotización
+                  Cotizaciones
                 </Link>
                 ).
               </>

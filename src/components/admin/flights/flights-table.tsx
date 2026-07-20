@@ -124,8 +124,14 @@ export function FlightsTable({ rows }: { rows: FlightRow[] }) {
       columns={columns}
       rows={rows}
       rowKey={(v) => v.id}
+      // COTIZADO ya abre su DETALLE DE VUELO (petición del cliente, jul
+      // 2026): la operación se prepara desde ahí y el banner del detalle
+      // enlaza a la cotización. Solo SOLICITUD sigue yendo al cotizador
+      // (aún no hay nada operativo que ver).
       rowHref={(v) =>
-        v.en_cotizacion ? `/admin/quotes/${v.id}` : `/admin/flights/${v.id}`
+        v.estado === "SOLICITUD"
+          ? `/admin/quotes/${v.id}`
+          : `/admin/flights/${v.id}`
       }
       // Azul = aún en cotización (sin confirmar): identificable de un vistazo
       // sin sacarlo de la numeración de folios.
