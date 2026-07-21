@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { BackLink } from "@/components/admin/back-link";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -64,13 +65,7 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          href="/admin/quotes"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeftIcon className="h-3.5 w-3.5" />
-          Cotizaciones
-        </Link>
+        <BackLink href="/admin/quotes">Cotizaciones</BackLink>
         <div className="mt-2 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-3 flex-wrap">

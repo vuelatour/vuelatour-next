@@ -93,5 +93,8 @@ export function EstadosCuentaTable({ estados }: { estados: EstadoCuentaArchivo[]
     },
   ];
 
-  return <DataTable columns={columns} rows={estados} rowKey={(e) => e.id} />;
+  // /admin/conciliacion tiene dos tablas: prefijo propio para no chocar
+  return (
+    <DataTable syncId="ec" columns={columns} rows={estados} rowKey={(e) => e.id} />
+  );
 }

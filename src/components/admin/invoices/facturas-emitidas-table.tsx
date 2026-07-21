@@ -161,6 +161,8 @@ export function FacturasEmitidasTable({
 
   return (
     <DataTable
+      // /admin/facturas tiene dos tablas: prefijo propio para no chocar
+      syncId="fe"
       columns={columns}
       rows={facturas}
       rowKey={(f) => f.id}

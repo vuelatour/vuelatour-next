@@ -131,6 +131,8 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
 
   return (
     <DataTable
+      // /admin/conciliacion tiene dos tablas: prefijo propio para no chocar
+      syncId="mv"
       columns={columns}
       rows={movimientos}
       rowKey={(m) => m.id}

@@ -2,13 +2,13 @@ import Link from "next/link";
 import { fmtDate as sharedFmtDate, fmtDateTime as sharedFmtDateTime } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeftIcon,
   EnvelopeIcon,
   PhoneIcon,
   CreditCardIcon,
   CalendarDaysIcon,
   BanknotesIcon,
 } from "@heroicons/react/24/outline";
+import { BackLink } from "@/components/admin/back-link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isApiError } from "@/lib/api/errors";
@@ -53,13 +53,13 @@ export default async function PilotDetailPage({
 
   return (
     <div className="space-y-6">
-      <Link
+      <BackLink
         href="/admin/pilots"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        iconClassName="h-4 w-4"
       >
-        <ArrowLeftIcon className="h-4 w-4" />
         Pilotos
-      </Link>
+      </BackLink>
 
       <div className="flex flex-wrap items-start gap-4 justify-between">
         <div className="flex items-start gap-4">

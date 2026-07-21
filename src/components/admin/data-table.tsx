@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import {
   ChevronLeftIcon,
@@ -53,6 +60,13 @@ interface DataTableProps<T> {
   rowHref?: (row: T) => string;
   rowClassName?: (row: T) => string | undefined;
   defaultPageSize?: PageSize;
+  /**
+   * Prefijo de los query params que persisten búsqueda (`${syncId}q`) y
+   * página (`${syncId}p`) en la URL, para que al volver de un detalle la
+   * tabla quede como estaba. Si una página tiene DOS tablas, cada una debe
+   * pasar un syncId distinto.
+   */
+  syncId?: string;
 }
 
 /** Búsqueda insensible a acentos y mayúsculas (nombres es-MX). */
@@ -99,9 +113,70 @@ export function DataTable<T>({
   rowHref,
   rowClassName,
   defaultPageSize = 20,
+  syncId = "t",
 }: DataTableProps<T>) {
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
+
+  // ── Persistencia en la URL (query params ${syncId}q / ${syncId}p) ──
+  // El server no conoce la URL, así que el estado arranca vacío y un efecto
+  // post-mount aplica los params UNA vez: así la hidratación no truena
+  // (server y cliente pintan lo mismo) y al volver de un detalle con
+  // router.back() la tabla restaura búsqueda y página.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get(`${syncId}q`);
+    const p = Number(params.get(`${syncId}p`));
+    // Restaurar DESDE la URL (sistema externo) una sola vez al montar es el
+    // caso legítimo que el linter no distingue de un efecto en cascada.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q) setBusqueda(q);
+    if (Number.isInteger(p) && p > 1) setPagina(p);
+  }, [syncId]);
+
+  // Escribe el estado a la URL SIN recargar ni ensuciar el historial
+  // (replaceState, integrado con el router de Next). Conserva el resto de
+  // params (filtros del server como aeronave_id no se tocan).
+  const escribirUrl = useCallback(
+    (q: string, p: number) => {
+      const url = new URL(window.location.href);
+      if (q.trim()) url.searchParams.set(`${syncId}q`, q);
+      else url.searchParams.delete(`${syncId}q`);
+      if (p > 1) url.searchParams.set(`${syncId}p`, String(p));
+      else url.searchParams.delete(`${syncId}p`);
+      window.history.replaceState(null, "", url.toString());
+    },
+    [syncId],
+  );
+
+  // Debounce de la búsqueda (~300ms) para no reescribir la URL por tecla.
+  const debounceRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      // Al desmontar (p. ej. navegar al detalle) se cancela cualquier
+      // escritura pendiente para no pisar la URL de la página nueva.
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const cambiarBusqueda = (q: string) => {
+    setBusqueda(q);
+    setPagina(1); // nueva búsqueda = de vuelta a la página 1
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null;
+      escribirUrl(q, 1);
+    }, 300);
+  };
+
+  const cambiarPagina = (p: number) => {
+    setPagina(p);
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    escribirUrl(busqueda, p);
+  };
 
   const guardado = useSyncExternalStore(
     pageSizeStore.subscribe,
@@ -111,7 +186,7 @@ export function DataTable<T>({
   const pageSize = guardado ?? defaultPageSize;
 
   const cambiarPageSize = (n: PageSize) => {
-    setPagina(1);
+    cambiarPagina(1);
     pageSizeStore.set(n);
   };
 
@@ -140,10 +215,7 @@ export function DataTable<T>({
             <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={busqueda}
-              onChange={(e) => {
-                setBusqueda(e.target.value);
-                setPagina(1);
-              }}
+              onChange={(e) => cambiarBusqueda(e.target.value)}
               placeholder={searchPlaceholder}
               className="h-8 pl-8 text-sm"
               aria-label="Buscar en la tabla"
@@ -172,7 +244,7 @@ export function DataTable<T>({
                 Sin resultados para &ldquo;{busqueda.trim()}&rdquo;.{" "}
                 <button
                   type="button"
-                  onClick={() => setBusqueda("")}
+                  onClick={() => cambiarBusqueda("")}
                   className="underline underline-offset-2 hover:text-foreground"
                 >
                   Limpiar búsqueda
@@ -238,7 +310,7 @@ export function DataTable<T>({
                 size="sm"
                 variant="outline"
                 className="h-8 w-8 p-0"
-                onClick={() => setPagina(paginaActual - 1)}
+                onClick={() => cambiarPagina(paginaActual - 1)}
                 disabled={paginaActual <= 1}
                 aria-label="Página anterior"
               >
@@ -251,7 +323,7 @@ export function DataTable<T>({
                 size="sm"
                 variant="outline"
                 className="h-8 w-8 p-0"
-                onClick={() => setPagina(paginaActual + 1)}
+                onClick={() => cambiarPagina(paginaActual + 1)}
                 disabled={paginaActual >= totalPaginas}
                 aria-label="Página siguiente"
               >

@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { BackLink } from "@/components/admin/back-link";
 import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listRoutes } from "@/lib/api/routes-server";
@@ -80,13 +79,7 @@ export default async function NewQuotePage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          href="/admin/quotes"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeftIcon className="h-3.5 w-3.5" />
-          Cotizaciones
-        </Link>
+        <BackLink href="/admin/quotes">Cotizaciones</BackLink>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight mt-2">
           Nueva cotización
         </h1>

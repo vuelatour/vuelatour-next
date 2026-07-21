@@ -136,6 +136,8 @@ export function FacturasPendientesTable({
 
   return (
     <DataTable
+      // /admin/facturas tiene dos tablas: prefijo propio para no chocar
+      syncId="fp"
       columns={columns}
       rows={pendientes}
       rowKey={(v) => v.id}

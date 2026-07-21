@@ -1,11 +1,10 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeftIcon,
   CogIcon,
   CpuChipIcon,
   BanknotesIcon,
 } from "@heroicons/react/24/outline";
+import { BackLink } from "@/components/admin/back-link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -92,13 +91,12 @@ export default async function AircraftDetailPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <div>
-        <Link
+        <BackLink
           href="/admin/aircraft"
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-3"
         >
-          <ArrowLeftIcon className="h-3.5 w-3.5" />
           Volver a la flota
-        </Link>
+        </BackLink>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-1">
             <h1 className="text-2xl md:text-3xl font-mono font-semibold tracking-tight">

@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeftIcon,
   PaperAirplaneIcon,
   BanknotesIcon,
 } from "@heroicons/react/24/outline";
+import { BackLink } from "@/components/admin/back-link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -64,13 +64,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   if (snapshot.estado === "SOLICITUD") {
     return (
       <div className="space-y-6">
-        <Link
-          href="/admin/flights"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeftIcon className="h-3.5 w-3.5" />
-          Vuelos
-        </Link>
+        <BackLink href="/admin/flights">Vuelos</BackLink>
         <Card>
           <CardHeader>
             <CardTitle>Cotización en proceso</CardTitle>
@@ -201,13 +195,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
         </div>
       )}
       <div>
-        <Link
-          href="/admin/flights"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeftIcon className="h-3.5 w-3.5" />
-          Vuelos
-        </Link>
+        <BackLink href="/admin/flights">Vuelos</BackLink>
         <div className="mt-2 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-3 flex-wrap">

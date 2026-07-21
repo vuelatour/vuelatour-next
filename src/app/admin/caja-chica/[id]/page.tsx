@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { fmtDateOnly } from "@/lib/datetime";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { BackLink } from "@/components/admin/back-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isApiError } from "@/lib/api/errors";
 import { getFondo } from "@/lib/api/caja-chica-server";
@@ -84,13 +83,13 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="space-y-6">
-      <Link
+      <BackLink
         href="/admin/caja-chica"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        iconClassName="h-4 w-4"
       >
-        <ArrowLeftIcon className="h-4 w-4" />
         Caja chica
-      </Link>
+      </BackLink>
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
