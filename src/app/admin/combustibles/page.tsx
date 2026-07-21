@@ -8,6 +8,8 @@ import { listFuelLoads, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listCards } from "@/lib/api/cards-server";
 import { EmptyState } from "@/components/admin/empty-state";
+import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import { FuelBulkUploadDialog } from "@/components/admin/expenses/fuel-bulk-upload-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -50,19 +52,29 @@ export default async function CombustiblesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Operación</p>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Combustibles</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {count} {count === 1 ? "carga registrada" : "cargas registradas"} (incluye las del mecánico).
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">Operación</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Combustibles</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {count} {count === 1 ? "carga registrada" : "cargas registradas"} (incluye las del mecánico).
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <ExcelExportButton
+            path="/v1/expenses/combustibles/plantilla.xlsx"
+            filename="plantilla-combustibles.xlsx"
+            label="Plantilla (Excel)"
+          />
+          <FuelBulkUploadDialog />
+        </div>
       </div>
 
       {loads.length === 0 ? (
         <EmptyState
             icon={BeakerIcon}
             title="Sin cargas de combustible"
-            description="Las cargas que registre el mecánico (o los pilotos) aparecerán aquí, vinculadas a su aeronave y vuelo."
+            description="Las cargas que registre el mecánico (o los pilotos) aparecerán aquí, vinculadas a su aeronave y vuelo. También puedes cargarlas en lote con la plantilla de Excel (botón Carga masiva)."
           />
       ) : (
         <Card>

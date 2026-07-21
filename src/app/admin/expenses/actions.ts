@@ -184,6 +184,76 @@ export async function deleteTarifaAction(id: string): Promise<ActionResult> {
   }
 }
 
+// ===== Carga masiva de combustibles (plantilla Excel) =====
+
+export interface CargaCombustibleFilaDatos {
+  matricula?: string | null;
+  fecha?: string | null;
+  litros?: number | null;
+  monto?: number | null;
+  moneda?: string | null;
+  /** La plantilla trae más columnas; el API las devuelve en `datos` y se
+   *  reenvían TAL CUAL al confirmar (no recomponer aquí). */
+  [extra: string]: unknown;
+}
+
+export interface CargaCombustibleFila {
+  fila: number;
+  ok: boolean;
+  errores: string[];
+  advertencias: string[];
+  datos: CargaCombustibleFilaDatos;
+}
+
+export interface CargaCombustiblePreview {
+  filas: CargaCombustibleFila[];
+  resumen: {
+    total: number;
+    validas: number;
+    con_error: number;
+    con_advertencia: number;
+  };
+}
+
+export interface CargaCombustibleResultado {
+  creados: number;
+  errores: Array<{ fila: number; error: string }>;
+}
+
+/** Analiza el archivo de la plantilla (base64) y devuelve la vista previa fila por fila. */
+export async function previewCargaCombustiblesAction(input: {
+  archivo_base64: string;
+  filename: string;
+}): Promise<ActionResult<CargaCombustiblePreview>> {
+  try {
+    const data = await apiServer<CargaCombustiblePreview>(
+      "/v1/expenses/combustibles/carga-masiva/preview",
+      { method: "POST", body: input },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Crea las cargas de combustible de las filas válidas (las `datos` del preview, tal cual). */
+export async function confirmCargaCombustiblesAction(
+  filas: CargaCombustibleFilaDatos[],
+): Promise<ActionResult<CargaCombustibleResultado>> {
+  try {
+    const data = await apiServer<CargaCombustibleResultado>(
+      "/v1/expenses/combustibles/carga-masiva",
+      { method: "POST", body: { filas } },
+    );
+    revalidatePath("/admin/combustibles");
+    revalidatePath("/admin/expenses");
+    revalidatePath("/admin/caja-chica", "layout");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function verifyGastoAction(id: string, raw: unknown): Promise<ActionResult<Gasto>> {
   const parsed = GastoVerifySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
