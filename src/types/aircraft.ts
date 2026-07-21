@@ -17,6 +17,8 @@ export interface Aircraft {
   modelo: string;
   pais_registro: PaisAeronave;
   num_motores: number;
+  /** Última lectura de tacómetro del avión (solo en el listado; null sin tacos). */
+  ultimo_taco?: number | null;
   velocidad_crucero_kts: Decimal;
   asientos: number;
   tarifa_hora_pub_usd: Decimal | null;

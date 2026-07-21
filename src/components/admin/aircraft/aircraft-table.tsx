@@ -58,6 +58,18 @@ const columns: Array<DataTableColumn<Aircraft>> = [
     cell: (a) => a.asientos,
   },
   {
+    key: "ultimo_taco",
+    header: "Último taco",
+    headClassName: "text-right",
+    cellClassName: "text-right font-mono text-sm",
+    cell: (a) =>
+      a.ultimo_taco != null ? (
+        `${Number(a.ultimo_taco).toFixed(1)} h`
+      ) : (
+        <span className="text-xs font-sans text-muted-foreground">—</span>
+      ),
+  },
+  {
     key: "tarifa_pub",
     header: "USD/hr público",
     headClassName: "text-right",
