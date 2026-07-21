@@ -52,6 +52,12 @@ const EscalaSchema = z
     // al capturar tacómetros — no se editan aquí.
     fecha_salida_plan: z.string().optional().or(z.literal("")),
     es_sobrevuelo: z.boolean().default(false),
+    es_ferry: z.boolean().default(false),
+    // OJO al orden de la unión: "" debe ganar ANTES de la coerción numérica
+    // (z.coerce.number("") === 0 y un campo vacío se guardaría como 0 pax).
+    pasajeros: z
+      .union([z.literal(""), z.coerce.number().int("Debe ser entero").min(0, "Mínimo 0")])
+      .optional(),
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
@@ -107,6 +113,8 @@ function defaults(
       destino_iata: initialEscala.destino_iata,
       fecha_salida_plan: toLocalDatetime(initialEscala.fecha_salida_plan),
       es_sobrevuelo: initialEscala.es_sobrevuelo ?? false,
+      es_ferry: initialEscala.es_ferry ?? false,
+      pasajeros: initialEscala.pasajeros ?? "",
       notas: initialEscala.notas ?? "",
     };
   }
@@ -116,6 +124,8 @@ function defaults(
     destino_iata: "",
     fecha_salida_plan: "",
     es_sobrevuelo: false,
+    es_ferry: false,
+    pasajeros: "",
     notas: "",
   };
 }
@@ -170,6 +180,7 @@ export function EscalaFormSheet({
   const origenIata = watch("origen_iata");
   const destinoIata = watch("destino_iata");
   const esSobrevuelo = watch("es_sobrevuelo");
+  const esFerry = watch("es_ferry");
 
   const ordenCollision =
     typeof orden === "number" && collisionSet.has(orden);
@@ -188,6 +199,14 @@ export function EscalaFormSheet({
           ? cancunInputToIso(values.fecha_salida_plan)
           : undefined,
         es_sobrevuelo: values.es_sobrevuelo,
+        // Ferry ⇒ 0 pax SIEMPRE (regla del tramo de posicionamiento). Al
+        // quitar el ferry, se manda el número capturado (vacío = sin cambio).
+        es_ferry: values.es_ferry,
+        pasajeros: values.es_ferry
+          ? 0
+          : values.pasajeros === "" || values.pasajeros == null
+            ? undefined
+            : Number(values.pasajeros),
         notas: values.notas?.trim() || undefined,
       };
       const res = isEdit
@@ -274,6 +293,42 @@ export function EscalaFormSheet({
             error={errors.fecha_salida_plan?.message}
           >
             <Input type="datetime-local" {...register("fecha_salida_plan")} />
+          </Field>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <Label className="text-sm font-medium">Ferry (sin pasajeros)</Label>
+              <p className="text-xs text-muted-foreground">
+                Tramo de posicionamiento/reposicionamiento: vuela vacío. El
+                piloto lo ve en su app; el cliente no lo ve ni se le cobra.
+              </p>
+            </div>
+            <Switch
+              checked={esFerry}
+              onCheckedChange={(c) => {
+                setValue("es_ferry", c);
+                // Ferry vuela vacío: los pasajeros se van a 0 en automático.
+                if (c) setValue("pasajeros", 0);
+              }}
+            />
+          </div>
+
+          <Field
+            label="Pasajeros del tramo"
+            hint={
+              esFerry
+                ? "Un ferry vuela vacío (0). Apaga el switch de arriba para capturar pasajeros."
+                : "Cuántos pasajeros vuelan en ESTE tramo (puede variar entre ida y regreso)."
+            }
+            error={errors.pasajeros?.message as string | undefined}
+          >
+            <Input
+              type="number"
+              min={0}
+              disabled={esFerry}
+              placeholder="Ej. 4"
+              {...register("pasajeros")}
+            />
           </Field>
 
           <div className="flex items-center justify-between rounded-lg border border-border p-3">

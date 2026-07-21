@@ -306,6 +306,10 @@ export interface EscalaPayload {
   fecha_salida_plan?: string;
   /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
   es_sobrevuelo?: boolean;
+  /** Ferry/posicionamiento: sin pasajeros; el piloto lo ve, el cliente no. */
+  es_ferry?: boolean;
+  /** Pasajeros del tramo (0 en ferry). */
+  pasajeros?: number;
   notas?: string;
 }
 
