@@ -81,6 +81,9 @@ const CLAVE_LABEL: Record<string, string> = {
   IVA: "IVA",
   PERNOCTA: "Pernocta",
   AJUSTE: "Ajuste",
+  // Regla actual: la comisión se SUMA al precio del cliente, por eso es una
+  // línea del desglose canónico (las líneas suman exactamente el total).
+  COMISION_VENDEDOR: "Comisión del vendedor",
 };
 
 /**
@@ -165,34 +168,43 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
             <span className="font-semibold">Total cobrado al cliente</span>
             <span className="font-mono font-bold">{fmtUsd(total)}</span>
           </div>
-          {/* Comisión del vendedor (interna): el cliente paga el total
-              completo; el neto es lo que queda a VuelaTour (reparto). */}
-          {Number(quote.calculo_snapshot?.meta?.comision_vendedor_usd ?? 0) > 0 && (
-            <>
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>
-                  Comisión vendedor
-                  {quote.calculo_snapshot?.meta?.comision_vendedor_nombre
-                    ? ` (${quote.calculo_snapshot.meta.comision_vendedor_nombre})`
-                    : ""}{" "}
-                  · interna
-                </span>
-                <span className="font-mono">
-                  −{fmtUsd(Number(quote.calculo_snapshot!.meta!.comision_vendedor_usd))}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-semibold">Neto VuelaTour</span>
-                <span className="font-mono font-bold">
-                  {fmtUsd(
-                    quote.calculo_snapshot?.meta?.neto_vuelatour_usd ??
-                      total -
-                        Number(quote.calculo_snapshot!.meta!.comision_vendedor_usd),
-                  )}
-                </span>
-              </div>
-            </>
-          )}
+          {/* Comisión del vendedor (interna): regla actual = se SUMA al
+              precio (la paga el cliente) y viene como línea COMISION_VENDEDOR
+              del desglose; el neto VuelaTour lo manda el motor en meta.
+              Cotizaciones viejas (sin esa línea) se calcularon con la regla
+              anterior (salía del precio): conservan su signo para no
+              contradecir los números guardados. */}
+          {(() => {
+            const meta = quote.calculo_snapshot?.meta;
+            const comision = Number(meta?.comision_vendedor_usd ?? 0);
+            if (!(comision > 0)) return null;
+            const sumada = lineas.some((l) => l.clave === "COMISION_VENDEDOR");
+            const neto =
+              meta?.neto_vuelatour_usd ?? (sumada ? null : total - comision);
+            return (
+              <>
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>
+                    Comisión vendedor
+                    {meta?.comision_vendedor_nombre
+                      ? ` (${meta.comision_vendedor_nombre})`
+                      : ""}{" "}
+                    · {sumada ? "la paga el cliente" : "interna"}
+                  </span>
+                  <span className="font-mono">
+                    {sumada ? "+" : "−"}
+                    {fmtUsd(comision)}
+                  </span>
+                </div>
+                {neto != null && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold">Neto VuelaTour</span>
+                    <span className="font-mono font-bold">{fmtUsd(neto)}</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           {cuadra ? (
             <p className="text-[11px] text-green-600 dark:text-green-400">
               ✓ Las líneas suman exactamente el total.

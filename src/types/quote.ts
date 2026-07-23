@@ -11,6 +11,9 @@ export type PaisAeronave = "MX" | "USA";
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
 export type TipoParada = "NORMAL" | "SERVICIO";
 
+/** Modalidad de la comisión del vendedor: monto fijo o tarifa × horas cobradas. */
+export type ComisionVendedorModo = "FIJA" | "POR_HORA";
+
 /** Concepto extra de la cotización (handler, comisariato, extensión, etc.). */
 export interface ExtraConcepto {
   concepto: string;
@@ -133,7 +136,16 @@ export interface CalculateQuoteRequest {
   tc_usd_mxn?: number;
   /** Comisión BillPocket en % (custom, tope 20). Solo con metodo_pago=BILLPOCKET. */
   comision_billpocket_pct?: number;
-  /** Comisión del VENDEDOR en USD (interna): sale del precio, no se suma al cliente. */
+  /**
+   * Comisión del VENDEDOR (interna): se SUMA al precio del cliente — el neto
+   * VuelaTour queda en el precio base. Con IVA, la comisión también lo genera.
+   * FIJA (default): viaja comision_vendedor_usd. POR_HORA: viaja la tarifa y
+   * el motor resuelve comisión = tarifa × horas cobradas.
+   */
+  comision_vendedor_modo?: ComisionVendedorModo;
+  /** Tarifa $/hr del vendedor (solo modo POR_HORA). */
+  comision_vendedor_tarifa_hr?: number;
+  /** Monto de la comisión en USD (solo modo FIJA, el default). */
   comision_vendedor_usd?: number;
   comision_vendedor_nombre?: string;
   tarifa_hora_override_usd?: number;
@@ -229,8 +241,15 @@ export interface QuoteBreakdown {
     version_motor: string;
     /** % de comisión BillPocket sintetizada por el motor (null si no aplica). */
     comision_billpocket_pct?: number | null;
-    /** Comisión del vendedor (interna): no altera el total que paga el cliente. */
+    /**
+     * Comisión del vendedor EFECTIVA en USD (interna): se SUMA al precio del
+     * cliente. En POR_HORA es tarifa × horas cobradas ya resuelta por el motor.
+     */
     comision_vendedor_usd?: number | null;
+    /** Modalidad capturada (FIJA default; POR_HORA = tarifa × horas). */
+    comision_vendedor_modo?: ComisionVendedorModo | null;
+    /** Tarifa $/hr capturada (solo POR_HORA). */
+    comision_vendedor_tarifa_hr?: number | null;
     comision_vendedor_nombre?: string | null;
     /** Total − comisión del vendedor: lo que queda a VuelaTour (reparto/reportes). */
     neto_vuelatour_usd?: number | null;

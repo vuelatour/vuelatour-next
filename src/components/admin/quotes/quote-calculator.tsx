@@ -50,6 +50,7 @@ import {
 import { createRouteAction } from "@/app/admin/routes/actions";
 import type {
   CalculateQuoteRequest,
+  ComisionVendedorModo,
   EscalaInput,
   ExtraConcepto,
   MetodoPago,
@@ -149,8 +150,12 @@ interface QuoteFormValues {
   tc_usd_mxn: number | null;
   /** Comisión BillPocket % (custom por operación, tope 20). */
   comision_billpocket_pct: number | null;
-  /** Comisión del VENDEDOR en USD (interna): sale del precio, no del cliente. */
+  /** Modalidad de la comisión del VENDEDOR: monto fijo o $/hr × horas cobradas. */
+  comision_vendedor_modo: ComisionVendedorModo;
+  /** Comisión del VENDEDOR en USD (modo FIJA): se SUMA al precio del cliente. */
   comision_vendedor_usd: number | null;
+  /** Tarifa $/hr del vendedor (modo POR_HORA): el motor la multiplica por las horas cobradas. */
+  comision_vendedor_tarifa_hr: number | null;
   comision_vendedor_nombre: string;
   tarifa_hora_override_usd: number | null;
   tuas_override_usd_pax: number | null;
@@ -514,8 +519,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         tc_usd_mxn: Number(q.tc_usd_mxn) > 0 ? Number(q.tc_usd_mxn) : null,
         comision_billpocket_pct:
           q.calculo_snapshot?.meta?.comision_billpocket_pct ?? null,
+        comision_vendedor_modo:
+          q.calculo_snapshot?.meta?.comision_vendedor_modo === "POR_HORA"
+            ? "POR_HORA"
+            : "FIJA",
+        // En POR_HORA el meta trae la comisión EFECTIVA (tarifa × horas): no
+        // rehidratarla como monto fijo — se rehidrata la tarifa capturada.
         comision_vendedor_usd:
-          q.calculo_snapshot?.meta?.comision_vendedor_usd ?? null,
+          q.calculo_snapshot?.meta?.comision_vendedor_modo === "POR_HORA"
+            ? null
+            : (q.calculo_snapshot?.meta?.comision_vendedor_usd ?? null),
+        comision_vendedor_tarifa_hr:
+          Number(q.calculo_snapshot?.meta?.comision_vendedor_tarifa_hr) > 0
+            ? Number(q.calculo_snapshot?.meta?.comision_vendedor_tarifa_hr)
+            : null,
         comision_vendedor_nombre:
           q.calculo_snapshot?.meta?.comision_vendedor_nombre ?? "",
         tarifa_hora_override_usd: null,
@@ -555,7 +572,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       metodo_pago: "TRANSFERENCIA",
       tc_usd_mxn: null,
       comision_billpocket_pct: null,
+      comision_vendedor_modo: "FIJA",
       comision_vendedor_usd: null,
+      comision_vendedor_tarifa_hr: null,
       comision_vendedor_nombre: "",
       tarifa_hora_override_usd: null,
       tuas_override_usd_pax: null,
@@ -639,12 +658,29 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         Number(debounced.comision_billpocket_pct) > 0
           ? Math.min(Number(debounced.comision_billpocket_pct), 20)
           : undefined,
+      // Comisión del vendedor: SOLO viaja lo que aplica a la modalidad activa
+      // (sin ceros falsos). POR_HORA ⇒ modo + tarifa (el motor resuelve
+      // tarifa × horas cobradas); FIJA (default del API) ⇒ solo el monto.
+      comision_vendedor_modo:
+        debounced.comision_vendedor_modo === "POR_HORA" &&
+        Number(debounced.comision_vendedor_tarifa_hr) > 0
+          ? "POR_HORA"
+          : undefined,
+      comision_vendedor_tarifa_hr:
+        debounced.comision_vendedor_modo === "POR_HORA" &&
+        Number(debounced.comision_vendedor_tarifa_hr) > 0
+          ? Number(debounced.comision_vendedor_tarifa_hr)
+          : undefined,
       comision_vendedor_usd:
+        debounced.comision_vendedor_modo !== "POR_HORA" &&
         Number(debounced.comision_vendedor_usd) > 0
           ? Number(debounced.comision_vendedor_usd)
           : undefined,
       comision_vendedor_nombre:
-        Number(debounced.comision_vendedor_usd) > 0 &&
+        ((debounced.comision_vendedor_modo === "POR_HORA" &&
+          Number(debounced.comision_vendedor_tarifa_hr) > 0) ||
+          (debounced.comision_vendedor_modo !== "POR_HORA" &&
+            Number(debounced.comision_vendedor_usd) > 0)) &&
         debounced.comision_vendedor_nombre.trim()
           ? debounced.comision_vendedor_nombre.trim()
           : undefined,
@@ -1808,44 +1844,99 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </div>
           )}
 
-          {/* Comisión del VENDEDOR (Itzy/Pablo/broker): sale del precio de
-              venta, NO se suma al cliente. El cliente paga el total completo;
-              el neto (total − comisión) fluye a reparto/reportes. INTERNA:
-              jamás aparece en el PDF del cliente. */}
+          {/* Comisión del VENDEDOR (Itzy/Pablo/broker): se SUMA al precio del
+              cliente — el neto VuelaTour queda en el precio base y lo manda el
+              motor en meta (no calcularlo aquí). Modalidades: monto fijo o
+              $/hr × horas cobradas (la resuelve el motor). INTERNA: jamás
+              aparece en el PDF del cliente. */}
           <Field
             label="Comisión del vendedor (interna)"
-            hint="Opcional · sale del precio, no del cliente · no aparece en el PDF"
+            hint="Se SUMA al precio del cliente · interna, no aparece en el PDF"
           >
-            <div className="flex items-center gap-3 flex-wrap">
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="USD · Ej. 50"
-                className="w-32"
-                value={values.comision_vendedor_usd ?? ""}
-                onChange={(e) =>
-                  setValue(
-                    "comision_vendedor_usd",
-                    e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                  )
-                }
-              />
-              <Input
-                placeholder="Quién vendió (Itzy, Pablo…)"
-                className="w-48"
-                value={values.comision_vendedor_nombre}
-                onChange={(e) => setValue("comision_vendedor_nombre", e.target.value)}
-              />
-              {Number(values.comision_vendedor_usd) > 0 && breakdown && (
-                <span className="text-xs text-muted-foreground font-mono">
-                  Neto VuelaTour: $
-                  {(
-                    Number(breakdown.totales.total_usd) -
-                    Number(values.comision_vendedor_usd)
-                  ).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                </span>
-              )}
+            <div className="space-y-2">
+              <div className="w-56">
+                <Segmented
+                  value={values.comision_vendedor_modo}
+                  onChange={(v) =>
+                    setValue(
+                      "comision_vendedor_modo",
+                      v === "POR_HORA" ? "POR_HORA" : "FIJA",
+                    )
+                  }
+                  options={[
+                    { value: "FIJA", label: "Monto fijo" },
+                    { value: "POR_HORA", label: "Por hora" },
+                  ]}
+                />
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                {values.comision_vendedor_modo === "POR_HORA" ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="$/hr · Ej. 50"
+                    className="w-32"
+                    value={values.comision_vendedor_tarifa_hr ?? ""}
+                    onChange={(e) =>
+                      setValue(
+                        "comision_vendedor_tarifa_hr",
+                        e.target.value === ""
+                          ? null
+                          : Math.max(0, Number(e.target.value)),
+                      )
+                    }
+                  />
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="USD · Ej. 50"
+                    className="w-32"
+                    value={values.comision_vendedor_usd ?? ""}
+                    onChange={(e) =>
+                      setValue(
+                        "comision_vendedor_usd",
+                        e.target.value === ""
+                          ? null
+                          : Math.max(0, Number(e.target.value)),
+                      )
+                    }
+                  />
+                )}
+                <Input
+                  placeholder="Quién vendió (Itzy, Pablo…)"
+                  className="w-48"
+                  value={values.comision_vendedor_nombre}
+                  onChange={(e) => setValue("comision_vendedor_nombre", e.target.value)}
+                />
+              </div>
+              {/* Vista en vivo POR_HORA: tarifa × horas cobradas del cálculo. */}
+              {values.comision_vendedor_modo === "POR_HORA" &&
+                Number(values.comision_vendedor_tarifa_hr) > 0 && (
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {breakdown && Number(breakdown.tiempos.cobrable_hr) > 0
+                      ? `= ${fmtUsd(Number(values.comision_vendedor_tarifa_hr))} × ${fmtDecimal(
+                          breakdown.tiempos.cobrable_hr,
+                        )} hr = ${fmtUsd(
+                          Math.round(
+                            Number(values.comision_vendedor_tarifa_hr) *
+                              Number(breakdown.tiempos.cobrable_hr) *
+                              100,
+                          ) / 100,
+                        )}`
+                      : "= se calcula con las horas al cotizar"}
+                  </p>
+                )}
+              {/* Neto VuelaTour: viene del motor (total − comisión), fuente única. */}
+              {values.comision_vendedor_modo !== "POR_HORA" &&
+                Number(values.comision_vendedor_usd) > 0 &&
+                breakdown?.meta?.neto_vuelatour_usd != null && (
+                  <p className="text-xs text-muted-foreground font-mono">
+                    Neto VuelaTour: {fmtUsd(breakdown.meta.neto_vuelatour_usd)}
+                  </p>
+                )}
             </div>
           </Field>
 
@@ -2136,23 +2227,26 @@ function Preview({
                 {fmtUsd(breakdown.totales.total_usd)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">USD</p>
-              {/* Comisión del vendedor: el cliente paga el total completo; el
-                  neto es lo que queda a VuelaTour (reparto/reportes). */}
+              {/* Comisión del vendedor: se SUMA al precio (la paga el
+                  cliente); el neto VuelaTour lo manda el motor en meta —
+                  fuente única, no se calcula aquí. */}
               {!!breakdown.meta?.comision_vendedor_usd && (
                 <p className="text-xs text-muted-foreground mt-2">
                   Comisión vendedor
                   {breakdown.meta.comision_vendedor_nombre
                     ? ` (${breakdown.meta.comision_vendedor_nombre})`
                     : ""}
-                  : −{fmtUsd(breakdown.meta.comision_vendedor_usd)} ·{" "}
-                  <span className="font-semibold text-foreground">
-                    Neto VuelaTour:{" "}
-                    {fmtUsd(
-                      breakdown.meta.neto_vuelatour_usd ??
-                        breakdown.totales.total_usd -
-                          breakdown.meta.comision_vendedor_usd,
-                    )}
-                  </span>
+                  : +{fmtUsd(breakdown.meta.comision_vendedor_usd)} (la paga el
+                  cliente)
+                  {breakdown.meta.neto_vuelatour_usd != null && (
+                    <>
+                      {" "}·{" "}
+                      <span className="font-semibold text-foreground">
+                        Neto VuelaTour:{" "}
+                        {fmtUsd(breakdown.meta.neto_vuelatour_usd)}
+                      </span>
+                    </>
+                  )}
                 </p>
               )}
             </div>
