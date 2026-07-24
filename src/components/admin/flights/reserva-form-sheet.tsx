@@ -59,7 +59,16 @@ interface LegRow {
   esFerry: boolean;
   /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
   esSobrevuelo: boolean;
+  /** El piloto pernocta tras este tramo (además se marca sola si el siguiente sale otro día). */
+  pernocta: boolean;
+  /** Parada de servicio/técnica (tipo_parada SERVICIO) + su detalle. */
+  servicio: boolean;
+  servicioNotas: string;
   pasajeros: string;
+  /** Manifiesto: un nombre por línea (colapsado tras "+ nombres de pasajeros"). */
+  nombres: string;
+  /** UI: el textarea de nombres solo se despliega si se pide (caso común: vacío). */
+  showNombres: boolean;
   notas: string;
 }
 
@@ -69,9 +78,21 @@ const emptyLeg = (origen = ""): LegRow => ({
   hora: "",
   esFerry: false,
   esSobrevuelo: false,
+  pernocta: false,
+  servicio: false,
+  servicioNotas: "",
   pasajeros: "",
+  nombres: "",
+  showNombres: false,
   notas: "",
 });
+
+/** Textarea "uno por línea" → array de nombres (líneas no vacías). */
+const parseNombres = (raw: string): string[] =>
+  raw
+    .split("\n")
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0);
 
 interface ReservaFormSheetProps {
   open: boolean;
@@ -157,16 +178,26 @@ export function ReservaFormSheet({
         // vuelo.notas es "Notas (visibles en PDF)" y una nota interna
         // (p. ej. cómo va a pagar) no debe salir en el PDF del cliente.
         notas_internas: notas.trim() || undefined,
-        escalas_operacion: legs.map((l, idx) => ({
-          origen_iata: l.origen,
-          destino_iata: l.destino,
-          // El tramo 1 siempre sale a la fecha/hora general del vuelo.
-          hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
-          es_ferry: l.esFerry,
-          es_sobrevuelo: l.esSobrevuelo,
-          pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
-          notas: l.notas.trim() || undefined,
-        })),
+        escalas_operacion: legs.map((l, idx) => {
+          // Un ferry vuela vacío: sin manifiesto de nombres.
+          const nombres = l.esFerry ? [] : parseNombres(l.nombres);
+          return {
+            origen_iata: l.origen,
+            destino_iata: l.destino,
+            // El tramo 1 siempre sale a la fecha/hora general del vuelo.
+            hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
+            es_ferry: l.esFerry,
+            es_sobrevuelo: l.esSobrevuelo,
+            pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
+            pasajeros_nombres: nombres.length > 0 ? nombres : undefined,
+            requiere_pernocta: l.pernocta || undefined,
+            tipo_parada: l.servicio ? ("SERVICIO" as const) : undefined,
+            servicio_notas: l.servicio
+              ? l.servicioNotas.trim() || undefined
+              : undefined,
+            notas: l.notas.trim() || undefined,
+          };
+        }),
       });
       if (res.ok && res.data) {
         toast.success(`Operación guardada · vuelo #${res.data.folio}. Usa "Cotizar" cuando quieras ponerle precio.`);
@@ -289,12 +320,17 @@ export function ReservaFormSheet({
                       <span className="w-8" />
                     )}
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <label className="flex items-center gap-2 text-xs">
                       <Switch
                         checked={leg.esFerry}
                         onCheckedChange={(c) =>
-                          updateLeg(i, { esFerry: c, pasajeros: c ? "" : leg.pasajeros })
+                          // Ferry vuela vacío: sin pax y sin nombres.
+                          updateLeg(i, {
+                            esFerry: c,
+                            pasajeros: c ? "" : leg.pasajeros,
+                            ...(c ? { nombres: "", showNombres: false } : {}),
+                          })
                         }
                       />
                       Ferry (vacío)
@@ -316,7 +352,34 @@ export function ReservaFormSheet({
                       />
                       Sobrevuelo
                     </label>
+                    <label
+                      className="flex items-center gap-2 text-xs"
+                      title="El piloto pernocta tras este tramo — dispara el viático de pernocta en la cotización. Si el siguiente tramo sale otro día, se marca sola."
+                    >
+                      <Switch
+                        checked={leg.pernocta}
+                        onCheckedChange={(c) => updateLeg(i, { pernocta: c })}
+                      />
+                      Pernocta
+                    </label>
+                    <label
+                      className="flex items-center gap-2 text-xs"
+                      title="Parada técnica / de servicio: cambiar llanta, revisión, carga de material."
+                    >
+                      <Switch
+                        checked={leg.servicio}
+                        onCheckedChange={(c) => updateLeg(i, { servicio: c })}
+                      />
+                      Parada de servicio
+                    </label>
                   </div>
+                  {leg.servicio && (
+                    <Input
+                      placeholder="Detalle del servicio · ej. aterriza en Toledo a cambiar llanta"
+                      value={leg.servicioNotas}
+                      onChange={(e) => updateLeg(i, { servicioNotas: e.target.value })}
+                    />
+                  )}
                   <div className="grid grid-cols-[1fr_1fr] items-center gap-3">
                     <Input
                       type="number"
@@ -362,6 +425,31 @@ export function ReservaFormSheet({
                     value={leg.notas}
                     onChange={(e) => updateLeg(i, { notas: e.target.value })}
                   />
+                  {/* Manifiesto colapsado: en el caso común va vacío y no
+                      alarga el formulario; un ferry vuela sin nombres. */}
+                  {!leg.esFerry &&
+                    (leg.showNombres ? (
+                      <div className="space-y-1">
+                        <Textarea
+                          rows={3}
+                          value={leg.nombres}
+                          onChange={(e) => updateLeg(i, { nombres: e.target.value })}
+                          placeholder={"Nombres de pasajeros, uno por línea\nJuan Pérez\nMaría López"}
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Específico de este tramo. Útil para permisos; puede ir
+                          vacío.
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => updateLeg(i, { showNombres: true })}
+                        className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
+                      >
+                        + nombres de pasajeros
+                      </button>
+                    ))}
                 </div>
               ))}
             </div>

@@ -331,9 +331,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   // Ruta OPERATIVA opcional al crear: SIEMPRE existe una ruta real del avión
   // (gastos/avión); la comercial de abajo es la que se cobra. Se persiste con
-  // itinerario_operativo=true y el cotizador nunca la pisa.
+  // itinerario_operativo=true y el cotizador nunca la pisa. Cada tramo captura
+  // el mismo detalle que el cotizador (pernocta, servicio, nota, nombres…):
+  // estos tramos son los que ve el piloto en su app.
   const [opsLegs, setOpsLegs] = useState<
-    Array<{ origen: string; destino: string; ferry: boolean; pax: string }>
+    Array<{
+      origen: string;
+      destino: string;
+      ferry: boolean;
+      pax: string;
+      hora: string; // datetime-local (hora Cancún)
+      nota: string;
+      pernocta: boolean;
+      servicio: boolean;
+      servicioNotas: string;
+      /** Manifiesto: un nombre por línea (colapsado tras "+ nombres de pasajeros"). */
+      nombres: string;
+      showNombres: boolean;
+    }>
   >([]);
   const initialQuote = isRevise ? props.initialQuote : undefined;
   const clientName = isRevise ? props.clientName : undefined;
@@ -1015,13 +1030,32 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         cliente_id: values.cliente_id,
         escalas_operacion:
           opsValidos.length > 0
-            ? opsValidos.map((l) => ({
-                origen_iata: l.origen,
-                destino_iata: l.destino,
-                es_ferry: l.ferry,
-                pasajeros:
-                  !l.ferry && l.pax !== "" ? Math.max(0, Number(l.pax)) : undefined,
-              }))
+            ? opsValidos.map((l) => {
+                // Un ferry vuela vacío: sin manifiesto de nombres.
+                const nombres = l.ferry
+                  ? []
+                  : l.nombres
+                      .split("\n")
+                      .map((n) => n.trim())
+                      .filter((n) => n.length > 0);
+                return {
+                  origen_iata: l.origen,
+                  destino_iata: l.destino,
+                  es_ferry: l.ferry,
+                  pasajeros:
+                    !l.ferry && l.pax !== ""
+                      ? Math.max(0, Number(l.pax))
+                      : undefined,
+                  pasajeros_nombres: nombres.length > 0 ? nombres : undefined,
+                  hora_salida: l.hora ? cancunInputToIso(l.hora) : undefined,
+                  requiere_pernocta: l.pernocta || undefined,
+                  tipo_parada: l.servicio ? ("SERVICIO" as const) : undefined,
+                  servicio_notas: l.servicio
+                    ? l.servicioNotas.trim() || undefined
+                    : undefined,
+                  notas: l.nota.trim() || undefined,
+                };
+              })
             : undefined,
         tipo: values.tipo,
         fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
@@ -1696,6 +1730,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         destino: "",
                         ferry: prev.length === 0,
                         pax: "",
+                        hora: "",
+                        nota: "",
+                        pernocta: false,
+                        servicio: false,
+                        servicioNotas: "",
+                        nombres: "",
+                        showNombres: false,
                       },
                     ])
                   }
@@ -1754,19 +1795,61 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         Quitar
                       </Button>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <label className="flex items-center gap-2 text-xs">
                         <Switch
                           checked={l.ferry}
                           onCheckedChange={(c) =>
                             setOpsLegs((prev) =>
                               prev.map((x, j) =>
-                                j === i ? { ...x, ferry: c, pax: c ? "" : x.pax } : x,
+                                j === i
+                                  ? {
+                                      ...x,
+                                      ferry: c,
+                                      pax: c ? "" : x.pax,
+                                      // Ferry vuela vacío: sin nombres.
+                                      ...(c
+                                        ? { nombres: "", showNombres: false }
+                                        : {}),
+                                    }
+                                  : x,
                               ),
                             )
                           }
                         />
                         Ferry (vacío)
+                      </label>
+                      <label
+                        className="flex items-center gap-2 text-xs"
+                        title="El piloto pernocta tras este tramo. Si el siguiente tramo sale otro día, se marca sola."
+                      >
+                        <Switch
+                          checked={l.pernocta}
+                          onCheckedChange={(c) =>
+                            setOpsLegs((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, pernocta: c } : x,
+                              ),
+                            )
+                          }
+                        />
+                        Pernocta
+                      </label>
+                      <label
+                        className="flex items-center gap-2 text-xs"
+                        title="Parada técnica / de servicio: cambiar llanta, revisión, carga de material."
+                      >
+                        <Switch
+                          checked={l.servicio}
+                          onCheckedChange={(c) =>
+                            setOpsLegs((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, servicio: c } : x,
+                              ),
+                            )
+                          }
+                        />
+                        Servicio
                       </label>
                       <Input
                         type="number"
@@ -1784,6 +1867,84 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         }
                       />
                     </div>
+                    {l.servicio && (
+                      <Input
+                        className="h-8"
+                        placeholder="Detalle del servicio · ej. aterriza en Toledo a cambiar llanta"
+                        value={l.servicioNotas}
+                        onChange={(e) =>
+                          setOpsLegs((prev) =>
+                            prev.map((x, j) =>
+                              j === i ? { ...x, servicioNotas: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    )}
+                    <div className="grid grid-cols-[auto_1fr] items-center gap-2">
+                      <Input
+                        type="datetime-local"
+                        className="h-8 w-auto"
+                        title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo."
+                        value={l.hora}
+                        onChange={(e) =>
+                          setOpsLegs((prev) =>
+                            prev.map((x, j) =>
+                              j === i ? { ...x, hora: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                      <Input
+                        className="h-8"
+                        placeholder='Nota del tramo para el piloto · ej. "cargar gasolina aquí"'
+                        value={l.nota}
+                        onChange={(e) =>
+                          setOpsLegs((prev) =>
+                            prev.map((x, j) =>
+                              j === i ? { ...x, nota: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    {/* Manifiesto colapsado: en el caso común va vacío y no
+                        alarga la card; un ferry vuela sin nombres. */}
+                    {!l.ferry &&
+                      (l.showNombres ? (
+                        <div className="space-y-1">
+                          <Textarea
+                            rows={3}
+                            value={l.nombres}
+                            onChange={(e) =>
+                              setOpsLegs((prev) =>
+                                prev.map((x, j) =>
+                                  j === i ? { ...x, nombres: e.target.value } : x,
+                                ),
+                              )
+                            }
+                            placeholder={"Nombres de pasajeros, uno por línea\nJuan Pérez\nMaría López"}
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Específico de este tramo. Útil para permisos; puede
+                            ir vacío.
+                          </p>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpsLegs((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, showNombres: true } : x,
+                              ),
+                            )
+                          }
+                          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
+                        >
+                          + nombres de pasajeros
+                        </button>
+                      ))}
                   </div>
                 ))
               )}

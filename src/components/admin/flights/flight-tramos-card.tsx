@@ -174,6 +174,46 @@ export function FlightTramosCard({
                   <span className="font-mono text-sm">
                     {escala.origen_iata} → {escala.destino_iata}
                   </span>
+                  {/* Detalle operativo capturado (paridad con el cotizador):
+                      indicadores discretos para que la oficina vea de un
+                      vistazo lo que verá el piloto. */}
+                  {escala.es_ferry ? (
+                    <Badge variant="outline" className="text-[10px]">
+                      Ferry · vacío
+                    </Badge>
+                  ) : (
+                    escala.pasajeros != null && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px]"
+                        title={
+                          escala.pasajeros_nombres?.length
+                            ? escala.pasajeros_nombres.join(", ")
+                            : undefined
+                        }
+                      >
+                        {escala.pasajeros} pax
+                      </Badge>
+                    )
+                  )}
+                  {escala.requiere_pernocta && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                      title="El piloto pernocta tras este tramo."
+                    >
+                      Pernocta
+                    </Badge>
+                  )}
+                  {escala.tipo_parada === "SERVICIO" && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                      title={escala.servicio_notas ?? "Parada de servicio"}
+                    >
+                      Servicio
+                    </Badge>
+                  )}
                   {!esExterno && estado === "CONFIRMADO" && sinAsignar && (
                     <Badge
                       variant="outline"

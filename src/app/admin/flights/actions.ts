@@ -312,6 +312,14 @@ export interface EscalaPayload {
   es_ferry?: boolean;
   /** Pasajeros del tramo (0 en ferry). */
   pasajeros?: number;
+  /** Manifiesto de nombres de ESTE tramo (array vacío = borrar los guardados). */
+  pasajeros_nombres?: string[];
+  /** El piloto pernocta tras este tramo. */
+  requiere_pernocta?: boolean;
+  /** Parada de servicio/técnica (cambiar llanta, revisión…). */
+  tipo_parada?: "NORMAL" | "SERVICIO";
+  /** Detalle de la parada de servicio (null = limpiar al apagar el switch). */
+  servicio_notas?: string | null;
   notas?: string;
 }
 
@@ -335,6 +343,8 @@ export interface OperationalLegPayload {
   origen_iata: string;
   destino_iata: string;
   pasajeros?: number;
+  /** Manifiesto de nombres de ESTE tramo (un ferry vuela vacío). */
+  pasajeros_nombres?: string[];
   es_ferry?: boolean;
   es_sobrevuelo?: boolean;
   requiere_pernocta?: boolean;
@@ -506,6 +516,11 @@ export interface ReservaEscalaPayload {
   es_sobrevuelo?: boolean;
   pasajeros?: number;
   pasajeros_nombres?: string[];
+  /** El piloto pernocta tras este tramo (se suma a la derivación por fechas). */
+  requiere_pernocta?: boolean;
+  /** Parada de servicio/técnica del tramo. */
+  tipo_parada?: "NORMAL" | "SERVICIO";
+  servicio_notas?: string;
   notas?: string;
 }
 

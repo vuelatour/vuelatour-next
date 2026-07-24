@@ -58,6 +58,12 @@ const EscalaSchema = z
     pasajeros: z
       .union([z.literal(""), z.coerce.number().int("Debe ser entero").min(0, "Mínimo 0")])
       .optional(),
+    // Manifiesto del tramo: textarea con un nombre por línea (se parsea al enviar).
+    pasajeros_nombres: z.string().max(4000).optional().or(z.literal("")),
+    requiere_pernocta: z.boolean().default(false),
+    // Parada de servicio (tipo_parada NORMAL↔SERVICIO) + su detalle.
+    es_servicio: z.boolean().default(false),
+    servicio_notas: z.string().max(1000).optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
@@ -115,6 +121,10 @@ function defaults(
       es_sobrevuelo: initialEscala.es_sobrevuelo ?? false,
       es_ferry: initialEscala.es_ferry ?? false,
       pasajeros: initialEscala.pasajeros ?? "",
+      pasajeros_nombres: (initialEscala.pasajeros_nombres ?? []).join("\n"),
+      requiere_pernocta: initialEscala.requiere_pernocta ?? false,
+      es_servicio: initialEscala.tipo_parada === "SERVICIO",
+      servicio_notas: initialEscala.servicio_notas ?? "",
       notas: initialEscala.notas ?? "",
     };
   }
@@ -126,8 +136,20 @@ function defaults(
     es_sobrevuelo: false,
     es_ferry: false,
     pasajeros: "",
+    pasajeros_nombres: "",
+    requiere_pernocta: false,
+    es_servicio: false,
+    servicio_notas: "",
     notas: "",
   };
+}
+
+/** Textarea "uno por línea" → array de nombres (líneas no vacías, sin espacios sobrantes). */
+function parseNombres(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split("\n")
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0);
 }
 
 export function EscalaFormSheet({
@@ -181,6 +203,7 @@ export function EscalaFormSheet({
   const destinoIata = watch("destino_iata");
   const esSobrevuelo = watch("es_sobrevuelo");
   const esFerry = watch("es_ferry");
+  const esServicio = watch("es_servicio");
 
   const ordenCollision =
     typeof orden === "number" && collisionSet.has(orden);
@@ -191,6 +214,14 @@ export function EscalaFormSheet({
       return;
     }
     startTransition(async () => {
+      // Manifiesto del tramo: un ferry vuela vacío (sin nombres). Al EDITAR,
+      // el campo solo viaja si cambió respecto a lo guardado — pero si el
+      // usuario borró nombres, viaja el array VACÍO (borrar sí es un cambio;
+      // omitirlo dejaría los nombres viejos pegados).
+      const nombres = values.es_ferry ? [] : parseNombres(values.pasajeros_nombres);
+      const nombresIniciales = initialEscala?.pasajeros_nombres ?? [];
+      const nombresCambiaron =
+        nombres.join("\n") !== nombresIniciales.join("\n");
       const payload = {
         orden: Number(values.orden),
         origen_iata: values.origen_iata.toUpperCase(),
@@ -207,6 +238,24 @@ export function EscalaFormSheet({
           : values.pasajeros === "" || values.pasajeros == null
             ? undefined
             : Number(values.pasajeros),
+        pasajeros_nombres: isEdit
+          ? nombresCambiaron
+            ? nombres
+            : undefined
+          : nombres.length > 0
+            ? nombres
+            : undefined,
+        requiere_pernocta: values.requiere_pernocta,
+        tipo_parada: (values.es_servicio ? "SERVICIO" : "NORMAL") as
+          | "NORMAL"
+          | "SERVICIO",
+        // Al apagar el switch de servicio en edición se LIMPIA el detalle
+        // guardado (null); en alta simplemente no viaja.
+        servicio_notas: values.es_servicio
+          ? values.servicio_notas?.trim() || undefined
+          : isEdit
+            ? null
+            : undefined,
         notas: values.notas?.trim() || undefined,
       };
       const res = isEdit
@@ -307,8 +356,11 @@ export function EscalaFormSheet({
               checked={esFerry}
               onCheckedChange={(c) => {
                 setValue("es_ferry", c);
-                // Ferry vuela vacío: los pasajeros se van a 0 en automático.
-                if (c) setValue("pasajeros", 0);
+                // Ferry vuela vacío: pasajeros a 0 y sin nombres, en automático.
+                if (c) {
+                  setValue("pasajeros", 0);
+                  setValue("pasajeros_nombres", "");
+                }
               }}
             />
           </div>
@@ -328,6 +380,23 @@ export function EscalaFormSheet({
               disabled={esFerry}
               placeholder="Ej. 4"
               {...register("pasajeros")}
+            />
+          </Field>
+
+          <Field
+            label="Nombres de pasajeros (opcional)"
+            hint={
+              esFerry
+                ? "Un ferry vuela vacío: sin manifiesto de nombres."
+                : "Específico de este tramo. Útil para permisos; puede ir vacío."
+            }
+            error={errors.pasajeros_nombres?.message}
+          >
+            <Textarea
+              rows={3}
+              disabled={esFerry}
+              placeholder={"Uno por línea (puede ir vacío)\nJuan Pérez\nMaría López"}
+              {...register("pasajeros_nombres")}
             />
           </Field>
 
@@ -351,6 +420,47 @@ export function EscalaFormSheet({
                 }
               }}
             />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <Label className="text-sm font-medium">Pernocta</Label>
+              <p className="text-xs text-muted-foreground">
+                El piloto pernocta tras este tramo — dispara el viático de
+                pernocta en la cotización.
+              </p>
+            </div>
+            <Switch
+              checked={watch("requiere_pernocta")}
+              onCheckedChange={(c) => setValue("requiere_pernocta", c)}
+            />
+          </div>
+
+          <div className="rounded-lg border border-border p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium">Parada de servicio</Label>
+                <p className="text-xs text-muted-foreground">
+                  Parada técnica: cambiar llanta, revisión, carga de material.
+                </p>
+              </div>
+              <Switch
+                checked={esServicio}
+                onCheckedChange={(c) => setValue("es_servicio", c)}
+              />
+            </div>
+            {esServicio && (
+              <Field
+                label="Detalle del servicio"
+                error={errors.servicio_notas?.message}
+              >
+                <Textarea
+                  rows={2}
+                  placeholder="Ej. aterriza en Toledo a cambiar llanta"
+                  {...register("servicio_notas")}
+                />
+              </Field>
+            )}
           </div>
 
           <Field

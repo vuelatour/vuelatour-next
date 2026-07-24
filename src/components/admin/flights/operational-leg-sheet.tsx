@@ -49,6 +49,8 @@ export function OperationalLegSheet({
   const [esFerry, setEsFerry] = useState(true);
   const [esSobrevuelo, setEsSobrevuelo] = useState(false);
   const [pasajeros, setPasajeros] = useState("");
+  // Manifiesto del tramo: un nombre por línea (un ferry vuela vacío).
+  const [nombres, setNombres] = useState("");
   const [requierePernocta, setRequierePernocta] = useState(false);
   const [esServicio, setEsServicio] = useState(false);
   const [servicioNotas, setServicioNotas] = useState("");
@@ -66,6 +68,12 @@ export function OperationalLegSheet({
       toast.error("Captura origen y destino (IATA)");
       return;
     }
+    const nombresLista = esFerry
+      ? []
+      : nombres
+          .split("\n")
+          .map((n) => n.trim())
+          .filter((n) => n.length > 0);
     startTransition(async () => {
       const res = await createOperationalLegAction(flightId, {
         origen_iata: origen.toUpperCase(),
@@ -73,6 +81,7 @@ export function OperationalLegSheet({
         es_ferry: esFerry,
         es_sobrevuelo: esSobrevuelo,
         pasajeros: esFerry ? 0 : Number(pasajeros) || 0,
+        pasajeros_nombres: nombresLista.length > 0 ? nombresLista : undefined,
         requiere_pernocta: requierePernocta,
         tipo_parada: esServicio ? "SERVICIO" : "NORMAL",
         servicio_notas: esServicio ? servicioNotas.trim() || undefined : undefined,
@@ -181,6 +190,23 @@ export function OperationalLegSheet({
                 placeholder="0"
                 className="w-24"
               />
+            </div>
+          )}
+
+          {!esFerry && (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Nombres de pasajeros (opcional)
+              </Label>
+              <Textarea
+                rows={3}
+                value={nombres}
+                onChange={(e) => setNombres(e.target.value)}
+                placeholder={"Uno por línea (puede ir vacío)\nJuan Pérez\nMaría López"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Específico de este tramo. Útil para permisos; puede ir vacío.
+              </p>
             </div>
           )}
 

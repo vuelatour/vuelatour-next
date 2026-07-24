@@ -168,7 +168,15 @@ export function EscalasCard({
                         </Badge>
                       ) : (
                         esc.pasajeros != null && (
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px]"
+                            title={
+                              esc.pasajeros_nombres?.length
+                                ? esc.pasajeros_nombres.join(", ")
+                                : undefined
+                            }
+                          >
                             {esc.pasajeros} pax
                           </Badge>
                         )

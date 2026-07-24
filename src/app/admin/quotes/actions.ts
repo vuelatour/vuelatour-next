@@ -22,6 +22,13 @@ export interface OperationalLegInput {
   destino_iata: string;
   es_ferry?: boolean;
   pasajeros?: number;
+  /** Manifiesto de nombres de ESTE tramo (un ferry vuela vacío). */
+  pasajeros_nombres?: string[];
+  /** El piloto pernocta tras este tramo (se suma a la derivación por fechas). */
+  requiere_pernocta?: boolean;
+  /** Parada de servicio/técnica del tramo. */
+  tipo_parada?: "NORMAL" | "SERVICIO";
+  servicio_notas?: string;
   hora_salida?: string;
   notas?: string;
 }
