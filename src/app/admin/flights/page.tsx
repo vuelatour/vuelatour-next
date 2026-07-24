@@ -21,6 +21,7 @@ interface FlightsPageProps {
     estado?: string;
     piloto_id?: string;
     aeronave_id?: string;
+    cobro?: string;
     desde?: string;
     hasta?: string;
   }>;
@@ -39,6 +40,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
         estado: estadoFilter,
         piloto_id: sp.piloto_id || undefined,
         aeronave_id: sp.aeronave_id || undefined,
+        cobro: sp.cobro || undefined,
         desde: sp.desde || undefined,
         hasta: sp.hasta || undefined,
         limit: 200,
@@ -146,6 +148,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
           estado: sp.estado ?? "",
           piloto_id: sp.piloto_id ?? "",
           aeronave_id: sp.aeronave_id ?? "",
+          cobro: sp.cobro ?? "",
           desde: sp.desde ?? "",
           hasta: sp.hasta ?? "",
         }}

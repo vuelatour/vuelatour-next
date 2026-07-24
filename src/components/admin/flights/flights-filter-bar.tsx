@@ -17,6 +17,16 @@ const ESTADOS_OPERATIVOS: { value: EstadoVuelo | ""; label: string }[] = [
   { value: "CANCELADO", label: "Cancelado" },
 ];
 
+// Estado de COBRO del vuelo (petición del cliente): quién ya pagó, a quién
+// le falta. Los valores son el contrato del API (ListFlightsQuery.cobro).
+const ESTADOS_COBRO: { value: string; label: string }[] = [
+  { value: "", label: "Todos" },
+  { value: "COBRADO", label: "Cobrado completo" },
+  { value: "POR_COBRAR", label: "Falta por cobrar" },
+  { value: "PARCIAL", label: "Con abonos (falta saldo)" },
+  { value: "SIN_COBROS", label: "Sin ningún cobro" },
+];
+
 interface FlightsFilterBarProps {
   aircraft: { id: string; label: string }[];
   pilots: { id: string; nombre: string }[];
@@ -24,6 +34,7 @@ interface FlightsFilterBarProps {
     estado: string;
     piloto_id: string;
     aeronave_id: string;
+    cobro: string;
     desde: string;
     hasta: string;
   };
@@ -58,13 +69,14 @@ export function FlightsFilterBar({
     initial.estado ||
     initial.piloto_id ||
     initial.aeronave_id ||
+    initial.cobro ||
     initial.desde ||
     initial.hasta
   );
 
   return (
     <Card>
-      <CardContent className="p-4 grid gap-3 md:grid-cols-5 items-end">
+      <CardContent className="p-4 grid gap-3 md:grid-cols-3 lg:grid-cols-6 items-end">
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">Estado</Label>
           <SearchableSelect
@@ -99,6 +111,15 @@ export function FlightsFilterBar({
           />
         </div>
         <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Cobro</Label>
+          <SearchableSelect
+            options={ESTADOS_COBRO}
+            value={initial.cobro}
+            onChange={(v) => pushQuery({ cobro: v })}
+            placeholder="Todos"
+          />
+        </div>
+        <div className="space-y-1.5">
           <Label className="text-xs font-medium">Desde</Label>
           <Input
             type="date"
@@ -117,6 +138,7 @@ export function FlightsFilterBar({
                     estado: "",
                     piloto_id: "",
                     aeronave_id: "",
+                    cobro: "",
                     desde: "",
                     hasta: "",
                   })

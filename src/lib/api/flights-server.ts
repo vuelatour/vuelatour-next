@@ -13,6 +13,8 @@ export interface ListFlightsQuery {
   piloto_id?: string;
   estado?: EstadoVuelo;
   es_externo?: boolean;
+  /** Estado de cobro: COBRADO · POR_COBRAR · PARCIAL · SIN_COBROS. */
+  cobro?: string;
   desde?: string;
   hasta?: string;
   limit?: number;
