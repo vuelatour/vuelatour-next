@@ -108,6 +108,10 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
   // Cliente extranjero: se factura con el RFC genérico del SAT; el API aplica
   // régimen 616, uso S01 y CP de la emisora en automático.
   const [esExtranjero, setEsExtranjero] = useState(false);
+  // Cliente INTERNO (operación propia): sus cotizaciones pueden ir en $0.
+  // Solo viaja en create/update si el operador tocó el switch.
+  const [esInterno, setEsInterno] = useState(false);
+  const esInternoTouched = useRef(false);
   // Constancia de situación fiscal → IA llena los datos fiscales.
   const [leyendoConstancia, setLeyendoConstancia] = useState(false);
   const constanciaRef = useRef<HTMLInputElement>(null);
@@ -120,6 +124,8 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
     setTarifasReady(!initialClient);
     setTarifasError(false);
     setEsExtranjero(initialClient?.rfc === RFC_EXTRANJERO);
+    setEsInterno(initialClient?.es_interno ?? false);
+    esInternoTouched.current = false;
     createdIdRef.current = null;
     let cancelled = false;
     listAircraftTarifaOptionsAction().then((r) => {
@@ -268,10 +274,15 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
     }
 
     startTransition(async () => {
+      // es_interno viaja SOLO si se tocó el switch (patrón de los demás
+      // booleanos: nada de mandar valores que el operador no decidió).
+      const payload: ClientFormValues = esInternoTouched.current
+        ? { ...values, es_interno: esInterno }
+        : values;
       const existingId = isEdit ? initialClient!.id : createdIdRef.current;
       const result = existingId
-        ? await updateClientAction(existingId, values)
-        : await createClientAction(values);
+        ? await updateClientAction(existingId, payload)
+        : await createClientAction(payload);
 
       if (result.ok) {
         const clienteId = existingId ?? result.data?.id ?? null;
@@ -498,6 +509,27 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
             <Switch
               checked={esBroker}
               onCheckedChange={(c) => setValue("es_broker", c)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">
+                Cliente interno (operación propia)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Para vuelos de la empresa (reposicionamiento, demostración,
+                servicio): sus cotizaciones pueden ir en $0 — sin hora mínima ni
+                cobro esperado. La operación (tacómetros, gastos) se registra
+                normal y el costo cae al avión.
+              </p>
+            </div>
+            <Switch
+              checked={esInterno}
+              onCheckedChange={(c) => {
+                esInternoTouched.current = true;
+                setEsInterno(c);
+              }}
             />
           </div>
 

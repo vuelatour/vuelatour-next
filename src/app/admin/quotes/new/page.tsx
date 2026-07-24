@@ -66,6 +66,7 @@ export default async function NewQuotePage() {
     id: c.id,
     nombre: c.nombre,
     es_broker: c.es_broker,
+    es_interno: c.es_interno,
     rfc: c.rfc,
   }));
 

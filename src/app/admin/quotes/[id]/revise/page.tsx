@@ -106,6 +106,7 @@ export default async function ReviseQuotePage({ params }: RevisePageProps) {
         airports={airports}
         initialQuote={quote}
         clientName={client?.nombre ?? quote.cliente_id}
+        clientEsInterno={client?.es_interno ?? false}
       />
     </div>
   );

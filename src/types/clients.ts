@@ -24,6 +24,12 @@ export interface Client {
   pais_residencia: string | null;
   canal_origen: CanalCliente | null;
   es_broker: boolean;
+  /**
+   * Pseudo-cliente de operación propia (reposicionamiento, demostración,
+   * servicio): sus cotizaciones pueden ir en $0 — sin hora mínima ni cobro
+   * esperado. Opcional defensivo: el API puede no traerlo aún.
+   */
+  es_interno?: boolean;
   notas: string | null;
   activo: boolean;
   created_at: string;

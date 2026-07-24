@@ -18,7 +18,16 @@ const columns: Array<DataTableColumn<Client>> = [
     key: "nombre",
     header: "Nombre",
     cellClassName: "font-medium",
-    cell: (c) => c.nombre,
+    cell: (c) => (
+      <span className="inline-flex items-center gap-1.5">
+        {c.nombre}
+        {c.es_interno && (
+          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+            Interno
+          </Badge>
+        )}
+      </span>
+    ),
   },
   {
     key: "contacto",
@@ -116,7 +125,7 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
       rows={clients}
       rowKey={(c) => c.id}
       searchText={(c) =>
-        `${c.nombre} ${c.rfc ?? ""} ${c.razon_social_default ?? ""} ${c.email ?? ""} ${c.telefono ?? ""}`
+        `${c.nombre} ${c.rfc ?? ""} ${c.razon_social_default ?? ""} ${c.email ?? ""} ${c.telefono ?? ""} ${c.es_interno ? "interno" : ""}`
       }
       searchPlaceholder="Buscar cliente (nombre, RFC, email, teléfono)…"
     />

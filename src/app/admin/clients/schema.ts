@@ -35,6 +35,9 @@ export const ClientFormSchema = z.object({
   pais_residencia: z.string().max(100).optional().or(z.literal("")),
   canal_origen: CanalEnum.optional().or(z.literal("")),
   es_broker: z.boolean().default(false),
+  // Cliente interno (operación propia): OPCIONAL — solo viaja al API si el
+  // operador tocó el switch (stripEmpty descarta undefined).
+  es_interno: z.boolean().optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

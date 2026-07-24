@@ -102,6 +102,8 @@ interface ClientOption {
   id: string;
   nombre: string;
   es_broker: boolean;
+  /** Cliente interno (operación propia): la cotización puede ir en $0. */
+  es_interno?: boolean;
   rfc: string | null;
 }
 
@@ -178,6 +180,7 @@ type QuoteCalculatorProps = {
       frequentClientIds?: string[];
       initialQuote?: undefined;
       clientName?: undefined;
+      clientEsInterno?: undefined;
     }
   | {
       mode: "revise";
@@ -185,6 +188,8 @@ type QuoteCalculatorProps = {
       frequentClientIds?: undefined;
       initialQuote: PersistedQuote;
       clientName: string;
+      /** El cliente de la cotización es interno (operación propia): puede ir en $0. */
+      clientEsInterno?: boolean;
     }
 );
 
@@ -332,6 +337,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   >([]);
   const initialQuote = isRevise ? props.initialQuote : undefined;
   const clientName = isRevise ? props.clientName : undefined;
+  const reviseClienteInterno = isRevise ? (props.clientEsInterno ?? false) : false;
   const clients = isRevise ? [] : props.clients;
   const frequentClientIds = isRevise ? [] : (props.frequentClientIds ?? []);
 
@@ -606,6 +612,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     () => JSON.parse(debouncedJson),
     [debouncedJson],
   );
+
+  // Cliente INTERNO (operación propia): el motor permite cotizar en $0 (sin
+  // hora mínima, tarifa 0, sin cobro esperado) — la UI no debe estorbar.
+  // La validación real vive en el server; para clientes normales nada cambia.
+  const clienteInterno = isRevise
+    ? reviseClienteInterno
+    : !!allClients.find((c) => c.id === values.cliente_id)?.es_interno;
 
   const calcPayload = useMemo<CalculateQuoteRequest | null>(() => {
     if (!debounced.aeronave_id) return null;
@@ -1061,6 +1074,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 <span className="font-mono">v{initialQuote.cotizacion_version}</span>{" "}
                 · revisar genera v{initialQuote.cotizacion_version + 1}
               </p>
+              {clienteInterno && (
+                <p className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400">
+                  Cliente interno — la cotización puede ir en $0 (vuelo de la
+                  empresa, sin cobro).
+                </p>
+              )}
             </div>
           ) : (
             <Field label="Cliente" required>
@@ -1074,7 +1093,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2">
                       <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
                       <p className="text-xs text-muted-foreground">
-                        {[sel.es_broker ? "Broker · tarifa broker" : null, sel.rfc]
+                        {[
+                          sel.es_interno ? "Interno · operación propia" : null,
+                          sel.es_broker ? "Broker · tarifa broker" : null,
+                          sel.rfc,
+                        ]
                           .filter(Boolean)
                           .join(" · ") || "Cliente directo"}
                       </p>
@@ -1122,11 +1145,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     </div>
                   );
                 })()}
+                {clienteInterno && (
+                  <p className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-400">
+                    Cliente interno — la cotización puede ir en $0 (vuelo de la
+                    empresa, sin cobro).
+                  </p>
+                )}
                 <SearchableSelect
                   options={allClients.map((c) => ({
                     value: c.id,
                     label: c.nombre,
-                    description: [c.rfc, c.es_broker ? "Broker" : null]
+                    description: [
+                      c.rfc,
+                      c.es_broker ? "Broker" : null,
+                      c.es_interno ? "Interno" : null,
+                    ]
                       .filter(Boolean)
                       .join(" · "),
                   }))}
@@ -1193,9 +1226,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   value: a.id,
                   label: `${a.matricula} — ${a.modelo}`,
                   description: `${a.velocidad_crucero_kts} kts${
-                    sinTarifa ? " · sin tarifa configurada" : ""
+                    sinTarifa
+                      ? clienteInterno
+                        ? " · sin tarifa · interno cotiza $0"
+                        : " · sin tarifa configurada"
+                      : ""
                   }`,
-                  disabled: sinTarifa,
+                  // Cliente interno: el motor acepta tarifa $0, así que un
+                  // avión sin tarifa configurada SÍ se puede cotizar.
+                  disabled: sinTarifa && !clienteInterno,
                 };
               })}
               value={values.aeronave_id}
@@ -1976,7 +2015,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               <div id="tarifa-override-field" className="scroll-mt-24">
                 <Field
                   label="Tarifa USD/hr — SOLO esta cotización"
-                  hint="Por tiempos u otro acuerdo se cobra más o menos. Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
+                  hint={
+                    clienteInterno
+                      ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
+                      : "Por tiempos u otro acuerdo se cobra más o menos. Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
+                  }
                 >
                   <Input
                     type="number"
@@ -2128,6 +2171,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               id: client.id,
               nombre: client.nombre,
               es_broker: client.es_broker,
+              es_interno: client.es_interno,
               rfc: client.rfc,
             };
             setExtraClients((prev) => [...prev.filter((c) => c.id !== opt.id), opt]);
