@@ -146,6 +146,12 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
   const copiloto = pilotsRes.data.find((p) => p.id === snapshot.copiloto_id);
+  // Apoyo en tierra: el snapshot trae el nombre resuelto (el apoyo puede ser
+  // cualquier usuario, no solo pilotos); fallback defensivo a la lista.
+  const apoyoNombre =
+    snapshot.apoyo_nombre ??
+    pilotsRes.data.find((p) => p.id === snapshot.apoyo_id)?.nombre ??
+    null;
 
   const aircraftOptions = aircraftRes.data.map((a) => ({
     id: a.id,
@@ -236,6 +242,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     ✓ Asignado
                   </Badge>
                 ))}
+              {apoyoNombre && (
+                <Badge
+                  variant="outline"
+                  className="text-xs"
+                  title="Apoyo en tierra: va al aeropuerto a apoyar (maletas, pagos, cobros y gastos). Ve el vuelo como el piloto en su app, pero no captura tacómetros."
+                >
+                  Apoyo: {apoyoNombre}
+                </Badge>
+              )}
               {snapshot.estado_permiso === "pendiente" && (
                 <Badge
                   variant="outline"
@@ -447,6 +462,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                       )}
                     </Row>
                     {copiloto && <Row label="Copiloto">{copiloto.nombre}</Row>}
+                    {apoyoNombre && <Row label="Apoyo">{apoyoNombre}</Row>}
                     <Row label="Traslado inicial">
                       {snapshot.fecha_vuelo ? (
                         fmtDateTime(snapshot.fecha_vuelo)

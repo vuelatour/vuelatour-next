@@ -11,6 +11,10 @@ export interface FlightListItem {
   piloto_id: string | null;
   /** Copiloto del viaje (segundo piloto): ve todo el vuelo igual que el piloto. */
   copiloto_id: string | null;
+  /** Apoyo en tierra: va al aeropuerto a apoyar (maletas, pagos, cobros,
+      gastos). Ve el vuelo como el piloto en su app pero NO captura
+      tacómetros. Opcional-defensivo: filas/respuestas viejas no lo traen. */
+  apoyo_id?: string | null;
   ruta_id: string | null;
   tipo: "REDONDO" | "MULTIESCALA";
   estado: EstadoVuelo;
@@ -120,6 +124,8 @@ export interface FlightSnapshot extends FlightListItem {
   escalas: FlightEscala[];
   cobros: FlightCobro[];
   total_cobrado: number;
+  /** Nombre del apoyo en tierra, resuelto por el backend en snapshot(). */
+  apoyo_nombre?: string | null;
 }
 
 /** Foto de tacómetro con URL firmada: GET /v1/flights/:id/taco-photos. */

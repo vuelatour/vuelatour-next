@@ -42,6 +42,7 @@ interface AssignFormValues {
   aeronave_id: string;
   piloto_id: string;
   copiloto_id: string;
+  apoyo_id: string;
   fecha_vuelo: string;
 }
 
@@ -58,6 +59,7 @@ function defaults(flight: FlightListItem): AssignFormValues {
     aeronave_id: flight.aeronave_id ?? "",
     piloto_id: flight.piloto_id ?? "",
     copiloto_id: flight.copiloto_id ?? "",
+    apoyo_id: flight.apoyo_id ?? "",
     fecha_vuelo: isoToCancunInput(flight.fecha_vuelo),
   };
 }
@@ -98,6 +100,11 @@ export function FlightAssignSheet({
   const aeronaveId = watch("aeronave_id");
   const pilotoId = watch("piloto_id");
   const copilotoId = watch("copiloto_id");
+  const apoyoId = watch("apoyo_id");
+  // Puede quedar en conflicto si el apoyo se eligió primero y luego el
+  // piloto/copiloto cambió a la misma persona (el select ya la filtra).
+  const apoyoConflicto =
+    !!apoyoId && (apoyoId === pilotoId || apoyoId === copilotoId);
   const dispoById = new Map(dispo.map((d) => [d.id, d]));
   const selectedPiloto = pilotoId ? dispoById.get(pilotoId) : undefined;
 
@@ -125,10 +132,22 @@ export function FlightAssignSheet({
     .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
 
   const onSubmit = handleSubmit((values) => {
+    // El API también lo valida; aquí se corta antes con mensaje claro.
+    if (
+      values.apoyo_id &&
+      (values.apoyo_id === values.piloto_id ||
+        values.apoyo_id === values.copiloto_id)
+    ) {
+      toast.error(
+        "El apoyo debe ser una persona distinta del piloto y del copiloto.",
+      );
+      return;
+    }
     const payload: {
       aeronave_id?: string;
       piloto_id?: string;
       copiloto_id?: string | null;
+      apoyo_id?: string | null;
       fecha_vuelo?: string;
     } = {};
     if (!flight.es_externo && values.aeronave_id !== (flight.aeronave_id ?? "")) {
@@ -140,6 +159,10 @@ export function FlightAssignSheet({
     if (values.copiloto_id !== (flight.copiloto_id ?? "")) {
       // null explícito para quitar el copiloto (string vacío).
       payload.copiloto_id = values.copiloto_id || null;
+    }
+    if (values.apoyo_id !== (flight.apoyo_id ?? "")) {
+      // null explícito para quitar el apoyo (string vacío).
+      payload.apoyo_id = values.apoyo_id || null;
     }
     if (values.fecha_vuelo) {
       payload.fecha_vuelo = cancunInputToIso(values.fecha_vuelo);
@@ -255,6 +278,31 @@ export function FlightAssignSheet({
             />
             <p className="text-[11px] text-muted-foreground">
               Cuando van 2 pilotos. El copiloto ve todo el vuelo en su app igual que el piloto.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Apoyo (opcional)</Label>
+            <SearchableSelect
+              options={[
+                { value: "", label: "Sin apoyo" },
+                ...pilotOptions.filter(
+                  (o) => o.value !== pilotoId && o.value !== copilotoId,
+                ),
+              ]}
+              value={apoyoId}
+              onChange={(v) => setValue("apoyo_id", v)}
+              placeholder="Selecciona apoyo"
+              emptyText="Sin usuarios disponibles"
+            />
+            {apoyoConflicto && (
+              <p className="flex items-start gap-1.5 text-xs text-destructive font-medium">
+                <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
+                El apoyo debe ser una persona distinta del piloto y del copiloto.
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Va al aeropuerto a apoyar (maletas, pagos, cobros, gastos). Ve el
+              vuelo como el piloto en su app, pero no captura tacómetros.
             </p>
           </div>
           <div className="space-y-1.5">

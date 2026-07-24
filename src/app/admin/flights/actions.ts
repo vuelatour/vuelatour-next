@@ -31,6 +31,8 @@ export interface AssignFlightPayload {
   piloto_id?: string;
   /** Copiloto del viaje (segundo piloto). null = quitarlo. */
   copiloto_id?: string | null;
+  /** Apoyo en tierra (maletas, pagos, cobros, gastos). null = quitarlo. */
+  apoyo_id?: string | null;
   fecha_vuelo?: string;
 }
 
