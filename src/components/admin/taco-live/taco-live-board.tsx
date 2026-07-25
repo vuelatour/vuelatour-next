@@ -45,6 +45,13 @@ export interface TacoLiveEscala {
   nota_correccion: string | null;
   foto_salida_url: string | null;
   foto_llegada_url: string | null;
+  /**
+   * RECOMENDACIÓN calculada al vuelo por el API (promedio del tramo). NO es
+   * una lectura: el sistema ya no escribe estimados — la oficina la confirma
+   * o ajusta. Opcionales para tolerar API viejo/nuevo.
+   */
+  llegada_estimada?: number | null;
+  minutos_promedio?: number | null;
 }
 
 export interface TacoLiveVuelo {
@@ -64,6 +71,21 @@ const ESTADO_STYLE: Record<TacoLiveEscala["estado"], { label: string; cls: strin
   REVISAR: { label: "Revisar", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
   OK: { label: "OK", cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
 };
+
+function fmtTaco(n: number): string {
+  return n.toLocaleString("es-MX", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+/**
+ * Sugerencia de llegada (solo referencia, NO un dato): aplica a escalas
+ * EN_CURSO/VENCIDA que siguen sin lectura de llegada y el API mandó la
+ * recomendación calculada al vuelo.
+ */
+function sugerenciaLlegada(e: TacoLiveEscala): number | null {
+  if (e.taco_llegada != null) return null;
+  if (e.estado !== "EN_CURSO" && e.estado !== "VENCIDA") return null;
+  return e.llegada_estimada ?? null;
+}
 
 /** Leyenda de procedencia de una lectura (acordado con el cliente). */
 function leyendaOrigen(e: TacoLiveEscala, lado: "salida" | "llegada"): string | null {
@@ -170,6 +192,7 @@ function Lectura({
 
 function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscala }) {
   const st = ESTADO_STYLE[escala.estado];
+  const sugerencia = sugerenciaLlegada(escala);
   return (
     <div
       className={`rounded-lg border p-3 ${
@@ -209,6 +232,17 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
           <RevisionActions vueloId={vueloId} escala={escala} />
         </div>
       </div>
+      {sugerencia != null && (
+        <p
+          className="mt-2 text-[11px] text-amber-600/90 dark:text-amber-400/90"
+          title="Calculada con el promedio histórico del tramo. NO es una lectura: confírmala con la foto del piloto o ajústala aquí."
+        >
+          Sugerencia: ~{fmtTaco(sugerencia)}
+          {escala.minutos_promedio != null &&
+            ` (promedio del tramo ~${Math.round(escala.minutos_promedio)} min)`}{" "}
+          — solo referencia, aún sin lectura.
+        </p>
+      )}
       {escala.revision_motivo && escala.revision_requerida && (
         <p className="mt-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
           {escala.revision_motivo}
@@ -234,8 +268,13 @@ function RevisionActions({
   const router = useRouter();
   const [openAjuste, setOpenAjuste] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Sin llegada real: precargamos la sugerencia del API (editable). Guardar
+  // sigue siendo confirmTaco — acción humana deliberada, origen OFICINA.
+  const sugerencia = sugerenciaLlegada(escala);
   const [salida, setSalida] = useState(escala.taco_salida?.toString() ?? "");
-  const [llegada, setLlegada] = useState(escala.taco_llegada?.toString() ?? "");
+  const [llegada, setLlegada] = useState(
+    escala.taco_llegada?.toString() ?? sugerencia?.toString() ?? "",
+  );
   const [nota, setNota] = useState("");
 
   const comprobar = () => {
@@ -343,6 +382,12 @@ function RevisionActions({
                 value={llegada}
                 onChange={(e) => setLlegada(e.target.value)}
               />
+              {sugerencia != null && (
+                <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90">
+                  Sugerencia por promedio — confirma con la foto o el piloto
+                  antes de guardar.
+                </p>
+              )}
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>Nota (opcional)</Label>

@@ -288,9 +288,10 @@ export function EscalasCard({
 }
 
 /**
- * Botón de cierre operativo: rellena los huecos de tacómetro del vuelo con el
- * promedio histórico del tramo. Lo calculado queda en amarillo hasta
- * confirmarse (el cron nocturno hace lo mismo automáticamente).
+ * Botón de cierre operativo: PROPAGA lecturas reales (la llegada de un tramo
+ * como salida del siguiente). Política del cliente (25 jul 2026): el sistema
+ * ya NO calcula lecturas con promedios — lo que falte queda pendiente con
+ * sugerencia en Tacómetros en vivo para que lo confirme un humano.
  */
 function FillTacoGapsButton({ flightId }: { flightId: string }) {
   const router = useRouter();
@@ -303,12 +304,12 @@ function FillTacoGapsButton({ flightId }: { flightId: string }) {
         const n = res.data?.escalas_actualizadas ?? 0;
         toast.success(
           n > 0
-            ? `${n} ${n === 1 ? "tramo completado" : "tramos completados"} con el promedio del tramo · revisar en amarillo`
-            : "No hay huecos que se puedan calcular todavía",
+            ? `${n} ${n === 1 ? "salida propagada" : "salidas propagadas"} desde la llegada del tramo anterior`
+            : "Nada que propagar: lo que falta son lecturas reales — captúralas o ajústalas en Tacómetros en vivo",
         );
         router.refresh();
       } else {
-        toast.error(res.error ?? "Error al completar huecos");
+        toast.error(res.error ?? "Error al propagar lecturas");
       }
     });
   };
@@ -320,10 +321,10 @@ function FillTacoGapsButton({ flightId }: { flightId: string }) {
       onClick={handleFill}
       disabled={pending}
       className="gap-1.5"
-      title="Calcula las lecturas faltantes con el promedio histórico del tramo. Quedan en amarillo hasta que las confirmes."
+      title="Copia lecturas reales: la llegada de cada tramo se propaga como salida del siguiente. El sistema ya no inventa valores con promedios."
     >
       <SparklesIcon className="h-3.5 w-3.5" />
-      {pending ? "Calculando…" : "Completar huecos"}
+      {pending ? "Propagando…" : "Propagar lecturas"}
     </Button>
   );
 }

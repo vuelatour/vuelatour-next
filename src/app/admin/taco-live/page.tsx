@@ -17,10 +17,11 @@ function shiftDay(fecha: string, delta: number): string {
 }
 
 /**
- * Tacómetros en vivo: todas las escalas del día esperando su lectura. La
- * operación NUNCA se detiene — si el dato no llega a la hora esperada, el
- * sistema lo deduce (amarillo) y aquí la oficina confirma o ajusta viendo la
- * foto. Prioridad de origen: piloto > IA > deducción matemática.
+ * Tacómetros en vivo: todas las escalas del día esperando su lectura. El
+ * sistema ya NO escribe lecturas estimadas — lo vencido queda sin llegada
+ * (rojo) con una SUGERENCIA calculada al vuelo por el API (llegada_estimada /
+ * minutos_promedio, campos aditivos), y aquí la oficina la confirma con la
+ * foto del piloto o la ajusta (confirmTaco, origen OFICINA).
  */
 export default async function TacoLivePage({
   searchParams,
@@ -54,8 +55,9 @@ export default async function TacoLivePage({
             {porRevisar > 0 && (
               <span className="text-amber-600 font-medium"> · {porRevisar} por revisar</span>
             )}
-            . Si una lectura no llega a la hora esperada, se deduce sola — aquí
-            solo confirmas o ajustas viendo la foto.
+            . El sistema ya no captura lecturas por ti: lo vencido queda
+            pendiente con una sugerencia — confírmala con la foto del piloto o
+            ajústala aquí.
           </p>
         </div>
         <div className="flex items-center gap-2">
