@@ -18,6 +18,16 @@ const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
   SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
 };
 
+// Mismas etiquetas que el alta/verificación de gastos (fuente: expense-create).
+const MEDIO_PAGO_LABELS: Record<string, string> = {
+  EFECTIVO: "Efectivo",
+  TARJETA_CORP: "Tarjeta corporativa",
+  PERSONAL_PABLO: "Personal Pablo",
+  PERSONAL_ALE: "Personal Ale",
+  TRANSFERENCIA: "Transferencia",
+  BODEGA: "Bodega (inventario)",
+};
+
 const fmtMoney = (monto: string, moneda: string) =>
   Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
 
@@ -69,6 +79,12 @@ export function FlightGastosTable({
           )}
         </>
       ),
+    },
+    {
+      key: "medio",
+      header: "Pago",
+      cellClassName: "align-top whitespace-nowrap text-xs",
+      cell: (g) => MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago,
     },
     {
       key: "desglose",
