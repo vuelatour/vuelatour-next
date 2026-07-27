@@ -187,11 +187,13 @@ export function EscalasCard({
                           </Badge>
                         )}
                         {/* Corrección de oficina SIEMPRE disponible (origen
-                            OFICINA + nota); el flujo amarillo de abajo es solo
-                            para lecturas marcadas por revisar. Un tramo
-                            cancelado no captura ni corrige (se restaura en
-                            «Asignación por tramo» si sí voló). */}
-                        {!cancelada && !esc.revision_requerida && (
+                            OFICINA + nota) — TAMBIÉN en tramos amarillos: con
+                            solo «Confirmar lectura» no era obvio que ahí
+                            mismo se podía editar, y parecía que el tramo no
+                            se dejaba corregir. Un tramo cancelado no captura
+                            ni corrige (se restaura en «Asignación por
+                            tramo» si sí voló). */}
+                        {!cancelada && (
                           <TacoConfirmDialog
                             flightId={flightId}
                             escala={esc}
@@ -565,7 +567,7 @@ function TacoConfirmDialog({
             <AlertDialogDescription>
               {esCorreccion
                 ? "Ajusta la lectura equivocada contra la foto. La corrección queda con origen OFICINA, se registra quién la hizo, y si cambias la llegada se propaga como salida del siguiente tramo."
-                : `${escala.revision_motivo ?? "Lectura marcada para revisión."} Revisa contra la foto; corrige el valor si hace falta y confirma para pasarla de amarillo a verde.`}
+                : `${escala.revision_motivo ?? "Lectura marcada para revisión."} Los campos de abajo SÍ se pueden editar: corrige el valor contra la foto si hace falta (o adjunta una) y confirma para pasar de amarillo a verde.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid grid-cols-2 gap-3">
