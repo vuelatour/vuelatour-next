@@ -44,6 +44,22 @@ export function getFlightTacoPhotos(id: string) {
   });
 }
 
+export interface VueloAnterior {
+  id: string;
+  folio: number;
+  ruta: string;
+  fecha_vuelo: string | null;
+  estado: string;
+}
+
+/** Vuelo anterior del mismo avión (auditar la cadena de tacómetros). */
+export function getVueloAnterior(id: string) {
+  return apiServer<{ anterior: VueloAnterior | null }>(
+    `/v1/flights/${id}/anterior`,
+    { cache: "no-store" },
+  );
+}
+
 export interface BitacoraEvento {
   id: string;
   tipo: "recordatorio_taco" | "taco_capturado";

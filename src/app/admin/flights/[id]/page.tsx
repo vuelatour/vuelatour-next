@@ -27,6 +27,7 @@ import {
   getCobroVoucherUrls,
   getFlightBitacora,
   getFlightPlanUrl,
+  getVueloAnterior,
 } from "@/lib/api/flights-server";
 import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listProviders } from "@/lib/api/providers-server";
@@ -89,7 +90,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes, vueloAnteriorRes] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -109,7 +110,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       listGastos({ vuelo_id: id, limit: 200 }).catch(
         () => ({ data: [], count: 0, limit: 0, offset: 0 }),
       ),
+      // Vuelo anterior del mismo avión (auditar la cadena de tacómetros).
+      getVueloAnterior(id).catch(() => ({ anterior: null })),
     ]);
+  const vueloAnterior = vueloAnteriorRes.anterior;
   const gastos = gastosRes.data;
   // Resumen para el aviso al cancelar el vuelo (los gastos se conservan).
   const gastosPorMoneda = new Map<string, number>();
@@ -522,6 +526,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             escalas={snapshot.escalas}
             tacoPhotos={tacoPhotos}
             pilotoExterno={piloto?.es_piloto_externo === true}
+            vueloAnterior={vueloAnterior}
           />
 
           {/* Cobros */}

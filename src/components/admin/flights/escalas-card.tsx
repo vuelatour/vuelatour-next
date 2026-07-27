@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { fmtDateTime } from "@/lib/datetime";
 import { useRouter } from "next/navigation";
 import {
+  ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
   PencilSquareIcon,
@@ -38,6 +39,8 @@ import {
   getUltimoTacoAction,
 } from "@/app/admin/flights/actions";
 import { fmtDecimal } from "@/lib/format";
+import { fmtDate } from "@/lib/datetime";
+import type { VueloAnterior } from "@/lib/api/flights-server";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
 
 interface EscalasCardProps {
@@ -46,6 +49,8 @@ interface EscalasCardProps {
   tacoPhotos?: TacoPhoto[];
   /** Piloto EXTERNO sin app (doc 3.7): la oficina captura las lecturas aquí. */
   pilotoExterno?: boolean;
+  /** Vuelo previo del mismo avión: de ahí viene la salida del tramo 1. */
+  vueloAnterior?: VueloAnterior | null;
 }
 
 /**
@@ -69,6 +74,7 @@ export function EscalasCard({
   escalas,
   tacoPhotos = [],
   pilotoExterno = false,
+  vueloAnterior = null,
 }: EscalasCardProps) {
   const photosByEscala = new Map(tacoPhotos.map((p) => [p.escala_id, p]));
 
@@ -85,6 +91,24 @@ export function EscalasCard({
                   ? "Piloto EXTERNO (sin app): la oficina captura aquí las lecturas de cada tramo con «Capturar» — el vuelo avanza solo (EN VUELO → COMPLETADO) al guardarlas."
                   : "Lecturas, fotos y revisiones de cada tramo (las captura el piloto). La ruta, fechas y tramos se gestionan arriba en «Asignación por tramo»."}
             </CardDescription>
+            {/* La salida del tramo 1 viene del último taco del avión = de su
+                vuelo previo: enlace directo para auditar la cadena. */}
+            {vueloAnterior && (
+              <a
+                href={`/admin/flights/${vueloAnterior.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground transition-colors"
+                title="Abre en otra pestaña el vuelo previo de este avión (de ahí viene la salida del tramo 1)."
+              >
+                <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+                Vuelo anterior del avión: #{vueloAnterior.folio} ·{" "}
+                <span className="font-mono">{vueloAnterior.ruta}</span>
+                {vueloAnterior.fecha_vuelo
+                  ? ` · ${fmtDate(vueloAnterior.fecha_vuelo)}`
+                  : ""}
+              </a>
+            )}
           </div>
           <div className="flex shrink-0 gap-2">
             {escalas.length > 0 &&
