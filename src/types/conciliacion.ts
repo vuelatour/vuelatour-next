@@ -23,6 +23,9 @@ export interface MovimientoBancario {
   conciliado: boolean;
   gasto_id: string | null;
   cobro_id: string | null;
+  /** Conciliado por CLASIFICACIÓN (no corresponde a ningún vuelo). */
+  clasificacion_id?: string | null;
+  clasificacion?: { nombre: string } | null;
   origen: string;
   notas: string | null;
   created_at: string;

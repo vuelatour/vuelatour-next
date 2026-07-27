@@ -110,6 +110,20 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
             ) : (
               <span className="text-sm text-emerald-600">Cobro de vuelo</span>
             )
+          ) : m.conciliado && m.clasificacion_id ? (
+            // Conciliado por CLASIFICACIÓN: no corresponde a ningún vuelo
+            // (comisión del banco, impuestos, personal…).
+            <span
+              className="block text-sm text-sky-600 dark:text-sky-400"
+              title={m.notas ?? undefined}
+            >
+              {m.clasificacion?.nombre ?? "Clasificado"}
+              {m.notas && (
+                <span className="block text-[10px] text-muted-foreground truncate max-w-[220px]">
+                  {m.notas}
+                </span>
+              )}
+            </span>
           ) : (
             <Badge variant="outline" className="border-amber-500/50 text-amber-600">
               Pendiente

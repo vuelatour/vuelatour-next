@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { LinkIcon, EllipsisHorizontalIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import {
+  LinkIcon,
+  EllipsisHorizontalIcon,
+  TagIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,10 +35,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   buscarCobrosCandidatosAction,
+  clasificarMovimientoAction,
+  crearClasificacionAction,
   linkMovimientoAction,
   linkMovimientoCobroAction,
+  listClasificacionesAction,
+  type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import type { CobroCandidato, MovimientoBancario } from "@/types/conciliacion";
@@ -64,6 +75,77 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   // Qué tiene vinculado realmente el movimiento (manda sobre el tipo al
   // desvincular, por si un dato viejo quedó cruzado distinto).
   const vinculadoACobro = movimiento.cobro_id != null;
+  const vinculadoAGastoOCobro =
+    movimiento.gasto_id != null || movimiento.cobro_id != null;
+  const clasificado = movimiento.clasificacion_id != null;
+
+  // Clasificación "sin vuelo": elegir del catálogo o crear una nueva en el
+  // mismo diálogo, con notas. Concilia el movimiento sin gasto/cobro.
+  const [openClasificar, setOpenClasificar] = useState(false);
+  const [clasificaciones, setClasificaciones] = useState<Clasificacion[] | null>(null);
+  const [clasifSel, setClasifSel] = useState("");
+  const [clasifNueva, setClasifNueva] = useState("");
+  const [clasifNotas, setClasifNotas] = useState("");
+  const [confirmarQuitarClasif, setConfirmarQuitarClasif] = useState(false);
+
+  const abrirClasificar = () => {
+    setClasifSel(movimiento.clasificacion_id ?? "");
+    setClasifNueva("");
+    setClasifNotas(movimiento.notas ?? "");
+    setOpenClasificar(true);
+    setClasificaciones(null);
+    void listClasificacionesAction().then((r) => {
+      if (r.ok) setClasificaciones(r.data ?? []);
+      else {
+        setClasificaciones([]);
+        toast.error(r.error ?? "No se pudieron cargar las clasificaciones");
+      }
+    });
+  };
+
+  const guardarClasificacion = () => {
+    const nueva = clasifNueva.trim();
+    if (!nueva && !clasifSel) {
+      toast.error("Elige una clasificación o escribe una nueva");
+      return;
+    }
+    startTransition(async () => {
+      let clasifId = clasifSel;
+      if (nueva) {
+        // Crear (o recuperar la existente con ese nombre) en el mismo paso.
+        const creada = await crearClasificacionAction(nueva);
+        if (!creada.ok || !creada.data) {
+          toast.error(creada.error ?? "No se pudo crear la clasificación");
+          return;
+        }
+        clasifId = creada.data.id;
+      }
+      const r = await clasificarMovimientoAction(movimiento.id, {
+        clasificacion_id: clasifId,
+        notas: clasifNotas,
+      });
+      if (r.ok) {
+        toast.success("Movimiento clasificado (deja de estar pendiente)");
+        setOpenClasificar(false);
+      } else {
+        toast.error(r.error ?? "Error al clasificar");
+      }
+    });
+  };
+
+  const quitarClasificacion = () => {
+    startTransition(async () => {
+      const r = await clasificarMovimientoAction(movimiento.id, {
+        clasificacion_id: null,
+      });
+      if (r.ok) {
+        toast.success("Clasificación quitada: el movimiento vuelve a Pendiente");
+        setConfirmarQuitarClasif(false);
+      } else {
+        toast.error(r.error ?? "Error");
+      }
+    });
+  };
 
   const abrirVincular = () => {
     setSeleccion("");
@@ -141,7 +223,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {movimiento.conciliado ? (
+          {vinculadoAGastoOCobro ? (
             <DropdownMenuItem
               onClick={() => setConfirmarDesvincular(true)}
               className="gap-2 text-destructive focus:text-destructive"
@@ -149,11 +231,31 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
               <XMarkIcon className="h-4 w-4" />
               {vinculadoACobro ? "Desvincular cobro" : "Desvincular gasto"}
             </DropdownMenuItem>
+          ) : clasificado ? (
+            <>
+              <DropdownMenuItem onClick={abrirClasificar} className="gap-2">
+                <TagIcon className="h-4 w-4" />
+                Editar clasificación / notas
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setConfirmarQuitarClasif(true)}
+                className="gap-2 text-destructive focus:text-destructive"
+              >
+                <XMarkIcon className="h-4 w-4" />
+                Quitar clasificación
+              </DropdownMenuItem>
+            </>
           ) : (
-            <DropdownMenuItem onClick={abrirVincular} className="gap-2">
-              <LinkIcon className="h-4 w-4" />
-              {esAbono ? "Vincular cobro" : "Vincular gasto"}
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem onClick={abrirVincular} className="gap-2">
+                <LinkIcon className="h-4 w-4" />
+                {esAbono ? "Vincular cobro" : "Vincular gasto"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={abrirClasificar} className="gap-2">
+                <TagIcon className="h-4 w-4" />
+                Clasificar (no es de un vuelo)
+              </DropdownMenuItem>
+            </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -203,6 +305,119 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Clasificar "sin vuelo": catálogo + creación en el mismo espacio. */}
+      <Dialog open={openClasificar} onOpenChange={setOpenClasificar}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Clasificar movimiento (no es de un vuelo)</DialogTitle>
+            <DialogDescription>
+              {`${movimiento.tipo === "ABONO" ? "Abono" : "Cargo"} de ${fmtMoney(movimiento.monto)} del ${fmtDateOnly(movimiento.fecha)}. `}
+              Para movimientos del banco que no corresponden a ningún gasto o
+              cobro capturado (comisiones del banco, impuestos, personales…).
+              Queda conciliado con su clasificación y notas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Clasificación</Label>
+              {clasificaciones === null ? (
+                <p className="text-sm text-muted-foreground">Cargando…</p>
+              ) : (
+                <SearchableSelect
+                  options={clasificaciones.map((c) => ({
+                    value: c.id,
+                    label: c.nombre,
+                  }))}
+                  value={clasifSel}
+                  onChange={(v) => {
+                    setClasifSel(v);
+                    setClasifNueva("");
+                  }}
+                  placeholder={
+                    clasificaciones.length === 0
+                      ? "Aún no hay clasificaciones: crea la primera abajo"
+                      : "Selecciona una clasificación"
+                  }
+                  emptyText="Sin resultados: créala abajo"
+                />
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`clasif-nueva-${movimiento.id}`} className="text-sm font-medium">
+                …o crea una nueva
+              </Label>
+              <Input
+                id={`clasif-nueva-${movimiento.id}`}
+                value={clasifNueva}
+                onChange={(e) => setClasifNueva(e.target.value)}
+                placeholder="Ej. Comisión del banco"
+                maxLength={80}
+              />
+              {clasifNueva.trim() !== "" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Se creará «{clasifNueva.trim()}» y se usará para este
+                  movimiento (si ya existía con ese nombre, se reutiliza).
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`clasif-notas-${movimiento.id}`} className="text-sm font-medium">
+                Notas (opcional)
+              </Label>
+              <Textarea
+                id={`clasif-notas-${movimiento.id}`}
+                value={clasifNotas}
+                onChange={(e) => setClasifNotas(e.target.value)}
+                placeholder="Ej. comisión mensual de la cuenta; no es gasto de operación"
+                rows={2}
+                maxLength={500}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOpenClasificar(false)}
+              disabled={pending}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={guardarClasificacion} disabled={pending}>
+              {pending ? "Guardando…" : "Clasificar y conciliar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmación antes de quitar la clasificación (vuelve a Pendiente). */}
+      <AlertDialog
+        open={confirmarQuitarClasif}
+        onOpenChange={setConfirmarQuitarClasif}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Quitar la clasificación?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El movimiento volverá a quedar Pendiente de conciliar. Las notas
+              se conservan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                quitarClasificacion();
+              }}
+              disabled={pending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {pending ? "Quitando…" : "Quitar clasificación"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Confirmación antes de desvincular (regla permanente del cliente). */}
       <AlertDialog open={confirmarDesvincular} onOpenChange={setConfirmarDesvincular}>

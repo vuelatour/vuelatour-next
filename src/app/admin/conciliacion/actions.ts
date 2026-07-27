@@ -117,6 +117,62 @@ export async function importJobStatusAction(
   }
 }
 
+export interface Clasificacion {
+  id: string;
+  nombre: string;
+  activo: boolean;
+}
+
+/** Catálogo de clasificaciones "sin vuelo" (comisión del banco, etc.). */
+export async function listClasificacionesAction(): Promise<
+  ActionResult<Clasificacion[]>
+> {
+  try {
+    const data = await apiServer<Clasificacion[]>(
+      "/v1/conciliacion/clasificaciones",
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Crea una clasificación (o devuelve la existente con ese nombre). */
+export async function crearClasificacionAction(
+  nombre: string,
+): Promise<ActionResult<Clasificacion>> {
+  try {
+    const data = await apiServer<Clasificacion>(
+      "/v1/conciliacion/clasificaciones",
+      { method: "POST", body: { nombre } },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Concilia por clasificación (movimiento que no corresponde a ningún vuelo)
+ * con notas; clasificacion_id null la quita y vuelve a Pendiente.
+ */
+export async function clasificarMovimientoAction(
+  movId: string,
+  payload: { clasificacion_id: string | null; notas?: string },
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/conciliacion/movimientos/${movId}/clasificar`, {
+      method: "PATCH",
+      body: payload,
+    });
+    revalidatePath("/admin/conciliacion");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** URL firmada (1 h, con descarga) del estado de cuenta archivado. */
 export async function estadoCuentaUrlAction(
   id: string,
