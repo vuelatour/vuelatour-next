@@ -20,11 +20,13 @@ const inputCls =
 export function AircraftTacometrosCard({
   aircraftId,
   matricula,
+  numMotores,
   intervalos,
   horasBase,
 }: {
   aircraftId: string;
   matricula: string;
+  numMotores: number;
   intervalos: number[];
   horasBase: number;
 }) {
@@ -98,7 +100,11 @@ export function AircraftTacometrosCard({
           </CardDescription>
         </div>
         {/* Tira imprimible para la bitácora física (formato del equipo). */}
-        <BitacoraPdfButton aircraftId={aircraftId} matricula={matricula} />
+        <BitacoraPdfButton
+          aircraftId={aircraftId}
+          matricula={matricula}
+          numMotores={numMotores}
+        />
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Estatus */}

@@ -162,6 +162,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
         <AircraftTacometrosCard
           aircraftId={aircraft.id}
           matricula={aircraft.matricula}
+          numMotores={aircraft.num_motores}
           intervalos={aircraft.servicio_intervalos ?? []}
           horasBase={aircraft.servicio_horas_base ?? 0}
         />

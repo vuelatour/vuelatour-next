@@ -24,24 +24,38 @@ function hoyCancun(): string {
 }
 
 /**
- * Imprime la tira de bitácora de tacómetros del avión (PDF, formato
- * monomotor de la plantilla del equipo): una fila por vuelo con fecha,
- * tacómetro inicial, horas, tacómetro final y ruta — para recortar y pegar
- * en la bitácora física.
+ * Imprime la tira de bitácora de tacómetros del avión (PDF, réplica de la
+ * plantilla del equipo): una fila por vuelo con fecha, tacómetro inicial,
+ * horas, tacómetro final y ruta — para recortar y pegar en la bitácora
+ * física. En bimotor (formato Motor–Hélice) agrega los tiempos de hélice:
+ * el del primer renglón lo teclea la oficina (el sistema aún no lleva horas
+ * de vida de hélice) y el resto se deriva solo.
  */
 export function BitacoraPdfButton({
   aircraftId,
   matricula,
+  numMotores,
 }: {
   aircraftId: string;
   matricula: string;
+  numMotores: number;
 }) {
   const [open, setOpen] = useState(false);
   const [desde, setDesde] = useState(() => `${hoyCancun().slice(0, 7)}-01`);
   const [hasta, setHasta] = useState(hoyCancun);
+  const [formato, setFormato] = useState<"PLANEADOR" | "MOTOR_HELICE">(
+    numMotores > 1 ? "MOTOR_HELICE" : "PLANEADOR",
+  );
+  const [heliceBase, setHeliceBase] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const esBimotor = formato === "MOTOR_HELICE";
+
   const descargar = async () => {
+    if (esBimotor && heliceBase.trim() !== "" && !Number.isFinite(Number(heliceBase))) {
+      toast.error("El tiempo de hélice inicial no es un número válido");
+      return;
+    }
     setLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
@@ -51,6 +65,10 @@ export function BitacoraPdfButton({
       const params = new URLSearchParams();
       if (desde) params.set("desde", desde);
       if (hasta) params.set("hasta", hasta);
+      if (esBimotor) {
+        params.set("formato", "MOTOR_HELICE");
+        if (heliceBase.trim() !== "") params.set("helice_base", heliceBase.trim());
+      }
       const qs = params.size ? `?${params.toString()}` : "";
       const res = await fetch(
         `${env.API_URL}/v1/aircraft/${aircraftId}/bitacora.pdf${qs}`,
@@ -94,40 +112,87 @@ export function BitacoraPdfButton({
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Bitácora de tacómetro · {matricula}</DialogTitle>
             <DialogDescription>
-              Una fila por vuelo (fecha, tacómetro inicial, horas, tacómetro
-              final y ruta), lista para imprimir, recortar y pegar en el libro.
-              Deja las fechas vacías para todo el histórico.
+              Una fila por vuelo, lista para imprimir, recortar y pegar en el
+              libro. Deja las fechas vacías para todo el histórico.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label htmlFor="bitacora-desde" className="text-sm font-medium">
-                Desde
-              </label>
-              <input
-                id="bitacora-desde"
-                type="date"
-                className={inputCls}
-                value={desde}
-                onChange={(e) => setDesde(e.target.value)}
-              />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label htmlFor="bitacora-desde" className="text-sm font-medium">
+                  Desde
+                </label>
+                <input
+                  id="bitacora-desde"
+                  type="date"
+                  className={inputCls}
+                  value={desde}
+                  onChange={(e) => setDesde(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="bitacora-hasta" className="text-sm font-medium">
+                  Hasta
+                </label>
+                <input
+                  id="bitacora-hasta"
+                  type="date"
+                  className={inputCls}
+                  value={hasta}
+                  onChange={(e) => setHasta(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label htmlFor="bitacora-hasta" className="text-sm font-medium">
-                Hasta
-              </label>
-              <input
-                id="bitacora-hasta"
-                type="date"
-                className={inputCls}
-                value={hasta}
-                onChange={(e) => setHasta(e.target.value)}
-              />
-            </div>
+
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">Formato</legend>
+              <div className="flex gap-4 text-sm">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="bitacora-formato"
+                    checked={formato === "PLANEADOR"}
+                    onChange={() => setFormato("PLANEADOR")}
+                  />
+                  Planeador (monomotor)
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="bitacora-formato"
+                    checked={esBimotor}
+                    onChange={() => setFormato("MOTOR_HELICE")}
+                  />
+                  Motor–Hélice (bimotor)
+                </label>
+              </div>
+            </fieldset>
+
+            {esBimotor && (
+              <div className="space-y-1.5">
+                <label htmlFor="bitacora-helice" className="text-sm font-medium">
+                  Tiempo de hélice del primer renglón
+                </label>
+                <input
+                  id="bitacora-helice"
+                  inputMode="decimal"
+                  className={inputCls}
+                  value={heliceBase}
+                  onChange={(e) => setHeliceBase(e.target.value)}
+                  placeholder="Ej. 1395.2 (del libro)"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Cópialo del libro físico: es el tiempo de hélice que
+                  corresponde al primer vuelo del rango. Los demás renglones se
+                  calculan solos (avanzan igual que el tacómetro). Vacío = las
+                  columnas de hélice salen con «—» para llenarlas a mano.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
