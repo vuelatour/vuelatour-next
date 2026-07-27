@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
 
-type Kind = "pdf" | "xlsx" | "cierre";
+type Kind = "pdf" | "xlsx" | "dinero" | "cierre";
 
 export function ReportDownloads({ desde, hasta }: { desde: string; hasta: string }) {
   const [loading, setLoading] = useState<Kind | null>(null);
@@ -73,6 +73,19 @@ export function ReportDownloads({ desde, hasta }: { desde: string; hasta: string
       >
         <TableCellsIcon className="h-4 w-4" />
         {loading === "xlsx" ? "Generando…" : "Excel mensual"}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        disabled={loading !== null}
+        onClick={() =>
+          download("dinero", "/v1/profit-sharing/dinero.xlsx", `dinero-${desde}-a-${hasta}.xlsx`)
+        }
+        title="Libro «Dinero» del periodo (réplica del control manual): dinero-vlos con filas coloreadas por avión y clave vt+cliente, otros ingresos, otros gastos y utilidades. Costo proveedor y comisiones van vacíos hasta definir sus reglas."
+      >
+        <TableCellsIcon className="h-4 w-4" />
+        {loading === "dinero" ? "Generando…" : "Dinero (Excel)"}
       </Button>
       <Button
         variant="outline"
