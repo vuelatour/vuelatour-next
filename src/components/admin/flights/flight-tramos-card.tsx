@@ -115,6 +115,12 @@ export function FlightTramosCard({
   // cualquier estado operable — incluida la RESERVA del vuelo rápido; solo se
   // cierra al COMPLETAR o CANCELAR.
   const canAssign = estado !== "COMPLETADO" && estado !== "CANCELADO";
+  // Cancelar/restaurar un TRAMO sí procede aunque el vuelo esté COMPLETADO
+  // (caso #74: la deducción fabricó lecturas de un regreso que nunca voló y
+  // se detectó ya cerrado el vuelo). El candado real es la evidencia
+  // (llegada real/fotos), no el estado. Solo un vuelo CANCELADO entero
+  // congela sus tramos.
+  const puedeCancelarTramo = estado !== "CANCELADO";
 
   const ordered = [...escalas].sort((a, b) => a.orden - b.orden);
 
@@ -301,7 +307,7 @@ export function FlightTramosCard({
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {cancelada && canAssign && (
+                  {cancelada && puedeCancelarTramo && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -344,49 +350,55 @@ export function FlightTramosCard({
                       {sinAsignar ? "Asignar" : "Reasignar"}
                     </Button>
                   )}
-                  {!cancelada && canAssign && (
+                  {!cancelada && (canAssign || puedeCancelarTramo) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <EllipsisHorizontalIcon className="h-4 w-4" />
                         <span className="sr-only">Acciones del tramo</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setEditEscala(escala)}
-                          className="gap-2"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                          Editar tramo (ruta, fecha, notas)
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setCancelMotivo("");
-                            setToCancel(escala);
-                          }}
-                          disabled={tieneEvidenciaReal}
-                          title={
-                            tieneEvidenciaReal
-                              ? "Tiene lecturas o fotos reales de tacómetro: el tramo sí voló. Corrige la ruta con Editar."
-                              : undefined
-                          }
-                          className="gap-2 text-destructive focus:text-destructive"
-                        >
-                          <NoSymbolIcon className="h-4 w-4" />
-                          Cancelar tramo (no voló)
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setToDelete(escala)}
-                          disabled={!!(escala.taco_salida || escala.taco_llegada)}
-                          title={
-                            escala.taco_salida || escala.taco_llegada
-                              ? "Tiene tacómetro capturado: no se puede borrar (auditoría). Si el tramo no voló, usa «Cancelar tramo»."
-                              : undefined
-                          }
-                          className="gap-2 text-destructive focus:text-destructive"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                          Eliminar tramo
-                        </DropdownMenuItem>
+                        {canAssign && (
+                          <DropdownMenuItem
+                            onClick={() => setEditEscala(escala)}
+                            className="gap-2"
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                            Editar tramo (ruta, fecha, notas)
+                          </DropdownMenuItem>
+                        )}
+                        {puedeCancelarTramo && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setCancelMotivo("");
+                              setToCancel(escala);
+                            }}
+                            disabled={tieneEvidenciaReal}
+                            title={
+                              tieneEvidenciaReal
+                                ? "Tiene llegada o fotos reales de tacómetro: el tramo sí voló. Corrige la ruta con Editar."
+                                : undefined
+                            }
+                            className="gap-2 text-destructive focus:text-destructive"
+                          >
+                            <NoSymbolIcon className="h-4 w-4" />
+                            Cancelar tramo (no voló)
+                          </DropdownMenuItem>
+                        )}
+                        {canAssign && (
+                          <DropdownMenuItem
+                            onClick={() => setToDelete(escala)}
+                            disabled={!!(escala.taco_salida || escala.taco_llegada)}
+                            title={
+                              escala.taco_salida || escala.taco_llegada
+                                ? "Tiene tacómetro capturado: no se puede borrar (auditoría). Si el tramo no voló, usa «Cancelar tramo»."
+                                : undefined
+                            }
+                            className="gap-2 text-destructive focus:text-destructive"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                            Eliminar tramo
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
