@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   PaperAirplaneIcon,
   BanknotesIcon,
+  WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { Badge } from "@/components/ui/badge";
@@ -139,6 +140,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     escalasOrden.length > 0
       ? [escalasOrden[0].origen_iata, ...escalasOrden.map((e) => e.destino_iata)].join(" → ")
       : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
+  // Vuelo de SERVICIO (regla 27 jul 2026): algún tramo de parada Servicio y
+  // CERO pasajeros en los tramos activos = llevar el avión a taller. No es
+  // del cliente: no se cotiza (el backend también lo rechaza).
+  const esVueloServicio =
+    escalasOrden.length > 0 &&
+    escalasOrden.some((e) => e.tipo_parada === "SERVICIO") &&
+    escalasOrden.every((e) => !(Number(e.pasajeros) > 0));
   const tramosCotizados = quote?.calculo_snapshot?.tramos;
   const rutaComercial =
     tramosCotizados && tramosCotizados.length > 0
@@ -280,6 +288,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   ⚠ Tacómetro incompleto
                 </Badge>
               )}
+              {esVueloServicio && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                  title="Llevar el avión a taller/parada técnica sin pasajeros: no es del cliente y no se cotiza."
+                >
+                  Vuelo de servicio
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {client?.nombre ?? snapshot.cliente_id} ·{" "}
@@ -294,7 +311,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 ajusta con vuelo del mes corriente o anterior (hora Cancún);
                 más atrás pertenece a cierres pasados. */}
             {snapshot.estado === "RESERVA" &&
-              (cotizacionEditablePorFecha(snapshot.fecha_vuelo) ? (
+              (esVueloServicio ? (
+                <span
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground cursor-not-allowed"
+                  title="Vuelo de servicio (taller/parada técnica sin pasajeros): no es del cliente y no se cotiza. Si sí es un viaje del cliente, quita la marca de Servicio del tramo o captura sus pasajeros."
+                >
+                  <WrenchScrewdriverIcon className="h-4 w-4" />
+                  Vuelo de servicio · no se cotiza
+                </span>
+              ) : cotizacionEditablePorFecha(snapshot.fecha_vuelo) ? (
                 <Link
                   href={`/admin/quotes/${snapshot.id}/revise`}
                   className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-600/90 transition-colors"

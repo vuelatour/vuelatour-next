@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { ArrowLeftIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
 import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
 import { getQuote } from "@/lib/api/quotes-server";
 import { getClient } from "@/lib/api/clients-server";
@@ -30,6 +30,43 @@ export default async function ReviseQuotePage({ params }: RevisePageProps) {
   // mismo); atajamos para no entrar a un form que no se puede guardar.
   if (quote.estado === "CANCELADO" || quote.cobrado || quote.facturado) {
     notFound();
+  }
+
+  // Vuelo de SERVICIO (taller/parada técnica sin pasajeros): no se cotiza ni
+  // se asigna a una cotización (el backend rechaza igual con 409). Aviso
+  // amable en vez del cotizador.
+  const escalasActivas = (quote.escalas ?? []).filter((e) => !e.cancelada_at);
+  const esVueloServicio =
+    escalasActivas.length > 0 &&
+    escalasActivas.some((e) => e.tipo_parada === "SERVICIO") &&
+    escalasActivas.every((e) => !(Number(e.pasajeros) > 0));
+  if (esVueloServicio) {
+    return (
+      <div className="space-y-6">
+        <Link
+          href={`/admin/flights/${quote.id}`}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Volver al vuelo
+        </Link>
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 px-4 py-4 text-sm max-w-2xl">
+          <WrenchScrewdriverIcon className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-medium">
+              Vuelo de servicio: no se cotiza.
+            </p>
+            <p className="text-muted-foreground">
+              Este vuelo lleva el avión a taller o parada técnica sin
+              pasajeros; no es un viaje del cliente y no se le asigna
+              cotización. Si sí es un viaje del cliente, quita la marca de
+              Servicio en sus tramos o captura los pasajeros, y vuelve a
+              intentar.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const [aircraftRes, routesRes, airportsRes, client] = await Promise.all([

@@ -27,6 +27,8 @@ export interface PersistedEscala {
   hora_salida: string | null;
   hora_llegada: string | null;
   notas: string | null;
+  /** Tramo CANCELADO (no voló): fuera de horas/completitud. */
+  cancelada_at?: string | null;
 }
 export type EstadoVuelo =
   | "RESERVA"
