@@ -109,6 +109,8 @@ export function FlightTramosCard({
   const [toDelete, setToDelete] = useState<FlightEscala | null>(null);
   const [toCancel, setToCancel] = useState<FlightEscala | null>(null);
   const [cancelMotivo, setCancelMotivo] = useState("");
+  const [toRestore, setToRestore] = useState<FlightEscala | null>(null);
+  const [restoreMotivo, setRestoreMotivo] = useState("");
   const [opSheetOpen, setOpSheetOpen] = useState(false);
   const [deleting, startDelete] = useTransition();
   const [canceling, startCancel] = useTransition();
@@ -152,13 +154,19 @@ export function FlightTramosCard({
     });
   };
 
-  const handleRestore = (escala: FlightEscala) => {
+  const handleRestore = () => {
+    if (!toRestore) return;
     startRestore(async () => {
-      const res = await restoreEscalaAction(flightId, escala.id);
+      const res = await restoreEscalaAction(
+        flightId,
+        toRestore.id,
+        restoreMotivo.trim(),
+      );
       if (res.ok) {
         toast.success(
           "Tramo restaurado a la ruta activa. Sus tacómetros quedaron sin capturar: se rellenan con la propagación o en Tacómetros en vivo.",
         );
+        setToRestore(null);
         router.refresh();
       } else {
         toast.error(res.error ?? "No se pudo restaurar el tramo");
@@ -314,13 +322,16 @@ export function FlightTramosCard({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleRestore(escala)}
+                      onClick={() => {
+                        setRestoreMotivo("");
+                        setToRestore(escala);
+                      }}
                       disabled={restoring}
                       className="h-7 gap-1 text-xs"
                       title="Regresa el tramo a la ruta activa (si al final sí se va a volar)."
                     >
                       <ArrowUturnLeftIcon className="h-3.5 w-3.5" />
-                      {restoring ? "Restaurando…" : "Restaurar"}
+                      Restaurar
                     </Button>
                   )}
                   {!cancelada &&
@@ -514,6 +525,61 @@ export function FlightTramosCard({
               }}
             >
               Sí, editar tramo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={toRestore !== null}
+        onOpenChange={(o) => !o && setToRestore(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Restaurar este tramo?</DialogTitle>
+            <DialogDescription>
+              {toRestore
+                ? `${toRestore.origen_iata} → ${toRestore.destino_iata}. `
+                : ""}
+              Vuelve a la ruta activa: cuenta para completitud, pide tacómetro
+              y regresa al calendario y a la app del piloto. Sus lecturas
+              anuladas al cancelar NO regresan (se recapturan o las ajusta
+              oficina). El motivo queda en las notas internas del vuelo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="restore-tramo-motivo"
+              className="text-sm font-medium"
+            >
+              Motivo (obligatorio)
+            </label>
+            <Textarea
+              id="restore-tramo-motivo"
+              value={restoreMotivo}
+              onChange={(e) => setRestoreMotivo(e.target.value)}
+              placeholder="Ej. El avión salió del taller y sí voló el regreso."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setToRestore(null)}
+              disabled={restoring}
+            >
+              Volver
+            </Button>
+            <Button
+              disabled={restoring || restoreMotivo.trim().length < 3}
+              title={
+                restoreMotivo.trim().length < 3
+                  ? "Escribe el motivo de la restauración"
+                  : undefined
+              }
+              onClick={handleRestore}
+            >
+              {restoring ? "Restaurando…" : "Restaurar tramo"}
             </Button>
           </DialogFooter>
         </DialogContent>

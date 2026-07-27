@@ -465,15 +465,17 @@ export async function cancelEscalaAction(
   }
 }
 
-/** Restaura un tramo cancelado a la ruta activa (las lecturas no regresan). */
+/** Restaura un tramo cancelado a la ruta activa (motivo auditable; las
+ *  lecturas anuladas no regresan). */
 export async function restoreEscalaAction(
   flightId: string,
   escalaId: string,
+  motivo: string,
 ): Promise<ActionResult<FlightEscala>> {
   try {
     const data = await apiServer<FlightEscala>(
       `/v1/flights/legs/${escalaId}/restore`,
-      { method: "POST" },
+      { method: "POST", body: { motivo } },
     );
     revalidateFlight(flightId);
     return { ok: true, data };
