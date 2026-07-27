@@ -12,16 +12,19 @@ import {
 } from "@/app/admin/aircraft/actions";
 import type { TacometroHistorial } from "@/types/aircraft";
 import { ImagePreview } from "@/components/admin/image-preview";
+import { BitacoraPdfButton } from "./bitacora-pdf-button";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function AircraftTacometrosCard({
   aircraftId,
+  matricula,
   intervalos,
   horasBase,
 }: {
   aircraftId: string;
+  matricula: string;
   intervalos: number[];
   horasBase: number;
 }) {
@@ -85,13 +88,17 @@ export function AircraftTacometrosCard({
 
   return (
     <Card className="lg:col-span-2">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ClockIcon className="h-4 w-4 text-muted-foreground" /> Tacómetros y servicio por horas
-        </CardTitle>
-        <CardDescription>
-          Conteo de horas del avión (último Hobbs) y cada cuándo le toca servicio.
-        </CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ClockIcon className="h-4 w-4 text-muted-foreground" /> Tacómetros y servicio por horas
+          </CardTitle>
+          <CardDescription>
+            Conteo de horas del avión (último Hobbs) y cada cuándo le toca servicio.
+          </CardDescription>
+        </div>
+        {/* Tira imprimible para la bitácora física (formato del equipo). */}
+        <BitacoraPdfButton aircraftId={aircraftId} matricula={matricula} />
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Estatus */}
