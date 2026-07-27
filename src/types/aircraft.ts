@@ -48,6 +48,8 @@ export interface TacometroHistorial {
   proximo_servicio: { a_las: number; intervalo: number; faltan: number } | null;
   historial: {
     escala_id: string;
+    /** Vuelo del tramo: el folio enlaza a /admin/flights/:vuelo_id. */
+    vuelo_id?: string | null;
     folio: number | null;
     fecha: string | null;
     ruta: string;

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ChevronDownIcon, ClockIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
@@ -225,9 +226,20 @@ export function AircraftTacometrosCard({
                       <td className="px-3 py-2">{h.fecha ? fmtDateTime(h.fecha) : "—"}</td>
                       <td className="px-3 py-2">
                         {h.ruta}
-                        {h.folio != null && (
-                          <span className="ml-1 text-xs text-muted-foreground">#{h.folio}</span>
-                        )}
+                        {h.folio != null &&
+                          (h.vuelo_id ? (
+                            <Link
+                              href={`/admin/flights/${h.vuelo_id}`}
+                              className="ml-1 text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground transition-colors"
+                              title={`Ver detalle del vuelo #${h.folio}`}
+                            >
+                              #{h.folio}
+                            </Link>
+                          ) : (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              #{h.folio}
+                            </span>
+                          ))}
                       </td>
                       <td
                         className={`px-3 py-2 text-right tabular-nums ${
