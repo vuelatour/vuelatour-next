@@ -60,8 +60,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
 
   // Vuelos = lifecycle operativo (CONFIRMADO en adelante). Lo que sigue en
   // SOLICITUD/COTIZADO se administra en /admin/quotes, pero se LISTA aquí en
-  // azul para que la numeración de folios no tenga "huecos" (#16 → #14
-  // parecía un vuelo borrado).
+  // azul para que operación vea toda la agenda en un solo lugar.
   const esCotizacion = (v: { estado: string }) =>
     v.estado === "SOLICITUD" || v.estado === "COTIZADO";
   const operativos = estadoFilter
@@ -81,8 +80,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const faltaTaco = (id: string) => tacoStatus[id]?.falta === true;
 
   // Filas-viewmodel serializables para el componente cliente (sin Maps).
-  // La tabla incluye TAMBIÉN las filas en cotización (azules): el orden del
-  // API las intercala por folio/fecha natural.
+  // La tabla incluye TAMBIÉN las filas en cotización (azules).
   const rows: FlightRow[] = flightsRes.data.map((v) => ({
     id: v.id,
     folio: v.folio,
@@ -105,6 +103,13 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     falta_taco: faltaTaco(v.id),
     en_cotizacion: esCotizacion(v),
   }));
+  // Orden por fecha de vuelo (recientes primero); sin fecha al final. El folio
+  // ya no se muestra, así que la fecha es el orden natural para operación.
+  rows.sort((a, b) => {
+    if (!a.fecha_vuelo) return b.fecha_vuelo ? 1 : 0;
+    if (!b.fecha_vuelo) return -1;
+    return b.fecha_vuelo.localeCompare(a.fecha_vuelo);
+  });
 
   return (
     <div className="space-y-6">

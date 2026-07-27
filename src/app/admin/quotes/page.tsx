@@ -61,6 +61,13 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       q.estado === "CONFIRMADO" && !q.es_externo && (!q.piloto_id || !q.aeronave_id),
     faltaPiloto: !q.piloto_id,
   }));
+  // Orden por fecha de vuelo (recientes primero); sin fecha al final. El folio
+  // ya no se muestra, así que la fecha es el orden natural para operación.
+  rows.sort((a, b) => {
+    if (!a.fechaVuelo) return b.fechaVuelo ? 1 : 0;
+    if (!b.fechaVuelo) return -1;
+    return b.fechaVuelo.localeCompare(a.fechaVuelo);
+  });
   const sinAsignar = rows.filter((r) => r.sinAsignar).length;
 
   return (

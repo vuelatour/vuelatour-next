@@ -27,14 +27,9 @@ export interface FlightRow {
   en_cotizacion: boolean;
 }
 
+// El folio NO se muestra (confundía a operación); sigue en los datos y en la
+// búsqueda por si alguien lo teclea.
 const columns: Array<DataTableColumn<FlightRow>> = [
-  {
-    key: "folio",
-    header: "Folio",
-    headClassName: "w-20",
-    cellClassName: "font-mono text-xs",
-    cell: (v) => <>#{v.folio}</>,
-  },
   {
     key: "cliente",
     header: "Cliente",
@@ -133,13 +128,12 @@ export function FlightsTable({ rows }: { rows: FlightRow[] }) {
           ? `/admin/quotes/${v.id}`
           : `/admin/flights/${v.id}`
       }
-      // Azul = aún en cotización (sin confirmar): identificable de un vistazo
-      // sin sacarlo de la numeración de folios.
+      // Azul = aún en cotización (sin confirmar): identificable de un vistazo.
       rowClassName={(v) => (v.en_cotizacion ? "bg-sky-500/[0.07]" : undefined)}
       searchText={(v) =>
         `#${v.folio} ${v.cliente_nombre ?? ""} ${v.operador_externo ?? ""} ${v.ruta} ${v.matricula ?? ""} ${v.piloto_nombre ?? ""}`
       }
-      searchPlaceholder="Buscar vuelo (folio, cliente, ruta, matrícula, piloto)…"
+      searchPlaceholder="Buscar vuelo (cliente, ruta, matrícula, piloto)…"
     />
   );
 }
