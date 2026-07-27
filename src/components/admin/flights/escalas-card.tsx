@@ -38,6 +38,7 @@ import {
   fillTacoGapsAction,
   getUltimoTacoAction,
 } from "@/app/admin/flights/actions";
+import { uploadTacoFoto } from "@/lib/storage/taco-fotos";
 import { fmtDecimal } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import type { VueloAnterior } from "@/lib/api/flights-server";
@@ -409,6 +410,10 @@ function TacoConfirmDialog({
   const [salida, setSalida] = useState(escala.taco_salida ?? "");
   const [llegada, setLlegada] = useState(escala.taco_llegada ?? "");
   const [nota, setNota] = useState("");
+  // Fotos adjuntadas por oficina (evidencia faltante o reemplazo de una
+  // ilegible): se suben al confirmar.
+  const [fotoSalida, setFotoSalida] = useState<File | null>(null);
+  const [fotoLlegada, setFotoLlegada] = useState<File | null>(null);
   // Procedencia de la salida precargada (leyenda bajo el campo). El historial
   // del tacómetro ya lo conoce el sistema: no hay que ir a buscarlo a mano.
   const [sugerenciaOrigen, setSugerenciaOrigen] = useState<string | null>(null);
@@ -425,6 +430,8 @@ function TacoConfirmDialog({
     setSalida(salidaActual);
     setLlegada(escala.taco_llegada != null ? String(escala.taco_llegada) : "");
     setNota("");
+    setFotoSalida(null);
+    setFotoLlegada(null);
     setSugerenciaOrigen(null);
     // Solo se precarga cuando el tramo NO tiene salida capturada.
     if (salidaActual !== "") return;
@@ -449,6 +456,8 @@ function TacoConfirmDialog({
       taco_salida?: number;
       taco_llegada?: number;
       nota?: string;
+      foto_taco_salida_url?: string;
+      foto_taco_llegada_url?: string;
     } = {};
     const s = String(salida).trim();
     const l = String(llegada).trim();
@@ -470,12 +479,33 @@ function TacoConfirmDialog({
     }
     if (nota.trim()) payload.nota = nota.trim();
 
-    if (esCorreccion && !payload.taco_salida && !payload.taco_llegada) {
-      toast.info("No cambiaste ninguna lectura.");
+    if (
+      esCorreccion &&
+      !payload.taco_salida &&
+      !payload.taco_llegada &&
+      !fotoSalida &&
+      !fotoLlegada
+    ) {
+      toast.info("No cambiaste ninguna lectura ni adjuntaste foto.");
       return;
     }
 
     startTransition(async () => {
+      // Las fotos van primero al bucket (mismo mecanismo que la app del
+      // piloto); solo el PATH viaja en el payload.
+      try {
+        if (fotoSalida) {
+          payload.foto_taco_salida_url = await uploadTacoFoto(fotoSalida);
+        }
+        if (fotoLlegada) {
+          payload.foto_taco_llegada_url = await uploadTacoFoto(fotoLlegada);
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo subir la foto",
+        );
+        return;
+      }
       const res = await confirmTacoAction(flightId, escala.id, payload);
       if (res.ok) {
         toast.success(esCorreccion ? "Lectura corregida" : "Lectura confirmada");
@@ -567,6 +597,40 @@ function TacoConfirmDialog({
                 onChange={(e) => setLlegada(e.target.value)}
                 placeholder="—"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`taco-foto-salida-${escala.id}`}>
+                Foto salida (opcional)
+              </Label>
+              <Input
+                id={`taco-foto-salida-${escala.id}`}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="text-xs file:mr-2 file:text-xs"
+                onChange={(e) => setFotoSalida(e.target.files?.[0] ?? null)}
+              />
+              {escala.foto_taco_salida_url && fotoSalida && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  Reemplaza la foto de salida actual.
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`taco-foto-llegada-${escala.id}`}>
+                Foto llegada (opcional)
+              </Label>
+              <Input
+                id={`taco-foto-llegada-${escala.id}`}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="text-xs file:mr-2 file:text-xs"
+                onChange={(e) => setFotoLlegada(e.target.files?.[0] ?? null)}
+              />
+              {escala.foto_taco_llegada_url && fotoLlegada && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  Reemplaza la foto de llegada actual.
+                </p>
+              )}
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label htmlFor={`taco-nota-${escala.id}`}>Nota (opcional)</Label>

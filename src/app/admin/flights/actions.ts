@@ -488,6 +488,9 @@ export interface ConfirmTacoPayload {
   taco_salida?: number;
   taco_llegada?: number;
   nota?: string;
+  /** Paths (bucket taco-fotos) de fotos adjuntadas por oficina. */
+  foto_taco_salida_url?: string;
+  foto_taco_llegada_url?: string;
 }
 
 /** Oficina confirma una lectura marcada para revisión (amarillo → verde). */
