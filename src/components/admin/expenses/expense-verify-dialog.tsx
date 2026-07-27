@@ -162,6 +162,10 @@ export function ExpenseVerifyDialog({
           propina,
         };
       }
+      // Litros solo aplican a GAS; vacío = no tocar (el zod los descarta).
+      if (values.categoria !== "GAS" || values.litros === "") {
+        delete (payload as { litros?: unknown }).litros;
+      }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
         // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
@@ -292,6 +296,24 @@ export function ExpenseVerifyDialog({
               />
             </Field>
           </div>
+
+          {/* Litros: solo combustible — corrige aquí un GAS capturado sin
+              litros (el balance no calcula $/litro sin ellos). */}
+          {watch("categoria") === "GAS" && (
+            <Field
+              label="Litros cargados"
+              hint="Del ticket de combustible; el balance calcula $/litro con esto."
+            >
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                inputMode="decimal"
+                placeholder="Ej. 164"
+                {...register("litros")}
+              />
+            </Field>
+          )}
 
           {/* Total pagado EN VIVO (ticket + propina): es el monto que se
               guarda y el que aparece en el estado de cuenta del banco. */}
@@ -449,6 +471,7 @@ function defaults(g: Gasto): GastoVerifyValues {
   return {
     monto: ticket != null ? String(ticket) : "",
     propina: propina > 0 ? String(propina) : "",
+    litros: g.litros != null ? String(g.litros) : "",
     moneda: g.moneda ?? "MXN",
     // fecha_gasto es columna date (YYYY-MM-DD, sin zona) — el corte por 10
     // chars aquí no es el slice prohibido de timestamps.

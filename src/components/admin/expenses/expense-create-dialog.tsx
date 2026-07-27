@@ -93,6 +93,7 @@ function emptyValues(defaults?: {
     categoria: defaults?.categoria ?? "OPERACIONES",
     monto: "",
     propina: "",
+    litros: "",
     moneda: "MXN",
     fecha_gasto: hoyCancun(),
     medio_pago: "TRANSFERENCIA",
@@ -190,6 +191,12 @@ export function ExpenseCreateDialog({
     if (ai.categoria_sugerida && CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)) {
       setValue("categoria", ai.categoria_sugerida);
       llenado.push(ai.categoria_sugerida);
+    }
+    // Litros del ticket de combustible: sin ellos el balance no calcula el
+    // precio por litro (caso vuelo #70: gas capturado sin litros).
+    if (ai.litros != null && ai.litros > 0) {
+      setValue("litros", String(ai.litros));
+      llenado.push(`${ai.litros} L`);
     }
     if (ai.medio_pago && MEDIOS.some((m) => m.value === ai.medio_pago)) {
       setValue("medio_pago", ai.medio_pago);
@@ -314,10 +321,19 @@ export function ExpenseCreateDialog({
       }
       // "Como piloto" solo aplica con un vuelo ligado y con piloto.
       const aplicarComoPiloto = comoPiloto && !!values.vuelo_id && !vueloSinPiloto;
+      const litros =
+        values.categoria === "GAS" && values.litros !== ""
+          ? Number(values.litros)
+          : undefined;
+      if (litros !== undefined && !(litros > 0)) {
+        toast.error("Los litros no son válidos.");
+        return;
+      }
       const result = await createGastoAction({
         ...values,
         monto: totalPagado,
         propina,
+        litros,
         foto_url: fotoPath,
         valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
         capturar_como_piloto: aplicarComoPiloto,
@@ -518,6 +534,24 @@ export function ExpenseCreateDialog({
                 />
               </Field>
             </div>
+
+            {/* Litros: solo combustible. Sin ellos el balance por avión no
+                calcula el precio por litro (queda en pendientes de captura). */}
+            {watch("categoria") === "GAS" && (
+              <Field
+                label="Litros cargados"
+                hint="Del ticket de combustible; el balance calcula $/litro con esto."
+              >
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  inputMode="decimal"
+                  placeholder="Ej. 164"
+                  {...register("litros")}
+                />
+              </Field>
+            )}
 
             {/* Total pagado EN VIVO (ticket + propina): es el monto que se
                 guarda y el que aparece en el estado de cuenta del banco. */}

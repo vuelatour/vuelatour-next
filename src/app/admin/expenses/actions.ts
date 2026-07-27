@@ -60,6 +60,8 @@ export interface GastoTicketIA {
   categoria_sugerida?: string | null;
   medio_pago?: string | null;
   tarjeta_terminacion?: string | null;
+  /** Litros cargados si el ticket es de combustible (galones ya convertidos). */
+  litros?: number | null;
   conceptos?: { concepto: string; monto: number }[];
   /** Desglose compuesto por el API (regla FBO/TUA) tal como irá en notas. */
   desglose_lineas?: string[];

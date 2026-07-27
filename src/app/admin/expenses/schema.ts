@@ -44,6 +44,12 @@ export const GastoVerifySchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().min(0, "Propina inválida").optional(),
   ),
+  /** Litros cargados (combustible): corrige aquí un GAS capturado sin litros
+   *  (el balance no calcula $/litro sin ellos). */
+  litros: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+    z.number().positive("Litros inválidos").optional(),
+  ),
   moneda: z.enum(["MXN", "USD"]).optional(),
   fecha_gasto: z
     .string()
@@ -78,6 +84,11 @@ export const GastoCreateSchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().min(0, "Propina inválida").optional(),
   ),
+  /** Litros cargados (combustible): alimenta $/litro del balance por avión. */
+  litros: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+    z.number().positive("Litros inválidos").optional(),
+  ),
   moneda: z.enum(["MXN", "USD"]),
   fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
   medio_pago: MedioPagoEnum,
@@ -105,6 +116,8 @@ export type GastoCreateValues = {
    *  guardar se envía monto = ticket + propina (total pagado). */
   monto: string;
   propina: string;
+  /** Litros cargados (solo categoría GAS): alimenta precio/litro del balance. */
+  litros: string;
   moneda: string;
   fecha_gasto: string;
   medio_pago: string;
@@ -121,6 +134,7 @@ export type GastoVerifyValues = {
    *  recompone monto = ticket + propina. */
   monto: string;
   propina: string;
+  litros: string;
   moneda: string;
   fecha_gasto: string;
   categoria: string;
