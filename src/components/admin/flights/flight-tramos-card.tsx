@@ -103,6 +103,9 @@ export function FlightTramosCard({
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
   const [editEscala, setEditEscala] = useState<FlightEscala | null>(null);
+  // Editar un tramo de un vuelo COMPLETADO pide confirmación primero: los
+  // cambios tocan datos de un vuelo ya cerrado.
+  const [confirmEdit, setConfirmEdit] = useState<FlightEscala | null>(null);
   const [toDelete, setToDelete] = useState<FlightEscala | null>(null);
   const [toCancel, setToCancel] = useState<FlightEscala | null>(null);
   const [cancelMotivo, setCancelMotivo] = useState("");
@@ -350,55 +353,54 @@ export function FlightTramosCard({
                       {sinAsignar ? "Asignar" : "Reasignar"}
                     </Button>
                   )}
-                  {!cancelada && (canAssign || puedeCancelarTramo) && (
+                  {!cancelada && puedeCancelarTramo && (
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <EllipsisHorizontalIcon className="h-4 w-4" />
                         <span className="sr-only">Acciones del tramo</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {canAssign && (
-                          <DropdownMenuItem
-                            onClick={() => setEditEscala(escala)}
-                            className="gap-2"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                            Editar tramo (ruta, fecha, notas)
-                          </DropdownMenuItem>
-                        )}
-                        {puedeCancelarTramo && (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setCancelMotivo("");
-                              setToCancel(escala);
-                            }}
-                            disabled={tieneEvidenciaReal}
-                            title={
-                              tieneEvidenciaReal
-                                ? "Tiene llegada o fotos reales de tacómetro: el tramo sí voló. Corrige la ruta con Editar."
-                                : undefined
-                            }
-                            className="gap-2 text-destructive focus:text-destructive"
-                          >
-                            <NoSymbolIcon className="h-4 w-4" />
-                            Cancelar tramo (no voló)
-                          </DropdownMenuItem>
-                        )}
-                        {canAssign && (
-                          <DropdownMenuItem
-                            onClick={() => setToDelete(escala)}
-                            disabled={!!(escala.taco_salida || escala.taco_llegada)}
-                            title={
-                              escala.taco_salida || escala.taco_llegada
-                                ? "Tiene tacómetro capturado: no se puede borrar (auditoría). Si el tramo no voló, usa «Cancelar tramo»."
-                                : undefined
-                            }
-                            className="gap-2 text-destructive focus:text-destructive"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                            Eliminar tramo
-                          </DropdownMenuItem>
-                        )}
+                        <DropdownMenuItem
+                          onClick={() =>
+                            // Vuelo cerrado: confirmar antes de abrir el editor.
+                            canAssign
+                              ? setEditEscala(escala)
+                              : setConfirmEdit(escala)
+                          }
+                          className="gap-2"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                          Editar tramo (ruta, fecha, notas)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setCancelMotivo("");
+                            setToCancel(escala);
+                          }}
+                          disabled={tieneEvidenciaReal}
+                          title={
+                            tieneEvidenciaReal
+                              ? "Tiene llegada o fotos reales de tacómetro: el tramo sí voló. Corrige la ruta con Editar."
+                              : undefined
+                          }
+                          className="gap-2 text-destructive focus:text-destructive"
+                        >
+                          <NoSymbolIcon className="h-4 w-4" />
+                          Cancelar tramo (no voló)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setToDelete(escala)}
+                          disabled={!!(escala.taco_salida || escala.taco_llegada)}
+                          title={
+                            escala.taco_salida || escala.taco_llegada
+                              ? "Tiene tacómetro capturado: no se puede borrar (auditoría). Si el tramo no voló, usa «Cancelar tramo»."
+                              : undefined
+                          }
+                          className="gap-2 text-destructive focus:text-destructive"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          Eliminar tramo
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -485,6 +487,37 @@ export function FlightTramosCard({
         flightId={flightId}
         airports={airports}
       />
+
+      <Dialog
+        open={confirmEdit !== null}
+        onOpenChange={(o) => !o && setConfirmEdit(null)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>¿Editar tramo de un vuelo completado?</DialogTitle>
+            <DialogDescription>
+              {confirmEdit
+                ? `${confirmEdit.origen_iata} → ${confirmEdit.destino_iata}. `
+                : ""}
+              El vuelo ya está COMPLETADO: cambiar ruta, fecha o notas modifica
+              datos de un vuelo cerrado (reportes y bitácora lo reflejan).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmEdit(null)}>
+              Volver
+            </Button>
+            <Button
+              onClick={() => {
+                if (confirmEdit) setEditEscala(confirmEdit);
+                setConfirmEdit(null);
+              }}
+            >
+              Sí, editar tramo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={toCancel !== null}
