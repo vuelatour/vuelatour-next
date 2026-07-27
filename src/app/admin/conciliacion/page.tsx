@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { EstadosCuentaTable } from "@/components/admin/conciliacion/estados-cuenta-table";
 import { ImportButton } from "@/components/admin/conciliacion/import-button";
+import { ReporteConciliacionButton } from "@/components/admin/conciliacion/reporte-conciliacion-button";
 import { MovimientosTable } from "@/components/admin/conciliacion/movimientos-table";
 import {
   conciliacionResumen,
@@ -88,7 +89,10 @@ export default async function ConciliacionPage({
             abonos con los cobros de vuelos, por monto y fecha. Los ambiguos se vinculan a mano.
           </p>
         </div>
-        <ImportButton cuentas={cuentas} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <ReporteConciliacionButton cuentas={cuentas} />
+          <ImportButton cuentas={cuentas} />
+        </div>
       </div>
 
       {resumen.length > 0 && (

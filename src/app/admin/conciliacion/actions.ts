@@ -67,6 +67,56 @@ export async function importarMovimientosAction(payload: {
   }
 }
 
+/**
+ * Importación como JOB del servidor: responde job_id de inmediato; el
+ * proceso sigue en el backend aunque se cierre el navegador. El avance se
+ * consulta con importJobStatusAction (barra de porcentaje en el diálogo).
+ */
+export async function importarMovimientosAsyncAction(payload: {
+  cuenta_bancaria_id: string;
+  movimientos: MovimientoImport[];
+  filename?: string;
+  file_base64?: string;
+}): Promise<ActionResult<{ job_id: string }>> {
+  try {
+    const data = await apiServer<{ job_id: string }>(
+      "/v1/conciliacion/importar-async",
+      { method: "POST", body: payload },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export interface ImportJobStatus {
+  id: string;
+  estado: "PROCESANDO" | "LISTO" | "ERROR";
+  progreso: number;
+  paso: string | null;
+  total_movimientos: number;
+  importados: number | null;
+  conciliados_auto: number | null;
+  duplicados_omitidos: number | null;
+  error: string | null;
+}
+
+export async function importJobStatusAction(
+  jobId: string,
+): Promise<ActionResult<ImportJobStatus>> {
+  try {
+    const data = await apiServer<ImportJobStatus>(
+      `/v1/conciliacion/importar-status/${jobId}`,
+      { cache: "no-store" },
+    );
+    // Al terminar, refresca la página de conciliación (movimientos nuevos).
+    if (data.estado === "LISTO") revalidatePath("/admin/conciliacion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** URL firmada (1 h, con descarga) del estado de cuenta archivado. */
 export async function estadoCuentaUrlAction(
   id: string,
