@@ -43,13 +43,13 @@ export function BitacoraPdfButton({
   const [open, setOpen] = useState(false);
   const [desde, setDesde] = useState(() => `${hoyCancun().slice(0, 7)}-01`);
   const [hasta, setHasta] = useState(hoyCancun);
-  const [formato, setFormato] = useState<"PLANEADOR" | "MOTOR_HELICE">(
-    numMotores > 1 ? "MOTOR_HELICE" : "PLANEADOR",
-  );
   const [heliceBase, setHeliceBase] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const esBimotor = formato === "MOTOR_HELICE";
+  // El formato lo decide el TIPO del avión (dato de la aeronave), sin
+  // opción de cambiarlo aquí: bimotor → Motor–Hélice; monomotor → Planeador.
+  const esBimotor = numMotores > 1;
+  const formato = esBimotor ? "MOTOR_HELICE" : "PLANEADOR";
 
   const descargar = async () => {
     if (esBimotor && heliceBase.trim() !== "" && !Number.isFinite(Number(heliceBase))) {
@@ -66,7 +66,7 @@ export function BitacoraPdfButton({
       if (desde) params.set("desde", desde);
       if (hasta) params.set("hasta", hasta);
       if (esBimotor) {
-        params.set("formato", "MOTOR_HELICE");
+        params.set("formato", formato);
         if (heliceBase.trim() !== "") params.set("helice_base", heliceBase.trim());
       }
       const qs = params.size ? `?${params.toString()}` : "";
@@ -148,29 +148,19 @@ export function BitacoraPdfButton({
               </div>
             </div>
 
-            <fieldset className="space-y-1.5">
-              <legend className="text-sm font-medium">Formato</legend>
-              <div className="flex gap-4 text-sm">
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="bitacora-formato"
-                    checked={formato === "PLANEADOR"}
-                    onChange={() => setFormato("PLANEADOR")}
-                  />
-                  Planeador (monomotor)
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="bitacora-formato"
-                    checked={esBimotor}
-                    onChange={() => setFormato("MOTOR_HELICE")}
-                  />
-                  Motor–Hélice (bimotor)
-                </label>
-              </div>
-            </fieldset>
+            {/* Formato automático por el tipo del avión (no editable aquí:
+                se corrige en Editar avión → Tipo si estuviera mal). */}
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Formato</p>
+              <p className="text-sm text-muted-foreground">
+                {esBimotor
+                  ? "Motor–Hélice (avión bimotor)"
+                  : "Planeador (avión monomotor)"}
+                <span className="ml-1 text-[11px]">
+                  · lo define el tipo del avión (Editar avión → Tipo)
+                </span>
+              </p>
+            </div>
 
             {esBimotor && (
               <div className="space-y-1.5">

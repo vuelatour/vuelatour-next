@@ -151,8 +151,18 @@ export function AircraftFormDialog({
           </Field>
 
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Motores" required hint="1 o 2" error={errors.num_motores?.message}>
-              <Input type="number" min={1} max={2} {...register("num_motores")} />
+            {/* Tipo de avión: además del dato técnico, decide el formato de
+                la bitácora de tacómetros (Planeador vs Motor–Hélice). */}
+            <Field label="Tipo" required error={errors.num_motores?.message}>
+              <SearchableSelect
+                options={[
+                  { value: "1", label: "Monomotor" },
+                  { value: "2", label: "Bimotor" },
+                ]}
+                value={String(watch("num_motores") ?? "")}
+                onChange={(v) => setValue("num_motores", Number(v) as never)}
+                placeholder="Selecciona"
+              />
             </Field>
             <Field
               label="Vel. crucero"
