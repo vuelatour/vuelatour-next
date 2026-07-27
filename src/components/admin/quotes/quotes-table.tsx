@@ -30,9 +30,14 @@ export interface QuoteListRow {
   faltaPiloto: boolean;
 }
 
-// El folio NO se muestra (confundía a operación); sigue en los datos y en la
-// búsqueda por si alguien lo teclea.
 const columns: Array<DataTableColumn<QuoteListRow>> = [
+  {
+    key: "folio",
+    header: "Folio",
+    headClassName: "w-20",
+    cellClassName: "font-mono text-xs",
+    cell: (q) => <>#{q.folio}</>,
+  },
   {
     key: "cliente",
     header: "Cliente",
@@ -127,7 +132,7 @@ export function QuotesTable({ quotes }: { quotes: QuoteListRow[] }) {
       searchText={(q) =>
         `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta}`
       }
-      searchPlaceholder="Buscar cotización (cliente, ruta)…"
+      searchPlaceholder="Buscar cotización (folio, cliente, ruta)…"
     />
   );
 }
