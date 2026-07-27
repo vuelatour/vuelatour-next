@@ -88,9 +88,10 @@ export function EscalasCard({
           </div>
           <div className="flex shrink-0 gap-2">
             {escalas.length > 0 &&
-              escalas.some((e) => !e.taco_salida || !e.taco_llegada) && (
-                <FillTacoGapsButton flightId={flightId} />
-              )}
+              escalas.some(
+                (e) =>
+                  !e.cancelada_at && (!e.taco_salida || !e.taco_llegada),
+              ) && <FillTacoGapsButton flightId={flightId} />}
           </div>
         </CardHeader>
         <CardContent>
@@ -105,17 +106,26 @@ export function EscalasCard({
                 const photos = photosByEscala.get(esc.id);
                 const fotoSalida = photos?.foto_salida_url ?? null;
                 const fotoLlegada = photos?.foto_llegada_url ?? null;
+                const cancelada = !!esc.cancelada_at;
                 return (
                   <li
                     key={esc.id}
                     className={
-                      esc.revision_requerida
-                        ? "rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 space-y-1.5"
-                        : "rounded-lg border border-border bg-muted/20 p-3 space-y-1.5"
+                      cancelada
+                        ? "rounded-lg border border-red-500/30 bg-red-500/[0.04] p-3 space-y-1.5 opacity-80"
+                        : esc.revision_requerida
+                          ? "rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 space-y-1.5"
+                          : "rounded-lg border border-border bg-muted/20 p-3 space-y-1.5"
                     }
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-semibold text-sm">
+                      <span
+                        className={
+                          cancelada
+                            ? "font-mono font-semibold text-sm text-muted-foreground line-through"
+                            : "font-mono font-semibold text-sm"
+                        }
+                      >
                         <span className="text-muted-foreground mr-2">
                           {esc.solo_operativa ? "·" : `${idx + 1}.`}
                         </span>
@@ -131,7 +141,14 @@ export function EscalasCard({
                         )}
                       </span>
                       <div className="flex items-center gap-2">
-                        {esc.taco_salida || esc.taco_llegada ? (
+                        {cancelada ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30"
+                          >
+                            Cancelado · no voló
+                          </Badge>
+                        ) : esc.taco_salida || esc.taco_llegada ? (
                           // Lectura parcial visible ("1,572.00 → —"): decir
                           // "Sin tacómetros" con la salida ya propagada
                           // ocultaba que solo falta la llegada.
@@ -146,8 +163,10 @@ export function EscalasCard({
                         )}
                         {/* Corrección de oficina SIEMPRE disponible (origen
                             OFICINA + nota); el flujo amarillo de abajo es solo
-                            para lecturas marcadas por revisar. */}
-                        {!esc.revision_requerida && (
+                            para lecturas marcadas por revisar. Un tramo
+                            cancelado no captura ni corrige (se restaura en
+                            «Asignación por tramo» si sí voló). */}
+                        {!cancelada && !esc.revision_requerida && (
                           <TacoConfirmDialog
                             flightId={flightId}
                             escala={esc}
@@ -160,6 +179,15 @@ export function EscalasCard({
                         )}
                       </div>
                     </div>
+                    {cancelada && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400">
+                        {esc.cancelada_motivo
+                          ? `Motivo: ${esc.cancelada_motivo}`
+                          : "Tramo cancelado."}{" "}
+                        No cuenta horas ni pide lecturas. Restaurar: en
+                        «Asignación por tramo».
+                      </p>
+                    )}
 
                     <div className="flex flex-wrap items-center gap-1.5">
                       {esc.es_ferry ? (

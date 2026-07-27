@@ -129,10 +129,12 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   ]);
   const providerOptions = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
-  // Ruta OPERATIVA (lo que se vuela), derivada de las escalas. El
-  // origen/destino del vuelo es el espejo comercial (CUN→CUN) y engaña
-  // cuando la operación sale de otra base.
-  const escalasOrden = [...snapshot.escalas].sort((a, b) => a.orden - b.orden);
+  // Ruta OPERATIVA (lo que se vuela), derivada de las escalas ACTIVAS (los
+  // tramos cancelados no volaron). El origen/destino del vuelo es el espejo
+  // comercial (CUN→CUN) y engaña cuando la operación sale de otra base.
+  const escalasOrden = [...snapshot.escalas]
+    .filter((e) => !e.cancelada_at)
+    .sort((a, b) => a.orden - b.orden);
   const rutaOperativa =
     escalasOrden.length > 0
       ? [escalasOrden[0].origen_iata, ...escalasOrden.map((e) => e.destino_iata)].join(" → ")
@@ -171,12 +173,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     snapshot.cobros.map((c) => c.foto_voucher_url).filter((p): p is string => !!p),
   ).catch(() => ({}) as Record<string, string>);
 
-  // Tacómetro incompleto: vuelos propios en curso/cerrados sin todas las lecturas.
+  // Tacómetro incompleto: vuelos propios en curso/cerrados sin todas las
+  // lecturas de sus tramos ACTIVOS (los cancelados no piden lectura).
   const faltaTaco =
     !snapshot.es_externo &&
     (snapshot.estado === "EN_VUELO" || snapshot.estado === "COMPLETADO") &&
-    (snapshot.escalas.length === 0 ||
-      snapshot.escalas.some((e) => e.taco_salida == null || e.taco_llegada == null));
+    (escalasOrden.length === 0 ||
+      escalasOrden.some((e) => e.taco_salida == null || e.taco_llegada == null));
 
   const pendingCobro = Math.max(
     0,

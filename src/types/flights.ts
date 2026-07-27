@@ -81,8 +81,16 @@ export interface FlightEscala {
   solo_operativa: boolean;
   taco_salida: string | null;
   taco_llegada: string | null;
+  /** Procedencia de cada lectura: PILOTO | IA | DEDUCIDO | OFICINA. DEDUCIDO
+   * es provisional del sistema (no evidencia de que el tramo voló). */
+  taco_salida_origen?: "PILOTO" | "IA" | "DEDUCIDO" | "OFICINA" | null;
+  taco_llegada_origen?: "PILOTO" | "IA" | "DEDUCIDO" | "OFICINA" | null;
   foto_taco_salida_url: string | null;
   foto_taco_llegada_url: string | null;
+  /** Tramo CANCELADO (no voló): fuera de horas, completitud y calendario. */
+  cancelada_at?: string | null;
+  cancelada_motivo?: string | null;
+  cancelada_por?: string | null;
   valor_ia_propuesto: string | null;
   revision_requerida: boolean;
   revision_motivo: string | null;

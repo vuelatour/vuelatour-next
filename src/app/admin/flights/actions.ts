@@ -444,6 +444,44 @@ export async function deleteEscalaAction(
   }
 }
 
+/**
+ * Cancela UN tramo que no voló (motivo obligatorio): anula sus lecturas
+ * provisionales y lo saca de horas/completitud/calendario/app del piloto.
+ */
+export async function cancelEscalaAction(
+  flightId: string,
+  escalaId: string,
+  motivo: string,
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const data = await apiServer<FlightEscala>(
+      `/v1/flights/legs/${escalaId}/cancel`,
+      { method: "POST", body: { motivo } },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Restaura un tramo cancelado a la ruta activa (las lecturas no regresan). */
+export async function restoreEscalaAction(
+  flightId: string,
+  escalaId: string,
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const data = await apiServer<FlightEscala>(
+      `/v1/flights/legs/${escalaId}/restore`,
+      { method: "POST" },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ============ Tacómetros: revisión de oficina ============
 
 export interface ConfirmTacoPayload {
