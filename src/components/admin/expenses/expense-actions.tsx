@@ -24,7 +24,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deleteGastoAction, dismissDuplicadoAction } from "@/app/admin/expenses/actions";
+import {
+  deleteGastoAction,
+  dismissDuplicadoAction,
+  vistoBuenoGastoAction,
+} from "@/app/admin/expenses/actions";
 import { ExpenseVerifyDialog } from "./expense-verify-dialog";
 import type { Gasto } from "@/types/expenses";
 
@@ -49,6 +53,14 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
     });
   };
 
+  const darVistoBueno = () => {
+    startTransition(async () => {
+      const r = await vistoBuenoGastoAction(gasto.id);
+      if (r.ok) toast.success("Visto bueno registrado");
+      else toast.error(r.error ?? "Error");
+    });
+  };
+
   const handleDelete = () => {
     startTransition(async () => {
       const r = await deleteGastoAction(gasto.id);
@@ -69,6 +81,12 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {gasto.requiere_visto_bueno === true && (
+            <DropdownMenuItem onClick={darVistoBueno} className="gap-2">
+              <CheckBadgeIcon className="h-4 w-4" />
+              Dar visto bueno (prellenado IA)
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Verificar / editar

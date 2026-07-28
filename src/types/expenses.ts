@@ -25,6 +25,9 @@ export interface Gasto {
   foto_url: string | null;
   conciliado: boolean;
   duplicado_sospechado: boolean;
+  /** Prellenado con IA desde la app (flujo admin): pendiente del visto bueno. */
+  requiere_visto_bueno?: boolean;
+  visto_bueno_at?: string | null;
   /** Quién subió el gasto: PILOTO | MECANICO | OFICINA | SISTEMA (pistas). */
   origen: string | null;
   /** Aterrizaje al que corresponde (gastos de pista). */

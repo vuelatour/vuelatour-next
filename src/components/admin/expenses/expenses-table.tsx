@@ -55,6 +55,15 @@ export function ExpensesTable({
                 Duplicado?
               </Badge>
             )}
+            {g.requiere_visto_bueno === true && (
+              <Badge
+                variant="outline"
+                className="border-sky-500/50 text-sky-600"
+                title="Prellenado con IA desde la app: pendiente del visto bueno de administración (menú ⋯ → Dar visto bueno)."
+              >
+                Visto bueno
+              </Badge>
+            )}
           </span>
         ),
       },

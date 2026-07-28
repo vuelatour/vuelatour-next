@@ -274,6 +274,17 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
 }
 
 /** Descarta la bandera de duplicado con un clic. */
+/** Visto bueno de administración a un gasto prellenado con IA (app admin). */
+export async function vistoBuenoGastoAction(id: string): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/expenses/${id}/visto-bueno`, { method: "POST" });
+    revalidatePath("/admin/expenses");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function dismissDuplicadoAction(id: string): Promise<ActionResult<Gasto>> {
   try {
     const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
