@@ -133,18 +133,9 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
             </Field>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
-            <div className="space-y-0.5">
-              <Label className="text-sm font-medium">Fondo de caja chica</Label>
-              <p className="text-xs text-muted-foreground">
-                Marca si tiene asignado fondo administrado por Mary.
-              </p>
-            </div>
-            <Switch
-              checked={watch("tiene_fondo_caja") ?? false}
-              onCheckedChange={(c) => setValue("tiene_fondo_caja", c)}
-            />
-          </div>
+          {/* El fondo de caja chica NO se marca aquí: se abre en Tesorería →
+              Caja chica y el sistema mantiene el indicador. Marcarlo a mano
+              dejaba a la persona fuera del selector de "Abrir fondo". */}
 
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div className="space-y-0.5">

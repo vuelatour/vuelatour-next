@@ -160,20 +160,9 @@ export function InvitePilotDialog() {
             />
           </div>
 
-          {!esExterno && (
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">Fondo de caja chica</Label>
-                <p className="text-xs text-muted-foreground">
-                  Marca si tendrá asignado fondo administrado por Mary.
-                </p>
-              </div>
-              <Switch
-                checked={watch("tiene_fondo_caja") ?? false}
-                onCheckedChange={(c) => setValue("tiene_fondo_caja", c)}
-              />
-            </div>
-          )}
+          {/* El fondo de caja chica se abre en Tesorería → Caja chica, no se
+              marca aquí: marcarlo a mano escondía a la persona del selector
+              de "Abrir fondo" sin que el fondo existiera. */}
 
           <DialogFooter>
             <Button

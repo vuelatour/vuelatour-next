@@ -8,20 +8,26 @@ import {
 } from "@/components/ui/card";
 import { FondosTable } from "@/components/admin/caja-chica/fondos-table";
 import { FondoCreateButton } from "@/components/admin/caja-chica/fondo-create-button";
-import { listFondos } from "@/lib/api/caja-chica-server";
+import { listElegiblesFondo, listFondos } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CajaChicaPage() {
-  const [{ data: fondos, count }, usersRes] = await Promise.all([
+  const [{ data: fondos, count }, usersRes, elegiblesRes] = await Promise.all([
     listFondos({ limit: 200 }),
     listUsers({ limit: 200 }),
+    listElegiblesFondo(),
   ]);
 
-  const sinFondo = usersRes.data
-    .filter((u) => !u.tiene_fondo_caja)
-    .map((u) => ({ id: u.id, nombre: u.nombre, rol: u.rol }));
+  // Quién puede recibir fondo lo decide el API contra la tabla de fondos: el
+  // flag `tiene_fondo_caja` del usuario se marcaba a mano y escondía personas
+  // que nunca tuvieron fondo (jul 2026: Luis Cáceres, Abraham Zamora).
+  const sinFondo = elegiblesRes.data.map((u) => ({
+    id: u.id,
+    nombre: u.nombre,
+    rol: u.rol,
+  }));
 
   // Para el selector "Autorizado por" al registrar movimientos.
   const usuarios = usersRes.data.map((u) => ({ id: u.id, nombre: u.nombre }));
