@@ -225,6 +225,19 @@ export async function updateEngineAction(
 
 // ===== Hélices =====
 
+export async function deleteEngineAction(
+  aircraftId: string,
+  engineId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/engines/${engineId}`, { method: "DELETE" });
+    revalidateAircraft(aircraftId);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function createPropellerAction(
   aircraftId: string,
   raw: unknown,
@@ -257,6 +270,19 @@ export async function updatePropellerAction(
     });
     revalidateAircraft(aircraftId);
     return { ok: true, data: prop };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deletePropellerAction(
+  aircraftId: string,
+  propellerId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/propellers/${propellerId}`, { method: "DELETE" });
+    revalidateAircraft(aircraftId);
+    return { ok: true };
   } catch (err) {
     return fail(err);
   }

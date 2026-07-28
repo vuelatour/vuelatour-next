@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { PlusIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createPropellerAction,
+  deletePropellerAction,
   updatePropellerAction,
 } from "@/app/admin/aircraft/actions";
 import { PropellerFormSchema, type PropellerFormValues } from "@/app/admin/aircraft/schema";
@@ -55,6 +56,63 @@ export function AircraftPropellerButton({
         </Button>
       )}
       <PropellerDialog open={open} onOpenChange={setOpen} aircraftId={aircraftId} propeller={propeller} />
+    </>
+  );
+}
+
+export function AircraftPropellerDeleteButton({
+  aircraftId,
+  propeller,
+}: {
+  aircraftId: string;
+  propeller: Propeller;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const onDelete = () =>
+    startTransition(async () => {
+      const res = await deletePropellerAction(aircraftId, propeller.id);
+      if (res.ok) {
+        toast.success("Hélice eliminada");
+        setOpen(false);
+      } else {
+        toast.error(res.error ?? "No se pudo eliminar la hélice");
+      }
+    });
+
+  return (
+    <>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+        onClick={() => setOpen(true)}
+        title="Eliminar hélice"
+        aria-label="Eliminar hélice"
+      >
+        <TrashIcon className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar hélice</DialogTitle>
+            <DialogDescription>
+              Se eliminará la hélice <span className="font-medium">{propeller.posicion}</span>{" "}
+              (serie <span className="font-mono">{propeller.numero_serie}</span>). Esta acción no
+              se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={onDelete} disabled={pending}>
+              {pending ? "Eliminando…" : "Eliminar hélice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -99,6 +157,11 @@ function PropellerDialog({
         payload = { ...values };
         if (!dirtyFields.horas_totales) delete payload.horas_totales;
         if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
+        // Campo de texto vaciado a propósito → null para borrar el valor
+        // guardado (el "" se descarta en la action y no borraría nada).
+        for (const k of ["fabricante", "modelo", "notas"] as const) {
+          if (dirtyFields[k] && payload[k] === "") payload[k] = null;
+        }
       }
       const res = isEdit
         ? await updatePropellerAction(aircraftId, propeller!.id, payload)
@@ -191,10 +254,10 @@ function defaults(p?: Propeller): PropellerFormValues {
   return {
     posicion: p.posicion,
     numero_serie: p.numero_serie,
-    fabricante: "",
-    modelo: "",
+    fabricante: p.fabricante ?? "",
+    modelo: p.modelo ?? "",
     horas_totales: p.horas_totales ?? "",
     tbo_horas: p.tbo_horas ?? "",
-    notas: "",
+    notas: p.notas ?? "",
   };
 }

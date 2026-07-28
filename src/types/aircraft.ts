@@ -67,6 +67,9 @@ export interface Motor {
   posicion: PosicionMotor;
   numero_serie: string;
   tipo: TipoMotor;
+  fabricante?: string | null;
+  modelo?: string | null;
+  notas?: string | null;
   horas_totales: Decimal;
   turm: Decimal;
   tbo_horas: Decimal;
@@ -80,6 +83,9 @@ export interface Propeller {
   id: string;
   posicion: PosicionHelice;
   numero_serie: string;
+  fabricante?: string | null;
+  modelo?: string | null;
+  notas?: string | null;
   horas_totales: Decimal;
   tbo_horas: Decimal | null;
   horas_actuales?: number;

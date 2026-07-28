@@ -102,12 +102,14 @@ export const EngineFormSchema = z.object({
   posicion: PosicionMotorEnum,
   numero_serie: z.string().min(1, "Requerido").max(50),
   tipo: TipoMotorEnum,
-  fabricante: z.string().max(50).optional().or(z.literal("")),
-  modelo: z.string().max(50).optional().or(z.literal("")),
+  // nullable: al editar, vaciar el campo manda null para BORRAR el valor
+  // guardado (el "" se descarta en stripEmpty y no borraría nada).
+  fabricante: z.string().max(50).nullable().optional().or(z.literal("")),
+  modelo: z.string().max(50).nullable().optional().or(z.literal("")),
   horas_totales: optionalNonNegative,
   turm: optionalNonNegative,
   tbo_horas: z.coerce.number().min(1, "Debe ser mayor a 0"),
-  notas: z.string().max(2000).optional().or(z.literal("")),
+  notas: z.string().max(2000).nullable().optional().or(z.literal("")),
 });
 export type EngineFormValues = z.input<typeof EngineFormSchema>;
 
@@ -116,11 +118,11 @@ const PosicionHeliceEnum = z.enum(["UNICA", "IZQUIERDA", "DERECHA"]);
 export const PropellerFormSchema = z.object({
   posicion: PosicionHeliceEnum,
   numero_serie: z.string().min(1, "Requerido").max(50),
-  fabricante: z.string().max(50).optional().or(z.literal("")),
-  modelo: z.string().max(50).optional().or(z.literal("")),
+  fabricante: z.string().max(50).nullable().optional().or(z.literal("")),
+  modelo: z.string().max(50).nullable().optional().or(z.literal("")),
   horas_totales: optionalNonNegative,
   tbo_horas: optionalPositive,
-  notas: z.string().max(2000).optional().or(z.literal("")),
+  notas: z.string().max(2000).nullable().optional().or(z.literal("")),
 });
 export type PropellerFormValues = z.input<typeof PropellerFormSchema>;
 

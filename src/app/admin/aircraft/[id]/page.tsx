@@ -21,8 +21,14 @@ import {
   AircraftOwnersCard,
   type SocioOption,
 } from "@/components/admin/aircraft/aircraft-owners-card";
-import { AircraftEngineButton } from "@/components/admin/aircraft/aircraft-engine-button";
-import { AircraftPropellerButton } from "@/components/admin/aircraft/aircraft-propeller-button";
+import {
+  AircraftEngineButton,
+  AircraftEngineDeleteButton,
+} from "@/components/admin/aircraft/aircraft-engine-button";
+import {
+  AircraftPropellerButton,
+  AircraftPropellerDeleteButton,
+} from "@/components/admin/aircraft/aircraft-propeller-button";
 import { AircraftInsuranceCard } from "@/components/admin/aircraft/aircraft-insurance-card";
 import {
   AircraftMetricsCard,
@@ -341,6 +347,10 @@ function MotorCard({
     motor.tbo_restante ??
     Number(motor.tbo_horas) - (Number(motor.horas_totales) - Number(motor.turm));
   const horasVida = motor.horas_actuales ?? Number(motor.horas_totales);
+  // Un motor no puede tener menos horas de vida que las que tenía en su
+  // último overhaul: si pasa, falta capturar "Horas totales" en el motor.
+  const horasIncoherentes = Number(motor.turm) > horasVida;
+  const marcaModelo = [motor.fabricante, motor.modelo].filter(Boolean).join(" ");
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
       <div className="flex items-center justify-between">
@@ -350,9 +360,11 @@ function MotorCard({
             {motor.tipo}
           </Badge>
           <AircraftEngineButton aircraftId={aircraftId} engine={motor} />
+          <AircraftEngineDeleteButton aircraftId={aircraftId} engine={motor} />
         </div>
       </div>
       <p className="font-mono text-xs text-muted-foreground break-all">{motor.numero_serie}</p>
+      {marcaModelo && <p className="text-xs text-muted-foreground">{marcaModelo}</p>}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini label="Horas de vida" value={`${fmtDecimal(horasVida)} hrs`} />
         <Mini label="TURM (últ. overhaul)" value={fmtDecimal(motor.turm)} />
@@ -363,6 +375,17 @@ function MotorCard({
           className={restantes <= 0 ? "text-destructive font-semibold" : restantes <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
         />
       </dl>
+      {horasIncoherentes && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Revisar captura: las horas de vida ({fmtDecimal(horasVida)}) son menores al TURM (
+          {fmtDecimal(motor.turm)}). Edita el motor y captura sus horas totales reales.
+        </p>
+      )}
+      {motor.notas && (
+        <p className="pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">
+          {motor.notas}
+        </p>
+      )}
       {reserve && (
         <p className="pt-2 border-t border-border text-xs text-muted-foreground">
           Reserva: <span className="font-medium text-foreground">{fmtUsd(reserve.monto_por_hora_usd)} / hr</span>
@@ -383,9 +406,17 @@ function PropellerCard({
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">{propeller.posicion}</p>
-        <AircraftPropellerButton aircraftId={aircraftId} propeller={propeller} />
+        <div className="flex items-center gap-1">
+          <AircraftPropellerButton aircraftId={aircraftId} propeller={propeller} />
+          <AircraftPropellerDeleteButton aircraftId={aircraftId} propeller={propeller} />
+        </div>
       </div>
       <p className="font-mono text-xs text-muted-foreground break-all">{propeller.numero_serie}</p>
+      {(propeller.fabricante || propeller.modelo) && (
+        <p className="text-xs text-muted-foreground">
+          {[propeller.fabricante, propeller.modelo].filter(Boolean).join(" ")}
+        </p>
+      )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini
           label="Horas de vida"
@@ -400,6 +431,11 @@ function PropellerCard({
           />
         )}
       </dl>
+      {propeller.notas && (
+        <p className="pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">
+          {propeller.notas}
+        </p>
+      )}
     </div>
   );
 }

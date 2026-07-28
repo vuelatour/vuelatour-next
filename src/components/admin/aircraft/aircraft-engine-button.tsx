@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { PlusIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createEngineAction,
+  deleteEngineAction,
   updateEngineAction,
 } from "@/app/admin/aircraft/actions";
 import { EngineFormSchema, type EngineFormValues } from "@/app/admin/aircraft/schema";
@@ -55,6 +56,63 @@ export function AircraftEngineButton({
         </Button>
       )}
       <EngineDialog open={open} onOpenChange={setOpen} aircraftId={aircraftId} engine={engine} />
+    </>
+  );
+}
+
+export function AircraftEngineDeleteButton({
+  aircraftId,
+  engine,
+}: {
+  aircraftId: string;
+  engine: Motor;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const onDelete = () =>
+    startTransition(async () => {
+      const res = await deleteEngineAction(aircraftId, engine.id);
+      if (res.ok) {
+        toast.success("Motor eliminado");
+        setOpen(false);
+      } else {
+        toast.error(res.error ?? "No se pudo eliminar el motor");
+      }
+    });
+
+  return (
+    <>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+        onClick={() => setOpen(true)}
+        title="Eliminar motor"
+        aria-label="Eliminar motor"
+      >
+        <TrashIcon className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar motor</DialogTitle>
+            <DialogDescription>
+              Se eliminará el motor <span className="font-medium">{engine.posicion}</span> (serie{" "}
+              <span className="font-mono">{engine.numero_serie}</span>) junto con su historial de
+              traslados y los vencimientos ligados a él. Esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={onDelete} disabled={pending}>
+              {pending ? "Eliminando…" : "Eliminar motor"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -100,6 +158,11 @@ function EngineDialog({
         if (!dirtyFields.horas_totales) delete payload.horas_totales;
         if (!dirtyFields.turm) delete payload.turm;
         if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
+        // Campo de texto vaciado a propósito → null para borrar el valor
+        // guardado (el "" se descarta en la action y no borraría nada).
+        for (const k of ["fabricante", "modelo", "notas"] as const) {
+          if (dirtyFields[k] && payload[k] === "") payload[k] = null;
+        }
       }
       const res = isEdit
         ? await updateEngineAction(aircraftId, engine!.id, payload)
@@ -214,11 +277,11 @@ function defaults(m?: Motor): EngineFormValues {
     posicion: m.posicion,
     numero_serie: m.numero_serie,
     tipo: m.tipo,
-    fabricante: "",
-    modelo: "",
+    fabricante: m.fabricante ?? "",
+    modelo: m.modelo ?? "",
     horas_totales: m.horas_totales ?? "",
     turm: m.turm ?? "",
     tbo_horas: m.tbo_horas as unknown as number,
-    notas: "",
+    notas: m.notas ?? "",
   };
 }
