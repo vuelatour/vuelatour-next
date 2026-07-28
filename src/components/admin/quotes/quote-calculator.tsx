@@ -26,6 +26,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -358,6 +366,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   const router = useRouter();
   const [advanced, setAdvanced] = useState(false);
+  // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
+  const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
 
   // Clientes creados inline desde el cotizador (sin ir a "Clientes").
@@ -635,6 +645,38 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     ? reviseClienteInterno
     : !!allClients.find((c) => c.id === values.cliente_id)?.es_interno;
 
+  // "Todo en $0" para vuelos de la empresa: el motor ya pone la TARIFA en 0
+  // para internos, pero TUAS, pernoctas, extras, comisión del vendedor y
+  // descuentos siguen sumando. Esto apaga de un golpe todo lo que le cobraría
+  // al cliente, sin tocar lo OPERATIVO (tramos, tiempos, sobrevuelo, costo del
+  // operador externo): el vuelo sigue pesando en el balance del avión.
+  const ponerTodoEnCero = () => {
+    const opts = { shouldDirty: true } as const;
+    setValue("tarifa_hora_override_usd", 0, opts);
+    setValue("cobrar_tuas", false, opts);
+    setValue("tuas_override_usd_pax", 0, opts);
+    setValue("tuas_lineas", [], opts);
+    setValue("extras", [], opts);
+    // Un descuento sobre $0 dejaría el total en negativo.
+    setValue("descuento_usd", null, opts);
+    setValue("redondeo_auto", false, opts);
+    setValue("redondeo_usd", null, opts);
+    setValue("comision_vendedor_usd", null, opts);
+    setValue("comision_vendedor_tarifa_hr", null, opts);
+    // La pernocta la sigue marcando el tramo (el piloto sí pernoctó y se le
+    // paga como gasto); lo que se pone en 0 es el cargo al cliente.
+    setValue(
+      "escalas",
+      values.escalas.map((e) => ({ ...e, pernocta_costo_usd: 0 })),
+      opts,
+    );
+    // Externo: el precio pactado con el cliente también va a 0; el costo del
+    // operador (costo_externo_usd) NO se toca, es un gasto real.
+    if (values.es_externo) setValue("total_pactado_usd", 0, opts);
+    setCeroOpen(false);
+    toast.success("Cotización en $0 — revisa y guarda");
+  };
+
   const calcPayload = useMemo<CalculateQuoteRequest | null>(() => {
     if (!debounced.aeronave_id) return null;
     const base: CalculateQuoteRequest = {
@@ -745,8 +787,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       return null;
     }
     if (base.pasajeros < 1) return null;
-    if (debounced.tarifa_hora_override_usd) {
-      base.tarifa_hora_override_usd = Number(debounced.tarifa_hora_override_usd);
+    // Campo vacío = sin override (el input devuelve "" y Number("") es 0: no
+    // se puede confiar en la verdad/falsedad del valor crudo).
+    const tarifaRaw = `${debounced.tarifa_hora_override_usd ?? ""}`.trim();
+    if (tarifaRaw !== "" && Number(tarifaRaw) > 0) {
+      base.tarifa_hora_override_usd = Number(tarifaRaw);
+    } else if (clienteInterno && tarifaRaw !== "" && Number(tarifaRaw) === 0) {
+      // Cliente INTERNO: el 0 tecleado es intencional (vuelo de la empresa sin
+      // cobro) y debe ganarle a la tarifa preferencial pactada del cliente.
+      // En clientes normales el 0 se sigue ignorando: el motor respondería 400
+      // "sin tarifa configurada" y tiraría el preview en cada tecla.
+      base.tarifa_hora_override_usd = 0;
     }
     if (!debounced.cobrar_tuas) {
       // Switch rápido apagado: la TUAS no se cobra en esta cotización.
@@ -787,7 +838,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       base.iva_pct_override = Number(debounced.iva_pct_override);
     }
     return base;
-  }, [debounced]);
+  }, [debounced, clienteInterno]);
 
   const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1109,10 +1160,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 · revisar genera v{initialQuote.cotizacion_version + 1}
               </p>
               {clienteInterno && (
-                <p className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400">
-                  Cliente interno — la cotización puede ir en $0 (vuelo de la
-                  empresa, sin cobro).
-                </p>
+                <div className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400 space-y-1.5">
+                  <p>
+                    Cliente interno — la cotización puede ir en $0 (vuelo de la
+                    empresa, sin cobro).
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => setCeroOpen(true)}
+                  >
+                    Poner todo en $0
+                  </Button>
+                </div>
               )}
             </div>
           ) : (
@@ -1180,10 +1242,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   );
                 })()}
                 {clienteInterno && (
-                  <p className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-400">
-                    Cliente interno — la cotización puede ir en $0 (vuelo de la
-                    empresa, sin cobro).
-                  </p>
+                  <div className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 space-y-2">
+                    <p>
+                      Cliente interno — la cotización puede ir en $0 (vuelo de la
+                      empresa, sin cobro).
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => setCeroOpen(true)}
+                    >
+                      Poner todo en $0
+                    </Button>
+                  </div>
                 )}
                 <SearchableSelect
                   options={allClients.map((c) => ({
@@ -2361,6 +2434,41 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           router.refresh();
         }}
       />
+
+      {/* Confirmación de "todo en $0": borra extras y overrides ya capturados. */}
+      <Dialog open={ceroOpen} onOpenChange={setCeroOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Poner la cotización en $0</DialogTitle>
+            <DialogDescription>
+              Vuelo de la empresa: se apaga todo lo que se le cobraría al
+              cliente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm space-y-2">
+            <p className="text-muted-foreground">Se pone en cero:</p>
+            <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+              <li>Tarifa por hora</li>
+              <li>TUAS (se apaga el cobro)</li>
+              <li>Pernoctas cobradas al cliente</li>
+              <li>Conceptos extra (se borran)</li>
+              <li>Comisión del vendedor, descuento y redondeo</li>
+              {values.es_externo && <li>Precio pactado del vuelo externo</li>}
+            </ul>
+            <p className="text-xs text-muted-foreground pt-1">
+              No se toca la operación: tramos, tiempos, pasajeros ni el costo
+              del operador externo. El vuelo sigue pesando en el balance del
+              avión con sus gastos reales.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCeroOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={ponerTodoEnCero}>Poner todo en $0</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
