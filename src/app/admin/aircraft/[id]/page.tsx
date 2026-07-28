@@ -47,6 +47,7 @@ import {
 import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { fmtDate } from "@/lib/datetime";
 import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
 
 interface PageProps {
@@ -334,6 +335,58 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Barra de vida del ciclo TBO. El % lo calcula el API (`vida_usada_pct`). */
+function VidaTboBar({ pct, agotado }: { pct: number; agotado: boolean }) {
+  const color = agotado
+    ? "bg-destructive"
+    : pct >= 90
+      ? "bg-amber-500"
+      : "bg-emerald-500";
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-muted-foreground">Vida usada del TBO</span>
+        <span className="font-medium">{fmtDecimal(pct)} %</span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Pie de card: de dónde salen las horas vivas y quién tocó el componente. */
+function ComponenteFooter({
+  horasBase,
+  ref_,
+  hobbs,
+  actualizado,
+  quien,
+}: {
+  horasBase: number;
+  ref_?: number | null;
+  hobbs?: number;
+  actualizado?: string;
+  quien?: string | null;
+}) {
+  return (
+    <div className="pt-2 border-t border-border space-y-0.5 text-[11px] text-muted-foreground">
+      <p>
+        Base capturada {fmtDecimal(horasBase)} hrs
+        {ref_ != null && (
+          <> · acumula desde el tacómetro {fmtDecimal(ref_)}{hobbs != null && <> (avión va en {fmtDecimal(hobbs)})</>}</>
+        )}
+      </p>
+      {actualizado && (
+        <p>
+          Actualizado {fmtDate(actualizado)}
+          {quien && <> · {quien}</>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function MotorCard({
   motor,
   reserve,
@@ -347,15 +400,22 @@ function MotorCard({
     motor.tbo_restante ??
     Number(motor.tbo_horas) - (Number(motor.horas_totales) - Number(motor.turm));
   const horasVida = motor.horas_actuales ?? Number(motor.horas_totales);
+  const desdeOverhaul = motor.horas_desde_overhaul ?? horasVida - Number(motor.turm);
   // Un motor no puede tener menos horas de vida que las que tenía en su
   // último overhaul: si pasa, falta capturar "Horas totales" en el motor.
   const horasIncoherentes = Number(motor.turm) > horasVida;
   const marcaModelo = [motor.fabricante, motor.modelo].filter(Boolean).join(" ");
   return (
-    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold">{motor.posicion}</p>
-        <div className="flex items-center gap-1">
+    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{motor.posicion}</p>
+          <p className="font-mono text-xs text-muted-foreground break-all">
+            S/N {motor.numero_serie}
+          </p>
+          {marcaModelo && <p className="text-xs text-muted-foreground">{marcaModelo}</p>}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
           <Badge variant="outline" className="text-xs">
             {motor.tipo}
           </Badge>
@@ -363,10 +423,12 @@ function MotorCard({
           <AircraftEngineDeleteButton aircraftId={aircraftId} engine={motor} />
         </div>
       </div>
-      <p className="font-mono text-xs text-muted-foreground break-all">{motor.numero_serie}</p>
-      {marcaModelo && <p className="text-xs text-muted-foreground">{marcaModelo}</p>}
+      {motor.vida_usada_pct != null && !horasIncoherentes && (
+        <VidaTboBar pct={motor.vida_usada_pct} agotado={restantes <= 0} />
+      )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini label="Horas de vida" value={`${fmtDecimal(horasVida)} hrs`} />
+        <Mini label="Desde el últ. overhaul" value={`${fmtDecimal(desdeOverhaul)} hrs`} />
         <Mini label="TURM (últ. overhaul)" value={fmtDecimal(motor.turm)} />
         <Mini label="TBO" value={`${fmtDecimal(motor.tbo_horas)} hrs`} />
         <Mini
@@ -374,6 +436,12 @@ function MotorCard({
           value={`${fmtDecimal(restantes)} hrs`}
           className={restantes <= 0 ? "text-destructive font-semibold" : restantes <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
         />
+        {reserve && (
+          <Mini
+            label="Reserva overhaul"
+            value={`${fmtUsd(reserve.monto_por_hora_usd)} / hr`}
+          />
+        )}
       </dl>
       {horasIncoherentes && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -382,15 +450,18 @@ function MotorCard({
         </p>
       )}
       {motor.notas && (
-        <p className="pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">
-          {motor.notas}
-        </p>
+        <div className="pt-2 border-t border-border">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Notas</p>
+          <p className="text-xs mt-0.5 whitespace-pre-wrap">{motor.notas}</p>
+        </div>
       )}
-      {reserve && (
-        <p className="pt-2 border-t border-border text-xs text-muted-foreground">
-          Reserva: <span className="font-medium text-foreground">{fmtUsd(reserve.monto_por_hora_usd)} / hr</span>
-        </p>
-      )}
+      <ComponenteFooter
+        horasBase={Number(motor.horas_totales)}
+        ref_={motor.aeronave_horas_ref != null ? Number(motor.aeronave_horas_ref) : null}
+        hobbs={motor.hobbs_avion}
+        actualizado={motor.updated_at}
+        quien={motor.actualizado_por?.nombre}
+      />
     </div>
   );
 }
@@ -403,19 +474,29 @@ function PropellerCard({
   aircraftId: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold">{propeller.posicion}</p>
-        <div className="flex items-center gap-1">
+    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{propeller.posicion}</p>
+          <p className="font-mono text-xs text-muted-foreground break-all">
+            S/N {propeller.numero_serie}
+          </p>
+          {(propeller.fabricante || propeller.modelo) && (
+            <p className="text-xs text-muted-foreground">
+              {[propeller.fabricante, propeller.modelo].filter(Boolean).join(" ")}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
           <AircraftPropellerButton aircraftId={aircraftId} propeller={propeller} />
           <AircraftPropellerDeleteButton aircraftId={aircraftId} propeller={propeller} />
         </div>
       </div>
-      <p className="font-mono text-xs text-muted-foreground break-all">{propeller.numero_serie}</p>
-      {(propeller.fabricante || propeller.modelo) && (
-        <p className="text-xs text-muted-foreground">
-          {[propeller.fabricante, propeller.modelo].filter(Boolean).join(" ")}
-        </p>
+      {propeller.vida_usada_pct != null && (
+        <VidaTboBar
+          pct={propeller.vida_usada_pct}
+          agotado={(propeller.tbo_restante ?? 1) <= 0}
+        />
       )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini
@@ -432,10 +513,18 @@ function PropellerCard({
         )}
       </dl>
       {propeller.notas && (
-        <p className="pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">
-          {propeller.notas}
-        </p>
+        <div className="pt-2 border-t border-border">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Notas</p>
+          <p className="text-xs mt-0.5 whitespace-pre-wrap">{propeller.notas}</p>
+        </div>
       )}
+      <ComponenteFooter
+        horasBase={Number(propeller.horas_totales)}
+        ref_={propeller.aeronave_horas_ref != null ? Number(propeller.aeronave_horas_ref) : null}
+        hobbs={propeller.hobbs_avion}
+        actualizado={propeller.updated_at}
+        quien={propeller.actualizado_por?.nombre}
+      />
     </div>
   );
 }

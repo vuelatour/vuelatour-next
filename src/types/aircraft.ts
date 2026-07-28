@@ -77,6 +77,16 @@ export interface Motor {
   horas_actuales?: number;
   /** Horas restantes para el próximo overhaul (TBO). null si no hay TBO. */
   tbo_restante?: number | null;
+  /** Horas voladas desde el último overhaul (horas de vida − TURM). */
+  horas_desde_overhaul?: number;
+  /** % del ciclo TBO consumido. null si el componente no tiene TBO. */
+  vida_usada_pct?: number | null;
+  /** Tacómetro actual del avión: desde `aeronave_horas_ref` acumulan las horas. */
+  hobbs_avion?: number;
+  aeronave_horas_ref?: Decimal | null;
+  created_at?: string;
+  updated_at?: string;
+  actualizado_por?: { nombre: string } | null;
 }
 
 export interface Propeller {
@@ -90,6 +100,13 @@ export interface Propeller {
   tbo_horas: Decimal | null;
   horas_actuales?: number;
   tbo_restante?: number | null;
+  horas_desde_overhaul?: number;
+  vida_usada_pct?: number | null;
+  hobbs_avion?: number;
+  aeronave_horas_ref?: Decimal | null;
+  created_at?: string;
+  updated_at?: string;
+  actualizado_por?: { nombre: string } | null;
 }
 
 export interface AircraftOwner {
