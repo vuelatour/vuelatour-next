@@ -22,7 +22,7 @@ import { ImagePreview } from "@/components/admin/image-preview";
 import { EmptyState } from "@/components/admin/empty-state";
 import { confirmTacoAction } from "@/app/admin/flights/actions";
 import { fmtDateTime } from "@/lib/datetime";
-import { fotoDudosa, leyendaOrigen, partirMotivo } from "@/lib/taco-procedencia";
+import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
 
 export interface TacoLiveEscala {
   escala_id: string;
@@ -40,6 +40,8 @@ export interface TacoLiveEscala {
   valor_ia_propuesto: number | null;
   revision_requerida: boolean;
   revision_motivo: string | null;
+  /** Bitácora: cómo se registró la lectura (la manda el API por separado). */
+  procedencia?: string | null;
   capturado_por_nombre: string | null;
   corregido_por_nombre: string | null;
   corregido_at: string | null;
@@ -222,22 +224,21 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
       )}
       {escala.revision_requerida && (
         <p className="mt-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-          {partirMotivo(escala.revision_motivo).pendientes ??
-            "Lectura por revisar"}
+          {escala.revision_motivo ?? "Lectura por revisar"}
         </p>
       )}
       {/* Bitácora: cómo entró el número (IA, calidad de la foto, quién lo
           aceptó y quién lo confirmó). Se ve aunque la lectura esté en verde. */}
-      {partirMotivo(escala.revision_motivo).bitacora && (
+      {escala.procedencia && (
         <p
           className={
-            fotoDudosa(escala.revision_motivo)
+            fotoDudosa(escala.procedencia)
               ? "mt-2 text-[11px] text-amber-600 dark:text-amber-400"
               : "mt-2 text-[11px] text-muted-foreground"
           }
         >
-          {fotoDudosa(escala.revision_motivo) && "\u26a0 "}
-          {partirMotivo(escala.revision_motivo).bitacora}
+          {fotoDudosa(escala.procedencia) && "\u26a0 "}
+          {escala.procedencia}
         </p>
       )}
       {!escala.revision_requerida && escala.nota_correccion && (
@@ -338,9 +339,7 @@ function RevisionActions({
               Ajustar tacómetro · {escala.origen_iata} → {escala.destino_iata}
             </DialogTitle>
             <DialogDescription>
-              {partirMotivo(escala.revision_motivo).pendientes ??
-                "Corrige contra la foto."}{" "}
-              Al guardar
+              {escala.revision_motivo ?? "Corrige contra la foto."} Al guardar
               queda como &ldquo;Ajustado por ti&rdquo; y la escala pasa a verde.
             </DialogDescription>
           </DialogHeader>

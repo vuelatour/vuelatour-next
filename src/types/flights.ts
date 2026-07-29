@@ -94,6 +94,8 @@ export interface FlightEscala {
   valor_ia_propuesto: string | null;
   revision_requerida: boolean;
   revision_motivo: string | null;
+  /** Bitácora "cómo se registró la lectura" (el API la manda aparte del motivo). */
+  procedencia?: string | null;
   hora_salida: string | null;
   hora_llegada: string | null;
   capturado_offline: boolean;

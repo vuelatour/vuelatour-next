@@ -42,11 +42,7 @@ import { uploadTacoFoto } from "@/lib/storage/taco-fotos";
 import { fmtDecimal } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import type { VueloAnterior } from "@/lib/api/flights-server";
-import {
-  fotoDudosa,
-  leyendaOrigen,
-  partirMotivo,
-} from "@/lib/taco-procedencia";
+import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
 
 interface EscalasCardProps {
@@ -287,8 +283,7 @@ export function EscalasCard({
                         <p className="flex items-start gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                           <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-px" />
                           <span>
-                            {partirMotivo(esc.revision_motivo).pendientes ??
-                              "Lectura por revisar"}
+                            {esc.revision_motivo ?? "Lectura por revisar"}
                           </span>
                         </p>
                         <TacoConfirmDialog
@@ -362,8 +357,8 @@ export function EscalasCard({
 function ProcedenciaLectura({ escala }: { escala: FlightEscala }) {
   const salida = leyendaOrigen(escala, "salida");
   const llegada = leyendaOrigen(escala, "llegada");
-  const { bitacora } = partirMotivo(escala.revision_motivo);
-  const dudosa = fotoDudosa(escala.revision_motivo);
+  const bitacora = escala.procedencia ?? null;
+  const dudosa = fotoDudosa(bitacora);
   if (!salida && !llegada && !bitacora && !escala.valor_ia_propuesto) return null;
 
   return (
@@ -622,7 +617,7 @@ function TacoConfirmDialog({
             <AlertDialogDescription>
               {esCorreccion
                 ? "Ajusta la lectura equivocada contra la foto. La corrección queda con origen OFICINA, se registra quién la hizo, y si cambias la llegada se propaga como salida del siguiente tramo."
-                : `${partirMotivo(escala.revision_motivo).pendientes ?? "Lectura marcada para revisión."} Los campos de abajo SÍ se pueden editar: corrige el valor contra la foto si hace falta (o adjunta una) y confirma para pasar de amarillo a verde.`}
+                : `${escala.revision_motivo ?? "Lectura marcada para revisión."} Los campos de abajo SÍ se pueden editar: corrige el valor contra la foto si hace falta (o adjunta una) y confirma para pasar de amarillo a verde.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid grid-cols-2 gap-3">

@@ -6,9 +6,6 @@
 
 export type OrigenTaco = "PILOTO" | "IA" | "DEDUCIDO" | "OFICINA";
 
-/** Prefijo del bloque de bitácora dentro de `escala.revision_motivo`. */
-const PROCEDENCIA_PREFIX = "Registro: ";
-
 export interface LecturaProcedencia {
   taco_salida: number | string | null;
   taco_llegada: number | string | null;
@@ -51,31 +48,10 @@ export function leyendaOrigen(
 }
 
 /**
- * Separa `revision_motivo` en sus dos bloques: la BITÁCORA (cómo se registró
- * la lectura: IA, calidad de la foto, quién la aceptó y quién la confirmó) y
- * los PENDIENTES detectados por el sistema. La bitácora se conserva aunque la
- * lectura ya esté en verde: es la explicación del dato, no una alerta.
+ * ¿La bitácora menciona una foto dudosa? (para pintar el aviso ámbar)
+ * El API ya manda `procedencia` por separado de `revision_motivo`.
  */
-export function partirMotivo(motivo: string | null | undefined): {
-  bitacora: string | null;
-  pendientes: string | null;
-} {
-  const chunks = (motivo ?? "")
-    .split("; ")
-    .map((c) => c.trim())
-    .filter(Boolean);
-  const bitacoraChunk = chunks.find((c) => c.startsWith(PROCEDENCIA_PREFIX));
-  const resto = chunks.filter((c) => c !== bitacoraChunk);
-  return {
-    bitacora: bitacoraChunk
-      ? bitacoraChunk.slice(PROCEDENCIA_PREFIX.length)
-      : null,
-    pendientes: resto.length ? resto.join("; ") : null,
-  };
-}
-
-/** ¿La bitácora menciona una foto dudosa? (para pintar el aviso ámbar) */
-export function fotoDudosa(motivo: string | null | undefined): boolean {
-  const t = (motivo ?? "").toUpperCase();
+export function fotoDudosa(procedencia: string | null | undefined): boolean {
+  const t = (procedencia ?? "").toUpperCase();
   return t.includes("CALIDAD DE FOTO BAJA") || t.includes("BORROSA");
 }
