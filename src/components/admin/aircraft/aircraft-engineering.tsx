@@ -261,15 +261,27 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                       {v.referencia ? ` · ${v.referencia}` : ""}
                     </p>
                   </div>
-                  {v.tipo_documento?.es_critico && (
-                    <Badge
-                      variant="outline"
-                      className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 shrink-0"
-                      title="Documento crítico: si se vence, el avión queda NO APTO y el sistema bloquea asignarlo a un vuelo hasta renovarlo. Vigente no estorba."
-                    >
-                      Crítico
-                    </Badge>
-                  )}
+                  {v.tipo_documento?.es_critico &&
+                    (v.vence_por === "PERMANENTE" ? (
+                      // Un permanente NUNCA se vence, así que NUNCA puede
+                      // bloquear: pintarlo en ámbar como los demás críticos
+                      // era una alarma falsa.
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 text-muted-foreground"
+                        title="Es un documento crítico, pero está registrado como PERMANENTE: no vence, así que nunca deja al avión no apto. Si en realidad sí tiene fecha de vigencia, edítalo en Vencimientos y ponle «Vence por fecha» para que el sistema lo vigile."
+                      >
+                        Crítico · no vence
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 shrink-0"
+                        title="Documento crítico: si se vence, el avión queda NO APTO y el sistema bloquea asignarlo a un vuelo hasta renovarlo. Vigente no estorba."
+                      >
+                        Crítico
+                      </Badge>
+                    ))}
                 </div>
               ))}
             </div>
