@@ -36,6 +36,7 @@ import {
   listMaintenance,
   updateMaintenance,
 } from "@/lib/api/engineering";
+import { createDocumentTypeAction } from "@/app/admin/document-types/actions";
 import type {
   DocumentType,
   EstadoMantenimiento,
@@ -545,6 +546,16 @@ function VencimientoDialog({
   docTypes: DocumentType[];
 }) {
   const [saving, setSaving] = useState(false);
+  // Tipos creados aquí mismo (aún no están en el catálogo que cargó el padre).
+  const [tiposNuevos, setTiposNuevos] = useState<DocumentType[]>([]);
+  const [tipoOpen, setTipoOpen] = useState(false);
+
+  // Solo documentos DE AERONAVE: este diálogo siempre registra el permiso de
+  // este avión, y ver licencias de piloto aquí (Licencia MX, certificado
+  // médico…) invita a capturarlas en el objeto equivocado.
+  const tiposAeronave = [...docTypes, ...tiposNuevos].filter(
+    (d) => (d.ambito ?? "").toUpperCase() === "AERONAVE",
+  );
 
   // El padre monta este diálogo solo mientras está abierto, así que basta
   // inicializar los defaults una vez (se descartan al cerrar).
@@ -605,13 +616,34 @@ function VencimientoDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
-          <Field label="Tipo de documento" required error={errors.tipo_documento_id?.message}>
-            <SearchableSelect
-              options={docTypes.map((d) => ({ value: d.id, label: d.nombre }))}
-              value={(watch("tipo_documento_id") as string | undefined) ?? ""}
-              onChange={(v) => setValue("tipo_documento_id", v, { shouldValidate: true })}
-              placeholder="Selecciona el tipo"
-            />
+          <Field
+            label="Tipo de documento"
+            required
+            error={errors.tipo_documento_id?.message}
+            hint="¿No está en la lista? Créalo aquí mismo con «Nuevo tipo»."
+          >
+            <div className="space-y-2">
+              <SearchableSelect
+                options={tiposAeronave.map((d) => ({
+                  value: d.id,
+                  label: d.nombre,
+                  description: d.es_critico ? "Crítico · bloquea el avión" : undefined,
+                }))}
+                value={(watch("tipo_documento_id") as string | undefined) ?? ""}
+                onChange={(v) => setValue("tipo_documento_id", v, { shouldValidate: true })}
+                placeholder="Selecciona el tipo"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-7 text-xs"
+                onClick={() => setTipoOpen(true)}
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                Nuevo tipo
+              </Button>
+            </div>
           </Field>
           <Field label="Vence por" required error={errors.vence_por?.message}>
             <SearchableSelect
@@ -647,6 +679,133 @@ function VencimientoDialog({
             </Button>
           </DialogFooter>
         </form>
+
+        <NuevoTipoDocumentoDialog
+          key={tipoOpen ? "abierto" : "cerrado"}
+          open={tipoOpen}
+          onOpenChange={setTipoOpen}
+          formaDefault={vencePor === "HORAS" || vencePor === "PERMANENTE" ? vencePor : "FECHA"}
+          onCreated={(tipo) => {
+            setTiposNuevos((prev) => [...prev, tipo]);
+            setValue("tipo_documento_id", tipo.id, { shouldValidate: true });
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Alta rápida de un tipo de documento SIN salir del alta del permiso (mismo
+ * patrón que el cliente rápido del cotizador): la oficina captura el permiso
+ * que trae en la mano, no va a otra pantalla a dar de alta el catálogo.
+ * Queda con ámbito AERONAVE y se puede afinar después en
+ * Configuración → Tipos de documento.
+ */
+function NuevoTipoDocumentoDialog({
+  open,
+  onOpenChange,
+  formaDefault,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  formaDefault: "FECHA" | "HORAS" | "PERMANENTE";
+  onCreated: (tipo: DocumentType) => void;
+}) {
+  // El padre remonta este diálogo con `key` al abrirlo, así que los campos
+  // arrancan limpios sin necesidad de un efecto que resetee.
+  const [nombre, setNombre] = useState("");
+  const [critico, setCritico] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const guardar = async () => {
+    const limpio = nombre.trim();
+    if (!limpio) {
+      toast.error("Escribe el nombre del documento");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await createDocumentTypeAction({
+        nombre: limpio,
+        ambito: "AERONAVE",
+        forma_default: formaDefault,
+        umbral_alerta_dias: 30,
+        es_critico: critico,
+      });
+      if (res.ok && res.data) {
+        toast.success(`Tipo «${res.data.nombre}» creado`);
+        onCreated({
+          id: res.data.id,
+          nombre: res.data.nombre,
+          ambito: res.data.ambito,
+          umbral_alerta_dias: res.data.umbral_alerta_dias,
+          es_critico: res.data.es_critico,
+        });
+        onOpenChange(false);
+      } else {
+        toast.error(res.error ?? "No se pudo crear el tipo");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Nuevo tipo de documento</DialogTitle>
+          <DialogDescription>
+            Se agrega al catálogo de documentos de AERONAVE y queda disponible
+            para todos los aviones.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Field label="Nombre del documento" required>
+            <Input
+              autoFocus
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Ej. Certificado de matrícula"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void guardar();
+                }
+              }}
+            />
+          </Field>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={critico}
+              onChange={(e) => setCritico(e.target.checked)}
+            />
+            <span>
+              Es crítico
+              <span className="block text-xs text-muted-foreground">
+                Vencido, deja el avión como NO APTO (igual que el seguro o la
+                tarjeta de aeronavegabilidad).
+              </span>
+            </span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
+            Cancelar
+          </Button>
+          <Button type="button" onClick={() => void guardar()} disabled={saving}>
+            {saving ? "Creando…" : "Crear tipo"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
