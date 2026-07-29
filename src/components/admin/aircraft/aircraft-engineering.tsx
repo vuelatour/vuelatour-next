@@ -229,7 +229,14 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
               <DocumentCheckIcon className="h-4 w-4 text-muted-foreground" />
               Permisos y licencias
             </CardTitle>
-            <CardDescription>{venc.length} documentos.</CardDescription>
+            <CardDescription>
+              {venc.length} documentos. Los marcados{" "}
+              <span className="text-amber-600 dark:text-amber-400 font-medium">
+                Crítico
+              </span>{" "}
+              dejan el avión NO APTO si se vencen: el sistema no deja asignarlo
+              a un vuelo hasta renovarlos.
+            </CardDescription>
           </div>
           <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => setVencOpen(true)}>
             <PlusIcon className="h-3.5 w-3.5" />
@@ -255,7 +262,11 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                     </p>
                   </div>
                   {v.tipo_documento?.es_critico && (
-                    <Badge variant="outline" className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 shrink-0"
+                      title="Documento crítico: si se vence, el avión queda NO APTO y el sistema bloquea asignarlo a un vuelo hasta renovarlo. Vigente no estorba."
+                    >
                       Crítico
                     </Badge>
                   )}
