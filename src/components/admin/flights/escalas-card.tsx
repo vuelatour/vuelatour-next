@@ -42,6 +42,11 @@ import { uploadTacoFoto } from "@/lib/storage/taco-fotos";
 import { fmtDecimal } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import type { VueloAnterior } from "@/lib/api/flights-server";
+import {
+  fotoDudosa,
+  leyendaOrigen,
+  partirMotivo,
+} from "@/lib/taco-procedencia";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
 
 interface EscalasCardProps {
@@ -271,19 +276,19 @@ export function EscalasCard({
                       </p>
                     )}
 
-                    {esc.valor_ia_propuesto && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <SparklesIcon className="h-3 w-3" />
-                        Sugerencia IA: {fmtDecimal(esc.valor_ia_propuesto, 1)}
-                      </span>
-                    )}
+                    {/* Procedencia: de dónde salió cada número y quién
+                        respondió por él. Es la MISMA leyenda del tablero de
+                        tacómetros en vivo — la oficina preguntaba "¿quién
+                        confirmó esto?" y aquí no se veía. */}
+                    <ProcedenciaLectura escala={esc} />
 
                     {esc.revision_requerida && (
                       <div className="space-y-1.5">
                         <p className="flex items-start gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                           <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-px" />
                           <span>
-                            {esc.revision_motivo ?? "Lectura por revisar"}
+                            {partirMotivo(esc.revision_motivo).pendientes ??
+                              "Lectura por revisar"}
                           </span>
                         </p>
                         <TacoConfirmDialog
@@ -348,6 +353,56 @@ export function EscalasCard({
  * ya NO calcula lecturas con promedios — lo que falte queda pendiente con
  * sugerencia en Tacómetros en vivo para que lo confirme un humano.
  */
+/**
+ * Cómo se registró cada lectura del tramo: procedencia por lado (salida /
+ * llegada), la sugerencia de la IA y la bitácora completa (calidad de la foto,
+ * quién la aceptó, quién la confirmó). No es una alerta: es la explicación del
+ * dato, y se ve aunque el tramo esté en verde.
+ */
+function ProcedenciaLectura({ escala }: { escala: FlightEscala }) {
+  const salida = leyendaOrigen(escala, "salida");
+  const llegada = leyendaOrigen(escala, "llegada");
+  const { bitacora } = partirMotivo(escala.revision_motivo);
+  const dudosa = fotoDudosa(escala.revision_motivo);
+  if (!salida && !llegada && !bitacora && !escala.valor_ia_propuesto) return null;
+
+  return (
+    <div className="space-y-1 rounded-md border border-border/70 bg-muted/30 px-2.5 py-2">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        Cómo se registró
+      </p>
+      {salida && (
+        <p className="text-[11px] text-muted-foreground">
+          <span className="text-foreground font-medium">Salida:</span> {salida}
+        </p>
+      )}
+      {llegada && (
+        <p className="text-[11px] text-muted-foreground">
+          <span className="text-foreground font-medium">Llegada:</span> {llegada}
+        </p>
+      )}
+      {escala.valor_ia_propuesto && (
+        <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+          <SparklesIcon className="h-3 w-3" />
+          Sugerencia IA: {fmtDecimal(escala.valor_ia_propuesto, 1)}
+        </p>
+      )}
+      {bitacora && (
+        <p
+          className={
+            dudosa
+              ? "text-[11px] text-amber-600 dark:text-amber-400"
+              : "text-[11px] text-muted-foreground"
+          }
+        >
+          {dudosa && "⚠ "}
+          {bitacora}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function FillTacoGapsButton({ flightId }: { flightId: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();

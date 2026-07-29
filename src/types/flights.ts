@@ -100,6 +100,9 @@ export interface FlightEscala {
   sincronizado_at: string | null;
   capturado_por: string | null;
   corregido_por: string | null;
+  /** Nombres resueltos por el API para la procedencia de la lectura. */
+  capturado_por_nombre?: string | null;
+  corregido_por_nombre?: string | null;
   nota_correccion: string | null;
   corregido_at: string | null;
   notas: string | null;

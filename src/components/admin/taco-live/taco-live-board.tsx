@@ -22,6 +22,7 @@ import { ImagePreview } from "@/components/admin/image-preview";
 import { EmptyState } from "@/components/admin/empty-state";
 import { confirmTacoAction } from "@/app/admin/flights/actions";
 import { fmtDateTime } from "@/lib/datetime";
+import { fotoDudosa, leyendaOrigen, partirMotivo } from "@/lib/taco-procedencia";
 
 export interface TacoLiveEscala {
   escala_id: string;
@@ -87,32 +88,8 @@ function sugerenciaLlegada(e: TacoLiveEscala): number | null {
   return e.llegada_estimada ?? null;
 }
 
-/** Leyenda de procedencia de una lectura (acordado con el cliente). */
-function leyendaOrigen(e: TacoLiveEscala, lado: "salida" | "llegada"): string | null {
-  const valor = lado === "salida" ? e.taco_salida : e.taco_llegada;
-  const origen = lado === "salida" ? e.taco_salida_origen : e.taco_llegada_origen;
-  if (valor == null || !origen) return null;
-  const confirmada =
-    !e.revision_requerida && e.corregido_por_nombre
-      ? ` · confirmado por ${e.corregido_por_nombre}`
-      : "";
-  switch (origen) {
-    case "PILOTO":
-      return (
-        (e.valor_ia_propuesto != null && e.valor_ia_propuesto === valor
-          ? "Leído por IA · aceptado por piloto"
-          : `Capturado por ${e.capturado_por_nombre ?? "piloto"}`) + confirmada
-      );
-    case "IA":
-      return `Leído por IA de la foto${confirmada || " · sin confirmar"}`;
-    case "DEDUCIDO":
-      return `Deducido automáticamente${confirmada || " · sin confirmar"}`;
-    case "OFICINA":
-      return `Ajustado por ${e.corregido_por_nombre ?? "oficina"}`;
-    default:
-      return origen;
-  }
-}
+// La leyenda de procedencia vive en @/lib/taco-procedencia (fuente única): el
+// detalle del vuelo muestra exactamente lo mismo.
 
 export function TacoLiveBoard({ vuelos }: { vuelos: TacoLiveVuelo[] }) {
   if (vuelos.length === 0) {
@@ -243,9 +220,24 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
           — solo referencia, aún sin lectura.
         </p>
       )}
-      {escala.revision_motivo && escala.revision_requerida && (
+      {escala.revision_requerida && (
         <p className="mt-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-          {escala.revision_motivo}
+          {partirMotivo(escala.revision_motivo).pendientes ??
+            "Lectura por revisar"}
+        </p>
+      )}
+      {/* Bitácora: cómo entró el número (IA, calidad de la foto, quién lo
+          aceptó y quién lo confirmó). Se ve aunque la lectura esté en verde. */}
+      {partirMotivo(escala.revision_motivo).bitacora && (
+        <p
+          className={
+            fotoDudosa(escala.revision_motivo)
+              ? "mt-2 text-[11px] text-amber-600 dark:text-amber-400"
+              : "mt-2 text-[11px] text-muted-foreground"
+          }
+        >
+          {fotoDudosa(escala.revision_motivo) && "\u26a0 "}
+          {partirMotivo(escala.revision_motivo).bitacora}
         </p>
       )}
       {!escala.revision_requerida && escala.nota_correccion && (
@@ -346,7 +338,9 @@ function RevisionActions({
               Ajustar tacómetro · {escala.origen_iata} → {escala.destino_iata}
             </DialogTitle>
             <DialogDescription>
-              {escala.revision_motivo ?? "Corrige contra la foto."} Al guardar
+              {partirMotivo(escala.revision_motivo).pendientes ??
+                "Corrige contra la foto."}{" "}
+              Al guardar
               queda como &ldquo;Ajustado por ti&rdquo; y la escala pasa a verde.
             </DialogDescription>
           </DialogHeader>
