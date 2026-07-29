@@ -622,7 +622,7 @@ function TacoConfirmDialog({
             <AlertDialogDescription>
               {esCorreccion
                 ? "Ajusta la lectura equivocada contra la foto. La corrección queda con origen OFICINA, se registra quién la hizo, y si cambias la llegada se propaga como salida del siguiente tramo."
-                : `${escala.revision_motivo ?? "Lectura marcada para revisión."} Los campos de abajo SÍ se pueden editar: corrige el valor contra la foto si hace falta (o adjunta una) y confirma para pasar de amarillo a verde.`}
+                : `${partirMotivo(escala.revision_motivo).pendientes ?? "Lectura marcada para revisión."} Los campos de abajo SÍ se pueden editar: corrige el valor contra la foto si hace falta (o adjunta una) y confirma para pasar de amarillo a verde.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid grid-cols-2 gap-3">
