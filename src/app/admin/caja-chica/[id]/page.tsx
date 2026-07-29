@@ -73,6 +73,8 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
       tipoLabel: CONCEPTO[e.tipo] ?? e.tipo,
       esGasto: e.origen === "gasto",
       descripcion: e.descripcion,
+      vueloId: e.vuelo_id ?? null,
+      vueloFolio: e.vuelo_folio ?? null,
       negativo: e.monto < 0,
       montoAbsFmt: money(Math.abs(e.monto)).replace(/^-/, ""),
       saldoFmt: money(e.saldo),

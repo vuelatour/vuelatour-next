@@ -43,6 +43,9 @@ export interface HistorialEntry {
   monto: number;
   descripcion: string | null;
   saldo: number;
+  /** Vuelo del gasto en efectivo (null en movimientos de caja). */
+  vuelo_id?: string | null;
+  vuelo_folio?: number | null;
 }
 
 export interface CajaFondoListResponse {
