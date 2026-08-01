@@ -21,6 +21,7 @@ import {
 import { ImagePreview } from "@/components/admin/image-preview";
 import { EmptyState } from "@/components/admin/empty-state";
 import { confirmTacoAction } from "@/app/admin/flights/actions";
+import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
 import { fmtDateTime } from "@/lib/datetime";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
 
@@ -209,6 +210,15 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
           <Lectura escala={escala} lado="salida" />
           <Lectura escala={escala} lado="llegada" />
           <RevisionActions vueloId={vueloId} escala={escala} />
+          {/* Borrar (con confirmación): el piloto capturó en el vuelo
+              equivocado y debe recapturar — corregir no basta. */}
+          <TacoClearDialog
+            flightId={vueloId}
+            escalaId={escala.escala_id}
+            ruta={`${escala.origen_iata} → ${escala.destino_iata}`}
+            tieneSalida={escala.taco_salida != null}
+            tieneLlegada={escala.taco_llegada != null}
+          />
         </div>
       </div>
       {sugerencia != null && (

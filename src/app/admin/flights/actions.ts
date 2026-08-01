@@ -496,6 +496,29 @@ export interface ConfirmTacoPayload {
 }
 
 /** Oficina confirma una lectura marcada para revisión (amarillo → verde). */
+/**
+ * Borra las lecturas de un tramo (por lado) para que el piloto recapture:
+ * limpia lectura, origen, foto y hora; COMPLETADO regresa a EN_VUELO si el
+ * borrado dejó un hueco de llegada.
+ */
+export async function clearTacoAction(
+  flightId: string,
+  escalaId: string,
+  payload: { salida?: boolean; llegada?: boolean },
+): Promise<ActionResult<FlightEscala>> {
+  try {
+    const data = await apiServer<FlightEscala>(
+      `/v1/flights/legs/${escalaId}/taco/clear`,
+      { method: "POST", body: payload },
+    );
+    revalidateFlight(flightId);
+    revalidatePath("/admin/taco-live");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function confirmTacoAction(
   flightId: string,
   escalaId: string,

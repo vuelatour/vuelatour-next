@@ -42,6 +42,7 @@ import { uploadTacoFoto } from "@/lib/storage/taco-fotos";
 import { fmtDecimal } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import type { VueloAnterior } from "@/lib/api/flights-server";
+import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
 
@@ -203,6 +204,15 @@ export function EscalasCard({
                             // Salida sugerida: la llegada del tramo ANTERIOR
                             // (por orden) — el horómetro es continuo.
                             salidaSugerida={llegadaAnterior(escalas, esc)}
+                          />
+                        )}
+                        {!cancelada && (
+                          <TacoClearDialog
+                            flightId={flightId}
+                            escalaId={esc.id}
+                            ruta={`${esc.origen_iata} → ${esc.destino_iata}`}
+                            tieneSalida={esc.taco_salida != null}
+                            tieneLlegada={esc.taco_llegada != null}
                           />
                         )}
                       </div>
