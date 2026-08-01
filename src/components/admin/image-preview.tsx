@@ -7,6 +7,7 @@ import {
   MagnifyingGlassPlusIcon,
   MagnifyingGlassMinusIcon,
   ArrowsPointingOutIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 
 const MIN_ZOOM = 1;
@@ -48,6 +49,47 @@ export function ImagePreview({
   const arrastre = useRef({ x: 0, y: 0, offX: 0, offY: 0, movido: 0 });
 
   const close = useCallback(() => setOpen(false), []);
+  const [descargando, setDescargando] = useState(false);
+
+  /**
+   * Descarga la imagen con nombre legible. La URL es firmada (bucket
+   * privado) y cruza de dominio, así que `<a download>` directo la abriría en
+   * vez de bajarla: se trae como blob y se dispara la descarga local. Si la
+   * red falla, plan B: abrirla en otra pestaña.
+   */
+  const descargar = useCallback(async () => {
+    setDescargando(true);
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const ext = blob.type.includes("png")
+        ? "png"
+        : blob.type.includes("webp")
+          ? "webp"
+          : "jpg";
+      const base =
+        alt
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-zA-Z0-9 _-]/g, "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .toLowerCase() || "imagen";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${base}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(src, "_blank", "noopener");
+    } finally {
+      setDescargando(false);
+    }
+  }, [src, alt]);
 
   const reset = useCallback(() => setVista({ scale: 1, x: 0, y: 0 }), []);
 
@@ -191,6 +233,15 @@ export function ImagePreview({
                 title="Ajustar a la pantalla (0)"
               >
                 <ArrowsPointingOutIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => void descargar()}
+                disabled={descargando}
+                className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40"
+                title="Descargar imagen"
+              >
+                <ArrowDownTrayIcon className="h-5 w-5" />
               </button>
               <button
                 type="button"
