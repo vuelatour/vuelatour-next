@@ -8,6 +8,7 @@ import { daysUntilCancun, fmtDateOnly } from "@/lib/datetime";
 import {
   PlusIcon,
   PencilSquareIcon,
+  TrashIcon,
   WrenchScrewdriverIcon,
   DocumentCheckIcon,
   ClockIcon,
@@ -37,6 +38,10 @@ import {
   updateMaintenance,
 } from "@/lib/api/engineering";
 import { createDocumentTypeAction } from "@/app/admin/document-types/actions";
+import {
+  deleteExpirationAction,
+  updateExpirationAction,
+} from "@/app/admin/expirations/actions";
 import type {
   DocumentType,
   EstadoMantenimiento,
@@ -261,6 +266,8 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                       {v.referencia ? ` · ${v.referencia}` : ""}
                     </p>
                   </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                  <VencimientoRowActions vencimiento={v} onSaved={reload} />
                   {v.tipo_documento?.es_critico &&
                     (v.vence_por === "PERMANENTE" ? (
                       // Un permanente NUNCA se vence, así que NUNCA puede
@@ -282,6 +289,7 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                         Crítico
                       </Badge>
                     ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -715,6 +723,190 @@ function VencimientoDialog({
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+/**
+ * Editar / eliminar un vencimiento DESDE la ficha del avión: es donde la
+ * oficina los ve, y hasta ahora solo se podían tocar en la pantalla general
+ * de Vencimientos (que nadie encontraba — "no pueden editar los vencimientos
+ * que ya se subieron"). Reusa las server actions del módulo de vencimientos.
+ */
+function VencimientoRowActions({
+  vencimiento,
+  onSaved,
+}: {
+  vencimiento: Vencimiento;
+  onSaved: () => Promise<void>;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [vencePor, setVencePor] = useState(vencimiento.vence_por);
+  const [fecha, setFecha] = useState(vencimiento.fecha_vencimiento ?? "");
+  const [horas, setHoras] = useState(vencimiento.horas_limite ?? "");
+  const [referencia, setReferencia] = useState(vencimiento.referencia ?? "");
+
+  const abrirEdicion = () => {
+    setVencePor(vencimiento.vence_por);
+    setFecha(vencimiento.fecha_vencimiento ?? "");
+    setHoras(vencimiento.horas_limite ?? "");
+    setReferencia(vencimiento.referencia ?? "");
+    setEditOpen(true);
+  };
+
+  const guardar = async () => {
+    if (vencePor === "FECHA" && !fecha) {
+      toast.error("Captura la fecha de vencimiento");
+      return;
+    }
+    if (vencePor === "HORAS" && !(Number(horas) > 0)) {
+      toast.error("Captura las horas límite");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await updateExpirationAction(vencimiento.id, {
+        vence_por: vencePor,
+        fecha_vencimiento: vencePor === "FECHA" ? fecha : "",
+        horas_limite: vencePor === "HORAS" ? Number(horas) : "",
+        referencia,
+      });
+      if (res.ok) {
+        toast.success("Vencimiento actualizado");
+        setEditOpen(false);
+        await onSaved();
+      } else {
+        toast.error(res.error ?? "No se pudo actualizar");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const eliminar = async () => {
+    setSaving(true);
+    try {
+      const res = await deleteExpirationAction(vencimiento.id);
+      if (res.ok) {
+        toast.success("Vencimiento eliminado");
+        setDeleteOpen(false);
+        await onSaved();
+      } else {
+        toast.error(res.error ?? "No se pudo eliminar");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const nombre = vencimiento.tipo_documento?.nombre ?? "Documento";
+
+  return (
+    <>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7"
+        title="Editar vencimiento"
+        aria-label="Editar vencimiento"
+        onClick={abrirEdicion}
+      >
+        <PencilSquareIcon className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+        title="Eliminar vencimiento"
+        aria-label="Eliminar vencimiento"
+        onClick={() => setDeleteOpen(true)}
+      >
+        <TrashIcon className="h-4 w-4" />
+      </Button>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar · {nombre}</DialogTitle>
+            <DialogDescription>
+              Renovaste el documento o corregiste el dato: el semáforo y las
+              alertas se recalculan solos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Field label="Vence por" required>
+              <SearchableSelect
+                options={[
+                  { value: "FECHA", label: "Vence por fecha" },
+                  { value: "HORAS", label: "Vence por horas" },
+                  { value: "PERMANENTE", label: "Permanente (no vence)" },
+                ]}
+                value={vencePor}
+                onChange={(v) => setVencePor(v as typeof vencePor)}
+                placeholder="Vence por"
+              />
+            </Field>
+            {vencePor === "FECHA" && (
+              <Field label="Fecha de vencimiento" required>
+                <Input
+                  type="date"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
+                />
+              </Field>
+            )}
+            {vencePor === "HORAS" && (
+              <Field label="Horas límite" required>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  value={horas}
+                  onChange={(e) => setHoras(e.target.value)}
+                />
+              </Field>
+            )}
+            <Field label="Referencia" hint="folio / número de permiso (opcional)">
+              <Input
+                value={referencia}
+                onChange={(e) => setReferencia(e.target.value)}
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void guardar()} disabled={saving}>
+              {saving ? "Guardando…" : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Eliminar · {nombre}</DialogTitle>
+            <DialogDescription>
+              Se elimina este vencimiento del avión: el sistema dejará de
+              vigilarlo y de avisar cuando caduque. Esta acción no se puede
+              deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={() => void eliminar()} disabled={saving}>
+              {saving ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
