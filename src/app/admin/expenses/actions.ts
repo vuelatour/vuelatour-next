@@ -273,6 +273,27 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
   }
 }
 
+/**
+ * Marca si el ticket en EFECTIVO ya se facturó (pedido de oficina, ago 2026):
+ * FACTURA = facturado; VALE = "efectivo con ticket, por facturar" (así lo
+ * define el enum desde el origen). Toggle de un clic en la tabla de Gastos.
+ */
+export async function marcarFacturadoAction(
+  id: string,
+  facturado: boolean,
+): Promise<ActionResult<Gasto>> {
+  try {
+    const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
+      method: "PATCH",
+      body: { estatus_comprobante: facturado ? "FACTURA" : "VALE" },
+    });
+    revalidatePath("/admin/expenses");
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Descarta la bandera de duplicado con un clic. */
 /** Visto bueno de administración a un gasto prellenado con IA (app admin). */
 export async function vistoBuenoGastoAction(id: string): Promise<ActionResult> {

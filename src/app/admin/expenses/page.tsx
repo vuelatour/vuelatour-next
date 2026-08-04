@@ -16,6 +16,8 @@ import {
 } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
+import { listPilots } from "@/lib/api/pilots-server";
+import { ExpensesFilterBar } from "@/components/admin/expenses/expenses-filter-bar";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
@@ -43,7 +45,14 @@ const CATEGORIAS_OPERATIVAS = new Set([
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ f?: string; aeronave_id?: string }>;
+  searchParams: Promise<{
+    f?: string;
+    aeronave_id?: string;
+    medio?: string;
+    piloto?: string;
+    desde?: string;
+    hasta?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const filtro: Filtro =
@@ -51,19 +60,36 @@ export default async function ExpensesPage({
   // Filtro por avión (link desde el expediente del avión). El API lo soporta
   // nativo en /v1/expenses; los contadores de las pestañas lo respetan.
   const aeronaveId = sp.aeronave_id || undefined;
+  // Filtros de oficina (ago 2026): tipo de pago, quién capturó y fechas de
+  // corte — los mismos que hereda "Exportar Excel" (reporte de efectivos por
+  // piloto con dos clics).
+  const filtrosExtra = {
+    medio_pago: sp.medio || undefined,
+    usuario_captura_id: sp.piloto || undefined,
+    desde: sp.desde || undefined,
+    hasta: sp.hasta || undefined,
+  };
 
-  const query: ListGastosQuery = { limit: 200, aeronave_id: aeronaveId };
+  const query: ListGastosQuery = {
+    limit: 200,
+    aeronave_id: aeronaveId,
+    ...filtrosExtra,
+  };
   if (filtro === "pendientes") query.pendientes = true;
   if (filtro === "duplicados") query.duplicados = true;
 
-  const [{ data: gastos }, pendientesRes, duplicadosRes, aircraftRes, providersRes] =
+  const [{ data: gastos }, pendientesRes, duplicadosRes, aircraftRes, providersRes, pilotsRes] =
     await Promise.all([
       listGastos(query),
-      listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId }),
-      listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId }),
+      listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
+      listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
       listAircraft({ limit: 100 }),
       listProviders({ limit: 200 }),
+      listPilots({ estado: "ACTIVO", limit: 200 }).catch(() => ({ data: [] as { id: string; nombre: string }[] })),
     ]);
+  const personas = (pilotsRes.data as { id: string; nombre: string }[]).map(
+    (p) => ({ id: p.id, nombre: p.nombre }),
+  );
 
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
@@ -75,6 +101,11 @@ export default async function ExpensesPage({
     const params = new URLSearchParams();
     if (key !== "todos") params.set("f", key);
     if (aeronaveId) params.set("aeronave_id", aeronaveId);
+    // Las pestañas conservan los filtros de oficina activos.
+    if (sp.medio) params.set("medio", sp.medio);
+    if (sp.piloto) params.set("piloto", sp.piloto);
+    if (sp.desde) params.set("desde", sp.desde);
+    if (sp.hasta) params.set("hasta", sp.hasta);
     const qs = params.toString();
     return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
   };
@@ -111,7 +142,14 @@ export default async function ExpensesPage({
           <ExpenseCreateDialog aircraft={aircraft} providers={providers} />
           <PistasDialog />
           <SuggestAssignmentsButton pendientes={pendientesRes.count} />
-          <ExcelExportButton path="/v1/expenses/export" filename="gastos.xlsx" label="Exportar Excel" />
+          <ExcelExportButton
+            path="/v1/expenses/export"
+            filename="gastos.xlsx"
+            label="Exportar Excel"
+            // El Excel sale con LOS MISMOS filtros que se ven en pantalla
+            // (incluye el resumen de efectivos por persona y su facturado).
+            query={{ aeronave_id: aeronaveId, ...filtrosExtra }}
+          />
         </div>
       </div>
 
@@ -140,6 +178,7 @@ export default async function ExpensesPage({
             )}
           </Link>
         ))}
+        <ExpensesFilterBar personas={personas} />
         {aeronaveFiltro && (
           <Link
             href={filtro === "todos" ? "/admin/expenses" : `/admin/expenses?f=${filtro}`}

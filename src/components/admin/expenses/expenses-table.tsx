@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { marcarFacturadoAction } from "@/app/admin/expenses/actions";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
@@ -83,6 +86,20 @@ export function ExpensesTable({
               </p>
             )}
           </>
+        ),
+      },
+      {
+        key: "pago",
+        header: "Pago",
+        cellClassName: "whitespace-nowrap",
+        cell: (g) => (
+          <div className="space-y-0.5">
+            <span className="text-xs">
+              {MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago}
+            </span>
+            {/* Efectivo: ¿ya se facturó el ticket? Toggle de un clic. */}
+            {g.medio_pago === "EFECTIVO" && <FacturadoToggle gasto={g} />}
+          </div>
         ),
       },
       {
@@ -186,5 +203,62 @@ export function ExpensesTable({
       }
       searchPlaceholder="Buscar gasto (proveedor, categoría, matrícula, lugar)…"
     />
+  );
+}
+
+const MEDIO_PAGO_LABELS: Record<string, string> = {
+  EFECTIVO: "Efectivo",
+  TARJETA_CORP: "Tarjeta corporativa",
+  TRANSFERENCIA: "Transferencia",
+  PERSONAL_PABLO: "Personal Pablo",
+  PERSONAL_ALE: "Personal Ale",
+  BODEGA: "Bodega",
+};
+
+/**
+ * ¿El ticket en EFECTIVO ya se facturó? Un clic alterna facturado ↔ por
+ * facturar (FACTURA ↔ VALE en estatus_comprobante — VALE es, por definición
+ * del enum, "efectivo sin factura"). No pide confirmación: no es destructivo
+ * y el mismo botón lo revierte.
+ */
+function FacturadoToggle({ gasto }: { gasto: Gasto }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const facturado = gasto.estatus_comprobante === "FACTURA";
+
+  const toggle = () =>
+    startTransition(async () => {
+      const res = await marcarFacturadoAction(gasto.id, !facturado);
+      if (res.ok) {
+        toast.success(
+          !facturado
+            ? "Marcado como facturado"
+            : "Marcado como por facturar",
+        );
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "No se pudo actualizar");
+      }
+    });
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={pending}
+      title={
+        facturado
+          ? "Ticket ya facturado. Clic para regresarlo a «por facturar»."
+          : "Ticket en efectivo SIN facturar. Clic para marcarlo como facturado."
+      }
+      className={
+        "block rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50 " +
+        (facturado
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400")
+      }
+    >
+      {pending ? "…" : facturado ? "Facturado" : "Por facturar"}
+    </button>
   );
 }
