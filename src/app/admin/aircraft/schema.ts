@@ -109,6 +109,9 @@ export const EngineFormSchema = z.object({
   horas_totales: optionalNonNegative,
   turm: optionalNonNegative,
   tbo_horas: z.coerce.number().min(1, "Debe ser mayor a 0"),
+  // Límite CALENDARIO del overhaul (TBO por tiempo, ej. 12 años). Vaciar al
+  // editar manda null para borrar la fecha guardada.
+  tbo_fecha: z.string().nullable().optional().or(z.literal("")),
   notas: z.string().max(2000).nullable().optional().or(z.literal("")),
 });
 export type EngineFormValues = z.input<typeof EngineFormSchema>;
@@ -121,7 +124,9 @@ export const PropellerFormSchema = z.object({
   fabricante: z.string().max(50).nullable().optional().or(z.literal("")),
   modelo: z.string().max(50).nullable().optional().or(z.literal("")),
   horas_totales: optionalNonNegative,
+  turm: optionalNonNegative,
   tbo_horas: optionalPositive,
+  tbo_fecha: z.string().nullable().optional().or(z.literal("")),
   notas: z.string().max(2000).nullable().optional().or(z.literal("")),
 });
 export type PropellerFormValues = z.input<typeof PropellerFormSchema>;

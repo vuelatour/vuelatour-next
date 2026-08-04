@@ -158,9 +158,9 @@ function EngineDialog({
         if (!dirtyFields.horas_totales) delete payload.horas_totales;
         if (!dirtyFields.turm) delete payload.turm;
         if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
-        // Campo de texto vaciado a propósito → null para borrar el valor
-        // guardado (el "" se descarta en la action y no borraría nada).
-        for (const k of ["fabricante", "modelo", "notas"] as const) {
+        // Campo vaciado a propósito → null para borrar el valor guardado
+        // (el "" se descarta en la action y no borraría nada).
+        for (const k of ["fabricante", "modelo", "notas", "tbo_fecha"] as const) {
           if (dirtyFields[k] && payload[k] === "") payload[k] = null;
         }
       }
@@ -245,6 +245,13 @@ function EngineDialog({
             Solo captura horas si estás corrigiendo la base; las horas vivas se calculan solas con
             el tacómetro.
           </p>
+          <Field
+            label="Vence overhaul (fecha)"
+            hint="Opcional: límite calendario del TBO (ej. 12 años desde el overhaul). Manda lo que ocurra primero."
+            error={errors.tbo_fecha?.message}
+          >
+            <Input type="date" {...register("tbo_fecha")} />
+          </Field>
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>
@@ -274,6 +281,7 @@ function defaults(m?: Motor): EngineFormValues {
       horas_totales: "",
       turm: "",
       tbo_horas: "" as unknown as number,
+      tbo_fecha: "",
       notas: "",
     };
   }
@@ -286,6 +294,7 @@ function defaults(m?: Motor): EngineFormValues {
     horas_totales: m.horas_totales ?? "",
     turm: m.turm ?? "",
     tbo_horas: m.tbo_horas as unknown as number,
+    tbo_fecha: m.tbo_fecha ?? "",
     notas: m.notas ?? "",
   };
 }

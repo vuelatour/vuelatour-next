@@ -156,10 +156,11 @@ function PropellerDialog({
       if (isEdit) {
         payload = { ...values };
         if (!dirtyFields.horas_totales) delete payload.horas_totales;
+        if (!dirtyFields.turm) delete payload.turm;
         if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
-        // Campo de texto vaciado a propósito → null para borrar el valor
-        // guardado (el "" se descarta en la action y no borraría nada).
-        for (const k of ["fabricante", "modelo", "notas"] as const) {
+        // Campo vaciado a propósito → null para borrar el valor guardado
+        // (el "" se descarta en la action y no borraría nada).
+        for (const k of ["fabricante", "modelo", "notas", "tbo_fecha"] as const) {
           if (dirtyFields[k] && payload[k] === "") payload[k] = null;
         }
       }
@@ -209,9 +210,16 @@ function PropellerDialog({
               <Input {...register("modelo")} />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Field label="Horas totales" error={errors.horas_totales?.message}>
               <Input type="number" step="0.01" min={0} {...register("horas_totales")} />
+            </Field>
+            <Field
+              label="TURM"
+              hint="tacómetro del avión en el últ. overhaul"
+              error={errors.turm?.message}
+            >
+              <Input type="number" step="0.01" min={0} {...register("turm")} />
             </Field>
             <Field label="TBO" hint="horas (opcional)" error={errors.tbo_horas?.message}>
               <Input type="number" step="0.01" min={1} {...register("tbo_horas")} />
@@ -221,6 +229,13 @@ function PropellerDialog({
             Solo captura horas si estás corrigiendo la base; las horas vivas se calculan solas con
             el tacómetro.
           </p>
+          <Field
+            label="Vence overhaul (fecha)"
+            hint="Opcional: límite calendario del TBO (ej. 6 años desde el overhaul). Manda lo que ocurra primero."
+            error={errors.tbo_fecha?.message}
+          >
+            <Input type="date" {...register("tbo_fecha")} />
+          </Field>
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>
@@ -247,7 +262,9 @@ function defaults(p?: Propeller): PropellerFormValues {
       fabricante: "",
       modelo: "",
       horas_totales: "",
+      turm: "",
       tbo_horas: "",
+      tbo_fecha: "",
       notas: "",
     };
   }
@@ -257,7 +274,9 @@ function defaults(p?: Propeller): PropellerFormValues {
     fabricante: p.fabricante ?? "",
     modelo: p.modelo ?? "",
     horas_totales: p.horas_totales ?? "",
+    turm: p.turm ?? "",
     tbo_horas: p.tbo_horas ?? "",
+    tbo_fecha: p.tbo_fecha ?? "",
     notas: p.notas ?? "",
   };
 }

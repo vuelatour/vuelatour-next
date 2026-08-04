@@ -47,7 +47,7 @@ import {
 import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
-import { fmtDate } from "@/lib/datetime";
+import { daysUntilCancun, fmtDate } from "@/lib/datetime";
 import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
 
 interface PageProps {
@@ -436,6 +436,7 @@ function MotorCard({
           value={`${fmtDecimal(restantes)} hrs`}
           className={restantes <= 0 ? "text-destructive font-semibold" : restantes <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
         />
+        <VenceOverhaulMini fecha={motor.tbo_fecha} />
         {reserve && (
           <Mini
             label="Reserva overhaul"
@@ -503,6 +504,16 @@ function PropellerCard({
           label="Horas de vida"
           value={`${fmtDecimal(propeller.horas_actuales ?? Number(propeller.horas_totales))} hrs`}
         />
+        {propeller.horas_desde_overhaul != null && (
+          <Mini
+            label="Desde el últ. overhaul"
+            value={`${fmtDecimal(propeller.horas_desde_overhaul)} hrs`}
+          />
+        )}
+        <Mini
+          label="TURM (taco al últ. overhaul)"
+          value={fmtDecimal(propeller.turm ?? 0)}
+        />
         <Mini label="TBO" value={propeller.tbo_horas ? `${fmtDecimal(propeller.tbo_horas)} hrs` : "—"} />
         {propeller.tbo_restante != null && (
           <Mini
@@ -511,6 +522,7 @@ function PropellerCard({
             className={propeller.tbo_restante <= 0 ? "text-destructive font-semibold" : propeller.tbo_restante <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
           />
         )}
+        <VenceOverhaulMini fecha={propeller.tbo_fecha} />
       </dl>
       {propeller.notas && (
         <div className="pt-2 border-t border-border">
@@ -559,6 +571,31 @@ function Mini({
       <dt className="text-muted-foreground">{label}</dt>
       <dd className={`font-medium ${className}`}>{value}</dd>
     </div>
+  );
+}
+
+/**
+ * Límite CALENDARIO del overhaul (tbo_fecha): además del TBO por horas, el
+ * componente puede vencer por tiempo ("TBO 12 años"). Rojo vencido, ámbar a
+ * ≤60 días. Sin fecha capturada no ocupa espacio en la card.
+ */
+function VenceOverhaulMini({ fecha }: { fecha?: string | null }) {
+  if (!fecha) return null;
+  const dias = daysUntilCancun(fecha);
+  const detalle =
+    dias == null ? "" : dias < 0 ? " · VENCIDO" : ` · en ${dias} d`;
+  return (
+    <Mini
+      label="Vence overhaul (fecha)"
+      value={`${fmtDate(fecha)}${detalle}`}
+      className={
+        dias != null && dias < 0
+          ? "text-destructive font-semibold"
+          : dias != null && dias <= 60
+            ? "text-amber-600 dark:text-amber-400 font-semibold"
+            : ""
+      }
+    />
   );
 }
 

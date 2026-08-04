@@ -73,6 +73,8 @@ export interface Motor {
   horas_totales: Decimal;
   turm: Decimal;
   tbo_horas: Decimal;
+  /** Límite CALENDARIO del overhaul (TBO por tiempo). null = solo horas. */
+  tbo_fecha?: string | null;
   /** Horas de vida vivas (acumulan con lo volado). Lo calcula el snapshot. */
   horas_actuales?: number;
   /** Horas restantes para el próximo overhaul (TBO). null si no hay TBO. */
@@ -97,7 +99,10 @@ export interface Propeller {
   modelo?: string | null;
   notas?: string | null;
   horas_totales: Decimal;
+  /** Taco del avión en el último overhaul de la hélice (como motor.turm). */
+  turm?: Decimal;
   tbo_horas: Decimal | null;
+  tbo_fecha?: string | null;
   horas_actuales?: number;
   tbo_restante?: number | null;
   horas_desde_overhaul?: number;
