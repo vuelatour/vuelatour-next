@@ -14,7 +14,8 @@ export const ExpirationFormSchema = z.object({
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
   piloto_id: z.string().uuid().optional().or(z.literal("")),
   motor_id: z.string().uuid().optional().or(z.literal("")),
-  fecha_vencimiento: z.string().optional().or(z.literal("")),
+  // null explícito = limpiar la fecha calendario de un "por horas" al editar.
+  fecha_vencimiento: z.string().nullable().optional().or(z.literal("")),
   horas_limite: z
     .union([z.coerce.number().positive("Debe ser mayor a 0"), z.literal("")])
     .optional(),

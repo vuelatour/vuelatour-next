@@ -121,7 +121,8 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
   // Días contados en hora Cancún: 0 = vence hoy, negativo = ya venció.
   const proximos = [
     ...venc
-      .filter((v) => v.vence_por === "FECHA" && v.fecha_vencimiento)
+      // Incluye los "por horas" con límite calendario (TBO 12 años, etc.).
+      .filter((v) => v.fecha_vencimiento)
       .map((v) => ({
         id: `v-${v.id}`,
         label: v.tipo_documento?.nombre ?? "Vencimiento",
@@ -261,7 +262,7 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                       {v.vence_por === "FECHA"
                         ? `Vence ${fmtDate(v.fecha_vencimiento)}`
                         : v.vence_por === "HORAS"
-                          ? `Límite ${v.horas_limite ?? "—"} hrs`
+                          ? `Límite ${v.horas_limite ?? "—"} hrs${v.fecha_vencimiento ? ` · vence ${fmtDate(v.fecha_vencimiento)}` : ""}`
                           : "Permanente"}
                       {v.referencia ? ` · ${v.referencia}` : ""}
                     </p>
@@ -617,8 +618,10 @@ function VencimientoDialog({
       await createExpiration(aircraftId, {
         tipo_documento_id: values.tipo_documento_id,
         vence_por: values.vence_por,
+        // HORAS también admite fecha calendario opcional (TBO por tiempo):
+        // manda lo que ocurra primero.
         fecha_vencimiento:
-          values.vence_por === "FECHA" && values.fecha_vencimiento
+          values.vence_por !== "PERMANENTE" && values.fecha_vencimiento
             ? values.fecha_vencimiento
             : undefined,
         horas_limite:
@@ -698,6 +701,15 @@ function VencimientoDialog({
               <Input type="number" step="0.1" min={0} placeholder="Ej. 1200" {...register("horas_limite")} />
             </Field>
           )}
+          {vencePor === "HORAS" && (
+            <Field
+              label="Vence también por fecha"
+              hint="Opcional: límite calendario (ej. TBO 12 años). Manda lo que ocurra primero."
+              error={errors.fecha_vencimiento?.message}
+            >
+              <Input type="date" {...register("fecha_vencimiento")} />
+            </Field>
+          )}
           <Field label="Referencia" hint="opcional" error={errors.referencia?.message}>
             <Input placeholder="Folio, número de permiso…" {...register("referencia")} />
           </Field>
@@ -769,7 +781,10 @@ function VencimientoRowActions({
     try {
       const res = await updateExpirationAction(vencimiento.id, {
         vence_por: vencePor,
-        fecha_vencimiento: vencePor === "FECHA" ? fecha : "",
+        // HORAS conserva su fecha calendario opcional; vaciarla manda null
+        // explícito (el "" se descarta y el PATCH conservaría la anterior).
+        fecha_vencimiento:
+          vencePor === "PERMANENTE" ? null : fecha ? fecha : null,
         horas_limite: vencePor === "HORAS" ? Number(horas) : "",
         referencia,
       });
@@ -865,6 +880,18 @@ function VencimientoRowActions({
                   min={0}
                   value={horas}
                   onChange={(e) => setHoras(e.target.value)}
+                />
+              </Field>
+            )}
+            {vencePor === "HORAS" && (
+              <Field
+                label="Vence también por fecha"
+                hint="Opcional: límite calendario (ej. TBO 12 años). Manda lo que ocurra primero."
+              >
+                <Input
+                  type="date"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
                 />
               </Field>
             )}

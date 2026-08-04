@@ -230,7 +230,11 @@ function EngineDialog({
             <Field label="Horas totales" error={errors.horas_totales?.message}>
               <Input type="number" step="0.01" min={0} {...register("horas_totales")} />
             </Field>
-            <Field label="TURM" hint="al últ. OH" error={errors.turm?.message}>
+            <Field
+              label="TURM"
+              hint="tacómetro del avión en el últ. overhaul"
+              error={errors.turm?.message}
+            >
               <Input type="number" step="0.01" min={0} {...register("turm")} />
             </Field>
             <Field label="TBO" required hint="horas" error={errors.tbo_horas?.message}>

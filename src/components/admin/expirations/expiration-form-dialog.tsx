@@ -107,9 +107,15 @@ export function ExpirationFormDialog({
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // Al EDITAR un "por horas" y vaciar la fecha calendario, hay que mandar
+      // null explícito (el "" se descarta y el PATCH conservaría la anterior).
+      const payload =
+        isEdit && values.vence_por === "HORAS" && !values.fecha_vencimiento
+          ? { ...values, fecha_vencimiento: null }
+          : values;
       const result = isEdit
-        ? await updateExpirationAction(initialExpiration!.id, values)
-        : await createExpirationAction(values);
+        ? await updateExpirationAction(initialExpiration!.id, payload)
+        : await createExpirationAction(payload);
 
       if (result.ok) {
         toast.success(isEdit ? "Vencimiento actualizado" : "Vencimiento registrado");
@@ -220,6 +226,15 @@ export function ExpirationFormDialog({
                 error={errors.horas_limite?.message}
               >
                 <Input type="number" step="0.1" min={0} {...register("horas_limite")} />
+              </Field>
+            )}
+            {vencePor === "HORAS" && (
+              <Field
+                label="Vence también por fecha"
+                hint="Opcional: límite calendario (ej. TBO 12 años). Manda lo que ocurra primero."
+                error={errors.fecha_vencimiento?.message}
+              >
+                <Input type="date" {...register("fecha_vencimiento")} />
               </Field>
             )}
           </div>

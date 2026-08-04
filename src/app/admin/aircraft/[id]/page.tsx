@@ -429,7 +429,7 @@ function MotorCard({
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini label="Horas de vida" value={`${fmtDecimal(horasVida)} hrs`} />
         <Mini label="Desde el últ. overhaul" value={`${fmtDecimal(desdeOverhaul)} hrs`} />
-        <Mini label="TURM (últ. overhaul)" value={fmtDecimal(motor.turm)} />
+        <Mini label="TURM (taco al últ. overhaul)" value={fmtDecimal(motor.turm)} />
         <Mini label="TBO" value={`${fmtDecimal(motor.tbo_horas)} hrs`} />
         <Mini
           label="Restantes a overhaul"

@@ -82,7 +82,8 @@ export function ExpirationsTable({
         e.vence_por === "FECHA" && e.fecha_vencimiento
           ? fmtDateOnly(e.fecha_vencimiento)
           : e.vence_por === "HORAS" && e.horas_limite
-            ? `${fmtDecimal(e.horas_limite)} hrs`
+            ? // Por horas Y calendario a la vez: manda lo que ocurra primero.
+              `${fmtDecimal(e.horas_limite)} hrs${e.fecha_vencimiento ? ` · ${fmtDateOnly(e.fecha_vencimiento)}` : ""}`
             : "Permanente",
     },
     {
@@ -90,14 +91,20 @@ export function ExpirationsTable({
       header: "Restante",
       headClassName: "text-right",
       cellClassName: "text-right text-xs font-mono",
-      cell: (e) =>
-        e.dias_restantes !== null
-          ? e.dias_restantes < 0
-            ? `hace ${Math.abs(e.dias_restantes)} d`
-            : `${e.dias_restantes} d`
-          : e.horas_restantes !== null
+      cell: (e) => {
+        const dias =
+          e.dias_restantes !== null
+            ? e.dias_restantes < 0
+              ? `hace ${Math.abs(e.dias_restantes)} d`
+              : `${e.dias_restantes} d`
+            : null;
+        const horas =
+          e.horas_restantes !== null
             ? `${fmtDecimal(e.horas_restantes)} hrs`
-            : "—",
+            : null;
+        // Doble límite (horas + calendario): se muestran ambos restantes.
+        return dias && horas ? `${horas} · ${dias}` : (dias ?? horas ?? "—");
+      },
     },
     {
       key: "estado",
