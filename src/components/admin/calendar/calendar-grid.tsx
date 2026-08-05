@@ -154,15 +154,16 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
     );
   }
   const esRegreso = ev.tramo === "regreso";
+  const esCancelado = ev.estado === "CANCELADO";
   const label = `${ev.hora ? `${ev.hora} ` : ""}${ev.aeronave_matricula ?? ev.operador_externo ?? ""} ${ev.origen_iata}-${ev.destino_iata}`;
   return (
     <Link
       href={eventHref(ev)}
       title={ev.title}
-      className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate hover:opacity-90 transition-opacity"
+      className={`block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate hover:opacity-90 transition-opacity ${esCancelado ? "line-through opacity-80" : ""}`}
       style={{ backgroundColor: ev.color }}
     >
-      {esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
+      {esCancelado ? "✕ " : esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
       {label}
     </Link>
   );
@@ -185,6 +186,7 @@ function DayEvent({ ev }: { ev: CalendarEvent }) {
     );
   }
   const esRegreso = ev.tramo === "regreso";
+  const esCancelado = ev.estado === "CANCELADO";
   return (
     <Link
       href={eventHref(ev)}
@@ -193,11 +195,18 @@ function DayEvent({ ev }: { ev: CalendarEvent }) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
-          <span className="font-medium text-sm truncate">
+          <span
+            className={`font-medium text-sm truncate ${esCancelado ? "line-through text-muted-foreground" : ""}`}
+          >
             {esRegreso ? "↩ " : ""}
             {ev.hora ? `${ev.hora} · ` : ""}
             {ev.origen_iata}→{ev.destino_iata}
           </span>
+          {esCancelado && (
+            <span className="shrink-0 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400">
+              Cancelado
+            </span>
+          )}
         </div>
         <ArrowUpRightIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </div>

@@ -164,6 +164,11 @@ function Legend() {
       color: "#F59E0B",
       title: "Un aeropuerto de la ruta requiere permiso de pista/operación y aún no se ha emitido. Se quita al marcarlo como “Emitido” en el vuelo (Editar → Permiso de pista, o el botón “Permiso emitido”).",
     },
+    {
+      label: "Cancelado",
+      color: "#EF4444",
+      title: "Vuelo cancelado: se queda en el calendario como historial de operaciones — existió la solicitud y luego se canceló.",
+    },
   ];
   return (
     <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
