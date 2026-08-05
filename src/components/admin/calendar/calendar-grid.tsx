@@ -154,7 +154,7 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
     );
   }
   const esRegreso = ev.tramo === "regreso";
-  const esCancelado = ev.estado === "CANCELADO";
+  const esCancelado = ev.cancelado ?? ev.estado === "CANCELADO";
   const label = `${ev.hora ? `${ev.hora} ` : ""}${ev.aeronave_matricula ?? ev.operador_externo ?? ""} ${ev.origen_iata}-${ev.destino_iata}`;
   return (
     <Link
@@ -186,7 +186,7 @@ function DayEvent({ ev }: { ev: CalendarEvent }) {
     );
   }
   const esRegreso = ev.tramo === "regreso";
-  const esCancelado = ev.estado === "CANCELADO";
+  const esCancelado = ev.cancelado ?? ev.estado === "CANCELADO";
   return (
     <Link
       href={eventHref(ev)}

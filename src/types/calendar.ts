@@ -12,6 +12,8 @@ export interface CalendarEvent {
   fecha_vuelo: string | null;
   hora: string | null;
   estado: string;
+  /** Cancelado a nivel vuelo O el tramo del evento (historial en rojo). */
+  cancelado?: boolean;
   estado_permiso: "no_aplica" | "pendiente" | "emitido" | null;
   es_externo: boolean;
   title: string;
