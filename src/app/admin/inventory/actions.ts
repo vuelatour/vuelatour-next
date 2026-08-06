@@ -31,6 +31,25 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return out;
 }
 
+/**
+ * Campos de texto que al EDITAR deben poder VACIARSE: el "" se descarta en
+ * stripEmpty (no borraría nada), así que se manda null explícito. Sin esto un
+ * ítem con `unidad` mal capturada (caso real "1") era irreparable desde el
+ * panel: vaciar el campo devolvía "Ítem actualizado" sin cambiar nada.
+ */
+const BORRABLES = ["unidad", "numero_parte", "codigo", "notas"] as const;
+
+function conBorrados(
+  raw: Record<string, unknown>,
+  limpio: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...limpio };
+  for (const k of BORRABLES) {
+    if (typeof raw[k] === "string" && raw[k].trim() === "") out[k] = null;
+  }
+  return out;
+}
+
 export async function createItemAction(raw: unknown): Promise<ActionResult<InventarioItem>> {
   const parsed = ItemFormSchema.safeParse(raw);
   if (!parsed.success) {
@@ -59,7 +78,11 @@ export async function updateItemAction(
   try {
     const updated = await apiServer<InventarioItem>(`/v1/inventory/items/${id}`, {
       method: "PATCH",
-      body: stripEmpty(parsed.data),
+      // Vaciar un campo borrable manda null (stripEmpty se come el "").
+      body: conBorrados(
+        parsed.data as Record<string, unknown>,
+        stripEmpty(parsed.data),
+      ),
     });
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${id}`);

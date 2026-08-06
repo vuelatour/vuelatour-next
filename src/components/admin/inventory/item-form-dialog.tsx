@@ -65,6 +65,31 @@ export function ItemFormDialog({
   }, [open, initialItem, reset]);
 
   const onSubmit = handleSubmit((values) => {
+    // La entrada inicial se valida ANTES de crear el ítem: si algo falta, no
+    // se crea nada y el operador corrige sin perder lo capturado (antes el
+    // ítem quedaba creado en stock 0 con solo un aviso).
+    if (!isEdit) {
+      const cantN = Number(values.cantidad_inicial?.trim() || "0");
+      const costoTxt = values.costo_inicial_usd?.trim() ?? "";
+      const tcN = Number(values.tc_inicial?.trim() || "0");
+      const hayCosto = costoTxt !== "" && Number(costoTxt) > 0;
+      if (cantN > 0 && !hayCosto) {
+        toast.error(
+          "Captura el costo unitario de compra de la entrada inicial (mayor a 0) o borra la cantidad.",
+        );
+        return;
+      }
+      if (cantN > 0 && values.moneda_inicial === "MXN" && !(tcN > 0)) {
+        toast.error("Captura el tipo de cambio (MXN por USD) de la compra inicial.");
+        return;
+      }
+      if (cantN <= 0 && hayCosto) {
+        toast.error(
+          "Captura cuántas piezas entran (cantidad inicial) o borra el costo.",
+        );
+        return;
+      }
+    }
     startTransition(async () => {
       // La foto primero: si la subida falla, no se guarda el ítem a medias.
       let fotoPayload: { foto_url: string | null; foto_storage_path: string | null } | undefined;
@@ -90,7 +115,7 @@ export function ItemFormDialog({
         // precio. Best-effort: si falla, el ítem ya existe y se avisa.
         const cant = values.cantidad_inicial?.trim();
         const costo = values.costo_inicial_usd?.trim();
-        if (!isEdit && result.data && cant && costo) {
+        if (!isEdit && result.data && Number(cant || "0") > 0 && costo) {
           const esMxn = values.moneda_inicial === "MXN";
           const mov = await createMovimientoAction(result.data.id, {
             tipo: "ENTRADA",
@@ -99,6 +124,11 @@ export function ItemFormDialog({
             ...(esMxn
               ? { costo_unitario_mxn: costo, tc_usd_mxn: values.tc_inicial }
               : { costo_unitario_usd: costo }),
+            // Día CANCÚN: sin esto el API usa current_date (UTC) y una alta de
+            // las 19:00+ se fecha al día siguiente.
+            fecha_movimiento: new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Cancun",
+            }).format(new Date()),
             notas: "Stock inicial (alta del ítem)",
           });
           if (!mov.ok) {
@@ -127,8 +157,9 @@ export function ItemFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar ítem" : "Nuevo ítem de inventario"}</DialogTitle>
           <DialogDescription>
-            Catálogo de bodega. El stock se calcula del cardex (entradas menos salidas, FIFO); no
-            se edita aquí.
+            Catálogo de bodega. El stock se calcula del cardex (entradas menos salidas, FIFO):
+            al crear, captúralo abajo en «Entrada inicial»; después se mueve con entradas y
+            salidas.
           </DialogDescription>
         </DialogHeader>
 
@@ -239,12 +270,21 @@ export function ItemFormDialog({
 
           {/* Presentación del stock: en qué se cuenta (el cardex y las alertas
               hablan en esta unidad). Texto libre con sugerencias comunes. */}
-          <Field label="Unidad" hint="En qué se cuenta el stock" error={errors.unidad?.message}>
+          <Field
+            label="Unidad de medida"
+            hint="En qué se cuenta el stock — NO es la cantidad"
+            error={errors.unidad?.message}
+          >
             <>
               <Input
                 placeholder="pieza, caja, bote, galón, litro, bolsa…"
                 list="unidades-sugeridas"
-                {...register("unidad")}
+                {...register("unidad", {
+                  validate: (v) =>
+                    !v || !/^[\d.,]+$/.test(v.trim())
+                      ? true
+                      : "Escribe en qué se cuenta (pieza, caja, litro). La cantidad va en «Entrada inicial».",
+                })}
               />
               <datalist id="unidades-sugeridas">
                 <option value="pieza" />

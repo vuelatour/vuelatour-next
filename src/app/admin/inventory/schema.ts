@@ -17,7 +17,17 @@ export const ItemFormSchema = z.object({
   categoria: z.string().min(1, "Requerido").max(50),
   stock_minimo: optionalNumber,
   ubicacion: z.string().max(50).optional().or(z.literal("")),
-  unidad: z.string().max(30).optional().or(z.literal("")),
+  // Un número aquí NO es una unidad de medida: capturarlo así dejó un ítem
+  // en stock 0 (6 ago 2026). La cantidad va en la entrada inicial/cardex.
+  unidad: z
+    .string()
+    .max(30)
+    .refine((v) => v === "" || !/^[\d.,]+$/.test(v.trim()), {
+      message:
+        "Escribe en qué se cuenta (pieza, caja, litro). La cantidad va en la entrada inicial.",
+    })
+    .optional()
+    .or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
   // Foto del producto: null explícito = quitarla (stripEmpty deja pasar null).
   foto_url: z.string().max(1000).nullable().optional().or(z.literal("")),
