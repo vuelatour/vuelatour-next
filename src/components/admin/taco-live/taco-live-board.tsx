@@ -107,7 +107,9 @@ export function TacoLiveBoard({ vuelos }: { vuelos: TacoLiveVuelo[] }) {
   return (
     <div className="space-y-4">
       {vuelos.map((v) => (
-        <Card key={v.vuelo_id}>
+        // Ancla por vuelo: el histórico de tacómetros del avión enlaza aquí
+        // (scroll-mt para que el header no lo tape).
+        <Card key={v.vuelo_id} id={`vuelo-${v.vuelo_id}`} className="scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex flex-wrap items-center gap-2">
               <Link

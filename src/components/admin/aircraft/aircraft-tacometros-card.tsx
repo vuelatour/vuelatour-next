@@ -249,10 +249,10 @@ export function AircraftTacometrosCard({
                         }`}
                         title={salto ? "Salto en la cadena de tacómetros" : undefined}
                       >
-                        {h.taco_salida ?? "—"}
+                        <TacoLink h={h}>{h.taco_salida ?? "—"}</TacoLink>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {h.taco_llegada ?? "—"}
+                        <TacoLink h={h}>{h.taco_llegada ?? "—"}</TacoLink>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {h.horas != null ? `${h.horas} h` : "—"}
@@ -276,6 +276,35 @@ export function AircraftTacometrosCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * La lectura enlaza a "Tacómetros en vivo" en el DÍA del tramo, anclado al
+ * vuelo (pedido de oficina, ago 2026): ahí se ajusta/confirma con la interfaz
+ * que ya conocen. Día en CANCÚN — cortar el ISO crudo movería el día para los
+ * vuelos de la noche.
+ */
+function TacoLink({
+  h,
+  children,
+}: {
+  h: { fecha: string | null; vuelo_id?: string | null };
+  children: React.ReactNode;
+}) {
+  if (!h.fecha) return <>{children}</>;
+  const dia = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Cancun",
+  }).format(new Date(h.fecha));
+  const ancla = h.vuelo_id ? `#vuelo-${h.vuelo_id}` : "";
+  return (
+    <Link
+      href={`/admin/taco-live?fecha=${dia}${ancla}`}
+      className="underline-offset-2 hover:underline hover:text-foreground transition-colors"
+      title="Ajustar en Tacómetros en vivo"
+    >
+      {children}
+    </Link>
   );
 }
 
