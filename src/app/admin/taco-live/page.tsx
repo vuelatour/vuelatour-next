@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { apiServer } from "@/lib/api/server";
 import { TacoLiveBoard, type TacoLiveVuelo } from "@/components/admin/taco-live/taco-live-board";
+import { TacoLiveDatePicker } from "@/components/admin/taco-live/taco-live-date-picker";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export default async function TacoLivePage({
           >
             <ChevronLeftIcon className="h-4 w-4" />
           </Link>
-          <span className="text-sm font-medium font-mono">{fecha}</span>
+          <TacoLiveDatePicker fecha={fecha} />
           <Link
             href={`/admin/taco-live?fecha=${shiftDay(fecha, 1)}`}
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
