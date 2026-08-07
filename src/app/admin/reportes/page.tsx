@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
-import { ReportDownloads } from "@/components/admin/profit-sharing/report-downloads";
+import { CierreRepartoSection } from "@/components/admin/profit-sharing/mes-reporte-select";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import {
   FlightReportPicker,
@@ -88,13 +88,14 @@ export default async function ReportesPage({ searchParams }: PageProps) {
         <CardHeader>
           <CardTitle className="text-base">Cierre y reparto del periodo</CardTitle>
           <CardDescription>
-            PDF de reparto para socios, reporte mensual por avión en Excel, y el paquete de
-            cierre (.zip con el Excel + XML/PDF de las facturas timbradas del periodo). Los
-            estados de cuenta del banco se anexan a mano (no se almacenan en el sistema).
+            Elige el mes y descarga: PDF de reparto para socios, reporte mensual por avión en
+            Excel, libro «Dinero» y el paquete de cierre (.zip con el Excel + XML/PDF de las
+            facturas timbradas del periodo). Los estados de cuenta del banco se anexan a mano
+            (no se almacenan en el sistema).
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ReportDownloads desde={desde} hasta={hasta} />
+          <CierreRepartoSection desde={desde} hasta={hasta} />
         </CardContent>
       </Card>
 

@@ -36,7 +36,11 @@ export function PeriodSelector({ initial }: Props) {
       <CardContent className="p-4 grid gap-3 sm:grid-cols-2 max-w-md">
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">Periodo desde</Label>
+          {/* key = valor: si otro control (p. ej. el selector de mes del
+              cierre) cambia el periodo en la URL, el input se re-monta y
+              muestra la fecha vigente (defaultValue no se re-aplica solo). */}
           <Input
+            key={initial.desde}
             type="date"
             defaultValue={initial.desde}
             onChange={(e) => pushQuery({ desde: e.target.value })}
@@ -45,6 +49,7 @@ export function PeriodSelector({ initial }: Props) {
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">Periodo hasta</Label>
           <Input
+            key={initial.hasta}
             type="date"
             defaultValue={initial.hasta}
             onChange={(e) => pushQuery({ hasta: e.target.value })}
