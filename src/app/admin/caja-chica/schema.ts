@@ -13,11 +13,13 @@ export const TipoMovimientoCajaEnum = z.enum(["REPOSICION", "REINTEGRO", "AJUSTE
 export const FondoFormSchema = z.object({
   usuario_id: z.string().uuid("Selecciona una persona"),
   moneda: MonedaEnum.default("MXN"),
+  es_acumulada: z.boolean().optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 
 export const FondoUpdateSchema = z.object({
   activo: z.boolean().optional(),
+  es_acumulada: z.boolean().optional(),
   moneda: MonedaEnum.optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
@@ -40,6 +42,7 @@ export const MovimientoFormSchema = z
 export type FondoFormValues = {
   usuario_id: string;
   moneda: "MXN" | "USD";
+  es_acumulada?: boolean;
   notas: string;
 };
 

@@ -8,6 +8,8 @@ export interface CajaUsuario {
 }
 
 export interface CajaFondo {
+  /** Caja al revés: `saldo` = lo POR REPONER (sube al gastar, 0 al reponer). */
+  es_acumulada?: boolean;
   id: string;
   usuario_id: string;
   moneda: MonedaCaja;

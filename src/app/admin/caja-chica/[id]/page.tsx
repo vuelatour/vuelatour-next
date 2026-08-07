@@ -113,12 +113,27 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
 
       <Card>
         <CardContent className="py-6">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Saldo actual</p>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">
+            {fondo.es_acumulada ? "Por reponer (caja acumulada)" : "Saldo actual"}
+          </p>
           <p
-            className={`text-3xl font-semibold tabular-nums mt-1 ${fondo.saldo < 0 ? "text-destructive" : "text-emerald-600"}`}
+            className={`text-3xl font-semibold tabular-nums mt-1 ${
+              fondo.es_acumulada
+                ? fondo.saldo > 0
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-emerald-600"
+                : fondo.saldo < 0
+                  ? "text-destructive"
+                  : "text-emerald-600"
+            }`}
           >
             {money(fondo.saldo)}
           </p>
+          {fondo.es_acumulada && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Sube con cada gasto en efectivo; una REPOSICIÓN por este monto lo deja en cero.
+            </p>
+          )}
         </CardContent>
       </Card>
 
