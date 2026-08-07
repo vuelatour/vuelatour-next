@@ -67,7 +67,10 @@ export default async function ConciliacionPage({
     .filter((g) => g.medio_pago !== "BODEGA")
     .map((g) => ({
       value: g.id,
-      label: `${g.categoria} · $${fmtMoney(g.monto)} · ${fmtDate(g.fecha_gasto)}${
+      // La moneda VISIBLE: una compra en dólares (Aircraft Spruce) se vincula
+      // contra su cargo en pesos — al ligarla, el sistema guarda el tipo de
+      // cambio real del banco en el gasto.
+      label: `${g.categoria} · $${fmtMoney(g.monto)} ${g.moneda ?? "MXN"} · ${fmtDate(g.fecha_gasto)}${
         g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""
       }`,
     }));
