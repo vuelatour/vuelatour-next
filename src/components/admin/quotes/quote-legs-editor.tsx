@@ -232,6 +232,31 @@ export function QuoteLegsEditor({
 
   const nmTotal = value.reduce((acc, l) => acc + (Number(l.millas_nauticas) || 0), 0);
 
+  // Resumen del VIAJE por día (multi-día): agrupa los tramos por el día
+  // Cancún de su fecha (datetime-local ya viene en pared Cancún); un tramo
+  // sin fecha hereda el día del anterior. Solo se pinta con 2+ días.
+  const resumenDias = useMemo(() => {
+    const dias: { dia: string; tramos: string[]; pernocta: string | null }[] =
+      [];
+    let diaActual: string | null = null;
+    for (const l of value) {
+      const d = l.fecha_salida_plan ? l.fecha_salida_plan.slice(0, 10) : null;
+      if (d) diaActual = d;
+      const key = diaActual ?? "";
+      let bucket = dias.find((x) => x.dia === key);
+      if (!bucket) {
+        bucket = { dia: key, tramos: [], pernocta: null };
+        dias.push(bucket);
+      }
+      if (l.origen_iata && l.destino_iata) {
+        bucket.tramos.push(`${l.origen_iata}→${l.destino_iata}`);
+        if (l.requiere_pernocta) bucket.pernocta = l.destino_iata;
+      }
+    }
+    return dias.filter((x) => x.dia && x.tramos.length > 0);
+  }, [value]);
+  const esMultiDia = resumenDias.length > 1;
+
   return (
     <div className="space-y-3">
       <div className="space-y-2">
@@ -488,6 +513,30 @@ export function QuoteLegsEditor({
           {value.length} {value.length === 1 ? "tramo" : "tramos"}
         </p>
       </div>
+
+      {esMultiDia && (
+        <div className="rounded-lg border border-brand-500/30 bg-brand-500/5 p-3 space-y-1.5">
+          <p className="text-xs font-semibold">
+            Viaje de {resumenDias.length} días
+          </p>
+          {resumenDias.map((d, i) => (
+            <p key={d.dia} className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Día {i + 1} · {d.dia.split("-").reverse().join("/")}:
+              </span>{" "}
+              {d.tramos.join(" · ")}
+              {d.pernocta && (
+                <span className="text-amber-600"> · pernocta en {d.pernocta}</span>
+              )}
+            </p>
+          ))}
+          <p className="text-[11px] text-muted-foreground">
+            Todo el viaje se cotiza y cobra como UN solo vuelo (una hora
+            mínima, un folio); las pernoctas se marcan solas al cambiar de
+            día.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

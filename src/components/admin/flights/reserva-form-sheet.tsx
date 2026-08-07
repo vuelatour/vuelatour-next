@@ -455,6 +455,56 @@ export function ReservaFormSheet({
             </div>
           </div>
 
+          {(() => {
+            // Resumen del VIAJE por día (multi-día): tramo 1 sale a la fecha
+            // general; los demás heredan el día del anterior si no traen hora.
+            const dias: {
+              dia: string;
+              tramos: string[];
+              pernocta: string | null;
+            }[] = [];
+            let diaActual = fechaVuelo ? fechaVuelo.slice(0, 10) : null;
+            legs.forEach((l, i) => {
+              const propio = i > 0 && l.hora ? l.hora.slice(0, 10) : null;
+              if (propio) diaActual = propio;
+              if (!diaActual || !l.origen || !l.destino) return;
+              let b = dias.find((x) => x.dia === diaActual);
+              if (!b) {
+                b = { dia: diaActual, tramos: [], pernocta: null };
+                dias.push(b);
+              }
+              b.tramos.push(`${l.origen}→${l.destino}`);
+              if (l.pernocta) b.pernocta = l.destino;
+            });
+            if (dias.length <= 1) return null;
+            return (
+              <div className="rounded-lg border border-brand-500/30 bg-brand-500/5 p-3 space-y-1.5">
+                <p className="text-xs font-semibold">
+                  Viaje de {dias.length} días
+                </p>
+                {dias.map((d, i) => (
+                  <p key={d.dia} className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      Día {i + 1} · {d.dia.split("-").reverse().join("/")}:
+                    </span>{" "}
+                    {d.tramos.join(" · ")}
+                    {d.pernocta && (
+                      <span className="text-amber-600">
+                        {" "}
+                        · pernocta en {d.pernocta}
+                      </span>
+                    )}
+                  </p>
+                ))}
+                <p className="text-[11px] text-muted-foreground">
+                  Todo el viaje queda en UN solo vuelo (un folio, una
+                  cotización); las pernoctas se marcan solas al cambiar de
+                  día.
+                </p>
+              </div>
+            );
+          })()}
+
           {/* 3. Piloto */}
           <Field label="Piloto" required>
             <SearchableSelect
