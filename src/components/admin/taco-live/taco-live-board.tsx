@@ -56,6 +56,14 @@ export interface TacoLiveEscala {
    */
   llegada_estimada?: number | null;
   minutos_promedio?: number | null;
+  /**
+   * Viaje multi-día: false cuando el tramo pertenece a OTRO día del viaje
+   * (el vuelo aparece todos sus días; la fila ajena se atenúa). Opcional
+   * para tolerar API viejo.
+   */
+  es_del_dia?: boolean;
+  /** Día Cancún (YYYY-MM-DD) del tramo, para la etiqueta de la fila ajena. */
+  dia_tramo?: string | null;
 }
 
 export interface TacoLiveVuelo {
@@ -94,7 +102,14 @@ function sugerenciaLlegada(e: TacoLiveEscala): number | null {
 // La leyenda de procedencia vive en @/lib/taco-procedencia (fuente única): el
 // detalle del vuelo muestra exactamente lo mismo.
 
-export function TacoLiveBoard({ vuelos }: { vuelos: TacoLiveVuelo[] }) {
+export function TacoLiveBoard({
+  vuelos,
+  fecha,
+}: {
+  vuelos: TacoLiveVuelo[];
+  /** Día consultado (YYYY-MM-DD) — distingue tramos pasados de futuros. */
+  fecha?: string;
+}) {
   if (vuelos.length === 0) {
     return (
       <EmptyState
@@ -129,7 +144,12 @@ export function TacoLiveBoard({ vuelos }: { vuelos: TacoLiveVuelo[] }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {v.escalas.map((e) => (
-              <EscalaRow key={e.escala_id} vueloId={v.vuelo_id} escala={e} />
+              <EscalaRow
+                key={e.escala_id}
+                vueloId={v.vuelo_id}
+                escala={e}
+                fecha={fecha}
+              />
             ))}
           </CardContent>
         </Card>
@@ -172,18 +192,33 @@ function Lectura({
   );
 }
 
-function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscala }) {
+function EscalaRow({
+  vueloId,
+  escala,
+  fecha,
+}: {
+  vueloId: string;
+  escala: TacoLiveEscala;
+  fecha?: string;
+}) {
   const st = ESTADO_STYLE[escala.estado];
   const sugerencia = sugerenciaLlegada(escala);
+  // Tramo de otro día del viaje: SOLO se atenúa el FUTURO (aún no vuela).
+  // Un tramo de un día PASADO sin llegada es justo lo más urgente del
+  // tablero: conserva su rojo y se etiqueta en pasado ("Quedó del…").
+  const deOtroDia = escala.es_del_dia === false;
+  const esFuturo =
+    deOtroDia && !!fecha && !!escala.dia_tramo && escala.dia_tramo > fecha;
+  const esPasado = deOtroDia && !esFuturo;
   return (
     <div
       className={`rounded-lg border p-3 ${
         escala.estado === "REVISAR"
           ? "border-amber-500/50 bg-amber-500/5"
-          : escala.estado === "VENCIDA"
+          : escala.estado === "VENCIDA" && !esFuturo
             ? "border-red-500/50 bg-red-500/5"
             : "border-border"
-      }`}
+      }${esFuturo ? " opacity-55" : ""}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -197,6 +232,28 @@ function EscalaRow({ vueloId, escala }: { vueloId: string; escala: TacoLiveEscal
           {escala.es_ferry && (
             <Badge variant="outline" className="text-[10px]">
               Ferry
+            </Badge>
+          )}
+          {esFuturo && (
+            <Badge
+              variant="outline"
+              className="text-[10px] bg-slate-500/10 text-slate-500 border-slate-500/30"
+              title="Este tramo del viaje vuela otro día; se muestra aquí como referencia."
+            >
+              {escala.dia_tramo
+                ? `Vuela el ${escala.dia_tramo.split("-").reverse().join("/")}`
+                : "Otro día"}
+            </Badge>
+          )}
+          {esPasado && (
+            <Badge
+              variant="outline"
+              className="text-[10px] bg-red-500/10 text-red-600 border-red-500/30"
+              title="Tramo de un día anterior del viaje: su lectura sigue pendiente."
+            >
+              {escala.dia_tramo
+                ? `Quedó del ${escala.dia_tramo.split("-").reverse().join("/")}`
+                : "Día anterior"}
             </Badge>
           )}
           <Badge variant="outline" className={`text-[10px] ${st.cls}`}>

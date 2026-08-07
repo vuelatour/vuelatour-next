@@ -36,9 +36,21 @@ export default async function TacoLivePage({
   });
 
   const fecha = data.fecha;
-  const totalEscalas = data.vuelos.reduce((acc, v) => acc + v.escalas.length, 0);
+  // Los contadores describen EL DÍA: un viaje multi-día trae también sus
+  // tramos de otros días (atenuados en el tablero) y no deben inflar el
+  // encabezado.
+  const delDia = (e: { es_del_dia?: boolean }) => e.es_del_dia !== false;
+  const totalEscalas = data.vuelos.reduce(
+    (acc, v) => acc + v.escalas.filter(delDia).length,
+    0,
+  );
+  const otrosDias = data.vuelos.reduce(
+    (acc, v) => acc + v.escalas.filter((e) => !delDia(e)).length,
+    0,
+  );
   const porRevisar = data.vuelos.reduce(
-    (acc, v) => acc + v.escalas.filter((e) => e.revision_requerida).length,
+    (acc, v) =>
+      acc + v.escalas.filter((e) => delDia(e) && e.revision_requerida).length,
     0,
   );
 
@@ -53,6 +65,9 @@ export default async function TacoLivePage({
           <p className="text-sm text-muted-foreground mt-1">
             {data.vuelos.length} {data.vuelos.length === 1 ? "vuelo" : "vuelos"} ·{" "}
             {totalEscalas} escalas
+            {otrosDias > 0 && (
+              <span className="text-muted-foreground"> (+{otrosDias} de otros días)</span>
+            )}
             {porRevisar > 0 && (
               <span className="text-amber-600 font-medium"> · {porRevisar} por revisar</span>
             )}
@@ -86,7 +101,7 @@ export default async function TacoLivePage({
         </div>
       </div>
 
-      <TacoLiveBoard vuelos={data.vuelos} />
+      <TacoLiveBoard vuelos={data.vuelos} fecha={fecha} />
     </div>
   );
 }
