@@ -4,8 +4,7 @@ import { useState } from "react";
 import { DocumentArrowDownIcon, TableCellsIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { env } from "@/lib/env";
+import { descargarDelApi } from "@/lib/download";
 
 /**
  * Descarga el reporte consolidado de un vuelo (cotización + ingreso + tacómetro
@@ -26,31 +25,14 @@ export function FlightReportButtons({
 
   const download = async (kind: "pdf" | "xlsx") => {
     setLoading(kind);
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const res = await fetch(`${env.API_URL}/v1/flights/${flightId}/reporte.${kind}`, {
-        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+    const err = await descargarDelApi(`/v1/flights/${flightId}/reporte.${kind}`, {
+      filename: `vuelo-${fol}.${kind}`,
+    });
+    if (err)
+      toast.error("No se pudo generar el reporte del vuelo", {
+        description: err,
       });
-      if (!res.ok) {
-        toast.error("No se pudo generar el reporte del vuelo");
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `vuelo-${fol}.${kind}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("No se pudo generar el reporte del vuelo");
-    } finally {
-      setLoading(null);
-    }
+    setLoading(null);
   };
 
   return (

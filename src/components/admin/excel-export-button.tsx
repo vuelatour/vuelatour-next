@@ -5,8 +5,7 @@ import { TableCellsIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { env } from "@/lib/env";
+import { descargarDelApi } from "@/lib/download";
 
 /** Descarga un Excel desde un endpoint del API (blob + token de sesión). Reutilizable. */
 export function ExcelExportButton({
@@ -29,35 +28,9 @@ export function ExcelExportButton({
 
   const run = async () => {
     setLoading(true);
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const params = Object.entries(query ?? {}).filter(
-        (e): e is [string, string] => e[1] != null && e[1] !== "",
-      );
-      const qs = params.length ? `?${new URLSearchParams(params).toString()}` : "";
-      const res = await fetch(`${env.API_URL}${path}${qs}`, {
-        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
-      if (!res.ok) {
-        toast.error("No se pudo exportar");
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("No se pudo exportar");
-    } finally {
-      setLoading(false);
-    }
+    const err = await descargarDelApi(path, { filename, query });
+    if (err) toast.error("No se pudo exportar", { description: err });
+    setLoading(false);
   };
 
   return (

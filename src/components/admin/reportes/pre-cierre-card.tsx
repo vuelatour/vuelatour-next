@@ -37,14 +37,29 @@ interface PreCierre {
 }
 
 /** A dónde ir a resolver cada pendiente del checklist. */
-const LINK_POR_CLAVE: Record<string, string> = {
-  tacos_en_revision: "/admin/taco-live",
-  gastos_sin_avion: "/admin/expenses",
-  gastos_sin_tc: "/admin/expenses",
-  gastos_sin_comprobante: "/admin/facturas-recibidas",
+// Links "Resolver" en función del PERIODO del checklist: sin el rango, la
+// lista destino mezclaba pendientes de todos los tiempos y el conteo no
+// cuadraba con el "· N" del item.
+const LINK_POR_CLAVE: Record<
+  string,
+  (p: { desde: string; hasta: string }) => string
+> = {
+  // Vuelos sin completar: la lista del periodo (externos incluidos — esos
+  // se completan a mano en su detalle y NO aparecen en taco-live).
+  vuelos_sin_completar: (p) =>
+    `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
+  tacos_en_revision: () => "/admin/taco-live",
+  cobros_pendientes: (p) =>
+    `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
+  gastos_sin_avion: () => "/admin/expenses",
+  gastos_sin_tc: () => "/admin/expenses",
+  gastos_sin_comprobante: () => "/admin/facturas-recibidas",
   // Cuotas de aeródromo sin provisionar: Gastos → "Pistas por pagar".
-  pistas_sin_gasto: "/admin/expenses",
-  sin_conciliar: "/admin/conciliacion",
+  pistas_sin_gasto: () => "/admin/expenses",
+  // El honorario del piloto externo se captura como gasto del vuelo (los
+  // folios del item llevan directo a cada vuelo).
+  externos_sin_honorario: () => "/admin/expenses",
+  sin_conciliar: () => "/admin/conciliacion",
 };
 
 function fmtMonto(item: PreCierreItem): string | null {
@@ -128,7 +143,7 @@ export async function PreCierreCard({
         <CardContent className="space-y-3">
           {pendientes.map((item) => {
             const monto = fmtMonto(item);
-            const href = LINK_POR_CLAVE[item.clave];
+            const href = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
             return (
               <div
                 key={item.clave}

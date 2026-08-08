@@ -17,6 +17,7 @@ import {
   type AircraftPickItem,
 } from "@/components/admin/reportes/aircraft-balance-picker";
 import { listFlights } from "@/lib/api/flights-server";
+import { fmtDate } from "@/lib/datetime";
 import { listAircraft } from "@/lib/api/aircraft";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
 
@@ -50,7 +51,14 @@ export default async function ReportesPage({ searchParams }: PageProps) {
         f.ruta_iatas && f.ruta_iatas.length > 0
           ? f.ruta_iatas.join(" → ")
           : `${f.origen_iata} → ${f.destino_iata}`;
-      return { id: f.id, folio: f.folio, label: `#${f.folio} · ${ruta}` };
+      // Fecha en el label: con varias idas a la misma ruta, el folio solo no
+      // alcanza para encontrar el vuelo (y el buscador filtra por texto).
+      const fecha = f.fecha_vuelo ? ` · ${fmtDate(f.fecha_vuelo)}` : "";
+      return {
+        id: f.id,
+        folio: f.folio,
+        label: `#${f.folio} · ${ruta}${fecha}`,
+      };
     });
   } catch {
     flightsPick = [];

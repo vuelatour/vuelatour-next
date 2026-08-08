@@ -6,8 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { env } from "@/lib/env";
+import { descargarDelApi } from "@/lib/download";
 
 export interface AircraftPickItem {
   id: string;
@@ -36,37 +35,12 @@ export function AircraftBalancePicker({
   const download = async () => {
     if (!avion) return;
     setLoading(true);
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const qs = new URLSearchParams({ desde, hasta }).toString();
-      const res = await fetch(
-        `${env.API_URL}/v1/aircraft/${avion.id}/balance.xlsx?${qs}`,
-        {
-          headers: session
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : {},
-        },
-      );
-      if (!res.ok) {
-        toast.error("No se pudo generar el balance");
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `balance-${avion.matricula}-${desde}-${hasta}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("No se pudo generar el balance");
-    } finally {
-      setLoading(false);
-    }
+    const err = await descargarDelApi(`/v1/aircraft/${avion.id}/balance.xlsx`, {
+      filename: `balance-${avion.matricula}-${desde}-${hasta}.xlsx`,
+      query: { desde, hasta },
+    });
+    if (err) toast.error("No se pudo generar el balance", { description: err });
+    setLoading(false);
   };
 
   return (

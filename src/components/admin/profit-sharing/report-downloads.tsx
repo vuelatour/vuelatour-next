@@ -8,8 +8,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { env } from "@/lib/env";
+import { descargarDelApi } from "@/lib/download";
 
 type Kind = "pdf" | "xlsx" | "dinero" | "cierre";
 
@@ -18,36 +17,13 @@ export function ReportDownloads({ desde, hasta }: { desde: string; hasta: string
 
   const download = async (kind: Kind, path: string, filename: string, openInTab = false) => {
     setLoading(kind);
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const qs = new URLSearchParams({ desde, hasta }).toString();
-      const res = await fetch(`${env.API_URL}${path}?${qs}`, {
-        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
-      if (!res.ok) {
-        toast.error("No se pudo generar el reporte");
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      if (openInTab) {
-        window.open(url, "_blank");
-      } else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("No se pudo generar el reporte");
-    } finally {
-      setLoading(null);
-    }
+    const err = await descargarDelApi(path, {
+      filename,
+      openInTab,
+      query: { desde, hasta },
+    });
+    if (err) toast.error("No se pudo generar el reporte", { description: err });
+    setLoading(null);
   };
 
   return (
