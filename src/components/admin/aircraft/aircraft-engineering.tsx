@@ -240,8 +240,9 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
               <span className="text-amber-600 dark:text-amber-400 font-medium">
                 Crítico
               </span>{" "}
-              dejan el avión NO APTO si se vencen: el sistema no deja asignarlo
-              a un vuelo hasta renovarlos.
+              ponen el avión EN ROJO al vencerse y avisan a administración a
+              diario. Se puede seguir asignando (la autoridad a veces autoriza
+              vuelos limitados), pero la alerta no se apaga hasta renovarlos.
             </CardDescription>
           </div>
           <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => setVencOpen(true)}>
@@ -661,7 +662,7 @@ function VencimientoDialog({
                 options={tiposAeronave.map((d) => ({
                   value: d.id,
                   label: d.nombre,
-                  description: d.es_critico ? "Crítico · bloquea el avión" : undefined,
+                  description: d.es_critico ? "Crítico · alerta al vencer" : undefined,
                 }))}
                 value={(watch("tipo_documento_id") as string | undefined) ?? ""}
                 onChange={(v) => setValue("tipo_documento_id", v, { shouldValidate: true })}

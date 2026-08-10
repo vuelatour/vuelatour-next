@@ -50,7 +50,7 @@ const columns: Array<DataTableColumn<DocumentType>> = [
     cell: (t) =>
       t.es_critico ? (
         <span
-          title="Vencido bloquea asignación de vuelos"
+          title="Vencido: avión en rojo + alerta diaria a administración (no bloquea asignar)"
           className="inline-flex items-center text-destructive"
         >
           <ExclamationTriangleIcon className="h-4 w-4" />

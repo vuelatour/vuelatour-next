@@ -132,7 +132,9 @@ export function DocumentTypeFormDialog({ open, onOpenChange, initialType }: Prop
             <div className="min-w-0">
               <Label className="text-sm">Documento crítico</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Si está vencido, bloquea la asignación de vuelos (doc 4.3).
+                Si está vencido, el avión se marca en rojo y administración
+                recibe alerta diaria (ya no bloquea la asignación: la
+                autoridad puede autorizar vuelos limitados).
               </p>
             </div>
             <Switch
