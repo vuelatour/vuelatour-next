@@ -227,7 +227,11 @@ function EngineDialog({
             </Field>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Horas totales" error={errors.horas_totales?.message}>
+            <Field
+              label="Horas totales"
+              hint="tiempo total del componente (TSN)"
+              error={errors.horas_totales?.message}
+            >
               <Input type="number" step="0.01" min={0} {...register("horas_totales")} />
             </Field>
             <Field

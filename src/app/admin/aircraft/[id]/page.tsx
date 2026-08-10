@@ -427,8 +427,8 @@ function MotorCard({
         <VidaTboBar pct={motor.vida_usada_pct} agotado={restantes <= 0} />
       )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
-        <Mini label="Horas de vida" value={`${fmtDecimal(horasVida)} hrs`} />
-        <Mini label="Desde el últ. overhaul" value={`${fmtDecimal(desdeOverhaul)} hrs`} />
+        <Mini label="Tiempo total (TSN)" value={`${fmtDecimal(horasVida)} hrs`} />
+        <Mini label="Desde el últ. overhaul (TSO)" value={`${fmtDecimal(desdeOverhaul)} hrs`} />
         <Mini label="TURM (taco al últ. overhaul)" value={fmtDecimal(motor.turm)} />
         <Mini label="TBO" value={`${fmtDecimal(motor.tbo_horas)} hrs`} />
         <Mini
@@ -446,8 +446,8 @@ function MotorCard({
       </dl>
       {horasIncoherentes && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          Revisar captura: las horas de vida ({fmtDecimal(horasVida)}) son menores al TURM (
-          {fmtDecimal(motor.turm)}). Edita el motor y captura sus horas totales reales.
+          Revisar captura: el tiempo total (TSN) del motor ({fmtDecimal(horasVida)}) es menor al
+          TURM ({fmtDecimal(motor.turm)}). Edita el motor y captura sus horas totales reales.
         </p>
       )}
       {motor.notas && (
@@ -501,12 +501,12 @@ function PropellerCard({
       )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini
-          label="Horas de vida"
+          label="Tiempo total (TSN)"
           value={`${fmtDecimal(propeller.horas_actuales ?? Number(propeller.horas_totales))} hrs`}
         />
         {propeller.horas_desde_overhaul != null && (
           <Mini
-            label="Desde el últ. overhaul"
+            label="Desde el últ. overhaul (TSO)"
             value={`${fmtDecimal(propeller.horas_desde_overhaul)} hrs`}
           />
         )}
