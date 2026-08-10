@@ -27,6 +27,8 @@ export const ExpirationFormSchema = z.object({
   critico: z.boolean().nullable().optional(),
   referencia: z.string().max(100).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
+  // PATH del archivo adjunto en el bucket privado; null = quitar al editar.
+  archivo_url: z.string().nullable().optional(),
 });
 
 export type ExpirationFormValues = z.input<typeof ExpirationFormSchema>;

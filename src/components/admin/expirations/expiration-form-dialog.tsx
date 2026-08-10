@@ -27,6 +27,7 @@ import {
 import { FORMA_OPTIONS } from "@/app/admin/document-types/schema";
 import type { DocumentType, Expiration } from "@/types/expirations";
 import { Field } from "@/components/admin/form-field";
+import { DocumentoField } from "./documento-field";
 
 export interface AircraftOption {
   id: string;
@@ -267,6 +268,20 @@ export function ExpirationFormDialog({
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>
 
+          <Field
+            label="Copia del documento"
+            hint="Adjunta el permiso/licencia escaneado o fotografiado (PDF o imagen, máx. 10 MB). Se guarda en privado; solo la oficina lo ve."
+          >
+            <DocumentoField
+              value={(watch("archivo_url") as string | null) ?? null}
+              onChange={(path) =>
+                setValue("archivo_url", path, { shouldDirty: true })
+              }
+              expirationId={initialExpiration?.id}
+              savedValue={initialExpiration?.archivo_url ?? null}
+            />
+          </Field>
+
           <DialogFooter>
             <Button
               type="button"
@@ -300,6 +315,7 @@ function defaults(v?: Expiration): ExpirationFormValues {
       umbral_alerta_dias: "",
       referencia: "",
       notas: "",
+      archivo_url: null,
     };
   }
   return {
@@ -313,5 +329,6 @@ function defaults(v?: Expiration): ExpirationFormValues {
     umbral_alerta_dias: v.umbral_alerta_dias ?? "",
     referencia: v.referencia ?? "",
     notas: v.notas ?? "",
+    archivo_url: v.archivo_url ?? null,
   };
 }

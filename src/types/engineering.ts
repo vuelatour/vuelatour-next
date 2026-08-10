@@ -32,6 +32,7 @@ export interface Vencimiento {
   umbral_alerta_dias: number | null;
   referencia: string | null;
   notas: string | null;
+  archivo_url: string | null;
   created_at: string;
   tipo_documento?: { nombre: string; es_critico: boolean } | null;
 }

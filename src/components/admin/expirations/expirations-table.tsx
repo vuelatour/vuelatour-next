@@ -1,6 +1,9 @@
 "use client";
 
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import {
+  ExclamationTriangleIcon,
+  PaperClipIcon,
+} from "@heroicons/react/24/outline";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtDecimal } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +67,15 @@ export function ExpirationsTable({
           </div>
           {e.referencia && (
             <div className="text-[10px] text-muted-foreground">Ref. {e.referencia}</div>
+          )}
+          {e.archivo_url && (
+            <div
+              className="text-[10px] text-muted-foreground inline-flex items-center gap-1"
+              title="Tiene copia del documento adjunta (ábrela desde ⋯ → Editar → Ver)"
+            >
+              <PaperClipIcon className="h-3 w-3" />
+              Documento adjunto
+            </div>
           )}
         </>
       ),

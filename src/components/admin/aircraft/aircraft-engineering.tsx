@@ -11,6 +11,7 @@ import {
   TrashIcon,
   WrenchScrewdriverIcon,
   DocumentCheckIcon,
+  DocumentTextIcon,
   ClockIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -40,6 +41,7 @@ import {
 import { createDocumentTypeAction } from "@/app/admin/document-types/actions";
 import {
   deleteExpirationAction,
+  getExpirationArchivoAction,
   updateExpirationAction,
 } from "@/app/admin/expirations/actions";
 import type {
@@ -267,6 +269,23 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                           : "Permanente"}
                       {v.referencia ? ` · ${v.referencia}` : ""}
                     </p>
+                    {v.archivo_url && (
+                      <button
+                        type="button"
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline"
+                        onClick={async () => {
+                          const res = await getExpirationArchivoAction(v.id);
+                          if (res.ok && res.data?.url) {
+                            window.open(res.data.url, "_blank", "noopener");
+                          } else {
+                            toast.error(res.error ?? "No se pudo abrir");
+                          }
+                        }}
+                      >
+                        <DocumentTextIcon className="h-3 w-3" />
+                        Ver documento
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                   <VencimientoRowActions vencimiento={v} onSaved={reload} />

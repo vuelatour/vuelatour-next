@@ -66,6 +66,21 @@ export async function updateExpirationAction(
   }
 }
 
+/** URL firmada (1 h) de la copia del documento adjunto (bucket privado). */
+export async function getExpirationArchivoAction(
+  id: string,
+): Promise<ActionResult<{ url: string }>> {
+  try {
+    const data = await apiServer<{ url: string }>(
+      `/v1/expirations/${id}/archivo`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function deleteExpirationAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/expirations/${id}`, { method: "DELETE" });
