@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,9 +41,16 @@ import {
 import { createDocumentTypeAction } from "@/app/admin/document-types/actions";
 import {
   deleteExpirationAction,
+  extraerVencimientoAction,
   getExpirationArchivoAction,
   updateExpirationAction,
 } from "@/app/admin/expirations/actions";
+import { DocumentoField } from "@/components/admin/expirations/documento-field";
+import {
+  deleteDocumentoFlota,
+  fileToBase64,
+  MAX_BYTES_IA,
+} from "@/lib/storage/documentos-flota";
 import type {
   DocumentType,
   EstadoMantenimiento,
@@ -635,6 +642,17 @@ function VencimientoDialog({
   // Tipos creados aquí mismo (aún no están en el catálogo que cargó el padre).
   const [tiposNuevos, setTiposNuevos] = useState<DocumentType[]>([]);
   const [tipoOpen, setTipoOpen] = useState(false);
+  // Copia del documento (path en el bucket privado). Cerrar sin guardar borra
+  // el archivo recién subido (huérfano); guardado, se conserva.
+  const [archivo, setArchivo] = useState<string | null>(null);
+  const guardadoRef = useRef(false);
+
+  const cerrar = (next: boolean) => {
+    if (!next && !guardadoRef.current && archivo) {
+      void deleteDocumentoFlota(archivo);
+    }
+    onOpenChange(next);
+  };
 
   // Solo documentos DE AERONAVE: este diálogo siempre registra el permiso de
   // este avión, y ver licencias de piloto aquí (Licencia MX, certificado
@@ -683,7 +701,9 @@ function VencimientoDialog({
             ? values.horas_limite
             : undefined,
         referencia: values.referencia?.trim() || undefined,
+        archivo_url: archivo ?? undefined,
       });
+      guardadoRef.current = true;
       toast.success("Vencimiento registrado");
       onOpenChange(false);
       await onSaved();
@@ -694,8 +714,34 @@ function VencimientoDialog({
     }
   });
 
+  // Lectura IA del documento adjuntado: pre-llena la fecha si está vacía
+  // (best-effort; jamás pisa lo tecleado).
+  const onArchivoFile = (file: File) => {
+    void (async () => {
+      if (file.size > MAX_BYTES_IA) return;
+      try {
+        const base64 = await fileToBase64(file);
+        const res = await extraerVencimientoAction(
+          file.type === "application/pdf"
+            ? { pdfBase64: base64 }
+            : { imageBase64: base64, mediaType: file.type },
+        );
+        if (!res.ok || !res.data?.disponible) return;
+        const fecha = res.data.fecha_vencimiento;
+        if (fecha && !watch("fecha_vencimiento")) {
+          setValue("fecha_vencimiento", fecha);
+          toast.success(
+            "La IA leyó la fecha de vencimiento del documento. Revisa antes de guardar.",
+          );
+        }
+      } catch {
+        // best-effort: la captura manual sigue intacta
+      }
+    })();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={cerrar}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Nuevo permiso / licencia</DialogTitle>
@@ -767,8 +813,18 @@ function VencimientoDialog({
           <Field label="Referencia" hint="opcional" error={errors.referencia?.message}>
             <Input placeholder="Folio, número de permiso…" {...register("referencia")} />
           </Field>
+          <Field
+            label="Copia del documento"
+            hint="PDF o foto, máx. 10 MB. Privado: solo la oficina lo ve. Al adjuntar, la IA intenta leer la fecha."
+          >
+            <DocumentoField
+              value={archivo}
+              onChange={setArchivo}
+              onFile={onArchivoFile}
+            />
+          </Field>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            <Button type="button" variant="outline" onClick={() => cerrar(false)} disabled={saving}>
               Cancelar
             </Button>
             <Button type="submit" disabled={saving}>
@@ -813,13 +869,27 @@ function VencimientoRowActions({
   const [fecha, setFecha] = useState(vencimiento.fecha_vencimiento ?? "");
   const [horas, setHoras] = useState(vencimiento.horas_limite ?? "");
   const [referencia, setReferencia] = useState(vencimiento.referencia ?? "");
+  // Copia del documento: renovar el permiso implica adjuntar la copia NUEVA —
+  // sin esto la fecha renovada se quedaba con el documento caducado pegado.
+  const [archivo, setArchivo] = useState<string | null>(
+    vencimiento.archivo_url ?? null,
+  );
 
   const abrirEdicion = () => {
     setVencePor(vencimiento.vence_por);
     setFecha(vencimiento.fecha_vencimiento ?? "");
     setHoras(vencimiento.horas_limite ?? "");
     setReferencia(vencimiento.referencia ?? "");
+    setArchivo(vencimiento.archivo_url ?? null);
     setEditOpen(true);
+  };
+
+  // Cerrar sin guardar con un archivo recién subido = huérfano en el bucket.
+  const cerrarEdicion = (next: boolean) => {
+    if (!next && archivo && archivo !== (vencimiento.archivo_url ?? null)) {
+      void deleteDocumentoFlota(archivo);
+    }
+    setEditOpen(next);
   };
 
   const guardar = async () => {
@@ -841,6 +911,8 @@ function VencimientoRowActions({
           vencePor === "PERMANENTE" ? null : fecha ? fecha : null,
         horas_limite: vencePor === "HORAS" ? Number(horas) : "",
         referencia,
+        // null explícito = quitar; el API borra del bucket el reemplazado.
+        archivo_url: archivo,
       });
       if (res.ok) {
         toast.success("Vencimiento actualizado");
@@ -895,13 +967,14 @@ function VencimientoRowActions({
         <TrashIcon className="h-4 w-4" />
       </Button>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={editOpen} onOpenChange={cerrarEdicion}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar · {nombre}</DialogTitle>
             <DialogDescription>
               Renovaste el documento o corregiste el dato: el semáforo y las
-              alertas se recalculan solos.
+              alertas se recalculan solos. Si renovaste, adjunta también la
+              copia nueva.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -955,9 +1028,20 @@ function VencimientoRowActions({
                 onChange={(e) => setReferencia(e.target.value)}
               />
             </Field>
+            <Field
+              label="Copia del documento"
+              hint="PDF o foto, máx. 10 MB. Al renovar, reemplázala por la vigente."
+            >
+              <DocumentoField
+                value={archivo}
+                onChange={setArchivo}
+                expirationId={vencimiento.id}
+                savedValue={vencimiento.archivo_url ?? null}
+              />
+            </Field>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
+            <Button variant="outline" onClick={() => cerrarEdicion(false)} disabled={saving}>
               Cancelar
             </Button>
             <Button onClick={() => void guardar()} disabled={saving}>

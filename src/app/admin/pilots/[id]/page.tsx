@@ -7,13 +7,19 @@ import {
   CreditCardIcon,
   CalendarDaysIcon,
   BanknotesIcon,
+  DocumentCheckIcon,
+  ChevronRightIcon,
 } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { isApiError } from "@/lib/api/errors";
 import { getPilot } from "@/lib/api/pilots-server";
+import { listExpirations } from "@/lib/api/expirations-server";
 import { AccessToggle } from "@/components/admin/pilots/access-toggle";
+import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
+import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import type {
   PilotCapture,
   PilotDetail,
@@ -50,6 +56,16 @@ export default async function PilotDetailPage({
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
   }
+
+  // Licencias/médico del piloto (vencimientos con sus copias): antes solo se
+  // veían filtrando la tabla general de Vencimientos. Tolerante: si la lista
+  // falla, la ficha carga sin la card (no es dato operativo del día).
+  const vencimientos: Expiration[] = await listExpirations({
+    piloto_id: id,
+    limit: 100,
+  })
+    .then((r) => r.data)
+    .catch(() => []);
 
   return (
     <div className="space-y-6">
@@ -130,8 +146,92 @@ export default async function PilotDetailPage({
         <ExpensesCard expenses={pilot.gastos_recientes} />
       </div>
 
+      <DocumentosCard pilotoId={pilot.id} vencimientos={vencimientos} />
+
       {pilot.fondos.length > 0 && <FondosCard fondos={pilot.fondos} />}
     </div>
+  );
+}
+
+const ESTADO_VENC_STYLES: Record<EstadoVencimiento, string> = {
+  VIGENTE: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
+  PROXIMO: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+  VENCIDO: "bg-destructive/15 text-destructive border-destructive/30",
+  PERMANENTE: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
+  INDETERMINADO: "bg-muted text-muted-foreground border-border",
+};
+
+const ESTADO_VENC_LABELS: Record<EstadoVencimiento, string> = {
+  VIGENTE: "Vigente",
+  PROXIMO: "Próximo",
+  VENCIDO: "Vencido",
+  PERMANENTE: "Permanente",
+  INDETERMINADO: "Sin dato",
+};
+
+/** Licencias y certificados del piloto, con su copia adjunta si existe. */
+function DocumentosCard({
+  pilotoId,
+  vencimientos,
+}: {
+  pilotoId: string;
+  vencimientos: Expiration[];
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2 space-y-0">
+        <CardTitle className="text-base flex items-center gap-2">
+          <DocumentCheckIcon className="h-4 w-4 text-muted-foreground" />
+          Documentos y licencias
+        </CardTitle>
+        <Link
+          href={`/admin/expirations?piloto_id=${pilotoId}`}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+        >
+          Gestionar <ChevronRightIcon className="h-3.5 w-3.5" />
+        </Link>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {vencimientos.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Sin documentos registrados. Regístralos en Vencimientos (licencia,
+            certificado médico…) para que el sistema vigile su vigencia.
+          </p>
+        ) : (
+          vencimientos.map((v) => (
+            <div
+              key={v.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {v.tipo?.nombre ?? "Documento"}
+                  {v.referencia && (
+                    <span className="text-muted-foreground font-normal">
+                      {" "}
+                      · {v.referencia}
+                    </span>
+                  )}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {v.vence_por === "FECHA" && v.fecha_vencimiento
+                    ? `Vence ${sharedFmtDate(v.fecha_vencimiento)}`
+                    : v.vence_por === "PERMANENTE"
+                      ? "Permanente"
+                      : v.fecha_vencimiento
+                        ? `Vence ${sharedFmtDate(v.fecha_vencimiento)}`
+                        : "—"}
+                </p>
+                {v.archivo_url && <VerDocumentoButton expirationId={v.id} />}
+              </div>
+              <Badge variant="outline" className={ESTADO_VENC_STYLES[v.estado]}>
+                {ESTADO_VENC_LABELS[v.estado]}
+              </Badge>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

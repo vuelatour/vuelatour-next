@@ -10,6 +10,7 @@ import {
   PencilSquareIcon,
   TrashIcon,
   ShieldCheckIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,9 +44,12 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createInsuranceAction,
   deleteInsuranceAction,
+  getSeguroArchivoAction,
   updateInsuranceAction,
 } from "@/app/admin/aircraft/actions";
 import { InsuranceFormSchema, type InsuranceFormValues } from "@/app/admin/aircraft/schema";
+import { DocumentoField } from "@/components/admin/expirations/documento-field";
+import { deleteDocumentoFlota } from "@/lib/storage/documentos-flota";
 import { fmtUsd } from "@/lib/format";
 import type { AeronaveSeguro } from "@/types/aircraft";
 import { Field } from "@/components/admin/form-field";
@@ -147,6 +151,23 @@ export function AircraftInsuranceCard({
                     {s.suma_asegurada_usd ? ` · Suma ${fmtUsd(s.suma_asegurada_usd)}` : ""}
                     {s.prima_usd ? ` · Prima ${fmtUsd(s.prima_usd)}` : ""}
                   </p>
+                  {s.archivo_url && (
+                    <button
+                      type="button"
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline"
+                      onClick={async () => {
+                        const res = await getSeguroArchivoAction(s.id);
+                        if (res.ok && res.data?.url) {
+                          window.open(res.data.url, "_blank", "noopener");
+                        } else {
+                          toast.error(res.error ?? "No se pudo abrir la póliza");
+                        }
+                      }}
+                    >
+                      <DocumentTextIcon className="h-3 w-3" />
+                      Ver póliza
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {(() => {
@@ -240,20 +261,39 @@ function InsuranceDialog({
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<InsuranceFormValues>({
     resolver: zodResolver(InsuranceFormSchema),
     defaultValues: defaults(initial),
   });
 
+  // Cerrar/cancelar con un archivo subido pero no guardado deja un huérfano
+  // en el bucket (mismo patrón que el form de vencimientos).
+  const handleClose = (next: boolean) => {
+    if (!next) {
+      const actual = watch("archivo_url") || null;
+      const guardado = initial?.archivo_url ?? null;
+      if (actual && actual !== guardado) void deleteDocumentoFlota(actual);
+    }
+    onOpenChange(next);
+  };
+
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // Quitar la copia en edición = null explícito (el "" se descarta en la
+      // action y el PATCH conservaría la anterior).
+      const payload =
+        isEdit && !values.archivo_url && initial?.archivo_url
+          ? { ...values, archivo_url: null }
+          : values;
       const res = isEdit
-        ? await updateInsuranceAction(aircraftId, initial!.id, values)
+        ? await updateInsuranceAction(aircraftId, initial!.id, payload)
         : await createInsuranceAction(aircraftId, values);
       if (res.ok) {
         toast.success(isEdit ? "Póliza actualizada" : "Póliza agregada");
-        onOpenChange(false);
+        onOpenChange(false); // guardado: NO limpiar el adjunto recién guardado
       } else if (res.fieldErrors) {
         const f = Object.keys(res.fieldErrors)[0];
         toast.error(`${f}: ${res.fieldErrors[f]?.[0] ?? "Validación falló"}`);
@@ -264,7 +304,7 @@ function InsuranceDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar póliza" : "Nueva póliza"}</DialogTitle>
@@ -301,8 +341,23 @@ function InsuranceDialog({
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea rows={2} placeholder="Opcional" {...register("notas")} />
           </Field>
+          <Field
+            label="Copia de la póliza"
+            hint="PDF o foto, máx. 10 MB. Se guarda en privado; solo la oficina la ve."
+          >
+            <DocumentoField
+              value={watch("archivo_url") || null}
+              onChange={(path) =>
+                setValue("archivo_url", path ?? "", { shouldDirty: true })
+              }
+              savedValue={initial?.archivo_url ?? null}
+              firmar={
+                isEdit ? () => getSeguroArchivoAction(initial!.id) : undefined
+              }
+            />
+          </Field>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={pending}>
               Cancelar
             </Button>
             <Button type="submit" disabled={pending}>

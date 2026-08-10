@@ -31,6 +31,8 @@ export function DocumentoField({
   onChange,
   expirationId,
   savedValue = null,
+  firmar,
+  onFile: notificarFile,
 }: {
   value: string | null;
   onChange: (path: string | null) => void;
@@ -38,6 +40,11 @@ export function DocumentoField({
   /** PATH ya PERSISTIDO en el vencimiento (para saber si "Ver" puede firmar
    *  o hay que guardar primero). El del alta nueva es null. */
   savedValue?: string | null;
+  /** Firma alternativa del documento GUARDADO (ej. pólizas de seguro). Si no
+   *  se da, "Ver" usa el endpoint de vencimientos con `expirationId`. */
+  firmar?: () => Promise<{ ok: boolean; data?: { url: string }; error?: string }>;
+  /** Se llama con el File original tras subirlo (para lectura IA aguas arriba). */
+  onFile?: (file: File) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [subiendo, setSubiendo] = useState(false);
@@ -63,6 +70,7 @@ export function DocumentoField({
       // subido esta sesión y aún no guardado). El guardado nunca se toca.
       if (value && value !== savedValue) void deleteDocumentoFlota(value);
       onChange(path);
+      notificarFile?.(file);
       toast.success("Documento adjunto — guarda para conservarlo.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo subir");
@@ -72,8 +80,8 @@ export function DocumentoField({
   };
 
   const ver = () => {
-    if (!expirationId) {
-      toast.info("Guarda el vencimiento para poder ver el documento.");
+    if (!expirationId && !firmar) {
+      toast.info("Guarda el registro para poder ver el documento.");
       return;
     }
     if (value !== savedValue) {
@@ -81,7 +89,9 @@ export function DocumentoField({
       return;
     }
     startVer(async () => {
-      const res = await getExpirationArchivoAction(expirationId);
+      const res = firmar
+        ? await firmar()
+        : await getExpirationArchivoAction(expirationId!);
       if (res.ok && res.data?.url) {
         window.open(res.data.url, "_blank", "noopener");
       } else {

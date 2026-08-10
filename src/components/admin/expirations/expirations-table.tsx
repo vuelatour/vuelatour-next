@@ -9,6 +9,7 @@ import { fmtDecimal } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ExpirationActions } from "@/components/admin/expirations/expiration-actions";
+import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type {
   AircraftOption,
   EngineOption,
@@ -41,6 +42,9 @@ interface ExpirationsTableProps {
   aircraft: AircraftOption[];
   pilots: PilotOption[];
   engines: EngineOption[];
+  /** false para MECANICO: consulta la lista pero editar/borrar/ver documento
+   *  son de oficina (el API le respondería 403 — no pintarle botones rotos). */
+  canManage?: boolean;
 }
 
 export function ExpirationsTable({
@@ -49,6 +53,7 @@ export function ExpirationsTable({
   aircraft,
   pilots,
   engines,
+  canManage = true,
 }: ExpirationsTableProps) {
   const columns: Array<DataTableColumn<ExpirationRow>> = [
     {
@@ -68,15 +73,22 @@ export function ExpirationsTable({
           {e.referencia && (
             <div className="text-[10px] text-muted-foreground">Ref. {e.referencia}</div>
           )}
-          {e.archivo_url && (
-            <div
-              className="text-[10px] text-muted-foreground inline-flex items-center gap-1"
-              title="Tiene copia del documento adjunta (ábrela desde ⋯ → Editar → Ver)"
-            >
-              <PaperClipIcon className="h-3 w-3" />
-              Documento adjunto
-            </div>
-          )}
+          {e.archivo_url &&
+            (canManage ? (
+              <VerDocumentoButton
+                expirationId={e.id}
+                label="Ver documento"
+                className="text-[10px] text-brand-600 hover:underline inline-flex items-center gap-1"
+              />
+            ) : (
+              <div
+                className="text-[10px] text-muted-foreground inline-flex items-center gap-1"
+                title="Tiene copia adjunta; solo la oficina puede abrirla"
+              >
+                <PaperClipIcon className="h-3 w-3" />
+                Documento adjunto
+              </div>
+            ))}
         </>
       ),
     },
@@ -129,7 +141,10 @@ export function ExpirationsTable({
         </Badge>
       ),
     },
-    {
+  ];
+
+  if (canManage) {
+    columns.push({
       key: "acciones",
       header: "",
       headClassName: "w-12",
@@ -143,8 +158,8 @@ export function ExpirationsTable({
           engines={engines}
         />
       ),
-    },
-  ];
+    });
+  }
 
   return (
     <DataTable

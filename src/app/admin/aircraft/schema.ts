@@ -140,7 +140,8 @@ export const InsuranceFormSchema = z.object({
   prima_usd: optionalNonNegative,
   vigente_desde: z.string().min(1, "Requerido"),
   vigente_hasta: z.string().min(1, "Requerido"),
-  archivo_url: z.string().max(1000).optional().or(z.literal("")),
+  // null explícito = quitar la copia (el API borra el archivo del bucket).
+  archivo_url: z.string().max(1000).nullable().optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 export type InsuranceFormValues = z.input<typeof InsuranceFormSchema>;

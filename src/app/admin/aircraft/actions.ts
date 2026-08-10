@@ -340,6 +340,21 @@ export async function deleteInsuranceAction(
   }
 }
 
+/** URL firmada (1 h) de la copia de la póliza (bucket privado, solo oficina). */
+export async function getSeguroArchivoAction(
+  seguroId: string,
+): Promise<ActionResult<{ url: string }>> {
+  try {
+    const data = await apiServer<{ url: string }>(
+      `/v1/aircraft/insurance/${seguroId}/archivo`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ===== Discrepancias (squawks) =====
 
 export async function createSquawkAction(

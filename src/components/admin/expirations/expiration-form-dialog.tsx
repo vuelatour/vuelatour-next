@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   createExpirationAction,
+  extraerVencimientoAction,
   updateExpirationAction,
 } from "@/app/admin/expirations/actions";
 import {
@@ -28,7 +29,11 @@ import { FORMA_OPTIONS } from "@/app/admin/document-types/schema";
 import type { DocumentType, Expiration } from "@/types/expirations";
 import { Field } from "@/components/admin/form-field";
 import { DocumentoField } from "./documento-field";
-import { deleteDocumentoFlota } from "@/lib/storage/documentos-flota";
+import {
+  deleteDocumentoFlota,
+  fileToBase64,
+  MAX_BYTES_IA,
+} from "@/lib/storage/documentos-flota";
 
 export interface AircraftOption {
   id: string;
@@ -105,6 +110,72 @@ export function ExpirationFormDialog({
     setValue("aeronave_id", "");
     setValue("piloto_id", "");
     setValue("motor_id", "");
+  };
+
+  // Lectura IA del documento recién adjuntado (doc 7.6): pre-llena SOLO los
+  // campos VACÍOS (jamás pisa lo tecleado) y siempre se revisa antes de
+  // guardar. Best-effort: si la IA no está configurada o falla, silencio y
+  // captura manual.
+  const onArchivoFile = (file: File) => {
+    void (async () => {
+      if (file.size > MAX_BYTES_IA) return;
+      try {
+        const base64 = await fileToBase64(file);
+        const res = await extraerVencimientoAction(
+          file.type === "application/pdf"
+            ? { pdfBase64: base64 }
+            : { imageBase64: base64, mediaType: file.type },
+        );
+        if (!res.ok || !res.data?.disponible) return;
+        const d = res.data;
+        let llenados = 0;
+        if (!watch("tipo_documento_id") && d.tipo_documento) {
+          const nombre = d.tipo_documento.toLowerCase();
+          const tipo = documentTypes.find(
+            (t) =>
+              t.nombre.toLowerCase() === nombre ||
+              t.nombre.toLowerCase().includes(nombre) ||
+              nombre.includes(t.nombre.toLowerCase()),
+          );
+          if (tipo) {
+            onTipoChange(tipo.id);
+            llenados++;
+          }
+        }
+        // La matrícula solo aplica si el tipo (elegido o recién deducido) es
+        // de aeronave: en ámbito PILOTO/MOTOR el API rechaza aeronave_id.
+        const tipoActual = documentTypes.find(
+          (t) => t.id === watch("tipo_documento_id"),
+        );
+        if (
+          tipoActual?.ambito === "AERONAVE" &&
+          !watch("aeronave_id") &&
+          d.matricula
+        ) {
+          const mat = d.matricula.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+          const avion = aircraft.find(
+            (a) => a.matricula.replace(/[^A-Za-z0-9]/g, "").toUpperCase() === mat,
+          );
+          if (avion) {
+            setValue("aeronave_id", avion.id);
+            llenados++;
+          }
+        }
+        if (!watch("fecha_vencimiento") && d.fecha_vencimiento) {
+          setValue("fecha_vencimiento", d.fecha_vencimiento, {
+            shouldDirty: true,
+          });
+          llenados++;
+        }
+        if (llenados > 0) {
+          toast.success(
+            `La IA leyó el documento y pre-llenó ${llenados} campo(s). Revisa antes de guardar.`,
+          );
+        }
+      } catch {
+        // best-effort: la captura manual sigue intacta
+      }
+    })();
   };
 
   // Cerrar/cancelar con un archivo SUBIDO pero no guardado deja un huérfano
@@ -282,7 +353,7 @@ export function ExpirationFormDialog({
 
           <Field
             label="Copia del documento"
-            hint="Adjunta el permiso/licencia escaneado o fotografiado (PDF o imagen, máx. 10 MB). Se guarda en privado; solo la oficina lo ve."
+            hint="Adjunta el permiso/licencia escaneado o fotografiado (PDF o imagen, máx. 10 MB). Se guarda en privado; solo la oficina lo ve. Al adjuntar, la IA intenta pre-llenar los campos vacíos."
           >
             <DocumentoField
               value={(watch("archivo_url") as string | null) ?? null}
@@ -291,6 +362,7 @@ export function ExpirationFormDialog({
               }
               expirationId={initialExpiration?.id}
               savedValue={initialExpiration?.archivo_url ?? null}
+              onFile={onArchivoFile}
             />
           </Field>
 

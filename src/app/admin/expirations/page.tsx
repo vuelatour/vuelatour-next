@@ -8,6 +8,7 @@ import {
 } from "@/components/admin/expirations/expirations-table";
 import { listExpirations } from "@/lib/api/expirations-server";
 import { listDocumentTypes } from "@/lib/api/document-types-server";
+import { getMe } from "@/lib/api/me";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
 import { listEngines } from "@/lib/api/engines-server";
@@ -26,6 +27,10 @@ interface ExpirationsPageProps {
 
 export default async function ExpirationsPage({ searchParams }: ExpirationsPageProps) {
   const sp = await searchParams;
+  // MECANICO consulta la lista, pero crear/editar/borrar/ver documento son de
+  // oficina (el API le responde 403): no pintarle botones que fallan.
+  const me = await getMe();
+  const canManage = me.rol === "ADMIN" || me.rol === "COORDINADOR";
 
   const [expRes, typesRes, aircraftRes, pilotsRes, enginesRes] = await Promise.all([
     listExpirations({
@@ -104,12 +109,14 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
             .
           </p>
         </div>
-        <ExpirationCreateButton
-          documentTypes={typesRes.data}
-          aircraft={aircraftOpts}
-          pilots={pilotOpts}
-          engines={engineOpts}
-        />
+        {canManage && (
+          <ExpirationCreateButton
+            documentTypes={typesRes.data}
+            aircraft={aircraftOpts}
+            pilots={pilotOpts}
+            engines={engineOpts}
+          />
+        )}
       </div>
 
       <ExpirationsFilterBar
@@ -138,6 +145,7 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
               aircraft={aircraftOpts}
               pilots={pilotOpts}
               engines={engineOpts}
+              canManage={canManage}
             />
           </CardContent>
         </Card>

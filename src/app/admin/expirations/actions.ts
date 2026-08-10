@@ -66,6 +66,37 @@ export async function updateExpirationAction(
   }
 }
 
+export interface ExtraccionVencimiento {
+  disponible: boolean;
+  matricula?: string | null;
+  tipo_documento?: string | null;
+  fecha_vigencia?: string | null;
+  fecha_vencimiento?: string | null;
+  emisor?: string | null;
+  confianza?: number;
+}
+
+/**
+ * Lee por IA el documento adjuntado (PDF/imagen en base64) para pre-llenar el
+ * alta del vencimiento. Best-effort: `disponible=false` si la IA no está
+ * configurada — el formulario sigue en captura manual.
+ */
+export async function extraerVencimientoAction(input: {
+  pdfBase64?: string;
+  imageBase64?: string;
+  mediaType?: string;
+}): Promise<ActionResult<ExtraccionVencimiento>> {
+  try {
+    const data = await apiServer<ExtraccionVencimiento>(
+      "/v1/expirations/extraer",
+      { method: "POST", body: input },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** URL firmada (1 h) de la copia del documento adjunto (bucket privado). */
 export async function getExpirationArchivoAction(
   id: string,

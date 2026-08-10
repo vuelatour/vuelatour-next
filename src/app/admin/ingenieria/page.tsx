@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { getFleetUpcoming } from "@/lib/api/engineering-server";
+import { getMe } from "@/lib/api/me";
+import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 
 export const dynamic = "force-dynamic";
 
@@ -23,18 +25,46 @@ export default async function IngenieriaPage() {
   // reintento), no un "Nada próximo en 90 días" que oculta vencimientos
   // críticos de aeronavegabilidad.
   const { vencimientos, mantenimientos } = await getFleetUpcoming(90);
+  // Ver documento = solo oficina (el endpoint firma con service key y regresa
+  // 403 a otros roles: no pintarles un botón que falla).
+  const me = await getMe();
+  const canVerDocs = me.rol === "ADMIN" || me.rol === "COORDINADOR";
 
-  type Row = { id: string; matricula: string; concepto: string; fecha: string; dias: number; critico?: boolean; href: string };
+  type Row = {
+    id: string;
+    matricula: string;
+    concepto: string;
+    fecha: string;
+    dias: number;
+    critico?: boolean;
+    href: string;
+    /** id del vencimiento con copia adjunta (pinta "Ver documento"). */
+    docId?: string;
+  };
   const rows: Row[] = [
-    ...vencimientos.map((v) => ({
-      id: `v-${v.id}`,
-      matricula: v.aeronave?.matricula ?? "—",
-      concepto: v.tipo_documento?.nombre ?? "Vencimiento",
-      fecha: v.fecha_vencimiento,
-      dias: daysUntil(v.fecha_vencimiento),
-      critico: v.tipo_documento?.es_critico,
-      href: `/admin/aircraft/${v.aeronave_id}`,
-    })),
+    ...vencimientos.map((v) => {
+      // Vencimientos de MOTOR heredan el avión del motor; los de PILOTO no
+      // tienen avión: su etiqueta es el piloto y el link va a Vencimientos
+      // (antes se armaba /admin/aircraft/null — link roto).
+      const aeronaveId = v.aeronave_id ?? v.motor?.aeronave_id ?? null;
+      const matricula =
+        v.aeronave?.matricula ??
+        v.motor?.aeronave?.matricula ??
+        v.piloto?.nombre ??
+        "—";
+      return {
+        id: `v-${v.id}`,
+        matricula,
+        concepto: v.tipo_documento?.nombre ?? "Vencimiento",
+        fecha: v.fecha_vencimiento,
+        dias: daysUntil(v.fecha_vencimiento),
+        critico: v.tipo_documento?.es_critico,
+        href: aeronaveId
+          ? `/admin/aircraft/${aeronaveId}`
+          : "/admin/expirations?ambito=PILOTO",
+        docId: canVerDocs && v.tiene_archivo ? v.id : undefined,
+      };
+    }),
     ...mantenimientos.map((m) => ({
       id: `m-${m.id}`,
       matricula: m.aeronave?.matricula ?? "—",
@@ -84,6 +114,7 @@ export default async function IngenieriaPage() {
                     <p className="text-[11px] text-muted-foreground">
                       {fmtDateOnly(r.fecha)}
                     </p>
+                    {r.docId && <VerDocumentoButton expirationId={r.docId} />}
                   </div>
                   <Badge variant="outline" className={diasBadge(r.dias)}>
                     {r.dias <= 0 ? "Vencido" : `${r.dias} d`}

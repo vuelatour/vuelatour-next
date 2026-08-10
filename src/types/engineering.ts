@@ -51,9 +51,17 @@ export interface FleetUpcoming {
     fecha_vencimiento: string;
     vence_por: string;
     referencia: string | null;
-    aeronave_id: string;
+    // null en vencimientos de PILOTO o MOTOR (el avión sale de motor.aeronave).
+    aeronave_id: string | null;
+    tiene_archivo?: boolean;
     tipo_documento?: { nombre: string; es_critico: boolean } | null;
     aeronave?: { matricula: string } | null;
+    piloto?: { nombre: string } | null;
+    motor?: {
+      posicion?: string | null;
+      aeronave_id: string | null;
+      aeronave?: { matricula: string } | null;
+    } | null;
   }>;
   mantenimientos: Array<{
     id: string;

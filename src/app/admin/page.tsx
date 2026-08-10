@@ -12,6 +12,7 @@ import { getMe } from "@/lib/api/me";
 import { getDashboardOperativo } from "@/lib/api/dashboards-server";
 import { getFleetUpcoming } from "@/lib/api/engineering-server";
 import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
+import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type { DashboardOperativo } from "@/types/dashboards";
 import type { FleetUpcoming } from "@/types/engineering";
 
@@ -36,13 +37,19 @@ export default async function AdminDashboardPage() {
     getFleetUpcoming(45).catch(() => null as FleetUpcoming | null),
   ]);
 
+  const canVerDocs = me.rol === "ADMIN" || me.rol === "COORDINADOR";
   const proximos = [
     ...(upcoming?.vencimientos ?? []).map((v) => ({
       id: `v-${v.id}`,
       label: v.tipo_documento?.nombre ?? "Vencimiento",
-      matricula: v.aeronave?.matricula,
+      // MOTOR hereda el avión del motor; PILOTO muestra el nombre del piloto.
+      matricula:
+        v.aeronave?.matricula ??
+        v.motor?.aeronave?.matricula ??
+        v.piloto?.nombre,
       fecha: v.fecha_vencimiento,
       critico: v.tipo_documento?.es_critico ?? false,
+      docId: canVerDocs && v.tiene_archivo ? v.id : undefined,
     })),
     ...(upcoming?.mantenimientos ?? []).map((m) => ({
       id: `m-${m.id}`,
@@ -50,6 +57,7 @@ export default async function AdminDashboardPage() {
       matricula: m.aeronave?.matricula,
       fecha: m.fecha_programada,
       critico: false,
+      docId: undefined as string | undefined,
     })),
   ]
     .map((x) => ({ ...x, dias: daysUntil(x.fecha) }))
@@ -105,6 +113,9 @@ export default async function AdminDashboardPage() {
                       <span className="text-muted-foreground font-mono"> · {p.matricula}</span>
                     )}
                   </span>
+                  {p.docId && (
+                    <VerDocumentoButton expirationId={p.docId} label="Ver doc." />
+                  )}
                 </div>
                 <Badge
                   variant="outline"

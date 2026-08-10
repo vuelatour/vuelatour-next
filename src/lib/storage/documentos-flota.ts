@@ -60,6 +60,25 @@ export async function deleteDocumentoFlota(path: string): Promise<void> {
   }
 }
 
+/**
+ * File → base64 SIN prefijo data: (contrato de POST /v1/expirations/extraer).
+ * Límite 8 MB: más allá, el base64 (~+33%) rebasa el bodySizeLimit de las
+ * server actions — el caller salta la lectura IA y sigue en captura manual.
+ */
+export const MAX_BYTES_IA = 8 * 1024 * 1024;
+
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function sanitizeName(s: string): string {
   return s
     .toLowerCase()
