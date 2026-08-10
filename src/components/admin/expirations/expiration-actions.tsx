@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { EllipsisHorizontalIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
+import {
+  EllipsisHorizontalIcon,
+  ExclamationTriangleIcon,
+  PencilIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -19,7 +24,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deleteExpirationAction } from "@/app/admin/expirations/actions";
+import {
+  deleteExpirationAction,
+  updateExpirationAction,
+} from "@/app/admin/expirations/actions";
 import {
   ExpirationFormDialog,
   type AircraftOption,
@@ -47,6 +55,26 @@ export function ExpirationActions({
   const [openDelete, setOpenDelete] = useState(false);
   const [pending, startTransition] = useTransition();
 
+  // Ajuste ÁGIL del crítico por documento (las reglas de la autoridad
+  // cambian por semana): escribe el override sin abrir el formulario.
+  const esCritico = expiration.tipo?.es_critico ?? false;
+  const toggleCritico = () => {
+    startTransition(async () => {
+      const result = await updateExpirationAction(expiration.id, {
+        critico: !esCritico,
+      });
+      if (result.ok) {
+        toast.success(
+          !esCritico
+            ? "Marcado como crítico: alerta al vencer."
+            : "Ya no es crítico: deja de alertar al vencer.",
+        );
+      } else {
+        toast.error(result.error ?? "No se pudo cambiar");
+      }
+    });
+  };
+
   const handleDelete = () => {
     startTransition(async () => {
       const result = await deleteExpirationAction(expiration.id);
@@ -70,6 +98,10 @@ export function ExpirationActions({
           <DropdownMenuItem onSelect={() => setOpenEdit(true)} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={toggleCritico} className="gap-2">
+            <ExclamationTriangleIcon className="h-4 w-4" />
+            {esCritico ? "Quitar crítico" : "Marcar como crítico"}
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => setOpenDelete(true)}

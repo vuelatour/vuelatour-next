@@ -22,6 +22,9 @@ export const ExpirationFormSchema = z.object({
   umbral_alerta_dias: z
     .union([z.coerce.number().int().min(0).max(365), z.literal("")])
     .optional(),
+  // Override por documento del "crítico" del tipo (las reglas cambian por
+  // semana): true/false = manda sobre el tipo; ausente = no tocar.
+  critico: z.boolean().nullable().optional(),
   referencia: z.string().max(100).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });

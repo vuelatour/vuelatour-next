@@ -270,27 +270,61 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                   <VencimientoRowActions vencimiento={v} onSaved={reload} />
-                  {v.tipo_documento?.es_critico &&
-                    (v.vence_por === "PERMANENTE" ? (
-                      // Un permanente NUNCA se vence, así que NUNCA puede
-                      // bloquear: pintarlo en ámbar como los demás críticos
-                      // era una alarma falsa.
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 text-muted-foreground"
-                        title="Es un documento crítico, pero está registrado como PERMANENTE: no vence, así que nunca deja al avión no apto. Si en realidad sí tiene fecha de vigencia, edítalo en Vencimientos y ponle «Vence por fecha» para que el sistema lo vigile."
-                      >
-                        Crítico · no vence
-                      </Badge>
+                  {/* Toggle ÁGIL del crítico POR DOCUMENTO: las reglas de la
+                      autoridad cambian por semana — un clic escribe el
+                      override sin abrir formularios. */}
+                  <button
+                    type="button"
+                    className="shrink-0"
+                    onClick={async () => {
+                      const efectivo = v.tipo_documento?.es_critico ?? false;
+                      const res = await updateExpirationAction(v.id, {
+                        critico: !efectivo,
+                      });
+                      if (res.ok) {
+                        toast.success(
+                          !efectivo
+                            ? "Marcado como crítico: el avión se pondrá en rojo si vence."
+                            : "Ya no es crítico: deja de alertar al vencer.",
+                        );
+                        void reload();
+                      } else {
+                        toast.error(res.error ?? "No se pudo cambiar");
+                      }
+                    }}
+                    title={
+                      v.tipo_documento?.es_critico
+                        ? v.vence_por === "PERMANENTE"
+                          ? "Crítico pero PERMANENTE: no vence, así que nunca alerta. Clic para quitarle el crítico; si en realidad sí tiene vigencia, edítalo y ponle «Vence por fecha»."
+                          : "Documento crítico: si se vence, el avión se pone EN ROJO y administración recibe alerta diaria (se puede seguir asignando). Clic para quitarle el crítico."
+                        : "Este documento NO es crítico: al vencer no alerta. Clic para marcarlo crítico."
+                    }
+                  >
+                    {v.tipo_documento?.es_critico ? (
+                      v.vence_por === "PERMANENTE" ? (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-muted-foreground"
+                        >
+                          Crítico · no vence
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 shrink-0"
+                        >
+                          Crítico
+                        </Badge>
+                      )
                     ) : (
                       <Badge
                         variant="outline"
-                        className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 shrink-0"
-                        title="Documento crítico: si se vence, el avión queda NO APTO y el sistema bloquea asignarlo a un vuelo hasta renovarlo. Vigente no estorba."
+                        className="shrink-0 text-muted-foreground/60"
                       >
-                        Crítico
+                        No crítico
                       </Badge>
-                    ))}
+                    )}
+                  </button>
                   </div>
                 </div>
               ))}
