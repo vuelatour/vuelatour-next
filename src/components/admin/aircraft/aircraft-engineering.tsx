@@ -315,7 +315,7 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                       v.tipo_documento?.es_critico
                         ? v.vence_por === "PERMANENTE"
                           ? "Crítico pero PERMANENTE: no vence, así que nunca alerta. Clic para quitarle el crítico; si en realidad sí tiene vigencia, edítalo y ponle «Vence por fecha»."
-                          : "Documento crítico: si se vence, el avión se pone EN ROJO y administración recibe alerta diaria (se puede seguir asignando). Clic para quitarle el crítico."
+                          : "Documento crítico: si se vence, el avión se pone EN ROJO y administración recibe un recordatorio semanal (se puede seguir asignando). Clic para quitarle el crítico."
                         : "Este documento NO es crítico: al vencer no alerta. Clic para marcarlo crítico."
                     }
                   >

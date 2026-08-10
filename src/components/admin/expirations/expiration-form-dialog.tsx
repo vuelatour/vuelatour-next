@@ -28,6 +28,7 @@ import { FORMA_OPTIONS } from "@/app/admin/document-types/schema";
 import type { DocumentType, Expiration } from "@/types/expirations";
 import { Field } from "@/components/admin/form-field";
 import { DocumentoField } from "./documento-field";
+import { deleteDocumentoFlota } from "@/lib/storage/documentos-flota";
 
 export interface AircraftOption {
   id: string;
@@ -106,6 +107,17 @@ export function ExpirationFormDialog({
     setValue("motor_id", "");
   };
 
+  // Cerrar/cancelar con un archivo SUBIDO pero no guardado deja un huérfano
+  // en el bucket: si el path del form difiere del persistido, se borra.
+  const handleClose = (next: boolean) => {
+    if (!next) {
+      const actual = (watch("archivo_url") as string | null) ?? null;
+      const guardado = initialExpiration?.archivo_url ?? null;
+      if (actual && actual !== guardado) void deleteDocumentoFlota(actual);
+    }
+    onOpenChange(next);
+  };
+
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
       // Al EDITAR un "por horas" y vaciar la fecha calendario, hay que mandar
@@ -120,7 +132,7 @@ export function ExpirationFormDialog({
 
       if (result.ok) {
         toast.success(isEdit ? "Vencimiento actualizado" : "Vencimiento registrado");
-        onOpenChange(false);
+        onOpenChange(false); // guardado: NO limpiar (handleClose borraría el adjunto recién guardado)
       } else if (result.fieldErrors) {
         const f = Object.keys(result.fieldErrors)[0];
         toast.error(`${f}: ${result.fieldErrors[f]?.[0] ?? "Inválido"}`);
@@ -131,7 +143,7 @@ export function ExpirationFormDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar vencimiento" : "Nuevo vencimiento"}</DialogTitle>
@@ -286,7 +298,7 @@ export function ExpirationFormDialog({
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleClose(false)}
               disabled={pending}
             >
               Cancelar

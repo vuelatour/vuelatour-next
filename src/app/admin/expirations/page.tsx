@@ -9,7 +9,7 @@ import {
 import { listExpirations } from "@/lib/api/expirations-server";
 import { listDocumentTypes } from "@/lib/api/document-types-server";
 import { listAircraft } from "@/lib/api/aircraft";
-import { listUsers } from "@/lib/api/users-server";
+import { listPilots } from "@/lib/api/pilots-server";
 import { listEngines } from "@/lib/api/engines-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
@@ -37,7 +37,12 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
     }),
     listDocumentTypes({ limit: 200, activo: true }),
     listAircraft({ limit: 100 }),
-    listUsers({ rol: "PILOTO", limit: 100 }),
+    // Pilotos vía /pilots (ADMIN+COORDINADOR) y no /users (ADMIN): sin esto,
+    // COORDINADOR no podía cargar la página. Tolerante: MECANICO (que ve la
+    // lista pero no /pilots) cae a etiqueta genérica en vez de romper.
+    listPilots({ estado: "ACTIVO", limit: 100 }).catch(() => ({
+      data: [] as { id: string; nombre: string }[],
+    })),
     listEngines({ limit: 100 }),
   ]);
 
