@@ -61,6 +61,8 @@ export const GastoVerifySchema = z.object({
   estatus_comprobante: EstatusEnum.optional(),
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
   proveedor_id: z.string().uuid().optional().or(z.literal("")),
+  /** Folio/remisión del ticket: candado anti-duplicados del API (409 si ya existe). */
+  folio_ticket: z.string().max(60).optional().or(z.literal("")),
   // TC MXN→USD del gasto: sin él, un gasto MXN queda FUERA del balance USD
   // del reparto (y bloquea el pre-cierre). Aquí es donde se corrige.
   tc_gasto: z.preprocess(
@@ -96,6 +98,8 @@ export const GastoCreateSchema = z.object({
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
   vuelo_id: z.string().uuid().optional().or(z.literal("")),
   proveedor_id: z.string().uuid().optional().or(z.literal("")),
+  /** Folio/remisión del ticket: candado anti-duplicados del API (409 si ya existe). */
+  folio_ticket: z.string().max(60).optional().or(z.literal("")),
   tc_gasto: z.preprocess(
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().positive("TC inválido").optional(),
@@ -125,6 +129,8 @@ export type GastoCreateValues = {
   aeronave_id: string;
   vuelo_id: string;
   proveedor_id: string;
+  /** Folio/remisión del ticket: candado anti-duplicados del API. */
+  folio_ticket: string;
   tc_gasto: string;
   notas: string;
 };
@@ -142,6 +148,7 @@ export type GastoVerifyValues = {
   estatus_comprobante: string;
   aeronave_id: string;
   proveedor_id: string;
+  folio_ticket: string;
   tc_gasto: string;
   notas: string;
 };

@@ -101,6 +101,7 @@ function emptyValues(defaults?: {
     aeronave_id: defaults?.aeronaveId ?? "",
     vuelo_id: defaults?.vueloId ?? "",
     proveedor_id: "",
+    folio_ticket: "",
     tc_gasto: "",
     notas: "",
   };
@@ -202,6 +203,10 @@ export function ExpenseCreateDialog({
       setValue("medio_pago", ai.medio_pago);
     }
     // Proveedor: match laxo contra el catálogo por nombre.
+    if (ai.folio && !watch("folio_ticket")) {
+      setValue("folio_ticket", String(ai.folio).slice(0, 60));
+      llenado.push("folio");
+    }
     if (ai.proveedor) {
       const needle = ai.proveedor.toLowerCase();
       const match = providers.find(
@@ -739,6 +744,17 @@ export function ExpenseCreateDialog({
                 value={watch("proveedor_id")}
                 onChange={(v) => setValue("proveedor_id", v)}
                 placeholder="Sin proveedor"
+              />
+            </Field>
+
+            <Field
+              label="Folio / remisión del ticket"
+              hint="La IA lo llena al adjuntar la foto. Si otro gasto ya trae el mismo folio, el sistema rechaza la captura: es el candado anti-duplicados."
+            >
+              <Input
+                className="font-mono"
+                placeholder="Ej. 2622242310"
+                {...register("folio_ticket")}
               />
             </Field>
 

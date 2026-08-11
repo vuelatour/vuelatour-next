@@ -16,6 +16,8 @@ export interface Gasto {
   proveedor_id: string | null;
   medio_pago: string;
   tarjeta_terminacion: string | null;
+  /** Folio/remisión del ticket (llave anti-duplicados; puede venir de la IA). */
+  folio_ticket: string | null;
   /** Detalle de cargas de combustible (categoria GAS). */
   litros: string | null;
   tipo_combustible: "TURBOSINA" | "AVGAS" | null;

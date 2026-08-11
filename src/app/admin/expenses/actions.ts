@@ -56,6 +56,8 @@ export interface GastoTicketIA {
   moneda?: "MXN" | "USD" | null;
   fecha?: string | null;
   proveedor?: string | null;
+  /** Folio/remisión impreso en el ticket (llave anti-duplicados). */
+  folio?: string | null;
   concepto?: string | null;
   categoria_sugerida?: string | null;
   medio_pago?: string | null;

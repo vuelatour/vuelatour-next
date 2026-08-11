@@ -355,6 +355,17 @@ export function ExpenseVerifyDialog({
             </Field>
           </div>
 
+          <Field
+            label="Folio / remisión del ticket"
+            hint="Candado anti-duplicados: otro gasto con el mismo folio se rechaza."
+          >
+            <Input
+              className="font-mono"
+              placeholder="Ej. 2622242310"
+              {...register("folio_ticket")}
+            />
+          </Field>
+
           {watch("moneda") === "MXN" && (
             <Field
               label="Tipo de cambio (MXN por USD)"
@@ -481,6 +492,7 @@ function defaults(g: Gasto): GastoVerifyValues {
     estatus_comprobante: g.estatus_comprobante,
     aeronave_id: g.aeronave_id ?? "",
     proveedor_id: g.proveedor_id ?? "",
+    folio_ticket: g.folio_ticket ?? "",
     tc_gasto: g.tc_gasto != null ? String(g.tc_gasto) : "",
     notas: g.notas ?? "",
   };
