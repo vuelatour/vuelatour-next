@@ -50,6 +50,9 @@ export interface AircraftMetricsDetalle extends AircraftMetrics {
     horas_objetivo: number;
     faltan_hr: number;
   } | null;
+  /** false = el avión NO tiene programa de servicio capturado (distinto de
+   *  "sin datos"): el KPI lo dice y pide configurarlo. */
+  programa_configurado?: boolean;
 }
 
 export function getAircraftMetrics(id: string) {

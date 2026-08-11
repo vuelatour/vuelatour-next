@@ -56,16 +56,26 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
       <Kpi
         icon={WrenchScrewdriverIcon}
         label="Próximo servicio"
-        value={prox ? `a las ${fmtDecimal(prox.horas_objetivo, 0)} h` : "—"}
+        value={
+          prox
+            ? `a las ${fmtDecimal(prox.horas_objetivo, 0)} h`
+            : metrics.programa_configurado === false
+              ? "Sin programa"
+              : "—"
+        }
         hint={
           prox
             ? `${prox.titulo} · faltan ${fmtDecimal(prox.faltan_hr, 1)} h`
-            : undefined
+            : metrics.programa_configurado === false
+              ? "Sin vigilancia por horas: configúralo en Tacómetros → Editar programa"
+              : undefined
         }
         valueClass={
           prox && prox.faltan_hr < 10
             ? "text-amber-600 dark:text-amber-400"
-            : undefined
+            : metrics.programa_configurado === false
+              ? "text-amber-600 dark:text-amber-400"
+              : undefined
         }
       />
       <Kpi

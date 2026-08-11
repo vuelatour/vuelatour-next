@@ -38,6 +38,9 @@ export interface Aircraft {
   updated_at: string;
   /** Foto principal de la galería (para el avatar del listado). */
   imagen_principal_url?: string | null;
+  /** Semáforo APTO/NO APTO (solo en el listado; mismo cálculo que el detalle). */
+  apto?: boolean;
+  no_apto_razones?: string[];
 }
 
 /** Histórico de tacómetros + estatus de servicio de una aeronave. */
@@ -186,6 +189,9 @@ export interface AeronaveDiscrepancia {
 }
 
 export interface AircraftSnapshot extends Aircraft {
+  /** Semáforo apto-para-volar: SIEMPRE presente en el snapshot (a diferencia
+   *  de /metrics, que está gateado por roles financieros). */
+  airworthiness?: { apto: boolean; razones: string[] };
   motors: Motor[];
   propellers: Propeller[];
   owners: AircraftOwner[];

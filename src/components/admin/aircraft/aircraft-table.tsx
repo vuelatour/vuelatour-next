@@ -99,12 +99,20 @@ const columns: Array<DataTableColumn<Aircraft>> = [
     headClassName: "text-center",
     cellClassName: "text-center",
     cell: (a) =>
-      a.activa ? (
-        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
-          Activa
+      !a.activa ? (
+        <Badge variant="secondary">Inactiva</Badge>
+      ) : a.apto === false ? (
+        // Motivos en el tooltip; el detalle trae el desglose completo.
+        <Badge
+          className="bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/20 cursor-help"
+          title={(a.no_apto_razones ?? []).join("\n")}
+        >
+          No apto
         </Badge>
       ) : (
-        <Badge variant="secondary">Inactiva</Badge>
+        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
+          Apta
+        </Badge>
       ),
   },
   {

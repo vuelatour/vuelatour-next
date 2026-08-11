@@ -93,7 +93,12 @@ export default async function AircraftDetailPage({ params }: PageProps) {
     if (!(isApiError(err) && err.status === 403)) metricsError = true;
   }
 
-  const razones = metrics ? razonesNoApto(metrics.airworthiness) : [];
+  // Aptitud con respaldo del snapshot: /metrics está gateado por roles
+  // financieros y el COORDINADOR se quedaba sin ver el NO APTO.
+  const aptitud = metrics
+    ? { apto: metrics.airworthiness.apto, razones: razonesNoApto(metrics.airworthiness) }
+    : (aircraft.airworthiness ?? null);
+  const razones = aptitud?.razones ?? [];
 
   return (
     <div className="space-y-6">
@@ -122,8 +127,8 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                   En vuelo ahora
                 </Badge>
               )}
-              {metrics &&
-                (metrics.airworthiness.apto ? (
+              {aptitud &&
+                (aptitud.apto ? (
                   <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20">
                     Apto para volar
                   </Badge>
