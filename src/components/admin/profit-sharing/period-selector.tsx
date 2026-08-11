@@ -39,11 +39,19 @@ export function PeriodSelector({ initial }: Props) {
           {/* key = valor: si otro control (p. ej. el selector de mes del
               cierre) cambia el periodo en la URL, el input se re-monta y
               muestra la fecha vigente (defaultValue no se re-aplica solo). */}
+          {/* Rango invertido = ambas fechas al valor nuevo (arrastra la otra):
+              antes el 400 del API tumbaba la página con el selector adentro. */}
           <Input
             key={initial.desde}
             type="date"
+            max={initial.hasta}
             defaultValue={initial.desde}
-            onChange={(e) => pushQuery({ desde: e.target.value })}
+            onChange={(e) => {
+              const v = e.target.value;
+              pushQuery(
+                v && v > initial.hasta ? { desde: v, hasta: v } : { desde: v },
+              );
+            }}
           />
         </div>
         <div className="space-y-1.5">
@@ -51,8 +59,14 @@ export function PeriodSelector({ initial }: Props) {
           <Input
             key={initial.hasta}
             type="date"
+            min={initial.desde}
             defaultValue={initial.hasta}
-            onChange={(e) => pushQuery({ hasta: e.target.value })}
+            onChange={(e) => {
+              const v = e.target.value;
+              pushQuery(
+                v && v < initial.desde ? { desde: v, hasta: v } : { hasta: v },
+              );
+            }}
           />
         </div>
       </CardContent>

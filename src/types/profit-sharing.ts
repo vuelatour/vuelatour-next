@@ -73,7 +73,20 @@ export interface AvionReparto {
   detalle?: AvionRepartoDetalle | null;
 }
 
+/** Vuelos EXTERNOS del periodo (sin avión de flota): bloque informativo — su
+ *  utilidad NO se reparte entre socios hasta que el cliente decida el
+ *  tratamiento. Opcional por tolerancia a APIs sin el campo. */
+export interface ExternosResumen {
+  vuelos: number;
+  cobrado_usd: number;
+  costo_usd: number;
+  utilidad_usd: number;
+  sin_costo_count: number;
+  cobros_sin_tc_mxn: number;
+}
+
 export interface ProfitSharingResult {
+  externos?: ExternosResumen;
   periodo: { desde: string; hasta: string };
   gastos_sin_tc: { count: number; monto_mxn: number };
   aviones: AvionReparto[];

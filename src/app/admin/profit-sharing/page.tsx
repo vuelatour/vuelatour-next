@@ -8,9 +8,18 @@ import { ReportDownloads } from "@/components/admin/profit-sharing/report-downlo
 import { KpiStrip } from "@/components/admin/profit-sharing/kpi-strip";
 import { AvionRepartoCard } from "@/components/admin/profit-sharing/avion-reparto-card";
 import { getProfitSharing } from "@/lib/api/profit-sharing-server";
+import { getMe } from "@/lib/api/me";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
-import { fmtDecimal } from "@/lib/format";
+import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { EmptyState } from "@/components/admin/empty-state";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +36,16 @@ interface PageProps {
 export default async function ProfitSharingPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const fallback = currentMonth();
-  const desde = sp.desde || fallback.desde;
-  const hasta = sp.hasta || fallback.hasta;
+  let desde = sp.desde || fallback.desde;
+  let hasta = sp.hasta || fallback.hasta;
+  // Rango invertido (dedazo del selector): se normaliza en vez de dejar que
+  // el 400 del API tumbe la página completa — selector incluido.
+  if (desde > hasta) [desde, hasta] = [hasta, desde];
 
-  const result = await getProfitSharing({ desde, hasta });
+  const [result, me] = await Promise.all([
+    getProfitSharing({ desde, hasta }),
+    getMe(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -44,7 +59,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             Cascada del saldo, desglose y reparto a socios por aeronave.
           </p>
         </div>
-        <ReportDownloads desde={desde} hasta={hasta} />
+        <ReportDownloads desde={desde} hasta={hasta} rol={me.rol} />
       </div>
 
       <PeriodSelector initial={{ desde, hasta }} />
@@ -58,7 +73,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             horas de tacómetro del periodo. Descarga el PDF para socios o los
             Excel con los botones de arriba y de cada avión.
           </p>
-          {result.gastos_sin_tc.count > 0 && (
+          {(result.gastos_sin_tc?.count ?? 0) > 0 && (
             <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
               {result.gastos_sin_tc.count} gasto(s) fijo(s) en MXN sin tipo de
@@ -85,10 +100,71 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 avion={a}
                 desde={desde}
                 hasta={hasta}
+                puedeDescargarBalance={me.rol === "ADMIN" || me.rol === "ANALISTA"}
               />
             ))}
           </div>
         </>
+      )}
+
+      {result.externos && result.externos.vuelos > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <PaperAirplaneIcon className="h-4 w-4 text-muted-foreground" />
+              Vuelos externos del periodo
+            </CardTitle>
+            <CardDescription>
+              Vuelos cubiertos con avión de otro operador: su dinero no
+              pertenece a ningún avión de la flota, por eso NO entra a las
+              cards ni al reparto de socios. Se muestra aquí para que no se
+              pierda de vista.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Vuelos
+                </p>
+                <p className="font-semibold">{result.externos.vuelos}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Cobrado
+                </p>
+                <p className="font-semibold font-mono">
+                  {fmtUsd(result.externos.cobrado_usd)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Costo del operador
+                </p>
+                <p className="font-semibold font-mono">
+                  {fmtUsd(result.externos.costo_usd)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Utilidad externa
+                </p>
+                <p
+                  className={`font-semibold font-mono ${result.externos.utilidad_usd < 0 ? "text-destructive" : ""}`}
+                >
+                  {fmtUsd(result.externos.utilidad_usd)}
+                </p>
+              </div>
+            </div>
+            {result.externos.sin_costo_count > 0 && (
+              <p className="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
+                {result.externos.sin_costo_count} vuelo(s) externo(s) sin costo
+                del operador capturado: la utilidad externa está incompleta.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

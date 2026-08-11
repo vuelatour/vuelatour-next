@@ -29,10 +29,14 @@ export function AvionRepartoCard({
   avion,
   desde,
   hasta,
+  puedeDescargarBalance = true,
 }: {
   avion: AvionReparto;
   desde: string;
   hasta: string;
+  /** El endpoint del balance es ADMIN/ANALISTA: al SOCIO no se le pinta un
+   *  botón que siempre respondería 403. */
+  puedeDescargarBalance?: boolean;
 }) {
   const positivo = avion.saldo_disponible_usd >= 0;
   const totalVuelos =
@@ -185,12 +189,16 @@ export function AvionRepartoCard({
       </CardContent>
 
       <CardFooter className="justify-between gap-2">
-        <ExcelExportButton
-          path={`/v1/aircraft/${avion.aeronave.id}/balance.xlsx`}
-          query={{ desde, hasta }}
-          filename={`balance-${avion.aeronave.matricula}-${desde}-${hasta}.xlsx`}
-          label="Balance (Excel)"
-        />
+        {puedeDescargarBalance ? (
+          <ExcelExportButton
+            path={`/v1/aircraft/${avion.aeronave.id}/balance.xlsx`}
+            query={{ desde, hasta }}
+            filename={`balance-${avion.aeronave.matricula}-${desde}-${hasta}.xlsx`}
+            label="Balance (Excel)"
+          />
+        ) : (
+          <span />
+        )}
         <Link
           href={`/admin/aircraft/${avion.aeronave.id}`}
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
