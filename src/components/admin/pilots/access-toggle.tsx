@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   CheckCircleIcon,
@@ -9,6 +9,16 @@ import {
 } from "@heroicons/react/24/outline";
 import { setPilotAccessAction } from "@/app/admin/pilots/actions";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { EstadoUsuario } from "@/types/me";
 
 interface Props {
@@ -37,14 +47,19 @@ const LABELS: Record<EstadoUsuario, { text: string; icon: typeof CheckCircleIcon
 
 export function AccessToggle({ id, estado, size = "default" }: Props) {
   const [pending, startTransition] = useTransition();
+  const [confirmando, setConfirmando] = useState(false);
   const current = LABELS[estado];
   const Icon = current.icon;
 
   const toggle = (next: EstadoUsuario) => {
     startTransition(async () => {
       const res = await setPilotAccessAction(id, next);
-      if (res.ok) toast.success(`Acceso → ${next}`);
-      else toast.error(res.error ?? "Error al cambiar estado");
+      if (res.ok) {
+        toast.success(`Acceso → ${next}`);
+        setConfirmando(false);
+      } else {
+        toast.error(res.error ?? "Error al cambiar estado");
+      }
     });
   };
 
@@ -59,14 +74,46 @@ export function AccessToggle({ id, estado, size = "default" }: Props) {
         {current.text}
       </span>
       {isActive ? (
-        <Button
-          size={size}
-          variant="outline"
-          onClick={() => toggle("INACTIVO")}
-          disabled={pending}
-        >
-          Revocar acceso
-        </Button>
+        <>
+          {/* Confirmación SIEMPRE antes de revocar (regla permanente del
+              cliente): bloquear al piloto lo deja sin app a media operación. */}
+          <Button
+            size={size}
+            variant="outline"
+            onClick={() => setConfirmando(true)}
+            disabled={pending}
+          >
+            Revocar acceso
+          </Button>
+          <AlertDialog
+            open={confirmando}
+            onOpenChange={(v) => !pending && setConfirmando(v)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Revocar el acceso?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  El piloto quedará BLOQUEADO: no podrá entrar a la app ni
+                  capturar tacómetros, gastos o cobros. Sus capturas encoladas
+                  sin enviar podrían perderse si cierra sesión. Puedes
+                  reactivarlo cuando quieras.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggle("INACTIVO");
+                  }}
+                  disabled={pending}
+                >
+                  {pending ? "Revocando…" : "Sí, revocar"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
       ) : (
         <Button
           size={size}

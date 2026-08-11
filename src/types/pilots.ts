@@ -23,7 +23,32 @@ export interface PilotFlightSummary {
   pasajeros: number;
   monto_total_usd: number;
   fecha_vuelo: string | null;
+  fecha_fin?: string | null;
   cobrado: boolean;
+  /** Rol del piloto en ese vuelo: PILOTO | COPILOTO | APOYO | TRAMO. */
+  rol?: string;
+}
+
+export interface PilotDescanso {
+  id: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+  motivo: string | null;
+}
+
+/** Pagos al piloto EXTERNO: gastos categoría PILOTO_EXTERNO de sus vuelos. */
+export interface PilotHonorarios {
+  total_usd: number;
+  mes_usd: number;
+  sin_tc_mxn: number;
+  recientes: {
+    id: string;
+    monto: number;
+    moneda: string;
+    fecha_gasto: string;
+    vuelo_id: string | null;
+    folio: number | null;
+  }[];
 }
 
 export interface PilotExpense {
@@ -60,12 +85,21 @@ export interface PilotFondo {
 }
 
 export interface PilotDetail extends User {
-  stats: PilotStats & { total_cobrado_mes_usd: number };
+  stats: PilotStats & {
+    total_cobrado_mes_usd: number;
+    /** Cobros MXN del mes sin TC (excluidos del total — nunca en silencio). */
+    cobrado_sin_tc_mxn?: number;
+    horas_mes?: number;
+    horas_limite?: number;
+    horas_restantes?: number;
+  };
   vuelos_proximos: PilotFlightSummary[];
   vuelos_completados_mes: PilotFlightSummary[];
   gastos_recientes: PilotExpense[];
   capturas_recientes: PilotCapture[];
   fondos: PilotFondo[];
+  descansos_proximos?: PilotDescanso[];
+  honorarios?: PilotHonorarios | null;
 }
 
 export type PilotsListResponse = ListResponse<PilotListItem>;

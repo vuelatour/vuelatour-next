@@ -9,6 +9,7 @@ import {
   BanknotesIcon,
   DocumentCheckIcon,
   ChevronRightIcon,
+  MoonIcon,
 } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -22,10 +23,12 @@ import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento
 import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import type {
   PilotCapture,
+  PilotDescanso,
   PilotDetail,
   PilotExpense,
   PilotFlightSummary,
   PilotFondo,
+  PilotHonorarios,
 } from "@/types/pilots";
 
 export const dynamic = "force-dynamic";
@@ -116,9 +119,24 @@ export default async function PilotDetailPage({
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Stat label="Vuelos mes" value={pilot.stats.vuelos_mes} />
-        <Stat label="Próximos" value={pilot.stats.vuelos_proximos} />
+        {/* Horas del mes con semáforo del límite informativo de 90 hrs
+            (doc 3.6): rojo al exceder, ámbar arriba del 85%. */}
+        <Stat
+          label="Horas mes"
+          isText
+          value={`${(pilot.stats.horas_mes ?? 0).toLocaleString("en-US")} / ${pilot.stats.horas_limite ?? 90} hr`}
+          valueClass={
+            (pilot.stats.horas_mes ?? 0) >= (pilot.stats.horas_limite ?? 90)
+              ? "text-destructive"
+              : (pilot.stats.horas_mes ?? 0) >=
+                  (pilot.stats.horas_limite ?? 90) * 0.85
+                ? "text-amber-600 dark:text-amber-400"
+                : undefined
+          }
+        />
+        <Stat label="Activos y próximos" value={pilot.stats.vuelos_proximos} />
         <Stat label="Capturas mes" value={pilot.stats.capturas_mes} />
         <Stat label="Gastos mes" value={pilot.stats.gastos_mes} />
         <Stat
@@ -127,19 +145,43 @@ export default async function PilotDetailPage({
           isText
         />
       </div>
+      {(pilot.stats.cobrado_sin_tc_mxn ?? 0) > 0 && (
+        <p className="text-xs text-amber-600 dark:text-amber-400 -mt-3">
+          Cobros del mes por ${pilot.stats.cobrado_sin_tc_mxn?.toLocaleString("en-US")}{" "}
+          MXN sin tipo de cambio quedaron fuera del total cobrado.
+        </p>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <FlightsCard
-          title="Próximos vuelos"
+          title="Activos y próximos"
           flights={pilot.vuelos_proximos}
-          empty="Sin vuelos programados."
+          empty="Sin vuelos activos ni programados."
         />
         <FlightsCard
-          title="Vuelos completados (mes)"
+          title="Últimos vuelos completados"
           flights={pilot.vuelos_completados_mes}
-          empty="Sin vuelos completados este mes."
+          empty="Sin vuelos completados aún."
+          footer={
+            <Link
+              href={`/admin/flights?piloto_id=${pilot.id}`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Ver historial completo en Vuelos{" "}
+              <ChevronRightIcon className="h-3.5 w-3.5" />
+            </Link>
+          }
         />
       </div>
+
+      {(pilot.honorarios || (pilot.descansos_proximos?.length ?? 0) > 0) && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          {pilot.honorarios && <HonorariosCard honorarios={pilot.honorarios} />}
+          {(pilot.descansos_proximos?.length ?? 0) > 0 && (
+            <DescansosCard descansos={pilot.descansos_proximos!} />
+          )}
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <CapturesCard captures={pilot.capturas_recientes} />
@@ -239,16 +281,23 @@ function Stat({
   label,
   value,
   isText = false,
+  valueClass,
 }: {
   label: string;
   value: number | string;
   isText?: boolean;
+  /** Color del valor (semáforo de horas, etc.). */
+  valueClass?: string;
 }) {
   return (
     <Card>
       <CardContent className="py-4">
         <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className={`mt-1 font-semibold ${isText ? "text-lg" : "text-2xl"}`}>{value}</p>
+        <p
+          className={`mt-1 font-semibold ${isText ? "text-lg" : "text-2xl"} ${valueClass ?? ""}`}
+        >
+          {value}
+        </p>
       </CardContent>
     </Card>
   );
@@ -258,10 +307,12 @@ function FlightsCard({
   title,
   flights,
   empty,
+  footer,
 }: {
   title: string;
   flights: PilotFlightSummary[];
   empty: string;
+  footer?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -290,6 +341,13 @@ function FlightsCard({
                   {fmtDateTime(f.fecha_vuelo)} · {f.pasajeros} pax · ${f.monto_total_usd} USD
                 </p>
               </div>
+              {/* Rol del piloto cuando NO es el piloto principal: copiloto,
+                  apoyo o piloto de algún tramo (rotación). */}
+              {f.rol && f.rol !== "PILOTO" && (
+                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400">
+                  {f.rol === "TRAMO" ? "por tramo" : f.rol.toLowerCase()}
+                </span>
+              )}
               <span
                 className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${
                   f.estado === "EN_VUELO"
@@ -304,6 +362,113 @@ function FlightsCard({
             </Link>
           ))
         )}
+        {footer && <div className="pt-1">{footer}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Pagos al piloto EXTERNO (gastos PILOTO_EXTERNO de sus vuelos, doc 3.7). */
+function HonorariosCard({ honorarios }: { honorarios: PilotHonorarios }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <BanknotesIcon className="h-4 w-4 text-muted-foreground" />
+          Honorarios (piloto externo)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Este mes
+            </p>
+            <p className="font-semibold font-mono">
+              ${honorarios.mes_usd.toLocaleString("en-US")} USD
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Histórico
+            </p>
+            <p className="font-semibold font-mono">
+              ${honorarios.total_usd.toLocaleString("en-US")} USD
+            </p>
+          </div>
+        </div>
+        {honorarios.sin_tc_mxn > 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            ${honorarios.sin_tc_mxn.toLocaleString("en-US")} MXN de honorarios
+            sin tipo de cambio quedaron fuera del total.
+          </p>
+        )}
+        {honorarios.recientes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Sin honorarios capturados. Se registran como gasto categoría
+            «Piloto externo» ligado al vuelo.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {honorarios.recientes.map((h) => (
+              <div
+                key={h.id}
+                className="flex items-center justify-between gap-2 text-sm"
+              >
+                <span className="text-muted-foreground text-xs">
+                  {sharedFmtDate(h.fecha_gasto)}
+                  {h.folio != null && (
+                    <>
+                      {" · "}
+                      {h.vuelo_id ? (
+                        <Link
+                          href={`/admin/flights/${h.vuelo_id}`}
+                          className="hover:underline"
+                        >
+                          vuelo #{h.folio}
+                        </Link>
+                      ) : (
+                        <>vuelo #{h.folio}</>
+                      )}
+                    </>
+                  )}
+                </span>
+                <span className="font-mono font-medium">
+                  ${Number(h.monto).toLocaleString("en-US")} {h.moneda}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Descansos vigentes o futuros del piloto: clave al asignarle vuelos. */
+function DescansosCard({ descansos }: { descansos: PilotDescanso[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <MoonIcon className="h-4 w-4 text-muted-foreground" />
+          Descansos próximos
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {descansos.map((d) => (
+          <div
+            key={d.id}
+            className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
+          >
+            <span className="font-medium">
+              {sharedFmtDate(d.fecha_inicio)} – {sharedFmtDate(d.fecha_fin)}
+            </span>
+            <span className="text-xs text-muted-foreground truncate">
+              {d.motivo ?? "Descanso"}
+            </span>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
