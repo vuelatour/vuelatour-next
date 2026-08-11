@@ -185,8 +185,13 @@ function PilotCard({ pilot }: { pilot: PilotListItem }) {
           <AccessToggle id={pilot.id} estado={pilot.estado} size="sm" />
         )}
 
-        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-border">
+        <div className="grid grid-cols-5 gap-2 pt-2 border-t border-border">
           <Metric icon={PaperAirplaneIcon} value={pilot.stats.vuelos_mes} label="vuelos mes" />
+          <Metric
+            icon={ClockIcon}
+            value={`${pilot.stats.horas_mes ?? 0} h`}
+            label="horas mes"
+          />
           <Metric icon={ClockIcon} value={pilot.stats.vuelos_proximos} label="próximos" />
           <Metric icon={CameraIcon} value={pilot.stats.capturas_mes} label="capturas" />
           <Metric icon={ReceiptPercentIcon} value={pilot.stats.gastos_mes} label="gastos" />
@@ -212,7 +217,7 @@ function Metric({
   label,
 }: {
   icon: typeof PaperAirplaneIcon;
-  value: number;
+  value: number | string;
   label: string;
 }) {
   return (

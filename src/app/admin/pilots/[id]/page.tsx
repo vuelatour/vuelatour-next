@@ -19,6 +19,7 @@ import { isApiError } from "@/lib/api/errors";
 import { getPilot } from "@/lib/api/pilots-server";
 import { listExpirations } from "@/lib/api/expirations-server";
 import { AccessToggle } from "@/components/admin/pilots/access-toggle";
+import { MesStatsSelector } from "@/components/admin/pilots/mes-stats-selector";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import type {
@@ -47,14 +48,17 @@ const fmtDate = sharedFmtDate;
 
 export default async function PilotDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ mes?: string }>;
 }) {
   const { id } = await params;
+  const { mes } = await searchParams;
 
   let pilot: PilotDetail;
   try {
-    pilot = await getPilot(id);
+    pilot = await getPilot(id, mes);
   } catch (err) {
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
@@ -117,6 +121,22 @@ export default async function PilotDetailPage({
         ) : (
           <AccessToggle id={pilot.id} estado={pilot.estado} />
         )}
+      </div>
+
+      {/* Stats del MES elegido (default: corriente). El resto del expediente
+          (activos, recientes, documentos) no depende del mes. */}
+      <div className="flex items-center justify-end">
+        <MesStatsSelector
+          mes={
+            pilot.stats.mes ??
+            // Fallback con API viejo: mes corriente en hora CANCÚN (no UTC).
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Cancun",
+              year: "numeric",
+              month: "2-digit",
+            }).format(new Date())
+          }
+        />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">

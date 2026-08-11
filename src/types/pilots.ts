@@ -7,6 +7,8 @@ export interface PilotStats {
   vuelos_proximos: number;
   capturas_mes: number;
   gastos_mes: number;
+  /** Horas voladas del mes (por tramo, hora Cancún). Ausente con API viejo. */
+  horas_mes?: number;
   ultimo_vuelo: string | null;
 }
 
@@ -86,6 +88,8 @@ export interface PilotFondo {
 
 export interface PilotDetail extends User {
   stats: PilotStats & {
+    /** Mes consultado (YYYY-MM): las stats corresponden a ESTE mes. */
+    mes?: string;
     total_cobrado_mes_usd: number;
     /** Cobros MXN del mes sin TC (excluidos del total — nunca en silencio). */
     cobrado_sin_tc_mxn?: number;

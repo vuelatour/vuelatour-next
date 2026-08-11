@@ -16,6 +16,9 @@ export function listPilots(query: ListPilotsQuery = {}) {
   });
 }
 
-export function getPilot(id: string) {
-  return apiServer<PilotDetail>(`/v1/pilots/${id}`, { cache: "no-store" });
+export function getPilot(id: string, mes?: string) {
+  return apiServer<PilotDetail>(`/v1/pilots/${id}`, {
+    cache: "no-store",
+    searchParams: { mes },
+  });
 }
