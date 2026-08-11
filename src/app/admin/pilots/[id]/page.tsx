@@ -124,8 +124,17 @@ export default async function PilotDetailPage({
       </div>
 
       {/* Stats del MES elegido (default: corriente). El resto del expediente
-          (activos, recientes, documentos) no depende del mes. */}
-      <div className="flex items-center justify-end">
+          (activos, recientes, documentos) no depende del mes. El selector
+          vive EN el encabezado de la sección — flotando solo parecía perdido. */}
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">
+            Resumen del mes
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Vuelos, horas, capturas y dinero del mes elegido.
+          </p>
+        </div>
         <MesStatsSelector
           mes={
             pilot.stats.mes ??
@@ -139,7 +148,7 @@ export default async function PilotDetailPage({
         />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <Stat label="Vuelos mes" value={pilot.stats.vuelos_mes} />
         {/* Horas del mes con semáforo del límite informativo de 90 hrs
             (doc 3.6): rojo al exceder, ámbar arriba del 85%. */}
@@ -147,6 +156,7 @@ export default async function PilotDetailPage({
           label="Horas mes"
           isText
           value={`${(pilot.stats.horas_mes ?? 0).toLocaleString("en-US")} / ${pilot.stats.horas_limite ?? 90} hr`}
+          hint="límite informativo de 90 hr"
           valueClass={
             (pilot.stats.horas_mes ?? 0) >= (pilot.stats.horas_limite ?? 90)
               ? "text-destructive"
@@ -157,12 +167,21 @@ export default async function PilotDetailPage({
           }
         />
         <Stat label="Activos y próximos" value={pilot.stats.vuelos_proximos} />
-        <Stat label="Capturas mes" value={pilot.stats.capturas_mes} />
-        <Stat label="Gastos mes" value={pilot.stats.gastos_mes} />
+        <Stat
+          label="Capturas mes"
+          value={pilot.stats.capturas_mes}
+          hint="tacómetros sincronizados"
+        />
+        <Stat
+          label="Gastos mes"
+          value={pilot.stats.gastos_mes}
+          hint="capturados por el piloto"
+        />
         <Stat
           label="Cobrado mes"
           value={`$${pilot.stats.total_cobrado_mes_usd.toLocaleString("en-US")}`}
           isText
+          hint="dinero recibido de sus vuelos (USD)"
         />
       </div>
       {(pilot.stats.cobrado_sin_tc_mxn ?? 0) > 0 && (
@@ -302,12 +321,15 @@ function Stat({
   value,
   isText = false,
   valueClass,
+  hint,
 }: {
   label: string;
   value: number | string;
   isText?: boolean;
   /** Color del valor (semáforo de horas, etc.). */
   valueClass?: string;
+  /** Aclaración corta bajo el valor (qué mide exactamente la cifra). */
+  hint?: string;
 }) {
   return (
     <Card>
@@ -318,6 +340,11 @@ function Stat({
         >
           {value}
         </p>
+        {hint && (
+          <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+            {hint}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -346,7 +373,11 @@ function FlightsCard({
         {flights.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">{empty}</p>
         ) : (
-          flights.map((f) => (
+          // Tope con scroll interno: 20 completados estiraban la card y
+          // desbalanceaban la fila; el footer (historial) queda siempre a la
+          // vista.
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+            {flights.map((f) => (
             <Link
               key={f.id}
               href={`/admin/flights/${f.id}`}
@@ -358,7 +389,11 @@ function FlightsCard({
                   <span className="text-muted-foreground font-normal ml-2">#{f.folio}</span>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {fmtDateTime(f.fecha_vuelo)} · {f.pasajeros} pax · ${f.monto_total_usd} USD
+                  {fmtDateTime(f.fecha_vuelo)} · {f.pasajeros} pax
+                  {/* El precio solo cuando existe: "$0 USD" en cada renglón
+                      era ruido (internos y ferris cotizan en cero). */}
+                  {Number(f.monto_total_usd) > 0 &&
+                    ` · $${Number(f.monto_total_usd).toLocaleString("en-US")} USD`}
                 </p>
               </div>
               {/* Rol del piloto cuando NO es el piloto principal: copiloto,
@@ -374,13 +409,17 @@ function FlightsCard({
                     ? "bg-brand-500/15 text-brand-500"
                     : f.estado === "COMPLETADO"
                       ? "bg-muted text-muted-foreground"
-                      : "bg-green-500/15 text-green-600 dark:text-green-400"
+                      : f.estado === "RESERVA"
+                        ? // Reserva = tentativa: ámbar, no el verde de confirmado.
+                          "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                        : "bg-green-500/15 text-green-600 dark:text-green-400"
                 }`}
               >
                 {f.estado}
               </span>
             </Link>
-          ))
+            ))}
+          </div>
         )}
         {footer && <div className="pt-1">{footer}</div>}
       </CardContent>
