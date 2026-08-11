@@ -95,16 +95,16 @@ export function ExpirationActions({
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => setOpenEdit(true)} className="gap-2">
+          <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={toggleCritico} className="gap-2">
+          <DropdownMenuItem onClick={toggleCritico} className="gap-2">
             <ExclamationTriangleIcon className="h-4 w-4" />
             {esCritico ? "Quitar crítico" : "Marcar como crítico"}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => setOpenDelete(true)}
+            onClick={() => setOpenDelete(true)}
             className="gap-2 text-destructive focus:text-destructive"
           >
             <TrashIcon className="h-4 w-4" />
