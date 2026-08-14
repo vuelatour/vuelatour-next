@@ -228,9 +228,10 @@ export default async function ExpensesPage({
           </CardHeader>
         </Card>
       ) : (
-        // Vista general en dos columnas; el desglose completo por vuelo está
-        // en el detalle del vuelo (link en la columna Vuelo).
-        <div className="grid gap-6 xl:grid-cols-2 items-start">
+        // Cards APILADAS a lo ancho (pedido de oficina 14-ago): lado a lado
+        // las columnas no cabían y las tablas se cortaban. El desglose por
+        // vuelo está en el detalle del vuelo (link en la columna Vuelo).
+        <div className="space-y-6">
           <GastosCard
             titulo="Gastos generales"
             descripcion="Viáticos, refacciones, fijos y otros."
