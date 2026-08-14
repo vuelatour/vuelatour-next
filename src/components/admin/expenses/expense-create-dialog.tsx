@@ -79,6 +79,13 @@ const ESTATUS = [
   { value: "VALE", label: "Vale (sin factura)" },
 ];
 
+// Seguimiento de oficina "¿ya lo facturé?" — independiente del comprobante.
+const FACTURACION = [
+  { value: "PENDIENTE", label: "🔴 Pendiente de facturar" },
+  { value: "SOLICITADA", label: "🟡 Factura solicitada" },
+  { value: "FACTURADA", label: "🟢 Facturada" },
+];
+
 /** Hoy en hora Cancún (UTC−5 fija) para el default del formulario. */
 function hoyCancun(): string {
   return new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -98,6 +105,7 @@ function emptyValues(defaults?: {
     fecha_gasto: hoyCancun(),
     medio_pago: "TRANSFERENCIA",
     estatus_comprobante: "SIN_COMPROBANTE",
+    estatus_facturacion: "PENDIENTE",
     aeronave_id: defaults?.aeronaveId ?? "",
     vuelo_id: defaults?.vueloId ?? "",
     proveedor_id: "",
@@ -289,6 +297,10 @@ export function ExpenseCreateDialog({
     }
     setFactura(file);
     setAiRaw(null);
+    // OJO: adjuntar archivo NO auto-marca la facturación — un ticket JPG
+    // también se adjunta aquí y "archivo = facturado" es la misma señal
+    // contaminada que se descartó en la app. Jamás afirmar facturado en
+    // falso: la oficina lo marca en el select si de verdad es la factura.
     if (file && watch("estatus_comprobante") === "SIN_COMPROBANTE") {
       setValue("estatus_comprobante", "FACTURA");
     }
@@ -641,6 +653,14 @@ export function ExpenseCreateDialog({
                   options={ESTATUS}
                   value={watch("estatus_comprobante")}
                   onChange={(v) => setValue("estatus_comprobante", v)}
+                  placeholder="Estatus"
+                />
+              </Field>
+              <Field label="Facturación (oficina)">
+                <SearchableSelect
+                  options={FACTURACION}
+                  value={watch("estatus_facturacion")}
+                  onChange={(v) => setValue("estatus_facturacion", v)}
                   placeholder="Estatus"
                 />
               </Field>

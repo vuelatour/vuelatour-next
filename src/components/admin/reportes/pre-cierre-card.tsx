@@ -53,7 +53,10 @@ const LINK_POR_CLAVE: Record<
     `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
   gastos_sin_avion: () => "/admin/expenses",
   gastos_sin_tc: () => "/admin/expenses",
-  gastos_sin_comprobante: () => "/admin/facturas-recibidas",
+  // Directo a Gastos filtrado a "sin facturar" (pendiente + solicitada) DEL
+  // PERIODO: ahí está el semáforo para irlos resolviendo uno por uno.
+  gastos_sin_comprobante: (p) =>
+    `/admin/expenses?facturacion=NO_FACTURADA&desde=${p.desde}&hasta=${p.hasta}`,
   // Cuotas de aeródromo sin provisionar: Gastos → "Pistas por pagar".
   pistas_sin_gasto: () => "/admin/expenses",
   // El honorario del piloto externo se captura como gasto del vuelo (los

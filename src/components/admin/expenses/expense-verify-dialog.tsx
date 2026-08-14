@@ -61,6 +61,14 @@ const ESTATUS = [
   { value: "SIN_COMPROBANTE", label: "Sin comprobante" },
 ];
 
+// Seguimiento de oficina "¿ya lo facturé?" — independiente del comprobante
+// que entregó el piloto (semáforo pedido por el cliente, ago 2026).
+const FACTURACION = [
+  { value: "PENDIENTE", label: "🔴 Pendiente de facturar" },
+  { value: "SOLICITADA", label: "🟡 Factura solicitada" },
+  { value: "FACTURADA", label: "🟢 Facturada" },
+];
+
 interface ExpenseVerifyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -165,6 +173,15 @@ export function ExpenseVerifyDialog({
       // Litros solo aplican a GAS; vacío = no tocar (el zod los descarta).
       if (values.categoria !== "GAS" || values.litros === "") {
         delete (payload as { litros?: unknown }).litros;
+      }
+      // Facturación: viaja SOLO si se cambió en ESTE diálogo. El badge de la
+      // tabla y el trigger del amarre de factura recibida también escriben
+      // este campo — mandar el valor con que se abrió el form (posiblemente
+      // stale) pisaría esos cambios en silencio.
+      if (
+        values.estatus_facturacion === (gasto.estatus_facturacion ?? "PENDIENTE")
+      ) {
+        delete (payload as { estatus_facturacion?: unknown }).estatus_facturacion;
       }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
@@ -436,6 +453,14 @@ export function ExpenseVerifyDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
+            <Field label="Facturación (oficina)">
+              <SearchableSelect
+                options={FACTURACION}
+                value={watch("estatus_facturacion")}
+                onChange={(v) => setValue("estatus_facturacion", v)}
+                placeholder="Estatus"
+              />
+            </Field>
             <Field label="Medio de pago">
               <SearchableSelect
                 options={MEDIOS}
@@ -490,6 +515,8 @@ function defaults(g: Gasto): GastoVerifyValues {
     categoria: g.categoria,
     medio_pago: g.medio_pago,
     estatus_comprobante: g.estatus_comprobante,
+    // Gastos previos a la migración: sin campo = Pendiente (conservador).
+    estatus_facturacion: g.estatus_facturacion ?? "PENDIENTE",
     aeronave_id: g.aeronave_id ?? "",
     proveedor_id: g.proveedor_id ?? "",
     folio_ticket: g.folio_ticket ?? "",

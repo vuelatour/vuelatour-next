@@ -31,6 +31,14 @@ export const MedioPagoEnum = z.enum([
 
 export const EstatusEnum = z.enum(["FACTURA", "VALE", "SIN_COMPROBANTE"]);
 
+/** Seguimiento de oficina "¿ya facturé este gasto?" — independiente del
+ *  comprobante que entregó el piloto (ese NO se toca al marcarlo). */
+export const FacturacionEnum = z.enum([
+  "PENDIENTE",
+  "SOLICITADA",
+  "FACTURADA",
+]);
+
 export const GastoVerifySchema = z.object({
   // Monto/moneda/fecha editables: si la IA marcó ⚠ discrepancia contra lo
   // que capturó el piloto, la oficina corrige aquí el dato bueno.
@@ -59,6 +67,7 @@ export const GastoVerifySchema = z.object({
   categoria: CategoriaEnum.optional(),
   medio_pago: MedioPagoEnum.optional(),
   estatus_comprobante: EstatusEnum.optional(),
+  estatus_facturacion: FacturacionEnum.optional(),
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
   proveedor_id: z.string().uuid().optional().or(z.literal("")),
   /** Folio/remisión del ticket: candado anti-duplicados del API (409 si ya existe). */
@@ -95,6 +104,7 @@ export const GastoCreateSchema = z.object({
   fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
   medio_pago: MedioPagoEnum,
   estatus_comprobante: EstatusEnum.optional(),
+  estatus_facturacion: FacturacionEnum.optional(),
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
   vuelo_id: z.string().uuid().optional().or(z.literal("")),
   proveedor_id: z.string().uuid().optional().or(z.literal("")),
@@ -126,6 +136,7 @@ export type GastoCreateValues = {
   fecha_gasto: string;
   medio_pago: string;
   estatus_comprobante: string;
+  estatus_facturacion: string;
   aeronave_id: string;
   vuelo_id: string;
   proveedor_id: string;
@@ -146,6 +157,7 @@ export type GastoVerifyValues = {
   categoria: string;
   medio_pago: string;
   estatus_comprobante: string;
+  estatus_facturacion: string;
   aeronave_id: string;
   proveedor_id: string;
   folio_ticket: string;

@@ -276,20 +276,24 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
 }
 
 /**
- * Marca si el ticket en EFECTIVO ya se facturó (pedido de oficina, ago 2026):
- * FACTURA = facturado; VALE = "efectivo con ticket, por facturar" (así lo
- * define el enum desde el origen). Toggle de un clic en la tabla de Gastos.
+ * Seguimiento de facturación de OFICINA (pedido del cliente, ago 2026):
+ * 🔴 PENDIENTE → 🟡 SOLICITADA → 🟢 FACTURADA. Campo propio del gasto
+ * (estatus_facturacion) — NO toca estatus_comprobante: lo que entregó el
+ * piloto se conserva (el toggle viejo lo mutaba y se perdía el registro).
+ * Sin confirmación: reversible con el mismo control.
  */
-export async function marcarFacturadoAction(
+export async function marcarFacturacionAction(
   id: string,
-  facturado: boolean,
+  estatus: "PENDIENTE" | "SOLICITADA" | "FACTURADA",
 ): Promise<ActionResult<Gasto>> {
   try {
     const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
       method: "PATCH",
-      body: { estatus_comprobante: facturado ? "FACTURA" : "VALE" },
+      body: { estatus_facturacion: estatus },
     });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/flights", "layout");
+    revalidatePath("/admin/caja-chica", "layout");
     return { ok: true, data: updated };
   } catch (err) {
     return fail(err);

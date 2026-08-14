@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
+import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDateOnly } from "@/lib/datetime";
 import type { Gasto } from "@/types/expenses";
 
@@ -137,6 +138,13 @@ export function FlightGastosTable({
           </Badge>
         </div>
       ),
+    },
+    {
+      // Mismo semáforo "¿ya lo facturé?" que en Gastos (oficina).
+      key: "facturacion",
+      header: "Facturación",
+      cellClassName: "align-top",
+      cell: (g) => <FacturacionBadge gasto={g} />,
     },
     {
       key: "acciones",

@@ -52,6 +52,7 @@ export default async function ExpensesPage({
     piloto?: string;
     desde?: string;
     hasta?: string;
+    facturacion?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -68,6 +69,8 @@ export default async function ExpensesPage({
     usuario_captura_id: sp.piloto || undefined,
     desde: sp.desde || undefined,
     hasta: sp.hasta || undefined,
+    // Semáforo de facturación (PENDIENTE/SOLICITADA/FACTURADA/NO_FACTURADA).
+    estatus_facturacion: sp.facturacion || undefined,
   };
 
   const query: ListGastosQuery = {
@@ -106,6 +109,7 @@ export default async function ExpensesPage({
     if (sp.piloto) params.set("piloto", sp.piloto);
     if (sp.desde) params.set("desde", sp.desde);
     if (sp.hasta) params.set("hasta", sp.hasta);
+    if (sp.facturacion) params.set("facturacion", sp.facturacion);
     const qs = params.toString();
     return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
   };
@@ -181,7 +185,19 @@ export default async function ExpensesPage({
         <ExpensesFilterBar personas={personas} />
         {aeronaveFiltro && (
           <Link
-            href={filtro === "todos" ? "/admin/expenses" : `/admin/expenses?f=${filtro}`}
+            // Quitar SOLO el avión: los demás filtros activos (pestaña,
+            // medio, capturó, fechas, facturación) se conservan.
+            href={(() => {
+              const params = new URLSearchParams();
+              if (filtro !== "todos") params.set("f", filtro);
+              if (sp.medio) params.set("medio", sp.medio);
+              if (sp.piloto) params.set("piloto", sp.piloto);
+              if (sp.desde) params.set("desde", sp.desde);
+              if (sp.hasta) params.set("hasta", sp.hasta);
+              if (sp.facturacion) params.set("facturacion", sp.facturacion);
+              const qs = params.toString();
+              return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
+            })()}
             title="Quitar el filtro de avión"
             className="inline-flex items-center gap-1.5 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-1.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-600/20"
           >

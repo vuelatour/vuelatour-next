@@ -15,6 +15,8 @@ export interface ListGastosQuery {
   usuario_captura_id?: string;
   categoria?: string;
   estatus_comprobante?: string;
+  /** PENDIENTE | SOLICITADA | FACTURADA | NO_FACTURADA (pend. o sol.). */
+  estatus_facturacion?: string;
   medio_pago?: string;
   pendientes?: boolean;
   duplicados?: boolean;

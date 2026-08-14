@@ -24,6 +24,9 @@ export interface Gasto {
   lugar: string | null;
   fecha_hora_carga: string | null;
   estatus_comprobante: string;
+  /** Seguimiento de oficina: PENDIENTE | SOLICITADA | FACTURADA (semáforo
+   *  "¿ya facturé este gasto?"). Independiente del comprobante del piloto. */
+  estatus_facturacion?: string;
   foto_url: string | null;
   conciliado: boolean;
   duplicado_sospechado: boolean;

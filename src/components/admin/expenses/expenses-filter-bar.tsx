@@ -13,6 +13,15 @@ const MEDIOS = [
   { value: "PERSONAL_ALE", label: "Personal Ale" },
 ];
 
+// Semáforo de facturación de oficina; "Sin facturar" agrupa pendiente +
+// solicitada (lo que aún falta por resolver, en un solo filtro).
+const FACTURACION = [
+  { value: "PENDIENTE", label: "🔴 Pendiente" },
+  { value: "SOLICITADA", label: "🟡 Solicitada" },
+  { value: "FACTURADA", label: "🟢 Facturada" },
+  { value: "NO_FACTURADA", label: "Sin facturar (pend. + sol.)" },
+];
+
 /**
  * Filtros de Gastos (pedido de oficina, ago 2026): tipo de pago, quién lo
  * capturó y fechas de corte. Van por querystring (server component recarga con
@@ -41,7 +50,8 @@ export function ExpensesFilterBar({
   const piloto = sp.get("piloto") ?? "";
   const desde = sp.get("desde") ?? "";
   const hasta = sp.get("hasta") ?? "";
-  const hayFiltros = !!(medio || piloto || desde || hasta);
+  const facturacion = sp.get("facturacion") ?? "";
+  const hayFiltros = !!(medio || piloto || desde || hasta || facturacion);
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -54,6 +64,17 @@ export function ExpensesFilterBar({
           value={medio}
           onChange={(v) => set({ medio: v })}
           placeholder="Todos"
+        />
+      </div>
+      <div className="w-44">
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Facturación
+        </p>
+        <SearchableSelect
+          options={FACTURACION}
+          value={facturacion}
+          onChange={(v) => set({ facturacion: v })}
+          placeholder="Todas"
         />
       </div>
       <div className="w-48">
@@ -89,7 +110,13 @@ export function ExpensesFilterBar({
         <button
           type="button"
           onClick={() =>
-            set({ medio: null, piloto: null, desde: null, hasta: null })
+            set({
+              medio: null,
+              piloto: null,
+              desde: null,
+              hasta: null,
+              facturacion: null,
+            })
           }
           className="inline-flex h-9 items-center gap-1 rounded-lg border border-border px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
