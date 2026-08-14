@@ -10,10 +10,17 @@ const nonZeroNumber = z.preprocess(
 export const MonedaEnum = z.enum(["MXN", "USD"]);
 export const TipoMovimientoCajaEnum = z.enum(["REPOSICION", "REINTEGRO", "AJUSTE"]);
 
+/** Monto nominal del fondo ("su caja es de $6,000"). Opcional; > 0. */
+const montoFondoOpcional = z.preprocess(
+  (v) => (v === "" || v == null ? undefined : Number(v)),
+  z.number({ error: "Número inválido" }).positive("Debe ser mayor a 0").optional(),
+);
+
 export const FondoFormSchema = z.object({
   usuario_id: z.string().uuid("Selecciona una persona"),
   moneda: MonedaEnum.default("MXN"),
   es_acumulada: z.boolean().optional(),
+  monto_fondo: montoFondoOpcional,
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 
@@ -21,6 +28,7 @@ export const FondoUpdateSchema = z.object({
   activo: z.boolean().optional(),
   es_acumulada: z.boolean().optional(),
   moneda: MonedaEnum.optional(),
+  monto_fondo: montoFondoOpcional,
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 
@@ -43,6 +51,8 @@ export type FondoFormValues = {
   usuario_id: string;
   moneda: "MXN" | "USD";
   es_acumulada?: boolean;
+  /** Monto nominal del fondo; vacío = sin fijar. */
+  monto_fondo: string;
   notas: string;
 };
 

@@ -9,6 +9,7 @@ import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { MovimientoButton } from "@/components/admin/caja-chica/movimiento-button";
+import { FondoMontoButton } from "@/components/admin/caja-chica/fondo-monto-button";
 import {
   FondoHistorialTable,
   type MovimientoFondoRow,
@@ -111,31 +112,112 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
         />
       </div>
 
-      <Card>
-        <CardContent className="py-6">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">
-            {fondo.es_acumulada ? "Por reponer (caja acumulada)" : "Saldo actual"}
-          </p>
-          <p
-            className={`text-3xl font-semibold tabular-nums mt-1 ${
-              fondo.es_acumulada
-                ? fondo.saldo > 0
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-emerald-600"
-                : fondo.saldo < 0
-                  ? "text-destructive"
-                  : "text-emerald-600"
-            }`}
-          >
-            {money(fondo.saldo)}
-          </p>
-          {fondo.es_acumulada && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Sube con cada gasto en efectivo; una REPOSICIÓN por este monto lo deja en cero.
+      {/* Métricas del fondo (pedido oficina 14-ago): saldo + fondo total +
+          por reponer + última reposición, de un vistazo. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="py-6">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              {fondo.es_acumulada ? "Por reponer (caja acumulada)" : "Saldo actual"}
             </p>
-          )}
-        </CardContent>
-      </Card>
+            <p
+              className={`text-3xl font-semibold tabular-nums mt-1 ${
+                fondo.es_acumulada
+                  ? fondo.saldo > 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-emerald-600"
+                  : fondo.saldo < 0
+                    ? "text-destructive"
+                    : "text-emerald-600"
+              }`}
+            >
+              {money(fondo.saldo)}
+            </p>
+            {fondo.es_acumulada && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Sube con cada gasto en efectivo; una REPOSICIÓN por este monto lo deja en cero.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {!fondo.es_acumulada && (
+          <Card>
+            <CardContent className="py-6">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Fondo total
+              </p>
+              <p className="text-3xl font-semibold tabular-nums mt-1">
+                {fondo.monto_fondo != null ? (
+                  money(Number(fondo.monto_fondo))
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </p>
+              <div className="mt-1">
+                <FondoMontoButton
+                  fondoId={fondo.id}
+                  montoActual={
+                    fondo.monto_fondo != null ? Number(fondo.monto_fondo) : null
+                  }
+                  persona={fondo.usuario?.nombre ?? "esta persona"}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {!fondo.es_acumulada && fondo.monto_fondo != null && (
+          <Card>
+            <CardContent className="py-6">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Por reponer
+              </p>
+              {(() => {
+                const porReponer =
+                  Math.round((Number(fondo.monto_fondo) - fondo.saldo) * 100) /
+                  100;
+                return (
+                  <p
+                    className={`text-3xl font-semibold tabular-nums mt-1 ${
+                      porReponer > 0
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-emerald-600"
+                    }`}
+                  >
+                    {money(porReponer)}
+                  </p>
+                );
+              })()}
+              <p className="text-xs text-muted-foreground mt-1">
+                Fondo total − saldo actual.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardContent className="py-6">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              Última reposición
+            </p>
+            {fondo.ultima_reposicion ? (
+              <>
+                <p className="text-3xl font-semibold tabular-nums mt-1">
+                  {money(fondo.ultima_reposicion.monto)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {fmtDateOnly(fondo.ultima_reposicion.fecha)}
+                </p>
+              </>
+            ) : (
+              <p className="text-3xl font-semibold mt-1 text-muted-foreground">
+                —
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>

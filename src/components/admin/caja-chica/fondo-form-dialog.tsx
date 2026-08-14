@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createFondoAction } from "@/app/admin/caja-chica/actions";
@@ -40,11 +41,24 @@ export function FondoFormDialog({ open, onOpenChange, usuarios }: FondoFormDialo
     register,
     formState: { errors },
   } = useForm<FondoFormValues>({
-    defaultValues: { usuario_id: "", moneda: "MXN", es_acumulada: false, notas: "" },
+    defaultValues: {
+      usuario_id: "",
+      moneda: "MXN",
+      es_acumulada: false,
+      monto_fondo: "",
+      notas: "",
+    },
   });
 
   useEffect(() => {
-    if (open) reset({ usuario_id: "", moneda: "MXN", es_acumulada: false, notas: "" });
+    if (open)
+      reset({
+        usuario_id: "",
+        moneda: "MXN",
+        es_acumulada: false,
+        monto_fondo: "",
+        notas: "",
+      });
   }, [open, reset]);
 
   const onSubmit = handleSubmit((values) => {
@@ -92,6 +106,28 @@ export function FondoFormDialog({ open, onOpenChange, usuarios }: FondoFormDialo
               placeholder="Moneda"
             />
           </Field>
+
+          {/* Solo cajas clásicas: en la acumulada no se entrega fondo (el
+              saldo YA es lo por reponer). */}
+          {!watch("es_acumulada") && (
+            <Field
+              label="Monto del fondo (opcional)"
+              error={errors.monto_fondo?.message}
+            >
+              <Input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                placeholder="Ej. 6000"
+                {...register("monto_fondo")}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                A cuánto se repone su caja. Con esto el panel muestra
+                &quot;por reponer&quot; = fondo − saldo.
+              </p>
+            </Field>
+          )}
 
           {/* Caja "al revés" (pedido 6 ago 2026): para admins/pilotos que
               gastan de su bolsa — el número mostrado es lo POR REPONER. */}

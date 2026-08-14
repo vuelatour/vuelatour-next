@@ -2,6 +2,7 @@
 
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { FondoActions } from "./fondo-actions";
+import { fmtDateOnly } from "@/lib/datetime";
 import type { CajaFondo } from "@/types/caja-chica";
 
 const money = (n: number, moneda: string) =>
@@ -34,6 +35,19 @@ export function FondosTable({
       cell: (f) => f.moneda,
     },
     {
+      // Monto nominal ("su caja es de $6,000") — pedido de oficina 14-ago.
+      key: "fondo_total",
+      header: "Fondo total",
+      headClassName: "text-right",
+      cellClassName: "text-right tabular-nums",
+      cell: (f) =>
+        f.monto_fondo != null ? (
+          money(Number(f.monto_fondo), f.moneda)
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
       key: "saldo",
       header: "Saldo",
       headClassName: "text-right",
@@ -60,6 +74,22 @@ export function FondosTable({
           )}
         </span>
       ),
+    },
+    {
+      key: "ultima_reposicion",
+      header: "Última reposición",
+      cellClassName: "whitespace-nowrap text-muted-foreground",
+      cell: (f) =>
+        f.ultima_reposicion ? (
+          <span>
+            {fmtDateOnly(f.ultima_reposicion.fecha)}
+            <span className="ml-1.5 tabular-nums text-foreground">
+              {money(f.ultima_reposicion.monto, f.moneda)}
+            </span>
+          </span>
+        ) : (
+          "—"
+        ),
     },
     {
       key: "acciones",

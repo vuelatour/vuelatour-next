@@ -19,6 +19,10 @@ export interface CajaFondo {
   updated_at: string;
   usuario?: CajaUsuario | null;
   saldo: number;
+  /** Monto nominal del fondo (a cuánto se repone). Null = sin fijar. */
+  monto_fondo?: number | string | null;
+  /** Última REPOSICIÓN registrada; null si nunca ha habido. */
+  ultima_reposicion?: { fecha: string; monto: number } | null;
 }
 
 export interface CajaMovimiento {
