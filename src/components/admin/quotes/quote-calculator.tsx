@@ -365,7 +365,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const frequentClientIds = isRevise ? [] : (props.frequentClientIds ?? []);
 
   const router = useRouter();
-  const [advanced, setAdvanced] = useState(false);
+  // Al revisar una versión con tarifa AJUSTADA a mano, la sección de
+  // overrides arranca ABIERTA: el valor pactado debe estar a la vista, no
+  // escondido en un colapsable (el prefill lo rehidrata más abajo).
+  const [advanced, setAdvanced] = useState(
+    isRevise &&
+      initialQuote?.calculo_snapshot?.tarifa?.proviene_de_override === true,
+  );
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -453,7 +459,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // la que se cotizó vive en el snapshot.
         aeronave_id:
           q.aeronave_id ?? q.calculo_snapshot?.aeronave?.id ?? defaultAircraftId,
-        ruta_id: "",
+        // El vínculo a la ruta del catálogo se conserva (antes se perdía al
+        // revisar y salía el aviso falso "difiere de la ruta guardada").
+        ruta_id: q.ruta_id ?? "",
         escalas: q.itinerario_operativo
           ? // Itinerario operativo: las escalas del vuelo son la ruta REAL del
             // piloto, no la comercial. La comercial COTIZADA vive en el
@@ -566,12 +574,29 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             : null,
         comision_vendedor_nombre:
           q.calculo_snapshot?.meta?.comision_vendedor_nombre ?? "",
-        tarifa_hora_override_usd: null,
+        // La tarifa AJUSTADA a mano se rehidrata como override (bug 17-ago:
+        // #105 v4 pactada a $989.58/hr salía a Revisar con la default del
+        // avión a $1,050 y la v5 perdía lo pactado en silencio). SOLO cuando
+        // fue override manual (proviene_de_override): una tarifa que venía
+        // del avión o de la preferencial del cliente debe RE-resolverse
+        // (cambiar PUBLICO↔BROKER o el avión debe recalcular).
+        tarifa_hora_override_usd:
+          q.calculo_snapshot?.tarifa?.proviene_de_override === true &&
+          Number(q.tarifa_hora_usd) > 0
+            ? Number(q.tarifa_hora_usd)
+            : null,
         tuas_override_usd_pax:
           Number(q.calculo_snapshot?.tuas?.usd_pax_default) > 0
             ? Number(q.calculo_snapshot!.tuas.usd_pax_default)
             : null,
-        iva_pct_override: null,
+        // IVA manual DETECTABLE: se cobró IVA aunque el método de pago no lo
+        // pide → era override y se rehidrata. (Un % custom sobre un método
+        // CON IVA no es distinguible del estándar: ese caso se re-resuelve.)
+        iva_pct_override:
+          q.calculo_snapshot?.iva?.aplica_por_metodo_pago === false &&
+          Number(q.iva_pct) > 0
+            ? Number(q.iva_pct)
+            : null,
         notas: q.notas ?? "",
         notas_internas: q.notas_internas ?? "",
         motivo: "",
