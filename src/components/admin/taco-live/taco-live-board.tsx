@@ -64,6 +64,12 @@ export interface TacoLiveEscala {
   es_del_dia?: boolean;
   /** Día Cancún (YYYY-MM-DD) del tramo, para la etiqueta de la fila ajena. */
   dia_tramo?: string | null;
+  /**
+   * Avión de ESTE tramo (null = hereda el del vuelo). En vuelos con aviones
+   * mezclados cada matrícula lleva SU horómetro: sin esto las lecturas de
+   * dos aviones se leían revueltas. Opcional para tolerar API viejo.
+   */
+  aeronave_matricula?: string | null;
 }
 
 export interface TacoLiveVuelo {
@@ -121,7 +127,14 @@ export function TacoLiveBoard({
   }
   return (
     <div className="space-y-4">
-      {vuelos.map((v) => (
+      {vuelos.map((v) => {
+        // Vuelo MIXTO: algún tramo vuela en OTRO avión que el principal —
+        // cada fila lleva entonces su chip de matrícula (horómetros
+        // distintos; sin el chip las lecturas se leían revueltas).
+        const vueloMixto = v.escalas.some(
+          (x) => x.aeronave_matricula && x.aeronave_matricula !== v.matricula,
+        );
+        return (
         // Ancla por vuelo: el histórico de tacómetros del avión enlaza aquí
         // (scroll-mt para que el header no lo tape).
         <Card key={v.vuelo_id} id={`vuelo-${v.vuelo_id}`} className="scroll-mt-24">
@@ -149,11 +162,14 @@ export function TacoLiveBoard({
                 vueloId={v.vuelo_id}
                 escala={e}
                 fecha={fecha}
+                matriculaVuelo={v.matricula}
+                vueloMixto={vueloMixto}
               />
             ))}
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -196,10 +212,16 @@ function EscalaRow({
   vueloId,
   escala,
   fecha,
+  matriculaVuelo,
+  vueloMixto,
 }: {
   vueloId: string;
   escala: TacoLiveEscala;
   fecha?: string;
+  /** Matrícula principal del vuelo (para resaltar el tramo que va en OTRO avión). */
+  matriculaVuelo?: string | null;
+  /** true = el vuelo mezcla aviones: cada fila pinta su chip de matrícula. */
+  vueloMixto?: boolean;
 }) {
   const st = ESTADO_STYLE[escala.estado];
   const sugerencia = sugerenciaLlegada(escala);
@@ -232,6 +254,20 @@ function EscalaRow({
           {escala.es_ferry && (
             <Badge variant="outline" className="text-[10px]">
               Ferry
+            </Badge>
+          )}
+          {vueloMixto && (
+            <Badge
+              variant="outline"
+              className={`text-[10px] font-mono ${
+                escala.aeronave_matricula &&
+                escala.aeronave_matricula !== matriculaVuelo
+                  ? "bg-amber-500/10 text-amber-600 border-amber-500/40"
+                  : "text-muted-foreground"
+              }`}
+              title="Avión que vuela ESTE tramo — cada matrícula lleva su propio tacómetro."
+            >
+              Avión: {escala.aeronave_matricula ?? matriculaVuelo ?? "—"}
             </Badge>
           )}
           {esFuturo && (
@@ -406,6 +442,9 @@ function RevisionActions({
           <DialogHeader>
             <DialogTitle>
               Ajustar tacómetro · {escala.origen_iata} → {escala.destino_iata}
+              {/* Con avión propio del tramo, decirlo aquí también: oficina
+                  debe saber QUÉ horómetro está ajustando. */}
+              {escala.aeronave_matricula ? ` · ${escala.aeronave_matricula}` : ""}
             </DialogTitle>
             <DialogDescription>
               {escala.revision_motivo ?? "Corrige contra la foto."} Al guardar
