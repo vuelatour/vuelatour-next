@@ -151,9 +151,11 @@ export function AircraftTacometrosCard({
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                Secuencia de intervalos en horas que se repite. Ej. Cessna:{" "}
-                <span className="font-mono">50, 100, 200</span> (servicios a +50, +150,
-                +350 y vuelve a empezar). Seneca/Kodiak: <span className="font-mono">100</span>.
+                Cada intervalo cuenta por su cuenta desde la base y manda el más
+                próximo (el chico nunca se salta). Ej. Cessna:{" "}
+                <span className="font-mono">50, 100, 200</span> con base 1700 →
+                servicios a 1750, 1800, 1850, 1900 (el de 1800 es de 100 h; el de
+                1900, de 200 h). Seneca/Kodiak: <span className="font-mono">100</span>.
               </p>
               <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
                 <div className="space-y-1">
