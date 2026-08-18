@@ -35,12 +35,14 @@ import {
   createMaintenance,
   listDocumentTypes,
   listExpirations,
+  listExpirationsEliminadas,
   listMaintenance,
   updateMaintenance,
 } from "@/lib/api/engineering";
 import { createDocumentTypeAction } from "@/app/admin/document-types/actions";
 import {
   deleteExpirationAction,
+  restoreExpirationAction,
   extraerVencimientoAction,
   getExpirationArchivoAction,
   updateExpirationAction,
@@ -56,6 +58,7 @@ import type {
   EstadoMantenimiento,
   Mantenimiento,
   Vencimiento,
+  VencimientoEliminado,
 } from "@/types/engineering";
 
 const ESTADO_MANT: Record<EstadoMantenimiento, { label: string; cls: string }> = {
@@ -78,6 +81,7 @@ const fmtDate = fmtDateOnly;
 export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
   const [mant, setMant] = useState<Mantenimiento[]>([]);
   const [venc, setVenc] = useState<Vencimiento[]>([]);
+  const [vencEliminados, setVencEliminados] = useState<VencimientoEliminado[]>([]);
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
   const [error, setError] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -87,14 +91,16 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
 
   const reload = useCallback(async () => {
     try {
-      const [m, v, d] = await Promise.all([
+      const [m, v, d, ve] = await Promise.all([
         listMaintenance(aircraftId),
         listExpirations(aircraftId),
         listDocumentTypes(),
+        listExpirationsEliminadas(aircraftId).catch(() => []),
       ]);
       setMant(m);
       setVenc(v);
       setDocTypes(d);
+      setVencEliminados(ve);
       setError(false);
     } catch {
       // NUNCA disfrazar la caída de "sin registros": se pinta el aviso rojo.
@@ -104,12 +110,19 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([listMaintenance(aircraftId), listExpirations(aircraftId), listDocumentTypes()])
-      .then(([m, v, d]) => {
+    Promise.all([
+      listMaintenance(aircraftId),
+      listExpirations(aircraftId),
+      listDocumentTypes(),
+      // Best-effort: la sección de eliminados no debe tirar la card entera.
+      listExpirationsEliminadas(aircraftId).catch(() => []),
+    ])
+      .then(([m, v, d, ve]) => {
         if (!active) return;
         setMant(m);
         setVenc(v);
         setDocTypes(d);
+        setVencEliminados(ve);
         setError(false);
       })
       .catch(() => {
@@ -276,6 +289,15 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                           : "Permanente"}
                       {v.referencia ? ` · ${v.referencia}` : ""}
                     </p>
+                    {(v.registrado_por || v.actualizado_por) && (
+                      <p className="text-[10px] text-muted-foreground/70">
+                        Registró {v.registrado_por ?? "—"}
+                        {v.actualizado_por &&
+                        v.actualizado_por !== v.registrado_por
+                          ? ` · editó ${v.actualizado_por}`
+                          : ""}
+                      </p>
+                    )}
                     {v.archivo_url && (
                       <button
                         type="button"
@@ -355,6 +377,49 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                 </div>
               ))}
             </div>
+          )}
+          {/* Eliminados (borrado suave, 18-ago): bitácora de quién/cuándo y
+              restaurar sin recapturar — pedido del mecánico tras "perder"
+              documentos. */}
+          {vencEliminados.length > 0 && (
+            <details className="mt-3 rounded-lg border border-dashed border-border/70 p-3">
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                Eliminados ({vencEliminados.length}) — se pueden restaurar
+              </summary>
+              <div className="mt-2 space-y-2">
+                {vencEliminados.map((v) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
+                  >
+                    <span className="min-w-0 truncate">
+                      {v.tipo_documento?.nombre ?? "Documento"}
+                      {v.fecha_vencimiento
+                        ? ` · vencía ${fmtDate(v.fecha_vencimiento)}`
+                        : ""}{" "}
+                      · eliminado por {v.eliminado_por ?? "—"}
+                      {v.deleted_at ? ` el ${fmtDate(v.deleted_at)}` : ""}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={async () => {
+                        const res = await restoreExpirationAction(v.id);
+                        if (res.ok) {
+                          toast.success("Documento restaurado");
+                          void reload();
+                        } else {
+                          toast.error(res.error ?? "No se pudo restaurar");
+                        }
+                      }}
+                    >
+                      Restaurar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </CardContent>
       </Card>
@@ -1057,8 +1122,9 @@ function VencimientoRowActions({
             <DialogTitle>Eliminar · {nombre}</DialogTitle>
             <DialogDescription>
               Se elimina este vencimiento del avión: el sistema dejará de
-              vigilarlo y de avisar cuando caduque. Esta acción no se puede
-              deshacer.
+              vigilarlo y de avisar cuando caduque. Queda bitácora de quién lo
+              eliminó y administración puede restaurarlo desde esta misma
+              ficha (sección &quot;Eliminados&quot;).
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

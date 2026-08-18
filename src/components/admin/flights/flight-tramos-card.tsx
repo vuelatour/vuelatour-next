@@ -459,6 +459,19 @@ export function FlightTramosCard({
             </div>
           );
         })}
+        {/* Descubribilidad (caso #166, 18-ago): con el vuelo cubierto por
+            externo el botón Asignar se oculta y la oficina no encontraba el
+            camino de regreso a avión propio. */}
+        {esExterno && (
+          <p className="px-1 text-[11px] text-amber-600 dark:text-amber-400">
+            Vuelo cubierto por externo: no se asignan aviones propios. Si al
+            final sí sale con avión de la casa, usa{" "}
+            <span className="font-medium">
+              Editar externo → &quot;Regresar a vuelo propio&quot;
+            </span>{" "}
+            y después asigna avión y piloto.
+          </p>
+        )}
         <p className="px-1 text-[11px] text-muted-foreground">{TZ_LABEL}</p>
       </CardContent>
 

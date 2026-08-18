@@ -121,3 +121,14 @@ export async function deleteExpirationAction(id: string): Promise<ActionResult> 
     return fail(err);
   }
 }
+
+/** Restaura un documento eliminado (borrado suave). */
+export async function restoreExpirationAction(id: string): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/expirations/${id}/restaurar`, { method: "POST" });
+    revalidatePath("/admin/expirations");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}

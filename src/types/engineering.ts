@@ -34,7 +34,22 @@ export interface Vencimiento {
   notas: string | null;
   archivo_url: string | null;
   created_at: string;
+  /** Bitácora (18-ago-2026): quién registró y quién editó al último. */
+  updated_at?: string | null;
+  registrado_por?: string | null;
+  actualizado_por?: string | null;
   tipo_documento?: { nombre: string; es_critico: boolean } | null;
+}
+
+/** Documento eliminado (borrado suave): restaurable por ADMIN/COORDINADOR. */
+export interface VencimientoEliminado {
+  id: string;
+  fecha_vencimiento: string | null;
+  vence_por: "FECHA" | "HORAS" | "PERMANENTE";
+  referencia: string | null;
+  deleted_at: string | null;
+  eliminado_por: string | null;
+  tipo_documento?: { nombre?: string } | null;
 }
 
 export interface DocumentType {

@@ -128,7 +128,7 @@ export function ExpirationActions({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar este vencimiento?</AlertDialogTitle>
             <AlertDialogDescription>
-              El registro se borra de forma permanente. Esta acción no se puede deshacer.
+              El documento deja de contar para alertas y semáforo. Queda bitácora de quién lo eliminó y administración puede restaurarlo desde la ficha del avión.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
