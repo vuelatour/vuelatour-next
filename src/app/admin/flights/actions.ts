@@ -203,6 +203,8 @@ export interface RegisterCobroPayload {
   comision_banco_pct?: number;
   /** Comisión como MONTO directo (moneda del cobro): manda sobre el %. */
   comision_banco_monto?: number;
+  /** A qué CUENTA llegó (transferencia/HSBC link/cheque): texto libre. */
+  cuenta_destino?: string;
   referencia?: string;
   fecha_cobro?: string;
   notas?: string;

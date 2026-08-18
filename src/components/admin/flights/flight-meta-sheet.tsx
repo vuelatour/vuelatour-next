@@ -50,6 +50,7 @@ const METODO_COBRO_OPTS: { value: MetodoPago; label: string; description: string
   { value: "CHEQUE", label: "Cheque", description: "Facturable · entra a Facturas antes de cobrar" },
   { value: "EFECTIVO", label: "Efectivo", description: "Entra a Facturas hasta que se cobra" },
   { value: "DOLARES", label: "Dólares directo", description: "Entra a Facturas hasta que se cobra" },
+  { value: "OTRO", label: "Otro (manual)", description: "Entra a Facturas hasta que se cobra · FormaPago SAT 99" },
 ];
 
 const PERMISO_OPTS: { value: EstadoPermiso; label: string; description: string }[] = [

@@ -5,7 +5,9 @@ export type MetodoPago =
   | "TRANSFERENCIA"
   | "CHEQUE"
   | "EFECTIVO"
-  | "DOLARES";
+  | "DOLARES"
+  /** Método MANUAL (solo oficina): el nombre va en metodo_pago_detalle. */
+  | "OTRO";
 export type PaisAeronave = "MX" | "USA";
 
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
@@ -132,6 +134,8 @@ export interface CalculateQuoteRequest {
   /** Precio TOTAL pactado (externos): el motor ajusta para aterrizar exacto. */
   total_pactado_usd?: number;
   metodo_pago: MetodoPago;
+  /** Nombre MANUAL del método cuando metodo_pago = OTRO (ej. "PayPal"). */
+  metodo_pago_detalle?: string;
   /** TC MXN por USD pactado (pago en pesos). Persiste tc_usd_mxn + monto_total_mxn. */
   tc_usd_mxn?: number;
   /** Comisión BillPocket en % (custom, tope 20). Solo con metodo_pago=BILLPOCKET. */

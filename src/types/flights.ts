@@ -124,6 +124,8 @@ export interface FlightCobro {
   /** Comisión en la moneda del cobro; el banco depositó monto − esto. */
   comision_banco_monto?: string | null;
   referencia: string | null;
+  /** A qué cuenta llegó el cobro (texto libre; solo métodos bancarios). */
+  cuenta_destino?: string | null;
   fecha_cobro: string;
   foto_voucher_url: string | null;
   registrado_por: string | null;

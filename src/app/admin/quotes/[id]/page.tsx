@@ -437,7 +437,11 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
               <Cell label="Tipo de vuelo" value={quote.tipo} />
               <Cell
                 label="Método de cobro"
-                value={quote.metodo_cobro ?? "—"}
+                value={
+                  quote.metodo_cobro === "OTRO"
+                    ? `Otro${quote.metodo_cobro_detalle ? ` — ${quote.metodo_cobro_detalle}` : ""}`
+                    : (quote.metodo_cobro ?? "—")
+                }
               />
               <Cell
                 label="Fecha solicitud"

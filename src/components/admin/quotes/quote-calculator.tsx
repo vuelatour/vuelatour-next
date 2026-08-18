@@ -156,6 +156,8 @@ interface QuoteFormValues {
   /** Descuento negociado ("ciérramelo en 750"). Se captura en positivo. */
   descuento_usd: number | null;
   metodo_pago: MetodoPago;
+  /** Nombre MANUAL del método cuando metodo_pago = OTRO. */
+  metodo_pago_detalle: string;
   /** TC MXN por USD con el que entrará el pago (BillPocket/transferencia en pesos). */
   tc_usd_mxn: number | null;
   /** Comisión BillPocket % (custom por operación, tope 20). */
@@ -218,6 +220,10 @@ const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "BILLPOCKET", label: "BillPocket", hint: "Sin factura" },
   { value: "EFECTIVO", label: "Efectivo", hint: "Sin IVA" },
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },
+  // Método MANUAL: la oficina escribe cuál es. Sin IVA por defecto (el
+  // override de IVA de "Overrides avanzados" es la válvula si sí factura);
+  // el piloto NO puede cobrarlo en campo (candado del API).
+  { value: "OTRO", label: "Otro (escríbelo)", hint: "Manual · sin IVA por defecto" },
 ];
 
 /** Mapea una Route del API a la opción local del dropdown (con detalle por tramo). */
@@ -555,6 +561,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           q.calculo_snapshot?.meta?.descuento_usd ??
           (Number(q.ajuste_final_usd) < 0 ? Math.abs(Number(q.ajuste_final_usd)) : null),
         metodo_pago: (q.metodo_cobro ?? "TRANSFERENCIA") as MetodoPago,
+        metodo_pago_detalle: q.metodo_cobro_detalle ?? "",
         tc_usd_mxn: Number(q.tc_usd_mxn) > 0 ? Number(q.tc_usd_mxn) : null,
         comision_billpocket_pct:
           q.calculo_snapshot?.meta?.comision_billpocket_pct ?? null,
@@ -626,6 +633,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       redondeo_usd: null,
       descuento_usd: null,
       metodo_pago: "TRANSFERENCIA",
+      metodo_pago_detalle: "",
       tc_usd_mxn: null,
       comision_billpocket_pct: null,
       comision_vendedor_modo: "FIJA",
@@ -746,6 +754,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ? Number(debounced.total_pactado_usd)
           : undefined,
       metodo_pago: debounced.metodo_pago,
+      metodo_pago_detalle:
+        debounced.metodo_pago === "OTRO" && debounced.metodo_pago_detalle.trim()
+          ? debounced.metodo_pago_detalle.trim()
+          : undefined,
       tc_usd_mxn:
         Number(debounced.tc_usd_mxn) > 0 ? Number(debounced.tc_usd_mxn) : undefined,
       comision_billpocket_pct:
@@ -2061,6 +2073,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               placeholder="Selecciona método"
             />
           </Field>
+
+          {values.metodo_pago === "OTRO" && (
+            <Field
+              label="¿Cuál método?"
+              required
+              hint="Escríbelo tal como quieren verlo (ej. PayPal, depósito en ventanilla)"
+            >
+              <Input
+                value={values.metodo_pago_detalle}
+                onChange={(e) => setValue("metodo_pago_detalle", e.target.value)}
+                placeholder="Nombre del método"
+                maxLength={80}
+              />
+            </Field>
+          )}
 
           {/* BillPocket no factura (sin IVA) pero cobra comisión CUSTOM por
               operación (5%, 9%… tope 20%): entra al total como línea sin IVA. */}

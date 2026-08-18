@@ -83,6 +83,8 @@ export interface PersistedQuote {
   monto_total_mxn: Decimal | null;
 
   metodo_cobro: MetodoPago | null;
+  /** Nombre manual del método cuando metodo_cobro = OTRO. */
+  metodo_cobro_detalle?: string | null;
   pago_anticipado_req: boolean;
   /** Nombres de los pasajeros (manifiesto, para tramitar permisos). */
   pasajeros_nombres?: string[];
@@ -143,6 +145,8 @@ export interface CotizacionVersion {
   extras_total_usd?: Decimal;
   tc_usd_mxn: Decimal | null;
   metodo_cobro: MetodoPago | null;
+  /** Nombre manual del método cuando metodo_cobro = OTRO. */
+  metodo_cobro_detalle?: string | null;
   calculo_snapshot: QuoteBreakdown | null;
   motivo: string | null;
   created_at: string;

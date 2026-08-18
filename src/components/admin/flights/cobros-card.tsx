@@ -34,6 +34,7 @@ export const METODO_LABELS: Record<string, string> = {
   BILLPOCKET: "BillPocket",
   EFECTIVO: "Efectivo",
   DOLARES: "Dólares",
+  OTRO: "Otro",
 };
 
 interface CobrosCardProps {
@@ -113,6 +114,7 @@ export function CobrosCard({
                     </p>
                     <p className="text-[11px] text-muted-foreground truncate">
                       {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro}
+                      {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
                     {Number(c.comision_banco_monto) > 0 && (

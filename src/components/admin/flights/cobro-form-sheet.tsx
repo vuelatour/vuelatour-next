@@ -35,6 +35,8 @@ const METODOS: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "BILLPOCKET", label: "BillPocket", hint: "Terminal · sin factura" },
   { value: "EFECTIVO", label: "Efectivo (MXN)", hint: "Sin IVA" },
   { value: "DOLARES", label: "Dólares en mano", hint: "Sin IVA" },
+  // Método manual (solo oficina): descríbelo en referencia/notas.
+  { value: "OTRO", label: "Otro", hint: "Método manual · descríbelo en la referencia" },
 ];
 
 const CobroFormSchema = z
@@ -48,6 +50,7 @@ const CobroFormSchema = z
       "BILLPOCKET",
       "EFECTIVO",
       "DOLARES",
+      "OTRO",
     ]),
     tc_usd_mxn: z
       .union([z.coerce.number(), z.literal("")])
@@ -72,6 +75,7 @@ const CobroFormSchema = z
       .optional()
       .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
     referencia: z.string().max(100).optional().or(z.literal("")),
+    cuenta_destino: z.string().max(120).optional().or(z.literal("")),
     fecha_cobro: z.string().optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
@@ -116,6 +120,7 @@ function defaults(pendingUsd: number): CobroFormValues {
     comision_banco_pct: undefined,
     comision_banco_monto: undefined,
     referencia: "",
+    cuenta_destino: "",
     fecha_cobro: todayLocal(),
     notas: "",
   };
@@ -194,6 +199,7 @@ export function CobroFormSheet({
               ? Number(values.comision_banco_pct)
               : undefined,
         referencia: values.referencia?.trim() || undefined,
+        cuenta_destino: values.cuenta_destino?.trim() || undefined,
         fecha_cobro: values.fecha_cobro
           ? cancunInputToIso(`${values.fecha_cobro.slice(0, 10)}T12:00`)
           : undefined,
@@ -393,6 +399,19 @@ export function CobroFormSheet({
                 );
               })()}
             </div>
+          )}
+
+          {/* A qué cuenta LLEGÓ el dinero (pedido del equipo, 18-ago): texto
+              libre — típicamente el alias de la cuenta (HSBC MXN, Banamex
+              USD…). Solo métodos que tocan banco. */}
+          {["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"].includes(metodo) && (
+            <Field
+              label="¿A qué cuenta llegó?"
+              hint="Banco/alias de la cuenta que recibió (ej. HSBC MXN)"
+              error={errors.cuenta_destino?.message}
+            >
+              <Input placeholder="Opcional" {...register("cuenta_destino")} />
+            </Field>
           )}
 
           <Field

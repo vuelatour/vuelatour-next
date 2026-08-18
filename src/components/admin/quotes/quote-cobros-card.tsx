@@ -90,7 +90,8 @@ export function QuoteCobrosCard({
                 ${Number(c.monto).toLocaleString("en-US")} {c.moneda}
               </p>
               <p className="text-xs text-muted-foreground">
-                {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro} ·{" "}
+                {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro}
+                {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""} ·{" "}
                 {fmtDate(c.fecha_cobro)}
                 {c.comision_banco_monto != null &&
                   Number(c.comision_banco_monto) > 0 && (
