@@ -93,14 +93,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {quote.estado !== "SOLICITUD" && (
-              <Link
-                href={`/admin/flights/${quote.id}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                Ver detalle del vuelo
-              </Link>
-            )}
+            {/* El acceso al vuelo vive en QuoteActionsBar ("Ver vuelo"): un
+                segundo botón aquí duplicaba la misma ruta (y en COTIZADO
+                enlazaba a una página que rebota). */}
             <QuoteActionsBar quote={quote} />
           </div>
         </div>
