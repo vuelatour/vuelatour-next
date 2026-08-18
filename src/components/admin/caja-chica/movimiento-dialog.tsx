@@ -15,9 +15,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { createCajaMovimientoAction } from "@/app/admin/caja-chica/actions";
+import {
+  createCajaMovimientoAction,
+  updateCajaMovimientoAction,
+} from "@/app/admin/caja-chica/actions";
 import type { MovimientoFormValues } from "@/app/admin/caja-chica/schema";
-import type { MonedaCaja } from "@/types/caja-chica";
+import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
 import { Field } from "@/components/admin/form-field";
 
 const TIPOS = [
@@ -33,6 +36,10 @@ interface MovimientoDialogProps {
   persona: string;
   moneda: MonedaCaja;
   usuarios: { id: string; nombre: string }[];
+  /** Con movimiento = modo CORRECCIÓN (caso Mari, 18-ago: el ingreso quedó
+   *  con la fecha equivocada y no había forma de arreglarlo): prellena todo
+   *  y el submit hace PATCH en vez de crear. */
+  movimiento?: CajaMovimiento | null;
 }
 
 export function MovimientoDialog({
@@ -42,8 +49,10 @@ export function MovimientoDialog({
   persona,
   moneda,
   usuarios,
+  movimiento,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
+  const esCorreccion = movimiento != null;
 
   const {
     register,
@@ -52,19 +61,25 @@ export function MovimientoDialog({
     watch,
     setValue,
     formState: { errors },
-  } = useForm<MovimientoFormValues>({ defaultValues: defaults(moneda) });
+  } = useForm<MovimientoFormValues>({
+    defaultValues: defaults(moneda, movimiento),
+  });
 
   useEffect(() => {
-    if (open) reset(defaults(moneda));
-  }, [open, moneda, reset]);
+    if (open) reset(defaults(moneda, movimiento));
+  }, [open, moneda, movimiento, reset]);
 
   const tipo = watch("tipo");
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
-      const result = await createCajaMovimientoAction(fondoId, values);
+      const result = esCorreccion
+        ? await updateCajaMovimientoAction(movimiento.id, fondoId, values)
+        : await createCajaMovimientoAction(fondoId, values);
       if (result.ok) {
-        toast.success("Movimiento registrado");
+        toast.success(
+          esCorreccion ? "Movimiento corregido" : "Movimiento registrado",
+        );
         onOpenChange(false);
       } else if (result.fieldErrors) {
         const f = Object.keys(result.fieldErrors)[0];
@@ -79,7 +94,9 @@ export function MovimientoDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Movimiento de caja chica</DialogTitle>
+          <DialogTitle>
+            {esCorreccion ? "Corregir movimiento" : "Movimiento de caja chica"}
+          </DialogTitle>
           <DialogDescription>{persona}</DialogDescription>
         </DialogHeader>
 
@@ -130,7 +147,11 @@ export function MovimientoDialog({
               Cancelar
             </Button>
             <Button type="submit" disabled={pending}>
-              {pending ? "Registrando…" : "Registrar"}
+              {pending
+                ? "Guardando…"
+                : esCorreccion
+                  ? "Guardar cambios"
+                  : "Registrar"}
             </Button>
           </DialogFooter>
         </form>
@@ -140,7 +161,23 @@ export function MovimientoDialog({
 }
 
 
-function defaults(moneda: MonedaCaja): MovimientoFormValues {
+function defaults(
+  moneda: MonedaCaja,
+  m?: CajaMovimiento | null,
+): MovimientoFormValues {
+  if (m) {
+    // Corrección: prellenar TODO lo registrado (incluida la fecha — el
+    // motivo original del diálogo en modo edición).
+    return {
+      tipo: m.tipo,
+      monto: String(m.monto),
+      moneda,
+      fecha: m.fecha ?? "",
+      autorizado_por: m.autorizado_por ?? "",
+      referencia: m.referencia ?? "",
+      notas: m.notas ?? "",
+    };
+  }
   return {
     tipo: "REPOSICION",
     monto: "",

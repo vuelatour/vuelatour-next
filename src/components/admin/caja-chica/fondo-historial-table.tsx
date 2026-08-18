@@ -4,7 +4,9 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
+import { MovimientoActions } from "./movimiento-actions";
 import type { Gasto } from "@/types/expenses";
+import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
 
 /** Fila-viewmodel SERIALIZABLE que arma la página (server) del fondo. */
 export interface MovimientoFondoRow {
@@ -22,6 +24,9 @@ export interface MovimientoFondoRow {
   vueloFolio: number | null;
   /** Gasto editable desde aquí (solo movimientos con origen "gasto"). */
   gasto: Gasto | null;
+  /** Movimiento de caja corregible/eliminable (origen "caja") — caso Mari
+   *  18-ago: el ingreso con fecha equivocada no tenía forma de arreglarse. */
+  movimiento?: CajaMovimiento | null;
   /** URL firmada de la foto del comprobante, si tiene. */
   fotoUrl?: string;
 }
@@ -30,10 +35,18 @@ export function FondoHistorialTable({
   movimientos,
   aircraft,
   providers,
+  fondoId,
+  persona,
+  moneda,
+  usuarios,
 }: {
   movimientos: MovimientoFondoRow[];
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
+  fondoId: string;
+  persona: string;
+  moneda: MonedaCaja;
+  usuarios: { id: string; nombre: string }[];
 }) {
   const columns: Array<DataTableColumn<MovimientoFondoRow>> = [
     {
@@ -102,14 +115,22 @@ export function FondoHistorialTable({
       // de pago (p.ej. era tarjeta), el movimiento desaparece del fondo
       // automáticamente.
       cell: (m) =>
-        m.gasto && (
+        m.gasto ? (
           <ExpenseActions
             gasto={m.gasto}
             aircraft={aircraft}
             providers={providers}
             fotoUrl={m.fotoUrl}
           />
-        ),
+        ) : m.movimiento ? (
+          <MovimientoActions
+            movimiento={m.movimiento}
+            fondoId={fondoId}
+            persona={persona}
+            moneda={moneda}
+            usuarios={usuarios}
+          />
+        ) : null,
     },
   ];
 

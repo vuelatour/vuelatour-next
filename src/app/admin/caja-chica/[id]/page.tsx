@@ -66,9 +66,15 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
 
   // Filas-viewmodel serializables para la tabla cliente (nada de Maps ni
   // funciones cruzando la frontera server→cliente).
+  // Movimientos de caja por id: la fila 'caja' del historial lleva el
+  // movimiento completo para poder corregirlo/eliminarlo (caso Mari 18-ago).
+  const movsById = new Map(fondo.movimientos.map((m) => [m.id, m]));
   const historial: MovimientoFondoRow[] = fondo.historial.map((e) => {
     const gasto = e.origen === "gasto" ? (gastosById.get(e.id) ?? null) : null;
+    const movimiento =
+      e.origen === "caja" ? (movsById.get(e.id) ?? null) : null;
     return {
+      movimiento,
       key: `${e.origen}-${e.id}`,
       fechaFmt: fmtDate(e.fecha),
       tipoLabel: CONCEPTO[e.tipo] ?? e.tipo,
@@ -233,6 +239,10 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
               movimientos={historial}
               aircraft={aircraft}
               providers={providers}
+              fondoId={fondo.id}
+              persona={fondo.usuario?.nombre ?? "Fondo"}
+              moneda={fondo.moneda}
+              usuarios={usuarios}
             />
           )}
         </CardContent>
