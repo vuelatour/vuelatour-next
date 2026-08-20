@@ -20,7 +20,21 @@ export function FondosTable({
       key: "persona",
       header: "Persona",
       cellClassName: "font-medium",
-      cell: (f) => f.usuario?.nombre ?? "—",
+      cell: (f) => {
+        const origen = f.fondo_origen_id
+          ? fondos.find((x) => x.id === f.fondo_origen_id)
+          : null;
+        return (
+          <div className="min-w-0">
+            <p>{f.usuario?.nombre ?? "—"}</p>
+            {f.fondo_origen_id && (
+              <p className="text-[11px] font-normal text-muted-foreground">
+                Se fondea desde {origen?.usuario?.nombre ?? "otra caja"}
+              </p>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "rol",

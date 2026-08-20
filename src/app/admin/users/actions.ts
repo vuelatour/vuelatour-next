@@ -119,3 +119,81 @@ export async function resetUserPasswordAction(
     return fail(err);
   }
 }
+
+// ===== Caja chica vinculada (20-ago-2026): configurar desde Usuarios =====
+
+export interface CajaVinculoInfo {
+  fondo: {
+    id: string;
+    moneda: string;
+    fondo_origen_id: string | null;
+  } | null;
+  /** Cajas activas que pueden ser madre (con su dueño y moneda). */
+  opciones: { fondoId: string; nombre: string; moneda: string }[];
+}
+
+/** Fondo del usuario + cajas candidatas a madre, para el diálogo de vínculo. */
+export async function getCajaVinculoAction(
+  usuarioId: string,
+): Promise<ActionResult<CajaVinculoInfo>> {
+  try {
+    const res = await apiServer<{
+      data: Array<{
+        id: string;
+        usuario_id: string;
+        moneda: string;
+        fondo_origen_id?: string | null;
+        usuario?: { nombre?: string } | null;
+      }>;
+    }>("/v1/caja-chica/fondos?activo=true&limit=200");
+    const fondos = res.data ?? [];
+    const propio = fondos.find((f) => f.usuario_id === usuarioId) ?? null;
+    return {
+      ok: true,
+      data: {
+        fondo: propio
+          ? {
+              id: propio.id,
+              moneda: propio.moneda,
+              fondo_origen_id: propio.fondo_origen_id ?? null,
+            }
+          : null,
+        opciones: fondos
+          .filter((f) => f.usuario_id !== usuarioId)
+          .map((f) => ({
+            fondoId: f.id,
+            nombre: f.usuario?.nombre ?? "—",
+            moneda: f.moneda,
+          })),
+      },
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Vincula (o desvincula) la caja del usuario con su caja madre. Con
+ * `retroactivo`, las reposiciones YA registradas también generan su espejo
+ * (descuenta el fondeo histórico de la madre).
+ */
+export async function setCajaOrigenAction(
+  fondoId: string,
+  origenFondoId: string | null,
+  retroactivo: boolean,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/caja-chica/fondos/${fondoId}`, {
+      method: "PATCH",
+      body: {
+        fondo_origen_id: origenFondoId,
+        ...(origenFondoId && retroactivo ? { retroactivo: true } : {}),
+      },
+    });
+    revalidatePath("/admin/caja-chica");
+    revalidatePath("/admin/users");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}

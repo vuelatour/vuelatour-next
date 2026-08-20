@@ -23,6 +23,8 @@ export interface CajaFondo {
   monto_fondo?: number | string | null;
   /** Última REPOSICIÓN registrada; null si nunca ha habido. */
   ultima_reposicion?: { fecha: string; monto: number } | null;
+  /** Caja MADRE que fondea a esta (espejos automáticos). Null = sin vínculo. */
+  fondo_origen_id?: string | null;
 }
 
 export interface CajaMovimiento {
@@ -39,6 +41,8 @@ export interface CajaMovimiento {
   created_at: string;
   autorizado?: { nombre: string } | null;
   registrado?: { nombre: string } | null;
+  /** Espejo de un fondeo automático: sigue a su origen, no se edita directo. */
+  espejo_de_id?: string | null;
 }
 
 export interface HistorialEntry {

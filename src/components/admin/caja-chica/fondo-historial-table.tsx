@@ -123,13 +123,24 @@ export function FondoHistorialTable({
             fotoUrl={m.fotoUrl}
           />
         ) : m.movimiento ? (
-          <MovimientoActions
-            movimiento={m.movimiento}
-            fondoId={fondoId}
-            persona={persona}
-            moneda={moneda}
-            usuarios={usuarios}
-          />
+          m.movimiento.espejo_de_id ? (
+            // Espejo de un fondeo automático: sigue a la reposición de la
+            // caja vinculada (ahí se corrige o elimina).
+            <span
+              className="text-[11px] text-muted-foreground"
+              title="Espejo automático: corrígelo o elimínalo desde la reposición de la caja vinculada."
+            >
+              espejo
+            </span>
+          ) : (
+            <MovimientoActions
+              movimiento={m.movimiento}
+              fondoId={fondoId}
+              persona={persona}
+              moneda={moneda}
+              usuarios={usuarios}
+            />
+          )
         ) : null,
     },
   ];

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import {
+  BanknotesIcon,
   EllipsisHorizontalIcon,
   EnvelopeIcon,
   KeyIcon,
@@ -30,11 +31,13 @@ import {
   resendInvitationAction,
 } from "@/app/admin/users/actions";
 import { UserFormDialog } from "./user-form-dialog";
+import { CajaVinculoDialog } from "./caja-vinculo-dialog";
 import { ResetPasswordDialog } from "./reset-password-dialog";
 import type { User } from "@/types/users";
 
 export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
   const [openEdit, setOpenEdit] = useState(false);
+  const [openCaja, setOpenCaja] = useState(false);
   const [openReset, setOpenReset] = useState(false);
   const [openDeactivate, setOpenDeactivate] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -79,6 +82,13 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
             <PencilIcon className="h-4 w-4" />
             Editar
           </DropdownMenuItem>
+          {/* Cajas vinculadas (20-ago): la caja de esta persona se fondea
+              desde la caja madre elegida — las reposiciones se descuentan
+              solas de la madre. */}
+          <DropdownMenuItem onClick={() => setOpenCaja(true)} className="gap-2">
+            <BanknotesIcon className="h-4 w-4" />
+            Caja chica: fondear desde…
+          </DropdownMenuItem>
           {/* Externos (doc 3.7): sin acceso — ni contraseña ni invitación. */}
           {!user.es_piloto_externo && (
             <DropdownMenuItem onClick={() => setOpenReset(true)} className="gap-2">
@@ -112,6 +122,7 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
       </DropdownMenu>
 
       <UserFormDialog open={openEdit} onOpenChange={setOpenEdit} user={user} />
+      <CajaVinculoDialog open={openCaja} onOpenChange={setOpenCaja} user={user} />
       <ResetPasswordDialog open={openReset} onOpenChange={setOpenReset} user={user} />
 
       <AlertDialog open={openDeactivate} onOpenChange={setOpenDeactivate}>
