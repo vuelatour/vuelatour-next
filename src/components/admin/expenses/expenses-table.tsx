@@ -69,6 +69,26 @@ export function ExpensesTable({
         ),
       },
       {
+        // Descripción/motivo a la vista (pedido oficina 20-ago): la primera
+        // línea de la nota — antes había que abrir Verificar/editar para
+        // leerla. El hover muestra la nota completa.
+        key: "descripcion",
+        header: "Descripción",
+        cell: (g) => {
+          const linea = (g.notas ?? "").split("\n")[0].trim();
+          return linea ? (
+            <span
+              className="block max-w-[240px] truncate text-xs text-muted-foreground"
+              title={g.notas ?? undefined}
+            >
+              {linea}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          );
+        },
+      },
+      {
         key: "monto",
         header: "Monto",
         headClassName: "text-right",
@@ -200,9 +220,10 @@ export function ExpensesTable({
           g.lugar ?? "",
           g.vuelo?.folio ?? "",
           g.captura?.nombre ?? "",
+          g.notas ?? "",
         ].join(" ")
       }
-      searchPlaceholder="Buscar gasto (proveedor, categoría, matrícula, lugar)…"
+      searchPlaceholder="Buscar gasto (proveedor, categoría, matrícula, descripción)…"
     />
   );
 }
