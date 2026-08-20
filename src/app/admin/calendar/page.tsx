@@ -144,6 +144,11 @@ function Legend() {
   const items = [
     { label: "Vuelo propio", color: "#9CA3AF", title: "Vuelo con avión asignado; el color es el configurado para esa aeronave." },
     {
+      label: "Evento (no vuelo)",
+      color: "#0EA5E9",
+      title: "Lavado, trámite, visita… agendado desde la app o el panel. Con avión toma su color.",
+    },
+    {
       label: "Tentativo",
       color: "#64748B",
       title: "Reserva tentativa: espacio apartado sin cotización (el cliente aún no confirma). Se cotiza desde el detalle del vuelo.",

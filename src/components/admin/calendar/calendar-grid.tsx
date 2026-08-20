@@ -5,7 +5,7 @@ import Link from "next/link";
 import { XMarkIcon, ArrowUpRightIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import type { CalendarEvent } from "@/types/calendar";
-import { RemoveDescansoButton } from "./descansos";
+import { RemoveDescansoButton, RemoveEventoButton } from "./descansos";
 
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
@@ -142,6 +142,18 @@ function eventHref(ev: CalendarEvent): string {
 }
 
 function EventChip({ ev }: { ev: CalendarEvent }) {
+  // Evento NO-vuelo (lavado, trámite, visita): chip sin link a vuelo.
+  if (ev.tipo_evento === "evento") {
+    return (
+      <span
+        title={ev.title}
+        className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate"
+        style={{ backgroundColor: ev.color }}
+      >
+        📌 {ev.titulo ?? ev.title}
+      </span>
+    );
+  }
   if (ev.tipo_evento === "descanso") {
     return (
       <span
@@ -170,6 +182,31 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
 }
 
 function DayEvent({ ev }: { ev: CalendarEvent }) {
+  if (ev.tipo_evento === "evento") {
+    return (
+      <div className="rounded-lg border border-border p-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+              <span className="font-medium text-sm truncate">
+                📌 {ev.hora ? `${ev.hora} · ` : ""}{ev.titulo ?? ev.title}
+                {ev.aeronave_matricula ? ` · ${ev.aeronave_matricula}` : ""}
+              </span>
+            </div>
+            {(ev.piloto_nombre || ev.notas) && (
+              <p className="mt-0.5 pl-5 text-xs text-muted-foreground truncate">
+                {[ev.piloto_nombre, ev.notas].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
+          {ev.evento_id && (
+            <RemoveEventoButton eventoId={ev.evento_id} label={ev.titulo ?? ev.title} />
+          )}
+        </div>
+      </div>
+    );
+  }
   if (ev.tipo_evento === "descanso") {
     return (
       <div className="rounded-lg border border-border p-2.5">

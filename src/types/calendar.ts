@@ -1,9 +1,14 @@
 export interface CalendarEvent {
   id: string;
-  /** "descanso" = bloque de descanso de piloto (no es un vuelo). */
-  tipo_evento?: "vuelo" | "descanso";
+  /** "descanso" = descanso de piloto; "evento" = no-vuelo (lavado, trámite). */
+  tipo_evento?: "vuelo" | "descanso" | "evento";
   /** Id del registro piloto_descanso (para quitarlo desde el calendario). */
   descanso_id?: string;
+  /** Id del evento_flota (para quitarlo desde el calendario). */
+  evento_id?: string;
+  /** Título del evento NO-vuelo. */
+  titulo?: string | null;
+  notas?: string | null;
   /** Vuelo al que pertenece el evento (ida y regreso comparten vuelo_id). */
   vuelo_id?: string;
   /** Escala/tramo concreto del evento (para navegar al tramo). */

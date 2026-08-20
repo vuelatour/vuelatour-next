@@ -29,6 +29,7 @@ import { Field } from "@/components/admin/form-field";
 import {
   createDescansoAction,
   deleteDescansoAction,
+  deleteEventoFlotaAction,
 } from "@/app/admin/calendar/actions";
 
 /** Botón "Marcar descanso": rango de días en que un piloto no vuela. */
@@ -169,6 +170,69 @@ export function RemoveDescansoButton({
             <AlertDialogTitle>¿Quitar este descanso?</AlertDialogTitle>
             <AlertDialogDescription>
               {label}. Se elimina el rango completo del calendario.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              disabled={pending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {pending ? "Quitando…" : "Quitar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/** Quitar un evento NO-vuelo (lavado, trámite) — mismo patrón que descansos. */
+export function RemoveEventoButton({
+  eventoId,
+  label,
+}: {
+  eventoId: string;
+  label: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const handleDelete = () => {
+    startTransition(async () => {
+      const res = await deleteEventoFlotaAction(eventoId);
+      if (res.ok) {
+        toast.success("Evento quitado");
+        setOpen(false);
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Error al quitar el evento");
+      }
+    });
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+        title="Quitar evento"
+      >
+        <TrashIcon className="h-3.5 w-3.5" />
+        Quitar
+      </button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Quitar este evento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {label}. Se elimina del calendario (no toca ningún vuelo).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

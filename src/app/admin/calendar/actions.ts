@@ -48,3 +48,14 @@ export async function deleteDescansoAction(descansoId: string): Promise<ActionRe
     return fail(err);
   }
 }
+
+/** Elimina un evento NO-vuelo (lavado, trámite) del calendario. */
+export async function deleteEventoFlotaAction(eventoId: string): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/calendar/eventos/${eventoId}`, { method: "DELETE" });
+    revalidatePath("/admin/calendar");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
