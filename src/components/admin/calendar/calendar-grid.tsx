@@ -6,6 +6,7 @@ import { XMarkIcon, ArrowUpRightIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import type { CalendarEvent } from "@/types/calendar";
 import { RemoveDescansoButton, RemoveEventoButton } from "./descansos";
+import { textOnColor } from "@/lib/color-contrast";
 
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
@@ -147,8 +148,8 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
     return (
       <span
         title={ev.title}
-        className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate"
-        style={{ backgroundColor: ev.color }}
+        className="block rounded px-1.5 py-1 text-[11px] leading-tight truncate"
+        style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
       >
         📌 {ev.titulo ?? ev.title}
       </span>
@@ -158,8 +159,8 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
     return (
       <span
         title={ev.title}
-        className="block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate"
-        style={{ backgroundColor: ev.color }}
+        className="block rounded px-1.5 py-1 text-[11px] leading-tight truncate"
+        style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
       >
         😴 {ev.piloto_nombre ?? "Descanso"}
       </span>
@@ -172,8 +173,9 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
     <Link
       href={eventHref(ev)}
       title={ev.title}
-      className={`block rounded px-1.5 py-1 text-[11px] leading-tight text-white truncate hover:opacity-90 transition-opacity ${esCancelado ? "line-through opacity-80" : ""}`}
-      style={{ backgroundColor: ev.color }}
+      className={`block rounded px-1.5 py-1 text-[11px] leading-tight truncate hover:opacity-90 transition-opacity ${esCancelado ? "line-through opacity-80" : ""}`}
+      // Texto oscuro sobre fondos claros (paleta pastel de los aviones).
+      style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
     >
       {esCancelado ? "✕ " : esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
       {label}
