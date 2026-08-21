@@ -10,6 +10,9 @@ import {
   DocumentCheckIcon,
   ChevronRightIcon,
   MoonIcon,
+  ClockIcon,
+  ReceiptPercentIcon,
+  ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -22,6 +25,8 @@ import { AccessToggle } from "@/components/admin/pilots/access-toggle";
 import { MesStatsSelector } from "@/components/admin/pilots/mes-stats-selector";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type { Expiration, EstadoVencimiento } from "@/types/expirations";
+import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import type { EstadoVuelo } from "@/types/quotes-persisted";
 import type {
   PilotCapture,
   PilotDescanso,
@@ -45,6 +50,26 @@ function initials(name: string): string {
 
 const fmtDateTime = sharedFmtDateTime;
 const fmtDate = sharedFmtDate;
+
+/** Hoy en Cancún como YYYY-MM-DD (los descansos son días de pared). */
+function hoyCancun(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cancun" }).format(
+    new Date(),
+  );
+}
+
+/** Badge de estado con la FUENTE ÚNICA (estado-vuelo.ts); estado desconocido
+ *  cae a gris en vez de romper. */
+function EstadoBadge({ estado }: { estado: string }) {
+  const cls =
+    ESTADO_STYLES[estado as EstadoVuelo] ?? "bg-muted text-muted-foreground border-border";
+  const label = ESTADO_LABELS[estado as EstadoVuelo] ?? estado;
+  return (
+    <Badge variant="outline" className={`shrink-0 ${cls}`}>
+      {label}
+    </Badge>
+  );
+}
 
 export default async function PilotDetailPage({
   params,
@@ -123,6 +148,17 @@ export default async function PilotDetailPage({
         )}
       </div>
 
+      {/* Franja de alertas (21-ago): lo que oficina debe ver ANTES de asignarle
+          un vuelo — documentos vencidos/por vencer, descanso activo hoy y horas
+          cerca del límite. Solo aparece si hay algo. */}
+      <AlertasPiloto
+        pilotoId={pilot.id}
+        vencimientos={vencimientos}
+        descansos={pilot.descansos_proximos ?? []}
+        horasMes={pilot.stats.horas_mes ?? 0}
+        horasLimite={pilot.stats.horas_limite ?? 90}
+      />
+
       {/* Stats del MES elegido (default: corriente). El resto del expediente
           (activos, recientes, documentos) no depende del mes. El selector
           vive EN el encabezado de la sección — flotando solo parecía perdido. */}
@@ -148,41 +184,51 @@ export default async function PilotDetailPage({
         />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        <Stat label="Vuelos mes" value={pilot.stats.vuelos_mes} />
-        {/* Horas del mes con semáforo del límite informativo de 90 hrs
-            (doc 3.6): rojo al exceder, ámbar arriba del 85%. */}
-        <Stat
-          label="Horas mes"
-          isText
-          value={`${(pilot.stats.horas_mes ?? 0).toLocaleString("en-US")} / ${pilot.stats.horas_limite ?? 90} hr`}
-          hint="límite informativo de 90 hr"
-          valueClass={
-            (pilot.stats.horas_mes ?? 0) >= (pilot.stats.horas_limite ?? 90)
-              ? "text-destructive"
-              : (pilot.stats.horas_mes ?? 0) >=
-                  (pilot.stats.horas_limite ?? 90) * 0.85
-                ? "text-amber-600 dark:text-amber-400"
-                : undefined
-          }
-        />
-        <Stat label="Activos y próximos" value={pilot.stats.vuelos_proximos} />
-        <Stat
-          label="Capturas mes"
-          value={pilot.stats.capturas_mes}
-          hint="tacómetros sincronizados"
-        />
-        <Stat
-          label="Gastos mes"
-          value={pilot.stats.gastos_mes}
-          hint="capturados por el piloto"
-        />
-        <Stat
-          label="Cobrado mes"
-          value={`$${pilot.stats.total_cobrado_mes_usd.toLocaleString("en-US")}`}
-          isText
-          hint="dinero recibido de sus vuelos (USD)"
-        />
+      {/* Tres grupos con peso distinto: OPERACIÓN (lo que vuela), CAPTURA
+          (disciplina en la app) y DINERO. Las horas llevan barra contra el
+          límite informativo de 90 h (doc 3.6): ámbar arriba del 85%, rojo al
+          exceder. */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <GrupoStats titulo="Operación" icon={CalendarDaysIcon}>
+          <Stat label="Vuelos" value={pilot.stats.vuelos_mes} hint="en el mes" />
+          <Stat
+            label="Activos y próximos"
+            value={pilot.stats.vuelos_proximos}
+            hint="hoy y programados"
+          />
+          <HorasStat
+            horas={pilot.stats.horas_mes ?? 0}
+            limite={pilot.stats.horas_limite ?? 90}
+          />
+        </GrupoStats>
+        <GrupoStats titulo="Captura en la app" icon={ClockIcon}>
+          <Stat
+            label="Tacómetros"
+            value={pilot.stats.capturas_mes}
+            hint="lecturas sincronizadas"
+          />
+          <Stat
+            label="Gastos"
+            value={pilot.stats.gastos_mes}
+            hint="capturados por el piloto"
+          />
+        </GrupoStats>
+        <GrupoStats titulo="Dinero" icon={BanknotesIcon}>
+          <Stat
+            label="Cobrado"
+            value={`$${pilot.stats.total_cobrado_mes_usd.toLocaleString("en-US")}`}
+            isText
+            hint="recibido de sus vuelos (USD)"
+          />
+          {pilot.honorarios && (
+            <Stat
+              label="Honorarios"
+              value={`$${pilot.honorarios.mes_usd.toLocaleString("en-US")}`}
+              isText
+              hint="pagados al externo (USD)"
+            />
+          )}
+        </GrupoStats>
       </div>
       {(pilot.stats.cobrado_sin_tc_mxn ?? 0) > 0 && (
         <p className="text-xs text-amber-600 dark:text-amber-400 -mt-3">
@@ -213,21 +259,20 @@ export default async function PilotDetailPage({
         />
       </div>
 
-      {(pilot.honorarios || (pilot.descansos_proximos?.length ?? 0) > 0) && (
-        <div className="grid lg:grid-cols-2 gap-4">
-          {pilot.honorarios && <HonorariosCard honorarios={pilot.honorarios} />}
-          {(pilot.descansos_proximos?.length ?? 0) > 0 && (
-            <DescansosCard descansos={pilot.descansos_proximos!} />
-          )}
-        </div>
-      )}
+      {/* Expediente: documentos y descansos van ANTES de capturas/gastos —
+          son lo que oficina revisa al asignar. Los descansos siempre se
+          muestran (vacío = "sin descansos", no una card que desaparece). */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <DocumentosCard pilotoId={pilot.id} vencimientos={vencimientos} />
+        <DescansosCard descansos={pilot.descansos_proximos ?? []} />
+      </div>
+
+      {pilot.honorarios && <HonorariosCard honorarios={pilot.honorarios} />}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <CapturesCard captures={pilot.capturas_recientes} />
         <ExpensesCard expenses={pilot.gastos_recientes} />
       </div>
-
-      <DocumentosCard pilotoId={pilot.id} vencimientos={vencimientos} />
 
       {pilot.fondos.length > 0 && <FondosCard fondos={pilot.fondos} />}
     </div>
@@ -316,6 +361,30 @@ function DocumentosCard({
   );
 }
 
+/** Grupo de cifras con título: agrupa las stats por tema en vez de seis
+ *  cajas iguales en fila. */
+function GrupoStats({
+  titulo,
+  icon: Icon,
+  children,
+}: {
+  titulo: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 font-medium">
+          <Icon className="h-3.5 w-3.5" />
+          {titulo}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 gap-x-4 gap-y-3 pb-4">{children}</CardContent>
+    </Card>
+  );
+}
+
 function Stat({
   label,
   value,
@@ -332,21 +401,150 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <Card>
-      <CardContent className="py-4">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p
-          className={`mt-1 font-semibold ${isText ? "text-lg" : "text-2xl"} ${valueClass ?? ""}`}
-        >
-          {value}
-        </p>
-        {hint && (
-          <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-            {hint}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="min-w-0">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p
+        className={`mt-0.5 font-semibold tabular-nums ${isText ? "text-lg" : "text-2xl"} ${valueClass ?? ""}`}
+      >
+        {value}
+      </p>
+      {hint && (
+        <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">{hint}</p>
+      )}
+    </div>
+  );
+}
+
+/** Horas del mes con barra contra el límite informativo (doc 3.6). */
+function HorasStat({ horas, limite }: { horas: number; limite: number }) {
+  const pct = limite > 0 ? Math.min(100, (horas / limite) * 100) : 0;
+  const estado = horas >= limite ? "rojo" : horas >= limite * 0.85 ? "ambar" : "ok";
+  const color =
+    estado === "rojo"
+      ? "bg-destructive"
+      : estado === "ambar"
+        ? "bg-amber-500"
+        : "bg-green-500";
+  const texto =
+    estado === "rojo"
+      ? "text-destructive"
+      : estado === "ambar"
+        ? "text-amber-600 dark:text-amber-400"
+        : "";
+  const restantes = Math.max(0, limite - horas);
+  return (
+    <div className="col-span-2 min-w-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Horas voladas</p>
+        <p className="text-[11px] text-muted-foreground">límite informativo {limite} h</p>
+      </div>
+      <p className={`mt-0.5 text-2xl font-semibold tabular-nums ${texto}`}>
+        {horas.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+        <span className="text-sm font-normal text-muted-foreground"> / {limite} h</span>
+      </p>
+      <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {estado === "rojo"
+          ? `Excedió el límite por ${(horas - limite).toLocaleString("en-US", { maximumFractionDigits: 1 })} h`
+          : `Le quedan ${restantes.toLocaleString("en-US", { maximumFractionDigits: 1 })} h este mes`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Franja de alertas del piloto: documentos vencidos / por vencer, descanso
+ * activo hoy y horas cerca del límite. Vacía = no se pinta nada.
+ */
+function AlertasPiloto({
+  pilotoId,
+  vencimientos,
+  descansos,
+  horasMes,
+  horasLimite,
+}: {
+  pilotoId: string;
+  vencimientos: Expiration[];
+  descansos: PilotDescanso[];
+  horasMes: number;
+  horasLimite: number;
+}) {
+  const hoy = hoyCancun();
+  const vencidos = vencimientos.filter((v) => v.estado === "VENCIDO");
+  const proximos = vencimientos.filter((v) => v.estado === "PROXIMO");
+  const descansoHoy = descansos.find(
+    (d) => d.fecha_inicio.slice(0, 10) <= hoy && d.fecha_fin.slice(0, 10) >= hoy,
+  );
+  const items: { tono: "rojo" | "ambar"; texto: string; href?: string }[] = [];
+  if (vencidos.length > 0) {
+    items.push({
+      tono: "rojo",
+      texto: `${vencidos.length === 1 ? "Documento vencido" : `${vencidos.length} documentos vencidos`}: ${vencidos
+        .map((v) => v.tipo?.nombre ?? "documento")
+        .join(", ")}`,
+      href: `/admin/expirations?piloto_id=${pilotoId}`,
+    });
+  }
+  if (proximos.length > 0) {
+    items.push({
+      tono: "ambar",
+      texto: `Por vencer: ${proximos
+        .map(
+          (v) =>
+            `${v.tipo?.nombre ?? "documento"}${v.fecha_vencimiento ? ` (${fmtDate(v.fecha_vencimiento)})` : ""}`,
+        )
+        .join(", ")}`,
+      href: `/admin/expirations?piloto_id=${pilotoId}`,
+    });
+  }
+  if (descansoHoy) {
+    items.push({
+      tono: "ambar",
+      texto: `Hoy está de descanso (${fmtDate(descansoHoy.fecha_inicio)} – ${fmtDate(descansoHoy.fecha_fin)}${descansoHoy.motivo ? ` · ${descansoHoy.motivo}` : ""}).`,
+    });
+  }
+  if (horasLimite > 0 && horasMes >= horasLimite) {
+    items.push({
+      tono: "rojo",
+      texto: `Excedió el límite informativo de ${horasLimite} h este mes (${horasMes.toLocaleString("en-US", { maximumFractionDigits: 1 })} h).`,
+    });
+  } else if (horasLimite > 0 && horasMes >= horasLimite * 0.85) {
+    items.push({
+      tono: "ambar",
+      texto: `Cerca del límite de ${horasLimite} h: lleva ${horasMes.toLocaleString("en-US", { maximumFractionDigits: 1 })} h este mes.`,
+    });
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {items.map((it, i) => {
+        const cls =
+          it.tono === "rojo"
+            ? "border-destructive/40 bg-destructive/10 text-destructive"
+            : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+        const inner = (
+          <span className="inline-flex items-start gap-2 text-sm">
+            <ExclamationTriangleIcon className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{it.texto}</span>
+          </span>
+        );
+        return it.href ? (
+          <Link
+            key={i}
+            href={it.href}
+            className={`block rounded-lg border px-3 py-2 hover:opacity-90 transition-opacity ${cls}`}
+          >
+            {inner}
+          </Link>
+        ) : (
+          <div key={i} className={`rounded-lg border px-3 py-2 ${cls}`}>
+            {inner}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -389,7 +587,14 @@ function FlightsCard({
                   <span className="text-muted-foreground font-normal ml-2">#{f.folio}</span>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {fmtDateTime(f.fecha_vuelo)} · {f.pasajeros} pax
+                  {fmtDateTime(f.fecha_vuelo)}
+                  {/* Viaje multi-día: se ve hasta cuándo dura. */}
+                  {f.fecha_fin &&
+                    f.fecha_vuelo &&
+                    f.fecha_fin.slice(0, 10) !== f.fecha_vuelo.slice(0, 10) &&
+                    ` → ${fmtDate(f.fecha_fin)}`}
+                  {" · "}
+                  {f.pasajeros} pax
                   {/* El precio solo cuando existe: "$0 USD" en cada renglón
                       era ruido (internos y ferris cotizan en cero). */}
                   {Number(f.monto_total_usd) > 0 &&
@@ -403,20 +608,7 @@ function FlightsCard({
                   {f.rol === "TRAMO" ? "por tramo" : f.rol.toLowerCase()}
                 </span>
               )}
-              <span
-                className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${
-                  f.estado === "EN_VUELO"
-                    ? "bg-brand-500/15 text-brand-500"
-                    : f.estado === "COMPLETADO"
-                      ? "bg-muted text-muted-foreground"
-                      : f.estado === "RESERVA"
-                        ? // Reserva = tentativa: ámbar, no el verde de confirmado.
-                          "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                        : "bg-green-500/15 text-green-600 dark:text-green-400"
-                }`}
-              >
-                {f.estado}
-              </span>
+              <EstadoBadge estado={f.estado} />
             </Link>
             ))}
           </div>
@@ -515,6 +707,12 @@ function DescansosCard({ descansos }: { descansos: PilotDescanso[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
+        {descansos.length === 0 && (
+          <p className="text-sm text-muted-foreground py-2">
+            Sin descansos marcados. Se capturan desde el Calendario (Marcar
+            descanso) o desde la app.
+          </p>
+        )}
         {descansos.map((d) => (
           <div
             key={d.id}
@@ -537,7 +735,10 @@ function CapturesCard({ captures }: { captures: PilotCapture[] }) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Capturas recientes</CardTitle>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ClockIcon className="h-4 w-4 text-muted-foreground" />
+          Tacómetros recientes
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         {captures.length === 0 ? (
@@ -552,15 +753,20 @@ function CapturesCard({ captures }: { captures: PilotCapture[] }) {
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">
-                  {c.origen_iata} → {c.destino_iata}{" "}
-                  <span className="text-muted-foreground text-xs">leg {c.orden}</span>
+                  {c.origen_iata} → {c.destino_iata}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Salida: {c.taco_salida ?? "—"} · Llegada: {c.taco_llegada ?? "—"} ·{" "}
+                  Salida {c.taco_salida ?? "—"} · Llegada {c.taco_llegada ?? "—"} ·{" "}
                   {fmtDateTime(c.sincronizado_at)}
                   {c.capturado_offline && " · offline"}
                 </p>
               </div>
+              {/* Horas del tramo: la cifra que alimenta el balance. */}
+              {c.taco_salida != null && c.taco_llegada != null && (
+                <span className="text-sm font-mono tabular-nums whitespace-nowrap">
+                  {(Number(c.taco_llegada) - Number(c.taco_salida)).toFixed(1)} h
+                </span>
+              )}
             </div>
           ))
         )}
@@ -573,7 +779,10 @@ function ExpensesCard({ expenses }: { expenses: PilotExpense[] }) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Gastos recientes</CardTitle>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ReceiptPercentIcon className="h-4 w-4 text-muted-foreground" />
+          Gastos recientes
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         {expenses.length === 0 ? (
@@ -588,7 +797,11 @@ function ExpensesCard({ expenses }: { expenses: PilotExpense[] }) {
                 <p className="text-sm font-medium">{g.categoria}</p>
                 <p className="text-xs text-muted-foreground">
                   {fmtDate(g.fecha_gasto)}
-                  {g.foto_url ? " · con comprobante" : " · sin comprobante"}
+                  {g.foto_url ? (
+                    " · con comprobante"
+                  ) : (
+                    <span className="text-amber-600 dark:text-amber-400"> · sin comprobante</span>
+                  )}
                 </p>
               </div>
               <p className="text-sm font-mono whitespace-nowrap">
