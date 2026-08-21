@@ -38,7 +38,7 @@ interface AircraftFormDialogProps {
 /**
  * Tonos sugeridos para el color de calendario de la aeronave. NO incluye los
  * colores reservados del sistema (sin asignar #8B5CF6, permiso #F59E0B, externo
- * #FFB6C1, respaldo #9CA3AF) para evitar que un vuelo se confunda con un estado.
+ * #F0DCDB, respaldo #9CA3AF) para evitar que un vuelo se confunda con un estado.
  */
 const SUGGESTED_AIRCRAFT_COLORS = [
   "#3B82F6", // azul

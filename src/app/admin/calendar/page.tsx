@@ -158,7 +158,7 @@ function Legend() {
       color: "#8B5CF6",
       title: "Vuelo confirmado al que aún le falta asignar avión y/o piloto.",
     },
-    { label: "Externo", color: "#FFB6C1", title: "Vuelo operado por un tercero." },
+    { label: "Externo", color: "#F0DCDB", title: "Vuelo operado por un tercero." },
     {
       label: "Descanso",
       color: "#14B8A6",

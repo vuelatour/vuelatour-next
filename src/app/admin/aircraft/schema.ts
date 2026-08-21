@@ -10,7 +10,7 @@ const PaisEnum = z.enum(["MX", "USA"]);
 export const RESERVED_CALENDAR_COLORS: Record<string, string> = {
   "#8B5CF6": "Sin asignar",
   "#F59E0B": "Permiso pendiente",
-  "#FFB6C1": "Externo",
+  "#F0DCDB": "Externo",
   "#9CA3AF": "color de respaldo del sistema",
 };
 

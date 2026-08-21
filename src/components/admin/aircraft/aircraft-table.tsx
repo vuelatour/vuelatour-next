@@ -26,7 +26,17 @@ const columns: Array<DataTableColumn<Aircraft>> = [
           </div>
         )}
         <span>
-          <span className="block font-mono font-semibold group-hover:text-brand-600 transition-colors">
+          <span className="flex items-center gap-2 font-mono font-semibold group-hover:text-brand-600 transition-colors">
+            {/* Color del avión en el calendario (pedido 21-ago): un punto
+                discreto, el mismo que pinta sus vuelos y el Libro Dinero. */}
+            {a.color_calendario && (
+              <span
+                aria-hidden
+                title={`Color en el calendario: ${a.color_calendario}`}
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-border"
+                style={{ backgroundColor: a.color_calendario }}
+              />
+            )}
             {a.matricula}
           </span>
           <span className="block text-xs text-muted-foreground">{a.modelo}</span>
