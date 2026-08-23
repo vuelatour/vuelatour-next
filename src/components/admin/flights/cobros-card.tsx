@@ -25,6 +25,7 @@ import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { CobroFormSheet } from "./cobro-form-sheet";
 import { fmtUsd } from "@/lib/format";
 import type { FlightCobro } from "@/types/flights";
+import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 export const METODO_LABELS: Record<string, string> = {
@@ -72,13 +73,20 @@ export function CobrosCard({
               {cobros.length === 0
                 ? "Sin cobros todavía."
                 : `${cobros.length} ${cobros.length === 1 ? "cobro" : "cobros"}.`}{" "}
-              {pendingUsd > 0 ? (
+              {pendingUsd > TOLERANCIA_COBRO_USD ? (
                 <span className="text-destructive">
                   Pendiente {fmtUsd(pendingUsd)} USD
                 </span>
               ) : (
                 <span className="text-green-600 dark:text-green-400">
                   Totalmente cobrado
+                  {pendingUsd > 0 && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      (diferencia de redondeo {fmtUsd(pendingUsd)} USD por la
+                      conversión de pesos)
+                    </span>
+                  )}
                 </span>
               )}
             </CardDescription>

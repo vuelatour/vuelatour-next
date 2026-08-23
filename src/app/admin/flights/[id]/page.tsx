@@ -40,6 +40,7 @@ import { listAirports } from "@/lib/api/airports-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import { diferenciaRedondeo, pendienteCobro } from "@/lib/admin/cobros";
 
 export const dynamic = "force-dynamic";
 
@@ -193,9 +194,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     (escalasOrden.length === 0 ||
       escalasOrden.some((e) => e.taco_salida == null || e.taco_llegada == null));
 
-  const pendingCobro = Math.max(
-    0,
-    Number(snapshot.monto_total_usd) - snapshot.total_cobrado,
+  // Misma tolerancia de redondeo que el API (1 USD): un cobro en pesos que
+  // cubre el total MXN no deja "pendiente $0.01".
+  const pendingCobro = pendienteCobro(
+    Number(snapshot.monto_total_usd),
+    snapshot.total_cobrado,
+  );
+  const redondeoCobro = diferenciaRedondeo(
+    Number(snapshot.monto_total_usd),
+    snapshot.total_cobrado,
   );
 
   return (
@@ -408,8 +415,18 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   <Row label="Pendiente">
                     <span
                       className={`font-mono ${pendingCobro > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}
+                      title={
+                        redondeoCobro > 0
+                          ? `Diferencia de redondeo de ${fmtUsd(redondeoCobro)} USD por la conversión MXN→USD: cuenta como pagado.`
+                          : undefined
+                      }
                     >
                       {fmtUsd(pendingCobro)}
+                      {redondeoCobro > 0 && (
+                        <span className="ml-1 text-[10px] font-sans text-muted-foreground">
+                          (redondeo {fmtUsd(redondeoCobro)})
+                        </span>
+                      )}
                     </span>
                   </Row>
                   <Row label="Estado">

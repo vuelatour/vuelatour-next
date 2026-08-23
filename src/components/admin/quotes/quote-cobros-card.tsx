@@ -27,6 +27,7 @@ import { fmtUsd } from "@/lib/format";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { METODO_LABELS } from "@/components/admin/flights/cobros-card";
 import type { FlightCobro } from "@/types/flights";
+import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
 
 /**
  * Cobros del vuelo VISIBLES desde la cotización: el desglose a cobrar no
@@ -52,7 +53,9 @@ export function QuoteCobrosCard({
 
   if (cobros.length === 0) return null;
 
-  const cubierto = totalCobrado >= montoTotalUsd - 0.01;
+  // Misma tolerancia que el API (1 USD): los centavos de la conversión
+  // MXN→USD no cuentan como deuda.
+  const cubierto = totalCobrado >= montoTotalUsd - TOLERANCIA_COBRO_USD;
 
   return (
     <Card id="cobros-vuelo" className="scroll-mt-24 border-emerald-500/40">
