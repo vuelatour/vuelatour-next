@@ -17,6 +17,7 @@ import {
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { listPilots } from "@/lib/api/pilots-server";
+import { listUsers } from "@/lib/api/users-server";
 import { ExpensesFilterBar } from "@/components/admin/expenses/expenses-filter-bar";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
@@ -88,10 +89,24 @@ export default async function ExpensesPage({
       listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
       listAircraft({ limit: 100 }),
       listProviders({ limit: 200 }),
-      listPilots({ estado: "ACTIVO", limit: 200 }).catch(() => ({ data: [] as { id: string; nombre: string }[] })),
+      // Filtro "Capturó": TODO el personal activo — la oficina (Jimmy, Mary,
+      // Itzi…) también captura gastos y con /pilots no aparecía (queja del
+      // cliente, 24-ago). /users es solo ADMIN: si el rol no alcanza (403),
+      // se cae a la lista de pilotos — mejor una lista corta que ninguna.
+      listUsers({ estado: "ACTIVO", limit: 200 })
+        .then((r) =>
+          r.data
+            .filter((u) => !u.es_piloto_externo) // externos jamás capturan (sin app)
+            .map((u) => ({ id: u.id, nombre: u.nombre })),
+        )
+        .catch(() =>
+          listPilots({ estado: "ACTIVO", limit: 200 })
+            .then((r) => r.data.map((u) => ({ id: u.id, nombre: u.nombre })))
+            .catch(() => [] as { id: string; nombre: string }[]),
+        ),
     ]);
-  const personas = (pilotsRes.data as { id: string; nombre: string }[]).map(
-    (p) => ({ id: p.id, nombre: p.nombre }),
+  const personas = [...pilotsRes].sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, "es"),
   );
 
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
