@@ -18,8 +18,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   assignVueloGastoAction,
   buscarVuelosCercanosAction,
+  reanalizarComprobanteAction,
   sugerirAsignacionGastoAction,
   verifyGastoAction,
+  type GastoTicketIA,
   type SugerenciaAsignacion,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
@@ -43,6 +45,7 @@ const CATEGORIAS = [
     "PERMISO",
   ].map((c) => ({ value: c, label: c })),
   { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
+  { value: "INDIRECTO", label: "Indirecto (sin vuelo)" },
   ...["FIJO", "OTRO"].map((c) => ({ value: c, label: c })),
 ];
 
@@ -95,13 +98,20 @@ export function ExpenseVerifyDialog({
   // automático, la oficina lo asigna a mano de esta lista (±15 días).
   const [vueloSel, setVueloSel] = useState<string>(gasto.vuelo_id ?? "");
   const [vuelos, setVuelos] = useState<VueloCercano[]>([]);
+  // Reanálisis IA del comprobante guardado (gastos con lectura vieja pegada,
+  // p. ej. de antes de la separación TUA/FBO en el prompt).
+  const [reanalizando, setReanalizando] = useState(false);
+  const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
 
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoVerifyValues>({
     defaultValues: defaults(gasto),
   });
 
   useEffect(() => {
-    if (open) reset(defaults(gasto));
+    if (open) {
+      reset(defaults(gasto));
+      setAiRaw(null);
+    }
   }, [open, gasto, reset]);
 
   // Vuelos alrededor de la fecha del gasto, para asignar/corregir a mano.
@@ -138,6 +148,155 @@ export function ExpenseVerifyDialog({
     };
   }, [open, gasto.id, gasto.aeronave_id]);
 
+  /**
+   * Quita el desglose VIEJO de las notas conservando todo lo demás
+   * (⚠ discrepancias, notas humanas posteriores): el bloque "Desglose:"
+   * contiguo y las líneas "X - $N MXN" dentro de "[IA al sincronizar]".
+   */
+  const limpiarDesgloseViejo = (notas: string): string =>
+    notas
+      .replace(/(^|\n)Desglose:\n(?:[^\n]+\n?)*/g, "$1")
+      .replace(/\[IA al sincronizar\]\n((?:[^\n]+\n?)*)/g, (_m, cuerpo: string) => {
+        const resto = (cuerpo as string)
+          .split("\n")
+          .filter((l) => l.trim() !== "" && !/ - \$[\d.,]+ [A-Z]{3}\s*$/.test(l));
+        return resto.length > 0 ? `[IA al sincronizar]\n${resto.join("\n")}\n` : "";
+      })
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+  /** Prellena el form con la lectura fresca; el humano revisa y guarda. */
+  const aplicarIA = (ai: GastoTicketIA) => {
+    const llenado: string[] = [];
+    if (ai.monto != null && ai.monto > 0) {
+      // ai.monto = TOTAL del ticket; si la IA leyó propina impresa se separa
+      // (al guardar se recompone el total, que es lo que llega al banco).
+      const propinaIA =
+        ai.propina != null && ai.propina > 0 && ai.propina < ai.monto
+          ? ai.propina
+          : null;
+      if (propinaIA != null) {
+        setValue("monto", String(Math.round((ai.monto - propinaIA) * 100) / 100));
+        setValue("propina", String(propinaIA));
+        llenado.push(`$${ai.monto} (incl. propina $${propinaIA})`);
+      } else {
+        // La propina del form se conserva: la IA no la ve en el ticket pero
+        // pudo capturarse de la terminal (borrarla bajaría el total que se
+        // concilia con el banco).
+        setValue("monto", String(ai.monto));
+        llenado.push(`$${ai.monto}`);
+      }
+    }
+    if (
+      (ai.moneda === "MXN" || ai.moneda === "USD") &&
+      watch("moneda") !== ai.moneda
+    ) {
+      setValue("moneda", ai.moneda);
+      llenado.push(`moneda→${ai.moneda}`);
+    }
+    if (ai.fecha && /^\d{4}-\d{2}-\d{2}$/.test(ai.fecha)) {
+      setValue("fecha_gasto", ai.fecha);
+      llenado.push(ai.fecha);
+    }
+    if (
+      ai.categoria_sugerida &&
+      CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)
+    ) {
+      setValue("categoria", ai.categoria_sugerida);
+      llenado.push(ai.categoria_sugerida);
+    }
+    if (ai.litros != null && ai.litros > 0) {
+      setValue("litros", String(ai.litros));
+      llenado.push(`${ai.litros} L`);
+    }
+    // Medio de pago: EFECTIVO→TARJETA sí se corrige (voucher engrapado),
+    // pero PERSONAL_*/BODEGA nunca — la IA no distingue una tarjeta personal
+    // de la corporativa, y BODEGA es un cargo contable sin ticket bancario.
+    const medioActual = watch("medio_pago");
+    if (
+      ai.medio_pago &&
+      MEDIOS.some((m) => m.value === ai.medio_pago) &&
+      medioActual !== ai.medio_pago &&
+      !["PERSONAL_PABLO", "PERSONAL_ALE", "BODEGA"].includes(medioActual ?? "")
+    ) {
+      setValue("medio_pago", ai.medio_pago);
+      llenado.push(`medio→${ai.medio_pago}`);
+    }
+    // El folio es la llave anti-duplicados: solo se llena si estaba vacío.
+    if (ai.folio && !watch("folio_ticket")) {
+      setValue("folio_ticket", String(ai.folio).slice(0, 60));
+      llenado.push("folio");
+    }
+    if (ai.proveedor && !watch("proveedor_id")) {
+      const needle = ai.proveedor.toLowerCase();
+      const match = providers.find(
+        (p) =>
+          p.nombre.toLowerCase().includes(needle) ||
+          needle.includes(p.nombre.toLowerCase()),
+      );
+      if (match) {
+        setValue("proveedor_id", match.id);
+        llenado.push(match.nombre);
+      }
+    }
+    if (ai.matricula && !watch("aeronave_id")) {
+      const av = aircraft.find(
+        (a) => a.matricula.replace(/-/g, "") === ai.matricula!.replace(/-/g, ""),
+      );
+      if (av) setValue("aeronave_id", av.id);
+    }
+    // Desglose Operación/TUA/FBO: SUSTITUYE el bloque "Desglose:" viejo de
+    // las notas (el caso que motivó el botón: el desglose viejo se quedaba
+    // pegado y el reporte separaba mal el TUA).
+    if (ai.desglose_lineas && ai.desglose_lineas.length >= 2) {
+      let bloque = `Desglose:\n${ai.desglose_lineas.join("\n")}`;
+      const MAX = 2000; // límite del PATCH (schema notas)
+      if (bloque.length > MAX) bloque = bloque.slice(0, MAX);
+      let actuales = limpiarDesgloseViejo(watch("notas") ?? "");
+      // El bloque nuevo se preserva ENTERO (es lo que espejan los reportes);
+      // si no cabe, se recorta lo viejo.
+      const espacio = MAX - bloque.length - (actuales ? 2 : 0);
+      if (actuales.length > espacio) actuales = actuales.slice(0, Math.max(0, espacio)).trimEnd();
+      setValue("notas", `${actuales}${actuales ? "\n\n" : ""}${bloque}`);
+      llenado.push("desglose");
+    }
+    toast.success(
+      llenado.length > 0
+        ? `IA releyó el comprobante: ${llenado.join(" · ")}. Revisa y guarda.`
+        : "IA releyó el comprobante; revisa los campos antes de guardar.",
+    );
+  };
+
+  const reanalizar = () => {
+    setReanalizando(true);
+    reanalizarComprobanteAction(gasto.id)
+      .then((res) => {
+        if (!res.ok || !res.data) {
+          toast.error(res.ok ? "Sin respuesta de la IA" : (res.error ?? "Error"));
+          return;
+        }
+        if (res.data.disponible === false) {
+          toast.error(res.data.motivo ?? "La IA no está disponible ahora.");
+          return;
+        }
+        // Lectura no confiable: no prellenar nada (mismo gate que el alta
+        // offline — sin monto legible la propuesta solo ensuciaría el form).
+        if (
+          res.data.legible === false ||
+          res.data.monto == null ||
+          res.data.monto <= 0
+        ) {
+          toast.error(
+            "La IA no pudo leer el comprobante con confianza; no se prellenó nada.",
+          );
+          return;
+        }
+        setAiRaw(res.data);
+        aplicarIA(res.data);
+      })
+      .finally(() => setReanalizando(false));
+  };
+
   const aplicarCandidato = (c: NonNullable<SugerenciaAsignacion["sugerido"]>) => {
     if (c.aeronave_id) setValue("aeronave_id", c.aeronave_id);
     setVueloSel(c.vuelo_id);
@@ -154,6 +313,16 @@ export function ExpenseVerifyDialog({
       const ticket = Number(values.monto);
       const propina = values.propina === "" ? 0 : Number(values.propina);
       let payload: Record<string, unknown> = { ...values };
+      // La lectura fresca de la IA se persiste JUNTO con la verificación:
+      // los reportes derivan de valor_ia_extraido el desglose
+      // Operación/TUA/FBO (persistirla al hacer clic cambiaba los números
+      // aunque el operador cancelara). Cancelar de verdad descarta.
+      if (aiRaw) {
+        const lectura: Record<string, unknown> = { ...aiRaw };
+        delete lectura.disponible;
+        delete lectura.motivo;
+        payload = { ...payload, valor_ia_extraido: lectura };
+      }
       if (values.monto !== "" || values.propina !== "") {
         if (!(ticket > 0)) {
           toast.error("Captura el monto del ticket.");
@@ -220,13 +389,54 @@ export function ExpenseVerifyDialog({
 
         {/* Comprobante: foto subida con el registro, para validar el dato. */}
         {fotoUrl ? (
-          <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
-            <ComprobantePreview
-              path={gasto.foto_url ?? ""}
-              url={fotoUrl}
-              alt="Comprobante del gasto"
-              thumbClassName="w-full h-auto max-h-[45vh] object-contain"
-            />
+          <div className="space-y-2">
+            <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
+              <ComprobantePreview
+                path={gasto.foto_url ?? ""}
+                url={fotoUrl}
+                alt="Comprobante del gasto"
+                thumbClassName="w-full h-auto max-h-[45vh] object-contain"
+              />
+            </div>
+            {/* Reanálisis: para gastos capturados antes de una mejora del
+                prompt (p. ej. separación TUA/FBO) cuyo dato viejo se quedó. */}
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={reanalizar}
+                disabled={reanalizando || pending}
+              >
+                {reanalizando ? "Analizando…" : "✨ Reanalizar con IA"}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Vuelve a leer el comprobante y propone los campos; nada se
+                guarda hasta que confirmes.
+              </p>
+            </div>
+            {aiRaw && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs">
+                {aiRaw.desglose_lineas && aiRaw.desglose_lineas.length >= 2 ? (
+                  <>
+                    <p className="mb-1 font-medium">
+                      Desglose leído (así quedará en las notas):
+                    </p>
+                    <ul className="space-y-0.5 font-mono text-muted-foreground">
+                      {aiRaw.desglose_lineas.map((l) => (
+                        <li key={l}>{l}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    La IA no distinguió un desglose que cuadre con el total: el
+                    gasto queda solo con el monto (revisa la factura si
+                    esperabas Operación/FBO/TUA por separado).
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">

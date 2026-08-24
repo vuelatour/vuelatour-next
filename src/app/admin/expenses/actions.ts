@@ -96,6 +96,27 @@ export async function leerFacturaIAAction(input: {
   }
 }
 
+/**
+ * Reanaliza el comprobante YA GUARDADO de un gasto (botón del modal
+ * Verificar): el API firma la foto, la manda a la IA y refresca
+ * `valor_ia_extraido` (fuente del desglose TUA/FBO en reportes); los campos
+ * capturados no se tocan — la lectura vuelve para prellenar el formulario y
+ * que un humano guarde.
+ */
+export async function reanalizarComprobanteAction(
+  gastoId: string,
+): Promise<ActionResult<GastoTicketIA>> {
+  try {
+    const data = await apiServer<GastoTicketIA>(
+      `/v1/expenses/${gastoId}/reanalizar-ia`,
+      { method: "POST", cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // ===== Gastos de pista (cuotas de aeródromo VIP SAESA) =====
 
 /** Aterrizajes del periodo sin gasto de pista, con tarifa sugerida. */

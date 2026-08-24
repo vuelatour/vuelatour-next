@@ -80,6 +80,10 @@ export const GastoVerifySchema = z.object({
   ),
   notas: z.string().max(2000).optional().or(z.literal("")),
   duplicado_sospechado: z.boolean().optional(),
+  /** Lectura fresca de la IA (botón Reanalizar): viaja JUNTO con la
+   *  verificación — los reportes derivan de este jsonb el desglose
+   *  Operación/TUA/FBO, así que solo se persiste cuando el humano guarda. */
+  valor_ia_extraido: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Alta manual de gasto desde el panel (gastos operativos que sube la oficina). */
