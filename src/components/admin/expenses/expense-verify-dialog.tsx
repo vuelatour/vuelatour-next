@@ -333,7 +333,10 @@ export function ExpenseVerifyDialog({
           return;
         }
         payload = {
-          ...values,
+          // OJO: se extiende PAYLOAD (no values): reconstruir desde values
+          // tiraba valor_ia_extraido — el jsonb llegaba null y el balance
+          // no separaba el TUA (caso ASUR Cozumel $1,417.28, 24-ago).
+          ...payload,
           monto: Math.round((ticket + propina) * 100) / 100,
           // 0 explícito: quitar la propina también debe guardarse.
           propina,
