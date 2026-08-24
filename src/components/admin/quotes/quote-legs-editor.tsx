@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
 import { cn } from "@/lib/utils";
 import { fmtDecimal } from "@/lib/format";
 import type { EscalaInput } from "@/types/quote";
@@ -62,12 +63,15 @@ export function QuoteLegsEditor({
   routes,
   airports,
   defaultOrigin = "CUN",
+  avisoAnclaCun = false,
 }: {
   value: EscalaInput[];
   onChange: (legs: EscalaInput[]) => void;
   routes?: RouteOption[];
   airports: AirportOption[];
   defaultOrigin?: string;
+  /** Cotizador: avisa (sin bloquear) si la ruta comercial no abre/cierra en CUN. */
+  avisoAnclaCun?: boolean;
 }) {
   // Inicializa con un tramo si está vacío.
   useEffect(() => {
@@ -93,6 +97,10 @@ export function QuoteLegsEditor({
   const [distanciasCatalogo, setDistanciasCatalogo] = useState<
     Map<string, number>
   >(new Map());
+  // Hasta que el catálogo responda, lookupNm NO cae al haversine: una ruta
+  // aplicada en frío congelaría la distancia directa (más corta que la
+  // aerovía) y el efecto de autollenado ya no la corrige (millas > 0).
+  const [catalogoListo, setCatalogoListo] = useState(false);
   useEffect(() => {
     let alive = true;
     getDistanciasAction().then((r) => {
@@ -116,7 +124,13 @@ export function QuoteLegsEditor({
         );
       }
       setDistanciasCatalogo(map);
-    });
+    })
+      .catch(() => {})
+      .finally(() => {
+        // Aun si el fetch falla, liberamos el haversine (mejor una distancia
+        // directa editable que millas en 0 para siempre).
+        if (alive) setCatalogoListo(true);
+      });
     return () => {
       alive = false;
     };
@@ -167,7 +181,7 @@ export function QuoteLegsEditor({
     if (saved != null) return saved;
     const co = coordByIata.get(o);
     const cd = coordByIata.get(d);
-    if (!co || !cd) return null;
+    if (!co || !cd || !catalogoListo) return null;
     return Math.round(haversineNm(co.lat, co.lon, cd.lat, cd.lon) * 100) / 100;
   };
 
@@ -191,7 +205,7 @@ export function QuoteLegsEditor({
     // lookupNm depende de nmByPair/coordByIata/distanciasCatalogo (incluidos);
     // value se cubre con endpointsKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpointsKey, nmByPair, coordByIata, distanciasCatalogo]);
+  }, [endpointsKey, nmByPair, coordByIata, distanciasCatalogo, catalogoListo]);
 
   const updateLeg = (idx: number, patch: Partial<EscalaInput>) => {
     const next = [...value];
@@ -230,6 +244,36 @@ export function QuoteLegsEditor({
     onChange(next);
   };
 
+  // ===== Ruta rápida: "CUN, HOL, CUN" + Enter arma los tramos de golpe =====
+  // ¿Hay CAPTURA que se perdería al reemplazar? El esqueleto de ruta
+  // (origen/destino/millas) no cuenta: reponerlo cuesta un Enter y en el
+  // cotizador la plantilla lo hidrata siempre (el diálogo saldría en todos
+  // los usos). Lo irrecuperable son pasajeros, fechas, notas y banderas.
+  const hayDatosTramos = value.some(
+    (l) =>
+      (l.pasajeros ?? null) !== null ||
+      (l.pasajeros_nombres ?? []).some((n) => n.trim() !== "") ||
+      (l.notas ?? "") !== "" ||
+      (l.servicio_notas ?? "") !== "" ||
+      (l.fecha_salida_plan ?? null) !== null ||
+      l.es_ferry === true ||
+      l.requiere_pernocta === true ||
+      l.tipo_parada === "SERVICIO",
+  );
+
+  const aplicarRutaRapida = (codigos: string[]) => {
+    const next: EscalaInput[] = [];
+    for (let i = 0; i < codigos.length - 1; i++) {
+      next.push({
+        origen_iata: codigos[i],
+        destino_iata: codigos[i + 1],
+        // Si el catálogo aún no carga, el efecto de autollenado la completa después.
+        millas_nauticas: lookupNm(codigos[i], codigos[i + 1]) ?? 0,
+      });
+    }
+    onChange(next);
+  };
+
   const nmTotal = value.reduce((acc, l) => acc + (Number(l.millas_nauticas) || 0), 0);
 
   // Resumen del VIAJE por día (multi-día): agrupa los tramos por el día
@@ -259,6 +303,22 @@ export function QuoteLegsEditor({
 
   return (
     <div className="space-y-3">
+      <RutaRapidaInput
+        airports={airports}
+        hayDatos={hayDatosTramos}
+        onAplicar={aplicarRutaRapida}
+      />
+      {avisoAnclaCun &&
+        value.length > 0 &&
+        value[0].origen_iata &&
+        value[value.length - 1].destino_iata &&
+        (value[0].origen_iata !== "CUN" ||
+          value[value.length - 1].destino_iata !== "CUN") && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            La ruta comercial normalmente abre y cierra en CUN (hoy:{" "}
+            {value[0].origen_iata} → … → {value[value.length - 1].destino_iata}).
+          </p>
+        )}
       <div className="space-y-2">
         {value.map((leg, idx) => {
           const isFirst = idx === 0;

@@ -22,6 +22,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createReservaAction } from "@/app/admin/flights/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import { Field } from "@/components/admin/form-field";
+import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
 
 interface ClientOption {
   id: string;
@@ -149,6 +150,32 @@ export function ReservaFormSheet({
   const removeLeg = (i: number) =>
     setLegs((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)));
 
+  // Ruta rápida: "CUN, HOL, CUN" + Enter arma los tramos de la operación.
+  // Solo la CAPTURA cuenta como dato a confirmar; el esqueleto de ruta
+  // (origen/destino) se repone con un Enter y el diálogo estorbaría.
+  const hayDatosTramos = legs.some(
+    (l) =>
+      l.hora !== "" ||
+      l.pasajeros !== "" ||
+      l.nombres.trim() !== "" ||
+      l.notas.trim() !== "" ||
+      l.servicioNotas.trim() !== "" ||
+      l.esFerry ||
+      l.pernocta ||
+      l.servicio,
+  );
+
+  const aplicarRutaRapida = (codigos: string[]) =>
+    setLegs(
+      codigos.slice(0, -1).map((c, i) => ({
+        ...emptyLeg(c),
+        destino: codigos[i + 1],
+        // Mismo punto seguido = sobrevuelo (sale y regresa); sin la marca,
+        // la validación del submit lo rechazaría.
+        esSobrevuelo: c === codigos[i + 1],
+      })),
+    );
+
   const submit = () => {
     setError(null);
     if (!aeronaveId) return setError("Elige el avión.");
@@ -270,6 +297,11 @@ export function ReservaFormSheet({
               La ruta real del avión (puede salir de otra base). Marca como
               ferry los tramos sin pasajeros: el piloto los ve, el cliente no.
             </p>
+            <RutaRapidaInput
+              airports={airports}
+              hayDatos={hayDatosTramos}
+              onAplicar={aplicarRutaRapida}
+            />
             <div className="space-y-2">
               {legs.map((leg, i) => (
                 <div key={i} className="rounded-lg border border-border p-3 space-y-2">
@@ -294,7 +326,15 @@ export function ReservaFormSheet({
                         options={airportOptions}
                         value={leg.destino}
                         onChange={(v) => {
-                          updateLeg(i, { destino: v });
+                          // Sobrevuelo exige origen === destino: elegir otro
+                          // destino lo desactiva (si no, el tramo viajaría al
+                          // API como sobrevuelo sin serlo).
+                          updateLeg(i, {
+                            destino: v,
+                            ...(leg.esSobrevuelo && v !== leg.origen
+                              ? { esSobrevuelo: false }
+                              : {}),
+                          });
                           // Encadena el origen del siguiente tramo si está vacío.
                           setLegs((prev) =>
                             prev.map((l, idx) =>

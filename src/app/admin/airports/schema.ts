@@ -5,6 +5,9 @@ export const AirportFormSchema = z.object({
     .string()
     .min(3, "Mínimo 3 caracteres")
     .max(4, "Máximo 4 caracteres")
+    // Solo alfanumérico: un código con "." "-" o "/" sería inalcanzable desde
+    // la Ruta rápida (el parser usa esos caracteres como separadores).
+    .regex(/^[A-Za-z0-9]+$/, "Solo letras y números")
     .transform((v) => v.toUpperCase()),
   icao: z
     .string()

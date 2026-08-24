@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
+import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
 import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
@@ -1512,6 +1513,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   onChange={(legs) => setValue("escalas", legs)}
                   routes={allRoutes}
                   airports={airports}
+                  avisoAnclaCun
                 />
               </Field>
               {itinerarioAjustado && (
@@ -1547,10 +1549,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </div>
             </>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              Selecciona una ruta guardada (o crea una nueva) para cargar su
-              itinerario y ajustarlo aquí.
-            </p>
+            <Field
+              label="Tramos de esta cotización"
+              hint="Selecciona una ruta guardada para cargar su itinerario, o escribe la ruta aquí."
+            >
+              <RutaRapidaInput
+                airports={airports}
+                hayDatos={false}
+                onAplicar={(codigos) =>
+                  setValue(
+                    "escalas",
+                    codigos.slice(0, -1).map((c, i) => ({
+                      origen_iata: c,
+                      destino_iata: codigos[i + 1],
+                      // El autollenado del editor las completa al montar.
+                      millas_nauticas: 0,
+                    })),
+                  )
+                }
+              />
+            </Field>
           )}
 
           {/* Tarifa tipo */}
