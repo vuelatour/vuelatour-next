@@ -380,98 +380,30 @@ export function QuoteLegsEditor({
                     cobrado.
                   </p>
                 )}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Millas náuticas
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={leg.millas_nauticas || ""}
-                    onChange={(e) =>
-                      updateLeg(idx, {
-                        millas_nauticas: Number(e.target.value) || 0,
-                      })
-                    }
-                    placeholder="0.00"
-                    className={cn(
-                      leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
-                    )}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Pasajeros
-                  </Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
-                    disabled={leg.es_ferry}
-                    value={leg.es_ferry ? 0 : (leg.pasajeros ?? "")}
-                    onChange={(e) =>
-                      updateLeg(idx, {
-                        pasajeros: e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
-                    placeholder="usa global"
-                  />
-                </div>
-              </div>
-
+              {/* Solo lo COMERCIAL (limpieza 25-ago): pasajeros por tramo,
+                  fecha/hora, nota al piloto y manifiesto se capturan en lo
+                  OPERATIVO — aquí eran ruido y ya no se usan. El precio usa
+                  el campo global de Pasajeros (leg.pasajeros ?? global). */}
               <div className="space-y-1">
                 <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Fecha y hora del tramo (opcional)
+                  Millas náuticas
                 </Label>
                 <Input
-                  type="datetime-local"
-                  value={leg.fecha_salida_plan ?? ""}
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={leg.millas_nauticas || ""}
                   onChange={(e) =>
                     updateLeg(idx, {
-                      fecha_salida_plan: e.target.value || null,
+                      millas_nauticas: Number(e.target.value) || 0,
                     })
                   }
+                  placeholder="0.00"
+                  className={cn(
+                    leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
+                  )}
                 />
               </div>
-
-              {/* Nota operativa de este tramo para el piloto (la ve en su app). */}
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Nota del tramo para el piloto (opcional)
-                </Label>
-                <Textarea
-                  rows={2}
-                  value={leg.notas ?? ""}
-                  onChange={(e) =>
-                    updateLeg(idx, { notas: e.target.value || null })
-                  }
-                  placeholder='Ej. "Cargar gasolina aquí", "revisar llanta"…'
-                />
-              </div>
-
-              {/* Manifiesto por tramo: los pasajeros pueden cambiar entre escalas. */}
-              {!leg.es_ferry && (
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Nombres de pasajeros (opcional)
-                  </Label>
-                  <Textarea
-                    rows={3}
-                    value={(leg.pasajeros_nombres ?? []).join("\n")}
-                    onChange={(e) =>
-                      updateLeg(idx, {
-                        pasajeros_nombres: e.target.value.split("\n"),
-                      })
-                    }
-                    placeholder={"Uno por línea (puede ir vacío)\nJuan Pérez\nMaría López"}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Específico de este tramo. Útil para permisos; puede ir vacío.
-                  </p>
-                </div>
-              )}
 
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}
               <div className="rounded-md bg-background/60 border border-border/60 p-2 space-y-2">
