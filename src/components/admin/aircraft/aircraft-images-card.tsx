@@ -220,6 +220,27 @@ function ImageTile({
     });
   };
 
+  // Etiqueta del PDF de cotización (26-ago): EXTERIOR/INTERIOR, una por
+  // aeronave (el API limpia a la que la tuviera). Clic en la actual = quitar.
+  const handleEtiqueta = (etiqueta: "EXTERIOR" | "INTERIOR") => {
+    startTransition(async () => {
+      const nueva = image.etiqueta === etiqueta ? null : etiqueta;
+      const res = await updateAircraftImageAction(aircraftId, image.id, {
+        etiqueta: nueva,
+      });
+      if (res.ok) {
+        toast.success(
+          nueva
+            ? `Esta foto irá como ${nueva === "EXTERIOR" ? "Exterior" : "Interior"} en el PDF de cotización`
+            : "Etiqueta quitada",
+        );
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Error al actualizar");
+      }
+    });
+  };
+
   const handleDelete = () => {
     startTransition(async () => {
       const res = await deleteAircraftImageAction(aircraftId, image.id);
@@ -246,10 +267,19 @@ function ImageTile({
           loading="lazy"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        {image.es_principal && (
-          <div className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-brand-600/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-            <StarSolidIcon className="h-3 w-3" />
-            Principal
+        {(image.es_principal || image.etiqueta) && (
+          <div className="absolute top-2 left-2 flex flex-col items-start gap-1">
+            {image.es_principal && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-brand-600/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                <StarSolidIcon className="h-3 w-3" />
+                Principal
+              </span>
+            )}
+            {image.etiqueta && (
+              <span className="inline-flex items-center rounded-md bg-navy-900/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                PDF · {image.etiqueta === "EXTERIOR" ? "Exterior" : "Interior"}
+              </span>
+            )}
           </div>
         )}
         <div className="absolute top-1 right-1">
@@ -269,6 +299,26 @@ function ImageTile({
               >
                 <StarIcon className="h-4 w-4" />
                 Marcar como principal
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleEtiqueta("EXTERIOR")}
+                disabled={pending}
+                className="gap-2"
+              >
+                <PhotoIcon className="h-4 w-4" />
+                {image.etiqueta === "EXTERIOR"
+                  ? "Quitar de Exterior (PDF)"
+                  : "Usar como Exterior (PDF)"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleEtiqueta("INTERIOR")}
+                disabled={pending}
+                className="gap-2"
+              >
+                <PhotoIcon className="h-4 w-4" />
+                {image.etiqueta === "INTERIOR"
+                  ? "Quitar de Interior (PDF)"
+                  : "Usar como Interior (PDF)"}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
                 <PencilIcon className="h-4 w-4" />

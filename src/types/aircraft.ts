@@ -146,6 +146,8 @@ export interface AeronaveImagen {
   alt_text: string | null;
   orden: number;
   es_principal: boolean;
+  /** Uso en el PDF de cotización: EXTERIOR / INTERIOR (una por aeronave). */
+  etiqueta?: "EXTERIOR" | "INTERIOR" | null;
   size_bytes: number | null;
   content_type: string | null;
   created_at: string;

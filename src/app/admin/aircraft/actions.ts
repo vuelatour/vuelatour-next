@@ -436,6 +436,8 @@ export interface UpdateAircraftImagePayload {
   alt_text?: string;
   es_principal?: boolean;
   orden?: number;
+  /** Uso en el PDF de cotización (una por aeronave); null = quitar. */
+  etiqueta?: "EXTERIOR" | "INTERIOR" | null;
 }
 
 export async function updateAircraftImageAction(

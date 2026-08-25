@@ -10,8 +10,10 @@ import {
   XCircleIcon,
   BookmarkSquareIcon,
   PlusIcon,
+  PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
+import { updateClientAction } from "@/app/admin/clients/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import type { Client } from "@/types/clients";
 import type { Route } from "@/types/routes";
@@ -380,6 +382,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // (26-ago) La TotalBar fija de arriba sustituyó al observer de
   // visibilidad + barra flotante inferior del layout de 2 columnas.
 
+  // Editar el nombre del cliente AHÍ MISMO (26-ago): al crear uno nuevo en
+  // el cotizador y equivocarse en el nombre, no había forma de corregirlo
+  // sin salir a Catálogos.
+  const [editClienteOpen, setEditClienteOpen] = useState(false);
+  const [editClienteNombre, setEditClienteNombre] = useState("");
+  const [editClienteSaving, startEditCliente] = useTransition();
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -1314,7 +1322,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   if (!sel) return null;
                   return (
                     <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2">
-                      <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
+                        <button
+                          type="button"
+                          title="Corregir el nombre del cliente"
+                          onClick={() => {
+                            setEditClienteNombre(sel.nombre);
+                            setEditClienteOpen(true);
+                          }}
+                          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <PencilSquareIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {[
                           sel.es_interno ? "Interno · operación propia" : null,
@@ -2669,6 +2690,64 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           router.refresh();
         }}
       />
+
+      {/* Corregir el nombre del cliente sin salir del cotizador (26-ago). */}
+      <Dialog open={editClienteOpen} onOpenChange={setEditClienteOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Corregir nombre del cliente</DialogTitle>
+            <DialogDescription>
+              Cambia el nombre en el catálogo (aplica en todos lados, no solo
+              en esta cotización).
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={editClienteNombre}
+            onChange={(e) => setEditClienteNombre(e.target.value)}
+            placeholder="Nombre del cliente"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditClienteOpen(false)}
+              disabled={editClienteSaving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={editClienteSaving || !editClienteNombre.trim()}
+              onClick={() => {
+                const id = values.cliente_id;
+                const nombre = editClienteNombre.trim();
+                if (!id || !nombre) return;
+                startEditCliente(async () => {
+                  const res = await updateClientAction(id, { nombre });
+                  if (res.ok) {
+                    // Upsert local: el recién creado vive en extraClients y
+                    // se corrige al instante; los del catálogo llegan con el
+                    // refresh del server.
+                    setExtraClients((prev) => {
+                      const resto = prev.filter((c) => c.id !== id);
+                      const base =
+                        prev.find((c) => c.id === id) ??
+                        allClients.find((c) => c.id === id);
+                      return base ? [...resto, { ...base, nombre }] : resto;
+                    });
+                    toast.success("Nombre corregido");
+                    setEditClienteOpen(false);
+                    router.refresh();
+                  } else {
+                    toast.error(res.error ?? "No se pudo corregir el nombre");
+                  }
+                });
+              }}
+            >
+              {editClienteSaving ? "Guardando…" : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirmación de "todo en $0": borra extras y overrides ya capturados. */}
       <Dialog open={ceroOpen} onOpenChange={setCeroOpen}>
