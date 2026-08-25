@@ -846,6 +846,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     } else {
       return null;
     }
+    // Con pax POR TRAMO completo, el "global" que viaja (y que la lista y
+    // el PDF muestran) es el MÁXIMO de los tramos — el capturado queda
+    // congelado sin efecto en el precio (cada tramo manda su propio pax).
+    const tramosPaxDeb = (debounced.escalas ?? []).filter((l) => !l.es_ferry);
+    const paxPorTramoDebounced =
+      tramosPaxDeb.length > 0 &&
+      tramosPaxDeb.every((l) => l.pasajeros != null && `${l.pasajeros}` !== "");
+    const maxPaxTramosDebounced = paxPorTramoDebounced
+      ? Math.max(...tramosPaxDeb.map((l) => Number(l.pasajeros) || 0))
+      : 0;
+    if (paxPorTramoDebounced) {
+      base.pasajeros = Math.max(1, maxPaxTramosDebounced);
+    }
     if (base.pasajeros < 1) return null;
     // Campo vacío = sin override (el input devuelve "" y Number("") es 0: no
     // se puede confiar en la verdad/falsedad del valor crudo).
@@ -938,8 +951,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
   // Un tramo posterior puede subir más pax: valida contra el máximo del itinerario.
-  const maxPasajeros =
-    values.escalas.length > 0
+  // ¿TODOS los tramos (no-ferry) traen su propio pax? Entonces el global NO
+  // se edita ni cuenta (26-ago): el TUAS usa el pax de cada tramo y mezclar
+  // el global solo confundía (y disparaba avisos de capacidad falsos).
+  const tramosConPax = values.escalas.filter((l) => !l.es_ferry);
+  const paxPorTramo =
+    tramosConPax.length > 0 &&
+    tramosConPax.every((l) => l.pasajeros != null && `${l.pasajeros}` !== "");
+  const maxPaxTramos = paxPorTramo
+    ? Math.max(...tramosConPax.map((l) => Number(l.pasajeros) || 0))
+    : 0;
+  const maxPasajeros = paxPorTramo
+    ? maxPaxTramos
+    : values.escalas.length > 0
       ? Math.max(
           Number(values.pasajeros) || 0,
           ...values.escalas
@@ -1662,12 +1686,27 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Pasajeros" required>
-              <Input
-                type="number"
-                min={1}
-                max={selectedAircraft?.asientos || undefined}
-                {...register("pasajeros")}
-              />
+              {paxPorTramo ? (
+                <>
+                  <Input
+                    type="number"
+                    disabled
+                    value={maxPaxTramos}
+                    readOnly
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Definido POR TRAMO: cada tramo usa su propio número (máx.{" "}
+                    {maxPaxTramos}); este global no se toma en cuenta.
+                  </p>
+                </>
+              ) : (
+                <Input
+                  type="number"
+                  min={1}
+                  max={selectedAircraft?.asientos || undefined}
+                  {...register("pasajeros")}
+                />
+              )}
               {selectedAircraft && selectedAircraft.asientos > 0 && (
                 <p
                   className={cn(
@@ -1676,7 +1715,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   )}
                 >
                   {capacidadExcedida
-                    ? `Excede la capacidad: máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`
+                    ? `Excede la capacidad: ${maxPasajeros} pax en un tramo vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo}).`
                     : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
                 </p>
               )}
@@ -1734,30 +1773,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   );
                 })()}
             </Field>
-            <div className="flex flex-col gap-1">
-              <Label className="text-sm font-medium">Cobrar TUAS</Label>
-              <div className="flex items-center h-9">
-                <Switch
-                  checked={values.cobrar_tuas}
-                  onCheckedChange={(c) => setValue("cobrar_tuas", c)}
-                />
-                <span className="text-xs text-muted-foreground ml-3">
-                  {values.cobrar_tuas
-                    ? "Se cobra según aeropuerto"
-                    : "No se cobra en esta cotización"}
-                </span>
-              </div>
-              {breakdown && values.cobrar_tuas && (
-                <AporteChip
-                  usd={breakdown.totales.tuas_total_usd}
-                  nota={
-                    (breakdown.tuas.filas ?? []).length > 0
-                      ? `${(breakdown.tuas.filas ?? []).length} aeropuerto(s) · editable a la derecha`
-                      : undefined
-                  }
-                />
-              )}
-            </div>
+            {/* El switch de Cobrar TUAS vive en la card "TUAS por
+                aeropuerto" del panel derecho (26-ago): junto a donde se
+                editan los montos, que es donde tiene sentido. */}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
@@ -2481,6 +2499,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             tuasLineas={values.tuas_lineas ?? []}
             onTuaChange={setTuaLinea}
             cobrarTuas={values.cobrar_tuas}
+            onCobrarTuasChange={(c) => setValue("cobrar_tuas", c)}
             tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
             tiempoOverride={values.tiempo_vuelo_override_hr}
             onTiempoOverride={(v) => setValue("tiempo_vuelo_override_hr", v)}
@@ -2717,6 +2736,7 @@ function Preview({
   tuasLineas,
   onTuaChange,
   cobrarTuas,
+  onCobrarTuasChange,
   tcUsdMxn,
   tiempoOverride,
   onTiempoOverride,
@@ -2726,6 +2746,7 @@ function Preview({
   tuasLineas: TuaLinea[];
   onTuaChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
   cobrarTuas: boolean;
+  onCobrarTuasChange: (c: boolean) => void;
   tcUsdMxn: number | null;
   /** Tiempo de vuelo PACTADO (hr) capturado en la card de Tiempos. */
   tiempoOverride: number | null;
@@ -3108,10 +3129,18 @@ function Preview({
           aeropuerto cobra; manda sobre el catálogo). */}
       <Card className={cn("transition-opacity", !cobrarTuas && "opacity-60")}>
         <CardHeader>
-          <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
+            {/* El switch vive AQUÍ, junto a donde se editan los montos. */}
+            <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+              {cobrarTuas ? "Se cobra" : "No se cobra"}
+              <Switch checked={cobrarTuas} onCheckedChange={onCobrarTuasChange} />
+            </label>
+          </div>
           <CardDescription className="text-xs">
-            {breakdown.tuas.pasajeros} {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} global.
-            Regla aplicada por matrícula {breakdown.aeronave.matricula.startsWith("XA")
+            {breakdown.tuas.pasajeros} {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} de
+            referencia (cada tramo puede llevar el suyo). Regla aplicada por
+            matrícula {breakdown.aeronave.matricula.startsWith("XA")
               ? "XA"
               : breakdown.aeronave.matricula.startsWith("XB")
                 ? "XB"
