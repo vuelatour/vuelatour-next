@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -376,21 +376,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // "Personalizada" en Tipo de tarifa (25-ago): modo elegido a mano; el
   // derivado overrideTarifaActivo cubre revises y "todo en $0".
   const [tarifaCustom, setTarifaCustom] = useState(false);
-  // ¿El panel del cálculo está a la vista? En pantallas angostas el panel
-  // queda ABAJO del formulario (no hay "lado derecho"): mientras no se vea,
-  // una barra flotante muestra el total en vivo (pedido 25-ago).
-  const previewRef = useRef<HTMLDivElement>(null);
-  const [previewVisible, setPreviewVisible] = useState(true);
-  useEffect(() => {
-    const el = previewRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setPreviewVisible(entry.isIntersecting),
-      { threshold: 0.05 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+  // (26-ago) La TotalBar fija de arriba sustituyó al observer de
+  // visibilidad + barra flotante inferior del layout de 2 columnas.
+
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -1231,9 +1219,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   };
 
   return (
-    <div className={cn("grid gap-6 lg:grid-cols-5", !previewVisible && "pb-16")}>
+    // UNA columna (26-ago): el flujo va de arriba a abajo — formulario y
+    // luego las cards del cálculo — con la barra del TOTAL fija arriba.
+    // El split izquierda/derecha obligaba a scrollear en dos lados.
+    <div className="mx-auto max-w-4xl space-y-6">
+      <TotalBar
+        breakdown={breakdown}
+        loading={loading}
+        error={error}
+        sinDatos={!calcPayload}
+      />
       {/* FORM */}
-      <Card className="lg:col-span-2">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <CalculatorIcon className="h-4 w-4 text-muted-foreground" />
@@ -1603,7 +1600,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   </Button>
                 </div>
               )}
-              <div className="hidden xl:block">
+              <div className="hidden lg:block">
                 <RoutePreviewMap
                   airports={airports}
                   legs={values.escalas.map((l) => ({
@@ -1719,6 +1716,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
                 </p>
               )}
+              {/* Cuánto pagan de TUAS estos pasajeros, aeropuerto por
+                  aeropuerto (26-ago): "4 × $25.00 = $100.00 USD". */}
+              {values.cobrar_tuas &&
+                breakdown &&
+                (breakdown.tuas.filas ?? []).length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {(breakdown.tuas.filas ?? []).map((f) => (
+                      <p key={f.iata} className="text-xs text-muted-foreground">
+                        TUA <span className="font-mono">{f.iata}</span>:{" "}
+                        <span className="font-mono">
+                          {f.pax} ×{" "}
+                          {f.moneda === "MXN"
+                            ? fmtMxn(f.monto_pax)
+                            : fmtUsd(f.monto_pax)}{" "}
+                          = {fmtUsd(f.total_usd)} USD
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+                )}
             </Field>
             <div className="flex flex-col gap-1">
               <Label className="text-sm font-medium">Pase de abordar</Label>
@@ -2465,13 +2482,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </CardContent>
       </Card>
 
-      {/* PREVIEW — fijo al hacer scroll (pedido 25-ago): el total siempre a
-          la vista; si el desglose es más alto que la ventana, scrollea
-          adentro del panel. */}
-      <div
-        ref={previewRef}
-        className="lg:col-span-3 space-y-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1"
-      >
+      {/* CÁLCULO — en el mismo flujo, bajo el formulario. El total vive en
+          la TotalBar fija de arriba, así que aquí queda el detalle. */}
+      <div className="space-y-6">
         {error ? (
           <Card className="border-destructive/50 bg-destructive/5">
             <CardHeader>
@@ -2573,53 +2586,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </Card>
       </div>
 
-      {/* Barra flotante: total en vivo mientras el panel del cálculo no está
-          a la vista (pantalla angosta o scroll profundo). El observer la
-          oculta sola cuando el desglose ya se ve. */}
-      {!previewVisible && (
-        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-2.5">
-            {error ? (
-              <p className="text-sm font-medium text-destructive truncate">
-                Error al calcular — revisa los parámetros
-              </p>
-            ) : breakdown ? (
-              <p className={cn("text-sm", loading && "opacity-60")}>
-                <span className="text-xs uppercase tracking-wider text-muted-foreground mr-2">
-                  Total
-                </span>
-                <span className="text-lg font-bold font-mono">
-                  {fmtUsd(breakdown.totales.total_usd)}
-                </span>
-                <span className="text-xs text-muted-foreground ml-1">USD</span>
-                {breakdown.totales.total_mxn != null && (
-                  <span className="text-xs text-muted-foreground ml-3 font-mono">
-                    {fmtMxn(breakdown.totales.total_mxn)} MXN
-                  </span>
-                )}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Completa aeronave, ruta y pasajeros para calcular.
-              </p>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() =>
-                previewRef.current?.scrollIntoView({
-                  behavior: "smooth",
-                  block: "start",
-                })
-              }
-            >
-              Ver desglose
-            </Button>
-          </div>
-        </div>
-      )}
 
       {!isRevise && (
         <QuickClientDialog
@@ -2727,6 +2693,123 @@ function AporteChip({
         <span className="text-muted-foreground font-normal"> · {nota}</span>
       ) : null}
     </p>
+  );
+}
+
+/**
+ * Barra FIJA del total (26-ago): siempre visible al hacer scroll — se va
+ * ajustando la cotización y el total + mini-desglose se actualizan en vivo,
+ * sin regresar arriba. Sustituye a la barra flotante inferior y al panel
+ * lateral pegajoso (el cotizador pasó a UNA columna).
+ */
+function TotalBar({
+  breakdown,
+  loading,
+  error,
+  sinDatos,
+}: {
+  breakdown: QuoteBreakdown | null;
+  loading: boolean;
+  error: string | null;
+  sinDatos: boolean;
+}) {
+  const chips: { label: string; value: string }[] = [];
+  if (breakdown) {
+    chips.push({
+      label: "Subtotal",
+      value: fmtUsd(breakdown.totales.subtotal_vuelo_usd),
+    });
+    chips.push({ label: "TUAS", value: fmtUsd(breakdown.totales.tuas_total_usd) });
+    if (breakdown.totales.viaticos_pernocta_usd) {
+      chips.push({
+        label: "Pernocta",
+        value: fmtUsd(breakdown.totales.viaticos_pernocta_usd),
+      });
+    }
+    if (breakdown.totales.extras_total_usd) {
+      chips.push({
+        label: "Extras",
+        value: fmtUsd(breakdown.totales.extras_total_usd),
+      });
+    }
+    // La comisión del vendedor SÍ es parte del total (la paga el cliente)
+    // pero viaja en meta, no en totales: sin este chip el desglose de la
+    // barra no sumaría el número grande de al lado.
+    if (breakdown.meta?.comision_vendedor_usd) {
+      chips.push({
+        label: "Comisión",
+        value: fmtUsd(breakdown.meta.comision_vendedor_usd),
+      });
+    }
+    if (breakdown.totales.ajuste_final_usd) {
+      chips.push({
+        label:
+          (breakdown.totales.ajuste_final_usd ?? 0) < 0
+            ? "Descuento"
+            : "Redondeo",
+        value: fmtUsd(breakdown.totales.ajuste_final_usd!),
+      });
+    }
+    chips.push({ label: "IVA", value: fmtUsd(breakdown.totales.iva_usd) });
+  }
+  return (
+    <div className="sticky top-0 z-30 -mx-1 px-1 pt-1">
+      <div className="rounded-xl border border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 shadow-sm px-4 py-2.5">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div
+            className={cn(
+              "flex items-baseline gap-2 transition-opacity",
+              loading && "opacity-60",
+            )}
+          >
+            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              Total
+            </span>
+            {error ? (
+              <span className="text-sm font-medium text-destructive">
+                Error al calcular
+              </span>
+            ) : sinDatos ? (
+              <span className="text-sm text-muted-foreground">
+                Completa aeronave, ruta y pasajeros
+              </span>
+            ) : !breakdown ? (
+              <span className="text-sm text-muted-foreground">Calculando…</span>
+            ) : (
+              <>
+                <span className="text-2xl font-bold tracking-tight font-mono tabular-nums">
+                  {fmtUsd(breakdown.totales.total_usd)}
+                </span>
+                <span className="text-xs text-muted-foreground">USD</span>
+                {breakdown.totales.total_mxn != null && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {fmtMxn(breakdown.totales.total_mxn)}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          {breakdown && !error && (
+            <div
+              className={cn(
+                "hidden md:flex items-baseline gap-4 text-xs transition-opacity",
+                loading && "opacity-60",
+              )}
+            >
+              {chips.map((c) => (
+                <span key={c.label} className="whitespace-nowrap">
+                  <span className="text-muted-foreground">{c.label} </span>
+                  <span className="font-mono tabular-nums">{c.value}</span>
+                </span>
+              ))}
+              <Badge variant="outline" className="text-[10px]">
+                {breakdown.tarifa.tipo}
+              </Badge>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3327,19 +3410,29 @@ function TuasAirportRow({
             </Badge>
           )}
         </span>
-        {/* Total de la fila, NATIVO en su moneda (canon USD al lado si es MXN). */}
+        {/* Cuenta EXPLÍCITA (26-ago): "N pax × unitario = total" — la
+            oficina ve de dónde sale el número, no solo el resultado. */}
         <span className="font-mono text-sm">
           {fila ? (
-            fila.moneda === "MXN" ? (
-              <>
-                {fmtMxn(fila.total_nativo)}
-                <span className="ml-1.5 text-xs text-muted-foreground">
-                  = {fmtUsd(fila.total_usd)}
-                </span>
-              </>
-            ) : (
-              fmtUsd(fila.total_usd)
-            )
+            <>
+              <span className="text-xs text-muted-foreground">
+                {fila.pax} ×{" "}
+                {fila.moneda === "MXN"
+                  ? fmtMxn(fila.monto_pax)
+                  : fmtUsd(fila.monto_pax)}{" "}
+                ={" "}
+              </span>
+              {fila.moneda === "MXN" ? (
+                <>
+                  {fmtMxn(fila.total_nativo)}
+                  <span className="ml-1.5 text-xs text-muted-foreground">
+                    = {fmtUsd(fila.total_usd)}
+                  </span>
+                </>
+              ) : (
+                fmtUsd(fila.total_usd)
+              )}
+            </>
           ) : (
             "$0"
           )}
