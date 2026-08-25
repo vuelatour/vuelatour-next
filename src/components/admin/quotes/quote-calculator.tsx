@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -661,10 +661,28 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     register,
     watch,
     setValue,
+    reset,
   } = useForm<QuoteFormValues>({
     mode: "onChange",
     defaultValues: formDefaults,
   });
+
+  // Restaura el borrador de la URL UNA vez al montar (solo alta nueva: en
+  // revise la verdad viene del snapshot y no se toca).
+  const draftRestaurado = useRef(false);
+  useEffect(() => {
+    if (isRevise || draftRestaurado.current) return;
+    draftRestaurado.current = true;
+    const raw = new URLSearchParams(window.location.search).get(DRAFT_PARAM);
+    if (!raw) return;
+    const f = decodeDraft(raw);
+    if (f) {
+      reset({ ...formDefaults, ...f });
+      toast.info("Se restauró tu avance desde la URL.");
+    }
+    // Solo al montar; formDefaults es estable en el alta nueva.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const values = watch();
   // IMPORTANTE: serializamos el form a JSON antes de pasarlo al debounce.
@@ -678,6 +696,22 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     () => JSON.parse(debouncedJson),
     [debouncedJson],
   );
+
+  // Escribe el borrador en la URL con el MISMO debounce del cálculo.
+  // Pristino (igual a los defaults) = sin parámetro, para no ensuciar URLs.
+  useEffect(() => {
+    if (isRevise || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (debouncedJson === JSON.stringify(formDefaults)) {
+      if (!url.searchParams.has(DRAFT_PARAM)) return;
+      url.searchParams.delete(DRAFT_PARAM);
+    } else {
+      url.searchParams.set(DRAFT_PARAM, encodeDraft(debounced));
+    }
+    window.history.replaceState(null, "", url.toString());
+    // formDefaults estable; debouncedJson representa a debounced.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedJson, isRevise]);
 
   // Cliente INTERNO (operación propia): el motor permite cotizar en $0 (sin
   // hora mínima, tarifa 0, sin cobro esperado) — la UI no debe estorbar.
@@ -2704,6 +2738,34 @@ function AporteChip({
       ) : null}
     </p>
   );
+}
+
+// ===== Borrador del cotizador EN LA URL (26-ago) =====
+// Recargar no pierde el avance: el form viaja comprimido en un query param
+// (?d=) que se actualiza con replaceState (sin ensuciar historial) y se
+// restaura al montar. De paso la URL es compartible con el avance a medias.
+const DRAFT_PARAM = "d";
+
+function encodeDraft(v: QuoteFormValues): string {
+  return btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, f: v }))))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
+  try {
+    const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
+    const parsed = JSON.parse(decodeURIComponent(escape(atob(b64)))) as {
+      v?: number;
+      f?: Partial<QuoteFormValues>;
+    };
+    return parsed?.v === 1 && parsed.f && typeof parsed.f === "object"
+      ? parsed.f
+      : null;
+  } catch {
+    return null; // parámetro corrupto/viejo: se ignora, jamás rompe el alta
+  }
 }
 
 /**
