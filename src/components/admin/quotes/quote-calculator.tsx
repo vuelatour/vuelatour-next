@@ -134,6 +134,8 @@ interface QuoteFormValues {
   pase_abordar: boolean;
   /** Horas de sobrevuelo (reconocimiento/foto): se suman al tiempo cobrable. */
   sobrevuelo_hr: number | null;
+  /** Tiempo de VUELO pactado (hr): sustituye al calculado NM ÷ kts. */
+  tiempo_vuelo_override_hr: number | null;
   /** Switch rápido de TUAS: apagado = no se cobra (override $0/pax). */
   cobrar_tuas: boolean;
   /** TUAS capturadas POR AEROPUERTO (pass-through): mandan sobre el catálogo. */
@@ -510,6 +512,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           Number(q.calculo_snapshot?.tiempos?.sobrevuelo_hr) > 0
             ? Number(q.calculo_snapshot!.tiempos.sobrevuelo_hr)
             : null,
+        tiempo_vuelo_override_hr:
+          q.calculo_snapshot?.tiempos?.vuelo_proviene_de_override === true &&
+          Number(q.calculo_snapshot?.tiempos?.vuelo_hr) > 0
+            ? Number(q.calculo_snapshot!.tiempos.vuelo_hr)
+            : null,
         // El switch de TUAS apagado se guardó como override $0/pax; un override
         // distinto de 0 se re-hidrata en el campo avanzado para no perderlo.
         cobrar_tuas: q.calculo_snapshot?.tuas?.usd_pax_default !== 0,
@@ -632,6 +639,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pasajeros: 2,
       pase_abordar: false,
       sobrevuelo_hr: null,
+      tiempo_vuelo_override_hr: null,
       cobrar_tuas: true,
       tuas_lineas: [],
       cotizacion_abierta: false,
@@ -734,6 +742,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       sobrevuelo_hr:
         Number(debounced.sobrevuelo_hr) > 0
           ? Number(debounced.sobrevuelo_hr)
+          : undefined,
+      tiempo_vuelo_override_hr:
+        Number(debounced.tiempo_vuelo_override_hr) > 0
+          ? Number(debounced.tiempo_vuelo_override_hr)
           : undefined,
       cotizacion_abierta: debounced.cotizacion_abierta,
       extras: (debounced.extras ?? [])
@@ -2411,6 +2423,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onTuaChange={setTuaLinea}
             cobrarTuas={values.cobrar_tuas}
             tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
+            tiempoOverride={values.tiempo_vuelo_override_hr}
+            onTiempoOverride={(v) => setValue("tiempo_vuelo_override_hr", v)}
           />
         ) : (
           <PreviewSkeleton />
@@ -2613,6 +2627,8 @@ function Preview({
   onTuaChange,
   cobrarTuas,
   tcUsdMxn,
+  tiempoOverride,
+  onTiempoOverride,
 }: {
   breakdown: QuoteBreakdown;
   loading: boolean;
@@ -2620,6 +2636,9 @@ function Preview({
   onTuaChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
   cobrarTuas: boolean;
   tcUsdMxn: number | null;
+  /** Tiempo de vuelo PACTADO (hr) capturado en la card de Tiempos. */
+  tiempoOverride: number | null;
+  onTiempoOverride: (v: number | null) => void;
 }) {
   // Aeropuertos ÚNICOS del itinerario (todos, no solo origen/destino).
   const aeropuertos = (() => {
@@ -2893,11 +2912,49 @@ function Preview({
             <CardTitle className="text-sm">Tiempos</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row
-              label="Vuelo"
-              value={`${fmtDecimal(breakdown.tiempos.vuelo_hr, 4)} hr`}
-              hint={`${fmtDecimal(breakdown.ruta.millas_nauticas_totales)} NM ÷ ${breakdown.aeronave.velocidad_crucero_kts} kts`}
-            />
+            {/* Tiempo de vuelo PACTADO (25-ago): editable aquí mismo para
+                cobrar un tiempo distinto al calculado; vacío = NM ÷ kts. */}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p>Vuelo</p>
+                <p className="text-xs text-muted-foreground">
+                  {breakdown.tiempos.vuelo_proviene_de_override
+                    ? `pactado · calculado ${fmtDecimal(breakdown.tiempos.vuelo_hr_calculado ?? 0, 4)} hr (${fmtDecimal(breakdown.ruta.millas_nauticas_totales)} NM ÷ ${breakdown.aeronave.velocidad_crucero_kts} kts)`
+                    : `${fmtDecimal(breakdown.ruta.millas_nauticas_totales)} NM ÷ ${breakdown.aeronave.velocidad_crucero_kts} kts`}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={24}
+                  placeholder={fmtDecimal(
+                    breakdown.tiempos.vuelo_hr_calculado ??
+                      breakdown.tiempos.vuelo_hr,
+                    4,
+                  )}
+                  className="h-7 w-24 text-right font-mono"
+                  value={tiempoOverride ?? ""}
+                  onChange={(e) =>
+                    onTiempoOverride(
+                      e.target.value === ""
+                        ? null
+                        : Math.max(0, Number(e.target.value)),
+                    )
+                  }
+                />
+                <span className="text-xs text-muted-foreground">hr</span>
+              </div>
+            </div>
+            {breakdown.tiempos.vuelo_proviene_de_override &&
+              Number(breakdown.tiempos.vuelo_hr) <
+                Number(breakdown.tiempos.vuelo_hr_calculado ?? 0) && (
+                <p className="text-xs text-amber-600">
+                  Ojo: el tiempo pactado es MENOR al calculado — se cobraría
+                  menos que el vuelo real.
+                </p>
+              )}
             <Row
               label="Calzos"
               value={`${fmtDecimal(breakdown.tiempos.calzos_hr, 4)} hr`}

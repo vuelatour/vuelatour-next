@@ -123,6 +123,8 @@ export interface CalculateQuoteRequest {
   pase_abordar?: boolean;
   /** Horas de SOBREVUELO (reconocimiento/foto): se suman al tiempo cobrable. */
   sobrevuelo_hr?: number;
+  /** Tiempo de VUELO deseado (hr): sustituye al calculado NM ÷ kts. */
+  tiempo_vuelo_override_hr?: number;
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
   /** Conceptos extra (se suman al total; los gravados entran a la base de IVA). */
@@ -182,6 +184,9 @@ export interface QuoteBreakdown {
   };
   tiempos: {
     vuelo_hr: number;
+    /** Calculado real (NM ÷ kts) cuando el vuelo_hr viene pactado. */
+    vuelo_hr_calculado?: number;
+    vuelo_proviene_de_override?: boolean;
     calzos_hr: number;
     /** Horas de sobrevuelo solicitadas (0 si no aplica). */
     sobrevuelo_hr?: number;
