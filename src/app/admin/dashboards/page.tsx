@@ -81,7 +81,7 @@ export default async function DashboardsPage({ searchParams }: PageProps) {
       <div>
         <p className="text-sm text-muted-foreground">Reportes</p>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
-          Dashboards
+          Estadísticas
         </h1>
       </div>
 

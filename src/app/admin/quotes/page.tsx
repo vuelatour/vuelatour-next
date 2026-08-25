@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { QuotesFilterBar } from "@/components/admin/quotes/quotes-filter-bar";
 import { QuotesTable, type QuoteListRow } from "@/components/admin/quotes/quotes-table";
 import { listQuotes } from "@/lib/api/quotes-server";
+import { getCobroStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
@@ -42,6 +43,20 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const { data: quotes, count } = quotesRes;
 
+  // Semáforo de cobro (cotización y vuelo comparten id): batch solo para
+  // filas con precio y sin cobrar; null degrada a "Por cobrar" sin romper.
+  // SOLICITUD/COTIZADO también entran: un anticipo debe verse "Parcial"
+  // igual que en la lista de vuelos.
+  const cobroRelevantes = quotes.filter(
+    (q) =>
+      !q.cobrado &&
+      Number(q.monto_total_usd) > 0 &&
+      q.cotizacion_abierta !== true,
+  );
+  const cobroStatus = await getCobroStatus(
+    cobroRelevantes.map((q) => q.id),
+  ).catch(() => null);
+
   // Filas planas y serializables para el componente cliente (lookups resueltos).
   const rows: QuoteListRow[] = quotes.map((q) => ({
     id: q.id,
@@ -60,6 +75,12 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
     sinAsignar:
       q.estado === "CONFIRMADO" && !q.es_externo && (!q.piloto_id || !q.aeronave_id),
     faltaPiloto: !q.piloto_id,
+    cobrado: q.cobrado,
+    esInterno: clientsById.get(q.cliente_id)?.es_interno === true,
+    cotizacionAbierta: q.cotizacion_abierta === true,
+    totalCobradoUsd:
+      cobroStatus === null ? null : (cobroStatus[q.id]?.total_cobrado ?? 0),
+    sinTcCount: cobroStatus?.[q.id]?.sin_tc_count ?? 0,
   }));
   // Orden por fecha de vuelo (recientes primero); sin fecha al final. El folio
   // ya no se muestra, así que la fecha es el orden natural para operación.

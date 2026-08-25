@@ -25,6 +25,6 @@ export function getPageTitleFromPathname(pathname: string): string | undefined {
     if (pathname.startsWith(`${item.href}/`)) return item.label;
   }
 
-  if (pathname === "/admin") return "Dashboard";
+  if (pathname === "/admin") return "Inicio";
   return undefined;
 }

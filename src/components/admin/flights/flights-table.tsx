@@ -2,6 +2,8 @@
 
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
+import { estadoCobroSemaforo } from "@/lib/admin/cobros";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
@@ -25,6 +27,13 @@ export interface FlightRow {
   falta_taco: boolean;
   /** SOLICITUD/COTIZADO: fila azul y el clic abre la cotización, no el vuelo. */
   en_cotizacion: boolean;
+  // Semáforo de cobro (regla única en estadoCobroSemaforo).
+  cobrado: boolean;
+  es_interno: boolean;
+  cotizacion_abierta: boolean;
+  /** null = batch de cobros no disponible (rol sin acceso). */
+  total_cobrado_usd: number | null;
+  sin_tc_count: number;
 }
 
 const columns: Array<DataTableColumn<FlightRow>> = [
@@ -94,6 +103,26 @@ const columns: Array<DataTableColumn<FlightRow>> = [
     headClassName: "text-right",
     cellClassName: "text-right font-mono",
     cell: (v) => fmtUsd(v.monto_total_usd),
+  },
+  {
+    key: "cobro",
+    header: "Cobro",
+    headClassName: "text-center",
+    cellClassName: "text-center",
+    cell: (v) => (
+      <CobroEstadoBadge
+        estado={estadoCobroSemaforo({
+          montoTotalUsd: Number(v.monto_total_usd) || 0,
+          cobrado: v.cobrado,
+          esInterno: v.es_interno,
+          totalCobradoUsd: v.total_cobrado_usd,
+          sinTcCount: v.sin_tc_count,
+          cotizacionAbierta: v.cotizacion_abierta,
+          enCotizacion: v.en_cotizacion,
+          cancelado: v.estado === "CANCELADO",
+        })}
+      />
+    ),
   },
   {
     key: "estado",

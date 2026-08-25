@@ -6,7 +6,7 @@ import {
   FlightsTable,
   type FlightRow,
 } from "@/components/admin/flights/flights-table";
-import { listFlights, getTacoStatus } from "@/lib/api/flights-server";
+import { listFlights, getCobroStatus, getTacoStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -79,6 +79,18 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   );
   const faltaTaco = (id: string) => tacoStatus[id]?.falta === true;
 
+  // Semáforo de cobro: el flag `cobrado` ya viene en la fila; el batch trae
+  // el total para distinguir PARCIAL de SIN COBRO. Solo se consultan filas
+  // con precio y sin cobrar (las verdes no necesitan round-trip). Si el rol
+  // no alcanza, null degrada a "Por cobrar" sin reventar la página.
+  const cobroRelevantes = flightsRes.data.filter(
+    (v) =>
+      !v.cobrado && Number(v.monto_total_usd) > 0 && v.cotizacion_abierta !== true,
+  );
+  const cobroStatus = await getCobroStatus(
+    cobroRelevantes.map((v) => v.id),
+  ).catch(() => null);
+
   // Filas-viewmodel serializables para el componente cliente (sin Maps).
   // La tabla incluye TAMBIÉN las filas en cotización (azules).
   const rows: FlightRow[] = flightsRes.data.map((v) => ({
@@ -102,6 +114,12 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     estado: v.estado,
     falta_taco: faltaTaco(v.id),
     en_cotizacion: esCotizacion(v),
+    cobrado: v.cobrado,
+    es_interno: clientsById.get(v.cliente_id)?.es_interno === true,
+    cotizacion_abierta: v.cotizacion_abierta === true,
+    total_cobrado_usd:
+      cobroStatus === null ? null : (cobroStatus[v.id]?.total_cobrado ?? 0),
+    sin_tc_count: cobroStatus?.[v.id]?.sin_tc_count ?? 0,
   }));
   // Orden por fecha de vuelo (recientes primero); sin fecha al final. El folio
   // ya no se muestra, así que la fecha es el orden natural para operación.

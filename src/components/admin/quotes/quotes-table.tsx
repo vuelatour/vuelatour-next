@@ -6,6 +6,8 @@ import {
   PaperAirplaneIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
+import { estadoCobroSemaforo } from "@/lib/admin/cobros";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
@@ -28,6 +30,13 @@ export interface QuoteListRow {
   /** CONFIRMADO no externo sin piloto o sin avión asignado. */
   sinAsignar: boolean;
   faltaPiloto: boolean;
+  // Semáforo de cobro (regla única en estadoCobroSemaforo).
+  cobrado: boolean;
+  esInterno: boolean;
+  cotizacionAbierta: boolean;
+  /** null = batch de cobros no disponible (rol sin acceso). */
+  totalCobradoUsd: number | null;
+  sinTcCount: number;
 }
 
 const columns: Array<DataTableColumn<QuoteListRow>> = [
@@ -73,6 +82,26 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
     headClassName: "text-right",
     cellClassName: "text-right font-mono",
     cell: (q) => fmtUsd(q.montoTotalUsd),
+  },
+  {
+    key: "cobro",
+    header: "Cobro",
+    headClassName: "text-center",
+    cellClassName: "text-center",
+    cell: (q) => (
+      <CobroEstadoBadge
+        estado={estadoCobroSemaforo({
+          montoTotalUsd: Number(q.montoTotalUsd) || 0,
+          cobrado: q.cobrado,
+          esInterno: q.esInterno,
+          totalCobradoUsd: q.totalCobradoUsd,
+          sinTcCount: q.sinTcCount,
+          cotizacionAbierta: q.cotizacionAbierta,
+          enCotizacion: q.estado === "SOLICITUD" || q.estado === "COTIZADO",
+          cancelado: q.estado === "CANCELADO",
+        })}
+      />
+    ),
   },
   {
     key: "version",

@@ -98,6 +98,21 @@ export function getCobroVoucherUrls(paths: string[]) {
   });
 }
 
+/** Total cobrado USD por vuelo, en lote (semáforo de cobro de las listas). */
+export function getCobroStatus(ids: string[]) {
+  if (ids.length === 0)
+    return Promise.resolve<
+      Record<string, { total_cobrado: number; sin_tc_count: number }>
+    >({});
+  return apiServer<
+    Record<string, { total_cobrado: number; sin_tc_count: number }>
+  >("/v1/flights/cobro-status", {
+    method: "POST",
+    body: { ids },
+    cache: "no-store",
+  });
+}
+
 /** Marca, por vuelo, si el tacómetro está incompleto (badge en la lista admin). */
 export function getTacoStatus(ids: string[]) {
   if (ids.length === 0) return Promise.resolve<Record<string, { falta: boolean }>>({});
