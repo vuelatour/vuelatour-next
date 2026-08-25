@@ -70,6 +70,7 @@ import type {
 } from "@/types/quote";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import { Field } from "@/components/admin/form-field";
+import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 
 interface AircraftOption {
   id: string;
@@ -1413,11 +1414,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           )}
 
           <div className="grid grid-cols-2 gap-3">
+            {/* Calendario nativo para la FECHA + hora en TEXTO LIBRE
+                ("8pm", "20:00", "0830"): el popup nativo de la hora era un
+                fastidio para la oficina (26-ago). */}
             <Field label="Fecha de traslado inicial" hint="Opcional · salida (fecha y hora)">
-              <Input type="datetime-local" {...register("fecha_vuelo")} />
+              <FechaHoraCampo
+                value={values.fecha_vuelo ?? ""}
+                onChange={(v) => setValue("fecha_vuelo", v)}
+              />
             </Field>
             <Field label="Fecha de traslado final" hint="Opcional · regreso (fecha y hora)">
-              <Input type="datetime-local" {...register("fecha_traslado_final")} />
+              <FechaHoraCampo
+                value={values.fecha_traslado_final ?? ""}
+                onChange={(v) => setValue("fecha_traslado_final", v)}
+              />
             </Field>
           </div>
 
