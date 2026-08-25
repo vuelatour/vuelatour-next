@@ -380,29 +380,51 @@ export function QuoteLegsEditor({
                     cobrado.
                   </p>
                 )}
-              {/* Solo lo COMERCIAL (limpieza 25-ago): pasajeros por tramo,
-                  fecha/hora, nota al piloto y manifiesto se capturan en lo
-                  OPERATIVO — aquí eran ruido y ya no se usan. El precio usa
-                  el campo global de Pasajeros (leg.pasajeros ?? global). */}
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Millas náuticas
-                </Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={leg.millas_nauticas || ""}
-                  onChange={(e) =>
-                    updateLeg(idx, {
-                      millas_nauticas: Number(e.target.value) || 0,
-                    })
-                  }
-                  placeholder="0.00"
-                  className={cn(
-                    leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
-                  )}
-                />
+              {/* Solo lo COMERCIAL (limpieza 25-ago): fecha/hora, nota al
+                  piloto y manifiesto se capturan en lo OPERATIVO. PASAJEROS
+                  por tramo SÍ se queda (regresó 26-ago): el TUAS se calcula
+                  con el pax de CADA tramo (leg.pasajeros ?? global) y un
+                  tramo puede llevar 4 y otro 2. */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Millas náuticas
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={leg.millas_nauticas || ""}
+                    onChange={(e) =>
+                      updateLeg(idx, {
+                        millas_nauticas: Number(e.target.value) || 0,
+                      })
+                    }
+                    placeholder="0.00"
+                    className={cn(
+                      leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
+                    )}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Pasajeros (TUAS)
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    disabled={leg.es_ferry}
+                    value={leg.es_ferry ? 0 : (leg.pasajeros ?? "")}
+                    onChange={(e) =>
+                      updateLeg(idx, {
+                        pasajeros:
+                          e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    placeholder="usa global"
+                  />
+                </div>
               </div>
 
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}

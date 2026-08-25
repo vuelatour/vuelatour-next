@@ -1553,6 +1553,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   airports={airports}
                   avisoAnclaCun
                 />
+                {breakdown && (
+                  <AporteChip
+                    usd={breakdown.totales.viaticos_pernocta_usd}
+                    nota="pernoctas cobradas al cliente"
+                  />
+                )}
               </Field>
               {itinerarioAjustado && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-2.5">
@@ -1702,6 +1708,31 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 placeholder="0"
                 {...register("sobrevuelo_hr")}
               />
+              {breakdown &&
+                Number(breakdown.tiempos.sobrevuelo_hr) > 0 &&
+                (() => {
+                  // Aporte REAL: la parte del sobrevuelo absorbida por la
+                  // hora mínima no suma (0.7 + 0.5 hr cobra 1.2 → solo 0.2
+                  // hr son del sobrevuelo). min(sob, cobrable − 1).
+                  const sob = Number(breakdown.tiempos.sobrevuelo_hr);
+                  const deltaHr = Math.min(
+                    sob,
+                    Math.max(0, breakdown.tiempos.cobrable_hr - 1),
+                  );
+                  if (deltaHr <= 0) {
+                    return (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Queda dentro de la hora mínima: no suma al total.
+                      </p>
+                    );
+                  }
+                  return (
+                    <AporteChip
+                      usd={deltaHr * breakdown.tarifa.usd_por_hora}
+                      nota={`${fmtDecimal(deltaHr, 2)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`}
+                    />
+                  );
+                })()}
             </Field>
             <div className="flex flex-col gap-1">
               <Label className="text-sm font-medium">Cobrar TUAS</Label>
@@ -1716,6 +1747,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     : "No se cobra en esta cotización"}
                 </span>
               </div>
+              {breakdown && values.cobrar_tuas && (
+                <AporteChip
+                  usd={breakdown.totales.tuas_total_usd}
+                  nota={
+                    (breakdown.tuas.filas ?? []).length > 0
+                      ? `${(breakdown.tuas.filas ?? []).length} aeropuerto(s) · editable a la derecha`
+                      : undefined
+                  }
+                />
+              )}
             </div>
           </div>
 
@@ -1775,6 +1816,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onChange={(extras) => setValue("extras", extras)}
             tcCapturado={Number(values.tc_usd_mxn) > 0}
           />
+          {breakdown && (
+            <AporteChip
+              usd={breakdown.totales.extras_total_usd}
+              nota="conceptos extra"
+            />
+          )}
 
           {/* Cierre del total: el redondeo es AUTOMÁTICO (regla del cliente:
               siempre arriba al siguiente múltiplo de $10; 976→980, 991→1000)
@@ -1783,6 +1830,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               el desglose siga cuadrando. */}
           <div className="space-y-3 rounded-lg border border-border p-3">
             <p className="text-sm font-medium">Cierre del total</p>
+            {breakdown && (
+              <AporteChip
+                usd={breakdown.totales.ajuste_final_usd}
+                nota="ajuste neto (redondeo − descuento)"
+              />
+            )}
             {values.es_externo && Number(values.total_pactado_usd) > 0 && (
               <div className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-400">
                 El <strong>precio pactado</strong> manda: el total aterriza en{" "}
@@ -2282,6 +2335,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             hint="Se SUMA al precio del cliente · interna, no aparece en el PDF"
           >
             <div className="space-y-2">
+              {breakdown && (
+                <AporteChip
+                  usd={breakdown.meta?.comision_vendedor_usd}
+                  nota="la paga el cliente"
+                />
+              )}
               <div className="w-56">
                 <Segmented
                   value={values.comision_vendedor_modo}
@@ -2617,6 +2676,38 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Mini-desglose EN VIVO (26-ago): bajo cada ajuste del formulario se ve
+ * cuánto suma/resta ese apartado al total — para entender la cotización sin
+ * ir a buscar al panel de la derecha ("sencillo, no tedioso").
+ */
+function AporteChip({
+  usd,
+  nota,
+}: {
+  usd: number | null | undefined;
+  nota?: string;
+}) {
+  const v = Math.round((Number(usd) || 0) * 100) / 100;
+  if (v === 0) return null;
+  return (
+    <p
+      className={cn(
+        "text-xs font-medium mt-1",
+        v > 0
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-amber-600 dark:text-amber-400",
+      )}
+    >
+      {v > 0 ? "+" : "−"}
+      {fmtUsd(Math.abs(v))} en el total
+      {nota ? (
+        <span className="text-muted-foreground font-normal"> · {nota}</span>
+      ) : null}
+    </p>
   );
 }
 
