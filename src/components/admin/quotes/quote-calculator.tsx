@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
   CalculatorIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
   CheckCircleIcon,
   XCircleIcon,
   BookmarkSquareIcon,
@@ -373,12 +371,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   const router = useRouter();
   // Al revisar una versión con tarifa AJUSTADA a mano, la sección de
-  // Overrides avanzados (TUAS/IVA). La tarifa personalizada ya NO vive aquí:
-  // se muestra sola vía el segmento "Personalizada" (derivado del override).
-  const [advanced, setAdvanced] = useState(false);
   // "Personalizada" en Tipo de tarifa (25-ago): modo elegido a mano; el
   // derivado overrideTarifaActivo cubre revises y "todo en $0".
   const [tarifaCustom, setTarifaCustom] = useState(false);
+  // ¿El panel del cálculo está a la vista? En pantallas angostas el panel
+  // queda ABAJO del formulario (no hay "lado derecho"): mientras no se vea,
+  // una barra flotante muestra el total en vivo (pedido 25-ago).
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [previewVisible, setPreviewVisible] = useState(true);
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setPreviewVisible(entry.isIntersecting),
+      { threshold: 0.05 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -1185,7 +1195,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-5">
+    <div className={cn("grid gap-6 lg:grid-cols-5", !previewVisible && "pb-16")}>
       {/* FORM */}
       <Card className="lg:col-span-2">
         <CardHeader>
@@ -2235,6 +2245,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </div>
           )}
 
+          {/* IVA (override): junto al método de pago/TC — la válvula cuando
+              el trato SÍ factura distinto (antes escondida hasta abajo en
+              "Overrides avanzados"; pedido 25-ago). */}
+          <Field label="IVA % (override)" hint="0.16 = 16%. Vacío = automático">
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              max={1}
+              placeholder="Auto"
+              className="w-32"
+              {...register("iva_pct_override")}
+            />
+          </Field>
+
           {/* Comisión del VENDEDOR (Itzy/Pablo/broker): se SUMA al precio del
               cliente — el neto VuelaTour queda en el precio base y lo manda el
               motor en meta (no calcularlo aquí). Modalidades: monto fijo o
@@ -2348,58 +2373,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </Field>
           )}
 
-          {/* Avanzado */}
-          <button
-            type="button"
-            onClick={() => setAdvanced((a) => !a)}
-            className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors pt-2 border-t border-border w-full"
-          >
-            {advanced ? (
-              <ChevronUpIcon className="h-4 w-4" />
-            ) : (
-              <ChevronDownIcon className="h-4 w-4" />
-            )}
-            Overrides avanzados
-          </button>
-
-          {advanced && (
-            <div className="space-y-3 pl-6 border-l-2 border-border">
-              <Field
-                label="TUAS USD/pax (override)"
-                hint={
-                  values.cobrar_tuas
-                    ? "Vacío = usa la del aeropuerto"
-                    : "Sin efecto: el switch «Cobrar TUAS» está apagado"
-                }
-              >
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="Auto"
-                  disabled={!values.cobrar_tuas}
-                  {...register("tuas_override_usd_pax")}
-                />
-              </Field>
-              <Field label="IVA % (override)" hint="0.16 = 16%. Vacío = automático">
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={1}
-                  placeholder="Auto"
-                  {...register("iva_pct_override")}
-                />
-              </Field>
-            </div>
-          )}
         </CardContent>
       </Card>
 
       {/* PREVIEW — fijo al hacer scroll (pedido 25-ago): el total siempre a
           la vista; si el desglose es más alto que la ventana, scrollea
           adentro del panel. */}
-      <div className="lg:col-span-3 space-y-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
+      <div
+        ref={previewRef}
+        className="lg:col-span-3 space-y-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1"
+      >
         {error ? (
           <Card className="border-destructive/50 bg-destructive/5">
             <CardHeader>
@@ -2497,6 +2480,54 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Barra flotante: total en vivo mientras el panel del cálculo no está
+          a la vista (pantalla angosta o scroll profundo). El observer la
+          oculta sola cuando el desglose ya se ve. */}
+      {!previewVisible && (
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-2.5">
+            {error ? (
+              <p className="text-sm font-medium text-destructive truncate">
+                Error al calcular — revisa los parámetros
+              </p>
+            ) : breakdown ? (
+              <p className={cn("text-sm", loading && "opacity-60")}>
+                <span className="text-xs uppercase tracking-wider text-muted-foreground mr-2">
+                  Total
+                </span>
+                <span className="text-lg font-bold font-mono">
+                  {fmtUsd(breakdown.totales.total_usd)}
+                </span>
+                <span className="text-xs text-muted-foreground ml-1">USD</span>
+                {breakdown.totales.total_mxn != null && (
+                  <span className="text-xs text-muted-foreground ml-3 font-mono">
+                    {fmtMxn(breakdown.totales.total_mxn)} MXN
+                  </span>
+                )}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Completa aeronave, ruta y pasajeros para calcular.
+              </p>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() =>
+                previewRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                })
+              }
+            >
+              Ver desglose
+            </Button>
+          </div>
+        </div>
+      )}
 
       {!isRevise && (
         <QuickClientDialog
@@ -3334,6 +3365,7 @@ function ExtrasEditor({
           </button>
         ))}
       </div>
+
     </div>
   );
 }
