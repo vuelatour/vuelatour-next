@@ -153,13 +153,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     scroll-behavior: smooth;
-    overflow-x: hidden;
+    /* clip, NO hidden: overflow-x hidden en html/body crea un contenedor de
+       scroll recortado y ROMPE position:sticky contra el viewport (26-ago:
+       la TotalBar del cotizador no seguía al hacer scroll). clip recorta el
+       desborde horizontal igual, sin matar el sticky. */
+    overflow-x: clip;
   }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: 'kern' 1, 'liga' 1;
     text-rendering: optimizeLegibility;
-    overflow-x: hidden;
+    overflow-x: clip; /* ver nota en html: hidden rompe sticky */
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
