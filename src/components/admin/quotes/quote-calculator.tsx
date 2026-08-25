@@ -2730,6 +2730,34 @@ function AporteChip({
   );
 }
 
+/**
+ * Fila del desglose del TOTAL, estilo recibo: etiqueta a la izquierda, monto
+ * mono a la derecha. Sustituye al grid de celdas (26-ago): las celdas
+ * condicionales desbordaban a una segunda fila y "Redondeo" quedaba huérfano
+ * y desalineado — el recibo nunca se rompe y se lee en el orden de la suma.
+ */
+function FilaTotal({
+  label,
+  hint,
+  value,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-muted-foreground">
+        {label}
+        {hint ? (
+          <span className="text-xs"> · {hint}</span>
+        ) : null}
+      </span>
+      <span className="font-mono tabular-nums">{value}</span>
+    </div>
+  );
+}
+
 function Preview({
   breakdown,
   loading,
@@ -2831,58 +2859,57 @@ function Preview({
               {breakdown.tarifa.tipo}
             </Badge>
           </div>
-          <div
-            className={cn(
-              "mt-4 pt-4 border-t border-border grid gap-3 text-sm",
-              breakdown.totales.viaticos_pernocta_usd
-                ? "grid-cols-2 sm:grid-cols-4"
-                : "grid-cols-3",
-            )}
-          >
-            <Cell label="Subtotal" value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)} />
-            <Cell
-              label="TUAS"
-              value={fmtUsd(breakdown.totales.tuas_total_usd)}
-              hint={`${breakdown.tuas.pasajeros} pax${
-                Number(breakdown.tuas.total_mxn_nativo) > 0 ? " · incluye MXN" : ""
-              }`}
+          {/* Desglose tipo RECIBO, en el MISMO orden de la suma canónica
+              (subtotal + TUAS + pernocta + extras + ajuste + IVA = total):
+              se lee de arriba a abajo y siempre queda alineado. */}
+          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-sm">
+            <FilaTotal
+              label="Subtotal vuelo"
+              value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
             />
-            <Cell
-              label="IVA"
-              value={fmtUsd(breakdown.totales.iva_usd)}
-              hint={
-                breakdown.iva.porcentaje > 0
-                  ? `${(breakdown.iva.porcentaje * 100).toFixed(0)}%`
-                  : "0%"
-              }
+            <FilaTotal
+              label="TUAS"
+              hint={`${breakdown.tuas.pasajeros} pax${
+                Number(breakdown.tuas.total_mxn_nativo) > 0 ? ", incluye MXN" : ""
+              }`}
+              value={fmtUsd(breakdown.totales.tuas_total_usd)}
             />
             {!!breakdown.totales.viaticos_pernocta_usd && (
-              <Cell
+              <FilaTotal
                 label="Pernocta"
+                hint="viáticos, sin IVA"
                 value={fmtUsd(breakdown.totales.viaticos_pernocta_usd)}
-                hint="viáticos · sin IVA"
+              />
+            )}
+            {!!breakdown.totales.extras_total_usd && (
+              <FilaTotal
+                label="Extras"
+                hint={`${breakdown.extras?.length ?? 0} ${
+                  (breakdown.extras?.length ?? 0) === 1 ? "concepto" : "conceptos"
+                }`}
+                value={fmtUsd(breakdown.totales.extras_total_usd)}
               />
             )}
             {!!breakdown.totales.ajuste_final_usd && (
-              <Cell
+              <FilaTotal
                 label={
                   (breakdown.totales.ajuste_final_usd ?? 0) < 0
                     ? "Descuento"
                     : "Redondeo"
                 }
-                value={fmtUsd(breakdown.totales.ajuste_final_usd!)}
                 hint="fuera de IVA"
+                value={fmtUsd(breakdown.totales.ajuste_final_usd!)}
               />
             )}
-            {!!breakdown.totales.extras_total_usd && (
-              <Cell
-                label="Extras"
-                value={fmtUsd(breakdown.totales.extras_total_usd)}
-                hint={`${breakdown.extras?.length ?? 0} ${
-                  (breakdown.extras?.length ?? 0) === 1 ? "concepto" : "conceptos"
-                }`}
-              />
-            )}
+            <FilaTotal
+              label="IVA"
+              hint={
+                breakdown.iva.porcentaje > 0
+                  ? `${(breakdown.iva.porcentaje * 100).toFixed(0)}%`
+                  : "0%"
+              }
+              value={fmtUsd(breakdown.totales.iva_usd)}
+            />
           </div>
           {(breakdown.extras?.length ?? 0) > 0 && (
             <div className="mt-3 pt-3 border-t border-border space-y-1">
