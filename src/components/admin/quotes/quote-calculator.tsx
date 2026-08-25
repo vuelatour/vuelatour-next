@@ -373,12 +373,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   const router = useRouter();
   // Al revisar una versión con tarifa AJUSTADA a mano, la sección de
-  // overrides arranca ABIERTA: el valor pactado debe estar a la vista, no
-  // escondido en un colapsable (el prefill lo rehidrata más abajo).
-  const [advanced, setAdvanced] = useState(
-    isRevise &&
-      initialQuote?.calculo_snapshot?.tarifa?.proviene_de_override === true,
-  );
+  // Overrides avanzados (TUAS/IVA). La tarifa personalizada ya NO vive aquí:
+  // se muestra sola vía el segmento "Personalizada" (derivado del override).
+  const [advanced, setAdvanced] = useState(false);
+  // "Personalizada" en Tipo de tarifa (25-ago): modo elegido a mano; el
+  // derivado overrideTarifaActivo cubre revises y "todo en $0".
+  const [tarifaCustom, setTarifaCustom] = useState(false);
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -930,6 +930,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !!selectedAircraft.asientos &&
     maxPasajeros > selectedAircraft.asientos;
   const tipoTarifa = values.tipo_tarifa;
+  // Con override capturado (o modo elegido), el segmento muestra Personalizada.
+  const overrideTarifaActivo =
+    `${values.tarifa_hora_override_usd ?? ""}`.trim() !== "";
+  // El modo se queda PEGADO una vez activo (revise con override, "todo en
+  // $0" o valor tecleado): si no, borrar el input a media edición
+  // desmontaría el campo al caer el derivado. Solo el segmento lo apaga.
+  useEffect(() => {
+    if (overrideTarifaActivo && !tarifaCustom) setTarifaCustom(true);
+  }, [overrideTarifaActivo, tarifaCustom]);
+  const tarifaSegment =
+    tarifaCustom || overrideTarifaActivo ? "CUSTOM" : tipoTarifa;
 
   // ¿El itinerario de esta cotización difiere de la plantilla seleccionada?
   // (Las fechas por tramo no cuentan: son propias de cada cotización.)
@@ -1261,14 +1272,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           <button
                             type="button"
                             onClick={() => {
-                              const el = document.getElementById(
-                                "tarifa-override-field",
-                              );
-                              el?.scrollIntoView({
-                                behavior: "smooth",
-                                block: "center",
-                              });
-                              el?.querySelector("input")?.focus();
+                              // Activa "Personalizada" y espera el render
+                              // para que el input exista antes del scroll.
+                              setTarifaCustom(true);
+                              setTimeout(() => {
+                                const el = document.getElementById(
+                                  "tarifa-override-field",
+                                );
+                                el?.scrollIntoView({
+                                  behavior: "smooth",
+                                  block: "center",
+                                });
+                                el?.querySelector("input")?.focus();
+                              }, 60);
                             }}
                             className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
                           >
@@ -1571,17 +1587,49 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </Field>
           )}
 
-          {/* Tarifa tipo */}
+          {/* Tarifa tipo — "Personalizada" = override de USD/hr SOLO de esta
+              cotización (antes vivía escondido en Overrides; pedido 25-ago). */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Tipo de tarifa</Label>
             <Segmented
-              value={tipoTarifa}
-              onChange={(v) => setValue("tipo_tarifa", v as TipoTarifa)}
+              value={tarifaSegment}
+              onChange={(v) => {
+                if (v === "CUSTOM") {
+                  setTarifaCustom(true);
+                  return;
+                }
+                setTarifaCustom(false);
+                // Volver a la tarifa estándar LIMPIA el override: si no,
+                // seguiría mandando sobre Público/Broker en silencio.
+                setValue("tarifa_hora_override_usd", null);
+                setValue("tipo_tarifa", v as TipoTarifa);
+              }}
               options={[
                 { value: "PUBLICO", label: "Público" },
                 { value: "BROKER", label: "Broker" },
+                { value: "CUSTOM", label: "Personalizada" },
               ]}
             />
+            {tarifaSegment === "CUSTOM" && (
+              <div id="tarifa-override-field" className="scroll-mt-24">
+                <Field
+                  label="Tarifa USD/hr — SOLO esta cotización"
+                  hint={
+                    clienteInterno
+                      ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
+                      : "Por tiempos u otro acuerdo se cobra más o menos. Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
+                  }
+                >
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="Auto"
+                    {...register("tarifa_hora_override_usd")}
+                  />
+                </Field>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -2316,24 +2364,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
           {advanced && (
             <div className="space-y-3 pl-6 border-l-2 border-border">
-              <div id="tarifa-override-field" className="scroll-mt-24">
-                <Field
-                  label="Tarifa USD/hr — SOLO esta cotización"
-                  hint={
-                    clienteInterno
-                      ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
-                      : "Por tiempos u otro acuerdo se cobra más o menos. Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
-                  }
-                >
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="Auto"
-                    {...register("tarifa_hora_override_usd")}
-                  />
-                </Field>
-              </div>
               <Field
                 label="TUAS USD/pax (override)"
                 hint={
@@ -2366,8 +2396,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </CardContent>
       </Card>
 
-      {/* PREVIEW */}
-      <div className="lg:col-span-3 space-y-6">
+      {/* PREVIEW — fijo al hacer scroll (pedido 25-ago): el total siempre a
+          la vista; si el desglose es más alto que la ventana, scrollea
+          adentro del panel. */}
+      <div className="lg:col-span-3 space-y-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
         {error ? (
           <Card className="border-destructive/50 bg-destructive/5">
             <CardHeader>
