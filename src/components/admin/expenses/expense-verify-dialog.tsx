@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
+import {
+  listCardsOptionsAction,
+  type CardOption,
+} from "@/app/admin/users/actions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,6 +109,18 @@ export function ExpenseVerifyDialog({
   // p. ej. de antes de la separación TUA/FBO en el prompt).
   const [reanalizando, setReanalizando] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
+  // Tarjetas del catálogo para "con cuál se pagó" (solo medio TARJETA_CORP).
+  const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void listCardsOptionsAction().then((res) => {
+      if (!cancel && res.ok && res.data) setCardOptions(res.data);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
 
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoVerifyValues>({
     defaultValues: defaults(gasto),
@@ -731,6 +747,21 @@ export function ExpenseVerifyDialog({
                 placeholder="Medio"
               />
             </Field>
+            {watch("medio_pago") === "TARJETA_CORP" && (
+              /* El server sella la tarjeta ASIGNADA al capturador; aquí
+                 oficina ve/corrige con cuál se pagó de verdad. */
+              <Field label="Tarjeta corp.">
+                <SearchableSelect
+                  options={cardOptions.map((c) => ({
+                    value: c.terminacion,
+                    label: `**** ${c.terminacion} · ${c.nombre_titular}`,
+                  }))}
+                  value={watch("tarjeta_terminacion") ?? ""}
+                  onChange={(v) => setValue("tarjeta_terminacion", v)}
+                  placeholder="Sin registrar"
+                />
+              </Field>
+            )}
             <Field label="Proveedor">
               <SearchableSelect
                 options={providers.map((p) => ({ value: p.id, label: p.nombre }))}
@@ -775,6 +806,7 @@ function defaults(g: Gasto): GastoVerifyValues {
     // chars aquí no es el slice prohibido de timestamps.
     fecha_gasto: (g.fecha_gasto ?? "").slice(0, 10),
     categoria: g.categoria,
+    tarjeta_terminacion: g.tarjeta_terminacion ?? "",
     medio_pago: g.medio_pago,
     estatus_comprobante: g.estatus_comprobante,
     // Gastos previos a la migración: sin campo = Pendiente (conservador).

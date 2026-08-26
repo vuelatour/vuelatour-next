@@ -70,6 +70,13 @@ export const GastoVerifySchema = z.object({
     .or(z.literal("")),
   categoria: CategoriaEnum.optional(),
   medio_pago: MedioPagoEnum.optional(),
+  // Con TARJETA_CORP: corregir qué tarjeta pagó (el server la sella al
+  // capturar con la tarjeta asignada al capturador; aquí oficina la ajusta).
+  tarjeta_terminacion: z
+    .string()
+    .regex(/^\d{4}$/, "4 dígitos")
+    .optional()
+    .or(z.literal("")),
   estatus_comprobante: EstatusEnum.optional(),
   estatus_facturacion: FacturacionEnum.optional(),
   // null explícito = DESLIGAR (sobrevive a stripEmpty; "" se descarta).
@@ -170,6 +177,9 @@ export type GastoVerifyValues = {
   fecha_gasto: string;
   categoria: string;
   medio_pago: string;
+  /** Con TARJETA_CORP: con cuál tarjeta se pagó (el server la sella al
+   *  capturar; oficina la corrige aquí). */
+  tarjeta_terminacion: string;
   estatus_comprobante: string;
   estatus_facturacion: string;
   aeronave_id: string;
