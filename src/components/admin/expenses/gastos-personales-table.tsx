@@ -19,6 +19,7 @@ export interface GastoPersonalRow {
   monto: number;
   moneda: string;
   medio_pago: string;
+  tarjeta_terminacion: string | null;
   /** Nombre de quien capturó el gasto. */
   capturo: string | null;
   /** Path del comprobante en el bucket privado (decide imagen vs PDF). */
@@ -127,6 +128,11 @@ export function GastosPersonalesTable({ gastos }: { gastos: GastoPersonalRow[] }
         cell: (g) => (
           <span className="text-xs">
             {MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago}
+            {g.medio_pago === "TARJETA_CORP" && g.tarjeta_terminacion && (
+              <span className="ml-1 font-mono text-[11px] text-muted-foreground">
+                **** {g.tarjeta_terminacion}
+              </span>
+            )}
           </span>
         ),
       },

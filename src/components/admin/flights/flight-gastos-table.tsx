@@ -85,7 +85,18 @@ export function FlightGastosTable({
       key: "medio",
       header: "Pago",
       cellClassName: "align-top whitespace-nowrap text-xs",
-      cell: (g) => MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago,
+      // Con tarjeta corporativa se enseña CUÁL pagó (el server la sella con
+      // la asignada al capturador; oficina la corrige en Verificar).
+      cell: (g) => (
+        <>
+          {MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago}
+          {g.medio_pago === "TARJETA_CORP" && g.tarjeta_terminacion && (
+            <span className="ml-1 font-mono text-[11px] text-muted-foreground">
+              **** {g.tarjeta_terminacion}
+            </span>
+          )}
+        </>
+      ),
     },
     {
       key: "desglose",

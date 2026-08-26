@@ -124,6 +124,13 @@ export const GastoCreateSchema = z.object({
   moneda: z.enum(["MXN", "USD"]),
   fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
   medio_pago: MedioPagoEnum,
+  // Con TARJETA_CORP: cuál tarjeta pagó. Vacío = el server sella la
+  // asignada a quien captura (o la del voucher IA).
+  tarjeta_terminacion: z
+    .string()
+    .regex(/^\d{4}$/, "4 dígitos")
+    .optional()
+    .or(z.literal("")),
   estatus_comprobante: EstatusEnum.optional(),
   estatus_facturacion: FacturacionEnum.optional(),
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
@@ -156,6 +163,7 @@ export type GastoCreateValues = {
   moneda: string;
   fecha_gasto: string;
   medio_pago: string;
+  tarjeta_terminacion: string;
   estatus_comprobante: string;
   estatus_facturacion: string;
   aeronave_id: string;

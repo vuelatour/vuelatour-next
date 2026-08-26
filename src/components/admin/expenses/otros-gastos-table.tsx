@@ -25,6 +25,7 @@ export interface OtroGastoRow {
   monto: number;
   moneda: string;
   medio_pago: string;
+  tarjeta_terminacion: string | null;
   /** Matrícula del avión clásico (aeronave_id del gasto), si tiene. */
   matricula: string | null;
   /** Reparto entre aviones (tabla hija); vacío = sin reparto. */
@@ -123,6 +124,11 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         cell: (g) => (
           <span className="text-xs">
             {MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago}
+            {g.medio_pago === "TARJETA_CORP" && g.tarjeta_terminacion && (
+              <span className="ml-1 font-mono text-[11px] text-muted-foreground">
+                **** {g.tarjeta_terminacion}
+              </span>
+            )}
           </span>
         ),
       },

@@ -86,6 +86,7 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
       monto,
       moneda: g.moneda,
       medio_pago: g.medio_pago,
+      tarjeta_terminacion: g.tarjeta_terminacion ?? null,
       matricula: g.aeronave?.matricula ?? null,
       repartos,
       remanente,

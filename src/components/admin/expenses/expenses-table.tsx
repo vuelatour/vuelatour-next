@@ -113,6 +113,11 @@ export function ExpensesTable({
         cell: (g) => (
           <span className="text-xs">
             {MEDIO_PAGO_LABELS[g.medio_pago] ?? g.medio_pago}
+            {g.medio_pago === "TARJETA_CORP" && g.tarjeta_terminacion && (
+              <span className="ml-1 font-mono text-[11px] text-muted-foreground">
+                **** {g.tarjeta_terminacion}
+              </span>
+            )}
           </span>
         ),
       },
@@ -223,6 +228,7 @@ export function ExpensesTable({
           g.lugar ?? "",
           g.vuelo?.folio ?? "",
           g.captura?.nombre ?? "",
+          g.tarjeta_terminacion ?? "",
           g.notas ?? "",
         ].join(" ")
       }

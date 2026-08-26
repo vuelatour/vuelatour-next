@@ -106,6 +106,7 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
       monto: num(g.monto),
       moneda: g.moneda,
       medio_pago: g.medio_pago,
+      tarjeta_terminacion: g.tarjeta_terminacion ?? null,
       capturo: g.captura?.nombre ?? null,
       foto_path: g.foto_url,
       foto_url: g.foto_url ? (fotoUrls[g.foto_url] ?? null) : null,

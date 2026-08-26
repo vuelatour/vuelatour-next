@@ -33,6 +33,10 @@ import {
 import { fmtDateOnly } from "@/lib/datetime";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
+import {
+  listCardsOptionsAction,
+  type CardOption,
+} from "@/app/admin/users/actions";
 import { Field } from "@/components/admin/form-field";
 import { cn } from "@/lib/utils";
 
@@ -108,6 +112,7 @@ function emptyValues(defaults?: {
     moneda: "MXN",
     fecha_gasto: hoyCancun(),
     medio_pago: "TRANSFERENCIA",
+    tarjeta_terminacion: "",
     estatus_comprobante: "SIN_COMPROBANTE",
     estatus_facturacion: "PENDIENTE",
     aeronave_id: defaults?.aeronaveId ?? "",
@@ -150,6 +155,19 @@ export function ExpenseCreateDialog({
   // Lectura IA del adjunto: autollenado best-effort (siempre revisable a mano).
   const [leyendoIA, setLeyendoIA] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
+  // Tarjetas del catálogo para "¿con qué tarjeta?" (solo medio TARJETA_CORP;
+  // vacío = el server sella la asignada a quien captura).
+  const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void listCardsOptionsAction().then((res) => {
+      if (!cancel && res.ok && res.data) setCardOptions(res.data);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
   const [arrastrando, setArrastrando] = useState(false);
   // Vuelos alrededor de la fecha del gasto (±15 días), para dejarlo LIGADO al
   // vuelo desde el alta — pedido del cliente: los gastos viven en su vuelo.
@@ -799,6 +817,28 @@ export function ExpenseCreateDialog({
                   placeholder="Medio"
                 />
               </Field>
+              {watch("medio_pago") === "TARJETA_CORP" && (
+                <Field
+                  label="¿Con qué tarjeta?"
+                  hint="vacío = la asignada a quien captura"
+                >
+                  <SearchableSelect
+                    options={[
+                      {
+                        value: "",
+                        label: "Automática (asignada al capturador)",
+                      },
+                      ...cardOptions.map((c) => ({
+                        value: c.terminacion,
+                        label: `**** ${c.terminacion} · ${c.nombre_titular}`,
+                      })),
+                    ]}
+                    value={watch("tarjeta_terminacion") ?? ""}
+                    onChange={(v) => setValue("tarjeta_terminacion", v)}
+                    placeholder="Automática"
+                  />
+                </Field>
+              )}
               {watch("categoria") !== "PERSONAL_DUENO" && (
                 <Field label="Avión">
                   <SearchableSelect
