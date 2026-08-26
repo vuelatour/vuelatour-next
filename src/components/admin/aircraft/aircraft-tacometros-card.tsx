@@ -28,6 +28,7 @@ import {
   updateServicioEtapasAction,
 } from "@/app/admin/aircraft/actions";
 import type { ServicioEtapa, TacometroHistorial } from "@/types/aircraft";
+import { DataTable } from "@/components/admin/data-table";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { BitacoraPdfButton } from "./bitacora-pdf-button";
 
@@ -624,109 +625,154 @@ export function AircraftTacometrosCard({
           ) : !data || data.historial.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin lecturas registradas.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Fecha</th>
-                    <th className="px-3 py-2 text-left">Ruta</th>
-                    <th className="px-3 py-2 text-right">Salida</th>
-                    <th className="px-3 py-2 text-right">Llegada</th>
-                    <th className="px-3 py-2 text-right">Horas</th>
-                    <th className="px-3 py-2 text-center">Fotos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.historial.map((h, i) => {
-                    // El histórico viene del más reciente al más antiguo: el tramo
-                    // anterior en el tiempo es la fila SIGUIENTE. Si la salida no
-                    // coincide con la llegada anterior, hay un salto en la cadena.
-                    const anterior = data.historial[i + 1];
-                    const salto =
-                      h.taco_salida != null &&
-                      anterior?.taco_llegada != null &&
-                      h.taco_salida !== anterior.taco_llegada;
-                    return (
-                    <tr key={h.escala_id} className="border-t border-border">
-                      <td className="px-3 py-2">{h.fecha ? fmtDateTime(h.fecha) : "—"}</td>
-                      <td className="px-3 py-2">
-                        {h.ruta}
-                        {h.folio != null &&
-                          (h.vuelo_id ? (
-                            <Link
-                              href={`/admin/flights/${h.vuelo_id}`}
-                              className="ml-1 text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground transition-colors"
-                              title={`Ver detalle del vuelo #${h.folio}`}
-                            >
-                              #{h.folio}
-                            </Link>
-                          ) : (
-                            <span className="ml-1 text-xs text-muted-foreground">
-                              #{h.folio}
-                            </span>
-                          ))}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-right tabular-nums ${
-                          salto || h.taco_salida_obs
-                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium"
-                            : ""
-                        }`}
-                        title={
-                          [
-                            salto ? "Salto en la cadena de tacómetros" : null,
-                            h.taco_salida_obs
-                              ? `Observación: ${h.taco_salida_obs}${
+            (() => {
+              /* Paginado con el DataTable compartido (10/20/50/100 + búsqueda),
+                 igual que las demás listas: el histórico completo hacía
+                 kilométrico el expediente. El "salto" de cadena depende de la
+                 fila SIGUIENTE (más antigua), así que se precalcula sobre el
+                 arreglo COMPLETO antes de paginar. */
+              const filas = data.historial.map((h, i) => {
+                const anterior = data.historial[i + 1];
+                const salto =
+                  h.taco_salida != null &&
+                  anterior?.taco_llegada != null &&
+                  h.taco_salida !== anterior.taco_llegada;
+                return { ...h, salto };
+              });
+              return (
+                <DataTable
+                  rows={filas}
+                  rowKey={(h) => h.escala_id}
+                  defaultPageSize={10}
+                  searchText={(h) =>
+                    [
+                      h.ruta,
+                      h.folio != null ? `#${h.folio}` : "",
+                      h.fecha ? fmtDateTime(h.fecha) : "",
+                    ].join(" ")
+                  }
+                  searchPlaceholder="Buscar por ruta, folio o fecha…"
+                  columns={[
+                    {
+                      key: "fecha",
+                      header: "Fecha",
+                      cell: (h) => (h.fecha ? fmtDateTime(h.fecha) : "—"),
+                    },
+                    {
+                      key: "ruta",
+                      header: "Ruta",
+                      cell: (h) => (
+                        <>
+                          {h.ruta}
+                          {h.folio != null &&
+                            (h.vuelo_id ? (
+                              <Link
+                                href={`/admin/flights/${h.vuelo_id}`}
+                                className="ml-1 text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground transition-colors"
+                                title={`Ver detalle del vuelo #${h.folio}`}
+                              >
+                                #{h.folio}
+                              </Link>
+                            ) : (
+                              <span className="ml-1 text-xs text-muted-foreground">
+                                #{h.folio}
+                              </span>
+                            ))}
+                        </>
+                      ),
+                    },
+                    {
+                      key: "salida",
+                      header: "Salida",
+                      headClassName: "text-right",
+                      cellClassName: "text-right tabular-nums",
+                      cell: (h) => (
+                        <span
+                          className={
+                            h.salto || h.taco_salida_obs
+                              ? "inline-block rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+                              : undefined
+                          }
+                          title={
+                            [
+                              h.salto
+                                ? "Salto en la cadena de tacómetros"
+                                : null,
+                              h.taco_salida_obs
+                                ? `Observación: ${h.taco_salida_obs}${
+                                    h.taco_obs_por
+                                      ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
+                                      : ""
+                                  }`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join("\n") || undefined
+                          }
+                        >
+                          <TacoLink h={h}>{h.taco_salida ?? "—"}</TacoLink>
+                          {h.taco_salida_obs && (
+                            <span className="ml-1">{"\ud83d\udcdd"}</span>
+                          )}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "llegada",
+                      header: "Llegada",
+                      headClassName: "text-right",
+                      cellClassName: "text-right tabular-nums",
+                      cell: (h) => (
+                        <span
+                          className={
+                            h.taco_llegada_obs
+                              ? "inline-block rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+                              : undefined
+                          }
+                          title={
+                            h.taco_llegada_obs
+                              ? `Observación: ${h.taco_llegada_obs}${
                                   h.taco_obs_por
                                     ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
                                     : ""
                                 }`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join("\n") || undefined
-                        }
-                      >
-                        <TacoLink h={h}>{h.taco_salida ?? "—"}</TacoLink>
-                        {h.taco_salida_obs && <span className="ml-1">{"\ud83d\udcdd"}</span>}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-right tabular-nums ${
-                          h.taco_llegada_obs
-                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium"
-                            : ""
-                        }`}
-                        title={
-                          h.taco_llegada_obs
-                            ? `Observación: ${h.taco_llegada_obs}${
-                                h.taco_obs_por
-                                  ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
-                                  : ""
-                              }`
-                            : undefined
-                        }
-                      >
-                        <TacoLink h={h}>{h.taco_llegada ?? "—"}</TacoLink>
-                        {h.taco_llegada_obs && <span className="ml-1">{"\ud83d\udcdd"}</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {h.horas != null ? `${h.horas} h` : "—"}
-                      </td>
-                      <td className="px-3 py-2">
+                              : undefined
+                          }
+                        >
+                          <TacoLink h={h}>{h.taco_llegada ?? "—"}</TacoLink>
+                          {h.taco_llegada_obs && (
+                            <span className="ml-1">{"\ud83d\udcdd"}</span>
+                          )}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "horas",
+                      header: "Horas",
+                      headClassName: "text-right",
+                      cellClassName: "text-right tabular-nums",
+                      cell: (h) => (h.horas != null ? `${h.horas} h` : "—"),
+                    },
+                    {
+                      key: "fotos",
+                      header: "Fotos",
+                      headClassName: "text-center",
+                      cell: (h) => (
                         <div className="flex items-center justify-center gap-1">
                           <TacoFoto url={h.foto_salida_url} label="Salida" />
                           <TacoFoto url={h.foto_llegada_url} label="Llegada" />
                           {!h.foto_salida_url && !h.foto_llegada_url && (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            <span className="text-xs text-muted-foreground">
+                              —
+                            </span>
                           )}
                         </div>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                      ),
+                    },
+                  ]}
+                />
+              );
+            })()
           )}
         </div>
       </CardContent>
