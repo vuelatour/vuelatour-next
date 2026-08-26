@@ -1,13 +1,13 @@
 import { cn } from "@/lib/utils";
+import { VtPlaneLottie } from "@/components/ui/vt-plane-lottie";
 
 /**
- * Loader de marca VuelaTour: un avioncito (path del ícono `Plane` de lucide)
- * volando en loop sobre un arco Bézier que se dibuja — misma estética que el
- * hero público (arco punteado + trazo rojo con glow, ver
- * `public/hero-section.tsx`). Animación 100% CSS: los keyframes
- * (`vt-plane-fly`, `vt-arc-draw`, `vt-spin`) viven en `globals.css` y
- * respetan `prefers-reduced-motion` (sin animación: avión estático a media
- * ruta sobre el arco de puntos).
+ * Loader de marca VuelaTour. La animación principal es el LOTTIE del avión
+ * que subió el cliente (public/animations/airplane-animation.json, loop 2s,
+ * colores brand) vía VtPlaneLottie; el arte CSS del arco (keyframes
+ * vt-plane-fly/vt-arc-draw en globals.css) queda como RESPALDO: se pinta en
+ * el server (cero flash) y es lo que se muestra con prefers-reduced-motion.
+ * VtSpinner (mini para botones) sigue siendo 100% CSS.
  */
 
 /** Path del ícono Plane de lucide (24×24, apunta 45° arriba-derecha). */
@@ -30,6 +30,23 @@ export function VtLoader({ label = "Cargando…", className }: VtLoaderProps) {
       aria-live="polite"
       className={cn("flex flex-col items-center gap-2", className)}
     >
+      <VtPlaneLottie className="h-32 w-32" fallback={<VtLoaderArteCss />} />
+      {label ? (
+        <p className="text-sm text-muted-foreground">{label}</p>
+      ) : (
+        <span className="sr-only">Cargando</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Arte CSS del avión sobre el arco: respaldo del Lottie (se pinta en el
+ * SERVER — cero flash — y queda fijo con prefers-reduced-motion).
+ */
+function VtLoaderArteCss() {
+  return (
+    <div className="flex h-32 w-32 items-center justify-center">
       <svg
         viewBox="0 0 120 64"
         className="w-36 text-brand-600"
@@ -70,11 +87,6 @@ export function VtLoader({ label = "Cargando…", className }: VtLoaderProps) {
           </g>
         </g>
       </svg>
-      {label ? (
-        <p className="text-sm text-muted-foreground">{label}</p>
-      ) : (
-        <span className="sr-only">Cargando</span>
-      )}
     </div>
   );
 }
