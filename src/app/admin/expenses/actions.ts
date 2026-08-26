@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
-import type { Gasto, PistaPendiente, TarifaAerodromo } from "@/types/expenses";
+import { listAircraft } from "@/lib/api/aircraft";
+import type {
+  Gasto,
+  PistaPendiente,
+  RepartoResponse,
+  TarifaAerodromo,
+} from "@/types/expenses";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -579,6 +585,67 @@ export async function buscarVuelosCercanosAction(
         fecha: v.fecha_vuelo,
         estado: v.estado,
       }));
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Reparto de gastos generales entre aviones (Otros gastos) =====
+
+/**
+ * Aviones ACTIVOS para el selector del diálogo de reparto (el diálogo se
+ * autoabastece: se usa igual desde /admin/otros-gastos y desde el menú ⋯
+ * de /admin/expenses).
+ */
+export async function listAvionesActivosAction(): Promise<
+  ActionResult<Array<{ id: string; matricula: string; modelo: string }>>
+> {
+  try {
+    const res = await listAircraft({ activa: true, limit: 100 });
+    return {
+      ok: true,
+      data: res.data.map((a) => ({
+        id: a.id,
+        matricula: a.matricula,
+        modelo: a.modelo,
+      })),
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Reparto vigente de un gasto (prellena el diálogo). */
+export async function getRepartoAction(
+  id: string,
+): Promise<ActionResult<RepartoResponse>> {
+  try {
+    const data = await apiServer<RepartoResponse>(`/v1/expenses/${id}/reparto`, {
+      cache: "no-store",
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Reemplaza TODO el reparto del gasto ([] lo quita: 100% empresa). La fila
+ * del gasto nunca se parte — el reparto vive en una tabla hija, así que
+ * conciliación y anti-duplicados no se enteran.
+ */
+export async function saveRepartoAction(
+  id: string,
+  items: Array<{ aeronave_id: string; monto: number }>,
+): Promise<ActionResult<RepartoResponse>> {
+  try {
+    const data = await apiServer<RepartoResponse>(`/v1/expenses/${id}/reparto`, {
+      method: "PUT",
+      body: { items },
+    });
+    revalidatePath("/admin/otros-gastos");
+    revalidatePath("/admin/expenses");
     return { ok: true, data };
   } catch (err) {
     return fail(err);

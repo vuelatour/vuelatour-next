@@ -55,6 +55,7 @@ const GRUPO_LABEL: Record<DetalleGastoGrupo, string> = {
   INDIRECTO: "Indirecto",
   PERMISO: "Permiso",
   EXCLUIDO: "Excluido",
+  FIJO: "Fijo (manual)",
 };
 
 const GRUPO_BADGE: Record<DetalleGastoGrupo, string> = {
@@ -62,6 +63,7 @@ const GRUPO_BADGE: Record<DetalleGastoGrupo, string> = {
   INDIRECTO: "bg-muted text-muted-foreground border-border",
   PERMISO: "bg-brand-600/10 text-brand-600 dark:text-brand-400 border-brand-600/30",
   EXCLUIDO: "border-dashed text-muted-foreground",
+  FIJO: "bg-muted text-muted-foreground border-border",
 };
 
 /** Estado de cobro derivado: bandera cobrado > cobro parcial > pendiente. */

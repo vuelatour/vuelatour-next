@@ -20,7 +20,7 @@ export interface DetalleVuelo {
   cobros_sin_tc_mxn: number;
 }
 
-export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO";
+export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | 'FIJO';
 
 /** Gastos del avión agrupados por categoría (para el desglose expandible). */
 export interface DetalleGastoCategoria {

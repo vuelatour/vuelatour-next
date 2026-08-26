@@ -155,7 +155,7 @@ export function AvionRepartoCard({
             deduccion
           />
           <CascadaRow
-            label="Fijos prorrateados"
+            label="Fijos (prorrateo + reparto manual)"
             value={avion.gastos.otros_prorrateados_usd}
             deduccion
           />

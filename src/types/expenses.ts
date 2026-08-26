@@ -45,6 +45,14 @@ export interface Gasto {
   aeronave?: { matricula: string } | null;
   captura?: { nombre: string } | null;
   vuelo?: { folio: string | null } | null;
+  /** Reparto entre aviones (tabla hija): la fila del gasto NUNCA se parte —
+   *  conciliación y anti-duplicados siguen viendo un solo gasto. El monto de
+   *  cada parte va en la MONEDA del gasto (numeric → puede llegar string). */
+  repartos?: Array<{
+    aeronave_id: string;
+    monto: string | number;
+    aeronave?: { matricula: string } | null;
+  }>;
 }
 
 export interface GastoListResponse {
@@ -52,6 +60,39 @@ export interface GastoListResponse {
   count: number;
   limit: number;
   offset: number;
+}
+
+// ===== Otros gastos (generales OTRO/FIJO/INDIRECTO sin vuelo) =====
+
+/** Totales del periodo POR MONEDA (nunca se mezclan MXN y USD). */
+export interface OtrosGastosResumen {
+  moneda: string;
+  total: string | number;
+  asignado_aviones: string | number;
+  /** Lo NO asignado a aviones: gasto de la empresa VuelaTour. */
+  empresa: string | number;
+}
+
+export interface OtrosGastosResponse {
+  periodo: { desde: string; hasta: string };
+  data: Gasto[];
+  resumen: OtrosGastosResumen[];
+}
+
+/** Estado del reparto de UN gasto (GET/PUT /v1/expenses/:id/reparto). */
+export interface RepartoResponse {
+  gasto: {
+    id: string;
+    categoria: string;
+    monto: string | number;
+    moneda: string;
+    fecha_gasto: string | null;
+    notas: string | null;
+  };
+  items: Array<{ aeronave_id: string; monto: string | number; matricula: string }>;
+  suma: string | number;
+  /** monto − suma: la parte que absorbe VuelaTour (empresa). */
+  remanente_empresa: string | number;
 }
 
 /** Aterrizaje del periodo sin gasto de pista, con tarifa sugerida. */

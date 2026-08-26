@@ -1,5 +1,5 @@
 import { apiServer } from "./server";
-import type { GastoListResponse } from "@/types/expenses";
+import type { GastoListResponse, OtrosGastosResponse } from "@/types/expenses";
 
 export interface ListFuelLoadsQuery {
   /** Rango sobre fecha_gasto (DATE), normalmente el mes elegido. */
@@ -53,6 +53,18 @@ export interface ListGastosQuery {
 export function listGastos(query: ListGastosQuery = {}) {
   return apiServer<GastoListResponse>("/v1/expenses", {
     searchParams: query as Record<string, string | number | boolean | undefined>,
+    cache: "no-store",
+  });
+}
+
+/**
+ * Otros gastos del periodo (generales OTRO/FIJO/INDIRECTO sin vuelo) con su
+ * reparto entre aviones y el resumen por moneda. Default del API: mes
+ * corriente en hora Cancún.
+ */
+export function listOtrosGastos(query: { desde?: string; hasta?: string } = {}) {
+  return apiServer<OtrosGastosResponse>("/v1/expenses/otros-gastos", {
+    searchParams: query,
     cache: "no-store",
   });
 }

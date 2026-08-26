@@ -68,6 +68,14 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
       },
       {
+        // Gastos generales (OTRO/FIJO/INDIRECTO sin vuelo): se asignan o
+        // dividen entre aviones; lo no asignado es gasto de la empresa.
+        label: "Otros gastos",
+        href: "/admin/otros-gastos",
+        icon: BanknotesIcon,
+        roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
+      },
+      {
         label: "Combustibles",
         href: "/admin/combustibles",
         icon: BeakerIcon,

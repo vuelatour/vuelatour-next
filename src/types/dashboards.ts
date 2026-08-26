@@ -95,6 +95,8 @@ export interface DashboardGastos {
     gastos_totales_usd: number;
     gastos_avion_usd: number;
     gastos_sin_avion_usd: number;
+  /** Remanentes de repartos manuales: gasto de la empresa VuelaTour. */
+  gastos_empresa_usd?: number;
     horas_voladas: number;
     costo_hora_promedio_usd: number | null;
     gastos_sin_tc: number;

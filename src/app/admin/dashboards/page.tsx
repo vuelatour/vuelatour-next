@@ -365,6 +365,12 @@ async function Gastos({ desde, hasta }: { desde: string; hasta: string }) {
           imputan a ninguna aeronave).
         </p>
       )}
+      {(resumen.gastos_empresa_usd ?? 0) > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {fmtUsd(resumen.gastos_empresa_usd ?? 0)} en gastos de la empresa
+          VuelaTour (remanentes de repartos: no se imputan a aeronaves).
+        </p>
+      )}
 
       <Card>
         <CardHeader>

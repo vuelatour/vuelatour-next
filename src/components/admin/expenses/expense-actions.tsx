@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import {
+  ArrowsRightLeftIcon,
   CheckBadgeIcon,
   EllipsisHorizontalIcon,
   PencilIcon,
@@ -30,7 +31,11 @@ import {
   vistoBuenoGastoAction,
 } from "@/app/admin/expenses/actions";
 import { ExpenseVerifyDialog } from "./expense-verify-dialog";
+import { RepartoDialog } from "./reparto-dialog";
 import type { Gasto } from "@/types/expenses";
+
+/** Gastos generales SIN vuelo: los únicos repartibles entre aviones. */
+const CATEGORIAS_REPARTIBLES = new Set(["OTRO", "FIJO", "INDIRECTO"]);
 
 interface ExpenseActionsProps {
   gasto: Gasto;
@@ -43,7 +48,11 @@ interface ExpenseActionsProps {
 export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
+  const [openReparto, setOpenReparto] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  const repartible =
+    !gasto.vuelo_id && CATEGORIAS_REPARTIBLES.has(gasto.categoria);
 
   const dismiss = () => {
     startTransition(async () => {
@@ -91,6 +100,12 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
             <PencilIcon className="h-4 w-4" />
             Verificar / editar
           </DropdownMenuItem>
+          {repartible && (
+            <DropdownMenuItem onClick={() => setOpenReparto(true)} className="gap-2">
+              <ArrowsRightLeftIcon className="h-4 w-4" />
+              Repartir entre aviones
+            </DropdownMenuItem>
+          )}
           {gasto.duplicado_sospechado && (
             <DropdownMenuItem onClick={dismiss} className="gap-2">
               <CheckBadgeIcon className="h-4 w-4" />
@@ -115,6 +130,27 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
         providers={providers}
         fotoUrl={fotoUrl}
       />
+
+      {repartible && (
+        <RepartoDialog
+          open={openReparto}
+          onOpenChange={setOpenReparto}
+          gasto={{
+            id: gasto.id,
+            categoria: gasto.categoria,
+            monto: Number(gasto.monto),
+            moneda: gasto.moneda,
+            fecha_gasto: gasto.fecha_gasto,
+            descripcion:
+              [
+                (gasto.notas ?? "").split("\n")[0].trim() || null,
+                gasto.proveedor?.nombre ?? null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || null,
+          }}
+        />
+      )}
 
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
         <AlertDialogContent>

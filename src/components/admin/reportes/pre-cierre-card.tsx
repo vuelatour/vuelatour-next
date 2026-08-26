@@ -63,6 +63,7 @@ const LINK_POR_CLAVE: Record<
   // folios del item llevan directo a cada vuelo).
   externos_sin_honorario: () => "/admin/expenses",
   sin_conciliar: () => "/admin/conciliacion",
+  repartos_incoherentes: () => "/admin/otros-gastos",
 };
 
 function fmtMonto(item: PreCierreItem): string | null {

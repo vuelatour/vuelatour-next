@@ -228,7 +228,7 @@ export function ExpensesTable({
   );
 }
 
-const MEDIO_PAGO_LABELS: Record<string, string> = {
+export const MEDIO_PAGO_LABELS: Record<string, string> = {
   EFECTIVO: "Efectivo",
   TARJETA_CORP: "Tarjeta corporativa",
   TRANSFERENCIA: "Transferencia",
