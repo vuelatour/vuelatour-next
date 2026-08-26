@@ -54,7 +54,8 @@ interface FlightActionsBarProps {
   /** Externo sin desglose de cotización: puede editar método de cobro aquí. */
   metodoCobroEditable?: boolean;
   /** URL FIRMADA de la foto del plan de vuelo (bucket privado); null = sin foto. */
-  planVueloUrl?: string | null;
+  planVueloUrl?: string | null;  /** Solo ADMIN puede borrar definitivamente un vuelo cancelado. */
+  esAdmin?: boolean;
 }
 
 export function FlightActionsBar({
@@ -64,6 +65,7 @@ export function FlightActionsBar({
   gastosResumen,
   metodoCobroEditable,
   planVueloUrl,
+  esAdmin = false,
 }: FlightActionsBarProps) {
   const router = useRouter();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -224,6 +226,7 @@ export function FlightActionsBar({
         flight={flight}
         aircraft={aircraft}
         gastosResumen={gastosResumen}
+        esAdmin={esAdmin}
       />
 
       <FlightAssignSheet

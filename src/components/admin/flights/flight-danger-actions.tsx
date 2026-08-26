@@ -23,12 +23,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   cancelFlightAction,
   deleteFlightAction,
+  purgeFlightAction,
   reassignAircraftAction,
 } from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
@@ -51,11 +53,14 @@ export function FlightDangerActions({
   flight,
   aircraft,
   gastosResumen,
+  esAdmin = false,
 }: {
   flight: FlightListItem;
   aircraft: AircraftOption[];
   /** Resumen de gastos ligados (para el aviso al cancelar), ej. "2 gastos · $8,911.28 MXN". */
   gastosResumen?: string | null;
+  /** Solo el ADMIN puede borrar DEFINITIVAMENTE un vuelo cancelado. */
+  esAdmin?: boolean;
 }) {
   const router = useRouter();
   const [reassignOpen, setReassignOpen] = useState(false);
@@ -64,6 +69,9 @@ export function FlightDangerActions({
   const [nuevaAeronave, setNuevaAeronave] = useState("");
   const [motivo, setMotivo] = useState("");
   const [motivoCancel, setMotivoCancel] = useState("");
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [motivoPurge, setMotivoPurge] = useState("");
+  const [confirmaFolio, setConfirmaFolio] = useState("");
   const [pending, startTransition] = useTransition();
 
   const operable =
@@ -73,8 +81,11 @@ export function FlightDangerActions({
     flight.estado !== "EN_VUELO" &&
     !flight.cobrado &&
     !flight.facturado;
+  // Borrado DEFINITIVO (26-ago): solo ADMIN y solo vuelos CANCELADOS.
+  // El API además exige: sin cobros, sin gastos ligados, sin factura.
+  const purgable = esAdmin && flight.estado === "CANCELADO";
 
-  if (!operable) return null;
+  if (!operable && !purgable) return null;
 
   const handleReassign = () => {
     if (!nuevaAeronave) {
@@ -94,6 +105,20 @@ export function FlightDangerActions({
         router.push(`/admin/flights/${res.data.id}`);
       } else {
         toast.error(res.error ?? "No se pudo reasignar la aeronave");
+      }
+    });
+  };
+
+  const handlePurge = () => {
+    startTransition(async () => {
+      const res = await purgeFlightAction(flight.id, motivoPurge.trim());
+      if (res.ok) {
+        toast.success(
+          `Vuelo #${flight.folio} eliminado definitivamente de la base`,
+        );
+        router.push("/admin/flights");
+      } else {
+        toast.error(res.error ?? "No se pudo eliminar el vuelo");
       }
     });
   };
@@ -130,6 +155,8 @@ export function FlightDangerActions({
 
   return (
     <>
+      {operable && (
+        <>
       {flight.aeronave_id && (
         <Button
           variant="outline"
@@ -293,6 +320,81 @@ export function FlightDangerActions({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </>
+      )}
+
+      {purgable && (
+        <>
+          <Button
+            variant="outline"
+            onClick={() => setPurgeOpen(true)}
+            className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            title="Borra el vuelo cancelado DE LA BASE DE DATOS. No se puede deshacer."
+          >
+            <TrashIcon className="h-4 w-4" />
+            Borrar de la base de datos
+          </Button>
+          <AlertDialog open={purgeOpen} onOpenChange={setPurgeOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  ¿Borrar DEFINITIVAMENTE el vuelo #{flight.folio}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se elimina de la base de datos junto con sus tramos, fotos
+                  de tacómetro, plan de vuelo y eventos de calendario.{" "}
+                  <b>No se puede deshacer</b> — solo queda una huella de
+                  auditoría (quién, cuándo y por qué).
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Solo se permite si el vuelo NO tiene cobros, gastos ligados ni
+                factura (el sistema lo verifica).
+              </p>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Motivo del borrado</Label>
+                  <Textarea
+                    value={motivoPurge}
+                    onChange={(e) => setMotivoPurge(e.target.value)}
+                    placeholder="Ej. registro de prueba duplicado"
+                    rows={2}
+                    maxLength={500}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>
+                    Escribe el folio{" "}
+                    <span className="font-mono">{flight.folio}</span> para
+                    confirmar
+                  </Label>
+                  <Input
+                    value={confirmaFolio}
+                    onChange={(e) => setConfirmaFolio(e.target.value)}
+                    placeholder={String(flight.folio ?? "")}
+                  />
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>
+                  Conservar el vuelo
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handlePurge}
+                  disabled={
+                    pending ||
+                    motivoPurge.trim().length < 5 ||
+                    confirmaFolio.trim() !== String(flight.folio ?? "")
+                  }
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {pending ? "Borrando…" : "Borrar de la base de datos"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </>
   );
 }

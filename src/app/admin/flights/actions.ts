@@ -265,6 +265,29 @@ export async function deleteFlightAction(id: string): Promise<ActionResult> {
  * de un vuelo que no se hizo cuenta, salvo que el proveedor cancele la
  * factura — en ese caso oficina elimina el gasto).
  */
+/**
+ * Borrado DEFINITIVO de un vuelo CANCELADO (solo ADMIN). El API exige: sin
+ * cobros, sin gastos ligados, sin factura; deja bitácora forense.
+ */
+export async function purgeFlightAction(
+  id: string,
+  motivo: string,
+): Promise<ActionResult<unknown>> {
+  try {
+    const data = await apiServer(`/v1/flights/${id}/purge`, {
+      method: "DELETE",
+      body: { motivo },
+    });
+    revalidatePath("/admin/flights");
+    revalidatePath("/admin/quotes");
+    revalidatePath("/admin/calendar");
+    revalidatePath("/admin/taco-live");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function cancelFlightAction(
   id: string,
   motivo: string,

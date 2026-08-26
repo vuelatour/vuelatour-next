@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
+import { getMe } from "@/lib/api/me";
 import { FlightReportButtons } from "@/components/admin/flights/flight-report-buttons";
 import { cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
@@ -50,6 +51,7 @@ interface FlightDetailPageProps {
 }
 
 export default async function FlightDetailPage({ params }: FlightDetailPageProps) {
+  const me = await getMe().catch(() => null);
   const { id } = await params;
 
   let snapshot;
@@ -372,6 +374,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 </span>
               ))}
             <FlightActionsBar
+              esAdmin={me?.rol === "ADMIN"}
               flight={snapshot}
               aircraft={aircraftOptions}
               pilots={pilotOptions}
