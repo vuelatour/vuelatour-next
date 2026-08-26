@@ -53,6 +53,8 @@ const LINK_POR_CLAVE: Record<
     `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
   gastos_sin_avion: () => "/admin/expenses",
   gastos_sin_tc: () => "/admin/expenses",
+  // El comprobante trae otra matrícula: se corrige el avión en Gastos.
+  matricula_recibo_distinta: () => "/admin/expenses",
   // Directo a Gastos filtrado a "sin facturar" (pendiente + solicitada) DEL
   // PERIODO: ahí está el semáforo para irlos resolviendo uno por uno.
   gastos_sin_comprobante: (p) =>

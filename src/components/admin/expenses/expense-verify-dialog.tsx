@@ -638,6 +638,29 @@ export function ExpenseVerifyDialog({
             />
           </Field>
 
+          {(() => {
+            /* Cruce de matrícula (caso ASUR Mérida): el recibo manda. */
+            const mIa = aiRaw?.matricula ??
+              (gasto.valor_ia_extraido as { matricula?: unknown } | null)
+                ?.matricula;
+            const sel = watch("aeronave_id");
+            if (!mIa || typeof mIa !== "string" || !sel) return null;
+            const norm = (m: string) => m.toUpperCase().replace(/[^A-Z0-9]/g, "");
+            const delRecibo = aircraft.find((a) => norm(a.matricula) === norm(mIa));
+            if (!delRecibo || delRecibo.id === sel) return null;
+            const asignada = aircraft.find((a) => a.id === sel);
+            return (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                ⚠ El comprobante trae la matrícula{" "}
+                <span className="font-mono font-medium">{delRecibo.matricula}</span> pero el
+                gasto quedará en{" "}
+                <span className="font-mono font-medium">{asignada?.matricula ?? "otro avión"}</span>
+                . En cambios de avión a media jornada el recibo manda: corrige el avión si
+                aplica.
+              </p>
+            );
+          })()}
+
           {/* Asignación MANUAL del vuelo (±15 días de la fecha del gasto):
               cubre cuando la sugerencia automática no encuentra match o el
               gasto quedó ligado al vuelo equivocado. */}

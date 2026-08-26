@@ -28,6 +28,8 @@ export interface Gasto {
    *  "¿ya facturé este gasto?"). Independiente del comprobante del piloto. */
   estatus_facturacion?: string;
   foto_url: string | null;
+  /** Lectura IA del comprobante (jsonb: matricula, conceptos, folio…). */
+  valor_ia_extraido: Record<string, unknown> | null;
   conciliado: boolean;
   duplicado_sospechado: boolean;
   /** Prellenado con IA desde la app (flujo admin): pendiente del visto bueno. */
