@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { listCards } from "@/lib/api/cards-server";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { UserFormSchema, UserInviteSchema } from "./schema";
@@ -193,6 +194,32 @@ export async function setCajaOrigenAction(
     revalidatePath("/admin/caja-chica");
     revalidatePath("/admin/users");
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Opción de tarjeta para el selector "Tarjeta corp." de usuarios/pilotos. */
+export interface CardOption {
+  terminacion: string;
+  nombre_titular: string;
+}
+
+/**
+ * Tarjetas ACTIVAS del catálogo para el selector del diálogo de usuario
+ * (26-ago: la terminación ya no es texto libre — se elige del catálogo y el
+ * API vincula la tarjeta real). Los diálogos se autoabastecen al abrir.
+ */
+export async function listCardsOptionsAction(): Promise<ActionResult<CardOption[]>> {
+  try {
+    const res = await listCards({ limit: 100 });
+    return {
+      ok: true,
+      data: res.data.map((c) => ({
+        terminacion: c.terminacion,
+        nombre_titular: c.nombre_titular,
+      })),
+    };
   } catch (err) {
     return fail(err);
   }

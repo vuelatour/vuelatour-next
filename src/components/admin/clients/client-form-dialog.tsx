@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { PhoneField } from "@/components/admin/phone-field";
+import { PhoneField, normalizePhone } from "@/components/admin/phone-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -662,7 +662,8 @@ function defaults(client?: Client): ClientFormValues {
   }
   return {
     nombre: client.nombre,
-    telefono: client.telefono ?? "",
+    // Legado normalizado: el form debe validar LO QUE SE MUESTRA.
+    telefono: normalizePhone(client.telefono),
     email: client.email ?? "",
     razon_social_default: client.razon_social_default ?? "",
     rfc: client.rfc ?? "",

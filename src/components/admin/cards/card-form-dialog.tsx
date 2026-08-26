@@ -66,8 +66,14 @@ export function CardFormDialog({ open, onOpenChange, initialCard, users, bankAcc
 
   const onSubmit = handleSubmit((values) => {
     startTransition(async () => {
+      // Desvincular desde el form (26-ago): "" se descartaría en el action
+      // (stripEmpty) y el usuario viejo quedaba pegado — null explícito.
+      const payload: Record<string, unknown> = { ...values };
+      if (isEdit && initialCard?.usuario_id && !values.usuario_id) {
+        payload.usuario_id = null;
+      }
       const result = isEdit
-        ? await updateCardAction(initialCard!.id, values)
+        ? await updateCardAction(initialCard!.id, payload)
         : await createCardAction(values);
 
       if (result.ok) {

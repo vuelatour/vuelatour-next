@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { PhoneField } from "@/components/admin/phone-field";
+import { PhoneField, normalizePhone } from "@/components/admin/phone-field";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -184,7 +184,8 @@ function defaults(provider?: Provider): ProviderFormValues {
     tipo: provider.tipo,
     pais: provider.pais ?? "",
     email: provider.email ?? "",
-    telefono: provider.telefono ?? "",
+    // Legado normalizado: el form debe validar LO QUE SE MUESTRA.
+    telefono: normalizePhone(provider.telefono),
     direccion: provider.direccion ?? "",
     contacto: provider.contacto ?? "",
     notas: provider.notas ?? "",

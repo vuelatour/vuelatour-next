@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { PhoneField } from "@/components/admin/phone-field";
+import { PhoneField, normalizePhone } from "@/components/admin/phone-field";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createIssuingEntityAction,
@@ -284,7 +284,8 @@ function defaults(entity?: IssuingEntity): IssuingEntityFormValues {
     codigo_postal: entity.codigo_postal ?? "",
     direccion: entity.direccion ?? "",
     email_facturacion: entity.email_facturacion ?? "",
-    telefono: entity.telefono ?? "",
+    // Legado normalizado: el form debe validar LO QUE SE MUESTRA.
+    telefono: normalizePhone(entity.telefono),
     pac_proveedor: entity.pac_proveedor ?? "",
     notas: entity.notas ?? "",
   };

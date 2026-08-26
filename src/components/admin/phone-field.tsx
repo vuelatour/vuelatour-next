@@ -33,6 +33,19 @@ export function parsePhone(value: string | null | undefined): {
   return { lada: "52", digits: digits.slice(-10) };
 }
 
+/**
+ * Normaliza un teléfono LEGADO al formato canónico "+lada 10dígitos" (o "").
+ * Lo que PhoneField MUESTRA debe ser lo que el form VALIDA: un valor viejo
+ * con espacios internos ("+52 33 1313 6438") se pintaba bien pero el zod
+ * validaba el CRUDO y el guardado quedaba bloqueado con "Lada + 10 dígitos"
+ * (caso Abraham Zamora, 26-ago). Úsalo SIEMPRE en los defaults() de los
+ * formularios que montan PhoneField.
+ */
+export function normalizePhone(value: string | null | undefined): string {
+  const { lada, digits } = parsePhone(value);
+  return digits.length === 10 ? `+${lada} ${digits}` : "";
+}
+
 export function PhoneField({
   value,
   onChange,

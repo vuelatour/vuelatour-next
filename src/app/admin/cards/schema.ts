@@ -5,7 +5,13 @@ export const CardFormSchema = z.object({
     .string()
     .regex(/^\d{4}$/, "Deben ser exactamente 4 dígitos"),
   nombre_titular: z.string().min(1, "Requerido").max(100),
-  usuario_id: z.string().uuid("UUID inválido").optional().or(z.literal("")),
+  // null explícito = DESVINCULAR (sobrevive al stripEmpty del action).
+  usuario_id: z
+    .string()
+    .uuid("UUID inválido")
+    .nullable()
+    .optional()
+    .or(z.literal("")),
   banco: z.string().max(50).optional().or(z.literal("")),
   cuenta_bancaria_id: z.string().uuid("UUID inválido").optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),

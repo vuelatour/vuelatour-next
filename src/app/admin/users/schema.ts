@@ -17,9 +17,12 @@ export const UserFormSchema = z.object({
   rol: RolEnum,
   estado: EstadoEnum,
   tiene_fondo_caja: z.boolean().default(false),
+  // null explícito = DESVINCULAR la tarjeta (sobrevive al stripEmpty del
+  // action; "" se descartaría y quitarla sería un no-op silencioso).
   tarjeta_terminacion: z
     .string()
     .regex(/^\d{4}$/, "Deben ser 4 dígitos")
+    .nullable()
     .optional()
     .or(z.literal("")),
   es_piloto: z.boolean().default(false),

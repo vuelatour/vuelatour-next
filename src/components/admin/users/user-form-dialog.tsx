@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -14,11 +14,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { PhoneField } from "@/components/admin/phone-field";
+import { PhoneField, normalizePhone } from "@/components/admin/phone-field";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { updateUserAction } from "@/app/admin/users/actions";
+import { updateUserAction, listCardsOptionsAction, type CardOption } from "@/app/admin/users/actions";
 import { UserFormSchema, type UserFormValues } from "@/app/admin/users/schema";
 import type { User } from "@/types/users";
 import { Field } from "@/components/admin/form-field";
@@ -47,6 +47,19 @@ interface Props {
 
 export function UserFormDialog({ open, onOpenChange, user }: Props) {
   const [pending, startTransition] = useTransition();
+  // Tarjetas del catálogo para el selector (26-ago): la terminación ya no es
+  // texto libre — elegirla aquí VINCULA la tarjeta real en Tarjetas corp.
+  const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void listCardsOptionsAction().then((res) => {
+      if (!cancel && res.ok && res.data) setCardOptions(res.data);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
 
   const {
     register,
@@ -65,8 +78,19 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
   }, [open, user, reset]);
 
   const onSubmit = handleSubmit((values) => {
+    const payload: Record<string, unknown> = { ...values };
+    // Tarjeta: solo viaja si CAMBIÓ (mandarla siempre re-sincronizaba el
+    // catálogo en cada guardado); quitarla manda null explícito — el "" lo
+    // tira stripEmpty y "Sin tarjeta" era un no-op silencioso (26-ago).
+    const tarjetaOriginal = user.tarjeta_terminacion ?? "";
+    const tarjetaNueva = values.tarjeta_terminacion ?? "";
+    if (tarjetaNueva === tarjetaOriginal) {
+      delete payload.tarjeta_terminacion;
+    } else if (tarjetaNueva === "") {
+      payload.tarjeta_terminacion = null;
+    }
     startTransition(async () => {
-      const result = await updateUserAction(user.id, values);
+      const result = await updateUserAction(user.id, payload);
       if (result.ok) {
         toast.success("Usuario actualizado");
         onOpenChange(false);
@@ -121,14 +145,26 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
               />
             </Field>
             <Field
-              label="Terminación tarjeta corp."
-              hint="4 dígitos"
+              label="Tarjeta corp."
+              hint="del catálogo Tarjetas corp."
               error={errors.tarjeta_terminacion?.message}
             >
-              <Input
-                maxLength={4}
-                {...register("tarjeta_terminacion")}
-                className="font-mono"
+              <SearchableSelect
+                options={[
+                  { value: "", label: "Sin tarjeta" },
+                  ...cardOptions.map((c) => ({
+                    value: c.terminacion,
+                    label: `**** ${c.terminacion} · ${c.nombre_titular}`,
+                  })),
+                ]}
+                value={watch("tarjeta_terminacion") ?? ""}
+                onChange={(v) =>
+                  setValue("tarjeta_terminacion", v, {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  })
+                }
+                placeholder="Sin tarjeta"
               />
             </Field>
           </div>
@@ -192,7 +228,8 @@ function defaults(user: User): UserFormValues {
     tarjeta_terminacion: user.tarjeta_terminacion ?? "",
     es_piloto: user.es_piloto,
     es_piloto_externo: user.es_piloto_externo,
-    telefono: user.telefono ?? "",
+    // Legado normalizado: el form debe validar LO QUE SE MUESTRA.
+    telefono: normalizePhone(user.telefono),
     avatar_url: user.avatar_url ?? "",
   };
 }

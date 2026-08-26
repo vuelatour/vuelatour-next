@@ -1,6 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import {
+  listCardsOptionsAction,
+  type CardOption,
+} from "@/app/admin/users/actions";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -15,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PhoneField } from "@/components/admin/phone-field";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +29,18 @@ import { Field } from "@/components/admin/form-field";
 
 export function InvitePilotDialog() {
   const [open, setOpen] = useState(false);
+  // Tarjetas del catálogo (26-ago): elegirla aquí vincula la tarjeta real.
+  const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void listCardsOptionsAction().then((res) => {
+      if (!cancel && res.ok && res.data) setCardOptions(res.data);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
   const [pending, startTransition] = useTransition();
 
   const {
@@ -129,15 +146,26 @@ export function InvitePilotDialog() {
             </Field>
             {!esExterno && (
               <Field
-                label="Terminación tarjeta"
-                hint="4 dígitos"
+                label="Tarjeta corp."
+                hint="del catálogo Tarjetas corp."
                 error={errors.tarjeta_terminacion?.message}
               >
-                <Input
-                  maxLength={4}
-                  {...register("tarjeta_terminacion")}
-                  className="font-mono"
-                  placeholder="1234"
+                <SearchableSelect
+                  options={[
+                    { value: "", label: "Sin tarjeta" },
+                    ...cardOptions.map((c) => ({
+                      value: c.terminacion,
+                      label: `**** ${c.terminacion} · ${c.nombre_titular}`,
+                    })),
+                  ]}
+                  value={watch("tarjeta_terminacion") ?? ""}
+                  onChange={(v) =>
+                    setValue("tarjeta_terminacion", v, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  placeholder="Sin tarjeta"
                 />
               </Field>
             )}

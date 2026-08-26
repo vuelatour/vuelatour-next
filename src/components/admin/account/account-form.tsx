@@ -7,7 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PhoneField } from "@/components/admin/phone-field";
+import { PhoneField, normalizePhone } from "@/components/admin/phone-field";
 import { updateAccountAction } from "@/app/admin/account/actions";
 import { Field } from "@/components/admin/form-field";
 
@@ -42,7 +42,8 @@ export function AccountForm({
     formState: { errors, isDirty },
   } = useForm<AccountFormValues>({
     resolver: zodResolver(AccountFormSchema),
-    defaultValues: initial,
+    // Teléfono legado normalizado (ver normalizePhone): validar lo mostrado.
+    defaultValues: { ...initial, telefono: normalizePhone(initial.telefono) },
   });
 
   const onSubmit = handleSubmit((values) => {
@@ -85,7 +86,9 @@ export function AccountForm({
         <Button
           type="button"
           variant="outline"
-          onClick={() => reset(initial)}
+          onClick={() =>
+            reset({ ...initial, telefono: normalizePhone(initial.telefono) })
+          }
           disabled={pending || !isDirty}
         >
           Descartar
