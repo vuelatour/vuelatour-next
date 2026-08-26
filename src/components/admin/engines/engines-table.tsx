@@ -11,7 +11,10 @@ const POSICION: Record<string, string> = {
   DERECHO: "Derecho",
 };
 
-/** Fila-viewmodel serializable armada por la página (matrícula ya resuelta). */
+/**
+ * Fila-viewmodel serializable armada por la página. Los derivados (horas de
+ * vida, desde OVH, restantes) vienen del API: aquí solo se pintan.
+ */
 export interface EngineRow {
   id: string;
   aeronave_id: string;
@@ -19,11 +22,40 @@ export interface EngineRow {
   posicion: string;
   numero_serie: string;
   tipo: string;
-  horas_totales: string;
-  turm: string;
-  tbo_horas: string;
-  rest: number;
-  estado: "vencido" | "proximo" | "ok";
+  horas_vida: number | null;
+  desde_ovh: number | null;
+  tbo_horas: string | null;
+  rest: number | null;
+  estado: "vencido" | "proximo" | "ok" | "sin_tbo";
+}
+
+export function estadoOverhaulBadge(estado: EngineRow["estado"]) {
+  switch (estado) {
+    case "vencido":
+      return (
+        <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">
+          Overhaul vencido
+        </Badge>
+      );
+    case "proximo":
+      return (
+        <Badge variant="outline" className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
+          Próximo
+        </Badge>
+      );
+    case "ok":
+      return (
+        <Badge variant="outline" className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30">
+          OK
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="outline" className="text-muted-foreground">
+          Sin TBO
+        </Badge>
+      );
+  }
 }
 
 const columns: Array<DataTableColumn<EngineRow>> = [
@@ -60,25 +92,25 @@ const columns: Array<DataTableColumn<EngineRow>> = [
     ),
   },
   {
-    key: "horas_totales",
-    header: "Horas totales",
+    key: "horas_vida",
+    header: "Horas de vida",
     headClassName: "text-right",
     cellClassName: "text-right font-mono text-sm",
-    cell: (e) => fmtDecimal(e.horas_totales),
+    cell: (e) => (e.horas_vida != null ? fmtDecimal(e.horas_vida, 1) : "—"),
   },
   {
-    key: "turm",
-    header: "TURM",
+    key: "desde_ovh",
+    header: "Desde OVH",
     headClassName: "text-right",
     cellClassName: "text-right font-mono text-sm",
-    cell: (e) => fmtDecimal(e.turm),
+    cell: (e) => (e.desde_ovh != null ? fmtDecimal(e.desde_ovh, 1) : "—"),
   },
   {
     key: "tbo",
     header: "TBO",
     headClassName: "text-right",
     cellClassName: "text-right font-mono text-sm",
-    cell: (e) => fmtDecimal(e.tbo_horas),
+    cell: (e) => (e.tbo_horas ? fmtDecimal(e.tbo_horas) : "—"),
   },
   {
     key: "restantes",
@@ -86,10 +118,12 @@ const columns: Array<DataTableColumn<EngineRow>> = [
     headClassName: "text-right",
     cellClassName: "text-right font-mono text-sm",
     cell: (e) =>
-      e.estado === "vencido" ? (
-        <span className="text-destructive font-semibold">{fmtDecimal(e.rest)}</span>
+      e.rest == null ? (
+        "—"
+      ) : e.estado === "vencido" ? (
+        <span className="text-destructive font-semibold">{fmtDecimal(e.rest, 1)}</span>
       ) : (
-        fmtDecimal(e.rest)
+        fmtDecimal(e.rest, 1)
       ),
   },
   {
@@ -97,20 +131,7 @@ const columns: Array<DataTableColumn<EngineRow>> = [
     header: "Estado",
     headClassName: "text-center",
     cellClassName: "text-center",
-    cell: (e) =>
-      e.estado === "vencido" ? (
-        <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">
-          Overhaul vencido
-        </Badge>
-      ) : e.estado === "proximo" ? (
-        <Badge variant="outline" className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
-          Próximo
-        </Badge>
-      ) : (
-        <Badge variant="outline" className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30">
-          OK
-        </Badge>
-      ),
+    cell: (e) => estadoOverhaulBadge(e.estado),
   },
 ];
 

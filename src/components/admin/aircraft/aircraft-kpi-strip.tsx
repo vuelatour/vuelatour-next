@@ -27,6 +27,15 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
       : fmtUsd(fin.utilidad)
     : "—";
 
+  // Tiempo total del planeador: solo si difiere del taco (base histórica
+  // capturada); si son iguales el dato no agrega nada.
+  const planeador =
+    metrics.tiempo_total_planeador != null &&
+    metrics.horas_actuales != null &&
+    Math.abs(metrics.tiempo_total_planeador - metrics.horas_actuales) > 0.05
+      ? metrics.tiempo_total_planeador
+      : null;
+
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Kpi
@@ -36,6 +45,11 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
           metrics.horas_actuales != null
             ? `${fmtDecimal(metrics.horas_actuales, 1)} h`
             : "—"
+        }
+        hint={
+          planeador != null
+            ? `Planeador: ${fmtDecimal(planeador, 1)} hrs total`
+            : undefined
         }
         mono
       />
@@ -70,6 +84,11 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
               ? "Sin vigilancia por horas: configúralo en Tacómetros → Editar programa"
               : undefined
         }
+        tooltip={
+          prox && (prox.tareas?.length ?? 0) > 0
+            ? `Incluye: ${prox.tareas!.join(", ")}`
+            : undefined
+        }
         valueClass={
           prox && prox.faltan_hr < 10
             ? "text-amber-600 dark:text-amber-400"
@@ -100,6 +119,7 @@ function Kpi({
   label,
   value,
   hint,
+  tooltip,
   valueClass,
   mono = false,
 }: {
@@ -107,11 +127,13 @@ function Kpi({
   label: string;
   value: string;
   hint?: string;
+  /** Tooltip nativo del card completo (detalle largo, ej. checklist del servicio). */
+  tooltip?: string;
   valueClass?: string;
   mono?: boolean;
 }) {
   return (
-    <Card size="sm">
+    <Card size="sm" title={tooltip}>
       <CardContent className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-muted-foreground">{label}</p>

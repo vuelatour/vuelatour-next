@@ -37,11 +37,16 @@ import {
 import { AircraftKpiStrip } from "@/components/admin/aircraft/aircraft-kpi-strip";
 import { AircraftTacometrosCard } from "@/components/admin/aircraft/aircraft-tacometros-card";
 import { AircraftSquawksCard } from "@/components/admin/aircraft/aircraft-squawks-card";
+import {
+  ComponentActions,
+  type AeronaveDestinoOption,
+} from "@/components/admin/aircraft/aircraft-component-actions";
 import { ErrorState } from "@/components/admin/error-state";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import {
   getAircraftMetrics,
   getAircraftSnapshot,
+  listAircraft,
   type AircraftMetricsDetalle,
 } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -79,6 +84,20 @@ export default async function AircraftDetailPage({ params }: PageProps) {
     socios = u.data.map((x) => ({ id: x.id, nombre: x.nombre }));
   } catch {
     socios = [];
+  }
+
+  // Aeronaves activas: destinos posibles al trasladar un motor/hélice.
+  // Best-effort: sin lista, el diálogo de traslado avisa que no hay destinos.
+  let avionesDestino: AeronaveDestinoOption[] = [];
+  try {
+    const flota = await listAircraft({ activa: true, limit: 200 });
+    avionesDestino = flota.data.map((a) => ({
+      id: a.id,
+      matricula: a.matricula,
+      modelo: a.modelo,
+    }));
+  } catch {
+    avionesDestino = [];
   }
 
   // Métricas operativas (apto-para-volar, utilización, finanzas).
@@ -170,13 +189,11 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           metrics && <AircraftMetricsCard metrics={metrics} aircraftId={aircraft.id} />
         )}
 
-        {/* 2. Tacómetros: histórico por aeronave + programa de servicio por horas */}
+        {/* 2. Tacómetros: histórico por aeronave + programa de servicio por etapas */}
         <AircraftTacometrosCard
           aircraftId={aircraft.id}
           matricula={aircraft.matricula}
           numMotores={aircraft.num_motores}
-          intervalos={aircraft.servicio_intervalos ?? []}
-          horasBase={aircraft.servicio_horas_base ?? 0}
         />
 
         {/* 3. Bitácora de discrepancias (squawks) */}
@@ -278,6 +295,9 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                   motor={m}
                   reserve={reservesByMotor.get(m.id)}
                   aircraftId={aircraft.id}
+                  matricula={aircraft.matricula}
+                  modelo={aircraft.modelo}
+                  aviones={avionesDestino}
                 />
               ))
             )}
@@ -301,7 +321,14 @@ export default async function AircraftDetailPage({ params }: PageProps) {
               <p className="text-sm text-muted-foreground">Sin hélices registradas.</p>
             ) : (
               propsSorted.map((p) => (
-                <PropellerCard key={p.id} propeller={p} aircraftId={aircraft.id} />
+                <PropellerCard
+                  key={p.id}
+                  propeller={p}
+                  aircraftId={aircraft.id}
+                  matricula={aircraft.matricula}
+                  modelo={aircraft.modelo}
+                  aviones={avionesDestino}
+                />
               ))
             )}
           </CardContent>
@@ -396,19 +423,26 @@ function MotorCard({
   motor,
   reserve,
   aircraftId,
+  matricula,
+  modelo,
+  aviones,
 }: {
   motor: Motor;
   reserve?: OverhaulReserve;
   aircraftId: string;
+  matricula: string;
+  modelo: string;
+  aviones: AeronaveDestinoOption[];
 }) {
-  const restantes =
-    motor.tbo_restante ??
-    Number(motor.tbo_horas) - (Number(motor.horas_totales) - Number(motor.turm));
+  // Los derivados vienen SIEMPRE del API (componenteEstado vía snapshot);
+  // sin dato = "—", nunca una fórmula local de respaldo.
+  const restantes = motor.tbo_restante ?? null;
   const horasVida = motor.horas_actuales ?? Number(motor.horas_totales);
-  const desdeOverhaul = motor.horas_desde_overhaul ?? horasVida - Number(motor.turm);
+  const desdeOverhaul = motor.horas_desde_overhaul ?? null;
   // Un motor no puede tener menos horas de vida que las que tenía en su
   // último overhaul: si pasa, falta capturar "Horas totales" en el motor.
-  const horasIncoherentes = Number(motor.turm) > horasVida;
+  const horasIncoherentes =
+    motor.turm_componente != null && motor.turm_componente > horasVida;
   const marcaModelo = [motor.fabricante, motor.modelo].filter(Boolean).join(" ");
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2.5">
@@ -429,17 +463,31 @@ function MotorCard({
         </div>
       </div>
       {motor.vida_usada_pct != null && !horasIncoherentes && (
-        <VidaTboBar pct={motor.vida_usada_pct} agotado={restantes <= 0} />
+        <VidaTboBar pct={motor.vida_usada_pct} agotado={(restantes ?? 1) <= 0} />
       )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini label="Tiempo total (TSN)" value={`${fmtDecimal(horasVida)} hrs`} />
-        <Mini label="Desde el últ. overhaul (TSO)" value={`${fmtDecimal(desdeOverhaul)} hrs`} />
-        <Mini label="TURM (taco al últ. overhaul)" value={fmtDecimal(motor.turm)} />
+        <Mini
+          label="Desde el últ. overhaul (TSO)"
+          value={desdeOverhaul != null ? `${fmtDecimal(desdeOverhaul)} hrs` : "—"}
+        />
+        <Mini
+          label="TURM (hrs del componente al últ. OVH)"
+          value={motor.turm_componente != null ? fmtDecimal(motor.turm_componente) : "—"}
+        />
         <Mini label="TBO" value={`${fmtDecimal(motor.tbo_horas)} hrs`} />
         <Mini
           label="Restantes a overhaul"
-          value={`${fmtDecimal(restantes)} hrs`}
-          className={restantes <= 0 ? "text-destructive font-semibold" : restantes <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
+          value={restantes != null ? `${fmtDecimal(restantes)} hrs` : "—"}
+          className={
+            restantes == null
+              ? ""
+              : restantes <= 0
+                ? "text-destructive font-semibold"
+                : restantes <= 25
+                  ? "text-amber-600 dark:text-amber-400 font-semibold"
+                  : ""
+          }
         />
         <VenceOverhaulMini fecha={motor.tbo_fecha} />
         {reserve && (
@@ -452,7 +500,8 @@ function MotorCard({
       {horasIncoherentes && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
           Revisar captura: el tiempo total (TSN) del motor ({fmtDecimal(horasVida)}) es menor al
-          TURM ({fmtDecimal(motor.turm)}). Edita el motor y captura sus horas totales reales.
+          TURM ({fmtDecimal(motor.turm_componente)}). Edita el motor y captura sus horas totales
+          reales.
         </p>
       )}
       {motor.notas && (
@@ -461,6 +510,19 @@ function MotorCard({
           <p className="text-xs mt-0.5 whitespace-pre-wrap">{motor.notas}</p>
         </div>
       )}
+      <ComponentActions
+        aircraftId={aircraftId}
+        matricula={matricula}
+        modelo={modelo}
+        aviones={aviones}
+        componente={{
+          id: motor.id,
+          tipo: "MOTOR",
+          posicion: motor.posicion,
+          numero_serie: motor.numero_serie,
+          horas_actuales: motor.horas_actuales ?? null,
+        }}
+      />
       <ComponenteFooter
         horasBase={Number(motor.horas_totales)}
         ref_={motor.aeronave_horas_ref != null ? Number(motor.aeronave_horas_ref) : null}
@@ -475,9 +537,15 @@ function MotorCard({
 function PropellerCard({
   propeller,
   aircraftId,
+  matricula,
+  modelo,
+  aviones,
 }: {
   propeller: Propeller;
   aircraftId: string;
+  matricula: string;
+  modelo: string;
+  aviones: AeronaveDestinoOption[];
 }) {
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2.5">
@@ -516,8 +584,12 @@ function PropellerCard({
           />
         )}
         <Mini
-          label="TURM (taco al últ. overhaul)"
-          value={fmtDecimal(propeller.turm ?? 0)}
+          label="TURM (hrs del componente al últ. OVH)"
+          value={
+            propeller.turm_componente != null
+              ? fmtDecimal(propeller.turm_componente)
+              : "—"
+          }
         />
         <Mini label="TBO" value={propeller.tbo_horas ? `${fmtDecimal(propeller.tbo_horas)} hrs` : "—"} />
         {propeller.tbo_restante != null && (
@@ -535,6 +607,19 @@ function PropellerCard({
           <p className="text-xs mt-0.5 whitespace-pre-wrap">{propeller.notas}</p>
         </div>
       )}
+      <ComponentActions
+        aircraftId={aircraftId}
+        matricula={matricula}
+        modelo={modelo}
+        aviones={aviones}
+        componente={{
+          id: propeller.id,
+          tipo: "HELICE",
+          posicion: propeller.posicion,
+          numero_serie: propeller.numero_serie,
+          horas_actuales: propeller.horas_actuales ?? null,
+        }}
+      />
       <ComponenteFooter
         horasBase={Number(propeller.horas_totales)}
         ref_={propeller.aeronave_horas_ref != null ? Number(propeller.aeronave_horas_ref) : null}

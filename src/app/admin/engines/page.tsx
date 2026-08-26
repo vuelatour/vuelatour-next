@@ -1,7 +1,6 @@
 import { CpuChipIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EnginesTable, type EngineRow } from "@/components/admin/engines/engines-table";
-import { listAircraft } from "@/lib/api/aircraft";
 import { listEngines } from "@/lib/api/engines-server";
 
 export const dynamic = "force-dynamic";
@@ -9,39 +8,45 @@ export const dynamic = "force-dynamic";
 /** Horas de aviso antes de agotar el TBO. */
 const PROXIMO_HRS = 100;
 
-function restantes(totales: string, turm: string, tbo: string): number {
-  return Number(tbo) - (Number(totales) - Number(turm));
-}
-
 export default async function EnginesListPage() {
-  const [enginesRes, aircraftRes] = await Promise.all([
-    listEngines({ limit: 200 }),
-    listAircraft({ limit: 200 }),
-  ]);
+  const enginesRes = await listEngines({ limit: 200 });
   const engines = enginesRes.data;
-  const matriculas = new Map(aircraftRes.data.map((a) => [a.id, a.matricula]));
 
+  // Los derivados (horas de vida, desde overhaul, restantes) vienen SIEMPRE
+  // del API — misma aritmética que el expediente del avión. La fórmula local
+  // que se usaba aquí contradecía al detalle (caso N990GG: "6,290 restantes"
+  // con TBO 2,000). Sin dato del API = "—", nunca un cálculo de respaldo.
   const rows: EngineRow[] = engines
     .map((e): EngineRow => {
-      const rest = restantes(e.horas_totales, e.turm, e.tbo_horas);
+      const rest = e.tbo_restante ?? null;
       return {
         id: e.id,
         aeronave_id: e.aeronave_id,
-        matricula: matriculas.get(e.aeronave_id) ?? "—",
+        matricula: e.aeronave?.matricula ?? "—",
         posicion: e.posicion,
         numero_serie: e.numero_serie,
         tipo: e.tipo,
-        horas_totales: e.horas_totales,
-        turm: e.turm,
+        horas_vida: e.horas_actuales ?? null,
+        desde_ovh: e.horas_desde_overhaul ?? null,
         tbo_horas: e.tbo_horas,
         rest,
-        estado: rest <= 0 ? "vencido" : rest <= PROXIMO_HRS ? "proximo" : "ok",
+        estado:
+          rest == null
+            ? "sin_tbo"
+            : rest <= 0
+              ? "vencido"
+              : rest <= PROXIMO_HRS
+                ? "proximo"
+                : "ok",
       };
     })
-    .sort((a, b) => a.rest - b.rest);
+    .sort(
+      (a, b) =>
+        (a.rest ?? Number.POSITIVE_INFINITY) - (b.rest ?? Number.POSITIVE_INFINITY),
+    );
 
-  const vencidos = rows.filter((r) => r.rest <= 0).length;
-  const proximos = rows.filter((r) => r.rest > 0 && r.rest <= PROXIMO_HRS).length;
+  const vencidos = rows.filter((r) => r.estado === "vencido").length;
+  const proximos = rows.filter((r) => r.estado === "proximo").length;
 
   return (
     <div className="space-y-6">

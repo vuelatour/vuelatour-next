@@ -30,10 +30,16 @@ export interface Aircraft {
   ubicacion_base: string;
   activa: boolean;
   notas: string | null;
-  /** Programa de servicio: secuencia cíclica de intervalos en horas (ej. [50,100,200]). */
+  /** Programa de servicio: secuencia cíclica de intervalos en horas (ej. [50,100,200]).
+   *  DERIVADO de las etapas (aeronave_servicio_etapa): se escribe vía servicio_etapas. */
   servicio_intervalos: number[];
   /** Horómetro (Hobbs) donde arranca la secuencia de servicios. */
   servicio_horas_base: number;
+  /** Horas TOTALES del planeador cuando el taco marcaba planeador_taco_ref
+   *  (base histórica de bitácoras). 0/0 = el tiempo total equivale al taco. */
+  planeador_horas_base?: Decimal | number | null;
+  /** Lectura del tacómetro al capturar planeador_horas_base. */
+  planeador_taco_ref?: Decimal | number | null;
   created_at: string;
   updated_at: string;
   /** Foto principal de la galería (para el avatar del listado). */
@@ -43,12 +49,74 @@ export interface Aircraft {
   no_apto_razones?: string[];
 }
 
+/** Etapa del programa de servicio: intervalo + nombre + checklist de tareas. */
+export interface ServicioEtapa {
+  id: string;
+  intervalo_hr: number;
+  nombre: string | null;
+  tareas: string[];
+}
+
+/**
+ * Componente (motor/hélice) con derivados VIVOS, como viene en /tacometros.
+ * La aritmética la hace el API (componenteEstado) — nunca recalcular aquí.
+ */
+export interface TacoComponente {
+  id: string;
+  tipo: "MOTOR" | "HELICE";
+  posicion: string;
+  numero_serie: string;
+  horas_actuales: number;
+  tbo_restante: number | null;
+  horas_desde_overhaul: number;
+  /** TURM en marco del COMPONENTE: horas de vida en su último overhaul (null = sin overhaul). */
+  turm_componente: number | null;
+  vida_usada_pct: number | null;
+  hobbs_avion: number;
+  tbo_horas: number | null;
+}
+
+/** Bitácora de un componente rotable (motor/hélice): componente_evento. */
+export interface ComponenteEvento {
+  id: string;
+  tipo_evento: "INSTALACION" | "TRASLADO" | "OVERHAUL" | "AJUSTE";
+  aeronave: { matricula: string } | null;
+  aeronave_origen: { matricula: string } | null;
+  posicion: string | null;
+  hobbs_avion: number | string | null;
+  hobbs_avion_origen: number | string | null;
+  horas_componente: number | string | null;
+  horas_desde_overhaul: number | string | null;
+  fecha: string | null;
+  motivo: string | null;
+  created_at: string;
+  realizado: { nombre: string } | null;
+}
+
 /** Histórico de tacómetros + estatus de servicio de una aeronave. */
 export interface TacometroHistorial {
   horas_actuales: number;
+  /** Tiempo TOTAL del planeador (base histórica + delta del taco). Con base 0/0 equivale al taco. */
+  tiempo_total_planeador?: number;
+  planeador_horas_base?: number;
+  planeador_taco_ref?: number;
   servicio_intervalos: number[];
   servicio_horas_base: number;
-  proximo_servicio: { a_las: number; intervalo: number; faltan: number } | null;
+  /** Etapas del programa (fuente de verdad; servicio_intervalos se deriva). */
+  servicio_etapas?: ServicioEtapa[];
+  proximo_servicio: {
+    a_las: number;
+    intervalo: number;
+    faltan: number;
+    /** Nombre de la etapa ganadora, si lo tiene. */
+    nombre?: string | null;
+    /** Intervalos cuyos hitos coinciden en este servicio (el mayor incluye a los menores). */
+    etapas_incluidas?: number[];
+    /** Tareas unidas de las etapas incluidas. */
+    tareas?: string[];
+  } | null;
+  /** Motores y hélices con derivados vivos (para selector de componente y cards). */
+  componentes?: TacoComponente[];
   historial: {
     escala_id: string;
     /** Vuelo del tramo: el folio enlaza a /admin/flights/:vuelo_id. */
@@ -74,12 +142,18 @@ export interface Motor {
   modelo?: string | null;
   notas?: string | null;
   horas_totales: Decimal;
+  /** LEGADO: taco del avión en el últ. overhaul (no sobrevive traslados). Usar turm_componente. */
   turm: Decimal;
+  /** TSO congelado que viaja CON el componente (marco del componente). */
+  tso_base?: Decimal | null;
   tbo_horas: Decimal;
   /** Límite CALENDARIO del overhaul (TBO por tiempo). null = solo horas. */
   tbo_fecha?: string | null;
   /** Horas de vida vivas (acumulan con lo volado). Lo calcula el snapshot. */
   horas_actuales?: number;
+  /** TURM en marco del COMPONENTE: horas de vida en su último overhaul
+   *  (como la bitácora física AFAC). null = sin overhaul. Derivado del API. */
+  turm_componente?: number | null;
   /** Horas restantes para el próximo overhaul (TBO). null si no hay TBO. */
   tbo_restante?: number | null;
   /** Horas voladas desde el último overhaul (horas de vida − TURM). */
@@ -102,11 +176,16 @@ export interface Propeller {
   modelo?: string | null;
   notas?: string | null;
   horas_totales: Decimal;
-  /** Taco del avión en el último overhaul de la hélice (como motor.turm). */
+  /** LEGADO: taco del avión en el últ. overhaul (no sobrevive traslados). Usar turm_componente. */
   turm?: Decimal;
+  /** TSO congelado que viaja CON el componente (marco del componente). */
+  tso_base?: Decimal | null;
   tbo_horas: Decimal | null;
   tbo_fecha?: string | null;
   horas_actuales?: number;
+  /** TURM en marco del COMPONENTE: horas de vida en su último overhaul
+   *  (como la bitácora física AFAC). null = sin overhaul. Derivado del API. */
+  turm_componente?: number | null;
   tbo_restante?: number | null;
   horas_desde_overhaul?: number;
   vida_usada_pct?: number | null;

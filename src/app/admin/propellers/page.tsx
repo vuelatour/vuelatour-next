@@ -4,29 +4,49 @@ import {
   PropellersTable,
   type PropellerRow,
 } from "@/components/admin/propellers/propellers-table";
-import { listAircraft } from "@/lib/api/aircraft";
 import { listPropellers } from "@/lib/api/propellers-server";
 
 export const dynamic = "force-dynamic";
 
-export default async function PropellersListPage() {
-  const [propsRes, aircraftRes] = await Promise.all([
-    listPropellers({ limit: 200 }),
-    listAircraft({ limit: 200 }),
-  ]);
-  const propellers = propsRes.data;
-  const matriculas = new Map(aircraftRes.data.map((a) => [a.id, a.matricula]));
+/** Horas de aviso antes de agotar el TBO (mismo umbral que motores). */
+const PROXIMO_HRS = 100;
 
-  const rows: PropellerRow[] = propellers.map((p) => ({
-    id: p.id,
-    aeronave_id: p.aeronave_id,
-    matricula: matriculas.get(p.aeronave_id) ?? "—",
-    posicion: p.posicion,
-    numero_serie: p.numero_serie,
-    fabricante: p.fabricante,
-    horas_totales: p.horas_totales,
-    tbo_horas: p.tbo_horas,
-  }));
+export default async function PropellersListPage() {
+  const propsRes = await listPropellers({ limit: 200 });
+  const propellers = propsRes.data;
+
+  // Misma tabla que los motores (sin Tipo): derivados vivos del API, nunca
+  // fórmulas locales. Sin dato = "—".
+  const rows: PropellerRow[] = propellers
+    .map((p): PropellerRow => {
+      const rest = p.tbo_restante ?? null;
+      return {
+        id: p.id,
+        aeronave_id: p.aeronave_id,
+        matricula: p.aeronave?.matricula ?? "—",
+        posicion: p.posicion,
+        numero_serie: p.numero_serie,
+        horas_vida: p.horas_actuales ?? null,
+        desde_ovh: p.horas_desde_overhaul ?? null,
+        tbo_horas: p.tbo_horas,
+        rest,
+        estado:
+          rest == null
+            ? "sin_tbo"
+            : rest <= 0
+              ? "vencido"
+              : rest <= PROXIMO_HRS
+                ? "proximo"
+                : "ok",
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.rest ?? Number.POSITIVE_INFINITY) - (b.rest ?? Number.POSITIVE_INFINITY),
+    );
+
+  const vencidos = rows.filter((r) => r.estado === "vencido").length;
+  const proximos = rows.filter((r) => r.estado === "proximo").length;
 
   return (
     <div className="space-y-6">
@@ -35,6 +55,12 @@ export default async function PropellersListPage() {
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Hélices</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {propellers.length} {propellers.length === 1 ? "hélice" : "hélices"} en la flota
+          {vencidos > 0 && (
+            <span className="text-destructive"> · {vencidos} con overhaul vencido</span>
+          )}
+          {proximos > 0 && (
+            <span className="text-amber-600 dark:text-amber-400"> · {proximos} próxima(s)</span>
+          )}
         </p>
       </div>
 

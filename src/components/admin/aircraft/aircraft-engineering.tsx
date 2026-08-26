@@ -13,6 +13,7 @@ import {
   DocumentCheckIcon,
   DocumentTextIcon,
   ClockIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,7 @@ import {
   fileToBase64,
   MAX_BYTES_IA,
 } from "@/lib/storage/documentos-flota";
+import { aircraftTacometrosAction } from "@/app/admin/aircraft/actions";
 import type {
   DocumentType,
   EstadoMantenimiento,
@@ -60,6 +62,11 @@ import type {
   Vencimiento,
   VencimientoEliminado,
 } from "@/types/engineering";
+import type {
+  ServicioEtapa,
+  TacoComponente,
+  TacometroHistorial,
+} from "@/types/aircraft";
 
 const ESTADO_MANT: Record<EstadoMantenimiento, { label: string; cls: string }> = {
   PROGRAMADO: {
@@ -78,11 +85,38 @@ const ESTADO_MANT: Record<EstadoMantenimiento, { label: string; cls: string }> =
 
 const fmtDate = fmtDateOnly;
 
+/** Posición abreviada para el badge de componente (Motor IZQ / Hélice DER). */
+const POS_ABREV: Record<string, string> = {
+  UNICO: "",
+  UNICA: "",
+  IZQUIERDO: "IZQ",
+  IZQUIERDA: "IZQ",
+  DERECHO: "DER",
+  DERECHA: "DER",
+};
+
+/** "Motor IZQ" / "Hélice DER" resuelto con los componentes del avión. */
+function componenteLabel(
+  m: Pick<Mantenimiento, "motor_id" | "helice_id">,
+  componentes: TacoComponente[],
+): string | null {
+  const id = m.motor_id ?? m.helice_id;
+  if (!id) return null;
+  const tipo = m.motor_id ? "Motor" : "Hélice";
+  const c = componentes.find((x) => x.id === id);
+  if (!c) return tipo;
+  const pos = POS_ABREV[c.posicion] ?? c.posicion;
+  return pos ? `${tipo} ${pos}` : tipo;
+}
+
 export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
   const [mant, setMant] = useState<Mantenimiento[]>([]);
   const [venc, setVenc] = useState<Vencimiento[]>([]);
   const [vencEliminados, setVencEliminados] = useState<VencimientoEliminado[]>([]);
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
+  // Etapas del programa + componentes del avión (para el diálogo de servicio).
+  // Best-effort: sin ellos el diálogo funciona igual, solo sin selectores.
+  const [taco, setTaco] = useState<TacometroHistorial | null>(null);
   const [error, setError] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [mantOpen, setMantOpen] = useState(false);
@@ -91,16 +125,18 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
 
   const reload = useCallback(async () => {
     try {
-      const [m, v, d, ve] = await Promise.all([
+      const [m, v, d, ve, t] = await Promise.all([
         listMaintenance(aircraftId),
         listExpirations(aircraftId),
         listDocumentTypes(),
         listExpirationsEliminadas(aircraftId).catch(() => []),
+        aircraftTacometrosAction(aircraftId).then((r) => (r.ok ? (r.data ?? null) : null)),
       ]);
       setMant(m);
       setVenc(v);
       setDocTypes(d);
       setVencEliminados(ve);
+      setTaco(t);
       setError(false);
     } catch {
       // NUNCA disfrazar la caída de "sin registros": se pinta el aviso rojo.
@@ -116,13 +152,16 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
       listDocumentTypes(),
       // Best-effort: la sección de eliminados no debe tirar la card entera.
       listExpirationsEliminadas(aircraftId).catch(() => []),
+      // Best-effort: etapas/componentes para el diálogo de servicio.
+      aircraftTacometrosAction(aircraftId).then((r) => (r.ok ? (r.data ?? null) : null)),
     ])
-      .then(([m, v, d, ve]) => {
+      .then(([m, v, d, ve, t]) => {
         if (!active) return;
         setMant(m);
         setVenc(v);
         setDocTypes(d);
         setVencEliminados(ve);
+        setTaco(t);
         setError(false);
       })
       .catch(() => {
@@ -209,7 +248,10 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
             <p className="text-sm text-muted-foreground">Sin mantenimientos registrados.</p>
           ) : (
             <div className="space-y-2">
-              {mant.map((m) => (
+              {mant.map((m) => {
+                const compLabel = componenteLabel(m, taco?.componentes ?? []);
+                const tareas = m.tareas_realizadas ?? [];
+                return (
                 <div key={m.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{m.descripcion}</p>
@@ -223,6 +265,28 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                         : ""}
                       {m.proveedor ? ` · ${m.proveedor}` : ""}
                     </p>
+                    {(m.etapa_intervalo_hr != null || compLabel || tareas.length > 0) && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {m.etapa_intervalo_hr != null && (
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            {Number(m.etapa_intervalo_hr)} hrs
+                          </Badge>
+                        )}
+                        {compLabel && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {compLabel}
+                          </Badge>
+                        )}
+                        {tareas.length > 0 && (
+                          <span
+                            className="cursor-help text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2"
+                            title={tareas.join("\n")}
+                          >
+                            {tareas.length} {tareas.length === 1 ? "tarea" : "tareas"} ✓
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Badge variant="outline" className={ESTADO_MANT[m.estado].cls}>
@@ -243,7 +307,8 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
                     </Button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -468,6 +533,9 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
           onSaved={reload}
           aircraftId={aircraftId}
           initial={editingMant}
+          etapas={taco?.servicio_etapas ?? []}
+          componentes={taco?.componentes ?? []}
+          proximo={taco?.proximo_servicio ?? null}
         />
       )}
       {vencOpen && (
@@ -522,12 +590,21 @@ function MantenimientoDialog({
   onSaved,
   aircraftId,
   initial,
+  etapas,
+  componentes,
+  proximo,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => Promise<void>;
   aircraftId: string;
   initial?: Mantenimiento;
+  /** Etapas del programa de servicio del avión (de /tacometros). */
+  etapas: ServicioEtapa[];
+  /** Motores y hélices del avión (de /tacometros.componentes). */
+  componentes: TacoComponente[];
+  /** Próximo servicio detallado (para prellenar horas programadas). */
+  proximo: TacometroHistorial["proximo_servicio"];
 }) {
   const isEdit = !!initial;
   const [saving, setSaving] = useState(false);
@@ -545,6 +622,91 @@ function MantenimientoDialog({
     defaultValues: mantDefaults(initial),
   });
 
+  // ===== Etapa del programa + componente + checklist de tareas =====
+  // "" = sin etapa; id de etapa; "legacy" = el mantenimiento trae un intervalo
+  // que ya no existe como etapa (se conserva tal cual al guardar).
+  const [etapaSel, setEtapaSel] = useState<string>(() => {
+    if (initial?.etapa_intervalo_hr == null) return "";
+    const found = etapas.find(
+      (e) => Math.abs(e.intervalo_hr - Number(initial.etapa_intervalo_hr)) <= 0.05,
+    );
+    return found?.id ?? "legacy";
+  });
+  // "" = avión (general); id de componente; "legacy-comp" = componente
+  // registrado que no está en la lista (se conserva al guardar).
+  const [compSel, setCompSel] = useState<string>(() => {
+    const id = initial?.motor_id ?? initial?.helice_id;
+    if (!id) return "";
+    return componentes.some((c) => c.id === id) ? id : "legacy-comp";
+  });
+  const etapaObj = etapas.find((e) => e.id === etapaSel);
+  const [tareasChecked, setTareasChecked] = useState<Record<string, boolean>>(() => {
+    const iniciales = initial?.tareas_realizadas ?? [];
+    const e = etapas.find(
+      (x) =>
+        initial?.etapa_intervalo_hr != null &&
+        Math.abs(x.intervalo_hr - Number(initial.etapa_intervalo_hr)) <= 0.05,
+    );
+    return Object.fromEntries(
+      (e?.tareas ?? []).map((t) => [t, iniciales.includes(t)]),
+    );
+  });
+  const [tareasLibres, setTareasLibres] = useState<string[]>(() => {
+    const iniciales = initial?.tareas_realizadas ?? [];
+    const e = etapas.find(
+      (x) =>
+        initial?.etapa_intervalo_hr != null &&
+        Math.abs(x.intervalo_hr - Number(initial.etapa_intervalo_hr)) <= 0.05,
+    );
+    const delChecklist = new Set(e?.tareas ?? []);
+    return iniciales.filter((t) => !delChecklist.has(t));
+  });
+  const [nuevaTarea, setNuevaTarea] = useState("");
+
+  const onEtapaChange = (v: string) => {
+    setEtapaSel(v);
+    const e = etapas.find((x) => x.id === v);
+    // Selección fresca: checklist completo marcado (el flujo típico es
+    // capturar un servicio ya hecho); se desmarca lo que no se hizo.
+    setTareasChecked(Object.fromEntries((e?.tareas ?? []).map((t) => [t, true])));
+    if (!e) return;
+    const etiqueta = `Servicio de ${e.intervalo_hr} hrs${e.nombre ? ` — ${e.nombre}` : ""}`;
+    // Prellenados best-effort: SOLO campos vacíos, jamás pisar lo tecleado.
+    if (!watch("descripcion")) setValue("descripcion", etiqueta);
+    if (
+      !watch("horas_programadas") &&
+      proximo &&
+      (proximo.etapas_incluidas ?? []).some(
+        (i) => Math.abs(i - e.intervalo_hr) <= 0.05,
+      )
+    ) {
+      setValue("horas_programadas", String(proximo.a_las));
+    }
+  };
+
+  const totalTareas = () =>
+    (etapaObj?.tareas ?? []).filter((t) => tareasChecked[t]).length +
+    tareasLibres.length;
+
+  const agregarTarea = () => {
+    const t = nuevaTarea.trim();
+    if (!t) return;
+    if (t.length > 120) {
+      toast.error("Cada tarea: máximo 120 caracteres");
+      return;
+    }
+    if (tareasLibres.includes(t) || (etapaObj?.tareas ?? []).includes(t)) {
+      toast.error("Esa tarea ya está en la lista");
+      return;
+    }
+    if (totalTareas() >= 60) {
+      toast.error("Máximo 60 tareas por servicio");
+      return;
+    }
+    setTareasLibres((prev) => [...prev, t]);
+    setNuevaTarea("");
+  };
+
   const estado = watch("estado");
   const horas = watch("horas_aeronave");
   const horasProg = watch("horas_programadas");
@@ -560,7 +722,34 @@ function MantenimientoDialog({
     setSaving(true);
     try {
       const values = MantenimientoFormSchema.parse(raw);
-      // Mismo contrato que siempre ha recibido el API (no cambia).
+      // Etapa/componente/tareas del rediseño de mantenimiento (ago 2026).
+      // "legacy" conserva lo ya registrado; en edición, null LIMPIA el campo.
+      const etapaIntervalo =
+        etapaObj?.intervalo_hr ??
+        (etapaSel === "legacy" && initial?.etapa_intervalo_hr != null
+          ? Number(initial.etapa_intervalo_hr)
+          : null);
+      const comp = componentes.find((c) => c.id === compSel);
+      const motorId =
+        comp != null
+          ? comp.tipo === "MOTOR"
+            ? comp.id
+            : null
+          : compSel === "legacy-comp"
+            ? (initial?.motor_id ?? null)
+            : null;
+      const heliceId =
+        comp != null
+          ? comp.tipo === "HELICE"
+            ? comp.id
+            : null
+          : compSel === "legacy-comp"
+            ? (initial?.helice_id ?? null)
+            : null;
+      const tareasRealizadas = [
+        ...(etapaObj?.tareas ?? []).filter((t) => tareasChecked[t]),
+        ...tareasLibres,
+      ];
       const body = {
         estado: values.estado,
         descripcion: values.descripcion.trim(),
@@ -574,6 +763,12 @@ function MantenimientoDialog({
         horas_programadas: values.horas_programadas,
         costo_usd: values.costo_usd,
         proveedor: values.proveedor?.trim() || undefined,
+        // En alta, sin selección se OMITEN (undefined); en edición el null
+        // explícito limpia lo guardado.
+        etapa_intervalo_hr: etapaIntervalo ?? (isEdit ? null : undefined),
+        motor_id: motorId ?? (isEdit ? null : undefined),
+        helice_id: heliceId ?? (isEdit ? null : undefined),
+        tareas_realizadas: tareasRealizadas,
       };
       if (isEdit) {
         await updateMaintenance(initial!.id, body);
@@ -593,11 +788,12 @@ function MantenimientoDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar servicio" : "Nuevo servicio"}</DialogTitle>
           <DialogDescription>
-            Mantenimiento de la aeronave: programado, en taller o completado.
+            Mantenimiento de la aeronave: programado, en taller o completado. Si
+            corresponde a una etapa del programa, elígela para llevar su checklist.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -627,8 +823,127 @@ function MantenimientoDialog({
               />
             </Field>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Etapa del programa"
+              hint={etapas.length === 0 && etapaSel === "" ? "Este avión no tiene etapas capturadas." : undefined}
+            >
+              <SearchableSelect
+                options={[
+                  { value: "", label: "Sin etapa (servicio libre)" },
+                  ...etapas.map((e) => ({
+                    value: e.id,
+                    label: `Servicio de ${e.intervalo_hr} hrs${e.nombre ? ` — ${e.nombre}` : ""}`,
+                    description:
+                      e.tareas.length > 0
+                        ? `${e.tareas.length} ${e.tareas.length === 1 ? "tarea" : "tareas"}`
+                        : undefined,
+                  })),
+                  ...(etapaSel === "legacy" && initial?.etapa_intervalo_hr != null
+                    ? [
+                        {
+                          value: "legacy",
+                          label: `Servicio de ${Number(initial.etapa_intervalo_hr)} hrs (etapa anterior)`,
+                        },
+                      ]
+                    : []),
+                ]}
+                value={etapaSel}
+                onChange={onEtapaChange}
+                placeholder="Sin etapa"
+              />
+            </Field>
+            <Field label="Componente">
+              <SearchableSelect
+                options={[
+                  { value: "", label: "Avión (general)" },
+                  ...componentes.map((c) => ({
+                    value: c.id,
+                    label: `${c.tipo === "MOTOR" ? "Motor" : "Hélice"} ${c.posicion} · S/N ${c.numero_serie}`,
+                  })),
+                  ...(compSel === "legacy-comp"
+                    ? [
+                        {
+                          value: "legacy-comp",
+                          label: initial?.motor_id
+                            ? "Motor (registrado)"
+                            : "Hélice (registrada)",
+                        },
+                      ]
+                    : []),
+                ]}
+                value={compSel}
+                onChange={setCompSel}
+                placeholder="Avión (general)"
+              />
+            </Field>
+          </div>
           <Field label="Descripción" required error={errors.descripcion?.message}>
             <Input placeholder="Ej. Servicio de 100 h" {...register("descripcion")} />
+          </Field>
+          {etapaObj && etapaObj.tareas.length > 0 && (
+            <div className="space-y-1.5 rounded-lg border border-border bg-muted/20 p-3">
+              <p className="text-xs font-medium">
+                Checklist de la etapa — lo marcado se guarda como realizado
+              </p>
+              {etapaObj.tareas.map((t) => (
+                <label
+                  key={t}
+                  className="flex cursor-pointer items-start gap-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={!!tareasChecked[t]}
+                    onChange={(e) =>
+                      setTareasChecked((prev) => ({ ...prev, [t]: e.target.checked }))
+                    }
+                  />
+                  <span>{t}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <Field
+            label="Tareas adicionales"
+            hint="Escribe una tarea y presiona Enter para agregarla."
+          >
+            <div className="space-y-2">
+              {tareasLibres.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {tareasLibres.map((t) => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs"
+                    >
+                      {t}
+                      <button
+                        type="button"
+                        aria-label={`Quitar tarea: ${t}`}
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() =>
+                          setTareasLibres((prev) => prev.filter((x) => x !== t))
+                        }
+                      >
+                        <XMarkIcon className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Input
+                value={nuevaTarea}
+                maxLength={120}
+                placeholder="Ej. Cambio de manguera de combustible"
+                onChange={(e) => setNuevaTarea(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    agregarTarea();
+                  }
+                }}
+              />
+            </div>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Fecha programada" error={errors.fecha_programada?.message}>

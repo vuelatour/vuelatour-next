@@ -71,19 +71,60 @@ export const AircraftFormSchema = z.object({
     .or(z.literal("")),
   activa: z.boolean().default(true),
   notas: z.string().max(2000).optional().or(z.literal("")),
-  // Programa de servicio por horas (secuencia cíclica de intervalos).
-  servicio_intervalos: z.array(z.coerce.number().min(1)).optional(),
   servicio_horas_base: optionalNonNegative,
 });
 
 export type AircraftFormValues = z.input<typeof AircraftFormSchema>;
 
-/** Editor del programa de servicio por horas (separado del form principal). */
-export const ServicioProgramaSchema = z.object({
-  servicio_intervalos: z.array(z.coerce.number().min(1, "Cada intervalo > 0")),
+// ===== Programa de servicio por ETAPAS (editor de la card Tacómetros) =====
+// Fuente de verdad: el PATCH manda servicio_etapas y el API deriva
+// servicio_intervalos — NUNCA mandar los dos.
+export const ServicioEtapaSchema = z.object({
+  intervalo_hr: z.coerce.number().positive("Debe ser mayor a 0"),
+  nombre: z.string().max(80, "Máximo 80 caracteres").optional().or(z.literal("")),
+  tareas: z
+    .array(z.string().min(1).max(120, "Cada tarea: máximo 120 caracteres"))
+    .max(40, "Máximo 40 tareas por etapa")
+    .optional(),
+});
+
+export const ServicioProgramaEtapasSchema = z.object({
+  servicio_etapas: z.array(ServicioEtapaSchema),
   servicio_horas_base: z.coerce.number().min(0, "No puede ser negativo"),
 });
-export type ServicioProgramaValues = z.input<typeof ServicioProgramaSchema>;
+export type ServicioProgramaEtapasValues = z.input<typeof ServicioProgramaEtapasSchema>;
+
+/** Base histórica del planeador (tiempo total = base + hobbs − ref). */
+export const PlaneadorBaseSchema = z.object({
+  planeador_horas_base: z.coerce.number().min(0, "No puede ser negativo"),
+  planeador_taco_ref: z.coerce.number().min(0, "No puede ser negativo"),
+});
+export type PlaneadorBaseValues = z.input<typeof PlaneadorBaseSchema>;
+
+// ===== Traslado / overhaul de componentes (motores y hélices) =====
+export const TransplantSchema = z.object({
+  aeronave_destino_id: z.string().uuid("Selecciona la aeronave destino"),
+  posicion_destino: z.enum([
+    "UNICO",
+    "IZQUIERDO",
+    "DERECHO",
+    "UNICA",
+    "IZQUIERDA",
+    "DERECHA",
+  ]),
+  motivo: z.string().min(3, "Describe el motivo (mínimo 3 caracteres)").max(500),
+});
+export type TransplantValues = z.input<typeof TransplantSchema>;
+
+export const OverhaulSchema = z.object({
+  /** YYYY-MM-DD; vacío = hoy (Cancún) en el API. */
+  fecha: z.string().optional().or(z.literal("")),
+  motivo: z.string().max(500).optional().or(z.literal("")),
+  tbo_horas: optionalPositive,
+  /** Nuevo límite calendario del TBO; null explícito lo borra. */
+  tbo_fecha: z.string().nullable().optional().or(z.literal("")),
+});
+export type OverhaulValues = z.input<typeof OverhaulSchema>;
 
 // ===== Dueños / socios =====
 export const OwnerFormSchema = z.object({
@@ -107,7 +148,9 @@ export const EngineFormSchema = z.object({
   fabricante: z.string().max(50).nullable().optional().or(z.literal("")),
   modelo: z.string().max(50).nullable().optional().or(z.literal("")),
   horas_totales: optionalNonNegative,
-  turm: optionalNonNegative,
+  // TURM en marco del COMPONENTE (horas de vida en su últ. overhaul). El
+  // `turm` legado (taco del avión) ya NO se captura desde los forms.
+  turm_componente: optionalNonNegative,
   tbo_horas: z.coerce.number().min(1, "Debe ser mayor a 0"),
   // Límite CALENDARIO del overhaul (TBO por tiempo, ej. 12 años). Vaciar al
   // editar manda null para borrar la fecha guardada.
@@ -124,7 +167,8 @@ export const PropellerFormSchema = z.object({
   fabricante: z.string().max(50).nullable().optional().or(z.literal("")),
   modelo: z.string().max(50).nullable().optional().or(z.literal("")),
   horas_totales: optionalNonNegative,
-  turm: optionalNonNegative,
+  // TURM en marco del COMPONENTE (ver EngineFormSchema).
+  turm_componente: optionalNonNegative,
   tbo_horas: optionalPositive,
   tbo_fecha: z.string().nullable().optional().or(z.literal("")),
   notas: z.string().max(2000).nullable().optional().or(z.literal("")),

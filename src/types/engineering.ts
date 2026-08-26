@@ -17,6 +17,14 @@ export interface Mantenimiento {
   costo_usd: string | null;
   proveedor: string | null;
   notas: string | null;
+  /** Etapa del programa a la que corresponde el servicio (intervalo en hrs). */
+  etapa_intervalo_hr?: number | string | null;
+  /** Checklist ejecutado: tareas de la etapa marcadas + tareas libres. */
+  tareas_realizadas?: string[] | null;
+  /** Motor al que aplica el servicio (null/ausente = avión en general). */
+  motor_id?: string | null;
+  /** Hélice a la que aplica el servicio (null/ausente = avión en general). */
+  helice_id?: string | null;
   created_at: string;
 }
 
@@ -83,6 +91,8 @@ export interface FleetUpcoming {
     descripcion: string;
     fecha_programada: string;
     aeronave_id: string;
+    /** Etapa del programa (intervalo en hrs) si el servicio está ligado a una. */
+    etapa_intervalo_hr?: number | string | null;
     aeronave?: { matricula: string } | null;
   }>;
 }

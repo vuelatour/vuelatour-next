@@ -3,82 +3,213 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { ChevronDownIcon, ClockIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
+import {
+  ChevronDownIcon,
+  ClockIcon,
+  PlusIcon,
+  TrashIcon,
+  WrenchScrewdriverIcon,
+} from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { fmtDateTime } from "@/lib/datetime";
+import { fmtDecimal } from "@/lib/format";
 import {
   aircraftTacometrosAction,
-  updateServicioProgramaAction,
+  updatePlaneadorBaseAction,
+  updateServicioEtapasAction,
 } from "@/app/admin/aircraft/actions";
-import type { TacometroHistorial } from "@/types/aircraft";
+import type { ServicioEtapa, TacometroHistorial } from "@/types/aircraft";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { BitacoraPdfButton } from "./bitacora-pdf-button";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const textareaCls =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const labelCls = "text-[11px] uppercase tracking-wide text-muted-foreground";
+
+/** Fila del editor de etapas (texto crudo; se valida al guardar, con error visible). */
+interface EtapaDraft {
+  key: string;
+  intervalo: string;
+  nombre: string;
+  /** Tareas de la etapa, una por línea. */
+  tareas: string;
+  error?: string;
+}
+
+let draftSeq = 0;
+function nuevaFila(e?: ServicioEtapa | { intervalo_hr: number }): EtapaDraft {
+  draftSeq += 1;
+  return {
+    key: `etapa-${draftSeq}`,
+    intervalo: e ? String(e.intervalo_hr) : "",
+    nombre: e && "nombre" in e ? (e.nombre ?? "") : "",
+    tareas: e && "tareas" in e ? e.tareas.join("\n") : "",
+  };
+}
 
 export function AircraftTacometrosCard({
   aircraftId,
   matricula,
   numMotores,
-  intervalos,
-  horasBase,
 }: {
   aircraftId: string;
   matricula: string;
   numMotores: number;
-  intervalos: number[];
-  horasBase: number;
 }) {
   const [data, setData] = useState<TacometroHistorial | null>(null);
   const [loading, setLoading] = useState(true);
-  const [intervalosStr, setIntervalosStr] = useState(intervalos.join(", "));
-  const [base, setBase] = useState(String(horasBase ?? 0));
-  const [saving, startSaving] = useTransition();
+
+  // Editor del programa de servicio (etapas)
   const [editorOpen, setEditorOpen] = useState(false);
+  const [etapas, setEtapas] = useState<EtapaDraft[]>([]);
+  const [base, setBase] = useState("0");
+  const [baseError, setBaseError] = useState<string | null>(null);
+  const [confirmVaciar, setConfirmVaciar] = useState(false);
+  const [saving, startSaving] = useTransition();
+
+  // Base histórica del planeador
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planBase, setPlanBase] = useState("0");
+  const [planRef, setPlanRef] = useState("0");
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [savingPlan, startSavingPlan] = useTransition();
+
+  const aplicarDatos = useCallback((d: TacometroHistorial) => {
+    setData(d);
+    // Prellenar el editor con las etapas del API; si el avión aún tiene solo
+    // el arreglo legado de intervalos, se convierten en etapas sin nombre.
+    const desdeEtapas = (d.servicio_etapas ?? []).map((e) => nuevaFila(e));
+    const filas =
+      desdeEtapas.length > 0
+        ? desdeEtapas
+        : (d.servicio_intervalos ?? []).map((i) => nuevaFila({ intervalo_hr: i }));
+    setEtapas(filas);
+    setBase(String(d.servicio_horas_base ?? 0));
+    setPlanBase(String(d.planeador_horas_base ?? 0));
+    setPlanRef(String(d.planeador_taco_ref ?? 0));
+  }, []);
 
   const reload = useCallback(async () => {
     // No se hace setLoading(true) síncrono aquí: el estado inicial ya es `true`
     // y así la carga dentro del efecto no dispara render en cascada (lint).
     const res = await aircraftTacometrosAction(aircraftId);
-    if (res.ok && res.data) {
-      setData(res.data);
-      setIntervalosStr(res.data.servicio_intervalos.join(", "));
-      setBase(String(res.data.servicio_horas_base ?? 0));
-    }
+    if (res.ok && res.data) aplicarDatos(res.data);
     setLoading(false);
-  }, [aircraftId]);
+  }, [aircraftId, aplicarDatos]);
 
   useEffect(() => {
     let active = true;
     aircraftTacometrosAction(aircraftId).then((res) => {
       if (!active) return;
-      if (res.ok && res.data) {
-        setData(res.data);
-        setIntervalosStr(res.data.servicio_intervalos.join(", "));
-        setBase(String(res.data.servicio_horas_base ?? 0));
-      }
+      if (res.ok && res.data) aplicarDatos(res.data);
       setLoading(false);
     });
     return () => {
       active = false;
     };
-  }, [aircraftId]);
+  }, [aircraftId, aplicarDatos]);
 
-  const guardar = () => {
-    const parsed = intervalosStr
-      .split(/[,\s]+/)
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isFinite(n) && n > 0);
+  /**
+   * Valida el editor SIN descartar nada en silencio: cada fila inválida
+   * muestra su error y el guardado se detiene (el bug del input de intervalos
+   * que tiraba texto a la basura no vuelve).
+   */
+  const validar = (): { etapas: Array<{ intervalo_hr: number; nombre?: string; tareas?: string[] }>; base: number } | null => {
+    let valido = true;
+    const revisadas = etapas.map((e) => {
+      const limpio = e.intervalo.trim();
+      const n = Number(limpio);
+      let error: string | undefined;
+      if (limpio === "") error = "Captura el intervalo en horas";
+      else if (!Number.isFinite(n) || n <= 0) error = "Debe ser un número mayor a 0";
+      else if (e.nombre.trim().length > 80) error = "Nombre: máximo 80 caracteres";
+      else {
+        const tareas = e.tareas.split("\n").map((t) => t.trim()).filter(Boolean);
+        if (tareas.length > 40) error = "Máximo 40 tareas por etapa";
+        else if (tareas.some((t) => t.length > 120)) error = "Cada tarea: máximo 120 caracteres";
+      }
+      if (error) valido = false;
+      return { ...e, error };
+    });
+    setEtapas(revisadas);
+
+    const baseNum = Number(base.trim() === "" ? "x" : base);
+    if (!Number.isFinite(baseNum) || baseNum < 0) {
+      setBaseError("Captura un número mayor o igual a 0");
+      valido = false;
+    } else {
+      setBaseError(null);
+    }
+    if (!valido) return null;
+    return {
+      etapas: revisadas.map((e) => ({
+        intervalo_hr: Number(e.intervalo.trim()),
+        nombre: e.nombre.trim() || undefined,
+        tareas: e.tareas.split("\n").map((t) => t.trim()).filter(Boolean),
+      })),
+      base: baseNum,
+    };
+  };
+
+  const guardar = (confirmado = false) => {
+    const v = validar();
+    if (!v) return;
+    // Guardar con 0 etapas cuando el avión SÍ tenía programa = borrarlo:
+    // confirmación explícita (regla permanente: toda acción destructiva avisa).
+    const teniaPrograma =
+      (data?.servicio_etapas?.length ?? 0) > 0 ||
+      (data?.servicio_intervalos?.length ?? 0) > 0;
+    if (v.etapas.length === 0 && teniaPrograma && !confirmado) {
+      setConfirmVaciar(true);
+      return;
+    }
     startSaving(async () => {
-      const res = await updateServicioProgramaAction(aircraftId, {
-        servicio_intervalos: parsed,
-        servicio_horas_base: Number(base) || 0,
+      const res = await updateServicioEtapasAction(aircraftId, {
+        servicio_etapas: v.etapas,
+        servicio_horas_base: v.base,
       });
       if (res.ok) {
-        toast.success("Programa de servicio guardado");
+        toast.success(
+          v.etapas.length === 0
+            ? "Programa de servicio eliminado"
+            : "Programa de servicio guardado",
+        );
+        setConfirmVaciar(false);
         setEditorOpen(false);
+        void reload();
+      } else {
+        toast.error(res.error ?? "No se pudo guardar");
+      }
+    });
+  };
+
+  const guardarPlaneador = () => {
+    const b = Number(planBase.trim() === "" ? "x" : planBase);
+    const r = Number(planRef.trim() === "" ? "x" : planRef);
+    if (!Number.isFinite(b) || b < 0 || !Number.isFinite(r) || r < 0) {
+      setPlanError("Captura números mayores o iguales a 0 en ambos campos");
+      return;
+    }
+    setPlanError(null);
+    startSavingPlan(async () => {
+      const res = await updatePlaneadorBaseAction(aircraftId, {
+        planeador_horas_base: b,
+        planeador_taco_ref: r,
+      });
+      if (res.ok) {
+        toast.success("Base del planeador guardada");
+        setPlanOpen(false);
         void reload();
       } else {
         toast.error(res.error ?? "No se pudo guardar");
@@ -88,6 +219,10 @@ export function AircraftTacometrosCard({
 
   const prox = data?.proximo_servicio;
   const vencido = prox != null && prox.faltan <= 0;
+  const etapasLectura = data?.servicio_etapas ?? [];
+  const tienePrograma =
+    etapasLectura.length > 0 || (data?.servicio_intervalos?.length ?? 0) > 0;
+  const mostrarPlaneador = (data?.planeador_horas_base ?? 0) > 0;
 
   return (
     <Card className="lg:col-span-2">
@@ -109,21 +244,46 @@ export function AircraftTacometrosCard({
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Estatus */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div
+          className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
+            mostrarPlaneador ? "lg:grid-cols-4" : ""
+          }`}
+        >
           <Metric label="Horas actuales" value={data ? `${data.horas_actuales} h` : "—"} />
+          {mostrarPlaneador && (
+            <Metric
+              label="Tiempo total del planeador"
+              value={
+                data?.tiempo_total_planeador != null
+                  ? `${fmtDecimal(data.tiempo_total_planeador, 1)} h`
+                  : "—"
+              }
+              hint="Base histórica + lo volado"
+            />
+          )}
           <Metric
             label="Próximo servicio"
             value={prox ? `a las ${prox.a_las} h` : "Sin programa"}
+            hint={prox?.nombre ?? undefined}
           />
           <Metric
             label="Faltan"
             value={prox ? `${prox.faltan} h` : "—"}
             tone={prox ? (vencido ? "danger" : prox.faltan <= 10 ? "warn" : "ok") : undefined}
-            hint={prox ? `Servicio de ${prox.intervalo} h` : undefined}
+            hint={
+              prox
+                ? `Servicio de ${prox.intervalo} h${prox.nombre ? ` — ${prox.nombre}` : ""}`
+                : undefined
+            }
           />
         </div>
+        {prox && (prox.tareas?.length ?? 0) > 0 && (
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Incluye: {prox.tareas!.join(", ")}
+          </p>
+        )}
 
-        {/* Programa de servicio (editor colapsado tras "Editar programa") */}
+        {/* Programa de servicio por ETAPAS (editor colapsado tras "Editar programa") */}
         <div className="rounded-lg border border-border p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-medium">
@@ -142,49 +302,312 @@ export function AircraftTacometrosCard({
               />
             </Button>
           </div>
+
           {!editorOpen ? (
+            // Modo lectura: secuencia con nombre y tareas por etapa.
+            loading ? (
+              <p className="text-xs text-muted-foreground">Cargando…</p>
+            ) : !tienePrograma ? (
+              <p className="text-xs text-muted-foreground">
+                Sin programa de servicio: el avión NO se vigila por horas.
+                Captúralo con «Editar programa».
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {etapasLectura.length > 0 ? (
+                  etapasLectura.map((e) =>
+                    e.tareas.length > 0 ? (
+                      <details key={e.id} className="group text-xs">
+                        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-foreground">
+                          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                          <span className="font-mono font-medium">{e.intervalo_hr} h</span>
+                          {e.nombre && <span>· {e.nombre}</span>}
+                          <span className="text-muted-foreground">
+                            · {e.tareas.length} {e.tareas.length === 1 ? "tarea" : "tareas"}
+                          </span>
+                        </summary>
+                        <ul className="mt-1 ml-6 list-disc space-y-0.5 text-muted-foreground">
+                          {e.tareas.map((t, i) => (
+                            <li key={i}>{t}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : (
+                      <p key={e.id} className="flex items-center gap-1.5 pl-[18px] text-xs">
+                        <span className="font-mono font-medium">{e.intervalo_hr} h</span>
+                        {e.nombre && <span>· {e.nombre}</span>}
+                        <span className="text-muted-foreground">· sin tareas capturadas</span>
+                      </p>
+                    ),
+                  )
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Intervalos:{" "}
+                    <span className="font-mono">
+                      {(data?.servicio_intervalos ?? []).join(", ")}
+                    </span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Base <span className="font-mono">{data?.servicio_horas_base ?? 0} h</span>
+                </p>
+              </div>
+            )
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Cada etapa cuenta por su cuenta desde la base y manda el hito más
+                próximo (la chica nunca se salta; en hitos coincidentes las tareas
+                se juntan). Ej. Cessna: etapas de{" "}
+                <span className="font-mono">50, 100 y 200 h</span> con base 1700 →
+                servicios a 1750, 1800, 1850… Seneca/Kodiak: una etapa de{" "}
+                <span className="font-mono">100 h</span>.
+              </p>
+
+              <div className="space-y-2">
+                {etapas.map((e, i) => (
+                  <div key={e.key} className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <div className="w-28 shrink-0 space-y-1">
+                        <label className={labelCls} htmlFor={`${e.key}-int`}>
+                          Intervalo (hrs) <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                          id={`${e.key}-int`}
+                          className={`${inputCls} ${e.error ? "border-destructive" : ""}`}
+                          type="number"
+                          min={0.1}
+                          step="0.1"
+                          placeholder="100"
+                          value={e.intervalo}
+                          onChange={(ev) =>
+                            setEtapas((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, intervalo: ev.target.value, error: undefined } : x,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label className={labelCls} htmlFor={`${e.key}-nom`}>
+                          Nombre (opcional)
+                        </label>
+                        <input
+                          id={`${e.key}-nom`}
+                          className={inputCls}
+                          placeholder="Ej. Servicio mayor"
+                          maxLength={80}
+                          value={e.nombre}
+                          onChange={(ev) =>
+                            setEtapas((prev) =>
+                              prev.map((x, j) => (j === i ? { ...x, nombre: ev.target.value } : x)),
+                            )
+                          }
+                        />
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="mt-5 h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        title="Quitar etapa"
+                        aria-label="Quitar etapa"
+                        onClick={() =>
+                          setEtapas((prev) => prev.filter((_, j) => j !== i))
+                        }
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {e.error && (
+                      <p role="alert" className="text-xs text-destructive">
+                        {e.error}
+                      </p>
+                    )}
+                    <div className="space-y-1">
+                      <label className={labelCls} htmlFor={`${e.key}-tar`}>
+                        Tareas (una por línea)
+                      </label>
+                      <textarea
+                        id={`${e.key}-tar`}
+                        className={textareaCls}
+                        rows={3}
+                        placeholder={"Cambio de aceite y filtro\nRevisión de bujías\nLavado de inyectores"}
+                        value={e.tareas}
+                        onChange={(ev) =>
+                          setEtapas((prev) =>
+                            prev.map((x, j) => (j === i ? { ...x, tareas: ev.target.value } : x)),
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setEtapas((prev) => [...prev, nuevaFila()])}
+                >
+                  <PlusIcon className="h-3.5 w-3.5" />
+                  Agregar etapa
+                </Button>
+                <div className="w-40 space-y-1">
+                  <label className={labelCls} htmlFor="servicio-base">
+                    Horas base (Hobbs)
+                  </label>
+                  <input
+                    id="servicio-base"
+                    className={`${inputCls} ${baseError ? "border-destructive" : ""}`}
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={base}
+                    onChange={(e) => {
+                      setBase(e.target.value);
+                      setBaseError(null);
+                    }}
+                  />
+                  {baseError && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {baseError}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => guardar()} disabled={saving}>
+                  {saving ? "Guardando…" : "Guardar programa"}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Confirmación: guardar con 0 etapas borra el programa completo. */}
+        <Dialog open={confirmVaciar} onOpenChange={setConfirmVaciar}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Eliminar programa de servicio</DialogTitle>
+              <DialogDescription>
+                Se eliminará el programa de servicio y sus tareas. El avión
+                dejará de vigilarse por horas.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setConfirmVaciar(false)}
+                disabled={saving}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => guardar(true)}
+                disabled={saving}
+              >
+                {saving ? "Eliminando…" : "Eliminar programa"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Tiempo total del planeador (base histórica de bitácoras) */}
+        <div className="rounded-lg border border-border p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ClockIcon className="h-4 w-4" /> Tiempo total del planeador
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1"
+              onClick={() => setPlanOpen((v) => !v)}
+              aria-expanded={planOpen}
+            >
+              Editar base
+              <ChevronDownIcon
+                className={`h-3.5 w-3.5 transition-transform ${planOpen ? "rotate-180" : ""}`}
+              />
+            </Button>
+          </div>
+          {!planOpen ? (
             <p className="text-xs text-muted-foreground">
-              Intervalos:{" "}
-              <span className="font-mono">{intervalosStr || "sin programa"}</span> · base{" "}
-              <span className="font-mono">{base || 0} h</span>
+              {loading ? (
+                "Cargando…"
+              ) : mostrarPlaneador ? (
+                <>
+                  Base{" "}
+                  <span className="font-mono">
+                    {fmtDecimal(data?.planeador_horas_base, 1)} h
+                  </span>{" "}
+                  cuando el taco marcaba{" "}
+                  <span className="font-mono">{fmtDecimal(data?.planeador_taco_ref, 1)}</span>{" "}
+                  · total hoy{" "}
+                  <span className="font-mono">
+                    {fmtDecimal(data?.tiempo_total_planeador, 1)} h
+                  </span>
+                </>
+              ) : (
+                "Sin base histórica capturada: el tiempo total equivale al tacómetro."
+              )}
             </p>
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                Cada intervalo cuenta por su cuenta desde la base y manda el más
-                próximo (el chico nunca se salta). Ej. Cessna:{" "}
-                <span className="font-mono">50, 100, 200</span> con base 1700 →
-                servicios a 1750, 1800, 1850, 1900 (el de 1800 es de 100 h; el de
-                1900, de 200 h). Seneca/Kodiak: <span className="font-mono">100</span>.
+                Captura la base real del avión según sus bitácoras: p.ej. el
+                planeador llevaba 12,345.0 hrs cuando el tacómetro marcaba
+                4,198.9. Las horas siguen derivándose del tacómetro; esto solo
+                fija la base histórica.
               </p>
-              <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Intervalos (separados por coma)
+                  <label className={labelCls} htmlFor="plan-base">
+                    Horas totales del planeador
                   </label>
                   <input
-                    className={inputCls}
-                    value={intervalosStr}
-                    onChange={(e) => setIntervalosStr(e.target.value)}
-                    placeholder="50, 100, 200"
+                    id="plan-base"
+                    className={`${inputCls} ${planError ? "border-destructive" : ""}`}
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={planBase}
+                    onChange={(e) => {
+                      setPlanBase(e.target.value);
+                      setPlanError(null);
+                    }}
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Horas base (Hobbs)
+                  <label className={labelCls} htmlFor="plan-ref">
+                    Lectura del tacómetro en ese momento
                   </label>
                   <input
-                    className={inputCls}
+                    id="plan-ref"
+                    className={`${inputCls} ${planError ? "border-destructive" : ""}`}
                     type="number"
                     min={0}
-                    value={base}
-                    onChange={(e) => setBase(e.target.value)}
+                    step="0.1"
+                    value={planRef}
+                    onChange={(e) => {
+                      setPlanRef(e.target.value);
+                      setPlanError(null);
+                    }}
                   />
                 </div>
               </div>
+              {planError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {planError}
+                </p>
+              )}
               <div className="flex justify-end">
-                <Button size="sm" onClick={guardar} disabled={saving}>
-                  {saving ? "Guardando…" : "Guardar programa"}
+                <Button size="sm" onClick={guardarPlaneador} disabled={savingPlan}>
+                  {savingPlan ? "Guardando…" : "Guardar base"}
                 </Button>
               </div>
             </>

@@ -156,7 +156,7 @@ function PropellerDialog({
       if (isEdit) {
         payload = { ...values };
         if (!dirtyFields.horas_totales) delete payload.horas_totales;
-        if (!dirtyFields.turm) delete payload.turm;
+        if (!dirtyFields.turm_componente) delete payload.turm_componente;
         if (!dirtyFields.tbo_horas) delete payload.tbo_horas;
         // Campo vaciado a propósito → null para borrar el valor guardado
         // (el "" se descarta en la action y no borraría nada).
@@ -220,18 +220,19 @@ function PropellerDialog({
             </Field>
             <Field
               label="TURM"
-              hint="tacómetro del avión en el últ. overhaul"
-              error={errors.turm?.message}
+              hint="horas del componente en su último overhaul"
+              error={errors.turm_componente?.message}
             >
-              <Input type="number" step="0.01" min={0} {...register("turm")} />
+              <Input type="number" step="0.01" min={0} {...register("turm_componente")} />
             </Field>
             <Field label="TBO" hint="horas (opcional)" error={errors.tbo_horas?.message}>
               <Input type="number" step="0.01" min={1} {...register("tbo_horas")} />
             </Field>
           </div>
           <p className="text-xs text-muted-foreground -mt-2">
-            Solo captura horas si estás corrigiendo la base; las horas vivas se calculan solas con
-            el tacómetro.
+            Como en la bitácora física: T.T. (horas totales) y T.U.R.M. del componente. Si nunca ha
+            tenido overhaul, déjalo vacío. Solo captura horas si estás corrigiendo la base; las
+            horas vivas se calculan solas con el tacómetro.
           </p>
           <Field
             label="Vence overhaul (fecha)"
@@ -266,7 +267,7 @@ function defaults(p?: Propeller): PropellerFormValues {
       fabricante: "",
       modelo: "",
       horas_totales: "",
-      turm: "",
+      turm_componente: "",
       tbo_horas: "",
       tbo_fecha: "",
       notas: "",
@@ -278,7 +279,9 @@ function defaults(p?: Propeller): PropellerFormValues {
     fabricante: p.fabricante ?? "",
     modelo: p.modelo ?? "",
     horas_totales: p.horas_totales ?? "",
-    turm: p.turm ?? "",
+    // Prellena el TURM en marco del componente (derivado del snapshot). Solo
+    // se manda si el usuario lo cambia (defensa dirty-fields de arriba).
+    turm_componente: p.turm_componente ?? "",
     tbo_horas: p.tbo_horas ?? "",
     tbo_fecha: p.tbo_fecha ?? "",
     notas: p.notas ?? "",

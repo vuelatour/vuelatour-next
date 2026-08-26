@@ -42,6 +42,8 @@ export interface AircraftMetricsDetalle extends AircraftMetrics {
   };
   /** Horómetro (Hobbs) actual de la aeronave. */
   horas_actuales?: number | null;
+  /** Tiempo TOTAL del planeador (base histórica + delta del taco). */
+  tiempo_total_planeador?: number | null;
   /** true si la aeronave tiene un vuelo EN_VUELO en este momento. */
   en_vuelo?: boolean;
   /** Próximo servicio del programa por horas. */
@@ -49,6 +51,8 @@ export interface AircraftMetricsDetalle extends AircraftMetrics {
     titulo: string;
     horas_objetivo: number;
     faltan_hr: number;
+    /** Checklist de la(s) etapa(s) que caen en ese hito. */
+    tareas?: string[];
   } | null;
   /** false = el avión NO tiene programa de servicio capturado (distinto de
    *  "sin datos"): el KPI lo dice y pide configurarlo. */
