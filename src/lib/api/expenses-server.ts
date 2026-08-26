@@ -1,12 +1,35 @@
 import { apiServer } from "./server";
 import type { GastoListResponse } from "@/types/expenses";
 
-/** Cargas de combustible (gastos categoría GAS). */
-export function listFuelLoads() {
-  return apiServer<GastoListResponse>("/v1/expenses", {
-    searchParams: { categoria: "GAS", limit: 200 },
+export interface ListFuelLoadsQuery {
+  /** Rango sobre fecha_gasto (DATE), normalmente el mes elegido. */
+  desde?: string;
+  hasta?: string;
+  aeronave_id?: string;
+}
+
+/**
+ * Cargas de combustible (gastos categoría GAS) del periodo, SIN cap:
+ * pagina con offset hasta cubrir `count` (patrón anti-cap-200) para que el
+ * resumen mensual por avión nunca sume un mes incompleto.
+ */
+export async function listFuelLoads(query: ListFuelLoadsQuery = {}) {
+  const limit = 200;
+  const base = { categoria: "GAS", limit, ...query };
+  const first = await apiServer<GastoListResponse>("/v1/expenses", {
+    searchParams: { ...base, offset: 0 },
     cache: "no-store",
   });
+  const data = [...first.data];
+  while (data.length < first.count) {
+    const page = await apiServer<GastoListResponse>("/v1/expenses", {
+      searchParams: { ...base, offset: data.length },
+      cache: "no-store",
+    });
+    if (page.data.length === 0) break; // defensa anti-bucle si count cambió
+    data.push(...page.data);
+  }
+  return { data, count: first.count };
 }
 
 export interface ListGastosQuery {

@@ -25,9 +25,10 @@ const RAZON_LABEL: Record<string, string> = {
 };
 
 /**
- * Liga una carga de combustible a su vuelo: sugiere por matrícula + horario
- * (carga en ruta → vuelo en curso; previno → siguiente salida) y deja elegir
- * entre los candidatos cercanos.
+ * Liga una carga de combustible a su vuelo (OPCIONAL: el combustible se
+ * controla por avión y mes; la liga solo alimenta el reporte por vuelo).
+ * Sugiere por matrícula + horario (carga en ruta → vuelo en curso; previno →
+ * siguiente salida) y deja elegir entre los candidatos cercanos.
  */
 export function FuelAssignFlight({
   gastoId,
@@ -49,7 +50,7 @@ export function FuelAssignFlight({
 
   const abrir = async () => {
     if (!aeronaveId) {
-      toast.error("La carga no tiene aeronave; asígnala primero en Gastos.");
+      toast.error("La carga no tiene avión; asígnalo primero con \"Asignar avión\".");
       return;
     }
     setOpen(true);
@@ -79,13 +80,14 @@ export function FuelAssignFlight({
   return (
     <>
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         onClick={abrir}
-        className="h-7 gap-1 px-2 text-xs"
+        title="Opcional: solo alimenta el reporte por vuelo"
+        className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
       >
         <LinkIcon className="h-3 w-3" />
-        {vueloActual ? "Reasignar" : "Asignar vuelo"}
+        {vueloActual ? "Reasignar" : "Ligar a vuelo"}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -93,8 +95,9 @@ export function FuelAssignFlight({
           <DialogHeader>
             <DialogTitle>¿A qué vuelo corresponde esta carga?</DialogTitle>
             <DialogDescription>
-              Sugerido por matrícula y horario del ticket. La liga aplica al
-              vuelo y a su cotización.
+              Liga opcional (informativa, para el reporte por vuelo). Sugerido
+              por matrícula y horario del ticket; aplica al vuelo y a su
+              cotización.
             </DialogDescription>
           </DialogHeader>
           {loading ? (

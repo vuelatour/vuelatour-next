@@ -472,6 +472,28 @@ export async function aplicarAsignacionesAction(
   return { ok: true, data: { aplicados, fallidos } };
 }
 
+/**
+ * Asigna la aeronave de una carga de combustible. Es LA acción central del
+ * modelo por avión/mes: sin avión, la carga no entra al Balance y bloquea el
+ * pre-cierre. (Quitar el avión a un GAS lo rechaza el API con 400.)
+ */
+export async function assignAeronaveGastoAction(
+  gastoId: string,
+  aeronaveId: string,
+): Promise<ActionResult<Gasto>> {
+  try {
+    const data = await apiServer<Gasto>(`/v1/expenses/${gastoId}`, {
+      method: "PATCH",
+      body: { aeronave_id: aeronaveId },
+    });
+    revalidatePath("/admin/combustibles");
+    revalidatePath("/admin/expenses");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Liga (o desliga) una carga de combustible a un vuelo/cotización. */
 export async function assignVueloGastoAction(
   gastoId: string,
