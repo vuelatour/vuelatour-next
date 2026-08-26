@@ -64,3 +64,32 @@ export function getAircraftMetrics(id: string) {
     cache: "no-store",
   });
 }
+
+/** Un mes del detalle de combustible del avión (moneda NATIVA, sin convertir). */
+export interface CombustibleMes {
+  mes: string; // YYYY-MM
+  cargas: number;
+  litros: number;
+  /** Cargas del mes capturadas sin litros (el total de litros queda corto). */
+  sin_litros: number;
+  mxn: number;
+  usd: number;
+}
+
+export interface CombustibleMensualResponse {
+  desde: string;
+  hasta: string;
+  meses: CombustibleMes[];
+}
+
+/**
+ * Gasto de combustible (GAS) del avión por mes — últimos 12 meses. Mismo
+ * filtro que la hoja "combustible" del balance: los totales cuadran con el
+ * Excel. Gateado a roles financieros (el expediente lo pide best-effort).
+ */
+export function getAircraftCombustibleMensual(id: string) {
+  return apiServer<CombustibleMensualResponse>(
+    `/v1/aircraft/${id}/combustible-mensual`,
+    { cache: "no-store" },
+  );
+}

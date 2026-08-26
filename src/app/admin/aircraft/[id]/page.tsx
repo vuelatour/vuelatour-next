@@ -36,6 +36,7 @@ import {
 } from "@/components/admin/aircraft/aircraft-metrics-card";
 import { AircraftKpiStrip } from "@/components/admin/aircraft/aircraft-kpi-strip";
 import { AircraftTacometrosCard } from "@/components/admin/aircraft/aircraft-tacometros-card";
+import { AircraftFuelCard } from "@/components/admin/aircraft/aircraft-fuel-card";
 import { AircraftSquawksCard } from "@/components/admin/aircraft/aircraft-squawks-card";
 import {
   ComponentActions,
@@ -44,10 +45,12 @@ import {
 import { ErrorState } from "@/components/admin/error-state";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import {
+  getAircraftCombustibleMensual,
   getAircraftMetrics,
   getAircraftSnapshot,
   listAircraft,
   type AircraftMetricsDetalle,
+  type CombustibleMensualResponse,
 } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { isApiError } from "@/lib/api/errors";
@@ -110,6 +113,18 @@ export default async function AircraftDetailPage({ params }: PageProps) {
     metrics = await getAircraftMetrics(id);
   } catch (err) {
     if (!(isApiError(err) && err.status === 403)) metricsError = true;
+  }
+
+  // Detalle del gasto de combustible por mes (regla 26-ago: el gas es del
+  // avión, no del vuelo). Mismo gate de roles financieros que /metrics:
+  // 403 = rol sin permiso → la card no se pinta; cualquier otra falla se
+  // pinta con ErrorState (nunca disfrazar una caída de "sin datos").
+  let combustible: CombustibleMensualResponse | null = null;
+  let combustibleError = false;
+  try {
+    combustible = await getAircraftCombustibleMensual(id);
+  } catch (err) {
+    if (!(isApiError(err) && err.status === 403)) combustibleError = true;
   }
 
   // Aptitud con respaldo del snapshot: /metrics está gateado por roles
@@ -189,23 +204,36 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           metrics && <AircraftMetricsCard metrics={metrics} aircraftId={aircraft.id} />
         )}
 
-        {/* 2. Tacómetros: histórico por aeronave + programa de servicio por etapas */}
+        {/* 2. Combustible por mes: detalle del gasto GAS del avión (cuadra con
+            la hoja "combustible" del Balance Excel) */}
+        {combustibleError ? (
+          <ErrorState
+            title="No se pudo cargar el combustible por mes"
+            description="El resto del expediente sigue disponible. Recarga la página; si el problema persiste, avisa al administrador."
+          />
+        ) : (
+          combustible && (
+            <AircraftFuelCard aircraftId={aircraft.id} data={combustible} />
+          )
+        )}
+
+        {/* 3. Tacómetros: histórico por aeronave + programa de servicio por etapas */}
         <AircraftTacometrosCard
           aircraftId={aircraft.id}
           matricula={aircraft.matricula}
           numMotores={aircraft.num_motores}
         />
 
-        {/* 3. Bitácora de discrepancias (squawks) */}
+        {/* 4. Bitácora de discrepancias (squawks) */}
         <AircraftSquawksCard aircraftId={aircraft.id} discrepancias={aircraft.discrepancias} />
 
-        {/* 4. Viajes: historial de vuelos de esta aeronave */}
+        {/* 5. Viajes: historial de vuelos de esta aeronave */}
         <AircraftFlightsCard aircraftId={aircraft.id} />
 
-        {/* 5. Ingeniería aeronáutica: mantenimientos, permisos, servicios próximos */}
+        {/* 6. Ingeniería aeronáutica: mantenimientos, permisos, servicios próximos */}
         <AircraftEngineering aircraftId={aircraft.id} />
 
-        {/* 6. Especificaciones */}
+        {/* 7. Especificaciones */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -256,14 +284,14 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* 7. Imágenes */}
+        {/* 8. Imágenes */}
         <AircraftImagesCard
           aircraftId={aircraft.id}
           matricula={aircraft.matricula}
           imagenes={aircraft.imagenes}
         />
 
-        {/* 8-9. Propietarios y Seguros: cards angostas, emparejadas en desktop */}
+        {/* 9-10. Propietarios y Seguros: cards angostas, emparejadas en desktop */}
         <div className="grid gap-6 lg:grid-cols-2 [&>*]:!col-span-1">
           <AircraftOwnersCard
             aircraftId={aircraft.id}
@@ -273,7 +301,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           <AircraftInsuranceCard aircraftId={aircraft.id} seguros={aircraft.seguros} />
         </div>
 
-        {/* 10. Motores */}
+        {/* 11. Motores */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
             <div className="space-y-1">
@@ -304,7 +332,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* 11. Hélices */}
+        {/* 12. Hélices */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
             <div className="space-y-1">
@@ -334,7 +362,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* 12. Reservas overhaul (resumen) */}
+        {/* 13. Reservas overhaul (resumen) */}
         {aircraft.overhaul_reserves.length > 0 && (
           <Card className="lg:col-span-2">
             <CardHeader>
