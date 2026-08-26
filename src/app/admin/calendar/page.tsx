@@ -54,7 +54,12 @@ export default async function CalendarPage({
   );
 
   const [{ events }, pilotsRes] = await Promise.all([
-    listCalendar({ from: monthStart.toISOString(), to: monthEnd.toISOString() }),
+    listCalendar({
+      from: monthStart.toISOString(),
+      to: monthEnd.toISOString(),
+      // Los servicios con fecha confirmada también son agenda de la flota.
+      incluir_mantenimientos: true,
+    }),
     listPilots({ estado: "ACTIVO", limit: 200 }).catch(() => ({ data: [] })),
   ]);
   const pilots = (pilotsRes.data as { id: string; nombre: string }[]).map((p) => ({

@@ -1,11 +1,14 @@
 export interface CalendarEvent {
   id: string;
-  /** "descanso" = descanso de piloto; "evento" = no-vuelo (lavado, trámite). */
-  tipo_evento?: "vuelo" | "descanso" | "evento";
+  /** "descanso" = descanso de piloto; "evento" = no-vuelo (lavado, trámite);
+   *  "mantenimiento" = servicio con fecha (PROGRAMADO ámbar / EN_TALLER rojo). */
+  tipo_evento?: "vuelo" | "descanso" | "evento" | "mantenimiento";
   /** Id del registro piloto_descanso (para quitarlo desde el calendario). */
   descanso_id?: string;
   /** Id del evento_flota (para quitarlo desde el calendario). */
   evento_id?: string;
+  /** Id del mantenimiento (tipo_evento "mantenimiento"). */
+  mantenimiento_id?: string;
   /** Título del evento NO-vuelo. */
   titulo?: string | null;
   notas?: string | null;

@@ -8,6 +8,8 @@ export interface CalendarQuery {
   piloto_id?: string;
   incluir_cancelados?: boolean;
   solo_externos?: boolean;
+  /** Mantenimientos con fecha como eventos (opt-in del API, skew-safe). */
+  incluir_mantenimientos?: boolean;
 }
 
 export function listCalendar(query: CalendarQuery = {}) {

@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { fmtDecimal } from "@/lib/format";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -185,11 +186,31 @@ function EngineDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar motor" : "Agregar motor"}</DialogTitle>
           <DialogDescription>
-            El motor es una entidad propia: sus horas totales son lineales y viajan con él si se
-            trasplanta.
+            El motor es una entidad propia: sus horas suben solas con cada vuelo y viajan con él
+            si se trasplanta a otro avión.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
+          {isEdit && engine?.horas_actuales != null && (
+            /* La duda #1 de la oficina: "¿estos números se quedan fijos?" —
+               NO: aquí se muestra la vida VIVA (base + volado desde el ancla)
+               para que se vea que el sistema suma solo con cada vuelo. */
+            <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs space-y-1">
+              <p className="font-medium text-green-700 dark:text-green-400">
+                Hoy lleva {fmtDecimal(engine.horas_actuales)} h de vida — y suben solas con cada
+                vuelo.
+              </p>
+              <p className="text-muted-foreground">
+                = {fmtDecimal(Number(engine.horas_totales))} h de base (la foto de la bitácora)
+                {engine.aeronave_horas_ref != null && engine.hobbs_avion != null
+                  ? ` + lo volado desde el tacómetro ${fmtDecimal(engine.aeronave_horas_ref)} (el avión va en ${fmtDecimal(engine.hobbs_avion)})`
+                  : " + lo volado desde el último ajuste"}
+                . Si lo trasladas a otro avión, sus horas viajan con él y siguen
+                sumando sin perderse.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <Field label="Posición" required error={errors.posicion?.message}>
               <SearchableSelect
@@ -246,9 +267,10 @@ function EngineDialog({
             </Field>
           </div>
           <p className="text-xs text-muted-foreground -mt-2">
-            Como en la bitácora física: T.T. (horas totales) y T.U.R.M. del componente. Si nunca ha
-            tenido overhaul, déjalo vacío. Solo captura horas si estás corrigiendo la base; las
-            horas vivas se calculan solas con el tacómetro.
+            Estos campos son la FOTO de la bitácora al día del ajuste — no se quedan fijos: desde
+            ahí el sistema sigue sumando solo con el tacómetro de cada vuelo. T.T. = horas totales
+            y T.U.R.M. del componente, como en la bitácora física (sin overhaul, deja TURM vacío).
+            Toca las horas SOLO para corregir la base.
           </p>
           <Field
             label="Vence overhaul (fecha)"

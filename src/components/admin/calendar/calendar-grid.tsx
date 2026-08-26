@@ -143,6 +143,20 @@ function eventHref(ev: CalendarEvent): string {
 }
 
 function EventChip({ ev }: { ev: CalendarEvent }) {
+  // Mantenimiento con fecha (PROGRAMADO ámbar / EN_TALLER rojo): linkea al
+  // expediente del avión, donde vive la card de Mantenimientos.
+  if (ev.tipo_evento === "mantenimiento") {
+    return (
+      <Link
+        href={ev.aeronave_id ? `/admin/aircraft/${ev.aeronave_id}` : "/admin/aircraft"}
+        title={ev.title}
+        className="block rounded px-1.5 py-1 text-[11px] leading-tight truncate hover:opacity-90 transition-opacity"
+        style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
+      >
+        🔧 {ev.aeronave_matricula ?? ""} {ev.titulo ?? "Servicio"}
+      </Link>
+    );
+  }
   // Evento NO-vuelo (lavado, trámite, visita): chip sin link a vuelo.
   if (ev.tipo_evento === "evento") {
     return (
@@ -184,6 +198,23 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
 }
 
 function DayEvent({ ev }: { ev: CalendarEvent }) {
+  if (ev.tipo_evento === "mantenimiento") {
+    return (
+      <Link
+        href={ev.aeronave_id ? `/admin/aircraft/${ev.aeronave_id}` : "/admin/aircraft"}
+        className="block rounded-lg border border-border p-2.5 hover:border-brand-600/40 hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+          <span className="font-medium text-sm truncate">
+            🔧 {ev.aeronave_matricula ? `${ev.aeronave_matricula} · ` : ""}
+            {ev.titulo ?? "Servicio"}
+            {ev.estado === "EN_TALLER" ? " · en taller" : ""}
+          </span>
+        </div>
+      </Link>
+    );
+  }
   if (ev.tipo_evento === "evento") {
     return (
       <div className="rounded-lg border border-border p-2.5">
