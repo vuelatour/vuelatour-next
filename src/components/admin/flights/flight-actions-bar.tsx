@@ -115,6 +115,13 @@ export function FlightActionsBar({
   const canCubrirExterno =
     flight.estado !== "CANCELADO" && flight.estado !== "COMPLETADO";
 
+  // Borrado DEFINITIVO (ADMIN + CANCELADO): vive en FlightDangerActions,
+  // pero el early-return del bar debe conocerlo — sin esto, en un vuelo
+  // CANCELADO todas las banderas quedan false y el bar entero devolvía null,
+  // escondiendo el botón de purga del expediente (mismo bug que ya se corrigió
+  // DENTRO de FlightDangerActions, un nivel arriba).
+  const purgable = esAdmin && flight.estado === "CANCELADO";
+
   const missingAssignment =
     !flight.es_externo && (!flight.aeronave_id || !flight.piloto_id);
 
@@ -144,7 +151,8 @@ export function FlightActionsBar({
     });
   };
 
-  if (!canAssign && !canStart && !canComplete && !canEditMeta) return null;
+  if (!canAssign && !canStart && !canComplete && !canEditMeta && !purgable)
+    return null;
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
