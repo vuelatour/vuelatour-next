@@ -245,6 +245,10 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
               <Field label="Velocidad crucero" value={`${fmtDecimal(aircraft.velocidad_crucero_kts, 0)} kts`} />
               <Field label="Motores" value={String(aircraft.num_motores)} />
+              <Field
+                label="Motor (HP)"
+                value={aircraft.motor_hp != null ? `${aircraft.motor_hp} HP` : "—"}
+              />
               <Field label="Asientos" value={String(aircraft.asientos)} />
               <Field label="Base" value={aircraft.ubicacion_base} />
               <Field label="Tarifa público" value={`${fmtUsd(aircraft.tarifa_hora_pub_usd)} / hr`} />
@@ -276,6 +280,31 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                 </div>
               )}
             </dl>
+            {/* Ficha comercial del PDF de cotización: la tira que ve el
+                cliente bajo las fotos del avión. Se ajusta con «Editar» →
+                Características (una por línea). */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <dt className="text-muted-foreground text-xs">
+                Características (PDF de cotización) — se editan con «Editar»
+              </dt>
+              {aircraft.caracteristicas && aircraft.caracteristicas.length > 0 ? (
+                <dd className="mt-1.5 flex flex-wrap gap-1.5">
+                  {aircraft.caracteristicas.map((c) => (
+                    <span
+                      key={c}
+                      className="rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </dd>
+              ) : (
+                <dd className="mt-1 text-xs text-muted-foreground">
+                  Sin capturar: la hoja del avión del PDF sale sin la tira de
+                  características.
+                </dd>
+              )}
+            </div>
             {aircraft.notas && (
               <p className="mt-4 pt-4 border-t border-border text-xs text-muted-foreground">
                 {aircraft.notas}
