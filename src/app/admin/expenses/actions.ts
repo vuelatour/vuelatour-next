@@ -44,6 +44,7 @@ export async function createGastoAction(raw: unknown): Promise<ActionResult<Gast
     });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     return { ok: true, data: created };
   } catch (err) {
     return fail(err);
@@ -160,6 +161,7 @@ export async function generarPistasAction(
     }>("/v1/expenses/pistas/generar", { method: "POST", body: { items } });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -279,6 +281,7 @@ export async function confirmCargaCombustiblesAction(
     revalidatePath("/admin/combustibles");
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -295,6 +298,7 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
     });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     revalidatePath("/admin/flights", "layout");
     return { ok: true, data: updated };
   } catch (err) {
@@ -347,6 +351,7 @@ export async function dismissDuplicadoAction(id: string): Promise<ActionResult<G
     });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     return { ok: true, data: updated };
   } catch (err) {
     return fail(err);
@@ -513,6 +518,7 @@ export async function assignVueloGastoAction(
     revalidatePath("/admin/combustibles");
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     revalidatePath("/admin/flights", "layout");
     return { ok: true, data };
   } catch (err) {
@@ -525,6 +531,7 @@ export async function deleteGastoAction(id: string): Promise<ActionResult> {
     await apiServer(`/v1/expenses/${id}`, { method: "DELETE" });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
+    revalidatePath("/admin/gastos-personales");
     revalidatePath("/admin/flights", "layout");
     return { ok: true };
   } catch (err) {

@@ -50,7 +50,7 @@ export function ExpensesTable({
         header: "Categoría",
         cell: (g) => (
           <span className="inline-flex items-center gap-1.5">
-            {g.categoria}
+            {g.categoria === "PERSONAL_DUENO" ? "Personal dueño" : g.categoria}
             {g.duplicado_sospechado && (
               <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                 Duplicado?
@@ -215,6 +215,9 @@ export function ExpensesTable({
       searchText={(g) =>
         [
           g.categoria,
+          // El label mostrado también se indexa ("personal dueño" con espacio
+          // no es substring de PERSONAL_DUENO).
+          g.categoria === "PERSONAL_DUENO" ? "Personal dueño" : "",
           g.proveedor?.nombre ?? "",
           g.aeronave?.matricula ?? "",
           g.lugar ?? "",

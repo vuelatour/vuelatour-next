@@ -76,6 +76,14 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
       },
       {
+        // Gastos PERSONALES del dueño (PERSONAL_DUENO): dinero personal, no
+        // de la empresa — fuera de balances/reparto/cierre. Sin FACTURACION.
+        label: "Gastos personales",
+        href: "/admin/gastos-personales",
+        icon: WalletIcon,
+        roles: ["ADMIN", "COORDINADOR"],
+      },
+      {
         label: "Combustibles",
         href: "/admin/combustibles",
         icon: BeakerIcon,

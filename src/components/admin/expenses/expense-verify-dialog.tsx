@@ -46,6 +46,9 @@ const CATEGORIAS = [
   ].map((c) => ({ value: c, label: c })),
   { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
   { value: "INDIRECTO", label: "Indirecto (sin vuelo)" },
+  // El API exige sin vuelo y sin avión para esta categoría (400 con mensaje
+  // claro si el gasto los tiene: quitarlos primero).
+  { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
   ...["FIJO", "OTRO"].map((c) => ({ value: c, label: c })),
 ];
 
@@ -355,11 +358,25 @@ export function ExpenseVerifyDialog({
       ) {
         delete (payload as { estatus_facturacion?: unknown }).estatus_facturacion;
       }
+      // Reclasificar a PERSONAL del dueño: desligar vuelo/avión/escala en el
+      // MISMO PATCH (null explícito sobrevive a stripEmpty; "" se tiraría y
+      // el candado del API rechazaría el estado efectivo con los enlaces
+      // viejos vivos).
+      if (values.categoria === "PERSONAL_DUENO") {
+        payload.aeronave_id = null;
+        payload.vuelo_id = null;
+        payload.escala_id = null;
+      }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
         // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
         // desligarlo junto con el resto de la verificación.
-        if (vueloSel !== (gasto.vuelo_id ?? "")) {
+        // Con PERSONAL_DUENO el PATCH ya desligó el vuelo: la segunda
+        // llamada re-ligaría o duplicaría la escritura.
+        if (
+          values.categoria !== "PERSONAL_DUENO" &&
+          vueloSel !== (gasto.vuelo_id ?? "")
+        ) {
           const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
           if (!link.ok) toast.error("Gasto guardado, pero no se pudo ligar el vuelo.");
         }
@@ -651,7 +668,16 @@ export function ExpenseVerifyDialog({
               <SearchableSelect
                 options={CATEGORIAS}
                 value={watch("categoria")}
-                onChange={(v) => setValue("categoria", v)}
+                onChange={(v) => {
+                  setValue("categoria", v);
+                  // PERSONAL del dueño: sin vuelo, avión ni escala (candado
+                  // del API) — se limpian aquí y el submit los DESLIGA con
+                  // null explícito en el mismo PATCH.
+                  if (v === "PERSONAL_DUENO") {
+                    setValue("aeronave_id", "");
+                    setVueloSel("");
+                  }
+                }}
                 placeholder="Categoría"
               />
             </Field>

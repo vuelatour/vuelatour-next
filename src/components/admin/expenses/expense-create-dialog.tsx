@@ -62,6 +62,10 @@ const CATEGORIAS = [
   // Gasto de la operación que NO pertenece a un vuelo (servicios,
   // mantenimientos, honorarios — hoja "gastos indirectos" del equipo).
   { value: "INDIRECTO", label: "Gasto indirecto (sin vuelo)" },
+  // Gasto PERSONAL del dueño: lo captura el personal pero NO es de la
+  // empresa ni de los aviones (fuera de balances/reparto/pre-cierre);
+  // seguimiento en la pantalla Gastos personales.
+  { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
   { value: "OTRO", label: "OTRO" },
 ];
 
@@ -197,7 +201,14 @@ export function ExpenseCreateDialog({
       setValue("fecha_gasto", ai.fecha);
       llenado.push(ai.fecha);
     }
-    if (ai.categoria_sugerida && CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)) {
+    // La categoría prefijada por la pantalla (Gastos personales, pistas)
+    // MANDA sobre la sugerencia de la IA: pisarla convertiría un gasto
+    // personal del dueño en gasto de empresa en silencio.
+    if (
+      !defaultCategoria &&
+      ai.categoria_sugerida &&
+      CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)
+    ) {
       setValue("categoria", ai.categoria_sugerida);
       llenado.push(ai.categoria_sugerida);
     }
@@ -226,8 +237,14 @@ export function ExpenseCreateDialog({
         llenado.push(match.nombre);
       }
     }
-    // Matrícula leída → avión (solo si el vuelo no lo fijó ya).
-    if (ai.matricula && !watch("aeronave_id")) {
+    // Matrícula leída → avión (solo si el vuelo no lo fijó ya). JAMÁS a un
+    // gasto personal del dueño: el campo Avión está oculto y el valor
+    // invisible haría fallar el guardado sin forma de corregirlo.
+    if (
+      ai.matricula &&
+      !watch("aeronave_id") &&
+      watch("categoria") !== "PERSONAL_DUENO"
+    ) {
       const av = aircraft.find(
         (a) => a.matricula.replace(/-/g, "") === ai.matricula!.replace(/-/g, ""),
       );
@@ -326,6 +343,12 @@ export function ExpenseCreateDialog({
         return;
       }
       const totalPagado = Math.round((ticket + propina) * 100) / 100;
+      // Cinturón: un PERSONAL del dueño jamás manda vuelo/avión aunque algún
+      // valor viejo (elegido antes de cambiar la categoría) siga en el form.
+      if (values.categoria === "PERSONAL_DUENO") {
+        values.vuelo_id = "";
+        values.aeronave_id = "";
+      }
       // Primero el archivo: si la subida falla, no se crea el gasto a medias.
       let fotoPath = "";
       if (factura) {
@@ -633,7 +656,12 @@ export function ExpenseCreateDialog({
                   // la opción solo existe en el alta global.
                   options={
                     defaultVueloId
-                      ? CATEGORIAS.filter((c) => c.value !== "INDIRECTO")
+                      ? CATEGORIAS.filter(
+                          (c) =>
+                            c.value !== "INDIRECTO" &&
+                            // Un gasto DEL VUELO jamás es personal del dueño.
+                            c.value !== "PERSONAL_DUENO",
+                        )
                       : CATEGORIAS
                   }
                   value={watch("categoria")}
@@ -642,6 +670,13 @@ export function ExpenseCreateDialog({
                     // INDIRECTO = sin vuelo: se limpia el enlace si lo había.
                     if (v === "INDIRECTO" && watch("vuelo_id")) {
                       setValue("vuelo_id", "");
+                      setComoPiloto(false);
+                    }
+                    // PERSONAL del dueño = sin vuelo NI avión (el API lo
+                    // exige): se limpian ambos enlaces.
+                    if (v === "PERSONAL_DUENO") {
+                      if (watch("vuelo_id")) setValue("vuelo_id", "");
+                      if (watch("aeronave_id")) setValue("aeronave_id", "");
                       setComoPiloto(false);
                     }
                   }}
@@ -673,7 +708,17 @@ export function ExpenseCreateDialog({
                 su tratamiento se definirá con el equipo.
               </p>
             )}
-            {!defaultVueloId && watch("categoria") !== "INDIRECTO" && (
+            {!defaultVueloId && watch("categoria") === "PERSONAL_DUENO" && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Gasto <span className="font-medium">personal del dueño</span>:
+                no es de la empresa ni de los aviones — no entra a balances,
+                reparto ni cierre. Su seguimiento vive en la pantalla{" "}
+                <span className="font-medium">Gastos personales</span>.
+              </p>
+            )}
+            {!defaultVueloId &&
+              watch("categoria") !== "INDIRECTO" &&
+              watch("categoria") !== "PERSONAL_DUENO" && (
               <Field
                 label="Vuelo"
                 hint="Ligado al vuelo entra a su reporte y resta en el reparto; elige por folio, matrícula o ruta (±15 días de la fecha)."
@@ -739,7 +784,13 @@ export function ExpenseCreateDialog({
               );
             })()}
 
-            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+            <div
+              className={`grid gap-3 [&>*]:min-w-0 ${
+                watch("categoria") === "PERSONAL_DUENO"
+                  ? "grid-cols-1"
+                  : "grid-cols-2"
+              }`}
+            >
               <Field label="Medio de pago">
                 <SearchableSelect
                   options={MEDIOS}
@@ -748,14 +799,16 @@ export function ExpenseCreateDialog({
                   placeholder="Medio"
                 />
               </Field>
-              <Field label="Avión">
-                <SearchableSelect
-                  options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
-                  value={watch("aeronave_id")}
-                  onChange={(v) => setValue("aeronave_id", v)}
-                  placeholder="Sin asignar"
-                />
-              </Field>
+              {watch("categoria") !== "PERSONAL_DUENO" && (
+                <Field label="Avión">
+                  <SearchableSelect
+                    options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
+                    value={watch("aeronave_id")}
+                    onChange={(v) => setValue("aeronave_id", v)}
+                    placeholder="Sin asignar"
+                  />
+                </Field>
+              )}
             </div>
 
             <Field label="Proveedor">

@@ -16,6 +16,10 @@ export const CategoriaEnum = z.enum([
   // Gasto de la operación SIN vuelo (avión opcional). Por ahora fuera del
   // reparto y de la bandeja de pendientes (tratamiento por decidir).
   "INDIRECTO",
+  // Gasto PERSONAL del dueño: no es de la empresa ni de los aviones —
+  // SIEMPRE sin vuelo y sin avión (el API lo exige); seguimiento en la
+  // pantalla Gastos personales.
+  "PERSONAL_DUENO",
   "OTRO",
 ]);
 
@@ -68,7 +72,13 @@ export const GastoVerifySchema = z.object({
   medio_pago: MedioPagoEnum.optional(),
   estatus_comprobante: EstatusEnum.optional(),
   estatus_facturacion: FacturacionEnum.optional(),
-  aeronave_id: z.string().uuid().optional().or(z.literal("")),
+  // null explícito = DESLIGAR (sobrevive a stripEmpty; "" se descarta).
+  // Lo usa la reclasificación a PERSONAL_DUENO: quitar avión/vuelo/escala
+  // en el MISMO PATCH que cambia la categoría (el candado del API valida el
+  // estado efectivo — por separado rechazaría el orden).
+  aeronave_id: z.string().uuid().nullable().optional().or(z.literal("")),
+  vuelo_id: z.string().uuid().nullable().optional().or(z.literal("")),
+  escala_id: z.string().uuid().nullable().optional().or(z.literal("")),
   proveedor_id: z.string().uuid().optional().or(z.literal("")),
   /** Folio/remisión del ticket: candado anti-duplicados del API (409 si ya existe). */
   folio_ticket: z.string().max(60).optional().or(z.literal("")),

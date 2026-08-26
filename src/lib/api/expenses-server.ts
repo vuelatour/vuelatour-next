@@ -78,3 +78,29 @@ export function signFuelPhotos(paths: string[]) {
     cache: "no-store",
   });
 }
+
+/**
+ * Gastos personales del dueño (categoría PERSONAL_DUENO) del periodo, SIN
+ * cap: pagina con offset hasta cubrir `count` (mismo patrón anti-cap que
+ * `listFuelLoads`) para que el seguimiento mensual nunca quede incompleto.
+ */
+export async function listGastosPersonales(
+  query: { desde?: string; hasta?: string } = {},
+) {
+  const limit = 200;
+  const base = { categoria: "PERSONAL_DUENO", limit, ...query };
+  const first = await apiServer<GastoListResponse>("/v1/expenses", {
+    searchParams: { ...base, offset: 0 },
+    cache: "no-store",
+  });
+  const data = [...first.data];
+  while (data.length < first.count) {
+    const page = await apiServer<GastoListResponse>("/v1/expenses", {
+      searchParams: { ...base, offset: data.length },
+      cache: "no-store",
+    });
+    if (page.data.length === 0) break; // defensa anti-bucle si count cambió
+    data.push(...page.data);
+  }
+  return { data, count: first.count };
+}
