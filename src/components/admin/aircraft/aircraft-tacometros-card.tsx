@@ -668,16 +668,46 @@ export function AircraftTacometrosCard({
                       </td>
                       <td
                         className={`px-3 py-2 text-right tabular-nums ${
-                          salto
+                          salto || h.taco_salida_obs
                             ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium"
                             : ""
                         }`}
-                        title={salto ? "Salto en la cadena de tacómetros" : undefined}
+                        title={
+                          [
+                            salto ? "Salto en la cadena de tacómetros" : null,
+                            h.taco_salida_obs
+                              ? `Observación: ${h.taco_salida_obs}${
+                                  h.taco_obs_por
+                                    ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
+                                    : ""
+                                }`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join("\n") || undefined
+                        }
                       >
                         <TacoLink h={h}>{h.taco_salida ?? "—"}</TacoLink>
+                        {h.taco_salida_obs && <span className="ml-1">{"\ud83d\udcdd"}</span>}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          h.taco_llegada_obs
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium"
+                            : ""
+                        }`}
+                        title={
+                          h.taco_llegada_obs
+                            ? `Observación: ${h.taco_llegada_obs}${
+                                h.taco_obs_por
+                                  ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
+                                  : ""
+                              }`
+                            : undefined
+                        }
+                      >
                         <TacoLink h={h}>{h.taco_llegada ?? "—"}</TacoLink>
+                        {h.taco_llegada_obs && <span className="ml-1">{"\ud83d\udcdd"}</span>}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {h.horas != null ? `${h.horas} h` : "—"}

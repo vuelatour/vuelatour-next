@@ -130,6 +130,11 @@ export interface TacometroHistorial {
     /** URLs firmadas de las fotos del tacómetro (bucket privado), si tiene. */
     foto_salida_url?: string | null;
     foto_llegada_url?: string | null;
+    /** Observación del equipo por lectura (Tacómetros en vivo → Excel). */
+    taco_salida_obs?: string | null;
+    taco_llegada_obs?: string | null;
+    taco_obs_por?: string | null;
+    taco_obs_fecha?: string | null;
   }[];
 }
 

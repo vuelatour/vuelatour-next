@@ -521,6 +521,29 @@ export async function clearTacoAction(
   }
 }
 
+/**
+ * Observación del equipo sobre las lecturas de un tramo (por lado): queda en
+ * el histórico del avión y en el Excel del balance (celda ámbar + nota). No
+ * confirma ni ajusta la lectura — endpoint propio.
+ */
+export async function tacoObsAction(
+  flightId: string,
+  escalaId: string,
+  payload: { taco_salida_obs?: string | null; taco_llegada_obs?: string | null },
+): Promise<ActionResult<unknown>> {
+  try {
+    const data = await apiServer(`/v1/flights/legs/${escalaId}/taco-obs`, {
+      method: "POST",
+      body: payload,
+    });
+    revalidateFlight(flightId);
+    revalidatePath("/admin/taco-live");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export async function confirmTacoAction(
   flightId: string,
   escalaId: string,

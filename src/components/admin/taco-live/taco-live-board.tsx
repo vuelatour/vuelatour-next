@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { EmptyState } from "@/components/admin/empty-state";
-import { confirmTacoAction } from "@/app/admin/flights/actions";
+import { confirmTacoAction, tacoObsAction } from "@/app/admin/flights/actions";
 import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
 import { fmtDateTime } from "@/lib/datetime";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
@@ -47,6 +47,11 @@ export interface TacoLiveEscala {
   corregido_por_nombre: string | null;
   corregido_at: string | null;
   nota_correccion: string | null;
+  /** Observación del EQUIPO por lectura (histórico + Excel en ámbar). */
+  taco_salida_obs?: string | null;
+  taco_llegada_obs?: string | null;
+  taco_obs_por?: string | null;
+  taco_obs_fecha?: string | null;
   foto_salida_url: string | null;
   foto_llegada_url: string | null;
   /**
@@ -351,6 +356,36 @@ function EscalaRow({
           {escala.nota_correccion}
         </p>
       )}
+      {/* Observaciones del equipo: viajan al histórico del avión y al Excel
+          del balance (celda en ámbar + nota) — mismo ámbar aquí. */}
+      {(escala.taco_salida_obs || escala.taco_llegada_obs) && (
+        <div className="mt-2 space-y-0.5">
+          {escala.taco_salida_obs && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              {"\ud83d\udcdd"} Salida: {escala.taco_salida_obs}
+              {escala.taco_obs_por && (
+                <span className="text-muted-foreground">
+                  {" — "}
+                  {escala.taco_obs_por}
+                  {escala.taco_obs_fecha ? `, ${escala.taco_obs_fecha}` : ""}
+                </span>
+              )}
+            </p>
+          )}
+          {escala.taco_llegada_obs && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              {"\ud83d\udcdd"} Llegada: {escala.taco_llegada_obs}
+              {escala.taco_obs_por && (
+                <span className="text-muted-foreground">
+                  {" — "}
+                  {escala.taco_obs_por}
+                  {escala.taco_obs_fecha ? `, ${escala.taco_obs_fecha}` : ""}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -374,6 +409,11 @@ function RevisionActions({
     escala.taco_llegada?.toString() ?? sugerencia?.toString() ?? "",
   );
   const [nota, setNota] = useState("");
+  // Observaciones persistentes por lectura (histórico + Excel): prellenadas
+  // con lo ya guardado; solo se mandan si CAMBIARON (una observación sola no
+  // debe "confirmar" la lectura — usa su propio endpoint).
+  const [obsSalida, setObsSalida] = useState(escala.taco_salida_obs ?? "");
+  const [obsLlegada, setObsLlegada] = useState(escala.taco_llegada_obs ?? "");
 
   const comprobar = () => {
     startTransition(async () => {
@@ -396,15 +436,49 @@ function RevisionActions({
       payload.taco_llegada = Number(llegada);
     }
     if (nota.trim()) payload.nota = nota.trim();
+    // Observaciones: solo si cambiaron. Si SOLO cambió la observación, no se
+    // llama confirmTaco (anotar no es confirmar la lectura).
+    const obsPayload: {
+      taco_salida_obs?: string | null;
+      taco_llegada_obs?: string | null;
+    } = {};
+    if (obsSalida.trim() !== (escala.taco_salida_obs ?? "").trim()) {
+      obsPayload.taco_salida_obs = obsSalida.trim() || null;
+    }
+    if (obsLlegada.trim() !== (escala.taco_llegada_obs ?? "").trim()) {
+      obsPayload.taco_llegada_obs = obsLlegada.trim() || null;
+    }
+    const hayAjuste = Object.keys(payload).length > 0;
+    const hayObs = Object.keys(obsPayload).length > 0;
+    if (!hayAjuste && !hayObs) {
+      setOpenAjuste(false);
+      return;
+    }
     startTransition(async () => {
-      const res = await confirmTacoAction(vueloId, escala.escala_id, payload);
-      if (res.ok) {
-        toast.success("Lectura ajustada");
-        setOpenAjuste(false);
-        router.refresh();
-      } else {
-        toast.error(res.error ?? "Error al ajustar");
+      if (hayObs) {
+        const resObs = await tacoObsAction(
+          vueloId,
+          escala.escala_id,
+          obsPayload,
+        );
+        if (!resObs.ok) {
+          toast.error(resObs.error ?? "Error al guardar la observación");
+          return;
+        }
       }
+      if (hayAjuste) {
+        const res = await confirmTacoAction(vueloId, escala.escala_id, payload);
+        if (res.ok) {
+          toast.success("Lectura ajustada");
+        } else {
+          toast.error(res.error ?? "Error al ajustar");
+          return;
+        }
+      } else {
+        toast.success("Observación guardada");
+      }
+      setOpenAjuste(false);
+      router.refresh();
     });
   };
 
@@ -496,6 +570,31 @@ function RevisionActions({
                 value={nota}
                 onChange={(e) => setNota(e.target.value)}
                 placeholder="Ej. la foto marca 1554.1"
+              />
+            </div>
+            {/* Observaciones persistentes: viajan al histórico del avión y
+                al Excel del balance (celda en ámbar + cuadro de notas). */}
+            <div className="space-y-1.5 border-t pt-3">
+              <Label>
+                Observación de salida{" "}
+                <span className="font-normal text-muted-foreground">
+                  (queda en el histórico y el Excel)
+                </span>
+              </Label>
+              <Input
+                value={obsSalida}
+                onChange={(e) => setObsSalida(e.target.value)}
+                maxLength={300}
+                placeholder="Ej. se recalibró el horómetro en taller"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Observación de llegada</Label>
+              <Input
+                value={obsLlegada}
+                onChange={(e) => setObsLlegada(e.target.value)}
+                maxLength={300}
+                placeholder="Ej. lectura verificada contra la foto"
               />
             </div>
           </div>
