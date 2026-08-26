@@ -79,6 +79,10 @@ interface FlightTramosCardProps {
   airports?: AirportOption[];
   /** Aeronave del vuelo (cotización): default al asignar tramos sin avión. */
   vueloAeronaveId?: string | null;
+  /** Piloto a nivel vuelo: un tramo sin piloto propio lo HEREDA (la API ya
+      opera así) — se muestra como herencia, nunca como "falta". */
+  vueloPilotoId?: string | null;
+  vueloPilotoNombre?: string | null;
 }
 
 /** Etiqueta del tramo por POSICIÓN visible (1..N): el orden interno puede
@@ -99,6 +103,8 @@ export function FlightTramosCard({
   pilots,
   airports = [],
   vueloAeronaveId,
+  vueloPilotoId,
+  vueloPilotoNombre,
 }: FlightTramosCardProps) {
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
@@ -199,7 +205,10 @@ export function FlightTramosCard({
           const label = tramoLabel(idx + 1, ordered.length);
           const cancelada = !!escala.cancelada_at;
           const sinAvion = !esExterno && !escala.aeronave_id;
-          const sinPiloto = !escala.piloto_id;
+          // Sin piloto propio el tramo HEREDA el del vuelo: solo "falta"
+          // cuando tampoco el vuelo tiene piloto.
+          const pilotoHeredado = !escala.piloto_id && !!vueloPilotoId;
+          const sinPiloto = !escala.piloto_id && !vueloPilotoId;
           const sinAsignar = sinAvion || sinPiloto;
           // Evidencia de que el tramo voló = LLEGADA real (≠ DEDUCIDO) o
           // fotos. La salida nunca cuenta: la llena el sistema (propagación
@@ -444,6 +453,13 @@ export function FlightTramosCard({
                 <Field label="Piloto">
                   {escala.piloto_nombre ? (
                     <span>{escala.piloto_nombre}</span>
+                  ) : pilotoHeredado && vueloPilotoNombre ? (
+                    <span
+                      className="text-muted-foreground"
+                      title="El tramo no tiene piloto propio: hereda el piloto del vuelo."
+                    >
+                      {vueloPilotoNombre} (del vuelo)
+                    </span>
                   ) : (
                     <span className="text-muted-foreground">Sin asignar</span>
                   )}
@@ -490,6 +506,7 @@ export function FlightTramosCard({
           aircraft={aircraft}
           pilots={pilots}
           vueloAeronaveId={vueloAeronaveId}
+          vueloPilotoId={vueloPilotoId}
         />
       )}
 

@@ -222,3 +222,70 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   filter: invert(1) opacity(0.7);
   cursor: pointer;
 }
+
+/* ============ VtLoader / VtSpinner (transición de carga con avioncito) ============
+   El avión recorre la MISMA Bézier del arco (M10 54 Q60 6 110 54): los
+   keyframes son puntos B(t) y ángulos de la tangente B'(t) en t=0,.25,.5,.75,1.
+   Con `prefers-reduced-motion` no hay animación: avión estático a media ruta
+   sobre el arco de puntos (el trazo animado queda oculto con dashoffset). */
+.vt-loader-plane {
+  transform-origin: 0 0;
+  transform: translate(60px, 30px);
+}
+.vt-loader-arc {
+  filter: drop-shadow(0 0 3px rgba(230, 57, 70, 0.45)); /* glow como el hero */
+}
+@media (prefers-reduced-motion: no-preference) {
+  .vt-loader-plane {
+    animation: vt-plane-fly 1.6s ease-in-out infinite;
+  }
+  .vt-loader-arc {
+    animation: vt-arc-draw 1.6s ease-in-out infinite;
+  }
+  .vt-spinner {
+    animation: vt-spin 1.2s linear infinite;
+  }
+}
+@keyframes vt-plane-fly {
+  0% {
+    transform: translate(10px, 54px) rotate(-44deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  25% {
+    transform: translate(35px, 36px) rotate(-26deg);
+  }
+  50% {
+    transform: translate(60px, 30px) rotate(0deg);
+  }
+  75% {
+    transform: translate(85px, 36px) rotate(26deg);
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(110px, 54px) rotate(44deg);
+    opacity: 0;
+  }
+}
+@keyframes vt-arc-draw {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.9;
+  }
+  90% {
+    opacity: 0.9;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes vt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

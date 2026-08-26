@@ -56,18 +56,24 @@ interface EscalaAssignSheetProps {
   pilots: PilotOption[];
   /** Aeronave del vuelo (de la cotización): default cuando el tramo no tiene una. */
   vueloAeronaveId?: string | null;
+  /** Piloto a nivel vuelo: el tramo sin piloto propio lo hereda (API), así
+      que el select se prellena con él en vez de arrancar vacío. */
+  vueloPilotoId?: string | null;
 }
 
 function defaults(
   escala: FlightEscala,
   vueloAeronaveId?: string | null,
+  vueloPilotoId?: string | null,
 ): EscalaAssignFormValues {
   return {
     // Si el tramo aún no tiene avión, se propone el de la cotización (el que
     // ya eligió quien cotizó): la oficina solo confirma. La ida y el regreso
     // pueden cambiarse a otro avión si hace falta.
     aeronave_id: escala.aeronave_id ?? vueloAeronaveId ?? "",
-    piloto_id: escala.piloto_id ?? "",
+    // Sin piloto propio, el tramo hereda el del vuelo: se prellena con él
+    // para que el select refleje quién vuela realmente el tramo.
+    piloto_id: escala.piloto_id ?? vueloPilotoId ?? "",
     fecha_salida_plan: isoToCancunInput(escala.fecha_salida_plan),
   };
 }
@@ -83,6 +89,7 @@ export function EscalaAssignSheet({
   aircraft,
   pilots,
   vueloAeronaveId,
+  vueloPilotoId,
 }: EscalaAssignSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -90,12 +97,12 @@ export function EscalaAssignSheet({
 
   const { register, handleSubmit, watch, setValue, reset } =
     useForm<EscalaAssignFormValues>({
-      defaultValues: defaults(escala, vueloAeronaveId),
+      defaultValues: defaults(escala, vueloAeronaveId, vueloPilotoId),
     });
 
   useEffect(() => {
-    if (open) reset(defaults(escala, vueloAeronaveId));
-  }, [open, escala, vueloAeronaveId, reset]);
+    if (open) reset(defaults(escala, vueloAeronaveId, vueloPilotoId));
+  }, [open, escala, vueloAeronaveId, vueloPilotoId, reset]);
 
   // Disponibilidad de pilotos (conflicto de día + horas del mes) al abrir.
   useEffect(() => {
@@ -147,7 +154,9 @@ export function EscalaAssignSheet({
     if (!esExterno && values.aeronave_id !== (escala.aeronave_id ?? "")) {
       payload.aeronave_id = values.aeronave_id || undefined;
     }
-    if (values.piloto_id !== (escala.piloto_id ?? "")) {
+    // Se compara contra el prellenado (propio ?? heredado): guardar sin
+    // cambiar el select NO materializa la herencia como piloto propio.
+    if (values.piloto_id !== (escala.piloto_id ?? vueloPilotoId ?? "")) {
       payload.piloto_id = values.piloto_id || undefined;
     }
     if (values.fecha_salida_plan) {
@@ -255,6 +264,10 @@ export function EscalaAssignSheet({
                   {selectedPiloto.limite_horas_mes} h.
                 </p>
               )}
+            <p className="text-[11px] text-muted-foreground">
+              Sin selección propia, el tramo hereda el piloto del vuelo.
+              Asignar aquí solo cambia ESTE tramo (rotación).
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Fecha y hora del tramo</Label>

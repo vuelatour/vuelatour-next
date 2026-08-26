@@ -263,6 +263,11 @@ export function FlightAssignSheet({
               El estado muestra conflicto de horario ese día y horas voladas del mes (límite
               informativo 90 h; no bloquea).
             </p>
+            <p className="text-[11px] text-muted-foreground">
+              Al reasignar el piloto aquí se aplica a TODOS los tramos del
+              vuelo; para cambiarlo solo en un tramo usa «Reasignar» en
+              Asignación por tramo.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Copiloto (opcional)</Label>

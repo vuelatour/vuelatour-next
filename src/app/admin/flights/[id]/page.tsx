@@ -471,6 +471,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     aircraft={aircraftOptions}
                     pilots={pilotOptions}
                     vueloAeronaveId={snapshot.aeronave_id}
+                    vueloPilotoId={snapshot.piloto_id}
+                    vueloPilotoNombre={piloto?.nombre ?? null}
                     airports={airportsRes.data.map((a) => ({
                       iata: a.iata,
                       nombre: a.nombre,
