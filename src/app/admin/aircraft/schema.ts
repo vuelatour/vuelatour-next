@@ -36,6 +36,31 @@ const optionalNonNegativeNullable = z.preprocess(
   z.null().or(z.coerce.number().min(0, "No puede ser negativo")).optional(),
 );
 
+/** Como el anterior pero exige > 0 (HP de motor). */
+const optionalPositiveNullable = z.preprocess(
+  (v) => (v === "" || v === undefined ? undefined : v),
+  z
+    .null()
+    .or(z.coerce.number().int("Entero").min(1, "Debe ser mayor a 0"))
+    .optional(),
+);
+
+/** Características comerciales: TEXTAREA "una por línea" → arreglo limpio. */
+const caracteristicasLineas = z.preprocess(
+  (v) => {
+    if (Array.isArray(v)) return v;
+    if (typeof v !== "string") return undefined;
+    return v
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  },
+  z
+    .array(z.string().max(80, "Máx. 80 caracteres por línea"))
+    .max(8, "Máx. 8 líneas")
+    .optional(),
+);
+
 export const AircraftFormSchema = z.object({
   matricula: z
     .string()
@@ -47,6 +72,10 @@ export const AircraftFormSchema = z.object({
   num_motores: z.coerce.number().int("Entero").min(1, "Mínimo 1").max(2, "Máximo 2"),
   velocidad_crucero_kts: z.coerce.number().min(1, "Debe ser mayor a 0"),
   asientos: z.coerce.number().int("Entero").min(1, "Debe ser mayor a 0"),
+  // Ficha comercial del PDF de cotización (26-ago v2): tarjeta "De un
+  // vistazo" + tira de características en la hoja del avión.
+  motor_hp: optionalPositiveNullable,
+  caracteristicas: caracteristicasLineas,
   tarifa_hora_pub_usd: optionalNonNegative,
   tarifa_hora_broker_usd: optionalNonNegative,
   reserva_overhaul_hr_usd: optionalNonNegative,

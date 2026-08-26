@@ -94,6 +94,14 @@ export function AircraftFormDialog({
     ) {
       payload.permiso_afac_usd_hr = null;
     }
+    // Motor (HP): misma regla — vaciar el campo en edición borra el valor.
+    if (
+      isEdit &&
+      initialAircraft?.motor_hp != null &&
+      ((payload.motor_hp as unknown) === "" || payload.motor_hp == null)
+    ) {
+      payload.motor_hp = null;
+    }
     startTransition(async () => {
       const result = isEdit
         ? await updateAircraftAction(initialAircraft!.id, payload)
@@ -174,6 +182,27 @@ export function AircraftFormDialog({
             </Field>
             <Field label="Asientos" required hint="sin piloto" error={errors.asientos?.message}>
               <Input type="number" min={1} placeholder="5" {...register("asientos")} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Motor (HP)"
+              hint="por motor — tarjeta del PDF"
+              error={errors.motor_hp?.message}
+            >
+              <Input type="number" min={1} placeholder="310" {...register("motor_hp")} />
+            </Field>
+            <Field
+              label="Características (PDF)"
+              hint="una por línea"
+              error={errors.caracteristicas?.message as string | undefined}
+            >
+              <Textarea
+                rows={3}
+                placeholder={"Ala alta con visibilidad panorámica\nAire acondicionado"}
+                {...register("caracteristicas")}
+              />
             </Field>
           </div>
 
@@ -278,6 +307,8 @@ function defaults(a?: Aircraft): AircraftFormValues {
       num_motores: 1,
       velocidad_crucero_kts: "" as unknown as number,
       asientos: "" as unknown as number,
+      motor_hp: "" as unknown as number,
+      caracteristicas: "" as unknown as string[],
       tarifa_hora_pub_usd: "",
       tarifa_hora_broker_usd: "",
       reserva_overhaul_hr_usd: "",
@@ -295,6 +326,8 @@ function defaults(a?: Aircraft): AircraftFormValues {
     num_motores: a.num_motores,
     velocidad_crucero_kts: a.velocidad_crucero_kts as unknown as number,
     asientos: a.asientos,
+    motor_hp: (a.motor_hp ?? "") as unknown as number,
+    caracteristicas: (a.caracteristicas ?? []).join("\n") as unknown as string[],
     tarifa_hora_pub_usd: a.tarifa_hora_pub_usd ?? "",
     tarifa_hora_broker_usd: a.tarifa_hora_broker_usd ?? "",
     reserva_overhaul_hr_usd: a.reserva_overhaul_hr_usd ?? "",

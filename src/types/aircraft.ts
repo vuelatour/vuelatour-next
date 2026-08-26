@@ -21,6 +21,10 @@ export interface Aircraft {
   ultimo_taco?: number | null;
   velocidad_crucero_kts: Decimal;
   asientos: number;
+  /** Ficha comercial del PDF de cotización (HP por motor; null = no capturado). */
+  motor_hp: number | null;
+  /** Características comerciales (tira del PDF), es-MX. */
+  caracteristicas: string[] | null;
   tarifa_hora_pub_usd: Decimal | null;
   tarifa_hora_broker_usd: Decimal | null;
   reserva_overhaul_hr_usd: Decimal | null;
