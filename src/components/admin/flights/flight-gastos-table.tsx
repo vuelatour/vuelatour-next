@@ -17,6 +17,7 @@ const ESTATUS_STYLE: Record<string, string> = {
 const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
   OFICINA: { label: "Oficina", cls: "border-sky-500/50 text-sky-600" },
   SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
+  VISITANTE: { label: "Visitante", cls: "border-teal-500/50 text-teal-600" },
 };
 
 // Mismas etiquetas que el alta/verificación de gastos (fuente: expense-create).

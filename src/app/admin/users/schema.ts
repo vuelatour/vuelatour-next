@@ -8,6 +8,7 @@ const RolEnum = z.enum([
   "PILOTO",
   "SOCIO",
   "MECANICO",
+  "VISITANTE",
 ]);
 
 const EstadoEnum = z.enum(["ACTIVO", "INACTIVO", "INVITADO"]);

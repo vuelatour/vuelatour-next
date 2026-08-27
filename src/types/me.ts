@@ -11,7 +11,10 @@ export type Rol =
   | "FACTURACION"
   | "PILOTO"
   | "SOCIO"
-  | "MECANICO";
+  | "MECANICO"
+  // Visitante de trabajo: SOLO registra gastos desde la app móvil (fondo de
+  // caja chica + tarjeta corporativa); cero acceso a vuelos ni al panel.
+  | "VISITANTE";
 
 export type EstadoUsuario = "ACTIVO" | "INACTIVO" | "INVITADO";
 

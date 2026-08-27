@@ -53,6 +53,9 @@ const CATEGORIAS = [
   // El API exige sin vuelo y sin avión para esta categoría (400 con mensaje
   // claro si el gasto los tiene: quitarlos primero).
   { value: "GASOLINA", label: "Gasolina (vehículos)" },
+  // Visitante de trabajo (fondo de visita / tarjeta corp): mismo candado del
+  // API que GASOLINA — sin vuelo, avión ni escala.
+  { value: "VISITA", label: "Visita" },
   { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
   ...["FIJO", "OTRO"].map((c) => ({ value: c, label: c })),
 ];
@@ -381,7 +384,8 @@ export function ExpenseVerifyDialog({
       // viejos vivos).
       if (
         values.categoria === "PERSONAL_DUENO" ||
-        values.categoria === "GASOLINA"
+        values.categoria === "GASOLINA" ||
+        values.categoria === "VISITA"
       ) {
         payload.aeronave_id = null;
         payload.vuelo_id = null;
@@ -396,6 +400,7 @@ export function ExpenseVerifyDialog({
         if (
           values.categoria !== "PERSONAL_DUENO" &&
           values.categoria !== "GASOLINA" &&
+          values.categoria !== "VISITA" &&
           vueloSel !== (gasto.vuelo_id ?? "")
         ) {
           const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
@@ -717,7 +722,7 @@ export function ExpenseVerifyDialog({
                   // PERSONAL del dueño: sin vuelo, avión ni escala (candado
                   // del API) — se limpian aquí y el submit los DESLIGA con
                   // null explícito en el mismo PATCH.
-                  if (v === "PERSONAL_DUENO" || v === "GASOLINA") {
+                  if (v === "PERSONAL_DUENO" || v === "GASOLINA" || v === "VISITA") {
                     setValue("aeronave_id", "");
                     setVueloSel("");
                   }

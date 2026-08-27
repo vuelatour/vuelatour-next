@@ -43,7 +43,7 @@ const CATEGORIA_BADGE: Record<string, string> = {
   INDIRECTO: "border-violet-500/50 text-violet-600",
 };
 
-const CATEGORIAS_FILTRO = ["TODAS", "OTRO", "FIJO", "INDIRECTO", "GASOLINA"] as const;
+const CATEGORIAS_FILTRO = ["TODAS", "OTRO", "FIJO", "INDIRECTO", "GASOLINA", "VISITA"] as const;
 type CategoriaFiltro = (typeof CATEGORIAS_FILTRO)[number];
 
 /**

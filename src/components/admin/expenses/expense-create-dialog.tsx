@@ -72,6 +72,9 @@ const CATEGORIAS = [
   // Gasolina de coches/camionetas (Pemex/Gulf): gasto de la empresa, sin
   // vuelo ni avión — el combustible de AVIACIÓN sigue siendo GAS.
   { value: "GASOLINA", label: "Gasolina (vehículos)" },
+  // Gasto de un VISITANTE de trabajo (fondo de visita / tarjeta corporativa):
+  // sin vuelo ni avión — vive en Otros gastos y ahí se reparte a mano.
+  { value: "VISITA", label: "Visita" },
   { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
   { value: "OTRO", label: "OTRO" },
 ];
@@ -265,7 +268,8 @@ export function ExpenseCreateDialog({
       ai.matricula &&
       !watch("aeronave_id") &&
       watch("categoria") !== "PERSONAL_DUENO" &&
-      watch("categoria") !== "GASOLINA"
+      watch("categoria") !== "GASOLINA" &&
+      watch("categoria") !== "VISITA"
     ) {
       const av = aircraft.find(
         (a) => a.matricula.replace(/-/g, "") === ai.matricula!.replace(/-/g, ""),
@@ -369,7 +373,8 @@ export function ExpenseCreateDialog({
       // valor viejo (elegido antes de cambiar la categoría) siga en el form.
       if (
         values.categoria === "PERSONAL_DUENO" ||
-        values.categoria === "GASOLINA"
+        values.categoria === "GASOLINA" ||
+        values.categoria === "VISITA"
       ) {
         values.vuelo_id = "";
         values.aeronave_id = "";
@@ -687,7 +692,9 @@ export function ExpenseCreateDialog({
                             // Un gasto DEL VUELO jamás es personal del dueño.
                             c.value !== "PERSONAL_DUENO" &&
                             // Un gasto DEL VUELO no es gasolina de coche.
-                            c.value !== "GASOLINA",
+                            c.value !== "GASOLINA" &&
+                            // Ni de un visitante (jamás lleva vuelo).
+                            c.value !== "VISITA",
                         )
                       : CATEGORIAS
                   }
@@ -701,7 +708,7 @@ export function ExpenseCreateDialog({
                     }
                     // PERSONAL del dueño = sin vuelo NI avión (el API lo
                     // exige): se limpian ambos enlaces.
-                    if (v === "PERSONAL_DUENO" || v === "GASOLINA") {
+                    if (v === "PERSONAL_DUENO" || v === "GASOLINA" || v === "VISITA") {
                       if (watch("vuelo_id")) setValue("vuelo_id", "");
                       if (watch("aeronave_id")) setValue("aeronave_id", "");
                       setComoPiloto(false);
@@ -744,6 +751,13 @@ export function ExpenseCreateDialog({
                 aviación va en GAS.
               </p>
             )}
+            {!defaultVueloId && watch("categoria") === "VISITA" && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Gasto de un <span className="font-medium">visitante de trabajo</span>{" "}
+                (fondo de visita / tarjeta corporativa). No lleva vuelo ni
+                avión.
+              </p>
+            )}
             {!defaultVueloId && watch("categoria") === "PERSONAL_DUENO" && (
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 Gasto <span className="font-medium">personal del dueño</span>:
@@ -755,7 +769,8 @@ export function ExpenseCreateDialog({
             {!defaultVueloId &&
               watch("categoria") !== "INDIRECTO" &&
               watch("categoria") !== "PERSONAL_DUENO" &&
-              watch("categoria") !== "GASOLINA" && (
+              watch("categoria") !== "GASOLINA" &&
+              watch("categoria") !== "VISITA" && (
               <Field
                 label="Vuelo"
                 hint="Ligado al vuelo entra a su reporte y resta en el reparto; elige por folio, matrícula o ruta (±15 días de la fecha)."
@@ -824,7 +839,8 @@ export function ExpenseCreateDialog({
             <div
               className={`grid gap-3 [&>*]:min-w-0 ${
                 watch("categoria") === "PERSONAL_DUENO" ||
-                watch("categoria") === "GASOLINA"
+                watch("categoria") === "GASOLINA" ||
+                watch("categoria") === "VISITA"
                   ? "grid-cols-1"
                   : "grid-cols-2"
               }`}
@@ -860,7 +876,8 @@ export function ExpenseCreateDialog({
                 </Field>
               )}
               {watch("categoria") !== "PERSONAL_DUENO" &&
-                watch("categoria") !== "GASOLINA" && (
+                watch("categoria") !== "GASOLINA" &&
+                watch("categoria") !== "VISITA" && (
                 <Field label="Avión">
                   <SearchableSelect
                     options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}

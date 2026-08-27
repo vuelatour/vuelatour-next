@@ -31,6 +31,7 @@ const ROLES = [
   { value: "PILOTO", label: "PILOTO", description: "Operativos: app móvil" },
   { value: "SOCIO", label: "SOCIO", description: "Lectura + PDFs de reparto" },
   { value: "MECANICO", label: "MECÁNICO", description: "Luis: app, solo cargas de combustible" },
+  { value: "VISITANTE", label: "VISITANTE", description: "Solo gastos de visita desde la app (fondo + tarjeta); sin acceso a vuelos" },
 ];
 
 const ESTADOS = [
