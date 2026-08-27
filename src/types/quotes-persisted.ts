@@ -21,6 +21,8 @@ export interface PersistedEscala {
   tipo_parada: "NORMAL" | "SERVICIO";
   servicio_notas: string | null;
   solo_operativa?: boolean;
+  /** Monto pactado del tramo (avión externo sin referencia). Decimal string. */
+  monto_externo_usd?: string | null;
   fecha_salida_plan: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;
@@ -54,6 +56,9 @@ export interface PersistedQuote {
   es_externo: boolean;
   operador_externo: string | null;
   costo_externo_usd: Decimal | null;
+  /** Ficha del avión AJENO (externo sin avión de la flota): sale en el PDF. */
+  avion_externo_modelo?: string | null;
+  avion_externo_matricula?: string | null;
 
   cotizacion_version: number;
 

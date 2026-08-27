@@ -90,6 +90,11 @@ export interface EscalaInput {
   fecha_salida_plan?: string | null;
   /** Ocultar ESTE tramo del PDF (título/itinerario/mapa); el precio no cambia. */
   pdf_oculto?: boolean;
+  /**
+   * Monto pactado del tramo (USD). SOLO para cotizaciones de avión EXTERNO
+   * sin avión de referencia: el precio del servicio es la SUMA de estos.
+   */
+  monto_externo_usd?: number | null;
 }
 
 /** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */
@@ -108,10 +113,19 @@ export interface TramoBreakdown {
   servicio_notas: string | null;
   /** Ocultar este tramo del PDF (27-ago). */
   pdf_oculto?: boolean;
+  /** Monto pactado del tramo (solo avión externo sin referencia; 0 si no aplica). */
+  monto_externo_usd?: number | null;
 }
 
 export interface CalculateQuoteRequest {
-  aeronave_id: string;
+  /** OPCIONAL solo cuando es_externo: sin avión, el precio del servicio es la
+   *  suma de los monto_externo_usd por tramo (MULTIESCALA con escalas). */
+  aeronave_id?: string;
+  /** Vuelo CUBIERTO por operador externo (también en el preview /calculate). */
+  es_externo?: boolean;
+  /** Ficha del avión AJENO (venta broker): sale en el PDF del cliente. */
+  avion_externo_modelo?: string;
+  avion_externo_matricula?: string;
   /** Cliente: si tiene tarifa preferencial para la aeronave, esa manda sobre la default. */
   cliente_id?: string;
   tipo?: TipoVuelo;
@@ -173,11 +187,13 @@ export interface CalculateQuoteRequest {
 }
 
 export interface QuoteBreakdown {
+  /** Avión externo sin referencia: id null y ficha (modelo/matrícula) del
+   *  avión AJENO capturada a mano — no es de la flota. */
   aeronave: {
-    id: string;
-    matricula: string;
-    modelo: string;
-    pais_registro: PaisAeronave;
+    id: string | null;
+    matricula: string | null;
+    modelo: string | null;
+    pais_registro: PaisAeronave | null;
     velocidad_crucero_kts: number;
   };
   ruta: {

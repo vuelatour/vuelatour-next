@@ -42,6 +42,12 @@ export function CubrirExternoDialog({
   const [saving, startSaving] = useTransition();
   const yaExterno = flight.es_externo;
   const [operador, setOperador] = useState(flight.operador_externo ?? "");
+  // Ficha del avión AJENO, prellenada para editarla en su lugar. Semántica
+  // del API: '' explícito = BORRAR la ficha; clave omitida = conservar.
+  const [modelo, setModelo] = useState(flight.avion_externo_modelo ?? "");
+  const [matricula, setMatricula] = useState(
+    flight.avion_externo_matricula ?? "",
+  );
   const [costo, setCosto] = useState(
     Number(flight.costo_externo_usd) > 0 ? String(flight.costo_externo_usd) : "",
   );
@@ -77,6 +83,21 @@ export function CubrirExternoDialog({
         operador_externo: operador.trim(),
         costo_externo_usd: Math.max(0, Number(costo) || 0),
         tc_usd_mxn: Number(tc) > 0 ? Number(tc) : undefined,
+        // Campo vaciado = '' explícito = BORRAR la ficha; el mínimo de 2
+        // caracteres del DTO solo aplica a valores no vacíos (1 char se
+        // omite: conserva la actual).
+        avion_externo_modelo:
+          modelo.trim().length >= 2
+            ? modelo.trim()
+            : modelo.trim() === ""
+              ? ""
+              : undefined,
+        avion_externo_matricula:
+          matricula.trim().length >= 2
+            ? matricula.trim()
+            : matricula.trim() === ""
+              ? ""
+              : undefined,
       });
       if (res.ok) {
         toast.success(
@@ -120,6 +141,31 @@ export function CubrirExternoDialog({
               onChange={(e) => setOperador(e.target.value)}
               autoFocus
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Modelo del avión (opcional)
+              </Label>
+              <Input
+                placeholder="HAWKER 400 A"
+                maxLength={80}
+                value={modelo}
+                onChange={(e) => setModelo(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Matrícula (opcional)</Label>
+              <Input
+                placeholder="XA-REG"
+                maxLength={20}
+                value={matricula}
+                onChange={(e) => setMatricula(e.target.value)}
+              />
+            </div>
+            <p className="col-span-2 -mt-1 text-xs text-muted-foreground">
+              Ficha del avión ajeno: sale en el PDF y en el detalle del vuelo.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Costo del apoyo (USD)</Label>

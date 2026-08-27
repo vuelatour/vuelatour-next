@@ -161,6 +161,17 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
 
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
+  // Ficha del avión AJENO (externo): del snapshot, con fallback a la
+  // cotización (misma fila de `vuelo`) para respuestas de APIs previas.
+  const avionExternoModelo =
+    snapshot.avion_externo_modelo ?? quote?.avion_externo_modelo ?? null;
+  const avionExternoMatricula =
+    snapshot.avion_externo_matricula ?? quote?.avion_externo_matricula ?? null;
+  // Etiqueta de la ficha (mismo patrón del PDF): modelo, matrícula o ambos —
+  // una matrícula SOLA también se muestra.
+  const avionExternoFicha = [avionExternoModelo, avionExternoMatricula]
+    .filter(Boolean)
+    .join(" · ");
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
   const copiloto = pilotsRes.data.find((p) => p.id === snapshot.copiloto_id);
   // Apoyo en tierra: el snapshot trae el nombre resuelto (el apoyo puede ser
@@ -237,7 +248,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               </Badge>
               {snapshot.es_externo && (
                 <Badge variant="outline" className="text-xs">
-                  Externo {snapshot.operador_externo ?? ""}
+                  {/* Con ficha capturada: "Externo · HAWKER 400 A · XA-REG"
+                      (modelo, matrícula o ambos); si no, el operador. */}
+                  {avionExternoFicha
+                    ? `Externo · ${avionExternoFicha}`
+                    : `Externo ${snapshot.operador_externo ?? ""}`}
                 </Badge>
               )}
               {snapshot.cotizacion_abierta && (
@@ -375,7 +390,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               ))}
             <FlightActionsBar
               esAdmin={me?.rol === "ADMIN"}
-              flight={snapshot}
+              // Ficha del avión ajeno resuelta vía cotización: así el diálogo
+              // «Editar externo» prellena modelo/matrícula y no los pisa.
+              flight={{
+                ...snapshot,
+                avion_externo_modelo: avionExternoModelo,
+                avion_externo_matricula: avionExternoMatricula,
+              }}
               aircraft={aircraftOptions}
               pilots={pilotOptions}
               gastosResumen={gastosResumen}
@@ -496,7 +517,16 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   <CardContent className="space-y-2 text-sm">
                     <Row label="Aeronave">
                       {snapshot.es_externo ? (
-                        <span className="text-muted-foreground">N/A (externo)</span>
+                        avionExternoFicha ? (
+                          <span className="font-mono font-semibold">
+                            {avionExternoFicha}{" "}
+                            <span className="text-muted-foreground font-normal">
+                              (externo)
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">N/A (externo)</span>
+                        )
                       ) : aircraft ? (
                         <span className="font-mono font-semibold">
                           {aircraft.matricula}{" "}
@@ -576,15 +606,16 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;
               oficina revisa aquí Operación/FBO, combustible, viáticos...).
-              En vuelos CUBIERTOS por externo no hay gastos ni tacómetros: el
-              único costo es lo que cobra el apoyo. */}
-          {snapshot.es_externo ? (
+              En vuelos CUBIERTOS por externo los gastos SÍ se capturan
+              (pistas, comisiones, apoyos) — lo único que no aplica son los
+              tacómetros. */}
+          {snapshot.es_externo && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Apoyo externo</CardTitle>
                 <CardDescription className="text-xs">
-                  Este vuelo lo opera un tercero: no se capturan gastos ni
-                  tacómetros.
+                  Este vuelo lo opera un tercero: los tacómetros no aplican;
+                  los gastos sí se capturan abajo como en cualquier vuelo.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
@@ -593,6 +624,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     <span className="text-muted-foreground">Sin registrar</span>
                   )}
                 </Row>
+                {avionExternoFicha && (
+                  <Row label="Avión">
+                    <span className="font-mono">{avionExternoFicha}</span>
+                  </Row>
+                )}
                 <Row label="Costo del apoyo">
                   <span className="font-semibold">
                     {fmtUsd(Number(snapshot.costo_externo_usd) || 0)}
@@ -605,22 +641,22 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   )}
                 </Row>
                 <p className="text-xs text-muted-foreground pt-1">
-                  Edita operador/costo con el botón «Editar externo» de arriba.
+                  Edita operador/avión/costo con el botón «Editar externo» de
+                  arriba.
                 </p>
               </CardContent>
             </Card>
-          ) : (
-            <FlightGastosCard
-              gastos={gastos}
-              fotoUrls={gastoFotoUrls}
-              aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
-              providers={providerOptions}
-              vueloId={snapshot.id}
-              vueloFolio={snapshot.folio}
-              aeronaveId={snapshot.aeronave_id}
-              pilotoNombre={piloto?.nombre ?? null}
-            />
           )}
+          <FlightGastosCard
+            gastos={gastos}
+            fotoUrls={gastoFotoUrls}
+            aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
+            providers={providerOptions}
+            vueloId={snapshot.id}
+            vueloFolio={snapshot.folio}
+            aeronaveId={snapshot.aeronave_id}
+            pilotoNombre={piloto?.nombre ?? null}
+          />
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
           <FlightBitacoraCard eventos={bitacora} />

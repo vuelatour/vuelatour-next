@@ -21,6 +21,10 @@ export interface FlightListItem {
   es_externo: boolean;
   operador_externo: string | null;
   costo_externo_usd: string | null;
+  /** Ficha del avión AJENO (externo). Opcional-defensivo para respuestas de
+      APIs previas al despliegue (el detalle cae a la cotización si falta). */
+  avion_externo_modelo?: string | null;
+  avion_externo_matricula?: string | null;
   /** Método de cobro pactado (define si entra a Facturas antes de cobrar). */
   metodo_cobro?: MetodoPago | null;
   cotizacion_version: number;

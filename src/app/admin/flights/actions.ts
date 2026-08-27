@@ -134,6 +134,10 @@ export async function cubrirExternoAction(
     costo_externo_usd: number;
     /** TC MXN/USD pactado (opcional): habilita facturar el vuelo en MXN. */
     tc_usd_mxn?: number;
+    /** Ficha del avión AJENO (ej. HAWKER 400 A / XA-REG); sale en el PDF.
+        '' explícito = BORRAR la ficha; omitir la clave = conservar. */
+    avion_externo_modelo?: string;
+    avion_externo_matricula?: string;
   },
 ): Promise<ActionResult<FlightListItem>> {
   try {

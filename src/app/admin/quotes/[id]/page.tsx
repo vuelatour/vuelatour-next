@@ -502,7 +502,8 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 <CardTitle className="text-sm">Cubierto por operador externo</CardTitle>
                 <CardDescription className="text-xs">
                   Otro operador vuela este servicio; VuelaTour cobra al cliente
-                  y paga al apoyo. Sin avión propio, tacómetros ni gastos.
+                  y paga al apoyo. Sin avión propio ni tacómetros; los gastos
+                  sí se registran en el vuelo.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
@@ -510,6 +511,16 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   <span className="text-muted-foreground">Operador</span>
                   <span className="font-medium">{quote.operador_externo ?? "—"}</span>
                 </div>
+                {(quote.avion_externo_modelo || quote.avion_externo_matricula) && (
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Avión</span>
+                    <span className="font-mono">
+                      {[quote.avion_externo_modelo, quote.avion_externo_matricula]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between gap-2">
                   <span className="text-muted-foreground">Costo del apoyo</span>
                   <span className="font-mono">

@@ -160,6 +160,9 @@ interface QuoteFormValues {
   /** Vuelo CUBIERTO por operador externo (sin avión propio ni tacómetros). */
   es_externo: boolean;
   operador_externo: string;
+  /** Ficha del avión AJENO (ej. HAWKER 400 A / XA-REG): sale en el PDF. */
+  avion_externo_modelo: string;
+  avion_externo_matricula: string;
   /** Lo que cobra el apoyo externo (costo para VuelaTour). */
   costo_externo_usd: number | null;
   /** Precio TOTAL pactado con el cliente (externos: se acuerda a mano). */
@@ -229,6 +232,14 @@ function focusTcField() {
   el?.scrollIntoView({ behavior: "smooth", block: "center" });
   el?.querySelector("input")?.focus();
 }
+
+/**
+ * Valor centinela del selector de aeronave (28-ago, venta broker de un jet
+ * AJENO): es_externo SIN avión de la flota — no hay tarifa, velocidad, hora
+ * mínima ni TUAS de catálogo; el precio del servicio es la SUMA de los montos
+ * pactados por tramo. Hacia el API la clave aeronave_id se OMITE.
+ */
+const SIN_AVION = "SIN_AVION";
 
 const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
   { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
@@ -347,6 +358,7 @@ function tramoToEscala(t: {
   notas?: string | null;
   fecha_salida_plan?: string | null;
   pdf_oculto?: boolean | null;
+  monto_externo_usd?: number | string | null;
 }): EscalaInput {
   return {
     origen_iata: t.origen_iata,
@@ -362,6 +374,12 @@ function tramoToEscala(t: {
     servicio_notas: t.servicio_notas ?? null,
     notas: t.notas ?? null,
     pdf_oculto: t.pdf_oculto ?? false,
+    // Monto pactado del tramo (avión externo sin referencia). PostgREST lo
+    // manda como decimal string; snapshots sin monto pueden traer null.
+    monto_externo_usd:
+      t.monto_externo_usd != null && Number.isFinite(Number(t.monto_externo_usd))
+        ? Number(t.monto_externo_usd)
+        : null,
     // datetime-local (sin segundos) para el input del editor de tramos.
     fecha_salida_plan: t.fecha_salida_plan ? isoToCancunInput(t.fecha_salida_plan) : null,
   };
@@ -489,6 +507,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             ]
           : []),
       ];
+      // Monto pactado por tramo: SOLO se hidrata en externo SIN avión — el
+      // snapshot viejo del API guardaba 0 en cotizaciones normales y ese 0
+      // contaminaba los legs (la ruta rápida pedía confirmación destructiva
+      // siempre). Solo >0 cuenta como capturado: un tramo sin monto vuelve
+      // con su borde ámbar tras revise.
+      const esExternoSinAvion =
+        (q.es_externo ?? false) &&
+        (q.aeronave_id ?? q.calculo_snapshot?.aeronave?.id) == null;
+      const montoTramoHidratado = (
+        ...valores: Array<number | string | null | undefined>
+      ): number | null => {
+        if (!esExternoSinAvion) return null;
+        for (const v of valores) if (Number(v) > 0) return Number(v);
+        return null;
+      };
       return {
         cliente_id: q.cliente_id,
         tipo: "MULTIESCALA" as TipoVuelo,
@@ -499,9 +532,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ? isoToCancunInput(q.fecha_traslado_final)
           : "",
         // Externo: el vuelo no tiene avión propio; la referencia de tarifa con
-        // la que se cotizó vive en el snapshot.
+        // la que se cotizó vive en el snapshot. Un externo SIN referencia
+        // (snapshot con aeronave.id null — venta broker de jet ajeno) entra
+        // en modo sin-avión: el precio son los montos pactados por tramo.
         aeronave_id:
-          q.aeronave_id ?? q.calculo_snapshot?.aeronave?.id ?? defaultAircraftId,
+          q.aeronave_id ??
+          q.calculo_snapshot?.aeronave?.id ??
+          (q.es_externo ? SIN_AVION : defaultAircraftId),
         // El vínculo a la ruta del catálogo se conserva (antes se perdía al
         // revisar y salía el aviso falso "difiere de la ruta guardada").
         ruta_id: q.ruta_id ?? "",
@@ -524,11 +561,25 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   tipo_parada: t.tipo_parada,
                   servicio_notas: t.servicio_notas,
                   pdf_oculto: t.pdf_oculto,
+                  monto_externo_usd: montoTramoHidratado(t.monto_externo_usd),
                 }),
               )
             : comercialSugerida(q)
           : q.escalas && q.escalas.filter((e) => !e.solo_operativa).length > 0
-            ? q.escalas.filter((e) => !e.solo_operativa).map(tramoToEscala)
+            ? q.escalas
+                .filter((e) => !e.solo_operativa)
+                .map((e, i) =>
+                  tramoToEscala({
+                    ...e,
+                    // Monto pactado (externo sin avión): el de la escala
+                    // persiste; fallback al snapshot del cálculo — el mismo
+                    // camino por el que viaja pdf_oculto por tramo.
+                    monto_externo_usd: montoTramoHidratado(
+                      e.monto_externo_usd,
+                      q.calculo_snapshot?.tramos?.[i]?.monto_externo_usd,
+                    ),
+                  }),
+                )
             : legacyLegs,
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
@@ -571,6 +622,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         pdf_mostrar_itinerario: q.pdf_mostrar_itinerario ?? true,
         es_externo: q.es_externo ?? false,
         operador_externo: q.operador_externo ?? "",
+        // Ficha del avión ajeno: la persiste el vuelo; fallback al snapshot
+        // cuando la cotización nació sin avión (aeronave.id null).
+        avion_externo_modelo:
+          q.avion_externo_modelo ??
+          (q.calculo_snapshot?.aeronave?.id == null
+            ? (q.calculo_snapshot?.aeronave?.modelo ?? "")
+            : ""),
+        avion_externo_matricula:
+          q.avion_externo_matricula ??
+          (q.calculo_snapshot?.aeronave?.id == null
+            ? (q.calculo_snapshot?.aeronave?.matricula ?? "")
+            : ""),
         costo_externo_usd:
           q.costo_externo_usd != null ? Number(q.costo_externo_usd) : null,
         // El pactado SÍ se persiste (calculo_snapshot.meta): rehidratarlo
@@ -676,6 +739,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       pdf_mostrar_itinerario: true,
       es_externo: false,
       operador_externo: "",
+      avion_externo_modelo: "",
+      avion_externo_matricula: "",
       costo_externo_usd: null,
       total_pactado_usd: null,
       extras: [],
@@ -763,6 +828,35 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     ? reviseClienteInterno
     : !!allClients.find((c) => c.id === values.cliente_id)?.es_interno;
 
+  // Modo SIN AVIÓN (28-ago, venta broker de un jet AJENO — ej. HAWKER 400 A
+  // XA-REG): es_externo sin avión de la flota. No hay tarifa por hora, hora
+  // mínima ni TUAS de catálogo — el precio del servicio es la SUMA de los
+  // montos pactados por tramo (o el total pactado a mano).
+  const sinAvion = values.es_externo && values.aeronave_id === SIN_AVION;
+  const hayMontoPactado =
+    values.escalas.some((l) => Number(l.monto_externo_usd) > 0) ||
+    Number(values.total_pactado_usd) > 0;
+  // Sin ningún monto todavía NO se llama /calculate (el motor respondería 400
+  // en cada tecla): el preview muestra su estado vacío con la instrucción.
+  const faltaMontoPactado = sinAvion && !hayMontoPactado;
+  // Ficha persistida al abrir (solo revise): distingue "vaciar el campo" =
+  // '' explícito al API (BORRAR la ficha) de "nunca hubo" = omitir la clave.
+  const teniaModeloPersistido =
+    isRevise && formDefaults.avion_externo_modelo !== "";
+  const teniaMatriculaPersistida =
+    isRevise && formDefaults.avion_externo_matricula !== "";
+
+  // Comisión del vendedor POR_HORA no existe sin horas (el motor la rechaza
+  // con 400 "usa comisión FIJA"): en modo sin-avión se fuerza FIJA — el
+  // monto fijo capturado (si lo hay) se conserva tal cual.
+  useEffect(() => {
+    if (sinAvion && values.comision_vendedor_modo === "POR_HORA") {
+      setValue("comision_vendedor_modo", "FIJA");
+    }
+    // setValue es estable en RHF.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinAvion, values.comision_vendedor_modo]);
+
   // "Todo en $0" para vuelos de la empresa: el motor ya pone la TARIFA en 0
   // para internos, pero TUAS, pernoctas, extras, comisión del vendedor y
   // descuentos siguen sumando. Esto apaga de un golpe todo lo que le cobraría
@@ -797,8 +891,40 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   const calcPayload = useMemo<CalculateQuoteRequest | null>(() => {
     if (!debounced.aeronave_id) return null;
+    // Modo sin-avión: la clave aeronave_id se OMITE (no viaja "" ni null) y
+    // viajan es_externo + ficha del avión ajeno + montos por tramo.
+    const sinAvionDeb =
+      debounced.es_externo && debounced.aeronave_id === SIN_AVION;
+    // Cinturón: el centinela jamás debe viajar como aeronave_id (p. ej. un
+    // borrador raro con SIN_AVION pero es_externo apagado).
+    if (!sinAvionDeb && debounced.aeronave_id === SIN_AVION) return null;
+    const modeloTrim = debounced.avion_externo_modelo?.trim() ?? "";
+    const matriculaTrim = debounced.avion_externo_matricula?.trim() ?? "";
+    // POR_HORA no aplica sin horas (sin-avión): se trata como FIJA aunque el
+    // modo aún diga POR_HORA en la ventana del debounce (el efecto lo corrige).
+    const modoPorHoraDeb =
+      debounced.comision_vendedor_modo === "POR_HORA" && !sinAvionDeb;
     const base: CalculateQuoteRequest = {
-      aeronave_id: debounced.aeronave_id,
+      ...(sinAvionDeb ? {} : { aeronave_id: debounced.aeronave_id }),
+      ...(debounced.es_externo
+        ? {
+            es_externo: true,
+            // El DTO exige 2-80 / 2-20 SOLO en valores no vacíos: '' explícito
+            // = BORRAR la ficha (viaja cuando el campo TENÍA valor persistido
+            // y se vació); a medio teclear (1 char) la clave se omite —
+            // conserva — para no tirar el preview con un 400 en cada tecla.
+            ...(modeloTrim.length >= 2
+              ? { avion_externo_modelo: modeloTrim }
+              : modeloTrim === "" && teniaModeloPersistido
+                ? { avion_externo_modelo: "" }
+                : {}),
+            ...(matriculaTrim.length >= 2
+              ? { avion_externo_matricula: matriculaTrim }
+              : matriculaTrim === "" && teniaMatriculaPersistida
+                ? { avion_externo_matricula: "" }
+                : {}),
+          }
+        : {}),
       // Con cliente, el motor aplica su tarifa preferencial si la tiene pactada.
       cliente_id: debounced.cliente_id || undefined,
       tipo: "MULTIESCALA",
@@ -860,24 +986,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       // (sin ceros falsos). POR_HORA ⇒ modo + tarifa (el motor resuelve
       // tarifa × horas cobradas); FIJA (default del API) ⇒ solo el monto.
       comision_vendedor_modo:
-        debounced.comision_vendedor_modo === "POR_HORA" &&
-        Number(debounced.comision_vendedor_tarifa_hr) > 0
+        modoPorHoraDeb && Number(debounced.comision_vendedor_tarifa_hr) > 0
           ? "POR_HORA"
           : undefined,
       comision_vendedor_tarifa_hr:
-        debounced.comision_vendedor_modo === "POR_HORA" &&
-        Number(debounced.comision_vendedor_tarifa_hr) > 0
+        modoPorHoraDeb && Number(debounced.comision_vendedor_tarifa_hr) > 0
           ? Number(debounced.comision_vendedor_tarifa_hr)
           : undefined,
       comision_vendedor_usd:
-        debounced.comision_vendedor_modo !== "POR_HORA" &&
-        Number(debounced.comision_vendedor_usd) > 0
+        !modoPorHoraDeb && Number(debounced.comision_vendedor_usd) > 0
           ? Number(debounced.comision_vendedor_usd)
           : undefined,
       comision_vendedor_nombre:
-        ((debounced.comision_vendedor_modo === "POR_HORA" &&
+        ((modoPorHoraDeb &&
           Number(debounced.comision_vendedor_tarifa_hr) > 0) ||
-          (debounced.comision_vendedor_modo !== "POR_HORA" &&
+          (!modoPorHoraDeb &&
             Number(debounced.comision_vendedor_usd) > 0)) &&
         debounced.comision_vendedor_nombre.trim()
           ? debounced.comision_vendedor_nombre.trim()
@@ -886,8 +1009,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     const legs = debounced.escalas ?? [];
     if (legs.length >= 1) {
       // Itinerario propio de la cotización (plantilla hidratada y ajustable).
+      // Sin avión el precio no usa millas: pueden ir en 0 (el API lo permite
+      // ahí — caso real: aeropuerto sin coordenadas para el haversine).
       const incomplete = legs.some(
-        (l) => !l.origen_iata || !l.destino_iata || !(Number(l.millas_nauticas) > 0),
+        (l) =>
+          !l.origen_iata ||
+          !l.destino_iata ||
+          (!sinAvionDeb && !(Number(l.millas_nauticas) > 0)),
       );
       if (incomplete) return null;
       base.escalas = legs.map((l) => ({
@@ -905,6 +1033,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         servicio_notas: l.servicio_notas ?? null,
         notas: l.notas?.trim() ? l.notas.trim() : null,
         fecha_salida_plan: l.fecha_salida_plan ? cancunInputToIso(l.fecha_salida_plan) : null,
+        // Monto pactado del tramo: SOLO viaja en modo sin-avión (con avión
+        // de referencia el motor lo ignora y no debe persistir basura).
+        ...(sinAvionDeb && l.monto_externo_usd != null
+          ? {
+              monto_externo_usd:
+                Math.round(Number(l.monto_externo_usd) * 100) / 100,
+            }
+          : {}),
       }));
       // La ruta guardada queda solo como referencia de la plantilla usada.
       if (debounced.ruta_id) base.ruta_id = debounced.ruta_id;
@@ -913,6 +1049,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       base.ruta_id = debounced.ruta_id;
     } else {
       return null;
+    }
+    if (sinAvionDeb) {
+      // El modo sin-avión se cotiza por tramos EXPLÍCITOS (MULTIESCALA) y sin
+      // ningún monto (>0) ni total pactado el motor respondería 400 "Captura
+      // el monto pactado…" en cada tecla: no se llama /calculate todavía.
+      if (!base.escalas || base.escalas.length === 0) return null;
+      const hayMonto = base.escalas.some(
+        (l) => Number(l.monto_externo_usd) > 0,
+      );
+      if (!hayMonto && !(Number(debounced.total_pactado_usd) > 0)) return null;
     }
     // Con pax POR TRAMO completo, el "global" que viaja (y que la lista y
     // el PDF muestran) es el MÁXIMO de los tramos — el capturado queda
@@ -979,7 +1125,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       base.iva_pct_override = Number(debounced.iva_pct_override);
     }
     return base;
-  }, [debounced, clienteInterno]);
+  }, [debounced, clienteInterno, teniaModeloPersistido, teniaMatriculaPersistida]);
 
   const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1215,7 +1361,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         breakdown.tuas.destino,
       ].filter(Boolean);
     const a = aps.find((x) => x?.iata === iata);
-    return a ? a.aplica : false;
+    if (!a) return false;
+    // Sin avión de catálogo el motor marca aplica=false mientras la línea no
+    // viaje — y una MXN sin TC se retiene y NO viaja: sin este caso el
+    // candado del TC nunca se activaría y la TUA capturada se caería del
+    // total en silencio.
+    if (sinAvion) return true;
+    return a.aplica;
   };
   // Líneas MXN que realmente cobrarían: monto > 0 y aeropuerto que aplica.
   const hayTuasMxnActivas = (values.tuas_lineas ?? []).some(
@@ -1251,6 +1403,22 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       : !!values.cliente_id && !!calcPayload && !!breakdown && !error);
 
   const handleSave = () => {
+    // Validación amable del modo sin-avión (el motor exigiría lo mismo con
+    // un 400 seco): al menos un tramo con monto > 0 o un total pactado > 0.
+    if (sinAvion && !hayMontoPactado) {
+      toast.error(
+        "Captura el monto pactado de al menos un tramo o el precio total pactado.",
+      );
+      return;
+    }
+    if (
+      !isRevise &&
+      values.es_externo &&
+      values.operador_externo.trim().length < 2
+    ) {
+      toast.error("Indica el operador externo que cubre el vuelo.");
+      return;
+    }
     if (!calcPayload) {
       toast.error("Faltan datos para guardar");
       return;
@@ -1333,12 +1501,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         notas_internas: values.notas_internas || undefined,
         ...(values.es_externo
           ? {
+              // es_externo y la ficha del avión ajeno ya viajan en calcPayload;
+              // aquí va lo que /calculate no conoce (operador y costo).
               es_externo: true,
               operador_externo: values.operador_externo.trim(),
-              costo_externo_usd:
-                Number(values.costo_externo_usd) > 0
-                  ? Number(values.costo_externo_usd)
-                  : 0,
+              // Solo si se capturó: un 0 "fingía utilidad" en el reparto —
+              // sin costo el API guarda null y sin_costo_count lo delata.
+              ...(Number(values.costo_externo_usd) > 0
+                ? { costo_externo_usd: Number(values.costo_externo_usd) }
+                : {}),
             }
           : {}),
       });
@@ -1361,6 +1532,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         loading={loading}
         error={error}
         sinDatos={!calcPayload}
+        sinDatosMsg={
+          faltaMontoPactado
+            ? "Captura el monto pactado de al menos un tramo"
+            : sinAvion
+              ? "Completa la ruta y los pasajeros"
+              : undefined
+        }
       />
       {/* FORM */}
       <Card className="border-t-2 border-t-brand-600/60">
@@ -1437,8 +1615,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       </p>
                       {/* Lo que se le cobra por hora A ESTE cliente (resuelto
                           por el motor: preferencial pactada > default del
-                          avión > override), visible al momento de elegirlo. */}
-                      {breakdown && (
+                          avión > override), visible al momento de elegirlo.
+                          Sin avión no hay tarifa por hora: se omite. */}
+                      {breakdown && !sinAvion && (
                         <p className="mt-1 text-xs">
                           <span className="font-mono font-semibold">
                             {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
@@ -1576,26 +1755,178 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </Field>
           </div>
 
+          {/* Vuelo cubierto por operador EXTERNO. Al crear: se prende AQUÍ
+              cuando la venta nace con un avión AJENO (broker, ej. HAWKER
+              400 A) — con avión propio se puede seguir cubriendo después
+              desde el detalle del vuelo («Cubrir con externo»). Al revisar:
+              muestra el estado y edita la ficha del avión y el pactado. */}
+          {(!isRevise || initialQuote?.es_externo) && (
+            <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+              {isRevise && initialQuote?.es_externo ? (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                  Vuelo cubierto por{" "}
+                  <strong>{initialQuote.operador_externo}</strong>.{" "}
+                  {sinAvion
+                    ? "Sin avión de la flota: el precio es la suma de los montos pactados por tramo. El operador y el costo del apoyo se editan desde el detalle del vuelo."
+                    : "El avión de abajo es solo la referencia de tarifa; el operador y el costo del apoyo se editan desde el detalle del vuelo."}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium">
+                        Cubierto por operador externo
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Otro operador vuela el servicio (ej. venta broker de
+                        un jet ajeno). Sin tacómetros; los gastos sí se
+                        registran en el vuelo.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={values.es_externo}
+                      onCheckedChange={(c) => {
+                        setValue("es_externo", c);
+                        // Sin es_externo no existe el modo sin-avión: el
+                        // selector regresa a un avión real de la flota.
+                        if (!c && values.aeronave_id === SIN_AVION) {
+                          setValue("aeronave_id", defaultAircraftId);
+                        }
+                      }}
+                    />
+                  </div>
+                  {values.es_externo && (
+                    <Field
+                      label="Operador externo"
+                      required
+                      hint="Quién vuela el servicio"
+                    >
+                      <Input
+                        placeholder="Ej. Aerocharter del Caribe"
+                        maxLength={120}
+                        value={values.operador_externo}
+                        onChange={(e) =>
+                          setValue("operador_externo", e.target.value)
+                        }
+                      />
+                    </Field>
+                  )}
+                </>
+              )}
+              {values.es_externo && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field
+                      label="Modelo del avión"
+                      hint="Sale en el PDF del cliente"
+                    >
+                      <Input
+                        placeholder="HAWKER 400 A"
+                        maxLength={80}
+                        value={values.avion_externo_modelo}
+                        onChange={(e) =>
+                          setValue("avion_externo_modelo", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="Matrícula (opcional)">
+                      <Input
+                        placeholder="XA-REG"
+                        maxLength={20}
+                        value={values.avion_externo_matricula}
+                        onChange={(e) =>
+                          setValue("avion_externo_matricula", e.target.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+                  {!isRevise && (
+                    <Field
+                      label="Costo del apoyo (USD)"
+                      hint="Lo que nos cobra el operador · interno, no lo ve el cliente"
+                    >
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder="0.00"
+                        value={values.costo_externo_usd ?? ""}
+                        onChange={(e) =>
+                          setValue(
+                            "costo_externo_usd",
+                            e.target.value === ""
+                              ? null
+                              : Math.max(0, Number(e.target.value)),
+                          )
+                        }
+                      />
+                    </Field>
+                  )}
+                  <Field
+                    label="Precio pactado con el cliente (total, USD)"
+                    hint={
+                      sinAvion
+                        ? "Opcional: manda sobre la suma de los tramos — el total aterriza exacto en lo pactado."
+                        : "Se conserva entre revisiones: el total aterriza exacto en lo pactado. Vacío = usar el cálculo normal."
+                    }
+                  >
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="Ej. 800.00"
+                      value={values.total_pactado_usd ?? ""}
+                      onChange={(e) =>
+                        setValue(
+                          "total_pactado_usd",
+                          e.target.value === ""
+                            ? null
+                            : Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                    />
+                  </Field>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Aeronave */}
           <Field label="Aeronave" required>
             <SearchableSelect
-              options={aircraft.map((a) => {
-                const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
-                return {
-                  value: a.id,
-                  label: `${a.matricula} — ${a.modelo}`,
-                  description: `${a.velocidad_crucero_kts} kts${
-                    sinTarifa
-                      ? clienteInterno
-                        ? " · sin tarifa · interno cotiza $0"
-                        : " · sin tarifa configurada"
-                      : ""
-                  }`,
-                  // Cliente interno: el motor acepta tarifa $0, así que un
-                  // avión sin tarifa configurada SÍ se puede cotizar.
-                  disabled: sinTarifa && !clienteInterno,
-                };
-              })}
+              options={[
+                // Externo: además de la flota (referencia de tarifa, flujo
+                // intacto), la opción SIN avión — venta broker de un jet
+                // AJENO: el precio se pacta POR TRAMO, no por hora.
+                ...(values.es_externo
+                  ? [
+                      {
+                        value: SIN_AVION,
+                        label: "Sin avión — precio pactado por tramo",
+                        description:
+                          "Avión ajeno (broker): captura el monto de cada tramo",
+                      },
+                    ]
+                  : []),
+                ...aircraft.map((a) => {
+                  const sinTarifa =
+                    !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
+                  return {
+                    value: a.id,
+                    label: `${a.matricula} — ${a.modelo}`,
+                    description: `${a.velocidad_crucero_kts} kts${
+                      sinTarifa
+                        ? clienteInterno
+                          ? " · sin tarifa · interno cotiza $0"
+                          : " · sin tarifa configurada"
+                        : ""
+                    }`,
+                    // Cliente interno: el motor acepta tarifa $0, así que un
+                    // avión sin tarifa configurada SÍ se puede cotizar.
+                    disabled: sinTarifa && !clienteInterno,
+                  };
+                }),
+              ]}
               value={values.aeronave_id}
               onChange={(v) => setValue("aeronave_id", v)}
               placeholder="Selecciona aeronave"
@@ -1604,6 +1935,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               <p className="text-xs text-muted-foreground mt-1">
                 Tarifa público {fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr · broker{" "}
                 {fmtUsd(selectedAircraft.tarifa_hora_broker_usd)} / hr
+              </p>
+            )}
+            {sinAvion && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Avión ajeno a la flota: sin tarifa por hora, hora mínima ni
+                TUAS de catálogo — el precio del servicio es la SUMA de los
+                montos pactados por tramo.
               </p>
             )}
           </Field>
@@ -1773,6 +2111,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   routes={allRoutes}
                   airports={airports}
                   avisoAnclaCun
+                  conMontoExterno={sinAvion}
                 />
                 {breakdown && (
                   <AporteChip
@@ -1837,7 +2176,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           )}
 
           {/* Tarifa tipo — "Personalizada" = override de USD/hr SOLO de esta
-              cotización (antes vivía escondido en Overrides; pedido 25-ago). */}
+              cotización (antes vivía escondido en Overrides; pedido 25-ago).
+              Modo sin-avión: NO hay tarifa por hora (público/broker/custom
+              dependen del avión) — la sección entera se omite. */}
+          {!sinAvion && (
           <div className="space-y-2">
             <Label className="text-sm font-medium">Tipo de tarifa</Label>
             <Segmented
@@ -1895,6 +2237,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </div>
             )}
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Pasajeros" required>
@@ -1966,6 +2309,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </div>
           </div>
 
+          {/* Sin avión no hay horas cobradas: el sobrevuelo no aplica. */}
+          {!sinAvion && (
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="Sobrevuelo (hr)"
@@ -2009,6 +2354,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 aeropuerto" del panel derecho (26-ago): junto a donde se
                 editan los montos, que es donde tiene sentido. */}
           </div>
+          )}
 
           <div className="flex items-center justify-between rounded-lg border border-border bg-navy-800/50 p-3">
             <div className="space-y-0.5">
@@ -2060,42 +2406,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               />
             </div>
           </div>
-
-          {/* Vuelo cubierto por operador externo: TODOS los vuelos nacen
-              igual (cotización normal); cubrirlo se decide después desde el
-              detalle del vuelo («Cubrir con externo»). Aquí solo se muestra
-              el estado y se edita el precio pactado al revisar. */}
-          {isRevise ? (
-            initialQuote?.es_externo && (
-              <div className="space-y-3">
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                  Vuelo cubierto por <strong>{initialQuote.operador_externo}</strong>.
-                  El avión de arriba es solo la referencia de tarifa; el operador y
-                  el costo del apoyo se editan desde el detalle del vuelo.
-                </div>
-                <Field
-                  label="Precio pactado con el cliente (total, USD)"
-                  hint="Se conserva entre revisiones: el total aterriza exacto en lo pactado. Vacío = usar el cálculo normal."
-                >
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="Ej. 800.00"
-                    value={values.total_pactado_usd ?? ""}
-                    onChange={(e) =>
-                      setValue(
-                        "total_pactado_usd",
-                        e.target.value === ""
-                          ? null
-                          : Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                </Field>
-              </div>
-            )
-          ) : null}
 
           {/* Conceptos extra */}
           <ExtrasEditor
@@ -2645,10 +2955,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   }
                   options={[
                     { value: "FIJA", label: "Monto fijo" },
-                    { value: "POR_HORA", label: "Por hora" },
+                    // Sin avión no hay horas cobradas: el motor rechaza
+                    // POR_HORA con 400 — solo queda el monto fijo.
+                    { value: "POR_HORA", label: "Por hora", disabled: sinAvion },
                   ]}
                 />
               </div>
+              {sinAvion && (
+                <p className="text-xs text-muted-foreground">
+                  Sin avión no hay horas cobradas: la comisión se captura como
+                  monto fijo.
+                </p>
+              )}
               <div className="flex items-center gap-3 flex-wrap">
                 {values.comision_vendedor_modo === "POR_HORA" ? (
                   <Input
@@ -2759,7 +3077,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 Completa los parámetros
               </CardTitle>
               <CardDescription>
-                Necesito aeronave, ruta y pasajeros para calcular.
+                {faltaMontoPactado
+                  ? "Modo sin avión: captura el monto pactado (USD) de al menos un tramo, o el precio total pactado con el cliente."
+                  : sinAvion
+                    ? "Modo sin avión: necesito la ruta y los pasajeros para calcular."
+                    : "Necesito aeronave, ruta y pasajeros para calcular."}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -3051,12 +3373,18 @@ function TotalBar({
   loading,
   error,
   sinDatos,
+  sinDatosMsg,
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
   error: string | null;
   sinDatos: boolean;
+  /** Mensaje específico del estado vacío (ej. modo sin-avión sin montos). */
+  sinDatosMsg?: string;
 }) {
+  // Avión externo SIN referencia (id null): no hay horas ni tarifa — el
+  // subtotal es la suma de los montos pactados por tramo.
+  const sinAvionBd = breakdown != null && breakdown.aeronave.id == null;
   // Desglose SIEMPRE visible bajo el total (27-ago; antes: chips solo en
   // ≥md): celdas compactas que PINTAN campos del breakdown canónico tal
   // cual — cero cálculos aquí. Las de $0 se omiten, salvo las estructurales
@@ -3064,23 +3392,25 @@ function TotalBar({
   const celdas: { label: string; value: string }[] = [];
   if (breakdown) {
     const t = breakdown.totales;
+    if (!sinAvionBd) {
+      celdas.push({
+        label: "Horas",
+        value: `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
+      });
+      const origenTarifa = breakdown.tarifa.proviene_de_override
+        ? "Override"
+        : breakdown.tarifa.preferencial_cliente
+          ? "Preferencial"
+          : breakdown.tarifa.tipo === "BROKER"
+            ? "Broker"
+            : "Pública";
+      celdas.push({
+        label: `Tarifa · ${origenTarifa}`,
+        value: `${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`,
+      });
+    }
     celdas.push({
-      label: "Horas",
-      value: `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
-    });
-    const origenTarifa = breakdown.tarifa.proviene_de_override
-      ? "Override"
-      : breakdown.tarifa.preferencial_cliente
-        ? "Preferencial"
-        : breakdown.tarifa.tipo === "BROKER"
-          ? "Broker"
-          : "Pública";
-    celdas.push({
-      label: `Tarifa · ${origenTarifa}`,
-      value: `${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`,
-    });
-    celdas.push({
-      label: "Servicio aéreo",
+      label: sinAvionBd ? "Montos pactados por tramo" : "Servicio aéreo",
       value: fmtUsd(t.subtotal_vuelo_usd),
     });
     if (t.tuas_total_usd) {
@@ -3130,7 +3460,7 @@ function TotalBar({
             </span>
           ) : sinDatos ? (
             <span className="text-sm text-muted-foreground">
-              Completa aeronave, ruta y pasajeros
+              {sinDatosMsg ?? "Completa aeronave, ruta y pasajeros"}
             </span>
           ) : !breakdown ? (
             <span className="text-sm text-muted-foreground">Calculando…</span>
@@ -3146,7 +3476,7 @@ function TotalBar({
                 </span>
               )}
               <Badge variant="outline" className="text-[10px]">
-                {breakdown.tarifa.tipo}
+                {sinAvionBd ? "EXTERNO" : breakdown.tarifa.tipo}
               </Badge>
             </>
           )}
@@ -3225,6 +3555,9 @@ function Preview({
   tiempoOverride: number | null;
   onTiempoOverride: (v: number | null) => void;
 }) {
+  // Avión externo SIN referencia (id null): no hay horas/tarifa/TUAS de
+  // catálogo — el subtotal es la suma de los montos pactados por tramo.
+  const sinAvionBd = breakdown.aeronave.id == null;
   // Aeropuertos ÚNICOS del itinerario (todos, no solo origen/destino).
   const aeropuertos = (() => {
     const list =
@@ -3301,7 +3634,7 @@ function Preview({
               )}
             </div>
             <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30">
-              {breakdown.tarifa.tipo}
+              {sinAvionBd ? "EXTERNO" : breakdown.tarifa.tipo}
             </Badge>
           </div>
           {/* Desglose tipo RECIBO, en el MISMO orden de la suma canónica
@@ -3309,7 +3642,9 @@ function Preview({
               se lee de arriba a abajo y siempre queda alineado. */}
           <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-sm">
             <FilaTotal
-              label="Subtotal vuelo"
+              label={
+                sinAvionBd ? "Montos pactados por tramo" : "Subtotal vuelo"
+              }
               value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
             />
             <FilaTotal
@@ -3474,7 +3809,11 @@ function Preview({
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span>
-                    {fmtDecimal(t.millas)} NM · {fmtDecimal(t.tiempo_hr, 4)} hr
+                    {/* Sin avión no hay tiempo derivado: se muestra el monto
+                        pactado de ESTE tramo (la suma es el subtotal). */}
+                    {sinAvionBd
+                      ? `${fmtDecimal(t.millas)} NM · pactado ${fmtUsd(t.monto_externo_usd ?? 0)}`
+                      : `${fmtDecimal(t.millas)} NM · ${fmtDecimal(t.tiempo_hr, 4)} hr`}
                   </span>
                   <span>TUAS {fmtUsd(t.tuas_usd)}</span>
                 </div>
@@ -3489,7 +3828,9 @@ function Preview({
         </Card>
       )}
 
-      {/* Tiempos + Tarifa */}
+      {/* Tiempos + Tarifa — dependen del avión: en modo sin-avión no
+          existen (sin velocidad no hay tiempo derivado ni tarifa/hr). */}
+      {!sinAvionBd && (
       <div className="grid gap-4 sm:grid-cols-2">
         <Card className="border-t-2 border-t-brand-600/60">
           <CardHeader>
@@ -3601,6 +3942,7 @@ function Preview({
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* TUAS desglose EDITABLE: todos los aeropuertos del itinerario, con
           monto por pax capturable + moneda propia (pass-through de lo que el
@@ -3616,15 +3958,29 @@ function Preview({
             </label>
           </div>
           <CardDescription className="text-xs">
-            {breakdown.tuas.pasajeros} {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} de
-            referencia (cada tramo puede llevar el suyo). Regla aplicada por
-            matrícula {breakdown.aeronave.matricula.startsWith("XA")
-              ? "XA"
-              : breakdown.aeronave.matricula.startsWith("XB")
-                ? "XB"
-                : "N"}
-            . Edita el monto por pasajero si el aeropuerto cobra distinto
-            (USD o MXN); vacío = monto del catálogo.
+            {sinAvionBd ? (
+              <>
+                {breakdown.tuas.pasajeros}{" "}
+                {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} de
+                referencia. Avión externo sin catálogo: la TUA solo se cobra
+                si capturas la línea del aeropuerto (monto por pasajero, USD
+                o MXN); vacío = no se cobra.
+              </>
+            ) : (
+              <>
+                {breakdown.tuas.pasajeros}{" "}
+                {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} de
+                referencia (cada tramo puede llevar el suyo). Regla aplicada
+                por matrícula{" "}
+                {breakdown.aeronave.matricula?.startsWith("XA")
+                  ? "XA"
+                  : breakdown.aeronave.matricula?.startsWith("XB")
+                    ? "XB"
+                    : "N"}
+                . Edita el monto por pasajero si el aeropuerto cobra distinto
+                (USD o MXN); vacío = monto del catálogo.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -3643,6 +3999,10 @@ function Preview({
               paxGlobal={breakdown.tuas.pasajeros}
               disabled={!cobrarTuas}
               tcCapturado={tcUsdMxn != null}
+              // Sin catálogo el motor marca aplica=false hasta que exista
+              // línea capturada: el campo debe seguir editable para poder
+              // capturarla.
+              permitirCaptura={sinAvionBd}
               onChange={onTuaChange}
             />
           ))}
@@ -3722,6 +4082,7 @@ function TuasAirportRow({
   paxGlobal,
   disabled,
   tcCapturado,
+  permitirCaptura = false,
   onChange,
 }: {
   air: TuasAeropuerto;
@@ -3730,6 +4091,9 @@ function TuasAirportRow({
   paxGlobal: number;
   disabled: boolean;
   tcCapturado: boolean;
+  /** Avión externo sin catálogo: editable aunque el motor diga aplica=false
+      (sin línea capturada la TUA no existe — capturar ES el flujo). */
+  permitirCaptura?: boolean;
   onChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
 }) {
   // Moneda elegida antes de capturar monto (sin monto aún no viaja la línea).
@@ -3739,8 +4103,8 @@ function TuasAirportRow({
   const moneda = linea?.moneda ?? monedaDraft;
   const capturada = !!linea;
   const montoCatalogo = air.monto_pax ?? air.usd_pax;
-  const pax = fila?.pax ?? (air.aplica ? paxGlobal : 0);
-  const editable = !disabled && air.aplica;
+  const pax = fila?.pax ?? (air.aplica || permitirCaptura ? paxGlobal : 0);
+  const editable = !disabled && (air.aplica || permitirCaptura);
 
   const handleMonto = (raw: string) => {
     // Vacío = des-capturar (vuelve al catálogo). "0" = TUA capturada en $0
@@ -3895,6 +4259,8 @@ function Segmented({
     label: string;
     /** Dato sutil junto al label (ej. "$750/hr" en el selector de tarifa). */
     sub?: string;
+    /** Opción no disponible en el contexto actual (ej. POR_HORA sin avión). */
+    disabled?: boolean;
   }[];
 }) {
   return (
@@ -3905,12 +4271,14 @@ function Segmented({
           <button
             type="button"
             key={opt.value}
+            disabled={opt.disabled}
             onClick={() => onChange(opt.value)}
             className={cn(
               "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
               active
                 ? "bg-navy-700 text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
+              opt.disabled && "opacity-50 cursor-not-allowed",
             )}
           >
             {opt.label}

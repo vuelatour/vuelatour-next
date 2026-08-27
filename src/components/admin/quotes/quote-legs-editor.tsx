@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
 import { cn } from "@/lib/utils";
-import { fmtDecimal } from "@/lib/format";
+import { fmtDecimal, fmtUsd } from "@/lib/format";
 import type { EscalaInput } from "@/types/quote";
 
 const PERNOCTA_COSTO_DEFAULT_USD = 150;
@@ -64,6 +64,7 @@ export function QuoteLegsEditor({
   airports,
   defaultOrigin = "CUN",
   avisoAnclaCun = false,
+  conMontoExterno = false,
 }: {
   value: EscalaInput[];
   onChange: (legs: EscalaInput[]) => void;
@@ -72,6 +73,9 @@ export function QuoteLegsEditor({
   defaultOrigin?: string;
   /** Cotizador: avisa (sin bloquear) si la ruta comercial no abre/cierra en CUN. */
   avisoAnclaCun?: boolean;
+  /** Avión EXTERNO sin referencia: cada tramo captura su monto pactado (USD)
+      y la suma es el precio del servicio. */
+  conMontoExterno?: boolean;
 }) {
   // Inicializa con un tramo si está vacío.
   useEffect(() => {
@@ -261,7 +265,11 @@ export function QuoteLegsEditor({
       (l.fecha_salida_plan ?? null) !== null ||
       l.es_ferry === true ||
       l.requiere_pernocta === true ||
-      l.tipo_parada === "SERVICIO",
+      l.tipo_parada === "SERVICIO" ||
+      // Monto pactado (avión externo sin referencia): re-teclearlo cuesta.
+      // Solo >0 cuenta — un 0 heredado de snapshots viejos no es captura y
+      // no debe disparar la confirmación destructiva de la ruta rápida.
+      Number(l.monto_externo_usd) > 0,
   );
 
   const aplicarRutaRapida = (codigos: string[]) => {
@@ -278,6 +286,10 @@ export function QuoteLegsEditor({
   };
 
   const nmTotal = value.reduce((acc, l) => acc + (Number(l.millas_nauticas) || 0), 0);
+  const montoExternoTotal = value.reduce(
+    (acc, l) => acc + (Number(l.monto_externo_usd) || 0),
+    0,
+  );
 
   // Resumen del VIAJE por día (multi-día): agrupa los tramos por el día
   // Cancún de su fecha (datetime-local ya viene en pared Cancún); un tramo
@@ -430,6 +442,39 @@ export function QuoteLegsEditor({
                 </div>
               </div>
 
+              {/* Avión externo sin referencia: el monto pactado de ESTE tramo
+                  (la suma de los tramos es el precio del servicio). 0 es
+                  válido (tramo sin cargo); vacío = falta capturar. */}
+              {conMontoExterno && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] uppercase tracking-wider text-foreground/70">
+                    Monto pactado del tramo (USD)
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={leg.monto_externo_usd ?? ""}
+                    onChange={(e) =>
+                      updateLeg(idx, {
+                        monto_externo_usd:
+                          e.target.value === ""
+                            ? null
+                            : Math.max(0, Number(e.target.value)),
+                      })
+                    }
+                    placeholder="0.00"
+                    className={cn(
+                      leg.monto_externo_usd == null && "border-amber-500/40",
+                    )}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Lo pactado por ESTE tramo; la suma de los tramos es el
+                    precio del servicio.
+                  </p>
+                </div>
+              )}
+
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}
               <div className="rounded-md border border-border bg-navy-800/60 p-2 space-y-2">
                 <div className="flex items-center justify-between">
@@ -542,6 +587,15 @@ export function QuoteLegsEditor({
         <p className="text-xs text-muted-foreground">
           <span className="font-mono text-foreground">{fmtDecimal(nmTotal)}</span> NM totales ·{" "}
           {value.length} {value.length === 1 ? "tramo" : "tramos"}
+          {conMontoExterno && (
+            <>
+              {" "}·{" "}
+              <span className="font-mono text-foreground">
+                {fmtUsd(montoExternoTotal)}
+              </span>{" "}
+              pactados
+            </>
+          )}
         </p>
       </div>
 
