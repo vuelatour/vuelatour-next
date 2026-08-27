@@ -105,9 +105,12 @@ export function FechaHoraCampo({
 
   return (
     <div className={cn("space-y-1", className)}>
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2">
+      {/* flex-wrap: en columnas angostas (tramos del sheet) los selects
+          bajan a su propia línea en vez de reventar el ancho. */}
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           type="date"
+          className="min-w-[150px] flex-1 basis-[150px]"
           value={fecha}
           onChange={(e) => {
             const f = e.target.value;
@@ -115,6 +118,7 @@ export function FechaHoraCampo({
             emitir(f, hora12, minuto, ampm);
           }}
         />
+        <div className="flex gap-2">
         <select
           aria-label="Hora"
           className={cn(SELECT_CLS, "w-[64px]")}
@@ -158,6 +162,7 @@ export function FechaHoraCampo({
           <option value="am">a.m.</option>
           <option value="pm">p.m.</option>
         </select>
+        </div>
       </div>
     </div>
   );

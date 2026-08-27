@@ -432,7 +432,7 @@ export function ReservaFormSheet({
                       onChange={(e) => updateLeg(i, { servicioNotas: e.target.value })}
                     />
                   )}
-                  <div className="grid grid-cols-[1fr_1fr] items-start gap-3">
+                  <div className="grid grid-cols-[110px_1fr] items-start gap-3">
                     <Input
                       type="number"
                       min={0}
@@ -442,13 +442,16 @@ export function ReservaFormSheet({
                       onChange={(e) => updateLeg(i, { pasajeros: e.target.value })}
                     />
                     {i === 0 ? (
-                      <Input
-                        value="Usa la fecha y hora general"
-                        disabled
-                        readOnly
-                        className="text-muted-foreground text-xs"
-                        title="El primer tramo sale a la fecha y hora general del vuelo (capturada arriba)."
-                      />
+                      // La fecha del tramo 1 ES la general (28-ago): se
+                      // edita AQUÍ mismo y el campo de arriba se actualiza
+                      // solo (mismo estado) — antes solo había un letrero
+                      // deshabilitado y la fecha quedaba lejos del tramo.
+                      <div title="Es la salida general del vuelo — editarla aquí actualiza el campo de arriba.">
+                        <FechaHoraCampo
+                          value={fechaVuelo}
+                          onChange={setFechaVuelo}
+                        />
+                      </div>
                     ) : (
                       <div
                         title="Hora del tramo (opcional, hora Cancún)."
