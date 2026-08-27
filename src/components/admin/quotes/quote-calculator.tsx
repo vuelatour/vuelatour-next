@@ -3444,38 +3444,43 @@ function TotalBar({
   }
   return (
     <div className="sticky top-0 z-30 -mx-1 px-1 pt-1">
-      <div className="rounded-xl border border-brand-600/40 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 shadow-md px-4 py-2.5">
+      {/* Rojo VuelaTour sólido (pedido 28-ago): al hacer scroll la barra
+          fija debe RESALTAR como el módulo activo del sidebar. */}
+      <div className="rounded-xl border border-brand-500 bg-brand-600 text-white shadow-md px-4 py-2.5">
         <div
           className={cn(
             "flex flex-wrap items-baseline gap-2 transition-opacity",
             loading && "opacity-60",
           )}
         >
-          <span className="text-[11px] uppercase tracking-wider text-foreground/70">
+          <span className="text-[11px] uppercase tracking-wider text-white/80">
             Total
           </span>
           {error ? (
-            <span className="text-sm font-medium text-destructive">
+            <span className="text-sm font-semibold text-white">
               Error al calcular
             </span>
           ) : sinDatos ? (
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-white/85">
               {sinDatosMsg ?? "Completa aeronave, ruta y pasajeros"}
             </span>
           ) : !breakdown ? (
-            <span className="text-sm text-muted-foreground">Calculando…</span>
+            <span className="text-sm text-white/85">Calculando…</span>
           ) : (
             <>
               <span className="text-2xl font-bold tracking-tight font-mono tabular-nums">
                 {fmtUsd(breakdown.totales.total_usd)}
               </span>
-              <span className="text-xs text-muted-foreground">USD</span>
+              <span className="text-xs text-white/80">USD</span>
               {breakdown.totales.total_mxn != null && (
-                <span className="text-xs text-muted-foreground font-mono">
+                <span className="text-xs text-white/80 font-mono">
                   {fmtMxn(breakdown.totales.total_mxn)}
                 </span>
               )}
-              <Badge variant="outline" className="text-[10px]">
+              <Badge
+                variant="outline"
+                className="text-[10px] border-white/50 text-white"
+              >
                 {sinAvionBd ? "EXTERNO" : breakdown.tarifa.tipo}
               </Badge>
             </>
@@ -3484,13 +3489,13 @@ function TotalBar({
         {breakdown && !error && (
           <div
             className={cn(
-              "mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-border/60 pt-1.5 transition-opacity",
+              "mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-white/25 pt-1.5 transition-opacity",
               loading && "opacity-60",
             )}
           >
             {celdas.map((c) => (
               <div key={c.label}>
-                <p className="text-[11px] uppercase tracking-wider leading-tight text-foreground/70 whitespace-nowrap">
+                <p className="text-[11px] uppercase tracking-wider leading-tight text-white/75 whitespace-nowrap">
                   {c.label}
                 </p>
                 <p className="font-mono tabular-nums text-xs whitespace-nowrap">
