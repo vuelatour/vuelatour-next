@@ -144,6 +144,30 @@
   --sidebar-ring: #e63946;
 }
 
+/* ============ Zona clara (islas blancas dentro del admin oscuro) ============
+   Cotizador 27-ago (pedido del cliente): la barra del total y las cards de
+   RESULTADOS van en BLANCO para seccionar contra el fondo navy — todo se
+   distingue de un vistazo. Re-escopar los tokens aquí hace que inputs,
+   switches, bordes y textos internos se adapten solos al contexto claro. */
+.dark .zona-clara {
+  color-scheme: light;
+  --background: #f8fafc;
+  --foreground: #102a43;          /* navy-900: texto oscuro de marca */
+  --card: #ffffff;
+  --card-foreground: #102a43;
+  --popover: #ffffff;
+  --popover-foreground: #102a43;
+  --secondary: #f0f4f8;
+  --secondary-foreground: #102a43;
+  --muted: #f0f4f8;
+  --muted-foreground: #486581;    /* navy-600: gris azulado legible */
+  --accent: #fef2f2;
+  --accent-foreground: #b91c1c;
+  --border: #d9e2ec;
+  --input: #d9e2ec;
+}
+
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -114,7 +114,7 @@ export function QuoteQuickAdjustCard({ quote }: { quote: PersistedQuote }) {
   };
 
   return (
-    <Card className="bg-navy-800">
+    <Card className="zona-clara">
       <CardHeader>
         <CardTitle className="text-sm flex items-center gap-2">
           <BoltIcon className="h-4 w-4 text-muted-foreground" />
@@ -154,7 +154,7 @@ export function QuoteQuickAdjustCard({ quote }: { quote: PersistedQuote }) {
           {extras.map((e, idx) => (
             <div
               key={idx}
-              className="rounded-lg border border-border bg-navy-900/70 p-2.5 space-y-2"
+              className="rounded-lg border border-border bg-muted p-2.5 space-y-2"
             >
               <div className="grid grid-cols-[1fr_96px_76px] gap-2">
                 <Input
@@ -178,7 +178,7 @@ export function QuoteQuickAdjustCard({ quote }: { quote: PersistedQuote }) {
                 />
               </div>
               {e.moneda === "MXN" && !(Number(quote.tc_usd_mxn) > 0) && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
+                <p className="text-xs text-amber-700">
                   La cotización no tiene tipo de cambio: captúralo con
                   «Revisar» antes de guardar montos en MXN.
                 </p>
