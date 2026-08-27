@@ -114,7 +114,7 @@ export function QuoteQuickAdjustCard({ quote }: { quote: PersistedQuote }) {
   };
 
   return (
-    <Card>
+    <Card className="bg-navy-800">
       <CardHeader>
         <CardTitle className="text-sm flex items-center gap-2">
           <BoltIcon className="h-4 w-4 text-muted-foreground" />
@@ -154,7 +154,7 @@ export function QuoteQuickAdjustCard({ quote }: { quote: PersistedQuote }) {
           {extras.map((e, idx) => (
             <div
               key={idx}
-              className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-2"
+              className="rounded-lg border border-border bg-navy-900/70 p-2.5 space-y-2"
             >
               <div className="grid grid-cols-[1fr_96px_76px] gap-2">
                 <Input

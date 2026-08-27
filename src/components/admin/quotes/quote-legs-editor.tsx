@@ -330,7 +330,7 @@ export function QuoteLegsEditor({
           return (
             <div
               key={idx}
-              className="rounded-lg border border-border bg-muted/40 p-3 space-y-2"
+              className="rounded-lg border border-border bg-navy-900/60 p-3 space-y-2"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-foreground/70">
@@ -431,7 +431,7 @@ export function QuoteLegsEditor({
               </div>
 
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}
-              <div className="rounded-md border border-border bg-card p-2 space-y-2">
+              <div className="rounded-md border border-border bg-navy-800 p-2 space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-xs font-medium">Ferry (vacío)</Label>

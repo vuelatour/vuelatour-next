@@ -1357,7 +1357,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         sinDatos={!calcPayload}
       />
       {/* FORM */}
-      <Card>
+      <Card className="bg-navy-800">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <CalculatorIcon className="h-4 w-4 text-muted-foreground" />
@@ -1368,7 +1368,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         <CardContent className="space-y-4">
           {/* Cliente */}
           {isRevise && initialQuote ? (
-            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 space-y-0.5">
+            <div className="rounded-lg border border-border bg-navy-900/70 px-3 py-2 space-y-0.5">
               <p className="text-[11px] uppercase tracking-wider text-foreground/70">
                 Cliente · folio
               </p>
@@ -1776,7 +1776,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 )}
               </Field>
               {itinerarioAjustado && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/40 p-2.5">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-navy-900/70 p-2.5">
                   <p className="text-xs text-muted-foreground">
                     Este itinerario difiere de la ruta guardada. Si se va a
                     repetir, guárdalo en el catálogo (la ruta original no se
@@ -2004,7 +2004,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 editan los montos, que es donde tiene sentido. */}
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-navy-900/70 p-3">
             <div className="space-y-0.5">
               <Label className="text-sm font-medium">Cotización abierta</Label>
               <p className="text-xs text-muted-foreground">
@@ -2019,7 +2019,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </div>
 
           {/* Presentación del PDF (27-ago): configurable por cotización. */}
-          <div className="space-y-2 rounded-lg border border-border p-3">
+          <div className="space-y-2 rounded-lg border border-border bg-navy-900/70 p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
               PDF de la cotización
             </p>
@@ -2187,7 +2187,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     ? (breakdown.meta?.redondeo_auto_usd ?? 0)
                     : Number(values.redondeo_usd) || 0;
                   return (
-                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm space-y-0.5">
+                    <div className="rounded-md border border-border bg-navy-900/70 px-3 py-2 text-sm space-y-0.5">
                       <div className="flex justify-between text-muted-foreground">
                         <span>Cotizado</span>
                         <span className="font-mono text-foreground">{fmtUsd(cotizado)}</span>
@@ -2747,7 +2747,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </CardHeader>
           </Card>
         ) : !calcPayload ? (
-          <Card>
+          <Card className="bg-navy-800">
             <CardHeader>
               <CardTitle className="text-base text-muted-foreground">
                 Completa los parámetros
@@ -2774,7 +2774,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         )}
 
         {/* Save bar */}
-        <Card>
+        <Card className="bg-navy-800">
           <CardContent className="p-4 space-y-3">
             {mxnSinTc && (
               <p className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
@@ -3108,7 +3108,7 @@ function TotalBar({
   }
   return (
     <div className="sticky top-0 z-30 -mx-1 px-1 pt-1">
-      <div className="rounded-xl border border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 shadow-sm px-4 py-2.5">
+      <div className="rounded-xl border border-border bg-navy-800/95 backdrop-blur supports-[backdrop-filter]:bg-navy-800/90 shadow-sm px-4 py-2.5">
         <div
           className={cn(
             "flex flex-wrap items-baseline gap-2 transition-opacity",
@@ -3262,7 +3262,7 @@ function Preview({
   return (
     <>
       {/* TOTAL */}
-      <Card className={cn("transition-opacity", loading && "opacity-60")}>
+      <Card className={cn("bg-navy-800 transition-opacity", loading && "opacity-60")}>
         <CardContent className="p-6">
           <div className="flex items-end justify-between gap-4">
             <div>
@@ -3379,7 +3379,7 @@ function Preview({
           {/* Total consolidado en MXN (motor ≥1.3.1): EXACTO por composición
               — componentes USD × tc + renglones nativos MXN tal cual. */}
           {breakdown.totales.total_mxn != null && (
-            <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+            <div className="mt-3 rounded-lg border border-border bg-navy-900/70 px-3 py-2 text-sm">
               {mxnNativos > 0 ? (
                 <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-wider text-foreground/70">
@@ -3420,7 +3420,7 @@ function Preview({
 
       {/* Detalle por tramo (MULTIESCALA) */}
       {breakdown.tramos && breakdown.tramos.length > 0 && (
-        <Card>
+        <Card className="bg-navy-800">
           <CardHeader>
             <CardTitle className="text-sm">Detalle por tramo</CardTitle>
             <CardDescription className="text-xs">
@@ -3485,7 +3485,7 @@ function Preview({
 
       {/* Tiempos + Tarifa */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+        <Card className="bg-navy-800">
           <CardHeader>
             <CardTitle className="text-sm">Tiempos</CardTitle>
           </CardHeader>
@@ -3564,7 +3564,7 @@ function Preview({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-navy-800">
           <CardHeader>
             <CardTitle className="text-sm">Tarifa</CardTitle>
           </CardHeader>
@@ -3599,7 +3599,7 @@ function Preview({
       {/* TUAS desglose EDITABLE: todos los aeropuertos del itinerario, con
           monto por pax capturable + moneda propia (pass-through de lo que el
           aeropuerto cobra; manda sobre el catálogo). */}
-      <Card className={cn("transition-opacity", !cobrarTuas && "opacity-60")}>
+      <Card className={cn("bg-navy-800 transition-opacity", !cobrarTuas && "opacity-60")}>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
@@ -3656,7 +3656,7 @@ function Preview({
       </Card>
 
       {/* IVA */}
-      <Card>
+      <Card className="bg-navy-800">
         <CardHeader>
           <CardTitle className="text-sm">IVA</CardTitle>
           <CardDescription className="text-xs">{breakdown.iva.nota}</CardDescription>
@@ -3674,7 +3674,7 @@ function Preview({
 function PreviewSkeleton() {
   return (
     <>
-      <Card>
+      <Card className="bg-navy-800">
         <CardContent className="p-6 space-y-4">
           <Skeleton className="h-3 w-12" />
           <Skeleton className="h-12 w-48" />
@@ -3686,14 +3686,14 @@ function PreviewSkeleton() {
         </CardContent>
       </Card>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+        <Card className="bg-navy-800">
           <CardContent className="p-6 space-y-3">
             <Skeleton className="h-4 w-20" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="bg-navy-800">
           <CardContent className="p-6 space-y-3">
             <Skeleton className="h-4 w-20" />
             <Skeleton className="h-4 w-full" />
@@ -3892,7 +3892,7 @@ function Segmented({
   }[];
 }) {
   return (
-    <div className="inline-flex w-full rounded-lg border border-border bg-muted/30 p-1">
+    <div className="inline-flex w-full rounded-lg border border-border bg-navy-900/70 p-1">
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -3903,7 +3903,7 @@ function Segmented({
             className={cn(
               "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
               active
-                ? "bg-card text-foreground shadow-sm"
+                ? "bg-navy-800 text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -3961,7 +3961,7 @@ function ExtrasEditor({
       {value.map((e, idx) => (
         <div
           key={idx}
-          className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-2"
+          className="rounded-lg border border-border bg-navy-900/70 p-2.5 space-y-2"
         >
           <div className="grid grid-cols-[1fr_96px_76px] gap-2">
             <Input
