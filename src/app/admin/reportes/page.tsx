@@ -126,7 +126,9 @@ export default async function ReportesPage({ searchParams }: PageProps) {
           <CardDescription>
             Libro completo del avión en el periodo: ventas, tacómetros,
             combustible, costos, cobranza, gastos indirectos y balance con
-            socios. Incluye hoja de pendientes de captura.
+            socios. Incluye hoja de pendientes de captura; el general suma la
+            pestaña Otros movimientos (cobrado vs pagado por concepto y
+            dinero sin avión/vuelo).
           </CardDescription>
         </CardHeader>
         <CardContent>
