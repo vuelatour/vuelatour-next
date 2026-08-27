@@ -6,14 +6,15 @@ import { cn } from "@/lib/utils";
 
 /**
  * Fecha + hora SIN el popup nativo de la hora (26-ago, queja del cliente:
- * "el calendario está bien pero la hora se me complica"). La fecha usa el
- * calendario nativo (type="date") y la hora es TEXTO LIBRE tolerante:
- * "8pm", "8:30 pm", "20:00", "0830", "8.30" — se normaliza al salir.
+ * "el calendario está bien pero la hora se me complica"). v2 (28-ago,
+ * pedido del cliente): la hora ya no es texto libre — son TRES selects
+ * (hora · minutos · a.m./p.m.) con default 6:00 a.m., sin estados
+ * inválidos posibles. El campo completo sigue siendo OPCIONAL: sin fecha
+ * no se guarda nada; al elegir fecha la hora sale lista con el default.
  *
  * Emite el MISMO string de datetime-local ("YYYY-MM-DDTHH:mm", pared
- * Cancún) que emitía el input nativo: el pipeline cancunInputToIso /
- * isoToCancunInput del repo no cambia. Emite solo con fecha Y hora válidas;
- * borrar la fecha limpia todo.
+ * Cancún) de siempre: el pipeline cancunInputToIso / isoToCancunInput del
+ * repo no cambia. Borrar la fecha limpia todo.
  */
 
 /** "8pm" | "8:30 pm" | "20:00" | "0830" | "8.30" → "HH:mm" (24h) o null. */
@@ -38,12 +39,14 @@ export function parseHoraLibre(raw: string): string | null {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
-/** "HH:mm" → "8:30 p.m." (es-MX, como el resto del panel). */
-function horaBonita(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const h12 = ((h + 11) % 12) + 1;
-  return `${h12}:${String(m).padStart(2, "0")} ${h < 12 ? "a.m." : "p.m."}`;
-}
+/** Mismo look de los Input del panel para los <select> nativos. */
+const SELECT_CLS =
+  "h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs " +
+  "outline-none focus-visible:border-ring focus-visible:ring-ring/50 " +
+  "focus-visible:ring-[3px] dark:bg-input/30";
+
+const HORAS_12 = ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
+const MINUTOS = ["0", "5", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
 
 export function FechaHoraCampo({
   value,
@@ -56,87 +59,106 @@ export function FechaHoraCampo({
   className?: string;
 }) {
   const [fecha, setFecha] = useState("");
-  const [horaTxt, setHoraTxt] = useState("");
-  const [horaInvalida, setHoraInvalida] = useState(false);
+  // Defaults pedidos por el cliente (28-ago): 6 · 00 · a.m.
+  const [hora12, setHora12] = useState("6");
+  const [minuto, setMinuto] = useState("0");
+  const [ampm, setAmpm] = useState<"am" | "pm">("am");
 
   // Hidrata desde el valor externo (revise, plantillas, reset del form).
   useEffect(() => {
     if (!value) {
       setFecha("");
-      setHoraTxt("");
-      setHoraInvalida(false);
+      setHora12("6");
+      setMinuto("0");
+      setAmpm("am");
       return;
     }
     const [f, h] = value.split("T");
     setFecha(f ?? "");
-    if (h) setHoraTxt(horaBonita(h.slice(0, 5)));
-    setHoraInvalida(false);
-    // Solo cuando cambia el valor EXTERNO: no pelear con el tecleo local.
+    if (h) {
+      const [hh, mm] = h.slice(0, 5).split(":").map(Number);
+      setHora12(String(((hh + 11) % 12) + 1));
+      setMinuto(String(mm));
+      setAmpm(hh < 12 ? "am" : "pm");
+    }
+    // Solo cuando cambia el valor EXTERNO: no pelear con la edición local.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  const emitir = (f: string, hhmm: string | null) => {
-    if (f && hhmm) onChange(`${f}T${hhmm}`);
-    else if (!f) onChange("");
+  const emitir = (f: string, h12: string, min: string, sufijo: "am" | "pm") => {
+    if (!f) {
+      onChange("");
+      return;
+    }
+    const base = Number(h12) % 12;
+    const hh = sufijo === "pm" ? base + 12 : base;
+    onChange(
+      `${f}T${String(hh).padStart(2, "0")}:${String(Number(min)).padStart(2, "0")}`,
+    );
   };
 
-  const confirmarHora = (raw: string) => {
-    const hhmm = parseHoraLibre(raw);
-    if (hhmm) {
-      setHoraTxt(horaBonita(hhmm));
-      setHoraInvalida(false);
-      emitir(fecha, hhmm);
-    } else {
-      setHoraInvalida(raw.trim() !== "");
-      // Borrar la hora VACÍA el valor completo (27-ago): antes el valor
-      // viejo sobrevivía en silencio mientras la UI decía "escribe la hora"
-      // — un tramo se guardaba con una fecha que nadie quiso. Mismo
-      // comportamiento que tenía el datetime-local (borrar = limpiar).
-      if (raw.trim() === "") onChange("");
-    }
-  };
+  // Un valor externo con minutos fuera del paso de 5 (ej. 10:37) se
+  // conserva tal cual en el select — nunca se redondea en silencio.
+  const minutos = MINUTOS.includes(minuto)
+    ? MINUTOS
+    : [minuto, ...MINUTOS].sort((a, b) => Number(a) - Number(b));
 
   return (
     <div className={cn("space-y-1", className)}>
-      <div className="grid grid-cols-[1fr_120px] gap-2">
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2">
         <Input
           type="date"
           value={fecha}
           onChange={(e) => {
             const f = e.target.value;
             setFecha(f);
-            emitir(f, parseHoraLibre(horaTxt));
+            emitir(f, hora12, minuto, ampm);
           }}
         />
-        <Input
-          type="text"
-          inputMode="text"
-          placeholder="8:00 pm"
-          aria-label="Hora (texto libre)"
-          value={horaTxt}
+        <select
+          aria-label="Hora"
+          className={cn(SELECT_CLS, "w-[64px]")}
+          value={hora12}
           onChange={(e) => {
-            setHoraTxt(e.target.value);
-            setHoraInvalida(false);
+            setHora12(e.target.value);
+            emitir(fecha, e.target.value, minuto, ampm);
           }}
-          onBlur={(e) => confirmarHora(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              confirmarHora((e.target as HTMLInputElement).value);
-            }
+        >
+          {HORAS_12.map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Minutos"
+          className={cn(SELECT_CLS, "w-[68px]")}
+          value={minuto}
+          onChange={(e) => {
+            setMinuto(e.target.value);
+            emitir(fecha, hora12, e.target.value, ampm);
           }}
-          className={cn(horaInvalida && "border-destructive")}
-        />
+        >
+          {minutos.map((m) => (
+            <option key={m} value={m}>
+              :{String(Number(m)).padStart(2, "0")}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="a.m. o p.m."
+          className={cn(SELECT_CLS, "w-[76px]")}
+          value={ampm}
+          onChange={(e) => {
+            const suf = e.target.value === "pm" ? "pm" : "am";
+            setAmpm(suf);
+            emitir(fecha, hora12, minuto, suf);
+          }}
+        >
+          <option value="am">a.m.</option>
+          <option value="pm">p.m.</option>
+        </select>
       </div>
-      {horaInvalida ? (
-        <p className="text-xs text-destructive">
-          No entendí la hora. Ejemplos: 8:00 pm · 20:00 · 0830
-        </p>
-      ) : fecha && parseHoraLibre(horaTxt) == null ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          Escribe la hora para completar la fecha (ej. 8:00 pm).
-        </p>
-      ) : null}
     </div>
   );
 }
