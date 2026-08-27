@@ -127,6 +127,10 @@ export interface CalculateQuoteRequest {
   tiempo_cobrable_override_hr?: number;
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
+  /** PDF: mostrar tarifa por hora (default apagado). */
+  pdf_mostrar_tarifa?: boolean;
+  /** PDF: mostrar la tabla del itinerario (default prendido). */
+  pdf_mostrar_itinerario?: boolean;
   /** Conceptos extra (se suman al total; los gravados entran a la base de IVA). */
   extras?: ExtraConcepto[];
   /** Ajuste final: negativo = descuento, positivo = redondeo. Fuera de IVA. */

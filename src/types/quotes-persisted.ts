@@ -90,6 +90,10 @@ export interface PersistedQuote {
   pasajeros_nombres?: string[];
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
+  /** PDF: mostrar la tarifa por hora en el desglose (default apagado). */
+  pdf_mostrar_tarifa?: boolean;
+  /** PDF: mostrar la tabla del itinerario (default prendido). */
+  pdf_mostrar_itinerario?: boolean;
   /** true = las escalas del vuelo son el itinerario OPERATIVO (lo vuela el
    *  piloto); el cotizador no las gestiona — la ruta comercial es aparte. */
   itinerario_operativo?: boolean;

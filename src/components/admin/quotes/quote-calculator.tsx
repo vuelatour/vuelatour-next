@@ -154,6 +154,9 @@ interface QuoteFormValues {
   /** TUAS capturadas POR AEROPUERTO (pass-through): mandan sobre el catálogo. */
   tuas_lineas: TuaLinea[];
   cotizacion_abierta: boolean;
+  /** PDF: mostrar tarifa por hora (default apagado) e itinerario (default prendido). */
+  pdf_mostrar_tarifa: boolean;
+  pdf_mostrar_itinerario: boolean;
   /** Vuelo CUBIERTO por operador externo (sin avión propio ni tacómetros). */
   es_externo: boolean;
   operador_externo: string;
@@ -561,6 +564,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   moneda: f.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
                 })),
         cotizacion_abierta: q.cotizacion_abierta ?? false,
+        pdf_mostrar_tarifa: q.pdf_mostrar_tarifa ?? false,
+        pdf_mostrar_itinerario: q.pdf_mostrar_itinerario ?? true,
         es_externo: q.es_externo ?? false,
         operador_externo: q.operador_externo ?? "",
         costo_externo_usd:
@@ -663,6 +668,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       cobrar_tuas: true,
       tuas_lineas: [],
       cotizacion_abierta: false,
+      // PDF (27-ago): tarifa/hr oculta e itinerario visible por defecto.
+      pdf_mostrar_tarifa: false,
+      pdf_mostrar_itinerario: true,
       es_externo: false,
       operador_externo: "",
       costo_externo_usd: null,
@@ -803,6 +811,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ? Number(debounced.tiempo_cobrable_override_hr)
           : undefined,
       cotizacion_abierta: debounced.cotizacion_abierta,
+      pdf_mostrar_tarifa: debounced.pdf_mostrar_tarifa,
+      pdf_mostrar_itinerario: debounced.pdf_mostrar_itinerario,
       extras: (debounced.extras ?? [])
         .filter(
           (e) =>
@@ -2006,6 +2016,43 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               checked={values.cotizacion_abierta}
               onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
             />
+          </div>
+
+          {/* Presentación del PDF (27-ago): configurable por cotización. */}
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+              PDF de la cotización
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">
+                  Mostrar tarifa por hora
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  El desglose dice «Servicio aéreo (1.6 h × $1,650/hr)».
+                  Apagado, solo el monto.
+                </p>
+              </div>
+              <Switch
+                checked={values.pdf_mostrar_tarifa}
+                onCheckedChange={(c) => setValue("pdf_mostrar_tarifa", c)}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">
+                  Mostrar itinerario de tramos
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  La tabla de tramos de la hoja 1; apagado queda solo el mapa
+                  de la ruta.
+                </p>
+              </div>
+              <Switch
+                checked={values.pdf_mostrar_itinerario}
+                onCheckedChange={(c) => setValue("pdf_mostrar_itinerario", c)}
+              />
+            </div>
           </div>
 
           {/* Vuelo cubierto por operador externo: TODOS los vuelos nacen
