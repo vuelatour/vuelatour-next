@@ -189,9 +189,12 @@ export function QuoteLegsEditor({
   // al hidratar una plantilla o al cargar el catálogo de coordenadas. Se dispara
   // solo cuando cambian los EXTREMOS, no al teclear millas (no pelea con la
   // captura manual).
-  const endpointsKey = value
-    .map((l) => `${l.origen_iata}-${l.destino_iata}`)
-    .join("|");
+  // La llave incluye el conteo de tramos completos SIN millas: al aplicar
+  // una plantilla/importar tramos con los MISMOS extremos pero millas en 0,
+  // el efecto debe re-correr (27-ago — antes quedaba atascado en 0).
+  const endpointsKey =
+    value.map((l) => `${l.origen_iata}-${l.destino_iata}`).join("|") +
+    `#z${value.filter((l) => l.origen_iata && l.destino_iata && !(Number(l.millas_nauticas) > 0)).length}`;
   useEffect(() => {
     let changed = false;
     const next = value.map((l) => {
@@ -327,10 +330,10 @@ export function QuoteLegsEditor({
           return (
             <div
               key={idx}
-              className="rounded-lg border border-border bg-muted/20 p-3 space-y-2"
+              className="rounded-lg border border-border bg-muted/40 p-3 space-y-2"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground">
+                <span className="text-xs font-medium text-foreground/70">
                   Tramo {idx + 1}
                   {isFirst && " · salida"}
                   {isLast && value.length > 1 && " · llegada"}
@@ -348,7 +351,7 @@ export function QuoteLegsEditor({
               </div>
               <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <Label className="text-[11px] uppercase tracking-wider text-foreground/70">
                     Origen
                   </Label>
                   <SearchableSelect
@@ -361,7 +364,7 @@ export function QuoteLegsEditor({
                 </div>
                 <ArrowRightIcon className="h-4 w-4 text-muted-foreground mb-2" />
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <Label className="text-[11px] uppercase tracking-wider text-foreground/70">
                     Destino
                   </Label>
                   <SearchableSelect
@@ -387,7 +390,7 @@ export function QuoteLegsEditor({
                   tramo puede llevar 4 y otro 2. */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <Label className="text-[11px] uppercase tracking-wider text-foreground/70">
                     Millas náuticas
                   </Label>
                   <Input
@@ -407,7 +410,7 @@ export function QuoteLegsEditor({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <Label className="text-[11px] uppercase tracking-wider text-foreground/70">
                     Pasajeros (TUAS)
                   </Label>
                   <Input
@@ -428,7 +431,7 @@ export function QuoteLegsEditor({
               </div>
 
               {/* Detalle del tramo: ferry, pernocta, parada de servicio */}
-              <div className="rounded-md bg-background/60 border border-border/60 p-2 space-y-2">
+              <div className="rounded-md border border-border bg-card p-2 space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-xs font-medium">Ferry (vacío)</Label>
@@ -523,13 +526,13 @@ export function QuoteLegsEditor({
           Agregar tramo
         </Button>
         <p className="text-xs text-muted-foreground">
-          <span className="font-mono">{fmtDecimal(nmTotal)}</span> NM totales ·{" "}
+          <span className="font-mono text-foreground">{fmtDecimal(nmTotal)}</span> NM totales ·{" "}
           {value.length} {value.length === 1 ? "tramo" : "tramos"}
         </p>
       </div>
 
       {esMultiDia && (
-        <div className="rounded-lg border border-brand-500/30 bg-brand-500/5 p-3 space-y-1.5">
+        <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 p-3 space-y-1.5">
           <p className="text-xs font-semibold">
             Viaje de {resumenDias.length} días
           </p>
@@ -540,14 +543,14 @@ export function QuoteLegsEditor({
               </span>{" "}
               {d.tramos.join(" · ")}
               {d.pernocta && (
-                <span className="text-amber-600"> · pernocta en {d.pernocta}</span>
+                <span className="text-amber-600 dark:text-amber-400"> · pernocta en {d.pernocta}</span>
               )}
             </p>
           ))}
           <p className="text-[11px] text-muted-foreground">
             Todo el viaje se cotiza y cobra como UN solo vuelo (una hora
-            mínima, un folio); las pernoctas se marcan solas al cambiar de
-            día.
+            mínima, un folio). La pernocta se marca A MANO en el tramo donde
+            el piloto duerme fuera — el sistema no la activa solo.
           </p>
         </div>
       )}

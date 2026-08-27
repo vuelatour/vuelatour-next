@@ -27,6 +27,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -255,6 +265,16 @@ function routeToOption(route: Route): RouteOption {
   };
 }
 
+/** "$750/hr" compacto (sin decimales) para el sub del selector de tarifa. */
+function tarifaSub(
+  n: number | string | null | undefined,
+): string | undefined {
+  if (n == null || `${n}`.trim() === "") return undefined;
+  const v = Number(n);
+  if (!Number.isFinite(v)) return undefined;
+  return `$${Math.round(v).toLocaleString("en-US")}/hr`;
+}
+
 /**
  * Firma comparable de un itinerario (sin fechas, que son propias de cada
  * cotización): sirve para detectar si los tramos difieren de la plantilla.
@@ -390,6 +410,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const [editClienteSaving, startEditCliente] = useTransition();
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
+  // Confirmación de "Cotizar con estos tramos" (pisa los tramos capturados).
+  const [opsATramosOpen, setOpsATramosOpen] = useState(false);
   const [saving, startSaving] = useTransition();
 
   // Clientes creados inline desde el cotizador (sin ir a "Clientes").
@@ -562,12 +584,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             moneda: e.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
             aplica_iva: e.aplica_iva ?? true,
           })),
-        // Con redondeo automático activo (default), el ajuste guardado es
+        // Con redondeo automático activo, el ajuste guardado es
         // redondeo_auto − descuento: se re-hidrata el descuento BASE desde
-        // meta y el redondeo se vuelve a resolver en el motor.
-        redondeo_auto: q.calculo_snapshot?.meta?.redondeo_automatico ?? true,
+        // meta y el redondeo se vuelve a resolver en el motor. (27-ago: el
+        // auto ya NO es default — sin bandera en meta se rehidrata APAGADO.)
+        redondeo_auto: q.calculo_snapshot?.meta?.redondeo_automatico ?? false,
         redondeo_usd:
-          q.calculo_snapshot?.meta?.redondeo_automatico ?? true
+          q.calculo_snapshot?.meta?.redondeo_automatico ?? false
             ? null
             : Number(q.ajuste_final_usd) > 0
               ? Number(q.ajuste_final_usd)
@@ -645,7 +668,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       costo_externo_usd: null,
       total_pactado_usd: null,
       extras: [],
-      redondeo_auto: true,
+      // Redondeo automático APAGADO por default (27-ago): se prende a propósito.
+      redondeo_auto: false,
       redondeo_usd: null,
       descuento_usd: null,
       metodo_pago: "TRANSFERENCIA",
@@ -1089,11 +1113,61 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   /** Aplica una ruta sugerida: tramos del historial + plantilla si aún existe. */
   const aplicarSugerencia = (s: RutaSugerida) => {
-    setValue("escalas", s.tramos.map(tramoToEscala));
+    // Cinturón (regla 27-ago): los pax son de ESTA cotización, jamás
+    // copiados del historial — aunque el API mandara pasajeros en un tramo.
+    setValue(
+      "escalas",
+      s.tramos.map((t) => ({ ...tramoToEscala(t), pasajeros: null })),
+    );
     setValue(
       "ruta_id",
       s.ruta_id && allRoutes.some((r) => r.id === s.ruta_id) ? s.ruta_id : "",
     );
+  };
+
+  // Tramos de la RUTA OPERATIVA como punto de partida COMERCIAL (solo revise
+  // con itinerario operativo): fuera cancelados y solo-operativos/ferry, y
+  // SIN pasajeros — regla 27-ago: los pax son de la cotización, jamás
+  // copiados de la operación.
+  const opsComoEscalas = (): EscalaInput[] => {
+    // Las escalas operativas se guardan SIN millas: se conservan las del
+    // form actual por par origen-destino (si coincide) para no dejar el
+    // cálculo en cero con los mismos extremos (verificación 27-ago); los
+    // pares nuevos los completa el autollenado del editor.
+    const prevPorPar = new Map(
+      (watch("escalas") ?? [])
+        .filter((e) => Number(e.millas_nauticas) > 0)
+        .map((e) => [
+          `${e.origen_iata}-${e.destino_iata}`,
+          Number(e.millas_nauticas),
+        ]),
+    );
+    return (initialQuote?.escalas ?? [])
+      .filter((e) => !e.cancelada_at && !(e.solo_operativa ?? e.es_ferry))
+      .map((e) => {
+        // Solo la SECUENCIA viaja de la operación a la cotización: pax,
+        // manifiesto y fechas son de cada lado (regla 27-ago).
+        const base = tramoToEscala({
+          ...e,
+          pasajeros: null,
+          pasajeros_nombres: [],
+          fecha_salida_plan: null,
+        });
+        return Number(base.millas_nauticas) > 0
+          ? base
+          : {
+              ...base,
+              millas_nauticas:
+                prevPorPar.get(`${e.origen_iata}-${e.destino_iata}`) ?? 0,
+            };
+      });
+  };
+
+  const aplicarOpsComoEscalas = () => {
+    setValue("escalas", opsComoEscalas(), { shouldDirty: true });
+    setOpsATramosOpen(false);
+    // El autollenado de millas del editor completa las que vengan en 0.
+    toast.success("Tramos de la operación cargados — captura los pasajeros");
   };
 
   // Upsert de una línea de TUA por aeropuerto; monto null = quitar la línea
@@ -1284,8 +1358,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         <CardContent className="space-y-4">
           {/* Cliente */}
           {isRevise && initialQuote ? (
-            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 space-y-0.5">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 space-y-0.5">
+              <p className="text-[11px] uppercase tracking-wider text-foreground/70">
                 Cliente · folio
               </p>
               <p className="text-sm font-medium">{clientName ?? initialQuote.cliente_id}</p>
@@ -1295,7 +1369,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 · revisar genera v{initialQuote.cotizacion_version + 1}
               </p>
               {clienteInterno && (
-                <div className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400 space-y-1.5">
+                <div className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/15 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400 space-y-1.5">
                   <p>
                     Cliente interno — la cotización puede ir en $0 (vuelo de la
                     empresa, sin cobro).
@@ -1321,7 +1395,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   const sel = allClients.find((c) => c.id === values.cliente_id);
                   if (!sel) return null;
                   return (
-                    <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2">
+                    <div className="rounded-lg border border-brand-500/30 bg-brand-500/15 px-3 py-2">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
                         <button
@@ -1358,7 +1432,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                               breakdown.tarifa.proviene_de_override
                                 ? "text-amber-600 dark:text-amber-400"
                                 : breakdown.tarifa.preferencial_cliente
-                                  ? "text-emerald-600"
+                                  ? "text-emerald-600 dark:text-emerald-400"
                                   : "text-muted-foreground"
                             }
                           >
@@ -1395,7 +1469,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   );
                 })()}
                 {clienteInterno && (
-                  <div className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 space-y-2">
+                  <div className="rounded-md border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 space-y-2">
                     <p>
                       Cliente interno — la cotización puede ir en $0 (vuelo de la
                       empresa, sin cobro).
@@ -1449,7 +1523,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         className={cn(
                           "max-w-[12rem] truncate rounded-full border px-2.5 py-1 text-xs transition-colors",
                           values.cliente_id === c.id
-                            ? "border-brand-500 bg-brand-500/10 font-medium text-brand-600"
+                            ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
                             : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
                         )}
                       >
@@ -1523,7 +1597,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             {/* Sugeridas por historial: lo que este cliente suele pedir. */}
             {rutasSugeridas.length > 0 && (
               <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <span className="text-[11px] uppercase tracking-wider text-foreground/70">
                   Suele pedir:
                 </span>
                 {rutasSugeridas.map((s) => {
@@ -1546,7 +1620,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       className={cn(
                         "max-w-[16rem] truncate rounded-full border px-2.5 py-1 font-mono text-xs transition-colors",
                         activa
-                          ? "border-brand-500 bg-brand-500/10 font-medium text-brand-600"
+                          ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
                           : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
                       )}
                     >
@@ -1602,10 +1676,35 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </Field>
 
           {initialQuote?.itinerario_operativo && (
-            <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 space-y-1">
-              <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
-                RUTA OPERATIVA (la vuela el piloto — aquí no se cotiza)
-              </p>
+            <div className="rounded-lg border border-sky-500/40 bg-sky-500/15 p-3 space-y-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                  RUTA OPERATIVA (la vuela el piloto — aquí no se cotiza)
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={opsComoEscalas().length === 0}
+                  title="Copia origen→destino de los tramos con pasajeros como punto de partida de la cotización. Los pax se capturan aquí, no se copian."
+                  onClick={() => {
+                    const nuevos = opsComoEscalas();
+                    if (
+                      values.escalas.length > 0 &&
+                      legsSignature(values.escalas) !== legsSignature(nuevos)
+                    ) {
+                      // Ya hay tramos capturados distintos: confirmar antes
+                      // de sobreescribir (regla permanente del cliente).
+                      setOpsATramosOpen(true);
+                    } else {
+                      aplicarOpsComoEscalas();
+                    }
+                  }}
+                >
+                  Cotizar con estos tramos
+                </Button>
+              </div>
               <p className="font-mono text-sm">
                 {(() => {
                   const ops = initialQuote.escalas ?? [];
@@ -1623,6 +1722,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 {" · "}Los tramos de abajo son la ruta COMERCIAL (lo que paga el
                 cliente, abre y cierra en CUN); la operativa no se toca al cotizar.
               </p>
+              <AlertDialog open={opsATramosOpen} onOpenChange={setOpsATramosOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      ¿Reemplazar los tramos capturados?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Los tramos de la cotización se sustituyen por los de la
+                      ruta operativa (sin pasajeros: esos se capturan aquí).
+                      El total se recalcula en vivo.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={aplicarOpsComoEscalas}>
+                      Reemplazar tramos
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
 
@@ -1647,7 +1766,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 )}
               </Field>
               {itinerarioAjustado && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-2.5">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/40 p-2.5">
                   <p className="text-xs text-muted-foreground">
                     Este itinerario difiere de la ruta guardada. Si se va a
                     repetir, guárdalo en el catálogo (la ruta original no se
@@ -1719,9 +1838,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 setValue("tipo_tarifa", v as TipoTarifa);
               }}
               options={[
-                { value: "PUBLICO", label: "Público" },
-                { value: "BROKER", label: "Broker" },
-                { value: "CUSTOM", label: "Personalizada" },
+                {
+                  value: "PUBLICO",
+                  label: "Público",
+                  sub: tarifaSub(selectedAircraft?.tarifa_hora_pub_usd),
+                },
+                {
+                  value: "BROKER",
+                  label: "Broker",
+                  sub: tarifaSub(selectedAircraft?.tarifa_hora_broker_usd),
+                },
+                {
+                  value: "CUSTOM",
+                  label: "Personalizada",
+                  // Solo con override capturado (puede ser $0: interno).
+                  sub: overrideTarifaActivo
+                    ? tarifaSub(values.tarifa_hora_override_usd)
+                    : undefined,
+                },
               ]}
             />
             {tarifaSegment === "CUSTOM" && (
@@ -1881,7 +2015,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           {isRevise ? (
             initialQuote?.es_externo && (
               <div className="space-y-3">
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                   Vuelo cubierto por <strong>{initialQuote.operador_externo}</strong>.
                   El avión de arriba es solo la referencia de tarifa; el operador y
                   el costo del apoyo se editan desde el detalle del vuelo.
@@ -1937,7 +2071,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               />
             )}
             {values.es_externo && Number(values.total_pactado_usd) > 0 && (
-              <div className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-400">
+              <div className="rounded-md border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs text-sky-700 dark:text-sky-400">
                 El <strong>precio pactado</strong> manda: el total aterriza en{" "}
                 {fmtUsd(Number(values.total_pactado_usd))} y el redondeo
                 automático no aplica.
@@ -2006,21 +2140,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     ? (breakdown.meta?.redondeo_auto_usd ?? 0)
                     : Number(values.redondeo_usd) || 0;
                   return (
-                    <div className="rounded-md bg-muted/40 px-3 py-2 text-sm space-y-0.5">
+                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm space-y-0.5">
                       <div className="flex justify-between text-muted-foreground">
                         <span>Cotizado</span>
-                        <span className="font-mono">{fmtUsd(cotizado)}</span>
+                        <span className="font-mono text-foreground">{fmtUsd(cotizado)}</span>
                       </div>
                       {redondeo > 0 && (
                         <div className="flex justify-between text-muted-foreground">
                           <span>+ Redondeo</span>
-                          <span className="font-mono">{fmtUsd(redondeo)}</span>
+                          <span className="font-mono text-foreground">{fmtUsd(redondeo)}</span>
                         </div>
                       )}
                       {descuento > 0 && (
                         <div className="flex justify-between text-muted-foreground">
                           <span>− Descuento</span>
-                          <span className="font-mono">−{fmtUsd(descuento)}</span>
+                          <span className="font-mono text-foreground">−{fmtUsd(descuento)}</span>
                         </div>
                       )}
                       {values.es_externo &&
@@ -2038,7 +2172,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           return delta !== 0 ? (
                             <div className="flex justify-between text-muted-foreground">
                               <span>Ajuste al precio pactado</span>
-                              <span className="font-mono">
+                              <span className="font-mono text-foreground">
                                 {delta > 0 ? "+" : "−"}
                                 {fmtUsd(Math.abs(delta))}
                               </span>
@@ -2061,7 +2195,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               para gastos/tacómetros; puede salir de otra base y llevar ferries.
               Es independiente de los tramos comerciales de arriba (el dinero). */}
           {!isRevise && (
-            <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3">
+            <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/15 p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
                   Ruta operativa (opcional · no se cotiza)
@@ -2172,7 +2306,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       </label>
                       <label
                         className="flex items-center gap-2 text-xs"
-                        title="El piloto pernocta tras este tramo. Si el siguiente tramo sale otro día, se marca sola."
+                        title="El piloto pernocta tras este tramo (viático en la cotización). SOLO se marca a mano — el sistema ya no la activa por salto de fecha."
                       >
                         <Switch
                           checked={l.pernocta}
@@ -2232,22 +2366,28 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         }
                       />
                     )}
-                    <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-                      <Input
-                        type="datetime-local"
-                        className="h-8 w-auto"
+                    <div className="flex flex-wrap items-start gap-2">
+                      {/* Calendario + hora en TEXTO libre ("8pm"/"20:00"):
+                          emite el mismo string datetime-local pared-Cancún
+                          que guarda opsLegs[].hora. */}
+                      <div
+                        className="w-[264px] shrink-0"
                         title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo."
-                        value={l.hora}
-                        onChange={(e) =>
-                          setOpsLegs((prev) =>
-                            prev.map((x, j) =>
-                              j === i ? { ...x, hora: e.target.value } : x,
-                            ),
-                          )
-                        }
-                      />
+                      >
+                        <FechaHoraCampo
+                          className="[&_input]:h-8"
+                          value={l.hora}
+                          onChange={(v) =>
+                            setOpsLegs((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, hora: v } : x,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
                       <Input
-                        className="h-8"
+                        className="h-8 min-w-[12rem] flex-1"
                         placeholder='Nota del tramo para el piloto · ej. "cargar gasolina aquí"'
                         value={l.nota}
                         onChange={(e) =>
@@ -2590,7 +2730,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         <Card>
           <CardContent className="p-4 space-y-3">
             {mxnSinTc && (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                 Hay TUAS o extras capturados en MXN sin tipo de cambio: el
                 total mostrado aún NO los incluye. Captura el TC (MXN por USD)
                 arriba para aplicarlos y poder guardar.
@@ -2864,101 +3004,119 @@ function TotalBar({
   error: string | null;
   sinDatos: boolean;
 }) {
-  const chips: { label: string; value: string }[] = [];
+  // Desglose SIEMPRE visible bajo el total (27-ago; antes: chips solo en
+  // ≥md): celdas compactas que PINTAN campos del breakdown canónico tal
+  // cual — cero cálculos aquí. Las de $0 se omiten, salvo las estructurales
+  // (Horas, Tarifa, Servicio aéreo, IVA) que anclan la lectura.
+  const celdas: { label: string; value: string }[] = [];
   if (breakdown) {
-    chips.push({
-      label: "Subtotal",
-      value: fmtUsd(breakdown.totales.subtotal_vuelo_usd),
+    const t = breakdown.totales;
+    celdas.push({
+      label: "Horas",
+      value: `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
     });
-    chips.push({ label: "TUAS", value: fmtUsd(breakdown.totales.tuas_total_usd) });
-    if (breakdown.totales.viaticos_pernocta_usd) {
-      chips.push({
+    const origenTarifa = breakdown.tarifa.proviene_de_override
+      ? "Override"
+      : breakdown.tarifa.preferencial_cliente
+        ? "Preferencial"
+        : breakdown.tarifa.tipo === "BROKER"
+          ? "Broker"
+          : "Pública";
+    celdas.push({
+      label: `Tarifa · ${origenTarifa}`,
+      value: `${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`,
+    });
+    celdas.push({
+      label: "Servicio aéreo",
+      value: fmtUsd(t.subtotal_vuelo_usd),
+    });
+    if (t.tuas_total_usd) {
+      celdas.push({ label: "TUAS", value: fmtUsd(t.tuas_total_usd) });
+    }
+    if (t.viaticos_pernocta_usd) {
+      celdas.push({
         label: "Pernocta",
-        value: fmtUsd(breakdown.totales.viaticos_pernocta_usd),
+        value: fmtUsd(t.viaticos_pernocta_usd),
       });
     }
-    if (breakdown.totales.extras_total_usd) {
-      chips.push({
-        label: "Extras",
-        value: fmtUsd(breakdown.totales.extras_total_usd),
-      });
+    if (t.extras_total_usd) {
+      celdas.push({ label: "Extras", value: fmtUsd(t.extras_total_usd) });
     }
     // La comisión del vendedor SÍ es parte del total (la paga el cliente)
-    // pero viaja en meta, no en totales: sin este chip el desglose de la
-    // barra no sumaría el número grande de al lado.
+    // pero viaja en meta, no en totales: sin esta celda el desglose no
+    // sumaría el número grande de arriba.
     if (breakdown.meta?.comision_vendedor_usd) {
-      chips.push({
-        label: "Comisión",
+      celdas.push({
+        label: "Comisión vendedor",
         value: fmtUsd(breakdown.meta.comision_vendedor_usd),
       });
     }
-    if (breakdown.totales.ajuste_final_usd) {
-      chips.push({
-        label:
-          (breakdown.totales.ajuste_final_usd ?? 0) < 0
-            ? "Descuento"
-            : "Redondeo",
-        value: fmtUsd(breakdown.totales.ajuste_final_usd!),
+    if (t.ajuste_final_usd) {
+      celdas.push({
+        label: (t.ajuste_final_usd ?? 0) < 0 ? "Descuento" : "Redondeo",
+        value: fmtUsd(t.ajuste_final_usd),
       });
     }
-    chips.push({ label: "IVA", value: fmtUsd(breakdown.totales.iva_usd) });
+    celdas.push({ label: "IVA", value: fmtUsd(t.iva_usd) });
   }
   return (
     <div className="sticky top-0 z-30 -mx-1 px-1 pt-1">
       <div className="rounded-xl border border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 shadow-sm px-4 py-2.5">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div
-            className={cn(
-              "flex items-baseline gap-2 transition-opacity",
-              loading && "opacity-60",
-            )}
-          >
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Total
+        <div
+          className={cn(
+            "flex flex-wrap items-baseline gap-2 transition-opacity",
+            loading && "opacity-60",
+          )}
+        >
+          <span className="text-[11px] uppercase tracking-wider text-foreground/70">
+            Total
+          </span>
+          {error ? (
+            <span className="text-sm font-medium text-destructive">
+              Error al calcular
             </span>
-            {error ? (
-              <span className="text-sm font-medium text-destructive">
-                Error al calcular
+          ) : sinDatos ? (
+            <span className="text-sm text-muted-foreground">
+              Completa aeronave, ruta y pasajeros
+            </span>
+          ) : !breakdown ? (
+            <span className="text-sm text-muted-foreground">Calculando…</span>
+          ) : (
+            <>
+              <span className="text-2xl font-bold tracking-tight font-mono tabular-nums">
+                {fmtUsd(breakdown.totales.total_usd)}
               </span>
-            ) : sinDatos ? (
-              <span className="text-sm text-muted-foreground">
-                Completa aeronave, ruta y pasajeros
-              </span>
-            ) : !breakdown ? (
-              <span className="text-sm text-muted-foreground">Calculando…</span>
-            ) : (
-              <>
-                <span className="text-2xl font-bold tracking-tight font-mono tabular-nums">
-                  {fmtUsd(breakdown.totales.total_usd)}
+              <span className="text-xs text-muted-foreground">USD</span>
+              {breakdown.totales.total_mxn != null && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  {fmtMxn(breakdown.totales.total_mxn)}
                 </span>
-                <span className="text-xs text-muted-foreground">USD</span>
-                {breakdown.totales.total_mxn != null && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {fmtMxn(breakdown.totales.total_mxn)}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-          {breakdown && !error && (
-            <div
-              className={cn(
-                "hidden md:flex items-baseline gap-4 text-xs transition-opacity",
-                loading && "opacity-60",
               )}
-            >
-              {chips.map((c) => (
-                <span key={c.label} className="whitespace-nowrap">
-                  <span className="text-muted-foreground">{c.label} </span>
-                  <span className="font-mono tabular-nums">{c.value}</span>
-                </span>
-              ))}
               <Badge variant="outline" className="text-[10px]">
                 {breakdown.tarifa.tipo}
               </Badge>
-            </div>
+            </>
           )}
         </div>
+        {breakdown && !error && (
+          <div
+            className={cn(
+              "mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-border/60 pt-1.5 transition-opacity",
+              loading && "opacity-60",
+            )}
+          >
+            {celdas.map((c) => (
+              <div key={c.label}>
+                <p className="text-[11px] uppercase tracking-wider leading-tight text-foreground/70 whitespace-nowrap">
+                  {c.label}
+                </p>
+                <p className="font-mono tabular-nums text-xs whitespace-nowrap">
+                  {c.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3174,10 +3332,10 @@ function Preview({
           {/* Total consolidado en MXN (motor ≥1.3.1): EXACTO por composición
               — componentes USD × tc + renglones nativos MXN tal cual. */}
           {breakdown.totales.total_mxn != null && (
-            <div className="mt-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+            <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
               {mxnNativos > 0 ? (
                 <div className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <p className="text-[11px] uppercase tracking-wider text-foreground/70">
                     Total por moneda
                   </p>
                   <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -3185,13 +3343,13 @@ function Preview({
                       Componentes USD: {fmtUsd(componentesUsd)}
                       {tcUsdMxn ? ` × tc ${fmtDecimal(tcUsdMxn, 4)}` : ""}
                     </span>
-                    <span className="font-mono shrink-0">
+                    <span className="font-mono shrink-0 text-foreground">
                       {componentesUsdEnMxn != null ? fmtMxn(componentesUsdEnMxn) : "—"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                     <span>Nativos MXN (TUAS/extras en pesos, tal cual)</span>
-                    <span className="font-mono shrink-0">{fmtMxn(mxnNativos)}</span>
+                    <span className="font-mono shrink-0 text-foreground">{fmtMxn(mxnNativos)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3 border-t border-border pt-1 font-semibold">
                     <span>Total MXN</span>
@@ -3261,7 +3419,7 @@ function Preview({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center justify-between text-xs">
                   <span>
                     {fmtDecimal(t.millas)} NM · {fmtDecimal(t.tiempo_hr, 4)} hr
                   </span>
@@ -3345,13 +3503,13 @@ function Preview({
                 Number(breakdown.tiempos.vuelo_hr) +
                   Number(breakdown.tiempos.calzos_hr) +
                   Number(breakdown.tiempos.sobrevuelo_hr ?? 0) && (
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-amber-600 dark:text-amber-400">
                   Ojo: el cobrable pactado es MENOR al tiempo real (vuelo +
                   calzos): se cobraría de menos.
                 </p>
               )}
             {breakdown.tiempos.minimo_hora_aplicado && (
-              <p className="text-xs text-amber-600">
+              <p className="text-xs text-amber-600 dark:text-amber-400">
                 Vuelo corto: se cobra la hora completa (mínimo 1 hr). Escribe
                 otro valor en Cobrable si quieres pactarlo distinto.
               </p>
@@ -3376,7 +3534,7 @@ function Preview({
               }
             />
             {breakdown.tarifa.preferencial_cliente && (
-              <p className="text-xs text-emerald-600">
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
                 Este cliente tiene tarifa preferencial pactada para este avión; manda
                 sobre la tarifa {breakdown.tarifa.tipo === "PUBLICO" ? "público" : "broker"} default.
               </p>
@@ -3679,7 +3837,12 @@ function Segmented({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: {
+    value: string;
+    label: string;
+    /** Dato sutil junto al label (ej. "$750/hr" en el selector de tarifa). */
+    sub?: string;
+  }[];
 }) {
   return (
     <div className="inline-flex w-full rounded-lg border border-border bg-muted/30 p-1">
@@ -3698,6 +3861,17 @@ function Segmented({
             )}
           >
             {opt.label}
+            {opt.sub && (
+              <span
+                className={cn(
+                  "ml-1 font-mono text-[10px] font-normal tabular-nums",
+                  // En el activo apenas más visible; en el resto, muted.
+                  active ? "text-foreground/70" : "text-muted-foreground",
+                )}
+              >
+                {opt.sub}
+              </span>
+            )}
           </button>
         );
       })}
@@ -3740,7 +3914,7 @@ function ExtrasEditor({
       {value.map((e, idx) => (
         <div
           key={idx}
-          className="rounded-lg border border-border bg-muted/20 p-2.5 space-y-2"
+          className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-2"
         >
           <div className="grid grid-cols-[1fr_96px_76px] gap-2">
             <Input

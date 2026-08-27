@@ -458,9 +458,21 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
               <Cell
                 label="Traslado final"
                 value={
-                  quote.fecha_traslado_final
-                    ? fmtDateTime(quote.fecha_traslado_final)
-                    : "—"
+                  quote.fecha_traslado_final ? (
+                    fmtDateTime(quote.fecha_traslado_final)
+                  ) : quote.fecha_fin && quote.fecha_fin !== quote.fecha_vuelo ? (
+                    // Sin traslado capturado pero el viaje termina otro día:
+                    // fecha_fin la deriva el trigger (GREATEST de los tramos).
+                    <>
+                      {fmtDateTime(quote.fecha_fin)}
+                      <span className="text-xs text-muted-foreground">
+                        {" "}
+                        · derivado del itinerario
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )
                 }
               />
               {quote.fecha_confirmacion && (
@@ -573,7 +585,7 @@ function Cell({
   hint,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   hint?: string;
 }) {
   return (

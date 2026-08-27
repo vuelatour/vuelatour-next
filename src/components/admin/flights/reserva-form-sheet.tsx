@@ -23,6 +23,7 @@ import { createReservaAction } from "@/app/admin/flights/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import { Field } from "@/components/admin/form-field";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
+import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 
 interface ClientOption {
   id: string;
@@ -60,7 +61,8 @@ interface LegRow {
   esFerry: boolean;
   /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
   esSobrevuelo: boolean;
-  /** El piloto pernocta tras este tramo (además se marca sola si el siguiente sale otro día). */
+  /** El piloto pernocta tras este tramo — SOLO manual (27-ago: se quitó la
+   *  derivación automática por salto de fecha; marcaba pernoctas no pedidas). */
   pernocta: boolean;
   /** Parada de servicio/técnica (tipo_parada SERVICIO) + su detalle. */
   servicio: boolean;
@@ -106,7 +108,10 @@ interface ReservaFormSheetProps {
 
 /**
  * Creación rápida de vuelo, en el orden pedido por el cliente:
- * avión → itinerario de OPERACIÓN → piloto → hora → cliente → opcionales.
+ * avión → fecha/hora de salida → itinerario de OPERACIÓN → piloto → cliente
+ * → opcionales. (Cambio 27-ago: la fecha SUBIÓ antes del itinerario — al
+ * final limitaba los tramos: el 1º no tiene campo propio y los demás
+ * quedaban deshabilitados hasta capturarla.)
  * La cotización (ruta comercial CUN→…→CUN, precio) es opcional y se arma
  * después desde el detalle del vuelo; los vuelos "salen de la nada" y esto
  * captura lo mínimo operable en segundos.
@@ -282,7 +287,14 @@ export function ReservaFormSheet({
             />
           </Field>
 
-          {/* 2. Ruta de operación */}
+          {/* 2. Fecha y hora de salida — arriba del itinerario (27-ago):
+              antes iba al final y limitaba los tramos. El tramo 1 la usa tal
+              cual; los tramos 2+ la precargan al enfocar su hora. */}
+          <Field label="Fecha y hora de salida" hint={TZ_LABEL} required>
+            <FechaHoraCampo value={fechaVuelo} onChange={setFechaVuelo} />
+          </Field>
+
+          {/* 3. Ruta de operación */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">
@@ -394,7 +406,7 @@ export function ReservaFormSheet({
                     </label>
                     <label
                       className="flex items-center gap-2 text-xs"
-                      title="El piloto pernocta tras este tramo — dispara el viático de pernocta en la cotización. Si el siguiente tramo sale otro día, se marca sola."
+                      title="El piloto pernocta tras este tramo — dispara el viático de pernocta en la cotización. SOLO se marca a mano."
                     >
                       <Switch
                         checked={leg.pernocta}
@@ -420,7 +432,7 @@ export function ReservaFormSheet({
                       onChange={(e) => updateLeg(i, { servicioNotas: e.target.value })}
                     />
                   )}
-                  <div className="grid grid-cols-[1fr_1fr] items-center gap-3">
+                  <div className="grid grid-cols-[1fr_1fr] items-start gap-3">
                     <Input
                       type="number"
                       min={0}
@@ -435,20 +447,14 @@ export function ReservaFormSheet({
                         disabled
                         readOnly
                         className="text-muted-foreground text-xs"
-                        title="El primer tramo sale a la fecha y hora general del vuelo (se captura abajo)."
+                        title="El primer tramo sale a la fecha y hora general del vuelo (capturada arriba)."
                       />
                     ) : (
-                      <Input
-                        type="datetime-local"
-                        disabled={!fechaVuelo}
-                        title={
-                          !fechaVuelo
-                            ? "Primero captura la fecha y hora general (abajo)."
-                            : "Hora del tramo (opcional). Si sale otro día, se marca pernocta."
-                        }
-                        value={leg.hora}
-                        // Precarga desde el tramo anterior o la fecha general para
-                        // que el selector nunca arranque en "ahora".
+                      <div
+                        title="Hora del tramo (opcional, hora Cancún)."
+                        // Precarga desde el tramo anterior o la fecha general
+                        // para que el campo nunca arranque vacío (el onFocus
+                        // de React burbujea desde los inputs internos).
                         onFocus={() => {
                           if (leg.hora) return;
                           const base =
@@ -456,8 +462,12 @@ export function ReservaFormSheet({
                             fechaVuelo;
                           if (base) updateLeg(i, { hora: base });
                         }}
-                        onChange={(e) => updateLeg(i, { hora: e.target.value })}
-                      />
+                      >
+                        <FechaHoraCampo
+                          value={leg.hora}
+                          onChange={(v) => updateLeg(i, { hora: v })}
+                        />
+                      </div>
                     )}
                   </div>
                   <Input
@@ -538,14 +548,23 @@ export function ReservaFormSheet({
                 ))}
                 <p className="text-[11px] text-muted-foreground">
                   Todo el viaje queda en UN solo vuelo (un folio, una
-                  cotización); las pernoctas se marcan solas al cambiar de
-                  día.
+                  cotización). La pernocta se marca A MANO en el tramo donde
+                  el piloto duerme fuera.
                 </p>
+                {dias.length > 1 && !legs.some((l) => l.pernocta) && (
+                  /* Salto de día sin pernocta: aviso (27-ago) — el sistema
+                     ya no la marca solo y olvidarla deja el viático fuera
+                     de la cotización. */
+                  <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    ⚠ El viaje cruza de día y ningún tramo tiene pernocta
+                    marcada — márcala si el piloto dormirá fuera.
+                  </p>
+                )}
               </div>
             );
           })()}
 
-          {/* 3. Piloto */}
+          {/* 4. Piloto */}
           <Field label="Piloto" required>
             <SearchableSelect
               options={pilots.map((p) => ({
@@ -576,15 +595,6 @@ export function ReservaFormSheet({
               value={copilotoId}
               onChange={setCopilotoId}
               placeholder="Sin copiloto"
-            />
-          </Field>
-
-          {/* 4. Hora */}
-          <Field label="Fecha y hora de salida" hint={TZ_LABEL} required>
-            <Input
-              type="datetime-local"
-              value={fechaVuelo}
-              onChange={(e) => setFechaVuelo(e.target.value)}
             />
           </Field>
 

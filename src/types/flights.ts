@@ -36,6 +36,8 @@ export interface FlightListItem {
   cotizacion_abierta?: boolean;
   fecha_vuelo: string | null;
   fecha_traslado_final: string | null;
+  /** Fin real del viaje (derivada por trigger: GREATEST de tramos/traslado final). */
+  fecha_fin: string | null;
   fecha_confirmacion: string | null;
   estado_permiso: "no_aplica" | "pendiente" | "emitido";
   /** PATH en el bucket privado planes-vuelo (filas viejas: URL completa).

@@ -527,6 +527,18 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     <Row label="Traslado final">
                       {snapshot.fecha_traslado_final ? (
                         fmtDateTime(snapshot.fecha_traslado_final)
+                      ) : snapshot.fecha_fin &&
+                        snapshot.fecha_fin !== snapshot.fecha_vuelo ? (
+                        // Sin traslado capturado pero el viaje termina otro
+                        // día: fecha_fin la deriva el trigger (GREATEST de
+                        // los tramos) y se muestra como referencia.
+                        <span>
+                          {fmtDateTime(snapshot.fecha_fin)}
+                          <span className="text-xs text-muted-foreground">
+                            {" "}
+                            · derivado del itinerario
+                          </span>
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">Sin fecha</span>
                       )}

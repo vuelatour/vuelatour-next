@@ -88,7 +88,11 @@ export function FechaHoraCampo({
       emitir(fecha, hhmm);
     } else {
       setHoraInvalida(raw.trim() !== "");
-      if (raw.trim() === "" && !fecha) onChange("");
+      // Borrar la hora VACÍA el valor completo (27-ago): antes el valor
+      // viejo sobrevivía en silencio mientras la UI decía "escribe la hora"
+      // — un tramo se guardaba con una fecha que nadie quiso. Mismo
+      // comportamiento que tenía el datetime-local (borrar = limpiar).
+      if (raw.trim() === "") onChange("");
     }
   };
 
