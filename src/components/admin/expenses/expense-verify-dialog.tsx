@@ -52,6 +52,7 @@ const CATEGORIAS = [
   { value: "INDIRECTO", label: "Indirecto (sin vuelo)" },
   // El API exige sin vuelo y sin avión para esta categoría (400 con mensaje
   // claro si el gasto los tiene: quitarlos primero).
+  { value: "GASOLINA", label: "Gasolina (vehículos)" },
   { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
   ...["FIJO", "OTRO"].map((c) => ({ value: c, label: c })),
 ];
@@ -378,7 +379,10 @@ export function ExpenseVerifyDialog({
       // MISMO PATCH (null explícito sobrevive a stripEmpty; "" se tiraría y
       // el candado del API rechazaría el estado efectivo con los enlaces
       // viejos vivos).
-      if (values.categoria === "PERSONAL_DUENO") {
+      if (
+        values.categoria === "PERSONAL_DUENO" ||
+        values.categoria === "GASOLINA"
+      ) {
         payload.aeronave_id = null;
         payload.vuelo_id = null;
         payload.escala_id = null;
@@ -391,6 +395,7 @@ export function ExpenseVerifyDialog({
         // llamada re-ligaría o duplicaría la escritura.
         if (
           values.categoria !== "PERSONAL_DUENO" &&
+          values.categoria !== "GASOLINA" &&
           vueloSel !== (gasto.vuelo_id ?? "")
         ) {
           const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
@@ -712,7 +717,7 @@ export function ExpenseVerifyDialog({
                   // PERSONAL del dueño: sin vuelo, avión ni escala (candado
                   // del API) — se limpian aquí y el submit los DESLIGA con
                   // null explícito en el mismo PATCH.
-                  if (v === "PERSONAL_DUENO") {
+                  if (v === "PERSONAL_DUENO" || v === "GASOLINA") {
                     setValue("aeronave_id", "");
                     setVueloSel("");
                   }

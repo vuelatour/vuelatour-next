@@ -20,6 +20,9 @@ export const CategoriaEnum = z.enum([
   // SIEMPRE sin vuelo y sin avión (el API lo exige); seguimiento en la
   // pantalla Gastos personales.
   "PERSONAL_DUENO",
+  // Gasolina de VEHÍCULOS (27-ago): gasolinera — nunca combustible de
+  // aviación. Sin vuelo ni avión; se administra en Otros gastos.
+  "GASOLINA",
   "OTRO",
 ]);
 
