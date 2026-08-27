@@ -88,6 +88,8 @@ export interface EscalaInput {
   notas?: string | null;
   /** Fecha/hora planeada del tramo. El 1er/último tramo heredan las fechas del vuelo si se omite. */
   fecha_salida_plan?: string | null;
+  /** Ocultar ESTE tramo del PDF (título/itinerario/mapa); el precio no cambia. */
+  pdf_oculto?: boolean;
 }
 
 /** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */
@@ -104,6 +106,8 @@ export interface TramoBreakdown {
   pernocta_usd: number;
   tipo_parada: TipoParada;
   servicio_notas: string | null;
+  /** Ocultar este tramo del PDF (27-ago). */
+  pdf_oculto?: boolean;
 }
 
 export interface CalculateQuoteRequest {

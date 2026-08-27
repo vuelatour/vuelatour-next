@@ -346,6 +346,7 @@ function tramoToEscala(t: {
   servicio_notas?: string | null;
   notas?: string | null;
   fecha_salida_plan?: string | null;
+  pdf_oculto?: boolean | null;
 }): EscalaInput {
   return {
     origen_iata: t.origen_iata,
@@ -360,6 +361,7 @@ function tramoToEscala(t: {
     tipo_parada: t.tipo_parada ?? "NORMAL",
     servicio_notas: t.servicio_notas ?? null,
     notas: t.notas ?? null,
+    pdf_oculto: t.pdf_oculto ?? false,
     // datetime-local (sin segundos) para el input del editor de tramos.
     fecha_salida_plan: t.fecha_salida_plan ? isoToCancunInput(t.fecha_salida_plan) : null,
   };
@@ -521,6 +523,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   pernocta_costo_usd: t.pernocta_usd,
                   tipo_parada: t.tipo_parada,
                   servicio_notas: t.servicio_notas,
+                  pdf_oculto: t.pdf_oculto,
                 }),
               )
             : comercialSugerida(q)
@@ -1152,8 +1155,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           Number(e.millas_nauticas),
         ]),
     );
+    // TODOS los tramos vivos viajan (27-ago): el ferry también se cotiza
+    // (cobra tiempo y calzos) — antes se descartaba y la ruta importada
+    // quedaba incompleta (caso CUN→HOL ferry + HOL→CUN).
     return (initialQuote?.escalas ?? [])
-      .filter((e) => !e.cancelada_at && !(e.solo_operativa ?? e.es_ferry))
+      .filter((e) => !e.cancelada_at)
       .map((e) => {
         // Solo la SECUENCIA viaja de la operación a la cotización: pax,
         // manifiesto y fechas son de cada lado (regla 27-ago).
