@@ -1539,6 +1539,22 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               ? "Completa la ruta y los pasajeros"
               : undefined
         }
+        // Identidad al lado derecho (pedido 28-ago): cliente + folio·versión
+        // llenan el hueco de la barra y se leen sin bajar al formulario.
+        titulo={
+          isRevise
+            ? (clientName ?? null)
+            : ((clients ?? []).find((c) => c.id === debounced.cliente_id)
+                ?.nombre ??
+              null)
+        }
+        subtitulo={
+          isRevise && initialQuote
+            ? `#${initialQuote.folio} · v${initialQuote.cotizacion_version} → v${
+                initialQuote.cotizacion_version + 1
+              }`
+            : "Nueva cotización"
+        }
       />
       {/* FORM */}
       <Card className="border-t-2 border-t-brand-600/60">
@@ -3374,6 +3390,8 @@ function TotalBar({
   error,
   sinDatos,
   sinDatosMsg,
+  titulo,
+  subtitulo,
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
@@ -3381,6 +3399,10 @@ function TotalBar({
   sinDatos: boolean;
   /** Mensaje específico del estado vacío (ej. modo sin-avión sin montos). */
   sinDatosMsg?: string;
+  /** Cliente de la cotización (lado derecho de la barra). */
+  titulo?: string | null;
+  /** Folio · versión (o "Nueva cotización"). */
+  subtitulo?: string | null;
 }) {
   // Avión externo SIN referencia (id null): no hay horas ni tarifa — el
   // subtotal es la suma de los montos pactados por tramo.
@@ -3484,6 +3506,20 @@ function TotalBar({
                 {sinAvionBd ? "EXTERNO" : breakdown.tarifa.tipo}
               </Badge>
             </>
+          )}
+          {(titulo || subtitulo) && (
+            <div className="ml-auto min-w-0 text-right">
+              {titulo && (
+                <p className="truncate text-sm font-semibold leading-tight max-w-[280px]">
+                  {titulo}
+                </p>
+              )}
+              {subtitulo && (
+                <p className="font-mono text-[11px] leading-tight text-white/80">
+                  {subtitulo}
+                </p>
+              )}
+            </div>
           )}
         </div>
         {breakdown && !error && (
