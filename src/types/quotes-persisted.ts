@@ -129,6 +129,28 @@ export interface PersistedQuote {
   notas: string | null;
   notas_internas: string | null;
   calculo_snapshot: QuoteBreakdown | null;
+  /**
+   * Partición del ingreso (regla 28-ago, la manda el API con la fuente
+   * única particionIngresoVuelo): venta del AVIÓN (tiempo + ajuste +
+   * comisión + IVA proporcional) vs ingreso de VUELATOUR (TUAs/extras/
+   * pernocta + su IVA → "Otros movimientos" del balance general).
+   * Opcional: respuestas previas al deploy no la traen.
+   */
+  particion_ingreso?: {
+    total_usd: number;
+    avion_usd: number;
+    vuelatour_usd: number;
+    iva_avion_usd: number;
+    iva_vuelatour_usd: number;
+    tiempo_usd: number;
+    ajuste_usd: number;
+    comision_vendedor_usd: number;
+    tuas_usd: number;
+    extras_usd: number;
+    pernocta_usd: number;
+    fuente: "desglose" | "columnas" | "sin_precio";
+    inconsistente: boolean;
+  } | null;
 
   /** Solo presente cuando se consulta por id (GET /v1/quotes/:id). */
   escalas?: PersistedEscala[];

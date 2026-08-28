@@ -168,6 +168,52 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
             <span className="font-semibold">Total cobrado al cliente</span>
             <span className="font-mono font-bold">{fmtUsd(total)}</span>
           </div>
+          {/* Regla del cliente (28-ago): al balance del AVIÓN solo va lo
+              cobrado por las horas de vuelo (+ ajuste) con su IVA; TUAs,
+              extras y pernocta (con su IVA) son ingreso de VuelaTour y van a
+              "Otros movimientos" del balance general. El API manda la
+              partición (fuente única); si no viene, no se inventa. */}
+          {quote.particion_ingreso && quote.particion_ingreso.total_usd > 0 && (
+            <div className="mt-2 rounded-lg border border-border bg-muted/20 px-3 py-2 space-y-1 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="font-semibold">Venta del avión</span>
+                  <span className="text-muted-foreground text-xs">
+                    {" "}
+                    · tiempo de vuelo + ajuste
+                    {quote.particion_ingreso.comision_vendedor_usd > 0
+                      ? " + comisión vendedor"
+                      : ""}{" "}
+                    + IVA {fmtUsd(quote.particion_ingreso.iva_avion_usd)} → balance
+                    del avión
+                  </span>
+                </span>
+                <span className="font-mono font-semibold shrink-0">
+                  {fmtUsd(quote.particion_ingreso.avion_usd)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="font-semibold">Ingreso VuelaTour</span>
+                  <span className="text-muted-foreground text-xs">
+                    {" "}
+                    · TUAs/extras/pernocta + IVA{" "}
+                    {fmtUsd(quote.particion_ingreso.iva_vuelatour_usd)} → Otros
+                    movimientos (balance general)
+                  </span>
+                </span>
+                <span className="font-mono font-semibold shrink-0">
+                  {fmtUsd(quote.particion_ingreso.vuelatour_usd)}
+                </span>
+              </div>
+              {quote.particion_ingreso.inconsistente && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  ⚠ El desglose no cuadra con el total: la partición se dejó
+                  completa en el avión. Re-cotiza o ajusta para regenerarla.
+                </p>
+              )}
+            </div>
+          )}
           {/* Comisión del vendedor (interna): regla actual = se SUMA al
               precio (la paga el cliente) y viene como línea COMISION_VENDEDOR
               del desglose; el neto VuelaTour lo manda el motor en meta.
