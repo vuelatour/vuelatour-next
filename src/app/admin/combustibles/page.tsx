@@ -119,6 +119,18 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
     vuelo_folio: l.vuelo?.folio ?? null,
   }));
 
+  // Orden de la tabla (pedido del cliente 28-ago): por MATRÍCULA y luego
+  // por fecha; las cargas SIN avión van primero (bloquean el cierre y hay
+  // que asignarlas).
+  rows.sort((a, b) => {
+    if (!a.matricula !== !b.matricula) return a.matricula ? 1 : -1;
+    const m = (a.matricula ?? "").localeCompare(b.matricula ?? "");
+    if (m !== 0) return m;
+    return String(a.fecha_hora_carga ?? a.fecha_gasto ?? "").localeCompare(
+      String(b.fecha_hora_carga ?? b.fecha_gasto ?? ""),
+    );
+  });
+
   // ===== Resumen del mes por avión (el control real del combustible) =====
   const porAvion = new Map<string, ResumenAvion>();
   for (const r of rows) {
@@ -158,11 +170,20 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
       t.cargas += 1;
       t.litros += r.litros ?? 0;
       if (r.moneda === "USD") t.usd += r.monto;
-      else t.mxn += r.monto;
+      else {
+        t.mxn += r.monto;
+        if (r.litros && r.litros > 0) {
+          t.mxnConLitros += r.monto;
+          t.litrosMxn += r.litros;
+        }
+      }
       return t;
     },
-    { cargas: 0, litros: 0, mxn: 0, usd: 0 },
+    { cargas: 0, litros: 0, mxn: 0, usd: 0, mxnConLitros: 0, litrosMxn: 0 },
   );
+  // El monto de cada carga es lo pagado en el ticket (IVA incluido): el
+  // total del mes ya va con IVA. IVA desglosado = monto − monto/1.16.
+  const ivaMxn = flota.mxn - flota.mxn / 1.16;
 
   return (
     <div className="space-y-6">
@@ -269,6 +290,36 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
           <Card>
             <CardContent className="p-0">
               <FuelLoadsTable loads={rows} aircraft={aircraftActivas} />
+              {/* Totales del mes al pie de la tabla (pedido del cliente
+                  28-ago): litros y monto CON IVA (el ticket ya lo incluye). */}
+              <div className="border-t border-border bg-muted/30 px-4 py-3">
+                <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+                  <span className="font-semibold">Total del mes</span>
+                  <span className="text-muted-foreground">
+                    {flota.cargas} {flota.cargas === 1 ? "carga" : "cargas"}
+                  </span>
+                  <span className="font-mono">{fmtLitros(flota.litros)} L</span>
+                  <span className="font-mono font-semibold">
+                    MXN {fmtMoney(flota.mxn)}{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      con IVA (IVA ≈ {fmtMoney(ivaMxn)})
+                    </span>
+                  </span>
+                  {flota.usd > 0 && (
+                    <span className="font-mono font-semibold">
+                      USD {fmtMoney(flota.usd)}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        (no se mezcla con MXN)
+                      </span>
+                    </span>
+                  )}
+                  {flota.litrosMxn > 0 && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      $/L prom {(flota.mxnConLitros / flota.litrosMxn).toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </>
