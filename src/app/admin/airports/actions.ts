@@ -18,6 +18,18 @@ function fail<T>(err: unknown): ActionResult<T> {
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
+/**
+ * El catálogo alimenta también el cotizador y el alta de vuelo (selects y
+ * ruta rápida): tras crear/editar/borrar, la próxima carga de esas pantallas
+ * ya trae el catálogo del servidor (28-ago: alta sin salir del flujo).
+ */
+function revalidarCatalogo() {
+  revalidatePath("/admin/airports");
+  revalidatePath("/admin/quotes");
+  revalidatePath("/admin/quotes/new");
+  revalidatePath("/admin/quotes/[id]/revise", "page");
+}
+
 function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const out: Partial<T> = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -37,7 +49,7 @@ export async function createAirportAction(raw: unknown): Promise<ActionResult<Ai
       method: "POST",
       body: stripEmpty(parsed.data),
     });
-    revalidatePath("/admin/airports");
+    revalidarCatalogo();
     return { ok: true, data: created };
   } catch (err) {
     return fail(err);
@@ -54,7 +66,7 @@ export async function updateAirportAction(id: string, raw: unknown): Promise<Act
       method: "PATCH",
       body: stripEmpty(parsed.data),
     });
-    revalidatePath("/admin/airports");
+    revalidarCatalogo();
     return { ok: true, data: updated };
   } catch (err) {
     return fail(err);
@@ -64,7 +76,7 @@ export async function updateAirportAction(id: string, raw: unknown): Promise<Act
 export async function deleteAirportAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/airports/${id}`, { method: "DELETE" });
-    revalidatePath("/admin/airports");
+    revalidarCatalogo();
     return { ok: true };
   } catch (err) {
     return fail(err);

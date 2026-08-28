@@ -23,7 +23,9 @@ import { createReservaAction } from "@/app/admin/flights/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import { Field } from "@/components/admin/form-field";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
+import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
 import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
+import type { Airport } from "@/types/airports";
 
 interface ClientOption {
   id: string;
@@ -140,7 +142,24 @@ export function ReservaFormSheet({
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const airportOptions = airports.map((a) => ({
+  // Aeropuertos creados SIN salir del sheet (28-ago): se suman al catálogo
+  // que llegó por props y quedan seleccionables al instante (ruta rápida y
+  // selects); el router.refresh() de fondo trae el catálogo del servidor
+  // (mismo patrón que extraClients).
+  const [extraAirports, setExtraAirports] = useState<AirportOption[]>([]);
+  const airportsAll = [
+    ...airports.filter((a) => !extraAirports.some((e) => e.iata === a.iata)),
+    ...extraAirports,
+  ].sort((a, b) => a.iata.localeCompare(b.iata));
+  const onAeropuertoCreado = (a: Airport) => {
+    setExtraAirports((prev) => [
+      ...prev.filter((x) => x.iata !== a.iata),
+      { iata: a.iata, nombre: a.nombre },
+    ]);
+    router.refresh();
+  };
+
+  const airportOptions = airportsAll.map((a) => ({
     value: a.iata,
     label: a.iata,
     description: a.nombre,
@@ -300,19 +319,23 @@ export function ReservaFormSheet({
               <Label className="text-sm font-medium">
                 Ruta de operación <span className="text-destructive">*</span>
               </Label>
-              <Button type="button" size="sm" variant="outline" onClick={addLeg} className="gap-1">
-                <PlusIcon className="h-3.5 w-3.5" />
-                Tramo
-              </Button>
+              <div className="flex items-center gap-2">
+                <AirportQuickCreateButton onCreated={onAeropuertoCreado} />
+                <Button type="button" size="sm" variant="outline" onClick={addLeg} className="gap-1">
+                  <PlusIcon className="h-3.5 w-3.5" />
+                  Tramo
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               La ruta real del avión (puede salir de otra base). Marca como
               ferry los tramos sin pasajeros: el piloto los ve, el cliente no.
             </p>
             <RutaRapidaInput
-              airports={airports}
+              airports={airportsAll}
               hayDatos={hayDatosTramos}
               onAplicar={aplicarRutaRapida}
+              onAeropuertoCreado={onAeropuertoCreado}
             />
             <div className="space-y-2">
               {legs.map((leg, i) => (

@@ -53,6 +53,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
+import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
+import type { Airport } from "@/types/airports";
 import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
@@ -386,7 +388,7 @@ function tramoToEscala(t: {
 }
 
 export function QuoteCalculator(props: QuoteCalculatorProps) {
-  const { aircraft, routes, airports } = props;
+  const { aircraft, routes, airports: airportsCatalogo } = props;
   const mode = props.mode ?? "create";
   const isRevise = mode === "revise";
 
@@ -418,6 +420,30 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const frequentClientIds = isRevise ? [] : (props.frequentClientIds ?? []);
 
   const router = useRouter();
+
+  // Aeropuertos creados SIN salir del cotizador (28-ago): se suman al
+  // catálogo que llegó por props y quedan seleccionables al instante en la
+  // ruta rápida, los tramos comerciales y la ruta operativa; el
+  // router.refresh() de fondo trae el catálogo ya actualizado del servidor
+  // (mismo patrón que extraClients / extraRoutes).
+  const [extraAirports, setExtraAirports] = useState<AirportOption[]>([]);
+  const airports = useMemo<AirportOption[]>(
+    () =>
+      [
+        ...airportsCatalogo.filter(
+          (a) => !extraAirports.some((e) => e.iata === a.iata),
+        ),
+        ...extraAirports,
+      ].sort((a, b) => a.iata.localeCompare(b.iata)),
+    [airportsCatalogo, extraAirports],
+  );
+  const onAeropuertoCreado = (a: Airport) => {
+    setExtraAirports((prev) => [
+      ...prev.filter((x) => x.iata !== a.iata),
+      { iata: a.iata, nombre: a.nombre, latitud: a.latitud, longitud: a.longitud },
+    ]);
+    router.refresh();
+  };
   // Al revisar una versión con tarifa AJUSTADA a mano, la sección de
   // "Personalizada" en Tipo de tarifa (25-ago): modo elegido a mano; el
   // derivado overrideTarifaActivo cubre revises y "todo en $0".
@@ -2126,6 +2152,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   onChange={(legs) => setValue("escalas", legs)}
                   routes={allRoutes}
                   airports={airports}
+                  onAeropuertoCreado={onAeropuertoCreado}
                   avisoAnclaCun
                   conMontoExterno={sinAvion}
                 />
@@ -2176,6 +2203,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               <RutaRapidaInput
                 airports={airports}
                 hayDatos={false}
+                onAeropuertoCreado={onAeropuertoCreado}
                 onAplicar={(codigos) =>
                   setValue(
                     "escalas",
@@ -2579,34 +2607,37 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
                   Ruta operativa (opcional · no se cotiza)
                 </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() =>
-                    setOpsLegs((prev) => [
-                      ...prev,
-                      {
-                        origen: prev.length
-                          ? prev[prev.length - 1].destino
-                          : "",
-                        destino: "",
-                        ferry: prev.length === 0,
-                        pax: "",
-                        hora: "",
-                        nota: "",
-                        pernocta: false,
-                        servicio: false,
-                        servicioNotas: "",
-                        nombres: "",
-                        showNombres: false,
-                      },
-                    ])
-                  }
-                >
-                  + Tramo
-                </Button>
+                <div className="flex items-center gap-2">
+                  <AirportQuickCreateButton onCreated={onAeropuertoCreado} />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() =>
+                      setOpsLegs((prev) => [
+                        ...prev,
+                        {
+                          origen: prev.length
+                            ? prev[prev.length - 1].destino
+                            : "",
+                          destino: "",
+                          ferry: prev.length === 0,
+                          pax: "",
+                          hora: "",
+                          nota: "",
+                          pernocta: false,
+                          servicio: false,
+                          servicioNotas: "",
+                          nombres: "",
+                          showNombres: false,
+                        },
+                      ])
+                    }
+                  >
+                    + Tramo
+                  </Button>
+                </div>
               </div>
               {opsLegs.length === 0 ? (
                 <p className="text-xs text-muted-foreground">

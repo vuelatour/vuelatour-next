@@ -29,9 +29,26 @@ interface AirportFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialAirport?: Airport;
+  /**
+   * Alta rápida desde el cotizador / vuelo operativo: código IATA que la
+   * operadora ya tecleó en la ruta rápida y que no existe en el catálogo.
+   * Solo aplica al crear (sin `initialAirport`).
+   */
+  initialIata?: string;
+  /**
+   * Se dispara con el aeropuerto recién creado (no en edición) para que el
+   * flujo que abrió el diálogo lo agregue a su lista local sin recargar.
+   */
+  onCreated?: (airport: Airport) => void;
 }
 
-export function AirportFormDialog({ open, onOpenChange, initialAirport }: AirportFormDialogProps) {
+export function AirportFormDialog({
+  open,
+  onOpenChange,
+  initialAirport,
+  initialIata,
+  onCreated,
+}: AirportFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialAirport;
 
@@ -44,12 +61,12 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
     formState: { errors },
   } = useForm<AirportFormValues>({
     resolver: zodResolver(AirportFormSchema),
-    defaultValues: defaults(initialAirport),
+    defaultValues: defaults(initialAirport, initialIata),
   });
 
   useEffect(() => {
-    if (open) reset(defaults(initialAirport));
-  }, [open, initialAirport, reset]);
+    if (open) reset(defaults(initialAirport, initialIata));
+  }, [open, initialAirport, initialIata, reset]);
 
   const aplicaXa = watch("tuas_aplica_xa");
   const aplicaXb = watch("tuas_aplica_xb");
@@ -65,6 +82,7 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
 
       if (result.ok) {
         toast.success(isEdit ? "Aeropuerto actualizado" : "Aeropuerto creado");
+        if (!isEdit && result.data) onCreated?.(result.data);
         onOpenChange(false);
       } else if (result.fieldErrors) {
         const firstField = Object.keys(result.fieldErrors)[0];
@@ -87,7 +105,16 @@ export function AirportFormDialog({ open, onOpenChange, initialAirport }: Airpor
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form
+          onSubmit={(e) => {
+            // El diálogo también vive dentro del cotizador / sheet de vuelo:
+            // que el submit no burbujee (por el árbol de React, portal
+            // incluido) a un formulario contenedor.
+            e.stopPropagation();
+            onSubmit(e);
+          }}
+          className="space-y-4"
+        >
           <div className="grid grid-cols-3 gap-3">
             <Field label="IATA" required error={errors.iata?.message}>
               <Input
@@ -243,10 +270,10 @@ function SwitchRow({
   );
 }
 
-function defaults(airport?: Airport): AirportFormValues {
+function defaults(airport?: Airport, initialIata?: string): AirportFormValues {
   if (!airport) {
     return {
-      iata: "",
+      iata: (initialIata ?? "").toUpperCase(),
       icao: "",
       nombre: "",
       ciudad: "",

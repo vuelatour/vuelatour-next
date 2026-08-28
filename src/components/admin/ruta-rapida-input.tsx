@@ -12,7 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
 import { cn } from "@/lib/utils";
+import type { Airport } from "@/types/airports";
 
 /**
  * Ruta rápida: la operadora teclea los códigos en una línea — "CUN, HOL, CUN"
@@ -44,6 +46,7 @@ export function RutaRapidaInput({
   airports,
   hayDatos,
   onAplicar,
+  onAeropuertoCreado,
   className,
 }: {
   /** Catálogo de aeropuertos: los códigos se validan contra él. */
@@ -57,11 +60,21 @@ export function RutaRapidaInput({
   hayDatos: boolean;
   /** Recibe los códigos validados (con la grafía exacta del catálogo). */
   onAplicar: (codigos: string[]) => void;
+  /**
+   * Alta de aeropuerto sin salir del flujo (28-ago): un código que no está
+   * en el catálogo ofrece "Crear XXX" con el IATA prellenado. El padre agrega
+   * el aeropuerto a su lista local y, si ya no falta ninguno, los tramos se
+   * arman solos (sin segundo Enter). Sin este prop solo se rechaza, como antes.
+   */
+  onAeropuertoCreado?: (airport: Airport) => void;
   className?: string;
 }) {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<string[] | null>(null);
+  // Códigos que faltaban en el ÚLTIMO intento de armar (Enter): ahí se
+  // ofrece crearlos y, al crear, continuar solo.
+  const [faltantes, setFaltantes] = useState<string[]>([]);
 
   // MAYÚSCULAS → grafía exacta del catálogo (los selects comparan el valor tal cual).
   const canonico = useMemo(() => {
@@ -71,7 +84,6 @@ export function RutaRapidaInput({
   }, [airports]);
 
   const codigos = parseCodigosRuta(raw);
-  const desconocidos = [...new Set(codigos.filter((c) => !canonico.has(c)))];
   // Aviso EN VIVO solo sobre códigos "terminados" (les sigue un separador o no
   // son el último): regañar a media tecleada ("CUN, HO…") es puro ruido ámbar.
   const ultimoTerminado = raw.length > 0 && SEPARADORES.test(raw[raw.length - 1]);
@@ -81,19 +93,28 @@ export function RutaRapidaInput({
   ];
   const repetidosPreview = repetidosConsecutivos(codigos);
 
-  const aplicar = () => {
+  /**
+   * Arma los tramos validando contra `mapa` (MAYÚSCULAS → grafía del
+   * catálogo). Va como parámetro porque, al crear un aeropuerto desde el chip,
+   * el prop `airports` se actualiza hasta el siguiente render y hay que
+   * continuar con un mapa que ya lo incluya.
+   */
+  const aplicarCon = (mapa: Map<string, string>) => {
     setError(null);
+    setFaltantes([]);
     if (codigos.length < 2) {
       setError("Escribe al menos dos aeropuertos, ej. CUN, HOL, CUN");
       return;
     }
-    if (desconocidos.length > 0) {
+    const faltan = [...new Set(codigos.filter((c) => !mapa.has(c)))];
+    if (faltan.length > 0) {
       setError(
-        `No está${desconocidos.length > 1 ? "n" : ""} en el catálogo de Aeropuertos: ${desconocidos.join(", ")}`,
+        `No está${faltan.length > 1 ? "n" : ""} en el catálogo de Aeropuertos: ${faltan.join(", ")}`,
       );
+      setFaltantes(faltan);
       return;
     }
-    const canonicos = codigos.map((c) => canonico.get(c)!);
+    const canonicos = codigos.map((c) => mapa.get(c)!);
     // Confirmación cuando se pierde captura O cuando hay un código repetido
     // (CUN,CUN = sobrevuelo): teclear "CUN-HOL, HOL-CUN" pensando en pares
     // produciría un HOL→HOL fantasma — mejor preguntarlo en claro.
@@ -104,6 +125,33 @@ export function RutaRapidaInput({
     onAplicar(canonicos);
     setRaw("");
   };
+  const aplicar = () => aplicarCon(canonico);
+
+  // Aeropuerto creado desde un chip "Crear XXX". `continuar` = el chip salía
+  // de un Enter rechazado: si ya no falta ninguno, arma los tramos de una
+  // vez (si aún faltan, vuelve a listarlos con sus chips). Desde el aviso en
+  // vivo solo se resuelve el código: la operadora sigue tecleando y armar a
+  // medias dejaría un tramo fantasma.
+  const alCrear = (airport: Airport, continuar: boolean) => {
+    onAeropuertoCreado?.(airport);
+    if (!continuar) return;
+    const mapa = new Map(canonico);
+    mapa.set(airport.iata.toUpperCase(), airport.iata);
+    aplicarCon(mapa);
+  };
+
+  const chipsCrear = (sinCatalogo: string[], continuar: boolean) =>
+    onAeropuertoCreado
+      ? sinCatalogo.map((c) => (
+          <AirportQuickCreateButton
+            key={c}
+            iata={c}
+            onCreated={(a) => alCrear(a, continuar)}
+          >
+            Crear {c}
+          </AirportQuickCreateButton>
+        ))
+      : null;
 
   const nTramos = codigos.length - 1;
   const repsConfirmar = confirmar ? repetidosConsecutivos(confirmar) : [];
@@ -118,6 +166,7 @@ export function RutaRapidaInput({
             onChange={(e) => {
               setRaw(e.target.value);
               setError(null);
+              setFaltantes([]);
             }}
             onKeyDown={(e) => {
               // preventDefault: dentro de un form, Enter dispararía el submit.
@@ -142,11 +191,17 @@ export function RutaRapidaInput({
         </Button>
       </div>
       {error ? (
-        <p className="text-xs text-destructive">{error}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-xs text-destructive">{error}</p>
+          {chipsCrear(faltantes, true)}
+        </div>
       ) : raw.trim() && desconocidosAviso.length > 0 ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          Sin catálogo: {desconocidosAviso.join(", ")}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Sin catálogo: {desconocidosAviso.join(", ")}
+          </p>
+          {chipsCrear(desconocidosAviso, false)}
+        </div>
       ) : raw.trim() && codigos.length >= 2 ? (
         <p className="text-xs text-muted-foreground">
           {codigos.join(" → ")} · {nTramos} {nTramos === 1 ? "tramo" : "tramos"}

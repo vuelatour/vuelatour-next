@@ -10,9 +10,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
+import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
 import { cn } from "@/lib/utils";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import type { EscalaInput } from "@/types/quote";
+import type { Airport } from "@/types/airports";
 
 const PERNOCTA_COSTO_DEFAULT_USD = 150;
 
@@ -65,6 +67,7 @@ export function QuoteLegsEditor({
   defaultOrigin = "CUN",
   avisoAnclaCun = false,
   conMontoExterno = false,
+  onAeropuertoCreado,
 }: {
   value: EscalaInput[];
   onChange: (legs: EscalaInput[]) => void;
@@ -76,6 +79,14 @@ export function QuoteLegsEditor({
   /** Avión EXTERNO sin referencia: cada tramo captura su monto pactado (USD)
       y la suma es el precio del servicio. */
   conMontoExterno?: boolean;
+  /**
+   * Alta de aeropuerto sin salir del cotizador (28-ago): habilita "Crear XXX"
+   * en la ruta rápida y el acceso "+ Nuevo aeropuerto" junto a los tramos. El
+   * padre agrega el aeropuerto a `airports` (estado local) y queda
+   * seleccionable al instante. Sin coordenadas no hay haversine: las millas
+   * quedan en 0 y se teclean.
+   */
+  onAeropuertoCreado?: (airport: Airport) => void;
 }) {
   // Inicializa con un tramo si está vacío.
   useEffect(() => {
@@ -322,6 +333,7 @@ export function QuoteLegsEditor({
         airports={airports}
         hayDatos={hayDatosTramos}
         onAplicar={aplicarRutaRapida}
+        onAeropuertoCreado={onAeropuertoCreado}
       />
       {avisoAnclaCun &&
         value.length > 0 &&
@@ -573,17 +585,22 @@ export function QuoteLegsEditor({
         })}
       </div>
 
-      <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={addLeg}
-          className="gap-1.5"
-        >
-          <PlusIcon className="h-3.5 w-3.5" />
-          Agregar tramo
-        </Button>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addLeg}
+            className="gap-1.5"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            Agregar tramo
+          </Button>
+          {onAeropuertoCreado && (
+            <AirportQuickCreateButton onCreated={onAeropuertoCreado} />
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
           <span className="font-mono text-foreground">{fmtDecimal(nmTotal)}</span> NM totales ·{" "}
           {value.length} {value.length === 1 ? "tramo" : "tramos"}
