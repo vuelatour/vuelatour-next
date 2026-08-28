@@ -23,6 +23,8 @@ import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
+import { ExpensesSeleccionProvider } from "@/components/admin/expenses/expenses-seleccion";
+import { esCategoriaCompra } from "@/types/compras";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,14 @@ const CATEGORIAS_OPERATIVAS = new Set([
   // Honorario del piloto externo: es costo de operar el vuelo.
   "PILOTO_EXTERNO",
 ]);
+
+/**
+ * Los pagos de una COMPRA de refacciones (aunque uno sea OPERACIONES, p. ej.
+ * la aduana) se quedan juntos en "generales": la tabla los muestra como una
+ * sola fila-grupo y partirlos entre dos cards la rompería.
+ */
+const esOperativo = (g: { categoria: string; compra_id?: string | null }) =>
+  CATEGORIAS_OPERATIVAS.has(g.categoria) && !g.compra_id;
 
 export default async function ExpensesPage({
   searchParams,
@@ -139,6 +149,13 @@ export default async function ExpensesPage({
       fotoUrls = {};
     }
   }
+
+  // Gastos que pueden marcarse para "Unir en compra" en ESTA vista (sueltos y
+  // de categoría de compra: misma regla que la casilla). El provider poda la
+  // selección a estos ids al cambiar de filtro/pestaña o tras borrar/ligar.
+  const idsSeleccionables = gastos
+    .filter((g) => !g.compra_id && esCategoriaCompra(g.categoria))
+    .map((g) => g.id);
 
   const tabs: { key: Filtro; label: string; count?: number }[] = [
     { key: "todos", label: "Todos" },
@@ -246,24 +263,29 @@ export default async function ExpensesPage({
         // Cards APILADAS a lo ancho (pedido de oficina 14-ago): lado a lado
         // las columnas no cabían y las tablas se cortaban. El desglose por
         // vuelo está en el detalle del vuelo (link en la columna Vuelo).
-        <div className="space-y-6">
-          <GastosCard
-            titulo="Gastos generales"
-            descripcion="Viáticos, refacciones, fijos y otros."
-            gastos={gastos.filter((g) => !CATEGORIAS_OPERATIVAS.has(g.categoria))}
-            aircraft={aircraft}
-            providers={providers}
-            fotoUrls={fotoUrls}
-          />
-          <GastosCard
-            titulo="Gastos operativos"
-            descripcion="Combustible, pistas/aterrizajes, TUAS, FBO, permisos y piloto externo."
-            gastos={gastos.filter((g) => CATEGORIAS_OPERATIVAS.has(g.categoria))}
-            aircraft={aircraft}
-            providers={providers}
-            fotoUrls={fotoUrls}
-          />
-        </div>
+        // El provider comparte la selección múltiple entre ambas tablas
+        // ("Unir en compra": la factura de refacciones y su envío/impuestos
+        // pueden caer en cards distintas).
+        <ExpensesSeleccionProvider idsVisibles={idsSeleccionables}>
+          <div className="space-y-6">
+            <GastosCard
+              titulo="Gastos generales"
+              descripcion="Viáticos, refacciones, compras de refacciones, fijos y otros."
+              gastos={gastos.filter((g) => !esOperativo(g))}
+              aircraft={aircraft}
+              providers={providers}
+              fotoUrls={fotoUrls}
+            />
+            <GastosCard
+              titulo="Gastos operativos"
+              descripcion="Combustible, pistas/aterrizajes, TUAS, FBO, permisos y piloto externo."
+              gastos={gastos.filter(esOperativo)}
+              aircraft={aircraft}
+              providers={providers}
+              fotoUrls={fotoUrls}
+            />
+          </div>
+        </ExpensesSeleccionProvider>
       )}
     </div>
   );

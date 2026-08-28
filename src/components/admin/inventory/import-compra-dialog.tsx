@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,9 +41,13 @@ function readBase64(file: File): Promise<string> {
 }
 
 export function ImportCompraDialog({ open, onOpenChange, providers }: ImportCompraDialogProps) {
+  const router = useRouter();
   const [extracting, setExtracting] = useState(false);
   const [importing, startImport] = useTransition();
   const [lineas, setLineas] = useState<LineaEdit[]>([]);
+  // Compra registrada por el API a partir del PDF: al terminar se ofrece
+  // abrirla para ligar envío/impuestos y recibirla en bodega.
+  const [compraCreada, setCompraCreada] = useState<{ id: string; resumen: string } | null>(null);
   const [proveedorId, setProveedorId] = useState("");
   const [fechaOrden, setFechaOrden] = useState("");
   const [referencia, setReferencia] = useState("");
@@ -56,6 +61,7 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
     setProveedorId("");
     setFechaOrden("");
     setReferencia("");
+    setCompraCreada(null);
   };
 
   const onFile = async (file: File | undefined) => {
@@ -128,11 +134,16 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
         lineas: lineasValidas,
       });
       if (res.ok && res.data) {
-        toast.success(
-          `Importado: ${res.data.entradas} entradas · ${res.data.items_creados} ítems nuevos`,
-        );
-        reset();
-        onOpenChange(false);
+        const resumen = `${res.data.entradas} entradas · ${res.data.items_creados} ítems nuevos`;
+        toast.success(`Importado: ${resumen}`);
+        if (res.data.compra_id) {
+          // Se queda abierto con el acceso a la compra (un toast se va).
+          setLineas([]);
+          setCompraCreada({ id: res.data.compra_id, resumen });
+        } else {
+          reset();
+          onOpenChange(false);
+        }
       } else {
         toast.error(res.error ?? "Error al importar");
       }
@@ -156,6 +167,17 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
           </DialogDescription>
         </DialogHeader>
 
+        {compraCreada ? (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm">
+            <p className="font-medium text-emerald-700 dark:text-emerald-400">
+              Compra registrada · {compraCreada.resumen}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Abre la compra para ligar el envío y los impuestos cuando lleguen y recibirla en
+              bodega con el costo real.
+            </p>
+          </div>
+        ) : (
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">PDF de la compra</Label>
@@ -269,14 +291,43 @@ export function ImportCompraDialog({ open, onOpenChange, providers }: ImportComp
             </>
           )}
         </div>
+        )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={importing}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={onImport} disabled={importing || lineas.length === 0}>
-            {importing ? "Importando…" : `Importar ${lineas.length} líneas`}
-          </Button>
+          {compraCreada ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  reset();
+                  onOpenChange(false);
+                }}
+              >
+                Cerrar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  const id = compraCreada.id;
+                  reset();
+                  onOpenChange(false);
+                  router.push(`/admin/inventory/compras/${id}`);
+                }}
+              >
+                Ver compra
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={importing}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={onImport} disabled={importing || lineas.length === 0}>
+                {importing ? "Importando…" : `Importar ${lineas.length} líneas`}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

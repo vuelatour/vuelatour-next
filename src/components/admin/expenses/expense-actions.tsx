@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowsRightLeftIcon,
   CheckBadgeIcon,
   EllipsisHorizontalIcon,
   PencilIcon,
+  ShoppingCartIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -30,8 +32,11 @@ import {
   dismissDuplicadoAction,
   vistoBuenoGastoAction,
 } from "@/app/admin/expenses/actions";
+import { createCompraAction } from "@/app/admin/inventory/compras/actions";
 import { ExpenseVerifyDialog } from "./expense-verify-dialog";
 import { RepartoDialog } from "./reparto-dialog";
+import { CompraLinkDialog } from "./compra-link-dialog";
+import { esCategoriaCompra } from "@/types/compras";
 import type { Gasto } from "@/types/expenses";
 
 /** Gastos generales SIN vuelo: los únicos repartibles entre aviones. */
@@ -46,13 +51,19 @@ interface ExpenseActionsProps {
 }
 
 export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseActionsProps) {
+  const router = useRouter();
   const [openEdit, setOpenEdit] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
   const [openReparto, setOpenReparto] = useState(false);
+  const [openCrearCompra, setOpenCrearCompra] = useState(false);
+  const [openLigarCompra, setOpenLigarCompra] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const repartible =
     !gasto.vuelo_id && CATEGORIAS_REPARTIBLES.has(gasto.categoria);
+  const enCompra = !!gasto.compra_id;
+  // Misma regla que la casilla "Unir en compra" (fuente única en types/compras).
+  const compraPosible = !enCompra && esCategoriaCompra(gasto.categoria);
 
   const dismiss = () => {
     startTransition(async () => {
@@ -82,6 +93,20 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
     });
   };
 
+  /** Este gasto ES la factura de mercancía: nace la compra y se abre. */
+  const crearCompra = () => {
+    startTransition(async () => {
+      const r = await createCompraAction({ gasto_mercancia_id: gasto.id });
+      if (r.ok && r.data) {
+        toast.success(`Compra #${r.data.folio} creada`);
+        setOpenCrearCompra(false);
+        router.push(`/admin/inventory/compras/${r.data.id}`);
+      } else {
+        toast.error(r.error ?? "No se pudo crear la compra");
+      }
+    });
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -100,6 +125,27 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
             <PencilIcon className="h-4 w-4" />
             Verificar / editar
           </DropdownMenuItem>
+          {enCompra && gasto.compra && (
+            <DropdownMenuItem
+              onClick={() => router.push(`/admin/inventory/compras/${gasto.compra!.id}`)}
+              className="gap-2"
+            >
+              <ShoppingCartIcon className="h-4 w-4" />
+              Ver compra #{gasto.compra.folio}
+            </DropdownMenuItem>
+          )}
+          {compraPosible && (
+            <>
+              <DropdownMenuItem onClick={() => setOpenCrearCompra(true)} className="gap-2">
+                <ShoppingCartIcon className="h-4 w-4" />
+                Crear compra con esta factura
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setOpenLigarCompra(true)} className="gap-2">
+                <ShoppingCartIcon className="h-4 w-4" />
+                Agregar a una compra abierta
+              </DropdownMenuItem>
+            </>
+          )}
           {repartible && (
             <DropdownMenuItem onClick={() => setOpenReparto(true)} className="gap-2">
               <ArrowsRightLeftIcon className="h-4 w-4" />
@@ -152,12 +198,46 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
         />
       )}
 
+      {compraPosible && (
+        <CompraLinkDialog
+          open={openLigarCompra}
+          onOpenChange={setOpenLigarCompra}
+          gasto={gasto}
+        />
+      )}
+
+      <AlertDialog open={openCrearCompra} onOpenChange={setOpenCrearCompra}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Crear una compra con esta factura?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Este gasto queda como la factura de MERCANCÍA de una compra nueva. En la compra
+              capturas las refacciones y ligas el envío y los impuestos cuando lleguen; al
+              recibirla en bodega entra cada pieza con su costo real.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                crearCompra();
+              }}
+              disabled={pending}
+            >
+              {pending ? "Creando…" : "Crear compra"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar este gasto?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta acción no se puede deshacer. Se borra el registro del gasto.
+              {enCompra && " Deja de contar en su compra."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

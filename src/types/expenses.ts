@@ -1,6 +1,15 @@
+import type { CompraRef, CompraRol } from "./compras";
+
 export interface Gasto {
   id: string;
   vuelo_id: string | null;
+  /** Compra de refacciones de la que este gasto es un PAGO (mercancía,
+   *  envío, impuestos u otro). Los gastos que comparten compra_id se ven
+   *  como UNA compra en la bandeja; cada uno conserva su factura y su cruce
+   *  bancario. Opcionales por skew de deploy. */
+  compra_id?: string | null;
+  compra_rol?: CompraRol | null;
+  compra?: CompraRef | null;
   aeronave_id: string | null;
   usuario_captura_id: string | null;
   categoria: string;

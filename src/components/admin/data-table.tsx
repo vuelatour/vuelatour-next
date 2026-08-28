@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -67,6 +68,15 @@ interface DataTableProps<T> {
    * pasar un syncId distinto.
    */
   syncId?: string;
+  /**
+   * Sub-filas PEGADAS a su fila padre (p. ej. los pagos de una compra
+   * expandida): se pintan justo debajo con las mismas columnas, pero NO
+   * cuentan para paginar ni las toca la búsqueda — el padre decide si las
+   * devuelve (y su `searchText` debe incluir el texto de ellas si quiere que
+   * la búsqueda las alcance). Así un grupo nunca queda partido entre dos
+   * páginas ni con hijos huérfanos al filtrar.
+   */
+  subRows?: (row: T) => T[] | undefined;
 }
 
 /** Búsqueda insensible a acentos y mayúsculas (nombres es-MX). */
@@ -114,6 +124,7 @@ export function DataTable<T>({
   rowClassName,
   defaultPageSize = 20,
   syncId = "t",
+  subRows,
 }: DataTableProps<T>) {
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -207,6 +218,31 @@ export function DataTable<T>({
   // Sin suficientes filas no hay nada que paginar: la barra solo estorba.
   const conBarra = filtradas.length > PAGE_SIZES[0] || rows.length > pageSize;
 
+  const pintarFila = (row: T) => {
+    const href = rowHref?.(row);
+    return (
+      <TableRow
+        key={rowKey(row)}
+        className={
+          (href ? "cursor-pointer hover:bg-muted/40 " : "") +
+          (rowClassName?.(row) ?? "")
+        }
+      >
+        {columns.map((c) => (
+          <TableCell key={c.key} className={c.cellClassName}>
+            {href && !c.noLink ? (
+              <Link href={href} className="block">
+                {c.cell(row)}
+              </Link>
+            ) : (
+              c.cell(row)
+            )}
+          </TableCell>
+        ))}
+      </TableRow>
+    );
+  };
+
   return (
     <div>
       {conBuscador && (
@@ -253,27 +289,16 @@ export function DataTable<T>({
             </TableRow>
           ) : (
             visibles.map((row) => {
-              const href = rowHref?.(row);
+              // Sin subRows la fila se pinta igual que siempre (los demás
+              // consumidores no cambian). Con hijas: un Fragment por fila
+              // padre, hijas pegadas debajo, fuera del conteo de paginado.
+              if (!subRows) return pintarFila(row);
+              const hijas = subRows(row) ?? [];
               return (
-                <TableRow
-                  key={rowKey(row)}
-                  className={
-                    (href ? "cursor-pointer hover:bg-muted/40 " : "") +
-                    (rowClassName?.(row) ?? "")
-                  }
-                >
-                  {columns.map((c) => (
-                    <TableCell key={c.key} className={c.cellClassName}>
-                      {href && !c.noLink ? (
-                        <Link href={href} className="block">
-                          {c.cell(row)}
-                        </Link>
-                      ) : (
-                        c.cell(row)
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <Fragment key={rowKey(row)}>
+                  {pintarFila(row)}
+                  {hijas.map(pintarFila)}
+                </Fragment>
               );
             })
           )}

@@ -124,6 +124,14 @@ export interface ImportarLinea {
   costo_unitario_usd: number;
 }
 
+export interface ImportarCompraResultado {
+  items_creados: number;
+  entradas: number;
+  /** Compra creada a partir del PDF (si el API la registra): el diálogo
+   *  ofrece "Ver compra". Opcional por skew de deploy. */
+  compra_id?: string | null;
+}
+
 export async function importarCompraAction(payload: {
   proveedor_id?: string;
   fecha_orden?: string;
@@ -132,13 +140,14 @@ export async function importarCompraAction(payload: {
   moneda?: "MXN" | "USD";
   tc_usd_mxn?: number;
   lineas: ImportarLinea[];
-}): Promise<ActionResult<{ items_creados: number; entradas: number }>> {
+}): Promise<ActionResult<ImportarCompraResultado>> {
   try {
-    const data = await apiServer<{ items_creados: number; entradas: number }>(
+    const data = await apiServer<ImportarCompraResultado>(
       "/v1/inventory/compras/importar",
       { method: "POST", body: payload },
     );
     revalidatePath("/admin/inventory");
+    revalidatePath("/admin/inventory/compras");
     return { ok: true, data };
   } catch (err) {
     return fail(err);

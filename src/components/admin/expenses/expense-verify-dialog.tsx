@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
+import { ShoppingCartIcon } from "@heroicons/react/24/outline";
 import { useForm } from "react-hook-form";
 import {
   listCardsOptionsAction,
@@ -42,6 +44,7 @@ import {
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
+import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
 import { Field } from "@/components/admin/form-field";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 
@@ -472,6 +475,20 @@ export function ExpenseVerifyDialog({
             bandeja de pendientes.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Pago de una compra de refacciones: el gasto se edita aquí igual,
+            pero el costo en bodega vive en la compra. */}
+        {gasto.compra && gasto.compra_rol && (
+          <Link
+            href={`/admin/inventory/compras/${gasto.compra.id}`}
+            className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-brand-600/40 bg-brand-600/10 px-2.5 py-1 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-600/20"
+            title="Abrir la compra"
+          >
+            <ShoppingCartIcon className="h-3.5 w-3.5" />
+            Compra #{gasto.compra.folio} · {COMPRA_ROL_LABELS[gasto.compra_rol]} ·{" "}
+            {COMPRA_ESTADO_LABELS[gasto.compra.estado]}
+          </Link>
+        )}
 
         {/* Comprobante: foto subida con el registro, para validar el dato. */}
         {fotoUrl ? (

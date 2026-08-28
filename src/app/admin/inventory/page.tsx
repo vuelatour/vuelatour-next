@@ -1,4 +1,10 @@
-import { ArchiveBoxIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import Link from "next/link";
+import {
+  ArchiveBoxIcon,
+  ExclamationTriangleIcon,
+  ShoppingCartIcon,
+} from "@heroicons/react/24/outline";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -45,6 +51,15 @@ export default async function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {/* Compras de refacciones: factura + envío + impuestos → costo real
+              en bodega. Sin submenú en el sidebar; la entrada es este botón. */}
+          <Link
+            href="/admin/inventory/compras"
+            className={buttonVariants({ variant: "outline", className: "gap-2" })}
+          >
+            <ShoppingCartIcon className="h-4 w-4" />
+            Compras
+          </Link>
           <ExcelExportButton
             path="/v1/inventory/items/export"
             filename="inventario-valorizado.xlsx"

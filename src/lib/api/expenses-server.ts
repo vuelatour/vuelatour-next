@@ -41,6 +41,8 @@ export interface ListGastosQuery {
   /** PENDIENTE | SOLICITADA | FACTURADA | NO_FACTURADA (pend. o sol.). */
   estatus_facturacion?: string;
   medio_pago?: string;
+  /** Pagos de una compra de refacciones concreta. */
+  compra_id?: string;
   pendientes?: boolean;
   duplicados?: boolean;
   desde?: string;
