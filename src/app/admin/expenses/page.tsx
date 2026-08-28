@@ -25,6 +25,7 @@ import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-
 import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
 import { ExpensesSeleccionProvider } from "@/components/admin/expenses/expenses-seleccion";
 import { esCategoriaCompra } from "@/types/compras";
+import { todayCancun } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -64,9 +65,20 @@ export default async function ExpensesPage({
     desde?: string;
     hasta?: string;
     facturacion?: string;
+    /** "7d" = solo lo CAPTURADO en los últimos 7 días (aunque el ticket
+     *  traiga otra fecha): lo que se subió desde la app esta semana. */
+    cap?: string;
   }>;
 }) {
   const sp = await searchParams;
+  const capturadoSemana = sp.cap === "7d";
+  const capturadoDesde = capturadoSemana
+    ? (() => {
+        const d = new Date(`${todayCancun()}T12:00:00Z`);
+        d.setUTCDate(d.getUTCDate() - 7);
+        return d.toISOString().slice(0, 10);
+      })()
+    : undefined;
   const filtro: Filtro =
     sp.f === "pendientes" || sp.f === "duplicados" ? sp.f : "todos";
   // Filtro por avión (link desde el expediente del avión). El API lo soporta
@@ -82,6 +94,9 @@ export default async function ExpensesPage({
     hasta: sp.hasta || undefined,
     // Semáforo de facturación (PENDIENTE/SOLICITADA/FACTURADA/NO_FACTURADA).
     estatus_facturacion: sp.facturacion || undefined,
+    // Fecha de CAPTURA (28-ago): "¿por qué no veo lo que subí desde la app?"
+    // — el ticket puede traer otra fecha (la IA leyó 2025) y quedar al fondo.
+    capturado_desde: capturadoDesde,
   };
 
   const query: ListGastosQuery = {
@@ -135,7 +150,16 @@ export default async function ExpensesPage({
     if (sp.desde) params.set("desde", sp.desde);
     if (sp.hasta) params.set("hasta", sp.hasta);
     if (sp.facturacion) params.set("facturacion", sp.facturacion);
+    if (sp.cap) params.set("cap", sp.cap);
     const qs = params.toString();
+    return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
+  };
+  // Mismo href que la pestaña activa, con/sin el chip "Subidos esta semana".
+  const hrefCapturado = (activar: boolean) => {
+    const url = new URL(hrefTab(filtro), "https://x");
+    if (activar) url.searchParams.set("cap", "7d");
+    else url.searchParams.delete("cap");
+    const qs = url.searchParams.toString();
     return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
   };
 
@@ -214,6 +238,19 @@ export default async function ExpensesPage({
             )}
           </Link>
         ))}
+        <Link
+          href={hrefCapturado(!capturadoSemana)}
+          title="Solo lo capturado en los últimos 7 días (aunque el ticket traiga otra fecha): lo que subieron desde la app esta semana"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+            capturadoSemana
+              ? "bg-brand-600 text-white"
+              : "bg-muted text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Subidos esta semana
+          {capturadoSemana && <XMarkIcon className="h-3.5 w-3.5" />}
+        </Link>
         <ExpensesFilterBar personas={personas} />
         {aeronaveFiltro && (
           <Link
@@ -227,6 +264,7 @@ export default async function ExpensesPage({
               if (sp.desde) params.set("desde", sp.desde);
               if (sp.hasta) params.set("hasta", sp.hasta);
               if (sp.facturacion) params.set("facturacion", sp.facturacion);
+              if (sp.cap) params.set("cap", sp.cap);
               const qs = params.toString();
               return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
             })()}

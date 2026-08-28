@@ -45,6 +45,9 @@ export interface ListGastosQuery {
   compra_id?: string;
   pendientes?: boolean;
   duplicados?: boolean;
+  /** Fecha de CAPTURA (día Cancún): lo subido desde esa fecha, sin importar la fecha del ticket. */
+  capturado_desde?: string;
+  capturado_hasta?: string;
   desde?: string;
   hasta?: string;
   limit?: number;
