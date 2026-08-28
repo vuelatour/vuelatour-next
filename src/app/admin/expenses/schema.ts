@@ -102,6 +102,10 @@ export const GastoVerifySchema = z.object({
     z.number().positive("TC inválido").optional(),
   ),
   notas: z.string().max(2000).optional().or(z.literal("")),
+  /** Sello de confirmación del PANEL: true = confirmar (el API sella quién y
+   *  cuándo), false = retirar el sello. Solo oficina puede mandarlo; ambos
+   *  valores sobreviven a stripEmpty (solo tira "" y undefined). */
+  verificado: z.boolean().optional(),
   duplicado_sospechado: z.boolean().optional(),
   /** Lectura fresca de la IA (botón Reanalizar): viaja JUNTO con la
    *  verificación — los reportes derivan de este jsonb el desglose

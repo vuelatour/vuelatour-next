@@ -5,8 +5,8 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
-import { fmtDateOnly } from "@/lib/datetime";
-import type { Gasto } from "@/types/expenses";
+import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { verificadorNombre, type Gasto } from "@/types/expenses";
 
 const ESTATUS_STYLE: Record<string, string> = {
   FACTURA: "border-emerald-500/50 text-emerald-600",
@@ -148,6 +148,15 @@ export function FlightGastosTable({
                 ? "Vale"
                 : "Factura"}
           </Badge>
+          {/* Sello de confirmación del panel (opcional: skew de deploy). */}
+          {g.verificado_at && (
+            <span
+              className="text-emerald-600 dark:text-emerald-400"
+              title={`Confirmado por ${verificadorNombre(g) ?? "oficina"} · ${fmtDate(g.verificado_at)}`}
+            >
+              ✓
+            </span>
+          )}
         </div>
       ),
     },

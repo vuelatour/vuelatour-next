@@ -9,6 +9,16 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -29,9 +39,9 @@ import {
   type SugerenciaAsignacion,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
-import { fmtDateOnly } from "@/lib/datetime";
+import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
-import type { Gasto } from "@/types/expenses";
+import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { Field } from "@/components/admin/form-field";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 
@@ -113,6 +123,12 @@ export function ExpenseVerifyDialog({
   // p. ej. de antes de la separación TUA/FBO en el prompt).
   const [reanalizando, setReanalizando] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
+  // Sello de confirmación del panel: retirarlo pide confirmación breve
+  // (regla de la casa para acciones que quitan algo) y se oculta optimista
+  // mientras la revalidación refresca la fila.
+  const [openRetirar, setOpenRetirar] = useState(false);
+  const [retirando, setRetirando] = useState(false);
+  const [selloRetirado, setSelloRetirado] = useState(false);
   // Tarjetas del catálogo para "con cuál se pagó" (solo medio TARJETA_CORP).
   const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
   useEffect(() => {
@@ -134,8 +150,30 @@ export function ExpenseVerifyDialog({
     if (open) {
       reset(defaults(gasto));
       setAiRaw(null);
+      setSelloRetirado(false);
     }
   }, [open, gasto, reset]);
+
+  /** Retira el sello de confirmación (PATCH verificado:false) sin tocar el
+   *  resto del formulario; guardar después vuelve a confirmar. */
+  const retirarConfirmacion = () => {
+    setRetirando(true);
+    verifyGastoAction(gasto.id, { verificado: false })
+      .then((r) => {
+        if (r.ok) {
+          setSelloRetirado(true);
+          toast.success(
+            "Confirmación retirada. Al guardar se vuelve a confirmar.",
+          );
+        } else {
+          toast.error(r.error ?? "No se pudo retirar la confirmación");
+        }
+      })
+      .finally(() => {
+        setRetirando(false);
+        setOpenRetirar(false);
+      });
+  };
 
   // Vuelos alrededor de la fecha del gasto, para asignar/corregir a mano.
   useEffect(() => {
@@ -335,7 +373,9 @@ export function ExpenseVerifyDialog({
       // y aquí se recompone. Ticket vacío + propina vacía = no tocar el monto.
       const ticket = Number(values.monto);
       const propina = values.propina === "" ? 0 : Number(values.propina);
-      let payload: Record<string, unknown> = { ...values };
+      // Guardar = confirmar: el sello (quién y cuándo) lo pone el API con
+      // quien manda verificado:true. true sobrevive a stripEmpty.
+      let payload: Record<string, unknown> = { ...values, verificado: true };
       // La lectura fresca de la IA se persiste JUNTO con la verificación:
       // los reportes derivan de valor_ia_extraido el desglose
       // Operación/TUA/FBO (persistirla al hacer clic cambiaba los números
@@ -543,6 +583,26 @@ export function ExpenseVerifyDialog({
                 <span className="font-medium">Sin match:</span> {sugerencia.razon}
               </p>
             ) : null}
+          </div>
+        )}
+
+        {/* Sello de confirmación del panel: quién confirmó y cuándo. Se
+            oculta optimista al retirarlo (la revalidación refresca la fila).
+            Tolerante al skew de deploy: sin campos del API no se muestra. */}
+        {gasto.verificado_at && !selloRetirado && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+            <span>
+              ✓ Confirmado por {verificadorNombre(gasto) ?? "oficina"} ·{" "}
+              {fmtDate(gasto.verificado_at)}
+            </span>
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
+              onClick={() => setOpenRetirar(true)}
+              disabled={pending || retirando}
+            >
+              Retirar confirmación
+            </button>
           </div>
         )}
 
@@ -795,6 +855,31 @@ export function ExpenseVerifyDialog({
             </Button>
           </DialogFooter>
         </form>
+
+        {/* Confirmación breve antes de quitar el sello (regla de la casa). */}
+        <AlertDialog open={openRetirar} onOpenChange={setOpenRetirar}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Retirar la confirmación?</AlertDialogTitle>
+              <AlertDialogDescription>
+                El gasto vuelve a quedar como no confirmado; oficina tendrá que
+                confirmarlo de nuevo (guardar este formulario lo confirma).
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={retirando}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  retirarConfirmacion();
+                }}
+                disabled={retirando}
+              >
+                {retirando ? "Retirando…" : "Retirar confirmación"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

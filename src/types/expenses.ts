@@ -43,6 +43,15 @@ export interface Gasto {
   factura_recibida_id: string | null;
   notas: string | null;
   created_at: string;
+  /** Sello de confirmación del PANEL (oficina): quién confirmó y cuándo.
+   *  Solo viaja a roles de oficina (el API lo recorta a campo) y puede no
+   *  venir aún (skew de deploy): SIEMPRE opcional con fallback. Cualquier
+   *  edición desde un rol de campo lo limpia (oficina re-confirma). */
+  verificado_por?: string | null;
+  verificado_at?: string | null;
+  /** Join del sello — PostgREST puede devolverlo como arreglo: leerlo
+   *  SIEMPRE vía verificadorNombre(). */
+  verificador?: { nombre: string } | Array<{ nombre: string }> | null;
   proveedor?: { nombre: string } | null;
   aeronave?: { matricula: string } | null;
   captura?: { nombre: string } | null;
@@ -55,6 +64,15 @@ export interface Gasto {
     monto: string | number;
     aeronave?: { matricula: string } | null;
   }>;
+}
+
+/** Nombre de quien confirmó el gasto (tolera el join objeto o arreglo). */
+export function verificadorNombre(
+  g: Pick<Gasto, "verificador">,
+): string | null {
+  const v = g.verificador;
+  const x = Array.isArray(v) ? v[0] : v;
+  return x?.nombre ?? null;
 }
 
 export interface GastoListResponse {
