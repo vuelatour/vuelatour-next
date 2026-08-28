@@ -12,12 +12,34 @@ export interface DetalleVuelo {
   fecha: string | null;
   ruta: string;
   es_externo: boolean;
+  /** Cifras BRUTAS del cliente (precio completo con TUAs/extras/pernocta/IVA). */
   total_usd: number;
   cobrado_usd: number;
   pendiente_usd: number;
   comision_vendedor_usd: number;
   cobrado: boolean;
   cobros_sin_tc_mxn: number;
+  /** Partición ADITIVA (28-ago-2026): la parte que es VENTA DEL AVIÓN (la que
+      cuadra con la card y se reparte). El API previo no la manda — leer
+      siempre con `?? total_usd` / `?? cobrado_usd` / `?? pendiente_usd`. */
+  venta_avion_usd?: number;
+  cobrado_avion_usd?: number;
+  pendiente_avion_usd?: number;
+  /** Otros ingresos VuelaTour COBRADOS en este vuelo (TUAs/extras/pernocta
+      + IVA) = cobrado_bruto_usd − cobrado_avion_usd. No se reparten. */
+  otros_ingresos_vuelatour_usd?: number;
+  /** Ídem, COTIZADOS en este vuelo (lo que el precio trae de TUAs/extras/
+      pernocta + IVA). Aditivo: el API previo no lo manda. */
+  otros_ingresos_vuelatour_cotizado_usd?: number;
+  /** Ídem, POR COBRAR en este vuelo (= cotizado − cobrado). Aditivo. */
+  otros_ingresos_vuelatour_pendiente_usd?: number;
+  /** Cobrado BRUTO (= venta avión + otros VuelaTour). */
+  cobrado_bruto_usd?: number;
+  /** De dónde salió la partición: desglose canónico, columnas del vuelo o
+      sin precio (todo se trata como venta). */
+  particion_fuente?: "desglose" | "columnas" | "sin_precio";
+  /** true si la partición no cuadra con el total del vuelo: revisar. */
+  particion_inconsistente?: boolean;
 }
 
 export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | 'FIJO';
@@ -45,10 +67,24 @@ export interface AvionRepartoDetalle {
 export interface AvionReparto {
   aeronave: { id: string; matricula: string; modelo: string };
   ingresos: {
+    /** VENTA DEL AVIÓN cobrada (lo que sí se reparte). Desde 28-ago-2026
+        excluye TUAs/extras/pernocta/IVA, que son ingresos de VuelaTour. */
     cobrado_usd: number;
+    /** Cobrado BRUTO (venta + otros ingresos VuelaTour). Opcional: el API
+        previo al deploy no lo manda. */
+    cobrado_bruto_usd?: number;
+    /** Otros ingresos VuelaTour cobrados en vuelos de este avión
+        (TUAs/extras/pernocta/IVA): informativos, NO se reparten. */
+    otros_ingresos_vuelatour_usd?: number;
+    /** Ídem, pendientes de cobro. */
+    otros_ingresos_vuelatour_pendiente_usd?: number;
     /** Comisión de vendedores: se descuenta del ingreso a repartir. */
     comisiones_venta_usd: number;
+    /** Pendiente de la VENTA DEL AVIÓN (parte que cuadra con la cascada). */
     pendiente_cobro_usd: number;
+    /** Deuda COMPLETA del cliente (venta + otros VuelaTour pendientes).
+        Opcional: el API previo al deploy no lo manda. */
+    pendiente_bruto_usd?: number;
     vuelos_cobrados: number;
     vuelos_pendientes: number;
     /** Cobros MXN que no pudieron convertirse a USD (sin TC). */
@@ -85,8 +121,24 @@ export interface ExternosResumen {
   cobros_sin_tc_mxn: number;
 }
 
+/** Otros ingresos de VuelaTour en el periodo (TUAs, extras, pernocta e IVA
+ *  cobrados junto con la venta): bloque informativo global — NO entran al
+ *  reparto de socios. Opcional por tolerancia a APIs previas al deploy. */
+export interface OtrosIngresosVuelatour {
+  vuelos: number;
+  cobrado_usd: number;
+  pendiente_usd: number;
+  desglose: {
+    tuas_usd: number;
+    extras_usd: number;
+    pernocta_usd: number;
+    iva_usd: number;
+  };
+}
+
 export interface ProfitSharingResult {
   externos?: ExternosResumen;
+  otros_ingresos_vuelatour?: OtrosIngresosVuelatour | null;
   periodo: { desde: string; hasta: string };
   gastos_sin_tc: { count: number; monto_mxn: number };
   aviones: AvionReparto[];

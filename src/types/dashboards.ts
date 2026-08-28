@@ -1,6 +1,14 @@
 export interface DashboardResumen {
   ingresos_cobrados_usd: number;
+  /** Deuda COMPLETA del cliente (venta del avión + TUAs/extras/pernocta/IVA
+      por cobrar). */
   ingresos_pendientes_usd: number;
+  /** Parte de esa deuda que es VENTA DEL AVIÓN (la que se reparte). Aditivo
+      28-ago-2026: el API previo no lo manda — tratar como opcional. */
+  ingresos_pendientes_avion_usd?: number;
+  /** Otros ingresos VuelaTour cobrados en el periodo (TUAs/extras/pernocta
+      + IVA): informativos, NO se reparten. Aditivo: puede faltar. */
+  otros_ingresos_vuelatour_usd?: number;
   gastos_totales_usd: number;
   saldo_disponible_usd: number;
   vuelos_periodo: number;

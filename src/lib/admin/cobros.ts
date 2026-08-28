@@ -7,6 +7,32 @@
  */
 export const TOLERANCIA_COBRO_USD = 1;
 
+// ===== Cuentas bancarias que reciben cobros (catálogo FIJO, 28-ago-2026) =====
+// Antes `cuenta_destino` era texto libre y cada quien escribía el alias a su
+// manera ("HSBC MXN", "hsbc pesos"…), lo que impedía agrupar por cuenta en
+// tesorería/conciliación. Valores EXACTOS (con acento): el API los valida
+// con @IsIn — cambiar uno aquí exige cambiarlo también en el API.
+export const CUENTAS_COBRO = [
+  { value: "Paywise", moneda: "MXN" },
+  { value: "HSBC Dólares", moneda: "USD" },
+  { value: "HSBC Pesos", moneda: "MXN" },
+  { value: "Scotiabank Dólares", moneda: "USD" },
+  { value: "Scotiabank Pesos", moneda: "MXN" },
+] as const;
+
+export type CuentaCobro = (typeof CUENTAS_COBRO)[number]["value"];
+
+/** Tupla no vacía para `z.enum(...)`. */
+export const CUENTAS_COBRO_VALUES = CUENTAS_COBRO.map((c) => c.value) as [
+  CuentaCobro,
+  ...CuentaCobro[],
+];
+
+/** Moneda de una cuenta del catálogo (null si es un alias legado / libre). */
+export function monedaDeCuenta(cuenta: string | null | undefined): "USD" | "MXN" | null {
+  return CUENTAS_COBRO.find((c) => c.value === cuenta)?.moneda ?? null;
+}
+
 /** Pendiente REAL: 0 si lo que falta cabe en la tolerancia de redondeo. */
 export function pendienteCobro(totalUsd: number, cobradoUsd: number): number {
   const p = Math.round((totalUsd - cobradoUsd) * 100) / 100;

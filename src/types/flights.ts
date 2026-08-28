@@ -40,6 +40,10 @@ export interface FlightListItem {
   ruta_iatas?: string[];
   pasajeros: number;
   monto_total_usd: string;
+  /** TC USD→MXN con el que se cotizó (numeric como string; null si la
+      cotización no lo fijó). Sirve para prellenar el TC al cobrar en MXN.
+      Opcional-defensivo: listados/respuestas previas al deploy no lo traen. */
+  tc_usd_mxn?: string | null;
   /** Nombres de los pasajeros (manifiesto, para tramitar permisos). */
   pasajeros_nombres?: string[];
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
@@ -136,7 +140,10 @@ export interface FlightCobro {
   /** Comisión en la moneda del cobro; el banco depositó monto − esto. */
   comision_banco_monto?: string | null;
   referencia: string | null;
-  /** A qué cuenta llegó el cobro (texto libre; solo métodos bancarios). */
+  /** A qué cuenta llegó el cobro (solo métodos bancarios). Desde 28-ago-2026
+      es uno de `CUENTAS_COBRO` (@/lib/admin/cobros: Paywise, HSBC Dólares,
+      HSBC Pesos, Scotiabank Dólares, Scotiabank Pesos); las filas anteriores
+      pueden traer el alias libre que se capturó entonces. */
   cuenta_destino?: string | null;
   fecha_cobro: string;
   foto_voucher_url: string | null;

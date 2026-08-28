@@ -9,6 +9,7 @@ import type {
   FlightListItem,
 } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
+import type { CuentaCobro } from "@/lib/admin/cobros";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -273,8 +274,9 @@ export interface RegisterCobroPayload {
   comision_banco_pct?: number;
   /** Comisión como MONTO directo (moneda del cobro): manda sobre el %. */
   comision_banco_monto?: number;
-  /** A qué CUENTA llegó (transferencia/HSBC link/cheque): texto libre. */
-  cuenta_destino?: string;
+  /** A qué CUENTA llegó (transferencia/HSBC link/cheque): una del catálogo
+      fijo `CUENTAS_COBRO` (el API la valida con @IsIn); undefined = sin dato. */
+  cuenta_destino?: CuentaCobro;
   referencia?: string;
   fecha_cobro?: string;
   notas?: string;

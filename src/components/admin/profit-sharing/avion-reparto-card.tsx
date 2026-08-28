@@ -42,6 +42,13 @@ export function AvionRepartoCard({
   const totalVuelos =
     avion.ingresos.vuelos_cobrados + avion.ingresos.vuelos_pendientes;
   const detalle = avion.detalle ?? null;
+  // Deuda COMPLETA del cliente (venta + otros VuelaTour) cuando supera el
+  // pendiente del avión: informativo, para no confundir "lo que falta cobrar"
+  // con "lo que falta del avión". Solo si el API ya manda el bruto.
+  const pendienteBruto = avion.ingresos.pendiente_bruto_usd;
+  const muestraDeudaTotal =
+    pendienteBruto != null &&
+    pendienteBruto > avion.ingresos.pendiente_cobro_usd;
 
   // Sublabel de la reserva: fórmula exacta si el API manda el detalle,
   // si no, al menos las horas voladas que la originan.
@@ -91,6 +98,14 @@ export function AvionRepartoCard({
               {avion.ingresos.vuelos_pendientes} vuelo(s)
             </Badge>
           )}
+          {muestraDeudaTotal && (
+            <span
+              className="self-center text-[11px] text-muted-foreground"
+              title="Incluye TUAs/extras/pernocta/IVA pendientes (ingresos de VuelaTour, no del avión)."
+            >
+              deuda total del cliente {fmtUsd(pendienteBruto)}
+            </span>
+          )}
           {avion.gastos.gastos_sin_tc_count > 0 && (
             <Badge
               variant="outline"
@@ -130,7 +145,7 @@ export function AvionRepartoCard({
         {/* Cascada del saldo: estas filas suman EXACTO el saldo disponible. */}
         <div className="space-y-1 text-sm">
           <CascadaRow
-            label="Ingresos cobrados"
+            label="Venta del avión cobrada"
             value={avion.ingresos.cobrado_usd}
             ingreso
           />
@@ -177,6 +192,25 @@ export function AvionRepartoCard({
               {fmtUsd(avion.saldo_disponible_usd)}
             </span>
           </div>
+          {/* Informativo (fuera de la cascada): TUAs/extras/pernocta/IVA son
+              ingresos de VuelaTour, no del avión — no se reparten. Solo si el
+              API ya lo manda. */}
+          {avion.ingresos.otros_ingresos_vuelatour_usd != null && (
+            <div className="flex items-baseline justify-between gap-3 pt-1 text-xs text-muted-foreground">
+              <span>
+                Otros ingresos VuelaTour (TUAs/extras/pernocta) — no se reparten
+                {(avion.ingresos.otros_ingresos_vuelatour_pendiente_usd ?? 0) > 0 && (
+                  <span className="ml-1.5 text-[11px] text-muted-foreground/70">
+                    · por cobrar{" "}
+                    {fmtUsd(avion.ingresos.otros_ingresos_vuelatour_pendiente_usd)}
+                  </span>
+                )}
+              </span>
+              <span className="font-mono tabular-nums">
+                {fmtUsd(avion.ingresos.otros_ingresos_vuelatour_usd)}
+              </span>
+            </div>
+          )}
         </div>
 
         <SociosSection

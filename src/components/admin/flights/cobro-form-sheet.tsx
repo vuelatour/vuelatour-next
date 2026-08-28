@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,7 +21,12 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cancunInputToIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import { fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import {
+  CUENTAS_COBRO,
+  CUENTAS_COBRO_VALUES,
+  monedaDeCuenta,
+} from "@/lib/admin/cobros";
 import { registerCobroAction } from "@/app/admin/flights/actions";
 import type { MetodoPago } from "@/types/quote";
 import { Field } from "@/components/admin/form-field";
@@ -38,6 +43,9 @@ const METODOS: { value: MetodoPago; label: string; hint: string }[] = [
   // Método manual (solo oficina): descríbelo en referencia/notas.
   { value: "OTRO", label: "Otro", hint: "Método manual · descríbelo en la referencia" },
 ];
+
+/** Métodos que tocan banco: solo en ellos se pregunta a qué cuenta llegó. */
+const METODOS_CON_CUENTA: MetodoPago[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"];
 
 const CobroFormSchema = z
   .object({
@@ -75,7 +83,8 @@ const CobroFormSchema = z
       .optional()
       .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
     referencia: z.string().max(100).optional().or(z.literal("")),
-    cuenta_destino: z.string().max(120).optional().or(z.literal("")),
+    // Catálogo FIJO de cuentas (el API valida con @IsIn); "" = sin dato.
+    cuenta_destino: z.enum(CUENTAS_COBRO_VALUES).optional().or(z.literal("")),
     fecha_cobro: z.string().optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
@@ -100,7 +109,15 @@ interface CobroFormSheetProps {
   montoTotalUsd: number;
   /** Pendiente USD a cobrar (auto-prefills el monto). */
   pendingUsd: number;
+  /** TC USD→MXN con el que se cotizó (null si la cotización no lo fijó).
+      Manda como sugerencia al cobrar en MXN. */
+  tcCotizacion?: number | null;
+  /** TC oficial Banxico (FIX) del día: respaldo cuando la cotización no
+      fijó TC. null si el API no tiene dato. */
+  tcOficial?: number | null;
 }
+
+type TcSugerido = { valor: number; fuente: "cotizacion" | "oficial" };
 
 function todayLocal(): string {
   const d = new Date();
@@ -133,9 +150,13 @@ export function CobroFormSheet({
   flightFolio,
   montoTotalUsd,
   pendingUsd,
+  tcCotizacion = null,
+  tcOficial = null,
 }: CobroFormSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // Qué TC se prellenó (para el hint); se apaga si el usuario lo edita.
+  const [tcPrefill, setTcPrefill] = useState<TcSugerido | null>(null);
 
   const {
     register,
@@ -143,6 +164,7 @@ export function CobroFormSheet({
     reset,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<CobroFormValues>({
     resolver: zodResolver(CobroFormSchema),
@@ -150,7 +172,10 @@ export function CobroFormSheet({
   });
 
   useEffect(() => {
-    if (open) reset(defaults(pendingUsd));
+    if (open) {
+      reset(defaults(pendingUsd));
+      setTcPrefill(null);
+    }
   }, [open, pendingUsd, reset]);
 
   const moneda = watch("moneda");
@@ -159,14 +184,85 @@ export function CobroFormSheet({
   const tc = watch("tc_usd_mxn");
   const comisionPct = watch("comision_banco_pct");
   const comisionMontoDirecto = watch("comision_banco_monto");
+  const cuentaDestino = watch("cuenta_destino");
+
+  // TC sugerido al cobrar en MXN: el de la cotización manda (es el que el
+  // cliente vio); si la cotización no lo fijó, el oficial Banxico del día.
+  const tcSugerido: TcSugerido | null =
+    tcCotizacion != null && tcCotizacion > 0
+      ? { valor: tcCotizacion, fuente: "cotizacion" }
+      : tcOficial != null && tcOficial > 0
+        ? { valor: tcOficial, fuente: "oficial" }
+        : null;
+
+  // ÚNICO camino para cambiar la moneda: al pasar a MXN con el TC vacío,
+  // se prellena con el sugerido (editable). Nunca pisa un TC ya tecleado.
+  // Al salir de MXN el input del TC se desmonta pero RHF CONSERVA el valor:
+  // se limpia SOLO si sigue siendo el prellenado (para que al volver a MXN
+  // se vuelva a sugerir con su hint). Un TC tecleado a mano se conserva
+  // oculto — nunca viaja en USD por el guard de onSubmit — y reaparece al
+  // regresar a MXN: cambiar de moneda por error no borra lo capturado.
+  const handleMonedaChange = (v: Moneda) => {
+    setValue("moneda", v);
+    if (v !== "MXN") {
+      const actual = getValues("tc_usd_mxn");
+      if (tcPrefill && Number(actual) === tcPrefill.valor) {
+        setValue("tc_usd_mxn", "");
+      }
+      setTcPrefill(null);
+      return;
+    }
+    if (!tcSugerido) return;
+    const actual = getValues("tc_usd_mxn");
+    if (actual !== undefined && actual !== "" && Number(actual) > 0) return;
+    setValue("tc_usd_mxn", tcSugerido.valor, { shouldValidate: true });
+    setTcPrefill(tcSugerido);
+  };
 
   // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD, EFECTIVO→MXN).
   const handleMetodoChange = (v: string) => {
     const m = v as MetodoPago;
     setValue("metodo_cobro", m);
-    if (m === "DOLARES") setValue("moneda", "USD");
-    else if (m === "EFECTIVO") setValue("moneda", "MXN");
+    // La cuenta destino solo aplica a métodos bancarios: al salir de ellos se
+    // limpia para no mandar una cuenta oculta en un cobro en efectivo.
+    if (!METODOS_CON_CUENTA.includes(m)) setValue("cuenta_destino", "");
+    if (m === "DOLARES") handleMonedaChange("USD");
+    else if (m === "EFECTIVO") handleMonedaChange("MXN");
   };
+
+  const tcHint =
+    tcPrefill && Number(tc) === tcPrefill.valor
+      ? tcPrefill.fuente === "cotizacion"
+        ? "Prellenado con el TC de la cotización — puedes editarlo."
+        : "Prellenado con el TC oficial del día (Banxico) — puedes editarlo."
+      : "Necesario para saber cuánto cubre del total en USD";
+
+  // Cuentas del catálogo: primero las de la moneda del cobro (sugerencia
+  // suave — no se fuerza ninguna; "" = sin especificar).
+  const cuentaOptions = useMemo(() => {
+    const ordenadas = [...CUENTAS_COBRO].sort(
+      (a, b) => Number(a.moneda !== moneda) - Number(b.moneda !== moneda),
+    );
+    return [
+      { value: "", label: "Sin especificar" },
+      ...ordenadas.map((c) => ({
+        value: c.value,
+        label: c.value,
+        description: c.moneda === "USD" ? "Cuenta en USD" : "Cuenta en MXN",
+      })),
+    ];
+  }, [moneda]);
+  const monedaCuenta = monedaDeCuenta(cuentaDestino);
+  const cuentaHint =
+    monedaCuenta && monedaCuenta !== moneda
+      ? `Ojo: la cuenta es en ${monedaCuenta} y el cobro en ${moneda}. Verifica que sea la correcta.`
+      : "Opcional · primero aparecen las cuentas en la moneda del cobro";
+
+  // Referencia de la cotización en pesos (informativa): con el TC de la
+  // cotización si existe; si no, con el oficial del día.
+  const tcReferencia = tcSugerido?.valor ?? null;
+  const totalMxnReferencia =
+    tcReferencia != null ? montoTotalUsd * tcReferencia : null;
 
   const usdEquivalente =
     moneda === "USD"
@@ -181,8 +277,10 @@ export function CobroFormSheet({
         monto: Number(values.monto),
         moneda: values.moneda as Moneda,
         metodo_cobro: values.metodo_cobro as MetodoPago,
+        // El TC solo tiene sentido en MXN: en USD nunca se manda, aunque el
+        // formulario conserve un valor prellenado de un cambio de moneda.
         tc_usd_mxn:
-          values.tc_usd_mxn !== undefined && Number(values.tc_usd_mxn) > 0
+          values.moneda === "MXN" && Number(values.tc_usd_mxn) > 0
             ? Number(values.tc_usd_mxn)
             : undefined,
         // Monto directo manda sobre el % (el API deriva el % de referencia).
@@ -199,7 +297,7 @@ export function CobroFormSheet({
               ? Number(values.comision_banco_pct)
               : undefined,
         referencia: values.referencia?.trim() || undefined,
-        cuenta_destino: values.cuenta_destino?.trim() || undefined,
+        cuenta_destino: values.cuenta_destino || undefined,
         fecha_cobro: values.fecha_cobro
           ? cancunInputToIso(`${values.fecha_cobro.slice(0, 10)}T12:00`)
           : undefined,
@@ -251,6 +349,40 @@ export function CobroFormSheet({
         </SheetHeader>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Vista rápida de la cotización (informativa): total, TC con el
+              que se cotizó y su equivalente en pesos, para que quien cobra
+              no tenga que ir a buscarlos. */}
+          <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
+            <p className="mb-1.5 font-medium text-foreground">Cotización</p>
+            <div className="grid grid-cols-3 gap-2">
+              <Dato label="Total USD" value={fmtUsd(montoTotalUsd)} />
+              <Dato
+                label={
+                  tcSugerido?.fuente === "oficial"
+                    ? "TC oficial Banxico (hoy)"
+                    : "TC de la cotización"
+                }
+                value={tcReferencia != null ? fmtDecimal(tcReferencia, 4) : "—"}
+              />
+              <Dato
+                label="Total ≈ MXN"
+                value={totalMxnReferencia != null ? fmtMxn(totalMxnReferencia) : "—"}
+              />
+            </div>
+            {tcSugerido?.fuente === "oficial" && (
+              <p className="mt-1.5 text-muted-foreground">
+                La cotización no fijó tipo de cambio; se muestra el TC oficial
+                Banxico del día: {fmtDecimal(tcSugerido.valor, 4)}.
+              </p>
+            )}
+            {!tcSugerido && (
+              <p className="mt-1.5 text-muted-foreground">
+                La cotización no fijó tipo de cambio y no hay TC oficial del día
+                disponible.
+              </p>
+            )}
+          </div>
+
           <Field label="Método de cobro" required>
             <SearchableSelect
               options={METODOS.map((m) => ({
@@ -278,7 +410,7 @@ export function CobroFormSheet({
               <Label className="text-sm font-medium">Moneda</Label>
               <Segmented
                 value={moneda}
-                onChange={(v) => setValue("moneda", v as Moneda)}
+                onChange={(v) => handleMonedaChange(v as Moneda)}
                 options={[
                   { value: "USD", label: "USD" },
                   { value: "MXN", label: "MXN" },
@@ -291,7 +423,7 @@ export function CobroFormSheet({
             <Field
               label="Tipo de cambio USD/MXN"
               required
-              hint="Necesario para saber cuánto cubre del total en USD"
+              hint={tcHint}
               error={errors.tc_usd_mxn?.message}
             >
               <Input
@@ -401,16 +533,28 @@ export function CobroFormSheet({
             </div>
           )}
 
-          {/* A qué cuenta LLEGÓ el dinero (pedido del equipo, 18-ago): texto
-              libre — típicamente el alias de la cuenta (HSBC MXN, Banamex
-              USD…). Solo métodos que tocan banco. */}
-          {["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"].includes(metodo) && (
+          {/* A qué cuenta LLEGÓ el dinero (pedido del equipo, 18-ago; catálogo
+              fijo desde 28-ago): una de CUENTAS_COBRO. Solo métodos que tocan
+              banco. Opcional: "Sin especificar" lo deja vacío. */}
+          {METODOS_CON_CUENTA.includes(metodo) && (
             <Field
               label="¿A qué cuenta llegó?"
-              hint="Banco/alias de la cuenta que recibió (ej. HSBC MXN)"
+              hint={cuentaHint}
               error={errors.cuenta_destino?.message}
             >
-              <Input placeholder="Opcional" {...register("cuenta_destino")} />
+              <SearchableSelect
+                options={cuentaOptions}
+                value={cuentaDestino ?? ""}
+                onChange={(v) =>
+                  setValue(
+                    "cuenta_destino",
+                    v as CobroFormValues["cuenta_destino"],
+                    { shouldValidate: true },
+                  )
+                }
+                placeholder="Sin especificar"
+                searchPlaceholder="Buscar cuenta…"
+              />
             </Field>
           )}
 
@@ -453,6 +597,15 @@ export function CobroFormSheet({
   );
 }
 
+/** Par etiqueta/valor compacto para la vista rápida de la cotización. */
+function Dato({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-[10px] text-muted-foreground">{label}</p>
+      <p className="truncate font-mono font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
 
 function Segmented({
   value,

@@ -46,6 +46,10 @@ interface CobrosCardProps {
   pendingUsd: number;
   cobros: FlightCobro[];
   voucherUrls?: Record<string, string>;
+  /** TC con el que se cotizó (sugerencia al cobrar en MXN). */
+  tcCotizacion?: number | null;
+  /** TC oficial Banxico del día (respaldo si la cotización no fijó TC). */
+  tcOficial?: number | null;
 }
 
 export function CobrosCard({
@@ -56,6 +60,8 @@ export function CobrosCard({
   pendingUsd,
   cobros,
   voucherUrls = {},
+  tcCotizacion = null,
+  tcOficial = null,
 }: CobrosCardProps) {
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -207,6 +213,8 @@ export function CobrosCard({
         flightFolio={flightFolio}
         montoTotalUsd={montoTotalUsd}
         pendingUsd={pendingUsd}
+        tcCotizacion={tcCotizacion}
+        tcOficial={tcOficial}
       />
     </>
   );

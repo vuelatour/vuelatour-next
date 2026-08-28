@@ -1,20 +1,32 @@
 import {
   ArrowTrendingDownIcon,
   BanknotesIcon,
+  BuildingOfficeIcon,
   ClockIcon,
   ScaleIcon,
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
-import type { AvionReparto } from "@/types/profit-sharing";
+import type {
+  AvionReparto,
+  OtrosIngresosVuelatour,
+} from "@/types/profit-sharing";
 
 /**
  * Strip de KPIs de la flota para el reparto: totales del periodo a golpe de
  * vista antes de bajar al detalle por avión. Se calcula sumando las mismas
- * cifras que muestran las cards (ninguna fuente paralela).
+ * cifras que muestran las cards (ninguna fuente paralela). `otrosIngresos`
+ * (TUAs/extras/pernocta/IVA de VuelaTour) es informativo y opcional: el API
+ * previo al deploy no lo manda.
  */
-export function KpiStrip({ aviones }: { aviones: AvionReparto[] }) {
+export function KpiStrip({
+  aviones,
+  otrosIngresos = null,
+}: {
+  aviones: AvionReparto[];
+  otrosIngresos?: OtrosIngresosVuelatour | null;
+}) {
   const sum = (fn: (a: AvionReparto) => number) =>
     aviones.reduce((acc, a) => acc + fn(a), 0);
 
@@ -33,12 +45,18 @@ export function KpiStrip({ aviones }: { aviones: AvionReparto[] }) {
   const vuelosCobrados = sum((a) => a.ingresos.vuelos_cobrados);
   const saldo = sum((a) => a.saldo_disponible_usd);
   const horas = sum((a) => a.horas_voladas_hr);
+  // 5 KPIs base + 1 informativo si viene el bloque; con cuenta impar el
+  // último ocupa las 2 columnas del grid móvil para no dejar hueco.
+  const conOtros = otrosIngresos != null;
+  const ultimoAncho = conOtros ? undefined : "col-span-2 md:col-span-1";
 
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <div
+      className={`grid grid-cols-2 gap-3 md:grid-cols-3 ${conOtros ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}
+    >
       <Kpi
         icon={BanknotesIcon}
-        label="Ingresos cobrados"
+        label="Venta de aviones cobrada"
         value={fmtUsd(ingresos)}
         hint={`${vuelosCobrados} vuelo(s) cobrados`}
         valueClass="text-emerald-600 dark:text-emerald-400"
@@ -74,8 +92,20 @@ export function KpiStrip({ aviones }: { aviones: AvionReparto[] }) {
             ? "text-emerald-600 dark:text-emerald-400"
             : "text-destructive"
         }
-        className="col-span-2 md:col-span-1"
+        className={ultimoAncho}
       />
+      {conOtros && (
+        <Kpi
+          icon={BuildingOfficeIcon}
+          label="Otros ingresos VuelaTour"
+          value={fmtUsd(otrosIngresos.cobrado_usd)}
+          hint={
+            otrosIngresos.pendiente_usd > 0
+              ? `TUAs/extras/pernocta · no se reparten · por cobrar ${fmtUsd(otrosIngresos.pendiente_usd)}`
+              : "TUAs/extras/pernocta · no se reparten"
+          }
+        />
+      )}
     </div>
   );
 }

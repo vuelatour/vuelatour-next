@@ -38,6 +38,7 @@ import { getQuote } from "@/lib/api/quotes-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
+import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -94,7 +95,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes, vueloAnteriorRes] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes, vueloAnteriorRes, tcOficial] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -116,6 +117,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ),
       // Vuelo anterior del mismo avión (auditar la cadena de tacómetros).
       getVueloAnterior(id).catch(() => ({ anterior: null })),
+      // TC oficial Banxico de hoy (Cancún): respaldo para prellenar el TC al
+      // cobrar en MXN si la cotización no lo fijó. Best-effort: la función
+      // ya devuelve null en cualquier fallo y nunca bloquea el render.
+      getTipoCambioOficial(),
     ]);
   const vueloAnterior = vueloAnteriorRes.anterior;
   const gastos = gastosRes.data;
@@ -619,6 +624,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             pendingUsd={pendingCobro}
             cobros={snapshot.cobros}
             voucherUrls={voucherUrls}
+            tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
+            tcOficial={tcOficial}
           />
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;

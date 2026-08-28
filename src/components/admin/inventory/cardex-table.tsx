@@ -56,9 +56,12 @@ const columns: Array<DataTableColumn<InventarioMovimiento>> = [
     cellClassName: "text-right tabular-nums text-muted-foreground",
     cell: (m) => (
       <>
-        {/* Se muestra en pesos (moneda operativa); el USD
-            interno alimenta el reparto y va como referencia. */}
-        {m.moneda === "MXN" && m.costo_unitario_mxn != null
+        {/* Se muestra en pesos (moneda operativa); el USD interno alimenta
+            el reparto y va como referencia. Prioridad: los pesos REALES del
+            movimiento si existen (sea cual sea la moneda — una SALIDA hereda
+            los pesos exactos de su ENTRADA, sin re-redondear USD×TC), luego
+            USD×TC, y USD tal cual como último recurso. */}
+        {m.costo_unitario_mxn != null
           ? `${mxn(Number(m.costo_unitario_mxn))} MXN`
           : m.tc_usd_mxn
             ? `${mxn(Number(m.costo_unitario_usd) * Number(m.tc_usd_mxn))} MXN`

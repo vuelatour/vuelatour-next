@@ -88,6 +88,19 @@ function estadoCobro(v: DetalleVuelo): { label: string; className: string } {
   };
 }
 
+/**
+ * Cifras del vuelo que CUADRAN con la card (venta del avión, sin TUAs/extras/
+ * pernocta/IVA). Tolerante al API previo al 28-ago, que solo manda las cifras
+ * brutas del cliente: en ese caso se usan tal cual.
+ */
+function cifrasAvion(v: DetalleVuelo) {
+  return {
+    venta: v.venta_avion_usd ?? v.total_usd,
+    cobrado: v.cobrado_avion_usd ?? v.cobrado_usd,
+    pendiente: v.pendiente_avion_usd ?? v.pendiente_usd,
+  };
+}
+
 /** Fecha del vuelo: soporta date-only (sin corrimiento) o timestamptz (Cancún). */
 function fmtFechaVuelo(fecha: string | null): string {
   if (!fecha) return "—";
@@ -102,14 +115,29 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
 
+  // Suma de la VENTA DEL AVIÓN (no del bruto del cliente): así el pie de la
+  // tabla cuadra con "Venta del avión cobrada" de la cascada.
   const totalVuelos = detalle.vuelos.reduce(
-    (acc, v) => ({
-      total: acc.total + v.total_usd,
-      cobrado: acc.cobrado + v.cobrado_usd,
-      pendiente: acc.pendiente + v.pendiente_usd,
-    }),
-    { total: 0, cobrado: 0, pendiente: 0 },
+    (acc, v) => {
+      const c = cifrasAvion(v);
+      return {
+        total: acc.total + c.venta,
+        cobrado: acc.cobrado + c.cobrado,
+        pendiente: acc.pendiente + c.pendiente,
+        otros: acc.otros + (v.otros_ingresos_vuelatour_usd ?? 0),
+        otrosPendiente:
+          acc.otrosPendiente + (v.otros_ingresos_vuelatour_pendiente_usd ?? 0),
+      };
+    },
+    { total: 0, cobrado: 0, pendiente: 0, otros: 0, otrosPendiente: 0 },
   );
+  // Columna "Otros VuelaTour" solo cuando el API ya manda la partición.
+  const hayOtros = detalle.vuelos.some(
+    (v) => v.otros_ingresos_vuelatour_usd != null,
+  );
+  const inconsistentes = detalle.vuelos.filter(
+    (v) => v.particion_inconsistente,
+  ).length;
 
   return (
     <div>
@@ -158,15 +186,27 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         <TableHead>Folio</TableHead>
                         <TableHead>Fecha</TableHead>
                         <TableHead>Ruta</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead className="text-right">Cobrado</TableHead>
-                        <TableHead className="text-right">Pendiente</TableHead>
+                        <TableHead className="text-right">Venta avión</TableHead>
+                        <TableHead className="text-right">Cobrado avión</TableHead>
+                        <TableHead className="text-right">Pendiente avión</TableHead>
+                        {hayOtros && (
+                          <TableHead
+                            className="text-right text-muted-foreground"
+                            title="Cobrado en el vuelo (TUAs/extras/pernocta + IVA): ingresos de VuelaTour, no se reparten."
+                          >
+                            Otros VuelaTour
+                            <span className="block text-[10px] font-normal">
+                              cobrado en el vuelo
+                            </span>
+                          </TableHead>
+                        )}
                         <TableHead>Estado</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {detalle.vuelos.map((v) => {
                         const estado = estadoCobro(v);
+                        const c = cifrasAvion(v);
                         return (
                           <TableRow key={v.id}>
                             <TableCell className="font-mono text-xs">
@@ -197,10 +237,18 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                               )}
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
-                              {fmtUsd(v.total_usd)}
+                              <span className="inline-flex items-center justify-end gap-1">
+                                {v.particion_inconsistente && (
+                                  <ExclamationTriangleIcon
+                                    aria-label="Partición inconsistente"
+                                    className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                                  />
+                                )}
+                                {fmtUsd(c.venta)}
+                              </span>
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
-                              {fmtUsd(v.cobrado_usd)}
+                              {fmtUsd(c.cobrado)}
                               {v.cobros_sin_tc_mxn > 0 && (
                                 <span className="block text-[10px] text-amber-600 dark:text-amber-400">
                                   +{fmtDecimal(v.cobros_sin_tc_mxn)} MXN sin TC
@@ -208,8 +256,21 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                               )}
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
-                              {fmtUsd(v.pendiente_usd)}
+                              {fmtUsd(c.pendiente)}
                             </TableCell>
+                            {hayOtros && (
+                              <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                                {v.otros_ingresos_vuelatour_usd != null
+                                  ? fmtUsd(v.otros_ingresos_vuelatour_usd)
+                                  : "—"}
+                                {(v.otros_ingresos_vuelatour_pendiente_usd ?? 0) > 0 && (
+                                  <span className="block text-[10px] text-muted-foreground">
+                                    · por cobrar{" "}
+                                    {fmtUsd(v.otros_ingresos_vuelatour_pendiente_usd ?? 0)}
+                                  </span>
+                                )}
+                              </TableCell>
+                            )}
                             <TableCell>
                               <Badge variant="outline" className={estado.className}>
                                 {estado.label}
@@ -233,11 +294,28 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         <TableCell className="text-right font-mono text-xs font-semibold">
                           {fmtUsd(totalVuelos.pendiente)}
                         </TableCell>
+                        {hayOtros && (
+                          <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                            {fmtUsd(totalVuelos.otros)}
+                            {totalVuelos.otrosPendiente > 0 && (
+                              <span className="block text-[10px] font-normal">
+                                · por cobrar {fmtUsd(totalVuelos.otrosPendiente)}
+                              </span>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell />
                       </TableRow>
                     </TableFooter>
                   </Table>
                 </div>
+              )}
+              {inconsistentes > 0 && (
+                <p className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                  <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />
+                  {inconsistentes} vuelo(s) con partición venta/otros que no
+                  cuadra con su total: revisa el desglose de la cotización.
+                </p>
               )}
             </div>
 

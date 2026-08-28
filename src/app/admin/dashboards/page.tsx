@@ -148,7 +148,21 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
               ? "text-amber-600 dark:text-amber-400"
               : undefined
           }
+          hint={
+            // Deuda completa del cliente; la parte del avión es la que se
+            // reparte (aditivo del API: sin el campo, sin hint).
+            resumen.ingresos_pendientes_avion_usd != null
+              ? `parte del avión: ${fmtUsd(resumen.ingresos_pendientes_avion_usd)} · resto de TUAs/extras/pernocta`
+              : undefined
+          }
         />
+        {resumen.otros_ingresos_vuelatour_usd != null && (
+          <Kpi
+            label="Otros ingresos VuelaTour"
+            value={fmtUsd(resumen.otros_ingresos_vuelatour_usd)}
+            hint="TUAs/extras/pernocta · no se reparten"
+          />
+        )}
       </div>
 
       <Card>
@@ -662,16 +676,22 @@ function Kpi({
   label,
   value,
   accent,
+  hint,
 }: {
   label: string;
   value: string;
   accent?: string;
+  /** Leyenda corta bajo el valor (p. ej. de qué se compone la cifra). */
+  hint?: string;
 }) {
   return (
     <Card>
       <CardContent className="p-4">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className={`text-2xl font-semibold mt-1 ${accent ?? ""}`}>{value}</p>
+        {hint && (
+          <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
+        )}
       </CardContent>
     </Card>
   );

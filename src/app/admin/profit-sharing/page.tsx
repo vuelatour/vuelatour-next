@@ -92,7 +92,10 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
         />
       ) : (
         <>
-          <KpiStrip aviones={result.aviones} />
+          <KpiStrip
+            aviones={result.aviones}
+            otrosIngresos={result.otros_ingresos_vuelatour}
+          />
           <div className="grid gap-4 lg:grid-cols-2">
             {result.aviones.map((a) => (
               <AvionRepartoCard
