@@ -26,6 +26,30 @@ export function conciliacionResumen(desde?: string, hasta?: string) {
   });
 }
 
+/** Gasto bancario que NO aparece en ningún estado de cuenta (sin conciliar). */
+export interface GastoSinBanco {
+  id: string;
+  fecha_gasto: string;
+  categoria: string;
+  monto: string;
+  moneda: string | null;
+  medio_pago: string;
+  tarjeta_terminacion: string | null;
+  lugar: string | null;
+  proveedor: { nombre: string } | { nombre: string }[] | null;
+  captura: { nombre: string } | { nombre: string }[] | null;
+  vuelo: { folio: number } | { folio: number }[] | null;
+}
+
+export function conciliacionGastosSinBanco() {
+  return apiServer<{
+    data: GastoSinBanco[];
+    total: number;
+    desde: string;
+    por_moneda: { moneda: string; monto: number }[];
+  }>("/v1/conciliacion/gastos-sin-banco", { cache: "no-store" });
+}
+
 /** Estados de cuenta importados (archivo original archivado en el bucket). */
 export function listEstadosCuenta() {
   return apiServer<{ data: EstadoCuentaArchivo[] }>("/v1/conciliacion/estados-cuenta", {

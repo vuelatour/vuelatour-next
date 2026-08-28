@@ -14,12 +14,17 @@ import { ImportButton } from "@/components/admin/conciliacion/import-button";
 import { ReporteConciliacionButton } from "@/components/admin/conciliacion/reporte-conciliacion-button";
 import { MovimientosTable } from "@/components/admin/conciliacion/movimientos-table";
 import {
+  GastosSinBancoTable,
+  type GastoSinBancoRow,
+} from "@/components/admin/conciliacion/gastos-sin-banco-table";
+import {
   conciliacionResumen,
   listEstadosCuenta,
   listMovimientosBancarios,
   type ListConciliacionQuery,
 } from "@/lib/api/conciliacion-server";
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
+import { conciliacionGastosSinBanco } from "@/lib/api/conciliacion-server";
 import { listGastos } from "@/lib/api/expenses-server";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +33,7 @@ export const dynamic = "force-dynamic";
 // cortaba antes de que el API respondiera.
 export const maxDuration = 300;
 
-type Filtro = "todos" | "pendientes" | "conciliados";
+type Filtro = "todos" | "pendientes" | "conciliados" | "sin_banco";
 
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
@@ -40,20 +45,27 @@ export default async function ConciliacionPage({
   searchParams: Promise<{ f?: string }>;
 }) {
   const sp = await searchParams;
-  const filtro: Filtro = sp.f === "pendientes" || sp.f === "conciliados" ? sp.f : "todos";
+  const filtro: Filtro =
+    sp.f === "pendientes" || sp.f === "conciliados" || sp.f === "sin_banco"
+      ? sp.f
+      : "todos";
 
   const query: ListConciliacionQuery = { limit: 300 };
   if (filtro === "pendientes") query.conciliado = false;
   if (filtro === "conciliados") query.conciliado = true;
 
-  const [{ data: movs }, cuentasRes, gastosRes, resumen, estadosRes] = await Promise.all([
-    listMovimientosBancarios(query),
-    listBankAccounts({ limit: 100 }),
-    listGastos({ limit: 200 }),
-    conciliacionResumen().catch(() => []),
-    // Best-effort: la página no se cae si el archivado aún no responde.
-    listEstadosCuenta().catch(() => ({ data: [] })),
-  ]);
+  const [{ data: movs }, cuentasRes, gastosRes, resumen, estadosRes, sinBanco] =
+    await Promise.all([
+      listMovimientosBancarios(query),
+      listBankAccounts({ limit: 100 }),
+      listGastos({ limit: 200 }),
+      conciliacionResumen().catch(() => []),
+      // Best-effort: la página no se cae si el archivado aún no responde.
+      listEstadosCuenta().catch(() => ({ data: [] })),
+      // El INVERSO de la bandeja (28-ago): gastos bancarios del sistema que
+      // no aparecen en ningún estado de cuenta. Best-effort (skew de deploy).
+      conciliacionGastosSinBanco().catch(() => null),
+    ]);
   const estadosCuenta = estadosRes.data;
 
   const cuentas = cuentasRes.data.map((c) => ({
@@ -75,10 +87,36 @@ export default async function ConciliacionPage({
       }`,
     }));
 
+  // PostgREST puede devolver los joins como arreglo: tomar el primero.
+  const uno = <T,>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+  const sinBancoRows: GastoSinBancoRow[] = (sinBanco?.data ?? []).map((g) => ({
+    id: g.id,
+    fecha: g.fecha_gasto,
+    descripcion: `${g.categoria}${
+      uno(g.proveedor)?.nombre
+        ? ` · ${uno(g.proveedor)!.nombre}`
+        : g.lugar
+          ? ` · ${g.lugar}`
+          : ""
+    }`,
+    medio:
+      g.medio_pago === "TARJETA_CORP"
+        ? `Tarjeta${g.tarjeta_terminacion ? ` **** ${g.tarjeta_terminacion}` : ""}`
+        : "Transferencia",
+    capturo: uno(g.captura)?.nombre ?? "—",
+    vuelo: uno(g.vuelo)?.folio != null ? `#${uno(g.vuelo)!.folio}` : "—",
+    monto: `$${fmtMoney(g.monto)} ${g.moneda ?? "MXN"}`,
+  }));
+
   const tabs: { key: Filtro; label: string }[] = [
     { key: "todos", label: "Todos" },
     { key: "pendientes", label: "Pendientes" },
     { key: "conciliados", label: "Conciliados" },
+    {
+      key: "sin_banco",
+      label: `Gastos sin banco${sinBanco ? ` (${sinBanco.total})` : ""}`,
+    },
   ];
 
   return (
@@ -145,7 +183,34 @@ export default async function ConciliacionPage({
         ))}
       </div>
 
-      {movs.length === 0 ? (
+      {filtro === "sin_banco" ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Gastos que no aparecen en el estado de cuenta
+            </CardTitle>
+            <CardDescription>
+              Pagados con tarjeta corporativa o transferencia y aún sin cruzar
+              con ninguna línea del banco (últimos 90 días). Puede faltar el
+              periodo por importar, no coincidir fecha/monto, o el cargo nunca
+              llegó al banco.
+              {sinBanco && sinBanco.por_moneda.length > 0 && (
+                <>
+                  {" "}
+                  Faltan:{" "}
+                  {sinBanco.por_moneda
+                    .map((m) => `$${fmtMoney(String(m.monto))} ${m.moneda}`)
+                    .join(" · ")}
+                  .
+                </>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <GastosSinBancoTable rows={sinBancoRows} />
+          </CardContent>
+        </Card>
+      ) : movs.length === 0 ? (
         <Card>
           <CardHeader className="text-center py-12">
             <div className="flex justify-center mb-4">
