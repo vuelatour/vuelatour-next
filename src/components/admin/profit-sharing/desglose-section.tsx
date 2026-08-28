@@ -66,8 +66,19 @@ const GRUPO_BADGE: Record<DetalleGastoGrupo, string> = {
   FIJO: "bg-muted text-muted-foreground border-border",
 };
 
-/** Estado de cobro derivado: bandera cobrado > cobro parcial > pendiente. */
+/** Estado de cobro derivado: cancelado > bandera cobrado > parcial > pendiente. */
 function estadoCobro(v: DetalleVuelo): { label: string; className: string } {
+  // Cancelado con dinero real (28-ago): lo cobrado NO se reembolsa y entra
+  // al balance; no existe "pendiente" en un cancelado.
+  if (v.cancelado) {
+    // El API ya solo manda cancelados con dinero retenido; la etiqueta se
+    // deriva igual por si llega uno sin cobros (API anterior).
+    const retuvo = v.cobrado || v.cobrado_usd > 0 || v.cobros_sin_tc_mxn > 0;
+    return {
+      label: retuvo ? "Cancelado · cobro retenido" : "Cancelado · sin cobros",
+      className: "bg-muted text-muted-foreground border-border",
+    };
+  }
   if (v.cobrado) {
     return {
       label: "Cobrado",
@@ -123,7 +134,8 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
       return {
         total: acc.total + c.venta,
         cobrado: acc.cobrado + c.cobrado,
-        pendiente: acc.pendiente + c.pendiente,
+        // Un cancelado no tiene pendiente (lo cobrado es retenido).
+        pendiente: acc.pendiente + (v.cancelado ? 0 : c.pendiente),
         otros: acc.otros + (v.otros_ingresos_vuelatour_usd ?? 0),
         otrosPendiente:
           acc.otrosPendiente + (v.otros_ingresos_vuelatour_pendiente_usd ?? 0),
@@ -256,7 +268,11 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                               )}
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
-                              {fmtUsd(c.pendiente)}
+                              {v.cancelado ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                fmtUsd(c.pendiente)
+                              )}
                             </TableCell>
                             {hayOtros && (
                               <TableCell className="text-right font-mono text-xs text-muted-foreground">
@@ -272,7 +288,17 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                               </TableCell>
                             )}
                             <TableCell>
-                              <Badge variant="outline" className={estado.className}>
+                              <Badge
+                                variant="outline"
+                                className={`whitespace-nowrap ${estado.className}`}
+                                title={
+                                  v.cancelado
+                                    ? v.cobrado || v.cobrado_usd > 0 || v.cobros_sin_tc_mxn > 0
+                                      ? "Vuelo cancelado: lo cobrado no se reembolsa y entra íntegro al balance del avión."
+                                      : "Vuelo cancelado sin cobros: no aporta ingreso al reparto."
+                                    : undefined
+                                }
+                              >
                                 {estado.label}
                               </Badge>
                             </TableCell>

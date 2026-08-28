@@ -42,7 +42,12 @@ import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
-import { diferenciaRedondeo, pendienteCobro } from "@/lib/admin/cobros";
+import {
+  diferenciaRedondeo,
+  estadoCobroSemaforo,
+  pendienteCobro,
+} from "@/lib/admin/cobros";
+import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { combinadoFolio } from "@/types/flights";
 
 export const dynamic = "force-dynamic";
@@ -218,14 +223,16 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
   // Misma tolerancia de redondeo que el API (1 USD): un cobro en pesos que
   // cubre el total MXN no deja "pendiente $0.01".
-  const pendingCobro = pendienteCobro(
-    Number(snapshot.monto_total_usd),
-    snapshot.total_cobrado,
-  );
-  const redondeoCobro = diferenciaRedondeo(
-    Number(snapshot.monto_total_usd),
-    snapshot.total_cobrado,
-  );
+  // Vuelo CANCELADO (regla cliente 28-ago): no existe "pendiente" — lo
+  // cobrado queda retenido al 100 % y no se persigue el saldo de la cotización
+  // (misma regla que estadoCobroSemaforo en las listas).
+  const vueloCancelado = snapshot.estado === "CANCELADO";
+  const pendingCobro = vueloCancelado
+    ? 0
+    : pendienteCobro(Number(snapshot.monto_total_usd), snapshot.total_cobrado);
+  const redondeoCobro = vueloCancelado
+    ? 0
+    : diferenciaRedondeo(Number(snapshot.monto_total_usd), snapshot.total_cobrado);
 
   return (
     <div className="space-y-6">
@@ -448,7 +455,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  <Row label="Monto total">
+                  <Row label={vueloCancelado ? "Cotizado" : "Monto total"}>
                     <span className="font-mono font-semibold">
                       {fmtUsd(snapshot.monto_total_usd)}
                     </span>
@@ -459,6 +466,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     </span>
                   </Row>
                   <Row label="Pendiente">
+                    {vueloCancelado ? (
+                      <span
+                        className="font-mono text-muted-foreground"
+                        title="Vuelo cancelado: no hay saldo por cobrar; lo cobrado queda retenido."
+                      >
+                        —
+                      </span>
+                    ) : (
                     <span
                       className={`font-mono ${pendingCobro > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}
                       title={
@@ -474,18 +489,23 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                         </span>
                       )}
                     </span>
+                    )}
                   </Row>
                   <Row label="Estado">
                     <div className="flex gap-1">
-                      {snapshot.cobrado ? (
-                        <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 text-[10px]">
-                          Cobrado
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px]">
-                          Por cobrar
-                        </Badge>
-                      )}
+                      {/* Misma fuente única que las listas: un cancelado con
+                          cobros pinta "Con cobros" (gris), nunca "Por cobrar". */}
+                      <CobroEstadoBadge
+                        estado={estadoCobroSemaforo({
+                          montoTotalUsd: Number(snapshot.monto_total_usd) || 0,
+                          cobrado: snapshot.cobrado,
+                          esInterno: client?.es_interno ?? false,
+                          totalCobradoUsd: snapshot.total_cobrado,
+                          cotizacionAbierta: snapshot.cotizacion_abierta,
+                          enCotizacion: snapshot.estado === "COTIZADO",
+                          cancelado: vueloCancelado,
+                        })}
+                      />
                       {snapshot.facturado ? (
                         <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
                           Facturado
@@ -622,6 +642,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             flightEstado={snapshot.estado}
             montoTotalUsd={Number(snapshot.monto_total_usd)}
             pendingUsd={pendingCobro}
+            cobradoUsd={snapshot.total_cobrado}
             cobros={snapshot.cobros}
             voucherUrls={voucherUrls}
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
@@ -678,6 +699,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             providers={providerOptions}
             vueloId={snapshot.id}
             vueloFolio={snapshot.folio}
+            vueloCancelado={snapshot.estado === "CANCELADO"}
             aeronaveId={snapshot.aeronave_id}
             pilotoNombre={piloto?.nombre ?? null}
           />

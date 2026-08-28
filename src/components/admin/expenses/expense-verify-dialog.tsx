@@ -41,11 +41,16 @@ import {
   type SugerenciaAsignacion,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
-import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { fmtDate } from "@/lib/datetime";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
 import { Field } from "@/components/admin/form-field";
+import {
+  VueloCanceladoHint,
+  esVueloCancelado,
+  vueloCercanoLabel,
+} from "@/components/admin/expenses/vuelo-cancelado-hint";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 
 const CATEGORIAS = [
@@ -561,6 +566,9 @@ export function ExpenseVerifyDialog({
                     <> · <span className="font-mono">{sugerencia.sugerido.matricula}</span></>
                   )}
                   {sugerencia.sugerido.ruta && <> · {sugerencia.sugerido.ruta}</>}
+                  {sugerencia.sugerido.estado === "CANCELADO" && (
+                    <> · <span className="font-semibold">CANCELADO</span></>
+                  )}
                   {sugerencia.confianza > 0 && (
                     <span className="text-muted-foreground"> · {Math.round(sugerencia.confianza * 100)}%</span>
                   )}
@@ -591,6 +599,7 @@ export function ExpenseVerifyDialog({
                       onClick={() => aplicarCandidato(c)}
                     >
                       #{c.folio ?? "?"} · {c.matricula ?? "—"}{c.ruta ? ` · ${c.ruta}` : ""}
+                      {c.estado === "CANCELADO" ? " · CANCELADO" : ""}
                     </Button>
                   ))}
                 </div>
@@ -773,9 +782,7 @@ export function ExpenseVerifyDialog({
                 { value: "", label: "Sin vuelo" },
                 ...vuelos.map((v) => ({
                   value: v.id,
-                  label:
-                    `#${v.folio ?? "?"} · ${v.matricula ?? "sin avión"} · ${v.ruta ?? ""}` +
-                    (v.fecha ? ` · ${fmtDateOnly(v.fecha)}` : ""),
+                  label: vueloCercanoLabel(v),
                 })),
               ]}
               value={vueloSel}
@@ -787,6 +794,9 @@ export function ExpenseVerifyDialog({
               }}
               placeholder="Busca por folio, matrícula o ruta"
             />
+            {esVueloCancelado(vuelos, vueloSel) && (
+              <VueloCanceladoHint className="mt-1" />
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">

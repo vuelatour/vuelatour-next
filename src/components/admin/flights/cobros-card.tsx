@@ -44,6 +44,8 @@ interface CobrosCardProps {
   flightEstado: EstadoVuelo;
   montoTotalUsd: number;
   pendingUsd: number;
+  /** Cobrado en USD (fuente única `total_cobrado` = cobrosEnUsd). */
+  cobradoUsd: number;
   cobros: FlightCobro[];
   voucherUrls?: Record<string, string>;
   /** TC con el que se cotizó (sugerencia al cobrar en MXN). */
@@ -58,6 +60,7 @@ export function CobrosCard({
   flightEstado,
   montoTotalUsd,
   pendingUsd,
+  cobradoUsd,
   cobros,
   voucherUrls = {},
   tcCotizacion = null,
@@ -67,7 +70,11 @@ export function CobrosCard({
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const canRegister = flightEstado !== "CANCELADO";
+  // Regla del cliente (28-ago): un vuelo CANCELADO puede tener dinero real —
+  // anticipo retenido o cargo por cancelación que NO se reembolsa — y entra
+  // íntegro al balance del avión. La oficina sí registra cobros aquí (el API
+  // solo se lo bloquea al piloto); lo que no existe es un "pendiente".
+  const cancelado = flightEstado === "CANCELADO";
 
   return (
     <>
@@ -76,6 +83,17 @@ export function CobrosCard({
           <div className="space-y-1">
             <CardTitle className="text-sm">Cobros registrados</CardTitle>
             <CardDescription className="text-xs">
+              {cancelado ? (
+                cobros.length === 0 ? (
+                  "Vuelo cancelado · sin cobros retenidos."
+                ) : (
+                  <span className="text-foreground">
+                    Cobros retenidos: {cobros.length} ·{" "}
+                    <span className="font-mono">{fmtUsd(cobradoUsd)} USD</span>
+                  </span>
+                )
+              ) : (
+                <>
               {cobros.length === 0
                 ? "Sin cobros todavía."
                 : `${cobros.length} ${cobros.length === 1 ? "cobro" : "cobros"}.`}{" "}
@@ -95,19 +113,19 @@ export function CobrosCard({
                   )}
                 </span>
               )}
+                </>
+              )}
             </CardDescription>
           </div>
-          {canRegister && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setOpen(true)}
-              className="gap-1.5 shrink-0"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              Registrar cobro
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen(true)}
+            className="gap-1.5 shrink-0"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"}
+          </Button>
         </CardHeader>
         {cobros.length > 0 && (
           <CardContent>
@@ -213,6 +231,7 @@ export function CobrosCard({
         flightFolio={flightFolio}
         montoTotalUsd={montoTotalUsd}
         pendingUsd={pendingUsd}
+        cancelado={cancelado}
         tcCotizacion={tcCotizacion}
         tcOficial={tcOficial}
       />

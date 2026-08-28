@@ -109,6 +109,10 @@ interface CobroFormSheetProps {
   montoTotalUsd: number;
   /** Pendiente USD a cobrar (auto-prefills el monto). */
   pendingUsd: number;
+  /** Vuelo CANCELADO: se registra lo que el cliente pagó y NO se reembolsa
+      (anticipo retenido / cargo por cancelación). Sin prefill de monto ni
+      noción de "pendiente"; entra íntegro al balance del avión. */
+  cancelado?: boolean;
   /** TC USD→MXN con el que se cotizó (null si la cotización no lo fijó).
       Manda como sugerencia al cobrar en MXN. */
   tcCotizacion?: number | null;
@@ -150,6 +154,7 @@ export function CobroFormSheet({
   flightFolio,
   montoTotalUsd,
   pendingUsd,
+  cancelado = false,
   tcCotizacion = null,
   tcOficial = null,
 }: CobroFormSheetProps) {
@@ -157,6 +162,9 @@ export function CobroFormSheet({
   const [pending, startTransition] = useTransition();
   // Qué TC se prellenó (para el hint); se apaga si el usuario lo edita.
   const [tcPrefill, setTcPrefill] = useState<TcSugerido | null>(null);
+  // En cancelado NO se sugiere el pendiente: el importe retenido lo decide la
+  // oficina (anticipo, % de cancelación…), así que se teclea siempre.
+  const montoPrefill = cancelado ? 0 : pendingUsd;
 
   const {
     register,
@@ -168,15 +176,15 @@ export function CobroFormSheet({
     formState: { errors },
   } = useForm<CobroFormValues>({
     resolver: zodResolver(CobroFormSchema),
-    defaultValues: defaults(pendingUsd),
+    defaultValues: defaults(montoPrefill),
   });
 
   useEffect(() => {
     if (open) {
-      reset(defaults(pendingUsd));
+      reset(defaults(montoPrefill));
       setTcPrefill(null);
     }
-  }, [open, pendingUsd, reset]);
+  }, [open, montoPrefill, reset]);
 
   const moneda = watch("moneda");
   const metodo = watch("metodo_cobro");
@@ -304,7 +312,9 @@ export function CobroFormSheet({
         notas: values.notas?.trim() || undefined,
       });
       if (res.ok) {
-        toast.success("Cobro registrado");
+        toast.success(
+          cancelado ? "Cargo por cancelación registrado" : "Cobro registrado",
+        );
         onOpenChange(false);
         router.refresh();
       } else {
@@ -333,22 +343,49 @@ export function CobroFormSheet({
         className="w-full sm:max-w-md sm:w-[480px] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
-          <SheetTitle>Registrar cobro · vuelo #{flightFolio}</SheetTitle>
+          <SheetTitle>
+            {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"} ·
+            vuelo #{flightFolio}
+          </SheetTitle>
           <SheetDescription>
-            Total a cobrar:{" "}
-            <span className="font-mono">{fmtUsd(montoTotalUsd)}</span> · Pendiente:{" "}
-            <span
-              className={cn(
-                "font-mono",
-                pendingUsd > 0 ? "text-destructive font-semibold" : "text-muted-foreground",
-              )}
-            >
-              {fmtUsd(pendingUsd)}
-            </span>
+            {cancelado ? (
+              <>
+                Cotizado:{" "}
+                <span className="font-mono">{fmtUsd(montoTotalUsd)}</span> · vuelo
+                cancelado (sin pendiente)
+              </>
+            ) : (
+              <>
+                Total a cobrar:{" "}
+                <span className="font-mono">{fmtUsd(montoTotalUsd)}</span> ·
+                Pendiente:{" "}
+                <span
+                  className={cn(
+                    "font-mono",
+                    pendingUsd > 0
+                      ? "text-destructive font-semibold"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {fmtUsd(pendingUsd)}
+                </span>
+              </>
+            )}
           </SheetDescription>
         </SheetHeader>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {cancelado && (
+            <div
+              role="note"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
+            >
+              <span className="font-medium">Vuelo cancelado:</span> registra lo
+              que el cliente pagó y NO se reembolsa (anticipo retenido o cargo
+              por cancelación). Entra íntegro al balance del avión.
+            </div>
+          )}
+
           {/* Vista rápida de la cotización (informativa): total, TC con el
               que se cotizó y su equivalente en pesos, para que quien cobra
               no tenga que ir a buscarlos. */}
@@ -443,7 +480,11 @@ export function CobroFormSheet({
                 {fmtUsd(usdEquivalente)}
               </span>
               <span className="text-muted-foreground"> USD. </span>
-              {usdEquivalente >= pendingUsd ? (
+              {cancelado ? (
+                <span className="text-muted-foreground">
+                  Queda como cobro retenido del vuelo cancelado.
+                </span>
+              ) : usdEquivalente >= pendingUsd ? (
                 <span className="text-green-600 dark:text-green-400">
                   Cubre el pendiente — el vuelo se marcará como cobrado.
                 </span>
@@ -589,7 +630,11 @@ export function CobroFormSheet({
             Cancelar
           </Button>
           <Button type="button" onClick={onSubmit} disabled={pending}>
-            {pending ? "Registrando…" : "Registrar cobro"}
+            {pending
+              ? "Registrando…"
+              : cancelado
+                ? "Registrar cargo"
+                : "Registrar cobro"}
           </Button>
         </SheetFooter>
       </SheetContent>

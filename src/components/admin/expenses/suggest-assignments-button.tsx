@@ -54,10 +54,12 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
     }
     setResultados(res.data.resultados);
     // Pre-palomea solo las sugerencias con match (la oficina puede despalomar).
+    // Un vuelo CANCELADO nunca se pre-palomea: la oficina lo confirma a
+    // propósito (el gasto sí cuenta en el balance, pero hay que estar seguros).
     setSeleccion(
       new Set(
         res.data.resultados
-          .filter((r) => r.sugerido !== null)
+          .filter((r) => r.sugerido !== null && r.sugerido.estado !== "CANCELADO")
           .map((r) => r.gasto.id),
       ),
     );
@@ -146,6 +148,9 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
                         <p className="text-xs mt-0.5">
                           → vuelo{" "}
                           <span className="font-mono">#{r.sugerido!.folio ?? "?"}</span>
+                          {r.sugerido!.estado === "CANCELADO" && (
+                            <> · <span className="font-semibold">CANCELADO</span></>
+                          )}
                           {r.sugerido!.matricula && (
                             <>
                               {" "}

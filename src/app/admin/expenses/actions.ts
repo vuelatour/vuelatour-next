@@ -396,6 +396,9 @@ export interface AsignacionCandidato {
   aeronave_id: string | null;
   matricula: string | null;
   ruta: string | null;
+  /** CANCELADO = el vuelo ya no voló (sus gastos sí cuentan); opcional por
+   *  compatibilidad con un API anterior al campo. */
+  estado?: string | null;
 }
 
 export interface SugerenciaAsignacion {
@@ -552,6 +555,11 @@ export interface VueloCercano {
 /**
  * Vuelos alrededor de la fecha del gasto (±15 días) para asignar A MANO
  * cuando la sugerencia automática no encuentra match.
+ *
+ * Incluye CANCELADOS (regla del cliente, 28-ago): un vuelo cancelado puede
+ * tener gastos reales (se voló a recoger, cancelaron, regresó ferry) y van
+ * al balance igual. Se listan AL FINAL para no estorbar en el caso común; la
+ * etiqueta "· CANCELADO" la pinta el selector (`vueloCercanoLabel`).
  */
 export async function buscarVuelosCercanosAction(
   fechaGasto: string | null,
@@ -579,7 +587,6 @@ export async function buscarVuelosCercanosAction(
       cache: "no-store",
     });
     const data = res.data
-      .filter((v) => v.estado !== "CANCELADO")
       .map((v) => ({
         id: v.id,
         folio: v.folio,
@@ -591,7 +598,12 @@ export async function buscarVuelosCercanosAction(
             : `${v.origen_iata}→${v.destino_iata}`,
         fecha: v.fecha_vuelo,
         estado: v.estado,
-      }));
+      }))
+      // sort es estable: conserva el orden del API dentro de cada grupo.
+      .sort(
+        (a, b) =>
+          Number(a.estado === "CANCELADO") - Number(b.estado === "CANCELADO"),
+      );
     return { ok: true, data };
   } catch (err) {
     return fail(err);

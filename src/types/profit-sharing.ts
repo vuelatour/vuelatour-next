@@ -40,6 +40,10 @@ export interface DetalleVuelo {
   particion_fuente?: "desglose" | "columnas" | "sin_precio";
   /** true si la partición no cuadra con el total del vuelo: revisar. */
   particion_inconsistente?: boolean;
+  /** Vuelo CANCELADO con dinero real (28-ago): los cobros son retenidos
+      (anticipo / cargo por cancelación, no se reembolsan) y los gastos
+      cuentan igual. Aditivo: el API previo no lo manda. */
+  cancelado?: boolean;
 }
 
 export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | 'FIJO';

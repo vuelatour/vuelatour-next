@@ -25,6 +25,7 @@ export function FlightGastosCard({
   providers,
   vueloId,
   vueloFolio,
+  vueloCancelado = false,
   aeronaveId,
   pilotoNombre,
 }: {
@@ -35,6 +36,9 @@ export function FlightGastosCard({
   /** Para capturar un gasto YA ligado a este vuelo (ej. honorario del piloto externo). */
   vueloId?: string;
   vueloFolio?: number;
+  /** Vuelo CANCELADO: los gastos se capturan igual (se voló a recoger,
+      cancelaron, regresó ferry…) y cuentan en el balance — regla 28-ago. */
+  vueloCancelado?: boolean;
   aeronaveId?: string | null;
   /** Piloto del vuelo (para "simular como piloto"). null = sin piloto. */
   pilotoNombre?: string | null;
@@ -57,6 +61,12 @@ export function FlightGastosCard({
                 Gastos
               </Link>
               .
+              {vueloCancelado && (
+                <span className="block text-amber-600 dark:text-amber-400">
+                  Vuelo cancelado: los gastos que sí se generaron cuentan igual
+                  en el balance del avión.
+                </span>
+              )}
             </CardDescription>
           </div>
           <div className="flex items-center gap-3">
@@ -66,6 +76,7 @@ export function FlightGastosCard({
                 providers={providers}
                 defaultVueloId={vueloId}
                 defaultVueloFolio={vueloFolio}
+                defaultVueloCancelado={vueloCancelado}
                 defaultAeronaveId={aeronaveId ?? undefined}
                 defaultPilotoNombre={pilotoNombre ?? null}
               />

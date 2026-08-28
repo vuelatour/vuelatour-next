@@ -30,7 +30,6 @@ import {
   type GastoTicketIA,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
-import { fmtDateOnly } from "@/lib/datetime";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import {
@@ -38,6 +37,11 @@ import {
   type CardOption,
 } from "@/app/admin/users/actions";
 import { Field } from "@/components/admin/form-field";
+import {
+  VueloCanceladoHint,
+  esVueloCancelado,
+  vueloCercanoLabel,
+} from "@/components/admin/expenses/vuelo-cancelado-hint";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -136,6 +140,7 @@ export function ExpenseCreateDialog({
   providers,
   defaultVueloId,
   defaultVueloFolio,
+  defaultVueloCancelado = false,
   defaultAeronaveId,
   defaultCategoria,
   defaultPilotoNombre,
@@ -145,6 +150,9 @@ export function ExpenseCreateDialog({
   /** Con vuelo: el gasto queda LIGADO (reporte por vuelo, reparto, pre-cierre). */
   defaultVueloId?: string;
   defaultVueloFolio?: number;
+  /** El vuelo prefijado está CANCELADO: el gasto se acepta igual (regla
+      28-ago) y solo se avisa que cuenta en el balance. */
+  defaultVueloCancelado?: boolean;
   defaultAeronaveId?: string;
   defaultCategoria?: string;
   /** Piloto del vuelo prefijado (para "simular como piloto"). null = sin piloto. */
@@ -455,6 +463,7 @@ export function ExpenseCreateDialog({
                 <>
                   Se liga al vuelo{defaultVueloFolio != null ? ` #${defaultVueloFolio}` : ""}:
                   entra a su reporte y resta en el reparto (ej. honorario del piloto externo).
+                  {defaultVueloCancelado && <VueloCanceladoHint className="mt-1" />}
                 </>
               ) : (
                 <>
@@ -780,9 +789,7 @@ export function ExpenseCreateDialog({
                     { value: "", label: "Sin vuelo" },
                     ...vuelos.map((v) => ({
                       value: v.id,
-                      label:
-                        `#${v.folio ?? "?"} · ${v.matricula ?? "sin avión"} · ${v.ruta ?? ""}` +
-                        (v.fecha ? ` · ${fmtDateOnly(v.fecha)}` : ""),
+                      label: vueloCercanoLabel(v),
                     })),
                   ]}
                   value={watch("vuelo_id")}
@@ -796,6 +803,9 @@ export function ExpenseCreateDialog({
                   }}
                   placeholder="Busca por folio, matrícula o ruta"
                 />
+                {esVueloCancelado(vuelos, watch("vuelo_id")) && (
+                  <VueloCanceladoHint className="mt-1" />
+                )}
               </Field>
             )}
 
