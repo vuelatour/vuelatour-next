@@ -56,7 +56,7 @@ const CATEGORIAS = [
   { value: "FBO", label: "FBO" },
   { value: "COMIDA", label: "COMIDA" },
   { value: "HOTEL", label: "HOTEL" },
-  { value: "TAXI", label: "TAXI" },
+  { value: "TAXI", label: "TAXI / estacionamiento" },
   { value: "REFACCION", label: "REFACCION" },
   { value: "PERMISO", label: "PERMISO" },
   // Honorario del freelance que voló el avión (doc 3.7): resta en el reparto
