@@ -204,7 +204,14 @@ export function FlightTramosCard({
         {ordered.map((escala, idx) => {
           const label = tramoLabel(idx + 1, ordered.length);
           const cancelada = !!escala.cancelada_at;
-          const sinAvion = !esExterno && !escala.aeronave_id;
+          // Sin avión propio el tramo HEREDA el del vuelo (regla sagrada,
+          // 28-ago): solo "falta" cuando tampoco el vuelo tiene — antes el
+          // regreso heredado pintaba "⚠ Falta avión" con el vuelo asignado.
+          const avionHeredado =
+            !esExterno && !escala.aeronave_id && !!vueloAeronaveId;
+          const sinAvion = !esExterno && !escala.aeronave_id && !vueloAeronaveId;
+          const vueloMatricula =
+            aircraft.find((a) => a.id === vueloAeronaveId)?.matricula ?? null;
           // Sin piloto propio el tramo HEREDA el del vuelo: solo "falta"
           // cuando tampoco el vuelo tiene piloto.
           const pilotoHeredado = !escala.piloto_id && !!vueloPilotoId;
@@ -445,6 +452,13 @@ export function FlightTramosCard({
                   ) : escala.aeronave_matricula ? (
                     <span className="font-mono font-semibold">
                       {escala.aeronave_matricula}
+                    </span>
+                  ) : avionHeredado && vueloMatricula ? (
+                    <span
+                      className="font-mono text-muted-foreground"
+                      title="El tramo no tiene avión propio: hereda el del vuelo."
+                    >
+                      {vueloMatricula} (del vuelo)
                     </span>
                   ) : (
                     <span className="text-muted-foreground">Sin asignar</span>
