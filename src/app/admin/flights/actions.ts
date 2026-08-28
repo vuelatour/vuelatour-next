@@ -152,6 +152,72 @@ export async function cubrirExternoAction(
   }
 }
 
+/** Candidato para COMBINAR (estrategia de pernocta): otro vuelo cuyo avión
+ *  duerme en el destino del ferry de ida de este vuelo. */
+export interface CombinarCandidato {
+  vuelo_id: string;
+  folio: number;
+  cliente_nombre: string | null;
+  /** Día (YYYY-MM-DD, Cancún) en que el ferry del anfitrión deja el avión. */
+  fecha: string | null;
+  /** Aeropuerto de pernocta P donde coinciden ambos ferries. */
+  aeropuerto: string;
+  /** Ferry de REGRESO del anfitrión (se cancelaría). */
+  tramo_ferry_anfitrion_id: string;
+  /** Ferry de IDA de ESTE vuelo (se cancelaría). */
+  tramo_ferry_id: string;
+  noches: number | null;
+}
+
+/** Candidatos para combinar este vuelo (el CUBIERTO). Lista vacía = no hay. */
+export async function getCombinarCandidatosAction(
+  flightId: string,
+): Promise<ActionResult<CombinarCandidato[]>> {
+  try {
+    const res = await apiServer<{ data: CombinarCandidato[] }>(
+      `/v1/flights/${flightId}/combinar-candidatos`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data: res.data ?? [] };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * COMBINA este vuelo (el CUBIERTO) con un anfitrión cuyo avión pernocta en el
+ * destino: cancela los DOS ferries (ida del cubierto + regreso del anfitrión),
+ * reasigna avión (y opcionalmente piloto) y liga ambos vuelos. Los PRECIOS de
+ * ambos clientes quedan intactos.
+ */
+export async function combinarVuelosAction(
+  id: string,
+  payload: {
+    vuelo_anfitrion_id: string;
+    tramo_ferry_id: string;
+    tramo_ferry_anfitrion_id: string;
+    /** Asignar también el piloto que pernocta (default true). */
+    aplicar_piloto?: boolean;
+    /** Marcar pernocta operativa en el anfitrión, sin tocar precios (default true). */
+    marcar_pernocta?: boolean;
+  },
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/flights/${id}/combinar`, {
+      method: "POST",
+      body: payload,
+    });
+    revalidateFlight(id);
+    // El anfitrión también cambió (ferry cancelado, pernocta, liga).
+    revalidatePath(`/admin/flights/${payload.vuelo_anfitrion_id}`);
+    revalidatePath(`/admin/quotes/${id}`);
+    revalidatePath(`/admin/quotes/${payload.vuelo_anfitrion_id}`);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Regresa un vuelo cubierto por externo a vuelo PROPIO (asignable de nuevo). */
 export async function revertirExternoAction(
   id: string,

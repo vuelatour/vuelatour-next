@@ -16,7 +16,7 @@ import { QuoteActionsBar } from "@/components/admin/quotes/quote-actions-bar";
 import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
 import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
-import type { FlightSnapshot } from "@/types/flights";
+import { combinadoFolio, type FlightSnapshot } from "@/types/flights";
 import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
@@ -86,6 +86,25 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   Externo{quote.operador_externo ? ` · ${quote.operador_externo}` : ""}
                 </Badge>
               )}
+              {quote.combinado_con_id &&
+                (() => {
+                  // Vuelo COMBINADO (pernocta): el join puede llegar objeto o
+                  // arreglo (PostgREST) o faltar (API vieja).
+                  const folioCombinado = combinadoFolio(quote);
+                  return (
+                    <Link href={`/admin/flights/${quote.combinado_con_id}`}>
+                      <Badge
+                        variant="outline"
+                        className="bg-teal-500/15 text-teal-600 dark:text-teal-400 border-teal-500/30 hover:bg-teal-500/25 transition-colors"
+                        title="Vuelos combinados (estrategia de pernocta): comparten avión, se cancelaron sus tramos ferry vacíos y los precios de ambos clientes no cambiaron. Clic para abrir el otro vuelo."
+                      >
+                        {folioCombinado != null
+                          ? `♻ Combinado con #${folioCombinado}`
+                          : "♻ Vuelo combinado"}
+                      </Badge>
+                    </Link>
+                  );
+                })()}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {clientNombre ?? quote.cliente_id} · {quote.origen_iata} → {quote.destino_iata} ·{" "}

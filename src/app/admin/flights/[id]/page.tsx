@@ -42,6 +42,7 @@ import { ApiError } from "@/lib/api/errors";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { diferenciaRedondeo, pendienteCobro } from "@/lib/admin/cobros";
+import { combinadoFolio } from "@/types/flights";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +173,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const avionExternoFicha = [avionExternoModelo, avionExternoMatricula]
     .filter(Boolean)
     .join(" · ");
+  // Vuelo COMBINADO (estrategia de pernocta): folio del vuelo ligado — el
+  // join puede llegar como objeto o arreglo (PostgREST) o faltar (API vieja).
+  const folioCombinado = combinadoFolio(snapshot);
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
   const copiloto = pilotsRes.data.find((p) => p.id === snapshot.copiloto_id);
   // Apoyo en tierra: el snapshot trae el nombre resuelto (el apoyo puede ser
@@ -263,6 +267,19 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 >
                   Cotización abierta
                 </Badge>
+              )}
+              {snapshot.combinado_con_id && (
+                <Link href={`/admin/flights/${snapshot.combinado_con_id}`}>
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-teal-500/15 text-teal-600 dark:text-teal-400 border-teal-500/30 hover:bg-teal-500/25 transition-colors"
+                    title="Vuelos combinados (estrategia de pernocta): comparten avión, se cancelaron sus tramos ferry vacíos y los precios de ambos clientes no cambiaron. Clic para abrir el otro vuelo."
+                  >
+                    {folioCombinado != null
+                      ? `♻ Combinado con #${folioCombinado}`
+                      : "♻ Vuelo combinado"}
+                  </Badge>
+                </Link>
               )}
               {!snapshot.es_externo &&
                 snapshot.estado === "CONFIRMADO" &&

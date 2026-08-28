@@ -59,6 +59,12 @@ export interface PersistedQuote {
   /** Ficha del avión AJENO (externo sin avión de la flota): sale en el PDF. */
   avion_externo_modelo?: string | null;
   avion_externo_matricula?: string | null;
+  /** Vuelo COMBINADO (estrategia de pernocta): id del vuelo ligado — se
+      cancelaron los dos ferries y comparten avión; los precios de ambos
+      clientes NO cambian. Opcional-defensivo (respuestas previas al deploy). */
+  combinado_con_id?: string | null;
+  /** Join del vuelo ligado (PostgREST puede mandarlo como arreglo). */
+  combinado?: { folio: number } | { folio: number }[] | null;
 
   cotizacion_version: number;
 

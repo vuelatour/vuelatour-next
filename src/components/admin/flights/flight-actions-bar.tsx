@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ArrowsRightLeftIcon,
   CheckCircleIcon,
   PaperAirplaneIcon,
   PencilSquareIcon,
@@ -26,6 +27,7 @@ import {
   startFlightAction,
   updatePermisoAction,
 } from "@/app/admin/flights/actions";
+import { CombinarVuelosDialog } from "./combinar-vuelos-dialog";
 import { CubrirExternoDialog } from "./cubrir-externo-dialog";
 import { FlightAssignSheet } from "./flight-assign-sheet";
 import { FlightDangerActions } from "./flight-danger-actions";
@@ -73,6 +75,7 @@ export function FlightActionsBar({
   const [startOpen, setStartOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [externoOpen, setExternoOpen] = useState(false);
+  const [combinarOpen, setCombinarOpen] = useState(false);
   const [starting, startStart] = useTransition();
   const [completing, startComplete] = useTransition();
   const [permiso, startPermiso] = useTransition();
@@ -114,6 +117,17 @@ export function FlightActionsBar({
   // externo, el mismo diálogo edita operador/costo.
   const canCubrirExterno =
     flight.estado !== "CANCELADO" && flight.estado !== "COMPLETADO";
+  // Combinar vuelos (estrategia de pernocta): aprovechar el avión de OTRO
+  // vuelo que ya duerme en el destino del ferry de ida. Solo vuelos propios
+  // que aún no vuelan y no combinados ya (en un combinado solo queda el badge
+  // del encabezado). Mismos estados que canAssign.
+  const canCombinar =
+    !flight.es_externo &&
+    !flight.combinado_con_id &&
+    (flight.estado === "RESERVA" ||
+      flight.estado === "SOLICITUD" ||
+      flight.estado === "COTIZADO" ||
+      flight.estado === "CONFIRMADO");
 
   // Borrado DEFINITIVO (ADMIN + CANCELADO): vive en FlightDangerActions,
   // pero el early-return del bar debe conocerlo — sin esto, en un vuelo
@@ -214,6 +228,17 @@ export function FlightActionsBar({
           Cerrar vuelo
         </Button>
       )}
+      {canCombinar && (
+        <Button
+          variant="outline"
+          onClick={() => setCombinarOpen(true)}
+          className="gap-2 border-teal-500/50 text-teal-600 dark:text-teal-400"
+          title="Estrategia de pernocta: si el avión de otro vuelo ya duerme en el destino de tu ferry de ida, se cancelan los dos tramos vacíos y este vuelo sale en ese avión. Los precios de ambos clientes no cambian."
+        >
+          <ArrowsRightLeftIcon className="h-4 w-4" />
+          Combinar vuelos
+        </Button>
+      )}
       {canCubrirExterno && (
         <Button
           variant="outline"
@@ -258,6 +283,15 @@ export function FlightActionsBar({
         <CubrirExternoDialog
           open={externoOpen}
           onOpenChange={setExternoOpen}
+          flight={flight}
+        />
+      )}
+
+      {/* Montado solo al abrir: los candidatos se buscan frescos cada vez. */}
+      {combinarOpen && (
+        <CombinarVuelosDialog
+          open={combinarOpen}
+          onOpenChange={setCombinarOpen}
           flight={flight}
         />
       )}

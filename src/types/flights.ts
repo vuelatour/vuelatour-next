@@ -25,6 +25,12 @@ export interface FlightListItem {
       APIs previas al despliegue (el detalle cae a la cotización si falta). */
   avion_externo_modelo?: string | null;
   avion_externo_matricula?: string | null;
+  /** Vuelo COMBINADO (estrategia de pernocta): id del vuelo ligado — se
+      cancelaron los dos ferries y comparten avión; los precios de ambos
+      clientes NO cambian. Opcional-defensivo (respuestas previas al deploy). */
+  combinado_con_id?: string | null;
+  /** Join del vuelo ligado (PostgREST puede mandarlo como arreglo). */
+  combinado?: { folio: number } | { folio: number }[] | null;
   /** Método de cobro pactado (define si entra a Facturas antes de cobrar). */
   metodo_cobro?: MetodoPago | null;
   cotizacion_version: number;
@@ -166,3 +172,12 @@ export interface TacoPhoto {
 }
 
 export type FlightListResponse = ListResponse<FlightListItem>;
+
+/** Folio del vuelo ligado por combinación (tolera el join objeto o arreglo). */
+export function combinadoFolio(v: {
+  combinado?: { folio: number } | { folio: number }[] | null;
+}): number | null {
+  const c = v.combinado;
+  const x = Array.isArray(c) ? c[0] : c;
+  return x?.folio ?? null;
+}
