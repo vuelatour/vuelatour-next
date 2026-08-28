@@ -80,7 +80,10 @@ export function FlightActionsBar({
   const [completing, startComplete] = useTransition();
   const [permiso, startPermiso] = useTransition();
 
-  const permisoPendiente = !flight.es_externo && flight.estado_permiso === "pendiente";
+  // También en vuelos EXTERNOS: la oficina tramita el permiso de pista aunque
+  // vuele otro operador. Solo un vuelo CANCELADO deja de pedirlo.
+  const permisoPendiente =
+    flight.estado !== "CANCELADO" && flight.estado_permiso === "pendiente";
 
   const handlePermisoEmitido = () => {
     startPermiso(async () => {
@@ -284,6 +287,7 @@ export function FlightActionsBar({
           open={externoOpen}
           onOpenChange={setExternoOpen}
           flight={flight}
+          aircraft={aircraft}
         />
       )}
 

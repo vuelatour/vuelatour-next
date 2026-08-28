@@ -15,16 +15,26 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   cubrirExternoAction,
   revertirExternoAction,
 } from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
 
+interface AircraftOption {
+  id: string;
+  matricula: string;
+  modelo: string;
+}
+
 interface CubrirExternoDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   flight: FlightListItem;
+  /** Aviones propios ACTIVOS: al regresar a vuelo propio un externo SIN
+      avión de referencia (p. ej. #214) hay que elegir cuál lo volará. */
+  aircraft: AircraftOption[];
 }
 
 /**
@@ -37,6 +47,7 @@ export function CubrirExternoDialog({
   open,
   onOpenChange,
   flight,
+  aircraft,
 }: CubrirExternoDialogProps) {
   const router = useRouter();
   const [saving, startSaving] = useTransition();
@@ -56,13 +67,33 @@ export function CubrirExternoDialog({
   // Regreso a vuelo propio: paso de confirmación inline (acción significativa).
   const [confirmRevert, setConfirmRevert] = useState(false);
   const [reverting, startRevert] = useTransition();
+  // Externo SIN avión de referencia: el API exige elegir el avión propio que
+  // volará el vuelo (con referencia, ese avión se conserva).
+  const necesitaAvion = yaExterno && !flight.aeronave_id;
+  const [aeronaveRevert, setAeronaveRevert] = useState("");
+  const aircraftOptions = aircraft.map((a) => ({
+    value: a.id,
+    label: `${a.matricula} — ${a.modelo}`,
+  }));
 
   const handleRevert = () => {
+    if (necesitaAvion && !aeronaveRevert) {
+      toast.error("Elige el avión propio que volará este vuelo");
+      return;
+    }
     startRevert(async () => {
-      const res = await revertirExternoAction(flight.id);
+      const res = await revertirExternoAction(
+        flight.id,
+        necesitaAvion ? { aeronave_id: aeronaveRevert } : undefined,
+      );
       if (res.ok) {
+        const avionId = necesitaAvion ? aeronaveRevert : flight.aeronave_id;
+        const matriculaPropia =
+          aircraft.find((a) => a.id === avionId)?.matricula ?? null;
         toast.success(
-          `Vuelo #${flight.folio} regresó a vuelo propio: asigna avión y piloto.`,
+          matriculaPropia
+            ? `Vuelo #${flight.folio} regresó a vuelo propio con ${matriculaPropia}; asigna piloto`
+            : `Vuelo #${flight.folio} regresó a vuelo propio: asigna avión y piloto.`,
         );
         setConfirmRevert(false);
         onOpenChange(false);
@@ -214,10 +245,32 @@ export function CubrirExternoDialog({
                 <div className="space-y-2">
                   <p className="text-xs text-amber-600">
                     Se quita al operador {flight.operador_externo ?? "externo"} y
-                    su costo del apoyo; el vuelo queda listo para asignar avión
-                    y piloto propios (tacómetros y gastos vuelven a aplicar).
-                    La cotización del cliente no cambia.
+                    su costo del apoyo; el vuelo queda listo para asignar{" "}
+                    {necesitaAvion ? "avión y piloto propios" : "piloto propio"}{" "}
+                    (tacómetros y gastos vuelven a aplicar). La cotización del
+                    cliente no cambia.
                   </p>
+                  {necesitaAvion && (
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium">
+                        Avión propio que volará el vuelo{" "}
+                        <span className="text-destructive">*</span>
+                      </Label>
+                      <SearchableSelect
+                        options={aircraftOptions}
+                        value={aeronaveRevert}
+                        onChange={setAeronaveRevert}
+                        placeholder="Selecciona aeronave"
+                        emptyText="Sin aviones activos"
+                        disabled={reverting}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Este vuelo externo no tenía avión de referencia: la
+                        cotización se queda igual; el avión solo define quién
+                        opera y captura tacómetros.
+                      </p>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -230,7 +283,7 @@ export function CubrirExternoDialog({
                     <Button
                       size="sm"
                       onClick={handleRevert}
-                      disabled={reverting}
+                      disabled={reverting || (necesitaAvion && !aeronaveRevert)}
                       className="bg-emerald-600 hover:bg-emerald-600/90 text-white"
                     >
                       {reverting ? "Regresando…" : "Sí, regresar a vuelo propio"}

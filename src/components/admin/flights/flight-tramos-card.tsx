@@ -126,6 +126,12 @@ export function FlightTramosCard({
   // cualquier estado operable — incluida la RESERVA del vuelo rápido; solo se
   // cierra al COMPLETAR o CANCELAR.
   const canAssign = estado !== "COMPLETADO" && estado !== "CANCELADO";
+  // Tramo extra en vuelo COMPLETADO (regla del cliente): al terminar la ruta
+  // el cliente a veces pide ir a otro lado y se considera parte del MISMO
+  // vuelo. El API pide motivo y regresa el vuelo a EN_VUELO hasta que el
+  // piloto capture la llegada. Solo un vuelo CANCELADO (o externo, sin
+  // operación propia) lo bloquea.
+  const puedeAgregarTramo = !esExterno && estado !== "CANCELADO";
   // Cancelar/restaurar un TRAMO sí procede aunque el vuelo esté COMPLETADO
   // (caso #74: la deducción fabricó lecturas de un regreso que nunca voló y
   // se detectó ya cerrado el vuelo). El candado real es la evidencia
@@ -187,7 +193,7 @@ export function FlightTramosCard({
           <PaperAirplaneIcon className="h-4 w-4 text-muted-foreground" />
           Asignación por tramo
         </CardTitle>
-        {canAssign && !esExterno && (
+        {puedeAgregarTramo && (
           <Button
             size="sm"
             variant="outline"
@@ -350,8 +356,9 @@ export function FlightTramosCard({
                       Restaurar
                     </Button>
                   )}
+                  {/* También en externos: la oficina tramita el permiso de
+                      pista aunque vuele otro operador. */}
                   {!cancelada &&
-                    !esExterno &&
                     escala.estado_permiso === "pendiente" &&
                     canAssign && (
                       <Button
@@ -540,6 +547,7 @@ export function FlightTramosCard({
         open={opSheetOpen}
         onOpenChange={setOpSheetOpen}
         flightId={flightId}
+        estado={estado}
         airports={airports}
       />
 

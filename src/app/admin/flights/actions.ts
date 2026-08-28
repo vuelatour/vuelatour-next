@@ -219,14 +219,17 @@ export async function combinarVuelosAction(
   }
 }
 
-/** Regresa un vuelo cubierto por externo a vuelo PROPIO (asignable de nuevo). */
+/** Regresa un vuelo cubierto por externo a vuelo PROPIO (asignable de nuevo).
+ *  Si el vuelo NO tiene avión de referencia (externo sin avión, p. ej. #214)
+ *  el API exige `aeronave_id`: el avión propio que volará el vuelo. */
 export async function revertirExternoAction(
   id: string,
+  payload?: { aeronave_id?: string },
 ): Promise<ActionResult<FlightListItem>> {
   try {
     const updated = await apiServer<FlightListItem>(
       `/v1/flights/${id}/revertir-externo`,
-      { method: "POST" },
+      { method: "POST", body: payload ?? {} },
     );
     revalidateFlight(id);
     return { ok: true, data: updated };
@@ -449,6 +452,10 @@ export interface OperationalLegPayload {
   servicio_notas?: string;
   fecha_salida_plan?: string;
   notas?: string;
+  /** Motivo del tramo extra (≤300). OBLIGATORIO cuando el vuelo ya está
+      COMPLETADO (el cliente pidió ir a otro lado al terminar la ruta): el
+      API regresa el vuelo a EN_VUELO hasta que el piloto capture la llegada. */
+  motivo?: string;
 }
 
 /** Agrega un tramo operativo interno (ruta real) sin tocar la cotización. */

@@ -19,31 +19,43 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cancunInputToIso, TZ_LABEL } from "@/lib/datetime";
 import { createOperationalLegAction } from "@/app/admin/flights/actions";
+import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 interface AirportOption {
   iata: string;
   nombre: string;
 }
 
+const MOTIVO_MAX = 300;
+
 /**
  * Alta de un tramo OPERATIVO interno (ruta real): ferry, parada técnica,
  * movimiento interno, pernocta operativa. No se cotiza ni se cobra ni se
  * muestra al cliente; no cambia el precio. Lo ve operaciones, el piloto y el
  * calendario.
+ *
+ * Vuelo COMPLETADO (regla del cliente): el cliente pidió ir a otro lado al
+ * terminar la ruta y se considera parte del MISMO vuelo. El API exige motivo
+ * y regresa el vuelo a EN_VUELO hasta que el piloto capture la llegada.
  */
 export function OperationalLegSheet({
   open,
   onOpenChange,
   flightId,
+  estado,
   airports,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   flightId: string;
+  estado: EstadoVuelo;
   airports: AirportOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const vueloCompletado = estado === "COMPLETADO";
+  // Motivo del tramo extra: obligatorio solo en vuelo COMPLETADO.
+  const [motivo, setMotivo] = useState("");
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
   const [esFerry, setEsFerry] = useState(true);
@@ -68,6 +80,13 @@ export function OperationalLegSheet({
       toast.error("Captura origen y destino (IATA)");
       return;
     }
+    const motivoLimpio = motivo.trim();
+    if (vueloCompletado && motivoLimpio.length === 0) {
+      toast.error(
+        "Indica el motivo del tramo extra: el vuelo ya estaba completado",
+      );
+      return;
+    }
     const nombresLista = esFerry
       ? []
       : nombres
@@ -87,9 +106,15 @@ export function OperationalLegSheet({
         servicio_notas: esServicio ? servicioNotas.trim() || undefined : undefined,
         fecha_salida_plan: fecha ? cancunInputToIso(fecha) : undefined,
         notas: notas.trim() || undefined,
+        motivo: vueloCompletado ? motivoLimpio : undefined,
       });
       if (res.ok) {
-        toast.success("Tramo operativo agregado a la ruta real");
+        toast.success(
+          vueloCompletado
+            ? "Tramo agregado; el vuelo vuelve a EN VUELO"
+            : "Tramo operativo agregado a la ruta real",
+        );
+        setMotivo("");
         onOpenChange(false);
         router.refresh();
       } else {
@@ -124,6 +149,33 @@ export function OperationalLegSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {vueloCompletado && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-3">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                El vuelo ya está completado: al agregar el tramo vuelve a{" "}
+                <strong>EN VUELO</strong> hasta que el piloto capture la
+                llegada; la cotización no cambia — revísala después si se
+                cobra.
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Motivo <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  rows={2}
+                  maxLength={MOTIVO_MAX}
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value)}
+                  placeholder="Ej. El cliente pidió continuar a Holbox al terminar la ruta."
+                />
+                <p className="text-xs text-muted-foreground">
+                  ¿Por qué se agrega un tramo a un vuelo ya cerrado? Queda en
+                  la bitácora. {motivo.length}/{MOTIVO_MAX}
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Origen</Label>
