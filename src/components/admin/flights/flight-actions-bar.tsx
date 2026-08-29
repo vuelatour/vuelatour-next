@@ -204,7 +204,9 @@ export function FlightActionsBar({
           }`}
         >
           <UserPlusIcon className="h-4 w-4" />
-          {missingAssignment ? "Asignar" : "Reasignar"}
+          {/* Aquí viven también copiloto y apoyo (feedback 29-ago: "no veo
+              dónde añadir apoyo o copiloto" — el botón decía solo Reasignar). */}
+          {missingAssignment ? "Asignar tripulación" : "Piloto y tripulación"}
         </Button>
       )}
       {canStart && (

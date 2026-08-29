@@ -601,8 +601,32 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                         <span className="text-muted-foreground">Sin asignar</span>
                       )}
                     </Row>
-                    {copiloto && <Row label="Copiloto">{copiloto.nombre}</Row>}
-                    {apoyoNombre && <Row label="Apoyo">{apoyoNombre}</Row>}
+                    {/* Siempre visibles (feedback 29-ago): así se ve que existen
+                        y dónde se editan, aunque vayan vacíos. */}
+                    <Row label="Copiloto">
+                      {copiloto ? (
+                        <span>{copiloto.nombre}</span>
+                      ) : (
+                        <span
+                          className="text-muted-foreground"
+                          title="Se agrega con el botón «Piloto y tripulación»"
+                        >
+                          Sin copiloto
+                        </span>
+                      )}
+                    </Row>
+                    <Row label="Apoyo en tierra">
+                      {apoyoNombre ? (
+                        <span>{apoyoNombre}</span>
+                      ) : (
+                        <span
+                          className="text-muted-foreground"
+                          title="Se agrega con el botón «Piloto y tripulación»"
+                        >
+                          Sin apoyo
+                        </span>
+                      )}
+                    </Row>
                     <Row label="Traslado inicial">
                       {snapshot.fecha_vuelo ? (
                         fmtDateTime(snapshot.fecha_vuelo)

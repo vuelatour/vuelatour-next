@@ -203,9 +203,10 @@ export function FlightAssignSheet({
         className="w-full sm:max-w-md sm:w-[480px] flex flex-col p-0"
       >
         <SheetHeader className="border-b border-border">
-          <SheetTitle>Asignar vuelo #{flight.folio}</SheetTitle>
+          <SheetTitle>Tripulación del vuelo #{flight.folio}</SheetTitle>
           <SheetDescription>
-            Define avión, piloto y fecha programada. Necesarios para iniciar el vuelo.
+            Avión, piloto y fecha programada (necesarios para iniciar el vuelo), más
+            copiloto y apoyo en tierra si van.
           </SheetDescription>
         </SheetHeader>
 
