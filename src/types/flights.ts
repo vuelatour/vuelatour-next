@@ -1,6 +1,10 @@
 import type { ListResponse } from "./aircraft";
 import type { MetodoPago } from "./quote";
-import type { EstadoVuelo } from "./quotes-persisted";
+import type {
+  EstadoVuelo,
+  ParticipacionAvion,
+  ParticipacionFuente,
+} from "./quotes-persisted";
 
 /** Resumen para listas: el backend devuelve solo estos cols en GET /v1/flights. */
 export interface FlightListItem {
@@ -160,6 +164,13 @@ export interface FlightSnapshot extends FlightListItem {
   total_cobrado: number;
   /** Nombre del apoyo en tierra, resuelto por el backend en snapshot(). */
   apoyo_nombre?: string | null;
+  /**
+   * Vuelo MULTI-AVIÓN (regla 28-ago-2026): reparto de la venta del avión
+   * entre los aviones de sus tramos (fuente única del API). Aditivo: el API
+   * previo no lo manda; con un solo avión trae un elemento con factor 1.
+   */
+  participacion_aviones?: ParticipacionAvion[];
+  participacion_fuente?: ParticipacionFuente;
 }
 
 /** Foto de tacómetro con URL firmada: GET /v1/flights/:id/taco-photos. */

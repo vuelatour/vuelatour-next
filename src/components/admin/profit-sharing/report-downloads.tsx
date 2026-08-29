@@ -74,7 +74,7 @@ export function ReportDownloads({
           onClick={() =>
             download("dinero", "/v1/profit-sharing/dinero.xlsx", `dinero-${desde}-a-${hasta}.xlsx`)
           }
-          title="Libro «Dinero» del periodo (réplica del control manual): dinero-vlos con filas coloreadas por avión y clave vt+cliente, otros ingresos, otros gastos y utilidades. Costo proveedor y comisiones van vacíos hasta definir sus reglas."
+          title="Libro «Dinero» del periodo (réplica del control manual): dinero-vlos con filas coloreadas por avión y clave vt+cliente, otros ingresos, otros gastos y utilidades. La comisión del vendedor va en «otros ingresos» (ingreso de VuelaTour) con su pago al vendedor provisionado en la misma fila; el costo proveedor sigue vacío hasta definir su regla."
         >
           <TableCellsIcon className="h-4 w-4" />
           {loading === "dinero" ? "Generando…" : "Dinero (Excel)"}

@@ -463,9 +463,14 @@ export async function sugerirAsignacionesBandejaAction(): Promise<
 /** Aplica en lote las sugerencias palomeadas: avión + vuelo por gasto. */
 export async function aplicarAsignacionesAction(
   items: Array<{ gasto_id: string; aeronave_id: string | null; vuelo_id: string }>,
-): Promise<ActionResult<{ aplicados: number; fallidos: number }>> {
+): Promise<
+  ActionResult<{ aplicados: number; fallidos: number; errores: string[] }>
+> {
   let aplicados = 0;
   let fallidos = 0;
+  // Motivo de cada rechazo del API tal cual (p. ej. 400: la escala del gasto
+  // pertenece a otro vuelo), para mostrarlo en el toast en vez de un conteo mudo.
+  const errores: string[] = [];
   for (const it of items) {
     try {
       await apiServer(`/v1/expenses/${it.gasto_id}`, {
@@ -476,14 +481,15 @@ export async function aplicarAsignacionesAction(
         },
       });
       aplicados += 1;
-    } catch {
+    } catch (err) {
       fallidos += 1;
+      errores.push(fail(err).error ?? "Error desconocido");
     }
   }
   revalidatePath("/admin/expenses");
   revalidatePath("/admin/caja-chica", "layout");
   revalidatePath("/admin/combustibles");
-  return { ok: true, data: { aplicados, fallidos } };
+  return { ok: true, data: { aplicados, fallidos, errores } };
 }
 
 /**

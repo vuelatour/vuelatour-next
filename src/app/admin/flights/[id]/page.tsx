@@ -48,6 +48,7 @@ import {
   pendienteCobro,
 } from "@/lib/admin/cobros";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
+import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import { combinadoFolio } from "@/types/flights";
 
 export const dynamic = "force-dynamic";
@@ -122,7 +123,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ),
       // Vuelo anterior del mismo avión (auditar la cadena de tacómetros).
       getVueloAnterior(id).catch(() => ({ anterior: null })),
-      // TC oficial Banxico de hoy (Cancún): respaldo para prellenar el TC al
+      // TC oficial de referencia de hoy (open.er-api): respaldo para prellenar el TC al
       // cobrar en MXN si la cotización no lo fijó. Best-effort: la función
       // ya devuelve null en cualquier fallo y nunca bloquea el render.
       getTipoCambioOficial(),
@@ -233,6 +234,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const redondeoCobro = vueloCancelado
     ? 0
     : diferenciaRedondeo(Number(snapshot.monto_total_usd), snapshot.total_cobrado);
+  // Vuelo MULTI-AVIÓN (regla 28-ago): la venta del avión se reparte por tramo
+  // entre los aviones. Lo calcula el API (fuente única); el snapshot lo manda
+  // y la cotización (misma fila) es el respaldo. Externos no reparten.
+  const participacionAviones = snapshot.es_externo
+    ? null
+    : (snapshot.participacion_aviones ?? quote?.participacion_aviones ?? null);
+  const participacionFuente =
+    snapshot.participacion_fuente ?? quote?.participacion_fuente ?? null;
 
   return (
     <div className="space-y-6">
@@ -460,6 +469,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                       {fmtUsd(snapshot.monto_total_usd)}
                     </span>
                   </Row>
+                  <ParticipacionAvionesNota
+                    aviones={participacionAviones}
+                    fuente={participacionFuente}
+                    className="text-right"
+                  />
                   <Row label="Cobrado">
                     <span className="font-mono">
                       {fmtUsd(snapshot.total_cobrado)}

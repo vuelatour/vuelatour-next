@@ -21,9 +21,11 @@ const AMBAR =
   "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30";
 
 /**
- * Card de reparto por avión: cascada del saldo (las filas SUMAN el saldo,
- * incluida la comisión de venta), reparto a socios, desglose expandible y
- * descarga del balance del avión en Excel.
+ * Card de reparto por avión: cascada del saldo (las filas SUMAN el saldo),
+ * reparto a socios, desglose expandible y descarga del balance del avión en
+ * Excel. Desde el 28-ago-2026 la comisión del vendedor NO es costo del avión
+ * (es ingreso/egreso de VuelaTour): el API la manda en 0 y la fila solo se
+ * pinta si un API previo todavía descuenta algo.
  */
 export function AvionRepartoCard({
   avion,
@@ -88,12 +90,20 @@ export function AvionRepartoCard({
             <ClockIcon />
             {fmtDecimal(avion.horas_voladas_hr, 1)} hr
           </Badge>
-          <Badge variant="outline" className="gap-1">
+          <Badge
+            variant="outline"
+            className="gap-1"
+            title="Cada vuelo se cuenta una sola vez: un vuelo con varios aviones cuenta en el avión que lo reporta (el principal), aunque su parte de la venta sí está en cada avión del desglose."
+          >
             <PaperAirplaneIcon />
             {totalVuelos} vuelo(s) · {avion.ingresos.vuelos_cobrados} cobrados
           </Badge>
           {avion.ingresos.pendiente_cobro_usd > 0 && (
-            <Badge variant="outline" className={AMBAR}>
+            <Badge
+              variant="outline"
+              className={AMBAR}
+              title="Parte del avión pendiente de cobro. Los vuelos se cuentan una sola vez (en el avión que reporta el vuelo)."
+            >
               Pendiente {fmtUsd(avion.ingresos.pendiente_cobro_usd)} ·{" "}
               {avion.ingresos.vuelos_pendientes} vuelo(s)
             </Badge>
@@ -101,7 +111,7 @@ export function AvionRepartoCard({
           {muestraDeudaTotal && (
             <span
               className="self-center text-[11px] text-muted-foreground"
-              title="Incluye TUAs/extras/pernocta/IVA pendientes (ingresos de VuelaTour, no del avión)."
+              title="Incluye TUAs/extras/pernocta/comisión del vendedor/IVA pendientes (ingresos de VuelaTour, no del avión)."
             >
               deuda total del cliente {fmtUsd(pendienteBruto)}
             </span>
@@ -149,11 +159,16 @@ export function AvionRepartoCard({
             value={avion.ingresos.cobrado_usd}
             ingreso
           />
-          <CascadaRow
-            label="Comisiones de venta"
-            value={avion.ingresos.comisiones_venta_usd}
-            deduccion
-          />
+          {/* Solo con un API previo al 28-ago (hoy siempre 0: la comisión del
+              vendedor es ingreso/egreso de VuelaTour, no costo del avión). */}
+          {(avion.ingresos.comisiones_venta_usd ?? 0) > 0 && (
+            <CascadaRow
+              label="Comisiones de venta"
+              sublabel="regla anterior — hoy es ingreso/egreso de VuelaTour"
+              value={avion.ingresos.comisiones_venta_usd}
+              deduccion
+            />
+          )}
           <CascadaRow
             label="Gastos directos"
             value={avion.gastos.directos_usd}
@@ -192,13 +207,17 @@ export function AvionRepartoCard({
               {fmtUsd(avion.saldo_disponible_usd)}
             </span>
           </div>
-          {/* Informativo (fuera de la cascada): TUAs/extras/pernocta/IVA son
-              ingresos de VuelaTour, no del avión — no se reparten. Solo si el
-              API ya lo manda. */}
+          {/* Informativo (fuera de la cascada): TUAs/extras/pernocta/comisión
+              del vendedor/IVA son ingresos de VuelaTour, no del avión — no se
+              reparten. Solo si el API ya lo manda. */}
           {avion.ingresos.otros_ingresos_vuelatour_usd != null && (
-            <div className="flex items-baseline justify-between gap-3 pt-1 text-xs text-muted-foreground">
+            <div
+              className="flex items-baseline justify-between gap-3 pt-1 text-xs text-muted-foreground"
+              title="Ingresos de VuelaTour cobrados en vuelos de este avión: TUAs, extras, pernocta y comisión del vendedor (con su IVA). No entran al saldo del avión ni al reparto; la comisión se paga al vendedor desde VuelaTour."
+            >
               <span>
-                Otros ingresos VuelaTour (TUAs/extras/pernocta) — no se reparten
+                Otros ingresos VuelaTour (TUAs/extras/pernocta/comisión) — no se
+                reparten
                 {(avion.ingresos.otros_ingresos_vuelatour_pendiente_usd ?? 0) > 0 && (
                   <span className="ml-1.5 text-[11px] text-muted-foreground/70">
                     · por cobrar{" "}

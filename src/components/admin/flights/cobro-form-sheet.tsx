@@ -116,7 +116,7 @@ interface CobroFormSheetProps {
   /** TC USD→MXN con el que se cotizó (null si la cotización no lo fijó).
       Manda como sugerencia al cobrar en MXN. */
   tcCotizacion?: number | null;
-  /** TC oficial Banxico (FIX) del día: respaldo cuando la cotización no
+  /** TC oficial de referencia (open.er-api) del día: respaldo cuando la cotización no
       fijó TC. null si el API no tiene dato. */
   tcOficial?: number | null;
 }
@@ -195,7 +195,7 @@ export function CobroFormSheet({
   const cuentaDestino = watch("cuenta_destino");
 
   // TC sugerido al cobrar en MXN: el de la cotización manda (es el que el
-  // cliente vio); si la cotización no lo fijó, el oficial Banxico del día.
+  // cliente vio); si la cotización no lo fijó, el oficial de referencia del día.
   const tcSugerido: TcSugerido | null =
     tcCotizacion != null && tcCotizacion > 0
       ? { valor: tcCotizacion, fuente: "cotizacion" }
@@ -242,7 +242,7 @@ export function CobroFormSheet({
     tcPrefill && Number(tc) === tcPrefill.valor
       ? tcPrefill.fuente === "cotizacion"
         ? "Prellenado con el TC de la cotización — puedes editarlo."
-        : "Prellenado con el TC oficial del día (Banxico) — puedes editarlo."
+        : "Prellenado con el TC oficial de referencia del día — puedes editarlo."
       : "Necesario para saber cuánto cubre del total en USD";
 
   // Cuentas del catálogo: primero las de la moneda del cobro (sugerencia
@@ -396,7 +396,7 @@ export function CobroFormSheet({
               <Dato
                 label={
                   tcSugerido?.fuente === "oficial"
-                    ? "TC oficial Banxico (hoy)"
+                    ? "TC oficial de referencia (hoy)"
                     : "TC de la cotización"
                 }
                 value={tcReferencia != null ? fmtDecimal(tcReferencia, 4) : "—"}
@@ -409,7 +409,7 @@ export function CobroFormSheet({
             {tcSugerido?.fuente === "oficial" && (
               <p className="mt-1.5 text-muted-foreground">
                 La cotización no fijó tipo de cambio; se muestra el TC oficial
-                Banxico del día: {fmtDecimal(tcSugerido.valor, 4)}.
+                de referencia del día: {fmtDecimal(tcSugerido.valor, 4)}.
               </p>
             )}
             {!tcSugerido && (

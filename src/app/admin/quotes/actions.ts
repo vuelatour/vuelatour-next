@@ -137,6 +137,10 @@ export interface ReviseQuotePayload extends CalculateQuoteRequest {
   fecha_traslado_final?: string;
   motivo: string;
   notas?: string;
+  /** Vuelo externo (28-ago): operador y lo que cobra el avión externo se
+      editan también al revisar. null limpia el costo. */
+  operador_externo?: string;
+  costo_externo_usd?: number | null;
 }
 
 export async function reviseQuoteAction(

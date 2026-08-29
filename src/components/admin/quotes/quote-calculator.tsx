@@ -1460,6 +1460,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ...calcPayload,
           motivo: motivoTrim,
           notas: values.notas || undefined,
+          // Externo (28-ago): operador y lo que cobra el avión externo se
+          // editan también al revisar; el costo vacío se limpia (null).
+          ...(initialQuote?.es_externo
+            ? {
+                ...(values.operador_externo.trim().length >= 2
+                  ? { operador_externo: values.operador_externo.trim() }
+                  : {}),
+                costo_externo_usd:
+                  Number(values.costo_externo_usd) > 0
+                    ? Number(values.costo_externo_usd)
+                    : null,
+              }
+            : {}),
           // Las fechas del vuelo también se actualizan al revisar (antes no
           // viajaban y la cotización no aparecía en el calendario).
           fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
@@ -1805,13 +1818,28 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           {(!isRevise || initialQuote?.es_externo) && (
             <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
               {isRevise && initialQuote?.es_externo ? (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                  Vuelo cubierto por{" "}
-                  <strong>{initialQuote.operador_externo}</strong>.{" "}
-                  {sinAvion
-                    ? "Sin avión de la flota: el precio es la suma de los montos pactados por tramo. El operador y el costo del apoyo se editan desde el detalle del vuelo."
-                    : "El avión de abajo es solo la referencia de tarifa; el operador y el costo del apoyo se editan desde el detalle del vuelo."}
-                </div>
+                <>
+                  <div className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                    Vuelo cubierto por{" "}
+                    <strong>{initialQuote.operador_externo}</strong>.{" "}
+                    {sinAvion
+                      ? "Sin avión de la flota: el precio es la suma de los montos pactados por tramo (o el precio pactado). Aquí capturas lo que cobra el avión externo y lo que se le cobra al cliente: no son lo mismo."
+                      : "El avión de abajo es solo la referencia de tarifa. Aquí capturas lo que cobra el avión externo y lo que se le cobra al cliente: no son lo mismo."}
+                  </div>
+                  <Field
+                    label="Operador externo"
+                    hint="Quién vuela el servicio (vacío = se conserva el actual)"
+                  >
+                    <Input
+                      placeholder="Ej. Aerocharter del Caribe"
+                      maxLength={120}
+                      value={values.operador_externo}
+                      onChange={(e) =>
+                        setValue("operador_externo", e.target.value)
+                      }
+                    />
+                  </Field>
+                </>
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-3">
@@ -1882,28 +1910,30 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       />
                     </Field>
                   </div>
-                  {!isRevise && (
-                    <Field
-                      label="Costo del apoyo (USD)"
-                      hint="Lo que nos cobra el operador · interno, no lo ve el cliente"
-                    >
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        placeholder="0.00"
-                        value={values.costo_externo_usd ?? ""}
-                        onChange={(e) =>
-                          setValue(
-                            "costo_externo_usd",
-                            e.target.value === ""
-                              ? null
-                              : Math.max(0, Number(e.target.value)),
-                          )
-                        }
-                      />
-                    </Field>
-                  )}
+                  {/* Regla 28-ago: lo que COBRA el avión externo (costo,
+                      interno) y lo que se le COBRA al cliente son dos cosas
+                      distintas — ambas se capturan aquí, al crear y al
+                      revisar. */}
+                  <Field
+                    label="Lo que cobra el avión externo (costo, USD)"
+                    hint="Lo que el operador nos cobra por el vuelo · interno, no lo ve el cliente"
+                  >
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="0.00"
+                      value={values.costo_externo_usd ?? ""}
+                      onChange={(e) =>
+                        setValue(
+                          "costo_externo_usd",
+                          e.target.value === ""
+                            ? null
+                            : Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                    />
+                  </Field>
                   <Field
                     label="Precio pactado con el cliente (total, USD)"
                     hint={
@@ -1928,6 +1958,29 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       }
                     />
                   </Field>
+                  {(() => {
+                    // Margen = lo que paga el cliente − lo que cobra el
+                    // avión externo (solo informativo; el API es la fuente).
+                    const costo = Number(values.costo_externo_usd) || 0;
+                    const precio =
+                      Number(values.total_pactado_usd) > 0
+                        ? Number(values.total_pactado_usd)
+                        : Number(breakdown?.totales.total_usd) || 0;
+                    if (!(costo > 0) || !(precio > 0)) return null;
+                    const margen = Math.round((precio - costo) * 100) / 100;
+                    return (
+                      <p
+                        className={`text-xs ${margen < 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
+                      >
+                        Margen VuelaTour: {fmtUsd(precio)} al cliente −{" "}
+                        {fmtUsd(costo)} del avión externo ={" "}
+                        <span className="font-mono font-semibold">
+                          {fmtUsd(margen)}
+                        </span>
+                        {margen < 0 && " · el costo supera lo pactado"}
+                      </p>
+                    );
+                  })()}
                 </>
               )}
             </div>

@@ -50,7 +50,7 @@ interface CobrosCardProps {
   voucherUrls?: Record<string, string>;
   /** TC con el que se cotizó (sugerencia al cobrar en MXN). */
   tcCotizacion?: number | null;
-  /** TC oficial Banxico del día (respaldo si la cotización no fijó TC). */
+  /** TC oficial de referencia del día (respaldo si la cotización no fijó TC). */
   tcOficial?: number | null;
 }
 

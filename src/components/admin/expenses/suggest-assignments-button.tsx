@@ -84,6 +84,11 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
       toast.success(
         `${res.data.aplicados} gasto(s) asignados${res.data.fallidos ? ` · ${res.data.fallidos} fallaron` : ""}.`,
       );
+      // El motivo del API tal cual (el primero; los demás son iguales o se
+      // ven al reintentar uno por uno).
+      if (res.data.fallidos && res.data.errores?.[0]) {
+        toast.error(res.data.errores[0]);
+      }
       setOpen(false);
       router.refresh();
     } else {

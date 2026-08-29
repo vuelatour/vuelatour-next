@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { fmtUsd } from "@/lib/format";
+import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
 interface Linea {
@@ -170,9 +171,12 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
           </div>
           {/* Regla del cliente (28-ago): al balance del AVIÓN solo va lo
               cobrado por las horas de vuelo (+ ajuste) con su IVA; TUAs,
-              extras y pernocta (con su IVA) son ingreso de VuelaTour y van a
-              "Otros movimientos" del balance general. El API manda la
-              partición (fuente única); si no viene, no se inventa. */}
+              extras, pernocta y la comisión del vendedor (con su IVA) son
+              ingreso de VuelaTour y van a "Otros movimientos" del balance
+              general. El API manda la partición (fuente única); si no viene,
+              no se inventa. En vuelos MULTI-AVIÓN la venta del avión se
+              reparte por tramo (el API manda la participación; aquí solo se
+              muestra). */}
           {quote.particion_ingreso && quote.particion_ingreso.total_usd > 0 && (
             <div className="mt-2 rounded-lg border border-border bg-muted/20 px-3 py-2 space-y-1 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -180,11 +184,8 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
                   <span className="font-semibold">Venta del avión</span>
                   <span className="text-muted-foreground text-xs">
                     {" "}
-                    · tiempo de vuelo + ajuste
-                    {quote.particion_ingreso.comision_vendedor_usd > 0
-                      ? " + comisión vendedor"
-                      : ""}{" "}
-                    + IVA {fmtUsd(quote.particion_ingreso.iva_avion_usd)} → balance
+                    · tiempo de vuelo + ajuste + IVA{" "}
+                    {fmtUsd(quote.particion_ingreso.iva_avion_usd)} → balance
                     del avión
                   </span>
                 </span>
@@ -192,12 +193,19 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
                   {fmtUsd(quote.particion_ingreso.avion_usd)}
                 </span>
               </div>
+              {!quote.es_externo && (
+                <ParticipacionAvionesNota
+                  aviones={quote.participacion_aviones}
+                  fuente={quote.participacion_fuente}
+                  className="pl-3"
+                />
+              )}
               <div className="flex items-center justify-between gap-3">
                 <span>
                   <span className="font-semibold">Ingreso VuelaTour</span>
                   <span className="text-muted-foreground text-xs">
                     {" "}
-                    · TUAs/extras/pernocta + IVA{" "}
+                    · TUAs/extras/pernocta/comisión vendedor + IVA{" "}
                     {fmtUsd(quote.particion_ingreso.iva_vuelatour_usd)} → Otros
                     movimientos (balance general)
                   </span>
@@ -216,32 +224,53 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
           )}
           {/* Comisión del vendedor (interna): regla actual = se SUMA al
               precio (la paga el cliente) y viene como línea COMISION_VENDEDOR
-              del desglose; el neto VuelaTour lo manda el motor en meta.
-              Cotizaciones viejas (sin esa línea) se calcularon con la regla
-              anterior (salía del precio): conservan su signo para no
-              contradecir los números guardados. */}
+              del desglose. El neto VuelaTour lo manda el API en
+              particion_ingreso (total − PAGO al vendedor, comisión + su IVA:
+              misma regla que el reporte por vuelo); meta.neto_vuelatour_usd
+              (total − comisión pre-IVA, del motor) es el respaldo para
+              respuestas previas. Desde el 28-ago-2026 la comisión es INGRESO
+              de VuelaTour (como un extra) y su pago al vendedor es egreso de
+              VuelaTour — nunca costo del avión. Cotizaciones viejas (sin esa
+              línea) se calcularon con la regla anterior (salía del precio):
+              conservan su signo para no contradecir los números guardados. */}
           {(() => {
             const meta = quote.calculo_snapshot?.meta;
             const comision = Number(meta?.comision_vendedor_usd ?? 0);
             if (!(comision > 0)) return null;
             const sumada = lineas.some((l) => l.clave === "COMISION_VENDEDOR");
+            const particion = quote.particion_ingreso;
+            // Cuando el pago lleva IVA, la línea visible es el PAGO completo
+            // (comisión + IVA) para que total − pago = neto cuadre a la vista.
+            const pago = Number(particion?.pago_vendedor_usd ?? 0);
+            const pagoConIva = pago > comision + 0.005;
             const neto =
-              meta?.neto_vuelatour_usd ?? (sumada ? null : total - comision);
+              particion?.neto_vuelatour_usd ??
+              meta?.neto_vuelatour_usd ??
+              (sumada ? null : total - comision);
+            const nombre = meta?.comision_vendedor_nombre;
             return (
               <>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>
-                    Comisión vendedor
-                    {meta?.comision_vendedor_nombre
-                      ? ` (${meta.comision_vendedor_nombre})`
-                      : ""}{" "}
-                    · {sumada ? "la paga el cliente" : "interna"}
-                  </span>
-                  <span className="font-mono">
-                    {sumada ? "+" : "−"}
-                    {fmtUsd(comision)}
-                  </span>
-                </div>
+                {pagoConIva ? (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>
+                      Pago al vendedor (comisión + IVA)
+                      {nombre ? ` · ${nombre}` : ""}
+                    </span>
+                    <span className="font-mono">−{fmtUsd(pago)}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>
+                      Comisión vendedor
+                      {nombre ? ` (${nombre})` : ""}{" "}
+                      · {sumada ? "la paga el cliente" : "interna"}
+                    </span>
+                    <span className="font-mono">
+                      {sumada ? "+" : "−"}
+                      {fmtUsd(comision)}
+                    </span>
+                  </div>
+                )}
                 {neto != null && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-semibold">Neto VuelaTour</span>

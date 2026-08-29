@@ -43,6 +43,37 @@ export type EstadoVuelo =
 
 type Decimal = string;
 
+/**
+ * Participación de cada AVIÓN en la venta del avión de un vuelo MULTI-AVIÓN
+ * (regla 28-ago-2026: ida en un avión y regreso en otro ⇒ la venta, sus
+ * cobros, su pendiente y sus horas cobradas se reparten en PARTES IGUALES
+ * POR TRAMO VENDIDO; los tramos operativos —ferry/posicionamiento— no
+ * reparten). La calcula el API con la fuente única `participacionPorAeronave`
+ * (+ `repartirUsd` para los montos); el panel SOLO la muestra. En vuelos de
+ * un solo avión viene un elemento con factor 1.
+ */
+export interface ParticipacionAvion {
+  aeronave_id: string;
+  matricula: string | null;
+  /** Fracción (0, 1] de la venta del avión; Σ == 1 exacto. */
+  factor: number;
+  /** Tramos VENDIDOS activos que voló este avión. */
+  tramos: number;
+  /** Reservado: el reparto es por tramo, no por horas → llega null o falta. */
+  horas?: number | null;
+  /**
+   * Parte de la venta del avión (USD) que le toca, repartida por el API en
+   * centavos por residuo mayor (Σ == venta del avión exacta). ADITIVO: el
+   * API previo no lo manda → el panel muestra solo porcentajes. Nunca
+   * calcular monto × factor en el panel (descuadra centavos vs el Excel).
+   */
+  venta_avion_usd?: number;
+}
+
+/** De dónde salieron los pesos: `unico` (un solo avión) o `tramos` (partes
+ *  iguales por tramo vendido). El API no emite otra fuente. */
+export type ParticipacionFuente = "unico" | "tramos";
+
 export interface PersistedQuote {
   id: string;
   folio: number;
@@ -131,10 +162,13 @@ export interface PersistedQuote {
   calculo_snapshot: QuoteBreakdown | null;
   /**
    * Partición del ingreso (regla 28-ago, la manda el API con la fuente
-   * única particionIngresoVuelo): venta del AVIÓN (tiempo + ajuste +
-   * comisión + IVA proporcional) vs ingreso de VUELATOUR (TUAs/extras/
-   * pernocta + su IVA → "Otros movimientos" del balance general).
-   * Opcional: respuestas previas al deploy no la traen.
+   * única particionIngresoVuelo): venta del AVIÓN (tiempo + ajuste + su
+   * IVA → balance del avión) vs ingreso de VUELATOUR (TUAs/extras/pernocta/
+   * comisión del vendedor + su IVA → "Otros movimientos" del balance
+   * general). `comision_vendedor_usd` informa el monto pre-IVA de la
+   * comisión, que desde el 28-ago-2026 (tarde) vive DENTRO de vuelatour_usd
+   * (es ingreso de VuelaTour, como un extra; su pago al vendedor es egreso
+   * de VuelaTour, no del avión). Opcional: respuestas previas no la traen.
    */
   particion_ingreso?: {
     total_usd: number;
@@ -148,9 +182,28 @@ export interface PersistedQuote {
     tuas_usd: number;
     extras_usd: number;
     pernocta_usd: number;
+    /**
+     * PAGO al vendedor = comisión + su IVA cuando grava (fuente única del
+     * API, `pagoVendedorUsd`). ADITIVO: respuestas previas no lo traen →
+     * la card muestra la comisión pre-IVA como siempre.
+     */
+    pago_vendedor_usd?: number | null;
+    /**
+     * Total − pago al vendedor (comisión + IVA): lo que queda a VuelaTour.
+     * Misma regla que el reporte por vuelo. ADITIVO: sin él se usa
+     * `meta.neto_vuelatour_usd` (total − comisión pre-IVA, del motor).
+     */
+    neto_vuelatour_usd?: number | null;
     fuente: "desglose" | "columnas" | "sin_precio";
     inconsistente: boolean;
   } | null;
+  /**
+   * Vuelo MULTI-AVIÓN (regla 28-ago-2026): cómo se reparte la venta del
+   * avión entre los aviones de sus tramos. Aditivo: el API previo no lo
+   * manda; con un solo avión trae un elemento con factor 1 (o falta).
+   */
+  participacion_aviones?: ParticipacionAvion[];
+  participacion_fuente?: ParticipacionFuente;
 
   /** Solo presente cuando se consulta por id (GET /v1/quotes/:id). */
   escalas?: PersistedEscala[];

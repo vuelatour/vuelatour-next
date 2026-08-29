@@ -12,10 +12,14 @@ export interface DetalleVuelo {
   fecha: string | null;
   ruta: string;
   es_externo: boolean;
-  /** Cifras BRUTAS del cliente (precio completo con TUAs/extras/pernocta/IVA). */
+  /** Cifras BRUTAS del cliente (precio completo con TUAs/extras/pernocta/
+      comisión del vendedor/IVA). */
   total_usd: number;
   cobrado_usd: number;
   pendiente_usd: number;
+  /** Comisión del vendedor (pre-IVA), INFORMATIVA: desde el 28-ago-2026 es
+      ingreso/egreso de VuelaTour (va en "otros ingresos"), ya no se descuenta
+      al avión. */
   comision_vendedor_usd: number;
   cobrado: boolean;
   cobros_sin_tc_mxn: number;
@@ -44,6 +48,17 @@ export interface DetalleVuelo {
       (anticipo / cargo por cancelación, no se reembolsan) y los gastos
       cuentan igual. Aditivo: el API previo no lo manda. */
   cancelado?: boolean;
+  /** Vuelo MULTI-AVIÓN (28-ago-2026): fracción (0, 1] de la venta del avión
+      que le toca a ESTE avión por sus tramos; las cifras `*_avion_usd` de la
+      fila ya vienen repartidas por el API. Aditivo (falta ⇒ 1). */
+  participacion?: number;
+  /** true cuando el vuelo lo volaron varios aviones de la flota. */
+  multi_avion?: boolean;
+  /** Etiqueta de los tramos de este avión (p. ej. "1 de 2 tramos"). */
+  tramos_avion?: string;
+  /** De dónde salió el peso: 'unico' | 'tramos' (partes iguales por tramo
+      vendido; el API no emite otra fuente). */
+  participacion_fuente?: string;
 }
 
 export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | 'FIJO';
@@ -78,11 +93,15 @@ export interface AvionReparto {
         previo al deploy no lo manda. */
     cobrado_bruto_usd?: number;
     /** Otros ingresos VuelaTour cobrados en vuelos de este avión
-        (TUAs/extras/pernocta/IVA): informativos, NO se reparten. */
+        (TUAs/extras/pernocta/comisión del vendedor/IVA): informativos, NO se
+        reparten. */
     otros_ingresos_vuelatour_usd?: number;
     /** Ídem, pendientes de cobro. */
     otros_ingresos_vuelatour_pendiente_usd?: number;
-    /** Comisión de vendedores: se descuenta del ingreso a repartir. */
+    /** Comisiones de venta descontadas al avión. Desde el 28-ago-2026 es
+        SIEMPRE 0: la comisión del vendedor es ingreso/egreso de VuelaTour
+        (otros ingresos), no un costo del avión. Se conserva por
+        compatibilidad de shape (PDF/XLSX/API previo). */
     comisiones_venta_usd: number;
     /** Pendiente de la VENTA DEL AVIÓN (parte que cuadra con la cascada). */
     pendiente_cobro_usd: number;
@@ -123,11 +142,16 @@ export interface ExternosResumen {
   utilidad_usd: number;
   sin_costo_count: number;
   cobros_sin_tc_mxn: number;
+  /** Comisión del vendedor cotizada en los vuelos externos del periodo
+      (pre-IVA): ingreso de VuelaTour, informativo. Aditivo: el API previo
+      no lo manda. */
+  comisiones_vendedor_usd?: number;
 }
 
-/** Otros ingresos de VuelaTour en el periodo (TUAs, extras, pernocta e IVA
- *  cobrados junto con la venta): bloque informativo global — NO entran al
- *  reparto de socios. Opcional por tolerancia a APIs previas al deploy. */
+/** Otros ingresos de VuelaTour en el periodo (TUAs, extras, pernocta,
+ *  comisión del vendedor e IVA cobrados junto con la venta): bloque
+ *  informativo global — NO entran al reparto de socios. Opcional por
+ *  tolerancia a APIs previas al deploy. */
 export interface OtrosIngresosVuelatour {
   vuelos: number;
   cobrado_usd: number;
@@ -137,6 +161,10 @@ export interface OtrosIngresosVuelatour {
     extras_usd: number;
     pernocta_usd: number;
     iva_usd: number;
+    /** Comisión del vendedor (pre-IVA), ingreso de VuelaTour desde el
+        28-ago-2026; su pago al vendedor es egreso de VuelaTour (otros
+        movimientos). Aditivo: el API previo no lo manda. */
+    comision_usd?: number;
   };
 }
 

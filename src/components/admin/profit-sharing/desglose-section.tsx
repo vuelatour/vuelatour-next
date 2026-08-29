@@ -19,6 +19,10 @@ import {
 } from "@/components/ui/table";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import {
+  fmtParticipacionPct,
+  fuenteParticipacionLabel,
+} from "@/components/admin/flights/participacion-aviones-nota";
 import type {
   AvionRepartoDetalle,
   DetalleGastoGrupo,
@@ -101,8 +105,9 @@ function estadoCobro(v: DetalleVuelo): { label: string; className: string } {
 
 /**
  * Cifras del vuelo que CUADRAN con la card (venta del avión, sin TUAs/extras/
- * pernocta/IVA). Tolerante al API previo al 28-ago, que solo manda las cifras
- * brutas del cliente: en ese caso se usan tal cual.
+ * pernocta/comisión/IVA). Tolerante al API previo al 28-ago, que solo manda
+ * las cifras brutas del cliente: en ese caso se usan tal cual. En vuelos
+ * MULTI-AVIÓN el API ya manda la PARTE de este avión (repartida por tramo).
  */
 function cifrasAvion(v: DetalleVuelo) {
   return {
@@ -110,6 +115,25 @@ function cifrasAvion(v: DetalleVuelo) {
     cobrado: v.cobrado_avion_usd ?? v.cobrado_usd,
     pendiente: v.pendiente_avion_usd ?? v.pendiente_usd,
   };
+}
+
+/** Chip "multi-avión · 50 %" (o "1 de 2 tramos · 50 %") solo en vuelos que
+ *  volaron varios aviones: las cifras de la fila son la PARTE de este avión. */
+function MultiAvionChip({ v }: { v: DetalleVuelo }) {
+  if (!v.multi_avion) return null;
+  const pct =
+    v.participacion != null ? fmtParticipacionPct(v.participacion) : null;
+  const fuente = fuenteParticipacionLabel(v.participacion_fuente);
+  return (
+    <Badge
+      variant="outline"
+      className="mt-0.5 h-4 px-1.5 text-[10px] text-muted-foreground"
+      title={`Vuelo con varios aviones: la venta del avión, sus cobros y su pendiente se reparten por tramo${fuente ? ` (${fuente})` : ""}. Esta fila es la parte de este avión; los gastos van al avión de su tramo.`}
+    >
+      {v.tramos_avion?.trim() || "multi-avión"}
+      {pct ? ` · ${pct}` : ""}
+    </Badge>
+  );
 }
 
 /** Fecha del vuelo: soporta date-only (sin corrimiento) o timestamptz (Cancún). */
@@ -204,7 +228,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         {hayOtros && (
                           <TableHead
                             className="text-right text-muted-foreground"
-                            title="Cobrado en el vuelo (TUAs/extras/pernocta + IVA): ingresos de VuelaTour, no se reparten."
+                            title="Cobrado en el vuelo (TUAs/extras/pernocta/comisión del vendedor + IVA): ingresos de VuelaTour, no se reparten."
                           >
                             Otros VuelaTour
                             <span className="block text-[10px] font-normal">
@@ -247,6 +271,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                   Externo
                                 </Badge>
                               )}
+                              <MultiAvionChip v={v} />
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
                               <span className="inline-flex items-center justify-end gap-1">
@@ -294,7 +319,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                 title={
                                   v.cancelado
                                     ? v.cobrado || v.cobrado_usd > 0 || v.cobros_sin_tc_mxn > 0
-                                      ? "Vuelo cancelado: lo cobrado no se reembolsa y entra íntegro al balance del avión."
+                                      ? "Vuelo cancelado: lo cobrado no se reembolsa y entra al balance del avión (su parte, si el vuelo fue multi-avión)."
                                       : "Vuelo cancelado sin cobros: no aporta ingreso al reparto."
                                     : undefined
                                 }

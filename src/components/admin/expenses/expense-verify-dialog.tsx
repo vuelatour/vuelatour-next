@@ -452,7 +452,14 @@ export function ExpenseVerifyDialog({
           vueloSel !== (gasto.vuelo_id ?? "")
         ) {
           const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
-          if (!link.ok) toast.error("Gasto guardado, pero no se pudo ligar el vuelo.");
+          // El API explica el rechazo (p. ej. 400: la escala pertenece a
+          // otro vuelo): se muestra tal cual, no un genérico.
+          if (!link.ok)
+            toast.error(
+              link.error
+                ? `Gasto guardado, pero no se pudo ligar el vuelo: ${link.error}`
+                : "Gasto guardado, pero no se pudo ligar el vuelo.",
+            );
         }
         toast.success("Gasto verificado");
         onOpenChange(false);
