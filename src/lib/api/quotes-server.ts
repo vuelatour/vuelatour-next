@@ -22,6 +22,26 @@ export function listQuotes(query: ListQuotesQuery = {}) {
   });
 }
 
+/**
+ * TODAS las cotizaciones del filtro, SIN cap: pagina con offset hasta cubrir
+ * `count` (patrón anti-cap-200, igual que `listFuelLoads`). Con el corte en
+ * 200, una cotización recién creada podía "desaparecer" de la lista
+ * (auditoría 29-ago: 'ya lo había guardado y no está').
+ */
+export async function listQuotesAll(
+  query: Omit<ListQuotesQuery, "limit" | "offset"> = {},
+) {
+  const limit = 200;
+  const first = await listQuotes({ ...query, limit, offset: 0 });
+  const data = [...first.data];
+  while (data.length < first.count) {
+    const page = await listQuotes({ ...query, limit, offset: data.length });
+    if (page.data.length === 0) break; // defensa anti-bucle si count cambió
+    data.push(...page.data);
+  }
+  return { data, count: first.count };
+}
+
 export function getQuote(id: string) {
   return apiServer<PersistedQuote>(`/v1/quotes/${id}`, { cache: "no-store" });
 }

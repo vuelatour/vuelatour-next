@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
 import {
   cancelEscalaAction,
   deleteEscalaAction,
@@ -48,7 +49,11 @@ import { EscalaAssignSheet } from "./escala-assign-sheet";
 import { EscalaFormSheet } from "./escala-form-sheet";
 import { OperationalLegSheet } from "./operational-leg-sheet";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
-import type { FlightEscala } from "@/types/flights";
+import {
+  apoyosEfectivosDeTramo,
+  type FlightEscala,
+  type TripulanteRef,
+} from "@/types/flights";
 
 interface AircraftOption {
   id: string;
@@ -83,6 +88,13 @@ interface FlightTramosCardProps {
       opera así) — se muestra como herencia, nunca como "falta". */
   vueloPilotoId?: string | null;
   vueloPilotoNombre?: string | null;
+  /** Copiloto a nivel vuelo: un tramo sin copiloto propio lo HEREDA. */
+  vueloCopilotoId?: string | null;
+  vueloCopilotoNombre?: string | null;
+  /** Apoyos de NIVEL VUELO (van en todos los tramos, "(del vuelo)"). */
+  apoyosVuelo?: TripulanteRef[];
+  /** Candidatos a apoyo por tramo (todos los usuarios activos). */
+  apoyoCandidatos?: PilotOption[];
 }
 
 /** Etiqueta del tramo por POSICIÓN visible (1..N): el orden interno puede
@@ -105,6 +117,10 @@ export function FlightTramosCard({
   vueloAeronaveId,
   vueloPilotoId,
   vueloPilotoNombre,
+  vueloCopilotoId,
+  vueloCopilotoNombre,
+  apoyosVuelo = [],
+  apoyoCandidatos,
 }: FlightTramosCardProps) {
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
@@ -223,6 +239,18 @@ export function FlightTramosCard({
           const pilotoHeredado = !escala.piloto_id && !!vueloPilotoId;
           const sinPiloto = !escala.piloto_id && !vueloPilotoId;
           const sinAsignar = sinAvion || sinPiloto;
+          // Copiloto por tramo (29-ago): propio o heredado del vuelo. El API
+          // nuevo resuelve copiloto_nombre (efectivo); con el previo se cae
+          // al catálogo de pilotos / al nombre del vuelo.
+          const copilotoPropio = !!escala.copiloto_id;
+          const copilotoEfectivoId =
+            escala.copiloto_id ?? escala.copiloto_efectivo_id ?? vueloCopilotoId ?? null;
+          const copilotoNombre =
+            escala.copiloto_nombre ??
+            (copilotoPropio
+              ? pilots.find((p) => p.id === escala.copiloto_id)?.nombre ?? null
+              : vueloCopilotoNombre ?? null);
+          const apoyos = apoyosEfectivosDeTramo(escala, apoyosVuelo);
           // Evidencia de que el tramo voló = LLEGADA real (≠ DEDUCIDO) o
           // fotos. La salida nunca cuenta: la llena el sistema (propagación
           // hereda el origen PILOTO del tramo anterior — caso #74).
@@ -492,6 +520,46 @@ export function FlightTramosCard({
                     <span className="text-muted-foreground">Sin fecha</span>
                   )}
                 </Field>
+                <Field label="Copiloto">
+                  {copilotoPropio ? (
+                    <span>{copilotoNombre ?? "Copiloto asignado"}</span>
+                  ) : copilotoEfectivoId ? (
+                    <span
+                      className="text-muted-foreground"
+                      title="El tramo no tiene copiloto propio: hereda el copiloto del vuelo."
+                    >
+                      {copilotoNombre ?? "Copiloto"} (del vuelo)
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Sin copiloto</span>
+                  )}
+                </Field>
+                <Field label="Apoyo en tierra" className="sm:col-span-2">
+                  {apoyos.length > 0 ? (
+                    <span className="flex flex-wrap gap-1">
+                      {apoyos.map((a) => (
+                        <Badge
+                          key={`${a.origen}-${a.id}`}
+                          variant="outline"
+                          className={cn(
+                            "text-[10px]",
+                            a.origen === "vuelo" && "text-muted-foreground",
+                          )}
+                          title={
+                            a.origen === "vuelo"
+                              ? "Apoyo de todo el vuelo (va en todos los tramos)."
+                              : "Apoyo solo de este tramo."
+                          }
+                        >
+                          {a.nombre || "Apoyo"}
+                          {a.origen === "vuelo" ? " (del vuelo)" : ""}
+                        </Badge>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Sin apoyo</span>
+                  )}
+                </Field>
               </div>
             </div>
           );
@@ -528,6 +596,10 @@ export function FlightTramosCard({
           pilots={pilots}
           vueloAeronaveId={vueloAeronaveId}
           vueloPilotoId={vueloPilotoId}
+          vueloCopilotoId={vueloCopilotoId}
+          vueloCopilotoNombre={vueloCopilotoNombre}
+          apoyosVuelo={apoyosVuelo}
+          apoyoCandidatos={apoyoCandidatos}
         />
       )}
 
@@ -761,12 +833,14 @@ export function FlightTramosCard({
 function Field({
   label,
   children,
+  className,
 }: {
   label: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className={cn("flex flex-col", className)}>
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </span>

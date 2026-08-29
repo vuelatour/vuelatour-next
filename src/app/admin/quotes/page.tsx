@@ -3,7 +3,7 @@ import { CalculatorIcon, ExclamationTriangleIcon } from "@heroicons/react/24/out
 import { Card, CardContent } from "@/components/ui/card";
 import { QuotesFilterBar } from "@/components/admin/quotes/quotes-filter-bar";
 import { QuotesTable, type QuoteListRow } from "@/components/admin/quotes/quotes-table";
-import { listQuotes } from "@/lib/api/quotes-server";
+import { listQuotesAll } from "@/lib/api/quotes-server";
 import { getCobroStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -28,11 +28,12 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
 
   const [quotesRes, clientsRes, aircraftRes, pilotsRes, airportsRes] =
     await Promise.all([
-      listQuotes({
+      // SIN cap (anti-cap-200): con el corte, una cotización recién creada
+      // podía quedar fuera y parecer "no guardada" (auditoría 29-ago).
+      listQuotesAll({
         estado: sp.estado || undefined,
         cliente_id: sp.cliente_id || undefined,
         q: sp.q || undefined,
-        limit: 200,
       }),
       listClients({ limit: 200, activo: true }),
       listAircraft({ limit: 100, activa: true }),
@@ -69,6 +70,8 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       : [q.origen_iata, q.destino_iata]
     ).join(" → "),
     fechaVuelo: q.fecha_vuelo,
+    // Cuándo se capturó: ordena las filas sin fecha de vuelo (nuevas arriba).
+    fechaSolicitud: q.fecha_solicitud ?? q.created_at ?? null,
     montoTotalUsd: q.monto_total_usd,
     version: q.cotizacion_version,
     estado: q.estado,
@@ -82,14 +85,23 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       cobroStatus === null ? null : (cobroStatus[q.id]?.total_cobrado ?? 0),
     sinTcCount: cobroStatus?.[q.id]?.sin_tc_count ?? 0,
   }));
-  // Orden por fecha de vuelo (recientes primero); sin fecha al final. El folio
-  // ya no se muestra, así que la fecha es el orden natural para operación.
+  // Orden por fecha de vuelo (recientes primero); SIN fecha PRIMERO
+  // (auditoría 29-ago: al fondo, una cotización recién creada sin fecha
+  // parecía "no guardada"). Entre las sin fecha, la solicitud más nueva
+  // arriba.
   rows.sort((a, b) => {
-    if (!a.fechaVuelo) return b.fechaVuelo ? 1 : 0;
-    if (!b.fechaVuelo) return -1;
+    if (!a.fechaVuelo || !b.fechaVuelo) {
+      if (!a.fechaVuelo && !b.fechaVuelo)
+        return (b.fechaSolicitud ?? "").localeCompare(a.fechaSolicitud ?? "");
+      return a.fechaVuelo ? 1 : -1;
+    }
     return b.fechaVuelo.localeCompare(a.fechaVuelo);
   });
   const sinAsignar = rows.filter((r) => r.sinAsignar).length;
+  const sinFecha = rows.filter((r) => !r.fechaVuelo).length;
+  // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
+  // de dejar que una cotización "desaparezca" en silencio.
+  const huboCorte = quotes.length < count;
 
   return (
     <div className="space-y-6">
@@ -130,6 +142,30 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         </div>
       </div>
 
+      {huboCorte && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>
+            Mostrando {quotes.length} de {count} cotizaciones — usa los
+            filtros para acotar la lista.
+          </span>
+        </div>
+      )}
+
+      {sinFecha > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>
+            {sinFecha === 1
+              ? "Hay 1 cotización sin fecha de vuelo"
+              : `Hay ${sinFecha} cotizaciones sin fecha de vuelo`}
+            : aparecen al inicio de la tabla con la etiqueta{" "}
+            <span className="font-medium">Sin fecha</span>. Ábrelas y ponles
+            fecha para que entren a la agenda.
+          </span>
+        </div>
+      )}
+
       {sinAsignar > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-sm text-violet-700 dark:text-violet-300">
           <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
@@ -164,7 +200,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <QuotesTable quotes={rows} />
+            <QuotesTable quotes={rows} huboCorte={huboCorte} />
           </CardContent>
         </Card>
       )}

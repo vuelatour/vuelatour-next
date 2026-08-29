@@ -11,6 +11,16 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -42,6 +52,12 @@ import {
   esVueloCancelado,
   vueloCercanoLabel,
 } from "@/components/admin/expenses/vuelo-cancelado-hint";
+import {
+  fechaGastoAntigua,
+  fechaGastoDistancia,
+  fechaGastoLegible,
+  fechaGastoSospechosa,
+} from "@/lib/admin/fecha-gasto";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -160,6 +176,12 @@ export function ExpenseCreateDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Candado de fechas (auditoría 29-ago: gastos con año 2025 fuera de todos
+  // los cortes): valores del form esperando la confirmación explícita de
+  // una fecha sospechosa (> 60 días atrás o > 2 días a futuro).
+  const [confirmarFecha, setConfirmarFecha] = useState<GastoCreateValues | null>(
+    null,
+  );
   // Backfill de oficina: guardar el gasto COMO SI lo subiera el piloto del
   // vuelo (mismo switch que la app). Solo con un vuelo LIGADO.
   const [comoPiloto, setComoPiloto] = useState(false);
@@ -361,7 +383,8 @@ export function ExpenseCreateDialog({
     if (file) void leerConIA(file);
   };
 
-  const onSubmit = handleSubmit((values) => {
+  /** Guardado real (fecha ya validada o confirmada por el usuario). */
+  const guardarGasto = (values: GastoCreateValues) => {
     startTransition(async () => {
       // monto guardado = TOTAL PAGADO (ticket + propina): es lo que llega al
       // banco y lo que usan reparto/reportes/conciliación. La propina queda
@@ -415,6 +438,12 @@ export function ExpenseCreateDialog({
         foto_url: fotoPath,
         valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
         capturar_como_piloto: aplicarComoPiloto,
+        // > 365 días atrás: SOLO se llega aquí tras la confirmación
+        // explícita del diálogo — el API exige este candado para fechas de
+        // otro año (auditoría 29-ago). No se manda en el caso normal.
+        ...(fechaGastoAntigua(values.fecha_gasto)
+          ? { permitir_fecha_antigua: true }
+          : {}),
       });
       if (result.ok) {
         toast.success(
@@ -437,7 +466,26 @@ export function ExpenseCreateDialog({
         toast.error(result.error ?? "Error desconocido");
       }
     });
+  };
+
+  const onSubmit = handleSubmit((values) => {
+    // Fecha sospechosa (> 60 días atrás o > 2 días a futuro): casi siempre
+    // es el año equivocado del ticket — confirmación explícita antes de
+    // guardar; si es real, se guarda igual.
+    if (fechaGastoSospechosa(values.fecha_gasto)) {
+      setConfirmarFecha({ ...values });
+      return;
+    }
+    guardarGasto(values);
   });
+
+  // La IA llenó la fecha con OTRO año (caso real: tickets leídos "2025"):
+  // campo en ámbar hasta que la oficina lo corrija — con el año equivocado
+  // el gasto queda fuera de TODOS los cortes mensuales.
+  const fechaIaOtroAnio =
+    !!aiRaw?.fecha &&
+    aiRaw.fecha === fechaGasto &&
+    fechaGasto.slice(0, 4) !== hoyCancun().slice(0, 4);
 
   return (
     <>
@@ -668,7 +716,22 @@ export function ExpenseCreateDialog({
                 />
               </Field>
               <Field label="Fecha del gasto">
-                <Input type="date" {...register("fecha_gasto")} />
+                <Input
+                  type="date"
+                  className={
+                    fechaIaOtroAnio
+                      ? "border-amber-500 focus-visible:ring-amber-500/40"
+                      : undefined
+                  }
+                  {...register("fecha_gasto")}
+                />
+                {fechaIaOtroAnio && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    La IA leyó el año {fechaGasto.slice(0, 4)} en el ticket —
+                    con el año equivocado el gasto queda fuera de todos los
+                    cortes. Corrígela si no es real.
+                  </p>
+                )}
               </Field>
             </div>
 
@@ -962,6 +1025,48 @@ export function ExpenseCreateDialog({
               </Button>
             </DialogFooter>
           </form>
+
+          {/* Confirmación de fecha sospechosa (auditoría 29-ago): > 60 días
+              atrás o > 2 días a futuro suele ser el año equivocado del
+              ticket — se confirma en explícito antes de guardar. */}
+          <AlertDialog
+            open={confirmarFecha !== null}
+            onOpenChange={(o) => {
+              if (!o) setConfirmarFecha(null);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirma la fecha del gasto</AlertDialogTitle>
+                <AlertDialogDescription>
+                  La fecha es del{" "}
+                  <span className="font-medium">
+                    {confirmarFecha
+                      ? fechaGastoLegible(confirmarFecha.fecha_gasto)
+                      : ""}
+                  </span>{" "}
+                  ({confirmarFecha
+                    ? fechaGastoDistancia(confirmarFecha.fecha_gasto)
+                    : ""}
+                  ), ¿es correcta? Con la fecha equivocada — típico un ticket
+                  leído con otro año — el gasto queda fuera de todos los
+                  cortes mensuales.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Revisar la fecha</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    const values = confirmarFecha;
+                    setConfirmarFecha(null);
+                    if (values) guardarGasto(values);
+                  }}
+                >
+                  Sí, la fecha es correcta
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </DialogContent>
       </Dialog>
     </>

@@ -1,12 +1,15 @@
 import Link from "next/link";
-import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
+import {
+  ExclamationTriangleIcon,
+  PaperAirplaneIcon,
+} from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { FlightsFilterBar } from "@/components/admin/flights/flights-filter-bar";
 import {
   FlightsTable,
   type FlightRow,
 } from "@/components/admin/flights/flights-table";
-import { listFlights, getCobroStatus, getTacoStatus } from "@/lib/api/flights-server";
+import { listFlightsAll, getCobroStatus, getTacoStatus } from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -36,14 +39,15 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
 
   const [flightsRes, clientsRes, aircraftRes, pilotsRes] =
     await Promise.all([
-      listFlights({
+      // SIN cap (anti-cap-200): prod ya rebasó los 200 vuelos y el corte
+      // silencioso hacía parecer "no guardado" un vuelo que sí existía.
+      listFlightsAll({
         estado: estadoFilter,
         piloto_id: sp.piloto_id || undefined,
         aeronave_id: sp.aeronave_id || undefined,
         cobro: sp.cobro || undefined,
         desde: sp.desde || undefined,
         hasta: sp.hasta || undefined,
-        limit: 200,
       }),
       // Best-effort: /v1/clients está restringido por rol (PII fiscal); un
       // rol operativo sin acceso ve la lista de vuelos sin nombre de cliente.
@@ -110,6 +114,9 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       ? (pilotsById.get(v.piloto_id)?.nombre ?? null)
       : null,
     fecha_vuelo: v.fecha_vuelo,
+    // Cuándo se capturó (para ordenar las filas sin fecha de vuelo). El
+    // listado del API puede no mandar fecha_solicitud: created_at ≈ lo mismo.
+    fecha_solicitud: v.fecha_solicitud ?? v.created_at ?? null,
     monto_total_usd: v.monto_total_usd,
     estado: v.estado,
     falta_taco: faltaTaco(v.id),
@@ -121,13 +128,21 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       cobroStatus === null ? null : (cobroStatus[v.id]?.total_cobrado ?? 0),
     sin_tc_count: cobroStatus?.[v.id]?.sin_tc_count ?? 0,
   }));
-  // Orden por fecha de vuelo (recientes primero); sin fecha al final. El folio
-  // ya no se muestra, así que la fecha es el orden natural para operación.
+  // Orden por fecha de vuelo (recientes primero); SIN fecha PRIMERO
+  // (auditoría 29-ago: al fondo, una fila recién creada sin fecha parecía
+  // "no guardada"). Entre las sin fecha, la solicitud más nueva arriba.
   rows.sort((a, b) => {
-    if (!a.fecha_vuelo) return b.fecha_vuelo ? 1 : 0;
-    if (!b.fecha_vuelo) return -1;
+    if (!a.fecha_vuelo || !b.fecha_vuelo) {
+      if (!a.fecha_vuelo && !b.fecha_vuelo)
+        return (b.fecha_solicitud ?? "").localeCompare(a.fecha_solicitud ?? "");
+      return a.fecha_vuelo ? 1 : -1;
+    }
     return b.fecha_vuelo.localeCompare(a.fecha_vuelo);
   });
+  const sinFecha = rows.filter((r) => !r.fecha_vuelo).length;
+  // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
+  // de dejar que un vuelo "desaparezca" en silencio.
+  const huboCorte = flightsRes.data.length < flightsRes.count;
 
   return (
     <div className="space-y-6">
@@ -158,6 +173,30 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
             cubrir con externo se decide después, desde el detalle del vuelo. */}
       </div>
 
+      {huboCorte && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>
+            Mostrando {rows.length} de {flightsRes.count} vuelos — usa los
+            filtros para acotar la lista.
+          </span>
+        </div>
+      )}
+
+      {sinFecha > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>
+            {sinFecha === 1
+              ? "Hay 1 vuelo sin fecha de vuelo"
+              : `Hay ${sinFecha} vuelos sin fecha de vuelo`}
+            : aparecen al inicio de la tabla con la etiqueta{" "}
+            <span className="font-medium">Sin fecha</span>. Ponles fecha desde
+            su detalle para que entren a la agenda.
+          </span>
+        </div>
+      )}
+
       <FlightsFilterBar
         aircraft={aircraftRes.data.map((a) => ({
           id: a.id,
@@ -186,7 +225,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <FlightsTable rows={rows} />
+            <FlightsTable rows={rows} huboCorte={huboCorte} />
           </CardContent>
         </Card>
       )}

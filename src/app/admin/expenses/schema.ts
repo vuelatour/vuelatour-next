@@ -111,6 +111,9 @@ export const GastoVerifySchema = z.object({
    *  verificación — los reportes derivan de este jsonb el desglose
    *  Operación/TUA/FBO, así que solo se persiste cuando el humano guarda. */
   valor_ia_extraido: z.record(z.string(), z.unknown()).optional(),
+  /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
+   *  fecha corregida en el diálogo. Solo se manda cuando es true. */
+  permitir_fecha_antigua: z.boolean().optional(),
 });
 
 /** Alta manual de gasto desde el panel (gastos operativos que sube la oficina). */
@@ -159,6 +162,11 @@ export const GastoCreateSchema = z.object({
   /** Backfill de oficina: registrar el gasto COMO SI lo subiera el piloto del
    *  vuelo (usuario_captura + origen = PILOTO). Requiere vuelo_id con piloto. */
   capturar_como_piloto: z.boolean().optional(),
+  /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
+   *  fecha en el diálogo — sin esto el API rechaza fechas de otro año
+   *  (auditoría 29-ago: gastos con año 2025 fuera de todos los cortes).
+   *  Solo se manda cuando es true. */
+  permitir_fecha_antigua: z.boolean().optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

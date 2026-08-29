@@ -22,6 +22,9 @@ export interface FlightRow {
   matricula: string | null;
   piloto_nombre: string | null;
   fecha_vuelo: string | null;
+  /** Cuándo se capturó (fecha_solicitud ?? created_at): ordena las filas SIN
+      fecha de vuelo — las recién creadas van PRIMERO, no perdidas al fondo. */
+  fecha_solicitud: string | null;
   monto_total_usd: string;
   estado: EstadoVuelo;
   falta_taco: boolean;
@@ -90,11 +93,18 @@ const columns: Array<DataTableColumn<FlightRow>> = [
     key: "fecha",
     header: "Fecha vuelo",
     cellClassName: "text-xs",
+    // Sin fecha = badge ámbar visible (no un guion que se confunde con
+    // "perdido"): estas filas van al INICIO de la tabla.
     cell: (v) =>
       v.fecha_vuelo ? (
         fmtDate(v.fecha_vuelo)
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <Badge
+          variant="outline"
+          className="border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400"
+        >
+          Sin fecha
+        </Badge>
       ),
   },
   {
@@ -147,11 +157,19 @@ const columns: Array<DataTableColumn<FlightRow>> = [
   },
 ];
 
-export function FlightsTable({ rows }: { rows: FlightRow[] }) {
+export function FlightsTable({
+  rows,
+  huboCorte = false,
+}: {
+  rows: FlightRow[];
+  /** true = la página no logró cargar TODAS las filas (corte defensivo). */
+  huboCorte?: boolean;
+}) {
   return (
     <DataTable
       columns={columns}
       rows={rows}
+      huboCorte={huboCorte}
       rowKey={(v) => v.id}
       // COTIZADO ya abre su DETALLE DE VUELO (petición del cliente, jul
       // 2026): la operación se prepara desde ahí y el banner del detalle

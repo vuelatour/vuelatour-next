@@ -23,7 +23,8 @@ import {
   getPilotosDisponibilidadAction,
   type PilotoDisponibilidad,
 } from "@/app/admin/flights/actions";
-import type { FlightEscala } from "@/types/flights";
+import type { FlightEscala, TripulanteRef } from "@/types/flights";
+import { ApoyosField, mismoConjunto } from "./apoyos-field";
 
 interface AircraftOption {
   id: string;
@@ -41,6 +42,10 @@ interface PilotOption {
 interface EscalaAssignFormValues {
   aeronave_id: string;
   piloto_id: string;
+  /** "" = hereda el copiloto del vuelo (29-ago-2026). */
+  copiloto_id: string;
+  /** Apoyos SOLO de este tramo, 0..N. */
+  apoyo_ids: string[];
   fecha_salida_plan: string;
 }
 
@@ -59,6 +64,14 @@ interface EscalaAssignSheetProps {
   /** Piloto a nivel vuelo: el tramo sin piloto propio lo hereda (API), así
       que el select se prellena con él en vez de arrancar vacío. */
   vueloPilotoId?: string | null;
+  /** Copiloto a nivel vuelo: el tramo sin copiloto propio lo hereda. */
+  vueloCopilotoId?: string | null;
+  vueloCopilotoNombre?: string | null;
+  /** Apoyos de NIVEL VUELO: van en todos los tramos; aquí solo se muestran
+      (se editan en «Piloto y tripulación»). */
+  apoyosVuelo?: TripulanteRef[];
+  /** Candidatos a apoyo (todos los usuarios activos); ausente = pilotos. */
+  apoyoCandidatos?: PilotOption[];
 }
 
 function defaults(
@@ -74,6 +87,10 @@ function defaults(
     // Sin piloto propio, el tramo hereda el del vuelo: se prellena con él
     // para que el select refleje quién vuela realmente el tramo.
     piloto_id: escala.piloto_id ?? vueloPilotoId ?? "",
+    // "" = hereda: la opción vacía del select ya muestra al copiloto del
+    // vuelo, así que no se materializa la herencia como copiloto propio.
+    copiloto_id: escala.copiloto_id ?? "",
+    apoyo_ids: (escala.apoyos_tramo ?? []).map((a) => a.id),
     fecha_salida_plan: isoToCancunInput(escala.fecha_salida_plan),
   };
 }
@@ -90,6 +107,10 @@ export function EscalaAssignSheet({
   pilots,
   vueloAeronaveId,
   vueloPilotoId,
+  vueloCopilotoId,
+  vueloCopilotoNombre,
+  apoyosVuelo,
+  apoyoCandidatos,
 }: EscalaAssignSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -119,6 +140,30 @@ export function EscalaAssignSheet({
 
   const aeronaveId = watch("aeronave_id");
   const pilotoId = watch("piloto_id");
+  const copilotoId = watch("copiloto_id");
+  const apoyoIds = watch("apoyo_ids");
+  // Copiloto que realmente va en el tramo: propio ?? del vuelo.
+  const copilotoEfectivoId = copilotoId || vueloCopilotoId || "";
+  const candidatos = apoyoCandidatos ?? pilots;
+  // Apoyos del vuelo: chips fijos (van en todos los tramos) y fuera del
+  // selector — agregarlos también al tramo sería redundante.
+  const apoyosVueloIds = (apoyosVuelo ?? []).map((a) => a.id);
+  const apoyosFijos = (apoyosVuelo ?? []).map((a) => ({
+    id: a.id,
+    nombre: a.nombre || candidatos.find((c) => c.id === a.id)?.nombre || "Usuario",
+    sufijo: " (del vuelo)",
+    title: "Apoyo de todo el vuelo: se quita en «Piloto y tripulación».",
+  }));
+  // Apoyos del tramo ya guardados (confirmar antes de quitar) y nombres de
+  // respaldo por si alguno ya no está en el catálogo.
+  const apoyosTramoGuardados = escala.apoyos_tramo ?? [];
+  const apoyosTramoGuardadosIds = apoyosTramoGuardados.map((a) => a.id);
+  const nombresApoyo = Object.fromEntries(
+    apoyosTramoGuardados.filter((a) => a.nombre).map((a) => [a.id, a.nombre]),
+  );
+  const apoyosEnConflicto = apoyoIds.filter(
+    (id) => id === pilotoId || id === copilotoEfectivoId,
+  );
   const dispoById = new Map(dispo.map((d) => [d.id, d]));
   const selectedPiloto = pilotoId ? dispoById.get(pilotoId) : undefined;
 
@@ -146,9 +191,29 @@ export function EscalaAssignSheet({
     .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
 
   const onSubmit = handleSubmit((values) => {
+    // El API también lo valida; aquí se corta antes con mensaje claro.
+    const copilotoEfectivo = values.copiloto_id || vueloCopilotoId || "";
+    if (copilotoEfectivo && copilotoEfectivo === values.piloto_id) {
+      toast.error(
+        "El copiloto debe ser una persona distinta del piloto del tramo.",
+      );
+      return;
+    }
+    if (
+      values.apoyo_ids.some(
+        (id) => id === values.piloto_id || id === copilotoEfectivo,
+      )
+    ) {
+      toast.error(
+        "Los apoyos deben ser personas distintas del piloto y del copiloto del tramo.",
+      );
+      return;
+    }
     const payload: {
       aeronave_id?: string;
       piloto_id?: string;
+      copiloto_id?: string | null;
+      apoyo_ids?: string[];
       fecha_salida_plan?: string;
     } = {};
     if (!esExterno && values.aeronave_id !== (escala.aeronave_id ?? "")) {
@@ -158,6 +223,15 @@ export function EscalaAssignSheet({
     // cambiar el select NO materializa la herencia como piloto propio.
     if (values.piloto_id !== (escala.piloto_id ?? vueloPilotoId ?? "")) {
       payload.piloto_id = values.piloto_id || undefined;
+    }
+    if (values.copiloto_id !== (escala.copiloto_id ?? "")) {
+      // null explícito = vuelve a heredar el copiloto del vuelo.
+      payload.copiloto_id = values.copiloto_id || null;
+    }
+    if (!mismoConjunto(values.apoyo_ids, apoyosTramoGuardadosIds)) {
+      // Lista completa del tramo (reemplaza): [] quita los del tramo; los
+      // del vuelo no se tocan desde aquí.
+      payload.apoyo_ids = values.apoyo_ids;
     }
     if (values.fecha_salida_plan) {
       payload.fecha_salida_plan = cancunInputToIso(values.fecha_salida_plan);
@@ -203,7 +277,8 @@ export function EscalaAssignSheet({
           </SheetTitle>
           <SheetDescription>
             {escala.origen_iata} → {escala.destino_iata}. La ida y el regreso se
-            asignan por separado (pueden llevar avión y piloto distintos).
+            asignan por separado (pueden llevar avión, piloto, copiloto y
+            apoyos distintos).
           </SheetDescription>
         </SheetHeader>
 
@@ -267,6 +342,63 @@ export function EscalaAssignSheet({
             <p className="text-[11px] text-muted-foreground">
               Sin selección propia, el tramo hereda el piloto del vuelo.
               Asignar aquí solo cambia ESTE tramo (rotación).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Copiloto del tramo</Label>
+            <SearchableSelect
+              options={[
+                {
+                  value: "",
+                  label: vueloCopilotoNombre
+                    ? `Hereda del vuelo (${vueloCopilotoNombre})`
+                    : "Hereda del vuelo (sin copiloto)",
+                },
+                ...pilotOptions.filter((o) => o.value !== pilotoId),
+              ]}
+              value={copilotoId}
+              onChange={(v) => setValue("copiloto_id", v)}
+              placeholder="Hereda del vuelo"
+              emptyText="Sin pilotos activos"
+            />
+            {copilotoEfectivoId && copilotoEfectivoId === pilotoId && (
+              <p className="flex items-start gap-1.5 text-xs text-destructive font-medium">
+                <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
+                El copiloto del vuelo es el piloto de este tramo: elige otro
+                copiloto para el tramo.
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Solo cambia ESTE tramo (rotación). El copiloto ve el tramo en
+              su app y sí captura tacómetros.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Apoyo en tierra del tramo</Label>
+            <ApoyosField
+              value={apoyoIds}
+              onChange={(ids) => setValue("apoyo_ids", ids)}
+              candidatos={candidatos}
+              excluir={[pilotoId, copilotoEfectivoId, ...apoyosVueloIds]}
+              persistidos={apoyosTramoGuardadosIds}
+              nombres={nombresApoyo}
+              fijos={apoyosFijos}
+              conflictos={apoyosEnConflicto}
+              confirmDescripcion="Dejará de ser apoyo de este tramo (si también es apoyo del vuelo, lo sigue viendo). El cambio se aplica al guardar la asignación."
+              emptyText="Sin apoyo en este tramo."
+              disabled={pending}
+            />
+            {apoyosEnConflicto.length > 0 && (
+              <p className="flex items-start gap-1.5 text-xs text-destructive font-medium">
+                <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
+                Los apoyos deben ser personas distintas del piloto y del
+                copiloto del tramo.
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Los apoyos «(del vuelo)» van en todos los tramos y se editan en
+              «Piloto y tripulación»; aquí solo agregas apoyos para ESTE
+              tramo. No capturan tacómetros.
             </p>
           </div>
           <div className="space-y-1.5">

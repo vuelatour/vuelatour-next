@@ -63,6 +63,26 @@ export function listGastos(query: ListGastosQuery = {}) {
 }
 
 /**
+ * TODOS los gastos del filtro, SIN cap: pagina con offset hasta cubrir
+ * `count` (patrón anti-cap-200, igual que `listFuelLoads`). Prod ya rebasó
+ * los 500 gastos y el corte silencioso hacía parecer "no guardado" un gasto
+ * que sí existía (auditoría 29-ago).
+ */
+export async function listGastosAll(
+  query: Omit<ListGastosQuery, "limit" | "offset"> = {},
+) {
+  const limit = 200;
+  const first = await listGastos({ ...query, limit, offset: 0 });
+  const data = [...first.data];
+  while (data.length < first.count) {
+    const page = await listGastos({ ...query, limit, offset: data.length });
+    if (page.data.length === 0) break; // defensa anti-bucle si count cambió
+    data.push(...page.data);
+  }
+  return { data, count: first.count };
+}
+
+/**
  * Otros gastos del periodo (generales OTRO/FIJO/INDIRECTO sin vuelo) con su
  * reparto entre aviones y el resumen por moneda. Default del API: mes
  * corriente en hora Cancún.

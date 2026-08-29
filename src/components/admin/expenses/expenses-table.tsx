@@ -80,11 +80,14 @@ export function ExpensesTable({
   aircraft,
   providers,
   fotoUrls,
+  huboCorte = false,
 }: {
   gastos: Gasto[];
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
   fotoUrls: Record<string, string>;
+  /** true = la página no logró cargar TODOS los gastos (corte defensivo). */
+  huboCorte?: boolean;
 }) {
   const seleccion = useSeleccionGastos();
   const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
@@ -468,6 +471,7 @@ export function ExpensesTable({
       columns={columns}
       rows={filas}
       rowKey={(f) => f.key}
+      huboCorte={huboCorte}
       rowClassName={(f) =>
         f.kind === "compra" ? "bg-brand-600/5" : f.hijo ? "bg-muted/30" : undefined
       }

@@ -32,8 +32,12 @@ export interface AssignFlightPayload {
   piloto_id?: string;
   /** Copiloto del viaje (segundo piloto). null = quitarlo. */
   copiloto_id?: string | null;
-  /** Apoyo en tierra (maletas, pagos, cobros, gastos). null = quitarlo. */
+  /** LEGADO: un solo apoyo en tierra; null = quitarlo. El API nuevo lo
+      traduce a `apoyo_ids` ([id] o []); el API previo solo entiende este. */
   apoyo_id?: string | null;
+  /** Apoyos de NIVEL VUELO (29-ago-2026): REEMPLAZA la lista completa;
+      [] = ninguno. Los apoyos por tramo no se tocan desde aquí. */
+  apoyo_ids?: string[];
   fecha_vuelo?: string;
 }
 
@@ -479,10 +483,15 @@ export async function createOperationalLegAction(
 export interface AssignEscalaPayload {
   aeronave_id?: string;
   piloto_id?: string;
+  /** Copiloto de ESTE tramo (29-ago-2026). null = hereda el del vuelo. */
+  copiloto_id?: string | null;
+  /** Apoyos SOLO de este tramo: REEMPLAZA la lista; [] = ninguno. Los apoyos
+      de nivel vuelo no se tocan desde aquí. */
+  apoyo_ids?: string[];
   fecha_salida_plan?: string;
 }
 
-/** Asigna aeronave/piloto a UN tramo (ida o regreso por separado). */
+/** Asigna aeronave/piloto/copiloto/apoyos a UN tramo (ida o regreso por separado). */
 export async function assignEscalaAction(
   flightId: string,
   escalaId: string,

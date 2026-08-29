@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { BanknotesIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import {
+  BanknotesIcon,
+  ExclamationTriangleIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import {
   Card,
   CardContent,
@@ -11,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { ExpensesTable } from "@/components/admin/expenses/expenses-table";
 import {
   listGastos,
+  listGastosAll,
   signFuelPhotos,
   type ListGastosQuery,
 } from "@/lib/api/expenses-server";
@@ -99,17 +104,25 @@ export default async function ExpensesPage({
     capturado_desde: capturadoDesde,
   };
 
-  const query: ListGastosQuery = {
-    limit: 200,
+  const query: Omit<ListGastosQuery, "limit" | "offset"> = {
     aeronave_id: aeronaveId,
     ...filtrosExtra,
   };
   if (filtro === "pendientes") query.pendientes = true;
   if (filtro === "duplicados") query.duplicados = true;
 
-  const [{ data: gastos }, pendientesRes, duplicadosRes, aircraftRes, providersRes, pilotsRes] =
+  const [
+    { data: gastos, count: gastosCount },
+    pendientesRes,
+    duplicadosRes,
+    aircraftRes,
+    providersRes,
+    pilotsRes,
+  ] =
     await Promise.all([
-      listGastos(query),
+      // SIN cap (anti-cap-200): prod ya rebasó los 500 gastos y el corte
+      // silencioso hacía parecer "no guardado" un gasto que sí existía.
+      listGastosAll(query),
       listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
       listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
       listAircraft({ limit: 100 }),
@@ -162,6 +175,10 @@ export default async function ExpensesPage({
     const qs = url.searchParams.toString();
     return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
   };
+
+  // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
+  // de dejar que un gasto "desaparezca" en silencio (auditoría 29-ago).
+  const huboCorte = gastos.length < gastosCount;
 
   // Firma las fotos de los comprobantes (bucket privado) para verlas en el admin.
   const fotoPaths = gastos.map((g) => g.foto_url).filter((p): p is string => !!p);
@@ -277,6 +294,16 @@ export default async function ExpensesPage({
         )}
       </div>
 
+      {huboCorte && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>
+            Mostrando {gastos.length} de {gastosCount} gastos — usa los
+            filtros para acotar la lista.
+          </span>
+        </div>
+      )}
+
       {gastos.length === 0 ? (
         <Card>
           <CardHeader className="text-center py-12">
@@ -313,6 +340,7 @@ export default async function ExpensesPage({
               aircraft={aircraft}
               providers={providers}
               fotoUrls={fotoUrls}
+              huboCorte={huboCorte}
             />
             <GastosCard
               titulo="Gastos operativos"
@@ -321,6 +349,7 @@ export default async function ExpensesPage({
               aircraft={aircraft}
               providers={providers}
               fotoUrls={fotoUrls}
+              huboCorte={huboCorte}
             />
           </div>
         </ExpensesSeleccionProvider>
@@ -336,6 +365,7 @@ function GastosCard({
   aircraft,
   providers,
   fotoUrls,
+  huboCorte = false,
 }: {
   titulo: string;
   descripcion: string;
@@ -343,6 +373,8 @@ function GastosCard({
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
   fotoUrls: Record<string, string>;
+  /** true = no se cargaron TODOS los gastos (corte defensivo del anti-cap). */
+  huboCorte?: boolean;
 }) {
   return (
     <Card>
@@ -362,6 +394,7 @@ function GastosCard({
             aircraft={aircraft}
             providers={providers}
             fotoUrls={fotoUrls}
+            huboCorte={huboCorte}
           />
         )}
       </CardContent>

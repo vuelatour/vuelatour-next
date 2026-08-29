@@ -41,7 +41,13 @@ import {
   type SugerenciaAsignacion,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
-import { fmtDate } from "@/lib/datetime";
+import { fmtDate, todayCancun } from "@/lib/datetime";
+import {
+  fechaGastoAntigua,
+  fechaGastoDistancia,
+  fechaGastoLegible,
+  fechaGastoSospechosa,
+} from "@/lib/admin/fecha-gasto";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
@@ -120,6 +126,11 @@ export function ExpenseVerifyDialog({
   fotoUrl,
 }: ExpenseVerifyDialogProps) {
   const [pending, startTransition] = useTransition();
+  // Candado de fechas (auditoría 29-ago): valores esperando confirmación
+  // explícita cuando la oficina CAMBIÓ la fecha a una sospechosa.
+  const [confirmarFecha, setConfirmarFecha] = useState<GastoVerifyValues | null>(
+    null,
+  );
   // Sugerencia IA/regla de a qué vuelo pertenece (solo gastos sin avión).
   const [sugerencia, setSugerencia] = useState<SugerenciaAsignacion | null>(null);
   const [sugiriendo, setSugiriendo] = useState(false);
@@ -374,7 +385,8 @@ export function ExpenseVerifyDialog({
     );
   };
 
-  const onSubmit = handleSubmit((values) => {
+  /** Guardado real (fecha ya validada o confirmada por el usuario). */
+  const guardarVerificacion = (values: GastoVerifyValues) => {
     startTransition(async () => {
       // monto guardado = TOTAL PAGADO (ticket + propina): lo que llega al
       // banco. En el formulario se edita el ticket y la propina por separado
@@ -439,6 +451,16 @@ export function ExpenseVerifyDialog({
         payload.vuelo_id = null;
         payload.escala_id = null;
       }
+      // Fecha CORREGIDA aquí a > 365 días atrás (ya confirmada en el
+      // diálogo): el API exige el candado permitir_fecha_antigua para
+      // fechas de otro año (auditoría 29-ago).
+      if (
+        values.fecha_gasto &&
+        values.fecha_gasto !== (gasto.fecha_gasto ?? "").slice(0, 10) &&
+        fechaGastoAntigua(values.fecha_gasto)
+      ) {
+        payload.permitir_fecha_antigua = true;
+      }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
         // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
@@ -470,7 +492,30 @@ export function ExpenseVerifyDialog({
         toast.error(result.error ?? "Error desconocido");
       }
     });
+  };
+
+  const onSubmit = handleSubmit((values) => {
+    // Candado de fechas (auditoría 29-ago): SOLO si la oficina CAMBIÓ la
+    // fecha aquí y quedó > 60 días atrás o > 2 días a futuro se pide
+    // confirmación — verificar un gasto viejo sin tocar la fecha no molesta.
+    const original = (gasto.fecha_gasto ?? "").slice(0, 10);
+    if (
+      values.fecha_gasto &&
+      values.fecha_gasto !== original &&
+      fechaGastoSospechosa(values.fecha_gasto)
+    ) {
+      setConfirmarFecha({ ...values });
+      return;
+    }
+    guardarVerificacion(values);
   });
+
+  // La IA (reanálisis) propuso una fecha con OTRO año: campo en ámbar hasta
+  // corregirla — con el año equivocado el gasto sale de todos los cortes.
+  const fechaIaOtroAnio =
+    !!aiRaw?.fecha &&
+    aiRaw.fecha === watch("fecha_gasto") &&
+    watch("fecha_gasto").slice(0, 4) !== todayCancun().slice(0, 4);
 
   const monto = Number(gasto.monto).toLocaleString("es-MX", {
     style: "currency",
@@ -717,7 +762,22 @@ export function ExpenseVerifyDialog({
               />
             </Field>
             <Field label="Fecha del gasto">
-              <Input type="date" {...register("fecha_gasto")} />
+              <Input
+                type="date"
+                className={
+                  fechaIaOtroAnio
+                    ? "border-amber-500 focus-visible:ring-amber-500/40"
+                    : undefined
+                }
+                {...register("fecha_gasto")}
+              />
+              {fechaIaOtroAnio && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  La IA leyó el año {watch("fecha_gasto").slice(0, 4)} en el
+                  comprobante — con el año equivocado el gasto queda fuera de
+                  todos los cortes. Corrígela si no es real.
+                </p>
+              )}
             </Field>
           </div>
 
@@ -910,6 +970,47 @@ export function ExpenseVerifyDialog({
                 disabled={retirando}
               >
                 {retirando ? "Retirando…" : "Retirar confirmación"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Confirmación de fecha sospechosa (auditoría 29-ago): solo cuando
+            la oficina CAMBIÓ la fecha a > 60 días atrás o > 2 días a futuro. */}
+        <AlertDialog
+          open={confirmarFecha !== null}
+          onOpenChange={(o) => {
+            if (!o) setConfirmarFecha(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirma la fecha del gasto</AlertDialogTitle>
+              <AlertDialogDescription>
+                La fecha es del{" "}
+                <span className="font-medium">
+                  {confirmarFecha
+                    ? fechaGastoLegible(confirmarFecha.fecha_gasto)
+                    : ""}
+                </span>{" "}
+                ({confirmarFecha
+                  ? fechaGastoDistancia(confirmarFecha.fecha_gasto)
+                  : ""}
+                ), ¿es correcta? Con la fecha equivocada — típico un ticket
+                leído con otro año — el gasto queda fuera de todos los cortes
+                mensuales.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Revisar la fecha</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const values = confirmarFecha;
+                  setConfirmarFecha(null);
+                  if (values) guardarVerificacion(values);
+                }}
+              >
+                Sí, la fecha es correcta
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -6,6 +6,20 @@ import type {
   ParticipacionFuente,
 } from "./quotes-persisted";
 
+/** Tripulante resuelto por el API (apoyos, copiloto por tramo). `rol` es el
+    del catálogo de usuarios (ADMIN, PILOTO, MECANICO…): el apoyo puede ser
+    cualquier usuario activo, no solo pilotos. */
+export interface TripulanteRef {
+  id: string;
+  nombre: string;
+  rol?: string | null;
+}
+
+/** Apoyo EFECTIVO de un tramo: los del vuelo ∪ los del tramo (29-ago-2026). */
+export interface ApoyoEfectivo extends TripulanteRef {
+  origen: "vuelo" | "tramo";
+}
+
 /** Resumen para listas: el backend devuelve solo estos cols en GET /v1/flights. */
 export interface FlightListItem {
   id: string;
@@ -17,8 +31,13 @@ export interface FlightListItem {
   copiloto_id: string | null;
   /** Apoyo en tierra: va al aeropuerto a apoyar (maletas, pagos, cobros,
       gastos). Ve el vuelo como el piloto en su app pero NO captura
-      tacómetros. Opcional-defensivo: filas/respuestas viejas no lo traen. */
+      tacómetros. Opcional-defensivo: filas/respuestas viejas no lo traen.
+      Desde 29-ago-2026 es solo el ESPEJO del primer apoyo de `apoyos`. */
   apoyo_id?: string | null;
+  /** Apoyos de NIVEL VUELO (0..N; fuente única `vuelo_apoyo`, 29-ago-2026).
+      Opcional-defensivo: el API previo no lo manda → leer SIEMPRE con
+      `apoyosDeVuelo()` (cae al espejo apoyo_id/apoyo_nombre). */
+  apoyos?: TripulanteRef[];
   ruta_id: string | null;
   tipo: "REDONDO" | "MULTIESCALA";
   estado: EstadoVuelo;
@@ -53,6 +72,10 @@ export interface FlightListItem {
   /** Vuelo abierto: el itinerario/precio se cierra al final. */
   cotizacion_abierta?: boolean;
   fecha_vuelo: string | null;
+  /** Fecha de la SOLICITUD (cuándo se capturó). Opcional-defensivo: el
+      listado del API puede no mandarla — caer a `created_at` (≈ lo mismo).
+      Ordena las filas SIN fecha de vuelo (recién creadas primero). */
+  fecha_solicitud?: string | null;
   fecha_traslado_final: string | null;
   /** Fin real del viaje (derivada por trigger: GREATEST de tramos/traslado final). */
   fecha_fin: string | null;
@@ -86,6 +109,19 @@ export interface FlightEscala {
   // Resueltos por el backend en snapshot() para mostrar la asignación del tramo.
   aeronave_matricula?: string | null;
   piloto_nombre?: string | null;
+  // Tripulación por tramo (29-ago-2026). Todo opcional-defensivo: el API
+  // previo no lo manda.
+  /** Copiloto de ESTE tramo (rotación). null = hereda `vuelo.copiloto_id`. */
+  copiloto_id?: string | null;
+  /** Copiloto que realmente va en el tramo (propio ?? del vuelo). */
+  copiloto_efectivo_id?: string | null;
+  /** Nombre del copiloto EFECTIVO, resuelto por el API. */
+  copiloto_nombre?: string | null;
+  /** Apoyos SOLO de este tramo (`vuelo_apoyo` con escala_id). */
+  apoyos_tramo?: TripulanteRef[];
+  /** Apoyos efectivos del tramo: los del vuelo ∪ los del tramo, con origen.
+      Leer con `apoyosEfectivosDeTramo()` para tolerar el API previo. */
+  apoyos_efectivos?: ApoyoEfectivo[];
   // Detalle por tramo.
   pasajeros: number | null;
   /** Manifiesto de nombres de ESTE tramo (por escala, puede ir vacío). */
@@ -198,4 +234,29 @@ export function combinadoFolio(v: {
   const c = v.combinado;
   const x = Array.isArray(c) ? c[0] : c;
   return x?.folio ?? null;
+}
+
+/** Apoyos de nivel vuelo con fallback al espejo `apoyo_id`/`apoyo_nombre`
+ *  (respuestas del API previo a la lista, 29-ago-2026). El nombre puede venir
+ *  vacío en el fallback: quien pinta lo resuelve contra el catálogo. */
+export function apoyosDeVuelo(v: {
+  apoyos?: TripulanteRef[] | null;
+  apoyo_id?: string | null;
+  apoyo_nombre?: string | null;
+}): TripulanteRef[] {
+  if (Array.isArray(v.apoyos)) return v.apoyos;
+  return v.apoyo_id ? [{ id: v.apoyo_id, nombre: v.apoyo_nombre ?? "" }] : [];
+}
+
+/** Apoyos efectivos de un tramo (del vuelo ∪ del tramo) con fallback cuando
+ *  el API previo no manda `apoyos_efectivos`. */
+export function apoyosEfectivosDeTramo(
+  escala: Pick<FlightEscala, "apoyos_efectivos" | "apoyos_tramo">,
+  apoyosVuelo: TripulanteRef[],
+): ApoyoEfectivo[] {
+  if (Array.isArray(escala.apoyos_efectivos)) return escala.apoyos_efectivos;
+  return [
+    ...apoyosVuelo.map((a) => ({ ...a, origen: "vuelo" as const })),
+    ...(escala.apoyos_tramo ?? []).map((a) => ({ ...a, origen: "tramo" as const })),
+  ];
 }

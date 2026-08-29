@@ -77,6 +77,13 @@ interface DataTableProps<T> {
    * páginas ni con hijos huérfanos al filtrar.
    */
   subRows?: (row: T) => T[] | undefined;
+  /**
+   * true = el server NO alcanzó a cargar todas las filas (corte defensivo
+   * del patrón anti-cap): la búsqueda rápida sin resultados avisa que el
+   * registro puede estar fuera de lo cargado, en vez de afirmar que no
+   * existe (auditoría 29-ago: 'ya lo había guardado y no está').
+   */
+  huboCorte?: boolean;
 }
 
 /** Búsqueda insensible a acentos y mayúsculas (nombres es-MX). */
@@ -125,6 +132,7 @@ export function DataTable<T>({
   defaultPageSize = 20,
   syncId = "t",
   subRows,
+  huboCorte = false,
 }: DataTableProps<T>) {
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -278,6 +286,13 @@ export function DataTable<T>({
                 className="py-8 text-center text-sm text-muted-foreground whitespace-normal"
               >
                 Sin resultados para &ldquo;{busqueda.trim()}&rdquo;.{" "}
+                {huboCorte && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    Ojo: no todas las filas están cargadas — el registro puede
+                    estar fuera de lo mostrado; acótalo con los filtros de
+                    arriba.{" "}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => cambiarBusqueda("")}

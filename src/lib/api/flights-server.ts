@@ -28,6 +28,26 @@ export function listFlights(query: ListFlightsQuery = {}) {
   });
 }
 
+/**
+ * TODOS los vuelos del filtro, SIN cap: pagina con offset hasta cubrir
+ * `count` (patrón anti-cap-200, igual que `listFuelLoads`). Prod ya rebasó
+ * los 200 vuelos y el corte silencioso hacía parecer "no guardado" un vuelo
+ * que sí existía (auditoría 29-ago).
+ */
+export async function listFlightsAll(
+  query: Omit<ListFlightsQuery, "limit" | "offset"> = {},
+) {
+  const limit = 200;
+  const first = await listFlights({ ...query, limit, offset: 0 });
+  const data = [...first.data];
+  while (data.length < first.count) {
+    const page = await listFlights({ ...query, limit, offset: data.length });
+    if (page.data.length === 0) break; // defensa anti-bucle si count cambió
+    data.push(...page.data);
+  }
+  return { data, count: first.count };
+}
+
 export function getFlight(id: string) {
   return apiServer<FlightListItem>(`/v1/flights/${id}`, { cache: "no-store" });
 }

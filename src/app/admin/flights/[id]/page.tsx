@@ -49,7 +49,7 @@ import {
 } from "@/lib/admin/cobros";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
-import { combinadoFolio } from "@/types/flights";
+import { apoyosDeVuelo, combinadoFolio } from "@/types/flights";
 
 export const dynamic = "force-dynamic";
 
@@ -226,13 +226,20 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     }));
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
   const copiloto = pilotsRes.data.find((p) => p.id === snapshot.copiloto_id);
-  // Apoyo en tierra: el snapshot trae el nombre resuelto (el apoyo puede ser
-  // cualquier usuario, no solo pilotos); fallback defensivo a la lista.
-  const apoyoNombre =
-    snapshot.apoyo_nombre ??
-    pilotsRes.data.find((p) => p.id === snapshot.apoyo_id)?.nombre ??
-    usuariosRes?.data.find((u) => u.id === snapshot.apoyo_id)?.nombre ??
+  // Apoyos en tierra de NIVEL VUELO (0..N, 29-ago): la lista del snapshot con
+  // fallback al espejo apoyo_id/apoyo_nombre (API previo). El apoyo puede ser
+  // cualquier usuario, no solo pilotos: los nombres que falten se resuelven
+  // contra el catálogo.
+  const nombreUsuario = (id: string) =>
+    pilotsRes.data.find((p) => p.id === id)?.nombre ??
+    usuariosRes?.data.find((u) => u.id === id)?.nombre ??
     null;
+  const apoyosVuelo = apoyosDeVuelo(snapshot).map((a) => ({
+    ...a,
+    nombre: a.nombre || nombreUsuario(a.id) || "Usuario",
+  }));
+  const apoyoNombre =
+    apoyosVuelo.length > 0 ? apoyosVuelo.map((a) => a.nombre).join(", ") : null;
 
   const aircraftOptions = aircraftRes.data.map((a) => ({
     id: a.id,
@@ -361,7 +368,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 <Badge
                   variant="outline"
                   className="text-xs"
-                  title="Apoyo en tierra: va al aeropuerto a apoyar (maletas, pagos, cobros y gastos). Ve el vuelo como el piloto en su app, pero no captura tacómetros."
+                  title="Apoyo en tierra de todo el vuelo: va al aeropuerto a apoyar (maletas, pagos, cobros y gastos). Ve el vuelo como el piloto en su app, pero no captura tacómetros. Los apoyos de un solo tramo se ven en Asignación por tramo."
                 >
                   Apoyo: {apoyoNombre}
                 </Badge>
@@ -589,6 +596,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     vueloAeronaveId={snapshot.aeronave_id}
                     vueloPilotoId={snapshot.piloto_id}
                     vueloPilotoNombre={piloto?.nombre ?? null}
+                    vueloCopilotoId={snapshot.copiloto_id}
+                    vueloCopilotoNombre={copiloto?.nombre ?? null}
+                    apoyosVuelo={apoyosVuelo}
+                    apoyoCandidatos={apoyoOptions.length > 0 ? apoyoOptions : undefined}
                     airports={airportsRes.data.map((a) => ({
                       iata: a.iata,
                       nombre: a.nombre,
@@ -655,8 +666,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                       )}
                     </Row>
                     <Row label="Apoyo en tierra">
-                      {apoyoNombre ? (
-                        <span>{apoyoNombre}</span>
+                      {apoyosVuelo.length > 0 ? (
+                        <span className="flex flex-wrap justify-end gap-1">
+                          {apoyosVuelo.map((a) => (
+                            <Badge key={a.id} variant="outline" className="text-[10px]">
+                              {a.nombre}
+                            </Badge>
+                          ))}
+                        </span>
                       ) : (
                         <span
                           className="text-muted-foreground"

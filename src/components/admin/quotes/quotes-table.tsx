@@ -24,6 +24,9 @@ export interface QuoteListRow {
   /** Ruta ya unida, p. ej. "CUN → MID → CUN". */
   ruta: string;
   fechaVuelo: string | null;
+  /** Fecha de la solicitud (cuándo se capturó): ordena las filas SIN fecha
+      de vuelo — las recién creadas van PRIMERO, no perdidas al fondo. */
+  fechaSolicitud: string | null;
   montoTotalUsd: string;
   version: number;
   estado: EstadoVuelo;
@@ -71,10 +74,19 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
     key: "fecha",
     header: "Fecha vuelo",
     cellClassName: "text-xs",
+    // Sin fecha = badge ámbar visible (no un guion que se confunde con
+    // "perdido"): estas filas van al INICIO de la tabla.
     cell: (q) =>
-      q.fechaVuelo
-        ? fmtDate(q.fechaVuelo)
-        : <span className="text-muted-foreground">—</span>,
+      q.fechaVuelo ? (
+        fmtDate(q.fechaVuelo)
+      ) : (
+        <Badge
+          variant="outline"
+          className="border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400"
+        >
+          Sin fecha
+        </Badge>
+      ),
   },
   {
     key: "total",
@@ -151,11 +163,19 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
   },
 ];
 
-export function QuotesTable({ quotes }: { quotes: QuoteListRow[] }) {
+export function QuotesTable({
+  quotes,
+  huboCorte = false,
+}: {
+  quotes: QuoteListRow[];
+  /** true = la página no logró cargar TODAS las filas (corte defensivo). */
+  huboCorte?: boolean;
+}) {
   return (
     <DataTable
       columns={columns}
       rows={quotes}
+      huboCorte={huboCorte}
       rowKey={(q) => q.id}
       rowHref={(q) => `/admin/quotes/${q.id}`}
       searchText={(q) =>
