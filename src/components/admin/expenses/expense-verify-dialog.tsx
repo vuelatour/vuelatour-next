@@ -48,6 +48,7 @@ import {
   fechaGastoLegible,
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
+import { avionPorMatricula } from "@/lib/admin/matricula";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
@@ -134,6 +135,13 @@ export function ExpenseVerifyDialog({
   // Sugerencia IA/regla de a qué vuelo pertenece (solo gastos sin avión).
   const [sugerencia, setSugerencia] = useState<SugerenciaAsignacion | null>(null);
   const [sugiriendo, setSugiriendo] = useState(false);
+  // Avión PRELLENADO desde la matrícula que la IA leyó en el comprobante
+  // (caso Paywise: capturas de oficina donde piloto+fecha da cero
+  // candidatos). Solo propone en el form; el humano revisa y guarda.
+  const [prefillAvion, setPrefillAvion] = useState<{
+    id: string;
+    matricula: string;
+  } | null>(null);
   // Vuelo elegido (sugerencia aplicada O selección manual). Sin match
   // automático, la oficina lo asigna a mano de esta lista (±15 días).
   const [vueloSel, setVueloSel] = useState<string>(gasto.vuelo_id ?? "");
@@ -207,13 +215,32 @@ export function ExpenseVerifyDialog({
     };
   }, [open, gasto.id, gasto.vuelo_id, gasto.fecha_gasto]);
 
-  // Al abrir un gasto SIN avión: buscar el match probable (piloto + fecha ±3d;
-  // IA si hay varios). Best-effort: si falla, la asignación sigue manual.
+  // Al abrir un gasto SIN avión: PRIMERO la matrícula que la IA leyó en el
+  // comprobante (capturas de oficina: piloto+fecha da cero candidatos) y
+  // después el match probable de vuelo (piloto + fecha ±3d; IA si hay
+  // varios). Best-effort: si nada cruza, la asignación sigue manual.
   useEffect(() => {
     if (!open || gasto.aeronave_id) {
       setSugerencia(null);
+      setPrefillAvion(null);
       return;
     }
+    // Prellenado por matrícula: corre DESPUÉS del reset (el efecto del reset
+    // está declarado antes y ambos disparan en el mismo commit). Jamás a
+    // categorías sin avión: el guardado los desliga y sería un valor a
+    // limpiar de nuevo.
+    const mIa = (gasto.valor_ia_extraido as { matricula?: unknown } | null)
+      ?.matricula;
+    const permiteAvion =
+      gasto.categoria !== "PERSONAL_DUENO" &&
+      gasto.categoria !== "GASOLINA" &&
+      gasto.categoria !== "VISITA";
+    let avion: { id: string; matricula: string } | null = null;
+    if (typeof mIa === "string" && mIa && permiteAvion) {
+      avion = avionPorMatricula(aircraft, mIa) ?? null;
+      if (avion) setValue("aeronave_id", avion.id);
+    }
+    setPrefillAvion(avion);
     let cancel = false;
     setSugiriendo(true);
     sugerirAsignacionGastoAction(gasto.id)
@@ -226,7 +253,15 @@ export function ExpenseVerifyDialog({
     return () => {
       cancel = true;
     };
-  }, [open, gasto.id, gasto.aeronave_id]);
+  }, [
+    open,
+    gasto.id,
+    gasto.aeronave_id,
+    gasto.valor_ia_extraido,
+    gasto.categoria,
+    aircraft,
+    setValue,
+  ]);
 
   /**
    * Quita el desglose VIEJO de las notas conservando todo lo demás
@@ -319,10 +354,16 @@ export function ExpenseVerifyDialog({
         llenado.push(match.nombre);
       }
     }
-    if (ai.matricula && !watch("aeronave_id")) {
-      const av = aircraft.find(
-        (a) => a.matricula.replace(/-/g, "") === ai.matricula!.replace(/-/g, ""),
-      );
+    // Matrícula leída → avión (normalización única; jamás a categorías sin
+    // avión — el guardado los desliga y quedaría un valor a limpiar).
+    if (
+      ai.matricula &&
+      !watch("aeronave_id") &&
+      watch("categoria") !== "PERSONAL_DUENO" &&
+      watch("categoria") !== "GASOLINA" &&
+      watch("categoria") !== "VISITA"
+    ) {
+      const av = avionPorMatricula(aircraft, ai.matricula);
       if (av) setValue("aeronave_id", av.id);
     }
     // Desglose Operación/TUA/FBO: SUSTITUYE el bloque "Desglose:" viejo de
@@ -817,26 +858,69 @@ export function ExpenseVerifyDialog({
             />
           </Field>
 
+          {/* Aviso del prellenado por matrícula: se oculta si la oficina
+              elige otro avión (su elección manda). */}
+          {prefillAvion && watch("aeronave_id") === prefillAvion.id && (
+            <p className="rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-2 text-xs text-brand-600">
+              ✨ Prellenado por la matrícula del comprobante (
+              <span className="font-mono font-medium">
+                {prefillAvion.matricula}
+              </span>
+              ) — revisa y guarda.
+            </p>
+          )}
+
           {(() => {
-            /* Cruce de matrícula (caso ASUR Mérida): el recibo manda. */
+            /* Cruce de matrícula: el recibo manda. Con avión elegido y
+               distinto → advertencia (caso ASUR Mérida); SIN avión elegido
+               → aviso con botón para tomar el del comprobante (caso
+               Paywise: quedaba INDIRECTO sin avión). */
             const mIa = aiRaw?.matricula ??
               (gasto.valor_ia_extraido as { matricula?: unknown } | null)
                 ?.matricula;
+            if (!mIa || typeof mIa !== "string") return null;
+            const delRecibo = avionPorMatricula(aircraft, mIa);
+            if (!delRecibo) return null;
             const sel = watch("aeronave_id");
-            if (!mIa || typeof mIa !== "string" || !sel) return null;
-            const norm = (m: string) => m.toUpperCase().replace(/[^A-Z0-9]/g, "");
-            const delRecibo = aircraft.find((a) => norm(a.matricula) === norm(mIa));
-            if (!delRecibo || delRecibo.id === sel) return null;
-            const asignada = aircraft.find((a) => a.id === sel);
+            if (sel) {
+              if (delRecibo.id === sel) return null;
+              const asignada = aircraft.find((a) => a.id === sel);
+              return (
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                  ⚠ El comprobante trae la matrícula{" "}
+                  <span className="font-mono font-medium">{delRecibo.matricula}</span> pero el
+                  gasto quedará en{" "}
+                  <span className="font-mono font-medium">{asignada?.matricula ?? "otro avión"}</span>
+                  . En cambios de avión a media jornada el recibo manda: corrige el avión si
+                  aplica.
+                </p>
+              );
+            }
+            // Categorías sin avión siguen sin avión: el guardado desliga
+            // con null explícito — sin chip que invite a ligarlo.
+            if (
+              watch("categoria") === "PERSONAL_DUENO" ||
+              watch("categoria") === "GASOLINA" ||
+              watch("categoria") === "VISITA"
+            )
+              return null;
             return (
-              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                ⚠ El comprobante trae la matrícula{" "}
-                <span className="font-mono font-medium">{delRecibo.matricula}</span> pero el
-                gasto quedará en{" "}
-                <span className="font-mono font-medium">{asignada?.matricula ?? "otro avión"}</span>
-                . En cambios de avión a media jornada el recibo manda: corrige el avión si
-                aplica.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+                <span>
+                  El comprobante trae la matrícula{" "}
+                  <span className="font-mono font-medium">{delRecibo.matricula}</span>{" "}
+                  y el gasto no tiene avión.
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setValue("aeronave_id", delRecibo.id)}
+                >
+                  Usar este avión
+                </Button>
+              </div>
             );
           })()}
 

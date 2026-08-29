@@ -58,6 +58,7 @@ import {
   fechaGastoLegible,
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
+import { avionPorMatricula } from "@/lib/admin/matricula";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -301,9 +302,9 @@ export function ExpenseCreateDialog({
       watch("categoria") !== "GASOLINA" &&
       watch("categoria") !== "VISITA"
     ) {
-      const av = aircraft.find(
-        (a) => a.matricula.replace(/-/g, "") === ai.matricula!.replace(/-/g, ""),
-      );
+      // Normalización única (caso Paywise: "N621TX" no cruzaba con el
+      // catálogo solo quitando guiones y el gasto quedaba sin avión).
+      const av = avionPorMatricula(aircraft, ai.matricula);
       if (av) setValue("aeronave_id", av.id);
     }
     const notas: string[] = [];
@@ -963,23 +964,54 @@ export function ExpenseCreateDialog({
             </div>
 
             {(() => {
-              /* Cruce de matrícula (caso ASUR Mérida): el recibo manda. */
+              /* Cruce de matrícula: el recibo manda. Con avión elegido y
+                 distinto → advertencia (caso ASUR Mérida); SIN avión elegido
+                 → aviso con botón para tomar el del comprobante (caso
+                 Paywise: el gasto quedaba INDIRECTO sin avión). */
               const mIa = aiRaw?.matricula;
+              if (!mIa || typeof mIa !== "string") return null;
+              const delRecibo = avionPorMatricula(aircraft, mIa);
+              if (!delRecibo) return null;
               const sel = watch("aeronave_id");
-              if (!mIa || typeof mIa !== "string" || !sel) return null;
-              const norm = (m: string) => m.toUpperCase().replace(/[^A-Z0-9]/g, "");
-              const delRecibo = aircraft.find((a) => norm(a.matricula) === norm(mIa));
-              if (!delRecibo || delRecibo.id === sel) return null;
-              const asignada = aircraft.find((a) => a.id === sel);
+              if (sel) {
+                if (delRecibo.id === sel) return null;
+                const asignada = aircraft.find((a) => a.id === sel);
+                return (
+                  <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                    ⚠ El comprobante trae la matrícula{" "}
+                    <span className="font-mono font-medium">{delRecibo.matricula}</span> pero el
+                    gasto quedará en{" "}
+                    <span className="font-mono font-medium">{asignada?.matricula ?? "otro avión"}</span>
+                    . En cambios de avión a media jornada el recibo manda: corrige el avión si
+                    aplica.
+                  </p>
+                );
+              }
+              // Categorías sin avión: el campo está oculto y un valor
+              // invisible rompería el guardado — sin chip.
+              if (
+                watch("categoria") === "PERSONAL_DUENO" ||
+                watch("categoria") === "GASOLINA" ||
+                watch("categoria") === "VISITA"
+              )
+                return null;
               return (
-                <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                  ⚠ El comprobante trae la matrícula{" "}
-                  <span className="font-mono font-medium">{delRecibo.matricula}</span> pero el
-                  gasto quedará en{" "}
-                  <span className="font-mono font-medium">{asignada?.matricula ?? "otro avión"}</span>
-                  . En cambios de avión a media jornada el recibo manda: corrige el avión si
-                  aplica.
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+                  <span>
+                    El comprobante trae la matrícula{" "}
+                    <span className="font-mono font-medium">{delRecibo.matricula}</span>{" "}
+                    y el gasto no tiene avión.
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => setValue("aeronave_id", delRecibo.id)}
+                  >
+                    Usar este avión
+                  </Button>
+                </div>
               );
             })()}
 
