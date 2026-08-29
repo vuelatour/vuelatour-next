@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   cubrirExternoAction,
@@ -59,11 +60,25 @@ export function CubrirExternoDialog({
   const [matricula, setMatricula] = useState(
     flight.avion_externo_matricula ?? "",
   );
-  const [costo, setCosto] = useState(
-    Number(flight.costo_externo_usd) > 0 ? String(flight.costo_externo_usd) : "",
+  // Costo NATIVO del operador (29-ago: puede ser MXN). Filas del API previo
+  // solo traen el USD derivado: se cae a él con moneda USD.
+  const [costo, setCosto] = useState(() => {
+    const nativo = Number(flight.costo_externo_monto);
+    if (nativo > 0) return String(flight.costo_externo_monto);
+    return Number(flight.costo_externo_usd) > 0
+      ? String(flight.costo_externo_usd)
+      : "";
+  });
+  const [moneda, setMoneda] = useState<"USD" | "MXN">(
+    flight.costo_externo_moneda === "MXN" ? "MXN" : "USD",
   );
-  // TC pactado: sin él, un vuelo cotizado en USD no se puede facturar.
-  const [tc, setTc] = useState("");
+  // TC pactado: con costo en MXN es OBLIGATORIO (deriva el USD del costo);
+  // además, sin él un vuelo cotizado en USD no se puede facturar.
+  const [tc, setTc] = useState(
+    Number(flight.costo_externo_tc) > 0 ? String(flight.costo_externo_tc) : "",
+  );
+  const costoMxnSinTc =
+    moneda === "MXN" && Number(costo) > 0 && !(Number(tc) > 0);
   // Regreso a vuelo propio: paso de confirmación inline (acción significativa).
   const [confirmRevert, setConfirmRevert] = useState(false);
   const [reverting, startRevert] = useTransition();
@@ -109,10 +124,19 @@ export function CubrirExternoDialog({
       toast.error("Indica el nombre del operador externo");
       return;
     }
+    // Invariante de dinero: un costo MXN sin TC no puede derivar su USD — se
+    // rechaza en captura (el API respondería 400), nunca se persiste a medias.
+    if (costoMxnSinTc) {
+      toast.error(
+        "El costo va en MXN: captura el tipo de cambio para derivar el USD.",
+      );
+      return;
+    }
     startSaving(async () => {
       const res = await cubrirExternoAction(flight.id, {
         operador_externo: operador.trim(),
-        costo_externo_usd: Math.max(0, Number(costo) || 0),
+        costo_externo_monto: Math.max(0, Number(costo) || 0),
+        costo_externo_moneda: moneda,
         tc_usd_mxn: Number(tc) > 0 ? Number(tc) : undefined,
         // Campo vaciado = '' explícito = BORRAR la ficha; el mínimo de 2
         // caracteres del DTO solo aplica a valores no vacíos (1 char se
@@ -199,23 +223,31 @@ export function CubrirExternoDialog({
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Costo del apoyo (USD)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              placeholder="0.00"
-              value={costo}
-              onChange={(e) => setCosto(e.target.value)}
-            />
+            <Label className="text-sm font-medium">
+              Lo que cobra el operador externo (costo)
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                placeholder="0.00"
+                value={costo}
+                onChange={(e) => setCosto(e.target.value)}
+              />
+              <MonedaSelect value={moneda} onChange={setMoneda} />
+            </div>
             <p className="text-xs text-muted-foreground">
-              Lo que nos cobra el operador por cubrir el vuelo (costo interno;
-              no aparece al cliente).
+              Lo que nos cobra el operador por cubrir el vuelo, en su moneda
+              (costo interno; no aparece al cliente).
             </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">
               Tipo de cambio (MXN por USD)
+              {moneda === "MXN" && Number(costo) > 0 && (
+                <span className="text-destructive"> *</span>
+              )}
             </Label>
             <Input
               type="number"
@@ -225,10 +257,23 @@ export function CubrirExternoDialog({
               value={tc}
               onChange={(e) => setTc(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Opcional: sin TC el vuelo no se puede facturar (el CFDI se emite
-              en MXN); también se puede capturar al emitir la factura.
-            </p>
+            {moneda === "MXN" && Number(costo) > 0 ? (
+              <p
+                className={
+                  costoMxnSinTc
+                    ? "text-xs font-medium text-amber-600 dark:text-amber-400"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                Obligatorio con costo en MXN: con este TC se deriva el USD del
+                costo (los reportes comparan todo en dólares).
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Opcional: sin TC el vuelo no se puede facturar (el CFDI se
+                emite en MXN); también se puede capturar al emitir la factura.
+              </p>
+            )}
           </div>
           {!yaExterno && (flight.aeronave_id || flight.piloto_id) && (
             <p className="text-xs text-amber-600">
@@ -245,7 +290,7 @@ export function CubrirExternoDialog({
                 <div className="space-y-2">
                   <p className="text-xs text-amber-600">
                     Se quita al operador {flight.operador_externo ?? "externo"} y
-                    su costo del apoyo; el vuelo queda listo para asignar{" "}
+                    su costo; el vuelo queda listo para asignar{" "}
                     {necesitaAvion ? "avión y piloto propios" : "piloto propio"}{" "}
                     (tacómetros y gastos vuelven a aplicar). La cotización del
                     cliente no cambia.

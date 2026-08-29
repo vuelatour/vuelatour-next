@@ -40,7 +40,7 @@ import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { ApiError } from "@/lib/api/errors";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn, fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import {
   diferenciaRedondeo,
@@ -771,10 +771,22 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     <span className="font-mono">{avionExternoFicha}</span>
                   </Row>
                 )}
-                <Row label="Costo del apoyo">
+                <Row label="Lo que cobra el operador externo">
                   <span className="font-semibold">
                     {fmtUsd(Number(snapshot.costo_externo_usd) || 0)}
                   </span>
+                  {/* Costo capturado en MXN: el USD es DERIVADO por el API
+                      (monto ÷ tc); el nativo se muestra al lado. */}
+                  {snapshot.costo_externo_moneda === "MXN" &&
+                    Number(snapshot.costo_externo_monto) > 0 && (
+                      <span className="ml-1.5 text-xs text-muted-foreground font-mono">
+                        ({fmtMxn(Number(snapshot.costo_externo_monto))}
+                        {Number(snapshot.costo_externo_tc) > 0
+                          ? ` · tc ${Number(snapshot.costo_externo_tc)}`
+                          : ""}
+                        )
+                      </span>
+                    )}
                 </Row>
                 <Row label="Margen vs cobro">
                   {fmtUsd(

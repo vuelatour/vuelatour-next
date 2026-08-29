@@ -546,11 +546,25 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   </div>
                 )}
                 <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Costo del apoyo</span>
-                  <span className="font-mono">
+                  <span className="text-muted-foreground">
+                    Lo que cobra el operador externo
+                  </span>
+                  <span className="font-mono text-right">
                     {Number(quote.costo_externo_usd) > 0
                       ? fmtUsd(Number(quote.costo_externo_usd))
                       : "Sin capturar"}
+                    {/* Costo capturado en MXN: el USD es DERIVADO por el API
+                        (monto ÷ tc); el nativo se muestra al lado. */}
+                    {quote.costo_externo_moneda === "MXN" &&
+                      Number(quote.costo_externo_monto) > 0 && (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          ({fmtMxn(Number(quote.costo_externo_monto))}
+                          {Number(quote.costo_externo_tc) > 0
+                            ? ` · tc ${Number(quote.costo_externo_tc)}`
+                            : ""}
+                          )
+                        </span>
+                      )}
                   </span>
                 </div>
                 {Number(quote.calculo_snapshot?.meta?.total_pactado_usd) > 0 && (
@@ -564,7 +578,7 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 {Number(quote.costo_externo_usd) > 0 && (
                   <div className="flex justify-between gap-2 border-t border-border pt-2">
                     <span className="text-muted-foreground">
-                      Margen (total − apoyo)
+                      Margen (total − costo del externo)
                     </span>
                     <span
                       className={

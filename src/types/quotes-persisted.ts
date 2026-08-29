@@ -21,8 +21,6 @@ export interface PersistedEscala {
   tipo_parada: "NORMAL" | "SERVICIO";
   servicio_notas: string | null;
   solo_operativa?: boolean;
-  /** Monto pactado del tramo (avión externo sin referencia). Decimal string. */
-  monto_externo_usd?: string | null;
   fecha_salida_plan: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;
@@ -86,7 +84,15 @@ export interface PersistedQuote {
   estado: EstadoVuelo;
   es_externo: boolean;
   operador_externo: string | null;
+  /** Costo del externo en USD (canon DERIVADO por el API; fuente única para
+      sumar/comparar). Con moneda MXN es monto ÷ tc. */
   costo_externo_usd: Decimal | null;
+  /** Costo NATIVO capturado (29-ago: puede ser MXN). Opcional-defensivo:
+      respuestas del API previo no lo traen — caer a costo_externo_usd. */
+  costo_externo_monto?: Decimal | null;
+  costo_externo_moneda?: "USD" | "MXN" | null;
+  /** TC MXN/USD con el que se derivó el USD cuando la moneda es MXN. */
+  costo_externo_tc?: Decimal | null;
   /** Ficha del avión AJENO (externo sin avión de la flota): sale en el PDF. */
   avion_externo_modelo?: string | null;
   avion_externo_matricula?: string | null;

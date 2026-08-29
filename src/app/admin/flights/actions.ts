@@ -136,8 +136,11 @@ export async function cubrirExternoAction(
   id: string,
   payload: {
     operador_externo: string;
-    costo_externo_usd: number;
-    /** TC MXN/USD pactado (opcional): habilita facturar el vuelo en MXN. */
+    /** Lo que cobra el operador externo, en su moneda NATIVA. */
+    costo_externo_monto: number;
+    costo_externo_moneda: "USD" | "MXN";
+    /** TC MXN/USD pactado: OBLIGATORIO si el costo va en MXN (el API deriva
+        el USD canon); también habilita facturar el vuelo en MXN. */
     tc_usd_mxn?: number;
     /** Ficha del avión AJENO (ej. HAWKER 400 A / XA-REG); sale en el PDF.
         '' explícito = BORRAR la ficha; omitir la clave = conservar. */

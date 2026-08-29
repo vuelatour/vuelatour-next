@@ -90,11 +90,6 @@ export interface EscalaInput {
   fecha_salida_plan?: string | null;
   /** Ocultar ESTE tramo del PDF (título/itinerario/mapa); el precio no cambia. */
   pdf_oculto?: boolean;
-  /**
-   * Monto pactado del tramo (USD). SOLO para cotizaciones de avión EXTERNO
-   * sin avión de referencia: el precio del servicio es la SUMA de estos.
-   */
-  monto_externo_usd?: number | null;
 }
 
 /** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */
@@ -113,14 +108,13 @@ export interface TramoBreakdown {
   servicio_notas: string | null;
   /** Ocultar este tramo del PDF (27-ago). */
   pdf_oculto?: boolean;
-  /** Monto pactado del tramo (solo avión externo sin referencia; 0 si no aplica). */
-  monto_externo_usd?: number | null;
 }
 
 export interface CalculateQuoteRequest {
-  /** OPCIONAL solo cuando es_externo: sin avión, el precio del servicio es la
-   *  suma de los monto_externo_usd por tramo (MULTIESCALA con escalas). */
-  aeronave_id?: string;
+  /** Requerida SIEMPRE: en externos es la referencia de tarifa con la que se
+   *  cotiza (el vuelo persiste sin avión propio; la referencia vive en el
+   *  snapshot del cálculo). */
+  aeronave_id: string;
   /** Vuelo CUBIERTO por operador externo (también en el preview /calculate). */
   es_externo?: boolean;
   /** Ficha del avión AJENO (venta broker): sale en el PDF del cliente. */
@@ -187,8 +181,8 @@ export interface CalculateQuoteRequest {
 }
 
 export interface QuoteBreakdown {
-  /** Avión externo sin referencia: id null y ficha (modelo/matrícula) del
-   *  avión AJENO capturada a mano — no es de la flota. */
+  /** id nullable solo por snapshots LEGADOS del modo sin-avión (retirado
+   *  29-ago; 0 filas en prod): el motor actual siempre resuelve un avión. */
   aeronave: {
     id: string | null;
     matricula: string | null;

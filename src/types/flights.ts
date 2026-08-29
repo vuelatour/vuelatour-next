@@ -43,7 +43,15 @@ export interface FlightListItem {
   estado: EstadoVuelo;
   es_externo: boolean;
   operador_externo: string | null;
+  /** Costo del externo en USD (canon DERIVADO por el API; con moneda MXN es
+      monto ÷ tc). Fuente única para sumar/comparar. */
   costo_externo_usd: string | null;
+  /** Costo NATIVO capturado (29-ago: puede ser MXN). Opcional-defensivo:
+      respuestas del API previo no lo traen — caer a costo_externo_usd. */
+  costo_externo_monto?: string | null;
+  costo_externo_moneda?: "USD" | "MXN" | null;
+  /** TC MXN/USD con el que se derivó el USD cuando la moneda es MXN. */
+  costo_externo_tc?: string | null;
   /** Ficha del avión AJENO (externo). Opcional-defensivo para respuestas de
       APIs previas al despliegue (el detalle cae a la cotización si falta). */
   avion_externo_modelo?: string | null;

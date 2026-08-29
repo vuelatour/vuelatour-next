@@ -47,8 +47,10 @@ export interface CreateQuotePayload extends CalculateQuoteRequest {
       el avión seleccionado queda solo como referencia de tarifa. */
   es_externo?: boolean;
   operador_externo?: string;
-  /** Lo que cobra el apoyo (costo del vuelo para VuelaTour). */
-  costo_externo_usd?: number;
+  /** Lo que cobra el operador externo (costo para VuelaTour) en su moneda
+      NATIVA. Con MXN el API deriva el USD con tc_usd_mxn (obligatorio ahí). */
+  costo_externo_monto?: number;
+  costo_externo_moneda?: "USD" | "MXN";
 }
 
 export async function createQuoteAction(payload: CreateQuotePayload): Promise<ActionResult<PersistedQuote>> {
@@ -137,10 +139,12 @@ export interface ReviseQuotePayload extends CalculateQuoteRequest {
   fecha_traslado_final?: string;
   motivo: string;
   notas?: string;
-  /** Vuelo externo (28-ago): operador y lo que cobra el avión externo se
-      editan también al revisar. null limpia el costo. */
+  /** Vuelo externo (28-ago): operador y lo que cobra el operador externo se
+      editan también al revisar. monto null limpia el costo; con MXN el API
+      deriva el USD con tc_usd_mxn (obligatorio ahí). */
   operador_externo?: string;
-  costo_externo_usd?: number | null;
+  costo_externo_monto?: number | null;
+  costo_externo_moneda?: "USD" | "MXN";
 }
 
 export async function reviseQuoteAction(
