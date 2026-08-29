@@ -21,6 +21,7 @@ import {
   useSeleccionGastos,
 } from "@/components/admin/expenses/expenses-seleccion";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
 
@@ -241,7 +242,7 @@ export function ExpensesTable({
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5">
-              {f.gasto.categoria === "PERSONAL_DUENO" ? "Personal dueño" : f.gasto.categoria}
+              {categoriaGastoLabel(f.gasto.categoria)}
               {f.gasto.compra_rol && <CompraRolBadge rol={f.gasto.compra_rol} />}
               {f.gasto.duplicado_sospechado && (
                 <Badge variant="outline" className="border-amber-500/50 text-amber-600">
@@ -357,7 +358,17 @@ export function ExpensesTable({
           f.kind === "compra" ? (
             GUION
           ) : f.gasto.aeronave?.matricula ? (
-            <span className="font-mono">{f.gasto.aeronave.matricula}</span>
+            // Matrícula → ficha del avión (mismo patrón que la columna Vuelo).
+            f.gasto.aeronave_id ? (
+              <Link
+                href={`/admin/aircraft/${f.gasto.aeronave_id}`}
+                className="font-mono text-brand-600 hover:underline"
+              >
+                {f.gasto.aeronave.matricula}
+              </Link>
+            ) : (
+              <span className="font-mono">{f.gasto.aeronave.matricula}</span>
+            )
           ) : (
             <Badge variant="outline" className="border-amber-500/50 text-amber-600">
               Pendiente
@@ -496,9 +507,9 @@ export function ExpensesTable({
 function textoGasto(g: Gasto): string {
   return [
     g.categoria,
-    // El label mostrado también se indexa ("personal dueño" con espacio
-    // no es substring de PERSONAL_DUENO).
-    g.categoria === "PERSONAL_DUENO" ? "Personal dueño" : "",
+    // El label mostrado también se indexa ("gasto personal del dueño" no es
+    // substring de PERSONAL_DUENO).
+    categoriaGastoLabel(g.categoria),
     g.proveedor?.nombre ?? "",
     g.aeronave?.matricula ?? "",
     g.lugar ?? "",

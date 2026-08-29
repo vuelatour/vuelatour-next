@@ -37,10 +37,10 @@ import { ExpenseVerifyDialog } from "./expense-verify-dialog";
 import { RepartoDialog } from "./reparto-dialog";
 import { CompraLinkDialog } from "./compra-link-dialog";
 import { esCategoriaCompra } from "@/types/compras";
+// Fuente única sincronizada con el API: antes un Set local sin
+// GASOLINA/VISITA escondía el menú "Repartir" para esas categorías.
+import { CATEGORIAS_REPARTIBLES } from "@/lib/admin/categorias-gasto";
 import type { Gasto } from "@/types/expenses";
-
-/** Gastos generales SIN vuelo: los únicos repartibles entre aviones. */
-const CATEGORIAS_REPARTIBLES = new Set(["OTRO", "FIJO", "INDIRECTO"]);
 
 interface ExpenseActionsProps {
   gasto: Gasto;

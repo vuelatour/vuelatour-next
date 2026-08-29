@@ -59,6 +59,10 @@ import {
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
+import {
+  categoriaGastoLabel,
+  hojaDestinoGasto,
+} from "@/lib/admin/categorias-gasto";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -70,35 +74,33 @@ const TIPOS_FACTURA = [
   "text/csv",
 ];
 
+// Etiquetas desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto); aquí solo
+// vive el ORDEN del select. Semántica de cada categoría: ver ese archivo.
 const CATEGORIAS = [
-  { value: "GAS", label: "GAS" },
-  { value: "OPERACIONES", label: "OPERACIONES" },
-  { value: "TUAS", label: "TUAS" },
-  { value: "FBO", label: "FBO" },
-  { value: "COMIDA", label: "COMIDA" },
-  { value: "HOTEL", label: "HOTEL" },
-  { value: "TAXI", label: "TAXI / estacionamiento" },
-  { value: "REFACCION", label: "REFACCION" },
-  { value: "PERMISO", label: "PERMISO" },
+  "GAS",
+  "OPERACIONES",
+  "TUAS",
+  "FBO",
+  "COMIDA",
+  "HOTEL",
+  "TAXI",
+  "REFACCION",
+  "PERMISO",
   // Honorario del freelance que voló el avión (doc 3.7): resta en el reparto
   // como gasto directo del vuelo.
-  { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
-  { value: "FIJO", label: "FIJO" },
-  // Gasto de la operación que NO pertenece a un vuelo (servicios,
-  // mantenimientos, honorarios — hoja "gastos indirectos" del equipo).
-  { value: "INDIRECTO", label: "Gasto indirecto (sin vuelo)" },
-  // Gasto PERSONAL del dueño: lo captura el personal pero NO es de la
-  // empresa ni de los aviones (fuera de balances/reparto/pre-cierre);
-  // seguimiento en la pantalla Gastos personales.
-  // Gasolina de coches/camionetas (Pemex/Gulf): gasto de la empresa, sin
-  // vuelo ni avión — el combustible de AVIACIÓN sigue siendo GAS.
-  { value: "GASOLINA", label: "Gasolina (vehículos)" },
-  // Gasto de un VISITANTE de trabajo (fondo de visita / tarjeta corporativa):
-  // sin vuelo ni avión — vive en Otros gastos y ahí se reparte a mano.
-  { value: "VISITA", label: "Visita" },
-  { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
-  { value: "OTRO", label: "OTRO" },
-];
+  "PILOTO_EXTERNO",
+  "FIJO",
+  // Sin vuelo (avión opcional): INDIRECTO/NOMINA; SERVICIOS es del avión.
+  "INDIRECTO",
+  "NOMINA",
+  "SERVICIOS",
+  // Sin vuelo NI avión: gasolina de coches, visitante de trabajo, gasto
+  // personal del dueño (fuera de balances/reparto/pre-cierre).
+  "GASOLINA",
+  "VISITA",
+  "PERSONAL_DUENO",
+  "OTRO",
+].map((value) => ({ value, label: categoriaGastoLabel(value) }));
 
 const MEDIOS = [
   { value: "TRANSFERENCIA", label: "Transferencia" },
@@ -410,6 +412,15 @@ export function ExpenseCreateDialog({
       ) {
         values.vuelo_id = "";
         values.aeronave_id = "";
+      }
+      // Sin vuelo (el avión SÍ se conserva): mismo cinturón contra un vuelo
+      // elegido antes de cambiar la categoría.
+      if (
+        values.categoria === "INDIRECTO" ||
+        values.categoria === "NOMINA" ||
+        values.categoria === "SERVICIOS"
+      ) {
+        values.vuelo_id = "";
       }
       // Primero el archivo: si la subida falla, no se crea el gasto a medias.
       let fotoPath = "";
@@ -753,7 +764,16 @@ export function ExpenseCreateDialog({
             )}
 
             <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-              <Field label="Categoría">
+              <Field
+                label="Categoría"
+                // ¿A qué hoja del balance cae? — reactivo a categoría, vuelo
+                // y avión elegidos (fuente única hojaDestinoGasto).
+                hint={`Cae en: ${hojaDestinoGasto(
+                  watch("categoria"),
+                  !!watch("vuelo_id"),
+                  !!watch("aeronave_id"),
+                )}`}
+              >
                 <SearchableSelect
                   // Un gasto DEL VUELO no puede ser indirecto (contradicción):
                   // la opción solo existe en el alta global.
@@ -762,6 +782,10 @@ export function ExpenseCreateDialog({
                       ? CATEGORIAS.filter(
                           (c) =>
                             c.value !== "INDIRECTO" &&
+                            // Nómina y servicios del avión tampoco son de UN
+                            // vuelo (van sin vuelo, con avión opcional).
+                            c.value !== "NOMINA" &&
+                            c.value !== "SERVICIOS" &&
                             // Un gasto DEL VUELO jamás es personal del dueño.
                             c.value !== "PERSONAL_DUENO" &&
                             // Un gasto DEL VUELO no es gasolina de coche.
@@ -774,8 +798,13 @@ export function ExpenseCreateDialog({
                   value={watch("categoria")}
                   onChange={(v) => {
                     setValue("categoria", v);
-                    // INDIRECTO = sin vuelo: se limpia el enlace si lo había.
-                    if (v === "INDIRECTO" && watch("vuelo_id")) {
+                    // Sin vuelo: se limpia el enlace si lo había. El avión SÍ
+                    // se conserva (SERVICIOS es del avión; en NOMINA es
+                    // opcional).
+                    if (
+                      (v === "INDIRECTO" || v === "NOMINA" || v === "SERVICIOS") &&
+                      watch("vuelo_id")
+                    ) {
                       setValue("vuelo_id", "");
                       setComoPiloto(false);
                     }
@@ -811,8 +840,23 @@ export function ExpenseCreateDialog({
             {!defaultVueloId && watch("categoria") === "INDIRECTO" && (
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 Gasto <span className="font-medium">indirecto</span>: no se liga a
-                ningún vuelo (avión opcional). Por ahora queda fuera del reparto;
-                su tratamiento se definirá con el equipo.
+                ningún vuelo (avión opcional). Con avión cae en su hoja de
+                Gastos indirectos; sin avión puede repartirse desde{" "}
+                <span className="font-medium">Otros gastos</span>.
+              </p>
+            )}
+            {!defaultVueloId && watch("categoria") === "NOMINA" && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium">Nómina</span>: sin vuelo; el avión
+                es opcional (p. ej. piloto de un solo avión). Sin avión puede
+                repartirse desde <span className="font-medium">Otros gastos</span>.
+              </p>
+            )}
+            {!defaultVueloId && watch("categoria") === "SERVICIOS" && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium">Servicios (avión)</span>: servicio o
+                mantenimiento de un avión sin vuelo. Elige el avión para que
+                caiga en su hoja de Gastos indirectos.
               </p>
             )}
             {!defaultVueloId && watch("categoria") === "GASOLINA" && (
@@ -841,6 +885,8 @@ export function ExpenseCreateDialog({
             )}
             {!defaultVueloId &&
               watch("categoria") !== "INDIRECTO" &&
+              watch("categoria") !== "NOMINA" &&
+              watch("categoria") !== "SERVICIOS" &&
               watch("categoria") !== "PERSONAL_DUENO" &&
               watch("categoria") !== "GASOLINA" &&
               watch("categoria") !== "VISITA" && (

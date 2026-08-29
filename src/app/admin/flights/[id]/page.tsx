@@ -742,6 +742,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
             tcOficial={tcOficial}
             tcOficialFecha={diaCotizacion}
+            // Reembolsos: solo roles de oficina.
+            puedeReembolsar={me?.rol === "ADMIN" || me?.rol === "COORDINADOR"}
           />
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;

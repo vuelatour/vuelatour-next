@@ -49,6 +49,10 @@ import {
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
+import {
+  categoriaGastoLabel,
+  hojaDestinoGasto,
+} from "@/lib/admin/categorias-gasto";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
@@ -60,30 +64,32 @@ import {
 } from "@/components/admin/expenses/vuelo-cancelado-hint";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 
+// Etiquetas desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto); aquí solo
+// vive el ORDEN del select. Semántica de cada categoría: ver ese archivo.
 const CATEGORIAS = [
-  ...[
-    "GAS",
-    "ATERRIZAJE",
-    "OPERACIONES",
-    "TUAS",
-    "FBO",
-    "COMIDA",
-    "HOTEL",
-    "TAXI",
-    "REFACCION",
-    "PERMISO",
-  ].map((c) => ({ value: c, label: c })),
-  { value: "PILOTO_EXTERNO", label: "Piloto externo (honorario)" },
-  { value: "INDIRECTO", label: "Indirecto (sin vuelo)" },
-  // El API exige sin vuelo y sin avión para esta categoría (400 con mensaje
-  // claro si el gasto los tiene: quitarlos primero).
-  { value: "GASOLINA", label: "Gasolina (vehículos)" },
-  // Visitante de trabajo (fondo de visita / tarjeta corp): mismo candado del
-  // API que GASOLINA — sin vuelo, avión ni escala.
-  { value: "VISITA", label: "Visita" },
-  { value: "PERSONAL_DUENO", label: "Personal del dueño (no empresa)" },
-  ...["FIJO", "OTRO"].map((c) => ({ value: c, label: c })),
-];
+  "GAS",
+  "ATERRIZAJE",
+  "OPERACIONES",
+  "TUAS",
+  "FBO",
+  "COMIDA",
+  "HOTEL",
+  "TAXI",
+  "REFACCION",
+  "PERMISO",
+  "PILOTO_EXTERNO",
+  // Sin vuelo (avión opcional): INDIRECTO/NOMINA; SERVICIOS es del avión.
+  "INDIRECTO",
+  "NOMINA",
+  "SERVICIOS",
+  // El API exige sin vuelo y sin avión para GASOLINA/VISITA/PERSONAL_DUENO
+  // (400 con mensaje claro si el gasto los tiene: quitarlos primero).
+  "GASOLINA",
+  "VISITA",
+  "PERSONAL_DUENO",
+  "FIJO",
+  "OTRO",
+].map((value) => ({ value, label: categoriaGastoLabel(value) }));
 
 const MEDIOS = [
   { value: "EFECTIVO", label: "Efectivo (caja chica)" },
@@ -492,6 +498,16 @@ export function ExpenseVerifyDialog({
         payload.vuelo_id = null;
         payload.escala_id = null;
       }
+      // Sin vuelo pero CON avión (INDIRECTO/NOMINA/SERVICIOS): desligar
+      // vuelo y escala en el MISMO PATCH — el avión se conserva.
+      if (
+        values.categoria === "INDIRECTO" ||
+        values.categoria === "NOMINA" ||
+        values.categoria === "SERVICIOS"
+      ) {
+        payload.vuelo_id = null;
+        payload.escala_id = null;
+      }
       // Fecha CORREGIDA aquí a > 365 días atrás (ya confirmada en el
       // diálogo): el API exige el candado permitir_fecha_antigua para
       // fechas de otro año (auditoría 29-ago).
@@ -512,6 +528,11 @@ export function ExpenseVerifyDialog({
           values.categoria !== "PERSONAL_DUENO" &&
           values.categoria !== "GASOLINA" &&
           values.categoria !== "VISITA" &&
+          // Sin vuelo por categoría: el PATCH ya lo desligó — una segunda
+          // llamada re-ligaría o duplicaría la escritura.
+          values.categoria !== "INDIRECTO" &&
+          values.categoria !== "NOMINA" &&
+          values.categoria !== "SERVICIOS" &&
           vueloSel !== (gasto.vuelo_id ?? "")
         ) {
           const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
@@ -951,7 +972,16 @@ export function ExpenseVerifyDialog({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Categoría">
+            <Field
+              label="Categoría"
+              // ¿A qué hoja del balance cae? — reactivo a categoría, vuelo y
+              // avión elegidos (fuente única hojaDestinoGasto).
+              hint={`Cae en: ${hojaDestinoGasto(
+                watch("categoria"),
+                !!vueloSel,
+                !!watch("aeronave_id"),
+              )}`}
+            >
               <SearchableSelect
                 options={CATEGORIAS}
                 value={watch("categoria")}
@@ -962,6 +992,12 @@ export function ExpenseVerifyDialog({
                   // null explícito en el mismo PATCH.
                   if (v === "PERSONAL_DUENO" || v === "GASOLINA" || v === "VISITA") {
                     setValue("aeronave_id", "");
+                    setVueloSel("");
+                  }
+                  // Sin vuelo pero el avión SÍ se conserva (SERVICIOS es del
+                  // avión; en NOMINA es opcional): el submit desliga el vuelo
+                  // con null explícito en el mismo PATCH.
+                  if (v === "INDIRECTO" || v === "NOMINA" || v === "SERVICIOS") {
                     setVueloSel("");
                   }
                 }}

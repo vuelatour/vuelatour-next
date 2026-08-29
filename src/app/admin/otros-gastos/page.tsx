@@ -87,6 +87,7 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
       moneda: g.moneda,
       medio_pago: g.medio_pago,
       tarjeta_terminacion: g.tarjeta_terminacion ?? null,
+      aeronave_id: g.aeronave_id ?? null,
       matricula: g.aeronave?.matricula ?? null,
       repartos,
       remanente,
@@ -130,7 +131,7 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
         <EmptyState
           icon={BanknotesIcon}
           title={`Sin otros gastos en ${mesLabel}`}
-          description="Aquí aparecen los gastos generales del mes (categorías OTRO, FIJO e INDIRECTO sin vuelo) para asignarlos o dividirlos entre aviones."
+          description="Aquí aparecen los gastos generales del mes sin vuelo (Otros gastos, FIJO, Gastos indirectos, Nómina, Gasolina de vehículos y Visita) para asignarlos o dividirlos entre aviones."
         />
       ) : (
         <>

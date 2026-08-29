@@ -22,6 +22,7 @@ import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
 import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
 import { getClient } from "@/lib/api/clients-server";
+import { getMe } from "@/lib/api/me";
 import { ApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -34,6 +35,7 @@ interface QuoteDetailPageProps {
 }
 
 export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) {
+  const me = await getMe().catch(() => null);
   const { id } = await params;
 
   let quote, versions;
@@ -252,9 +254,12 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
           {cobrosVuelo && cobrosVuelo.cobros.length > 0 && (
             <QuoteCobrosCard
               quoteId={quote.id}
+              quoteFolio={quote.folio}
               montoTotalUsd={Number(quote.monto_total_usd)}
               totalCobrado={cobrosVuelo.total_cobrado}
               cobros={cobrosVuelo.cobros}
+              // Reembolsos: solo roles de oficina.
+              puedeReembolsar={me?.rol === "ADMIN" || me?.rol === "COORDINADOR"}
             />
           )}
 

@@ -63,7 +63,17 @@ export function FuelLoadsTable({
         noLink: true,
         cell: (l) =>
           l.matricula ? (
-            <span className="font-mono text-sm">{l.matricula}</span>
+            // Matrícula → ficha del avión (mismo patrón que en Gastos).
+            l.aeronave_id ? (
+              <Link
+                href={`/admin/aircraft/${l.aeronave_id}`}
+                className="font-mono text-sm text-brand-600 hover:underline"
+              >
+                {l.matricula}
+              </Link>
+            ) : (
+              <span className="font-mono text-sm">{l.matricula}</span>
+            )
           ) : (
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">

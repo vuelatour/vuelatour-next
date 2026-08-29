@@ -311,6 +311,50 @@ export async function registerCobroAction(
   }
 }
 
+/**
+ * Reembolso al cliente (oficina): se manda POSITIVO y el API lo guarda como
+ * cobro NEGATIVO del vuelo — RESTA del cobrado (fuente única cobrosEnUsd) y
+ * no lleva comisión bancaria. El motivo es obligatorio (auditoría).
+ */
+export interface RegisterReembolsoPayload {
+  /** Monto POSITIVO del reembolso (el API le pone el signo). */
+  monto: number;
+  moneda: "USD" | "MXN";
+  /** TC del reembolso; obligatorio en MXN para restar del total USD. */
+  tc_usd_mxn?: number;
+  metodo_cobro: MetodoPago;
+  /** De qué cuenta salió el dinero (catálogo fijo CUENTAS_COBRO). */
+  cuenta_destino?: CuentaCobro;
+  fecha_cobro?: string;
+  /** Por qué se devuelve el dinero: OBLIGATORIO. */
+  motivo: string;
+}
+
+export async function registerReembolsoAction(
+  flightId: string,
+  payload: RegisterReembolsoPayload,
+): Promise<ActionResult<FlightCobro>> {
+  if (!(payload.monto > 0)) {
+    return { ok: false, error: "El monto del reembolso debe ser mayor a 0" };
+  }
+  if (!payload.motivo?.trim()) {
+    return { ok: false, error: "El motivo del reembolso es obligatorio" };
+  }
+  try {
+    const cobro = await apiServer<FlightCobro>(
+      `/v1/flights/${flightId}/refunds`,
+      {
+        method: "POST",
+        body: { ...payload, motivo: payload.motivo.trim() },
+      },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data: cobro };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Elimina un cobro capturado por error (oficina). El backend recalcula la bandera cobrado. */
 export async function deleteCobroAction(
   flightId: string,

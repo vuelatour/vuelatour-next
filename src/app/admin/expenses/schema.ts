@@ -16,6 +16,12 @@ export const CategoriaEnum = z.enum([
   // Gasto de la operación SIN vuelo (avión opcional). Por ahora fuera del
   // reparto y de la bandeja de pendientes (tratamiento por decidir).
   "INDIRECTO",
+  // Nómina del personal (ago-2026): SIN vuelo; avión OPCIONAL (se conserva
+  // si aplica a uno). Repartible entre aviones desde Otros gastos.
+  "NOMINA",
+  // Servicio/mantenimiento DE UN AVIÓN sin vuelo (ago-2026): sin vuelo;
+  // el avión SÍ se conserva (cae en su hoja de Gastos indirectos).
+  "SERVICIOS",
   // Gasto PERSONAL del dueño: no es de la empresa ni de los aviones —
   // SIEMPRE sin vuelo y sin avión (el API lo exige); seguimiento en la
   // pantalla Gastos personales.

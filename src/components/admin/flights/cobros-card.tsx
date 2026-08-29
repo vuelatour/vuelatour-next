@@ -20,9 +20,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { CobroFormSheet } from "./cobro-form-sheet";
+import { ReembolsoButton } from "./reembolso-dialog";
 import { fmtUsd } from "@/lib/format";
 import type { FlightCobro } from "@/types/flights";
 import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
@@ -55,6 +57,8 @@ interface CobrosCardProps {
   tcOficial?: number | null;
   /** Día (YYYY-MM-DD, Cancún) al que corresponde `tcOficial`. */
   tcOficialFecha?: string | null;
+  /** Rol de oficina (ADMIN/COORDINADOR): habilita "Registrar reembolso". */
+  puedeReembolsar?: boolean;
 }
 
 export function CobrosCard({
@@ -69,6 +73,7 @@ export function CobrosCard({
   tcCotizacion = null,
   tcOficial = null,
   tcOficialFecha = null,
+  puedeReembolsar = false,
 }: CobrosCardProps) {
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -121,27 +126,55 @@ export function CobrosCard({
               )}
             </CardDescription>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setOpen(true)}
-            className="gap-1.5 shrink-0"
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-            {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+            {/* Reembolso: solo oficina y solo cuando ya hay cobros de los
+                cuales devolver. */}
+            {puedeReembolsar && cobros.length > 0 && (
+              <ReembolsoButton flightId={flightId} flightFolio={flightFolio} />
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setOpen(true)}
+              className="gap-1.5 shrink-0"
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"}
+            </Button>
+          </div>
         </CardHeader>
         {cobros.length > 0 && (
           <CardContent>
             <div className="space-y-2">
-              {cobros.map((c) => (
+              {cobros.map((c) => {
+                // Reembolso = cobro NEGATIVO (derivado del signo): en rojo y
+                // con badge — RESTA del cobrado del vuelo.
+                const esReembolso = Number(c.monto) < 0;
+                return (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3"
+                  className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
+                    esReembolso
+                      ? "border-red-500/40 bg-red-500/5"
+                      : "border-border bg-muted/20"
+                  }`}
                 >
                   <div className="text-sm min-w-0">
-                    <p className="font-mono font-semibold">
+                    <p
+                      className={`font-mono font-semibold ${
+                        esReembolso ? "text-red-600 dark:text-red-400" : ""
+                      }`}
+                    >
                       {fmtUsd(c.monto)} {c.moneda}
+                      {esReembolso && (
+                        <Badge
+                          variant="outline"
+                          className="ml-2 border-red-500/50 text-red-600 dark:text-red-400 font-sans font-medium"
+                          title="Devolución al cliente: resta del cobrado del vuelo"
+                        >
+                          Reembolso
+                        </Badge>
+                      )}
                       {c.moneda === "MXN" && c.tc_usd_mxn && (
                         <span className="text-[10px] text-muted-foreground ml-2 font-normal">
                           (≈ {fmtUsd(Number(c.monto) / Number(c.tc_usd_mxn))} USD)
@@ -153,6 +186,15 @@ export function CobrosCard({
                       {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
+                    {/* Motivo del reembolso (viaja en notas): a la vista. */}
+                    {esReembolso && c.notas && (
+                      <p
+                        className="text-[11px] text-muted-foreground truncate"
+                        title={c.notas}
+                      >
+                        Motivo: {c.notas.split("\n")[0]}
+                      </p>
+                    )}
                     {Number(c.comision_banco_monto) > 0 && (
                       <p className="text-[11px] text-amber-600 dark:text-amber-400">
                         Comisión banco {Number(c.comision_banco_pct ?? 0)}% −
@@ -177,14 +219,19 @@ export function CobrosCard({
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      title="Eliminar cobro (capturado por error)"
+                      title={
+                        esReembolso
+                          ? "Eliminar reembolso (capturado por error)"
+                          : "Eliminar cobro (capturado por error)"
+                      }
                       onClick={() => setToDelete(c)}
                     >
                       <TrashIcon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         )}

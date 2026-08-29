@@ -235,6 +235,10 @@ export function RepartoMasivoDialog({
             asignes queda como gasto de la empresa VuelaTour (no resta a
             ningún avión).
           </DialogDescription>
+          <p className="text-xs text-slate-400">
+            Los parciales de INDIRECTO y Nómina caen en la hoja Gastos
+            indirectos del balance de cada avión; el resto en Otros gastos.
+          </p>
         </DialogHeader>
 
         {/* Resumen: cuántos gastos y cuánto dinero POR MONEDA. */}

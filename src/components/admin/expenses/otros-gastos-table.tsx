@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ArrowsRightLeftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
 import { RepartoMasivoDialog } from "@/components/admin/expenses/reparto-masivo-dialog";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { cn } from "@/lib/utils";
 
 /** Fila serializable armada por el server component de /admin/otros-gastos. */
@@ -27,6 +29,8 @@ export interface OtroGastoRow {
   moneda: string;
   medio_pago: string;
   tarjeta_terminacion: string | null;
+  /** Avión clásico del gasto (para ligar la matrícula a su ficha). */
+  aeronave_id: string | null;
   /** Matrícula del avión clásico (aeronave_id del gasto), si tiene. */
   matricula: string | null;
   /** Reparto entre aviones (tabla hija); vacío = sin reparto. */
@@ -41,13 +45,26 @@ const fmtMonto = (v: number, moneda: string) =>
 /** MXN primero, luego USD; cualquier otra moneda al final. */
 const ordenMoneda = (m: string) => (m === "MXN" ? 0 : m === "USD" ? 1 : 2);
 
+// El texto del badge sale de la FUENTE ÚNICA categoriaGastoLabel; aquí solo
+// viven los colores.
 const CATEGORIA_BADGE: Record<string, string> = {
   OTRO: "border-border text-foreground",
   FIJO: "border-sky-500/50 text-sky-600",
   INDIRECTO: "border-violet-500/50 text-violet-600",
+  NOMINA: "border-emerald-500/50 text-emerald-600",
+  GASOLINA: "border-amber-500/50 text-amber-600",
+  VISITA: "border-teal-500/50 text-teal-600",
 };
 
-const CATEGORIAS_FILTRO = ["TODAS", "OTRO", "FIJO", "INDIRECTO", "GASOLINA", "VISITA"] as const;
+const CATEGORIAS_FILTRO = [
+  "TODAS",
+  "OTRO",
+  "FIJO",
+  "INDIRECTO",
+  "NOMINA",
+  "GASOLINA",
+  "VISITA",
+] as const;
 type CategoriaFiltro = (typeof CATEGORIAS_FILTRO)[number];
 
 /**
@@ -185,7 +202,7 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
             variant="outline"
             className={CATEGORIA_BADGE[g.categoria] ?? ""}
           >
-            {g.categoria}
+            {categoriaGastoLabel(g.categoria)}
           </Badge>
         ),
       },
@@ -234,13 +251,15 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
             return (
               <div className="flex max-w-[300px] flex-wrap gap-1">
                 {g.repartos.map((r) => (
-                  <Badge
-                    key={r.aeronave_id}
-                    variant="outline"
-                    className="font-mono text-[11px]"
-                  >
-                    {r.matricula ?? "¿?"} · {fmtMonto(r.monto, g.moneda)}
-                  </Badge>
+                  // Cada parcial liga a la ficha del avión que lo absorbe.
+                  <Link key={r.aeronave_id} href={`/admin/aircraft/${r.aeronave_id}`}>
+                    <Badge
+                      variant="outline"
+                      className="font-mono text-[11px] transition-colors hover:border-brand-600/60 hover:text-brand-600"
+                    >
+                      {r.matricula ?? "¿?"} · {fmtMonto(r.monto, g.moneda)}
+                    </Badge>
+                  </Link>
                 ))}
                 {g.remanente > 0.004 && (
                   <Badge variant="secondary" className="text-[11px]">
@@ -252,10 +271,22 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
           }
           if (g.matricula) {
             // Sin reparto pero con avión clásico: cuenta 100% a ese avión.
-            return (
-              <Badge variant="outline" className="font-mono">
+            const badge = (
+              <Badge
+                variant="outline"
+                className={
+                  g.aeronave_id
+                    ? "font-mono transition-colors hover:border-brand-600/60 hover:text-brand-600"
+                    : "font-mono"
+                }
+              >
                 Avión: {g.matricula}
               </Badge>
+            );
+            return g.aeronave_id ? (
+              <Link href={`/admin/aircraft/${g.aeronave_id}`}>{badge}</Link>
+            ) : (
+              badge
             );
           }
           return <Badge variant="secondary">VuelaTour (sin asignar)</Badge>;
@@ -303,7 +334,7 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
                   : "bg-muted text-muted-foreground hover:text-foreground",
               )}
             >
-              {c === "TODAS" ? "Todas" : c}
+              {c === "TODAS" ? "Todas" : categoriaGastoLabel(c)}
               <span
                 className={cn(
                   "rounded-full px-1.5 text-xs",
@@ -324,6 +355,9 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         searchText={(g) =>
           [
             g.categoria,
+            // El label mostrado también se indexa ("nómina" no es substring
+            // de NOMINA).
+            categoriaGastoLabel(g.categoria),
             g.descripcion ?? "",
             g.notas ?? "",
             g.matricula ?? "",

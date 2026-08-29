@@ -6,6 +6,7 @@ import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 
 const ESTATUS_STYLE: Record<string, string> = {
@@ -57,7 +58,7 @@ export function FlightGastosTable({
       cellClassName: "align-top",
       cell: (g) => (
         <>
-          {g.categoria}
+          {categoriaGastoLabel(g.categoria)}
           {g.lugar ? (
             <p className="text-[11px] text-muted-foreground font-mono">{g.lugar}</p>
           ) : null}

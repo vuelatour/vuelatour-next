@@ -26,6 +26,7 @@ import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { METODO_LABELS } from "@/components/admin/flights/cobros-card";
+import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
 import type { FlightCobro } from "@/types/flights";
 import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
 
@@ -38,14 +39,20 @@ import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
  */
 export function QuoteCobrosCard({
   quoteId,
+  quoteFolio = null,
   montoTotalUsd,
   totalCobrado,
   cobros,
+  puedeReembolsar = false,
 }: {
   quoteId: string;
+  /** Folio del vuelo (encabezado del diálogo de reembolso). */
+  quoteFolio?: number | null;
   montoTotalUsd: number;
   totalCobrado: number;
   cobros: FlightCobro[];
+  /** Rol de oficina (ADMIN/COORDINADOR): habilita "Registrar reembolso". */
+  puedeReembolsar?: boolean;
 }) {
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -71,26 +78,52 @@ export function QuoteCobrosCard({
             total ya cobrado): elimínalo aquí si necesitas ajustarla.
           </CardDescription>
         </div>
-        <Badge
-          variant="outline"
-          className={
-            cubierto
-              ? "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
-              : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-          }
-        >
-          {cubierto ? "Cobrado" : "Parcial"}
-        </Badge>
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+          {/* Reembolso: solo oficina (la card ya implica cobros > 0). */}
+          {puedeReembolsar && (
+            <ReembolsoButton flightId={quoteId} flightFolio={quoteFolio} />
+          )}
+          <Badge
+            variant="outline"
+            className={
+              cubierto
+                ? "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
+                : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+            }
+          >
+            {/* El neto puede quedar en 0 tras un reembolso: no es "parcial". */}
+            {cubierto ? "Cobrado" : totalCobrado > 0 ? "Parcial" : "Reembolsado"}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {cobros.map((c) => (
+        {cobros.map((c) => {
+          // Reembolso = cobro NEGATIVO (derivado del signo): en rojo, con
+          // badge — RESTA del cobrado del vuelo.
+          const esReembolso = Number(c.monto) < 0;
+          return (
           <div
             key={c.id}
-            className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+            className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
+              esReembolso ? "border-red-500/40 bg-red-500/5" : "border-border"
+            }`}
           >
             <div className="min-w-0">
-              <p className="text-sm font-mono font-semibold">
+              <p
+                className={`text-sm font-mono font-semibold ${
+                  esReembolso ? "text-red-600 dark:text-red-400" : ""
+                }`}
+              >
                 ${Number(c.monto).toLocaleString("en-US")} {c.moneda}
+                {esReembolso && (
+                  <Badge
+                    variant="outline"
+                    className="ml-2 border-red-500/50 text-red-600 dark:text-red-400 font-sans font-medium"
+                    title="Devolución al cliente: resta del cobrado del vuelo"
+                  >
+                    Reembolso
+                  </Badge>
+                )}
               </p>
               <p className="text-xs text-muted-foreground">
                 {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro}
@@ -112,7 +145,8 @@ export function QuoteCobrosCard({
               <TrashIcon className="h-4 w-4" />
             </Button>
           </div>
-        ))}
+          );
+        })}
         <p className="text-[11px] text-muted-foreground">
           El detalle completo (vouchers, comisiones) vive en{" "}
           <Link

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
   fmtParticipacionPct,
   fuenteParticipacionLabel,
@@ -29,30 +30,8 @@ import type {
   DetalleVuelo,
 } from "@/types/profit-sharing";
 
-/** Etiquetas es-MX legibles para las categorías de gasto del API. */
-const CATEGORIA_LABEL: Record<string, string> = {
-  GAS: "Combustible",
-  ATERRIZAJE: "Aterrizajes",
-  TUAS: "TUAs",
-  FBO: "FBO",
-  COMIDA: "Comidas",
-  HOTEL: "Hotel",
-  TAXI: "Taxis",
-  REFACCION: "Refacciones",
-  PERMISO: "Permisos",
-  FIJO: "Fijos",
-  OTRO: "Otros",
-  OPERACIONES: "Operaciones",
-  PILOTO_EXTERNO: "Piloto externo",
-  INDIRECTO: "Indirectos",
-};
-
-function categoriaLabel(cat: string): string {
-  if (CATEGORIA_LABEL[cat]) return CATEGORIA_LABEL[cat];
-  // Fallback legible para categorías nuevas: "PISTA_VIP" → "Pista vip".
-  const limpio = cat.replaceAll("_", " ").toLowerCase();
-  return limpio.charAt(0).toUpperCase() + limpio.slice(1);
-}
+// Etiquetas es-MX de las categorías de gasto: FUENTE ÚNICA del panel
+// (@/lib/admin/categorias-gasto), con fallback capitalizado para nuevas.
 
 const GRUPO_LABEL: Record<DetalleGastoGrupo, string> = {
   DIRECTO: "Directo",
@@ -400,7 +379,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                       {detalle.gastos_por_categoria.map((g) => (
                         <TableRow key={`${g.grupo}-${g.categoria}`}>
                           <TableCell className="text-xs">
-                            {categoriaLabel(g.categoria)}
+                            {categoriaGastoLabel(g.categoria)}
                             {g.sin_tc_count > 0 && (
                               <span className="mt-0.5 flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
                                 <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />
