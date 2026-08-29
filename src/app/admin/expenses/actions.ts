@@ -676,3 +676,36 @@ export async function saveRepartoAction(
     return fail(err);
   }
 }
+
+/** Reporte por fila del reparto masivo (el API procesa gasto por gasto). */
+export interface RepartoMasivoResultado {
+  procesados: number;
+  exitos: number;
+  errores: Array<{ gasto_id: string; error: string }>;
+}
+
+/**
+ * Reparto MASIVO por porcentajes: aplica el mismo reparto (% por avión) a
+ * todos los gastos seleccionados — cada gasto reparte SU propio monto y el
+ * reparto vigente de cada uno se REEMPLAZA. El API reporta éxitos y errores
+ * por gasto (no todo-o-nada).
+ */
+export async function saveRepartoMasivoAction(
+  gastoIds: string[],
+  items: Array<{ aeronave_id: string; porcentaje: number }>,
+): Promise<ActionResult<RepartoMasivoResultado>> {
+  try {
+    const data = await apiServer<RepartoMasivoResultado>(
+      "/v1/expenses/reparto-masivo",
+      {
+        method: "POST",
+        body: { gasto_ids: gastoIds, items },
+      },
+    );
+    revalidatePath("/admin/otros-gastos");
+    revalidatePath("/admin/expenses");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}

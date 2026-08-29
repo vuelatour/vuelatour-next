@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowsRightLeftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
@@ -10,6 +10,7 @@ import {
   RepartoDialog,
   type RepartoGasto,
 } from "@/components/admin/expenses/reparto-dialog";
+import { RepartoMasivoDialog } from "@/components/admin/expenses/reparto-masivo-dialog";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,9 @@ export interface OtroGastoRow {
 const fmtMonto = (v: number, moneda: string) =>
   moneda === "USD" ? fmtUsd(v) : fmtMxn(v);
 
+/** MXN primero, luego USD; cualquier otra moneda al final. */
+const ordenMoneda = (m: string) => (m === "MXN" ? 0 : m === "USD" ? 1 : 2);
+
 const CATEGORIA_BADGE: Record<string, string> = {
   OTRO: "border-border text-foreground",
   FIJO: "border-sky-500/50 text-sky-600",
@@ -54,6 +58,12 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
   const [categoria, setCategoria] = useState<CategoriaFiltro>("TODAS");
   const [repartoGasto, setRepartoGasto] = useState<RepartoGasto | null>(null);
   const [openReparto, setOpenReparto] = useState(false);
+  // Selección para el reparto MASIVO: vive SOLO en esta tabla (una sola
+  // página, sin context — a diferencia de /admin/expenses).
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [openMasivo, setOpenMasivo] = useState(false);
 
   const visibles = useMemo(
     () =>
@@ -61,6 +71,65 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         ? gastos
         : gastos.filter((g) => g.categoria === categoria),
     [gastos, categoria],
+  );
+
+  // Poda anti "selección fantasma": tras repartir (revalidate cambia rows) o
+  // al cambiar el chip de categoría, quedarían ids que ya no están en
+  // pantalla. Se sincroniza con lo VISIBLE ahora (mismo patrón que
+  // ExpensesSeleccionProvider).
+  useEffect(() => {
+    const ids = new Set(visibles.map((g) => g.id));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSeleccionados((prev) => {
+      let cambio = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (ids.has(id)) next.add(id);
+        else cambio = true;
+      }
+      return cambio ? next : prev;
+    });
+  }, [visibles]);
+
+  const toggleSeleccion = useCallback((id: string) => {
+    setSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // El encabezado opera sobre TODOS los visibles del filtro de categoría (no
+  // solo la página que muestre el DataTable).
+  const todosVisibles =
+    visibles.length > 0 && visibles.every((g) => seleccionados.has(g.id));
+  const toggleTodosVisibles = useCallback(() => {
+    setSeleccionados((prev) => {
+      const todos =
+        visibles.length > 0 && visibles.every((g) => prev.has(g.id));
+      return todos ? new Set<string>() : new Set(visibles.map((g) => g.id));
+    });
+  }, [visibles]);
+
+  const seleccionRows = useMemo(
+    () => visibles.filter((g) => seleccionados.has(g.id)),
+    [visibles, seleccionados],
+  );
+
+  // Totales de la selección POR MONEDA (jamás se mezclan MXN y USD).
+  const totalesSeleccion = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const g of seleccionRows)
+      m.set(g.moneda, (m.get(g.moneda) ?? 0) + Math.round(g.monto * 100));
+    return [...m.entries()]
+      .sort((a, b) => ordenMoneda(a[0]) - ordenMoneda(b[0]))
+      .map(([moneda, cents]) => ({ moneda, total: cents / 100 }));
+  }, [seleccionRows]);
+
+  const limpiarSeleccion = useCallback(
+    () => setSeleccionados(new Set()),
+    [],
   );
 
   const abrirReparto = useCallback((g: OtroGastoRow) => {
@@ -77,6 +146,31 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
 
   const columns = useMemo<Array<DataTableColumn<OtroGastoRow>>>(
     () => [
+      {
+        key: "sel",
+        header: (
+          <input
+            type="checkbox"
+            checked={todosVisibles}
+            onChange={toggleTodosVisibles}
+            className="h-4 w-4 accent-brand-600 align-middle"
+            aria-label="Seleccionar todos los gastos visibles"
+            title="Seleccionar todos los visibles"
+          />
+        ),
+        headClassName: "w-8",
+        cellClassName: "w-8",
+        cell: (g) => (
+          <input
+            type="checkbox"
+            checked={seleccionados.has(g.id)}
+            onChange={() => toggleSeleccion(g.id)}
+            className="h-4 w-4 accent-brand-600"
+            aria-label="Seleccionar gasto para reparto masivo"
+            title="Seleccionar para repartir en grupo"
+          />
+        ),
+      },
       {
         key: "fecha",
         header: "Fecha",
@@ -186,7 +280,7 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         ),
       },
     ],
-    [abrirReparto],
+    [abrirReparto, seleccionados, todosVisibles, toggleSeleccion, toggleTodosVisibles],
   );
 
   return (
@@ -239,10 +333,66 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         searchPlaceholder="Buscar gasto (descripción, proveedor, categoría, matrícula)…"
       />
 
+      {/* Barra flotante del reparto masivo: aparece con la primera casilla. */}
+      {seleccionRows.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-card px-4 py-2 shadow-lg">
+          <p className="text-sm">
+            <span className="font-semibold tabular-nums">
+              {seleccionRows.length}
+            </span>{" "}
+            {seleccionRows.length === 1
+              ? "gasto seleccionado"
+              : "gastos seleccionados"}
+          </p>
+          {/* Totales POR MONEDA separados: MXN y USD jamás se suman. */}
+          <p className="flex items-center gap-2">
+            {totalesSeleccion.map((t) => (
+              <span
+                key={t.moneda}
+                className="font-mono text-sm font-medium tabular-nums"
+              >
+                {fmtMonto(t.total, t.moneda)}
+              </span>
+            ))}
+          </p>
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setOpenMasivo(true)}
+          >
+            <ArrowsRightLeftIcon className="h-4 w-4" />
+            Repartir seleccionados
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={limpiarSeleccion}
+            className="gap-1"
+          >
+            <XMarkIcon className="h-4 w-4" />
+            Limpiar
+          </Button>
+        </div>
+      )}
+
       <RepartoDialog
         open={openReparto}
         onOpenChange={setOpenReparto}
         gasto={repartoGasto}
+      />
+
+      <RepartoMasivoDialog
+        open={openMasivo}
+        onOpenChange={setOpenMasivo}
+        gastos={seleccionRows.map((g) => ({
+          id: g.id,
+          monto: g.monto,
+          moneda: g.moneda,
+          fecha_gasto: g.fecha_gasto,
+          descripcion: g.descripcion,
+          tieneReparto: g.repartos.length > 0,
+        }))}
+        onSuccess={limpiarSeleccion}
       />
     </div>
   );
