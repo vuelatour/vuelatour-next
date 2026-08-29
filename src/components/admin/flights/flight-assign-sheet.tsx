@@ -52,6 +52,8 @@ interface FlightAssignSheetProps {
   flight: FlightListItem;
   aircraft: AircraftOption[];
   pilots: PilotOption[];
+  /** Candidatos a apoyo (todos los roles activos); ausente = pilotos. */
+  apoyoCandidatos?: PilotOption[];
 }
 
 function defaults(flight: FlightListItem): AssignFormValues {
@@ -70,6 +72,7 @@ export function FlightAssignSheet({
   flight,
   aircraft,
   pilots,
+  apoyoCandidatos,
 }: FlightAssignSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -105,6 +108,13 @@ export function FlightAssignSheet({
   // piloto/copiloto cambió a la misma persona (el select ya la filtra).
   const apoyoConflicto =
     !!apoyoId && (apoyoId === pilotoId || apoyoId === copilotoId);
+  // Apoyo: cualquier usuario activo (pedido 29-ago), con su rol en el
+  // nombre para distinguir; sin semáforo de horas (no vuela).
+  const apoyoOptions = (apoyoCandidatos ?? pilots).map((p) => ({
+    value: p.id,
+    label: p.nombre,
+    description: p.email ?? undefined,
+  }));
   const dispoById = new Map(dispo.map((d) => [d.id, d]));
   const selectedPiloto = pilotoId ? dispoById.get(pilotoId) : undefined;
 
@@ -291,7 +301,7 @@ export function FlightAssignSheet({
             <SearchableSelect
               options={[
                 { value: "", label: "Sin apoyo" },
-                ...pilotOptions.filter(
+                ...apoyoOptions.filter(
                   (o) => o.value !== pilotoId && o.value !== copilotoId,
                 ),
               ]}

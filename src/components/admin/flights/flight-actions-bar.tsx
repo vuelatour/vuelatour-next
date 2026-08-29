@@ -51,6 +51,9 @@ interface FlightActionsBarProps {
   flight: FlightListItem;
   aircraft: AircraftOption[];
   pilots: PilotOption[];
+  /** Candidatos a APOYO en tierra: todos los usuarios activos (no solo
+   *  pilotos). Ausente = se ofrecen los pilotos. */
+  apoyoCandidatos?: PilotOption[];
   /** Resumen de gastos ligados (aviso al cancelar el vuelo). */
   gastosResumen?: string | null;
   /** Externo sin desglose de cotización: puede editar método de cobro aquí. */
@@ -64,6 +67,7 @@ export function FlightActionsBar({
   flight,
   aircraft,
   pilots,
+  apoyoCandidatos,
   gastosResumen,
   metodoCobroEditable,
   planVueloUrl,
@@ -273,6 +277,7 @@ export function FlightActionsBar({
         flight={flight}
         aircraft={aircraft}
         pilots={pilots}
+        apoyoCandidatos={apoyoCandidatos}
       />
 
       <FlightMetaSheet

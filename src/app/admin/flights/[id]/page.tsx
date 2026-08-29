@@ -187,6 +187,34 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   // Vuelo COMBINADO (estrategia de pernocta): folio del vuelo ligado — el
   // join puede llegar como objeto o arreglo (PostgREST) o faltar (API vieja).
   const folioCombinado = combinadoFolio(snapshot);
+  // Apoyo en tierra: CUALQUIER usuario activo de la operación (admin,
+  // coordinación, mecánico, visitante…), no solo pilotos (pedido 29-ago; el
+  // API ya lo permitía y la app ya listaba a todos). Best-effort: si el rol
+  // no puede listar usuarios, el selector cae a los pilotos.
+  const usuariosRes = await listUsers({ estado: "ACTIVO", limit: 200 }).catch(
+    () => null,
+  );
+  const rolLabel: Record<string, string> = {
+    ADMIN: "admin",
+    COORDINADOR: "coordinación",
+    ANALISTA: "analista",
+    FACTURACION: "facturación",
+    PILOTO: "piloto",
+    SOCIO: "socio",
+    MECANICO: "mecánico",
+    VISITANTE: "visitante",
+  };
+  const apoyoOptions = (usuariosRes?.data ?? [])
+    // Un piloto externo (freelance sin app) no puede apoyar.
+    .filter((u) => !(u as { es_piloto_externo?: boolean }).es_piloto_externo)
+    .map((u) => ({
+      id: u.id,
+      nombre:
+        u.rol === "PILOTO"
+          ? u.nombre
+          : `${u.nombre} · ${rolLabel[u.rol] ?? String(u.rol).toLowerCase()}`,
+      email: u.email,
+    }));
   const piloto = pilotsRes.data.find((p) => p.id === snapshot.piloto_id);
   const copiloto = pilotsRes.data.find((p) => p.id === snapshot.copiloto_id);
   // Apoyo en tierra: el snapshot trae el nombre resuelto (el apoyo puede ser
@@ -194,6 +222,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const apoyoNombre =
     snapshot.apoyo_nombre ??
     pilotsRes.data.find((p) => p.id === snapshot.apoyo_id)?.nombre ??
+    usuariosRes?.data.find((u) => u.id === snapshot.apoyo_id)?.nombre ??
     null;
 
   const aircraftOptions = aircraftRes.data.map((a) => ({
@@ -437,6 +466,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               }}
               aircraft={aircraftOptions}
               pilots={pilotOptions}
+              apoyoCandidatos={apoyoOptions.length > 0 ? apoyoOptions : undefined}
               gastosResumen={gastosResumen}
               planVueloUrl={planVuelo.url}
               // Externos SIN desglose de cotización (creados con el form
