@@ -19,7 +19,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { cancunInputToIso } from "@/lib/datetime";
+import { cancunInputToIso, fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import {
@@ -116,9 +116,11 @@ interface CobroFormSheetProps {
   /** TC USD→MXN con el que se cotizó (null si la cotización no lo fijó).
       Manda como sugerencia al cobrar en MXN. */
   tcCotizacion?: number | null;
-  /** TC oficial de referencia (open.er-api) del día: respaldo cuando la cotización no
-      fijó TC. null si el API no tiene dato. */
+  /** TC oficial de referencia (open.er-api / BCE) del DÍA DE LA COTIZACIÓN:
+      respaldo cuando la cotización no fijó TC. null si el API no tiene dato. */
   tcOficial?: number | null;
+  /** Día (YYYY-MM-DD) al que corresponde `tcOficial` (para decirlo en la UI). */
+  tcOficialFecha?: string | null;
 }
 
 type TcSugerido = { valor: number; fuente: "cotizacion" | "oficial" };
@@ -157,7 +159,9 @@ export function CobroFormSheet({
   cancelado = false,
   tcCotizacion = null,
   tcOficial = null,
+  tcOficialFecha = null,
 }: CobroFormSheetProps) {
+  const diaTcOficial = tcOficialFecha ? fmtDateOnly(tcOficialFecha) : null;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // Qué TC se prellenó (para el hint); se apaga si el usuario lo edita.
@@ -242,7 +246,7 @@ export function CobroFormSheet({
     tcPrefill && Number(tc) === tcPrefill.valor
       ? tcPrefill.fuente === "cotizacion"
         ? "Prellenado con el TC de la cotización — puedes editarlo."
-        : "Prellenado con el TC oficial de referencia del día — puedes editarlo."
+        : `Prellenado con el TC oficial de referencia del día de la cotización${diaTcOficial ? ` (${diaTcOficial})` : ""} — puedes editarlo.`
       : "Necesario para saber cuánto cubre del total en USD";
 
   // Cuentas del catálogo: primero las de la moneda del cobro (sugerencia
@@ -408,14 +412,17 @@ export function CobroFormSheet({
             </div>
             {tcSugerido?.fuente === "oficial" && (
               <p className="mt-1.5 text-muted-foreground">
-                La cotización no fijó tipo de cambio; se muestra el TC oficial
-                de referencia del día: {fmtDecimal(tcSugerido.valor, 4)}.
+                La cotización no fijó tipo de cambio; se usa el TC oficial de
+                referencia del día en que se cotizó
+                {diaTcOficial ? ` (${diaTcOficial})` : ""}:{" "}
+                {fmtDecimal(tcSugerido.valor, 4)} — el mismo que usan los Excel
+                del balance.
               </p>
             )}
             {!tcSugerido && (
               <p className="mt-1.5 text-muted-foreground">
                 La cotización no fijó tipo de cambio y no hay TC oficial del día
-                disponible.
+                de la cotización disponible.
               </p>
             )}
           </div>

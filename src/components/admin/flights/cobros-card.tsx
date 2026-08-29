@@ -50,8 +50,11 @@ interface CobrosCardProps {
   voucherUrls?: Record<string, string>;
   /** TC con el que se cotizó (sugerencia al cobrar en MXN). */
   tcCotizacion?: number | null;
-  /** TC oficial de referencia del día (respaldo si la cotización no fijó TC). */
+  /** TC oficial de referencia del día de la cotización (respaldo si la
+   *  cotización no fijó TC). */
   tcOficial?: number | null;
+  /** Día (YYYY-MM-DD, Cancún) al que corresponde `tcOficial`. */
+  tcOficialFecha?: string | null;
 }
 
 export function CobrosCard({
@@ -65,6 +68,7 @@ export function CobrosCard({
   voucherUrls = {},
   tcCotizacion = null,
   tcOficial = null,
+  tcOficialFecha = null,
 }: CobrosCardProps) {
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -234,6 +238,7 @@ export function CobrosCard({
         cancelado={cancelado}
         tcCotizacion={tcCotizacion}
         tcOficial={tcOficial}
+        tcOficialFecha={tcOficialFecha}
       />
     </>
   );

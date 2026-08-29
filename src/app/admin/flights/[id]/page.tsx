@@ -17,7 +17,7 @@ import {
 import { FlightActionsBar } from "@/components/admin/flights/flight-actions-bar";
 import { getMe } from "@/lib/api/me";
 import { FlightReportButtons } from "@/components/admin/flights/flight-report-buttons";
-import { cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import { CANCUN_TZ, cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
 import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card";
@@ -101,7 +101,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes, vueloAnteriorRes, tcOficial] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes, vueloAnteriorRes] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -123,11 +123,20 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ),
       // Vuelo anterior del mismo avión (auditar la cadena de tacómetros).
       getVueloAnterior(id).catch(() => ({ anterior: null })),
-      // TC oficial de referencia de hoy (open.er-api): respaldo para prellenar el TC al
-      // cobrar en MXN si la cotización no lo fijó. Best-effort: la función
-      // ya devuelve null en cualquier fallo y nunca bloquea el render.
-      getTipoCambioOficial(),
     ]);
+  // TC oficial de referencia del DÍA DE LA COTIZACIÓN (pedido 29-ago: no el
+  // de hoy) para prellenar el TC al cobrar en MXN cuando la cotización no lo
+  // fijó — la misma fecha que usan los Excel del balance (fecha_solicitud ??
+  // fecha_vuelo, en día Cancún). Best-effort: null en cualquier fallo.
+  const diaCotizacion = (() => {
+    const iso = quote?.fecha_solicitud ?? snapshot.fecha_vuelo;
+    if (!iso) return null;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? null
+      : new Intl.DateTimeFormat("en-CA", { timeZone: CANCUN_TZ }).format(d);
+  })();
+  const tcOficial = diaCotizacion ? await getTipoCambioOficial(diaCotizacion) : null;
   const vueloAnterior = vueloAnteriorRes.anterior;
   const gastos = gastosRes.data;
   // Resumen para el aviso al cancelar el vuelo (los gastos se conservan).
@@ -715,6 +724,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             voucherUrls={voucherUrls}
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
             tcOficial={tcOficial}
+            tcOficialFecha={diaCotizacion}
           />
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;
