@@ -19,6 +19,9 @@ import type { AvionReparto } from "@/types/profit-sharing";
 
 const AMBAR =
   "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30";
+/** Informativo (no advertencia): convertido con el TC oficial de referencia. */
+const INFO =
+  "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30";
 
 /**
  * Card de reparto por avión: cascada del saldo (las filas SUMAN el saldo),
@@ -120,7 +123,7 @@ export function AvionRepartoCard({
             <Badge
               variant="outline"
               className={AMBAR}
-              title={`${fmtDecimal(avion.gastos.gastos_sin_tc_mxn)} MXN quedaron fuera del cálculo por no tener tipo de cambio.`}
+              title={`${fmtDecimal(avion.gastos.gastos_sin_tc_mxn)} MXN quedaron fuera del cálculo: sin tipo de cambio capturado ni TC oficial de referencia disponible para su fecha.`}
             >
               {avion.gastos.gastos_sin_tc_count} gasto(s) sin TC
             </Badge>
@@ -129,9 +132,30 @@ export function AvionRepartoCard({
             <Badge
               variant="outline"
               className={AMBAR}
-              title="Cobros en MXN sin tipo de cambio: no pudieron convertirse a USD y quedaron fuera del ingreso."
+              title="Cobros en MXN sin tipo de cambio (ni en el cobro, ni en la cotización, ni TC oficial disponible para su fecha): no pudieron convertirse a USD y quedaron fuera del ingreso."
             >
               Cobros sin TC · {fmtDecimal(avion.ingresos.cobros_sin_tc_mxn)} MXN
+            </Badge>
+          )}
+          {/* Informativos (29-ago-2026): lo que SÍ entró con el TC oficial
+              de referencia del día. Ya está dentro de las cifras. */}
+          {(avion.gastos.gastos_tc_oficial?.count ?? 0) > 0 && (
+            <Badge
+              variant="outline"
+              className={INFO}
+              title={`${avion.gastos.gastos_tc_oficial?.count} gasto(s) en MXN sin tipo de cambio capturado (${fmtDecimal(avion.gastos.gastos_tc_oficial?.monto_mxn ?? 0)} MXN) se convirtieron con el TC oficial de referencia del día del gasto (open.er-api / BCE). Ya restan en la cascada; capturar el TC en el gasto lo sustituye.`}
+            >
+              {avion.gastos.gastos_tc_oficial?.count} gasto(s) con TC oficial
+            </Badge>
+          )}
+          {(avion.ingresos.cobros_tc_oficial_count ?? 0) > 0 && (
+            <Badge
+              variant="outline"
+              className={INFO}
+              title="Vuelos cuya cotización no trae tipo de cambio: sus cobros en MXN se convirtieron con el TC oficial de referencia del día de la cotización (open.er-api / BCE). Ya cuentan en la venta cobrada; capturar el TC en el vuelo o en el cobro lo sustituye."
+            >
+              {avion.ingresos.cobros_tc_oficial_count} vuelo(s) con cobros a TC
+              oficial
             </Badge>
           )}
           {avion.reparto.length > 0 && avion.reparto_porcentaje_total !== 100 && (

@@ -59,6 +59,17 @@ export interface DetalleVuelo {
   /** De dónde salió el peso: 'unico' | 'tramos' (partes iguales por tramo
       vendido; el API no emite otra fuente). */
   participacion_fuente?: string;
+  /** ADITIVO (29-ago-2026): presente solo cuando los cobros MXN sin TC de
+      este vuelo se convirtieron con el TC oficial de referencia del día de
+      la cotización (la cotización no trae tc_usd_mxn). */
+  tc_oficial?: { tc: number; fecha_dato: string; fuente: string };
+}
+
+/** Conteo/monto de lo convertido con el TC oficial de referencia del día
+ *  (open.er-api / BCE). Ya está DENTRO de las cifras: solo informa. */
+export interface TcOficialGastos {
+  count: number;
+  monto_mxn: number;
 }
 
 export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | 'FIJO';
@@ -71,6 +82,10 @@ export interface DetalleGastoCategoria {
   usd: number;
   sin_tc_count: number;
   sin_tc_mxn: number;
+  /** ADITIVOS (29-ago-2026): de `count`, los MXN sin TC capturado que se
+      convirtieron con el TC oficial del día del gasto. */
+  tc_oficial_count?: number;
+  tc_oficial_mxn?: number;
 }
 
 /**
@@ -110,8 +125,13 @@ export interface AvionReparto {
     pendiente_bruto_usd?: number;
     vuelos_cobrados: number;
     vuelos_pendientes: number;
-    /** Cobros MXN que no pudieron convertirse a USD (sin TC). */
+    /** Cobros MXN que no pudieron convertirse a USD (sin TC en el cobro, en
+        la cotización ni TC oficial de referencia disponible). */
     cobros_sin_tc_mxn: number;
+    /** ADITIVO (29-ago-2026): vuelos (contados en el avión que los reporta)
+        cuyos cobros MXN sin TC se convirtieron con el TC oficial del día de
+        la cotización; ya están dentro de cobrado_usd. */
+    cobros_tc_oficial_count?: number;
   };
   /** Horas de tacómetro voladas en el periodo (base de la reserva). */
   horas_voladas_hr: number;
@@ -122,6 +142,9 @@ export interface AvionReparto {
     otros_prorrateados_usd: number;
     gastos_sin_tc_count: number;
     gastos_sin_tc_mxn: number;
+    /** ADITIVO (29-ago-2026): gastos MXN sin tc_gasto convertidos con el TC
+        oficial del día del gasto; ya restan en las cifras de arriba. */
+    gastos_tc_oficial?: TcOficialGastos;
   };
   reserva_overhaul_usd: number;
   reserva_overhaul_incompleta: boolean;
@@ -142,6 +165,9 @@ export interface ExternosResumen {
   utilidad_usd: number;
   sin_costo_count: number;
   cobros_sin_tc_mxn: number;
+  /** ADITIVO (29-ago-2026): externos cuyos cobros MXN sin TC se convirtieron
+      con el TC oficial del día de la cotización. */
+  cobros_tc_oficial_count?: number;
   /** Comisión del vendedor cotizada en los vuelos externos del periodo
       (pre-IVA): ingreso de VuelaTour, informativo. Aditivo: el API previo
       no lo manda. */
@@ -168,10 +194,26 @@ export interface OtrosIngresosVuelatour {
   };
 }
 
+/** Resumen global del TC oficial de respaldo usado en el periodo (29-ago-2026):
+ *  vuelos con cobros MXN sin TC y gastos MXN sin TC (por avión + fijos del
+ *  pool + externos) convertidos con el TC oficial del día. Informativo. */
+export interface TcOficialResumen {
+  vuelos: number;
+  gastos: TcOficialGastos;
+  /** Fuentes legibles usadas ("open.er-api", "BCE (frankfurter)"). */
+  fuentes: string[];
+  leyenda: string;
+}
+
 export interface ProfitSharingResult {
   externos?: ExternosResumen;
   otros_ingresos_vuelatour?: OtrosIngresosVuelatour | null;
   periodo: { desde: string; hasta: string };
+  /** FIJOS del pool en MXN que NO convirtieron (sin TC capturado ni oficial). */
   gastos_sin_tc: { count: number; monto_mxn: number };
+  /** ADITIVO (29-ago-2026): FIJOS del pool convertidos con el TC oficial. */
+  gastos_tc_oficial?: TcOficialGastos;
+  /** ADITIVO (29-ago-2026): resumen global del TC oficial de respaldo. */
+  tc_oficial?: TcOficialResumen | null;
   aviones: AvionReparto[];
 }

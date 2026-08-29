@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -28,6 +29,9 @@ interface PreCierreItem {
   monto_mxn?: number;
   monto?: number;
   vuelos?: PreCierreVuelo[];
+  /** ADITIVO: aviso informativo (el dinero YA cuenta; nada que resolver
+      salvo confirmar). Se pinta en azul, sin "Resolver". */
+  informativo?: boolean;
 }
 
 interface PreCierre {
@@ -53,6 +57,9 @@ const LINK_POR_CLAVE: Record<
     `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
   gastos_sin_avion: () => "/admin/expenses",
   gastos_sin_tc: () => "/admin/expenses",
+  // Cobros MXN sin TC que ni el TC oficial convierte: se captura el TC en
+  // el vuelo (los folios del item llevan directo a cada uno).
+  cobros_sin_tc: (p) => `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
   // El comprobante trae otra matrícula: se corrige el avión en Gastos.
   matricula_recibo_distinta: () => "/admin/expenses",
   // Directo a Gastos filtrado a "sin facturar" (pendiente + solicitada) DEL
@@ -150,15 +157,28 @@ export async function PreCierreCard({
           {pendientes.map((item) => {
             const monto = fmtMonto(item);
             const href = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
+            const info = item.informativo === true;
             return (
               <div
                 key={item.clave}
-                className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-border p-3"
+                className={`flex flex-wrap items-start justify-between gap-2 rounded-lg border p-3 ${
+                  info ? "border-sky-500/30 bg-sky-500/[0.04]" : "border-border"
+                }`}
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium">
+                    {info && (
+                      <InformationCircleIcon
+                        aria-label="Informativo"
+                        className="mr-1 inline h-4 w-4 align-text-bottom text-sky-600 dark:text-sky-400"
+                      />
+                    )}
                     {item.titulo}{" "}
-                    <span className="text-amber-600 font-semibold">
+                    <span
+                      className={`font-semibold ${
+                        info ? "text-sky-700 dark:text-sky-300" : "text-amber-600"
+                      }`}
+                    >
                       · {item.count}
                     </span>
                     {monto && (

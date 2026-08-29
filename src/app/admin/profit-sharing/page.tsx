@@ -46,6 +46,8 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
     getProfitSharing({ desde, hasta }),
     getMe(),
   ]);
+  // Resumen del TC oficial de respaldo (aditivo: el API previo no lo manda).
+  const tcOficial = result.tc_oficial ?? null;
 
   return (
     <div className="space-y-6">
@@ -78,7 +80,35 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
               <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
               {result.gastos_sin_tc.count} gasto(s) fijo(s) en MXN sin tipo de
               cambio ({fmtDecimal(result.gastos_sin_tc.monto_mxn)} MXN) quedaron
-              fuera del cálculo.
+              fuera del cálculo (sin TC capturado ni TC oficial disponible para
+              su fecha).
+            </p>
+          )}
+          {/* Informativo (29-ago-2026): lo que SÍ entró con el TC oficial de
+              referencia del día. No es advertencia: el dinero ya está en las
+              cifras; capturar el TC lo sustituye. */}
+          {tcOficial && (tcOficial.vuelos > 0 || tcOficial.gastos.count > 0) && (
+            <p
+              className="flex items-center gap-1 text-sky-700 dark:text-sky-300"
+              title={`${tcOficial.leyenda}${
+                tcOficial.fuentes.length > 0
+                  ? ` Fuente(s): ${tcOficial.fuentes.join(" / ")}.`
+                  : ""
+              }`}
+            >
+              <InformationCircleIcon className="h-3.5 w-3.5 shrink-0" />
+              {[
+                tcOficial.gastos.count > 0
+                  ? `${tcOficial.gastos.count} gasto(s) (${fmtDecimal(tcOficial.gastos.monto_mxn)} MXN)`
+                  : null,
+                tcOficial.vuelos > 0
+                  ? `${tcOficial.vuelos} vuelo(s) con cobros en MXN`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" y ")}{" "}
+              sin tipo de cambio capturado se convirtieron con el TC oficial de
+              referencia del día (open.er-api / BCE).
             </p>
           )}
         </div>
@@ -164,6 +194,16 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
                 {result.externos.sin_costo_count} vuelo(s) externo(s) sin costo
                 del operador capturado: la utilidad externa está incompleta.
+              </p>
+            )}
+            {(result.externos.cobros_tc_oficial_count ?? 0) > 0 && (
+              <p
+                className="mt-2 flex items-center gap-1 text-xs text-sky-700 dark:text-sky-300"
+                title="La cotización no trae tipo de cambio: los cobros en MXN se convirtieron con el TC oficial de referencia del día de la cotización (open.er-api / BCE). Capturar el TC en el vuelo o en el cobro lo sustituye."
+              >
+                <InformationCircleIcon className="h-3.5 w-3.5 shrink-0" />
+                {result.externos.cobros_tc_oficial_count} vuelo(s) externo(s) con
+                cobros en MXN convertidos con el TC oficial de referencia.
               </p>
             )}
           </CardContent>

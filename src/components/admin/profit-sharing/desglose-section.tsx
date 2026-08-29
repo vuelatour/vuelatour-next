@@ -291,6 +291,14 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                   +{fmtDecimal(v.cobros_sin_tc_mxn)} MXN sin TC
                                 </span>
                               )}
+                              {v.tc_oficial && (
+                                <span
+                                  className="block text-[10px] font-normal text-sky-700 dark:text-sky-300"
+                                  title={`La cotización no trae tipo de cambio: los cobros en MXN se convirtieron con el TC oficial de referencia del ${fmtDateOnly(v.tc_oficial.fecha_dato)} (${v.tc_oficial.fuente}). Capturar el TC en el vuelo o en el cobro lo sustituye.`}
+                                >
+                                  TC oficial {fmtDecimal(v.tc_oficial.tc, 4)}
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
                               {v.cancelado ? (
@@ -398,6 +406,14 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                 <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />
                                 {g.sin_tc_count} sin TC ·{" "}
                                 {fmtDecimal(g.sin_tc_mxn)} MXN excluidos
+                              </span>
+                            )}
+                            {(g.tc_oficial_count ?? 0) > 0 && (
+                              <span
+                                className="mt-0.5 block text-[10px] text-sky-700 dark:text-sky-300"
+                                title={`${g.tc_oficial_count} gasto(s) en MXN sin tipo de cambio capturado (${fmtDecimal(g.tc_oficial_mxn ?? 0)} MXN) se convirtieron con el TC oficial de referencia del día del gasto (open.er-api / BCE); ya están en el monto USD.`}
+                              >
+                                {g.tc_oficial_count} con TC oficial
                               </span>
                             )}
                           </TableCell>
