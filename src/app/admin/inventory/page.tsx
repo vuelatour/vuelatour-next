@@ -15,10 +15,13 @@ import {
 import { ItemsTable } from "@/components/admin/inventory/items-table";
 import { ItemCreateButton } from "@/components/admin/inventory/item-create-button";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
+import { ItemBulkUploadDialog } from "@/components/admin/inventory/item-bulk-upload-dialog";
+import { CodigoSearch } from "@/components/admin/inventory/codigo-search";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
-import { listInventario } from "@/lib/api/inventory-server";
+import { listInventarioTodo } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 import { listAircraft } from "@/lib/api/aircraft";
+import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +29,17 @@ const mxn = (n: number) =>
   n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
 
 export default async function InventoryPage() {
-  const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes] =
+  const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes, me] =
     await Promise.all([
-      listInventario({ limit: 500 }),
+      // Toda la bodega (pagina hasta count): la tabla no debe "perder" ítems.
+      listInventarioTodo(),
       listProviders({ limit: 200 }),
       listAircraft({ limit: 100 }),
+      getMe().catch(() => null),
     ]);
+  // Alta masiva: el API la permite a ADMIN/MECANICO (y COORDINADOR); SOCIO
+  // solo consulta, así que no se le muestra un botón que le daría 403.
+  const puedeAltaMasiva = !!me && me.rol !== "SOCIO";
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
@@ -71,9 +79,14 @@ export default async function InventoryPage() {
             label="Cardex"
           />
           <ImportCompraButton providers={providers} />
+          {puedeAltaMasiva && <ItemBulkUploadDialog />}
           <ItemCreateButton categorias={categorias} />
         </div>
       </div>
+
+      {/* Lector de código de barras: abre el producto (o su caja) al instante;
+          si el código no existe, ofrece darlo de alta ya con ese código. */}
+      <CodigoSearch categorias={categorias} />
 
       {bajos > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">

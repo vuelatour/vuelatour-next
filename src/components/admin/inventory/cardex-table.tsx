@@ -18,7 +18,7 @@ const TIPO_STYLE: Record<TipoMovimiento, { label: string; cls: string }> = {
   AJUSTE: { label: "Ajuste", cls: "border-navy-400/50 text-muted-foreground" },
 };
 
-const columns: Array<DataTableColumn<InventarioMovimiento>> = [
+const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
   {
     key: "fecha",
     header: "Fecha",
@@ -87,7 +87,28 @@ const columns: Array<DataTableColumn<InventarioMovimiento>> = [
   },
 ];
 
+/** "2 × Caja de 6 = 12": cómo se capturó el movimiento (la cantidad sigue en unidades). */
+const columnaPresentacion: DataTableColumn<InventarioMovimiento> = {
+  key: "presentacion",
+  header: "Presentación",
+  cellClassName: "text-muted-foreground whitespace-nowrap text-xs",
+  cell: (m) =>
+    m.empaque && m.cantidad_empaques != null
+      ? `${num(Number(m.cantidad_empaques))} × ${m.empaque.nombre} = ${num(m.cantidad)}`
+      : "—",
+};
+
 export function CardexTable({ movimientos }: { movimientos: InventarioMovimiento[] }) {
+  // La columna solo aparece si algún movimiento se capturó por empaque
+  // (caja): a los ítems sin cajas no les estorba.
+  const conEmpaques = movimientos.some((m) => !!m.empaque && m.cantidad_empaques != null);
+  const columns = conEmpaques
+    ? [
+        ...columnasBase.slice(0, 3),
+        columnaPresentacion,
+        ...columnasBase.slice(3),
+      ]
+    : columnasBase;
   return (
     <DataTable
       columns={columns}
@@ -99,6 +120,7 @@ export function CardexTable({ movimientos }: { movimientos: InventarioMovimiento
           m.aeronave?.matricula,
           m.proveedor?.nombre,
           m.referencia,
+          m.empaque?.nombre,
           fmtDateOnly(m.fecha_movimiento),
         ]
           .filter(Boolean)

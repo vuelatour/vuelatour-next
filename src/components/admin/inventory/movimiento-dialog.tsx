@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition } from "react";
+import { useEffect, useMemo, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createMovimientoAction } from "@/app/admin/inventory/actions";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
+import type { InventarioEmpaque } from "@/types/inventory";
 
 const TIPOS = [
   { value: "ENTRADA", label: "Entrada (compra / alta de stock)" },
@@ -26,15 +27,27 @@ const TIPOS = [
   { value: "AJUSTE", label: "Ajuste / merma (corrección o desecho)" },
 ];
 
+/** Valor del selector "Capturar por" cuando se captura en unidades. */
+const POR_UNIDADES = "UNIDADES";
+
+const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 interface MovimientoDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   itemId: string;
   itemNombre: string;
+  /** Unidad de medida del ítem (pieza, botella…) para las leyendas. */
+  unidad?: string | null;
+  /** Empaques (cajas) del ítem: habilitan "Capturar por caja". */
+  empaques?: InventarioEmpaque[];
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
   /** Tipo preseleccionado al abrir (ej. SALIDA desde el listado). */
   initialTipo?: MovimientoFormValues["tipo"];
+  /** Empaque preseleccionado (se escaneó el código de la caja). */
+  initialEmpaqueId?: string;
 }
 
 export function MovimientoDialog({
@@ -42,11 +55,27 @@ export function MovimientoDialog({
   onOpenChange,
   itemId,
   itemNombre,
+  unidad,
+  empaques,
   aircraft,
   providers,
   initialTipo,
+  initialEmpaqueId,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
+  // Solo empaques activos se pueden usar para capturar; si el preseleccionado
+  // (escaneado) está inactivo, se ofrece igual para no perder la lectura.
+  const empaquesUsables = useMemo(
+    () => (empaques ?? []).filter((e) => e.activo || e.id === initialEmpaqueId),
+    [empaques, initialEmpaqueId],
+  );
+  const conEmpaques = empaquesUsables.length > 0;
+  // String estable (no el array): `empaques` puede venir como [] nuevo en
+  // cada render y un reset por render borraría lo que teclea el operador.
+  const preseleccionado =
+    initialEmpaqueId && empaquesUsables.some((e) => e.id === initialEmpaqueId)
+      ? initialEmpaqueId
+      : "";
 
   const {
     register,
@@ -55,18 +84,39 @@ export function MovimientoDialog({
     watch,
     setValue,
     formState: { errors },
-  } = useForm<MovimientoFormValues>({ defaultValues: defaults(initialTipo) });
+  } = useForm<MovimientoFormValues>({
+    defaultValues: defaults(initialTipo, preseleccionado),
+  });
 
   useEffect(() => {
-    if (open) reset(defaults(initialTipo));
-  }, [open, reset, initialTipo]);
+    if (open) reset(defaults(initialTipo, preseleccionado));
+  }, [open, reset, initialTipo, preseleccionado]);
 
   const tipo = watch("tipo");
   const esSalida = tipo === "SALIDA";
+  const empaqueId = watch("empaque_id");
+  const empaque = empaquesUsables.find((e) => e.id === empaqueId) ?? null;
+  const cantidadEmpaques = Number(watch("cantidad_empaques"));
+  const unidadesCalc =
+    empaque && cantidadEmpaques > 0 ? round2(cantidadEmpaques * Number(empaque.factor)) : 0;
+  const etiquetaUnidad = unidad?.trim() ? unidad.trim() : "unidades";
 
   const onSubmit = handleSubmit((values) => {
+    // Por empaque: la cantidad en UNIDADES (fuente única del cardex) se
+    // deriva aquí y viaja junto con empaque_id + cantidad_empaques; el API
+    // vuelve a calcularla y valida que coincidan.
+    let payload: MovimientoFormValues = values;
+    if (empaque) {
+      if (!(cantidadEmpaques > 0)) {
+        toast.error(`Captura cuántos «${empaque.nombre}» ${esSalida ? "salen" : "entran"}.`);
+        return;
+      }
+      payload = { ...values, cantidad: String(unidadesCalc) };
+    } else {
+      payload = { ...values, empaque_id: "", cantidad_empaques: "" };
+    }
     startTransition(async () => {
-      const result = await createMovimientoAction(itemId, values);
+      const result = await createMovimientoAction(itemId, payload);
       if (result.ok) {
         const conGasto = (result.data as { gasto_generado?: unknown } | undefined)
           ?.gasto_generado;
@@ -107,10 +157,61 @@ export function MovimientoDialog({
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Cantidad" required error={errors.cantidad?.message}>
-              <Input type="number" step="any" min="0" {...register("cantidad", { required: "Requerido" })} />
+          {/* Captura por caja: el operador teclea cuántas cajas y el sistema
+              rebaja/suma las unidades (caja de 6 × 2 = 12). */}
+          {conEmpaques && (
+            <Field
+              label="Capturar por"
+              hint="Por unidad suelta o por caja completa (se convierte a unidades)"
+            >
+              <SearchableSelect
+                options={[
+                  { value: POR_UNIDADES, label: `Unidades (${etiquetaUnidad})` },
+                  ...empaquesUsables.map((e) => ({
+                    value: e.id,
+                    label: `${e.nombre}${e.activo ? "" : " (inactivo)"}`,
+                    description: `${num(Number(e.factor))} ${etiquetaUnidad} por empaque`,
+                  })),
+                ]}
+                value={empaqueId || POR_UNIDADES}
+                onChange={(v) => {
+                  setValue("empaque_id", v === POR_UNIDADES ? "" : v);
+                  if (v === POR_UNIDADES) setValue("cantidad_empaques", "");
+                }}
+                placeholder="Unidades o caja"
+              />
             </Field>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            {empaque ? (
+              <Field
+                label={`Cantidad de ${empaque.nombre.toLowerCase()}`}
+                required
+                hint={
+                  cantidadEmpaques > 0
+                    ? `= ${num(unidadesCalc)} ${etiquetaUnidad}`
+                    : `1 = ${num(Number(empaque.factor))} ${etiquetaUnidad}`
+                }
+                error={errors.cantidad_empaques?.message ?? errors.cantidad?.message}
+              >
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  autoFocus
+                  {...register("cantidad_empaques", { required: "Requerido" })}
+                />
+              </Field>
+            ) : (
+              <Field
+                label={`Cantidad (${etiquetaUnidad})`}
+                required
+                error={errors.cantidad?.message}
+              >
+                <Input type="number" step="any" min="0" {...register("cantidad", { required: "Requerido" })} />
+              </Field>
+            )}
             {esSalida ? (
               <Field label="Costo unitario" hint="Se calcula por FIFO">
                 <Input value="FIFO automático" disabled readOnly className="text-muted-foreground" />
@@ -119,6 +220,7 @@ export function MovimientoDialog({
               <Field
                 label="Costo unitario"
                 required
+                hint={empaque ? `Por ${etiquetaUnidad.replace(/s$/, "")} suelta, NO por caja` : undefined}
                 error={
                   watch("moneda") === "MXN"
                     ? errors.costo_unitario_mxn?.message
@@ -266,10 +368,15 @@ export function MovimientoDialog({
 }
 
 
-function defaults(tipo: MovimientoFormValues["tipo"] = "ENTRADA"): MovimientoFormValues {
+function defaults(
+  tipo: MovimientoFormValues["tipo"] = "ENTRADA",
+  empaqueId = "",
+): MovimientoFormValues {
   return {
     tipo,
     cantidad: "",
+    empaque_id: empaqueId,
+    cantidad_empaques: "",
     para_flota: false,
     // Pesos por default: es la moneda operativa del cliente (USD para
     // compras tipo Aircraft Spruce).

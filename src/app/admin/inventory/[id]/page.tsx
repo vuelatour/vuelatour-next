@@ -7,7 +7,8 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
 import { CardexTable } from "@/components/admin/inventory/cardex-table";
-import type { InventarioItemDetail } from "@/types/inventory";
+import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
+import type { InventarioFoto, InventarioItemDetail } from "@/types/inventory";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,14 @@ const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 
 
 export default async function InventoryItemPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /** `?empaque=<id>`: se llegó escaneando la CAJA → abrir el movimiento por caja. */
+  searchParams: Promise<{ empaque?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
 
   let item: InventarioItemDetail;
   let aircraft: { id: string; matricula: string }[];
@@ -38,6 +43,15 @@ export default async function InventoryItemPage({
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
   }
+
+  const empaques = item.empaques ?? [];
+  const empaqueEscaneado =
+    sp.empaque && empaques.some((e) => e.id === sp.empaque) ? sp.empaque : undefined;
+  // Galería: principal + adicionales (sin duplicar la principal si el API la repite).
+  const fotos: InventarioFoto[] = [
+    ...(item.foto_url ? [{ url: item.foto_url, path: item.foto_storage_path ?? "" }] : []),
+    ...(item.fotos_adicionales ?? []).filter((f) => f.url && f.url !== item.foto_url),
+  ];
 
   return (
     <div className="space-y-6">
@@ -60,20 +74,36 @@ export default async function InventoryItemPage({
               />
             )}
           <div>
-            <p className="text-sm text-muted-foreground">{item.categoria}</p>
+            <p className="text-sm text-muted-foreground">
+              {item.categoria}
+              {item.marca ? ` · ${item.marca}` : ""}
+            </p>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{item.nombre}</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {item.numero_parte ? `Parte ${item.numero_parte} · ` : ""}
-              {item.codigo ? `SKU ${item.codigo} · ` : ""}
+              {item.codigo ? (
+                <>
+                  Código <span className="font-mono">{item.codigo}</span> ·{" "}
+                </>
+              ) : (
+                ""
+              )}
               {item.ubicacion ?? "Bodega Cancún"}
             </p>
+            {item.descripcion && (
+              <p className="text-sm mt-2 max-w-2xl whitespace-pre-line">{item.descripcion}</p>
+            )}
           </div>
           </div>
           <MovimientoButton
             itemId={item.id}
             itemNombre={item.nombre}
+            unidad={item.unidad}
+            empaques={empaques}
             aircraft={aircraft}
             providers={providers}
+            initialEmpaqueId={empaqueEscaneado}
+            autoOpen={!!empaqueEscaneado}
           />
         </div>
 
@@ -82,6 +112,50 @@ export default async function InventoryItemPage({
           <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
           <Stat label="Costo FIFO" value={item.costo_fifo_mxn_actual ? `${mxn(item.costo_fifo_mxn_actual)} MXN` : "—"} />
           <Stat label="Valorizado" value={`${mxn(item.valor_mxn)} MXN`} />
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,320px)]">
+          <EmpaquesCard
+            itemId={item.id}
+            itemNombre={item.nombre}
+            itemCodigo={item.codigo}
+            unidad={item.unidad}
+            empaques={empaques}
+          />
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Fotos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {fotos.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Sin fotos. Se agregan al editar el ítem o desde la app (la IA llena la ficha
+                  con ellas).
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {fotos.map((f, i) => (
+                    <a
+                      key={f.path || f.url}
+                      href={f.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block"
+                      title={i === 0 && item.foto_url ? "Foto principal" : "Foto adicional"}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={f.url}
+                        alt={`${item.nombre} ${i + 1}`}
+                        className="h-20 w-20 rounded-md object-cover ring-1 ring-border hover:ring-brand-600"
+                      />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <Card>

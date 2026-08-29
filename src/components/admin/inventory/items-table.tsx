@@ -40,9 +40,23 @@ export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTabl
             >
               {it.nombre}
             </Link>
-            {(it.numero_parte || it.codigo) && (
-              <span className="block text-xs text-muted-foreground font-mono">
-                {[it.numero_parte, it.codigo].filter(Boolean).join(" · ")}
+            {(it.marca || it.numero_parte || it.codigo) && (
+              <span className="block text-xs text-muted-foreground">
+                {it.marca && <span>{it.marca}</span>}
+                {it.marca && (it.numero_parte || it.codigo) && " · "}
+                {(it.numero_parte || it.codigo) && (
+                  <span className="font-mono">
+                    {[it.numero_parte, it.codigo].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+              </span>
+            )}
+            {(it.empaques ?? []).some((e) => e.activo) && (
+              <span className="block text-[11px] text-muted-foreground">
+                {(it.empaques ?? [])
+                  .filter((e) => e.activo)
+                  .map((e) => `${e.nombre} (${e.factor})`)
+                  .join(" · ")}
               </span>
             )}
           </div>
@@ -118,11 +132,19 @@ export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTabl
       rows={items}
       rowKey={(it) => it.id}
       searchText={(it) =>
-        [it.nombre, it.numero_parte, it.codigo, it.categoria, it.ubicacion]
+        [
+          it.nombre,
+          it.marca,
+          it.numero_parte,
+          it.codigo,
+          it.categoria,
+          it.ubicacion,
+          ...(it.empaques ?? []).flatMap((e) => [e.nombre, e.codigo]),
+        ]
           .filter(Boolean)
           .join(" ")
       }
-      searchPlaceholder="Buscar ítem (nombre, parte, SKU, ubicación)…"
+      searchPlaceholder="Buscar ítem (nombre, marca, parte, código, ubicación)…"
     />
   );
 }

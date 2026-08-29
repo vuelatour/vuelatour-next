@@ -10,10 +10,49 @@ const requiredPositive = z.preprocess(
   z.number({ error: "Número inválido" }).positive("Debe ser mayor a 0"),
 );
 
+const optionalPositive = z.preprocess(
+  (v) => (v === "" || v == null ? undefined : Number(v)),
+  z.number({ error: "Número inválido" }).positive("Debe ser mayor a 0").optional(),
+);
+
+/**
+ * Código de barras tal cual lo entrega el escáner: sin espacios (la
+ * etiqueta impresa los trae — "0 21400 06215 3" → "021400062153"). La BD
+ * normaliza igual; aquí se hace antes para que el 409 por duplicado sea
+ * legible y la comparación en el form no falle por un espacio.
+ */
+export function normalizarCodigo(v: unknown): string {
+  return typeof v === "string" ? v.replace(/\s+/g, "") : "";
+}
+
+const codigoBarras = z.preprocess(
+  (v) => (typeof v === "string" ? normalizarCodigo(v) : v),
+  z.string().max(60).optional().or(z.literal("")),
+);
+
+/** Empaque (caja) nuevo: se manda en `empaques[]` al crear el ítem o al endpoint de empaques. */
+export const EmpaqueFormSchema = z.object({
+  nombre: z.string().min(1, "Requerido").max(60),
+  factor: requiredPositive,
+  codigo: codigoBarras,
+});
+
+export const EmpaqueUpdateSchema = z.object({
+  nombre: z.string().min(1, "Requerido").max(60).optional(),
+  factor: optionalPositive,
+  // null explícito = quitar el código del empaque.
+  codigo: z.preprocess(
+    (v) => (typeof v === "string" ? normalizarCodigo(v) : v),
+    z.string().max(60).nullable().optional().or(z.literal("")),
+  ),
+  activo: z.boolean().optional(),
+});
+
 export const ItemFormSchema = z.object({
   nombre: z.string().min(1, "Requerido").max(200),
+  marca: z.string().max(80).optional().or(z.literal("")),
   numero_parte: z.string().max(50).optional().or(z.literal("")),
-  codigo: z.string().max(60).optional().or(z.literal("")),
+  codigo: codigoBarras,
   categoria: z.string().min(1, "Requerido").max(50),
   stock_minimo: optionalNumber,
   ubicacion: z.string().max(50).optional().or(z.literal("")),
@@ -28,10 +67,20 @@ export const ItemFormSchema = z.object({
     })
     .optional()
     .or(z.literal("")),
+  descripcion: z.string().max(2000).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
   // Foto del producto: null explícito = quitarla (stripEmpty deja pasar null).
   foto_url: z.string().max(1000).nullable().optional().or(z.literal("")),
   foto_storage_path: z.string().max(500).nullable().optional().or(z.literal("")),
+  // Fotos extra [{url, path}]: [] al editar = quitarlas todas (el API borra
+  // los huérfanos del bucket como con foto_storage_path).
+  fotos_adicionales: z
+    .array(z.object({ url: z.string().max(1000), path: z.string().max(500) }))
+    .max(12)
+    .optional(),
+  // Solo al CREAR: los empaques nacen junto con el ítem. Al editar se
+  // administran con los endpoints de empaques (ver actions).
+  empaques: z.array(EmpaqueFormSchema).max(10).optional(),
 });
 
 export const TipoMovimientoEnum = z.enum(["ENTRADA", "SALIDA", "DEVOLUCION", "AJUSTE"]);
@@ -39,7 +88,11 @@ export const TipoMovimientoEnum = z.enum(["ENTRADA", "SALIDA", "DEVOLUCION", "AJ
 export const MovimientoFormSchema = z
   .object({
     tipo: TipoMovimientoEnum,
+    /** SIEMPRE en unidades (fuente única del cardex/FIFO). */
     cantidad: requiredPositive,
+    // Captura por empaque (caja): cantidad = cantidad_empaques × factor.
+    empaque_id: z.string().uuid().optional().or(z.literal("")),
+    cantidad_empaques: optionalPositive,
     // Captura en MXN (default operativo) o USD; con MXN el TC es obligatorio
     // (la contabilidad interna del inventario sigue en USD).
     moneda: z.enum(["MXN", "USD"]).optional(),
@@ -85,15 +138,30 @@ export const MovimientoFormSchema = z
     },
   );
 
+/**
+ * Fila de empaque en el formulario del ítem (todo texto). `empaque_id` si ya
+ * existe — no se llama `id` porque useFieldArray pisa esa clave con su key.
+ */
+export type EmpaqueFormRow = {
+  empaque_id?: string;
+  nombre: string;
+  factor: string;
+  codigo: string;
+  activo: boolean;
+};
+
 export type ItemFormValues = {
   nombre: string;
+  marca: string;
   numero_parte: string;
   codigo: string;
   categoria: string;
   stock_minimo: string;
   ubicacion: string;
   unidad: string;
+  descripcion: string;
   notas: string;
+  empaques: EmpaqueFormRow[];
   // Solo al CREAR: entrada inicial opcional (cantidad + costo de compra) para
   // que el ítem no quede en stock 0 sin precio. Genera una ENTRADA de cardex.
   cantidad_inicial: string;
@@ -106,6 +174,9 @@ export type ItemFormValues = {
 export type MovimientoFormValues = {
   tipo: "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
   cantidad: string;
+  /** "" = por unidades; id del empaque = por cajas. */
+  empaque_id: string;
+  cantidad_empaques: string;
   para_flota: boolean;
   moneda: "MXN" | "USD";
   costo_unitario_usd: string;

@@ -3,9 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { ItemFormSchema, MovimientoFormSchema } from "./schema";
+import {
+  EmpaqueFormSchema,
+  EmpaqueUpdateSchema,
+  ItemFormSchema,
+  MovimientoFormSchema,
+  normalizarCodigo,
+} from "./schema";
 import type {
+  CodigoLookup,
   CompraExtraida,
+  ImportarItemsResultado,
+  InventarioEmpaque,
   InventarioItem,
   InventarioMovimiento,
 } from "@/types/inventory";
@@ -15,10 +24,12 @@ export interface ActionResult<T = unknown> {
   data?: T;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** HTTP del API cuando falló (404 = no existe, 409 = conflicto…). */
+  status?: number;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  if (isApiError(err)) return { ok: false, error: err.message, status: err.status };
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -36,8 +47,17 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
  * stripEmpty (no borraría nada), así que se manda null explícito. Sin esto un
  * ítem con `unidad` mal capturada (caso real "1") era irreparable desde el
  * panel: vaciar el campo devolvía "Ítem actualizado" sin cambiar nada.
+ * `ubicacion` NO va aquí: es NOT NULL en BD (default 'Bodega Cancún') y
+ * mandar null era un 500 — vacío = se conserva la actual (el form lo avisa).
  */
-const BORRABLES = ["unidad", "numero_parte", "codigo", "notas"] as const;
+const BORRABLES = [
+  "unidad",
+  "numero_parte",
+  "codigo",
+  "notas",
+  "marca",
+  "descripcion",
+] as const;
 
 function conBorrados(
   raw: Record<string, unknown>,
@@ -76,12 +96,16 @@ export async function updateItemAction(
     return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
   }
   try {
+    // Los empaques NO viajan en el PATCH: al editar se administran uno por
+    // uno con los endpoints de empaques (create/update/deleteEmpaqueAction).
+    const { empaques: _empaques, ...sinEmpaques } = parsed.data;
+    void _empaques;
     const updated = await apiServer<InventarioItem>(`/v1/inventory/items/${id}`, {
       method: "PATCH",
       // Vaciar un campo borrable manda null (stripEmpty se come el "").
       body: conBorrados(
-        parsed.data as Record<string, unknown>,
-        stripEmpty(parsed.data),
+        sinEmpaques as Record<string, unknown>,
+        stripEmpty(sinEmpaques),
       ),
     });
     revalidatePath("/admin/inventory");
@@ -170,6 +194,121 @@ export async function createMovimientoAction(
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${itemId}`);
     return { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ───────────────── Código de barras ─────────────────
+
+/**
+ * Busca a qué corresponde un código de barras (unidad de un ítem o empaque
+ * de un ítem). 404 → `status: 404` con "Código no registrado" para que la UI
+ * ofrezca dar de alta con ese código.
+ */
+export async function buscarPorCodigoAction(
+  codigoRaw: string,
+): Promise<ActionResult<CodigoLookup>> {
+  const codigo = normalizarCodigo(codigoRaw);
+  if (!codigo) return { ok: false, error: "Escribe o escanea un código" };
+  try {
+    const data = await apiServer<CodigoLookup>(
+      `/v1/inventory/codigo/${encodeURIComponent(codigo)}`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ───────────────── Empaques (cajas) ─────────────────
+
+export async function createEmpaqueAction(
+  itemId: string,
+  raw: unknown,
+): Promise<ActionResult<InventarioEmpaque>> {
+  const parsed = EmpaqueFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const created = await apiServer<InventarioEmpaque>(
+      `/v1/inventory/items/${itemId}/empaques`,
+      { method: "POST", body: stripEmpty(parsed.data) },
+    );
+    revalidatePath("/admin/inventory");
+    revalidatePath(`/admin/inventory/${itemId}`);
+    return { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateEmpaqueAction(
+  itemId: string,
+  empaqueId: string,
+  raw: unknown,
+): Promise<ActionResult<InventarioEmpaque>> {
+  const parsed = EmpaqueUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const body: Record<string, unknown> = stripEmpty(parsed.data);
+    // Vaciar el código del empaque = quitarlo (stripEmpty se come el "").
+    if (typeof (raw as { codigo?: unknown })?.codigo === "string" && parsed.data.codigo === "") {
+      body.codigo = null;
+    }
+    const updated = await apiServer<InventarioEmpaque>(
+      `/v1/inventory/items/${itemId}/empaques/${empaqueId}`,
+      { method: "PATCH", body },
+    );
+    revalidatePath("/admin/inventory");
+    revalidatePath(`/admin/inventory/${itemId}`);
+    return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** 409 del API = el empaque ya tiene movimientos: hay que desactivarlo en vez de borrarlo. */
+export async function deleteEmpaqueAction(
+  itemId: string,
+  empaqueId: string,
+): Promise<ActionResult> {
+  try {
+    await apiServer(`/v1/inventory/items/${itemId}/empaques/${empaqueId}`, {
+      method: "DELETE",
+    });
+    revalidatePath("/admin/inventory");
+    revalidatePath(`/admin/inventory/${itemId}`);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ───────────────── Alta masiva (Excel) ─────────────────
+
+/**
+ * Alta masiva de ítems desde la plantilla: con `confirmar=false` el API solo
+ * valida (preview fila por fila); con `confirmar=true` crea SOLO las filas OK
+ * (ítem + empaque + entrada inicial) de forma idempotente — un reintento
+ * marca DUPLICADO lo que ya existe, no lo duplica.
+ */
+export async function importarItemsAction(input: {
+  archivo_base64: string;
+  filename: string;
+  confirmar: boolean;
+}): Promise<ActionResult<ImportarItemsResultado>> {
+  try {
+    const data = await apiServer<ImportarItemsResultado>("/v1/inventory/items/importar", {
+      method: "POST",
+      body: input,
+    });
+    if (input.confirmar) revalidatePath("/admin/inventory");
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

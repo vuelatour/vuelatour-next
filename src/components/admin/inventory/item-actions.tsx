@@ -96,6 +96,8 @@ export function ItemActions({ item, aircraft, providers, categorias }: ItemActio
         onOpenChange={setOpenSalida}
         itemId={item.id}
         itemNombre={item.nombre}
+        unidad={item.unidad}
+        empaques={item.empaques ?? []}
         aircraft={aircraft}
         providers={providers}
         initialTipo="SALIDA"
