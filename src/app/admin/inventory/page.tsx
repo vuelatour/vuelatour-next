@@ -17,8 +17,12 @@ import { ItemCreateButton } from "@/components/admin/inventory/item-create-butto
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { ItemBulkUploadDialog } from "@/components/admin/inventory/item-bulk-upload-dialog";
 import { CodigoSearch } from "@/components/admin/inventory/codigo-search";
+import {
+  EntradasSinCosto,
+  type EntradaSinCosto,
+} from "@/components/admin/inventory/entradas-sin-costo";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
-import { listInventarioTodo } from "@/lib/api/inventory-server";
+import { listInventarioTodo, listMovimientos } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
@@ -29,17 +33,35 @@ const mxn = (n: number) =>
   n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
 
 export default async function InventoryPage() {
-  const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes, me] =
+  const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes, me, sinCostoRes] =
     await Promise.all([
       // Toda la bodega (pagina hasta count): la tabla no debe "perder" ítems.
       listInventarioTodo(),
       listProviders({ limit: 200 }),
       listAircraft({ limit: 100 }),
       getMe().catch(() => null),
+      // ENTRADAS sin costo real (carga masiva a $0) por completar. Tolerante:
+      // si el API aún no conoce `sin_costo` (skew de deploy), la portada no
+      // se cae — solo no aparece la sección.
+      listMovimientos({ tipo: "ENTRADA", sin_costo: true, limit: 500 }).catch(() => null),
     ]);
   // Alta masiva: el API la permite a ADMIN/MECANICO (y COORDINADOR); SOCIO
   // solo consulta, así que no se le muestra un botón que le daría 403.
   const puedeAltaMasiva = !!me && me.rol !== "SOCIO";
+  // Mismos roles del PATCH de costo del API (ADMIN/MECANICO).
+  const puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
+  const entradasSinCosto: EntradaSinCosto[] = (sinCostoRes?.data ?? []).map((m) => ({
+    id: m.id,
+    itemId: m.item_id,
+    itemNombre: m.item?.nombre ?? "Ítem",
+    fecha_movimiento: m.fecha_movimiento,
+    cantidad: Number(m.cantidad),
+    referencia: m.referencia,
+    moneda: m.moneda,
+    costo_unitario_usd: Number(m.costo_unitario_usd),
+    costo_unitario_mxn: m.costo_unitario_mxn != null ? Number(m.costo_unitario_mxn) : null,
+    tc_usd_mxn: m.tc_usd_mxn != null ? Number(m.tc_usd_mxn) : null,
+  }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
@@ -94,6 +116,11 @@ export default async function InventoryPage() {
           {bajos} {bajos === 1 ? "ítem está" : "ítems están"} por debajo del stock mínimo.
         </div>
       )}
+
+      {/* Entradas de la carga masiva a $0: el cliente les completa el precio
+          real desde aquí (mismo diálogo que en el cardex del ítem). */}
+      <EntradasSinCosto entradas={entradasSinCosto} puedeEditarCosto={puedeEditarCosto} />
+
 
       {items.length === 0 ? (
         <Card>

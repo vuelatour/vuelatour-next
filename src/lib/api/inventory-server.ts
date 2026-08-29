@@ -66,6 +66,8 @@ export interface ListMovimientosQuery {
   tipo?: string;
   desde?: string;
   hasta?: string;
+  /** true = solo movimientos con costo USD en 0 (entradas sin costo real). */
+  sin_costo?: boolean;
   limit?: number;
   offset?: number;
 }

@@ -139,6 +139,39 @@ export const MovimientoFormSchema = z
   );
 
 /**
+ * Corrección del COSTO de una ENTRADA de cardex (carga masiva a $0): SOLO
+ * moneda/costo/TC — cantidad, fecha y tipo jamás. Mismos refines de moneda
+ * que MovimientoFormSchema (caso aceites 28-ago-2026: pesos capturados como
+ * USD multiplicaron ×17 el costo del avión).
+ */
+export const EditarCostoSchema = z
+  .object({
+    moneda: z.enum(["MXN", "USD"]),
+    costo_unitario_usd: optionalNumber,
+    costo_unitario_mxn: optionalNumber,
+    tc_usd_mxn: optionalNumber,
+  })
+  .refine((d) => d.moneda !== "MXN" || d.costo_unitario_mxn != null, {
+    message: "El costo unitario es requerido",
+    path: ["costo_unitario_mxn"],
+  })
+  .refine((d) => d.moneda === "MXN" || d.costo_unitario_usd != null, {
+    message: "El costo unitario es requerido",
+    path: ["costo_unitario_usd"],
+  })
+  .refine((d) => d.moneda !== "MXN" || (d.tc_usd_mxn != null && d.tc_usd_mxn > 0), {
+    message: "Captura el tipo de cambio de la compra",
+    path: ["tc_usd_mxn"],
+  });
+
+export type EditarCostoFormValues = {
+  moneda: "MXN" | "USD";
+  costo_unitario_usd: string;
+  costo_unitario_mxn: string;
+  tc_usd_mxn: string;
+};
+
+/**
  * Fila de empaque en el formulario del ítem (todo texto). `empaque_id` si ya
  * existe — no se llama `id` porque useFieldArray pisa esa clave con su key.
  */

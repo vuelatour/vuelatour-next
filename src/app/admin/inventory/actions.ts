@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import {
+  EditarCostoSchema,
   EmpaqueFormSchema,
   EmpaqueUpdateSchema,
   ItemFormSchema,
@@ -194,6 +195,33 @@ export async function createMovimientoAction(
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${itemId}`);
     return { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Corrige el COSTO de una ENTRADA de cardex (carga masiva a $0). El API
+ * valida los candados (nace de compra / capa FIFO ya consumida) y sus 409 ya
+ * explican el porqué: el mensaje viaja tal cual al toast.
+ */
+export async function updateMovimientoCostoAction(
+  itemId: string,
+  movId: string,
+  raw: unknown,
+): Promise<ActionResult<InventarioMovimiento>> {
+  const parsed = EditarCostoSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const updated = await apiServer<InventarioMovimiento>(
+      `/v1/inventory/items/${itemId}/movimientos/${movId}`,
+      { method: "PATCH", body: stripEmpty(parsed.data) },
+    );
+    revalidatePath("/admin/inventory");
+    revalidatePath(`/admin/inventory/${itemId}`);
+    return { ok: true, data: updated };
   } catch (err) {
     return fail(err);
   }

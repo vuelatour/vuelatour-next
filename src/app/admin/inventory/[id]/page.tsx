@@ -5,8 +5,9 @@ import { isApiError } from "@/lib/api/errors";
 import { getInventarioItem } from "@/lib/api/inventory-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
+import { getMe } from "@/lib/api/me";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
-import { CardexTable } from "@/components/admin/inventory/cardex-table";
+import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import type { InventarioFoto, InventarioItemDetail } from "@/types/inventory";
 
@@ -30,15 +31,20 @@ export default async function InventoryItemPage({
   let item: InventarioItemDetail;
   let aircraft: { id: string; matricula: string }[];
   let providers: { id: string; nombre: string }[];
+  let puedeEditarCosto = false;
   try {
-    const [itemRes, aircraftRes, providersRes] = await Promise.all([
+    const [itemRes, aircraftRes, providersRes, me] = await Promise.all([
       getInventarioItem(id),
       listAircraft({ limit: 100 }),
       listProviders({ limit: 200 }),
+      getMe().catch(() => null),
     ]);
     item = itemRes;
     aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
+    // Mismos roles del PATCH del API: a los demás no se les muestra un botón
+    // que les daría 403.
+    puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
   } catch (err) {
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
@@ -168,7 +174,13 @@ export default async function InventoryItemPage({
                 Sin movimientos todavía. Registra una entrada para dar de alta stock.
               </p>
             ) : (
-              <CardexTable movimientos={item.movimientos} />
+              <CardexConEdicion
+                itemId={item.id}
+                itemNombre={item.nombre}
+                unidad={item.unidad}
+                movimientos={item.movimientos}
+                puedeEditarCosto={puedeEditarCosto}
+              />
             )}
           </CardContent>
         </Card>
