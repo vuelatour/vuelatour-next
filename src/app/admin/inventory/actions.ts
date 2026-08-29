@@ -58,6 +58,9 @@ const BORRABLES = [
   "notas",
   "marca",
   "descripcion",
+  // Numérico-como-texto en el form: vaciar el precio de venta = quitarlo
+  // (el API limpia también su moneda; las salidas vuelven a costo FIFO).
+  "precio_venta",
 ] as const;
 
 function conBorrados(

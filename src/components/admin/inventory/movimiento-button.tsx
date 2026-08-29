@@ -10,6 +10,9 @@ interface MovimientoButtonProps {
   itemId: string;
   itemNombre: string;
   unidad?: string | null;
+  /** Precio de venta del ítem: prellenado del cargo al avión en SALIDA. */
+  precioVenta?: number | null;
+  precioVentaMoneda?: "MXN" | "USD" | null;
   empaques?: InventarioEmpaque[];
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];

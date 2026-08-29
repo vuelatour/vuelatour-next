@@ -95,6 +95,44 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
   },
 ];
 
+/** SALIDA con venta: el ítem tiene precio de venta y el avión pagó ESO. */
+const conVentaDe = (m: InventarioMovimiento) =>
+  m.tipo === "SALIDA" && m.venta_unitaria != null && Number(m.venta_unitaria) > 0;
+
+/** Precio de venta unitario que pagó el avión (solo SALIDA con venta). */
+const columnaVenta: DataTableColumn<InventarioMovimiento> = {
+  key: "venta",
+  header: "Venta unit.",
+  headClassName: "text-right",
+  cellClassName: "text-right tabular-nums",
+  cell: (m) =>
+    conVentaDe(m) ? (
+      <>
+        {m.venta_moneda === "USD"
+          ? `${usd(Number(m.venta_unitaria))} USD`
+          : `${mxn(Number(m.venta_unitaria))} MXN`}
+      </>
+    ) : (
+      "—"
+    ),
+};
+
+/** Ganancia (venta − costo FIFO, en MXN): la manda el API en el detalle. */
+const columnaGanancia: DataTableColumn<InventarioMovimiento> = {
+  key: "ganancia",
+  header: "Ganancia",
+  headClassName: "text-right",
+  cellClassName: "text-right tabular-nums",
+  cell: (m) =>
+    conVentaDe(m) && m.ganancia_mxn != null ? (
+      <span className={Number(m.ganancia_mxn) < 0 ? "text-red-600" : "text-emerald-600"}>
+        {mxn(Number(m.ganancia_mxn))} MXN
+      </span>
+    ) : (
+      "—"
+    ),
+};
+
 /** "2 × Caja de 6 = 12": cómo se capturó el movimiento (la cantidad sigue en unidades). */
 const columnaPresentacion: DataTableColumn<InventarioMovimiento> = {
   key: "presentacion",
@@ -142,6 +180,9 @@ export function CardexTable({
   // La columna solo aparece si algún movimiento se capturó por empaque
   // (caja): a los ítems sin cajas no les estorba.
   const conEmpaques = movimientos.some((m) => !!m.empaque && m.cantidad_empaques != null);
+  // Venta/ganancia solo si alguna SALIDA llevó precio de venta: a los ítems
+  // que se cargan a costo FIFO no les estorban dos columnas vacías.
+  const conVenta = movimientos.some(conVentaDe);
   let columns = conEmpaques
     ? [
         ...columnasBase.slice(0, 3),
@@ -149,6 +190,10 @@ export function CardexTable({
         ...columnasBase.slice(3),
       ]
     : columnasBase;
+  if (conVenta) {
+    const idx = columns.findIndex((c) => c.key === "costo") + 1;
+    columns = [...columns.slice(0, idx), columnaVenta, columnaGanancia, ...columns.slice(idx)];
+  }
   if (onEditarCosto) columns = [...columns, columnaAcciones(onEditarCosto)];
   return (
     <DataTable

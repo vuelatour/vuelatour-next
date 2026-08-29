@@ -7,6 +7,7 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
+import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import type { InventarioFoto, InventarioItemDetail } from "@/types/inventory";
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
 
 const mxn = (n: number) =>
   n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
+const usd = (n: number) =>
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 export default async function InventoryItemPage({
@@ -101,22 +104,39 @@ export default async function InventoryItemPage({
             )}
           </div>
           </div>
-          <MovimientoButton
-            itemId={item.id}
-            itemNombre={item.nombre}
-            unidad={item.unidad}
-            empaques={empaques}
-            aircraft={aircraft}
-            providers={providers}
-            initialEmpaqueId={empaqueEscaneado}
-            autoOpen={!!empaqueEscaneado}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
+            <MovimientoButton
+              itemId={item.id}
+              itemNombre={item.nombre}
+              unidad={item.unidad}
+              precioVenta={item.precio_venta != null ? Number(item.precio_venta) : null}
+              precioVentaMoneda={item.precio_venta_moneda}
+              empaques={empaques}
+              aircraft={aircraft}
+              providers={providers}
+              initialEmpaqueId={empaqueEscaneado}
+              autoOpen={!!empaqueEscaneado}
+            />
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
           <Stat label="Stock actual" value={`${num(item.stock)}${item.unidad ? ` ${item.unidad}` : ""}`} highlight={item.bajo_stock} />
           <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
           <Stat label="Costo FIFO" value={item.costo_fifo_mxn_actual ? `${mxn(item.costo_fifo_mxn_actual)} MXN` : "—"} />
+          {/* Precio de VENTA al avión (29-ago-2026): la salida se carga a este
+              precio; sin precio, se carga a costo FIFO. */}
+          <Stat
+            label="Precio de venta"
+            value={
+              item.precio_venta != null && Number(item.precio_venta) > 0
+                ? item.precio_venta_moneda === "USD"
+                  ? `${usd(Number(item.precio_venta))} USD`
+                  : `${mxn(Number(item.precio_venta))} MXN`
+                : "A costo FIFO"
+            }
+          />
           <Stat label="Valorizado" value={`${mxn(item.valor_mxn)} MXN`} />
         </div>
 

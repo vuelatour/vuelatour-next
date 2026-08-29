@@ -549,6 +549,31 @@ export function ItemFormDialog({
             </>
           </Field>
 
+          {/* Precio de VENTA al avión (29-ago-2026): la salida de bodega se
+              carga a este precio; el costo FIFO queda para el inventario. */}
+          <Field
+            label="Precio de venta unitario"
+            hint="Lo que paga el avión al sacar la pieza de bodega; el costo FIFO queda para el inventario. Vacío = la salida se carga a costo."
+            error={errors.precio_venta?.message}
+          >
+            <div className="flex gap-2">
+              <select
+                value={watch("precio_venta_moneda")}
+                onChange={(e) =>
+                  setValue(
+                    "precio_venta_moneda",
+                    e.target.value as ItemFormValues["precio_venta_moneda"],
+                  )
+                }
+                className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+              >
+                <option value="MXN">MXN</option>
+                <option value="USD">USD</option>
+              </select>
+              <Input type="number" step="any" min="0" placeholder="0.00" {...register("precio_venta")} />
+            </div>
+          </Field>
+
           {/* Empaques (cajas): presentaciones con su propio código de barras.
               Un movimiento por caja rebaja factor × cajas en UNIDADES. */}
           <div className="rounded-lg border border-border p-3 space-y-3">
@@ -877,6 +902,8 @@ function defaults(item?: InventarioItem, initialCodigo?: string): ItemFormValues
       stock_minimo: "",
       ubicacion: "",
       unidad: "",
+      precio_venta: "",
+      precio_venta_moneda: "MXN",
       descripcion: "",
       notas: "",
       empaques: [],
@@ -895,6 +922,8 @@ function defaults(item?: InventarioItem, initialCodigo?: string): ItemFormValues
     stock_minimo: item.stock_minimo != null ? String(item.stock_minimo) : "",
     ubicacion: item.ubicacion ?? "",
     unidad: item.unidad ?? "",
+    precio_venta: item.precio_venta != null ? String(item.precio_venta) : "",
+    precio_venta_moneda: item.precio_venta_moneda ?? "MXN",
     descripcion: item.descripcion ?? "",
     notas: item.notas ?? "",
     // Solo los activos se editan aquí; los inactivos viven en la ficha.

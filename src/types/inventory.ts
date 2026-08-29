@@ -29,6 +29,13 @@ export interface InventarioItem {
   stock_minimo: number | null;
   /** Presentación del stock: pieza, caja, bote, galón, litro, bolsa… */
   unidad?: string | null;
+  /**
+   * Precio de VENTA unitario al avión (29-ago-2026): la SALIDA se carga a
+   * este precio como gasto BODEGA; el costo FIFO queda para el inventario.
+   * Sin precio, la salida se carga a costo FIFO. Opcional por skew de deploy.
+   */
+  precio_venta?: number | null;
+  precio_venta_moneda?: "MXN" | "USD" | null;
   /** Foto del producto (URL pública del bucket inventario-fotos). */
   foto_url?: string | null;
   foto_storage_path?: string | null;
@@ -68,6 +75,11 @@ export interface InventarioMovimiento {
   moneda?: "MXN" | "USD";
   costo_unitario_mxn?: number | null;
   tc_usd_mxn?: number | null;
+  /** SALIDA con venta: precio unitario que pagó el avión (null = a costo FIFO). */
+  venta_unitaria?: number | null;
+  venta_moneda?: "MXN" | "USD" | null;
+  /** Venta total MXN − costo FIFO MXN (la manda el API en el detalle del ítem). */
+  ganancia_mxn?: number | null;
   aeronave_id: string | null;
   proveedor_id: string | null;
   fecha_movimiento: string;

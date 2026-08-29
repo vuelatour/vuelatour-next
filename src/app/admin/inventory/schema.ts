@@ -16,6 +16,16 @@ const optionalPositive = z.preprocess(
 );
 
 /**
+ * Número opcional que CONSERVA el "" tras el parse (los campos BORRABLES de
+ * actions.ts lo detectan para mandar null al editar — vaciar = quitar). Con
+ * `optionalNumber` el "" se vuelve undefined y el borrado jamás viajaría.
+ */
+const optionalNumberBorrable = z.preprocess(
+  (v) => (v == null ? undefined : v === "" ? "" : Number(v)),
+  z.union([z.literal(""), z.number().min(0, "No puede ser negativo")]).optional(),
+);
+
+/**
  * Código de barras tal cual lo entrega el escáner: sin espacios (la
  * etiqueta impresa los trae — "0 21400 06215 3" → "021400062153"). La BD
  * normaliza igual; aquí se hace antes para que el 409 por duplicado sea
@@ -67,6 +77,11 @@ export const ItemFormSchema = z.object({
     })
     .optional()
     .or(z.literal("")),
+  // Precio de VENTA unitario al avión (29-ago-2026): la salida se carga a
+  // este precio; el costo FIFO queda para el inventario. Viaja con su moneda;
+  // vaciarlo al editar lo quita (BORRABLES en actions.ts).
+  precio_venta: optionalNumberBorrable,
+  precio_venta_moneda: z.enum(["MXN", "USD"]).optional(),
   descripcion: z.string().max(2000).optional().or(z.literal("")),
   notas: z.string().max(2000).optional().or(z.literal("")),
   // Foto del producto: null explícito = quitarla (stripEmpty deja pasar null).
@@ -99,6 +114,11 @@ export const MovimientoFormSchema = z
     costo_unitario_usd: optionalNumber,
     costo_unitario_mxn: optionalNumber,
     tc_usd_mxn: optionalNumber,
+    // SALIDA: precio de venta unitario que paga el avión (prellenado con el
+    // del ítem; vacío = la salida se carga a costo FIFO). Nunca se mezcla con
+    // costo_unitario_*: son campos distintos del API.
+    venta_unitaria: optionalNumber,
+    venta_moneda: z.enum(["MXN", "USD"]).optional(),
     aeronave_id: z.string().uuid().optional().or(z.literal("")),
     para_flota: z.boolean().optional(),
     proveedor_id: z.string().uuid().optional().or(z.literal("")),
@@ -192,6 +212,9 @@ export type ItemFormValues = {
   stock_minimo: string;
   ubicacion: string;
   unidad: string;
+  /** Precio de venta unitario al avión (vacío = las salidas van a costo FIFO). */
+  precio_venta: string;
+  precio_venta_moneda: "MXN" | "USD";
   descripcion: string;
   notas: string;
   empaques: EmpaqueFormRow[];
@@ -215,6 +238,9 @@ export type MovimientoFormValues = {
   costo_unitario_usd: string;
   costo_unitario_mxn: string;
   tc_usd_mxn: string;
+  /** SALIDA: precio de venta unitario (vacío = a costo FIFO). */
+  venta_unitaria: string;
+  venta_moneda: "MXN" | "USD";
   aeronave_id: string;
   proveedor_id: string;
   fecha_movimiento: string;

@@ -40,6 +40,9 @@ interface MovimientoDialogProps {
   itemNombre: string;
   /** Unidad de medida del ítem (pieza, botella…) para las leyendas. */
   unidad?: string | null;
+  /** Precio de venta del ítem: prellenado del cargo al avión en SALIDA. */
+  precioVenta?: number | null;
+  precioVentaMoneda?: "MXN" | "USD" | null;
   /** Empaques (cajas) del ítem: habilitan "Capturar por caja". */
   empaques?: InventarioEmpaque[];
   aircraft: { id: string; matricula: string }[];
@@ -56,6 +59,8 @@ export function MovimientoDialog({
   itemId,
   itemNombre,
   unidad,
+  precioVenta,
+  precioVentaMoneda,
   empaques,
   aircraft,
   providers,
@@ -85,12 +90,12 @@ export function MovimientoDialog({
     setValue,
     formState: { errors },
   } = useForm<MovimientoFormValues>({
-    defaultValues: defaults(initialTipo, preseleccionado),
+    defaultValues: defaults(initialTipo, preseleccionado, precioVenta, precioVentaMoneda),
   });
 
   useEffect(() => {
-    if (open) reset(defaults(initialTipo, preseleccionado));
-  }, [open, reset, initialTipo, preseleccionado]);
+    if (open) reset(defaults(initialTipo, preseleccionado, precioVenta, precioVentaMoneda));
+  }, [open, reset, initialTipo, preseleccionado, precioVenta, precioVentaMoneda]);
 
   const tipo = watch("tipo");
   const esSalida = tipo === "SALIDA";
@@ -114,6 +119,16 @@ export function MovimientoDialog({
       payload = { ...values, cantidad: String(unidadesCalc) };
     } else {
       payload = { ...values, empaque_id: "", cantidad_empaques: "" };
+    }
+    // La venta solo aplica en SALIDA: en otros tipos el campo ni se ve y no
+    // debe viajar (jamás mezclarla con costo_unitario_*).
+    if (!esSalida) {
+      payload = { ...payload, venta_unitaria: "" };
+    } else if (String(payload.venta_unitaria ?? "").trim() === "") {
+      // El campo viene PRELLENADO con el precio del ítem: vaciarlo es una
+      // decisión ("esta salida va a costo FIFO") y viaja como 0 explícito —
+      // sin él, el API re-aplicaría el precio del ítem.
+      payload = { ...payload, venta_unitaria: "0" };
     }
     startTransition(async () => {
       const result = await createMovimientoAction(itemId, payload);
@@ -213,8 +228,30 @@ export function MovimientoDialog({
               </Field>
             )}
             {esSalida ? (
-              <Field label="Costo unitario" hint="Se calcula por FIFO">
-                <Input value="FIFO automático" disabled readOnly className="text-muted-foreground" />
+              <Field
+                label="Precio de venta unitario"
+                hint="El avión paga este precio; el costo FIFO queda para el inventario"
+                error={errors.venta_unitaria?.message}
+              >
+                <div className="flex gap-2">
+                  <select
+                    value={watch("venta_moneda")}
+                    onChange={(e) =>
+                      setValue("venta_moneda", e.target.value as MovimientoFormValues["venta_moneda"])
+                    }
+                    className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                  >
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="Vacío = a costo FIFO"
+                    {...register("venta_unitaria")}
+                  />
+                </div>
               </Field>
             ) : (
               <Field
@@ -371,6 +408,8 @@ export function MovimientoDialog({
 function defaults(
   tipo: MovimientoFormValues["tipo"] = "ENTRADA",
   empaqueId = "",
+  precioVenta?: number | null,
+  precioVentaMoneda?: "MXN" | "USD" | null,
 ): MovimientoFormValues {
   return {
     tipo,
@@ -384,6 +423,10 @@ function defaults(
     costo_unitario_usd: "",
     costo_unitario_mxn: "",
     tc_usd_mxn: "",
+    // Prellenado con el precio de venta del ítem: en SALIDA el avión paga
+    // este precio (editable); vacío = la salida se carga a costo FIFO.
+    venta_unitaria: precioVenta != null && precioVenta > 0 ? String(precioVenta) : "",
+    venta_moneda: precioVentaMoneda ?? "MXN",
     aeronave_id: "",
     proveedor_id: "",
     fecha_movimiento: "",

@@ -97,6 +97,8 @@ export function ItemActions({ item, aircraft, providers, categorias }: ItemActio
         itemId={item.id}
         itemNombre={item.nombre}
         unidad={item.unidad}
+        precioVenta={item.precio_venta != null ? Number(item.precio_venta) : null}
+        precioVentaMoneda={item.precio_venta_moneda}
         empaques={item.empaques ?? []}
         aircraft={aircraft}
         providers={providers}
