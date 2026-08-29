@@ -131,7 +131,7 @@ export default async function ConciliacionPage({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <ReporteConciliacionButton cuentas={cuentas} />
+          <ReporteConciliacionButton cuentas={cuentas} filtroActivo={filtro} />
           <ImportButton cuentas={cuentas} />
         </div>
       </div>
