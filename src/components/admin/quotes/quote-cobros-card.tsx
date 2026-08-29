@@ -4,7 +4,11 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BanknotesIcon, TrashIcon } from "@heroicons/react/24/outline";
+import {
+  BanknotesIcon,
+  DocumentArrowDownIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
+import { descargarDelApi } from "@/lib/download";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { METODO_LABELS } from "@/components/admin/flights/cobros-card";
 import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
@@ -57,6 +62,18 @@ export function QuoteCobrosCard({
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, startDelete] = useTransition();
+  // Id del cobro cuyo recibo se está generando (carga por fila).
+  const [reciboDe, setReciboDe] = useState<string | null>(null);
+
+  const descargarRecibo = async (cobroId: string) => {
+    setReciboDe(cobroId);
+    const fol = quoteFolio != null ? String(quoteFolio) : quoteId.slice(0, 8);
+    const err = await descargarDelApi(`/v1/flights/cobros/${cobroId}/recibo.pdf`, {
+      filename: `recibo-${fol}-${cobroId.slice(0, 8)}.pdf`,
+    });
+    if (err) toast.error("No se pudo generar el recibo", { description: err });
+    setReciboDe(null);
+  };
 
   if (cobros.length === 0) return null;
 
@@ -135,15 +152,35 @@ export function QuoteCobrosCard({
                   )}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setToDelete(c)}
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
-              title="Eliminar cobro (para poder revisar la cotización)"
-            >
-              <TrashIcon className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Recibo para el cliente: solo cobros reales (un reembolso no
+                  tiene recibo de pago). */}
+              {Number(c.monto) > 0 && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Recibo de pago (PDF) para el cliente"
+                  disabled={reciboDe === c.id}
+                  onClick={() => descargarRecibo(c.id)}
+                >
+                  <DocumentArrowDownIcon
+                    className={`h-4 w-4 ${
+                      reciboDe === c.id ? "animate-pulse" : ""
+                    }`}
+                  />
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setToDelete(c)}
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                title="Eliminar cobro (para poder revisar la cotización)"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           );
         })}

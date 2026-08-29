@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { fmtDate } from "@/lib/datetime";
-import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import {
+  DocumentArrowDownIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +30,7 @@ import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { CobroFormSheet } from "./cobro-form-sheet";
 import { ReembolsoButton } from "./reembolso-dialog";
 import { fmtUsd } from "@/lib/format";
+import { descargarDelApi } from "@/lib/download";
 import type { FlightCobro } from "@/types/flights";
 import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
@@ -78,6 +83,17 @@ export function CobrosCard({
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Id del cobro cuyo recibo se está generando (carga por fila).
+  const [reciboDe, setReciboDe] = useState<string | null>(null);
+
+  const descargarRecibo = async (cobroId: string) => {
+    setReciboDe(cobroId);
+    const err = await descargarDelApi(`/v1/flights/cobros/${cobroId}/recibo.pdf`, {
+      filename: `recibo-${flightFolio}-${cobroId.slice(0, 8)}.pdf`,
+    });
+    if (err) toast.error("No se pudo generar el recibo", { description: err });
+    setReciboDe(null);
+  };
 
   // Regla del cliente (28-ago): un vuelo CANCELADO puede tener dinero real —
   // anticipo retenido o cargo por cancelación que NO se reembolsa — y entra
@@ -215,6 +231,24 @@ export function CobrosCard({
                     <p className="text-[11px] text-muted-foreground font-mono">
                       {fmtDate(c.fecha_cobro)}
                     </p>
+                    {/* Recibo para el cliente: solo cobros reales (un
+                        reembolso no tiene recibo de pago). */}
+                    {Number(c.monto) > 0 && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        title="Recibo de pago (PDF) para el cliente"
+                        disabled={reciboDe === c.id}
+                        onClick={() => descargarRecibo(c.id)}
+                      >
+                        <DocumentArrowDownIcon
+                          className={`h-3.5 w-3.5 ${
+                            reciboDe === c.id ? "animate-pulse" : ""
+                          }`}
+                        />
+                      </Button>
+                    )}
                     <Button
                       size="icon"
                       variant="ghost"
