@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
+import type { IaSaldoCheckpoint } from "@/lib/api/ia-uso-server";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -29,6 +30,27 @@ export async function updateConfiguracionAction(
     const data = await apiServer<ConfiguracionFlag>(`/v1/config/${clave}`, {
       method: "PATCH",
       body: cambio,
+    });
+    revalidatePath("/admin/configuracion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Captura un checkpoint de saldo de créditos de IA (el monto que el admin lee
+ * en console.anthropic.com). No es destructivo: cada captura es un registro
+ * nuevo y la estimación se recalcula a partir del más reciente.
+ */
+export async function capturarIaSaldoAction(input: {
+  saldo_usd: number;
+  notas?: string;
+}): Promise<ActionResult<IaSaldoCheckpoint>> {
+  try {
+    const data = await apiServer<IaSaldoCheckpoint>("/v1/config/ia-saldo", {
+      method: "POST",
+      body: input,
     });
     revalidatePath("/admin/configuracion");
     return { ok: true, data };
