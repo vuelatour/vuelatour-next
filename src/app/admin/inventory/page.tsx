@@ -21,7 +21,6 @@ import {
   EntradasSinCosto,
   type EntradaSinCosto,
 } from "@/components/admin/inventory/entradas-sin-costo";
-import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { listInventarioTodo, listMovimientos } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -79,6 +78,9 @@ export default async function InventoryPage() {
             {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado {mxn(valor_total_mxn)} MXN (FIFO).
             El consumo se carga al avión al registrar la salida.
           </p>
+          <p className="text-xs text-muted-foreground/80 mt-1">
+            El reporte de inventario vive en el Balance general (hoja Inventario).
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* Compras de refacciones: factura + envío + impuestos → costo real
@@ -90,16 +92,9 @@ export default async function InventoryPage() {
             <ShoppingCartIcon className="h-4 w-4" />
             Compras
           </Link>
-          <ExcelExportButton
-            path="/v1/inventory/items/export"
-            filename="inventario-valorizado.xlsx"
-            label="Valorizado"
-          />
-          <ExcelExportButton
-            path="/v1/inventory/movimientos/export"
-            filename="cardex.xlsx"
-            label="Cardex"
-          />
+          {/* Los exports Valorizado/Cardex se retiraron de aquí: el reporte
+              de inventario vive en el Balance general (hoja Inventario). El
+              cardex por ítem sigue en el detalle ("Cardex (Excel)"). */}
           <ImportCompraButton providers={providers} />
           {puedeAltaMasiva && <ItemBulkUploadDialog />}
           <ItemCreateButton categorias={categorias} />
