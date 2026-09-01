@@ -495,19 +495,11 @@ export function QuoteLegsEditor({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-xs font-medium">Mostrar en PDF</Label>
-                    <p className="text-[11px] text-muted-foreground">
-                      Apagado: el tramo no sale en el PDF (título, itinerario
-                      ni mapa) — se sigue cobrando igual.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={!leg.pdf_oculto}
-                    onCheckedChange={(c) => updateLeg(idx, { pdf_oculto: !c })}
-                  />
-                </div>
+                {/* "Mostrar en PDF" se movió al DETALLE de la cotización
+                    (1-sep): el switch aquí rehidrataba del snapshot y un
+                    guardado sin la bandera la regresaba a visible. La
+                    visibilidad vive en la escala VIVA y el cotizador ya no
+                    la manda (el API la conserva cuando no viaja). */}
 
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">

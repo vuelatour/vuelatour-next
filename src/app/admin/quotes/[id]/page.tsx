@@ -17,6 +17,7 @@ import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
 import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
 import { combinadoFolio, type FlightSnapshot } from "@/types/flights";
+import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
@@ -25,7 +26,9 @@ import { getClient } from "@/lib/api/clients-server";
 import { getMe } from "@/lib/api/me";
 import { ApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import type { PersistedEscala } from "@/types/quotes-persisted";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +66,22 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
   if (quote.estado !== "SOLICITUD" && quote.estado !== "COTIZADO") {
     cobrosVuelo = await getFlightSnapshot(id).catch(() => null);
   }
+
+  // Visibilidad en PDF por tramo (1-sep): el toggle vive AQUÍ (no en el
+  // cotizador) y escribe directo en la escala VIVA — la misma que manda en
+  // el PDF (escalasVisiblesPdf cruza por orden; el snapshot solo decide si
+  // no hay escala viva de ese orden). Solo roles de oficina que editan.
+  const puedeEditarPdf = me?.rol === "ADMIN" || me?.rol === "COORDINADOR";
+  const escalaVivaPorOrden = new Map<number, PersistedEscala>();
+  for (const esc of quote.escalas ?? []) {
+    if (!escalaVivaPorOrden.has(esc.orden)) escalaVivaPorOrden.set(esc.orden, esc);
+  }
+  const notaPdfTramos = puedeEditarPdf ? (
+    <p className="pt-1 text-[10px] text-muted-foreground">
+      Lo oculto no aparece en el PDF del cliente (la numeración se ajusta
+      sola); el precio no cambia.
+    </p>
+  ) : null;
 
   return (
     <div className="space-y-6">
@@ -326,55 +345,92 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                     mostraba la ruta vieja/operativa como si fuera la cotizada. */}
                 {quote.itinerario_operativo === true &&
                 (quote.calculo_snapshot?.tramos?.length ?? 0) > 0 ? (
-                  <ol className="space-y-1.5">
-                    {quote.calculo_snapshot!.tramos!.map((t) => (
-                      <li
-                        key={`${t.orden}-${t.origen}-${t.destino}`}
-                        className="flex items-center justify-between gap-3 text-xs"
-                      >
-                        <span className="font-mono">
-                          <span className="text-muted-foreground mr-2">{t.orden}.</span>
-                          {t.origen} → {t.destino}
-                        </span>
-                        <span className="font-mono text-muted-foreground">
-                          {t.millas ? `${fmtDecimal(t.millas)} NM` : "—"}
+                  <>
+                    <ol className="space-y-1.5">
+                      {quote.calculo_snapshot!.tramos!.map((t) => {
+                        // La escala viva de ese orden MANDA (regla del PDF);
+                        // sin ella decide el snapshot congelado (sin toggle:
+                        // no hay escala que patchear).
+                        const viva = escalaVivaPorOrden.get(t.orden);
+                        const oculto =
+                          viva?.pdf_oculto != null
+                            ? viva.pdf_oculto === true
+                            : t.pdf_oculto === true;
+                        return (
+                          <li
+                            key={`${t.orden}-${t.origen}-${t.destino}`}
+                            className="flex items-center justify-between gap-3 text-xs"
+                          >
+                            <span className={cn("font-mono", oculto && "opacity-60")}>
+                              <span className="text-muted-foreground mr-2">{t.orden}.</span>
+                              {t.origen} → {t.destino}
+                            </span>
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span className="font-mono text-muted-foreground">
+                                {t.millas ? `${fmtDecimal(t.millas)} NM` : "—"}
+                              </span>
+                              {puedeEditarPdf && viva && (
+                                <QuoteEscalaPdfToggle
+                                  quoteId={quote.id}
+                                  escalaId={viva.id}
+                                  oculto={oculto}
+                                />
+                              )}
+                            </span>
+                          </li>
+                        );
+                      })}
+                      <li className="pt-2 mt-2 border-t border-border flex items-center justify-between text-xs">
+                        <span className="font-semibold">Total</span>
+                        <span className="font-mono font-bold">
+                          {fmtDecimal(quote.millas_nauticas_one_way)} NM
                         </span>
                       </li>
-                    ))}
-                    <li className="pt-2 mt-2 border-t border-border flex items-center justify-between text-xs">
-                      <span className="font-semibold">Total</span>
-                      <span className="font-mono font-bold">
-                        {fmtDecimal(quote.millas_nauticas_one_way)} NM
-                      </span>
-                    </li>
-                  </ol>
+                    </ol>
+                    {notaPdfTramos}
+                  </>
                 ) : quote.tipo === "MULTIESCALA" && (quote.escalas?.filter((e) => !e.solo_operativa).length ?? 0) > 0 ? (
-                  <ol className="space-y-1.5">
-                    {quote.escalas!.filter((e) => !e.solo_operativa).map((esc) => (
-                      <li
-                        key={esc.id}
-                        className="flex items-center justify-between gap-3 text-xs"
-                      >
-                        <span className="font-mono">
-                          <span className="text-muted-foreground mr-2">
-                            {esc.orden}.
-                          </span>
-                          {esc.origen_iata} → {esc.destino_iata}
-                        </span>
-                        <span className="font-mono text-muted-foreground">
-                          {esc.millas_nauticas
-                            ? `${fmtDecimal(esc.millas_nauticas)} NM`
-                            : "—"}
+                  <>
+                    <ol className="space-y-1.5">
+                      {quote.escalas!.filter((e) => !e.solo_operativa).map((esc) => {
+                        const oculto = esc.pdf_oculto === true;
+                        return (
+                          <li
+                            key={esc.id}
+                            className="flex items-center justify-between gap-3 text-xs"
+                          >
+                            <span className={cn("font-mono", oculto && "opacity-60")}>
+                              <span className="text-muted-foreground mr-2">
+                                {esc.orden}.
+                              </span>
+                              {esc.origen_iata} → {esc.destino_iata}
+                            </span>
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span className="font-mono text-muted-foreground">
+                                {esc.millas_nauticas
+                                  ? `${fmtDecimal(esc.millas_nauticas)} NM`
+                                  : "—"}
+                              </span>
+                              {puedeEditarPdf && (
+                                <QuoteEscalaPdfToggle
+                                  quoteId={quote.id}
+                                  escalaId={esc.id}
+                                  oculto={oculto}
+                                />
+                              )}
+                            </span>
+                          </li>
+                        );
+                      })}
+                      <li className="pt-2 mt-2 border-t border-border flex items-center justify-between text-xs">
+                        <span className="font-semibold">Total</span>
+                        <span className="font-mono font-bold">
+                          {fmtDecimal(quote.millas_nauticas_one_way)} NM
                         </span>
                       </li>
-                    ))}
-                    <li className="pt-2 mt-2 border-t border-border flex items-center justify-between text-xs">
-                      <span className="font-semibold">Total</span>
-                      <span className="font-mono font-bold">
-                        {fmtDecimal(quote.millas_nauticas_one_way)} NM
-                      </span>
-                    </li>
-                  </ol>
+                    </ol>
+                    {notaPdfTramos}
+                  </>
                 ) : (
                   <>
                     <Row

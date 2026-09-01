@@ -21,6 +21,10 @@ export interface PersistedEscala {
   tipo_parada: "NORMAL" | "SERVICIO";
   servicio_notas: string | null;
   solo_operativa?: boolean;
+  /** Tramo oculto del PDF del cliente (presentación pura: se sigue cobrando).
+   *  Fuente de verdad VIVA de la visibilidad; se cambia desde el detalle
+   *  (PATCH pdf-visibilidad). Opcional-defensivo: API previo no lo trae. */
+  pdf_oculto?: boolean | null;
   fecha_salida_plan: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;

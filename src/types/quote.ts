@@ -88,8 +88,9 @@ export interface EscalaInput {
   notas?: string | null;
   /** Fecha/hora planeada del tramo. El 1er/último tramo heredan las fechas del vuelo si se omite. */
   fecha_salida_plan?: string | null;
-  /** Ocultar ESTE tramo del PDF (título/itinerario/mapa); el precio no cambia. */
-  pdf_oculto?: boolean;
+  // pdf_oculto se retiró del payload (1-sep): la visibilidad en PDF se cambia
+  // por escala desde el DETALLE (PATCH pdf-visibilidad) y el API conserva el
+  // valor cuando el cotizador guarda sin la bandera.
 }
 
 /** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */
@@ -106,7 +107,9 @@ export interface TramoBreakdown {
   pernocta_usd: number;
   tipo_parada: TipoParada;
   servicio_notas: string | null;
-  /** Ocultar este tramo del PDF (27-ago). */
+  /** Eco CONGELADO del snapshot (27-ago). La verdad viva es
+   *  escala.pdf_oculto (toggle en el detalle); esto es solo fallback para
+   *  snapshots sin escala viva de ese orden (misma regla que el PDF). */
   pdf_oculto?: boolean;
 }
 

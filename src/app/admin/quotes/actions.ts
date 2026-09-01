@@ -133,6 +133,30 @@ export async function quickAdjustQuoteAction(
   }
 }
 
+/**
+ * Visibilidad en PDF de UN tramo, directo sobre la escala VIVA (1-sep): el
+ * switch del cotizador se retiró (rehidrataba del snapshot y un guardado sin
+ * la bandera la regresaba a visible). Presentación pura: el tramo oculto se
+ * sigue cobrando y la numeración del PDF se ajusta sola.
+ */
+export async function setEscalaPdfVisibilidadAction(
+  vueloId: string,
+  escalaId: string,
+  oculto: boolean,
+): Promise<ActionResult> {
+  try {
+    const data = await apiServer<unknown>(
+      `/v1/quotes/${vueloId}/escalas/${escalaId}/pdf-visibilidad`,
+      { method: "PATCH", body: { oculto } },
+    );
+    revalidatePath(`/admin/quotes/${vueloId}`);
+    revalidatePath(`/admin/flights/${vueloId}`);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface ReviseQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
   fecha_vuelo?: string;

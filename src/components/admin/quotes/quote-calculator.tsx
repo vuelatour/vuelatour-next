@@ -353,7 +353,6 @@ function tramoToEscala(t: {
   servicio_notas?: string | null;
   notas?: string | null;
   fecha_salida_plan?: string | null;
-  pdf_oculto?: boolean | null;
 }): EscalaInput {
   return {
     origen_iata: t.origen_iata,
@@ -368,7 +367,9 @@ function tramoToEscala(t: {
     tipo_parada: t.tipo_parada ?? "NORMAL",
     servicio_notas: t.servicio_notas ?? null,
     notas: t.notas ?? null,
-    pdf_oculto: t.pdf_oculto ?? false,
+    // pdf_oculto YA NO se hidrata ni se manda (1-sep): la visibilidad en PDF
+    // vive en la escala VIVA (toggle en el detalle) y el API la conserva
+    // cuando el cotizador guarda sin la bandera.
     // datetime-local (sin segundos) para el input del editor de tramos.
     fecha_salida_plan: t.fecha_salida_plan ? isoToCancunInput(t.fecha_salida_plan) : null,
   };
@@ -557,7 +558,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   pernocta_costo_usd: t.pernocta_usd,
                   tipo_parada: t.tipo_parada,
                   servicio_notas: t.servicio_notas,
-                  pdf_oculto: t.pdf_oculto,
                 }),
               )
             : comercialSugerida(q)
