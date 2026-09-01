@@ -16,17 +16,21 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   PERMISO: "PERMISO",
   // Honorario del freelance que voló el avión (doc 3.7): gasto directo del vuelo.
   PILOTO_EXTERNO: "Piloto externo (honorario)",
-  FIJO: "FIJO",
+  // LEGADO: ya no se ofrece en captura/verificación (se retiró de los
+  // dropdowns), pero la etiqueta se conserva para pintar gastos históricos.
+  FIJO: "Gasto fijo",
   // Gasto de la operación SIN vuelo (avión opcional): hoja "Gastos
   // indirectos" del balance del avión (o repartible desde Otros gastos).
-  INDIRECTO: "Gastos indirectos",
+  INDIRECTO: "Gastos indirectos de avión",
   // Nómina del personal: sin vuelo; avión opcional (piloto de un solo avión).
   NOMINA: "Nómina",
   // Servicio/mantenimiento DE UN AVIÓN sin vuelo (taller, seguros del avión…).
   SERVICIOS: "Servicios (avión)",
   // Gasolina de coches/camionetas — nunca combustible de aviación (ese es GAS).
   GASOLINA: "Gasolina (vehículos)",
-  // Gasto de un visitante de trabajo (fondo de visita / tarjeta corporativa).
+  // LEGADO: gasto de un visitante de trabajo (fondo de visita / tarjeta
+  // corporativa). Ya no se ofrece en captura/verificación; la etiqueta se
+  // conserva para pintar gastos históricos.
   VISITA: "Visita",
   // Fuera del dinero de la empresa: ni balances, ni reparto, ni pre-cierre.
   PERSONAL_DUENO: "Gasto personal del dueño",

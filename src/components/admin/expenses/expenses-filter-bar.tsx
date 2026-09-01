@@ -4,14 +4,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
+import { medioPagoLabel } from "@/lib/admin/medios-pago";
 
+// Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
+// el ORDEN del filtro. BODEGA queda fuera a propósito (cargo contable de
+// inventario, no un pago que la oficina persiga).
 const MEDIOS = [
-  { value: "EFECTIVO", label: "Efectivo" },
-  { value: "TARJETA_CORP", label: "Tarjeta corporativa" },
-  { value: "TRANSFERENCIA", label: "Transferencia" },
-  { value: "PERSONAL_PABLO", label: "Personal Pablo" },
-  { value: "PERSONAL_ALE", label: "Personal Ale" },
-];
+  "EFECTIVO",
+  "TARJETA_CORP",
+  "TRANSFERENCIA",
+  "PAYWISE",
+  "PERSONAL_PABLO",
+  "PERSONAL_ALE",
+].map((value) => ({ value, label: medioPagoLabel(value) }));
 
 // Semáforo de facturación de oficina; "Sin facturar" agrupa pendiente +
 // solicitada (lo que aún falta por resolver, en un solo filtro).

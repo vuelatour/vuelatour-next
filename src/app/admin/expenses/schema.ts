@@ -41,6 +41,8 @@ export const MedioPagoEnum = z.enum([
   "PERSONAL_PABLO",
   "PERSONAL_ALE",
   "TRANSFERENCIA",
+  // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
+  "PAYWISE",
   // Cargo automático por salida de bodega (no es egreso bancario).
   "BODEGA",
 ]);

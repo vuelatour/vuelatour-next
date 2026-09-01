@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { ShoppingCartIcon } from "@heroicons/react/24/outline";
 import { useForm } from "react-hook-form";
@@ -85,10 +85,10 @@ const CATEGORIAS = [
   // El API exige sin vuelo y sin avión para GASOLINA/VISITA/PERSONAL_DUENO
   // (400 con mensaje claro si el gasto los tiene: quitarlos primero).
   "GASOLINA",
-  "VISITA",
   "PERSONAL_DUENO",
-  "FIJO",
   "OTRO",
+  // FIJO y VISITA son LEGADO: no se ofrecen para reclasificar, pero un gasto
+  // histórico que las traiga se agrega a sus opciones (ver categoriaOptions).
 ].map((value) => ({ value, label: categoriaGastoLabel(value) }));
 
 const MEDIOS = [
@@ -97,6 +97,8 @@ const MEDIOS = [
   { value: "PERSONAL_PABLO", label: "Dinero personal Pablo" },
   { value: "PERSONAL_ALE", label: "Dinero personal Ale" },
   { value: "TRANSFERENCIA", label: "Transferencia" },
+  // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
+  { value: "PAYWISE", label: "Paywise" },
   { value: "BODEGA", label: "Bodega (salida de inventario)" },
 ];
 
@@ -178,6 +180,20 @@ export function ExpenseVerifyDialog({
   const { handleSubmit, reset, watch, setValue, register } = useForm<GastoVerifyValues>({
     defaultValues: defaults(gasto),
   });
+
+  // Categorías LEGADO (FIJO/VISITA): ya no se ofrecen para capturas nuevas,
+  // pero un gasto histórico que las traiga debe pintarse con su etiqueta y
+  // poder guardarse sin cambiar de categoría — se agrega la suya a la lista.
+  const categoriaOptions = useMemo(
+    () =>
+      CATEGORIAS.some((c) => c.value === gasto.categoria)
+        ? CATEGORIAS
+        : [
+            ...CATEGORIAS,
+            { value: gasto.categoria, label: categoriaGastoLabel(gasto.categoria) },
+          ],
+    [gasto.categoria],
+  );
 
   useEffect(() => {
     if (open) {
@@ -983,7 +999,7 @@ export function ExpenseVerifyDialog({
               )}`}
             >
               <SearchableSelect
-                options={CATEGORIAS}
+                options={categoriaOptions}
                 value={watch("categoria")}
                 onChange={(v) => {
                   setValue("categoria", v);

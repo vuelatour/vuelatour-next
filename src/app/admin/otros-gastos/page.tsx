@@ -131,7 +131,7 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
         <EmptyState
           icon={BanknotesIcon}
           title={`Sin otros gastos en ${mesLabel}`}
-          description="Aquí aparecen los gastos generales del mes sin vuelo (Otros gastos, FIJO, Gastos indirectos, Nómina, Gasolina de vehículos y Visita) para asignarlos o dividirlos entre aviones."
+          description="Aquí aparecen los gastos generales del mes sin vuelo (Otros gastos, Gastos indirectos de avión, Nómina, Gasolina de vehículos y los históricos Gasto fijo y Visita) para asignarlos o dividirlos entre aviones."
         />
       ) : (
         <>

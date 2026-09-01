@@ -8,6 +8,8 @@ export const MEDIO_PAGO_LABELS: Record<string, string> = {
   EFECTIVO: "Efectivo",
   TARJETA_CORP: "Tarjeta corporativa",
   TRANSFERENCIA: "Transferencia",
+  // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
+  PAYWISE: "Paywise",
   PERSONAL_PABLO: "Personal Pablo",
   PERSONAL_ALE: "Personal Ale",
   // Cargo contable de inventario (salida de cardex): nunca toca el banco.

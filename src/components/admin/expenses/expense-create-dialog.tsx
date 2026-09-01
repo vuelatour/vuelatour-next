@@ -89,21 +89,23 @@ const CATEGORIAS = [
   // Honorario del freelance que voló el avión (doc 3.7): resta en el reparto
   // como gasto directo del vuelo.
   "PILOTO_EXTERNO",
-  "FIJO",
   // Sin vuelo (avión opcional): INDIRECTO/NOMINA; SERVICIOS es del avión.
   "INDIRECTO",
   "NOMINA",
   "SERVICIOS",
-  // Sin vuelo NI avión: gasolina de coches, visitante de trabajo, gasto
-  // personal del dueño (fuera de balances/reparto/pre-cierre).
+  // Sin vuelo NI avión: gasolina de coches y gasto personal del dueño
+  // (fuera de balances/reparto/pre-cierre).
   "GASOLINA",
-  "VISITA",
   "PERSONAL_DUENO",
   "OTRO",
+  // FIJO y VISITA son LEGADO: ya no se capturan (fuente única conserva sus
+  // etiquetas para pintar gastos históricos).
 ].map((value) => ({ value, label: categoriaGastoLabel(value) }));
 
 const MEDIOS = [
   { value: "TRANSFERENCIA", label: "Transferencia" },
+  // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
+  { value: "PAYWISE", label: "Paywise" },
   { value: "EFECTIVO", label: "Efectivo (caja chica)" },
   { value: "TARJETA_CORP", label: "Tarjeta corporativa" },
   { value: "PERSONAL_PABLO", label: "Dinero personal Pablo" },
@@ -789,9 +791,7 @@ export function ExpenseCreateDialog({
                             // Un gasto DEL VUELO jamás es personal del dueño.
                             c.value !== "PERSONAL_DUENO" &&
                             // Un gasto DEL VUELO no es gasolina de coche.
-                            c.value !== "GASOLINA" &&
-                            // Ni de un visitante (jamás lleva vuelo).
-                            c.value !== "VISITA",
+                            c.value !== "GASOLINA",
                         )
                       : CATEGORIAS
                   }
@@ -866,13 +866,6 @@ export function ExpenseCreateDialog({
                 vive en <span className="font-medium">Otros gastos</span> y ahí
                 puede repartirse a aviones si hiciera falta. El combustible de
                 aviación va en GAS.
-              </p>
-            )}
-            {!defaultVueloId && watch("categoria") === "VISITA" && (
-              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                Gasto de un <span className="font-medium">visitante de trabajo</span>{" "}
-                (fondo de visita / tarjeta corporativa). No lleva vuelo ni
-                avión.
               </p>
             )}
             {!defaultVueloId && watch("categoria") === "PERSONAL_DUENO" && (
