@@ -64,12 +64,12 @@ const NUMERICAS_UI: Record<
   string,
   { titulo: string; unidad: string; ayuda: string; icon?: typeof CameraIcon }
 > = {
-  dias_edicion_gastos_campo: {
-    titulo: "Días de edición de gastos de campo",
-    unidad: "días",
+  dias_gracia_gastos_semana: {
+    titulo: "Día(s) de gracia de la semana de gastos",
+    unidad: "día(s)",
     icon: CalendarDaysIcon,
     ayuda:
-      "Ventana en la que piloto, mecánico o visitante pueden corregir o borrar su PROPIO gasto o carga de combustible desde la app, contada en días (día Cancún) desde que lo capturaron. 0 = solo el mismo día. La oficina siempre puede editar desde el panel, y todo cambio queda en el historial del vuelo.",
+      "Los gastos de campo (piloto, mecánico o visitante) se capturan y corrigen dentro de su semana, de lunes a domingo (hora Cancún). Este número dice cuántos días más, tras el domingo, todavía pueden capturar o corregir lo de la semana pasada: 1 = hasta el lunes. La oficina siempre puede editar desde el panel, y todo cambio queda en el historial del vuelo.",
   },
 };
 
