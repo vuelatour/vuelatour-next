@@ -7,6 +7,7 @@ import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 
 const ESTATUS_STYLE: Record<string, string> = {
@@ -19,16 +20,6 @@ const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
   OFICINA: { label: "Oficina", cls: "border-sky-500/50 text-sky-600" },
   SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
   VISITANTE: { label: "Visitante", cls: "border-teal-500/50 text-teal-600" },
-};
-
-// Mismas etiquetas que el alta/verificación de gastos (fuente: expense-create).
-const MEDIO_PAGO_LABELS: Record<string, string> = {
-  EFECTIVO: "Efectivo",
-  TARJETA_CORP: "Tarjeta corporativa",
-  PERSONAL_PABLO: "Personal Pablo",
-  PERSONAL_ALE: "Personal Ale",
-  TRANSFERENCIA: "Transferencia",
-  BODEGA: "Bodega (inventario)",
 };
 
 const fmtMoney = (monto: string, moneda: string) =>

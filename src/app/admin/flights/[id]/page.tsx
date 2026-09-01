@@ -22,11 +22,13 @@ import { CobrosCard } from "@/components/admin/flights/cobros-card";
 import { EscalasCard } from "@/components/admin/flights/escalas-card";
 import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card";
 import { FlightBitacoraCard } from "@/components/admin/flights/flight-bitacora-card";
+import { FlightGastosHistorialCard } from "@/components/admin/flights/flight-gastos-historial-card";
 import {
   getFlightSnapshot,
   getFlightTacoPhotos,
   getCobroVoucherUrls,
   getFlightBitacora,
+  getFlightGastosHistorial,
   getFlightPlanUrl,
   getVueloAnterior,
 } from "@/lib/api/flights-server";
@@ -101,7 +103,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, planVuelo, quote, gastosRes, vueloAnteriorRes] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, gastosHistorial, planVuelo, quote, gastosRes, vueloAnteriorRes] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       listAircraft({ limit: 100, activa: true }),
@@ -109,6 +111,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       listAirports({ limit: 200, activo: true }),
       getFlightTacoPhotos(id).catch(() => []),
       getFlightBitacora(id),
+      // Historial de gastos (gasto_bitacora): best-effort dentro del propio
+      // helper — con API viejo simplemente no se pinta la card.
+      getFlightGastosHistorial(id),
       // Foto del plan de vuelo: el bucket es privado, así que se firma en el
       // backend (guarda el path; con URLs viejas completas también resuelve).
       snapshot.foto_plan_vuelo_url
@@ -812,6 +817,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             aeronaveId={snapshot.aeronave_id}
             pilotoNombre={piloto?.nombre ?? null}
           />
+
+          {/* Historial de gastos: quién capturó/editó/eliminó y qué cambió
+              (gasto_bitacora por trigger — auditoría pedida el 31-ago). */}
+          <FlightGastosHistorialCard eventos={gastosHistorial} />
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
           <FlightBitacoraCard eventos={bitacora} />

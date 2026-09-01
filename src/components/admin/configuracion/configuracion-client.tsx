@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { CameraIcon } from "@heroicons/react/24/outline";
+import { CalendarDaysIcon, CameraIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -54,6 +55,108 @@ const FLAGS_UI: Record<
   },
 };
 
+/**
+ * Copy amigable de las banderas NUMÉRICAS (traen valor_numerico en la BD):
+ * se editan con un input de número, no con el switch. El fallback (clave +
+ * descripción de la BD) cubre banderas numéricas nuevas sin tocar el panel.
+ */
+const NUMERICAS_UI: Record<
+  string,
+  { titulo: string; unidad: string; ayuda: string; icon?: typeof CameraIcon }
+> = {
+  dias_edicion_gastos_campo: {
+    titulo: "Días de edición de gastos de campo",
+    unidad: "días",
+    icon: CalendarDaysIcon,
+    ayuda:
+      "Ventana en la que piloto, mecánico o visitante pueden corregir o borrar su PROPIO gasto o carga de combustible desde la app, contada en días (día Cancún) desde que lo capturaron. 0 = solo el mismo día. La oficina siempre puede editar desde el panel, y todo cambio queda en el historial del vuelo.",
+  },
+};
+
+/**
+ * Bandera con valor numérico: input + Guardar en lugar del switch (el
+ * switch de las booleanas no significa nada aquí y pintaba un toggle roto).
+ */
+function FlagNumerica({
+  flag,
+  onSaved,
+}: {
+  flag: ConfiguracionFlag;
+  onSaved: (f: ConfiguracionFlag) => void;
+}) {
+  const meta = NUMERICAS_UI[flag.clave];
+  const Icon = meta?.icon;
+  const [valor, setValor] = useState(String(Number(flag.valor_numerico ?? 0)));
+  const [pending, startTransition] = useTransition();
+
+  const numero = Number(valor);
+  const valido = valor.trim() !== "" && Number.isFinite(numero) && numero >= 0;
+  const sinCambio = valido && numero === Number(flag.valor_numerico ?? 0);
+
+  const guardar = () => {
+    if (!valido || sinCambio || pending) return;
+    startTransition(async () => {
+      const res = await updateConfiguracionAction(flag.clave, {
+        valor_numerico: numero,
+      });
+      if (res.ok && res.data) {
+        // Defensa de skew: si el API aún no devuelve valor_numerico, se
+        // conserva el tecleado para no degradar la card a switch.
+        onSaved({ ...flag, ...res.data, valor_numerico: res.data.valor_numerico ?? numero });
+        toast.success("Valor guardado.");
+      } else {
+        toast.error(res.error ?? "No se pudo guardar el cambio");
+      }
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div className="space-y-1 min-w-0">
+          <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+            {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+            {meta?.titulo ?? flag.clave}
+            <Badge variant="outline" className="font-mono">
+              {Number(flag.valor_numerico ?? 0)}
+              {meta ? ` ${meta.unidad}` : ""}
+            </Badge>
+          </CardTitle>
+          <CardDescription>{flag.descripcion}</CardDescription>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && guardar()}
+            className="w-24 text-right"
+            disabled={pending}
+            aria-label={meta?.titulo ?? flag.clave}
+          />
+          <Button size="sm" onClick={guardar} disabled={pending || !valido || sinCambio}>
+            {pending ? "Guardando…" : "Guardar"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {meta?.ayuda && <p className="text-xs text-muted-foreground">{meta.ayuda}</p>}
+        {!valido && (
+          <p className="text-xs text-destructive mt-1">
+            Captura un número igual o mayor a 0.
+          </p>
+        )}
+        <p className="text-[11px] text-muted-foreground mt-2">
+          Último cambio: {fmtDateTime(flag.updated_at)}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ConfiguracionClient({
   initial,
 }: {
@@ -70,7 +173,7 @@ export function ConfiguracionClient({
     if (!confirmando) return;
     const { flag, nuevo } = confirmando;
     startTransition(async () => {
-      const res = await updateConfiguracionAction(flag.clave, nuevo);
+      const res = await updateConfiguracionAction(flag.clave, { activa: nuevo });
       if (res.ok && res.data) {
         const actualizado = res.data;
         setFlags((prev) =>
@@ -97,6 +200,22 @@ export function ConfiguracionClient({
           </p>
         )}
         {flags.map((flag) => {
+          // Bandera NUMÉRICA (gateada por presencia del campo, no por la
+          // clave): input + Guardar — el switch booleano aquí no significa
+          // nada y pintaría un toggle roto.
+          if (flag.valor_numerico != null) {
+            return (
+              <FlagNumerica
+                key={flag.clave}
+                flag={flag}
+                onSaved={(actualizado) =>
+                  setFlags((prev) =>
+                    prev.map((f) => (f.clave === actualizado.clave ? actualizado : f)),
+                  )
+                }
+              />
+            );
+          }
           const meta = FLAGS_UI[flag.clave];
           const Icon = meta?.icon;
           return (

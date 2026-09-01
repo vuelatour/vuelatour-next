@@ -98,6 +98,30 @@ export function getFlightBitacora(id: string) {
   }).catch(() => [] as BitacoraEvento[]);
 }
 
+export interface GastoHistorialEvento {
+  gasto_id: string;
+  accion: "INSERT" | "UPDATE" | "DELETE";
+  actor_nombre: string | null;
+  created_at: string;
+  /** true = evento reconstruido de un gasto capturado ANTES de existir la bitácora. */
+  sintetizado?: boolean;
+  /** Columnas de negocio que cambiaron: { col: { antes, despues } }. */
+  diff: Record<string, { antes: unknown; despues: unknown }>;
+  descripcion_gasto: string | null;
+}
+
+/**
+ * Historial de gastos del vuelo (gasto_bitacora, escrita por trigger de BD).
+ * Best-effort OBLIGATORIO: con skew de deploy (panel nuevo + API viejo) el
+ * endpoint no existe aún y el detalle del vuelo NO debe caerse — la card
+ * simplemente no se pinta.
+ */
+export function getFlightGastosHistorial(id: string) {
+  return apiServer<GastoHistorialEvento[]>(`/v1/flights/${id}/gastos-historial`, {
+    cache: "no-store",
+  }).catch(() => [] as GastoHistorialEvento[]);
+}
+
 /**
  * URL firmada (1 h) de la foto del plan de vuelo (bucket privado
  * planes-vuelo). El backend resuelve tanto paths como URLs viejas completas.

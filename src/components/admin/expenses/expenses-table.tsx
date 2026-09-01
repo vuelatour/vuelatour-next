@@ -22,6 +22,7 @@ import {
 } from "@/components/admin/expenses/expenses-seleccion";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
 
@@ -521,11 +522,7 @@ function textoGasto(g: Gasto): string {
   ].join(" ");
 }
 
-export const MEDIO_PAGO_LABELS: Record<string, string> = {
-  EFECTIVO: "Efectivo",
-  TARJETA_CORP: "Tarjeta corporativa",
-  TRANSFERENCIA: "Transferencia",
-  PERSONAL_PABLO: "Personal Pablo",
-  PERSONAL_ALE: "Personal Ale",
-  BODEGA: "Bodega",
-};
+// Fuente única movida a @/lib/admin/medios-pago (la necesita también el
+// historial de gastos, que es server component). Re-export para no tocar a
+// los consumidores existentes (otros-gastos, gastos-personales, compras).
+export { MEDIO_PAGO_LABELS };

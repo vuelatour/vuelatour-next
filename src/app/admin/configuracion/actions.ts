@@ -21,12 +21,14 @@ function fail<T>(err: unknown): ActionResult<T> {
 
 export async function updateConfiguracionAction(
   clave: string,
-  activa: boolean,
+  // Banderas booleanas mandan { activa }; las numéricas { valor_numerico }.
+  // apiServer ya serializa el body: objeto tal cual, sin JSON.stringify.
+  cambio: { activa?: boolean; valor_numerico?: number },
 ): Promise<ActionResult<ConfiguracionFlag>> {
   try {
     const data = await apiServer<ConfiguracionFlag>(`/v1/config/${clave}`, {
       method: "PATCH",
-      body: { activa },
+      body: cambio,
     });
     revalidatePath("/admin/configuracion");
     return { ok: true, data };
