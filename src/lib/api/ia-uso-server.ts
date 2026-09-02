@@ -27,7 +27,7 @@ export interface IaUsoModelo extends IaUsoTotal {
 
 export interface IaUsoDia {
   /** YYYY-MM-DD (día calendario en Cancún). */
-  fecha: string;
+  dia: string;
   llamadas: number;
   costo_usd: number;
 }

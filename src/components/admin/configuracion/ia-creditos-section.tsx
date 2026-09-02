@@ -234,8 +234,9 @@ export function IaCreditosSection({
   // Serie por día del mes completo (rellena con 0 los días sin llamadas).
   const dias = useMemo(() => {
     if (!resumen) return [];
+    // El API manda `dia` (YYYY-MM-DD Cancún); defensivo ante shape viejo.
     const porDia = new Map(
-      resumen.por_dia.map((d) => [d.fecha.slice(0, 10), d]),
+      (resumen.por_dia ?? []).map((d) => [String(d.dia ?? "").slice(0, 10), d]),
     );
     const [y, m] = mes.split("-").map(Number);
     const nDias = new Date(Date.UTC(y, m, 0)).getUTCDate();
