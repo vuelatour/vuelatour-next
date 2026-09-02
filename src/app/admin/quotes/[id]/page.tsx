@@ -284,7 +284,11 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
 
           {/* Ajuste rápido: extras y pasajeros sin rearmar el cotizador.
               Solo dentro de la ventana de edición (vuelo del mes corriente o
-              anterior, hora Cancún): más atrás son cierres pasados. */}
+              anterior, hora Cancún): más atrás son cierres pasados.
+              CANCELADO queda fuera A PROPÓSITO (1-sep-2026): aunque una
+              cancelada ya se puede "Revisar", el ajuste rápido es para
+              extras de última hora de vuelos vivos — el camino de una
+              cancelada es el cotizador completo (el API también lo rechaza). */}
           {quote.estado !== "CANCELADO" &&
             quote.estado !== "RESERVA" &&
             !quote.cobrado &&

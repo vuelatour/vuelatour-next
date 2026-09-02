@@ -70,22 +70,21 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
   // cotizar una RESERVA la convierte en COTIZADO. Además, solo dentro de la
   // ventana de edición: vuelo del mes corriente o anterior (hora Cancún) —
   // más atrás pertenece a cierres pasados.
+  // CANCELADA también se revisa (decisión del equipo, 1-sep-2026): el vuelo
+  // no salió pero la parte financiera existió. En canceladas la venta de
+  // balances es LO COBRADO (no el total), así que el cobro NO bloquea; solo
+  // la factura (CFDI ancla) y la ventana de mes. El backend valida lo mismo.
   const enVentana = cotizacionEditablePorFecha(quote.fecha_vuelo);
-  const canRevise =
-    quote.estado !== "CANCELADO" &&
-    !quote.cobrado &&
-    !quote.facturado &&
-    enVentana;
-  const bloqueadaPorMes =
-    quote.estado !== "CANCELADO" &&
-    !quote.cobrado &&
-    !quote.facturado &&
-    !enVentana;
+  const esCancelada = quote.estado === "CANCELADO";
+  const revisableSinVentana = esCancelada
+    ? !quote.facturado
+    : !quote.cobrado && !quote.facturado;
+  const canRevise = revisableSinVentana && enVentana;
+  const bloqueadaPorMes = revisableSinVentana && !enVentana;
   // Cobrado (sin factura): la revisión cambiaría un total YA cobrado. En vez
   // de esconder el botón, se explica el porqué y se lleva al cobro para
   // eliminarlo (la card de cobros vive abajo en esta misma página).
-  const bloqueadaPorCobro =
-    quote.estado !== "CANCELADO" && quote.cobrado && !quote.facturado;
+  const bloqueadaPorCobro = !esCancelada && quote.cobrado && !quote.facturado;
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -140,10 +139,19 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
       {canRevise && (
         <Link
           href={`/admin/quotes/${quote.id}/revise`}
-          className={buttonVariants({ variant: "outline" })}
+          className={
+            esCancelada
+              ? `${buttonVariants({ variant: "outline" })} border-amber-500/40 text-amber-700 dark:text-amber-400`
+              : buttonVariants({ variant: "outline" })
+          }
+          title={
+            esCancelada
+              ? "El vuelo está cancelado: la revisión solo ajusta el desglose para efectos financieros/documentales. En balances la venta sigue siendo lo cobrado y el vuelo NO se reactiva."
+              : undefined
+          }
         >
           <PencilSquareIcon className="h-4 w-4" />
-          Revisar
+          {esCancelada ? "Revisar (cancelada)" : "Revisar"}
         </Link>
       )}
       {bloqueadaPorMes && (

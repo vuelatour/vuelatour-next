@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowLeftIcon,
+  ExclamationTriangleIcon,
+  WrenchScrewdriverIcon,
+} from "@heroicons/react/24/outline";
 import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
 import { getQuote } from "@/lib/api/quotes-server";
 import { getClient } from "@/lib/api/clients-server";
@@ -28,7 +32,11 @@ export default async function ReviseQuotePage({ params }: RevisePageProps) {
 
   // Revisable mientras no se haya cobrado/facturado (el backend valida lo
   // mismo); atajamos para no entrar a un form que no se puede guardar.
-  if (quote.estado === "CANCELADO" || quote.cobrado || quote.facturado) {
+  // CANCELADA sí pasa (decisión del equipo, 1-sep-2026): la revisión de una
+  // cancelada es para efectos financieros/documentales — en balances la
+  // venta es lo cobrado, así que el cobro no bloquea; solo la factura.
+  const esCancelada = quote.estado === "CANCELADO";
+  if (quote.facturado || (!esCancelada && quote.cobrado)) {
     notFound();
   }
 
@@ -136,6 +144,24 @@ export default async function ReviseQuotePage({ params }: RevisePageProps) {
           {quote.cotizacion_version + 1} y la actual queda en el historial.
         </p>
       </div>
+      {/* Aviso ámbar para canceladas (1-sep-2026): mismo patrón del aviso de
+          vuelo de servicio de esta página. */}
+      {esCancelada && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-4 text-sm max-w-3xl">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              Vuelo cancelado: editas la cotización para efectos
+              financieros/documentales.
+            </p>
+            <p className="text-muted-foreground">
+              En balances la venta sigue siendo lo cobrado y el vuelo NO se
+              reactiva: permanece CANCELADO, sus tramos cancelados no reviven
+              y la tripulación no recibe avisos.
+            </p>
+          </div>
+        </div>
+      )}
       <QuoteCalculator
         mode="revise"
         aircraft={aircraft}
