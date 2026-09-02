@@ -62,11 +62,9 @@ function nuevaFila(e?: ServicioEtapa | { intervalo_hr: number }): EtapaDraft {
 export function AircraftTacometrosCard({
   aircraftId,
   matricula,
-  numMotores,
 }: {
   aircraftId: string;
   matricula: string;
-  numMotores: number;
 }) {
   const [data, setData] = useState<TacometroHistorial | null>(null);
   const [loading, setLoading] = useState(true);
@@ -236,12 +234,8 @@ export function AircraftTacometrosCard({
             Conteo de horas del avión (último Hobbs) y cada cuándo le toca servicio.
           </CardDescription>
         </div>
-        {/* Tira imprimible para la bitácora física (formato del equipo). */}
-        <BitacoraPdfButton
-          aircraftId={aircraftId}
-          matricula={matricula}
-          numMotores={numMotores}
-        />
+        {/* Bitácoras imprimibles (planeador, motor, hélice) para los libros físicos. */}
+        <BitacoraPdfButton aircraftId={aircraftId} matricula={matricula} />
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Estatus */}

@@ -218,11 +218,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
         )}
 
         {/* 3. Tacómetros: histórico por aeronave + programa de servicio por etapas */}
-        <AircraftTacometrosCard
-          aircraftId={aircraft.id}
-          matricula={aircraft.matricula}
-          numMotores={aircraft.num_motores}
-        />
+        <AircraftTacometrosCard aircraftId={aircraft.id} matricula={aircraft.matricula} />
 
         {/* 4. Bitácora de discrepancias (squawks) */}
         <AircraftSquawksCard aircraftId={aircraft.id} discrepancias={aircraft.discrepancias} />
