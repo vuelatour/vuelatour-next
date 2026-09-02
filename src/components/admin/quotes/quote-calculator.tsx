@@ -169,7 +169,11 @@ interface QuoteFormValues {
   costo_externo_monto: number | null;
   /** Moneda del costo del externo (29-ago). MXN exige TC para derivar USD. */
   costo_externo_moneda: "USD" | "MXN";
-  /** Precio TOTAL pactado con el cliente (externos: se acuerda a mano). */
+  /**
+   * LEGADO (2-sep-2026): la captura del precio pactado se eliminó del
+   * cotizador (sin input). El valor solo se rehidrata del snapshot en folios
+   * viejos (24/69/148) para que revisar/ajustar no mueva su total acordado.
+   */
   total_pactado_usd: number | null;
   /** Conceptos extra (handler, comisariato, extensión…). */
   extras: ExtraConcepto[];
@@ -631,8 +635,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           q.costo_externo_monto != null && q.costo_externo_moneda === "MXN"
             ? "MXN"
             : "USD",
-        // El pactado SÍ se persiste (calculo_snapshot.meta): rehidratarlo
-        // evita que una revisión recalcule y pise el precio acordado.
+        // LEGADO (2-sep-2026): el input del pactado se eliminó del cotizador,
+        // pero el valor persistido (calculo_snapshot.meta) se SIGUE
+        // rehidratando para que revisar un folio vivo (24/69/148) no
+        // recalcule ni pise su total acordado. El API además lo ancla a lo
+        // persistido en revise() y lo descarta al crear.
         total_pactado_usd:
           Number(q.calculo_snapshot?.meta?.total_pactado_usd) > 0
             ? Number(q.calculo_snapshot?.meta?.total_pactado_usd)
@@ -867,7 +874,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       values.escalas.map((e) => ({ ...e, pernocta_costo_usd: 0 })),
       opts,
     );
-    // Externo: el precio pactado con el cliente también va a 0; el costo del
+    // Externo LEGADO (2-sep-2026: la captura del pactado ya no existe): un
+    // pactado rehidratado de folios viejos también va a 0 — esta es la ÚNICA
+    // vía que queda para soltarlo; sin este reset, el total se quedaría
+    // clavado en lo pactado y el "$0" no cerraría en cero. El costo del
     // operador externo NO se toca, es un gasto real.
     if (values.es_externo) setValue("total_pactado_usd", 0, opts);
     setCeroOpen(false);
@@ -944,7 +954,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         ? -(Number(debounced.descuento_usd) || 0)
         : (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
       redondeo_automatico: debounced.redondeo_auto || undefined,
-      // Externos: total acordado a mano — el motor genera el ajuste exacto.
+      // Externos LEGADO (2-sep-2026): sin input ya no viaja captura nueva —
+      // aquí solo pasa el pactado REHIDRATADO de folios que ya lo tenían,
+      // para que el preview y la revisión sigan aterrizando su total exacto.
       total_pactado_usd:
         debounced.es_externo && Number(debounced.total_pactado_usd) > 0
           ? Number(debounced.total_pactado_usd)
@@ -1745,7 +1757,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               cuando la venta nace con un avión AJENO (broker, ej. HAWKER
               400 A) — con avión propio se puede seguir cubriendo después
               desde el detalle del vuelo («Cubrir con externo»). Al revisar:
-              muestra el estado y edita la ficha del avión y el pactado. */}
+              muestra el estado y edita la ficha del avión y el costo del
+              operador (el precio pactado se retiró el 2-sep-2026). */}
           {(!isRevise || initialQuote?.es_externo) && (
             <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
               {isRevise && initialQuote?.es_externo ? (
@@ -1874,26 +1887,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       </button>
                     )}
                   </Field>
-                  <Field
-                    label="Precio pactado con el cliente (total, USD)"
-                    hint="Se conserva entre revisiones: el total aterriza exacto en lo pactado. Vacío = usar el cálculo normal."
-                  >
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="Ej. 800.00"
-                      value={values.total_pactado_usd ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "total_pactado_usd",
-                          e.target.value === ""
-                            ? null
-                            : Math.max(0, Number(e.target.value)),
-                        )
-                      }
-                    />
-                  </Field>
+                  {/* El input "Precio pactado con el cliente (total, USD)" se
+                      ELIMINÓ (decisión del cliente, 2-sep-2026: "no tiene por
+                      qué existir"). El precio al cliente sale del cálculo
+                      normal; en folios viejos con pactado persistido
+                      (24/69/148) el motor sigue aterrizando su total vía la
+                      rehidratación silenciosa (initialValues/calcPayload). */}
                   {(() => {
                     // Margen = lo que paga el cliente − lo que cobra el
                     // operador externo (solo informativo; el API es la
@@ -1908,10 +1907,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         ? Math.round((nativo / tc) * 100) / 100
                         : 0
                       : nativo;
-                    const precio =
-                      Number(values.total_pactado_usd) > 0
-                        ? Number(values.total_pactado_usd)
-                        : Number(breakdown?.totales.total_usd) || 0;
+                    // El total del preview YA incluye un pactado legado
+                    // rehidratado (el motor aterriza ahí): el precio al
+                    // cliente es siempre el total calculado.
+                    const precio = Number(breakdown?.totales.total_usd) || 0;
                     if (!(costo > 0) || !(precio > 0)) return null;
                     const margen = Math.round((precio - costo) * 100) / 100;
                     return (
@@ -1930,7 +1929,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         <span className="font-mono font-semibold">
                           {fmtUsd(margen)}
                         </span>
-                        {margen < 0 && " · el costo supera lo pactado"}
+                        {margen < 0 && " · el costo supera el precio al cliente"}
                       </p>
                     );
                   })()}
@@ -2462,13 +2461,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 nota="ajuste neto (redondeo − descuento)"
               />
             )}
-            {values.es_externo && Number(values.total_pactado_usd) > 0 && (
-              <div className="rounded-md border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs text-sky-700 dark:text-sky-400">
-                El <strong>precio pactado</strong> manda: el total aterriza en{" "}
-                {fmtUsd(Number(values.total_pactado_usd))} y el redondeo
-                automático no aplica.
-              </div>
-            )}
+            {/* 2-sep-2026: el aviso "el pactado manda" se eliminó junto con
+                la captura del precio pactado (ya no existe la opción). */}
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm">Redondeo automático a número cerrado</p>
@@ -2549,28 +2543,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           <span className="font-mono text-foreground">−{fmtUsd(descuento)}</span>
                         </div>
                       )}
-                      {values.es_externo &&
-                        Number(values.total_pactado_usd) > 0 &&
-                        (() => {
-                          // Delta del pactado = total − cotizado − redondeo + descuento
-                          const delta =
-                            Math.round(
-                              (breakdown.totales.total_usd -
-                                cotizado -
-                                redondeo +
-                                descuento) *
-                                100,
-                            ) / 100;
-                          return delta !== 0 ? (
-                            <div className="flex justify-between text-muted-foreground">
-                              <span>Ajuste al precio pactado</span>
-                              <span className="font-mono text-foreground">
-                                {delta > 0 ? "+" : "−"}
-                                {fmtUsd(Math.abs(delta))}
-                              </span>
-                            </div>
-                          ) : null;
-                        })()}
+                      {/* 2-sep-2026: la línea "Ajuste al precio pactado" se
+                          eliminó junto con la captura del pactado. En folios
+                          legado (24/69/148) el motor sigue aterrizando el
+                          total en lo pactado vía el ajuste; ese delta ya no
+                          se desglosa aquí. */}
                       <div className="flex justify-between border-t border-border pt-1 font-semibold">
                         <span>Total a cobrar</span>
                         <span className="font-mono">
@@ -3307,7 +3284,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               <li>Pernoctas cobradas al cliente</li>
               <li>Conceptos extra (se borran)</li>
               <li>Comisión del vendedor, descuento y redondeo</li>
-              {values.es_externo && <li>Precio pactado del vuelo externo</li>}
+              {/* Solo folios viejos con pactado persistido (la captura se
+                  eliminó el 2-sep-2026): el reset es la única vía de soltarlo. */}
+              {values.es_externo && Number(values.total_pactado_usd) > 0 && (
+                <li>Precio pactado del vuelo externo (folio viejo)</li>
+              )}
             </ul>
             <p className="text-xs text-muted-foreground pt-1">
               No se toca la operación: tramos, tiempos, pasajeros ni el costo

@@ -152,7 +152,11 @@ export interface CalculateQuoteRequest {
   ajuste_final_usd?: number;
   /** Redondeo automático del total al siguiente múltiplo de $10 (siempre arriba). */
   redondeo_automatico?: boolean;
-  /** Precio TOTAL pactado (externos): el motor ajusta para aterrizar exacto. */
+  /**
+   * LEGADO (2-sep-2026): la captura se eliminó del cotizador. Solo viaja
+   * como rehidratación del pactado ya persistido de folios viejos — el API
+   * lo descarta al crear y lo ancla a lo persistido al revisar.
+   */
   total_pactado_usd?: number;
   metodo_pago: MetodoPago;
   /** Nombre MANUAL del método cuando metodo_pago = OTRO (ej. "PayPal"). */
@@ -287,7 +291,10 @@ export interface QuoteBreakdown {
     redondeo_automatico?: boolean | null;
     redondeo_auto_usd?: number | null;
     descuento_usd?: number | null;
-    /** Precio pactado (externos): persiste para que revisar/ajustar no lo pise. */
+    /**
+     * Precio pactado (externos) — LEGADO 2-sep-2026: ya no se captura; solo
+     * folios viejos lo traen y persiste para que revisar/ajustar no lo pise.
+     */
     total_pactado_usd?: number | null;
   };
 }
