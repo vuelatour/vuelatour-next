@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import type { PersistedEscala } from "@/types/quotes-persisted";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +77,28 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
   for (const esc of quote.escalas ?? []) {
     if (!escalaVivaPorOrden.has(esc.orden)) escalaVivaPorOrden.set(esc.orden, esc);
   }
+  // Ruta COMERCIAL completa para el encabezado (2-sep-2026): el par corto
+  // origen→destino escondía las paradas intermedias. MISMA precedencia que la
+  // card de itinerario: (a) con itinerario operativo la ruta cotizada vive en
+  // el snapshot del cálculo; (b) si no, las escalas vivas comerciales (sin
+  // solo_operativa ni canceladas); (c) fallback al par corto. Vista interna:
+  // SIN filtrar pdf_oculto (el PDF tiene su propia fuente, ruta-visible.util).
+  const escalasComerciales = (quote.escalas ?? [])
+    .filter((e) => !e.solo_operativa && !e.cancelada_at)
+    .sort((a, b) => a.orden - b.orden);
+  const rutaComercial =
+    quote.itinerario_operativo === true &&
+    (quote.calculo_snapshot?.tramos?.length ?? 0) > 0
+      ? puntosRuta(quote.calculo_snapshot!.tramos!)
+      : escalasComerciales.length > 0
+        ? puntosRuta(
+            escalasComerciales.map((e) => ({
+              origen: e.origen_iata,
+              destino: e.destino_iata,
+            })),
+          )
+        : [quote.origen_iata, quote.destino_iata];
+
   const notaPdfTramos = puedeEditarPdf ? (
     <p className="pt-1 text-[10px] text-muted-foreground">
       Lo oculto no aparece en el PDF del cliente (la numeración se ajusta
@@ -127,8 +150,10 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   );
                 })()}
             </div>
+            {/* Ruta comercial COMPLETA (2-sep-2026); en rutas largas el texto
+                envuelve — nunca se trunca. */}
             <p className="text-sm text-muted-foreground mt-1">
-              {clientNombre ?? quote.cliente_id} · {quote.origen_iata} → {quote.destino_iata} ·{" "}
+              {clientNombre ?? quote.cliente_id} · {rutaComercial.join(" → ")} ·{" "}
               {quote.pasajeros} {quote.pasajeros === 1 ? "pasajero" : "pasajeros"}
             </p>
           </div>
@@ -439,7 +464,7 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                   <>
                     <Row
                       label="Origen → Destino"
-                      value={`${quote.origen_iata} → ${quote.destino_iata}`}
+                      value={rutaComercial.join(" → ")}
                     />
                     <Row
                       label="Millas náuticas"

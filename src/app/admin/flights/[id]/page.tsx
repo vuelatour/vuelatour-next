@@ -44,6 +44,7 @@ import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import {
   diferenciaRedondeo,
   estadoCobroSemaforo,
@@ -169,9 +170,17 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const escalasOrden = [...snapshot.escalas]
     .filter((e) => !e.cancelada_at)
     .sort((a, b) => a.orden - b.orden);
+  // Walk con manejo de huecos (2-sep-2026): al filtrar un tramo intermedio
+  // cancelado, el origen del siguiente entra como punto propio (el walk
+  // ingenuo "origen del 1º + destinos" pintaba una continuidad falsa).
   const rutaOperativa =
     escalasOrden.length > 0
-      ? [escalasOrden[0].origen_iata, ...escalasOrden.map((e) => e.destino_iata)].join(" → ")
+      ? puntosRuta(
+          escalasOrden.map((e) => ({
+            origen: e.origen_iata,
+            destino: e.destino_iata,
+          })),
+        ).join(" → ")
       : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
   // Vuelo de SERVICIO (regla 27 jul 2026): algún tramo de parada Servicio y
   // CERO pasajeros en los tramos activos = llevar el avión a taller. No es
@@ -183,7 +192,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const tramosCotizados = quote?.calculo_snapshot?.tramos;
   const rutaComercial =
     tramosCotizados && tramosCotizados.length > 0
-      ? [tramosCotizados[0].origen, ...tramosCotizados.map((t) => t.destino)].join(" → ")
+      ? puntosRuta(tramosCotizados).join(" → ")
       : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
 
   const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);

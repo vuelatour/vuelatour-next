@@ -42,6 +42,9 @@ const EscalaSchema = z
       .min(3, "IATA requerido")
       .max(4)
       .transform((v) => v.toUpperCase()),
+    // SEMÁNTICA 2-sep-2026: el sobrevuelo es una BANDERA del tramo ORTOGONAL
+    // al destino (un CUN→CZM puede llevar sobrevuelo igual que un CUN→CUN):
+    // el destino se captura SIEMPRE, nunca se deriva del origen.
     destino_iata: z
       .string()
       .min(3, "IATA requerido")
@@ -67,8 +70,8 @@ const EscalaSchema = z
     notas: z.string().max(1000).optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
-    // Un SOBREVUELO sale y regresa al mismo punto (CUN → CUN): la igualdad
-    // solo se prohíbe en tramos de traslado normales.
+    // Un SOBREVUELO puede salir y regresar al mismo punto (CUN → CUN): la
+    // igualdad solo se prohíbe en tramos de traslado normales.
     if (
       val.origen_iata &&
       val.destino_iata &&
@@ -185,7 +188,9 @@ export function EscalaFormSheet({
   });
 
   useEffect(() => {
-    if (open) reset(defaults(initialEscala, takenOrdenes));
+    if (open) {
+      reset(defaults(initialEscala, takenOrdenes));
+    }
   }, [open, initialEscala, takenOrdenes, reset]);
 
   const airportOptions = useMemo(
@@ -225,6 +230,8 @@ export function EscalaFormSheet({
       const payload = {
         orden: Number(values.orden),
         origen_iata: values.origen_iata.toUpperCase(),
+        // SEMÁNTICA 2-sep-2026: el destino viaja tal cual se capturó — el
+        // sobrevuelo es una bandera ortogonal y NUNCA deriva el destino.
         destino_iata: values.destino_iata.toUpperCase(),
         fecha_salida_plan: values.fecha_salida_plan
           ? cancunInputToIso(values.fecha_salida_plan)
@@ -315,18 +322,18 @@ export function EscalaFormSheet({
               <SearchableSelect
                 options={airportOptions}
                 value={origenIata}
-                onChange={(v) => {
-                  setValue("origen_iata", v);
-                  // Sobrevuelo: el destino sigue al origen (mismo punto).
-                  if (esSobrevuelo) {
-                    setValue("destino_iata", v, { shouldValidate: true });
-                  }
-                }}
+                onChange={(v) => setValue("origen_iata", v)}
                 placeholder="IATA"
               />
             </Field>
             <ArrowRightIcon className="h-4 w-4 text-muted-foreground mb-2" />
-            <Field label="Destino" required error={errors.destino_iata?.message}>
+            {/* SEMÁNTICA 2-sep-2026: el destino SIEMPRE es editable — el
+                sobrevuelo es una bandera del tramo, ortogonal al destino. */}
+            <Field
+              label="Destino"
+              required
+              error={errors.destino_iata?.message}
+            >
               <SearchableSelect
                 options={airportOptions}
                 value={destinoIata}
@@ -404,21 +411,15 @@ export function EscalaFormSheet({
             <div>
               <Label className="text-sm font-medium">Sobrevuelo</Label>
               <p className="text-xs text-muted-foreground">
-                El avión sobrevuela una zona (recorrido/reconocimiento) en vez
-                de un traslado normal. Regresa al mismo punto: el destino se
-                iguala al origen.
+                El avión realiza un sobrevuelo (recorrido/reconocimiento) en
+                este tramo. No cambia origen ni destino.
               </p>
             </div>
+            {/* SEMÁNTICA 2-sep-2026: el switch SOLO prende/apaga la bandera —
+                jamás toca el campo Destino. */}
             <Switch
               checked={esSobrevuelo}
-              onCheckedChange={(c) => {
-                setValue("es_sobrevuelo", c);
-                // Sobrevuelo: sale y regresa al mismo punto — el destino se
-                // espeja del origen en automático.
-                if (c && origenIata) {
-                  setValue("destino_iata", origenIata, { shouldValidate: true });
-                }
-              }}
+              onCheckedChange={(c) => setValue("es_sobrevuelo", c)}
             />
           </div>
 

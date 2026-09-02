@@ -65,7 +65,9 @@ interface LegRow {
   destino: string;
   hora: string; // datetime-local; el 1er tramo usa "Fecha y hora" si va vacío
   esFerry: boolean;
-  /** Tramo de sobrevuelo (recorrido sobre una zona, no un traslado normal). */
+  /** Tramo de sobrevuelo (recorrido/reconocimiento). SEMÁNTICA 2-sep-2026:
+   *  bandera ORTOGONAL al destino — un CUN→CZM puede llevarla igual que un
+   *  CUN→CUN; prenderla/apagarla jamás toca origen ni destino. */
   esSobrevuelo: boolean;
   /** El piloto pernocta tras este tramo — SOLO manual (27-ago: se quitó la
    *  derivación automática por salto de fecha; marcaba pernoctas no pedidas). */
@@ -178,8 +180,22 @@ export function ReservaFormSheet({
   const updateLeg = (i: number, patch: Partial<LegRow>) =>
     setLegs((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
 
+  /** Cambia el destino de un tramo Y encadena el origen del siguiente si está
+   *  vacío (el backend valida esa continuidad). */
+  const setDestinoTramo = (i: number, v: string) => {
+    updateLeg(i, { destino: v });
+    setLegs((prev) =>
+      prev.map((l, idx) =>
+        idx === i + 1 && !l.origen ? { ...l, origen: v } : l,
+      ),
+    );
+  };
+
   const addLeg = () =>
-    setLegs((prev) => [...prev, emptyLeg(prev[prev.length - 1]?.destino ?? "")]);
+    setLegs((prev) => {
+      const last = prev[prev.length - 1];
+      return [...prev, emptyLeg(last ? last.destino : "")];
+    });
 
   const removeLeg = (i: number) =>
     setLegs((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)));
@@ -213,10 +229,12 @@ export function ReservaFormSheet({
   const submit = () => {
     setError(null);
     if (!aeronaveId) return setError("Elige el avión.");
+    // SEMÁNTICA 2-sep-2026: el sobrevuelo es ortogonal al destino — origen y
+    // destino se capturan SIEMPRE, con o sin la bandera.
     if (legs.some((l) => !l.origen || !l.destino))
       return setError("Cada tramo necesita origen y destino.");
-    // Sobrevuelo: sale y regresa al mismo punto — la igualdad solo se
-    // prohíbe en tramos de traslado normales.
+    // Un sobrevuelo PUEDE salir y regresar al mismo punto — la igualdad solo
+    // se prohíbe en tramos de traslado normales.
     if (legs.some((l) => l.origen === l.destino && !l.esSobrevuelo))
       return setError(
         "Un tramo no puede tener el mismo origen y destino (salvo sobrevuelo).",
@@ -243,6 +261,8 @@ export function ReservaFormSheet({
         const nombres = l.esFerry ? [] : parseNombres(l.nombres);
         return {
           origen_iata: l.origen,
+          // SEMÁNTICA 2-sep-2026: el destino viaja tal cual se capturó — el
+          // sobrevuelo es una bandera ortogonal y NUNCA deriva el destino.
           destino_iata: l.destino,
           // El tramo 1 siempre sale a la fecha/hora general del vuelo.
           hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
@@ -377,38 +397,18 @@ export function ReservaFormSheet({
                       <SearchableSelect
                         options={airportOptions}
                         value={leg.origen}
-                        onChange={(v) =>
-                          // Sobrevuelo: el destino sigue al origen (mismo punto).
-                          updateLeg(i, {
-                            origen: v,
-                            ...(leg.esSobrevuelo ? { destino: v } : {}),
-                          })
-                        }
+                        onChange={(v) => updateLeg(i, { origen: v })}
                         placeholder="IATA"
                       />
                     </Field>
                     <span className="text-muted-foreground mb-2">→</span>
                     <Field label="Destino">
+                      {/* SEMÁNTICA 2-sep-2026: el destino SIEMPRE es editable
+                          y el sobrevuelo no lo condiciona en nada. */}
                       <SearchableSelect
                         options={airportOptions}
                         value={leg.destino}
-                        onChange={(v) => {
-                          // Sobrevuelo exige origen === destino: elegir otro
-                          // destino lo desactiva (si no, el tramo viajaría al
-                          // API como sobrevuelo sin serlo).
-                          updateLeg(i, {
-                            destino: v,
-                            ...(leg.esSobrevuelo && v !== leg.origen
-                              ? { esSobrevuelo: false }
-                              : {}),
-                          });
-                          // Encadena el origen del siguiente tramo si está vacío.
-                          setLegs((prev) =>
-                            prev.map((l, idx) =>
-                              idx === i + 1 && !l.origen ? { ...l, origen: v } : l,
-                            ),
-                          );
-                        }}
+                        onChange={(v) => setDestinoTramo(i, v)}
                         placeholder="IATA"
                       />
                     </Field>
@@ -444,18 +444,13 @@ export function ReservaFormSheet({
                     </label>
                     <label
                       className="flex items-center gap-2 text-xs"
-                      title="El avión sobrevuela una zona (recorrido/reconocimiento) en vez de un traslado normal. Regresa al mismo punto: el destino se iguala al origen."
+                      title="El avión realiza un sobrevuelo (recorrido/reconocimiento) en este tramo. No cambia origen ni destino."
                     >
+                      {/* SEMÁNTICA 2-sep-2026: el switch SOLO prende/apaga la
+                          bandera — jamás toca el campo Destino. */}
                       <Switch
                         checked={leg.esSobrevuelo}
-                        onCheckedChange={(c) =>
-                          // Sobrevuelo: sale y regresa al mismo punto — el
-                          // destino se espeja del origen en automático.
-                          updateLeg(i, {
-                            esSobrevuelo: c,
-                            ...(c && leg.origen ? { destino: leg.origen } : {}),
-                          })
-                        }
+                        onCheckedChange={(c) => updateLeg(i, { esSobrevuelo: c })}
                       />
                       Sobrevuelo
                     </label>

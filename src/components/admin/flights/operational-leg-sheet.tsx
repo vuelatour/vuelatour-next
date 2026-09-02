@@ -80,6 +80,14 @@ export function OperationalLegSheet({
       toast.error("Captura origen y destino (IATA)");
       return;
     }
+    // Un sobrevuelo PUEDE salir y regresar al mismo punto; en un traslado
+    // normal la igualdad es un error de captura (misma regla del alta).
+    if (origen.toUpperCase() === destino.toUpperCase() && !esSobrevuelo) {
+      toast.error(
+        "Origen y destino no pueden ser iguales (salvo sobrevuelo)",
+      );
+      return;
+    }
     const motivoLimpio = motivo.trim();
     if (vueloCompletado && motivoLimpio.length === 0) {
       toast.error(
@@ -182,11 +190,7 @@ export function OperationalLegSheet({
               <SearchableSelect
                 options={airportOptions}
                 value={origen}
-                onChange={(v) => {
-                  setOrigen(v);
-                  // Sobrevuelo: el destino sigue al origen (mismo punto).
-                  if (esSobrevuelo) setDestino(v);
-                }}
+                onChange={setOrigen}
                 placeholder="IATA"
               />
             </div>
@@ -216,19 +220,13 @@ export function OperationalLegSheet({
             <div>
               <Label className="text-sm font-medium">Sobrevuelo</Label>
               <p className="text-xs text-muted-foreground">
-                El avión sobrevuela una zona (recorrido/reconocimiento) en vez
-                de un traslado normal. Regresa al mismo punto: el destino se
-                iguala al origen.
+                El avión realiza un sobrevuelo (recorrido/reconocimiento) en
+                este tramo. No cambia origen ni destino.
               </p>
             </div>
-            <Switch
-              checked={esSobrevuelo}
-              onCheckedChange={(c) => {
-                setEsSobrevuelo(c);
-                // Sobrevuelo: sale y regresa al mismo punto.
-                if (c && origen) setDestino(origen);
-              }}
-            />
+            {/* SEMÁNTICA 2-sep-2026: el switch SOLO prende/apaga la bandera —
+                jamás toca el campo Destino. */}
+            <Switch checked={esSobrevuelo} onCheckedChange={setEsSobrevuelo} />
           </div>
 
           {!esFerry && (
