@@ -33,8 +33,20 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return out;
 }
 
-/** Alta manual de gasto desde el panel (la oficina captura gastos operativos). */
-export async function createGastoAction(raw: unknown): Promise<ActionResult<Gasto>> {
+/**
+ * Alta manual de gasto desde el panel (la oficina captura gastos operativos).
+ *
+ * `reparto` (opcional): partes del reparto entre aviones capturadas en el
+ * MISMO diálogo (gasto general sin vuelo/avión de categoría repartible). Tras
+ * el POST se encadena el PUT del reparto existente — cero mecanismos nuevos
+ * de dinero. Si el PUT falla, el gasto YA creado NO se borra (candados de
+ * dinero): queda sin asignar en Otros gastos — estado recuperable con su
+ * botón Repartir — y el fallo viaja en `repartoError` para el toast.
+ */
+export async function createGastoAction(
+  raw: unknown,
+  reparto?: Array<{ aeronave_id: string; monto: number }>,
+): Promise<ActionResult<Gasto> & { repartoError?: string }> {
   const parsed = GastoCreateSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
   try {
@@ -42,10 +54,24 @@ export async function createGastoAction(raw: unknown): Promise<ActionResult<Gast
       method: "POST",
       body: stripEmpty(parsed.data),
     });
+    let repartoError: string | undefined;
+    if (reparto && reparto.length > 0) {
+      try {
+        await apiServer<RepartoResponse>(`/v1/expenses/${created.id}/reparto`, {
+          method: "PUT",
+          body: { items: reparto },
+        });
+      } catch (err) {
+        repartoError = fail(err).error;
+      }
+      revalidatePath("/admin/otros-gastos");
+    }
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");
-    return { ok: true, data: created };
+    return repartoError !== undefined
+      ? { ok: true, data: created, repartoError }
+      : { ok: true, data: created };
   } catch (err) {
     return fail(err);
   }

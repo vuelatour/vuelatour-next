@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ShoppingCartIcon } from "@heroicons/react/24/outline";
 import { useForm } from "react-hook-form";
@@ -50,6 +50,7 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  CATEGORIAS_REPARTIBLES,
   categoriaGastoLabel,
   hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
@@ -158,6 +159,13 @@ export function ExpenseVerifyDialog({
   // p. ej. de antes de la separación TUA/FBO en el prompt).
   const [reanalizando, setReanalizando] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
+  // El usuario LIMPIÓ el avión a mano ("Sin avión"): ni el prellenado por
+  // matrícula, ni aplicarIA (Reanalizar), lo re-imponen — sin esto, el avión
+  // "volvía solo" al verificar. El chip "Usar este avión" y elegir un vuelo
+  // con avión son los caminos de vuelta explícitos. Ref (no state): lo leen
+  // closures y el effect del prefill siempre al día, sin re-render ni
+  // dependencias extra.
+  const avionLimpiado = useRef(false);
   // Sello de confirmación del panel: retirarlo pide confirmación breve
   // (regla de la casa para acciones que quitan algo) y se oculta optimista
   // mientras la revalidación refresca la fila.
@@ -200,6 +208,9 @@ export function ExpenseVerifyDialog({
       reset(defaults(gasto));
       setAiRaw(null);
       setSelloRetirado(false);
+      // reset() no limpia refs: sin esto, el veto a la IA se heredaría a
+      // la siguiente apertura del diálogo (u otro gasto).
+      avionLimpiado.current = false;
     }
   }, [open, gasto, reset]);
 
@@ -250,7 +261,9 @@ export function ExpenseVerifyDialog({
     // Prellenado por matrícula: corre DESPUÉS del reset (el efecto del reset
     // está declarado antes y ambos disparan en el mismo commit). Jamás a
     // categorías sin avión: el guardado los desliga y sería un valor a
-    // limpiar de nuevo.
+    // limpiar de nuevo. Jamás si el usuario limpió el avión a mano ("Sin
+    // avión"): una revalidación re-dispara este efecto y re-imponía el
+    // avión que Pablo acababa de quitar.
     const mIa = (gasto.valor_ia_extraido as { matricula?: unknown } | null)
       ?.matricula;
     const permiteAvion =
@@ -258,7 +271,7 @@ export function ExpenseVerifyDialog({
       gasto.categoria !== "GASOLINA" &&
       gasto.categoria !== "VISITA";
     let avion: { id: string; matricula: string } | null = null;
-    if (typeof mIa === "string" && mIa && permiteAvion) {
+    if (typeof mIa === "string" && mIa && permiteAvion && !avionLimpiado.current) {
       avion = avionPorMatricula(aircraft, mIa) ?? null;
       if (avion) setValue("aeronave_id", avion.id);
     }
@@ -377,9 +390,11 @@ export function ExpenseVerifyDialog({
       }
     }
     // Matrícula leída → avión (normalización única; jamás a categorías sin
-    // avión — el guardado los desliga y quedaría un valor a limpiar).
+    // avión — el guardado los desliga y quedaría un valor a limpiar; jamás
+    // si el usuario limpió el avión a mano: Reanalizar no lo re-impone).
     if (
       ai.matricula &&
+      !avionLimpiado.current &&
       !watch("aeronave_id") &&
       watch("categoria") !== "PERSONAL_DUENO" &&
       watch("categoria") !== "GASOLINA" &&
@@ -441,7 +456,11 @@ export function ExpenseVerifyDialog({
   };
 
   const aplicarCandidato = (c: NonNullable<SugerenciaAsignacion["sugerido"]>) => {
-    if (c.aeronave_id) setValue("aeronave_id", c.aeronave_id);
+    if (c.aeronave_id) {
+      // Elección humana explícita (clic en el candidato): levanta el veto.
+      setValue("aeronave_id", c.aeronave_id);
+      avionLimpiado.current = false;
+    }
     setVueloSel(c.vuelo_id);
     toast.info(
       `Se aplicará: vuelo #${c.folio ?? "?"} · ${c.matricula ?? "sin matrícula"}. Guarda para confirmar.`,
@@ -500,6 +519,13 @@ export function ExpenseVerifyDialog({
         values.estatus_facturacion === (gasto.estatus_facturacion ?? "PENDIENTE")
       ) {
         delete (payload as { estatus_facturacion?: unknown }).estatus_facturacion;
+      }
+      // El usuario LIMPIÓ el avión a mano ("Sin avión"): desligar con null
+      // explícito — "" se tira en stripEmpty y el avión viejo seguiría vivo
+      // (la opción sería un no-op mentiroso). El API valida lo que aplique
+      // (p. ej. GAS exige avión y lo rechaza con mensaje claro).
+      if (avionLimpiado.current && !values.aeronave_id) {
+        payload.aeronave_id = null;
       }
       // Reclasificar a PERSONAL del dueño: desligar vuelo/avión/escala en el
       // MISMO PATCH (null explícito sobrevive a stripEmpty; "" se tiraría y
@@ -888,9 +914,29 @@ export function ExpenseVerifyDialog({
 
           <Field label="Avión (resuelve pendiente)">
             <SearchableSelect
-              options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
+              // Opción vacía REAL al frente: el Combobox solo dispara
+              // onChange con un item — sin ella era imposible deseleccionar
+              // (con value "" el trigger muestra su label, no el placeholder).
+              // "(se puede repartir)" SOLO cuando es verdad: sin vuelo y
+              // categoría repartible — en las demás, sin avión = bandeja.
+              options={[
+                {
+                  value: "",
+                  label:
+                    !vueloSel && CATEGORIAS_REPARTIBLES.has(watch("categoria"))
+                      ? "Sin avión (se puede repartir)"
+                      : "Sin avión",
+                },
+                ...aircraft.map((a) => ({ value: a.id, label: a.matricula })),
+              ]}
               value={watch("aeronave_id")}
-              onChange={(v) => setValue("aeronave_id", v)}
+              onChange={(v) => {
+                setValue("aeronave_id", v);
+                // Limpiar A MANO veta a la IA (prellenado y Reanalizar no lo
+                // re-imponen); elegir un avión levanta el veto. Al guardar,
+                // el limpiado se desliga con null explícito.
+                avionLimpiado.current = v === "";
+              }}
               placeholder="Sin asignar"
             />
           </Field>
@@ -953,7 +999,12 @@ export function ExpenseVerifyDialog({
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs"
-                  onClick={() => setValue("aeronave_id", delRecibo.id)}
+                  onClick={() => {
+                    // Acción humana explícita: levanta el veto de "Sin
+                    // avión" — es el camino de vuelta tras limpiarlo.
+                    setValue("aeronave_id", delRecibo.id);
+                    avionLimpiado.current = false;
+                  }}
                 >
                   Usar este avión
                 </Button>
@@ -976,9 +1027,13 @@ export function ExpenseVerifyDialog({
               value={vueloSel}
               onChange={(v) => {
                 setVueloSel(v);
-                // El avión del vuelo elegido se refleja de inmediato.
+                // El avión del vuelo elegido se refleja de inmediato —
+                // elección humana explícita: levanta el veto a la IA.
                 const opt = vuelos.find((x) => x.id === v);
-                if (opt?.aeronave_id) setValue("aeronave_id", opt.aeronave_id);
+                if (opt?.aeronave_id) {
+                  setValue("aeronave_id", opt.aeronave_id);
+                  avionLimpiado.current = false;
+                }
               }}
               placeholder="Busca por folio, matrícula o ruta"
             />

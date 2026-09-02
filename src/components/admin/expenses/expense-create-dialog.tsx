@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import {
+  ArrowsRightLeftIcon,
   CheckCircleIcon,
   PlusIcon,
   SparklesIcon,
@@ -37,6 +38,7 @@ import {
   createGastoAction,
   buscarVuelosCercanosAction,
   leerFacturaIAAction,
+  listAvionesActivosAction,
   type GastoTicketIA,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
@@ -60,6 +62,7 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  CATEGORIAS_REPARTIBLES,
   categoriaGastoLabel,
   hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
@@ -196,6 +199,27 @@ export function ExpenseCreateDialog({
   // Lectura IA del adjunto: autollenado best-effort (siempre revisable a mano).
   const [leyendoIA, setLeyendoIA] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
+  // El usuario LIMPIÓ el avión a mano ("Sin avión"): la IA ya no lo re-impone
+  // (ni al re-subir la foto ni en reanálisis); el chip "Usar este avión"
+  // sigue disponible como camino de vuelta EXPLÍCITO. Ref (no state): lo leen
+  // closures/effects siempre al día, sin re-render (nada lo pinta) y sin
+  // heredar el veto a un alta posterior (se resetea al abrir/guardar/cerrar —
+  // reset(emptyValues) no limpia refs ni useState).
+  const avionLimpiado = useRef(false);
+  // ===== Reparto entre aviones desde la captura (gasto general sin vuelo ni
+  // avión de categoría repartible): mismo patrón del RepartoDialog de Otros
+  // gastos — al guardar se encadena el PUT de reparto existente.
+  const [repartirActivo, setRepartirActivo] = useState(false);
+  const [repartoSel, setRepartoSel] = useState<
+    Record<string, { incluir: boolean; monto: string }>
+  >({});
+  // Aviones ACTIVOS del reparto (null = aún sin cargar). NO la prop aircraft:
+  // esa incluye inactivos y el PUT del API los rechaza.
+  const [avionesReparto, setAvionesReparto] = useState<Array<{
+    id: string;
+    matricula: string;
+    modelo: string;
+  }> | null>(null);
   // Tarjetas del catálogo para "¿con qué tarjeta?" (solo medio TARJETA_CORP;
   // vacío = el server sella la asignada a quien captura).
   const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
@@ -236,6 +260,90 @@ export function ExpenseCreateDialog({
       cancel = true;
     };
   }, [open, defaultVueloId, fechaGasto]);
+
+  // ===== Reparto en la captura: solo un gasto general SIN vuelo NI avión de
+  // categoría repartible (fuente única CATEGORIAS_REPARTIBLES, sincronizada
+  // con la regla del API — el PUT rechaza cualquier otra cosa).
+  const repartoDisponible =
+    !defaultVueloId &&
+    !watch("vuelo_id") &&
+    !watch("aeronave_id") &&
+    CATEGORIAS_REPARTIBLES.has(watch("categoria"));
+  // Total pagado EN VIVO (ticket + propina) en centavos: techo del reparto —
+  // es el monto que se guarda y el que llega al banco.
+  const totalPagadoCents = (() => {
+    const t = Number(watch("monto"));
+    const p = Number(watch("propina"));
+    return Math.round(
+      ((Number.isFinite(t) ? t : 0) + (Number.isFinite(p) ? p : 0)) * 100,
+    );
+  })();
+  const repartoIncluidos = (avionesReparto ?? []).filter(
+    (a) => repartoSel[a.id]?.incluir,
+  );
+  const repartoSumaCents = repartoIncluidos.reduce((acc, a) => {
+    const n = Number(repartoSel[a.id]?.monto);
+    return acc + (Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0);
+  }, 0);
+  const repartoExcedido = repartoSumaCents > totalPagadoCents;
+  const repartoSinMonto = repartoIncluidos.filter(
+    (a) => !(Number(repartoSel[a.id]?.monto) > 0),
+  );
+
+  /** Centavos → moneda del formulario, formato es-MX. */
+  const fmtCents = (cents: number) =>
+    (cents / 100).toLocaleString("es-MX", {
+      style: "currency",
+      currency: watch("moneda") === "USD" ? "USD" : "MXN",
+    });
+
+  const activarReparto = (on: boolean) => {
+    setRepartirActivo(on);
+    if (on && avionesReparto === null) {
+      void listAvionesActivosAction().then((res) => {
+        if (res.ok && res.data) {
+          setAvionesReparto(res.data);
+        } else {
+          toast.error(res.error ?? "No se pudieron cargar los aviones activos");
+          setRepartirActivo(false);
+        }
+      });
+    }
+  };
+
+  /** Partes iguales sobre el TOTAL PAGADO con disciplina de centavos: base =
+   *  round(total/n) y el PRIMERO absorbe el residuo (patrón RepartoDialog). */
+  const dividirIguales = () => {
+    const n = repartoIncluidos.length;
+    if (n === 0) {
+      toast.error("Marca primero los aviones entre los que se divide");
+      return;
+    }
+    const base = Math.round(totalPagadoCents / n);
+    const primero = totalPagadoCents - base * (n - 1);
+    setRepartoSel((s) => {
+      const next = { ...s };
+      repartoIncluidos.forEach((a, i) => {
+        next[a.id] = {
+          incluir: true,
+          monto: ((i === 0 ? primero : base) / 100).toFixed(2),
+        };
+      });
+      return next;
+    });
+  };
+
+  // Si el gasto deja de ser repartible (se ligó vuelo/avión o cambió la
+  // categoría — a mano O por la IA), el bloque de reparto se limpia CON
+  // AVISO: un reparto armado que sobrevive escondido repartiría en falso.
+  useEffect(() => {
+    if (repartoDisponible || !repartirActivo) return;
+    setRepartirActivo(false);
+    setRepartoSel({});
+    toast.info(
+      "Se quitó el reparto entre aviones: solo aplica a gastos sin vuelo ni avión de categoría repartible.",
+    );
+  }, [repartoDisponible, repartirActivo]);
 
   const aplicarIA = (ai: GastoTicketIA) => {
     const llenado: string[] = [];
@@ -296,11 +404,15 @@ export function ExpenseCreateDialog({
         llenado.push(match.nombre);
       }
     }
-    // Matrícula leída → avión (solo si el vuelo no lo fijó ya). JAMÁS a un
-    // gasto personal del dueño: el campo Avión está oculto y el valor
-    // invisible haría fallar el guardado sin forma de corregirlo.
+    // Matrícula leída → avión (solo si el vuelo no lo fijó ya). JAMÁS si el
+    // usuario limpió el avión a mano ("Sin avión"): la IA no pisa esa
+    // decisión ni al re-subir la foto — el chip "Usar este avión" queda como
+    // camino de vuelta explícito. JAMÁS a un gasto personal del dueño: el
+    // campo Avión está oculto y el valor invisible haría fallar el guardado
+    // sin forma de corregirlo.
     if (
       ai.matricula &&
+      !avionLimpiado.current &&
       !watch("aeronave_id") &&
       watch("categoria") !== "PERSONAL_DUENO" &&
       watch("categoria") !== "GASOLINA" &&
@@ -424,6 +536,52 @@ export function ExpenseCreateDialog({
       ) {
         values.vuelo_id = "";
       }
+      // Reparto entre aviones armado en el diálogo: se valida ANTES de subir
+      // nada. Cinturón: solo aplica si el gasto sigue siendo repartible
+      // (sin vuelo ni avión, categoría del set sincronizado con el API).
+      let repartoItems: Array<{ aeronave_id: string; monto: number }> | undefined;
+      if (
+        repartirActivo &&
+        !values.vuelo_id &&
+        !values.aeronave_id &&
+        CATEGORIAS_REPARTIBLES.has(values.categoria)
+      ) {
+        const incluidos = (avionesReparto ?? []).filter(
+          (a) => repartoSel[a.id]?.incluir,
+        );
+        if (incluidos.length === 0) {
+          toast.error(
+            'Marca los aviones del reparto (o apaga "Repartir entre aviones").',
+          );
+          return;
+        }
+        const sinMonto = incluidos.filter(
+          (a) => !(Number(repartoSel[a.id]?.monto) > 0),
+        );
+        if (sinMonto.length > 0) {
+          toast.error(
+            `Captura el monto de ${sinMonto.map((a) => a.matricula).join(", ")} (o desmárcalos).`,
+          );
+          return;
+        }
+        // Σ en CENTAVOS enteros contra el TOTAL PAGADO (ticket + propina):
+        // es el monto que se guarda; jamás flotantes.
+        const totalCents = Math.round(totalPagado * 100);
+        const sumaCents = incluidos.reduce(
+          (acc, a) => acc + Math.round(Number(repartoSel[a.id].monto) * 100),
+          0,
+        );
+        if (sumaCents > totalCents) {
+          toast.error(
+            "El reparto se pasa del total pagado — ajusta los montos (lo no asignado queda como gasto de VuelaTour).",
+          );
+          return;
+        }
+        repartoItems = incluidos.map((a) => ({
+          aeronave_id: a.id,
+          monto: Math.round(Number(repartoSel[a.id].monto) * 100) / 100,
+        }));
+      }
       // Primero el archivo: si la subida falla, no se crea el gasto a medias.
       let fotoPath = "";
       if (factura) {
@@ -444,32 +602,55 @@ export function ExpenseCreateDialog({
         toast.error("Los litros no son válidos.");
         return;
       }
-      const result = await createGastoAction({
-        ...values,
-        monto: totalPagado,
-        propina,
-        litros,
-        foto_url: fotoPath,
-        valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
-        capturar_como_piloto: aplicarComoPiloto,
-        // > 365 días atrás: SOLO se llega aquí tras la confirmación
-        // explícita del diálogo — el API exige este candado para fechas de
-        // otro año (auditoría 29-ago). No se manda en el caso normal.
-        ...(fechaGastoAntigua(values.fecha_gasto)
-          ? { permitir_fecha_antigua: true }
-          : {}),
-      });
+      const result = await createGastoAction(
+        {
+          ...values,
+          monto: totalPagado,
+          propina,
+          litros,
+          foto_url: fotoPath,
+          valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
+          capturar_como_piloto: aplicarComoPiloto,
+          // > 365 días atrás: SOLO se llega aquí tras la confirmación
+          // explícita del diálogo — el API exige este candado para fechas de
+          // otro año (auditoría 29-ago). No se manda en el caso normal.
+          ...(fechaGastoAntigua(values.fecha_gasto)
+            ? { permitir_fecha_antigua: true }
+            : {}),
+        },
+        repartoItems,
+      );
       if (result.ok) {
-        toast.success(
-          aplicarComoPiloto
-            ? "Gasto registrado como del piloto del vuelo"
-            : factura
-              ? "Gasto registrado con su factura"
-              : "Gasto registrado",
-        );
+        if (result.repartoError) {
+          // El gasto SÍ se creó pero el reparto no se aplicó: estado
+          // recuperable A PROPÓSITO (no se borra nada — candados de dinero).
+          // Sin vuelo y de categoría repartible, no cae a la bandeja: vive en
+          // Otros gastos como "VuelaTour (sin asignar)" con botón Repartir.
+          toast.warning(
+            `El gasto se creó SIN repartir: repártelo desde Otros gastos (o menú ⋯ → Repartir). Motivo: ${result.repartoError}`,
+            { duration: 10000 },
+          );
+        } else {
+          toast.success(
+            repartoItems
+              ? `Gasto registrado y repartido entre ${repartoItems.length} ${
+                  repartoItems.length === 1 ? "avión" : "aviones"
+                }`
+              : aplicarComoPiloto
+                ? "Gasto registrado como del piloto del vuelo"
+                : factura
+                  ? "Gasto registrado con su factura"
+                  : "Gasto registrado",
+          );
+        }
         setFactura(null);
         setAiRaw(null);
         setComoPiloto(false);
+        // reset(emptyValues) NO limpia estos: a mano, o el siguiente alta
+        // hereda el veto a la IA y un reparto armado.
+        avionLimpiado.current = false;
+        setRepartirActivo(false);
+        setRepartoSel({});
         if (facturaRef.current) facturaRef.current.value = "";
         reset(emptyValues(formDefaults));
         setOpen(false);
@@ -503,7 +684,18 @@ export function ExpenseCreateDialog({
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)} className="gap-2">
+      <Button
+        variant="outline"
+        onClick={() => {
+          // Estado que reset(emptyValues) no cubre: se limpia en CADA
+          // apertura (Cancelar cierra con setOpen directo, sin onOpenChange).
+          avionLimpiado.current = false;
+          setRepartirActivo(false);
+          setRepartoSel({});
+          setOpen(true);
+        }}
+        className="gap-2"
+      >
         <PlusIcon className="h-4 w-4" />
         {defaultVueloId ? "Registrar gasto" : "Nuevo gasto"}
       </Button>
@@ -512,7 +704,12 @@ export function ExpenseCreateDialog({
         open={open}
         onOpenChange={(o) => {
           setOpen(o);
-          if (!o) setComoPiloto(false);
+          if (!o) {
+            setComoPiloto(false);
+            avionLimpiado.current = false;
+            setRepartirActivo(false);
+            setRepartoSel({});
+          }
         }}
       >
         {/* overflow-x-hidden: los nombres de archivo/inputs de fecha no deben
@@ -898,9 +1095,13 @@ export function ExpenseCreateDialog({
                   value={watch("vuelo_id")}
                   onChange={(v) => {
                     setValue("vuelo_id", v);
-                    // El avión del vuelo elegido se refleja de inmediato.
+                    // El avión del vuelo elegido se refleja de inmediato —
+                    // elección humana explícita: levanta el veto a la IA.
                     const opt = vuelos.find((x) => x.id === v);
-                    if (opt?.aeronave_id) setValue("aeronave_id", opt.aeronave_id);
+                    if (opt?.aeronave_id) {
+                      setValue("aeronave_id", opt.aeronave_id);
+                      avionLimpiado.current = false;
+                    }
                     // Sin vuelo, "como piloto" no aplica.
                     if (!v) setComoPiloto(false);
                   }}
@@ -993,9 +1194,33 @@ export function ExpenseCreateDialog({
                 watch("categoria") !== "VISITA" && (
                 <Field label="Avión">
                   <SearchableSelect
-                    options={aircraft.map((a) => ({ value: a.id, label: a.matricula }))}
+                    // Opción vacía REAL al frente: el Combobox solo dispara
+                    // onChange con un item — sin ella, deseleccionar el avión
+                    // era imposible (con value "" el trigger muestra su label
+                    // en vez del placeholder). "(se puede repartir)" SOLO
+                    // cuando es verdad: gasto sin vuelo de categoría
+                    // repartible — prometerlo en OPERACIONES/COMIDA… mentiría
+                    // (esos caen a la bandeja de pendientes).
+                    options={[
+                      {
+                        value: "",
+                        label:
+                          !defaultVueloId &&
+                          !watch("vuelo_id") &&
+                          CATEGORIAS_REPARTIBLES.has(watch("categoria"))
+                            ? "Sin avión (se puede repartir)"
+                            : "Sin avión",
+                      },
+                      ...aircraft.map((a) => ({ value: a.id, label: a.matricula })),
+                    ]}
                     value={watch("aeronave_id")}
-                    onChange={(v) => setValue("aeronave_id", v)}
+                    onChange={(v) => {
+                      setValue("aeronave_id", v);
+                      // Limpiar A MANO veta a la IA (no re-impone la
+                      // matrícula en reanálisis ni re-subida); elegir un
+                      // avión levanta el veto.
+                      avionLimpiado.current = v === "";
+                    }}
                     placeholder="Sin asignar"
                   />
                 </Field>
@@ -1046,13 +1271,140 @@ export function ExpenseCreateDialog({
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs"
-                    onClick={() => setValue("aeronave_id", delRecibo.id)}
+                    onClick={() => {
+                      // Acción humana explícita: levanta el veto de "Sin
+                      // avión" — es el camino de vuelta tras limpiarlo.
+                      setValue("aeronave_id", delRecibo.id);
+                      avionLimpiado.current = false;
+                    }}
                   >
                     Usar este avión
                   </Button>
                 </div>
               );
             })()}
+
+            {/* Repartir entre aviones DESDE la captura: gasto general sin
+                vuelo ni avión de categoría repartible. Mismo patrón (y
+                disciplina de centavos) del diálogo Repartir de Otros gastos;
+                al guardar se encadena el PUT de reparto existente. */}
+            {repartoDisponible && (
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">
+                      Repartir entre aviones al guardar
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Divide este gasto entre los aviones que elijas; lo no
+                      asignado queda como gasto de la empresa VuelaTour.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={repartirActivo}
+                    onCheckedChange={activarReparto}
+                  />
+                </div>
+                {repartirActivo &&
+                  (avionesReparto === null ? (
+                    <p className="py-3 text-center text-xs text-muted-foreground">
+                      Cargando aviones activos…
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Marca los aviones y captura cuánto le toca a cada uno.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="gap-1.5 shrink-0"
+                          onClick={dividirIguales}
+                          disabled={pending || repartoIncluidos.length === 0}
+                        >
+                          <ArrowsRightLeftIcon className="h-4 w-4" />
+                          Dividir en partes iguales
+                        </Button>
+                      </div>
+                      <div className="rounded-lg border border-border divide-y divide-border">
+                        {avionesReparto.map((a) => {
+                          const sel =
+                            repartoSel[a.id] ?? { incluir: false, monto: "" };
+                          return (
+                            <label
+                              key={a.id}
+                              className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/40"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={sel.incluir}
+                                onChange={(e) =>
+                                  setRepartoSel((s) => ({
+                                    ...s,
+                                    [a.id]: { ...sel, incluir: e.target.checked },
+                                  }))
+                                }
+                                className="h-4 w-4 accent-brand-600"
+                              />
+                              <span className="font-mono text-sm font-medium">
+                                {a.matricula}
+                              </span>
+                              <span className="text-xs text-muted-foreground truncate">
+                                {a.modelo}
+                              </span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                inputMode="decimal"
+                                value={sel.monto}
+                                placeholder="0.00"
+                                disabled={!sel.incluir}
+                                onChange={(e) =>
+                                  setRepartoSel((s) => ({
+                                    ...s,
+                                    [a.id]: { ...sel, monto: e.target.value },
+                                  }))
+                                }
+                                className="h-8 w-28 text-right ml-auto"
+                              />
+                            </label>
+                          );
+                        })}
+                        {avionesReparto.length === 0 && (
+                          <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                            Sin aviones activos para repartir.
+                          </p>
+                        )}
+                      </div>
+                      {/* Línea viva contra el TOTAL PAGADO (ticket + propina):
+                          es el monto que se guardará. Rojo si Σ se pasa. */}
+                      <p
+                        className={
+                          repartoExcedido
+                            ? "text-xs font-medium text-red-600 dark:text-red-400"
+                            : "text-xs text-muted-foreground"
+                        }
+                      >
+                        Asignado {fmtCents(repartoSumaCents)} de{" "}
+                        {fmtCents(totalPagadoCents)} del total pagado ·{" "}
+                        {repartoExcedido
+                          ? `se pasa por ${fmtCents(repartoSumaCents - totalPagadoCents)} — ajusta los montos`
+                          : `VuelaTour absorbe ${fmtCents(Math.max(0, totalPagadoCents - repartoSumaCents))}`}
+                      </p>
+                      {repartoSinMonto.length > 0 && (
+                        <p className="text-xs text-amber-600">
+                          Captura el monto de{" "}
+                          {repartoSinMonto.map((a) => a.matricula).join(", ")} (o
+                          desmárcalos).
+                        </p>
+                      )}
+                    </>
+                  ))}
+              </div>
+            )}
 
             <Field label="Proveedor">
               <SearchableSelect

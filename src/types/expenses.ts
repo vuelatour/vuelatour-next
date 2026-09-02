@@ -67,12 +67,17 @@ export interface Gasto {
   vuelo?: { folio: string | null } | null;
   /** Reparto entre aviones (tabla hija): la fila del gasto NUNCA se parte —
    *  conciliación y anti-duplicados siguen viendo un solo gasto. El monto de
-   *  cada parte va en la MONEDA del gasto (numeric → puede llegar string). */
-  repartos?: Array<{
-    aeronave_id: string;
-    monto: string | number;
-    aeronave?: { matricula: string } | null;
-  }>;
+   *  cada parte va en la MONEDA del gasto (numeric → puede llegar string).
+   *  Opcional por skew de deploy: sin campo = comportamiento clásico. */
+  repartos?: GastoRepartoParte[];
+}
+
+/** Una parte del reparto de un gasto entre aviones (fila de gasto_reparto
+ *  que viaja embebida en el gasto). El join de matrícula puede faltar. */
+export interface GastoRepartoParte {
+  aeronave_id: string;
+  monto: string | number;
+  aeronave?: { matricula: string } | null;
 }
 
 /** Nombre de quien confirmó el gasto (tolera el join objeto o arreglo). */

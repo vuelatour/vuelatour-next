@@ -355,26 +355,70 @@ export function ExpensesTable({
       {
         key: "avion",
         header: "Avión",
-        cell: (f) =>
-          f.kind === "compra" ? (
-            GUION
-          ) : f.gasto.aeronave?.matricula ? (
+        cell: (f) => {
+          if (f.kind === "compra") return GUION;
+          const g = f.gasto;
+          // Gasto REPARTIDO entre aviones (tabla hija gasto_reparto): cada
+          // parcial liga a la ficha del avión (patrón de otros-gastos) con
+          // su monto en el title. Skew-tolerante: sin campo `repartos`, el
+          // comportamiento clásico de abajo sigue intacto.
+          const repartos = g.repartos ?? [];
+          if (repartos.length > 0) {
+            const remanenteCents =
+              Math.round(Number(g.monto) * 100) -
+              repartos.reduce(
+                (acc, r) => acc + Math.round(Number(r.monto) * 100),
+                0,
+              );
+            return (
+              <div className="flex max-w-[240px] flex-wrap items-center gap-1">
+                <span className="w-full text-[10px] text-muted-foreground">
+                  Repartido:
+                </span>
+                {repartos.map((r) => (
+                  <Link key={r.aeronave_id} href={`/admin/aircraft/${r.aeronave_id}`}>
+                    <Badge
+                      variant="outline"
+                      className="font-mono text-[11px] transition-colors hover:border-brand-600/60 hover:text-brand-600"
+                      title={fmtMoney(r.monto, g.moneda)}
+                    >
+                      {r.aeronave?.matricula ?? "¿?"}
+                    </Badge>
+                  </Link>
+                ))}
+                {remanenteCents / 100 > 0.004 && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[11px]"
+                    title={`Parte que absorbe la empresa: ${fmtMoney(remanenteCents / 100, g.moneda)}`}
+                  >
+                    VuelaTour
+                  </Badge>
+                )}
+              </div>
+            );
+          }
+          if (g.aeronave?.matricula) {
             // Matrícula → ficha del avión (mismo patrón que la columna Vuelo).
-            f.gasto.aeronave_id ? (
+            return g.aeronave_id ? (
               <Link
-                href={`/admin/aircraft/${f.gasto.aeronave_id}`}
+                href={`/admin/aircraft/${g.aeronave_id}`}
                 className="font-mono text-brand-600 hover:underline"
               >
-                {f.gasto.aeronave.matricula}
+                {g.aeronave.matricula}
               </Link>
             ) : (
-              <span className="font-mono">{f.gasto.aeronave.matricula}</span>
-            )
-          ) : (
+              <span className="font-mono">{g.aeronave.matricula}</span>
+            );
+          }
+          // "Pendiente" SOLO sin avión Y sin reparto: un repartido ya está
+          // resuelto (la bandeja del API también lo excluye).
+          return (
             <Badge variant="outline" className="border-amber-500/50 text-amber-600">
               Pendiente
             </Badge>
-          ),
+          );
+        },
       },
       {
         key: "vuelo",
@@ -513,6 +557,9 @@ function textoGasto(g: Gasto): string {
     categoriaGastoLabel(g.categoria),
     g.proveedor?.nombre ?? "",
     g.aeronave?.matricula ?? "",
+    // Matrículas del reparto: un gasto repartido se encuentra buscando
+    // cualquiera de sus aviones (igual que en otros-gastos).
+    ...(g.repartos ?? []).map((r) => r.aeronave?.matricula ?? ""),
     g.lugar ?? "",
     g.vuelo?.folio ?? "",
     g.captura?.nombre ?? "",
