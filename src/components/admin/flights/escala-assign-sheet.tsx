@@ -21,10 +21,12 @@ import { cancunInputToIso, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import {
   assignEscalaAction,
   getPilotosDisponibilidadAction,
+  type AssignEscalaPayload,
   type PilotoDisponibilidad,
 } from "@/app/admin/flights/actions";
 import type { FlightEscala, TripulanteRef } from "@/types/flights";
 import { ApoyosField, mismoConjunto } from "./apoyos-field";
+import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
 
 interface AircraftOption {
   id: string;
@@ -115,6 +117,12 @@ export function EscalaAssignSheet({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [dispo, setDispo] = useState<PilotoDisponibilidad[]>([]);
+  // Candado de squawk ALTA: guarda el payload rechazado para reintentarlo
+  // con la bandera si la oficina confirma en el diálogo.
+  const [squawk, setSquawk] = useState<{
+    lista: string[];
+    payload: AssignEscalaPayload;
+  } | null>(null);
 
   const { register, handleSubmit, watch, setValue, reset } =
     useForm<EscalaAssignFormValues>({
@@ -209,13 +217,7 @@ export function EscalaAssignSheet({
       );
       return;
     }
-    const payload: {
-      aeronave_id?: string;
-      piloto_id?: string;
-      copiloto_id?: string | null;
-      apoyo_ids?: string[];
-      fecha_salida_plan?: string;
-    } = {};
+    const payload: AssignEscalaPayload = {};
     if (!esExterno && values.aeronave_id !== (escala.aeronave_id ?? "")) {
       payload.aeronave_id = values.aeronave_id || undefined;
     }
@@ -240,19 +242,44 @@ export function EscalaAssignSheet({
       toast.info("No hay cambios que aplicar");
       return;
     }
+    ejecutar(payload, false);
+  });
+
+  /** Guarda la asignación del tramo; con `aceptarSquawk` reintenta pese al
+   *  squawk ALTA (confirmado en el diálogo — el API avisa al mecánico). */
+  const ejecutar = (payload: AssignEscalaPayload, aceptarSquawk: boolean) => {
     startTransition(async () => {
-      const res = await assignEscalaAction(flightId, escala.id, payload);
+      const res = await assignEscalaAction(
+        flightId,
+        escala.id,
+        aceptarSquawk ? { ...payload, aceptar_discrepancia_alta: true } : payload,
+      );
       if (res.ok) {
-        toast.success(`${tramoLabel} actualizado`);
+        toast.success(
+          aceptarSquawk
+            ? `${tramoLabel} actualizado — se avisó al mecánico de las discrepancias abiertas`
+            : `${tramoLabel} actualizado`,
+        );
+        setSquawk(null);
         onOpenChange(false);
         router.refresh();
       } else {
+        // Candado de squawk ALTA (solo aplica si se está asignando avión):
+        // se confirma en el diálogo y se reintenta con la bandera.
+        const lista =
+          !aceptarSquawk && payload.aeronave_id ? squawkAltaDe(res) : null;
+        if (lista) {
+          setSquawk({ lista, payload });
+          return;
+        }
+        setSquawk(null);
         toast.error(res.error ?? "Error al asignar el tramo");
       }
     });
-  });
+  };
 
   return (
+    <>
     <Sheet
       open={open}
       onOpenChange={(nextOpen, details) => {
@@ -425,5 +452,15 @@ export function EscalaAssignSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+
+    {/* Candado de squawk ALTA del avión elegido: confirmar para asignar de
+        todas formas (reintento con la bandera; el API avisa al mecánico). */}
+    <SquawkAltaDialog
+      lista={squawk?.lista ?? null}
+      pending={pending}
+      onCancel={() => setSquawk(null)}
+      onConfirm={() => squawk && ejecutar(squawk.payload, true)}
+    />
+    </>
   );
 }

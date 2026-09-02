@@ -19,7 +19,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { createReservaAction } from "@/app/admin/flights/actions";
+import {
+  createReservaAction,
+  type CreateReservaPayload,
+} from "@/app/admin/flights/actions";
+import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import { Field } from "@/components/admin/form-field";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
@@ -141,6 +145,12 @@ export function ReservaFormSheet({
   const [cotizacionAbierta, setCotizacionAbierta] = useState(false);
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Candado de squawk ALTA del avión elegido: guarda el payload rechazado
+  // para reintentarlo con la bandera si la oficina confirma en el diálogo.
+  const [squawk, setSquawk] = useState<{
+    lista: string[];
+    payload: CreateReservaPayload;
+  } | null>(null);
 
   // Aeropuertos creados SIN salir del sheet (28-ago): se suman al catálogo
   // que llegó por props y quedan seleccionables al instante (ruta rápida y
@@ -217,44 +227,66 @@ export function ReservaFormSheet({
     if (!fechaVuelo) return setError("Captura la fecha y hora de salida.");
     if (!clienteId) return setError("Elige el cliente (responsable del vuelo).");
 
+    const payload: CreateReservaPayload = {
+      cliente_id: clienteId,
+      aeronave_id: aeronaveId,
+      piloto_id: pilotoId,
+      copiloto_id: copilotoId || undefined,
+      fecha_vuelo: cancunInputToIso(fechaVuelo),
+      cotizacion_abierta: cotizacionAbierta,
+      // El campo del form es "Notas internas": va en notas_internas —
+      // vuelo.notas es "Notas (visibles en PDF)" y una nota interna
+      // (p. ej. cómo va a pagar) no debe salir en el PDF del cliente.
+      notas_internas: notas.trim() || undefined,
+      escalas_operacion: legs.map((l, idx) => {
+        // Un ferry vuela vacío: sin manifiesto de nombres.
+        const nombres = l.esFerry ? [] : parseNombres(l.nombres);
+        return {
+          origen_iata: l.origen,
+          destino_iata: l.destino,
+          // El tramo 1 siempre sale a la fecha/hora general del vuelo.
+          hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
+          es_ferry: l.esFerry,
+          es_sobrevuelo: l.esSobrevuelo,
+          pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
+          pasajeros_nombres: nombres.length > 0 ? nombres : undefined,
+          requiere_pernocta: l.pernocta || undefined,
+          tipo_parada: l.servicio ? ("SERVICIO" as const) : undefined,
+          servicio_notas: l.servicio
+            ? l.servicioNotas.trim() || undefined
+            : undefined,
+          notas: l.notas.trim() || undefined,
+        };
+      }),
+    };
+    ejecutar(payload, false);
+  };
+
+  /** Crea el vuelo; con `aceptarSquawk` reintenta pese al squawk ALTA del
+   *  avión (confirmado en el diálogo — el API avisa al mecánico). */
+  const ejecutar = (payload: CreateReservaPayload, aceptarSquawk: boolean) => {
     startTransition(async () => {
-      const res = await createReservaAction({
-        cliente_id: clienteId,
-        aeronave_id: aeronaveId,
-        piloto_id: pilotoId,
-        copiloto_id: copilotoId || undefined,
-        fecha_vuelo: cancunInputToIso(fechaVuelo),
-        cotizacion_abierta: cotizacionAbierta,
-        // El campo del form es "Notas internas": va en notas_internas —
-        // vuelo.notas es "Notas (visibles en PDF)" y una nota interna
-        // (p. ej. cómo va a pagar) no debe salir en el PDF del cliente.
-        notas_internas: notas.trim() || undefined,
-        escalas_operacion: legs.map((l, idx) => {
-          // Un ferry vuela vacío: sin manifiesto de nombres.
-          const nombres = l.esFerry ? [] : parseNombres(l.nombres);
-          return {
-            origen_iata: l.origen,
-            destino_iata: l.destino,
-            // El tramo 1 siempre sale a la fecha/hora general del vuelo.
-            hora_salida: l.hora && idx > 0 ? cancunInputToIso(l.hora) : undefined,
-            es_ferry: l.esFerry,
-            es_sobrevuelo: l.esSobrevuelo,
-            pasajeros: l.esFerry ? undefined : Number(l.pasajeros) || undefined,
-            pasajeros_nombres: nombres.length > 0 ? nombres : undefined,
-            requiere_pernocta: l.pernocta || undefined,
-            tipo_parada: l.servicio ? ("SERVICIO" as const) : undefined,
-            servicio_notas: l.servicio
-              ? l.servicioNotas.trim() || undefined
-              : undefined,
-            notas: l.notas.trim() || undefined,
-          };
-        }),
-      });
+      const res = await createReservaAction(
+        aceptarSquawk ? { ...payload, aceptar_discrepancia_alta: true } : payload,
+      );
       if (res.ok && res.data) {
-        toast.success(`Operación guardada · vuelo #${res.data.folio}. Usa "Cotizar" cuando quieras ponerle precio.`);
+        toast.success(
+          aceptarSquawk
+            ? `Operación guardada · vuelo #${res.data.folio} — se avisó al mecánico de las discrepancias abiertas del avión.`
+            : `Operación guardada · vuelo #${res.data.folio}. Usa "Cotizar" cuando quieras ponerle precio.`,
+        );
+        setSquawk(null);
         onOpenChange(false);
         router.push(`/admin/flights/${res.data.id}`);
       } else {
+        // Candado de squawk ALTA del avión: se confirma en el diálogo y se
+        // reintenta con la bandera (el API avisa al mecánico).
+        const lista = aceptarSquawk ? null : squawkAltaDe(res);
+        if (lista) {
+          setSquawk({ lista, payload });
+          return;
+        }
+        setSquawk(null);
         setError(res.error ?? "Error al crear el vuelo");
       }
     });
@@ -705,6 +737,15 @@ export function ReservaFormSheet({
           setClienteId(opt.id);
           router.refresh();
         }}
+      />
+
+      {/* Candado de squawk ALTA del avión elegido: confirmar para crear el
+          vuelo de todas formas (reintento con la bandera; avisa al mecánico). */}
+      <SquawkAltaDialog
+        lista={squawk?.lista ?? null}
+        pending={pending}
+        onCancel={() => setSquawk(null)}
+        onConfirm={() => squawk && ejecutar(squawk.payload, true)}
       />
     </Sheet>
   );

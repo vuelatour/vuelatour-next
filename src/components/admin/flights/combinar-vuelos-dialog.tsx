@@ -21,6 +21,7 @@ import {
   type CombinarCandidato,
 } from "@/app/admin/flights/actions";
 import { fmtDateOnly } from "@/lib/datetime";
+import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
 import type { FlightListItem } from "@/types/flights";
 
 interface CombinarVuelosDialogProps {
@@ -49,6 +50,10 @@ export function CombinarVuelosDialog({
   const [seleccionado, setSeleccionado] = useState<CombinarCandidato | null>(null);
   const [aplicarPiloto, setAplicarPiloto] = useState(true);
   const [marcarPernocta, setMarcarPernocta] = useState(true);
+  // Candado de squawk ALTA del avión del anfitrión: lista pendiente de
+  // confirmar (el API pre-valida ANTES de cancelar ferries, así que el
+  // reintento con la bandera es seguro).
+  const [squawk, setSquawk] = useState<string[] | null>(null);
   const [saving, startSaving] = useTransition();
 
   useEffect(() => {
@@ -68,7 +73,7 @@ export function CombinarVuelosDialog({
     };
   }, [flight.id]);
 
-  const handleCombinar = () => {
+  const handleCombinar = (aceptarSquawk = false) => {
     if (!seleccionado) return;
     const sel = seleccionado;
     startSaving(async () => {
@@ -78,12 +83,26 @@ export function CombinarVuelosDialog({
         tramo_ferry_anfitrion_id: sel.tramo_ferry_anfitrion_id,
         aplicar_piloto: aplicarPiloto,
         marcar_pernocta: marcarPernocta,
+        ...(aceptarSquawk ? { aceptar_discrepancia_alta: true } : {}),
       });
       if (res.ok) {
-        toast.success(`Vuelos combinados: #${flight.folio} ♻ #${sel.folio}`);
+        toast.success(
+          aceptarSquawk
+            ? `Vuelos combinados: #${flight.folio} ♻ #${sel.folio} — se avisó al mecánico de las discrepancias abiertas`
+            : `Vuelos combinados: #${flight.folio} ♻ #${sel.folio}`,
+        );
+        setSquawk(null);
         onOpenChange(false);
         router.refresh();
       } else {
+        // Candado de squawk ALTA del avión del anfitrión: se confirma en el
+        // diálogo y se reintenta con la bandera (el API avisa al mecánico).
+        const lista = aceptarSquawk ? null : squawkAltaDe(res);
+        if (lista) {
+          setSquawk(lista);
+          return;
+        }
+        setSquawk(null);
         toast.error(res.error ?? "No se pudieron combinar los vuelos");
       }
     });
@@ -209,7 +228,7 @@ export function CombinarVuelosDialog({
           </Button>
           {candidatos !== null && candidatos.length > 0 && (
             <Button
-              onClick={handleCombinar}
+              onClick={() => handleCombinar()}
               disabled={saving || !seleccionado}
               className="bg-teal-600 hover:bg-teal-600/90 text-white"
               title={
@@ -223,6 +242,16 @@ export function CombinarVuelosDialog({
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* Candado de squawk ALTA del avión del anfitrión: confirmar para
+          combinar de todas formas (reintento con la bandera; avisa al
+          mecánico). */}
+      <SquawkAltaDialog
+        lista={squawk}
+        pending={saving}
+        onCancel={() => setSquawk(null)}
+        onConfirm={() => handleCombinar(true)}
+      />
     </Dialog>
   );
 }

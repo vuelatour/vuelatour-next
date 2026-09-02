@@ -15,10 +15,17 @@ export interface ActionResult<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+  /** Código del API (filtro de excepciones), p. ej. SQUAWK_ALTA_SIN_RESOLVER:
+      permite detectar candados sin regex sobre el mensaje. */
+  code?: string;
+  /** Detalle estructurado del error del API (si lo mandó). */
+  details?: unknown;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  if (isApiError(err)) {
+    return { ok: false, error: err.message, code: err.code, details: err.details };
+  }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -39,6 +46,9 @@ export interface AssignFlightPayload {
       [] = ninguno. Los apoyos por tramo no se tocan desde aquí. */
   apoyo_ids?: string[];
   fecha_vuelo?: string;
+  /** Asignar el avión AUNQUE tenga squawk ALTA abierto (confirmación de la
+      oficina tras el diálogo; el API avisa al mecánico para que valide). */
+  aceptar_discrepancia_alta?: boolean;
 }
 
 export async function assignFlightAction(
@@ -208,6 +218,9 @@ export async function combinarVuelosAction(
     aplicar_piloto?: boolean;
     /** Marcar pernocta operativa en el anfitrión, sin tocar precios (default true). */
     marcar_pernocta?: boolean;
+    /** Combinar AUNQUE el avión del anfitrión tenga squawk ALTA abierto
+        (confirmado en el diálogo; el API avisa al mecánico). */
+    aceptar_discrepancia_alta?: boolean;
   },
 ): Promise<ActionResult> {
   try {
@@ -434,7 +447,13 @@ export async function cancelFlightAction(
 /** Cambio de aeronave de último minuto: clona el vuelo (cobros se mueven) y el original queda CANCELADO con sus gastos. */
 export async function reassignAircraftAction(
   id: string,
-  payload: { aeronave_id: string; motivo?: string },
+  payload: {
+    aeronave_id: string;
+    motivo?: string;
+    /** Reasignar AUNQUE el avión tenga squawk ALTA abierto (confirmado en el
+        diálogo; el API avisa al mecánico). */
+    aceptar_discrepancia_alta?: boolean;
+  },
 ): Promise<ActionResult<FlightListItem>> {
   try {
     const clon = await apiServer<FlightListItem>(`/v1/flights/${id}/reassign-aircraft`, {
@@ -536,6 +555,9 @@ export interface AssignEscalaPayload {
       de nivel vuelo no se tocan desde aquí. */
   apoyo_ids?: string[];
   fecha_salida_plan?: string;
+  /** Asignar el avión al tramo AUNQUE tenga squawk ALTA abierto (confirmado
+      en el diálogo; el API avisa al mecánico). */
+  aceptar_discrepancia_alta?: boolean;
 }
 
 /** Asigna aeronave/piloto/copiloto/apoyos a UN tramo (ida o regreso por separado). */
@@ -791,6 +813,9 @@ export interface CreateReservaPayload {
   pasajeros_nombres?: string[];
   notas?: string;
   notas_internas?: string;
+  /** Crear el vuelo AUNQUE el avión tenga squawk ALTA abierto (confirmado en
+      el diálogo; el API avisa al mecánico). */
+  aceptar_discrepancia_alta?: boolean;
 }
 
 /** Aparta el espacio en el calendario SIN cotización (vuelo propio tentativo). */
