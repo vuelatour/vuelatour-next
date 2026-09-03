@@ -236,8 +236,8 @@ export function RepartoMasivoDialog({
             ningún avión).
           </DialogDescription>
           <p className="text-xs text-slate-400">
-            Los parciales de INDIRECTO y Nómina caen en la hoja Gastos
-            indirectos del balance de cada avión; el resto en Otros gastos.
+            Cada parcial cae en la hoja Gastos Indirectos del balance del
+            avión que elijas (con la nota reparto manual).
           </p>
         </DialogHeader>
 

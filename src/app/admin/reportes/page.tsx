@@ -124,11 +124,11 @@ export default async function ReportesPage({ searchParams }: PageProps) {
         <CardHeader>
           <CardTitle className="text-base">Balance por avión</CardTitle>
           <CardDescription>
-            Libro completo del avión en el periodo: ventas, tacómetros,
-            combustible, costos, cobranza, gastos indirectos y balance con
-            socios. Incluye hoja de pendientes de captura; el general suma la
-            pestaña Otros movimientos (cobrado vs pagado por concepto y
-            dinero sin avión/vuelo).
+            Libro completo de un avión en el periodo: reporte de horas
+            (ventas, tacómetros, costos por vuelo), cobranza, combustible,
+            gastos indirectos (incluye la parte repartida a mano), refacciones
+            de bodega, permisos y balance con socios. Incluye la hoja de
+            pendientes de captura para completar el mes.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -136,6 +136,31 @@ export default async function ReportesPage({ searchParams }: PageProps) {
             aircraft={aircraftPick}
             desde={desde}
             hasta={hasta}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Consolidado de la flota: apartado propio (antes era una opción
+          centinela dentro del selector de aviones de arriba y se confundía
+          con el libro individual). Mismo periodo que el resto de la página. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Balance general VuelaTour</CardTitle>
+          <CardDescription>
+            Consolidado de toda la flota en el periodo, en un solo libro:
+            resumen por avión, reporte de horas de todos los aviones (filas
+            coloreadas por matrícula), otros movimientos, cobranza, otros
+            gastos de la empresa, repartidos a aviones, inventario de bodega,
+            balance por avión con sus socios y pendientes de captura. Es el
+            cierre de la empresa; el libro de un solo avión se descarga arriba.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ExcelExportButton
+            path="/v1/aircraft/balance-general.xlsx"
+            filename={`balance-general-vuelatour-${desde}-${hasta}.xlsx`}
+            label="Descargar balance general VuelaTour (Excel)"
+            query={{ desde, hasta }}
           />
         </CardContent>
       </Card>

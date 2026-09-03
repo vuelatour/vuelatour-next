@@ -207,7 +207,7 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
                     {" "}
                     · TUAs/extras/pernocta/comisión vendedor + IVA{" "}
                     {fmtUsd(quote.particion_ingreso.iva_vuelatour_usd)} → Otros
-                    movimientos (balance general)
+                    movimientos (Balance general VuelaTour)
                   </span>
                 </span>
                 <span className="font-mono font-semibold shrink-0">

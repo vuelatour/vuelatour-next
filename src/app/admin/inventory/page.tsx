@@ -79,7 +79,7 @@ export default async function InventoryPage() {
             El consumo se carga al avión al registrar la salida.
           </p>
           <p className="text-xs text-muted-foreground/80 mt-1">
-            El reporte de inventario vive en el Balance general (hoja Inventario).
+            El reporte de inventario vive en el Balance general VuelaTour (hoja Inventario).
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -93,7 +93,7 @@ export default async function InventoryPage() {
             Compras
           </Link>
           {/* Los exports Valorizado/Cardex se retiraron de aquí: el reporte
-              de inventario vive en el Balance general (hoja Inventario). El
+              de inventario vive en el Balance general VuelaTour (hoja Inventario). El
               cardex por ítem sigue en el detalle ("Cardex (Excel)"). */}
           <ImportCompraButton providers={providers} />
           {puedeAltaMasiva && <ItemBulkUploadDialog />}

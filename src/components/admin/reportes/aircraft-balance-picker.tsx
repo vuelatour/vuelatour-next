@@ -15,13 +15,15 @@ export interface AircraftPickItem {
 }
 
 /**
- * Selector de avión + descarga del balance del periodo en Excel
+ * Selector de avión + descarga del libro INDIVIDUAL del periodo en Excel
  * (`GET /v1/aircraft/:id/balance.xlsx?desde&hasta`). Respeta el periodo del
  * PeriodSelector de la página (llega por props).
+ *
+ * Solo lista aviones. El consolidado de la flota es otro reporte ("Balance
+ * general VuelaTour", card hermana en /admin/reportes con su propio botón) y
+ * ya NO vive como opción centinela de este selector: Ale y Pablo confundían
+ * ambos libros (2-sep-2026).
  */
-/** Valor especial del selector: balance GENERAL de toda la flota. */
-const GENERAL = "__general__";
-
 export function AircraftBalancePicker({
   aircraft,
   desde,
@@ -33,23 +35,15 @@ export function AircraftBalancePicker({
 }) {
   const [selected, setSelected] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const esGeneral = selected === GENERAL;
   const avion = aircraft.find((a) => a.id === selected);
 
   const download = async () => {
-    if (!esGeneral && !avion) return;
+    if (!avion) return;
     setLoading(true);
-    // General: una fila por avión con los TOTALES de su libro (mismo motor
-    // que el balance individual) + totales de flota.
-    const err = esGeneral
-      ? await descargarDelApi(`/v1/aircraft/balance-general.xlsx`, {
-          filename: `balance-general-${desde}-${hasta}.xlsx`,
-          query: { desde, hasta },
-        })
-      : await descargarDelApi(`/v1/aircraft/${avion!.id}/balance.xlsx`, {
-          filename: `balance-${avion!.matricula}-${desde}-${hasta}.xlsx`,
-          query: { desde, hasta },
-        });
+    const err = await descargarDelApi(`/v1/aircraft/${avion.id}/balance.xlsx`, {
+      filename: `balance-${avion.matricula}-${desde}-${hasta}.xlsx`,
+      query: { desde, hasta },
+    });
     if (err) toast.error("No se pudo generar el balance", { description: err });
     setLoading(false);
   };
@@ -59,24 +53,17 @@ export function AircraftBalancePicker({
       <div className="space-y-1.5 max-w-md">
         <Label className="text-sm font-medium">Avión</Label>
         <SearchableSelect
-          options={[
-            {
-              value: GENERAL,
-              label: "Toda la flota (balance general)",
-              description: "Una fila por avión + totales de flota",
-            },
-            ...aircraft.map((a) => ({
-              value: a.id,
-              label: a.modelo ? `${a.matricula} · ${a.modelo}` : a.matricula,
-            })),
-          ]}
+          options={aircraft.map((a) => ({
+            value: a.id,
+            label: a.modelo ? `${a.matricula} · ${a.modelo}` : a.matricula,
+          }))}
           value={selected}
           onChange={setSelected}
           placeholder="Busca por matrícula o modelo…"
           emptyText="Sin aeronaves"
         />
       </div>
-      {selected ? (
+      {avion ? (
         <Button
           variant="outline"
           size="sm"
@@ -85,16 +72,11 @@ export function AircraftBalancePicker({
           onClick={download}
         >
           <TableCellsIcon className="h-4 w-4" />
-          {loading
-            ? "Generando…"
-            : esGeneral
-              ? "Descargar balance general (Excel)"
-              : "Descargar balance (Excel)"}
+          {loading ? "Generando…" : "Descargar balance del avión (Excel)"}
         </Button>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Elige un avión (o &ldquo;Toda la flota&rdquo;) para descargar el
-          libro del periodo seleccionado.
+          Elige un avión para descargar su libro del periodo seleccionado.
         </p>
       )}
     </div>

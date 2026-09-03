@@ -20,7 +20,8 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   // dropdowns), pero la etiqueta se conserva para pintar gastos históricos.
   FIJO: "Gasto fijo",
   // Gasto de la operación SIN vuelo (avión opcional): hoja "Gastos
-  // indirectos" del balance del avión (o repartible desde Otros gastos).
+  // Indirectos" del balance del avión (o repartible desde la pantalla
+  // Otros gastos; cada parcial cae en esa misma hoja del avión elegido).
   INDIRECTO: "Gastos indirectos de avión",
   // Nómina del personal: sin vuelo; avión opcional (piloto de un solo avión).
   NOMINA: "Nómina",
@@ -64,10 +65,12 @@ export const CATEGORIAS_REPARTIBLES: ReadonlySet<string> = new Set([
  * balance por avión de pyservices:
  * - ligado a un vuelo → la hoja de ese vuelo;
  * - GAS con avión → hoja Combustible; PERMISO con avión → hoja Permisos;
- * - REFACCION manual con avión → hoja Gastos indirectos (la hoja
+ * - REFACCION manual con avión → hoja Gastos Indirectos (la hoja
  *   Refacciones se alimenta SOLO de las salidas de bodega);
- * - INDIRECTO/NOMINA/SERVICIOS y demás con avión → hoja Gastos indirectos;
- * - sin avión ni vuelo → balance general de VuelaTour (repartible);
+ * - INDIRECTO/NOMINA/SERVICIOS y demás con avión → hoja Gastos Indirectos;
+ * - sin avión ni vuelo → hoja Otros gastos del Balance general VuelaTour
+ *   (repartible desde la pantalla Otros gastos: cada parcial cae en la hoja
+ *   Gastos Indirectos del avión elegido, con la nota reparto manual);
  * - PERSONAL_DUENO → fuera de todos los balances.
  */
 export function hojaDestinoGasto(
@@ -78,10 +81,10 @@ export function hojaDestinoGasto(
   if (categoria === "PERSONAL_DUENO") return "Fuera de balances (personal)";
   if (tieneVuelo) return "Balance del avión · hoja del vuelo";
   if (!tieneAvion) {
-    return "Balance general · Gastos VuelaTour (repártelo en Otros gastos para cargarlo a aviones)";
+    return "Balance general VuelaTour · Otros gastos (repártelo desde Otros gastos para cargarlo a aviones)";
   }
   if (categoria === "GAS") return "Balance del avión · Combustible";
   if (categoria === "PERMISO") return "Balance del avión · Permisos";
   // REFACCION manual incluida: la hoja Refacciones es solo bodega.
-  return "Balance del avión · Gastos indirectos";
+  return "Balance del avión · Gastos Indirectos";
 }
