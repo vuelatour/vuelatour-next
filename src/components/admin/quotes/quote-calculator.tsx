@@ -2453,7 +2453,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             <>
               <Field
                 label="Tramos de esta cotización"
-                hint="Los ajustes (pax, ferry, pernocta, fechas) aplican solo a esta cotización; la ruta guardada no se modifica."
+                hint="Los ajustes (pax, ferry, pernocta) aplican solo a esta cotización; la ruta guardada no se modifica; la fecha que ve el cliente en el PDF se captura en el detalle de la cotización."
               >
                 <QuoteLegsEditor
                   value={values.escalas}
@@ -3306,7 +3306,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           que guarda opsLegs[].hora. */}
                       <div
                         className="w-[264px] shrink-0"
-                        title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo."
+                        title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo. Es la salida programada del piloto; la fecha del PDF del cliente se captura en el detalle de la cotización."
                       >
                         <FechaHoraCampo
                           className="[&_input]:h-8"

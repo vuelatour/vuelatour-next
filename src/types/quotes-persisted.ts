@@ -25,6 +25,12 @@ export interface PersistedEscala {
    *  Fuente de verdad VIVA de la visibilidad; se cambia desde el detalle
    *  (PATCH pdf-visibilidad). Opcional-defensivo: API previo no lo trae. */
   pdf_oculto?: boolean | null;
+  /** Fecha del tramo que ve el CLIENTE en el PDF (3-sep): 'YYYY-MM-DD' de
+   *  PARED, sin hora ni zona — jamás pasarla por Date. SOLO PDF: presentación
+   *  pura (no toca la ruta operativa, fecha_salida_plan ni fecha_vuelo; no
+   *  versiona). Se captura en el detalle (PATCH pdf-visibilidad). Opcional-
+   *  defensivo: API previo no la trae. */
+  pdf_fecha?: string | null;
   fecha_salida_plan: string | null;
   taco_salida: string | null;
   taco_llegada: string | null;

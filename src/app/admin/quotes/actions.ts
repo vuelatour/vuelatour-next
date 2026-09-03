@@ -157,6 +157,31 @@ export async function setEscalaPdfVisibilidadAction(
   }
 }
 
+/**
+ * Fecha del tramo para el PDF del cliente (3-sep): MISMA ruta PATCH
+ * pdf-visibilidad (el API acepta oculto y/o pdf_fecha). `pdf_fecha` es un
+ * string 'YYYY-MM-DD' de PARED (sin hora ni zona; nunca un Date) o null para
+ * quitarla. Presentación pura: no toca la ruta operativa ni las fechas de
+ * vuelo y no crea versión de cotización.
+ */
+export async function setEscalaPdfFechaAction(
+  vueloId: string,
+  escalaId: string,
+  pdf_fecha: string | null,
+): Promise<ActionResult> {
+  try {
+    const data = await apiServer<unknown>(
+      `/v1/quotes/${vueloId}/escalas/${escalaId}/pdf-visibilidad`,
+      { method: "PATCH", body: { pdf_fecha } },
+    );
+    revalidatePath(`/admin/quotes/${vueloId}`);
+    revalidatePath(`/admin/flights/${vueloId}`);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface ReviseQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
   fecha_vuelo?: string;

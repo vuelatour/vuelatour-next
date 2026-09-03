@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { cotizacionEditablePorFecha, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import {
+  cotizacionEditablePorFecha,
+  fmtDateOnly,
+  fmtDateTime,
+  TZ_LABEL,
+} from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
@@ -17,6 +22,7 @@ import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
 import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
 import { combinadoFolio, type FlightSnapshot } from "@/types/flights";
+import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-fecha";
 import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
@@ -99,10 +105,15 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
           )
         : [quote.origen_iata, quote.destino_iata];
 
+  // Fecha por tramo para el PDF (3-sep): misma escala VIVA, misma ruta
+  // PATCH. Es un 'YYYY-MM-DD' de pared que SOLO imprime el PDF — no toca la
+  // ruta operativa ni las fechas de vuelo y no versiona.
   const notaPdfTramos = puedeEditarPdf ? (
     <p className="pt-1 text-[10px] text-muted-foreground">
-      Lo oculto no aparece en el PDF del cliente (la numeración se ajusta
-      sola); el precio no cambia.
+      La fecha es solo para el PDF del cliente (sin hora). No cambia la ruta
+      operativa ni las fechas de vuelo; los tramos ocultos no muestran fecha.
+      Lo oculto no aparece en el PDF (la numeración se ajusta sola); el
+      precio no cambia.
     </p>
   ) : null;
 
@@ -385,6 +396,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                           viva?.pdf_oculto != null
                             ? viva.pdf_oculto === true
                             : t.pdf_oculto === true;
+                        // Fecha del PDF: SOLO de la escala viva (el snapshot
+                        // no la conoce); string de pared, sin Date.
+                        const pdfFecha = viva?.pdf_fecha ?? null;
                         return (
                           <li
                             key={`${t.orden}-${t.origen}-${t.destino}`}
@@ -398,6 +412,24 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                               <span className="font-mono text-muted-foreground">
                                 {t.millas ? `${fmtDecimal(t.millas)} NM` : "—"}
                               </span>
+                              {puedeEditarPdf && viva ? (
+                                <QuoteEscalaPdfFecha
+                                  quoteId={quote.id}
+                                  escalaId={viva.id}
+                                  fecha={pdfFecha}
+                                  oculto={oculto}
+                                />
+                              ) : (
+                                pdfFecha &&
+                                !oculto && (
+                                  <span
+                                    className="font-mono text-[10px] text-muted-foreground/70"
+                                    title="Fecha del tramo en el PDF del cliente (solo PDF)"
+                                  >
+                                    PDF: {fmtDateOnly(pdfFecha)}
+                                  </span>
+                                )
+                              )}
                               {puedeEditarPdf && viva && (
                                 <QuoteEscalaPdfToggle
                                   quoteId={quote.id}
@@ -423,6 +455,7 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                     <ol className="space-y-1.5">
                       {quote.escalas!.filter((e) => !e.solo_operativa).map((esc) => {
                         const oculto = esc.pdf_oculto === true;
+                        const pdfFecha = esc.pdf_fecha ?? null;
                         return (
                           <li
                             key={esc.id}
@@ -440,6 +473,24 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                                   ? `${fmtDecimal(esc.millas_nauticas)} NM`
                                   : "—"}
                               </span>
+                              {puedeEditarPdf ? (
+                                <QuoteEscalaPdfFecha
+                                  quoteId={quote.id}
+                                  escalaId={esc.id}
+                                  fecha={pdfFecha}
+                                  oculto={oculto}
+                                />
+                              ) : (
+                                pdfFecha &&
+                                !oculto && (
+                                  <span
+                                    className="font-mono text-[10px] text-muted-foreground/70"
+                                    title="Fecha del tramo en el PDF del cliente (solo PDF)"
+                                  >
+                                    PDF: {fmtDateOnly(pdfFecha)}
+                                  </span>
+                                )
+                              )}
                               {puedeEditarPdf && (
                                 <QuoteEscalaPdfToggle
                                   quoteId={quote.id}
