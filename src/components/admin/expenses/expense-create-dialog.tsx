@@ -67,6 +67,7 @@ import {
   opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
+import { MEDIOS_CAPTURA, medioPagoLabel } from "@/lib/admin/medios-pago";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -84,15 +85,12 @@ const TIPOS_FACTURA = [
 // capturan (la fuente única conserva sus etiquetas para gastos históricos).
 const CATEGORIAS = CATEGORIAS_CAPTURA.map(opcionCategoriaGasto);
 
-const MEDIOS = [
-  { value: "TRANSFERENCIA", label: "Transferencia" },
-  // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
-  { value: "PAYWISE", label: "Paywise" },
-  { value: "EFECTIVO", label: "Efectivo (caja chica)" },
-  { value: "TARJETA_CORP", label: "Tarjeta corporativa" },
-  { value: "PERSONAL_PABLO", label: "Dinero personal Pablo" },
-  { value: "PERSONAL_ALE", label: "Dinero personal Ale" },
-];
+// Medios de pago: FUENTE ÚNICA en @/lib/admin/medios-pago (orden, etiquetas
+// y el enum del schema salen de la misma lista).
+const MEDIOS = MEDIOS_CAPTURA;
+
+/** Mensaje único del candado de medio de pago (inline, toast y schema). */
+const MSG_MEDIO_REQUERIDO = "Elige el medio de pago";
 
 const ESTATUS = [
   { value: "SIN_COMPROBANTE", label: "Sin comprobante (factura por llegar)" },
@@ -124,7 +122,9 @@ function emptyValues(defaults?: {
     litros: "",
     moneda: "MXN",
     fecha_gasto: hoyCancun(),
-    medio_pago: "TRANSFERENCIA",
+    // SIN default (regla del cliente 3-sep-2026): antes abría en
+    // TRANSFERENCIA y el valor viajaba sin que nadie lo eligiera.
+    medio_pago: "",
     tarjeta_terminacion: "",
     estatus_comprobante: "SIN_COMPROBANTE",
     estatus_facturacion: "PENDIENTE",
@@ -223,9 +223,20 @@ export function ExpenseCreateDialog({
   };
   // Vuelo prefijado (alta desde el detalle) SIN piloto: no se puede atribuir.
   const vueloSinPiloto = !!defaultVueloId && !defaultPilotoNombre;
-  const { handleSubmit, reset, watch, setValue, register } = useForm<GastoCreateValues>({
+  const {
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    register,
+    formState: { errors },
+  } = useForm<GastoCreateValues>({
     defaultValues: emptyValues(formDefaults),
   });
+  // Registro manual (el control es un SearchableSelect, no un input nativo):
+  // handleSubmit bloquea el envío con el medio en blanco y pinta el error
+  // bajo el campo; setValue(..., { shouldValidate: true }) lo limpia.
+  register("medio_pago", { required: MSG_MEDIO_REQUERIDO });
 
   const fechaGasto = watch("fecha_gasto");
   useEffect(() => {
@@ -364,8 +375,16 @@ export function ExpenseCreateDialog({
       setValue("litros", String(ai.litros));
       llenado.push(`${ai.litros} L`);
     }
-    if (ai.medio_pago && MEDIOS.some((m) => m.value === ai.medio_pago)) {
-      setValue("medio_pago", ai.medio_pago);
+    // Medio de pago: la IA SOLO llena el campo si sigue en blanco. Lo que
+    // eligió la oficina a mano manda — la lectura llega segundos después y
+    // pisarla convertía un efectivo en tarjeta sin que nadie lo viera.
+    if (
+      !watch("medio_pago") &&
+      ai.medio_pago &&
+      MEDIOS.some((m) => m.value === ai.medio_pago)
+    ) {
+      setValue("medio_pago", ai.medio_pago, { shouldValidate: true });
+      llenado.push(medioPagoLabel(ai.medio_pago));
     }
     // Proveedor: match laxo contra el catálogo por nombre.
     if (ai.folio && !watch("folio_ticket")) {
@@ -493,6 +512,13 @@ export function ExpenseCreateDialog({
       }
       if (!(propina >= 0)) {
         toast.error("La propina no es válida.");
+        return;
+      }
+      // Candado del medio de pago ANTES de subir la factura o crear nada:
+      // sin default, el campo puede seguir en blanco (p. ej. tras la
+      // confirmación de fecha). El API lo exige y no tiene default.
+      if (!values.medio_pago) {
+        toast.error(`${MSG_MEDIO_REQUERIDO}.`);
         return;
       }
       const totalPagado = Math.round((ticket + propina) * 100) / 100;
@@ -634,24 +660,34 @@ export function ExpenseCreateDialog({
         reset(emptyValues(formDefaults));
         setOpen(false);
       } else if (result.fieldErrors) {
+        // Los mensajes del schema ya son legibles ("Elige el medio de
+        // pago"): sin el nombre técnico del campo como prefijo.
         const f = Object.keys(result.fieldErrors)[0];
-        toast.error(`${f}: ${result.fieldErrors[f]?.[0] ?? "Validación falló"}`);
+        toast.error(result.fieldErrors[f]?.[0] ?? `Validación falló (${f})`);
       } else {
         toast.error(result.error ?? "Error desconocido");
       }
     });
   };
 
-  const onSubmit = handleSubmit((values) => {
-    // Fecha sospechosa (> 60 días atrás o > 2 días a futuro): casi siempre
-    // es el año equivocado del ticket — confirmación explícita antes de
-    // guardar; si es real, se guarda igual.
-    if (fechaGastoSospechosa(values.fecha_gasto)) {
-      setConfirmarFecha({ ...values });
-      return;
-    }
-    guardarGasto(values);
-  });
+  const onSubmit = handleSubmit(
+    (values) => {
+      // Fecha sospechosa (> 60 días atrás o > 2 días a futuro): casi siempre
+      // es el año equivocado del ticket — confirmación explícita antes de
+      // guardar; si es real, se guarda igual.
+      if (fechaGastoSospechosa(values.fecha_gasto)) {
+        setConfirmarFecha({ ...values });
+        return;
+      }
+      guardarGasto(values);
+    },
+    // El formulario es largo: además del error bajo el campo, un toast con
+    // el primer mensaje para que el operador vea por qué no guardó.
+    (errs) => {
+      const primero = Object.values(errs).find((e) => e?.message)?.message;
+      toast.error(primero ? `${primero}.` : "Revisa los campos marcados.");
+    },
+  );
 
   // La IA llenó la fecha con OTRO año (caso real: tickets leídos "2025"):
   // campo en ámbar hasta que la oficina lo corrija — con el año equivocado
@@ -1140,12 +1176,21 @@ export function ExpenseCreateDialog({
                   : "grid-cols-2"
               }`}
             >
-              <Field label="Medio de pago">
+              <Field
+                label="Medio de pago"
+                required
+                error={errors.medio_pago?.message}
+              >
                 <SearchableSelect
                   options={MEDIOS}
                   value={watch("medio_pago")}
-                  onChange={(v) => setValue("medio_pago", v)}
-                  placeholder="Medio"
+                  onChange={(v) =>
+                    setValue("medio_pago", v, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  placeholder={MSG_MEDIO_REQUERIDO}
                 />
               </Field>
               {watch("medio_pago") === "TARJETA_CORP" && (

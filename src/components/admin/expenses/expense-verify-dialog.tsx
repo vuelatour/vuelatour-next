@@ -59,6 +59,7 @@ import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
 import { Field } from "@/components/admin/form-field";
+import { MEDIOS_VERIFICACION } from "@/lib/admin/medios-pago";
 import {
   VueloCanceladoHint,
   esVueloCancelado,
@@ -77,16 +78,10 @@ const CATEGORIAS = CATEGORIAS_CAPTURA.flatMap((c) =>
   c === "GAS" ? [c, "ATERRIZAJE"] : [c],
 ).map(opcionCategoriaGasto);
 
-const MEDIOS = [
-  { value: "EFECTIVO", label: "Efectivo (caja chica)" },
-  { value: "TARJETA_CORP", label: "Tarjeta corporativa" },
-  { value: "PERSONAL_PABLO", label: "Dinero personal Pablo" },
-  { value: "PERSONAL_ALE", label: "Dinero personal Ale" },
-  { value: "TRANSFERENCIA", label: "Transferencia" },
-  // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
-  { value: "PAYWISE", label: "Paywise" },
-  { value: "BODEGA", label: "Bodega (salida de inventario)" },
-];
+// Medios de pago: FUENTE ÚNICA en @/lib/admin/medios-pago (los de captura +
+// BODEGA, que aquí sí se muestra para no perder el medio de una salida de
+// inventario al verificarla).
+const MEDIOS = MEDIOS_VERIFICACION;
 
 const ESTATUS = [
   { value: "FACTURA", label: "Factura" },
@@ -544,6 +539,13 @@ export function ExpenseVerifyDialog({
         fechaGastoAntigua(values.fecha_gasto)
       ) {
         payload.permitir_fecha_antigua = true;
+      }
+      // Acoplamiento medio↔tarjeta: solo TARJETA_CORP lleva terminación (CHECK
+      // de la BD). Con cualquier otro medio se manda null EXPLÍCITO — "" se
+      // tira en stripEmpty y la terminación vieja seguiría viva, y cambiar
+      // p. ej. a EFECTIVO tronaba el PATCH con 500 (23514).
+      if (values.medio_pago !== "TARJETA_CORP") {
+        payload.tarjeta_terminacion = null;
       }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {

@@ -24,6 +24,9 @@ function fail<T>(err: unknown): ActionResult<T> {
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
+/** Tira "" y undefined del body. null SOBREVIVE a propósito: es el "quitar"
+ *  explícito de los diálogos (desligar avión/vuelo/escala, tarjeta_terminacion
+ *  = null cuando el medio deja de ser TARJETA_CORP). */
 function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const out: Partial<T> = {};
   for (const [k, v] of Object.entries(obj)) {

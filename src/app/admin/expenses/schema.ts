@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MEDIOS_CAPTURA_VALUES } from "@/lib/admin/medios-pago";
 
 export const CategoriaEnum = z.enum([
   "GAS",
@@ -86,9 +87,13 @@ export const GastoVerifySchema = z.object({
   medio_pago: MedioPagoEnum.optional(),
   // Con TARJETA_CORP: corregir qué tarjeta pagó (el server la sella al
   // capturar con la tarjeta asignada al capturador; aquí oficina la ajusta).
+  // null explícito = QUITAR la terminación (sobrevive a stripEmpty): el
+  // diálogo lo manda siempre que el medio no sea TARJETA_CORP — la BD tiene
+  // un CHECK medio↔tarjeta y sin esto el PATCH tronaba con 500.
   tarjeta_terminacion: z
     .string()
-    .regex(/^\d{4}$/, "4 dígitos")
+    .regex(/^\d{4}$/, "La tarjeta son 4 dígitos")
+    .nullable()
     .optional()
     .or(z.literal("")),
   estatus_comprobante: EstatusEnum.optional(),
@@ -144,12 +149,15 @@ export const GastoCreateSchema = z.object({
   ),
   moneda: z.enum(["MXN", "USD"]),
   fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
-  medio_pago: MedioPagoEnum,
+  // SIN valor por defecto (regla del cliente): el formulario abre con "" y
+  // el enum (derivado de la fuente única MEDIOS_CAPTURA_VALUES, sin BODEGA)
+  // lo rechaza con un mensaje que el diálogo muestra tal cual.
+  medio_pago: z.enum(MEDIOS_CAPTURA_VALUES, { error: "Elige el medio de pago" }),
   // Con TARJETA_CORP: cuál tarjeta pagó. Vacío = el server sella la
   // asignada a quien captura (o la del voucher IA).
   tarjeta_terminacion: z
     .string()
-    .regex(/^\d{4}$/, "4 dígitos")
+    .regex(/^\d{4}$/, "La tarjeta son 4 dígitos")
     .optional()
     .or(z.literal("")),
   estatus_comprobante: EstatusEnum.optional(),
