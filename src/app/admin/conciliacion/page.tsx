@@ -26,6 +26,7 @@ import {
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
 import { conciliacionGastosSinBanco } from "@/lib/api/conciliacion-server";
 import { listGastos } from "@/lib/api/expenses-server";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 
 export const dynamic = "force-dynamic";
 // Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
@@ -82,7 +83,7 @@ export default async function ConciliacionPage({
       // La moneda VISIBLE: una compra en dólares (Aircraft Spruce) se vincula
       // contra su cargo en pesos — al ligarla, el sistema guarda el tipo de
       // cambio real del banco en el gasto.
-      label: `${g.categoria} · $${fmtMoney(g.monto)} ${g.moneda ?? "MXN"} · ${fmtDate(g.fecha_gasto)}${
+      label: `${categoriaGastoLabel(g.categoria)} · $${fmtMoney(g.monto)} ${g.moneda ?? "MXN"} · ${fmtDate(g.fecha_gasto)}${
         g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""
       }`,
     }));
@@ -93,7 +94,7 @@ export default async function ConciliacionPage({
   const sinBancoRows: GastoSinBancoRow[] = (sinBanco?.data ?? []).map((g) => ({
     id: g.id,
     fecha: g.fecha_gasto,
-    descripcion: `${g.categoria}${
+    descripcion: `${categoriaGastoLabel(g.categoria)}${
       uno(g.proveedor)?.nombre
         ? ` · ${uno(g.proveedor)!.nombre}`
         : g.lugar

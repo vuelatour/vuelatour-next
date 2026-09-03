@@ -62,10 +62,11 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
-  categoriaGastoLabel,
-  hojaDestinoGasto,
+  opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
+import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -77,33 +78,11 @@ const TIPOS_FACTURA = [
   "text/csv",
 ];
 
-// Etiquetas desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto); aquí solo
-// vive el ORDEN del select. Semántica de cada categoría: ver ese archivo.
-const CATEGORIAS = [
-  "GAS",
-  "OPERACIONES",
-  "TUAS",
-  "FBO",
-  "COMIDA",
-  "HOTEL",
-  "TAXI",
-  "REFACCION",
-  "PERMISO",
-  // Honorario del freelance que voló el avión (doc 3.7): resta en el reparto
-  // como gasto directo del vuelo.
-  "PILOTO_EXTERNO",
-  // Sin vuelo (avión opcional): INDIRECTO/NOMINA; SERVICIOS es del avión.
-  "INDIRECTO",
-  "NOMINA",
-  "SERVICIOS",
-  // Sin vuelo NI avión: gasolina de coches y gasto personal del dueño
-  // (fuera de balances/reparto/pre-cierre).
-  "GASOLINA",
-  "PERSONAL_DUENO",
-  "OTRO",
-  // FIJO y VISITA son LEGADO: ya no se capturan (fuente única conserva sus
-  // etiquetas para pintar gastos históricos).
-].map((value) => ({ value, label: categoriaGastoLabel(value) }));
+// Opciones desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto): orden
+// (CATEGORIAS_CAPTURA), etiqueta y destino por default en verde. Semántica
+// de cada categoría: ver ese archivo. FIJO y VISITA son LEGADO: ya no se
+// capturan (la fuente única conserva sus etiquetas para gastos históricos).
+const CATEGORIAS = CATEGORIAS_CAPTURA.map(opcionCategoriaGasto);
 
 const MEDIOS = [
   { value: "TRANSFERENCIA", label: "Transferencia" },
@@ -965,13 +944,15 @@ export function ExpenseCreateDialog({
             <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field
                 label="Categoría"
-                // ¿A qué hoja del balance cae? — reactivo a categoría, vuelo
-                // y avión elegidos (fuente única hojaDestinoGasto).
-                hint={`Cae en: ${hojaDestinoGasto(
-                  watch("categoria"),
-                  !!watch("vuelo_id"),
-                  !!watch("aeronave_id"),
-                )}`}
+                // Línea 1: destino POR DEFAULT de la categoría (verde);
+                // línea 2: a qué hoja cae con el vuelo/avión elegidos.
+                hint={
+                  <CategoriaDestinoHint
+                    categoria={watch("categoria")}
+                    tieneVuelo={!!watch("vuelo_id")}
+                    tieneAvion={!!watch("aeronave_id")}
+                  />
+                }
               >
                 <SearchableSelect
                   // Un gasto DEL VUELO no puede ser indirecto (contradicción):
@@ -1062,7 +1043,7 @@ export function ExpenseCreateDialog({
                 (coches/camionetas): gasto de la empresa, sin vuelo ni avión —
                 vive en <span className="font-medium">Otros gastos</span> y ahí
                 puede repartirse a aviones si hiciera falta. El combustible de
-                aviación va en GAS.
+                aviación va en Gasavión / Turbosina.
               </p>
             )}
             {!defaultVueloId && watch("categoria") === "PERSONAL_DUENO" && (

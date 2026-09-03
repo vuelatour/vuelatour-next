@@ -86,6 +86,10 @@ export interface DetalleGastoCategoria {
       convirtieron con el TC oficial del día del gasto. */
   tc_oficial_count?: number;
   tc_oficial_mxn?: number;
+  /** ADITIVO (2-sep-2026): etiqueta humana homologada de la categoría base
+      con el mismo sufijo de la clave (" (repartido)"); `categoria` sigue
+      siendo el código crudo (clave de agregación, nunca se compara con esto). */
+  etiqueta?: string;
 }
 
 /**

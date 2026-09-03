@@ -16,6 +16,9 @@ export interface SearchableSelectOption {
   value: string;
   label: string;
   description?: string;
+  /** Clases de la descripción secundaria. Si se omite: gris con elipsis
+   *  (default histórico). Úsalo para colorearla o dejar que envuelva. */
+  descriptionClassName?: string;
   disabled?: boolean;
 }
 
@@ -103,7 +106,12 @@ export function SearchableSelect({
               <div className="flex min-w-0 flex-col">
                 <span className="truncate">{item.label}</span>
                 {item.description && (
-                  <span className="truncate text-[10px] text-muted-foreground">
+                  <span
+                    className={cn(
+                      "text-[10px]",
+                      item.descriptionClassName ?? "truncate text-muted-foreground",
+                    )}
+                  >
                     {item.description}
                   </span>
                 )}

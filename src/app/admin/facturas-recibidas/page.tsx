@@ -3,6 +3,7 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { Card, CardContent } from "@/components/ui/card";
 import { listRecibidas } from "@/lib/api/invoices-server";
 import { listGastos } from "@/lib/api/expenses-server";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { RecibidaUploadButton } from "@/components/admin/recibidas/recibida-upload-button";
 import { RecibidasTable } from "@/components/admin/recibidas/recibidas-table";
 import type { FacturaRecibida } from "@/types/invoices";
@@ -30,7 +31,7 @@ export default async function FacturasRecibidasPage() {
   const gastos = gastosRes.data.map((g) => ({
     id: g.id,
     label:
-      `${fmtDate(g.fecha_gasto)} · ${g.categoria} · ${fmtMoney(g.monto, g.moneda)}` +
+      `${fmtDate(g.fecha_gasto)} · ${categoriaGastoLabel(g.categoria)} · ${fmtMoney(g.monto, g.moneda)}` +
       (g.aeronave?.matricula ? ` · ${g.aeronave.matricula}` : "") +
       (g.lugar ? ` · ${g.lugar}` : "") +
       (g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""),

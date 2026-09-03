@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
   getRepartoAction,
   listAvionesActivosAction,
@@ -238,7 +239,7 @@ export function RepartoDialog({
           {/* Encabezado del gasto: para saber QUÉ se está repartiendo. */}
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline">{gasto.categoria}</Badge>
+              <Badge variant="outline">{categoriaGastoLabel(gasto.categoria)}</Badge>
               <span className="text-xs text-muted-foreground">
                 {gasto.fecha_gasto ? fmtDateOnly(gasto.fecha_gasto) : "Sin fecha"}
               </span>

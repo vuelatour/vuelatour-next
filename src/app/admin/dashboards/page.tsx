@@ -29,6 +29,7 @@ import {
 import { fmtUsd, fmtInt, fmtDecimal, fmtPercent } from "@/lib/format";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import type { Rol } from "@/types/me";
 
 export const dynamic = "force-dynamic";
@@ -557,7 +558,7 @@ async function Tarjetas({ desde, hasta }: { desde: string; hasta: string }) {
                 <TableBody>
                   {por_categoria.map((c) => (
                     <TableRow key={c.categoria}>
-                      <TableCell className="text-sm">{c.categoria}</TableCell>
+                      <TableCell className="text-sm">{categoriaGastoLabel(c.categoria)}</TableCell>
                       <TableCell className="text-right text-sm">{fmtInt(c.movimientos)}</TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {fmtUsd(c.gasto_usd)}

@@ -18,7 +18,8 @@ export function Field({
   children,
 }: {
   label: string;
-  hint?: string;
+  /** Texto o nodo (p. ej. dos líneas con colores propios). */
+  hint?: React.ReactNode;
   required?: boolean;
   error?: string;
   children: React.ReactNode;

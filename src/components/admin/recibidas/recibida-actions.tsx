@@ -44,6 +44,7 @@ import {
   updateRecibidaAction,
 } from "@/app/admin/facturas-recibidas/actions";
 import type { FacturaRecibida } from "@/types/invoices";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 
 export interface GastoOption {
   id: string;
@@ -79,7 +80,7 @@ export function RecibidaActions({
     .filter((g) => !gastos.some((o) => o.id === g.id))
     .map((g) => ({
       id: g.id,
-      label: `${g.fecha_gasto ?? ""} · ${g.categoria} · ${Number(g.monto).toLocaleString("es-MX")} ${g.moneda}${g.lugar ? ` · ${g.lugar}` : ""}`,
+      label: `${g.fecha_gasto ?? ""} · ${categoriaGastoLabel(g.categoria)} · ${Number(g.monto).toLocaleString("es-MX")} ${g.moneda}${g.lugar ? ` · ${g.lugar}` : ""}`,
       monto: Number(g.monto),
       moneda: g.moneda,
     }));

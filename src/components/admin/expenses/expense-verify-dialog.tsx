@@ -50,10 +50,11 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
-  categoriaGastoLabel,
-  hojaDestinoGasto,
+  opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
+import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
@@ -65,32 +66,16 @@ import {
 } from "@/components/admin/expenses/vuelo-cancelado-hint";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 
-// Etiquetas desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto); aquí solo
-// vive el ORDEN del select. Semántica de cada categoría: ver ese archivo.
-const CATEGORIAS = [
-  "GAS",
-  "ATERRIZAJE",
-  "OPERACIONES",
-  "TUAS",
-  "FBO",
-  "COMIDA",
-  "HOTEL",
-  "TAXI",
-  "REFACCION",
-  "PERMISO",
-  "PILOTO_EXTERNO",
-  // Sin vuelo (avión opcional): INDIRECTO/NOMINA; SERVICIOS es del avión.
-  "INDIRECTO",
-  "NOMINA",
-  "SERVICIOS",
-  // El API exige sin vuelo y sin avión para GASOLINA/VISITA/PERSONAL_DUENO
-  // (400 con mensaje claro si el gasto los tiene: quitarlos primero).
-  "GASOLINA",
-  "PERSONAL_DUENO",
-  "OTRO",
-  // FIJO y VISITA son LEGADO: no se ofrecen para reclasificar, pero un gasto
-  // histórico que las traiga se agrega a sus opciones (ver categoriaOptions).
-].map((value) => ({ value, label: categoriaGastoLabel(value) }));
+// Opciones desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto): orden de
+// captura + ATERRIZAJE (solo se reclasifica aquí, tras GAS), etiqueta y
+// destino por default en verde. El API exige sin vuelo y sin avión para
+// GASOLINA/VISITA/PERSONAL_DUENO (400 con mensaje claro si el gasto los
+// tiene: quitarlos primero). FIJO y VISITA son LEGADO: no se ofrecen para
+// reclasificar, pero un gasto histórico que las traiga se agrega a sus
+// opciones (ver categoriaOptions).
+const CATEGORIAS = CATEGORIAS_CAPTURA.flatMap((c) =>
+  c === "GAS" ? [c, "ATERRIZAJE"] : [c],
+).map(opcionCategoriaGasto);
 
 const MEDIOS = [
   { value: "EFECTIVO", label: "Efectivo (caja chica)" },
@@ -198,7 +183,7 @@ export function ExpenseVerifyDialog({
         ? CATEGORIAS
         : [
             ...CATEGORIAS,
-            { value: gasto.categoria, label: categoriaGastoLabel(gasto.categoria) },
+            opcionCategoriaGasto(gasto.categoria),
           ],
     [gasto.categoria],
   );
@@ -1045,13 +1030,15 @@ export function ExpenseVerifyDialog({
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="Categoría"
-              // ¿A qué hoja del balance cae? — reactivo a categoría, vuelo y
-              // avión elegidos (fuente única hojaDestinoGasto).
-              hint={`Cae en: ${hojaDestinoGasto(
-                watch("categoria"),
-                !!vueloSel,
-                !!watch("aeronave_id"),
-              )}`}
+              // Línea 1: destino POR DEFAULT de la categoría (verde);
+              // línea 2: a qué hoja cae con el vuelo/avión elegidos.
+              hint={
+                <CategoriaDestinoHint
+                  categoria={watch("categoria")}
+                  tieneVuelo={!!vueloSel}
+                  tieneAvion={!!watch("aeronave_id")}
+                />
+              }
             >
               <SearchableSelect
                 options={categoriaOptions}

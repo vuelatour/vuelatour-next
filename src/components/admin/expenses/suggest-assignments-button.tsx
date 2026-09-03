@@ -18,6 +18,7 @@ import {
   sugerirAsignacionesBandejaAction,
   type SugerenciaBandeja,
 } from "@/app/admin/expenses/actions";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 
 function fmtMonto(g: SugerenciaBandeja["gasto"]): string {
   if (g.monto == null) return "—";
@@ -143,7 +144,7 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
                       />
                       <div className="min-w-0">
                         <p className="font-medium">
-                          {r.gasto.categoria ?? "GASTO"} · {fmtMonto(r.gasto)}
+                          {categoriaGastoLabel(r.gasto.categoria ?? "GASTO")} · {fmtMonto(r.gasto)}
                           <span className="text-muted-foreground font-normal">
                             {" "}
                             · {r.gasto.fecha_gasto ?? "sin fecha"} ·{" "}
@@ -187,7 +188,7 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
                       className="rounded-lg border border-dashed border-border px-3 py-2 text-xs"
                     >
                       <span className="font-medium">
-                        {r.gasto.categoria ?? "GASTO"} · {fmtMonto(r.gasto)} ·{" "}
+                        {categoriaGastoLabel(r.gasto.categoria ?? "GASTO")} · {fmtMonto(r.gasto)} ·{" "}
                         {r.gasto.capturo_nombre ?? "¿quién?"}
                       </span>
                       <span className="text-muted-foreground"> — {r.razon}</span>

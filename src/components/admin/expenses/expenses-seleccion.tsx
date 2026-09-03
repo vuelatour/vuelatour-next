@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { unirGastosEnCompraAction } from "@/app/admin/inventory/compras/actions";
 import { fmtDateOnly } from "@/lib/datetime";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { fmtMontoMoneda, sugerirRolCompra, COMPRA_ROL_LABELS } from "@/types/compras";
 import type { Gasto } from "@/types/expenses";
 
@@ -249,7 +250,7 @@ function UnirCompraDialog({
                 />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">
-                    {fmtDateOnly(g.fecha_gasto)} · {g.categoria} ·{" "}
+                    {fmtDateOnly(g.fecha_gasto)} · {categoriaGastoLabel(g.categoria)} ·{" "}
                     <span className="tabular-nums">{fmtMontoMoneda(g.monto, g.moneda)}</span>
                   </p>
                   <p className="truncate text-xs text-muted-foreground">

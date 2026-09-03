@@ -20,6 +20,7 @@ import {
   type GastoCandidato,
 } from "@/app/admin/inventory/compras/actions";
 import { fmtDateOnly } from "@/lib/datetime";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
   COMPRA_ROL_OPTIONS,
   fmtMontoMoneda,
@@ -110,7 +111,7 @@ export function CompraPagoAddDialog({
             <SearchableSelect
               options={(candidatos ?? []).map((g) => ({
                 value: g.id,
-                label: `${fmtDateOnly(g.fecha_gasto)} · ${g.categoria} · ${fmtMontoMoneda(g.monto, g.moneda)}`,
+                label: `${fmtDateOnly(g.fecha_gasto)} · ${categoriaGastoLabel(g.categoria)} · ${fmtMontoMoneda(g.monto, g.moneda)}`,
                 description: [g.proveedor, g.descripcion].filter(Boolean).join(" · ") || undefined,
               }))}
               value={gastoId}

@@ -26,6 +26,7 @@ import { MesStatsSelector } from "@/components/admin/pilots/mes-stats-selector";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import type {
   PilotCapture,
@@ -794,7 +795,7 @@ function ExpensesCard({ expenses }: { expenses: PilotExpense[] }) {
               className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{g.categoria}</p>
+                <p className="text-sm font-medium">{categoriaGastoLabel(g.categoria)}</p>
                 <p className="text-xs text-muted-foreground">
                   {fmtDate(g.fecha_gasto)}
                   {g.foto_url ? (

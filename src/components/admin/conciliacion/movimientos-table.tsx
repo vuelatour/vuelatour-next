@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import type { MovimientoBancario } from "@/types/conciliacion";
 
 const fmtMoney = (monto: string) =>
@@ -71,7 +72,7 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
               className="block text-sm text-emerald-600 hover:underline"
               title="Ver el gasto con el que se concilió"
             >
-              {m.gasto.categoria} · ${fmtMoney(m.gasto.monto)}
+              {categoriaGastoLabel(m.gasto.categoria)} · ${fmtMoney(m.gasto.monto)}
               {m.gasto.vuelo?.folio != null && (
                 <span className="text-muted-foreground"> · vuelo #{m.gasto.vuelo.folio}</span>
               )}

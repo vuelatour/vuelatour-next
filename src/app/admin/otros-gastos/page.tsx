@@ -16,6 +16,7 @@ import { OtrosGastosFilterBar } from "@/components/admin/expenses/otros-gastos-f
 import { listOtrosGastos } from "@/lib/api/expenses-server";
 import { todayCancun, fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import type { OtrosGastosResumen } from "@/types/expenses";
 
 export const dynamic = "force-dynamic";
@@ -227,7 +228,7 @@ function ResumenMes({
                         {fmtDateOnly(d.fecha_gasto)}
                       </span>
                       <Badge variant="outline" className="shrink-0 text-[10px]">
-                        {d.categoria}
+                        {categoriaGastoLabel(d.categoria)}
                       </Badge>
                       <span className="truncate" title={d.descripcion ?? undefined}>
                         {d.descripcion ?? "Sin descripción"}

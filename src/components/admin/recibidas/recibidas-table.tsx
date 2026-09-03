@@ -8,6 +8,7 @@ import {
   type GastoOption,
 } from "@/components/admin/recibidas/recibida-actions";
 import type { FacturaRecibida } from "@/types/invoices";
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 
 const ESTADO: Record<FacturaRecibida["estado"], { label: string; cls: string }> = {
   SIN_CLASIFICAR: {
@@ -73,7 +74,7 @@ export function RecibidasTable({
       cellClassName: "text-sm text-muted-foreground",
       cell: (r) =>
         r.gastos && r.gastos.length > 1 ? (
-          <span title={r.gastos.map((g) => `${g.categoria} · ${fmtMoney(g.monto, g.moneda)}`).join("\n")}>
+          <span title={r.gastos.map((g) => `${categoriaGastoLabel(g.categoria)} · ${fmtMoney(g.monto, g.moneda)}`).join("\n")}>
             {r.gastos.length} gastos ·{" "}
             {fmtMoney(
               String(r.gastos.reduce((acc, g) => acc + Number(g.monto), 0)),
@@ -81,9 +82,9 @@ export function RecibidasTable({
             )}
           </span>
         ) : r.gastos && r.gastos.length === 1 ? (
-          `${r.gastos[0].categoria} · ${fmtMoney(r.gastos[0].monto, r.gastos[0].moneda)}`
+          `${categoriaGastoLabel(r.gastos[0].categoria)} · ${fmtMoney(r.gastos[0].monto, r.gastos[0].moneda)}`
         ) : r.gasto ? (
-          `${r.gasto.categoria} · ${fmtMoney(r.gasto.monto, r.gasto.moneda)}`
+          `${categoriaGastoLabel(r.gasto.categoria)} · ${fmtMoney(r.gasto.monto, r.gasto.moneda)}`
         ) : (
           "—"
         ),

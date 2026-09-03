@@ -379,7 +379,10 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                       {detalle.gastos_por_categoria.map((g) => (
                         <TableRow key={`${g.grupo}-${g.categoria}`}>
                           <TableCell className="text-xs">
-                            {categoriaGastoLabel(g.categoria)}
+                            {/* Etiqueta homologada del API (conserva el sufijo
+                                " (repartido)" de la clave); el fallback local
+                                cubre un API viejo sin `etiqueta`. */}
+                            {g.etiqueta ?? categoriaGastoLabel(g.categoria)}
                             {g.sin_tc_count > 0 && (
                               <span className="mt-0.5 flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
                                 <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />
