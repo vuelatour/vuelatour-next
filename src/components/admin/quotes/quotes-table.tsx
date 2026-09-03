@@ -23,6 +23,12 @@ export interface QuoteListRow {
   operadorExterno: string | null;
   /** Ruta ya unida, p. ej. "CUN → MID → CUN". */
   ruta: string;
+  /** Avión cotizado: matrícula de la flota (o del avión ajeno en externos);
+      null = sin avión asignado todavía. */
+  avionMatricula: string | null;
+  avionModelo: string | null;
+  /** Aviones adicionales en cotizaciones multi-avión (0 = uno solo). */
+  avionesExtra: number;
   fechaVuelo: string | null;
   /** Fecha de la solicitud (cuándo se capturó): ordena las filas SIN fecha
       de vuelo — las recién creadas van PRIMERO, no perdidas al fondo. */
@@ -69,6 +75,29 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
     header: "Ruta",
     cellClassName: "font-mono text-xs",
     cell: (q) => q.ruta,
+  },
+  {
+    key: "avion",
+    header: "Avión",
+    cellClassName: "text-xs",
+    cell: (q) =>
+      q.avionMatricula ? (
+        <span className="inline-flex flex-col leading-tight">
+          <span className="font-mono">
+            {q.avionMatricula}
+            {q.avionesExtra > 0 && (
+              <span className="ml-1 text-[10px] text-muted-foreground">
+                +{q.avionesExtra}
+              </span>
+            )}
+          </span>
+          {q.avionModelo && (
+            <span className="text-[10px] text-muted-foreground">{q.avionModelo}</span>
+          )}
+        </span>
+      ) : (
+        <span className="text-[10px] text-muted-foreground">Sin avión</span>
+      ),
   },
   {
     key: "fecha",
@@ -179,9 +208,9 @@ export function QuotesTable({
       rowKey={(q) => q.id}
       rowHref={(q) => `/admin/quotes/${q.id}`}
       searchText={(q) =>
-        `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta}`
+        `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""}`
       }
-      searchPlaceholder="Buscar cotización (folio, cliente, ruta)…"
+      searchPlaceholder="Buscar cotización (folio, cliente, ruta, avión)…"
     />
   );
 }

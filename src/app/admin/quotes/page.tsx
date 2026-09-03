@@ -36,12 +36,16 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         q: sp.q || undefined,
       }),
       listClients({ limit: 200, activo: true }),
-      listAircraft({ limit: 100, activa: true }),
+      // TODA la flota (no solo activa): la columna "Avión" debe resolver la
+      // matrícula aunque el avión ya esté dado de baja; el alta de reserva
+      // filtra las activas abajo.
+      listAircraft({ limit: 100 }),
       listPilots({ estado: "ACTIVO", limit: 200 }),
       listAirports({ limit: 200, activo: true }),
     ]);
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
+  const aircraftById = new Map(aircraftRes.data.map((a) => [a.id, a]));
   const { data: quotes, count } = quotesRes;
 
   // Semáforo de cobro (cotización y vuelo comparten id): batch solo para
@@ -69,6 +73,15 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       ? q.ruta_iatas
       : [q.origen_iata, q.destino_iata]
     ).join(" → "),
+    // Avión cotizado (pedido 3-sep): matrícula de la flota o, en externos,
+    // la matrícula del avión ajeno; multi-avión agrega "+N".
+    avionMatricula: q.es_externo
+      ? (q.avion_externo_matricula ?? null)
+      : (q.aeronave_id ? (aircraftById.get(q.aeronave_id)?.matricula ?? null) : null),
+    avionModelo: q.es_externo
+      ? null
+      : (q.aeronave_id ? (aircraftById.get(q.aeronave_id)?.modelo ?? null) : null),
+    avionesExtra: Math.max(0, (q.participacion_aviones?.length ?? 1) - 1),
     fechaVuelo: q.fecha_vuelo,
     // Cuándo se capturó: ordena las filas sin fecha de vuelo (nuevas arriba).
     fechaSolicitud: q.fecha_solicitud ?? q.created_at ?? null,
@@ -128,11 +141,13 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
               iata: a.iata,
               nombre: a.nombre,
             }))}
-            aircraft={aircraftRes.data.map((a) => ({
-              id: a.id,
-              matricula: a.matricula,
-              modelo: a.modelo,
-            }))}
+            aircraft={aircraftRes.data
+              .filter((a) => a.activa)
+              .map((a) => ({
+                id: a.id,
+                matricula: a.matricula,
+                modelo: a.modelo,
+              }))}
             pilots={pilotsRes.data.map((p) => ({
               id: p.id,
               nombre: p.nombre,
