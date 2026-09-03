@@ -18,6 +18,12 @@ export interface User {
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Dispositivos con token push registrados (3-sep-2026). 0 = no recibe
+   * avisos (eventos, vuelos): oficina debe avisarle por otro medio. Ausente
+   * con API viejo — nunca inventar un 0.
+   */
+  push_dispositivos?: number;
 }
 
 export type UserListResponse = ListResponse<User>;

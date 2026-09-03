@@ -232,7 +232,8 @@ export function RemoveEventoButton({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Quitar este evento?</AlertDialogTitle>
             <AlertDialogDescription>
-              {label}. Se elimina del calendario (no toca ningún vuelo).
+              {label}. Se elimina del calendario y se le avisa al responsable.
+              No toca ningún vuelo.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

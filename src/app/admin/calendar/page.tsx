@@ -2,10 +2,24 @@ import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { listCalendar } from "@/lib/api/calendar-server";
 import { listPilots } from "@/lib/api/pilots-server";
+import { listAircraft } from "@/lib/api/aircraft";
+import { listUsers } from "@/lib/api/users-server";
 import { MarkRestButton } from "@/components/admin/calendar/descansos";
+import {
+  CreateEventoButton,
+  type EventoFlotaResumen,
+  type OpcionAeronave,
+  type OpcionResponsable,
+} from "@/components/admin/calendar/eventos";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
-import { CalendarGrid, type CalendarDay } from "@/components/admin/calendar/calendar-grid";
+import {
+  CalendarGrid,
+  type CalendarDay,
+  type EventosCtx,
+} from "@/components/admin/calendar/calendar-grid";
 import type { CalendarEvent } from "@/types/calendar";
+import type { Aircraft } from "@/types/aircraft";
+import type { User } from "@/types/users";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +67,7 @@ export default async function CalendarPage({
     `${year}-${mes}-${String(ultimoDia).padStart(2, "0")}T23:59:59-05:00`,
   );
 
-  const [{ events }, pilotsRes] = await Promise.all([
+  const [{ events }, pilotsRes, aircraftRes, usersRes] = await Promise.all([
     listCalendar({
       from: monthStart.toISOString(),
       to: monthEnd.toISOString(),
@@ -61,11 +75,73 @@ export default async function CalendarPage({
       incluir_mantenimientos: true,
     }),
     listPilots({ estado: "ACTIVO", limit: 200 }).catch(() => ({ data: [] })),
+    // Catálogos del editor de eventos (best-effort: sin ellos el calendario
+    // carga igual, solo con selectores vacíos).
+    listAircraft({ activa: true, limit: 100 }).catch(() => ({ data: [] as Aircraft[] })),
+    // /v1/users es solo ADMIN: COORDINADOR cae al catálogo de pilotos.
+    listUsers({ estado: "ACTIVO", limit: 200 }).catch(() => null),
   ]);
-  const pilots = (pilotsRes.data as { id: string; nombre: string }[]).map((p) => ({
+  const pilots = (pilotsRes.data as { id: string; nombre: string; es_piloto_externo?: boolean }[]).map((p) => ({
     id: p.id,
     nombre: p.nombre,
+    es_piloto_externo: p.es_piloto_externo,
   }));
+
+  // Responsables de eventos: cualquier usuario ACTIVO con app (no externos,
+  // no visitantes). Con la lista de usuarios viene push_dispositivos y el
+  // selector advierte "sin la app registrada" ANTES de agendar.
+  const responsables: OpcionResponsable[] = usersRes
+    ? (usersRes.data as User[])
+        .filter((u) => u.estado === "ACTIVO" && !u.es_piloto_externo && u.rol !== "VISITANTE")
+        .map((u) => ({
+          id: u.id,
+          nombre: u.nombre,
+          rol: u.rol,
+          push_dispositivos: u.push_dispositivos,
+        }))
+    : pilots
+        .filter((p) => !p.es_piloto_externo)
+        .map((p) => ({ id: p.id, nombre: p.nombre, rol: "PILOTO" }));
+  responsables.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  const aircraftOpts: OpcionAeronave[] = (aircraftRes.data as Aircraft[]).map((a) => ({
+    id: a.id,
+    matricula: a.matricula,
+    modelo: a.modelo,
+  }));
+
+  // Resumen por evento_flota para el botón Editar: el API expande un item
+  // por día (id compuesto "evento:<id>:<día>"); el primer día trae la hora
+  // real (hora != null) y sirve de inicio; el último día visible, de fin
+  // aproximado cuando dura más de un día. Lo que no se conoce no se manda
+  // en el PATCH y se conserva.
+  const eventosFlota: Record<string, EventoFlotaResumen> = {};
+  const ultimoDiaPorEvento = new Map<string, string>();
+  const diasPorEvento = new Map<string, number>();
+  for (const e of events) {
+    if (e.tipo_evento !== "evento" || !e.evento_id || !e.fecha_vuelo) continue;
+    const dia = cancunKey(new Date(e.fecha_vuelo));
+    const r =
+      eventosFlota[e.evento_id] ??
+      (eventosFlota[e.evento_id] = {
+        id: e.evento_id,
+        titulo: e.titulo ?? e.title,
+        notas: e.notas ?? null,
+        aeronave_id: e.aeronave_id,
+        responsable_id: e.piloto_id,
+        responsable_nombre: e.piloto_nombre,
+        fecha_inicio: null,
+        fecha_fin_aprox: null,
+      });
+    if (e.hora) r.fecha_inicio = e.fecha_vuelo;
+    diasPorEvento.set(e.evento_id, (diasPorEvento.get(e.evento_id) ?? 0) + 1);
+    const prev = ultimoDiaPorEvento.get(e.evento_id);
+    if (!prev || dia > prev) ultimoDiaPorEvento.set(e.evento_id, dia);
+  }
+  for (const [id, dias] of diasPorEvento) {
+    if (dias > 1) eventosFlota[id]!.fecha_fin_aprox = ultimoDiaPorEvento.get(id) ?? null;
+  }
+  const eventosCtx: EventosCtx = { eventosFlota, aircraft: aircraftOpts, responsables };
 
   // Agrupa eventos por día local.
   const byDay = new Map<string, CalendarEvent[]>();
@@ -112,7 +188,8 @@ export default async function CalendarPage({
             {MESES[month]} {year}
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CreateEventoButton aircraft={aircraftOpts} responsables={responsables} />
           <MarkRestButton pilots={pilots} />
           <ResyncGoogleButton />
           <Link
@@ -140,7 +217,7 @@ export default async function CalendarPage({
 
       <Legend />
 
-      <CalendarGrid days={days} />
+      <CalendarGrid days={days} eventosCtx={eventosCtx} />
     </div>
   );
 }
@@ -151,7 +228,8 @@ function Legend() {
     {
       label: "Evento (no vuelo)",
       color: "#0EA5E9",
-      title: "Lavado, trámite, visita… agendado desde la app o el panel. Con avión toma su color.",
+      title:
+        "Cita, lavado, trámite… agendado desde la app o el panel (Nuevo evento). Con avión toma su color. Al agendar se avisa por push al responsable; ⚠ = no tiene la app registrada.",
     },
     {
       label: "Tentativo",
@@ -190,6 +268,10 @@ function Legend() {
       ))}
       <span className="text-muted-foreground/70">
         El color de la aeronave se configura por aeronave; aquí se muestra el real de cada vuelo.
+      </span>
+      <span className="text-muted-foreground/70">
+        Al agendar un evento se avisa por push al responsable; ⚠ = no tiene la app registrada
+        (avísale por otro medio).
       </span>
     </div>
   );

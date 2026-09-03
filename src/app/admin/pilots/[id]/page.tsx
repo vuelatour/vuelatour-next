@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { fmtDate as sharedFmtDate, fmtDateTime as sharedFmtDateTime } from "@/lib/datetime";
+import {
+  fmtDate as sharedFmtDate,
+  fmtDateTime as sharedFmtDateTime,
+  fmtWeekdayDateTime,
+} from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import {
   EnvelopeIcon,
@@ -13,6 +17,7 @@ import {
   ClockIcon,
   ReceiptPercentIcon,
   ExclamationTriangleIcon,
+  ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -28,6 +33,7 @@ import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import type { EventoMe } from "@/types/calendar";
 import type {
   PilotCapture,
   PilotDescanso,
@@ -51,6 +57,13 @@ function initials(name: string): string {
 
 const fmtDateTime = sharedFmtDateTime;
 const fmtDate = sharedFmtDate;
+
+/** Instante ISO → día Cancún YYYY-MM-DD (para saber si una cita es hoy). */
+function diaCancun(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cancun" }).format(
+    new Date(iso),
+  );
+}
 
 /** Hoy en Cancún como YYYY-MM-DD (los descansos son días de pared). */
 function hoyCancun(): string {
@@ -156,6 +169,7 @@ export default async function PilotDetailPage({
         pilotoId={pilot.id}
         vencimientos={vencimientos}
         descansos={pilot.descansos_proximos ?? []}
+        eventos={pilot.eventos_proximos ?? []}
         horasMes={pilot.stats.horas_mes ?? 0}
         horasLimite={pilot.stats.horas_limite ?? 90}
       />
@@ -268,7 +282,13 @@ export default async function PilotDetailPage({
         <DescansosCard descansos={pilot.descansos_proximos ?? []} />
       </div>
 
-      {pilot.honorarios && <HonorariosCard honorarios={pilot.honorarios} />}
+      {/* Eventos NO-vuelo de los que es responsable (3-sep-2026): oficina
+          ve aquí qué citas tiene pendientes y si le llegó el aviso es cosa
+          del calendario. */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <EventosCard eventos={pilot.eventos_proximos ?? []} />
+        {pilot.honorarios && <HonorariosCard honorarios={pilot.honorarios} />}
+      </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
         <CapturesCard captures={pilot.capturas_recientes} />
@@ -463,16 +483,19 @@ function AlertasPiloto({
   pilotoId,
   vencimientos,
   descansos,
+  eventos,
   horasMes,
   horasLimite,
 }: {
   pilotoId: string;
   vencimientos: Expiration[];
   descansos: PilotDescanso[];
+  eventos: EventoMe[];
   horasMes: number;
   horasLimite: number;
 }) {
   const hoy = hoyCancun();
+  const citasHoy = eventos.filter((e) => diaCancun(e.fecha) === hoy);
   const vencidos = vencimientos.filter((v) => v.estado === "VENCIDO");
   const proximos = vencimientos.filter((v) => v.estado === "PROXIMO");
   const descansoHoy = descansos.find(
@@ -504,6 +527,13 @@ function AlertasPiloto({
     items.push({
       tono: "ambar",
       texto: `Hoy está de descanso (${fmtDate(descansoHoy.fecha_inicio)} – ${fmtDate(descansoHoy.fecha_fin)}${descansoHoy.motivo ? ` · ${descansoHoy.motivo}` : ""}).`,
+    });
+  }
+  for (const c of citasHoy) {
+    items.push({
+      tono: "ambar",
+      texto: `Hoy tiene cita: ${fmtWeekdayDateTime(c.fecha)} · ${c.titulo}${c.aeronave_matricula ? ` · ${c.aeronave_matricula}` : ""}${c.notas ? ` · ${c.notas}` : ""}`,
+      href: `/admin/calendar?y=${hoy.slice(0, 4)}&m=${Number(hoy.slice(5, 7))}`,
     });
   }
   if (horasLimite > 0 && horasMes >= horasLimite) {
@@ -727,6 +757,80 @@ function DescansosCard({ descansos }: { descansos: PilotDescanso[] }) {
             </span>
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Eventos NO-vuelo (citas, trámites, lavados) de los que el piloto es
+ * responsable: hoy → +60 días. Incidente 3-sep-2026: una cita agendada desde
+ * la app no llegó al piloto y oficina no tenía dónde verla en su expediente.
+ */
+function EventosCard({ eventos }: { eventos: EventoMe[] }) {
+  const hoy = hoyCancun();
+  return (
+    <Card>
+      <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2 space-y-0">
+        <CardTitle className="text-base flex items-center gap-2">
+          <ClipboardDocumentCheckIcon className="h-4 w-4 text-muted-foreground" />
+          Eventos y citas próximos
+        </CardTitle>
+        <Link
+          href="/admin/calendar"
+          className="text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+        >
+          Calendario <ChevronRightIcon className="h-3.5 w-3.5" />
+        </Link>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {eventos.length === 0 && (
+          <p className="text-sm text-muted-foreground py-2">
+            Sin eventos asignados. Se agendan desde el Calendario (Nuevo
+            evento) o desde la app.
+          </p>
+        )}
+        {eventos.map((e) => {
+          const esHoy = diaCancun(e.fecha) === hoy;
+          const finOtroDia = e.fecha_fin && diaCancun(e.fecha_fin) !== diaCancun(e.fecha);
+          return (
+            <div
+              key={e.id}
+              className={`rounded-md border px-3 py-2 text-sm ${
+                esHoy ? "border-amber-500/40 bg-amber-500/5" : "border-border"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium truncate">
+                  {fmtWeekdayDateTime(e.fecha)}
+                  {finOtroDia && (
+                    <span className="text-muted-foreground font-normal">
+                      {" "}
+                      → {sharedFmtDate(e.fecha_fin)}
+                    </span>
+                  )}
+                  {" · "}
+                  {e.titulo}
+                </p>
+                {esHoy && (
+                  <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                    Hoy
+                  </span>
+                )}
+              </div>
+              {(e.aeronave_matricula || e.notas) && (
+                <p className="text-xs text-muted-foreground">
+                  {[e.aeronave_matricula, e.notas].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              {e.creado_por_nombre && (
+                <p className="text-[11px] text-muted-foreground/70">
+                  Agendó: {e.creado_por_nombre}
+                </p>
+              )}
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );

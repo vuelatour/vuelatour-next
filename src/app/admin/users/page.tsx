@@ -21,6 +21,8 @@ export default async function UsersPage() {
           <p className="text-sm text-muted-foreground mt-1">
             {count} {count === 1 ? "usuario" : "usuarios"}. Invita a alguien con su correo de Google
             o deja que entre solo si es de un dominio de la empresa; desde aquí se asigna rol y estado.
+            La columna Push dice si tiene la app con avisos activos (&ldquo;Sin app&rdquo; = no le
+            llegan avisos de eventos ni vuelos).
           </p>
         </div>
         <UserInviteButton />

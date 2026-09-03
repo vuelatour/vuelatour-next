@@ -32,4 +32,6 @@ export interface MeResponse {
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
+  /** Dispositivos push del propio usuario (3-sep-2026; ausente = API viejo). */
+  push_dispositivos?: number;
 }

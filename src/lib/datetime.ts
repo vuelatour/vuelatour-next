@@ -53,6 +53,23 @@ export function fmtDate(iso?: string | null): string {
   }).format(d);
 }
 
+/**
+ * timestamptz → "jue, 3 sep, 09:45" (hora Cancún). Para citas/eventos: el
+ * día de la semana ayuda a ubicar la cita de un vistazo.
+ */
+export function fmtWeekdayDateTime(iso?: string | null): string {
+  const d = valid(iso);
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: CANCUN_TZ,
+  }).format(d);
+}
+
 /** timestamptz → "10:00" (hora Cancún). */
 export function fmtTime(iso?: string | null): string {
   const d = valid(iso);

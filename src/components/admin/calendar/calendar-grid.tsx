@@ -6,6 +6,13 @@ import { XMarkIcon, ArrowUpRightIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import type { CalendarEvent } from "@/types/calendar";
 import { RemoveDescansoButton, RemoveEventoButton } from "./descansos";
+import {
+  AvisoResponsable,
+  EditEventoButton,
+  type EventoFlotaResumen,
+  type OpcionAeronave,
+  type OpcionResponsable,
+} from "./eventos";
 import { textOnColor } from "@/lib/color-contrast";
 
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -30,7 +37,23 @@ function tituloDia(iso: string): string {
   }).format(d);
 }
 
-export function CalendarGrid({ days }: { days: CalendarDay[] }) {
+/** Catálogos y resúmenes que necesita el editor de eventos NO-vuelo. */
+export interface EventosCtx {
+  /** Resumen por evento_id (armado por la página a partir de los días). */
+  eventosFlota: Record<string, EventoFlotaResumen>;
+  aircraft: OpcionAeronave[];
+  responsables: OpcionResponsable[];
+}
+
+const CTX_VACIO: EventosCtx = { eventosFlota: {}, aircraft: [], responsables: [] };
+
+export function CalendarGrid({
+  days,
+  eventosCtx = CTX_VACIO,
+}: {
+  days: CalendarDay[];
+  eventosCtx?: EventosCtx;
+}) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selected = days.find((d) => d.key === selectedKey) ?? null;
 
@@ -102,8 +125,8 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
                 <h3 className="text-base font-semibold capitalize">{tituloDia(selected.iso)}</h3>
                 <p className="text-xs text-muted-foreground">
                   {selected.events.length === 0
-                    ? "Sin vuelos"
-                    : `${selected.events.length} vuelo${selected.events.length === 1 ? "" : "s"}`}
+                    ? "Sin agenda"
+                    : `${selected.events.length} en agenda`}
                 </p>
               </div>
               <button
@@ -118,12 +141,12 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
 
             {selected.events.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                No hay vuelos agendados este día.
+                No hay vuelos ni eventos agendados este día.
               </p>
             ) : (
               <div className="space-y-2">
                 {selected.events.map((e) => (
-                  <DayEvent key={e.id} ev={e} />
+                  <DayEvent key={e.id} ev={e} ctx={eventosCtx} />
                 ))}
               </div>
             )}
@@ -157,15 +180,24 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
       </Link>
     );
   }
-  // Evento NO-vuelo (lavado, trámite, visita): chip sin link a vuelo.
+  // Evento NO-vuelo (cita, lavado, trámite): chip sin link a vuelo. Con hora
+  // y responsable; ⚠ = el responsable no tiene la app registrada (el aviso
+  // push no le llega — oficina debe hablarle).
   if (ev.tipo_evento === "evento") {
+    const sinApp = Boolean(ev.piloto_id) && ev.responsable_push_dispositivos === 0;
+    const tip = sinApp
+      ? `${ev.title} · ⚠ ${ev.piloto_nombre ?? "responsable"} sin la app registrada: avísale por otro medio`
+      : ev.title;
     return (
       <span
-        title={ev.title}
+        title={tip}
         className="block rounded px-1.5 py-1 text-[11px] leading-tight truncate"
         style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
       >
-        📌 {ev.titulo ?? ev.title}
+        {sinApp ? "⚠ " : "📌 "}
+        {ev.hora ? `${ev.hora} ` : ""}
+        {ev.titulo ?? ev.title}
+        {ev.piloto_nombre ? ` · ${ev.piloto_nombre}` : ""}
       </span>
     );
   }
@@ -197,7 +229,7 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
   );
 }
 
-function DayEvent({ ev }: { ev: CalendarEvent }) {
+function DayEvent({ ev, ctx }: { ev: CalendarEvent; ctx: EventosCtx }) {
   if (ev.tipo_evento === "mantenimiento") {
     return (
       <Link
@@ -216,23 +248,35 @@ function DayEvent({ ev }: { ev: CalendarEvent }) {
     );
   }
   if (ev.tipo_evento === "evento") {
+    const resumen = ev.evento_id ? ctx.eventosFlota[ev.evento_id] : undefined;
     return (
-      <div className="rounded-lg border border-border p-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
-              <span className="font-medium text-sm truncate">
-                📌 {ev.hora ? `${ev.hora} · ` : ""}{ev.titulo ?? ev.title}
-                {ev.aeronave_matricula ? ` · ${ev.aeronave_matricula}` : ""}
-              </span>
-            </div>
-            {(ev.piloto_nombre || ev.notas) && (
-              <p className="mt-0.5 pl-5 text-xs text-muted-foreground truncate">
-                {[ev.piloto_nombre, ev.notas].filter(Boolean).join(" · ")}
-              </p>
-            )}
-          </div>
+      <div className="rounded-lg border border-border p-2.5 space-y-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+          <span className="font-medium text-sm truncate">
+            📌 {ev.hora ? `${ev.hora} · ` : ""}{ev.titulo ?? ev.title}
+            {ev.aeronave_matricula ? ` · ${ev.aeronave_matricula}` : ""}
+          </span>
+        </div>
+        {ev.notas && (
+          <p className="pl-5 text-xs text-muted-foreground whitespace-pre-wrap">{ev.notas}</p>
+        )}
+        {/* Entrega del aviso (3-sep-2026): verde = le llegó / puede llegar;
+            ámbar = no tiene la app registrada, hay que hablarle. */}
+        <div className="pl-5">
+          <AvisoResponsable
+            responsableNombre={ev.piloto_nombre}
+            pushDispositivos={ev.piloto_id ? ev.responsable_push_dispositivos : null}
+          />
+        </div>
+        <div className="flex items-center justify-end gap-3 pt-0.5">
+          {resumen && (
+            <EditEventoButton
+              evento={resumen}
+              aircraft={ctx.aircraft}
+              responsables={ctx.responsables}
+            />
+          )}
           {ev.evento_id && (
             <RemoveEventoButton eventoId={ev.evento_id} label={ev.titulo ?? ev.title} />
           )}

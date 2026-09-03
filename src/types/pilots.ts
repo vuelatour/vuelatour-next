@@ -1,4 +1,5 @@
 import type { ListResponse } from "./aircraft";
+import type { EventoMe } from "./calendar";
 import type { EstadoUsuario } from "./me";
 import type { User } from "./users";
 
@@ -103,6 +104,9 @@ export interface PilotDetail extends User {
   capturas_recientes: PilotCapture[];
   fondos: PilotFondo[];
   descansos_proximos?: PilotDescanso[];
+  /** Eventos NO-vuelo de los que es responsable (hoy → +60 días, máx 10).
+   *  Ausente con API viejo. */
+  eventos_proximos?: EventoMe[];
   honorarios?: PilotHonorarios | null;
 }
 

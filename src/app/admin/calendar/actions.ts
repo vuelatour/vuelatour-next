@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
+import type {
+  EventoFlotaInput,
+  EventoFlotaPatch,
+  EventoFlotaResponse,
+} from "@/types/calendar";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -49,11 +54,56 @@ export async function deleteDescansoAction(descansoId: string): Promise<ActionRe
   }
 }
 
+/**
+ * Agenda un evento NO-vuelo (lavado, trámite, cita) desde el panel. El API
+ * avisa por push al responsable y devuelve `aviso` con el resultado de la
+ * entrega (3-sep-2026): la UI lo usa para decirle a oficina si el aviso
+ * realmente puede llegar o hay que hablarle por otro medio.
+ */
+export async function createEventoFlotaAction(
+  payload: EventoFlotaInput,
+): Promise<ActionResult<EventoFlotaResponse>> {
+  try {
+    const data = await apiServer<EventoFlotaResponse>("/v1/calendar/eventos", {
+      method: "POST",
+      body: payload,
+    });
+    revalidatePath("/admin/calendar");
+    revalidatePath("/admin/pilots");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Edita un evento NO-vuelo. Solo viajan los campos que cambiaron (PATCH
+ * parcial): lo que no se manda se conserva en el API. `null` limpia fin,
+ * avión, responsable o notas.
+ */
+export async function updateEventoFlotaAction(
+  eventoId: string,
+  payload: EventoFlotaPatch,
+): Promise<ActionResult<EventoFlotaResponse>> {
+  try {
+    const data = await apiServer<EventoFlotaResponse>(
+      `/v1/calendar/eventos/${eventoId}`,
+      { method: "PATCH", body: payload },
+    );
+    revalidatePath("/admin/calendar");
+    revalidatePath("/admin/pilots");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Elimina un evento NO-vuelo (lavado, trámite) del calendario. */
 export async function deleteEventoFlotaAction(eventoId: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/calendar/eventos/${eventoId}`, { method: "DELETE" });
     revalidatePath("/admin/calendar");
+    revalidatePath("/admin/pilots");
     return { ok: true };
   } catch (err) {
     return fail(err);

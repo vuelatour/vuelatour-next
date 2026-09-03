@@ -28,6 +28,43 @@ const ESTADO_STYLES: Record<string, string> = {
   INACTIVO: "bg-muted text-muted-foreground border-border",
 };
 
+/**
+ * Dispositivos con avisos push (3-sep-2026): "Sin app" en rojo = a este
+ * usuario NO le llegan avisos (eventos, vuelos) — oficina debe hablarle por
+ * otro medio. "—" = piloto externo (nunca usa la app) o API sin el dato.
+ */
+function PushBadge({ user: u }: { user: User }) {
+  if (u.es_piloto_externo) {
+    return (
+      <span className="text-xs text-muted-foreground" title="Piloto externo: no usa la app.">
+        —
+      </span>
+    );
+  }
+  if (u.push_dispositivos === undefined) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  if (u.push_dispositivos === 0) {
+    return (
+      <Badge
+        className="bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/20"
+        title="No tiene la app con notificaciones permitidas: no recibirá avisos push. Pídele que abra la app y acepte las notificaciones."
+      >
+        Sin app
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="font-mono text-[11px]"
+      title="Dispositivos con avisos push activos."
+    >
+      {u.push_dispositivos} disp.
+    </Badge>
+  );
+}
+
 function buildColumns(meId: string): Array<DataTableColumn<User>> {
   return [
     {
@@ -79,6 +116,13 @@ function buildColumns(meId: string): Array<DataTableColumn<User>> {
       headClassName: "text-center",
       cellClassName: "text-center",
       cell: (u) => <Badge className={ESTADO_STYLES[u.estado] ?? ""}>{u.estado}</Badge>,
+    },
+    {
+      key: "push",
+      header: "Push",
+      headClassName: "text-center",
+      cellClassName: "text-center",
+      cell: (u) => <PushBadge user={u} />,
     },
     {
       key: "fondo",
