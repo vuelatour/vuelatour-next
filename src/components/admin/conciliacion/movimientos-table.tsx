@@ -7,6 +7,8 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { folioTexto } from "@/lib/admin/grupos-ui";
+import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { MovimientoBancario } from "@/types/conciliacion";
 
 const fmtMoney = (monto: string) =>
@@ -85,6 +87,46 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
                   .join(" · ") || "Gasto conciliado"}
               </span>
             </Link>
+          ) : m.conciliado && m.cobro_grupo_id ? (
+            // Conciliado contra el SOBRE de un grupo (lo que depositó el
+            // cliente por N aviones): se verifica en el detalle del grupo.
+            m.cobro_grupo ? (
+              <Link
+                href={`/admin/quotes/grupo/${m.cobro_grupo.grupo_id}`}
+                className="block text-sm text-emerald-600 hover:underline"
+                title={
+                  m.cobro_grupo.grupo_nombre
+                    ? `${m.cobro_grupo.grupo_nombre} — ver el grupo cuyo sobre se concilió`
+                    : "Ver el grupo cuyo sobre se concilió"
+                }
+              >
+                Cobro grupo {folioTexto(m.cobro_grupo.grupo_folio)}
+                {m.cobro_grupo.aviones_n > 0 && (
+                  <>
+                    {" "}
+                    · {m.cobro_grupo.aviones_n}{" "}
+                    {m.cobro_grupo.aviones_n === 1 ? "avión" : "aviones"}
+                  </>
+                )}
+                <span className="text-muted-foreground">
+                  {" "}
+                  · ${fmtMoney(String(m.cobro_grupo.monto))} {m.cobro_grupo.moneda}
+                </span>
+                <span className="block text-[10px] text-muted-foreground">
+                  {[
+                    metodoPagoLabel(m.cobro_grupo.metodo_cobro),
+                    // fecha_cobro es timestamptz: hora Cancún.
+                    m.cobro_grupo.fecha_cobro
+                      ? fmtDateCancun(m.cobro_grupo.fecha_cobro)
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Ver grupo"}
+                </span>
+              </Link>
+            ) : (
+              <span className="text-sm text-emerald-600">Cobro de grupo</span>
+            )
           ) : m.conciliado && m.cobro_id ? (
             m.cobro?.vuelo_id ? (
               <Link
@@ -99,7 +141,7 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
                 )}
                 <span className="block text-[10px] text-muted-foreground">
                   {[
-                    m.cobro.metodo_cobro?.replaceAll("_", " "),
+                    metodoPagoLabel(m.cobro.metodo_cobro),
                     // fecha_cobro es timestamptz: formatear en hora Cancún
                     // (recortar la fecha UTC correría el día en la noche).
                     m.cobro.fecha_cobro ? fmtDateCancun(m.cobro.fecha_cobro) : null,
@@ -151,7 +193,11 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
       columns={columns}
       rows={movimientos}
       rowKey={(m) => m.id}
-      searchText={(m) => `${m.descripcion ?? ""} ${m.monto} ${m.referencia ?? ""}`}
+      searchText={(m) =>
+        `${m.descripcion ?? ""} ${m.monto} ${m.referencia ?? ""} ${
+          m.cobro_grupo ? folioTexto(m.cobro_grupo.grupo_folio) : ""
+        }`
+      }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"
     />
   );

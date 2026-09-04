@@ -23,6 +23,9 @@ export interface MovimientoBancario {
   conciliado: boolean;
   gasto_id: string | null;
   cobro_id: string | null;
+  /** ABONO conciliado contra el SOBRE de un grupo (cobro_grupo), excluyente
+      con `cobro_id`. Aditivo (API previo no lo manda). */
+  cobro_grupo_id?: string | null;
   /** Conciliado por CLASIFICACIÓN (no corresponde a ningún vuelo). */
   clasificacion_id?: string | null;
   clasificacion?: { nombre: string } | null;
@@ -39,22 +42,90 @@ export interface MovimientoBancario {
     vuelo_id: string | null;
     vuelo?: { folio: number | null } | null;
   } | null;
+  /** Sobre de grupo conciliado (ABONOS): detalle + navegación al grupo.
+      Aditivo; null cuando la liga es por cobro de vuelo o gasto. */
+  cobro_grupo?: SobreConciliacion | null;
 }
 
-/** Cobro de vuelo candidato para conciliar un ABONO a mano. */
-export interface CobroCandidato {
-  /** id del cobro (cobro_vuelo) que se manda a PATCH movimientos/:id/cobro. */
+/**
+ * SOBRE de cobro de GRUPO tal como lo expone conciliación (lista de
+ * movimientos y candidatos). El banco concilia contra el sobre (lo que
+ * depositó el cliente); las partes por avión nunca se ofrecen.
+ */
+export interface SobreConciliacion {
+  tipo: "SOBRE_GRUPO";
+  cobro_grupo_id: string;
+  grupo_id: string;
+  grupo_folio: number | null;
+  grupo_nombre: string | null;
+  /** BRUTO en la moneda del sobre. */
+  monto: number;
+  moneda: string;
+  metodo: string;
+  /** Alias de `metodo` (paridad con cobro_vuelo). */
+  metodo_cobro: string;
+  /** timestamptz: formatear en hora Cancún al mostrar. */
+  fecha: string;
+  /** Alias de `fecha`. */
+  fecha_cobro: string;
+  referencia: string | null;
+  comision_banco_monto: number | null;
+  /** Lo que depositó el banco (monto − comisión). */
+  neto: number;
+  /** Partes (aviones) en las que se partió el sobre. */
+  aviones_n: number;
+}
+
+/** Cobro de VUELO candidato para conciliar un ABONO a mano
+ *  (GET movimientos/:id/candidatos-cobro). Se manda `{cobro_id}` al PATCH. */
+export interface CandidatoCobroVuelo {
+  tipo: "COBRO_VUELO";
+  /** = cobro_id. */
   id: string;
+  cobro_id: string;
   vuelo_id: string;
   folio: number | null;
   cliente: string | null;
   /** timestamptz: formatear en hora Cancún al mostrar. */
   fecha_cobro: string;
-  monto: string;
+  /** BRUTO. */
+  monto: number;
   moneda: string;
   metodo_cobro: string;
-  /** Lo que depositó el banco (monto − comisión); igual al monto sin comisión. */
+  referencia: string | null;
+  comision_banco_monto: number | null;
+  /** Lo que depositó el banco (monto − comisión). */
   neto: number;
+  /** |neto − monto del abono| (0 = cuadra exacto). */
+  dif_monto: number;
+}
+
+/** SOBRE de grupo candidato. Se manda `{cobro_grupo_id}` al PATCH. */
+export interface CandidatoSobreGrupo extends SobreConciliacion {
+  /** = cobro_grupo_id. */
+  id: string;
+  cliente: string | null;
+  /** |neto − monto del abono| (0 = cuadra exacto). */
+  dif_monto: number;
+}
+
+export type CandidatoCobro = CandidatoCobroVuelo | CandidatoSobreGrupo;
+
+/** Respuesta de GET /v1/conciliacion/movimientos/:id/candidatos-cobro. */
+export interface CandidatosCobroResponse {
+  movimiento: {
+    id: string;
+    fecha: string;
+    monto: number;
+    tipo: string;
+    moneda: string | null;
+    cobro_id: string | null;
+    cobro_grupo_id: string | null;
+  };
+  /** Ordenados por dif_monto asc y luego cercanía de fecha (tope 60). */
+  candidatos: CandidatoCobro[];
+  /** Cuántos cuadran exacto (dif_monto = 0). */
+  exactos: number;
 }
 
 export interface ConciliacionResumenCuenta {

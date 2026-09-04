@@ -12,12 +12,42 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { apiServer } from "@/lib/api/server";
+import { fmtDate } from "@/lib/datetime";
+import { fmtUsd } from "@/lib/format";
+import { folioTexto } from "@/lib/admin/grupos-ui";
 
 interface PreCierreVuelo {
   id: string;
   folio: number;
   estado?: string;
   saldo_usd?: number;
+  /** ADITIVO (grupos, 4-sep-2026): folio del grupo si el vuelo es hijo de
+      una cotización de grupo (cobros_pendientes). */
+  grupo_folio?: number | null;
+}
+
+/** Grupo con saldo por cobrar (clave grupo_con_saldo). Montos del API. */
+interface PreCierreGrupo {
+  grupo_id: string;
+  grupo_folio: number;
+  nombre: string | null;
+  aviones: number;
+  total_usd: number;
+  cobrado_usd: number;
+  saldo_usd: number;
+}
+
+/** Sobre de cobro de grupo descuadrado (clave sobres_descuadrados). */
+interface PreCierreSobre {
+  sobre_id: string;
+  grupo_id: string;
+  grupo_folio: number | null;
+  /** timestamptz: formatear en hora Cancún. */
+  fecha_cobro: string | null;
+  monto: number;
+  moneda: string;
+  suma_partes: number;
+  partes_en_cancelados: number;
 }
 
 interface PreCierreItem {
@@ -29,6 +59,9 @@ interface PreCierreItem {
   monto_mxn?: number;
   monto?: number;
   vuelos?: PreCierreVuelo[];
+  /** ADITIVOS (grupos): lista de grupos / sobres del aviso. */
+  grupos?: PreCierreGrupo[];
+  sobres?: PreCierreSobre[];
   /** ADITIVO: aviso informativo (el dinero YA cuenta; nada que resolver
       salvo confirmar). Se pinta en azul, sin "Resolver". */
   informativo?: boolean;
@@ -73,6 +106,12 @@ const LINK_POR_CLAVE: Record<
   externos_sin_honorario: () => "/admin/expenses",
   sin_conciliar: () => "/admin/conciliacion",
   repartos_incoherentes: () => "/admin/otros-gastos",
+  // Cotizaciones de GRUPO: la lista de grupos del periodo (cada grupo del
+  // item lleva además su link directo). El saldo se cobra desde "Cobros del
+  // grupo" (sobre) o por avión.
+  grupo_con_saldo: (p) => `/admin/quotes/grupo?desde=${p.desde}&hasta=${p.hasta}`,
+  // Sobre descuadrado: se re-parte desde Cobros del grupo.
+  sobres_descuadrados: (p) => `/admin/quotes/grupo?desde=${p.desde}&hasta=${p.hasta}`,
 };
 
 function fmtMonto(item: PreCierreItem): string | null {
@@ -202,6 +241,16 @@ export async function PreCierreCard({
                             : v.estado
                               ? ` (${v.estado})`
                               : ""}
+                          {/* Hijo de un grupo: "G-12" junto al folio. */}
+                          {v.grupo_folio != null && (
+                            <span
+                              className="text-fuchsia-700 dark:text-fuchsia-300"
+                              title="Vuelo de una cotización de grupo"
+                            >
+                              {" "}
+                              · {folioTexto(v.grupo_folio)}
+                            </span>
+                          )}
                         </Link>
                       ))}
                       {item.vuelos.length > 8 && (
@@ -210,6 +259,76 @@ export async function PreCierreCard({
                         </span>
                       )}
                     </p>
+                  )}
+                  {/* Grupos con saldo: total / cobrado / saldo por grupo
+                      (montos del API) con link al detalle del grupo. */}
+                  {item.grupos && item.grupos.length > 0 && (
+                    <ul className="text-xs mt-1 space-y-0.5">
+                      {item.grupos.slice(0, 8).map((g) => (
+                        <li key={g.grupo_id}>
+                          <Link
+                            href={`/admin/quotes/grupo/${g.grupo_id}`}
+                            className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
+                            title={g.nombre ?? undefined}
+                          >
+                            <span className="text-fuchsia-700 dark:text-fuchsia-300 font-medium">
+                              {folioTexto(g.grupo_folio)}
+                            </span>
+                            {g.nombre ? ` ${g.nombre}` : ""} · {g.aviones}{" "}
+                            {g.aviones === 1 ? "avión" : "aviones"} · total{" "}
+                            <span className="font-mono">{fmtUsd(g.total_usd)}</span> ·
+                            cobrado{" "}
+                            <span className="font-mono">{fmtUsd(g.cobrado_usd)}</span> ·
+                            saldo{" "}
+                            <span className="font-mono text-amber-600 dark:text-amber-400">
+                              {fmtUsd(g.saldo_usd)}
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                      {item.grupos.length > 8 && (
+                        <li className="text-muted-foreground">
+                          y {item.grupos.length - 8} más…
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                  {/* Sobres descuadrados: sobre vs Σ de sus partes (del API)
+                      y partes en aviones cancelados, con link al grupo. */}
+                  {item.sobres && item.sobres.length > 0 && (
+                    <ul className="text-xs mt-1 space-y-0.5">
+                      {item.sobres.slice(0, 8).map((sb) => (
+                        <li key={sb.sobre_id}>
+                          <Link
+                            href={`/admin/quotes/grupo/${sb.grupo_id}`}
+                            className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
+                            title="Re-partir el sobre desde Cobros del grupo"
+                          >
+                            <span className="text-fuchsia-700 dark:text-fuchsia-300 font-medium">
+                              {folioTexto(sb.grupo_folio)}
+                            </span>{" "}
+                            · sobre{" "}
+                            <span className="font-mono">
+                              {fmtUsd(sb.monto)} {sb.moneda}
+                            </span>
+                            {sb.fecha_cobro ? ` del ${fmtDate(sb.fecha_cobro)}` : ""} ·
+                            las partes suman{" "}
+                            <span className="font-mono text-amber-600 dark:text-amber-400">
+                              {fmtUsd(sb.suma_partes)} {sb.moneda}
+                            </span>
+                            {sb.partes_en_cancelados > 0 &&
+                              ` · ${sb.partes_en_cancelados} parte${
+                                sb.partes_en_cancelados === 1 ? "" : "s"
+                              } en aviones cancelados`}
+                          </Link>
+                        </li>
+                      ))}
+                      {item.sobres.length > 8 && (
+                        <li className="text-muted-foreground">
+                          y {item.sobres.length - 8} más…
+                        </li>
+                      )}
+                    </ul>
                   )}
                 </div>
                 {href && (

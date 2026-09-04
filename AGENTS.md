@@ -29,6 +29,18 @@ This version has breaking changes — APIs, conventions, and file structure may 
   botones/menús llevan `noLink: true` si la fila tiene `rowHref`.
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
+- Cotización de GRUPO (4-sep-2026): `types/grupos.ts` (1:1 con /v1/grupos),
+  `lib/admin/grupos-ui.ts` (folioTexto "G-12", estados, semáforos vía
+  estadoCobroSemaforo, `mensajeErrorGrupo` para TODOS los 409 estructurados),
+  `app/admin/quotes/grupo/actions.ts` (server actions que nunca lanzan:
+  `{ok,data}|{ok:false,error}`), `components/admin/grupos/**` (wizard,
+  detalle, lista, badge `GrupoBadge`). El panel SOLO pinta: consolidado,
+  totales, por persona, partición de cobros y montos derivados de extras
+  vienen del API (la Σ local de una partición manual es solo ayuda visual).
+  `ExtrasEditor` es el único editor de extras (cotizador y ajuste rápido);
+  extras `origen='GRUPO'` se bloquean ("se edita desde el grupo").
+  Cobros que son parte de un sobre (`cobro.cobro_grupo`) no se editan ni
+  borran por vuelo; conciliación se enlaza al SOBRE (`cobro_grupo_id`).
 
 ## Fechas
 

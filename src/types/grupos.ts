@@ -610,10 +610,17 @@ export interface AvionGrupoDetalle {
 }
 
 export interface ProblemaGrupo {
-  tipo: "PAX" | "PRECIO_DESACTUALIZADO" | "EXTRAS";
+  /** SOBRE (Fase 2): un sobre de cobro descuadrado o con partes en aviones
+   *  cancelados (`diagnosticoSobres` del API). */
+  tipo: "PAX" | "PRECIO_DESACTUALIZADO" | "EXTRAS" | "SOBRE";
   detalle: string;
   folio?: number | null;
   posicion?: number | null;
+  /** Solo tipo SOBRE: el cobro_grupo afectado y su cuadre. */
+  sobre_id?: string | null;
+  monto?: number | null;
+  suma_partes?: number | null;
+  partes_en_cancelados?: number | null;
 }
 
 export interface OperacionGrupo {
@@ -653,9 +660,196 @@ export interface GrupoDetalle extends GrupoCabeceraBase {
   /** Σ cobrado de vivos. */
   cobrado_usd: number;
   saldo_usd: number;
+  /**
+   * SOBRES de cobro del grupo (Fase 2, 4-sep-2026): agrupación +
+   * conciliación; el dinero sigue saliendo de las partes (cobro_vuelo) vía
+   * cobrosEnUsd. Ausente = API previo a la Fase 2.
+   */
+  cobros?: SobreSalida[];
+  /** Semáforo BÁSICO del grupo que compone el API con los de sus hijos
+   *  vivos (el panel pinta con `semaforoCobroGrupo` = estadoCobroSemaforo). */
+  semaforo_cobro_grupo?: SemaforoCobroBasico;
   operacion: OperacionGrupo;
   problemas: ProblemaGrupo[];
   /** Detalles de `problemas` + avisos de la acción que respondió. */
+  avisos: string[];
+}
+
+// =====================================================================
+// SOBRE de cobro del grupo (Fase 2, 4-sep-2026): el pago único del cliente
+// (`cobro_grupo`) que el API PARTE en N cobro_vuelo, uno por avión vivo.
+// El panel SOLO pinta la partición que manda el API (previsualizar /
+// registrar); la Σ local de una partición manual es ayuda visual.
+// =====================================================================
+
+/** Cómo se partió (o se partirá) el sobre entre los aviones. */
+export type ModoParticionCobro = "LIQUIDACION" | "PROPORCIONAL" | "MANUAL";
+
+/** Una parte dada a mano: `monto` NATIVO con el mismo signo que el sobre
+ *  (0 = ese avión no recibe). Σ == monto exacto (el API lo valida). */
+export interface ParticionManualItem {
+  vuelo_id: string;
+  monto: number;
+}
+
+/**
+ * Body de POST /v1/grupos/:id/cobros y de …/cobros/previsualizar
+ * (= CreateCobroGrupoDto, whitelist estricta). `monto` negativo = reembolso
+ * del grupo (sin comisión; `notas` = motivo).
+ */
+export interface CreateCobroGrupoInput {
+  /** Monto NATIVO (2 decimales, ≠ 0; negativo = reembolso). */
+  monto: number;
+  moneda: MonedaGrupo;
+  metodo_cobro: MetodoPago;
+  /** Necesario con MXN (si falta el API usa el TC del grupo). */
+  tc_usd_mxn?: number;
+  /** 0..20; se ignora si viaja `comision_banco_monto`. */
+  comision_banco_pct?: number;
+  /** Comisión como MONTO directo en la moneda del sobre (manda sobre el %). */
+  comision_banco_monto?: number;
+  /** Una de CUENTAS_COBRO (catálogo fijo). */
+  cuenta_destino?: string;
+  /** ≤100 */
+  referencia?: string;
+  foto_voucher_url?: string;
+  /** ISO. */
+  fecha_cobro?: string;
+  /** ≤500; en reembolso es el MOTIVO. */
+  notas?: string;
+  /** uuid v4: reintento con la misma llave devuelve el sobre YA registrado
+   *  (200 + `idempotente: true`) sin duplicar dinero. */
+  client_request_id?: string;
+  /** Default AUTO (LIQUIDACION si cubre saldos ±1 USD, si no PROPORCIONAL). */
+  modo?: "AUTO" | "MANUAL";
+  /** Solo con modo MANUAL (≥1). */
+  particion_manual?: ParticionManualItem[];
+}
+
+/** Parte de un sobre YA registrado (un cobro_vuelo). */
+export interface ParteSobre {
+  cobro_vuelo_id: string;
+  vuelo_id: string;
+  folio: number | null;
+  posicion: number | null;
+  matricula: string | null;
+  /** NATIVO en la moneda del sobre (negativo en reembolsos). */
+  monto: number;
+  /** Peso con el que recibió su parte (6 decimales; Σ ≈ 1). */
+  factor: number | null;
+  comision_banco_monto: number | null;
+  /** La parte quedó en un hijo CANCELADO (quitado del grupo): re-partir. */
+  cancelado: boolean;
+}
+
+/** Sobre con sus partes (findOne.cobros[], GET /:id/cobros y escrituras). */
+export interface SobreSalida {
+  id: string;
+  grupo_id: string;
+  /** BRUTO nativo (negativo = reembolso). */
+  monto: number;
+  moneda: MonedaGrupo | (string & {});
+  metodo_cobro: MetodoPago | (string & {});
+  tc_usd_mxn: number | null;
+  comision_banco_pct: number | null;
+  comision_banco_monto: number | null;
+  /** monto − comisión (derivado por el API). */
+  neto: number;
+  cuenta_destino: string | null;
+  referencia: string | null;
+  foto_voucher_url: string | null;
+  /** ISO. */
+  fecha_cobro: string;
+  modo_particion: ModoParticionCobro | (string & {});
+  registrado_por: string | null;
+  notas: string | null;
+  client_request_id: string | null;
+  created_at: string;
+  updated_at: string;
+  es_reembolso: boolean;
+  partes: ParteSobre[];
+  partes_suma: number;
+  /** Σ partes == monto (invariante del sobre). */
+  cuadra: boolean;
+  partes_en_cancelados: number;
+  /** El banco enlaza AL SOBRE (movimiento_bancario.cobro_grupo_id). */
+  conciliado: boolean;
+  movimiento_bancario_id: string | null;
+  /** Solo sobres positivos tienen recibo. */
+  recibo_disponible: boolean;
+}
+
+/** Parte propuesta por el API en la vista previa (aún no escrita). */
+export interface PartePrevisualizada {
+  vuelo_id: string;
+  folio: number | null;
+  posicion: number | null;
+  matricula: string | null;
+  /** NATIVA (2 decimales, ≠ 0; negativa en reembolsos). */
+  monto: number;
+  /** La misma parte en USD (informativa). */
+  monto_usd: number;
+  factor: number;
+  comision_banco_monto: number | null;
+  saldo_antes_usd: number;
+  saldo_despues_usd: number;
+}
+
+export interface VerificacionParticion {
+  suma_partes: number;
+  monto: number;
+  cuadra: boolean;
+  suma_comision: number | null;
+  comision: number | null;
+  cuadra_comision: boolean;
+}
+
+/** Respuesta de POST /v1/grupos/:id/cobros/previsualizar (no escribe). */
+export interface PrevisualizacionCobro {
+  grupo_id: string;
+  folio_texto: string;
+  modo_particion: ModoParticionCobro;
+  monto: number;
+  moneda: MonedaGrupo;
+  monto_usd: number;
+  tc_usd_mxn: number | null;
+  comision_banco_pct: number | null;
+  comision_banco_monto: number | null;
+  neto: number;
+  partes: PartePrevisualizada[];
+  verificacion: VerificacionParticion;
+  /** Sobrepago, avión que recibiría más que su saldo, cambio de modo… */
+  avisos: string[];
+}
+
+/** POST /v1/grupos/:id/cobros: 201 nuevo | 200 `idempotente: true`. */
+export interface RegistroCobroGrupo {
+  sobre: SobreSalida;
+  idempotente: boolean;
+}
+
+/** DELETE /v1/grupos/cobros/:cobroGrupoId */
+export interface EliminacionCobroGrupo {
+  ok: true;
+  cobro_grupo_id: string;
+  grupo_id: string;
+  partes_eliminadas: number;
+  /** Vuelos hijos cuyas partes se borraron (para revalidar). */
+  vuelos: string[];
+}
+
+/** POST /v1/grupos/cobros/:cobroGrupoId/repartir */
+export interface RepartoCobroGrupo {
+  sobre: SobreSalida;
+  /** "El sobre pasó de MANUAL a PROPORCIONAL.", sobrepagos… */
+  avisos: string[];
+}
+
+/** GET /v1/grupos/:id/cobros */
+export interface ListaCobrosGrupo {
+  grupo_id: string;
+  folio_texto: string;
+  cobros: SobreSalida[];
   avisos: string[];
 }
 
@@ -693,7 +887,29 @@ export type GrupoErrorCode =
   | "SIN_FLOTA"
   | "HIJOS_CONGELADOS"
   | "HIJOS_NO_CONFIRMABLES"
-  | "REVISION_A_MEDIAS";
+  | "REVISION_A_MEDIAS"
+  // ---- Sobre de cobro (Fase 2) ----
+  /** 409 al editar/borrar POR VUELO un cobro que es parte de un sobre. */
+  | "COBRO_DE_GRUPO"
+  /** 409 al eliminar un sobre enlazado al banco. */
+  | "COBRO_CONCILIADO"
+  /** 409 eliminar/re-partir con una parte en hijo de mes cerrado. */
+  | "MES_CERRADO"
+  /** 409 reembolso: alguna parte supera lo cobrado neto de su avión. */
+  | "REEMBOLSO_EXCEDE"
+  /** 400 MANUAL: hijo ajeno/cancelado/repetido/signo distinto, o
+   *  particion_manual con modo AUTO. */
+  | "HIJO_INVALIDO"
+  /** 400 MANUAL: Σ partes ≠ monto. */
+  | "PARTICION_NO_CUADRA"
+  /** 400 comisión ≥ monto, parte ≤ su comisión, o comisión en reembolso. */
+  | "COMISION_INVALIDA"
+  /** 400 cobro en MXN sin TC (ni en el sobre ni en el grupo). */
+  | "SIN_TC"
+  /** 400 el grupo no tiene aviones vivos. */
+  | "SIN_HIJOS"
+  /** 400 monto 0. */
+  | "MONTO_CERO";
 
 export interface CapacidadExcedidaDetails {
   aeronave_id: string;
@@ -761,6 +977,42 @@ export interface RevisionAMediasDetails {
     posicion: number | null;
     aeronave_id: string | null;
   }[];
+}
+
+export interface CobroDeGrupoDetails {
+  cobro_grupo_id: string;
+  grupo_id: string;
+  grupo_folio: number | string | null;
+}
+
+export interface CobroConciliadoDetails {
+  cobro_grupo_id: string;
+  movimiento_bancario_id: string | null;
+}
+
+export interface MesCerradoDetail {
+  vuelo_id: string;
+  folio: number;
+  posicion: number | null;
+  fecha_vuelo: string | null;
+}
+export type MesCerradoDetails = MesCerradoDetail[];
+
+export interface ReembolsoExcedeDetail {
+  vuelo_id: string;
+  folio: number | null;
+  posicion: number | null;
+  matricula: string | null;
+  /** Lo que devolvería ese avión (USD, positivo). */
+  reembolso_usd: number;
+  cobrado_usd: number;
+}
+export type ReembolsoExcedeDetails = ReembolsoExcedeDetail[];
+
+export interface ParticionNoCuadraDetails {
+  suma: number;
+  monto: number;
+  diferencia: number;
 }
 
 /**

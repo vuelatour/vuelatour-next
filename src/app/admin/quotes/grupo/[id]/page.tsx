@@ -4,6 +4,7 @@ import { BackLink } from "@/components/admin/back-link";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { GrupoAvionesTable } from "@/components/admin/grupos/detalle/grupo-aviones-table";
 import { GrupoAvisos } from "@/components/admin/grupos/detalle/grupo-avisos";
+import { GrupoCobrosCard } from "@/components/admin/grupos/detalle/grupo-cobros-card";
 import { GrupoConsolidadoCard } from "@/components/admin/grupos/detalle/grupo-consolidado-card";
 import { GrupoHeaderActions } from "@/components/admin/grupos/detalle/grupo-header-actions";
 import { GrupoOperacionCard } from "@/components/admin/grupos/detalle/grupo-operacion-card";
@@ -18,12 +19,13 @@ import {
 import { listAircraft } from "@/lib/api/aircraft";
 import { getGrupo } from "@/lib/api/grupos-server";
 import { getMe } from "@/lib/api/me";
+import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { listUsers } from "@/lib/api/users-server";
 import { pendienteCobro } from "@/lib/admin/cobros";
 import { estadoGrupoBadge, etiquetaReparto, semaforoCobroGrupo } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
-import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import { fmtDateTime, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -45,13 +47,25 @@ export default async function GrupoDetailPage({ params }: GrupoDetailPageProps) 
   if (!grupo) notFound();
 
   const puedeEditar = me?.rol === "ADMIN" || me?.rol === "COORDINADOR";
+  // Sobre de cobro (Fase 2): mismos roles que el API (COBRA_GRUPO /
+  // DELETE sobre = paridad con el cobro por vuelo).
+  const puedeCobrar = puedeEditar || me?.rol === "FACTURACION";
+  const puedeEliminarCobro = me?.rol === "ADMIN" || me?.rol === "FACTURACION";
+  // Día Cancún en que se cotizó el grupo: TC oficial de respaldo al cobrar
+  // en pesos cuando el grupo no fijó TC (misma regla que el cobro por vuelo).
+  const diaCotizacion = isoToCancunInput(grupo.created_at).slice(0, 10) || null;
   // Catálogos para «Reemplazar avión» (solo quien edita los necesita).
-  const [aircraftRes, pilotsRes] = puedeEditar
-    ? await Promise.all([
-        listAircraft({ limit: 100, activa: true }).catch(() => ({ data: [] as Awaited<ReturnType<typeof listAircraft>>["data"] })),
-        listUsers({ rol: "PILOTO", limit: 50 }).catch(() => ({ data: [] as Awaited<ReturnType<typeof listUsers>>["data"] })),
-      ])
-    : [{ data: [] as Awaited<ReturnType<typeof listAircraft>>["data"] }, { data: [] as Awaited<ReturnType<typeof listUsers>>["data"] }];
+  const [aircraftRes, pilotsRes, tcOficial] = await Promise.all([
+    puedeEditar
+      ? listAircraft({ limit: 100, activa: true }).catch(() => ({ data: [] as Awaited<ReturnType<typeof listAircraft>>["data"] }))
+      : Promise.resolve({ data: [] as Awaited<ReturnType<typeof listAircraft>>["data"] }),
+    puedeEditar
+      ? listUsers({ rol: "PILOTO", limit: 50 }).catch(() => ({ data: [] as Awaited<ReturnType<typeof listUsers>>["data"] }))
+      : Promise.resolve({ data: [] as Awaited<ReturnType<typeof listUsers>>["data"] }),
+    puedeCobrar && grupo.tc_usd_mxn == null && diaCotizacion
+      ? getTipoCambioOficial(diaCotizacion)
+      : Promise.resolve<number | null>(null),
+  ]);
 
   const estadoBadge = estadoGrupoBadge(grupo.estado);
   const ruta = puntosRuta(
@@ -190,10 +204,12 @@ export default async function GrupoDetailPage({ params }: GrupoDetailPageProps) 
                     </span>
                   </span>
                 </div>
-                <span className="text-[11px] text-muted-foreground">
-                  Los cobros se registran en cada vuelo (por avión); el sobre de cobro
-                  único del grupo llega en la fase 2.
-                </span>
+                <a
+                  href="#cobros-grupo"
+                  className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  Registrar un pago del cliente → Cobros del grupo
+                </a>
               </div>
             </CardContent>
           </Card>
@@ -221,6 +237,16 @@ export default async function GrupoDetailPage({ params }: GrupoDetailPageProps) 
               />
             </CardContent>
           </Card>
+
+          {/* Sobres de cobro del grupo (Fase 2): un pago → N partes por avión. */}
+          <GrupoCobrosCard
+            grupo={grupo}
+            semaforo={semaforo}
+            puedeCobrar={puedeCobrar}
+            puedeEliminar={puedeEliminarCobro}
+            tcOficial={tcOficial}
+            tcOficialFecha={diaCotizacion}
+          />
 
           <GrupoConsolidadoCard
             consolidado={grupo.consolidado}

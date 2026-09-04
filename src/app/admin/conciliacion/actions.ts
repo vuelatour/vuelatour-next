@@ -3,12 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { listFlights } from "@/lib/api/flights-server";
-import { getBankAccount } from "@/lib/api/bank-accounts-server";
-import { listMovimientosBancarios } from "@/lib/api/conciliacion-server";
-import type { FlightCobro, FlightListItem } from "@/types/flights";
+import { candidatosCobroMovimiento } from "@/lib/api/conciliacion-server";
 import type {
-  CobroCandidato,
+  CandidatosCobroResponse,
   MovimientoBancario,
   ParsedStatement,
 } from "@/types/conciliacion";
@@ -17,10 +14,25 @@ export interface ActionResult<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+  /** Código del API (filtro de excepciones), p. ej. COBRO_DE_GRUPO: permite
+      detectar candados sin regex sobre el mensaje. */
+  code?: string;
+  /** Status HTTP del API (409 = conflicto: ya conciliado, parte de sobre…). */
+  status?: number;
+  /** Detalle estructurado del error del API (si lo mandó). */
+  details?: unknown;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  if (isApiError(err)) {
+    return {
+      ok: false,
+      error: err.message,
+      code: err.code,
+      status: err.status,
+      details: err.details,
+    };
+  }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -204,15 +216,35 @@ export async function linkMovimientoAction(
   }
 }
 
-/** Vincula (cobroId) o desvincula (null) un ABONO con un cobro de vuelo. */
+/**
+ * Liga de un ABONO: cobro de VUELO (`cobro_id`) O sobre de cobro de GRUPO
+ * (`cobro_grupo_id`), excluyentes — el API responde 400 si vienen los dos.
+ */
+export interface LigaCobroMovimiento {
+  cobro_id?: string | null;
+  cobro_grupo_id?: string | null;
+}
+
+/**
+ * Vincula un ABONO con un cobro de vuelo ({cobro_id}) o con el SOBRE de un
+ * grupo ({cobro_grupo_id}); `null` = desvincular (el API limpia las dos
+ * ligas). Una PARTE de sobre nunca se acepta: 409 COBRO_DE_GRUPO ("concilia
+ * contra el sobre"); ya conciliado con otro movimiento: 409.
+ */
 export async function linkMovimientoCobroAction(
   movId: string,
-  cobroId: string | null,
+  liga: LigaCobroMovimiento | null,
 ): Promise<ActionResult<MovimientoBancario>> {
   try {
     const data = await apiServer<MovimientoBancario>(
       `/v1/conciliacion/movimientos/${movId}/cobro`,
-      { method: "PATCH", body: { cobro_id: cobroId } },
+      {
+        method: "PATCH",
+        body: {
+          cobro_id: liga?.cobro_id ?? null,
+          cobro_grupo_id: liga?.cobro_grupo_id ?? null,
+        },
+      },
     );
     revalidatePath("/admin/conciliacion");
     return { ok: true, data };
@@ -221,119 +253,23 @@ export async function linkMovimientoCobroAction(
   }
 }
 
-/** Ventana de búsqueda alrededor de la fecha del abono (días). */
+/** Ventana de búsqueda (±días) alrededor de la fecha del abono. */
 const VENTANA_DIAS = 60;
-/** Tope de vuelos a los que se les consultan cobros (el API no expone un
- *  listado global de cobros; se juntan vuelo por vuelo). */
-const MAX_VUELOS = 80;
-const MAX_CANDIDATOS = 40;
-/** Métodos de cobro que llegan al banco (mismo criterio que el auto-cruce del
- *  API + BillPocket, cuyo depósito también aparece en el estado de cuenta).
- *  EFECTIVO y DOLARES viven en caja, nunca como abono directo. */
-const METODOS_COBRO_BANCARIOS = new Set([
-  "TRANSFERENCIA",
-  "HSBC_LINK",
-  "CHEQUE",
-  "BILLPOCKET",
-]);
-
-function sumarDias(fecha: string, dias: number): string {
-  const d = new Date(`${fecha}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + dias);
-  return d.toISOString().slice(0, 10);
-}
 
 /**
- * Cobros de vuelo candidatos para conciliar un ABONO a mano: vuelos con fecha
- * cercana al abono (±VENTANA_DIAS), solo métodos que tocan el banco, misma
- * moneda que la cuenta y sin estar ya conciliados con otro movimiento.
- * Ordenados por cercanía de monto (contra el NETO depositado, igual que el
- * auto-cruce) y luego de fecha.
+ * Candidatos para conciliar un ABONO a mano: cobros de VUELO y SOBRES de
+ * grupo, armados por el API (antes el panel juntaba 80 vuelos × payments):
+ * misma moneda que la cuenta, métodos que llegan al banco (transferencia,
+ * HSBC link, cheque, BillPocket), sin conciliar con otro movimiento,
+ * ordenados por cercanía del NETO depositado al monto y luego de fecha. Las
+ * partes de un sobre nunca se ofrecen (se concilia el sobre completo).
  */
-export async function buscarCobrosCandidatosAction(params: {
-  /** Fecha del abono (YYYY-MM-DD). */
-  fecha: string;
-  monto: string;
-  cuenta_bancaria_id: string;
-}): Promise<ActionResult<CobroCandidato[]>> {
+export async function candidatosCobroAction(
+  movId: string,
+  dias: number = VENTANA_DIAS,
+): Promise<ActionResult<CandidatosCobroResponse>> {
   try {
-    // La moneda de la cuenta define contra qué se cruza: un abono de la
-    // cuenta USD jamás debe ofrecer cobros MXN (misma regla que el API).
-    const moneda = await getBankAccount(params.cuenta_bancaria_id)
-      .then((c) => c.moneda ?? null)
-      .catch(() => null);
-
-    const [vuelosRes, conciliadosRes] = await Promise.all([
-      listFlights({
-        desde: sumarDias(params.fecha, -VENTANA_DIAS),
-        hasta: sumarDias(params.fecha, VENTANA_DIAS),
-        limit: 200,
-      }),
-      // Cobros ya conciliados con otro movimiento: no se vuelven a ofrecer
-      // (el API además lo rechaza con 409; aquí se filtran para no confundir).
-      listMovimientosBancarios({ conciliado: true, limit: 500 }),
-    ]);
-    const ocupados = new Set(
-      conciliadosRes.data.map((m) => m.cobro_id).filter(Boolean),
-    );
-
-    // Vuelos más cercanos a la fecha del abono primero; tope de consultas.
-    const refMs = Date.parse(`${params.fecha}T00:00:00Z`);
-    const distancia = (v: FlightListItem) =>
-      v.fecha_vuelo ? Math.abs(Date.parse(v.fecha_vuelo) - refMs) : Number.MAX_SAFE_INTEGER;
-    const vuelos = (
-      vuelosRes.data as Array<FlightListItem & { cliente_nombre?: string | null }>
-    )
-      .sort((a, b) => distancia(a) - distancia(b))
-      .slice(0, MAX_VUELOS);
-
-    // Cobros por vuelo, en lotes (no hay endpoint global de cobros).
-    const cobros: Array<{ cobro: FlightCobro; vuelo: (typeof vuelos)[number] }> = [];
-    const LOTE = 8;
-    for (let i = 0; i < vuelos.length; i += LOTE) {
-      const lote = vuelos.slice(i, i + LOTE);
-      const listas = await Promise.all(
-        lote.map((v) =>
-          apiServer<FlightCobro[]>(`/v1/flights/${v.id}/payments`, {
-            cache: "no-store",
-          }).catch(() => [] as FlightCobro[]),
-        ),
-      );
-      listas.forEach((lista, idx) => {
-        for (const cobro of lista) cobros.push({ cobro, vuelo: lote[idx] });
-      });
-    }
-
-    const montoMov = Number(params.monto);
-    const data = cobros
-      .filter(({ cobro }) => METODOS_COBRO_BANCARIOS.has(cobro.metodo_cobro))
-      .filter(({ cobro }) => !moneda || cobro.moneda === moneda)
-      .filter(({ cobro }) => !ocupados.has(cobro.id))
-      .map(({ cobro, vuelo }) => {
-        // El banco deposita monto − comisión: el abono real es el NETO
-        // (misma regla que el auto-cruce del API).
-        const bruto = Number(cobro.monto);
-        const comision = Number(cobro.comision_banco_monto ?? 0) || 0;
-        const neto = Math.round((bruto - comision) * 100) / 100;
-        const difMonto = Math.abs(neto - montoMov);
-        const difFecha = Math.abs(Date.parse(cobro.fecha_cobro) - refMs);
-        return { cobro, vuelo, neto, difMonto, difFecha };
-      })
-      .sort((a, b) => a.difMonto - b.difMonto || a.difFecha - b.difFecha)
-      .slice(0, MAX_CANDIDATOS)
-      .map(
-        ({ cobro, vuelo, neto }): CobroCandidato => ({
-          id: cobro.id,
-          vuelo_id: cobro.vuelo_id,
-          folio: vuelo.folio ?? null,
-          cliente: vuelo.cliente_nombre ?? null,
-          fecha_cobro: cobro.fecha_cobro,
-          monto: cobro.monto,
-          moneda: cobro.moneda,
-          metodo_cobro: cobro.metodo_cobro,
-          neto,
-        }),
-      );
+    const data = await candidatosCobroMovimiento(movId, dias);
     return { ok: true, data };
   } catch (err) {
     return fail(err);

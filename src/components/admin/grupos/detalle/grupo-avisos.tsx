@@ -34,6 +34,17 @@ export function GrupoAvisos({ grupo }: { grupo: GrupoDetalle }) {
                 return (
                   <li key={`${p.tipo}-${i}`}>
                     {p.detalle}
+                    {p.tipo === "SOBRE" && (
+                      <>
+                        {" "}
+                        <a
+                          href="#cobros-grupo"
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          ver cobros del grupo
+                        </a>
+                      </>
+                    )}
                     {vueloId && (
                       <>
                         {" "}

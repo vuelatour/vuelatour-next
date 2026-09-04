@@ -1,5 +1,6 @@
 import { apiServer } from "./server";
 import type {
+  CandidatosCobroResponse,
   ConciliacionResumenCuenta,
   EstadoCuentaArchivo,
   MovimientoListResponse,
@@ -55,4 +56,17 @@ export function listEstadosCuenta() {
   return apiServer<{ data: EstadoCuentaArchivo[] }>("/v1/conciliacion/estados-cuenta", {
     cache: "no-store",
   });
+}
+
+/**
+ * Candidatos para conciliar un ABONO a mano (cobros de vuelo + sobres de
+ * grupo): los arma el API en una sola consulta — misma moneda que la cuenta,
+ * métodos bancarios, sin conciliar con otro movimiento, ordenados por
+ * cercanía del NETO al monto del abono. `dias` = ventana ± (1..180).
+ */
+export function candidatosCobroMovimiento(movId: string, dias = 60) {
+  return apiServer<CandidatosCobroResponse>(
+    `/v1/conciliacion/movimientos/${movId}/candidatos-cobro`,
+    { searchParams: { dias }, cache: "no-store" },
+  );
 }

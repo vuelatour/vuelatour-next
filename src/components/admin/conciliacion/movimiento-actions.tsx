@@ -8,6 +8,7 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,7 +39,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  buscarCobrosCandidatosAction,
+  candidatosCobroAction,
   clasificarMovimientoAction,
   crearClasificacionAction,
   linkMovimientoAction,
@@ -47,10 +48,27 @@ import {
   type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
-import type { CobroCandidato, MovimientoBancario } from "@/types/conciliacion";
+import { folioTexto } from "@/lib/admin/grupos-ui";
+import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import type { CandidatoCobro, MovimientoBancario } from "@/types/conciliacion";
 
 const fmtMoney = (monto: string | number) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
+
+/** Ventana ±días de candidatos (la misma que usaba el panel antes). */
+const VENTANA_DIAS = 60;
+
+/** Valor único del select: el mismo uuid no puede confundirse entre tablas. */
+const valorCandidato = (c: CandidatoCobro) => `${c.tipo}:${c.id}`;
+
+/** "Grupo G-12 · 7 aviones" (chip del sobre). */
+const chipSobre = (c: { grupo_folio: number | null; aviones_n: number }) =>
+  `Grupo ${folioTexto(c.grupo_folio)}${
+    c.aviones_n > 0 ? ` · ${c.aviones_n} ${c.aviones_n === 1 ? "avión" : "aviones"}` : ""
+  }`;
+
+/** El API redondea dif_monto a 2 decimales: 0 = cuadra exacto con el abono. */
+const cuadraExacto = (c: CandidatoCobro) => c.dif_monto === 0;
 
 interface MovimientoActionsProps {
   movimiento: MovimientoBancario;
@@ -68,15 +86,19 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   const [openLink, setOpenLink] = useState(false);
   const [confirmarDesvincular, setConfirmarDesvincular] = useState(false);
   const [seleccion, setSeleccion] = useState("");
-  // null = buscando; lista = resultado (solo aplica a ABONOS).
-  const [candidatos, setCandidatos] = useState<CobroCandidato[] | null>(null);
+  // null = buscando; lista = resultado (solo aplica a ABONOS). Cobros de
+  // vuelo Y sobres de grupo, armados por el API.
+  const [candidatos, setCandidatos] = useState<CandidatoCobro[] | null>(null);
+  const [exactos, setExactos] = useState(0);
   const [pending, startTransition] = useTransition();
 
   // Qué tiene vinculado realmente el movimiento (manda sobre el tipo al
-  // desvincular, por si un dato viejo quedó cruzado distinto).
-  const vinculadoACobro = movimiento.cobro_id != null;
-  const vinculadoAGastoOCobro =
-    movimiento.gasto_id != null || movimiento.cobro_id != null;
+  // desvincular, por si un dato viejo quedó cruzado distinto). Un ABONO se
+  // liga a un cobro de vuelo (cobro_id) O al sobre de un grupo
+  // (cobro_grupo_id): ambos son "cobro" para desvincular.
+  const vinculadoASobre = movimiento.cobro_grupo_id != null;
+  const vinculadoACobro = movimiento.cobro_id != null || vinculadoASobre;
+  const vinculadoAGastoOCobro = movimiento.gasto_id != null || vinculadoACobro;
   const clasificado = movimiento.clasificacion_id != null;
 
   // Clasificación "sin vuelo": elegir del catálogo o crear una nueva en el
@@ -147,41 +169,65 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
     });
   };
 
-  const abrirVincular = () => {
-    setSeleccion("");
-    setOpenLink(true);
-    if (!esAbono) return;
-    // El API no expone un listado global de cobros: se buscan candidatos
-    // cercanos al abrir (vuelos ±60 días → sus cobros bancarios).
+  const cargarCandidatos = () => {
     setCandidatos(null);
-    void buscarCobrosCandidatosAction({
-      fecha: movimiento.fecha,
-      monto: movimiento.monto,
-      cuenta_bancaria_id: movimiento.cuenta_bancaria_id,
-    }).then((r) => {
-      if (r.ok) setCandidatos(r.data ?? []);
-      else {
+    setExactos(0);
+    void candidatosCobroAction(movimiento.id, VENTANA_DIAS).then((r) => {
+      if (r.ok && r.data) {
+        setCandidatos(r.data.candidatos);
+        setExactos(r.data.exactos);
+      } else {
         setCandidatos([]);
         toast.error(r.error ?? "No se pudieron buscar cobros");
       }
     });
   };
 
+  const abrirVincular = () => {
+    setSeleccion("");
+    setOpenLink(true);
+    if (!esAbono) return;
+    // Candidatos del API (cobros de vuelo + sobres de grupo, ±60 días,
+    // misma moneda que la cuenta, ordenados por cercanía del neto).
+    cargarCandidatos();
+  };
+
   const opcionesCobros = useMemo(
     () =>
-      (candidatos ?? []).map((c) => ({
-        value: c.id,
-        label: `Vuelo #${c.folio ?? "—"} · $${fmtMoney(c.monto)} ${c.moneda} · ${c.metodo_cobro.replaceAll("_", " ")}`,
-        description:
+      (candidatos ?? []).map((c) => {
+        const exacto = cuadraExacto(c);
+        // Etiqueta es-MX del método (fuente única del panel).
+        const metodo = metodoPagoLabel(c.metodo_cobro);
+        const label =
+          c.tipo === "SOBRE_GRUPO"
+            ? `${chipSobre(c)} · $${fmtMoney(c.monto)} ${c.moneda} · ${metodo}`
+            : `Vuelo #${c.folio ?? "—"} · $${fmtMoney(c.monto)} ${c.moneda} · ${metodo}`;
+        const description =
           [
+            c.tipo === "SOBRE_GRUPO" ? c.grupo_nombre : null,
             c.cliente,
             fmtDateCancun(c.fecha_cobro),
-            c.neto !== Number(c.monto) ? `depósito neto $${fmtMoney(c.neto)}` : null,
+            c.neto !== c.monto ? `depósito neto $${fmtMoney(c.neto)}` : null,
+            exacto ? "cuadra exacto con el abono" : `diferencia $${fmtMoney(c.dif_monto)}`,
           ]
             .filter(Boolean)
-            .join(" · ") || undefined,
-      })),
+            .join(" · ") || undefined;
+        return {
+          value: valorCandidato(c),
+          label,
+          description,
+          // Exacto resaltado en verde; el resto en gris (default).
+          descriptionClassName: exacto
+            ? "truncate text-emerald-600 dark:text-emerald-400 font-medium"
+            : undefined,
+        };
+      }),
     [candidatos],
+  );
+
+  const seleccionado = useMemo(
+    () => (candidatos ?? []).find((c) => valorCandidato(c) === seleccion) ?? null,
+    [candidatos, seleccion],
   );
 
   const desvincular = () => {
@@ -190,25 +236,63 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         ? await linkMovimientoCobroAction(movimiento.id, null)
         : await linkMovimientoAction(movimiento.id, null);
       if (r.ok) {
-        toast.success(vinculadoACobro ? "Cobro desvinculado" : "Gasto desvinculado");
+        toast.success(
+          vinculadoASobre
+            ? "Cobro de grupo desvinculado"
+            : vinculadoACobro
+              ? "Cobro desvinculado"
+              : "Gasto desvinculado",
+        );
         setConfirmarDesvincular(false);
       } else toast.error(r.error ?? "Error");
     });
   };
 
   const vincular = () => {
-    if (!seleccion) {
-      toast.error(esAbono ? "Selecciona un cobro" : "Selecciona un gasto");
+    if (!seleccion || (esAbono && !seleccionado)) {
+      toast.error(esAbono ? "Selecciona un cobro o un sobre de grupo" : "Selecciona un gasto");
       return;
     }
     startTransition(async () => {
-      const r = esAbono
-        ? await linkMovimientoCobroAction(movimiento.id, seleccion)
-        : await linkMovimientoAction(movimiento.id, seleccion);
+      let r;
+      if (esAbono && seleccionado) {
+        // Cobro de vuelo → {cobro_id}; sobre de grupo → {cobro_grupo_id}.
+        r = await linkMovimientoCobroAction(
+          movimiento.id,
+          seleccionado.tipo === "SOBRE_GRUPO"
+            ? { cobro_grupo_id: seleccionado.cobro_grupo_id }
+            : { cobro_id: seleccionado.cobro_id },
+        );
+      } else {
+        r = await linkMovimientoAction(movimiento.id, seleccion);
+      }
       if (r.ok) {
-        toast.success(esAbono ? "Cobro vinculado" : "Gasto vinculado");
+        toast.success(
+          esAbono
+            ? seleccionado?.tipo === "SOBRE_GRUPO"
+              ? `Cobro de grupo ${folioTexto(seleccionado.grupo_folio)} vinculado`
+              : "Cobro vinculado"
+            : "Gasto vinculado",
+        );
         setOpenLink(false);
         setSeleccion("");
+      } else if (r.code === "COBRO_DE_GRUPO") {
+        // Candado del API: una PARTE de sobre nunca se concilia; se concilia
+        // el sobre del grupo (el mensaje del API ya lo dice).
+        const d = r.details as { grupo_folio?: number | null } | undefined;
+        toast.error(r.error ?? "Este cobro es parte de un sobre de grupo.", {
+          description: `Elige el sobre del grupo ${folioTexto(d?.grupo_folio)} en la lista (aparece como «Grupo …»).`,
+        });
+        cargarCandidatos();
+      } else if (r.status === 409) {
+        // Ya conciliado con OTRO movimiento (carrera entre dos personas):
+        // se refresca la lista para que desaparezca el ocupado.
+        toast.error(r.error ?? "Ya está conciliado con otro movimiento.", {
+          description:
+            "Desvincúlalo en el otro movimiento si fue un error, o elige otro candidato.",
+        });
+        setSeleccion("");
+        cargarCandidatos();
       } else {
         toast.error(r.error ?? "Error");
       }
@@ -229,7 +313,11 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
               className="gap-2 text-destructive focus:text-destructive"
             >
               <XMarkIcon className="h-4 w-4" />
-              {vinculadoACobro ? "Desvincular cobro" : "Desvincular gasto"}
+              {vinculadoASobre
+                ? "Desvincular cobro de grupo"
+                : vinculadoACobro
+                  ? "Desvincular cobro"
+                  : "Desvincular gasto"}
             </DropdownMenuItem>
           ) : clasificado ? (
             <>
@@ -266,12 +354,14 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
             <DialogTitle>{esAbono ? "Vincular cobro" : "Vincular gasto"}</DialogTitle>
             <DialogDescription>
               {esAbono
-                ? `Abono de ${fmtMoney(movimiento.monto)} del ${fmtDateOnly(movimiento.fecha)}. Selecciona el cobro de vuelo que corresponde.`
+                ? `Abono de ${fmtMoney(movimiento.monto)} del ${fmtDateOnly(movimiento.fecha)}. Selecciona el cobro de vuelo o el sobre de grupo que corresponde.`
                 : `Cargo de ${fmtMoney(movimiento.monto)} del ${fmtDateOnly(movimiento.fecha)}. Selecciona el gasto capturado que corresponde.`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">{esAbono ? "Cobro" : "Gasto"}</Label>
+            <Label className="text-sm font-medium">
+              {esAbono ? "Cobro o sobre de grupo" : "Gasto"}
+            </Label>
             {esAbono && candidatos === null ? (
               <p className="text-sm text-muted-foreground">Buscando cobros cercanos…</p>
             ) : (
@@ -279,19 +369,84 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                 options={esAbono ? opcionesCobros : gastos}
                 value={seleccion}
                 onChange={setSeleccion}
-                placeholder={esAbono ? "Buscar por folio, cliente o monto" : "Buscar gasto"}
+                placeholder={
+                  esAbono ? "Buscar por folio, grupo, cliente o monto" : "Buscar gasto"
+                }
                 emptyText={
                   esAbono
-                    ? "Sin cobros candidatos cerca de la fecha del abono"
+                    ? "Sin cobros ni sobres candidatos cerca de la fecha del abono"
                     : "Sin resultados"
                 }
               />
             )}
+            {esAbono && candidatos !== null && exactos > 0 && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                {exactos === 1
+                  ? "1 candidato cuadra exacto con el abono (aparece primero)."
+                  : `${exactos} candidatos cuadran exacto con el abono (aparecen primero).`}
+              </p>
+            )}
+            {/* Resumen de lo elegido: chip del sobre (Grupo G-12 · 7 aviones)
+                o del vuelo, monto y si cuadra — para confirmar antes de ligar. */}
+            {esAbono && seleccionado && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  {seleccionado.tipo === "SOBRE_GRUPO" ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/30"
+                      title={seleccionado.grupo_nombre ?? undefined}
+                    >
+                      {chipSobre(seleccionado)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Vuelo #{seleccionado.folio ?? "—"}</Badge>
+                  )}
+                  <span className="font-mono font-semibold">
+                    ${fmtMoney(seleccionado.monto)} {seleccionado.moneda}
+                  </span>
+                  {cuadraExacto(seleccionado) ? (
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    >
+                      Cuadra exacto
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Diferencia ${fmtMoney(seleccionado.dif_monto)} contra el abono
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    seleccionado.tipo === "SOBRE_GRUPO" ? seleccionado.grupo_nombre : null,
+                    seleccionado.cliente,
+                    fmtDateCancun(seleccionado.fecha_cobro),
+                    metodoPagoLabel(seleccionado.metodo_cobro),
+                    seleccionado.neto !== seleccionado.monto
+                      ? `depósito neto $${fmtMoney(seleccionado.neto)}`
+                      : null,
+                    seleccionado.referencia ? `ref. ${seleccionado.referencia}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {seleccionado.tipo === "SOBRE_GRUPO" && (
+                  <p className="text-[11px] text-muted-foreground">
+                    El abono se concilia contra el sobre completo del grupo; las
+                    partes por avión quedan conciliadas con él.
+                  </p>
+                )}
+              </div>
+            )}
             {esAbono && (
               <p className="text-xs text-muted-foreground">
-                Se muestran cobros por transferencia, HSBC link, BillPocket o cheque de
-                vuelos con fecha cercana (±60 días), ordenados por cercanía de monto y
-                fecha. Los cobros con comisión bancaria se comparan por el depósito neto.
+                Se muestran cobros de vuelo y sobres de grupo por transferencia, HSBC
+                link, BillPocket o cheque con fecha cercana (±{VENTANA_DIAS} días) y la
+                moneda de la cuenta, ordenados por cercanía de monto y fecha. Los cobros
+                con comisión bancaria se comparan por el depósito neto. Las partes por
+                avión de un sobre no se ofrecen: se concilia el sobre.
               </p>
             )}
           </div>
@@ -424,12 +579,18 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {vinculadoACobro ? "¿Desvincular este cobro?" : "¿Desvincular este gasto?"}
+              {vinculadoASobre
+                ? "¿Desvincular este cobro de grupo?"
+                : vinculadoACobro
+                  ? "¿Desvincular este cobro?"
+                  : "¿Desvincular este gasto?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               El movimiento bancario volverá a quedar pendiente de conciliar y el{" "}
-              {vinculadoACobro ? "cobro" : "gasto"} quedará libre para vincularse con otro
-              movimiento.
+              {vinculadoASobre ? "sobre del grupo" : vinculadoACobro ? "cobro" : "gasto"}{" "}
+              quedará libre para vincularse con otro movimiento.
+              {vinculadoASobre &&
+                " Las partes por avión del sobre dejan de verse como conciliadas."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

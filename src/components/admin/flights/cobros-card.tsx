@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/datetime";
 import {
   DocumentArrowDownIcon,
@@ -29,6 +30,12 @@ import { toast } from "sonner";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { CobroFormSheet } from "./cobro-form-sheet";
 import { ReembolsoButton } from "./reembolso-dialog";
+import {
+  CobroConciliadoBadge,
+  CobroSobreNota,
+  esParteDeSobre,
+} from "./cobro-sobre-nota";
+import { folioTexto } from "@/lib/admin/grupos-ui";
 import { fmtUsd } from "@/lib/format";
 import { descargarDelApi } from "@/lib/download";
 import type { FlightCobro } from "@/types/flights";
@@ -80,17 +87,25 @@ export function CobrosCard({
   tcOficialFecha = null,
   puedeReembolsar = false,
 }: CobrosCardProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Id del cobro cuyo recibo se está generando (carga por fila).
   const [reciboDe, setReciboDe] = useState<string | null>(null);
 
-  const descargarRecibo = async (cobroId: string) => {
-    setReciboDe(cobroId);
-    const err = await descargarDelApi(`/v1/flights/cobros/${cobroId}/recibo.pdf`, {
-      filename: `recibo-${flightFolio}-${cobroId.slice(0, 8)}.pdf`,
-    });
+  const descargarRecibo = async (c: FlightCobro) => {
+    setReciboDe(c.id);
+    // Parte de un SOBRE de grupo: el recibo del cliente es el del sobre
+    // completo (REC-G), no el de la parte (el cliente pagó un solo monto).
+    const sobre = c.cobro_grupo;
+    const err = sobre
+      ? await descargarDelApi(`/v1/grupos/cobros/${sobre.id}/recibo.pdf`, {
+          filename: `recibo-${folioTexto(sobre.grupo_folio)}-${sobre.id.slice(0, 8)}.pdf`,
+        })
+      : await descargarDelApi(`/v1/flights/cobros/${c.id}/recibo.pdf`, {
+          filename: `recibo-${flightFolio}-${c.id.slice(0, 8)}.pdf`,
+        });
     if (err) toast.error("No se pudo generar el recibo", { description: err });
     setReciboDe(null);
   };
@@ -191,6 +206,8 @@ export function CobrosCard({
                           Reembolso
                         </Badge>
                       )}
+                      {/* Conciliado con el banco: SOLO si el API lo dice. */}
+                      <CobroConciliadoBadge cobro={c} />
                       {c.moneda === "MXN" && c.tc_usd_mxn && (
                         <span className="text-[10px] text-muted-foreground ml-2 font-normal">
                           (≈ {fmtUsd(Number(c.monto) / Number(c.tc_usd_mxn))} USD)
@@ -202,6 +219,8 @@ export function CobrosCard({
                       {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
+                    {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
+                    <CobroSobreNota cobro={c} />
                     {/* Motivo del reembolso (viaja en notas): a la vista. */}
                     {esReembolso && c.notas && (
                       <p
@@ -238,9 +257,13 @@ export function CobrosCard({
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        title="Recibo de pago (PDF) para el cliente"
+                        title={
+                          esParteDeSobre(c)
+                            ? "Recibo de pago (PDF) del sobre del grupo"
+                            : "Recibo de pago (PDF) para el cliente"
+                        }
                         disabled={reciboDe === c.id}
-                        onClick={() => descargarRecibo(c.id)}
+                        onClick={() => descargarRecibo(c)}
                       >
                         <DocumentArrowDownIcon
                           className={`h-3.5 w-3.5 ${
@@ -249,19 +272,24 @@ export function CobrosCard({
                         />
                       </Button>
                     )}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      title={
-                        esReembolso
-                          ? "Eliminar reembolso (capturado por error)"
-                          : "Eliminar cobro (capturado por error)"
-                      }
-                      onClick={() => setToDelete(c)}
-                    >
-                      <TrashIcon className="h-3.5 w-3.5" />
-                    </Button>
+                    {/* Parte de un sobre de grupo: NO se elimina por vuelo
+                        (el API responde 409 COBRO_DE_GRUPO); se hace desde
+                        Cobros del grupo, que re-parte el sobre completo. */}
+                    {!esParteDeSobre(c) && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        title={
+                          esReembolso
+                            ? "Eliminar reembolso (capturado por error)"
+                            : "Eliminar cobro (capturado por error)"
+                        }
+                        onClick={() => setToDelete(c)}
+                      >
+                        <TrashIcon className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
                 );
@@ -297,6 +325,19 @@ export function CobrosCard({
                 setDeleting(false);
                 if (res.ok) {
                   toast.success("Cobro eliminado; saldo recalculado.");
+                  setToDelete(null);
+                } else if (res.code === "COBRO_DE_GRUPO") {
+                  // Candado del API: la parte de un sobre se elimina desde
+                  // el grupo. Mensaje del API + atajo al grupo.
+                  const d = res.details as { grupo_id?: string } | undefined;
+                  toast.error(res.error ?? "Este cobro es parte de un sobre de grupo.", {
+                    action: d?.grupo_id
+                      ? {
+                          label: "Ir al grupo",
+                          onClick: () => router.push(`/admin/quotes/grupo/${d.grupo_id}`),
+                        }
+                      : undefined,
+                  });
                   setToDelete(null);
                 } else {
                   toast.error(res.error);

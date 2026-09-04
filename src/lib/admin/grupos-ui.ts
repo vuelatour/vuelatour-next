@@ -5,16 +5,22 @@ import type {
   AeronaveEnTallerDetails,
   AvionGrupoDetalle,
   CapacidadExcedidaDetails,
+  CobroConciliadoDetails,
+  CobroDeGrupoDetails,
   EstadoGrupo,
   GrupoApiError,
   GrupoDetalle,
   GrupoEmbedVuelo,
   HijosCongeladosDetails,
   HijosNoConfirmablesDetails,
+  MesCerradoDetails,
+  ModoParticionCobro,
   MotivoCongelado,
   OpcionCapacidad,
+  ParticionNoCuadraDetails,
   PaxNoCuadranDetails,
   PilotoDuplicadoDetails,
+  ReembolsoExcedeDetails,
   RepartoExtraGrupo,
   RevisionAMediasDetails,
   SquawkAltaDetails,
@@ -139,6 +145,45 @@ export const REPARTO_EXTRA_LABEL: Record<RepartoExtraGrupo, string> = {
 /** "Por persona" / "Repartido por pasajeros" / "Todo a un avión". */
 export function etiquetaReparto(reparto: RepartoExtraGrupo | null | undefined): string {
   return (reparto && REPARTO_EXTRA_LABEL[reparto]) || REPARTO_EXTRA_LABEL.POR_PAX;
+}
+
+// =====================================================================
+// Sobre de cobro: modo de partición
+// =====================================================================
+
+export const MODO_PARTICION_LABEL: Record<ModoParticionCobro, string> = {
+  LIQUIDACION: "Liquidación",
+  PROPORCIONAL: "Proporcional al precio",
+  MANUAL: "Manual",
+};
+
+/** "Liquidación" / "Proporcional al precio" / "Manual" (desconocido ⇒ crudo). */
+export function etiquetaModoParticion(modo: string | null | undefined): string {
+  if (!modo) return "—";
+  return MODO_PARTICION_LABEL[modo as ModoParticionCobro] ?? modo;
+}
+
+/**
+ * Explicación de UNA línea del modo detectado (vista previa del sobre).
+ * En un reembolso el proporcional va por lo COBRADO de cada avión, no por
+ * su precio.
+ */
+export function explicacionModoParticion(
+  modo: string | null | undefined,
+  opts: { esReembolso?: boolean } = {},
+): string {
+  switch (modo) {
+    case "LIQUIDACION":
+      return "El pago cubre lo que falta: cada avión recibe exactamente su saldo y queda cobrado.";
+    case "PROPORCIONAL":
+      return opts.esReembolso
+        ? "Se devuelve a cada avión en proporción a lo que tiene cobrado."
+        : "Pago parcial: se reparte en proporción al precio de cada avión (los centavos sobrantes van al avión ancla).";
+    case "MANUAL":
+      return "Montos capturados a mano por avión; deben sumar exacto el monto del sobre.";
+    default:
+      return "";
+  }
 }
 
 // =====================================================================
@@ -306,6 +351,32 @@ function textoAMedias(d: RevisionAMediasDetails, message: string): string {
   return `La revisión quedó a medias: ${aplicado}${fallo ? `; falló: ${fallo}` : ""}.${creados} Vuelve a guardar la revisión para completar los aviones restantes (el grupo ya está en la versión ${d.version}).`;
 }
 
+function textoMesCerrado(d: MesCerradoDetails): string {
+  const items = d.map(
+    (h) => `${h.posicion != null ? `avión ${h.posicion} ` : ""}#${h.folio}`,
+  );
+  return `No se puede tocar este cobro del grupo: tiene partes en vuelos de un mes ya cerrado (${listaY(items)}). Lo que ya se cerró no se modifica; si hace falta un ajuste, regístralo como un cobro o reembolso nuevo.`;
+}
+
+function textoReembolsoExcede(d: ReembolsoExcedeDetails): string {
+  if (d.length === 0) {
+    return "Ningún avión del grupo tiene cobros de los cuales devolver: no hay nada que reembolsar.";
+  }
+  const items = d.map(
+    (e) =>
+      `${e.posicion != null ? `avión ${e.posicion}` : `#${e.folio ?? "?"}`}${e.matricula ? ` (${e.matricula})` : ""} devolvería ${fmtUsd(e.reembolso_usd)} y solo tiene ${fmtUsd(e.cobrado_usd)} cobrados`,
+  );
+  return `El reembolso supera lo cobrado de ${d.length === 1 ? "un avión" : `${d.length} aviones`}: ${items.join("; ")}. Baja el monto o reparte a mano lo que devuelve cada avión.`;
+}
+
+function textoNoCuadra(d: ParticionNoCuadraDetails): string {
+  // El API manda `diferencia = monto − suma`: positiva ⇒ las partes se
+  // quedan CORTAS (faltan); negativa ⇒ se pasan (sobran). Montos nativos
+  // (USD o MXN): se pintan con "$" a secas, como el mensaje del API.
+  const signo = d.diferencia > 0 ? "faltan" : "sobran";
+  return `Las partes suman ${fmtUsd(d.suma)} y el monto del sobre es ${fmtUsd(d.monto)}: ${signo} ${fmtUsd(Math.abs(d.diferencia))}. Ajusta los montos por avión hasta que sumen exacto.`;
+}
+
 /**
  * Mensaje claro en es-MX para cada 409 estructurado del API. Para códigos
  * sin plantilla (CONFLICT, BAD_REQUEST, red…) devuelve el mensaje del API,
@@ -360,6 +431,49 @@ export function mensajeErrorGrupo(err: GrupoApiError): string {
       if (esObjeto(d) && Array.isArray(d.aplicados)) {
         texto = textoAMedias(d as unknown as RevisionAMediasDetails, err.message);
       }
+      break;
+    // ---- Sobre de cobro (Fase 2) ----
+    case "COBRO_DE_GRUPO": {
+      const folio = esObjeto(d) ? (d as unknown as CobroDeGrupoDetails).grupo_folio : null;
+      texto = `Este cobro es parte del sobre del grupo ${folioTexto(folio)}: se edita o elimina desde «Cobros del grupo» en el detalle del grupo, no desde el vuelo.`;
+      break;
+    }
+    case "COBRO_CONCILIADO": {
+      const mov = esObjeto(d) ? (d as unknown as CobroConciliadoDetails).movimiento_bancario_id : null;
+      texto = `Este cobro del grupo ya está conciliado con un movimiento bancario${mov ? ` (${mov.slice(0, 8)}…)` : ""}. Desvincúlalo primero en Conciliación y vuelve a intentarlo.`;
+      break;
+    }
+    case "MES_CERRADO":
+      if (Array.isArray(d) && d.length > 0) texto = textoMesCerrado(d as MesCerradoDetails);
+      break;
+    case "REEMBOLSO_EXCEDE":
+      if (Array.isArray(d)) texto = textoReembolsoExcede(d as ReembolsoExcedeDetails);
+      break;
+    case "PARTICION_NO_CUADRA":
+      if (esObjeto(d) && typeof d.suma === "number" && typeof d.monto === "number") {
+        texto = textoNoCuadra(d as unknown as ParticionNoCuadraDetails);
+      }
+      break;
+    case "HIJO_INVALIDO":
+      // El API ya explica cuál (ajeno, cancelado, repetido, signo, AUTO+manual).
+      texto = err.message?.trim()
+        ? `${err.message.trim()} Revisa la partición por avión y vuelve a intentarlo.`
+        : "La partición manual incluye un avión que no es del grupo o ya está cancelado.";
+      break;
+    case "COMISION_INVALIDA":
+      texto = err.message?.trim()
+        ? err.message.trim()
+        : "La comisión del banco no es válida: no puede ser mayor o igual al monto ni ir en un reembolso.";
+      break;
+    case "SIN_TC":
+      texto =
+        "Captura el tipo de cambio: sin TC un cobro en pesos no se puede partir entre los aviones ni sumar al total en USD.";
+      break;
+    case "SIN_HIJOS":
+      texto = "El grupo no tiene aviones vivos entre los cuales repartir el cobro.";
+      break;
+    case "MONTO_CERO":
+      texto = "El monto no puede ser 0.";
       break;
     default:
       break;

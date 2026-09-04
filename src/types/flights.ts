@@ -208,6 +208,32 @@ export interface FlightCobro {
   notas: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * SOBRE de cobro de GRUPO (4-sep-2026, ADITIVOS): cuando este cobro es una
+   * PARTE de un sobre (`cobro_grupo_id` ≠ null) se edita/elimina desde el
+   * grupo — el API responde 409 COBRO_DE_GRUPO en PATCH/DELETE por vuelo.
+   * `cobro_grupo` es el resumen del sobre para pintar "Parte del sobre G-12
+   * · $2,060.16 de $10,800.76" (montos del API, nunca calculados aquí).
+   */
+  cobro_grupo_id?: string | null;
+  /** Fracción (6 decimales) del sobre que le tocó a este vuelo. */
+  grupo_factor?: number | string | null;
+  cobro_grupo?: CobroGrupoResumen | null;
+  /** Conciliado con el banco (fuente única del API `cobro-conciliado.util`:
+      liga directa `cobro_id` o, si es parte, la liga del sobre). Ausente =
+      API previo (no se pinta badge; jamás se deduce en el panel). */
+  conciliado?: boolean;
+  movimiento_bancario_id?: string | null;
+}
+
+/** Resumen del sobre de grupo que viaja en cada parte (aditivo del API). */
+export interface CobroGrupoResumen {
+  id: string;
+  grupo_id: string;
+  grupo_folio: number | null;
+  /** BRUTO del sobre en su moneda nativa. */
+  monto_total: number;
+  moneda: string;
 }
 
 /** Snapshot completo: GET /v1/flights/:id/snapshot. */
