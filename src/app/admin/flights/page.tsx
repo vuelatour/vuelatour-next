@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ExclamationTriangleIcon,
   PaperAirplaneIcon,
+  UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { FlightsFilterBar } from "@/components/admin/flights/flights-filter-bar";
@@ -15,6 +16,10 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { EmptyState } from "@/components/admin/empty-state";
+import { getGrupo } from "@/lib/api/grupos-server";
+import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import type { FlightListItem } from "@/types/flights";
+import type { VueloConGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
 
@@ -27,17 +32,20 @@ interface FlightsPageProps {
     cobro?: string;
     desde?: string;
     hasta?: string;
+    /** Solo los aviones (hijos) de una cotización de GRUPO. */
+    grupo_id?: string;
   }>;
 }
 
 export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const sp = await searchParams;
+  const grupoFiltro = sp.grupo_id || undefined;
 
   // Filtro default: vuelos activos (no solicitud/cotizado/cancelado).
   // Si el user no pasa estado, mostramos todos los operativos (CONFIRMADO+).
   const estadoFilter = sp.estado as EstadoVuelo | undefined;
 
-  const [flightsRes, clientsRes, aircraftRes, pilotsRes] =
+  const [flightsRes, clientsRes, aircraftRes, pilotsRes, grupoFiltrado] =
     await Promise.all([
       // SIN cap (anti-cap-200): prod ya rebasó los 200 vuelos y el corte
       // silencioso hacía parecer "no guardado" un vuelo que sí existía.
@@ -48,6 +56,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
         cobro: sp.cobro || undefined,
         desde: sp.desde || undefined,
         hasta: sp.hasta || undefined,
+        grupo_id: grupoFiltro,
       }),
       // Best-effort: /v1/clients está restringido por rol (PII fiscal); un
       // rol operativo sin acceso ve la lista de vuelos sin nombre de cliente.
@@ -56,6 +65,8 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       })),
       listAircraft({ limit: 100, activa: true }),
       listUsers({ rol: "PILOTO", limit: 50 }),
+      // Cabecera del grupo filtrado (best-effort, solo para el banner).
+      grupoFiltro ? getGrupo(grupoFiltro).catch(() => null) : Promise.resolve(null),
     ]);
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
@@ -127,6 +138,21 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     total_cobrado_usd:
       cobroStatus === null ? null : (cobroStatus[v.id]?.total_cobrado ?? 0),
     sin_tc_count: cobroStatus?.[v.id]?.sin_tc_count ?? 0,
+    // Hijo de una cotización de GRUPO (4-sep): el embed `grupo` ya viaja en
+    // la fila de la lista; el total de aviones solo lo trae el snapshot, así
+    // que aquí el badge omite "de N".
+    grupo: (() => {
+      const vg = v as FlightListItem & VueloConGrupo;
+      const g = grupoDeVuelo(vg);
+      if (!g) return null;
+      return {
+        id: g.id,
+        folio: g.folio ?? null,
+        nombre: g.nombre ?? null,
+        posicion: vg.grupo_posicion ?? null,
+        total: null,
+      };
+    })(),
   }));
   // Orden por fecha de vuelo (recientes primero); SIN fecha PRIMERO
   // (auditoría 29-ago: al fondo, una fila recién creada sin fecha parecía
@@ -172,6 +198,28 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
         {/* TODOS los vuelos nacen igual (cotización normal en Cotizaciones);
             cubrir con externo se decide después, desde el detalle del vuelo. */}
       </div>
+
+      {grupoFiltro && (
+        <div className="flex items-center gap-3 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-4 py-3 text-sm text-fuchsia-800 dark:text-fuchsia-200 flex-wrap">
+          <UserGroupIcon className="h-5 w-5 shrink-0" />
+          <span className="flex-1 min-w-0">
+            Mostrando solo los aviones del grupo{" "}
+            <span className="font-mono font-medium">
+              {grupoFiltrado?.folio_texto ?? "seleccionado"}
+            </span>
+            {grupoFiltrado?.nombre ? ` · ${grupoFiltrado.nombre}` : ""}.
+          </span>
+          <Link
+            href={`/admin/quotes/grupo/${grupoFiltro}`}
+            className="underline underline-offset-2 font-medium"
+          >
+            Ver grupo
+          </Link>
+          <Link href="/admin/flights" className="underline underline-offset-2">
+            Quitar filtro
+          </Link>
+        </div>
+      )}
 
       {huboCorte && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">

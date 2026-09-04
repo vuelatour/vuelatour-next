@@ -35,7 +35,10 @@ import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
-import type { PersistedEscala } from "@/types/quotes-persisted";
+import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
+import type { PersistedEscala, PersistedQuote } from "@/types/quotes-persisted";
+import type { VueloConGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +108,11 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
           )
         : [quote.origen_iata, quote.destino_iata];
 
+  // Hijo de una cotización de GRUPO (4-sep): badge con link al grupo. El
+  // total de aviones sale del snapshot (meta.grupo) si el API lo selló.
+  const quoteConGrupo = quote as PersistedQuote & VueloConGrupo;
+  const grupoHijo = grupoDeVuelo(quoteConGrupo);
+
   // Fecha por tramo para el PDF (3-sep): misma escala VIVA, misma ruta
   // PATCH. Es un 'YYYY-MM-DD' de pared que SOLO imprime el PDF — no toca la
   // ruta operativa ni las fechas de vuelo y no versiona.
@@ -160,6 +168,15 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                     </Link>
                   );
                 })()}
+              {grupoHijo && (
+                <GrupoBadge
+                  grupoId={grupoHijo.id}
+                  folio={grupoHijo.folio}
+                  posicion={quoteConGrupo.grupo_posicion}
+                  total={quote.calculo_snapshot?.meta?.grupo?.total_aviones ?? null}
+                  nombre={grupoHijo.nombre}
+                />
+              )}
             </div>
             {/* Ruta comercial COMPLETA (2-sep-2026); en rutas largas el texto
                 envuelve — nunca se trunca. */}

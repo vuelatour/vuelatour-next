@@ -103,12 +103,19 @@ export async function getRutasSugeridasAction(
 }
 
 export interface QuickAdjustPayload {
-  /** monto_usd = monto NATIVO en la moneda del renglón (nombre legado). */
+  /** monto_usd = monto NATIVO en la moneda del renglón (nombre legado). Con
+   *  cantidad × unitario (4-sep) el motor deriva el monto; las líneas de
+   *  GRUPO viajan tal cual (el API las ancla). */
   extras?: {
     concepto: string;
     monto_usd: number;
     moneda?: "USD" | "MXN";
     aplica_iva?: boolean;
+    cantidad?: number;
+    unitario?: number;
+    por_persona?: boolean;
+    origen?: "GRUPO" | "VUELO";
+    grupo_extra_id?: string;
   }[];
   pasajeros?: number;
   motivo?: string;

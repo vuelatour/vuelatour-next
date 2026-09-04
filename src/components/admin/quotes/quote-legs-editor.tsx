@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { haversineNm } from "@/lib/admin/geo";
 import { getDistanciasAction } from "@/app/admin/distancias/actions";
 import { PlusIcon, TrashIcon, ArrowRightIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
@@ -33,24 +34,6 @@ interface AirportOption {
   /** Coordenadas del catálogo: permiten autocompletar las millas náuticas. */
   latitud?: number | string | null;
   longitud?: number | string | null;
-}
-
-const EARTH_RADIUS_NM = 3440.065;
-
-/** Distancia ortodrómica (great-circle) en millas náuticas entre dos coordenadas. */
-function haversineNm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_NM * Math.asin(Math.sqrt(a));
 }
 
 /**

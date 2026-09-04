@@ -12,7 +12,18 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+
+/** Liga con la cotización de GRUPO (hijo): badge "Grupo G-12 · avión 3 de 7". */
+export interface GrupoDeFila {
+  id: string;
+  folio: number | null;
+  nombre: string | null;
+  posicion: number | null;
+  /** Aviones del grupo (del snapshot); null = se omite "de N". */
+  total: number | null;
+}
 
 /** Fila-viewmodel serializable que arma la página (lookups ya resueltos). */
 export interface QuoteListRow {
@@ -46,15 +57,36 @@ export interface QuoteListRow {
   /** null = batch de cobros no disponible (rol sin acceso). */
   totalCobradoUsd: number | null;
   sinTcCount: number;
+  /** Hijo de una cotización de GRUPO (4-sep); null = cotización normal. */
+  grupo?: GrupoDeFila | null;
 }
 
 const columns: Array<DataTableColumn<QuoteListRow>> = [
   {
     key: "folio",
     header: "Folio",
-    headClassName: "w-20",
+    headClassName: "w-24",
     cellClassName: "font-mono text-xs",
-    cell: (q) => <>#{q.folio}</>,
+    // noLink: el badge del grupo enlaza al GRUPO, así que la celda arma su
+    // propio link de fila al folio (mismo destino que el resto de la fila).
+    noLink: true,
+    cell: (q) => (
+      <span className="inline-flex flex-col items-start gap-1">
+        <Link href={`/admin/quotes/${q.id}`} className="block hover:underline underline-offset-2">
+          #{q.folio}
+        </Link>
+        {q.grupo && (
+          <GrupoBadge
+            grupoId={q.grupo.id}
+            folio={q.grupo.folio}
+            posicion={q.grupo.posicion}
+            total={q.grupo.total}
+            nombre={q.grupo.nombre}
+            className="text-[10px] h-4 px-1.5"
+          />
+        )}
+      </span>
+    ),
   },
   {
     key: "cliente",
@@ -208,7 +240,7 @@ export function QuotesTable({
       rowKey={(q) => q.id}
       rowHref={(q) => `/admin/quotes/${q.id}`}
       searchText={(q) =>
-        `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""}`
+        `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""} ${q.grupo ? `G-${q.grupo.folio ?? ""} ${q.grupo.nombre ?? ""}` : ""}`
       }
       searchPlaceholder="Buscar cotización (folio, cliente, ruta, avión)…"
     />

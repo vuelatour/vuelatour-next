@@ -99,6 +99,13 @@ export interface FlightListItem {
   google_calendar_id: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Avisos NO bloqueantes que devuelven assign / createReserva (4-sep-2026):
+   * capacidad del avión vs pasajeros, doble reserva del avión ese día. Solo
+   * viajan en la respuesta de esas escrituras (no en listas/snapshot); el
+   * panel los muestra como toast ámbar con `toastAvisos`.
+   */
+  avisos?: string[];
 }
 
 export interface FlightEscala {
@@ -174,6 +181,8 @@ export interface FlightEscala {
   notas: string | null;
   created_at: string;
   updated_at: string;
+  /** Avisos NO bloqueantes de assignEscala (capacidad/doble reserva). */
+  avisos?: string[];
 }
 
 export interface FlightCobro {
@@ -215,6 +224,12 @@ export interface FlightSnapshot extends FlightListItem {
    */
   participacion_aviones?: ParticipacionAvion[];
   participacion_fuente?: ParticipacionFuente;
+  /**
+   * Cotización de GRUPO (4-sep-2026): aviones VIVOS del grupo al que
+   * pertenece este vuelo, para el badge "avión k de N". null/ausente = no es
+   * hijo de grupo o API previo (el badge omite "de N").
+   */
+  grupo_total_aviones?: number | null;
 }
 
 /** Foto de tacómetro con URL firmada: GET /v1/flights/:id/taco-photos. */

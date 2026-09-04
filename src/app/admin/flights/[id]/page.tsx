@@ -52,7 +52,10 @@ import {
 } from "@/lib/admin/cobros";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
-import { apoyosDeVuelo, combinadoFolio } from "@/types/flights";
+import { apoyosDeVuelo, combinadoFolio, type FlightSnapshot } from "@/types/flights";
+import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
+import type { VueloConGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
 
@@ -210,6 +213,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   // Vuelo COMBINADO (estrategia de pernocta): folio del vuelo ligado — el
   // join puede llegar como objeto o arreglo (PostgREST) o faltar (API vieja).
   const folioCombinado = combinadoFolio(snapshot);
+  // Hijo de una cotización de GRUPO (4-sep): badge con link al grupo; el
+  // total de aviones vivos lo manda el snapshot (grupo_total_aviones).
+  const snapshotConGrupo = snapshot as FlightSnapshot & VueloConGrupo;
+  const grupoHijo = grupoDeVuelo(snapshotConGrupo);
   // Apoyo en tierra: CUALQUIER usuario activo de la operación (admin,
   // coordinación, mecánico, visitante…), no solo pilotos (pedido 29-ago; el
   // API ya lo permitía y la app ya listaba a todos). Best-effort: si el rol
@@ -360,6 +367,16 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                       : "♻ Vuelo combinado"}
                   </Badge>
                 </Link>
+              )}
+              {grupoHijo && (
+                <GrupoBadge
+                  grupoId={grupoHijo.id}
+                  folio={grupoHijo.folio}
+                  posicion={snapshotConGrupo.grupo_posicion}
+                  total={snapshot.grupo_total_aviones ?? null}
+                  nombre={grupoHijo.nombre}
+                  className="text-xs"
+                />
               )}
               {!snapshot.es_externo &&
                 snapshot.estado === "CONFIRMADO" &&

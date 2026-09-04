@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import { toastAvisos } from "@/lib/admin/avisos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cancunInputToIso, TZ_LABEL } from "@/lib/datetime";
@@ -295,6 +296,9 @@ export function ReservaFormSheet({
             ? `Operación guardada · vuelo #${res.data.folio} — se avisó al mecánico de las discrepancias abiertas del avión.`
             : `Operación guardada · vuelo #${res.data.folio}. Usa "Cotizar" cuando quieras ponerle precio.`,
         );
+        // Avisos no bloqueantes del API (capacidad del avión vs pasajeros,
+        // doble reserva ese día): el vuelo YA se creó; solo se avisa.
+        toastAvisos(res.data.avisos);
         setSquawk(null);
         onOpenChange(false);
         router.push(`/admin/flights/${res.data.id}`);

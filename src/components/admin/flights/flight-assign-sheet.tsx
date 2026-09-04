@@ -25,6 +25,7 @@ import {
   type PilotoDisponibilidad,
 } from "@/app/admin/flights/actions";
 import { apoyosDeVuelo, type FlightListItem } from "@/types/flights";
+import { toastAvisos } from "@/lib/admin/avisos";
 import { ApoyosField, mismoConjunto } from "./apoyos-field";
 import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
 
@@ -214,6 +215,9 @@ export function FlightAssignSheet({
             ? "Asignación actualizada — se avisó al mecánico de las discrepancias abiertas"
             : "Asignación actualizada",
         );
+        // Avisos no bloqueantes del API (capacidad del avión vs pasajeros,
+        // doble reserva ese día): la asignación YA se guardó; solo se avisa.
+        toastAvisos(res.data?.avisos);
         setSquawk(null);
         onOpenChange(false);
         router.refresh();

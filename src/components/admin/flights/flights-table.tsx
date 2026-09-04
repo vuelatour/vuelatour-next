@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
+import type { GrupoDeFila } from "@/components/admin/quotes/quotes-table";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { estadoCobroSemaforo } from "@/lib/admin/cobros";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
@@ -37,15 +40,41 @@ export interface FlightRow {
   /** null = batch de cobros no disponible (rol sin acceso). */
   total_cobrado_usd: number | null;
   sin_tc_count: number;
+  /** Hijo de una cotización de GRUPO (4-sep); null = vuelo normal. */
+  grupo?: GrupoDeFila | null;
+}
+
+/** Destino del clic de fila (COTIZADO ya abre su detalle de vuelo). */
+function hrefDeFila(v: FlightRow): string {
+  return v.estado === "SOLICITUD" ? `/admin/quotes/${v.id}` : `/admin/flights/${v.id}`;
 }
 
 const columns: Array<DataTableColumn<FlightRow>> = [
   {
     key: "folio",
     header: "Folio",
-    headClassName: "w-20",
+    headClassName: "w-24",
     cellClassName: "font-mono text-xs",
-    cell: (v) => <>#{v.folio}</>,
+    // noLink: el badge del grupo enlaza al GRUPO; la celda arma su propio
+    // link de fila (mismo destino que el resto de la fila).
+    noLink: true,
+    cell: (v) => (
+      <span className="inline-flex flex-col items-start gap-1">
+        <Link href={hrefDeFila(v)} className="block hover:underline underline-offset-2">
+          #{v.folio}
+        </Link>
+        {v.grupo && (
+          <GrupoBadge
+            grupoId={v.grupo.id}
+            folio={v.grupo.folio}
+            posicion={v.grupo.posicion}
+            total={v.grupo.total}
+            nombre={v.grupo.nombre}
+            className="text-[10px] h-4 px-1.5"
+          />
+        )}
+      </span>
+    ),
   },
   {
     key: "cliente",
@@ -175,15 +204,11 @@ export function FlightsTable({
       // 2026): la operación se prepara desde ahí y el banner del detalle
       // enlaza a la cotización. Solo SOLICITUD sigue yendo al cotizador
       // (aún no hay nada operativo que ver).
-      rowHref={(v) =>
-        v.estado === "SOLICITUD"
-          ? `/admin/quotes/${v.id}`
-          : `/admin/flights/${v.id}`
-      }
+      rowHref={hrefDeFila}
       // Azul = aún en cotización (sin confirmar): identificable de un vistazo.
       rowClassName={(v) => (v.en_cotizacion ? "bg-sky-500/[0.07]" : undefined)}
       searchText={(v) =>
-        `#${v.folio} ${v.cliente_nombre ?? ""} ${v.operador_externo ?? ""} ${v.ruta} ${v.matricula ?? ""} ${v.piloto_nombre ?? ""}`
+        `#${v.folio} ${v.cliente_nombre ?? ""} ${v.operador_externo ?? ""} ${v.ruta} ${v.matricula ?? ""} ${v.piloto_nombre ?? ""} ${v.grupo ? `G-${v.grupo.folio ?? ""} ${v.grupo.nombre ?? ""}` : ""}`
       }
       searchPlaceholder="Buscar vuelo (folio, cliente, ruta, matrícula, piloto)…"
     />

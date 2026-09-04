@@ -32,6 +32,30 @@ export interface ExtraConcepto {
   tc_aplicado?: number | null;
   /** Si entra a la base de IVA (default true). */
   aplica_iva?: boolean;
+  // ---- cantidad × unitario (4-sep-2026, base de la cotización de grupo) ----
+  // Todos opcionales y retrocompatibles: un extra "de monto" sigue igual.
+  /**
+   * Cantidad (ej. 9 personas del tour). Con `unitario`, el MOTOR deriva el
+   * monto = round2(cantidad × unitario): el panel no lo calcula, solo lo
+   * pinta derivado/deshabilitado como referencia.
+   */
+  cantidad?: number;
+  /** Precio unitario NATIVO en la moneda del renglón. */
+  unitario?: number;
+  /**
+   * Extra POR PERSONA: en una cotización de un avión la cantidad se liga a
+   * los pasajeros del vuelo en cada recálculo; en una línea de GRUPO la
+   * cantidad la fija el grupo (grupo_pax).
+   */
+  por_persona?: boolean;
+  /**
+   * 'GRUPO' = materializado desde la cotización de grupo (se edita SOLO
+   * desde el grupo; el API la ancla al revisar/ajustar el hijo). 'VUELO'
+   * (default) = propio de esta cotización.
+   */
+  origen?: "GRUPO" | "VUELO";
+  /** Id del extra en la cabecera del grupo del que se materializó. */
+  grupo_extra_id?: string;
 }
 
 /** TUA capturada POR AEROPUERTO: monto unitario editable + moneda propia. */
@@ -296,5 +320,19 @@ export interface QuoteBreakdown {
      * folios viejos lo traen y persiste para que revisar/ajustar no lo pise.
      */
     total_pactado_usd?: number | null;
+    /**
+     * Liga con la cotización de GRUPO (4-sep-2026; ADITIVO, informativo):
+     * la sella el API cuando el vuelo es hijo de un grupo. `total_aviones`
+     * puede faltar en snapshots viejos → el badge omite "de N".
+     */
+    grupo?: {
+      id: string;
+      folio: number | null;
+      posicion: number;
+      total_aviones: number | null;
+      pax: number;
+      /** Voló en un avión distinto al cotizado sin recotizar. */
+      precio_desactualizado?: boolean;
+    } | null;
   };
 }

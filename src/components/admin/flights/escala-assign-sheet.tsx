@@ -27,6 +27,7 @@ import {
 import type { FlightEscala, TripulanteRef } from "@/types/flights";
 import { ApoyosField, mismoConjunto } from "./apoyos-field";
 import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
+import { toastAvisos } from "@/lib/admin/avisos";
 
 interface AircraftOption {
   id: string;
@@ -260,6 +261,8 @@ export function EscalaAssignSheet({
             ? `${tramoLabel} actualizado — se avisó al mecánico de las discrepancias abiertas`
             : `${tramoLabel} actualizado`,
         );
+        // Avisos no bloqueantes del API (capacidad/doble reserva del avión).
+        toastAvisos(res.data?.avisos);
         setSquawk(null);
         onOpenChange(false);
         router.refresh();

@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { CalculatorIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import {
+  CalculatorIcon,
+  ExclamationTriangleIcon,
+  UserGroupIcon,
+} from "@heroicons/react/24/outline";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { QuotesFilterBar } from "@/components/admin/quotes/quotes-filter-bar";
 import { QuotesTable, type QuoteListRow } from "@/components/admin/quotes/quotes-table";
@@ -11,6 +16,10 @@ import { listPilots } from "@/lib/api/pilots-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { NewReservaButton } from "@/components/admin/flights/new-reserva-button";
 import { EmptyState } from "@/components/admin/empty-state";
+import { getGrupo } from "@/lib/api/grupos-server";
+import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import type { PersistedQuote } from "@/types/quotes-persisted";
+import type { VueloConGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +29,16 @@ interface QuotesPageProps {
     estado?: string;
     cliente_id?: string;
     q?: string;
+    /** Solo los aviones (hijos) de una cotización de GRUPO. */
+    grupo_id?: string;
   }>;
 }
 
 export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const sp = await searchParams;
+  const grupoFiltro = sp.grupo_id || undefined;
 
-  const [quotesRes, clientsRes, aircraftRes, pilotsRes, airportsRes] =
+  const [quotesRes, clientsRes, aircraftRes, pilotsRes, airportsRes, grupoFiltrado] =
     await Promise.all([
       // SIN cap (anti-cap-200): con el corte, una cotización recién creada
       // podía quedar fuera y parecer "no guardada" (auditoría 29-ago).
@@ -34,6 +46,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         estado: sp.estado || undefined,
         cliente_id: sp.cliente_id || undefined,
         q: sp.q || undefined,
+        grupo_id: grupoFiltro,
       }),
       listClients({ limit: 200, activo: true }),
       // TODA la flota (no solo activa): la columna "Avión" debe resolver la
@@ -42,6 +55,8 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       listAircraft({ limit: 100 }),
       listPilots({ estado: "ACTIVO", limit: 200 }),
       listAirports({ limit: 200, activo: true }),
+      // Cabecera del grupo filtrado (best-effort, solo para el banner).
+      grupoFiltro ? getGrupo(grupoFiltro).catch(() => null) : Promise.resolve(null),
     ]);
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
@@ -97,6 +112,20 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
     totalCobradoUsd:
       cobroStatus === null ? null : (cobroStatus[q.id]?.total_cobrado ?? 0),
     sinTcCount: cobroStatus?.[q.id]?.sin_tc_count ?? 0,
+    // Hijo de una cotización de GRUPO (4-sep): el embed `grupo` ya viaja en
+    // la fila; el total de aviones sale del snapshot (si el API lo selló).
+    grupo: (() => {
+      const qg = q as PersistedQuote & VueloConGrupo;
+      const g = grupoDeVuelo(qg);
+      if (!g) return null;
+      return {
+        id: g.id,
+        folio: g.folio ?? null,
+        nombre: g.nombre ?? null,
+        posicion: qg.grupo_posicion ?? null,
+        total: q.calculo_snapshot?.meta?.grupo?.total_aviones ?? null,
+      };
+    })(),
   }));
   // Orden por fecha de vuelo (recientes primero); SIN fecha PRIMERO
   // (auditoría 29-ago: al fondo, una cotización recién creada sin fecha
@@ -126,7 +155,25 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
             {count} {count === 1 ? "cotización" : "cotizaciones"} en el rango.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Cotización de GRUPO (4-sep): varios aviones para un mismo cliente
+              con UN total; cada avión nace como vuelo normal ligado al grupo. */}
+          <Link
+            href="/admin/quotes/grupo"
+            className={buttonVariants({ variant: "ghost" })}
+            title="Ver todas las cotizaciones de grupo"
+          >
+            <UserGroupIcon className="h-4 w-4" />
+            Grupos
+          </Link>
+          <Link
+            href="/admin/quotes/grupo/nueva"
+            className={buttonVariants({ variant: "outline" })}
+            title="Cotizar un grupo: varios aviones para un mismo cliente con un solo total"
+          >
+            <UserGroupIcon className="h-4 w-4" />
+            Cotización de grupo
+          </Link>
           {/* Flujo principal (acuerdo con cliente): primero la estructura base
               OPERATIVA (avión, ruta real, piloto, hora, cliente); el precio se
               arma después con "Cotizar" desde el detalle — o nunca, si el
@@ -156,6 +203,28 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           />
         </div>
       </div>
+
+      {grupoFiltro && (
+        <div className="flex items-center gap-3 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-4 py-3 text-sm text-fuchsia-800 dark:text-fuchsia-200 flex-wrap">
+          <UserGroupIcon className="h-5 w-5 shrink-0" />
+          <span className="flex-1 min-w-0">
+            Mostrando solo los aviones del grupo{" "}
+            <span className="font-mono font-medium">
+              {grupoFiltrado?.folio_texto ?? "seleccionado"}
+            </span>
+            {grupoFiltrado?.nombre ? ` · ${grupoFiltrado.nombre}` : ""}.
+          </span>
+          <Link
+            href={`/admin/quotes/grupo/${grupoFiltro}`}
+            className="underline underline-offset-2 font-medium"
+          >
+            Ver grupo
+          </Link>
+          <Link href="/admin/quotes" className="underline underline-offset-2">
+            Quitar filtro
+          </Link>
+        </div>
+      )}
 
       {huboCorte && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">

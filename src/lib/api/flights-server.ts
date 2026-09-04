@@ -17,6 +17,8 @@ export interface ListFlightsQuery {
   cobro?: string;
   desde?: string;
   hasta?: string;
+  /** Solo los hijos de una cotización de GRUPO (vuelo.grupo_id). */
+  grupo_id?: string;
   limit?: number;
   offset?: number;
 }

@@ -58,6 +58,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
+import { ExtrasEditor } from "@/components/admin/quotes/extras-editor";
+import {
+  extrasAPayload,
+  montoExtraActivo,
+  normalizarExtrasEditor,
+  textoCantidadUnitario,
+} from "@/lib/admin/extras";
+import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import type { VueloConGrupo } from "@/types/grupos";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
 import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
@@ -413,6 +422,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }>
   >([]);
   const initialQuote = isRevise ? props.initialQuote : undefined;
+  // Hijo de una cotización de GRUPO (4-sep): los renglones de extras con
+  // origen GRUPO se pintan bloqueados con la liga al grupo.
+  const grupoDelHijo = grupoDeVuelo(initialQuote as (typeof initialQuote & VueloConGrupo) | undefined);
   const clientName = isRevise ? props.clientName : undefined;
   const reviseClienteInterno = isRevise ? (props.clientEsInterno ?? false) : false;
   const clients = isRevise ? [] : props.clients;
@@ -656,14 +668,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // nombre legado): un extra MXN persistido trae el canon convertido en
         // monto_usd y los pesos reales en monto_nativo — rehidratar el canon
         // como nativo re-interpretaría dólares como pesos.
-        extras: (q.extras ?? [])
-          .filter((e) => !e.concepto?.startsWith("Comisión BillPocket"))
-          .map((e) => ({
-            concepto: e.concepto,
-            monto_usd: Number(e.monto_nativo ?? e.monto_usd) || 0,
-            moneda: e.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
-            aplica_iva: e.aplica_iva ?? true,
-          })),
+        // 4-sep: cantidad × unitario, por_persona y la liga de GRUPO
+        // (origen/grupo_extra_id) se conservan tal cual (fuente única
+        // normalizarExtrasEditor) — un renglón de grupo viaja intacto.
+        extras: normalizarExtrasEditor(
+          (q.extras ?? []).filter(
+            (e) => !e.concepto?.startsWith("Comisión BillPocket"),
+          ),
+        ),
         // Con redondeo automático activo, el ajuste guardado es
         // redondeo_auto − descuento: se re-hidrata el descuento BASE desde
         // meta y el redondeo se vuelve a resolver en el motor. (27-ago: el
@@ -938,23 +950,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       cotizacion_abierta: debounced.cotizacion_abierta,
       pdf_mostrar_tarifa: debounced.pdf_mostrar_tarifa,
       pdf_mostrar_itinerario: debounced.pdf_mostrar_itinerario,
-      extras: (debounced.extras ?? [])
-        .filter(
-          (e) =>
-            e.concepto.trim() &&
-            Number(e.monto_usd) > 0 &&
-            // Un extra MXN sin TC no puede convertirse (el motor lo rechaza
-            // con 400 y tiraría el preview): se retiene fuera del cálculo —
-            // el editor avisa en ámbar y guardar queda bloqueado (mxnSinTc).
-            (e.moneda !== "MXN" || Number(debounced.tc_usd_mxn) > 0),
-        )
-        .map((e) => ({
-          concepto: e.concepto.trim(),
-          // Monto NATIVO en la moneda del renglón (nombre legado monto_usd).
-          monto_usd: Number(e.monto_usd),
-          moneda: e.moneda === "MXN" ? ("MXN" as const) : ("USD" as const),
-          aplica_iva: e.aplica_iva ?? true,
-        })),
+      // Un extra MXN sin TC no puede convertirse (el motor lo rechaza con
+      // 400 y tiraría el preview): se retiene fuera del cálculo — el editor
+      // avisa en ámbar y guardar queda bloqueado (mxnSinTc). Con cantidad ×
+      // unitario el monto NO se calcula aquí: lo deriva el motor.
+      extras: extrasAPayload(debounced.extras, {
+        tcCapturado: Number(debounced.tc_usd_mxn) > 0,
+      }),
       // Con redondeo automático solo viaja el descuento; el motor resuelve el
       // redondeo exacto al siguiente múltiplo de $10.
       ajuste_final_usd: debounced.redondeo_auto
@@ -1350,7 +1352,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       tuaAplicaEnBreakdown(l.iata),
   );
   const hayExtrasMxn = (values.extras ?? []).some(
-    (e) => e.moneda === "MXN" && Number(e.monto_usd) > 0,
+    (e) => e.moneda === "MXN" && montoExtraActivo(e) > 0,
   );
   // ¿Hay renglones nativos en MXN (TUAS o extras)? Fuerza a mostrar el campo
   // de TC aunque el método sea DOLARES: sin TC el motor no puede convertirlos.
@@ -2568,6 +2570,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onChange={(extras) => setValue("extras", extras)}
             tcCapturado={Number(values.tc_usd_mxn) > 0}
             onFocusTc={focusTc}
+            pasajeros={Number(values.pasajeros) > 0 ? Number(values.pasajeros) : null}
+            grupo={grupoDelHijo}
           />
           {breakdown && (
             <AporteChip
@@ -4231,8 +4235,20 @@ function Preview({
                 >
                   <span className="text-muted-foreground min-w-0 break-words">
                     {e.concepto}
+                    {/* Renglón cantidad × unitario: el motor ya derivó el
+                        monto; aquí solo la leyenda. */}
+                    {e.unitario != null && (
+                      <span className="ml-1 font-mono text-[10px]">
+                        · {textoCantidadUnitario(e, e.cantidad ?? null)}
+                      </span>
+                    )}
                     {e.aplica_iva === false && (
                       <span className="ml-1 text-[10px]">(sin IVA)</span>
+                    )}
+                    {e.origen === "GRUPO" && (
+                      <span className="ml-1 rounded bg-fuchsia-500/15 px-1 text-[10px] text-fuchsia-700 dark:text-fuchsia-300">
+                        grupo
+                      </span>
                     )}
                   </span>
                   <span className="font-mono shrink-0">
@@ -4855,124 +4871,3 @@ function Segmented({
   );
 }
 
-
-const EXTRAS_SUGERIDOS = ["Handler", "Comisariato", "Extensión de servicios"];
-
-/** Editor de conceptos extra: agrega, edita y quita líneas en la misma pantalla. */
-function ExtrasEditor({
-  value,
-  onChange,
-  tcCapturado,
-  onFocusTc,
-}: {
-  value: ExtraConcepto[];
-  onChange: (extras: ExtraConcepto[]) => void;
-  /** Hay TC (MXN por USD) capturado: sin él los renglones MXN no entran al total. */
-  tcCapturado: boolean;
-  /** Abre la sección de Cobro antes del scroll+focus al campo de TC. */
-  onFocusTc?: () => void;
-}) {
-  const update = (idx: number, patch: Partial<ExtraConcepto>) => {
-    const next = [...value];
-    next[idx] = { ...next[idx], ...patch };
-    onChange(next);
-  };
-  const add = (concepto = "") =>
-    onChange([...value, { concepto, monto_usd: 0, moneda: "USD", aplica_iva: true }]);
-  const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
-
-  return (
-    <div className="space-y-2">
-      <Label className="text-sm font-medium">Conceptos extra</Label>
-      {value.length === 0 && (
-        <p className="text-xs text-muted-foreground">
-          Handler, comisariato, extensión de servicios… se suman al total sin
-          salir de esta pantalla.
-        </p>
-      )}
-      {value.map((e, idx) => (
-        <div
-          key={idx}
-          className="rounded-lg border border-border bg-navy-800/50 p-2.5 space-y-2"
-        >
-          <div className="grid grid-cols-[1fr_96px_76px] gap-2">
-            <Input
-              placeholder="Concepto (ej. Handler)"
-              value={e.concepto}
-              onChange={(ev) => update(idx, { concepto: ev.target.value })}
-            />
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              // El monto es NATIVO en la moneda del renglón (MXN entra al
-              // total en pesos tal cual; requiere TC capturado).
-              placeholder={e.moneda === "MXN" ? "MXN" : "USD"}
-              value={e.monto_usd || ""}
-              onChange={(ev) =>
-                update(idx, { monto_usd: Number(ev.target.value) || 0 })
-              }
-            />
-            <MonedaSelect
-              value={e.moneda === "MXN" ? "MXN" : "USD"}
-              onChange={(m) => update(idx, { moneda: m })}
-            />
-          </div>
-          {/* Extra MXN sin TC: se retiene fuera del cálculo (no tira el
-              preview con el 400 del motor) y guardar queda bloqueado. */}
-          {e.moneda === "MXN" && Number(e.monto_usd) > 0 && !tcCapturado && (
-            <button
-              type="button"
-              onClick={onFocusTc ?? focusTcField}
-              className="text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
-            >
-              Captura el TC en «Cobro y cierre» — sin tipo de cambio este
-              extra en MXN no entra al total.
-            </button>
-          )}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Switch
-                checked={e.aplica_iva ?? true}
-                onCheckedChange={(c) => update(idx, { aplica_iva: c })}
-              />
-              Entra a la base de IVA
-            </label>
-            <button
-              type="button"
-              onClick={() => remove(idx)}
-              className="text-xs text-destructive hover:opacity-80 transition-opacity"
-            >
-              Quitar
-            </button>
-          </div>
-        </div>
-      ))}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => add()}
-          className="gap-1.5"
-        >
-          <PlusIcon className="h-3.5 w-3.5" />
-          Agregar concepto
-        </Button>
-        {EXTRAS_SUGERIDOS.filter(
-          (sug) => !value.some((e) => e.concepto.toLowerCase() === sug.toLowerCase()),
-        ).map((sug) => (
-          <button
-            key={sug}
-            type="button"
-            onClick={() => add(sug)}
-            className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
-          >
-            + {sug}
-          </button>
-        ))}
-      </div>
-
-    </div>
-  );
-}

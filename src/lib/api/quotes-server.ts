@@ -10,6 +10,8 @@ export interface ListQuotesQuery {
   aeronave_id?: string;
   estado?: string;
   es_externo?: boolean;
+  /** Solo los hijos de una cotización de GRUPO (vuelo.grupo_id). */
+  grupo_id?: string;
   q?: string;
   limit?: number;
   offset?: number;
