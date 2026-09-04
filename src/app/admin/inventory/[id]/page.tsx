@@ -2,24 +2,31 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/admin/back-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isApiError } from "@/lib/api/errors";
-import { getInventarioItem } from "@/lib/api/inventory-server";
+import { getInventarioItem, getInventarioItemResumen } from "@/lib/api/inventory-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
+import { fmtMxn, fmtUsd } from "@/lib/format";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
 import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
-import type { InventarioFoto, InventarioItemDetail } from "@/types/inventory";
+import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
+import type {
+  InventarioFoto,
+  InventarioItemDetail,
+  InventarioItemResumen,
+} from "@/types/inventory";
 
 export const dynamic = "force-dynamic";
 
-const mxn = (n: number) =>
-  n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
+/**
+ * Detalle del producto (pedido del cliente 4-sep-2026): abre con los tres
+ * bloques COMPRAS | VENTAS | RESUMEN (réplica de su Excel); debajo siguen
+ * los indicadores, empaques, fotos y el cardex completo con sus acciones.
+ */
 export default async function InventoryItemPage({
   params,
   searchParams,
@@ -32,17 +39,22 @@ export default async function InventoryItemPage({
   const sp = await searchParams;
 
   let item: InventarioItemDetail;
+  let resumen: InventarioItemResumen | null;
   let aircraft: { id: string; matricula: string }[];
   let providers: { id: string; nombre: string }[];
   let puedeEditarCosto = false;
   try {
-    const [itemRes, aircraftRes, providersRes, me] = await Promise.all([
+    const [itemRes, resumenRes, aircraftRes, providersRes, me] = await Promise.all([
       getInventarioItem(id),
+      // Bloques COMPRAS/VENTAS/RESUMEN. Tolerante: si el API aún no conoce la
+      // ruta (skew de deploy) el detalle no se cae — el bloque avisa.
+      getInventarioItemResumen(id).catch(() => null),
       listAircraft({ limit: 100 }),
       listProviders({ limit: 200 }),
       getMe().catch(() => null),
     ]);
     item = itemRes;
+    resumen = resumenRes;
     aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
     // Mismos roles del PATCH del API: a los demás no se les muestra un botón
@@ -64,24 +76,24 @@ export default async function InventoryItemPage({
 
   return (
     <div className="space-y-6">
-        <BackLink
-          href="/admin/inventory"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          iconClassName="h-4 w-4"
-        >
-          Inventario
-        </BackLink>
+      <BackLink
+        href="/admin/inventory"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        iconClassName="h-4 w-4"
+      >
+        Inventario
+      </BackLink>
 
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4">
-            {item.foto_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.foto_url}
-                alt={item.nombre}
-                className="h-20 w-20 shrink-0 rounded-lg object-cover ring-1 ring-border"
-              />
-            )}
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-4">
+          {item.foto_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.foto_url}
+              alt={item.nombre}
+              className="h-20 w-20 shrink-0 rounded-lg object-cover ring-1 ring-border"
+            />
+          )}
           <div>
             <p className="text-sm text-muted-foreground">
               {item.categoria}
@@ -103,108 +115,119 @@ export default async function InventoryItemPage({
               <p className="text-sm mt-2 max-w-2xl whitespace-pre-line">{item.descripcion}</p>
             )}
           </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
-            <MovimientoButton
-              itemId={item.id}
-              itemNombre={item.nombre}
-              unidad={item.unidad}
-              precioVenta={item.precio_venta != null ? Number(item.precio_venta) : null}
-              precioVentaMoneda={item.precio_venta_moneda}
-              empaques={empaques}
-              aircraft={aircraft}
-              providers={providers}
-              initialEmpaqueId={empaqueEscaneado}
-              autoOpen={!!empaqueEscaneado}
-            />
-          </div>
         </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-          <Stat label="Stock actual" value={`${num(item.stock)}${item.unidad ? ` ${item.unidad}` : ""}`} highlight={item.bajo_stock} />
-          <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
-          <Stat label="Costo FIFO" value={item.costo_fifo_mxn_actual ? `${mxn(item.costo_fifo_mxn_actual)} MXN` : "—"} />
-          {/* Precio de VENTA al avión (29-ago-2026): la salida se carga a este
-              precio; sin precio, se carga a costo FIFO. */}
-          <Stat
-            label="Precio de venta"
-            value={
-              item.precio_venta != null && Number(item.precio_venta) > 0
-                ? item.precio_venta_moneda === "USD"
-                  ? `${usd(Number(item.precio_venta))} USD`
-                  : `${mxn(Number(item.precio_venta))} MXN`
-                : "A costo FIFO"
-            }
-          />
-          <Stat label="Valorizado" value={`${mxn(item.valor_mxn)} MXN`} />
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,320px)]">
-          <EmpaquesCard
+        <div className="flex flex-wrap items-center gap-2">
+          <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
+          <MovimientoButton
             itemId={item.id}
             itemNombre={item.nombre}
-            itemCodigo={item.codigo}
             unidad={item.unidad}
+            precioVenta={item.precio_venta != null ? Number(item.precio_venta) : null}
+            precioVentaMoneda={item.precio_venta_moneda}
             empaques={empaques}
+            aircraft={aircraft}
+            providers={providers}
+            initialEmpaqueId={empaqueEscaneado}
+            autoOpen={!!empaqueEscaneado}
           />
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Fotos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {fotos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Sin fotos. Se agregan al editar el ítem o desde la app (la IA llena la ficha
-                  con ellas).
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {fotos.map((f, i) => (
-                    <a
-                      key={f.path || f.url}
-                      href={f.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block"
-                      title={i === 0 && item.foto_url ? "Foto principal" : "Foto adicional"}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={f.url}
-                        alt={`${item.nombre} ${i + 1}`}
-                        className="h-20 w-20 rounded-md object-cover ring-1 ring-border hover:ring-brand-600"
-                      />
-                    </a>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
+      </div>
+
+      {/* Lo primero que ve el operador: compras, ventas y resumen por día
+          (mismo FIFO/ganancia que el balance; solo se pinta). */}
+      <ResumenProducto resumen={resumen} />
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+        <Stat
+          label="Stock actual"
+          value={`${num(item.stock)}${item.unidad ? ` ${item.unidad}` : ""}`}
+          highlight={item.bajo_stock}
+        />
+        <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
+        <Stat
+          label="Costo FIFO"
+          value={item.costo_fifo_mxn_actual ? fmtMxn(item.costo_fifo_mxn_actual) : "—"}
+        />
+        {/* Precio de VENTA al avión (29-ago-2026): la salida se carga a este
+            precio; sin precio, se carga a costo FIFO. */}
+        <Stat
+          label="Precio de venta"
+          value={
+            item.precio_venta != null && Number(item.precio_venta) > 0
+              ? item.precio_venta_moneda === "USD"
+                ? `${fmtUsd(item.precio_venta)} USD`
+                : fmtMxn(item.precio_venta)
+              : "A costo FIFO"
+          }
+        />
+        <Stat label="Valorizado" value={fmtMxn(item.valor_mxn)} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,320px)]">
+        <EmpaquesCard
+          itemId={item.id}
+          itemNombre={item.nombre}
+          itemCodigo={item.codigo}
+          unidad={item.unidad}
+          empaques={empaques}
+        />
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Cardex</CardTitle>
+            <CardTitle className="text-base">Fotos</CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            {item.movimientos.length === 0 ? (
-              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-                Sin movimientos todavía. Registra una entrada para dar de alta stock.
+          <CardContent>
+            {fotos.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Sin fotos. Se agregan al editar el ítem o desde la app (la IA llena la ficha
+                con ellas).
               </p>
             ) : (
-              <CardexConEdicion
-                itemId={item.id}
-                itemNombre={item.nombre}
-                unidad={item.unidad}
-                movimientos={item.movimientos}
-                puedeEditarCosto={puedeEditarCosto}
-              />
+              <div className="flex flex-wrap gap-2">
+                {fotos.map((f, i) => (
+                  <a
+                    key={f.path || f.url}
+                    href={f.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                    title={i === 0 && item.foto_url ? "Foto principal" : "Foto adicional"}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={f.url}
+                      alt={`${item.nombre} ${i + 1}`}
+                      className="h-20 w-20 rounded-md object-cover ring-1 ring-border hover:ring-brand-600"
+                    />
+                  </a>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Cardex completo</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {item.movimientos.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+              Sin movimientos todavía. Registra una entrada para dar de alta stock.
+            </p>
+          ) : (
+            <CardexConEdicion
+              itemId={item.id}
+              itemNombre={item.nombre}
+              unidad={item.unidad}
+              movimientos={item.movimientos}
+              puedeEditarCosto={puedeEditarCosto}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

@@ -63,6 +63,24 @@ export interface InventarioItemWithStock extends InventarioItem {
   valor_mxn: number;
   costo_fifo_mxn_actual: number;
   bajo_stock: boolean;
+  /**
+   * Ganancia / pérdida del producto (4-sep-2026): la MISMA agregación que la
+   * hoja "inventario" del Balance general — Σ ventas al avión CON precio −
+   * costo FIFO de esas salidas, en MXN. null = nunca vendió con precio (una
+   * salida a costo FIFO no es venta). Opcionales por skew de deploy.
+   */
+  salidas_cant?: number | null;
+  ventas_mxn?: number | null;
+  costo_ventas_mxn?: number | null;
+  ganancia_mxn?: number | null;
+  /** Alguna ENTRADA quedó a $0: la ganancia está inflada hasta completar su costo. */
+  con_entradas_sin_costo?: boolean;
+  /**
+   * Algún movimiento está en USD sin tipo de cambio: el API deja en null los
+   * montos en pesos afectados (jamás suma USD como MXN); la ganancia puede
+   * faltar por eso. Opcional por skew de deploy.
+   */
+  con_movimientos_sin_tc?: boolean;
 }
 
 export interface InventarioMovimiento {
@@ -80,6 +98,13 @@ export interface InventarioMovimiento {
   venta_moneda?: "MXN" | "USD" | null;
   /** Venta total MXN − costo FIFO MXN (la manda el API en el detalle del ítem). */
   ganancia_mxn?: number | null;
+  /** SALIDA prorrateada a TODA la flota (sin avión específico). */
+  para_flota?: boolean | null;
+  /**
+   * Costo unitario en PESOS con el criterio único del API (costoUnitarioMxnDe):
+   * el panel lo pinta tal cual y no convierte monedas. Opcional por skew.
+   */
+  costo_unitario_mxn_efectivo?: number | null;
   aeronave_id: string | null;
   proveedor_id: string | null;
   fecha_movimiento: string;
@@ -105,10 +130,119 @@ export interface InventarioListResponse {
   offset: number;
   valor_total_usd: number;
   valor_total_mxn: number;
+  /** Por página, como valor_total_*; el cliente re-suma. Opcionales por skew. */
+  ventas_total_mxn?: number;
+  ganancia_total_mxn?: number;
 }
 
 export interface InventarioItemDetail extends InventarioItemWithStock {
   movimientos: InventarioMovimiento[];
+}
+
+/** Fila del bloque COMPRAS del resumen del producto (montos en MXN). */
+export interface ResumenCompra {
+  movimiento_id: string | null;
+  /** YYYY-MM-DD (día Cancún). */
+  fecha: string;
+  tipo: "ENTRADA" | "DEVOLUCION" | "AJUSTE";
+  cantidad: number;
+  /** Null cuando la captura fue USD sin TC (`sin_tc`). */
+  precio_unitario_mxn: number | null;
+  total_mxn: number | null;
+  moneda_captura: "MXN" | "USD";
+  costo_unitario_capturado: number;
+  tc_usd_mxn: number | null;
+  /** ENTRADA a $0 (carga masiva sin precio real). */
+  sin_costo: boolean;
+  /** Capturada en USD sin tipo de cambio: no hay pesos que pintar. */
+  sin_tc: boolean;
+  proveedor_nombre: string | null;
+  aeronave_matricula: string | null;
+  referencia: string | null;
+  descripcion: string;
+  stock_despues: number;
+  /** Compra de la que nació la entrada (abre /admin/inventory/compras/:id). */
+  compra_id: string | null;
+}
+
+/** Fila del bloque VENTAS del resumen del producto (montos en MXN). */
+export interface ResumenVenta {
+  movimiento_id: string | null;
+  fecha: string;
+  cantidad: number;
+  /** Precio de venta unitario; en una salida A COSTO, el costo FIFO unitario. */
+  precio_unitario_mxn: number | null;
+  total_mxn: number | null;
+  venta_moneda: "MXN" | "USD" | null;
+  venta_unitaria_capturada: number | null;
+  /** true = salió SIN precio: el avión pagó el costo FIFO (ganancia 0). */
+  a_costo: boolean;
+  /** Venta USD sin TC o capas USD sin TC: montos en pesos afectados en null. */
+  sin_tc: boolean;
+  costo_fifo_mxn: number | null;
+  ganancia_mxn: number | null;
+  /** Matrícula, 'FLOTA' o '—'. */
+  vendido_a: string;
+  aeronave_id: string | null;
+  para_flota: boolean;
+  referencia: string | null;
+  descripcion: string;
+  remanente: number;
+  /** Gasto del avión ligado (null en salidas a la flota: nacen N gastos). */
+  gasto_id: string | null;
+}
+
+/** Fila del bloque RESUMEN: un día con movimiento. */
+export interface ResumenDia {
+  fecha: string;
+  entradas_cant: number;
+  salidas_cant: number;
+  /** Stock al cierre del día (tras el último movimiento del día). */
+  existencia_cierre: number;
+  ventas_mxn: number | null;
+  costo_ventas_mxn: number | null;
+  /** Σ ganancia de las salidas con precio del día; null = ese día no vendió. */
+  utilidad_mxn: number | null;
+  /** Algún movimiento del día está en USD sin TC. */
+  sin_tc: boolean;
+}
+
+/**
+ * GET /v1/inventory/items/:id/resumen — bloques COMPRAS | VENTAS | RESUMEN
+ * por día + totales. Los calcula el API con el MISMO FIFO/ganancia de la
+ * hoja Inventario del Balance general y del cardex Excel; el panel solo pinta.
+ */
+export interface InventarioItemResumen {
+  item: {
+    id: string;
+    nombre: string;
+    numero_parte: string | null;
+    unidad: string | null;
+    categoria: string | null;
+    precio_venta: number | null;
+    precio_venta_moneda: "MXN" | "USD" | null;
+  };
+  moneda: "MXN";
+  periodo: { desde: string | null; hasta: string | null } | null;
+  compras: ResumenCompra[];
+  ventas: ResumenVenta[];
+  resumen_diario: ResumenDia[];
+  totales: {
+    compras_cant: number | null;
+    compras_mxn: number | null;
+    ventas_cant: number | null;
+    /** Σ salidas CON precio (mismo número que el listado y el balance). */
+    ventas_mxn: number | null;
+    /** Σ (a costo FIFO) de las salidas SIN precio — informativo. */
+    ventas_a_costo_mxn: number | null;
+    costo_ventas_mxn: number | null;
+    utilidad_mxn: number | null;
+    con_entradas_sin_costo: boolean;
+    /** Algún movimiento del cardex está en USD sin TC (filas con `sin_tc`). */
+    con_movimientos_sin_tc: boolean;
+    existencia_actual: number;
+    valor_costo_mxn: number;
+  };
 }
 
 /** GET /v1/inventory/codigo/:codigo — un código identifica un ítem O un empaque. */

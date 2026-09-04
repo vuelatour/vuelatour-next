@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ItemActions } from "@/components/admin/inventory/item-actions";
+import { fmtMxn } from "@/lib/format";
 import type { InventarioItemWithStock } from "@/types/inventory";
-
-const mxn = (n: number) =>
-  n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
 
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
@@ -18,11 +16,19 @@ interface ItemsTableProps {
   categorias: string[];
 }
 
+/**
+ * Tabla principal de Inventario (pedido del cliente 4-sep-2026, réplica de
+ * su Excel): Producto (item) · Categoría · Stock · Ganancia / pérdida. La
+ * fila abre el detalle del producto (compras, ventas y resumen por día). La
+ * ganancia la manda el API con la MISMA agregación de la hoja "inventario"
+ * del Balance general (ventas con precio − costo FIFO de esas salidas): aquí
+ * solo se pinta. Costo FIFO, mínimo y valorizado siguen en el detalle.
+ */
 export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTableProps) {
   const columns: Array<DataTableColumn<InventarioItemWithStock>> = [
     {
-      key: "item",
-      header: "Ítem",
+      key: "producto",
+      header: "Producto (item)",
       cell: (it) => (
         <div className="flex items-center gap-2.5">
           {it.foto_url && (
@@ -34,12 +40,7 @@ export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTabl
             />
           )}
           <div className="min-w-0">
-            <Link
-              href={`/admin/inventory/${it.id}`}
-              className="font-medium hover:text-brand-600 hover:underline"
-            >
-              {it.nombre}
-            </Link>
+            <span className="font-medium">{it.nombre}</span>
             {(it.marca || it.numero_parte || it.codigo) && (
               <span className="block text-xs text-muted-foreground">
                 {it.marca && <span>{it.marca}</span>}
@@ -89,26 +90,11 @@ export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTabl
       ),
     },
     {
-      key: "minimo",
-      header: "Mínimo",
-      headClassName: "text-right",
-      cellClassName: "text-right tabular-nums text-muted-foreground",
-      cell: (it) => (it.stock_minimo != null ? num(it.stock_minimo) : "—"),
-    },
-    {
-      key: "costo_fifo",
-      header: "Costo FIFO",
-      headClassName: "text-right",
-      cellClassName: "text-right tabular-nums text-muted-foreground",
-      cell: (it) =>
-        it.costo_fifo_mxn_actual ? `${mxn(it.costo_fifo_mxn_actual)} MXN` : "—",
-    },
-    {
-      key: "valor",
-      header: "Valor",
+      key: "ganancia",
+      header: "Ganancia / pérdida",
       headClassName: "text-right",
       cellClassName: "text-right tabular-nums",
-      cell: (it) => `${mxn(it.valor_mxn)} MXN`,
+      cell: (it) => <GananciaCell item={it} />,
     },
     {
       key: "acciones",
@@ -131,6 +117,7 @@ export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTabl
       columns={columns}
       rows={items}
       rowKey={(it) => it.id}
+      rowHref={(it) => `/admin/inventory/${it.id}`}
       searchText={(it) =>
         [
           it.nombre,
@@ -144,7 +131,57 @@ export function ItemsTable({ items, aircraft, providers, categorias }: ItemsTabl
           .filter(Boolean)
           .join(" ")
       }
-      searchPlaceholder="Buscar ítem (nombre, marca, parte, código, ubicación)…"
+      searchPlaceholder="Buscar producto (nombre, marca, parte, código, categoría)…"
     />
+  );
+}
+
+/** Aviso ámbar: por qué la cifra no es de fiar (entradas a $0 / USD sin TC). */
+function avisoDe(item: InventarioItemWithStock): string | null {
+  const partes: string[] = [];
+  if (item.con_entradas_sin_costo) partes.push("hay entradas sin costo: la ganancia está inflada");
+  if (item.con_movimientos_sin_tc)
+    partes.push("hay movimientos en USD sin tipo de cambio: sus pesos no se cuentan");
+  return partes.length > 0 ? partes.join(" · ") : null;
+}
+
+/**
+ * Ganancia / pérdida acumulada del producto: verde si ganó, rojo si perdió,
+ * "—" si nunca vendió con precio (las salidas a costo FIFO no son venta).
+ * El triángulo ámbar avisa que la cifra no es de fiar: hay entradas a $0
+ * (inflada hasta completar el costo real) o movimientos en USD sin tipo de
+ * cambio (el API no los suma como pesos).
+ */
+function GananciaCell({ item }: { item: InventarioItemWithStock }) {
+  const g = item.ganancia_mxn;
+  const aviso = avisoDe(item);
+  if (g == null) {
+    return (
+      <span
+        className="inline-flex items-center justify-end gap-1.5 text-muted-foreground"
+        title={aviso ?? "Sin ventas con precio registradas"}
+      >
+        —
+        {aviso && <ExclamationTriangleIcon className="h-4 w-4 shrink-0 text-amber-500" />}
+      </span>
+    );
+  }
+  const cls =
+    g > 0
+      ? "text-emerald-600 dark:text-emerald-400"
+      : g < 0
+        ? "text-red-600"
+        : "text-muted-foreground";
+  return (
+    <span
+      className={`inline-flex items-center justify-end gap-1.5 font-medium ${cls}`}
+      title={aviso ?? undefined}
+    >
+      {g > 0 ? "+" : ""}
+      {fmtMxn(g)}
+      {aviso && (
+        <ExclamationTriangleIcon className="h-4 w-4 shrink-0 text-amber-500" aria-label={aviso} />
+      )}
+    </span>
   );
 }

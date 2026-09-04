@@ -1,6 +1,7 @@
 import { apiServer } from "./server";
 import type {
   InventarioItemDetail,
+  InventarioItemResumen,
   InventarioListResponse,
   MovimientoListResponse,
 } from "@/types/inventory";
@@ -10,6 +11,9 @@ export interface ListInventarioQuery {
   categoria?: string;
   activo?: boolean;
   bajo_stock?: boolean;
+  /** Acotan SOLO las ventas/ganancia por ítem (YYYY-MM-DD, día Cancún); sin ellos = acumulado. */
+  desde?: string;
+  hasta?: string;
   limit?: number;
   offset?: number;
 }
@@ -34,7 +38,10 @@ export function listInventario(query: ListInventarioQuery = {}) {
 export async function listInventarioTodo(
   query: Omit<ListInventarioQuery, "limit" | "offset" | "bajo_stock"> = {},
 ): Promise<
-  Pick<InventarioListResponse, "data" | "count" | "valor_total_usd" | "valor_total_mxn">
+  Pick<InventarioListResponse, "data" | "count" | "valor_total_usd" | "valor_total_mxn"> & {
+    ventas_total_mxn: number;
+    ganancia_total_mxn: number;
+  }
 > {
   const limit = 300;
   const base = { ...query, limit };
@@ -51,7 +58,26 @@ export async function listInventarioTodo(
     count: first.count,
     valor_total_usd: round2(data.reduce((s, d) => s + (Number(d.valor_usd) || 0), 0)),
     valor_total_mxn: round2(data.reduce((s, d) => s + (Number(d.valor_mxn) || 0), 0)),
+    // Ganancia / pérdida acumulada de la bodega (Σ de lo que manda el API por
+    // ítem; null = ese ítem nunca vendió con precio y no suma).
+    ventas_total_mxn: round2(data.reduce((s, d) => s + (Number(d.ventas_mxn) || 0), 0)),
+    ganancia_total_mxn: round2(data.reduce((s, d) => s + (Number(d.ganancia_mxn) || 0), 0)),
   };
+}
+
+/**
+ * Resumen del producto para el detalle (4-sep-2026): bloques COMPRAS |
+ * VENTAS | RESUMEN por día + totales, calculados por el API con el mismo
+ * FIFO/ganancia del balance. `desde`/`hasta` (YYYY-MM-DD) opcionales.
+ */
+export function getInventarioItemResumen(
+  id: string,
+  query: { desde?: string; hasta?: string } = {},
+) {
+  return apiServer<InventarioItemResumen>(`/v1/inventory/items/${id}/resumen`, {
+    searchParams: query as Record<string, string | undefined>,
+    cache: "no-store",
+  });
 }
 
 export function getInventarioItem(id: string) {

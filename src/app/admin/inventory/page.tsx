@@ -25,14 +25,18 @@ import { listInventarioTodo, listMovimientos } from "@/lib/api/inventory-server"
 import { listProviders } from "@/lib/api/providers-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
+import { fmtMxn } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-const mxn = (n: number) =>
-  n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
-
 export default async function InventoryPage() {
-  const [{ data: items, count, valor_total_mxn }, providersRes, aircraftRes, me, sinCostoRes] =
+  const [
+    { data: items, count, valor_total_mxn, ganancia_total_mxn },
+    providersRes,
+    aircraftRes,
+    me,
+    sinCostoRes,
+  ] =
     await Promise.all([
       // Toda la bodega (pagina hasta count): la tabla no debe "perder" ítems.
       listInventarioTodo(),
@@ -64,6 +68,9 @@ export default async function InventoryPage() {
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
+  // Ganancia acumulada solo si ALGÚN ítem vendió con precio: un "$0.00"
+  // cuando nadie ha vendido se leería como "no ganó nada" (0 falso).
+  const hayGanancia = items.some((i) => i.ganancia_mxn != null);
   // Categorías existentes (únicas) para el selector del formulario: elegir
   // una evita fragmentar el catálogo ("Aceite" vs "Aceites").
   const categorias = [...new Set(items.map((i) => i.categoria).filter(Boolean))].sort();
@@ -75,11 +82,29 @@ export default async function InventoryPage() {
           <p className="text-sm text-muted-foreground">Bodega</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado {mxn(valor_total_mxn)} MXN (FIFO).
-            El consumo se carga al avión al registrar la salida.
+            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado{" "}
+            {fmtMxn(valor_total_mxn)} (FIFO) · ganancia acumulada{" "}
+            {hayGanancia ? (
+              <span
+                className={
+                  ganancia_total_mxn > 0
+                    ? "font-medium text-emerald-600 dark:text-emerald-400"
+                    : ganancia_total_mxn < 0
+                      ? "font-medium text-red-600"
+                      : ""
+                }
+              >
+                {fmtMxn(ganancia_total_mxn)}
+              </span>
+            ) : (
+              <span title="Ningún producto ha vendido con precio todavía">—</span>
+            )}
+            . El consumo se carga al avión al registrar la salida.
           </p>
           <p className="text-xs text-muted-foreground/80 mt-1">
-            El reporte de inventario vive en el Balance general VuelaTour (hoja Inventario).
+            Ganancia / pérdida = ventas al avión − costo FIFO de lo vendido (el mismo cálculo de la
+            hoja Inventario del Balance general VuelaTour). Toca un producto para ver sus compras,
+            ventas y resumen por día.
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">

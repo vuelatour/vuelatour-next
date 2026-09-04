@@ -5,12 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDateOnly } from "@/lib/datetime";
+import { fmtMxn, fmtUsd } from "@/lib/format";
 import type { InventarioMovimiento, TipoMovimiento } from "@/types/inventory";
 
-const mxn = (n: number) =>
-  n.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 });
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
 
 const TIPO_STYLE: Record<TipoMovimiento, { label: string; cls: string }> = {
@@ -64,18 +61,17 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
         <span className="font-medium text-amber-600 dark:text-amber-500">Sin costo</span>
       ) : (
         <>
-          {/* Se muestra en pesos (moneda operativa); el USD interno alimenta
-              el reparto y va como referencia. Prioridad: los pesos REALES del
-              movimiento si existen (sea cual sea la moneda — una SALIDA hereda
-              los pesos exactos de su ENTRADA, sin re-redondear USD×TC), luego
-              USD×TC, y USD tal cual como último recurso. */}
-          {m.costo_unitario_mxn != null
-            ? `${mxn(Number(m.costo_unitario_mxn))} MXN`
-            : m.tc_usd_mxn
-              ? `${mxn(Number(m.costo_unitario_usd) * Number(m.tc_usd_mxn))} MXN`
-              : `${mxn(m.costo_unitario_usd)} MXN`}
+          {/* Se muestra en pesos (moneda operativa) tal cual lo manda el API
+              (costo_unitario_mxn_efectivo, criterio único costoUnitarioMxnDe):
+              el panel ya NO convierte monedas. Respaldo por skew de deploy:
+              los pesos capturados si los hay; si no, solo el USD interno. */}
+          {m.costo_unitario_mxn_efectivo != null
+            ? fmtMxn(m.costo_unitario_mxn_efectivo)
+            : m.costo_unitario_mxn != null
+              ? fmtMxn(m.costo_unitario_mxn)
+              : `${fmtUsd(m.costo_unitario_usd)} USD`}
           <p className="text-[11px]">
-            {usd(m.costo_unitario_usd)} USD
+            {fmtUsd(m.costo_unitario_usd)} USD
             {m.tc_usd_mxn ? ` · TC ${Number(m.tc_usd_mxn)}` : ""}
           </p>
         </>
@@ -85,7 +81,9 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     key: "origen",
     header: "Avión / Proveedor",
     cellClassName: "text-muted-foreground",
-    cell: (m) => m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—",
+    // Salida prorrateada a toda la flota: no lleva avión, dice FLOTA.
+    cell: (m) =>
+      m.para_flota ? "FLOTA" : (m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"),
   },
   {
     key: "referencia",
@@ -109,8 +107,8 @@ const columnaVenta: DataTableColumn<InventarioMovimiento> = {
     conVentaDe(m) ? (
       <>
         {m.venta_moneda === "USD"
-          ? `${usd(Number(m.venta_unitaria))} USD`
-          : `${mxn(Number(m.venta_unitaria))} MXN`}
+          ? `${fmtUsd(m.venta_unitaria)} USD`
+          : fmtMxn(m.venta_unitaria)}
       </>
     ) : (
       "—"
@@ -126,7 +124,7 @@ const columnaGanancia: DataTableColumn<InventarioMovimiento> = {
   cell: (m) =>
     conVentaDe(m) && m.ganancia_mxn != null ? (
       <span className={Number(m.ganancia_mxn) < 0 ? "text-red-600" : "text-emerald-600"}>
-        {mxn(Number(m.ganancia_mxn))} MXN
+        {fmtMxn(m.ganancia_mxn)}
       </span>
     ) : (
       "—"
@@ -203,6 +201,7 @@ export function CardexTable({
       searchText={(m) =>
         [
           TIPO_STYLE[m.tipo].label,
+          m.para_flota ? "FLOTA" : undefined,
           m.aeronave?.matricula,
           m.proveedor?.nombre,
           m.referencia,
