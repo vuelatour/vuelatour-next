@@ -25,6 +25,7 @@ export function CapacidadCard({
   stale,
   onDobleRotacion,
   disabled = false,
+  lectura = false,
 }: {
   pasajerosTotal: number;
   /** Σ pax de las filas capturadas (conteo, no dinero). */
@@ -36,6 +37,8 @@ export function CapacidadCard({
   /** Un clic: rotaciones = 2 y pax = los suyos + los que faltan. */
   onDobleRotacion: (op: OpcionDobleRotacion) => void;
   disabled?: boolean;
+  /** Página única en lectura: el consejo remite a «Revisar». */
+  lectura?: boolean;
 }) {
   const faltan = pasajerosTotal - paxCapturados;
   const asientos = capacidad?.asientos_total ?? null;
@@ -81,8 +84,9 @@ export function CapacidadCard({
           </p>
           {resumen}
           <p className="text-xs">
-            Baja los pasajeros de algún avión o sube el total del grupo: para
-            guardar deben coincidir.
+            {lectura
+              ? "Usa «Revisar» para cuadrar los pasajeros por avión con el total del grupo."
+              : "Baja los pasajeros de algún avión o sube el total del grupo: para guardar deben coincidir."}
           </p>
         </div>
       </div>
@@ -173,8 +177,9 @@ export function CapacidadCard({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Sube los pasajeros de un avión con lugar, agrega otro avión o usa doble
-          vuelta en uno que regrese por más.
+          {lectura
+            ? "Usa «Revisar» para acomodarlos: subir pasajeros de un avión con lugar, agregar otro avión o doble vuelta."
+            : "Sube los pasajeros de un avión con lugar, agrega otro avión o usa doble vuelta en uno que regrese por más."}
         </p>
       )}
     </div>

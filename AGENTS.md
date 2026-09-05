@@ -41,6 +41,30 @@ This version has breaking changes — APIs, conventions, and file structure may 
   extras `origen='GRUPO'` se bloquean ("se edita desde el grupo").
   Cobros que son parte de un sobre (`cobro.cobro_grupo`) no se editan ni
   borran por vuelo; conciliación se enlaza al SOBRE (`cobro_grupo_id`).
+  **Página única del grupo (5-sep-2026)**: `/admin/quotes/grupo/[id]` =
+  `GrupoWorkspace` (cabecera + avisos + `GrupoForm lectura` a lo ancho +
+  cobros + operación). `GrupoForm` en lectura pinta `grupo.consolidado`
+  (no llama a /armar), valores como texto (`DatoLectura`), la tabla de
+  aviones con menús va DENTRO de la sección «Aviones» (`avionesLectura`) y
+  «Revisar» edita en el lugar (motivo, Guardar/Cancelar en `TotalBarGrupo`,
+  `onGuardado` → lectura + `router.refresh()`). `/editar` solo redirige a
+  `?revisar=1`. Sin cards duplicadas del detalle (consolidado, TUAS,
+  itinerario, cargos, notas, toggles PDF viven solo en el form).
+- **Página única de la COTIZACIÓN (5-sep-2026)**: `/admin/quotes/[id]` =
+  `QuoteWorkspace` (cabecera + `QuoteActionsBar` con `onRevisar` +
+  `QuoteCalculator mode="revise" lectura` a lo ancho + aside: ajuste rápido
+  `#ajuste-rapido` INTACTO (en pausa mientras se revisa), cobros,
+  historial, operación). En lectura el calculator pinta `calculo_snapshot`
+  (cero llamadas a /calculate), valores como texto (`Dato`,
+  `TramosLectura`, `ExtrasEditor readOnly`, `TuasCard readOnly`), los
+  toggles de PDF por tramo van DENTRO de la sección Tramos
+  (`tramoExtraLectura`, índice = orden de los tramos rehidratados) y
+  `QuoteDesgloseCard` vive en «Detalle del cálculo». «Revisar» edita en el
+  lugar (motivo bajo la barra del total, Guardar revisión/Cancelar en la
+  `TotalBar`, `onGuardado` → lectura + `router.refresh()`). Candados de
+  revisión = FUENTE ÚNICA `lib/admin/quote-revision.ts` (`candadoRevision`,
+  `RAZON_REVISION`). `/revise` solo redirige a `?revisar=1`. Catálogos del
+  cotizador: `lib/api/quote-catalogos-server.ts` (alta y detalle).
 
 ## Fechas
 

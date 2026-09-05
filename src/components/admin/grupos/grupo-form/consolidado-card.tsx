@@ -34,6 +34,9 @@ function FilaConsolidada({ linea }: { linea: LineaConsolidada }) {
             {CLAVE_CONSOLIDADO_LABEL[linea.clave] ?? linea.clave}
           </span>
           {linea.concepto}
+          {linea.aplica_iva === false && linea.clave === "EXTRA" && (
+            <span className="ml-1 text-[10px]">(sin IVA)</span>
+          )}
           {partes.length > 0 && (
             <ChevronDownIcon
               className={cn(
@@ -81,25 +84,35 @@ function Total({ label, value, hint, bold }: { label: string; value: string; hin
 }
 
 /**
- * Consolidado del grupo tal como lo manda el armador: líneas Σ por clave
- * (con "por avión" desplegable y la operación sutil de cada una), totales,
- * precio por persona y horas. Cero cálculos aquí — hasta la verificación
- * "suman exacto" viene del API.
+ * Consolidado del grupo tal como lo manda el API (armador en edición,
+ * cabecera persistida en lectura): líneas Σ por clave (con "por avión"
+ * desplegable y la operación sutil de cada una), totales, precio por
+ * persona y horas. Cero cálculos aquí — hasta la verificación "suman
+ * exacto" viene del API. Fuente ÚNICA del consolidado (5-sep-2026: la card
+ * del detalle se fusionó aquí: tc en MXN y aviso a soporte si no cuadra).
  */
 export function ConsolidadoCard({
   consolidado,
   pasajerosTotal,
   stale,
+  tcUsdMxn = null,
 }: {
   consolidado: Consolidado;
   pasajerosTotal: number;
   stale: boolean;
+  /** TC del grupo (solo para la leyenda junto al total en MXN). */
+  tcUsdMxn?: number | null;
 }) {
   const c = consolidado;
   const ivaPct = textoIvaPct(c);
   const porPersona = textoOperacionPorPersona(c);
   return (
     <div className={cn("space-y-3 transition-opacity", stale && "opacity-60")}>
+      {c.desglose.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Sin líneas: el grupo no tiene aviones vivos con precio.
+        </p>
+      )}
       <div className="space-y-1.5">
         {c.desglose.map((l, i) => (
           <FilaConsolidada key={`${l.clave}-${l.grupo_extra_id ?? l.iata ?? i}`} linea={l} />
@@ -127,7 +140,10 @@ export function ConsolidadoCard({
           <Total label="Total del grupo" bold value={fmtUsd(c.total_usd)} />
           {c.total_mxn != null && (
             <div className="flex justify-end">
-              <span className="font-mono text-xs text-muted-foreground">{fmtMxn(c.total_mxn)}</span>
+              <span className="font-mono text-xs text-muted-foreground">
+                {fmtMxn(c.total_mxn)}
+                {tcUsdMxn ? ` · tc ${fmtDecimal(tcUsdMxn, 4)}` : ""}
+              </span>
             </div>
           )}
         </div>
@@ -140,8 +156,10 @@ export function ConsolidadoCard({
         )}
       </div>
       <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="text-muted-foreground">
-          Verificación: las líneas suman {fmtUsd(c.verificacion.suma_lineas_usd)}
+        <span className={cn(c.verificacion.cuadra ? "text-muted-foreground" : "font-medium text-destructive")}>
+          {c.verificacion.cuadra
+            ? `Verificación: las líneas suman exacto el total (${fmtUsd(c.verificacion.suma_lineas_usd)}).`
+            : `Las líneas suman ${fmtUsd(c.verificacion.suma_lineas_usd)} y el total es ${fmtUsd(c.verificacion.total_usd)}: avisa a soporte antes de cobrar.`}
         </span>
         <Badge
           variant="outline"

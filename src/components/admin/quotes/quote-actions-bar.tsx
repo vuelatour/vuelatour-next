@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownTrayIcon,
+  BoltIcon,
   CheckCircleIcon,
   PaperAirplaneIcon,
   PencilSquareIcon,
@@ -30,10 +31,27 @@ import {
   cancelQuoteAction,
   confirmQuoteAction,
 } from "@/app/admin/quotes/actions";
-import { cotizacionEditablePorFecha } from "@/lib/datetime";
+import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
-export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
+export function QuoteActionsBar({
+  quote,
+  onRevisar,
+  editando = false,
+  onAjusteRapido,
+}: {
+  quote: PersistedQuote;
+  /**
+   * Página única (5-sep-2026): «Revisar» ya NO navega — habilita la edición
+   * ahí mismo. Sin handler cae al link `?revisar=1` (abre en edición).
+   */
+  onRevisar?: () => void;
+  /** Ya se está revisando: el botón «Revisar» se oculta (guardar/cancelar
+   *  viven en la barra del total). */
+  editando?: boolean;
+  /** Lleva/enfoca al bloque «Ajuste rápido» (solo cuando está disponible). */
+  onAjusteRapido?: () => void;
+}) {
   const router = useRouter();
   const [confirming, startConfirm] = useTransition();
   const [cancelling, startCancel] = useTransition();
@@ -66,25 +84,20 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
   };
 
   const canConfirm = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
-  // Revisable mientras no se haya cobrado/facturado (ajustes de última hora);
-  // cotizar una RESERVA la convierte en COTIZADO. Además, solo dentro de la
-  // ventana de edición: vuelo del mes corriente o anterior (hora Cancún) —
-  // más atrás pertenece a cierres pasados.
-  // CANCELADA también se revisa (decisión del equipo, 1-sep-2026): el vuelo
-  // no salió pero la parte financiera existió. En canceladas la venta de
-  // balances es LO COBRADO (no el total), así que el cobro NO bloquea; solo
-  // la factura (CFDI ancla) y la ventana de mes. El backend valida lo mismo.
-  const enVentana = cotizacionEditablePorFecha(quote.fecha_vuelo);
-  const esCancelada = quote.estado === "CANCELADO";
-  const revisableSinVentana = esCancelada
-    ? !quote.facturado
-    : !quote.cobrado && !quote.facturado;
-  const canRevise = revisableSinVentana && enVentana;
-  const bloqueadaPorMes = revisableSinVentana && !enVentana;
+  // Candados de «Revisar»: FUENTE ÚNICA `candadoRevision` (compartida con la
+  // barra del total del cotizador en lectura y con `?revisar=1`). Revisable
+  // mientras no se haya cobrado/facturado y dentro de la ventana de mes;
+  // CANCELADA también se revisa (1-sep-2026); vuelo de SERVICIO no se cotiza.
+  const {
+    canRevise,
+    esCancelada,
+    bloqueadaPorMes,
+    bloqueadaPorCobro,
+    esVueloServicio,
+  } = candadoRevision(quote);
   // Cobrado (sin factura): la revisión cambiaría un total YA cobrado. En vez
   // de esconder el botón, se explica el porqué y se lleva al cobro para
-  // eliminarlo (la card de cobros vive abajo en esta misma página).
-  const bloqueadaPorCobro = !esCancelada && quote.cobrado && !quote.facturado;
+  // eliminarlo (la card de cobros vive en esta misma página).
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -136,30 +149,66 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
         <ArrowDownTrayIcon className="h-4 w-4" />
         {pdfLoading ? "Generando…" : "PDF"}
       </Button>
-      {canRevise && (
-        <Link
-          href={`/admin/quotes/${quote.id}/revise`}
-          className={
-            esCancelada
-              ? `${buttonVariants({ variant: "outline" })} border-amber-500/40 text-amber-700 dark:text-amber-400`
-              : buttonVariants({ variant: "outline" })
-          }
-          title={
-            esCancelada
-              ? "El vuelo está cancelado: la revisión solo ajusta el desglose para efectos financieros/documentales. En balances la venta sigue siendo lo cobrado y el vuelo NO se reactiva."
-              : undefined
-          }
+      {/* «Ajuste rápido»: lleva al bloque (visible solo cuando el ajuste
+          está disponible — lo decide la página). */}
+      {onAjusteRapido && !editando && (
+        <Button
+          variant="outline"
+          onClick={onAjusteRapido}
+          className="gap-2"
+          title="Ir al ajuste rápido: conceptos extra y pasajeros sin abrir la revisión completa."
         >
-          <PencilSquareIcon className="h-4 w-4" />
-          {esCancelada ? "Revisar (cancelada)" : "Revisar"}
-        </Link>
+          <BoltIcon className="h-4 w-4" />
+          Ajuste rápido
+        </Button>
       )}
-      {bloqueadaPorMes && (
+      {canRevise &&
+        !editando &&
+        (onRevisar ? (
+          <Button
+            variant="outline"
+            onClick={onRevisar}
+            className={
+              esCancelada
+                ? "gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400"
+                : "gap-2"
+            }
+            title={esCancelada ? RAZON_REVISION.cancelada : undefined}
+          >
+            <PencilSquareIcon className="h-4 w-4" />
+            {esCancelada ? "Revisar (cancelada)" : "Revisar"}
+          </Button>
+        ) : (
+          <Link
+            href={`/admin/quotes/${quote.id}?revisar=1`}
+            className={
+              esCancelada
+                ? `${buttonVariants({ variant: "outline" })} border-amber-500/40 text-amber-700 dark:text-amber-400`
+                : buttonVariants({ variant: "outline" })
+            }
+            title={esCancelada ? RAZON_REVISION.cancelada : undefined}
+          >
+            <PencilSquareIcon className="h-4 w-4" />
+            {esCancelada ? "Revisar (cancelada)" : "Revisar"}
+          </Link>
+        ))}
+      {esVueloServicio && !editando && (
         <Button
           variant="outline"
           disabled
           className="gap-2"
-          title="El vuelo es de un mes ya cerrado (anterior al mes pasado): la cotización ya no puede ajustarse."
+          title={RAZON_REVISION.servicio}
+        >
+          <PencilSquareIcon className="h-4 w-4" />
+          Revisar · vuelo de servicio
+        </Button>
+      )}
+      {bloqueadaPorMes && !esVueloServicio && (
+        <Button
+          variant="outline"
+          disabled
+          className="gap-2"
+          title={RAZON_REVISION.mesCerrado}
         >
           <PencilSquareIcon className="h-4 w-4" />
           Revisar · mes cerrado
@@ -170,7 +219,7 @@ export function QuoteActionsBar({ quote }: { quote: PersistedQuote }) {
           variant="outline"
           onClick={() => setOpenCobradoInfo(true)}
           className="gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400"
-          title="El vuelo ya tiene cobros registrados: la cotización no puede revisarse."
+          title={RAZON_REVISION.cobrado}
         >
           <PencilSquareIcon className="h-4 w-4" />
           Revisar · vuelo cobrado

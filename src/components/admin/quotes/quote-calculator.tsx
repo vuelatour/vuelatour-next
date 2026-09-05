@@ -18,8 +18,11 @@ import {
   ChevronDownIcon,
   PlusIcon,
   PencilSquareIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
+import Link from "next/link";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
+import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { updateClientAction } from "@/app/admin/clients/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import type { Client } from "@/types/clients";
@@ -78,7 +81,12 @@ import { cn } from "@/lib/utils";
 import { calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
-import { cancunInputToIso, isoToCancunInput } from "@/lib/datetime";
+import {
+  cancunInputToIso,
+  fmtDateTime,
+  isoToCancunInput,
+  TZ_LABEL,
+} from "@/lib/datetime";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   createQuoteAction,
@@ -104,7 +112,7 @@ import type { PersistedQuote } from "@/types/quotes-persisted";
 import { Field } from "@/components/admin/form-field";
 import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 
-interface AircraftOption {
+export interface AircraftOption {
   id: string;
   matricula: string;
   modelo: string;
@@ -127,7 +135,7 @@ interface RouteOptionTramo {
   servicio_notas?: string | null;
 }
 
-interface RouteOption {
+export interface RouteOption {
   id: string;
   tipo: "SIMPLE" | "MULTIESCALA";
   origen_iata: string;
@@ -147,7 +155,7 @@ interface ClientOption {
   rfc: string | null;
 }
 
-interface AirportOption {
+export interface AirportOption {
   iata: string;
   nombre: string;
   latitud: number | null;
@@ -237,6 +245,14 @@ type QuoteCalculatorProps = {
       initialQuote?: undefined;
       clientName?: undefined;
       clientEsInterno?: undefined;
+      lectura?: undefined;
+      onRevisar?: undefined;
+      revisarBloqueado?: undefined;
+      revisarLabel?: undefined;
+      onCancelar?: undefined;
+      onGuardado?: undefined;
+      tramoExtraLectura?: undefined;
+      notaTramosLectura?: undefined;
     }
   | {
       mode: "revise";
@@ -246,6 +262,39 @@ type QuoteCalculatorProps = {
       clientName: string;
       /** El cliente de la cotización es interno (operación propia): puede ir en $0. */
       clientEsInterno?: boolean;
+      /**
+       * Página ÚNICA de la cotización (5-sep-2026): el mismo layout del
+       * cotizador sirve para VER (lectura) y para REVISAR (edición) sin
+       * cambiar de página. `lectura=true` pinta cada sección con valores
+       * legibles (texto, sin inputs ni botones de agregar/quitar), NO
+       * recalcula por tecla (el breakdown es el `calculo_snapshot`
+       * persistido) y muestra «Revisar» en la barra del total; el padre
+       * controla el modo con `onRevisar`/`onCancelar`/`onGuardado`.
+       */
+      lectura?: boolean;
+      /** Lectura: pasa a edición ahí mismo (botón «Revisar» de la barra). */
+      onRevisar?: () => void;
+      /** Lectura: razón por la que NO se puede revisar (botón deshabilitado
+       *  con el mismo texto que la barra de acciones); null = se puede. */
+      revisarBloqueado?: string | null;
+      /** Texto del botón «Revisar» (p. ej. «Revisar (cancelada)»). */
+      revisarLabel?: string;
+      /** Edición: descarta los cambios y vuelve a lectura (sin recargar). */
+      onCancelar?: () => void;
+      /**
+       * Edición: revisión guardada. Con este handler el cotizador NO navega
+       * (`router.push`) — solo hace `router.refresh()`; el padre vuelve a
+       * lectura y la página se rehidrata con la versión nueva.
+       */
+      onGuardado?: (quote: PersistedQuote) => void;
+      /**
+       * Lectura: contenido extra por tramo del itinerario cotizado (índice
+       * 0..N-1 en el MISMO orden que los tramos rehidratados) — aquí viven los
+       * toggles de PDF (ocultar tramo / fecha por tramo) del detalle.
+       */
+      tramoExtraLectura?: (idx: number, leg: EscalaInput) => ReactNode;
+      /** Lectura: nota al pie de la lista de tramos (leyenda de los toggles). */
+      notaTramosLectura?: ReactNode;
     }
 );
 
@@ -401,6 +450,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const { aircraft, routes, airports: airportsCatalogo } = props;
   const mode = props.mode ?? "create";
   const isRevise = mode === "revise";
+  // Página única (5-sep): modo LECTURA controlado por el padre (solo revise).
+  const lectura = isRevise ? (props.lectura ?? false) : false;
+  const onRevisar = isRevise ? props.onRevisar : undefined;
+  const revisarBloqueado = isRevise ? (props.revisarBloqueado ?? null) : null;
+  const revisarLabel = isRevise ? (props.revisarLabel ?? "Revisar") : "Revisar";
+  const onCancelar = isRevise ? props.onCancelar : undefined;
+  const onGuardado = isRevise ? props.onGuardado : undefined;
+  const tramoExtraLectura = isRevise ? props.tramoExtraLectura : undefined;
+  const notaTramosLectura = isRevise ? props.notaTramosLectura : undefined;
 
   // Ruta OPERATIVA opcional al crear: SIEMPRE existe una ruta real del avión
   // (gastos/avión); la comercial de abajo es la que se cobra. Se persiste con
@@ -816,6 +874,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // LECTURA (página única): el form SIEMPRE espeja lo persistido — al entrar
+  // a lectura (montaje, «Cancelar» o tras guardar) y cada vez que el server
+  // rehidrata la cotización (router.refresh tras revisar / ajuste rápido /
+  // toggles del PDF) se resetea a los defaults recién derivados. En edición
+  // no se toca: lo que el operador teclea es suyo hasta guardar o cancelar.
+  useEffect(() => {
+    if (!lectura) return;
+    reset(formDefaults);
+    setTarifaCustom(false);
+  }, [lectura, formDefaults, reset]);
+
   const values = watch();
   // IMPORTANTE: serializamos el form a JSON antes de pasarlo al debounce.
   // watch() devuelve un objeto NUEVO en cada render (referencia distinta aunque
@@ -1090,11 +1159,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     return base;
   }, [debounced, clienteInterno, teniaModeloPersistido, teniaMatriculaPersistida]);
 
-  const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(null);
+  // En LECTURA el breakdown es el snapshot PERSISTIDO (lo que se guardó, sin
+  // recalcular): arranca con él para que el primer render ya pinte el total.
+  const snapshotPersistido = initialQuote?.calculo_snapshot ?? null;
+  const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(
+    lectura ? snapshotPersistido : null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (lectura) {
+      // Sin llamadas al motor en lectura: el desglose es el guardado. Al
+      // pasar a edición el efecto re-corre con calcPayload y recalcula.
+      setBreakdown(snapshotPersistido);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     if (!calcPayload) {
       setBreakdown(null);
       setError(null);
@@ -1124,7 +1206,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     return () => {
       cancelled = true;
     };
-  }, [calcPayload]);
+  }, [calcPayload, lectura, snapshotPersistido]);
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
   // Un tramo posterior puede subir más pax: valida contra el máximo del itinerario.
@@ -1419,8 +1501,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           toast.success(
             `Cotización #${res.data.folio} revisada (v${res.data.cotizacion_version})`,
           );
-          router.push(`/admin/quotes/${res.data.id}`);
-          router.refresh();
+          if (onGuardado) {
+            // Página única: sin navegar — el padre vuelve a lectura y el
+            // refresh trae la versión nueva al mismo lugar.
+            onGuardado(res.data);
+            router.refresh();
+          } else {
+            router.push(`/admin/quotes/${res.data.id}`);
+            router.refresh();
+          }
         } else {
           toast.error(res.error ?? "Error al revisar");
         }
@@ -1571,6 +1660,22 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     const el = document.getElementById("motivo-revision-field");
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
     el?.querySelector("textarea")?.focus();
+  };
+
+  // «Cancelar» la revisión en el lugar (página única 5-sep): si el operador
+  // ya capturó algo distinto a lo persistido (motivo incluido) se confirma
+  // antes de descartar — regla del cliente: toda acción que tira trabajo
+  // pide confirmación (mismo patrón que el grupo). Sin cambios, sale directo.
+  const [confirmDescartar, setConfirmDescartar] = useState(false);
+  const hayCambiosRevision =
+    isRevise && !lectura && JSON.stringify(values) !== JSON.stringify(formDefaults);
+  const pedirCancelar = () => {
+    if (!onCancelar) return;
+    if (hayCambiosRevision) {
+      setConfirmDescartar(true);
+      return;
+    }
+    onCancelar();
   };
 
   // SOLO presentación de la TotalBar: cuando lo ÚNICO que falta para guardar
@@ -1787,6 +1892,173 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       : null;
   const avisoDetalle = error ? "Error al calcular" : null;
 
+  // ===== Nodos compartidos entre EDICIÓN y LECTURA (página única 5-sep):
+  // la misma presentación en ambos modos, definida una sola vez. =====
+  const sobrevueloAporteNode =
+    breakdown && Number(breakdown.tiempos.sobrevuelo_hr) > 0
+      ? (() => {
+          // Aporte REAL: la parte del sobrevuelo absorbida por la hora
+          // mínima no suma (0.7 + 0.5 hr cobra 1.2 → solo 0.2 hr son del
+          // sobrevuelo). min(sob, cobrable − 1).
+          const sob = Number(breakdown.tiempos.sobrevuelo_hr);
+          const deltaHr = Math.min(
+            sob,
+            Math.max(0, breakdown.tiempos.cobrable_hr - 1),
+          );
+          if (deltaHr <= 0) {
+            return (
+              <p className="text-xs text-muted-foreground mt-1">
+                Queda dentro de la hora mínima: no suma al total.
+              </p>
+            );
+          }
+          return (
+            <AporteChip
+              usd={deltaHr * breakdown.tarifa.usd_por_hora}
+              nota={`${fmtDecimal(deltaHr, 2)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`}
+            />
+          );
+        })()
+      : null;
+
+  const cierreResumenNode =
+    breakdown &&
+    ((breakdown.totales.ajuste_final_usd ?? 0) !== 0 ||
+      (Number(values.descuento_usd) || 0) > 0)
+      ? (() => {
+          const cotizado =
+            breakdown.totales.total_usd -
+            (breakdown.totales.ajuste_final_usd ?? 0);
+          const descuento = Number(values.descuento_usd) || 0;
+          // Con auto: el redondeo real lo reporta el motor; manual: lo del campo.
+          const redondeo = values.redondeo_auto
+            ? (breakdown.meta?.redondeo_auto_usd ?? 0)
+            : Number(values.redondeo_usd) || 0;
+          return (
+            <div className="rounded-md border border-border bg-navy-800/50 px-3 py-2 text-sm space-y-0.5">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Cotizado</span>
+                <span className="font-mono text-foreground">{fmtUsd(cotizado)}</span>
+              </div>
+              {redondeo > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>+ Redondeo</span>
+                  <span className="font-mono text-foreground">{fmtUsd(redondeo)}</span>
+                </div>
+              )}
+              {descuento > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>− Descuento</span>
+                  <span className="font-mono text-foreground">−{fmtUsd(descuento)}</span>
+                </div>
+              )}
+              {/* 2-sep-2026: la línea "Ajuste al precio pactado" se eliminó
+                  junto con la captura del pactado. En folios legado
+                  (24/69/148) el motor sigue aterrizando el total en lo
+                  pactado vía el ajuste; ese delta ya no se desglosa aquí. */}
+              <div className="flex justify-between border-t border-border pt-1 font-semibold">
+                <span>Total a cobrar</span>
+                <span className="font-mono">
+                  {fmtUsd(breakdown.totales.total_usd)}
+                </span>
+              </div>
+            </div>
+          );
+        })()
+      : null;
+
+  // Margen = lo que paga el cliente − lo que cobra el operador externo (solo
+  // informativo; el API es la fuente). Derivado ARRIBA (hoisted) para que el
+  // resumen del encabezado de la sección muestre el mismo número.
+  const margenExternoNode =
+    margenExternoUsd != null ? (
+      <p
+        className={`text-xs ${margenExternoUsd < 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
+      >
+        Margen VuelaTour: {fmtUsd(precioClienteUsd)} al cliente −{" "}
+        {fmtUsd(costoExtUsd)} del operador externo
+        {costoExtEsMxn && (
+          <span className="font-mono">
+            {" "}
+            ({fmtMxn(costoExtNativo)} ÷ tc {fmtDecimal(costoExtTc, 4)})
+          </span>
+        )}{" "}
+        ={" "}
+        <span className="font-mono font-semibold">
+          {fmtUsd(margenExternoUsd)}
+        </span>
+        {margenExternoUsd < 0 && " · el costo supera el precio al cliente"}
+      </p>
+    ) : null;
+
+  // Ruta OPERATIVA en LECTURA (la card azul que vivía en el detalle): la
+  // vuela el piloto y es distinta de la comercial cuando el vuelo salió de
+  // otra base o lleva ferries. Los tramos operativos se editan en el vuelo.
+  const escalasOperativas = initialQuote?.escalas ?? [];
+  const rutaOperativaLectura =
+    lectura &&
+    initialQuote &&
+    escalasOperativas.length > 0 &&
+    (initialQuote.itinerario_operativo === true ||
+      escalasOperativas.some((e) => e.solo_operativa || e.es_ferry)) ? (
+      <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+          Ruta operativa (la vuela el piloto — no se cotiza)
+        </p>
+        <ol className="mt-1.5 space-y-1">
+          {[...escalasOperativas]
+            .sort((a, b) => a.orden - b.orden)
+            .map((esc) => (
+              <li key={esc.id} className="flex items-center gap-2 text-xs font-mono">
+                <span className="text-muted-foreground">{esc.orden}.</span>
+                {esc.origen_iata} → {esc.destino_iata}
+                {esc.es_ferry && (
+                  <Badge variant="outline" className="text-[9px] px-1 py-0">
+                    ferry
+                  </Badge>
+                )}
+                {esc.solo_operativa && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 border-sky-500/40 text-sky-600 dark:text-sky-400"
+                  >
+                    operativo
+                  </Badge>
+                )}
+                {esc.cancelada_at && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-muted-foreground"
+                  >
+                    cancelado
+                  </Badge>
+                )}
+              </li>
+            ))}
+        </ol>
+        <p className="mt-1.5 text-[10px] text-muted-foreground">
+          Abajo está la ruta COMERCIAL (lo que paga el cliente, abre y cierra
+          en CUN). Los tramos operativos se editan en el detalle del vuelo.
+        </p>
+      </div>
+    ) : null;
+
+  // Comisión del vendedor en LECTURA: modalidad + monto/tarifa + quién
+  // vendió; el efectivo POR_HORA lo manda el motor en meta (fuente única).
+  const comisionVendedorTexto = (() => {
+    const nombre = values.comision_vendedor_nombre?.trim() ?? "";
+    const sufijo = nombre ? ` · ${nombre}` : "";
+    if (values.comision_vendedor_modo === "POR_HORA") {
+      if (!(Number(values.comision_vendedor_tarifa_hr) > 0)) return "—";
+      const efectiva = breakdown?.meta?.comision_vendedor_usd;
+      return `${fmtUsd(Number(values.comision_vendedor_tarifa_hr))}/hr × horas cobradas${
+        efectiva ? ` = ${fmtUsd(efectiva)}` : ""
+      }${sufijo}`;
+    }
+    if (!(Number(values.comision_vendedor_usd) > 0)) return "—";
+    return `${fmtUsd(Number(values.comision_vendedor_usd))} (monto fijo)${sufijo}`;
+  })();
+
   return (
     // UNA columna: formulario en secciones colapsables (encabezado = título +
     // resumen compacto + chevron) y la barra del TOTAL fija arriba, ahora con
@@ -1796,7 +2068,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         breakdown={breakdown}
         loading={loading}
         error={error}
-        sinDatos={!calcPayload}
+        sinDatos={lectura ? false : !calcPayload}
+        // Lectura sin snapshot (cotización de un motor anterior): el total
+        // persistido se pinta tal cual — nunca "Calculando…".
+        totalFallback={
+          lectura && initialQuote
+            ? {
+                usd: Number(initialQuote.monto_total_usd) || 0,
+                mxn:
+                  initialQuote.monto_total_mxn != null
+                    ? Number(initialQuote.monto_total_mxn)
+                    : null,
+                tarifaTipo: initialQuote.tarifa_tipo,
+              }
+            : null
+        }
         avion={cotizadoEnTexto}
         // Identidad al lado derecho (pedido 28-ago): cliente + folio·versión
         // llenan el hueco de la barra y se leen sin bajar al formulario.
@@ -1809,31 +2095,96 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         }
         subtitulo={
           isRevise && initialQuote
-            ? `#${initialQuote.folio} · v${initialQuote.cotizacion_version} → v${
-                initialQuote.cotizacion_version + 1
-              }`
+            ? lectura
+              ? `#${initialQuote.folio} · v${initialQuote.cotizacion_version}`
+              : `#${initialQuote.folio} · v${initialQuote.cotizacion_version} → v${
+                  initialQuote.cotizacion_version + 1
+                }`
             : "Nueva cotización"
         }
+        // LECTURA: el botón primario es «Revisar» (pasa a edición ahí
+        // mismo, mismos candados/razones que la barra de acciones).
+        // EDICIÓN: «Guardar revisión» + «Cancelar». Alta: «Guardar».
         saveLabel={
-          saving
-            ? "Guardando…"
-            : isRevise && initialQuote
-              ? `Aplicar revisión v${initialQuote.cotizacion_version + 1}`
-              : "Guardar cotización"
+          lectura
+            ? revisarLabel
+            : saving
+              ? "Guardando…"
+              : isRevise
+                ? "Guardar revisión"
+                : "Guardar cotización"
         }
-        saveDisabled={saving || (!canSave && !faltaSoloMotivo)}
-        onSave={() => {
-          // En revise con motivo pendiente el botón GUÍA al textarea del
-          // motivo (scroll+focus, mismo patrón focusTcField) en vez de
-          // quedarse muerto; el guardado real pasa por handleSave con TODOS
-          // sus candados intactos.
-          if (faltaSoloMotivo) {
-            focusMotivo();
-            return;
-          }
-          handleSave();
-        }}
+        saveIcon={lectura ? "revisar" : "guardar"}
+        saveTitle={lectura ? (revisarBloqueado ?? undefined) : undefined}
+        saveDisabled={
+          lectura
+            ? !onRevisar || !!revisarBloqueado
+            : saving || (!canSave && !faltaSoloMotivo)
+        }
+        onSave={
+          lectura
+            ? onRevisar
+            : () => {
+                // En revise con motivo pendiente el botón GUÍA al textarea del
+                // motivo (scroll+focus, mismo patrón focusTcField) en vez de
+                // quedarse muerto; el guardado real pasa por handleSave con
+                // TODOS sus candados intactos.
+                if (faltaSoloMotivo) {
+                  focusMotivo();
+                  return;
+                }
+                handleSave();
+              }
+        }
+        onCancel={isRevise && !lectura && onCancelar ? pedirCancelar : undefined}
+        cancelDisabled={saving}
       />
+
+      {/* Motivo de la revisión (EDICIÓN, página única 5-sep): a la vista
+          justo bajo la barra del total — «Revisar» pide el motivo aquí y
+          guarda/cancela en la barra. Ancla del botón de la barra: con el
+          motivo pendiente el clic guía aquí (scroll+focus). */}
+      {isRevise && !lectura && initialQuote && (
+        <Card
+          id="motivo-revision-field"
+          className="scroll-mt-24 border-t-2 border-t-amber-500/70"
+        >
+          <CardContent className="p-4 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="text-sm">
+                <p className="font-medium">
+                  Revisando · se generará la v
+                  {initialQuote.cotizacion_version + 1}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Edita lo que necesites abajo. La versión actual queda en el
+                  historial; guarda o cancela en la barra del total.
+                </p>
+              </div>
+              {onCancelar && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={pedirCancelar}
+                  disabled={saving}
+                  className="gap-1.5"
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                  Cancelar revisión
+                </Button>
+              )}
+            </div>
+            <Field label="Motivo de la revisión" required>
+              <Textarea
+                rows={2}
+                placeholder="Ej. Cliente cambió fecha y aumentó pasajeros"
+                {...register("motivo")}
+              />
+            </Field>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 1 · Cliente y fechas */}
       <SeccionCotizador
@@ -1844,6 +2195,116 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         abierta={abiertas.cliente}
         onToggle={() => toggleSeccion("cliente")}
       >
+        {lectura && initialQuote ? (
+          // ===== LECTURA: mismos bloques y mismo orden que la edición, con
+          // los valores como texto (fechas ISO → hora Cancún con fmtDateTime).
+          <>
+            <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2 space-y-0.5">
+              <p className="text-[11px] uppercase tracking-wider text-foreground/70">
+                Cliente · folio
+              </p>
+              <p className="text-sm font-medium">
+                {clientName ?? initialQuote.cliente_id}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-mono">#{initialQuote.folio}</span> ·{" "}
+                <span className="font-mono">v{initialQuote.cotizacion_version}</span>
+                {clienteInterno
+                  ? " · cliente interno (operación propia: puede ir en $0)"
+                  : ""}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Dato
+                label="Fecha de traslado inicial"
+                value={
+                  initialQuote.fecha_vuelo
+                    ? fmtDateTime(initialQuote.fecha_vuelo)
+                    : "—"
+                }
+                hint={TZ_LABEL}
+              />
+              <Dato
+                label="Fecha de traslado final"
+                value={
+                  initialQuote.fecha_traslado_final ? (
+                    fmtDateTime(initialQuote.fecha_traslado_final)
+                  ) : initialQuote.fecha_fin &&
+                    initialQuote.fecha_fin !== initialQuote.fecha_vuelo ? (
+                    // Sin traslado capturado pero el viaje termina otro día:
+                    // fecha_fin la deriva el trigger (GREATEST de los tramos).
+                    <>
+                      {fmtDateTime(initialQuote.fecha_fin)}
+                      <span className="text-xs text-muted-foreground">
+                        {" "}
+                        · derivado del itinerario
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Dato
+                label="Pasajeros"
+                value={
+                  paxPorTramo
+                    ? `${maxPaxTramos} · definido por tramo`
+                    : String(Number(values.pasajeros) || 0)
+                }
+                hint={
+                  <>
+                    {selectedAircraft && selectedAircraft.asientos > 0 && (
+                      <span
+                        className={cn(
+                          "block",
+                          capacidadExcedida && "text-destructive font-medium",
+                        )}
+                      >
+                        {capacidadExcedida
+                          ? `Excede la capacidad: ${maxPasajeros} pax en un tramo vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo}).`
+                          : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
+                      </span>
+                    )}
+                    {/* Cuánto pagan de TUAS estos pasajeros, aeropuerto por
+                        aeropuerto — mismas filas del desglose guardado. */}
+                    {values.cobrar_tuas &&
+                      breakdown &&
+                      (breakdown.tuas.filas ?? []).map((f) => (
+                        <span key={f.iata} className="block">
+                          TUA <span className="font-mono">{f.iata}</span>:{" "}
+                          <span className="font-mono">
+                            {f.pax} ×{" "}
+                            {f.moneda === "MXN"
+                              ? fmtMxn(f.monto_pax)
+                              : fmtUsd(f.monto_pax)}{" "}
+                            = {fmtUsd(f.total_usd)} USD
+                          </span>
+                        </span>
+                      ))}
+                  </>
+                }
+              />
+              <Dato
+                label="Pase de abordar"
+                value={values.pase_abordar ? "Sí" : "No"}
+                hint="Exenta TUAS (excepto CZM)"
+              />
+            </div>
+            <Dato
+              label="Cotización abierta"
+              value={
+                values.cotizacion_abierta
+                  ? "Sí — el itinerario/precio se cierra al final"
+                  : "No"
+              }
+              hint="Abierta = permite re-cotizar con los tramos reales hasta antes de cobrar/facturar."
+            />
+          </>
+        ) : (
+          <>
           {/* Cliente */}
           {isRevise && initialQuote ? (
             <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2 space-y-0.5">
@@ -2134,6 +2595,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
             />
           </div>
+          </>
+        )}
       </SeccionCotizador>
 
       {/* 2 · Avión y tarifa */}
@@ -2144,6 +2607,112 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         abierta={abiertas.avion}
         onToggle={() => toggleSeccion("avion")}
       >
+        {lectura ? (
+          <>
+            <Dato
+              label="Aeronave"
+              value={
+                selectedAircraft
+                  ? `${selectedAircraft.matricula} — ${selectedAircraft.modelo}`
+                  : breakdown?.aeronave?.modelo
+                    ? [breakdown.aeronave.matricula, breakdown.aeronave.modelo]
+                        .filter(Boolean)
+                        .join(" — ")
+                    : "—"
+              }
+              hint={
+                <>
+                  {selectedAircraft && (
+                    <span className="block">
+                      Tarifa público {fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr
+                      · broker {fmtUsd(selectedAircraft.tarifa_hora_broker_usd)} / hr
+                    </span>
+                  )}
+                  {values.es_externo && (
+                    <span className="block">
+                      Vuelo externo: este avión es solo la referencia de tarifa
+                      para cotizar — el vuelo no lo opera la flota.
+                    </span>
+                  )}
+                </>
+              }
+            />
+            <Dato
+              label="Tipo de tarifa"
+              value={
+                <span className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {tarifaSegment === "CUSTOM"
+                      ? "Personalizada"
+                      : tipoTarifa === "BROKER"
+                        ? "Broker"
+                        : "Público"}
+                  </Badge>
+                  {/* Tarifa efectiva: del snapshot; sin snapshot (motor
+                      anterior) la columna persistida tarifa_hora_usd. */}
+                  {breakdown ? (
+                    <span className="font-mono">
+                      {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
+                    </span>
+                  ) : Number(initialQuote?.tarifa_hora_usd) > 0 ? (
+                    <span className="font-mono">
+                      {fmtUsd(Number(initialQuote!.tarifa_hora_usd))}/hr
+                    </span>
+                  ) : null}
+                  {origenTarifaResumen && (
+                    <span className="text-xs text-muted-foreground">
+                      · {origenTarifaResumen}
+                    </span>
+                  )}
+                </span>
+              }
+              hint={
+                tarifaSegment === "CUSTOM"
+                  ? "Tarifa ajustada SOLO para esta cotización (no cambia la tarifa del cliente)."
+                  : breakdown?.tarifa.preferencial_cliente
+                    ? "Tarifa pactada con este cliente para este avión."
+                    : undefined
+              }
+            />
+            <div className="grid grid-cols-2 gap-3">
+              {/* Tiempo cobrable PERSISTIDO (la card «Tarifa» del detalle
+                  anterior lo mostraba): el desglose de Tiempos vive en
+                  «Detalle del cálculo». */}
+              <Dato
+                label="Tiempo cobrable"
+                value={
+                  breakdown
+                    ? `${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`
+                    : Number(initialQuote?.tiempo_cobrable_hr) > 0
+                      ? `${fmtDecimal(Number(initialQuote!.tiempo_cobrable_hr), 4)} hr`
+                      : "—"
+                }
+                hint={
+                  breakdown?.tiempos.cobrable_proviene_de_override
+                    ? "Pactado a mano (override)"
+                    : breakdown?.tiempos.minimo_hora_aplicado
+                      ? "Vuelo corto: se cobra la hora completa (mínimo 1 hr)"
+                      : undefined
+                }
+              />
+              <Dato
+                label="Sobrevuelo (hr)"
+                value={
+                  Number(values.sobrevuelo_hr) > 0
+                    ? `${fmtDecimal(Number(values.sobrevuelo_hr))} hr`
+                    : "—"
+                }
+                hint={
+                  <>
+                    Tiempo extra sobre la zona; se suma al cobrable
+                    {sobrevueloAporteNode}
+                  </>
+                }
+              />
+            </div>
+          </>
+        ) : (
+          <>
           {/* Aeronave: SIEMPRE de la flota. En externos es la referencia de
               tarifa con la que se cotiza (el vuelo persiste sin avión propio)
               — el modo "sin avión / monto pactado por tramo" se retiró
@@ -2259,36 +2828,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 placeholder="0"
                 {...register("sobrevuelo_hr")}
               />
-              {breakdown &&
-                Number(breakdown.tiempos.sobrevuelo_hr) > 0 &&
-                (() => {
-                  // Aporte REAL: la parte del sobrevuelo absorbida por la
-                  // hora mínima no suma (0.7 + 0.5 hr cobra 1.2 → solo 0.2
-                  // hr son del sobrevuelo). min(sob, cobrable − 1).
-                  const sob = Number(breakdown.tiempos.sobrevuelo_hr);
-                  const deltaHr = Math.min(
-                    sob,
-                    Math.max(0, breakdown.tiempos.cobrable_hr - 1),
-                  );
-                  if (deltaHr <= 0) {
-                    return (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Queda dentro de la hora mínima: no suma al total.
-                      </p>
-                    );
-                  }
-                  return (
-                    <AporteChip
-                      usd={deltaHr * breakdown.tarifa.usd_por_hora}
-                      nota={`${fmtDecimal(deltaHr, 2)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`}
-                    />
-                  );
-                })()}
+              {sobrevueloAporteNode}
             </Field>
             {/* El switch de Cobrar TUAS vive en la card "TUAS por
                 aeropuerto" de Cargos adicionales (26-ago): junto a donde se
                 editan los montos, que es donde tiene sentido. */}
           </div>
+          </>
+        )}
       </SeccionCotizador>
 
       {/* 3 · Tramos (ruta comercial que se cobra) */}
@@ -2300,6 +2847,49 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         abierta={abiertas.tramos}
         onToggle={() => toggleSeccion("tramos")}
       >
+        {lectura ? (
+          <>
+            <Dato
+              label="Ruta guardada"
+              value={
+                selectedRouteOpt
+                  ? rutaPathTexto(selectedRouteOpt)
+                  : "Itinerario propio (sin ruta del catálogo)"
+              }
+              hint={
+                selectedRouteOpt && itinerarioAjustado
+                  ? "El itinerario de esta cotización difiere de la ruta guardada."
+                  : undefined
+              }
+            />
+            {rutaOperativaLectura}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Tramos de esta cotización
+              </Label>
+              {/* Ruta COMERCIAL cotizada (lo que paga el cliente). Los
+                  toggles del PDF por tramo (ocultar / fecha) los cuelga el
+                  padre en `tramoExtraLectura` sobre la escala VIVA. */}
+              <TramosLectura legs={values.escalas} extra={tramoExtraLectura} />
+              {notaTramosLectura}
+            </div>
+            {values.escalas.length > 0 && (
+              <div className="hidden lg:block">
+                <RoutePreviewMap
+                  airports={airports}
+                  legs={values.escalas.map((l) => ({
+                    origen_iata: l.origen_iata,
+                    destino_iata: l.destino_iata,
+                    es_ferry: l.es_ferry,
+                    requiere_pernocta: l.requiere_pernocta,
+                    tipo_parada: l.tipo_parada,
+                  }))}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
           {/* Ruta */}
           <Field label="Ruta guardada" required>
             {/* Sugeridas por historial: lo que este cliente suele pedir. */}
@@ -2535,6 +3125,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               />
             </Field>
           )}
+          </>
+        )}
       </SeccionCotizador>
 
       {/* 4 · Cargos adicionales (TUAS + extras + pernoctas) */}
@@ -2558,15 +3150,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onCobrarTuasChange={(c) => setValue("cobrar_tuas", c)}
             tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
             onFocusTc={focusTc}
+            readOnly={lectura}
           />
         ) : (
           <p className="text-xs text-muted-foreground">
-            TUAS por aeropuerto: captura los tramos para ver el desglose
-            editable.
+            {lectura
+              ? "Esta versión no guardó el desglose de TUAS por aeropuerto (cotización de un motor anterior)."
+              : "TUAS por aeropuerto: captura los tramos para ver el desglose editable."}
           </p>
         )}
 
-          {/* Conceptos extra */}
+          {/* Conceptos extra (lectura: lista legible, sin agregar/quitar) */}
           <ExtrasEditor
             value={values.extras}
             onChange={(extras) => setValue("extras", extras)}
@@ -2574,6 +3168,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             onFocusTc={focusTc}
             pasajeros={Number(values.pasajeros) > 0 ? Number(values.pasajeros) : null}
             grupo={grupoDelHijo}
+            readOnly={lectura}
           />
           {breakdown && (
             <AporteChip
@@ -2600,6 +3195,120 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         abierta={abiertas.cobro}
         onToggle={() => toggleSeccion("cobro")}
       >
+        {lectura ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Dato
+                label="Método de pago"
+                value={
+                  values.metodo_pago === "OTRO"
+                    ? `Otro${
+                        values.metodo_pago_detalle.trim()
+                          ? ` — ${values.metodo_pago_detalle.trim()}`
+                          : ""
+                      }`
+                    : metodoPagoLabel
+                }
+                hint={
+                  METODOS_PAGO.find((m) => m.value === values.metodo_pago)?.hint
+                }
+              />
+              {values.metodo_pago === "BILLPOCKET" && (
+                <Dato
+                  label="Comisión BillPocket"
+                  value={
+                    Number(values.comision_billpocket_pct) > 0
+                      ? `${values.comision_billpocket_pct}%`
+                      : "—"
+                  }
+                  hint="Custom por operación · sin IVA · aparece en el desglose como «Comisión BillPocket»"
+                />
+              )}
+              <Dato
+                label="Tipo de cambio (MXN por USD)"
+                value={
+                  Number(values.tc_usd_mxn) > 0
+                    ? fmtDecimal(Number(values.tc_usd_mxn), 4)
+                    : "Sin capturar"
+                }
+                hint={
+                  Number(values.tc_usd_mxn) > 0 &&
+                  breakdown?.totales.total_mxn != null
+                    ? `Total ${fmtMxn(breakdown.totales.total_mxn)}`
+                    : hayLineasMxn || costoExternoEnMxn
+                      ? "Hay renglones en pesos: sin TC no pueden convertirse."
+                      : "Solo si el pago entra en pesos."
+                }
+              />
+              <Dato
+                label="IVA"
+                value={
+                  breakdown
+                    ? `${(breakdown.iva.porcentaje * 100).toFixed(0)}%${
+                        `${values.iva_pct_override ?? ""}`.trim() !== ""
+                          ? " · override manual"
+                          : ""
+                      }`
+                    : `${values.iva_pct_override ?? ""}`.trim() !== ""
+                      ? `${(Number(values.iva_pct_override) * 100).toFixed(0)}% · override manual`
+                      : "Automático (según método de pago)"
+                }
+                hint={breakdown?.iva.nota}
+              />
+            </div>
+            <Dato
+              label="Comisión del vendedor (interna)"
+              value={comisionVendedorTexto}
+              hint={
+                <>
+                  Se SUMA al precio del cliente · interna, no aparece en el PDF.
+                  {breakdown?.meta?.comision_vendedor_usd &&
+                  breakdown.meta.neto_vuelatour_usd != null ? (
+                    <span className="block font-mono">
+                      Neto VuelaTour: {fmtUsd(breakdown.meta.neto_vuelatour_usd)}
+                    </span>
+                  ) : null}
+                </>
+              }
+            />
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <p className="text-sm font-medium">Cierre del total</p>
+              {breakdown && (
+                <AporteChip
+                  usd={breakdown.totales.ajuste_final_usd}
+                  nota="ajuste neto (redondeo − descuento)"
+                />
+              )}
+              <div className="grid grid-cols-3 gap-3">
+                <Dato
+                  label="Redondeo automático"
+                  value={values.redondeo_auto ? "Sí" : "No"}
+                  hint="Al siguiente múltiplo de $10 (976→980)."
+                />
+                {!values.redondeo_auto && (
+                  <Dato
+                    label="Redondeo manual"
+                    value={
+                      Number(values.redondeo_usd) > 0
+                        ? fmtUsd(Number(values.redondeo_usd))
+                        : "—"
+                    }
+                  />
+                )}
+                <Dato
+                  label="Descuento"
+                  value={
+                    Number(values.descuento_usd) > 0
+                      ? fmtUsd(Number(values.descuento_usd))
+                      : "—"
+                  }
+                />
+              </div>
+              {cierreResumenNode}
+            </div>
+          </>
+        ) : (
+          <>
           <Field label="Método de pago" required>
             <SearchableSelect
               options={METODOS_PAGO.map((m) => ({
@@ -2895,52 +3604,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 />
               </Field>
             </div>
-            {breakdown &&
-              ((breakdown.totales.ajuste_final_usd ?? 0) !== 0 ||
-                (Number(values.descuento_usd) || 0) > 0) && (
-                (() => {
-                  const cotizado =
-                    breakdown.totales.total_usd -
-                    (breakdown.totales.ajuste_final_usd ?? 0);
-                  const descuento = Number(values.descuento_usd) || 0;
-                  // Con auto: el redondeo real lo reporta el motor; manual: lo del campo.
-                  const redondeo = values.redondeo_auto
-                    ? (breakdown.meta?.redondeo_auto_usd ?? 0)
-                    : Number(values.redondeo_usd) || 0;
-                  return (
-                    <div className="rounded-md border border-border bg-navy-800/50 px-3 py-2 text-sm space-y-0.5">
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Cotizado</span>
-                        <span className="font-mono text-foreground">{fmtUsd(cotizado)}</span>
-                      </div>
-                      {redondeo > 0 && (
-                        <div className="flex justify-between text-muted-foreground">
-                          <span>+ Redondeo</span>
-                          <span className="font-mono text-foreground">{fmtUsd(redondeo)}</span>
-                        </div>
-                      )}
-                      {descuento > 0 && (
-                        <div className="flex justify-between text-muted-foreground">
-                          <span>− Descuento</span>
-                          <span className="font-mono text-foreground">−{fmtUsd(descuento)}</span>
-                        </div>
-                      )}
-                      {/* 2-sep-2026: la línea "Ajuste al precio pactado" se
-                          eliminó junto con la captura del pactado. En folios
-                          legado (24/69/148) el motor sigue aterrizando el
-                          total en lo pactado vía el ajuste; ese delta ya no
-                          se desglosa aquí. */}
-                      <div className="flex justify-between border-t border-border pt-1 font-semibold">
-                        <span>Total a cobrar</span>
-                        <span className="font-mono">
-                          {fmtUsd(breakdown.totales.total_usd)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()
-              )}
+            {cierreResumenNode}
           </div>
+          </>
+        )}
       </SeccionCotizador>
 
           {/* Vuelo cubierto por operador EXTERNO. Al crear: se prende AQUÍ
@@ -2958,6 +3625,82 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           abierta={abiertas.externo}
           onToggle={() => toggleSeccion("externo")}
         >
+          {lectura && initialQuote ? (
+            // LECTURA: la card ámbar "Cubierto por operador externo" que
+            // vivía en el aside del detalle, en el mismo sitio de la sección.
+            <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Otro operador vuela este servicio; VuelaTour cobra al cliente y
+                paga al apoyo. Sin avión propio ni tacómetros; los gastos sí se
+                registran en el vuelo. El avión de «Avión y tarifa» es solo la
+                referencia de tarifa.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Dato
+                  label="Operador externo"
+                  value={initialQuote.operador_externo ?? "—"}
+                  hint="Quién vuela el servicio"
+                />
+                <Dato
+                  label="Avión"
+                  value={
+                    [
+                      initialQuote.avion_externo_modelo,
+                      initialQuote.avion_externo_matricula,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "—"
+                  }
+                  hint="Sale en el PDF del cliente"
+                />
+                <Dato
+                  label="Lo que cobra el operador externo (costo)"
+                  value={
+                    Number(initialQuote.costo_externo_usd) > 0 ? (
+                      <>
+                        {fmtUsd(Number(initialQuote.costo_externo_usd))}
+                        {/* Costo capturado en MXN: el USD es DERIVADO por el
+                            API (monto ÷ tc); el nativo se muestra al lado. */}
+                        {initialQuote.costo_externo_moneda === "MXN" &&
+                          Number(initialQuote.costo_externo_monto) > 0 && (
+                            <span className="ml-1.5 text-xs text-muted-foreground">
+                              ({fmtMxn(Number(initialQuote.costo_externo_monto))}
+                              {Number(initialQuote.costo_externo_tc) > 0
+                                ? ` · tc ${Number(initialQuote.costo_externo_tc)}`
+                                : ""}
+                              )
+                            </span>
+                          )}
+                      </>
+                    ) : (
+                      "Sin capturar"
+                    )
+                  }
+                  hint="Interno, no lo ve el cliente"
+                />
+                {Number(initialQuote.calculo_snapshot?.meta?.total_pactado_usd) > 0 && (
+                  <Dato
+                    label="Precio pactado (folio legado)"
+                    value={fmtUsd(
+                      Number(initialQuote.calculo_snapshot!.meta!.total_pactado_usd),
+                    )}
+                  />
+                )}
+              </div>
+              {margenExternoNode}
+              <p className="text-[11px] text-muted-foreground">
+                Antes de IVA/comisiones y otros costos. El operador y su costo
+                se editan con «Revisar» o en{" "}
+                <Link
+                  href={`/admin/flights/${initialQuote.id}`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  el vuelo → Editar externo
+                </Link>{" "}
+                (ahí también se regresa a vuelo propio).
+              </p>
+            </div>
+          ) : (
             <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
               {isRevise && initialQuote?.es_externo ? (
                 <>
@@ -3095,29 +3838,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       operador externo (solo informativo; el API es la
                       fuente). Derivado ARRIBA (hoisted) para que el resumen
                       del encabezado de la sección muestre el mismo número. */}
-                  {margenExternoUsd != null && (
-                    <p
-                      className={`text-xs ${margenExternoUsd < 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
-                    >
-                      Margen VuelaTour: {fmtUsd(precioClienteUsd)} al cliente −{" "}
-                      {fmtUsd(costoExtUsd)} del operador externo
-                      {costoExtEsMxn && (
-                        <span className="font-mono">
-                          {" "}
-                          ({fmtMxn(costoExtNativo)} ÷ tc {fmtDecimal(costoExtTc, 4)})
-                        </span>
-                      )}{" "}
-                      ={" "}
-                      <span className="font-mono font-semibold">
-                        {fmtUsd(margenExternoUsd)}
-                      </span>
-                      {margenExternoUsd < 0 &&
-                        " · el costo supera el precio al cliente"}
-                    </p>
-                  )}
+                  {margenExternoNode}
                 </>
               )}
             </div>
+          )}
         </SeccionCotizador>
       )}
 
@@ -3391,6 +4116,56 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         abierta={abiertas.notas}
         onToggle={() => toggleSeccion("notas")}
       >
+        {lectura ? (
+          <>
+            <Dato
+              label="Notas (visibles en PDF)"
+              value={
+                values.notas.trim() ? (
+                  <span className="whitespace-pre-wrap font-normal">
+                    {values.notas}
+                  </span>
+                ) : (
+                  "Sin notas"
+                )
+              }
+            />
+            {/* Notas internas: el DTO de revisión no las acepta (se editan
+                desde el detalle del vuelo), pero en lectura SÍ se muestran
+                — vivían en el detalle y no se pierden. */}
+            <Dato
+              label="Notas internas"
+              value={
+                initialQuote?.notas_internas ? (
+                  <span className="whitespace-pre-wrap font-normal">
+                    {initialQuote.notas_internas}
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+              hint="Solo para el equipo. No aparecen en el PDF al cliente; se editan desde el detalle del vuelo (Editar datos)."
+            />
+            <div className="space-y-1 rounded-lg border border-border bg-navy-800/50 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+                PDF de la cotización
+              </p>
+              <p className="text-sm">
+                Mostrar tarifa por hora:{" "}
+                <span className="font-medium">
+                  {values.pdf_mostrar_tarifa ? "Sí" : "No"}
+                </span>
+              </p>
+              <p className="text-sm">
+                Mostrar itinerario de tramos:{" "}
+                <span className="font-medium">
+                  {values.pdf_mostrar_itinerario ? "Sí" : "No"}
+                </span>
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
           <Field label="Notas (visibles en PDF)" hint="Opcional">
             <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" {...register("notas")} />
           </Field>
@@ -3444,6 +4219,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               />
             </div>
           </div>
+          </>
+        )}
       </SeccionCotizador>
 
       {/* 9 · Detalle del cálculo — el total vive en la TotalBar
@@ -3456,7 +4233,33 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         abierta={abiertas.detalle}
         onToggle={() => toggleSeccion("detalle")}
       >
-        {error ? (
+        {lectura && initialQuote ? (
+          // LECTURA: el desglose GUARDADO (snapshot) tal cual + el desglose
+          // canónico para balance (líneas que suman exacto, copiar, cotizado
+          // en / opera en, partición avión/VuelaTour) que vivía en el detalle.
+          <>
+            {breakdown ? (
+              <Preview
+                breakdown={breakdown}
+                loading={false}
+                avion={cotizadoEnTexto}
+                tcUsdMxn={
+                  Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null
+                }
+                tiempoOverride={values.tiempo_cobrable_override_hr}
+                onTiempoOverride={() => {}}
+                readOnly
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Esta versión no guardó el detalle del cálculo (cotización de un
+                motor anterior): abajo va el desglose reconstruido desde las
+                columnas guardadas.
+              </p>
+            )}
+            <QuoteDesgloseCard quote={initialQuote} />
+          </>
+        ) : error ? (
           <Card className="border-destructive/50 bg-destructive/5">
             <CardHeader>
               <CardTitle className="text-base text-destructive">
@@ -3490,7 +4293,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         )}
       </SeccionCotizador>
 
-        {/* Save bar */}
+        {/* Save bar (oculta en LECTURA: ahí el único botón es «Revisar» en
+            la barra del total). */}
+        {!lectura && (
         <Card className="border-t-2 border-t-brand-600/60">
           <CardContent className="p-4 space-y-3">
             {mxnSinTc && (
@@ -3501,41 +4306,45 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </p>
             )}
             {isRevise && initialQuote ? (
-              <>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-sm">
                   <p className="font-medium">
-                    Aplicar revisión v{initialQuote.cotizacion_version + 1}
+                    Guardar revisión v{initialQuote.cotizacion_version + 1}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     La versión actual queda en el historial. El cálculo nuevo
-                    reemplaza el snapshot del vuelo.
+                    reemplaza el snapshot del vuelo. El motivo se captura
+                    arriba, bajo la barra del total.
                   </p>
                 </div>
-                {/* Ancla del botón de la TotalBar: con motivo pendiente el
-                    clic guía aquí (scroll+focus) en lugar de morir. */}
-                <div id="motivo-revision-field" className="scroll-mt-24">
-                  <Field label="Motivo de la revisión" required>
-                    <Textarea
-                      rows={2}
-                      placeholder="Ej. Cliente cambió fecha y aumentó pasajeros"
-                      {...register("motivo")}
-                    />
-                  </Field>
-                </div>
-                <div className="flex items-center justify-end">
+                <div className="flex items-center gap-2">
+                  {onCancelar && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={pedirCancelar}
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </Button>
+                  )}
                   <Button
                     type="button"
-                    onClick={handleSave}
-                    disabled={!canSave || saving}
+                    onClick={() => {
+                      if (faltaSoloMotivo) {
+                        focusMotivo();
+                        return;
+                      }
+                      handleSave();
+                    }}
+                    disabled={saving || (!canSave && !faltaSoloMotivo)}
                     className="gap-2"
                   >
                     <BookmarkSquareIcon className="h-4 w-4" />
-                    {saving
-                      ? "Guardando…"
-                      : `Aplicar revisión v${initialQuote.cotizacion_version + 1}`}
+                    {saving ? "Guardando…" : "Guardar revisión"}
                   </Button>
                 </div>
-              </>
+              </div>
             ) : (
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-sm">
@@ -3557,7 +4366,38 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             )}
           </CardContent>
         </Card>
+        )}
 
+      {/* Cancelar la revisión en el lugar con cambios capturados: se confirma
+          (lo escrito se pierde; la cotización queda tal como está guardada). */}
+      {isRevise && initialQuote && (
+        <AlertDialog open={confirmDescartar} onOpenChange={setConfirmDescartar}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Descartar los cambios de la revisión?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Lo que capturaste en esta revisión se pierde y la cotización
+                #{initialQuote.folio} queda tal como está guardada (v
+                {initialQuote.cotizacion_version}). No se genera ninguna versión
+                nueva.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  setConfirmDescartar(false);
+                  onCancelar?.();
+                }}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                Descartar cambios
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
       {!isRevise && (
         <QuickClientDialog
           open={clientDialogOpen}
@@ -3729,6 +4569,144 @@ function AporteChip({
   );
 }
 
+/**
+ * Campo en LECTURA (página única 5-sep): etiqueta discreta + valor legible
+ * como texto — nunca un input gris deshabilitado. Mismo ritmo visual que
+ * `Field` para que el acomodo de cada sección sea el MISMO en ambos modos.
+ */
+function Dato({
+  label,
+  value,
+  hint,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-0.5", className)}>
+      <p className="text-[11px] uppercase tracking-wider text-foreground/70">
+        {label}
+      </p>
+      <div className="text-sm font-medium break-words">{value}</div>
+      {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
+    </div>
+  );
+}
+
+/** "CUN → HOL → CUN" de una ruta del catálogo (mismo texto del selector). */
+function rutaPathTexto(r: RouteOption): string {
+  return r.tramos.length > 0
+    ? [r.tramos[0]?.origen_iata, ...r.tramos.map((t) => t.destino_iata)]
+        .filter(Boolean)
+        .join(" → ")
+    : `${r.origen_iata} → ${r.destino_iata}`;
+}
+
+/**
+ * Tramos de la cotización en LECTURA: un renglón legible por tramo
+ * (origen → destino · NM · pax/ferry · pernocta · servicio) con un slot
+ * `extra` por tramo donde el padre cuelga los toggles del PDF. Misma
+ * información que el editor, sin inputs ni agregar/quitar.
+ */
+function TramosLectura({
+  legs,
+  extra,
+}: {
+  legs: EscalaInput[];
+  extra?: (idx: number, leg: EscalaInput) => ReactNode;
+}) {
+  if (legs.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">Sin tramos capturados.</p>
+    );
+  }
+  // Suma de MILLAS (no dinero): misma cuenta del pie del editor.
+  const nmTotal = legs.reduce(
+    (acc, l) => acc + (Number(l.millas_nauticas) || 0),
+    0,
+  );
+  return (
+    <ol className="space-y-1.5">
+      {legs.map((l, idx) => {
+        const conPax =
+          !l.es_ferry && l.pasajeros != null && `${l.pasajeros}` !== "";
+        return (
+          <li
+            key={`${idx}-${l.origen_iata}-${l.destino_iata}`}
+            className="rounded-lg border border-border bg-navy-800/50 px-2.5 py-2 text-sm"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono">
+                <span className="text-muted-foreground mr-2">{idx + 1}.</span>
+                {l.origen_iata} → {l.destino_iata}
+              </span>
+              <span className="flex flex-wrap items-center justify-end gap-2">
+                <span className="font-mono text-xs text-muted-foreground">
+                  {Number(l.millas_nauticas) > 0
+                    ? `${fmtDecimal(Number(l.millas_nauticas))} NM`
+                    : "—"}
+                </span>
+                {l.es_ferry ? (
+                  <Badge variant="outline" className="text-[10px]">
+                    Ferry · vacío
+                  </Badge>
+                ) : conPax ? (
+                  <Badge variant="outline" className="text-[10px]">
+                    {l.pasajeros} pax
+                  </Badge>
+                ) : null}
+                {l.requiere_pernocta && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  >
+                    Pernocta
+                    {l.pernocta_costo_usd != null
+                      ? ` · ${fmtUsd(l.pernocta_costo_usd)}`
+                      : ""}
+                  </Badge>
+                )}
+                {l.tipo_parada === "SERVICIO" && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                  >
+                    Servicio
+                  </Badge>
+                )}
+                {l.origen_iata && l.origen_iata === l.destino_iata && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-sky-500/40 text-sky-600 dark:text-sky-400"
+                  >
+                    Sobrevuelo
+                  </Badge>
+                )}
+                {extra?.(idx, l)}
+              </span>
+            </div>
+            {l.tipo_parada === "SERVICIO" && l.servicio_notas && (
+              <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">
+                {l.servicio_notas}
+              </p>
+            )}
+          </li>
+        );
+      })}
+      <li className="pt-2 mt-1 border-t border-border flex items-center justify-between text-xs">
+        <span className="font-semibold">Total</span>
+        <span className="font-mono font-bold">
+          {fmtDecimal(nmTotal)} NM · {legs.length}{" "}
+          {legs.length === 1 ? "tramo" : "tramos"}
+        </span>
+      </li>
+    </ol>
+  );
+}
+
 // ===== Borrador del cotizador EN LA URL (26-ago) =====
 // Recargar no pierde el avance: el form viaja comprimido en un query param
 // (?d=) que se actualiza con replaceState (sin ensuciar historial) y se
@@ -3780,16 +4758,18 @@ const SECCIONES_LS_KEY = "vt-cotizador-plegado-v1";
 function seccionesDefault(isRevise: boolean): Record<SeccionId, boolean> {
   return isRevise
     ? {
-        // Revisar: las secciones "completas" arrancan plegadas (su resumen
-        // vive en el encabezado); lo que normalmente se ajusta queda abierto.
-        cliente: false,
-        avion: false,
+        // Página única (5-sep-2026): la cotización se abre en su formato
+        // COMPLETO — todas las secciones abiertas en lectura y el mismo
+        // acomodo al pasar a edición ("que no se revuelva todo"). El
+        // plegado sigue disponible a mano y no se persiste en revise.
+        cliente: true,
+        avion: true,
         tramos: true,
         cargos: true,
-        cobro: false,
-        externo: false,
+        cobro: true,
+        externo: true,
         operativa: false, // no se renderiza en revise
-        notas: false,
+        notas: true,
         detalle: true,
       }
     : {
@@ -3905,7 +4885,13 @@ function TotalBar({
   subtitulo,
   saveLabel,
   saveDisabled,
+  saveIcon = "guardar",
+  saveTitle,
   onSave,
+  onCancel,
+  cancelLabel = "Cancelar",
+  cancelDisabled,
+  totalFallback,
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
@@ -3921,7 +4907,21 @@ function TotalBar({
       vista con el total — el guardado real vive en el padre (handleSave). */
   saveLabel?: string;
   saveDisabled?: boolean;
+  /** Icono del primario: «revisar» (lápiz) en lectura, «guardar» si no. */
+  saveIcon?: "guardar" | "revisar";
+  /** Tooltip del primario (razón del candado cuando está deshabilitado). */
+  saveTitle?: string;
   onSave?: () => void;
+  /** Botón secundario «Cancelar» (edición de la página única). */
+  onCancel?: () => void;
+  cancelLabel?: string;
+  cancelDisabled?: boolean;
+  /** Lectura sin snapshot: el total PERSISTIDO a pintar (nunca "Calculando…"). */
+  totalFallback?: {
+    usd: number;
+    mxn: number | null;
+    tarifaTipo?: string | null;
+  } | null;
 }) {
   // Desglose SIEMPRE visible bajo el total (27-ago; antes: chips solo en
   // ≥md): celdas compactas que PINTAN campos del breakdown canónico tal
@@ -4003,7 +5003,29 @@ function TotalBar({
               Completa aeronave, ruta y pasajeros
             </span>
           ) : !breakdown ? (
-            <span className="text-sm text-white/85">Calculando…</span>
+            totalFallback ? (
+              <>
+                <span className="text-2xl font-bold tracking-tight font-mono tabular-nums">
+                  {fmtUsd(totalFallback.usd)}
+                </span>
+                <span className="text-xs text-white/80">USD</span>
+                {totalFallback.mxn != null && (
+                  <span className="text-xs text-white/80 font-mono">
+                    {fmtMxn(totalFallback.mxn)}
+                  </span>
+                )}
+                {totalFallback.tarifaTipo && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-white/50 text-white"
+                  >
+                    {totalFallback.tarifaTipo}
+                  </Badge>
+                )}
+              </>
+            ) : (
+              <span className="text-sm text-white/85">Calculando…</span>
+            )
           ) : (
             <>
               <span className="text-2xl font-bold tracking-tight font-mono tabular-nums">
@@ -4023,7 +5045,7 @@ function TotalBar({
               </Badge>
             </>
           )}
-          {(titulo || subtitulo || avion || onSave) && (
+          {(titulo || subtitulo || avion || onSave || onCancel) && (
             <div className="ml-auto flex min-w-0 items-center gap-3">
               {(titulo || subtitulo || avion) && (
                 <div className="min-w-0 text-right">
@@ -4044,15 +5066,40 @@ function TotalBar({
                   )}
                 </div>
               )}
+              {onCancel && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onCancel}
+                  disabled={cancelDisabled}
+                  className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white disabled:opacity-60"
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                  {cancelLabel}
+                </Button>
+              )}
+              {/* Lectura con candado: la razón se LEE (no solo tooltip),
+                  igual que en la barra del grupo. */}
+              {onSave && saveIcon === "revisar" && saveDisabled && saveTitle && (
+                <span className="max-w-[240px] text-right text-[11px] leading-tight text-white/85">
+                  {saveTitle}
+                </span>
+              )}
               {onSave && (
                 <Button
                   type="button"
                   size="sm"
                   onClick={onSave}
                   disabled={saveDisabled}
+                  title={saveTitle}
                   className="shrink-0 gap-1.5 bg-white text-brand-700 hover:bg-white/90 disabled:opacity-60"
                 >
-                  <BookmarkSquareIcon className="h-4 w-4" />
+                  {saveIcon === "revisar" ? (
+                    <PencilSquareIcon className="h-4 w-4" />
+                  ) : (
+                    <BookmarkSquareIcon className="h-4 w-4" />
+                  )}
                   {saveLabel}
                 </Button>
               )}
@@ -4118,6 +5165,7 @@ function Preview({
   tcUsdMxn,
   tiempoOverride,
   onTiempoOverride,
+  readOnly = false,
 }: {
   breakdown: QuoteBreakdown;
   loading: boolean;
@@ -4128,6 +5176,8 @@ function Preview({
   /** COBRABLE pactado (hr) capturado en la card de Tiempos. */
   tiempoOverride: number | null;
   onTiempoOverride: (v: number | null) => void;
+  /** Lectura (página única): el Cobrable se pinta como valor, sin input. */
+  readOnly?: boolean;
 }) {
 
   // Composición del total MXN (motor): componentes USD × tc + nativos MXN.
@@ -4432,26 +5482,32 @@ function Preview({
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <Input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={48}
-                  placeholder={fmtDecimal(
-                    breakdown.tiempos.cobrable_hr_regla ??
-                      breakdown.tiempos.cobrable_hr,
-                    4,
-                  )}
-                  className="h-7 w-24 text-right font-mono font-semibold"
-                  value={tiempoOverride ?? ""}
-                  onChange={(e) =>
-                    onTiempoOverride(
-                      e.target.value === ""
-                        ? null
-                        : Math.max(0, Number(e.target.value)),
-                    )
-                  }
-                />
+                {readOnly ? (
+                  <span className="font-mono font-semibold">
+                    {fmtDecimal(breakdown.tiempos.cobrable_hr, 4)}
+                  </span>
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={48}
+                    placeholder={fmtDecimal(
+                      breakdown.tiempos.cobrable_hr_regla ??
+                        breakdown.tiempos.cobrable_hr,
+                      4,
+                    )}
+                    className="h-7 w-24 text-right font-mono font-semibold"
+                    value={tiempoOverride ?? ""}
+                    onChange={(e) =>
+                      onTiempoOverride(
+                        e.target.value === ""
+                          ? null
+                          : Math.max(0, Number(e.target.value)),
+                      )
+                    }
+                  />
+                )}
                 <span className="text-xs text-muted-foreground">hr</span>
               </div>
             </div>
@@ -4467,8 +5523,9 @@ function Preview({
               )}
             {breakdown.tiempos.minimo_hora_aplicado && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                Vuelo corto: se cobra la hora completa (mínimo 1 hr). Escribe
-                otro valor en Cobrable si quieres pactarlo distinto.
+                Vuelo corto: se cobra la hora completa (mínimo 1 hr).
+                {!readOnly &&
+                  " Escribe otro valor en Cobrable si quieres pactarlo distinto."}
               </p>
             )}
           </CardContent>
@@ -4569,6 +5626,7 @@ function TuasCard({
   onCobrarTuasChange,
   tcUsdMxn,
   onFocusTc,
+  readOnly = false,
 }: {
   breakdown: QuoteBreakdown;
   tuasLineas: TuaLinea[];
@@ -4578,6 +5636,8 @@ function TuasCard({
   tcUsdMxn: number | null;
   /** Abre la sección de Cobro antes del scroll+focus al campo de TC. */
   onFocusTc: () => void;
+  /** Lectura (página única): sin switch ni inputs; montos como texto. */
+  readOnly?: boolean;
 }) {
   // Aeropuertos ÚNICOS del itinerario (todos, no solo origen/destino).
   const aeropuertos = (() => {
@@ -4605,10 +5665,16 @@ function TuasCard({
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
             {/* El switch vive AQUÍ, junto a donde se editan los montos. */}
-            <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-              {cobrarTuas ? "Se cobra" : "No se cobra"}
-              <Switch checked={cobrarTuas} onCheckedChange={onCobrarTuasChange} />
-            </label>
+            {readOnly ? (
+              <Badge variant="outline" className="shrink-0 text-[10px]">
+                {cobrarTuas ? "Se cobra" : "No se cobra"}
+              </Badge>
+            ) : (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                {cobrarTuas ? "Se cobra" : "No se cobra"}
+                <Switch checked={cobrarTuas} onCheckedChange={onCobrarTuasChange} />
+              </label>
+            )}
           </div>
           <CardDescription className="text-xs">
             {breakdown.tuas.pasajeros}{" "}
@@ -4620,8 +5686,9 @@ function TuasCard({
               : breakdown.aeronave.matricula?.startsWith("XB")
                 ? "XB"
                 : "N"}
-            . Edita el monto por pasajero si el aeropuerto cobra distinto
-            (USD o MXN); vacío = monto del catálogo.
+            .
+            {!readOnly &&
+              " Edita el monto por pasajero si el aeropuerto cobra distinto (USD o MXN); vacío = monto del catálogo."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -4642,6 +5709,7 @@ function TuasCard({
               tcCapturado={tcUsdMxn != null}
               onChange={onTuaChange}
               onFocusTc={onFocusTc}
+              readOnly={readOnly}
             />
           ))}
           <div className="pt-3 border-t border-border space-y-1">
@@ -4674,6 +5742,7 @@ function TuasAirportRow({
   tcCapturado,
   onChange,
   onFocusTc,
+  readOnly = false,
 }: {
   air: TuasAeropuerto;
   fila?: TuasFila;
@@ -4684,6 +5753,8 @@ function TuasAirportRow({
   onChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
   /** Abre la sección de Cobro antes del scroll+focus al campo de TC. */
   onFocusTc?: () => void;
+  /** Lectura: el monto por pax se pinta como texto (capturado o catálogo). */
+  readOnly?: boolean;
 }) {
   // Moneda elegida antes de capturar monto (sin monto aún no viaja la línea).
   const [monedaDraft, setMonedaDraft] = useState<"USD" | "MXN">(
@@ -4759,27 +5830,45 @@ function TuasAirportRow({
           )}
         </span>
       </div>
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          step="0.01"
-          min={0}
-          className="h-8 w-28"
-          disabled={!editable}
-          defaultValue={linea ? String(linea.monto_pax) : ""}
-          placeholder={montoCatalogo > 0 ? montoCatalogo.toFixed(2) : "0.00"}
-          aria-label={`TUA por pasajero en ${air.iata}`}
-          onChange={(ev) => handleMonto(ev.target.value)}
-        />
-        <MonedaSelect value={moneda} onChange={handleMoneda} disabled={!editable} />
-        <span className="text-xs text-muted-foreground">
-          por pax × {pax} pax
-        </span>
-      </div>
+      {readOnly ? (
+        <p className="text-xs text-muted-foreground">
+          Por pasajero:{" "}
+          <span className="font-mono text-foreground">
+            {capturada
+              ? moneda === "MXN"
+                ? fmtMxn(linea!.monto_pax)
+                : fmtUsd(linea!.monto_pax)
+              : montoCatalogo > 0
+                ? air.moneda === "MXN"
+                  ? fmtMxn(montoCatalogo)
+                  : fmtUsd(montoCatalogo)
+                : "$0"}
+          </span>{" "}
+          {capturada ? "(monto capturado)" : "(catálogo)"} × {pax} pax
+        </p>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            step="0.01"
+            min={0}
+            className="h-8 w-28"
+            disabled={!editable}
+            defaultValue={linea ? String(linea.monto_pax) : ""}
+            placeholder={montoCatalogo > 0 ? montoCatalogo.toFixed(2) : "0.00"}
+            aria-label={`TUA por pasajero en ${air.iata}`}
+            onChange={(ev) => handleMonto(ev.target.value)}
+          />
+          <MonedaSelect value={moneda} onChange={handleMoneda} disabled={!editable} />
+          <span className="text-xs text-muted-foreground">
+            por pax × {pax} pax
+          </span>
+        </div>
+      )}
       <p className="text-xs text-muted-foreground">{air.razon}</p>
       {/* Solo con línea CAPTURADA >0 en MXN: con puro select flipeado (sin
           monto) no viaja nada, y el campo de TC ni estaría montado. */}
-      {capturada && linea!.monto_pax > 0 && moneda === "MXN" && !tcCapturado && editable && (
+      {!readOnly && capturada && linea!.monto_pax > 0 && moneda === "MXN" && !tcCapturado && editable && (
         <button
           type="button"
           onClick={onFocusTc ?? focusTcField}

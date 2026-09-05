@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -37,10 +38,12 @@ import {
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { toastAvisos } from "@/lib/admin/avisos";
 import { estadoGrupoBadge, mensajeErrorGrupo, resumenTuasGrupo } from "@/lib/admin/grupos-ui";
+import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import { tuasMxnSinTc, upsertTuaLinea } from "@/lib/admin/tuas";
 import { TuasGrupoCard } from "@/components/admin/grupos/tuas-grupo-card";
-import { fmtUsd } from "@/lib/format";
+import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
+import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Airport } from "@/types/airports";
 import type { Client } from "@/types/clients";
@@ -61,9 +64,9 @@ import { CapacidadCard } from "./capacidad-card";
 import { ConsolidadoCard } from "./consolidado-card";
 import { ExtrasGrupoEditor } from "./extras-grupo-editor";
 import { PlantillaEditor } from "./plantilla-editor";
-import { SeccionGrupo, type SeccionGrupoId } from "./seccion-grupo";
+import { DatoLectura, SeccionGrupo, type SeccionGrupoId } from "./seccion-grupo";
 import { SquawkGrupoDialog } from "./squawk-grupo-dialog";
-import { TotalBarGrupo } from "./total-bar-grupo";
+import { TotalBarGrupo, type CobroBarra } from "./total-bar-grupo";
 import { armarPayloadDe, createPayloadDe, revisePayloadDe } from "./payload";
 import {
   METODOS_PAGO_GRUPO,
@@ -85,6 +88,13 @@ const ARMAR_DEBOUNCE_MS = 600;
 /** Plegado del operador (solo alta nueva), patrón del cotizador. */
 const SECCIONES_LS_KEY = "vt-grupo-plegado-v1";
 
+const PDF_TOGGLES = [
+  ["pdf_mostrar_anexo_aviones", "Anexo «Flota asignada»", "Hoja con los aviones del grupo (modelo, asientos, pasajeros, salidas)."],
+  ["pdf_mostrar_precio_por_persona", "Precio por persona", "Total del grupo entre los pasajeros, junto al total."],
+  ["pdf_mostrar_subtotal_por_avion", "Subtotal por avión", "En el anexo, lo que cuesta cada avión (apagado: solo el total del grupo)."],
+  ["pdf_mostrar_tarifa", "Tarifa por hora", "En el anexo, USD/hr de cada avión (apagado: solo montos)."],
+] as const;
+
 type GrupoFormProps = {
   aircraft: AeronaveOption[];
   airports: AeropuertoOption[];
@@ -98,16 +108,45 @@ type GrupoFormProps = {
       clients: ClienteOption[];
       frequentClientIds?: string[];
       grupo?: undefined;
+      lectura?: undefined;
+      onRevisar?: undefined;
+      revisarBloqueado?: undefined;
+      onCancelar?: undefined;
+      onGuardado?: undefined;
+      cobro?: undefined;
+      avionesLectura?: undefined;
     }
   | {
       mode: "revise";
       clients?: undefined;
       frequentClientIds?: undefined;
       grupo: GrupoDetalle;
+      /**
+       * Página única del grupo (5-sep-2026): `true` = solo lectura (mismas
+       * secciones, valores legibles, barra con «Revisar»); `false` = edición
+       * en el lugar (motivo, «Guardar revisión» / «Cancelar» en la barra).
+       */
+      lectura?: boolean;
+      /** Lectura: entra a edición. Ausente = sin permiso (no se ofrece). */
+      onRevisar?: () => void;
+      /** Lectura: razón por la que NO se puede revisar (botón deshabilitado). */
+      revisarBloqueado?: string | null;
+      /** Edición en el lugar: descartar y volver a lectura (el padre voltea `lectura`). */
+      onCancelar?: () => void;
+      /** Revisión guardada: el padre vuelve a lectura y refresca. Sin él, navega al detalle. */
+      onGuardado?: (grupo: GrupoDetalle) => void;
+      /** Lectura: cobro del grupo para la barra del total. */
+      cobro?: CobroBarra | null;
+      /** Lectura: qué pintar en «Aviones del grupo» en lugar del editor (tabla con menús). */
+      avionesLectura?: ReactNode;
     }
 );
 
-function seccionesDefault(revise: boolean): Record<SeccionGrupoId, boolean> {
+function seccionesDefault(revise: boolean, lectura: boolean): Record<SeccionGrupoId, boolean> {
+  // Lectura: el formato completo directo (todo abierto, la revisión no aplica).
+  if (lectura) {
+    return { revision: false, grupo: true, ruta: true, cargos: true, tuas: true, aviones: true, consolidado: true, notas: true };
+  }
   return revise
     ? { revision: true, grupo: false, ruta: false, cargos: true, tuas: true, aviones: true, consolidado: true, notas: false }
     : { revision: false, grupo: true, ruta: true, cargos: true, tuas: true, aviones: true, consolidado: true, notas: false };
@@ -122,24 +161,30 @@ function esAMediasDetails(d: unknown): d is RevisionAMediasDetails {
 }
 
 /**
- * Wizard de UNA pantalla de la cotización de GRUPO (alta y revisión):
- * secciones plegables como el cotizador, preview vivo con `POST /armar`
- * (debounce 600 ms + candado anti-carrera) y guardado con los 409
- * estructurados del API (squawk ALTA por avión, revisión a medias, hijos
- * congelados). El panel SOLO PINTA lo que devuelve el armador: totales,
- * consolidado, por persona y salidas escalonadas nunca se calculan aquí.
+ * Wizard de UNA pantalla de la cotización de GRUPO (alta, revisión y — desde
+ * el 5-sep-2026 — LECTURA en la página única del grupo): secciones
+ * plegables como el cotizador, preview vivo con `POST /armar` (debounce
+ * 600 ms + candado anti-carrera) y guardado con los 409 estructurados del
+ * API (squawk ALTA por avión, revisión a medias, hijos congelados). El panel
+ * SOLO PINTA lo que devuelve el API: totales, consolidado, por persona y
+ * salidas escalonadas nunca se calculan aquí.
+ *
+ * En lectura no se llama al armador: se pinta `grupo.consolidado` (lo
+ * persistido) y «Revisar» habilita los campos AHÍ MISMO; «Cancelar» vuelve
+ * a lo persistido sin recargar.
  */
 export function GrupoForm(props: GrupoFormProps) {
   const { aircraft, routes, pilots, tcSugerido } = props;
   const isRevise = props.mode === "revise";
   const grupo = props.grupo ?? null;
+  const lectura = isRevise && props.lectura === true;
   const router = useRouter();
 
   const formDefaults = useMemo(
     () => (grupo ? defaultsDesdeGrupo(grupo) : defaultsNuevoGrupo()),
     [grupo],
   );
-  const { register, watch, setValue, getValues } = useForm<GrupoFormValues>({
+  const { register, watch, setValue, getValues, reset } = useForm<GrupoFormValues>({
     mode: "onChange",
     defaultValues: formDefaults,
   });
@@ -193,6 +238,8 @@ export function GrupoForm(props: GrupoFormProps) {
   const seqRef = useRef(0);
 
   useEffect(() => {
+    // En lectura no se calcula nada: se pinta lo persistido en la cabecera.
+    if (lectura) return;
     if (!debouncedJson) {
       seqRef.current += 1;
       setArmado(null);
@@ -222,7 +269,7 @@ export function GrupoForm(props: GrupoFormProps) {
         setArmadoError(res.error);
       }
     });
-  }, [debouncedJson, getValues, setValue]);
+  }, [debouncedJson, getValues, setValue, lectura]);
 
   const stale = !!armado && armadoJson !== payloadJson;
   const armadoAviones =
@@ -238,7 +285,7 @@ export function GrupoForm(props: GrupoFormProps) {
   // capturada — no debe atorar el candado ni forzar el TC. Fuera del
   // itinerario el motor la ignora. Sin armado se asume que cobra.
   const tuaCobraEnArmado = (iata: string): boolean => {
-    const aps = armado?.consolidado.tuas?.aeropuertos;
+    const aps = (lectura ? grupo?.consolidado.tuas : armado?.consolidado.tuas)?.aeropuertos;
     if (!aps) return true;
     const ap = aps.find((a) => a.iata === iata.toUpperCase());
     return ap ? ap.pax_gravados > 0 : false;
@@ -251,7 +298,7 @@ export function GrupoForm(props: GrupoFormProps) {
 
   // ===== Secciones (solo presentación) =====
   const [abiertas, setAbiertas] = useState<Record<SeccionGrupoId, boolean>>(() =>
-    seccionesDefault(isRevise),
+    seccionesDefault(isRevise, lectura),
   );
   useEffect(() => {
     if (isRevise) return;
@@ -306,6 +353,7 @@ export function GrupoForm(props: GrupoFormProps) {
   // ===== Aviones: acciones =====
   const [confirmQuitar, setConfirmQuitar] = useState<number | null>(null);
   const [confirmProponer, setConfirmProponer] = useState(false);
+  const [confirmDescartar, setConfirmDescartar] = useState(false);
 
   const quitarAvion = (idx: number) => {
     const a = values.aviones[idx];
@@ -345,6 +393,53 @@ export function GrupoForm(props: GrupoFormProps) {
   const [aMedias, setAMedias] = useState<{ texto: string; details: RevisionAMediasDetails } | null>(null);
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
 
+  // ===== Lectura ⇄ edición en el lugar =====
+  // Al entrar (o volver) a lectura y cada vez que llega un grupo nuevo del
+  // server mientras se lee, el formulario vuelve a lo persistido y se
+  // descarta cualquier preview/aviso de la edición. Mientras se EDITA no se
+  // pisa lo capturado aunque el server refresque (p. ej. un cobro abajo).
+  useEffect(() => {
+    if (!lectura) return;
+    reset(formDefaults);
+    seqRef.current += 1;
+    setArmado(null);
+    setArmadoJson(null);
+    setArmadoError(null);
+    setArmando(false);
+    setErrorGuardar(null);
+    setAMedias(null);
+    setSquawk(null);
+  }, [lectura, formDefaults, reset]);
+
+  // Al pasar de lectura a edición: se abre la sección de revisión y el
+  // motivo queda a la vista (es lo primero que pide el guardado).
+  const lecturaPrevia = useRef(lectura);
+  useEffect(() => {
+    if (lecturaPrevia.current && !lectura) {
+      abrirSeccion("revision");
+      setTimeout(() => {
+        const el = document.getElementById("grupo-motivo-field");
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        el?.querySelector("textarea")?.focus();
+      }, 60);
+    }
+    lecturaPrevia.current = lectura;
+  }, [lectura, abrirSeccion]);
+
+  /** ¿Hay captura distinta a lo persistido? (defaults deterministas ⇒ JSON). */
+  const hayCambios = useMemo(
+    () => JSON.stringify(values) !== JSON.stringify(formDefaults),
+    [values, formDefaults],
+  );
+  const pedirCancelar = () => {
+    if (!isRevise || !props.onCancelar) return;
+    if (hayCambios) {
+      setConfirmDescartar(true);
+      return;
+    }
+    props.onCancelar();
+  };
+
   const nombreOk = values.nombre.trim().length >= 2;
   const motivoOk = values.motivo.trim().length >= 3;
   // Una fila sin aeronave no viaja al API (avionesPayload la omite): sin
@@ -353,6 +448,7 @@ export function GrupoForm(props: GrupoFormProps) {
   const filaSinAvion = values.aviones.findIndex((a) => !a.aeronave_id);
   const avionesOk = values.aviones.length > 0 && filaSinAvion < 0;
   const canSave =
+    !lectura &&
     !!armarRes.payload &&
     !!armado &&
     !stale &&
@@ -363,7 +459,7 @@ export function GrupoForm(props: GrupoFormProps) {
     nombreOk &&
     !hayTuasMxnSinTc &&
     (!isRevise || motivoOk);
-  const faltaSoloMotivo = isRevise && !motivoOk && canSave === false && !!armarRes.payload && !!armado && !stale && !armando && !armadoError && avionesOk && paxOk && nombreOk && !hayTuasMxnSinTc;
+  const faltaSoloMotivo = isRevise && !lectura && !motivoOk && canSave === false && !!armarRes.payload && !!armado && !stale && !armando && !armadoError && avionesOk && paxOk && nombreOk && !hayTuasMxnSinTc;
 
   /** Aplica `creados[]` del 409 a medias: esos aviones ya existen (vuelo_id). */
   const aplicarCreados = (d: RevisionAMediasDetails) => {
@@ -414,6 +510,11 @@ export function GrupoForm(props: GrupoFormProps) {
           setAMedias(null);
           toast.success(`Grupo ${res.data.folio_texto} revisado (v${res.data.version})`);
           toastAvisos(res.data.avisos);
+          if (props.onGuardado) {
+            // Página única: el padre vuelve a lectura con la versión nueva.
+            props.onGuardado(res.data);
+            return;
+          }
           router.push(`/admin/quotes/grupo/${res.data.id}`);
           router.refresh();
           return;
@@ -438,6 +539,7 @@ export function GrupoForm(props: GrupoFormProps) {
   };
 
   const handleSave = () => {
+    if (lectura) return;
     if (faltaSoloMotivo) {
       toast.error("Escribe el motivo de la revisión");
       focusMotivo();
@@ -512,6 +614,19 @@ export function GrupoForm(props: GrupoFormProps) {
     ejecutar(next);
   };
 
+  // ===== Lo que se pinta según el modo (armado vivo vs cabecera persistida) =====
+  const consolidadoVisto = lectura ? (grupo?.consolidado ?? null) : (armado?.consolidado ?? null);
+  const tuasVistas = lectura ? (grupo?.consolidado.tuas ?? null) : (armado?.consolidado.tuas ?? null);
+  /** Lectura: monto USD de cada cargo del grupo, por id (líneas EXTRA persistidas). */
+  const montosExtrasPorId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!lectura || !grupo) return map;
+    for (const l of grupo.consolidado.desglose) {
+      if (l.clave === "EXTRA" && l.grupo_extra_id) map.set(l.grupo_extra_id, l.monto_usd);
+    }
+    return map;
+  }, [lectura, grupo]);
+
   // ===== Resúmenes de secciones plegadas =====
   const rutaTexto = puntosRuta(
     values.escalas_plantilla.map((t) => ({ origen: t.origen_iata, destino: t.destino_iata })),
@@ -545,9 +660,14 @@ export function GrupoForm(props: GrupoFormProps) {
           ? "Revisar"
           : null;
   const avisoCargos = hayExtrasMxn && !tcCapturado ? "Falta TC" : null;
-  const resumenTuas = armado ? resumenTuasGrupo(armado.consolidado.tuas) : "Se llena al calcular";
+  const resumenTuas = lectura
+    ? resumenTuasGrupo(tuasVistas)
+    : armado
+      ? resumenTuasGrupo(armado.consolidado.tuas)
+      : "Se llena al calcular";
   const avisoTuas = hayTuasMxnSinTc ? "Falta TC" : null;
   const estado = grupo ? estadoGrupoBadge(grupo.estado) : null;
+  const ajusteNum = Number(values.ajuste_grupo_usd) || 0;
 
   return (
     <div className="space-y-4 pb-4">
@@ -576,8 +696,8 @@ export function GrupoForm(props: GrupoFormProps) {
         </div>
       )}
 
-      {/* 0 · Revisión (solo editar) */}
-      {isRevise && grupo && (
+      {/* 0 · Revisión (solo editando) */}
+      {isRevise && grupo && !lectura && (
         <SeccionGrupo
           id="revision"
           titulo="Revisión del grupo"
@@ -712,109 +832,156 @@ export function GrupoForm(props: GrupoFormProps) {
           </Field>
         )}
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Nombre del grupo" required hint="Cómo lo identifica la oficina (ej. Tour Chichén 12 oct)">
-            <Input placeholder="Ej. Familia Pérez · Chichén Itzá" maxLength={120} {...register("nombre")} />
-          </Field>
-          <Field label="Pasajeros del grupo" required hint="Total de personas; se reparten entre los aviones">
-            <Input
-              type="number"
-              min={1}
-              max={500}
-              step={1}
-              value={values.pasajeros_total}
-              onChange={(e) =>
-                setValue(
-                  "pasajeros_total",
-                  e.target.value === "" ? "" : Math.max(1, Math.floor(Number(e.target.value) || 1)),
-                )
-              }
-              placeholder="Ej. 44"
-            />
-          </Field>
-        </div>
-
-        <Field label="Fecha y hora de salida" required hint="Hora de Cancún · cada avión sale escalonado 10 min después del anterior">
-          <FechaHoraCampo value={values.fecha_vuelo} onChange={(v) => setValue("fecha_vuelo", v)} />
-        </Field>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Tipo de tarifa</Label>
-            <div className="inline-flex w-full rounded-lg border border-border bg-navy-800/50 p-1">
-              {(["PUBLICO", "BROKER"] as TipoTarifa[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setValue("tarifa_tipo", t)}
-                  className={cn(
-                    "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
-                    values.tarifa_tipo === t ? "bg-navy-700 text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {t === "PUBLICO" ? "Público" : "Broker"}
-                </button>
-              ))}
+        {lectura && grupo ? (
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <DatoLectura label="Nombre del grupo">{grupo.nombre || "—"}</DatoLectura>
+              <DatoLectura label="Pasajeros del grupo" hint="Se reparten entre los aviones">
+                {grupo.pasajeros_total}
+              </DatoLectura>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Cada avión cobra su tarifa (o la preferencial del cliente); se puede pactar por avión en la sección Aviones.
-            </p>
-          </div>
-          <Field label="Método de pago" required>
-            <SearchableSelect
-              options={METODOS_PAGO_GRUPO.map((m) => ({ value: m.value, label: m.label, description: m.hint }))}
-              value={values.metodo_pago}
-              onChange={(v) => setValue("metodo_pago", v as MetodoPago)}
-              placeholder="Selecciona método"
-            />
-          </Field>
-        </div>
-        {values.metodo_pago === "OTRO" && (
-          <Field label="¿Cuál método?" required hint="Escríbelo tal como quieren verlo (ej. PayPal)">
-            <Input value={values.metodo_pago_detalle} onChange={(e) => setValue("metodo_pago_detalle", e.target.value)} placeholder="Nombre del método" maxLength={80} />
-          </Field>
-        )}
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div id="grupo-tc-field" className="scroll-mt-24">
-            <Field
-              label="Tipo de cambio (MXN por USD)"
-              hint={
-                hayExtrasMxn || hayTuasMxn
-                  ? "Requerido: hay cargos o TUAS capturados en pesos"
-                  : "Opcional · si el pago entrará en pesos"
-              }
+            <DatoLectura
+              label="Fecha y hora de salida"
+              hint={`${TZ_LABEL} · cada avión sale escalonado 10 min después del anterior`}
             >
-              <div className="flex flex-wrap items-center gap-2">
+              {fmtDateTime(grupo.fecha_vuelo)}
+              {grupo.fecha_fin && grupo.fecha_fin !== grupo.fecha_vuelo
+                ? ` → ${fmtDateTime(grupo.fecha_fin)}`
+                : ""}
+            </DatoLectura>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <DatoLectura
+                label="Tipo de tarifa"
+                hint="Cada avión cobra su tarifa (o la preferencial del cliente); se puede pactar por avión al revisar."
+              >
+                <Badge variant="outline" className="font-mono text-xs">
+                  {grupo.tarifa_tipo === "BROKER" ? "Broker" : "Público"}
+                </Badge>
+              </DatoLectura>
+              <DatoLectura label="Método de pago">{metodoPagoLabel(grupo.metodo_cobro)}</DatoLectura>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <DatoLectura
+                label="Tipo de cambio (MXN por USD)"
+                hint={grupo.tc_usd_mxn == null ? "Sin TC · el grupo se cobra en dólares" : undefined}
+              >
+                {grupo.tc_usd_mxn != null ? fmtDecimal(grupo.tc_usd_mxn, 4) : "—"}
+              </DatoLectura>
+              <DatoLectura label="Pase de abordar" hint="Exenta TUAS (excepto CZM)">
+                {grupo.pase_abordar ? "Sí" : "No"}
+              </DatoLectura>
+            </div>
+            <p className="border-t border-border pt-2 text-[11px] text-muted-foreground">
+              Creado {fmtDateTime(grupo.created_at)} · Última edición {fmtDateTime(grupo.updated_at)}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Field label="Nombre del grupo" required hint="Cómo lo identifica la oficina (ej. Tour Chichén 12 oct)">
+                <Input placeholder="Ej. Familia Pérez · Chichén Itzá" maxLength={120} {...register("nombre")} />
+              </Field>
+              <Field label="Pasajeros del grupo" required hint="Total de personas; se reparten entre los aviones">
                 <Input
                   type="number"
-                  step="0.0001"
-                  min={0}
-                  placeholder="Ej. 18.50"
-                  className="w-32"
-                  value={values.tc_usd_mxn}
-                  onChange={(e) => setValue("tc_usd_mxn", e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+                  min={1}
+                  max={500}
+                  step={1}
+                  value={values.pasajeros_total}
+                  onChange={(e) =>
+                    setValue(
+                      "pasajeros_total",
+                      e.target.value === "" ? "" : Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                    )
+                  }
+                  placeholder="Ej. 44"
                 />
-                {tcSugerido != null && Number(values.tc_usd_mxn) !== tcSugerido && (
-                  <button
-                    type="button"
-                    onClick={() => setValue("tc_usd_mxn", tcSugerido)}
-                    className="text-xs text-sky-700 dark:text-sky-400 underline underline-offset-2"
-                  >
-                    Usar TC del día: {tcSugerido}
-                  </button>
-                )}
-              </div>
-            </Field>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-sm font-medium">Pase de abordar</Label>
-            <div className="flex items-center h-9">
-              <Switch checked={values.pase_abordar} onCheckedChange={(c) => setValue("pase_abordar", c)} />
-              <span className="text-xs text-muted-foreground ml-3">Exenta TUAS (excepto CZM)</span>
+              </Field>
             </div>
-          </div>
-        </div>
+
+            <Field label="Fecha y hora de salida" required hint="Hora de Cancún · cada avión sale escalonado 10 min después del anterior">
+              <FechaHoraCampo value={values.fecha_vuelo} onChange={(v) => setValue("fecha_vuelo", v)} />
+            </Field>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Tipo de tarifa</Label>
+                <div className="inline-flex w-full rounded-lg border border-border bg-navy-800/50 p-1">
+                  {(["PUBLICO", "BROKER"] as TipoTarifa[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setValue("tarifa_tipo", t)}
+                      className={cn(
+                        "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
+                        values.tarifa_tipo === t ? "bg-navy-700 text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {t === "PUBLICO" ? "Público" : "Broker"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Cada avión cobra su tarifa (o la preferencial del cliente); se puede pactar por avión en la sección Aviones.
+                </p>
+              </div>
+              <Field label="Método de pago" required>
+                <SearchableSelect
+                  options={METODOS_PAGO_GRUPO.map((m) => ({ value: m.value, label: m.label, description: m.hint }))}
+                  value={values.metodo_pago}
+                  onChange={(v) => setValue("metodo_pago", v as MetodoPago)}
+                  placeholder="Selecciona método"
+                />
+              </Field>
+            </div>
+            {values.metodo_pago === "OTRO" && (
+              <Field label="¿Cuál método?" required hint="Escríbelo tal como quieren verlo (ej. PayPal)">
+                <Input value={values.metodo_pago_detalle} onChange={(e) => setValue("metodo_pago_detalle", e.target.value)} placeholder="Nombre del método" maxLength={80} />
+              </Field>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div id="grupo-tc-field" className="scroll-mt-24">
+                <Field
+                  label="Tipo de cambio (MXN por USD)"
+                  hint={
+                    hayExtrasMxn || hayTuasMxn
+                      ? "Requerido: hay cargos o TUAS capturados en pesos"
+                      : "Opcional · si el pago entrará en pesos"
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min={0}
+                      placeholder="Ej. 18.50"
+                      className="w-32"
+                      value={values.tc_usd_mxn}
+                      onChange={(e) => setValue("tc_usd_mxn", e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
+                    />
+                    {tcSugerido != null && Number(values.tc_usd_mxn) !== tcSugerido && (
+                      <button
+                        type="button"
+                        onClick={() => setValue("tc_usd_mxn", tcSugerido)}
+                        className="text-xs text-sky-700 dark:text-sky-400 underline underline-offset-2"
+                      >
+                        Usar TC del día: {tcSugerido}
+                      </button>
+                    )}
+                  </div>
+                </Field>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm font-medium">Pase de abordar</Label>
+                <div className="flex items-center h-9">
+                  <Switch checked={values.pase_abordar} onCheckedChange={(c) => setValue("pase_abordar", c)} />
+                  <span className="text-xs text-muted-foreground ml-3">Exenta TUAS (excepto CZM)</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </SeccionGrupo>
 
       {/* 2 · Ruta plantilla */}
@@ -832,6 +999,8 @@ export function GrupoForm(props: GrupoFormProps) {
           routes={routes}
           airports={airports}
           onAeropuertoCreado={onAeropuertoCreado}
+          disabled={saving}
+          lectura={lectura}
         />
       </SeccionGrupo>
 
@@ -851,33 +1020,53 @@ export function GrupoForm(props: GrupoFormProps) {
           tcCapturado={tcCapturado}
           armado={stale ? null : armado}
           onFocusTc={focusTc}
+          disabled={saving}
+          lectura={lectura}
+          montosPorId={montosExtrasPorId}
         />
-        <Field
-          label="Ajuste del grupo (USD, antes de IVA)"
-          hint="Negativo = descuento («ciérramelo en 21,000»). Se reparte a los aviones por su base gravable; los centavos van al ancla."
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <Input
-              type="number"
-              step="0.01"
-              placeholder="0.00"
-              className="w-36"
-              value={values.ajuste_grupo_usd}
-              onChange={(e) => setValue("ajuste_grupo_usd", e.target.value === "" ? "" : Number(e.target.value))}
-            />
-            {armado && !stale && armado.consolidado.ajuste_usd !== 0 && (
-              <span className="text-xs text-muted-foreground font-mono">
-                {armado.consolidado.ajuste_usd < 0 ? "Descuento" : "Ajuste"} en el consolidado: {fmtUsd(armado.consolidado.ajuste_usd)}
+        {lectura ? (
+          <DatoLectura
+            label="Ajuste del grupo (USD, antes de IVA)"
+            hint={ajusteNum !== 0 ? "Se reparte a los aviones por su base gravable; los centavos van al ancla." : undefined}
+          >
+            {ajusteNum !== 0 ? (
+              <span className="font-mono">
+                {ajusteNum < 0 ? "Descuento " : "Redondeo "}
+                {fmtUsd(ajusteNum)}
               </span>
+            ) : (
+              <span className="text-muted-foreground">Sin ajuste</span>
             )}
-          </div>
-        </Field>
+          </DatoLectura>
+        ) : (
+          <Field
+            label="Ajuste del grupo (USD, antes de IVA)"
+            hint="Negativo = descuento («ciérramelo en 21,000»). Se reparte a los aviones por su base gravable; los centavos van al ancla."
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                className="w-36"
+                value={values.ajuste_grupo_usd}
+                onChange={(e) => setValue("ajuste_grupo_usd", e.target.value === "" ? "" : Number(e.target.value))}
+              />
+              {armado && !stale && armado.consolidado.ajuste_usd !== 0 && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  {armado.consolidado.ajuste_usd < 0 ? "Descuento" : "Ajuste"} en el consolidado: {fmtUsd(armado.consolidado.ajuste_usd)}
+                </span>
+              )}
+            </div>
+          </Field>
+        )}
       </SeccionGrupo>
 
       {/* 4b · TUAS por aeropuerto (feedback 4-sep): mismo apartado del
           cotizador de un avión — pax gravados × tarifa, exentos por
-          matrícula, total y «por avión». Todo del armador; editable como
-          en el cotizador (monto por pasajero + moneda por aeropuerto). */}
+          matrícula, total y «por avión». Todo del API; editable como en el
+          cotizador (monto por pasajero + moneda por aeropuerto) y solo
+          lectura en la página única. */}
       <SeccionGrupo
         id="tuas"
         titulo="TUAS por aeropuerto"
@@ -888,23 +1077,27 @@ export function GrupoForm(props: GrupoFormProps) {
       >
         <p className="text-xs text-muted-foreground">
           Pasajeros gravados × tarifa por pasajero en cada aeropuerto del itinerario. Cada avión
-          resuelve su exención por matrícula (XA/XB/N). Edita el monto por pasajero si el
-          aeropuerto cobra distinto (USD o MXN); vacío = monto del catálogo, 0 = no cobra.
+          resuelve su exención por matrícula (XA/XB/N).{" "}
+          {lectura
+            ? "Los montos capturados se cambian con «Revisar»."
+            : "Edita el monto por pasajero si el aeropuerto cobra distinto (USD o MXN); vacío = monto del catálogo, 0 = no cobra."}
         </p>
         <TuasGrupoCard
-          tuas={armado?.consolidado.tuas ?? null}
+          tuas={tuasVistas}
           tuasLineas={values.tuas_lineas}
-          onChange={setTuaLinea}
+          onChange={lectura ? undefined : setTuaLinea}
           tcCapturado={tcCapturado}
           onFocusTc={focusTc}
-          stale={stale || armando}
+          stale={!lectura && (stale || armando)}
           disabled={saving}
           paseAbordar={values.pase_abordar}
           vacio={
-            armarRes.falta ??
-            (armado && !armado.consolidado.tuas
-              ? `TUAS ${fmtUsd(armado.consolidado.tuas_usd)} · sin desglose por aeropuerto`
-              : "Calculando…")
+            lectura
+              ? `TUAS ${fmtUsd(grupo?.consolidado.tuas_usd ?? 0)} · sin desglose por aeropuerto`
+              : (armarRes.falta ??
+                (armado && !armado.consolidado.tuas
+                  ? `TUAS ${fmtUsd(armado.consolidado.tuas_usd)} · sin desglose por aeropuerto`
+                  : "Calculando…"))
           }
         />
       </SeccionGrupo>
@@ -921,18 +1114,19 @@ export function GrupoForm(props: GrupoFormProps) {
         <CapacidadCard
           pasajerosTotal={pasajerosTotal}
           paxCapturados={paxCapturados}
-          capacidad={armado?.capacidad ?? null}
-          stale={stale || armando}
+          capacidad={lectura ? null : (armado?.capacidad ?? null)}
+          stale={!lectura && (stale || armando)}
           onDobleRotacion={aplicarDobleRotacion}
-          disabled={saving}
+          disabled={saving || lectura}
+          lectura={lectura}
         />
-        {armadoErrorTexto && (
+        {!lectura && armadoErrorTexto && (
           <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <ExclamationTriangleIcon className="h-5 w-5 shrink-0 mt-0.5" />
             <p>{armadoErrorTexto}</p>
           </div>
         )}
-        {armado && !stale && armado.avisos_grupo.length > 0 && (
+        {!lectura && armado && !stale && armado.avisos_grupo.length > 0 && (
           <ul className="space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             {armado.avisos_grupo.map((t) => (
               <li key={t} className="flex items-start gap-1.5">
@@ -942,7 +1136,7 @@ export function GrupoForm(props: GrupoFormProps) {
             ))}
           </ul>
         )}
-        {armado && (
+        {!lectura && armado && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <InformationCircleIcon className="h-3.5 w-3.5 shrink-0" />
             Pilotos ese día: {armado.pilotos.activos} activos · {armado.pilotos.libres} libres ·{" "}
@@ -950,31 +1144,83 @@ export function GrupoForm(props: GrupoFormProps) {
             {armado.pilotos.faltan > 0 ? ` · faltan ${armado.pilotos.faltan}` : ""}
           </p>
         )}
-        <AvionesEditor
-          value={values.aviones}
-          onChange={(a) => setValue("aviones", a)}
-          armadoAviones={armadoAviones}
-          stale={stale || armando}
-          aircraft={aircraft}
-          pilots={pilots}
-          pasajerosTotal={pasajerosTotal}
-          revise={isRevise}
-          onQuitar={quitarAvion}
-          onProponer={isRevise ? undefined : proponerFlota}
-          disabled={saving}
-        />
+        {lectura && grupo ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Un vuelo por avión con su piloto, salida escalonada y precio propio. Las acciones por
+              avión están en el menú de cada fila; para cambiar pasajeros, vueltas o tarifas usa
+              «Revisar». Ver en listas:{" "}
+              <Link href={`/admin/quotes?grupo_id=${grupo.id}`} className="underline underline-offset-2 hover:text-foreground">
+                cotizaciones
+              </Link>{" "}
+              ·{" "}
+              <Link href={`/admin/flights?grupo_id=${grupo.id}`} className="underline underline-offset-2 hover:text-foreground">
+                vuelos
+              </Link>
+              .
+            </p>
+            {props.avionesLectura ? (
+              <div className="-mx-4 border-t border-border">{props.avionesLectura}</div>
+            ) : (
+              <AvionesEditor
+                value={values.aviones}
+                onChange={(a) => setValue("aviones", a)}
+                armadoAviones={null}
+                stale={false}
+                aircraft={aircraft}
+                pilots={pilots}
+                pasajerosTotal={pasajerosTotal}
+                revise
+                onQuitar={quitarAvion}
+                disabled
+              />
+            )}
+          </>
+        ) : (
+          <AvionesEditor
+            value={values.aviones}
+            onChange={(a) => setValue("aviones", a)}
+            armadoAviones={armadoAviones}
+            stale={stale || armando}
+            aircraft={aircraft}
+            pilots={pilots}
+            pasajerosTotal={pasajerosTotal}
+            revise={isRevise}
+            onQuitar={quitarAvion}
+            onProponer={isRevise ? undefined : proponerFlota}
+            disabled={saving}
+          />
+        )}
       </SeccionGrupo>
 
-      {/* 7 · Consolidado */}
+      {/* 7 · Consolidado (fuente única: ConsolidadoCard; en lectura, lo persistido) */}
       <SeccionGrupo
         id="consolidado"
         titulo="Consolidado del grupo"
-        resumen={armado ? `${fmtUsd(armado.consolidado.total_usd)} · ${armado.consolidado.aviones} aviones` : "Sin cálculo aún"}
-        aviso={armado && !armado.consolidado.verificacion.cuadra ? "No cuadra" : null}
+        resumen={
+          consolidadoVisto
+            ? `${fmtUsd(consolidadoVisto.total_usd)} · ${consolidadoVisto.aviones} ${consolidadoVisto.aviones === 1 ? "avión" : "aviones"}`
+            : "Sin cálculo aún"
+        }
+        aviso={consolidadoVisto && !consolidadoVisto.verificacion.cuadra ? "No cuadra" : null}
         abierta={abiertas.consolidado}
         onToggle={() => toggleSeccion("consolidado")}
       >
-        {armado ? (
+        {lectura && grupo ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Suma de los desgloses de los {grupo.consolidado.aviones}{" "}
+              {grupo.consolidado.aviones === 1 ? "avión vivo" : "aviones vivos"}. Cada línea se
+              puede abrir para ver la parte de cada avión.
+            </p>
+            <ConsolidadoCard
+              consolidado={grupo.consolidado}
+              pasajerosTotal={grupo.pasajeros_total}
+              stale={false}
+              tcUsdMxn={grupo.tc_usd_mxn}
+            />
+          </>
+        ) : armado ? (
           <>
             {isRevise && congelados.length > 0 && (
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -983,7 +1229,12 @@ export function GrupoForm(props: GrupoFormProps) {
                 precio actual y el total del grupo puede diferir.
               </p>
             )}
-            <ConsolidadoCard consolidado={armado.consolidado} pasajerosTotal={armado.pasajeros_total} stale={stale || armando} />
+            <ConsolidadoCard
+              consolidado={armado.consolidado}
+              pasajerosTotal={armado.pasajeros_total}
+              stale={stale || armando}
+              tcUsdMxn={armado.tc_usd_mxn}
+            />
           </>
         ) : (
           <p className="text-xs text-muted-foreground">
@@ -998,6 +1249,7 @@ export function GrupoForm(props: GrupoFormProps) {
         titulo="Notas y PDF"
         resumen={[
           values.notas.trim() ? "Con notas" : "Sin notas",
+          values.notas_internas.trim() ? "notas internas" : null,
           values.pdf_mostrar_anexo_aviones ? "anexo de flota" : null,
           values.pdf_mostrar_precio_por_persona ? "precio por persona" : null,
           values.pdf_mostrar_subtotal_por_avion ? "subtotal por avión" : null,
@@ -1008,47 +1260,94 @@ export function GrupoForm(props: GrupoFormProps) {
         abierta={abiertas.notas}
         onToggle={() => toggleSeccion("notas")}
       >
-        <Field label="Notas (visibles en el PDF)" hint="Opcional">
-          <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" maxLength={2000} {...register("notas")} />
-        </Field>
-        <Field label="Notas internas" hint="Opcional · no aparecen en el PDF">
-          <Textarea rows={2} placeholder="Solo para el equipo" maxLength={2000} {...register("notas_internas")} />
-        </Field>
-        <div className="space-y-2 rounded-lg border border-border bg-navy-800/50 p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">PDF del grupo</p>
-          {(
-            [
-              ["pdf_mostrar_anexo_aviones", "Anexo «Flota asignada»", "Hoja con los aviones del grupo (modelo, asientos, pasajeros, salidas)."],
-              ["pdf_mostrar_precio_por_persona", "Precio por persona", "Total del grupo entre los pasajeros, junto al total."],
-              ["pdf_mostrar_subtotal_por_avion", "Subtotal por avión", "En el anexo, lo que cuesta cada avión (apagado: solo el total del grupo)."],
-              ["pdf_mostrar_tarifa", "Tarifa por hora", "En el anexo, USD/hr de cada avión (apagado: solo montos)."],
-            ] as const
-          ).map(([campo, titulo, hint]) => (
-            <div key={campo} className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">{titulo}</Label>
-                <p className="text-xs text-muted-foreground">{hint}</p>
-              </div>
-              <Switch checked={values[campo]} onCheckedChange={(c) => setValue(campo, c)} />
+        {lectura ? (
+          <>
+            <DatoLectura label="Notas (visibles en el PDF)">
+              {values.notas.trim() ? (
+                <p className="whitespace-pre-wrap font-normal">{values.notas}</p>
+              ) : (
+                <span className="text-muted-foreground">Sin notas</span>
+              )}
+            </DatoLectura>
+            <DatoLectura label="Notas internas" hint="Solo para el equipo. No aparecen en el PDF al cliente.">
+              {values.notas_internas.trim() ? (
+                <p className="whitespace-pre-wrap font-normal">{values.notas_internas}</p>
+              ) : (
+                <span className="text-muted-foreground">Sin notas internas</span>
+              )}
+            </DatoLectura>
+            <div className="space-y-1.5 rounded-lg border border-border bg-navy-800/50 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">PDF del grupo</p>
+              <ul className="space-y-1 text-sm">
+                {PDF_TOGGLES.map(([campo, titulo, hint]) => (
+                  <li key={campo} className="flex items-center justify-between gap-3">
+                    <span className={cn(!values[campo] && "text-muted-foreground")} title={hint}>
+                      {titulo}
+                    </span>
+                    <span
+                      className={cn(
+                        "font-mono text-xs",
+                        values[campo] ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+                      )}
+                    >
+                      {values[campo] ? "Sí" : "No"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-muted-foreground">Los toggles del PDF se cambian con «Revisar».</p>
             </div>
-          ))}
-        </div>
+          </>
+        ) : (
+          <>
+            <Field label="Notas (visibles en el PDF)" hint="Opcional">
+              <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" maxLength={2000} {...register("notas")} />
+            </Field>
+            <Field label="Notas internas" hint="Opcional · no aparecen en el PDF">
+              <Textarea rows={2} placeholder="Solo para el equipo" maxLength={2000} {...register("notas_internas")} />
+            </Field>
+            <div className="space-y-2 rounded-lg border border-border bg-navy-800/50 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">PDF del grupo</p>
+              {PDF_TOGGLES.map(([campo, titulo, hint]) => (
+                <div key={campo} className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{titulo}</Label>
+                    <p className="text-xs text-muted-foreground">{hint}</p>
+                  </div>
+                  <Switch checked={values[campo]} onCheckedChange={(c) => setValue(campo, c)} />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </SeccionGrupo>
 
       <TotalBarGrupo
-        armado={armado}
+        consolidado={consolidadoVisto}
+        tarifaTipo={lectura ? (grupo?.tarifa_tipo ?? null) : (armado?.tarifa_tipo ?? null)}
         armando={armando}
         stale={stale}
-        error={armadoErrorTexto}
-        falta={armarRes.falta}
+        error={lectura ? null : armadoErrorTexto}
+        falta={lectura ? null : armarRes.falta}
         pasajerosTotal={pasajerosTotal}
         paxCapturados={paxCapturados}
         titulo={clienteSel?.nombre ?? grupo?.cliente?.nombre ?? null}
-        subtitulo={isRevise && grupo ? `${grupo.folio_texto} · v${grupo.version} → v${grupo.version + 1}` : "Nuevo grupo"}
+        subtitulo={
+          isRevise && grupo
+            ? lectura
+              ? `${grupo.folio_texto} · v${grupo.version}`
+              : `${grupo.folio_texto} · v${grupo.version} → v${grupo.version + 1}`
+            : "Nuevo grupo"
+        }
+        modo={lectura ? "lectura" : "edicion"}
         saveLabel={isRevise ? "Guardar revisión" : "Crear grupo"}
         saveDisabled={!canSave && !faltaSoloMotivo}
         saving={saving}
         onSave={handleSave}
+        onCancelar={isRevise && props.onCancelar ? pedirCancelar : undefined}
+        onRevisar={lectura ? props.onRevisar : undefined}
+        revisarBloqueado={lectura ? props.revisarBloqueado : undefined}
+        cobro={lectura ? props.cobro : undefined}
         apartar={isRevise ? undefined : values.apartar}
         onApartarChange={isRevise ? undefined : (v) => setValue("apartar", v)}
       />
@@ -1106,6 +1405,32 @@ export function GrupoForm(props: GrupoFormProps) {
               }}
             >
               Proponer flota
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Cancelar la edición en el lugar con cambios capturados: se confirma
+          (lo escrito se pierde; el grupo queda tal como está guardado). */}
+      <AlertDialog open={confirmDescartar} onOpenChange={setConfirmDescartar}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Descartar los cambios de la revisión?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Lo que capturaste en esta revisión se pierde y el grupo queda tal como está
+              guardado (v{grupo?.version ?? "?"}). No se genera ninguna versión nueva.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={(e) => {
+                e.preventDefault();
+                setConfirmDescartar(false);
+                props.onCancelar?.();
+              }}
+            >
+              Descartar cambios
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

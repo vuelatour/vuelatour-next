@@ -463,7 +463,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 </span>
               ) : cotizacionEditablePorFecha(snapshot.fecha_vuelo) ? (
                 <Link
-                  href={`/admin/quotes/${snapshot.id}/revise`}
+                  href={`/admin/quotes/${snapshot.id}?revisar=1`}
                   className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-600/90 transition-colors"
                 >
                   <BanknotesIcon className="h-4 w-4" />
@@ -485,7 +485,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               !snapshot.facturado &&
               (cotizacionEditablePorFecha(snapshot.fecha_vuelo) ? (
                 <Link
-                  href={`/admin/quotes/${snapshot.id}/revise`}
+                  href={`/admin/quotes/${snapshot.id}?revisar=1`}
                   className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted transition-colors"
                 >
                   <BanknotesIcon className="h-4 w-4" />

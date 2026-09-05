@@ -79,3 +79,28 @@ export function SeccionGrupo({
     </Card>
   );
 }
+
+/**
+ * Valor LEGIBLE de un campo en modo lectura (página única del grupo,
+ * 5-sep-2026): misma etiqueta que el campo editable, el valor como texto —
+ * nunca un input gris deshabilitado.
+ */
+export function DatoLectura({
+  label,
+  hint,
+  children,
+  className,
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-0.5", className)}>
+      <p className="text-[11px] uppercase tracking-wider text-foreground/70">{label}</p>
+      <div className="text-sm font-medium">{children}</div>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}

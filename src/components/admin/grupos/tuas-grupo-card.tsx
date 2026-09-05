@@ -3,13 +3,6 @@
 import { useState } from "react";
 import { CheckCircleIcon, ChevronDownIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
 import { fmtMontoUnitario } from "@/lib/admin/extras";
@@ -44,7 +37,6 @@ export function TuasGrupoCard({
   stale = false,
   disabled = false,
   paseAbordar = false,
-  enCard = false,
   vacio,
 }: {
   /** `consolidado.tuas` del armado/detalle; null = aún sin cálculo. */
@@ -59,15 +51,13 @@ export function TuasGrupoCard({
   stale?: boolean;
   disabled?: boolean;
   paseAbordar?: boolean;
-  /** Envolver en Card con encabezado (detalle); en el wizard la sección ya es la card. */
-  enCard?: boolean;
   /** Texto cuando aún no hay cálculo. */
   vacio?: string;
 }) {
   const editable = !!onChange && !disabled;
   const lineaPorIata = new Map(tuasLineas.map((l) => [l.iata.toUpperCase(), l]));
 
-  const cuerpo = !tuas ? (
+  return !tuas ? (
     <p className="text-xs text-muted-foreground">{vacio ?? "Sin desglose de TUAS."}</p>
   ) : tuas.aeropuertos.length === 0 ? (
     <p className="text-xs text-muted-foreground">
@@ -103,21 +93,6 @@ export function TuasGrupoCard({
         )}
       </div>
     </div>
-  );
-
-  if (!enCard) return cuerpo;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
-        <CardDescription className="text-xs">
-          Pasajeros gravados × tarifa por pasajero en cada aeropuerto del itinerario. Cada
-          avión resuelve su exención por matrícula (XA/XB/N). Los montos capturados se editan
-          con «Revisar».
-        </CardDescription>
-      </CardHeader>
-      <CardContent>{cuerpo}</CardContent>
-    </Card>
   );
 }
 

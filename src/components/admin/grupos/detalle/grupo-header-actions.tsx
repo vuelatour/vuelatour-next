@@ -45,18 +45,27 @@ import type { GrupoDetalle } from "@/types/grupos";
 
 /**
  * Acciones de cabecera del grupo: PDF (proxy /api/grupos/:id/pdf), Revisar
- * (wizard), Confirmar (confirma TODOS los hijos vivos), Cambiar fecha (cada
- * hijo conserva su desfase escalonado) y Cancelar grupo (N × cancel). Toda
- * acción destructiva/irreversible confirma antes; los 409 estructurados
- * del API se traducen con `mensajeErrorGrupo`.
+ * (edición EN EL LUGAR de la página única, 5-sep-2026: `onRevisar`; sin él
+ * abre `?revisar=1`), Confirmar (confirma TODOS los hijos vivos), Cambiar
+ * fecha (cada hijo conserva su desfase escalonado) y Cancelar grupo
+ * (N × cancel). Toda acción destructiva/irreversible confirma antes; los
+ * 409 estructurados del API se traducen con `mensajeErrorGrupo`. Mientras
+ * se edita, las acciones que cambian el grupo se deshabilitan (un solo
+ * editor a la vez).
  */
 export function GrupoHeaderActions({
   grupo,
   puedeEditar,
+  onRevisar,
+  editando = false,
 }: {
   grupo: GrupoDetalle;
   /** ADMIN / COORDINADOR: escrituras. Otros roles solo ven el PDF. */
   puedeEditar: boolean;
+  /** Entra a edición en el lugar (sin navegar). */
+  onRevisar?: () => void;
+  /** La página está en edición: Revisar se esconde y el resto se bloquea. */
+  editando?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -70,7 +79,7 @@ export function GrupoHeaderActions({
   const folio = grupo.folio_texto;
   const vivos = grupo.aviones.filter((a) => !a.cancelado);
   const terminal = grupo.estado === "CANCELADO" || grupo.estado === "COMPLETADO";
-  const canRevise = puedeEditar && !terminal;
+  const canRevise = puedeEditar && !terminal && !editando;
   const canConfirm =
     puedeEditar &&
     (grupo.estado === "RESERVA" ||
@@ -79,6 +88,11 @@ export function GrupoHeaderActions({
   const canFecha = puedeEditar && !terminal;
   const canCancel = puedeEditar && !terminal;
   const congelados = vivos.filter((a) => a.congelado);
+  const tituloEditando = "Termina o cancela la revisión para usar esta acción.";
+  const tituloRevisar =
+    congelados.length > 0
+      ? `Hay ${congelados.length} avión(es) con precio congelado (cobrado/facturado): la revisión puede aplicarse solo a los editables.`
+      : "Cambiar aviones, pasajeros, ruta, cargos o los toggles del PDF aquí mismo (genera una versión nueva).";
 
   /** Avisos NUEVOS de la acción (los ya visibles en la página no se repiten). */
   const avisosNuevos = (data: GrupoDetalle) => {
@@ -172,20 +186,22 @@ export function GrupoHeaderActions({
         <ArrowDownTrayIcon className="h-4 w-4" />
         {pdfLoading ? "Generando…" : "PDF"}
       </Button>
-      {canRevise && (
-        <Link
-          href={`/admin/quotes/grupo/${grupo.id}/editar`}
-          className={buttonVariants({ variant: "outline" })}
-          title={
-            congelados.length > 0
-              ? `Hay ${congelados.length} avión(es) con precio congelado (cobrado/facturado): la revisión puede aplicarse solo a los editables.`
-              : "Cambiar aviones, pasajeros, ruta, cargos o los toggles del PDF (genera una versión nueva)."
-          }
-        >
-          <PencilSquareIcon className="h-4 w-4" />
-          Revisar
-        </Link>
-      )}
+      {canRevise &&
+        (onRevisar ? (
+          <Button variant="outline" onClick={onRevisar} className="gap-2" title={tituloRevisar}>
+            <PencilSquareIcon className="h-4 w-4" />
+            Revisar
+          </Button>
+        ) : (
+          <Link
+            href={`/admin/quotes/grupo/${grupo.id}?revisar=1`}
+            className={buttonVariants({ variant: "outline" })}
+            title={tituloRevisar}
+          >
+            <PencilSquareIcon className="h-4 w-4" />
+            Revisar
+          </Link>
+        ))}
       {canFecha && (
         <Button
           variant="outline"
@@ -193,8 +209,13 @@ export function GrupoHeaderActions({
             setFecha(isoToCancunInput(grupo.fecha_vuelo));
             setOpenFecha(true);
           }}
+          disabled={editando}
           className="gap-2"
-          title="Reagenda TODOS los aviones del grupo conservando el escalonamiento entre ellos."
+          title={
+            editando
+              ? tituloEditando
+              : "Reagenda TODOS los aviones del grupo conservando el escalonamiento entre ellos."
+          }
         >
           <CalendarDaysIcon className="h-4 w-4" />
           Cambiar fecha
@@ -203,7 +224,8 @@ export function GrupoHeaderActions({
       {canConfirm && (
         <Button
           onClick={() => setOpenConfirm(true)}
-          disabled={pending}
+          disabled={pending || editando}
+          title={editando ? tituloEditando : undefined}
           className="gap-2 bg-brand-600 hover:bg-brand-600/90"
         >
           <CheckCircleIcon className="h-4 w-4" />
@@ -214,7 +236,8 @@ export function GrupoHeaderActions({
         <Button
           variant="outline"
           onClick={() => setOpenCancel(true)}
-          disabled={pending}
+          disabled={pending || editando}
+          title={editando ? tituloEditando : undefined}
           className="gap-2 text-destructive hover:text-destructive"
         >
           <XCircleIcon className="h-4 w-4" />

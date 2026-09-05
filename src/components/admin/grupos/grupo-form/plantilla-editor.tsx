@@ -9,6 +9,7 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { getDistanciasAction } from "@/app/admin/distancias/actions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
 import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
 import { haversineNm } from "@/lib/admin/geo";
 import { cn } from "@/lib/utils";
-import { fmtDecimal } from "@/lib/format";
+import { fmtDecimal, fmtUsd } from "@/lib/format";
 import type { Airport } from "@/types/airports";
 import {
   PERNOCTA_COSTO_DEFAULT_USD,
@@ -37,6 +38,10 @@ import {
  * escalonadas). Misma ruta rápida "CUN, CZA, CUN"+Enter y mismo autollenado
  * de millas (catálogo de distancias → rutas guardadas → haversine) que el
  * cotizador de un avión.
+ *
+ * `lectura` (página única del grupo, 5-sep-2026): los mismos tramos en el
+ * mismo orden pero como texto legible (sin inputs, sin agregar/quitar, sin
+ * ruta rápida); no consulta el catálogo de distancias ni rellena millas.
  */
 export function PlantillaEditor({
   value,
@@ -45,6 +50,7 @@ export function PlantillaEditor({
   airports,
   onAeropuertoCreado,
   disabled = false,
+  lectura = false,
 }: {
   value: PlantillaTramoForm[];
   onChange: (tramos: PlantillaTramoForm[]) => void;
@@ -52,6 +58,7 @@ export function PlantillaEditor({
   airports: AeropuertoOption[];
   onAeropuertoCreado?: (airport: Airport) => void;
   disabled?: boolean;
+  lectura?: boolean;
 }) {
   const airportOptions = useMemo(
     () => airports.map((a) => ({ value: a.iata, label: a.iata, description: a.nombre })),
@@ -64,6 +71,8 @@ export function PlantillaEditor({
   const [distanciasCatalogo, setDistanciasCatalogo] = useState<Map<string, number>>(new Map());
   const [catalogoListo, setCatalogoListo] = useState(false);
   useEffect(() => {
+    // En lectura no hay nada que autollenar: no se consulta el catálogo.
+    if (lectura) return;
     let alive = true;
     getDistanciasAction()
       .then((r) => {
@@ -92,7 +101,7 @@ export function PlantillaEditor({
     return () => {
       alive = false;
     };
-  }, []);
+  }, [lectura]);
 
   const nmByPair = useMemo(() => {
     const map = new Map<string, number>();
@@ -141,6 +150,7 @@ export function PlantillaEditor({
     value.map((l) => `${l.origen_iata}-${l.destino_iata}`).join("|") +
     `#z${value.filter((l) => l.origen_iata && l.destino_iata && !(Number(l.millas_nauticas) > 0)).length}`;
   useEffect(() => {
+    if (lectura) return;
     let changed = false;
     const next = value.map((l) => {
       if (Number(l.millas_nauticas) > 0 || !l.origen_iata || !l.destino_iata) return l;
@@ -152,7 +162,7 @@ export function PlantillaEditor({
     if (changed) onChange(next);
     // lookupNm depende de los mapas incluidos; value se cubre con endpointsKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpointsKey, nmByPair, coordByIata, distanciasCatalogo, catalogoListo]);
+  }, [endpointsKey, nmByPair, coordByIata, distanciasCatalogo, catalogoListo, lectura]);
 
   const updateLeg = (idx: number, patch: Partial<PlantillaTramoForm>) => {
     const next = [...value];
@@ -219,6 +229,117 @@ export function PlantillaEditor({
     value.length % 2 === 0 &&
     !!primero?.origen_iata &&
     primero.origen_iata === ultimo?.destino_iata;
+
+  if (lectura) {
+    return (
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Es la ruta que vuela CADA avión del grupo. Los pasajeros por tramo y la
+          hora de salida de cada avión los pone el armador (sección Aviones).
+        </p>
+        {fueraDeCun && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            La ruta comercial normalmente abre y cierra en CUN (hoy:{" "}
+            {primero.origen_iata} → … → {ultimo.destino_iata}).
+          </p>
+        )}
+        <ol className="space-y-1.5">
+          {value.map((leg, idx) => {
+            const isFirst = idx === 0;
+            const isLast = idx === value.length - 1;
+            const sobrevuelo = !!leg.origen_iata && leg.origen_iata === leg.destino_iata;
+            return (
+              <li
+                key={idx}
+                className={cn(
+                  "rounded-lg border border-brand-600/40 bg-card px-3 py-2 space-y-1",
+                  leg.pdf_oculto && "border-dashed opacity-90",
+                )}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-foreground/70">
+                      Tramo {idx + 1}
+                      {isFirst && " · salida"}
+                      {isLast && value.length > 1 && " · llegada"}
+                    </span>
+                    <span className="font-mono text-sm font-semibold">
+                      {leg.origen_iata || "—"} → {leg.destino_iata || "—"}
+                    </span>
+                    {leg.es_ferry && (
+                      <Badge variant="outline" className="text-[10px]" title="Cobra tiempo y calzos, sin pasajeros ni TUAS">
+                        ferry
+                      </Badge>
+                    )}
+                    {leg.requiere_pernocta && (
+                      <Badge variant="outline" className="text-[10px]" title="El piloto duerme fuera tras este tramo (viático por avión)">
+                        pernocta{" "}
+                        {fmtUsd(leg.pernocta_costo_usd ?? PERNOCTA_COSTO_DEFAULT_USD)}
+                      </Badge>
+                    )}
+                    {leg.tipo_parada === "SERVICIO" && (
+                      <Badge variant="outline" className="text-[10px]">
+                        parada de servicio
+                      </Badge>
+                    )}
+                    {sobrevuelo && (
+                      <Badge variant="outline" className="text-[10px] text-sky-600 dark:text-sky-400">
+                        sobrevuelo
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-3 text-xs">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1",
+                        leg.pdf_oculto ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
+                      )}
+                      title={
+                        leg.pdf_oculto
+                          ? "Oculto en el PDF del cliente (se cobra igual)."
+                          : "Visible en el PDF del cliente."
+                      }
+                    >
+                      {leg.pdf_oculto ? (
+                        <EyeSlashIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <EyeIcon className="h-3.5 w-3.5" />
+                      )}
+                      {leg.pdf_oculto ? "Oculto en PDF" : "En PDF"}
+                    </span>
+                    <span className={cn("font-mono shrink-0", leg.millas_nauticas > 0 ? "text-foreground" : "text-amber-600 dark:text-amber-400")}>
+                      {leg.millas_nauticas > 0 ? `${fmtDecimal(leg.millas_nauticas)} NM` : "sin millas"}
+                    </span>
+                  </span>
+                </div>
+                {(leg.servicio_notas || leg.notas) && (
+                  <div className="space-y-0.5 text-xs text-muted-foreground">
+                    {leg.tipo_parada === "SERVICIO" && leg.servicio_notas && (
+                      <p>
+                        <span className="font-medium text-foreground/70">Servicio:</span>{" "}
+                        <span className="whitespace-pre-wrap">{leg.servicio_notas}</span>
+                      </p>
+                    )}
+                    {leg.notas && (
+                      <p>
+                        <span className="font-medium text-foreground/70">Nota al piloto:</span>{" "}
+                        {leg.notas}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <p className="text-right text-xs text-muted-foreground">
+          <span className="font-mono text-foreground">{fmtDecimal(nmTotal)}</span> NM ·{" "}
+          {value.length} {value.length === 1 ? "tramo" : "tramos"}
+          {idaYVuelta ? " · ida y vuelta (admite doble vuelta)" : ""}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

@@ -43,6 +43,7 @@ export function ExtrasEditor({
   sinTcTexto,
   pasajeros,
   grupo,
+  readOnly = false,
 }: {
   value: ExtraConcepto[];
   onChange: (extras: ExtraConcepto[]) => void;
@@ -57,6 +58,12 @@ export function ExtrasEditor({
   pasajeros?: number | null;
   /** Liga del hijo con su grupo (para la nota de los renglones bloqueados). */
   grupo?: { id: string; folio: number | string | null } | null;
+  /**
+   * Solo LECTURA (página única de la cotización, 5-sep-2026): cada renglón
+   * se pinta como texto legible (concepto · cantidad × precio · monto) sin
+   * inputs ni botones de agregar/quitar. Mismo componente = misma fuente.
+   */
+  readOnly?: boolean;
 }) {
   const update = (idx: number, patch: Partial<ExtraConcepto>) => {
     const next = [...value];
@@ -101,6 +108,75 @@ export function ExtrasEditor({
   ) : (
     <span>Se edita desde la cotización de grupo</span>
   );
+
+  if (readOnly) {
+    return (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Conceptos extra</Label>
+        {value.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Sin conceptos extra.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {value.map((e, idx) => {
+              const usaUnitario = extraUsaUnitario(e);
+              const esMxn = e.moneda === "MXN";
+              const referencia = montoReferencia(e, pasajeros);
+              const fmt = esMxn ? fmtMxn : fmtUsd;
+              const deGrupo = esExtraDeGrupo(e);
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    "flex items-start justify-between gap-3 rounded-lg border px-2.5 py-2 text-sm",
+                    deGrupo
+                      ? "border-fuchsia-500/30 bg-fuchsia-500/5"
+                      : "border-border bg-navy-800/50",
+                  )}
+                >
+                  <span className="min-w-0 space-y-0.5">
+                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      {deGrupo && (
+                        <LockClosedIcon className="h-3.5 w-3.5 shrink-0 text-fuchsia-600 dark:text-fuchsia-300" />
+                      )}
+                      <span className="font-medium break-words">
+                        {e.concepto || "(sin concepto)"}
+                      </span>
+                      {e.aplica_iva === false && (
+                        <span className="text-[10px] text-muted-foreground">(sin IVA)</span>
+                      )}
+                      {e.por_persona && (
+                        <span className="text-[10px] text-muted-foreground">
+                          · por persona
+                          {pasajeros != null && pasajeros > 0 ? ` (${pasajeros} pax)` : ""}
+                        </span>
+                      )}
+                    </span>
+                    {deGrupo && (
+                      <span className="block text-[11px] text-fuchsia-700/90 dark:text-fuchsia-300/90">
+                        {notaGrupo}
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-mono text-xs shrink-0 text-right">
+                    {usaUnitario ? (
+                      <>
+                        {textoCantidadUnitario(e, pasajeros)}
+                        {referencia != null && (
+                          <span className="ml-1 text-muted-foreground">= {fmt(referencia)}</span>
+                        )}
+                      </>
+                    ) : (
+                      fmt(Number(e.monto_usd) || 0)
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">

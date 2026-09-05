@@ -27,7 +27,9 @@ function revalidarCatalogo() {
   revalidatePath("/admin/airports");
   revalidatePath("/admin/quotes");
   revalidatePath("/admin/quotes/new");
-  revalidatePath("/admin/quotes/[id]/revise", "page");
+  // Página única (5-sep): el cotizador (lectura + revisión) vive en el
+  // detalle; /revise solo redirige.
+  revalidatePath("/admin/quotes/[id]", "page");
 }
 
 function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {

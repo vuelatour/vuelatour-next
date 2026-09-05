@@ -6,11 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
-import { REPARTO_EXTRA_LABEL } from "@/lib/admin/grupos-ui";
+import { REPARTO_EXTRA_LABEL, etiquetaReparto } from "@/lib/admin/grupos-ui";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ArmadoGrupo, RepartoExtraGrupo } from "@/types/grupos";
 import { extraVacio, type ExtraGrupoForm } from "./types";
+
+/** Unitario nativo legible ("—" si no está capturado). */
+function unitarioTextoDe(e: ExtraGrupoForm): string {
+  if (e.unitario === "") return "—";
+  return e.moneda === "MXN" ? fmtMxn(Number(e.unitario)) : fmtUsd(Number(e.unitario));
+}
 
 const EXTRAS_SUGERIDOS = ["Tour", "Camionetas", "Guía", "Handler"];
 
@@ -61,6 +67,10 @@ function indicesServer(value: ExtraGrupoForm[]): (number | null)[] {
  * lleva la parte de sus pasajeros). Apagado, se captura la cantidad y cómo
  * repartirlo entre los aviones. El monto de cada línea lo devuelve el
  * armador (consolidado): aquí no se multiplica nada.
+ *
+ * `lectura` (página única del grupo, 5-sep-2026): mismas líneas, mismo
+ * orden, como texto legible; el monto de cada una sale de `montosPorId`
+ * (líneas EXTRA del consolidado persistido, por `grupo_extra_id`).
  */
 export function ExtrasGrupoEditor({
   value,
@@ -70,6 +80,8 @@ export function ExtrasGrupoEditor({
   armado,
   onFocusTc,
   disabled = false,
+  lectura = false,
+  montosPorId,
 }: {
   value: ExtraGrupoForm[];
   onChange: (extras: ExtraGrupoForm[]) => void;
@@ -79,6 +91,9 @@ export function ExtrasGrupoEditor({
   armado: ArmadoGrupo | null;
   onFocusTc?: () => void;
   disabled?: boolean;
+  lectura?: boolean;
+  /** Lectura: monto USD en el grupo por id del extra (del consolidado del API). */
+  montosPorId?: Map<string, number>;
 }) {
   const update = (idx: number, patch: Partial<ExtraGrupoForm>) => {
     const next = [...value];
@@ -89,6 +104,43 @@ export function ExtrasGrupoEditor({
   const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
 
   const idxServer = indicesServer(value);
+
+  if (lectura) {
+    return (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Cargos del grupo</Label>
+        {value.length === 0 && (
+          <p className="text-xs text-muted-foreground">Sin cargos adicionales.</p>
+        )}
+        {value.map((e) => {
+          const monto = e.id != null ? (montosPorId?.get(e.id) ?? null) : null;
+          const cantidadTexto = e.por_persona ? `${pasajerosTotal || "—"} pax` : `${e.cantidad || "—"}`;
+          return (
+            <div
+              key={e.uid}
+              className="flex items-start justify-between gap-3 rounded-lg border border-border bg-navy-800/50 px-3 py-2 text-sm"
+            >
+              <span className="min-w-0">
+                <span className="block font-medium break-words">{e.concepto || "—"}</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  {etiquetaReparto(e.por_persona ? "POR_PAX" : e.reparto)}
+                  {e.aplica_iva ? "" : " · sin IVA"}
+                </span>
+              </span>
+              <span className="shrink-0 text-right font-mono text-xs">
+                <span className="block">
+                  {cantidadTexto} × {unitarioTextoDe(e)}
+                </span>
+                <span className="block text-muted-foreground">
+                  {monto != null ? `= ${fmtUsd(monto)} USD en el grupo` : ""}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
@@ -104,12 +156,7 @@ export function ExtrasGrupoEditor({
         const completa = enServer != null;
         const monto = completa ? montoServer(armado, enServer) : null;
         const cantidadTexto = e.por_persona ? `${pasajerosTotal || "—"} pax` : `${e.cantidad || "—"}`;
-        const unitarioTexto =
-          e.unitario === ""
-            ? "—"
-            : e.moneda === "MXN"
-              ? fmtMxn(Number(e.unitario))
-              : fmtUsd(Number(e.unitario));
+        const unitarioTexto = unitarioTextoDe(e);
         return (
           <div
             key={e.uid}
