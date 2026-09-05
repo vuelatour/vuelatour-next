@@ -205,15 +205,49 @@ export function CompraPagosCard({
           </Table>
         )}
         {compra.pagos.length > 0 && (
-          <div className="flex justify-end gap-4 border-t border-border px-4 py-2 text-xs text-muted-foreground">
-            {Object.entries(totales).map(([moneda, total]) => (
-              <span key={moneda}>
-                Pagado {moneda}:{" "}
-                <span className="font-medium text-foreground tabular-nums">
-                  {fmtMontoMoneda(total, moneda)}
+          // Pie en dos renglones (feedback 5-sep-2026: «no sé si es el total o
+          // solo la mercancía»): la suma de TODOS los pagos por moneda y, aparte,
+          // el total de la compra que calcula el API (mercancía + envío +
+          // impuestos al TC de la compra). Aquí solo se pinta.
+          <div className="space-y-1 border-t border-border px-4 py-2 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span>Suma de los pagos (todas las facturas, por moneda)</span>
+              <span className="flex flex-wrap gap-x-3">
+                {Object.entries(totales).map(([moneda, total]) => (
+                  <span key={moneda} className="font-medium text-foreground tabular-nums">
+                    {fmtMontoMoneda(total, moneda)}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span>
+                Total de la compra{" "}
+                <span className="text-[11px]">
+                  (mercancía {fmtMontoMoneda(compra.resumen.total_mercancia, compra.resumen.moneda)}
+                  {" + "}envío e impuestos{" "}
+                  {fmtMontoMoneda(
+                    Number(compra.resumen.cargos_factura) + Number(compra.resumen.cargos_pagos),
+                    compra.resumen.moneda,
+                  )}
+                  {compra.resumen.tc_usd_mxn ? ` · TC ${Number(compra.resumen.tc_usd_mxn).toFixed(4)}` : ""}
+                  )
                 </span>
               </span>
-            ))}
+              <span className="font-semibold text-foreground tabular-nums">
+                {fmtMontoMoneda(compra.resumen.total, compra.resumen.moneda)}
+                {compra.resumen.moneda === "USD" && compra.resumen.total_mxn != null && (
+                  <span className="ml-2 font-normal text-muted-foreground">
+                    ≈ {fmtMontoMoneda(compra.resumen.total_mxn, "MXN")}
+                  </span>
+                )}
+                {compra.resumen.moneda === "MXN" && compra.resumen.total_usd != null && (
+                  <span className="ml-2 font-normal text-muted-foreground">
+                    ≈ {fmtMontoMoneda(compra.resumen.total_usd, "USD")}
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
         )}
       </CardContent>
