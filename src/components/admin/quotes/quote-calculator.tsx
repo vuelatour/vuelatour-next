@@ -66,6 +66,8 @@ import {
   textoCantidadUnitario,
 } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { tuasLineasAPayload, upsertTuaLinea } from "@/lib/admin/tuas";
+import { modelosCotizadosTexto } from "@/lib/admin/avion-cotizado";
 import type { VueloConGrupo } from "@/types/grupos";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
@@ -1074,32 +1076,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         base.tuas_override_usd_pax = Number(debounced.tuas_override_usd_pax);
       }
       // TUAS capturadas por aeropuerto (mandan sobre catálogo y override).
-      // Monto 0 CAPTURADO = pass-through cero (el aeropuerto no cobra):
-      // viaja al motor, que lo trata como TUA $0 — no es "volver al catálogo"
-      // (eso es dejar el campo vacío = sin línea). Una línea MXN >0 sin TC
-      // no puede convertirse (el motor la rechaza con 400): se retiene fuera
-      // del cálculo — la card lo avisa en ámbar y guardar se bloquea.
-      const lineas = (debounced.tuas_lineas ?? []).filter(
-        (l) =>
-          l.iata &&
-          Number(l.monto_pax) >= 0 &&
-          (Number(l.monto_pax) === 0 ||
-            l.moneda !== "MXN" ||
-            Number(debounced.tc_usd_mxn) > 0),
-      );
-      if (lineas.length > 0) {
-        base.tuas_lineas = lineas.map((l) => {
-          // El DTO rechaza 3+ decimales: redondear a centavos antes de enviar.
-          const monto = Math.round(Number(l.monto_pax) * 100) / 100;
-          return {
-            iata: l.iata.toUpperCase(),
-            monto_pax: monto,
-            // $0 no necesita conversión: viaja como USD para que el motor no
-            // exija TC por una línea que de todos modos vale cero.
-            moneda: monto > 0 && l.moneda === "MXN" ? "MXN" : "USD",
-          };
-        });
-      }
+      // Regla compartida con la cotización de GRUPO (`tuasLineasAPayload`):
+      // $0 capturado viaja (pass-through cero); una línea MXN > 0 sin TC se
+      // retiene fuera del cálculo — la card lo avisa y guardar se bloquea.
+      const lineas = tuasLineasAPayload(debounced.tuas_lineas, {
+        tcCapturado: Number(debounced.tc_usd_mxn) > 0,
+      });
+      if (lineas.length > 0) base.tuas_lineas = lineas;
     }
     if (debounced.iva_pct_override !== null && debounced.iva_pct_override !== undefined) {
       base.iva_pct_override = Number(debounced.iva_pct_override);
@@ -1313,17 +1296,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   };
 
   // Upsert de una línea de TUA por aeropuerto; monto null = quitar la línea
-  // (vuelve al monto del catálogo).
+  // (vuelve al monto del catálogo). Regla compartida con el grupo.
   const setTuaLinea = (
     iata: string,
     monto: number | null,
     moneda: "USD" | "MXN",
   ) => {
-    const rest = (values.tuas_lineas ?? []).filter((l) => l.iata !== iata);
-    setValue(
-      "tuas_lineas",
-      monto == null ? rest : [...rest, { iata, monto_pax: monto, moneda }],
-    );
+    setValue("tuas_lineas", upsertTuaLinea(values.tuas_lineas, iata, monto, moneda));
   };
 
   // ¿La TUA de este aeropuerto APLICA según el motor? Un aeropuerto exento
@@ -1761,12 +1740,34 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     `${values.pdf_mostrar_itinerario ? "con" : "sin"} itinerario`,
   ].join(" · ");
 
+  // MODELO cotizado (feedback 4-sep): el cliente ve el TIPO de avión con el
+  // que se cotizó, nunca la matrícula. En revisión SIN cambio de avión manda
+  // la lista del API (modelos distintos de los tramos vivos, si son ≥2); al
+  // cambiar de avión, el del breakdown. Externo → solo el modelo ajeno.
+  const modeloCotizadoTexto = breakdown
+    ? modelosCotizadosTexto({
+        esExterno: values.es_externo,
+        externoModelo: values.avion_externo_modelo,
+        modelos:
+          isRevise &&
+          initialQuote &&
+          initialQuote.calculo_snapshot?.aeronave?.id === values.aeronave_id
+            ? initialQuote.modelos_cotizados
+            : null,
+        modelo: breakdown.aeronave.modelo,
+      })
+    : null;
+  const cotizadoEnTexto = modeloCotizadoTexto ? `Cotizado en: ${modeloCotizadoTexto}` : null;
+
   const resumenDetalle = breakdown
     ? [
+        modeloCotizadoTexto,
         `Subtotal ${fmtUsd(breakdown.totales.subtotal_vuelo_usd)}`,
         `IVA ${fmtUsd(breakdown.totales.iva_usd)}`,
         `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
-      ].join(" · ")
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : "Se llena al calcular";
 
   // Regla transversal: una sección con aviso activo pinta badge ámbar en su
@@ -1796,6 +1797,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         loading={loading}
         error={error}
         sinDatos={!calcPayload}
+        avion={cotizadoEnTexto}
         // Identidad al lado derecho (pedido 28-ago): cliente + folio·versión
         // llenan el hueco de la barra y se leen sin bajar al formulario.
         titulo={
@@ -3478,6 +3480,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           <Preview
             breakdown={breakdown}
             loading={loading}
+            avion={cotizadoEnTexto}
             tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
             tiempoOverride={values.tiempo_cobrable_override_hr}
             onTiempoOverride={(v) => setValue("tiempo_cobrable_override_hr", v)}
@@ -3897,6 +3900,7 @@ function TotalBar({
   loading,
   error,
   sinDatos,
+  avion,
   titulo,
   subtitulo,
   saveLabel,
@@ -3907,6 +3911,8 @@ function TotalBar({
   loading: boolean;
   error: string | null;
   sinDatos: boolean;
+  /** «Cotizado en: Piper Seneca V» (modelo, nunca matrícula). */
+  avion?: string | null;
   /** Cliente de la cotización (lado derecho de la barra). */
   titulo?: string | null;
   /** Folio · versión (o "Nueva cotización"). */
@@ -4017,9 +4023,9 @@ function TotalBar({
               </Badge>
             </>
           )}
-          {(titulo || subtitulo || onSave) && (
+          {(titulo || subtitulo || avion || onSave) && (
             <div className="ml-auto flex min-w-0 items-center gap-3">
-              {(titulo || subtitulo) && (
+              {(titulo || subtitulo || avion) && (
                 <div className="min-w-0 text-right">
                   {titulo && (
                     <p className="truncate text-sm font-semibold leading-tight max-w-[280px]">
@@ -4029,6 +4035,11 @@ function TotalBar({
                   {subtitulo && (
                     <p className="font-mono text-[11px] leading-tight text-white/80">
                       {subtitulo}
+                    </p>
+                  )}
+                  {avion && !error && (
+                    <p className="truncate text-[11px] leading-tight text-white/80 max-w-[280px]">
+                      {avion}
                     </p>
                   )}
                 </div>
@@ -4103,12 +4114,15 @@ function FilaTotal({
 function Preview({
   breakdown,
   loading,
+  avion,
   tcUsdMxn,
   tiempoOverride,
   onTiempoOverride,
 }: {
   breakdown: QuoteBreakdown;
   loading: boolean;
+  /** «Cotizado en: Piper Seneca V» — modelo cotizado, nunca matrícula. */
+  avion?: string | null;
   /** TC capturado; solo para el display del total por moneda. */
   tcUsdMxn: number | null;
   /** COBRABLE pactado (hr) capturado en la card de Tiempos. */
@@ -4147,6 +4161,10 @@ function Preview({
                 {fmtUsd(breakdown.totales.total_usd)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">USD</p>
+              {/* Tipo de avión cotizado (feedback 4-sep): el MODELO, nunca
+                  la matrícula — a veces se cotiza en un avión y la ruta
+                  operativa va en otro. */}
+              {avion && <p className="text-xs text-muted-foreground mt-1">{avion}</p>}
               {/* Comisión del vendedor: se SUMA al precio (la paga el
                   cliente); el neto VuelaTour lo manda el motor en meta —
                   fuente única, no se calcula aquí. */}

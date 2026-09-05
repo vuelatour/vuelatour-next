@@ -11,6 +11,7 @@ export type SeccionGrupoId =
   | "grupo"
   | "ruta"
   | "cargos"
+  | "tuas"
   | "aviones"
   | "consolidado"
   | "notas";

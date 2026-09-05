@@ -1,22 +1,28 @@
 import { ESTADO_STYLES } from "./estado-vuelo";
 import { estadoCobroSemaforo, type EstadoCobroSemaforo } from "./cobros";
-import { fmtUsd } from "@/lib/format";
+import { fmtMontoUnitario } from "./extras";
+import { fmtDecimal, fmtUsd } from "@/lib/format";
 import type {
   AeronaveEnTallerDetails,
   AvionGrupoDetalle,
   CapacidadExcedidaDetails,
   CobroConciliadoDetails,
   CobroDeGrupoDetails,
+  Consolidado,
+  ConsolidadoTuas,
   EstadoGrupo,
   GrupoApiError,
   GrupoDetalle,
   GrupoEmbedVuelo,
   HijosCongeladosDetails,
   HijosNoConfirmablesDetails,
+  LineaConsolidada,
   MesCerradoDetails,
   ModoParticionCobro,
   MotivoCongelado,
   OpcionCapacidad,
+  OperacionTuas,
+  ParteAvionConsolidada,
   ParticionNoCuadraDetails,
   PaxNoCuadranDetails,
   PilotoDuplicadoDetails,
@@ -24,6 +30,8 @@ import type {
   RepartoExtraGrupo,
   RevisionAMediasDetails,
   SquawkAltaDetails,
+  TuasAeropuertoConsolidado,
+  TuasAvionConsolidado,
   VueloConGrupo,
 } from "@/types/grupos";
 
@@ -131,6 +139,155 @@ export const CLAVE_CONSOLIDADO_LABEL: Record<string, string> = {
   AJUSTE: "Ajuste",
   COMISION_VENDEDOR: "Comisión del vendedor",
 };
+
+// ---------------------------------------------------------------------
+// Operación "sutil" de cada línea (feedback 4-sep-2026): texto muted que
+// enseña CÓMO salió el número, construido SOLO con los campos `operacion`
+// que manda el API (nada de aritmética: sin campos, sin texto). Formato
+// es-MX; unitarios siempre a 2 decimales (fmtMontoUnitario).
+// ---------------------------------------------------------------------
+
+/** "10.90 h" (horas cobrables, 2 decimales). */
+function textoHoras(h: number): string {
+  return `${fmtDecimal(h, 2)} h`;
+}
+
+/** "16 %" / "8.5 %" (porcentaje 0-100 con espacio, estilo es-MX). */
+function textoPorcentaje(pct: number): string {
+  return `${fmtDecimal(pct, Number.isInteger(pct) ? 0 : 2)} %`;
+}
+
+function plural(n: number, uno: string, varios: string): string {
+  return `${n} ${n === 1 ? uno : varios}`;
+}
+
+/** "XB-ANU exenta" / "XB-ANU, N4142R exentas" (null sin exentos). */
+export function textoAvionesExentos(
+  op: Pick<OperacionTuas, "aviones_exentos"> | null | undefined,
+): string | null {
+  const nombres = (op?.aviones_exentos ?? [])
+    .map((a) => a.matricula ?? (a.posicion != null ? `avión ${a.posicion}` : null))
+    .filter((x): x is string => !!x);
+  if (nombres.length === 0) return null;
+  return `${nombres.join(", ")} ${nombres.length === 1 ? "exenta" : "exentas"}`;
+}
+
+/**
+ * Operación de UNA línea del consolidado, debajo del concepto:
+ * - Servicio aéreo «7 aeronaves · 10.90 h»
+ * - TUAS «CUN · 44 pax × $20.85» (+ « · XB-ANU exenta»)
+ * - Cargo «44 × $85.00»
+ * - Pernocta «2 paradas × $150.00»
+ * - IVA «16 % de $18,622.00»
+ * - Ajuste «sobre $18,622.00»
+ * null cuando el API no manda la operación o le faltan campos.
+ */
+export function textoOperacionLinea(linea: Pick<LineaConsolidada, "operacion">): string | null {
+  const op = linea.operacion;
+  if (!op) return null;
+  switch (op.tipo) {
+    case "SERVICIO":
+      return `${plural(op.aviones, "aeronave", "aeronaves")} · ${textoHoras(op.horas_total_hr)}`;
+    case "TUAS": {
+      // El concepto ya dice «TUA CUN»: aquí solo la cuenta «44 pax × $20.85».
+      let base = `${op.pax_gravados} pax`;
+      if (op.unitario != null) base += ` × ${fmtMontoUnitario(op.unitario, op.moneda)}`;
+      const exentos = textoAvionesExentos(op);
+      return exentos ? `${base} · ${exentos}` : base;
+    }
+    case "EXTRA":
+      return op.cantidad != null && op.unitario != null
+        ? `${op.cantidad} × ${fmtMontoUnitario(op.unitario, op.moneda)}`
+        : null;
+    case "IVA":
+      return op.pct != null && op.base_usd != null
+        ? `${textoPorcentaje(op.pct)} de ${fmtMontoUnitario(op.base_usd, "USD")}`
+        : null;
+    case "PERNOCTA":
+      return op.unitario_usd != null
+        ? `${plural(op.paradas, "parada", "paradas")} × ${fmtMontoUnitario(op.unitario_usd, "USD")}`
+        : plural(op.paradas, "parada", "paradas");
+    case "AJUSTE":
+      return `sobre ${fmtMontoUnitario(op.base_usd, "USD")}`;
+    default:
+      return null;
+  }
+}
+
+/** "12 pax × $20.85" para un hijo gravado; "exenta · razón" si exento. */
+export function textoOperacionTuasAvion(d: TuasAvionConsolidado): string {
+  if (d.exento) return d.razon ? `exenta · ${d.razon}` : "exenta";
+  const unit = d.unitario != null ? ` × ${fmtMontoUnitario(d.unitario, d.moneda)}` : "";
+  return `${d.pax} pax${unit}`;
+}
+
+/**
+ * Operación de la PARTE de un avión dentro de una línea («por avión»):
+ * Servicio aéreo «1.50 h × $1,750.00»; TUAS «12 pax × $20.85» / «exenta».
+ * null en el resto (cargos, IVA…) o sin campos del API.
+ */
+export function textoOperacionParte(
+  linea: Pick<LineaConsolidada, "operacion">,
+  parte: ParteAvionConsolidada,
+): string | null {
+  const op = linea.operacion;
+  if (!op) return null;
+  if (op.tipo === "SERVICIO") {
+    if (parte.horas_hr == null) return null;
+    return parte.tarifa_hora_usd != null
+      ? `${textoHoras(parte.horas_hr)} × ${fmtMontoUnitario(parte.tarifa_hora_usd, "USD")}`
+      : textoHoras(parte.horas_hr);
+  }
+  if (op.tipo === "TUAS") {
+    const d = op.detalle_por_avion.find((x) => x.key === parte.key);
+    if (d) return textoOperacionTuasAvion(d);
+    return parte.exento ? "exenta" : null;
+  }
+  return null;
+}
+
+/** «$21,601.52 ÷ 44» (null si el API no manda `por_persona`). */
+export function textoOperacionPorPersona(c: Pick<Consolidado, "por_persona">): string | null {
+  const p = c.por_persona;
+  if (!p || !(p.pasajeros_total > 0)) return null;
+  return `${fmtMontoUnitario(p.total_usd, "USD")} ÷ ${p.pasajeros_total}`;
+}
+
+/** Porcentaje de la línea IVA del consolidado («16 %»), si viene uniforme. */
+export function textoIvaPct(c: Pick<Consolidado, "desglose">): string | null {
+  const op = (c.desglose ?? []).find((l) => l.clave === "IVA")?.operacion;
+  return op?.tipo === "IVA" && op.pct != null ? textoPorcentaje(op.pct) : null;
+}
+
+/**
+ * Operación de un aeropuerto del apartado TUAS: «44 × $20.85» (unitario
+ * uniforme), «44 pax · unitario distinto por avión» o null si todos los
+ * aviones quedaron exentos ahí.
+ */
+export function textoOperacionTuasAeropuerto(ap: TuasAeropuertoConsolidado): string | null {
+  if (!(ap.pax_gravados > 0)) return null;
+  if (ap.unitario == null) return `${ap.pax_gravados} pax · unitario distinto por avión`;
+  return `${ap.pax_gravados} × ${fmtMontoUnitario(ap.unitario, ap.moneda)}`;
+}
+
+/** Resumen plegado de la sección TUAS: «$917.00 · 2 aeropuertos». */
+export function resumenTuasGrupo(tuas: ConsolidadoTuas | null | undefined): string {
+  if (!tuas) return "Se llena al calcular";
+  const n = tuas.aeropuertos.length;
+  if (n === 0) return "Sin TUAS";
+  if (tuas.total_usd === 0) return `Sin cobro · ${plural(n, "aeropuerto", "aeropuertos")}`;
+  return `${fmtUsd(tuas.total_usd)} · ${plural(n, "aeropuerto", "aeropuertos")}`;
+}
+
+/** "Avión 2 · XB-ANU (Cessna 206)" para las filas «por avión». */
+export function etiquetaParteAvion(
+  p: Pick<ParteAvionConsolidada, "posicion" | "matricula" | "modelo">,
+): string {
+  const base = p.posicion != null ? `Avión ${p.posicion}` : "Avión";
+  const matricula = p.matricula ? ` · ${p.matricula}` : "";
+  const modelo = p.modelo ? ` (${p.modelo})` : "";
+  return `${base}${matricula}${modelo}`;
+}
 
 // =====================================================================
 // Reparto de extras

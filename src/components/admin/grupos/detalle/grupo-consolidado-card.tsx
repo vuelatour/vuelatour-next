@@ -9,7 +9,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CLAVE_CONSOLIDADO_LABEL } from "@/lib/admin/grupos-ui";
+import {
+  CLAVE_CONSOLIDADO_LABEL,
+  etiquetaParteAvion,
+  textoIvaPct,
+  textoOperacionLinea,
+  textoOperacionParte,
+  textoOperacionPorPersona,
+} from "@/lib/admin/grupos-ui";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Consolidado, LineaConsolidada } from "@/types/grupos";
@@ -40,6 +47,8 @@ export function GrupoConsolidadoCard({
 
   const lineas = consolidado.desglose ?? [];
   const cuadra = consolidado.verificacion?.cuadra !== false;
+  const ivaPct = textoIvaPct(consolidado);
+  const porPersona = textoOperacionPorPersona(consolidado);
 
   return (
     <Card>
@@ -86,7 +95,7 @@ export function GrupoConsolidadoCard({
               value={fmtUsd(consolidado.ajuste_usd)}
             />
           )}
-          <Fila label="IVA" value={fmtUsd(consolidado.iva_usd)} />
+          <Fila label="IVA" value={fmtUsd(consolidado.iva_usd)} hint={ivaPct ?? undefined} />
         </div>
 
         <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-end justify-between gap-3">
@@ -105,8 +114,9 @@ export function GrupoConsolidadoCard({
             <p className="text-lg font-semibold font-mono">
               {consolidado.por_persona_usd != null ? fmtUsd(consolidado.por_persona_usd) : "—"}
             </p>
-            <p className="text-[10px] text-muted-foreground">
-              {pasajerosTotal} pasajeros · {consolidado.aviones}{" "}
+            {/* Operación sutil «$21,601.52 ÷ 44» (campos del API). */}
+            <p className="font-mono text-[10px] text-muted-foreground tabular-nums">
+              {porPersona ?? `${pasajerosTotal} pasajeros`} · {consolidado.aviones}{" "}
               {consolidado.aviones === 1 ? "avión" : "aviones"}
             </p>
           </div>
@@ -139,6 +149,8 @@ function LineaRow({
 }) {
   const partes = linea.por_avion ?? [];
   const desplegable = partes.length > 0;
+  // Operación "sutil" (feedback 4-sep): solo con los campos `operacion` del API.
+  const operacion = textoOperacionLinea(linea);
   return (
     <div className="rounded-md">
       <button
@@ -158,6 +170,9 @@ function LineaRow({
           {linea.aplica_iva === false && linea.clave === "EXTRA" && (
             <span className="ml-1 text-[10px]">(sin IVA)</span>
           )}
+          {operacion && (
+            <span className="block font-mono text-[11px] tabular-nums">{operacion}</span>
+          )}
         </span>
         <span className="flex shrink-0 items-center gap-1.5 font-mono">
           {fmtUsd(linea.monto_usd)}
@@ -173,15 +188,18 @@ function LineaRow({
       </button>
       {desplegable && abierta && (
         <ul className="ml-4 mb-1 space-y-0.5 border-l border-border pl-3 text-xs">
-          {partes.map((p) => (
-            <li key={p.key} className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">
-                {p.posicion != null ? `Avión ${p.posicion}` : "Avión"}
-                {p.matricula ? ` · ${p.matricula}` : ""}
-              </span>
-              <span className="font-mono">{fmtUsd(p.monto_usd)}</span>
-            </li>
-          ))}
+          {partes.map((p) => {
+            const opParte = textoOperacionParte(linea, p);
+            return (
+              <li key={p.key} className="flex items-center justify-between gap-3">
+                <span className="min-w-0 text-muted-foreground">
+                  {etiquetaParteAvion(p)}
+                  {opParte && <span className="ml-1 font-mono text-[10px]">· {opParte}</span>}
+                </span>
+                <span className="font-mono shrink-0">{fmtUsd(p.monto_usd)}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

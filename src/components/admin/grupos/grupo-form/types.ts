@@ -1,4 +1,4 @@
-import type { MetodoPago, TipoParada, TipoTarifa } from "@/types/quote";
+import type { MetodoPago, TipoParada, TipoTarifa, TuaLinea } from "@/types/quote";
 import type {
   AvionArmado,
   AvionGrupoDetalle,
@@ -144,6 +144,9 @@ export interface GrupoFormValues {
   extras_grupo: ExtraGrupoForm[];
   /** Pre-IVA; negativo = descuento. */
   ajuste_grupo_usd: number | "";
+  /** TUAS capturadas por aeropuerto (misma línea del cotizador de un avión);
+   *  vacío = catálogo. Solo viajan las completas (ver `tuasLineasAPayload`). */
+  tuas_lineas: TuaLinea[];
   aviones: AvionForm[];
   notas: string;
   notas_internas: string;
@@ -290,6 +293,7 @@ export function defaultsNuevoGrupo(): GrupoFormValues {
     escalas_plantilla: [tramoVacio()],
     extras_grupo: [],
     ajuste_grupo_usd: "",
+    tuas_lineas: [],
     aviones: [],
     notas: "",
     notas_internas: "",
@@ -353,6 +357,13 @@ export function defaultsDesdeGrupo(g: GrupoDetalle): GrupoFormValues {
       reparto: e.reparto,
     })),
     ajuste_grupo_usd: g.ajuste_grupo_usd || "",
+    // Precarga de las TUAS capturadas (ya normalizadas por el API); API
+    // previo sin el campo ⇒ catálogo.
+    tuas_lineas: (g.tuas_lineas ?? []).map((l) => ({
+      iata: l.iata,
+      monto_pax: Number(l.monto_pax) || 0,
+      moneda: l.moneda === "MXN" ? "MXN" : "USD",
+    })),
     aviones: vivos.map((a) => ({
       uid: a.vuelo_id,
       vuelo_id: a.vuelo_id,

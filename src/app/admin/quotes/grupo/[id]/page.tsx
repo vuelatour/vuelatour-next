@@ -8,6 +8,7 @@ import { GrupoCobrosCard } from "@/components/admin/grupos/detalle/grupo-cobros-
 import { GrupoConsolidadoCard } from "@/components/admin/grupos/detalle/grupo-consolidado-card";
 import { GrupoHeaderActions } from "@/components/admin/grupos/detalle/grupo-header-actions";
 import { GrupoOperacionCard } from "@/components/admin/grupos/detalle/grupo-operacion-card";
+import { TuasGrupoCard } from "@/components/admin/grupos/tuas-grupo-card";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -253,6 +254,19 @@ export default async function GrupoDetailPage({ params }: GrupoDetailPageProps) 
             pasajerosTotal={grupo.pasajeros_total}
             tcUsdMxn={grupo.tc_usd_mxn}
           />
+
+          {/* Apartado TUAS por aeropuerto (feedback 4-sep): misma tabla del
+              wizard, solo lectura; los montos capturados se cambian con
+              «Revisar». Se omite si el API no manda el desglose. */}
+          {grupo.consolidado.tuas && (
+            <TuasGrupoCard
+              enCard
+              tuas={grupo.consolidado.tuas}
+              tuasLineas={grupo.tuas_lineas ?? []}
+              tcCapturado={grupo.tc_usd_mxn != null}
+              paseAbordar={grupo.pase_abordar}
+            />
+          )}
 
           <GrupoOperacionCard grupo={grupo} />
 

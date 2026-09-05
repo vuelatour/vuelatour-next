@@ -82,6 +82,14 @@ export interface ParticipacionAvion {
  *  iguales por tramo vendido). El API no emite otra fuente. */
 export type ParticipacionFuente = "unico" | "tramos";
 
+/** Ficha mínima de un avión (id + matrícula + modelo) tal como la manda
+ *  GET /v1/quotes/:id para el avión COTIZADO y el OPERATIVO. */
+export interface AvionFichaMin {
+  id: string;
+  matricula: string | null;
+  modelo: string | null;
+}
+
 export interface PersistedQuote {
   id: string;
   folio: number;
@@ -220,6 +228,22 @@ export interface PersistedQuote {
    */
   participacion_aviones?: ParticipacionAvion[];
   participacion_fuente?: ParticipacionFuente;
+
+  /**
+   * Avión COTIZADO (5-sep-2026, ADITIVO): el del SNAPSHOT, con el que se
+   * pactó el precio. Si ya no está en catálogo viaja lo que diga el snapshot.
+   * null sin snapshot. Ausente en API previo.
+   */
+  aeronave_cotizada?: AvionFichaMin | null;
+  /** Avión OPERATIVO (vuelo.aeronave_id); null en externos. ADITIVO. */
+  aeronave_operativa?: AvionFichaMin | null;
+  /**
+   * MODELO(S) del avión cotizado para el cliente (nunca matrícula): con ≥2
+   * aviones distintos en tramos vivos comerciales, los modelos en orden de
+   * tramo sin repetir; si no, [modelo del snapshot]; externo → [modelo del
+   * avión ajeno] o []. ADITIVO (fuente única del PDF y del panel).
+   */
+  modelos_cotizados?: string[];
 
   /** Solo presente cuando se consulta por id (GET /v1/quotes/:id). */
   escalas?: PersistedEscala[];

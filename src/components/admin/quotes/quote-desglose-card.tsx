@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { fmtUsd } from "@/lib/format";
+import { textoCotizadoEn, textoOperaEn } from "@/lib/admin/avion-cotizado";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
@@ -98,6 +99,19 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
   const suma = Math.round(lineas.reduce((acc, l) => acc + l.monto_usd, 0) * 100) / 100;
   const total = Number(quote.monto_total_usd) || 0;
   const cuadra = Math.abs(suma - total) < 0.01;
+  // Avión COTIZADO (feedback 4-sep): el MODELO con el que se pactó el precio
+  // (lista del API `modelos_cotizados`, fuente única con el PDF; fallback al
+  // snapshot). Si el vuelo OPERA en otro avión, aquí sí se dice cuál — es
+  // vista interna — para que la oficina sepa que precio y operación difieren.
+  const cotizadoEn = textoCotizadoEn({
+    esExterno: quote.es_externo,
+    externoModelo: quote.avion_externo_modelo,
+    modelos: quote.modelos_cotizados,
+    modelo: quote.calculo_snapshot?.aeronave?.modelo,
+  });
+  const operaEn = quote.es_externo
+    ? null
+    : textoOperaEn(quote.aeronave_cotizada, quote.aeronave_operativa);
 
   const handleCopy = async () => {
     const filas = [
@@ -148,6 +162,12 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
         </div>
       </CardHeader>
       <CardContent>
+        {cotizadoEn && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            {cotizadoEn}
+            {operaEn && <span className="ml-1">· {operaEn}</span>}
+          </p>
+        )}
         <div className="space-y-1.5">
           {lineas.map((l, i) => (
             <div

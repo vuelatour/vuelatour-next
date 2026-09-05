@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { VtSpinner } from "@/components/ui/vt-loader";
+import { textoIvaPct } from "@/lib/admin/grupos-ui";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ArmadoGrupo } from "@/types/grupos";
@@ -52,7 +53,8 @@ export function TotalBarGrupo({
 }) {
   const c = armado?.consolidado ?? null;
   const paxOk = pasajerosTotal > 0 && paxCapturados === pasajerosTotal;
-  const celdas: { label: string; value: string; alerta?: boolean }[] = [];
+  // `hint` = operación sutil al lado del número (campos del API tal cual).
+  const celdas: { label: string; value: string; hint?: string; alerta?: boolean }[] = [];
   celdas.push({
     label: "Pasajeros",
     value: `${paxCapturados} de ${pasajerosTotal || "—"}`,
@@ -62,15 +64,26 @@ export function TotalBarGrupo({
     celdas.push({ label: "Aviones", value: String(c.aviones) });
     celdas.push({ label: "Horas", value: `${fmtDecimal(c.horas_total_hr)} hr` });
     celdas.push({ label: "Servicio aéreo", value: fmtUsd(c.subtotal_aereo_usd) });
-    if (c.tuas_usd) celdas.push({ label: "TUAS", value: fmtUsd(c.tuas_usd) });
+    if (c.tuas_usd) {
+      const n = c.tuas?.aeropuertos.filter((a) => a.monto_usd !== 0).length;
+      celdas.push({
+        label: "TUAS",
+        value: fmtUsd(c.tuas_usd),
+        hint: n ? `${n} ${n === 1 ? "aeropuerto" : "aeropuertos"}` : undefined,
+      });
+    }
     if (c.extras_usd) celdas.push({ label: "Cargos", value: fmtUsd(c.extras_usd) });
     if (c.pernocta_usd) celdas.push({ label: "Pernocta", value: fmtUsd(c.pernocta_usd) });
     if (c.ajuste_usd) {
       celdas.push({ label: c.ajuste_usd < 0 ? "Descuento" : "Ajuste", value: fmtUsd(c.ajuste_usd) });
     }
-    celdas.push({ label: "IVA", value: fmtUsd(c.iva_usd) });
+    celdas.push({ label: "IVA", value: fmtUsd(c.iva_usd), hint: textoIvaPct(c) ?? undefined });
     if (c.por_persona_usd != null) {
-      celdas.push({ label: "Por persona", value: fmtUsd(c.por_persona_usd) });
+      celdas.push({
+        label: "Por persona",
+        value: fmtUsd(c.por_persona_usd),
+        hint: c.por_persona ? `÷ ${c.por_persona.pasajeros_total}` : undefined,
+      });
     }
   }
   const cargando = armando || (stale && !!armado);
@@ -157,6 +170,7 @@ export function TotalBarGrupo({
                 )}
               >
                 {x.value}
+                {x.hint && <span className="ml-1 text-[10px] text-white/70">{x.hint}</span>}
               </p>
             </div>
           ))}

@@ -11,7 +11,7 @@
  * `isoToCancunInput` de `@/lib/datetime`).
  */
 
-import type { MetodoPago, QuoteBreakdown, TipoParada, TipoTarifa } from "./quote";
+import type { MetodoPago, QuoteBreakdown, TipoParada, TipoTarifa, TuaLinea } from "./quote";
 import type { EstadoVuelo } from "./quotes-persisted";
 
 // =====================================================================
@@ -148,6 +148,13 @@ export interface ArmarGrupoInput {
   /** Pre-IVA, negativo = descuento; repartido por base gravable con pesos
    *  exactos (residuo al ancla). Máx 2 decimales. */
   ajuste_grupo_usd?: number;
+  /**
+   * TUAS capturadas POR AEROPUERTO (5-sep-2026): MISMO `TuaLinea` del
+   * cotizador de un avión (≤20). Viajan tal cual al motor de cada hijo, que
+   * resuelve su exención XA/XB/N con SU matrícula. Una línea MXN > 0 exige
+   * `tc_usd_mxn` (400 del motor, igual que el cotizador).
+   */
+  tuas_lineas?: TuaLinea[];
   /** ≤20. Vacío/omitido en /armar ⇒ el server PROPONE flota. */
   aviones?: AvionGrupoInput[];
 }
@@ -195,6 +202,8 @@ export interface ReviseGrupoInput {
   pase_abordar?: boolean;
   extras_grupo?: ExtraGrupoInput[];
   ajuste_grupo_usd?: number;
+  /** Omitido = conserva las de la cabecera; `[]` = volver al catálogo. */
+  tuas_lineas?: TuaLinea[];
   /** 1..20 */
   aviones?: AvionGrupoInput[];
   /** Si hay hijos congelados, aplicar SOLO a los editables en vez de 409
@@ -328,6 +337,118 @@ export interface PersonaRef {
   nombre: string | null;
 }
 
+// ---------------------------------------------------------------------
+// OPERACIÓN VISIBLE de cada línea (5-sep-2026): los números que el panel
+// pinta "sutilmente" al lado del monto («44 pax × $20.85», «1.50 h ×
+// $1,750.00», «16 % de $18,622.00»). Los arma el API desde los snapshots
+// persistidos de los hijos; aquí SOLO se formatean (nunca se recalcula).
+// ---------------------------------------------------------------------
+
+export interface OperacionServicio {
+  tipo: "SERVICIO";
+  aviones: number;
+  horas_total_hr: number;
+}
+
+/** Un hijo dentro del apartado TUAS de un aeropuerto. */
+export interface TuasAvionConsolidado {
+  key: string;
+  posicion: number | null;
+  matricula: string | null;
+  modelo: string | null;
+  pax: number;
+  /** Unitario NATIVO que pagó el hijo (null si exento). */
+  unitario: number | null;
+  moneda: MonedaGrupo | null;
+  unitario_usd: number | null;
+  monto_usd: number;
+  exento: boolean;
+  /** Razón del motor ("Matrícula N exenta en CUN", "monto capturado"…). */
+  razon: string | null;
+}
+
+export interface OperacionTuas {
+  tipo: "TUAS";
+  iata: string;
+  /** Pax que SÍ pagaron TUA en este aeropuerto (Σ filas de los hijos). */
+  pax_gravados: number;
+  /** Pax de aviones exentos (prefijo XA/XB/N o pase de abordar). */
+  pax_exentos: number;
+  /** Unitario NATIVO común a todos los aviones gravados; null cuando NO es
+   *  uniforme entre aviones (entonces manda `detalle_por_avion`). */
+  unitario: number | null;
+  moneda: MonedaGrupo | null;
+  /** Unitario en USD (igual a `unitario` si la línea es USD). */
+  unitario_usd: number | null;
+  /** Σ total nativo cuando la moneda es uniforme; null si mezcla monedas. */
+  total_nativo: number | null;
+  aviones_exentos: {
+    key: string;
+    posicion: number | null;
+    matricula: string | null;
+    modelo: string | null;
+    pax: number;
+    razon: string | null;
+  }[];
+  detalle_por_avion: TuasAvionConsolidado[];
+}
+
+export interface OperacionExtra {
+  tipo: "EXTRA";
+  /** Cantidad TOTAL del grupo y unitario NATIVO común; null si no aplica. */
+  cantidad: number | null;
+  unitario: number | null;
+  moneda: MonedaGrupo;
+}
+
+export interface OperacionIva {
+  tipo: "IVA";
+  /** Porcentaje 0-100 (16); null si los hijos no coinciden o no lo traen. */
+  pct: number | null;
+  /** Σ bases gravables de los hijos con IVA; null si algún snapshot no la trae. */
+  base_usd: number | null;
+}
+
+export interface OperacionPernocta {
+  tipo: "PERNOCTA";
+  /** Paradas con pernocta (Σ tramos de los hijos). */
+  paradas: number;
+  /** Costo por parada cuando es uniforme; null si varía. */
+  unitario_usd: number | null;
+}
+
+export interface OperacionAjuste {
+  tipo: "AJUSTE";
+  /** Base sobre la que se aplicó: servicio + TUAS + extras + comisión. */
+  base_usd: number;
+}
+
+export type OperacionLinea =
+  | OperacionServicio
+  | OperacionTuas
+  | OperacionExtra
+  | OperacionIva
+  | OperacionPernocta
+  | OperacionAjuste;
+
+/** Parte de un hijo (posición/matrícula/modelo) en una línea consolidada. */
+export interface ParteAvionConsolidada {
+  key: string;
+  posicion: number | null;
+  matricula: string | null;
+  /** ADITIVO 5-sep: API previo no lo manda. */
+  modelo?: string | null;
+  monto_usd: number;
+  /** TIEMPO_VUELO: horas cobrables del hijo. */
+  horas_hr?: number;
+  /** TIEMPO_VUELO: tarifa efectiva del hijo (solo si el snapshot la trae). */
+  tarifa_hora_usd?: number;
+  /** TUAS: pax del hijo en ese aeropuerto (gravados o exentos). */
+  pax?: number;
+  /** TUAS: el hijo quedó exento ahí (entra con monto_usd 0). */
+  exento?: boolean;
+}
+
 /** Línea del desglose CONSOLIDADO (Σ por clave de los desgloses persistidos). */
 export interface LineaConsolidada {
   clave:
@@ -348,13 +469,25 @@ export interface LineaConsolidada {
   iata?: string;
   pax?: number;
   aplica_iva?: boolean;
-  /** Parte de cada hijo (posición/matrícula) en esta línea. */
-  por_avion: {
-    key: string;
-    posicion: number | null;
-    matricula: string | null;
-    monto_usd: number;
-  }[];
+  /** Parte de cada hijo (posición/matrícula/modelo) en esta línea. */
+  por_avion: ParteAvionConsolidada[];
+  /** Operación visible (presentación). Ausente en COMISION_VENDEDOR, en la
+   *  línea TUAS legado "TUA" y en PERNOCTA sin tramos; también en API previo. */
+  operacion?: OperacionLinea;
+}
+
+/** Apartado TUAS por aeropuerto (incluye aeropuertos donde TODOS son exentos:
+ *  monto 0; el desglose NO los lista). */
+export interface TuasAeropuertoConsolidado extends OperacionTuas {
+  monto_usd: number;
+}
+
+/** Apartado TUAS del grupo (como el del cotizador de un avión). */
+export interface ConsolidadoTuas {
+  total_usd: number;
+  total_mxn_nativo: number;
+  /** En orden del itinerario. */
+  aeropuertos: TuasAeropuertoConsolidado[];
 }
 
 /** Totales del grupo = Σ de los hijos vivos. NUNCA recalcular en cliente. */
@@ -374,6 +507,11 @@ export interface Consolidado {
   total_mxn: number | null;
   /** total / pasajeros_total. */
   por_persona_usd: number | null;
+  /** Operación del precio por persona («$21,601.52 ÷ 44»); null sin pax.
+   *  ADITIVO 5-sep: ausente en API previo. */
+  por_persona?: { total_usd: number; pasajeros_total: number } | null;
+  /** Apartado TUAS por aeropuerto. ADITIVO 5-sep: ausente en API previo. */
+  tuas?: ConsolidadoTuas;
   /** Σ horas cobrables. */
   horas_total_hr: number;
   verificacion: { suma_lineas_usd: number; total_usd: number; cuadra: boolean };
@@ -480,6 +618,9 @@ export interface ArmadoGrupo {
   pase_abordar: boolean;
   extras_grupo: ExtraGrupoDef[];
   ajuste_grupo_usd: number;
+  /** TUAS capturadas NORMALIZADAS (IATA mayúsculas, una por aeropuerto).
+   *  ADITIVO 5-sep. */
+  tuas_lineas?: TuaLinea[];
   aviones: AvionArmado[];
   consolidado: Consolidado;
   /** "Faltan N pasajeros por acomodar (x de y)", "Faltan pilotos: k de N…" */
@@ -651,6 +792,9 @@ export interface GrupoDetalle extends GrupoCabeceraBase {
   ajuste_grupo_usd: number;
   escalas_plantilla: PlantillaTramo[];
   extras_grupo: ExtraGrupoDef[];
+  /** TUAS capturadas por aeropuerto (normalizadas desde `vuelo_grupo.tuas_lineas`).
+   *  ADITIVO 5-sep: ausente en API previo ⇒ catálogo. */
+  tuas_lineas?: TuaLinea[];
   cliente: ClienteGrupo | null;
   estado: EstadoGrupo;
   aviones_vivos: number;

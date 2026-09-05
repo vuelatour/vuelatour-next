@@ -1,4 +1,5 @@
 import { cancunInputToIso } from "@/lib/datetime";
+import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import type {
   ArmarGrupoInput,
   AvionGrupoInput,
@@ -148,6 +149,10 @@ export function armarPayloadDe(v: GrupoFormValues): ArmarResultado {
   if (tc != null && tc > 0) payload.tc_usd_mxn = tc;
   const ajuste = num(v.ajuste_grupo_usd);
   if (ajuste != null && ajuste !== 0) payload.ajuste_grupo_usd = Math.round(ajuste * 100) / 100;
+  // TUAS capturadas: misma regla del cotizador (una línea MXN > 0 sin TC se
+  // retiene fuera del cálculo; el wizard lo avisa y bloquea guardar).
+  const tuas = tuasLineasAPayload(v.tuas_lineas, { tcCapturado: tc != null && tc > 0 });
+  if (tuas.length > 0) payload.tuas_lineas = tuas;
   return { payload, falta: null };
 }
 
@@ -186,6 +191,9 @@ export function revisePayloadDe(v: GrupoFormValues, base: ArmarGrupoInput): Revi
     pase_abordar: base.pase_abordar,
     extras_grupo: base.extras_grupo ?? [],
     ajuste_grupo_usd: base.ajuste_grupo_usd ?? 0,
+    // Siempre explícito: omitirlo conservaría la cabecera y `[]` significa
+    // "volver al catálogo" — lo capturado en el wizard es la verdad.
+    tuas_lineas: base.tuas_lineas ?? [],
     aviones: base.aviones ?? [],
     solo_editables: v.solo_editables,
     notas: v.notas.trim().slice(0, 2000),

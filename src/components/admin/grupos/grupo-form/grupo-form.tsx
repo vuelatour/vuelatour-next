@@ -36,8 +36,10 @@ import {
 } from "@/app/admin/quotes/grupo/actions";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { toastAvisos } from "@/lib/admin/avisos";
-import { estadoGrupoBadge, mensajeErrorGrupo } from "@/lib/admin/grupos-ui";
+import { estadoGrupoBadge, mensajeErrorGrupo, resumenTuasGrupo } from "@/lib/admin/grupos-ui";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
+import { tuasMxnSinTc, upsertTuaLinea } from "@/lib/admin/tuas";
+import { TuasGrupoCard } from "@/components/admin/grupos/tuas-grupo-card";
 import { fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Airport } from "@/types/airports";
@@ -107,8 +109,8 @@ type GrupoFormProps = {
 
 function seccionesDefault(revise: boolean): Record<SeccionGrupoId, boolean> {
   return revise
-    ? { revision: true, grupo: false, ruta: false, cargos: true, aviones: true, consolidado: true, notas: false }
-    : { revision: false, grupo: true, ruta: true, cargos: true, aviones: true, consolidado: true, notas: false };
+    ? { revision: true, grupo: false, ruta: false, cargos: true, tuas: true, aviones: true, consolidado: true, notas: false }
+    : { revision: false, grupo: true, ruta: true, cargos: true, tuas: true, aviones: true, consolidado: true, notas: false };
 }
 
 function esSquawkDetails(d: unknown): d is SquawkAltaDetails {
@@ -227,6 +229,26 @@ export function GrupoForm(props: GrupoFormProps) {
     armado && armado.aviones.length === values.aviones.length ? armado.aviones : null;
   const armadoErrorTexto = armadoError ? mensajeErrorGrupo(armadoError) : null;
 
+  // ===== TUAS capturadas por aeropuerto (misma línea del cotizador) =====
+  const setTuaLinea = (iata: string, monto: number | null, moneda: "USD" | "MXN") =>
+    setValue("tuas_lineas", upsertTuaLinea(values.tuas_lineas, iata, monto, moneda));
+  const hayTuasMxn = values.tuas_lineas.some((l) => l.moneda === "MXN" && Number(l.monto_pax) > 0);
+  // ¿La TUA de este aeropuerto COBRA según el armador? Un aeropuerto donde
+  // todos los aviones quedaron exentos no cobra la línea aunque esté
+  // capturada — no debe atorar el candado ni forzar el TC. Fuera del
+  // itinerario el motor la ignora. Sin armado se asume que cobra.
+  const tuaCobraEnArmado = (iata: string): boolean => {
+    const aps = armado?.consolidado.tuas?.aeropuertos;
+    if (!aps) return true;
+    const ap = aps.find((a) => a.iata === iata.toUpperCase());
+    return ap ? ap.pax_gravados > 0 : false;
+  };
+  // Líneas MXN > 0 sin TC que sí cobrarían: se retienen fuera del cálculo
+  // (`tuasLineasAPayload`), la sección lo avisa y guardar se bloquea.
+  const hayTuasMxnSinTc = tuasMxnSinTc(values.tuas_lineas, tcCapturado).some((l) =>
+    tuaCobraEnArmado(l.iata),
+  );
+
   // ===== Secciones (solo presentación) =====
   const [abiertas, setAbiertas] = useState<Record<SeccionGrupoId, boolean>>(() =>
     seccionesDefault(isRevise),
@@ -339,8 +361,9 @@ export function GrupoForm(props: GrupoFormProps) {
     avionesOk &&
     paxOk &&
     nombreOk &&
+    !hayTuasMxnSinTc &&
     (!isRevise || motivoOk);
-  const faltaSoloMotivo = isRevise && !motivoOk && canSave === false && !!armarRes.payload && !!armado && !stale && !armando && !armadoError && avionesOk && paxOk && nombreOk;
+  const faltaSoloMotivo = isRevise && !motivoOk && canSave === false && !!armarRes.payload && !!armado && !stale && !armando && !armadoError && avionesOk && paxOk && nombreOk && !hayTuasMxnSinTc;
 
   /** Aplica `creados[]` del 409 a medias: esos aviones ya existen (vuelo_id). */
   const aplicarCreados = (d: RevisionAMediasDetails) => {
@@ -427,6 +450,11 @@ export function GrupoForm(props: GrupoFormProps) {
     if (!nombreOk) {
       toast.error("Ponle un nombre al grupo (mínimo 2 caracteres)");
       abrirSeccion("grupo");
+      return;
+    }
+    if (hayTuasMxnSinTc) {
+      toast.error("Captura el tipo de cambio: hay TUAS en pesos que aún no entran al total");
+      focusTc();
       return;
     }
     if (values.aviones.length === 0) {
@@ -517,6 +545,8 @@ export function GrupoForm(props: GrupoFormProps) {
           ? "Revisar"
           : null;
   const avisoCargos = hayExtrasMxn && !tcCapturado ? "Falta TC" : null;
+  const resumenTuas = armado ? resumenTuasGrupo(armado.consolidado.tuas) : "Se llena al calcular";
+  const avisoTuas = hayTuasMxnSinTc ? "Falta TC" : null;
   const estado = grupo ? estadoGrupoBadge(grupo.estado) : null;
 
   return (
@@ -749,7 +779,11 @@ export function GrupoForm(props: GrupoFormProps) {
           <div id="grupo-tc-field" className="scroll-mt-24">
             <Field
               label="Tipo de cambio (MXN por USD)"
-              hint={hayExtrasMxn ? "Requerido: hay cargos capturados en pesos" : "Opcional · si el pago entrará en pesos"}
+              hint={
+                hayExtrasMxn || hayTuasMxn
+                  ? "Requerido: hay cargos o TUAS capturados en pesos"
+                  : "Opcional · si el pago entrará en pesos"
+              }
             >
               <div className="flex flex-wrap items-center gap-2">
                 <Input
@@ -838,6 +872,41 @@ export function GrupoForm(props: GrupoFormProps) {
             )}
           </div>
         </Field>
+      </SeccionGrupo>
+
+      {/* 4b · TUAS por aeropuerto (feedback 4-sep): mismo apartado del
+          cotizador de un avión — pax gravados × tarifa, exentos por
+          matrícula, total y «por avión». Todo del armador; editable como
+          en el cotizador (monto por pasajero + moneda por aeropuerto). */}
+      <SeccionGrupo
+        id="tuas"
+        titulo="TUAS por aeropuerto"
+        resumen={resumenTuas}
+        aviso={avisoTuas}
+        abierta={abiertas.tuas}
+        onToggle={() => toggleSeccion("tuas")}
+      >
+        <p className="text-xs text-muted-foreground">
+          Pasajeros gravados × tarifa por pasajero en cada aeropuerto del itinerario. Cada avión
+          resuelve su exención por matrícula (XA/XB/N). Edita el monto por pasajero si el
+          aeropuerto cobra distinto (USD o MXN); vacío = monto del catálogo, 0 = no cobra.
+        </p>
+        <TuasGrupoCard
+          tuas={armado?.consolidado.tuas ?? null}
+          tuasLineas={values.tuas_lineas}
+          onChange={setTuaLinea}
+          tcCapturado={tcCapturado}
+          onFocusTc={focusTc}
+          stale={stale || armando}
+          disabled={saving}
+          paseAbordar={values.pase_abordar}
+          vacio={
+            armarRes.falta ??
+            (armado && !armado.consolidado.tuas
+              ? `TUAS ${fmtUsd(armado.consolidado.tuas_usd)} · sin desglose por aeropuerto`
+              : "Calculando…")
+          }
+        />
       </SeccionGrupo>
 
       {/* 5 · Aviones + 6 · Capacidad */}

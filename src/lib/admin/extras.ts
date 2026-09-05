@@ -120,6 +120,21 @@ export function extrasAPayload(
     });
 }
 
+/**
+ * Monto UNITARIO para leyendas de operación, siempre con 2 decimales:
+ * "$85.00" / "$1,750.00" (USD) o "$330.60 MXN". Fuente única del texto
+ * «cantidad × unitario» de extras, TUAS y consolidado de grupo.
+ */
+export function fmtMontoUnitario(
+  valor: number | string | null | undefined,
+  moneda: "USD" | "MXN" | null | undefined,
+): string {
+  const n = Number(valor) || 0;
+  return moneda === "MXN"
+    ? `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`
+    : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 /** "44 × $85.00" / "9 × $1,200.00 MXN" para leyendas (sin total). */
 export function textoCantidadUnitario(
   e: Pick<ExtraConcepto, "cantidad" | "unitario" | "moneda" | "por_persona">,
@@ -127,11 +142,7 @@ export function textoCantidadUnitario(
 ): string | null {
   if (e.unitario == null) return null;
   const c = cantidadEfectiva(e, pasajeros);
-  const unit = Number(e.unitario) || 0;
-  const monto =
-    e.moneda === "MXN"
-      ? `$${unit.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`
-      : `$${unit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const monto = fmtMontoUnitario(e.unitario, e.moneda);
   const cant = c != null ? String(c) : e.por_persona ? "por persona" : "?";
   return `${cant} × ${monto}`;
 }
