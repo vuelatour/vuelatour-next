@@ -12,7 +12,9 @@ import {
   type RepartoGasto,
 } from "@/components/admin/expenses/reparto-dialog";
 import { RepartoMasivoDialog } from "@/components/admin/expenses/reparto-masivo-dialog";
+import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { fmtDateOnly } from "@/lib/datetime";
+import type { CapturaLinea } from "@/lib/admin/gastos-captura";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { cn } from "@/lib/utils";
@@ -21,6 +23,8 @@ import { cn } from "@/lib/utils";
 export interface OtroGastoRow {
   id: string;
   fecha_gasto: string | null;
+  /** "Capturado 5 sep 14:32 · Luis · app" (lineaCaptura del server). */
+  captura: CapturaLinea | null;
   categoria: string;
   /** Primera línea de notas · proveedor. */
   descripcion: string | null;
@@ -192,7 +196,12 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         key: "fecha",
         header: "Fecha",
         cellClassName: "whitespace-nowrap",
-        cell: (g) => fmtDateOnly(g.fecha_gasto),
+        cell: (g) => (
+          <span>
+            {fmtDateOnly(g.fecha_gasto)}
+            <CapturadoLinea linea={g.captura} />
+          </span>
+        ),
       },
       {
         key: "categoria",

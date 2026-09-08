@@ -22,6 +22,7 @@ import {
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { todayCancun } from "@/lib/datetime";
+import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { getMe } from "@/lib/api/me";
 import { notFound } from "next/navigation";
 
@@ -101,6 +102,7 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
     return {
       id: g.id,
       fecha_gasto: g.fecha_gasto,
+      captura: lineaCaptura(g),
       descripcion,
       notas: g.notas,
       monto: num(g.monto),

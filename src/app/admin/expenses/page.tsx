@@ -73,17 +73,28 @@ export default async function ExpensesPage({
     /** "7d" = solo lo CAPTURADO en los últimos 7 días (aunque el ticket
      *  traiga otra fecha): lo que se subió desde la app esta semana. */
     cap?: string;
+    /** Rango explícito de CAPTURA (día Cancún, 7-sep): mismo eje que `cap`
+     *  — si viene un rango, el chip de la semana se ignora. */
+    cap_desde?: string;
+    cap_hasta?: string;
+    /** fecha (default) | captura: orden del listado y del Excel. */
+    orden?: string;
   }>;
 }) {
   const sp = await searchParams;
-  const capturadoSemana = sp.cap === "7d";
+  const esDia = (v?: string) => /^\d{4}-\d{2}-\d{2}$/.test(v ?? "");
+  const capDesdeExplicito = esDia(sp.cap_desde) ? sp.cap_desde : undefined;
+  const capHastaExplicito = esDia(sp.cap_hasta) ? sp.cap_hasta : undefined;
+  const hayRangoCaptura = !!(capDesdeExplicito || capHastaExplicito);
+  const capturadoSemana = sp.cap === "7d" && !hayRangoCaptura;
   const capturadoDesde = capturadoSemana
     ? (() => {
         const d = new Date(`${todayCancun()}T12:00:00Z`);
         d.setUTCDate(d.getUTCDate() - 7);
         return d.toISOString().slice(0, 10);
       })()
-    : undefined;
+    : capDesdeExplicito;
+  const orden = sp.orden === "captura" ? ("captura" as const) : undefined;
   const filtro: Filtro =
     sp.f === "pendientes" || sp.f === "duplicados" ? sp.f : "todos";
   // Filtro por avión (link desde el expediente del avión). El API lo soporta
@@ -101,7 +112,11 @@ export default async function ExpensesPage({
     estatus_facturacion: sp.facturacion || undefined,
     // Fecha de CAPTURA (28-ago): "¿por qué no veo lo que subí desde la app?"
     // — el ticket puede traer otra fecha (la IA leyó 2025) y quedar al fondo.
+    // Desde el 7-sep el API corta sobre capturado_en (momento real de
+    // captura) y acepta el rango completo + orden por captura.
     capturado_desde: capturadoDesde,
+    capturado_hasta: capHastaExplicito,
+    orden,
   };
 
   const query: Omit<ListGastosQuery, "limit" | "offset"> = {
@@ -153,27 +168,43 @@ export default async function ExpensesPage({
     ? (aircraft.find((a) => a.id === aeronaveId)?.matricula ?? "desconocido")
     : null;
 
-  const hrefTab = (key: Filtro) => {
+  // Filtros de oficina que TODO link interno conserva (pestañas, chip de la
+  // semana, quitar avión): agregar aquí cualquier filtro nuevo de la barra.
+  const FILTROS_URL = [
+    "medio",
+    "piloto",
+    "desde",
+    "hasta",
+    "facturacion",
+    "cap",
+    "cap_desde",
+    "cap_hasta",
+    "orden",
+  ] as const;
+  const paramsFiltros = (key: Filtro, conAvion: boolean) => {
     const params = new URLSearchParams();
     if (key !== "todos") params.set("f", key);
-    if (aeronaveId) params.set("aeronave_id", aeronaveId);
-    // Las pestañas conservan los filtros de oficina activos.
-    if (sp.medio) params.set("medio", sp.medio);
-    if (sp.piloto) params.set("piloto", sp.piloto);
-    if (sp.desde) params.set("desde", sp.desde);
-    if (sp.hasta) params.set("hasta", sp.hasta);
-    if (sp.facturacion) params.set("facturacion", sp.facturacion);
-    if (sp.cap) params.set("cap", sp.cap);
+    if (conAvion && aeronaveId) params.set("aeronave_id", aeronaveId);
+    for (const k of FILTROS_URL) if (sp[k]) params.set(k, sp[k]);
+    return params;
+  };
+  const hrefCon = (params: URLSearchParams) => {
     const qs = params.toString();
     return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
   };
+  const hrefTab = (key: Filtro) => hrefCon(paramsFiltros(key, true));
   // Mismo href que la pestaña activa, con/sin el chip "Subidos esta semana".
+  // Activarlo quita el rango explícito de captura (es el mismo eje).
   const hrefCapturado = (activar: boolean) => {
-    const url = new URL(hrefTab(filtro), "https://x");
-    if (activar) url.searchParams.set("cap", "7d");
-    else url.searchParams.delete("cap");
-    const qs = url.searchParams.toString();
-    return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
+    const params = paramsFiltros(filtro, true);
+    if (activar) {
+      params.set("cap", "7d");
+      params.delete("cap_desde");
+      params.delete("cap_hasta");
+    } else {
+      params.delete("cap");
+    }
+    return hrefCon(params);
   };
 
   // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
@@ -272,19 +303,8 @@ export default async function ExpensesPage({
         {aeronaveFiltro && (
           <Link
             // Quitar SOLO el avión: los demás filtros activos (pestaña,
-            // medio, capturó, fechas, facturación) se conservan.
-            href={(() => {
-              const params = new URLSearchParams();
-              if (filtro !== "todos") params.set("f", filtro);
-              if (sp.medio) params.set("medio", sp.medio);
-              if (sp.piloto) params.set("piloto", sp.piloto);
-              if (sp.desde) params.set("desde", sp.desde);
-              if (sp.hasta) params.set("hasta", sp.hasta);
-              if (sp.facturacion) params.set("facturacion", sp.facturacion);
-              if (sp.cap) params.set("cap", sp.cap);
-              const qs = params.toString();
-              return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
-            })()}
+            // medio, capturó, fechas, captura, orden, facturación) se conservan.
+            href={hrefCon(paramsFiltros(filtro, false))}
             title="Quitar el filtro de avión"
             className="inline-flex items-center gap-1.5 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-1.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-600/20"
           >

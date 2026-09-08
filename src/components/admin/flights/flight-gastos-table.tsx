@@ -3,10 +3,12 @@
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 
@@ -41,7 +43,14 @@ export function FlightGastosTable({
       key: "fecha",
       header: "Fecha",
       cellClassName: "whitespace-nowrap align-top",
-      cell: (g) => fmtDateOnly(g.fecha_gasto),
+      // Fecha del consumo y, debajo, cuándo/quién/desde dónde se capturó
+      // (hora Cancún) — fuente única lineaCaptura.
+      cell: (g) => (
+        <span>
+          {fmtDateOnly(g.fecha_gasto)}
+          <CapturadoLinea linea={lineaCaptura(g)} />
+        </span>
+      ),
     },
     {
       key: "categoria",

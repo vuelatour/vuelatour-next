@@ -17,6 +17,7 @@ import { listOtrosGastos } from "@/lib/api/expenses-server";
 import { todayCancun, fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import type { OtrosGastosResumen } from "@/types/expenses";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +82,7 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
     return {
       id: g.id,
       fecha_gasto: g.fecha_gasto,
+      captura: lineaCaptura(g),
       categoria: g.categoria,
       descripcion,
       notas: g.notas,

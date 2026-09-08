@@ -19,7 +19,9 @@ import {
   FuelAssignAircraft,
   type AeronaveOption,
 } from "@/components/admin/expenses/fuel-assign-aircraft";
+import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
+import type { CapturaLinea } from "@/lib/admin/gastos-captura";
 
 /** Fila-viewmodel serializable que arma la página (lookups ya resueltos). */
 export interface FuelLoadRow {
@@ -29,6 +31,8 @@ export interface FuelLoadRow {
   matricula: string | null;
   fecha_hora_carga: string | null;
   fecha_gasto: string | null;
+  /** "Capturado 5 sep 14:32 · Luis · app" (lineaCaptura del server). */
+  captura: CapturaLinea | null;
   tipo_combustible: "TURBOSINA" | "AVGAS" | null;
   litros: number | null;
   monto: number;
@@ -86,13 +90,18 @@ export function FuelLoadsTable({
       {
         key: "fecha",
         header: "Fecha",
-        cellClassName: "text-xs",
-        cell: (l) =>
-          l.fecha_hora_carga
-            ? fmtDateTimeShort(l.fecha_hora_carga)
-            : l.fecha_gasto
-              ? fmtDateOnly(l.fecha_gasto)
-              : "—",
+        cellClassName: "text-xs whitespace-nowrap",
+        // Fecha/hora de la carga y, debajo, cuándo/quién la capturó.
+        cell: (l) => (
+          <span>
+            {l.fecha_hora_carga
+              ? fmtDateTimeShort(l.fecha_hora_carga)
+              : l.fecha_gasto
+                ? fmtDateOnly(l.fecha_gasto)
+                : "—"}
+            <CapturadoLinea linea={l.captura} />
+          </span>
+        ),
       },
       {
         key: "tipo",

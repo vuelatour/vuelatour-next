@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { FuelBulkUploadDialog } from "@/components/admin/expenses/fuel-bulk-upload-dialog";
 import { todayCancun } from "@/lib/datetime";
+import { lineaCaptura } from "@/lib/admin/gastos-captura";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,7 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
     matricula: l.aeronave_id ? (matriculaById.get(l.aeronave_id) ?? null) : null,
     fecha_hora_carga: l.fecha_hora_carga,
     fecha_gasto: l.fecha_gasto,
+    captura: lineaCaptura(l),
     tipo_combustible: l.tipo_combustible,
     litros: l.litros != null ? Number(l.litros) : null,
     monto: Number(l.monto),

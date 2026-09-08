@@ -51,7 +51,13 @@ export interface Gasto {
   /** Factura recibida que lo ampara (amarre 1 factura → N gastos). */
   factura_recibida_id: string | null;
   notas: string | null;
+  /** Llegada al servidor (gatea la ventana de edición). */
   created_at: string;
+  /** Momento REAL de captura (7-sep-2026): la app lo manda al guardar aunque
+   *  esté sin señal; panel/masivo/sistema = created_at. SOLO auditoría y
+   *  lectura (no toca dinero ni candados). Opcional por skew de deploy: leerlo
+   *  SIEMPRE vía capturadoEnDe() (@/lib/admin/gastos-captura). */
+  capturado_en?: string | null;
   /** Sello de confirmación del PANEL (oficina): quién confirmó y cuándo.
    *  Solo viaja a roles de oficina (el API lo recorta a campo) y puede no
    *  venir aún (skew de deploy): SIEMPRE opcional con fallback. Cualquier

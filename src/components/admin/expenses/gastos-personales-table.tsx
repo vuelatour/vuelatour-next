@@ -5,13 +5,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MEDIO_PAGO_LABELS } from "@/components/admin/expenses/expenses-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import type { CapturaLinea } from "@/lib/admin/gastos-captura";
 
 /** Fila serializable armada por el server component de /admin/gastos-personales. */
 export interface GastoPersonalRow {
   id: string;
   fecha_gasto: string | null;
+  /** "Capturado 5 sep 14:32 · Luis · app" (lineaCaptura del server). */
+  captura: CapturaLinea | null;
   /** Primera línea de notas · proveedor. */
   descripcion: string | null;
   notas: string | null;
@@ -96,7 +100,12 @@ export function GastosPersonalesTable({ gastos }: { gastos: GastoPersonalRow[] }
         key: "fecha",
         header: "Fecha",
         cellClassName: "whitespace-nowrap",
-        cell: (g) => fmtDateOnly(g.fecha_gasto),
+        cell: (g) => (
+          <span>
+            {fmtDateOnly(g.fecha_gasto)}
+            <CapturadoLinea linea={g.captura} />
+          </span>
+        ),
       },
       {
         key: "descripcion",

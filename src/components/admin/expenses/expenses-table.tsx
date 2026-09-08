@@ -20,8 +20,10 @@ import {
   aGastoSeleccionado,
   useSeleccionGastos,
 } from "@/components/admin/expenses/expenses-seleccion";
+import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
@@ -193,40 +195,10 @@ export function ExpensesTable({
           ) : (
             <span className={f.hijo ? "pl-6 text-muted-foreground" : undefined}>
               {fmtDateOnly(f.gasto.fecha_gasto)}
-              {/* Pista de CAPTURA (28-ago): cuando el ticket trae otra fecha
-                  (la IA leyó 2025, o se subió días después) se ve aquí — así
-                  "lo que subí hoy" se encuentra aunque esté fechado atrás. */}
-              {(() => {
-                const fecha = f.gasto.fecha_gasto;
-                const cap = f.gasto.created_at;
-                if (!fecha || !cap) return null;
-                const diffDias = Math.round(
-                  (Date.parse(`${cap.slice(0, 10)}T12:00:00Z`) -
-                    Date.parse(`${fecha.slice(0, 10)}T12:00:00Z`)) /
-                    86_400_000,
-                );
-                const anio = Number(fecha.slice(0, 4));
-                const anioActual = new Date().getFullYear();
-                const anioRaro = Number.isFinite(anio) && anio < anioActual;
-                if (!anioRaro && Math.abs(diffDias) <= 2) return null;
-                return (
-                  <span
-                    className={
-                      "block text-[10px] " +
-                      (anioRaro || Math.abs(diffDias) > 120
-                        ? "text-amber-600 dark:text-amber-400"
-                        : "text-muted-foreground")
-                    }
-                    title={
-                      anioRaro
-                        ? `Ojo: el ticket quedó fechado en ${anio} — revisa el año`
-                        : "Fecha en que se capturó (la del ticket es la de arriba)"
-                    }
-                  >
-                    {anioRaro ? "⚠ año " + anio + " · " : ""}cap. {fmtDateOnly(cap.slice(0, 10))}
-                  </span>
-                );
-              })()}
+              {/* Cuándo, quién y desde dónde se capturó (pedido 7-sep), en
+                  hora Cancún. Conserva la pista ámbar de 28-ago (ticket con
+                  otro año o fecha muy lejana), ahora contra capturado_en. */}
+              <CapturadoLinea linea={lineaCaptura(f.gasto)} />
             </span>
           ),
       },

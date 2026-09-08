@@ -48,6 +48,9 @@ export interface ListGastosQuery {
   /** Fecha de CAPTURA (día Cancún): lo subido desde esa fecha, sin importar la fecha del ticket. */
   capturado_desde?: string;
   capturado_hasta?: string;
+  /** fecha (default: fecha_gasto desc, luego llegada) | captura (capturado_en
+   *  desc: "lo último que capturaron"). El Excel del API respeta el mismo orden. */
+  orden?: "fecha" | "captura";
   desde?: string;
   hasta?: string;
   limit?: number;

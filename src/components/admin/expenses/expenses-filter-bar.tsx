@@ -27,11 +27,24 @@ const FACTURACION = [
   { value: "NO_FACTURADA", label: "Sin facturar (pend. + sol.)" },
 ];
 
+// Orden del listado (7-sep): por fecha del consumo (default) o por el
+// momento real de captura — "lo último que subieron", sin importar la fecha
+// del ticket. Lo aplica el API y el Excel sale igual.
+const ORDEN = [
+  { value: "fecha", label: "Fecha del gasto" },
+  { value: "captura", label: "Fecha de captura" },
+];
+
 /**
  * Filtros de Gastos (pedido de oficina, ago 2026): tipo de pago, quién lo
  * capturó y fechas de corte. Van por querystring (server component recarga con
  * el filtro aplicado) y el botón "Exportar Excel" hereda LOS MISMOS filtros —
  * así el reporte de efectivos por piloto sale con dos clics.
+ *
+ * Desde el 7-sep hay DOS ejes de fecha, que no se mezclan: la del GASTO
+ * (consumo, `desde`/`hasta`) y la de CAPTURA (cuándo se cargó a la app o al
+ * panel, `cap_desde`/`cap_hasta`, día Cancún). El chip "Subidos esta semana"
+ * es un atajo del segundo eje: fijar un rango de captura lo apaga.
  */
 export function ExpensesFilterBar({
   personas,
@@ -56,7 +69,19 @@ export function ExpensesFilterBar({
   const desde = sp.get("desde") ?? "";
   const hasta = sp.get("hasta") ?? "";
   const facturacion = sp.get("facturacion") ?? "";
-  const hayFiltros = !!(medio || piloto || desde || hasta || facturacion);
+  const capDesde = sp.get("cap_desde") ?? "";
+  const capHasta = sp.get("cap_hasta") ?? "";
+  const orden = sp.get("orden") === "captura" ? "captura" : "fecha";
+  const hayFiltros = !!(
+    medio ||
+    piloto ||
+    desde ||
+    hasta ||
+    facturacion ||
+    capDesde ||
+    capHasta ||
+    orden !== "fecha"
+  );
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -94,21 +119,64 @@ export function ExpensesFilterBar({
         />
       </div>
       <div>
-        <p className="mb-1 text-[11px] font-medium text-muted-foreground">Desde</p>
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Gasto desde
+        </p>
         <Input
           type="date"
           value={desde}
           onChange={(e) => set({ desde: e.target.value })}
           className="h-9 w-36"
+          title="Fecha del consumo (la del ticket)"
         />
       </div>
       <div>
-        <p className="mb-1 text-[11px] font-medium text-muted-foreground">Hasta</p>
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Gasto hasta
+        </p>
         <Input
           type="date"
           value={hasta}
           onChange={(e) => set({ hasta: e.target.value })}
           className="h-9 w-36"
+          title="Fecha del consumo (la del ticket)"
+        />
+      </div>
+      {/* Eje de CAPTURA: cuándo se cargó a la app/panel (día Cancún). Al
+          fijarlo se apaga el chip "Subidos esta semana" (mismo eje). */}
+      <div>
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Capturado desde
+        </p>
+        <Input
+          type="date"
+          value={capDesde}
+          onChange={(e) => set({ cap_desde: e.target.value, cap: null })}
+          className="h-9 w-36"
+          title="Cuándo se capturó (cargó a la app o al panel), en hora Cancún — aunque el ticket traiga otra fecha"
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Capturado hasta
+        </p>
+        <Input
+          type="date"
+          value={capHasta}
+          onChange={(e) => set({ cap_hasta: e.target.value, cap: null })}
+          className="h-9 w-36"
+          title="Cuándo se capturó (cargó a la app o al panel), en hora Cancún — aunque el ticket traiga otra fecha"
+        />
+      </div>
+      <div className="w-40">
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Ordenar por
+        </p>
+        <SearchableSelect
+          options={ORDEN}
+          value={orden}
+          onChange={(v) => set({ orden: v === "captura" ? "captura" : null })}
+          placeholder="Fecha del gasto"
         />
       </div>
       {hayFiltros && (
@@ -121,6 +189,9 @@ export function ExpensesFilterBar({
               desde: null,
               hasta: null,
               facturacion: null,
+              cap_desde: null,
+              cap_hasta: null,
+              orden: null,
             })
           }
           className="inline-flex h-9 items-center gap-1 rounded-lg border border-border px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"

@@ -41,7 +41,12 @@ import {
   type SugerenciaAsignacion,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
-import { fmtDate, todayCancun } from "@/lib/datetime";
+import { fmtDate, fmtDateTime, todayCancun } from "@/lib/datetime";
+import {
+  capturadoEnDe,
+  llegoAlServidorDistinto,
+  origenCapturaLabel,
+} from "@/lib/admin/gastos-captura";
 import {
   fechaGastoAntigua,
   fechaGastoDistancia,
@@ -623,6 +628,30 @@ export function ExpenseVerifyDialog({
             bandeja de pendientes.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Auditoría de captura (pedido 7-sep): cuándo, quién y desde dónde
+            se capturó, en hora Cancún. La llegada al servidor solo se enseña
+            si difiere de la captura (> 1 min: se capturó sin señal y el
+            outbox lo subió después). Solo lectura: no toca la ventana de
+            edición ni el dinero. */}
+        {capturadoEnDe(gasto) && (
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+            <p>
+              <span className="font-medium">Capturado</span>{" "}
+              {fmtDateTime(capturadoEnDe(gasto))}
+              {gasto.captura?.nombre && <> · {gasto.captura.nombre}</>}
+              {origenCapturaLabel(gasto.origen) && (
+                <> · {origenCapturaLabel(gasto.origen)}</>
+              )}
+            </p>
+            {llegoAlServidorDistinto(gasto) && (
+              <p className="text-muted-foreground">
+                <span className="font-medium">Llegó al servidor</span>{" "}
+                {fmtDateTime(gasto.created_at)}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Pago de una compra de refacciones: el gasto se edita aquí igual,
             pero el costo en bodega vive en la compra. */}
