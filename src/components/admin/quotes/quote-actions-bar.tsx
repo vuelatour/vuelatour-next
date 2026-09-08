@@ -5,16 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownTrayIcon,
+  ArrowUturnLeftIcon,
   BoltIcon,
+  BookmarkSquareIcon,
   CheckCircleIcon,
   DocumentChartBarIcon,
+  EyeIcon,
+  LockClosedIcon,
   PaperAirplaneIcon,
-  PencilSquareIcon,
   XCircleIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { env } from "@/lib/env";
+import { abrirPdfCotizacion } from "@/lib/api/quotes-browser";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +34,11 @@ import {
   cancelQuoteAction,
   confirmQuoteAction,
 } from "@/app/admin/quotes/actions";
-import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
+import {
+  candadoRevision,
+  RAZON_REVISION,
+  type CobrosInfoCandado,
+} from "@/lib/admin/quote-revision";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
 /**
@@ -51,24 +57,47 @@ const ROLES_PDF_INTERNO: ReadonlySet<string> = new Set([
 const TITULO_PDF_INTERNO =
   "Versión interna: comisiones, horas, cobros. No se manda al cliente";
 
+/** Estado de edición directa (F0) que la página pasa a la barra. */
+export interface EdicionBarra {
+  sucio: boolean;
+  /** D5 (F2): solo cambió presentación del PDF → se guarda sin versión. */
+  soloPresentacion?: boolean;
+  canSave: boolean;
+  saving: boolean;
+  versionSiguiente: number;
+  onGuardar: () => void;
+  onDescartar: () => void;
+}
+
 export function QuoteActionsBar({
   quote,
-  onRevisar,
-  editando = false,
+  edicion,
   onAjusteRapido,
+  onVistaPrevia,
   rol = null,
+  cobrosInfo,
 }: {
   quote: PersistedQuote;
   /**
-   * Página única (5-sep-2026): «Revisar» ya NO navega — habilita la edición
-   * ahí mismo. Sin handler cae al link `?revisar=1` (abre en edición).
+   * Dinero cobrado del vuelo (neto y cobros MXN sin TC): espejo del candado
+   * D3 del API para que «Bloqueada · vuelo cobrado» aparezca también con un
+   * anticipo parcial, no solo con la bandera `cobrado`.
    */
-  onRevisar?: () => void;
-  /** Ya se está revisando: el botón «Revisar» se oculta (guardar/cancelar
-   *  viven en la barra del total). */
-  editando?: boolean;
-  /** Lleva/enfoca al bloque «Ajuste rápido» (solo cuando está disponible). */
+  cobrosInfo?: CobrosInfoCandado;
+  /**
+   * EDICIÓN DIRECTA (F0, 8-sep-2026): ya no existe «Revisar». Con cambios
+   * (`sucio`) la barra muestra «Descartar» y «Guardar → vN» (mismas acciones
+   * que la barra del total). undefined = cotización bloqueada.
+   */
+  edicion?: EdicionBarra;
+  /** «Ajuste rápido»: scroll+focus a pasajeros del documento (D2). */
   onAjusteRapido?: () => void;
+  /**
+   * «Vista previa hoja 1» (F1): abre la hoja real del PDF (diálogo grande;
+   * en pantallas angostas cambia a la pestaña de vista previa). Se pinta
+   * también con la cotización bloqueada (la hoja guardada se puede ver).
+   */
+  onVistaPrevia?: () => void;
   /**
    * Rol del usuario (de /v1/me). Decide si se pinta «PDF interno»
    * (8-sep-2026); sin rol el botón no aparece. El PDF de cliente no se gatea.
@@ -85,22 +114,12 @@ export function QuoteActionsBar({
   const [openCobradoInfo, setOpenCobradoInfo] = useState(false);
   const puedePdfInterno = rol != null && ROLES_PDF_INTERNO.has(rol);
 
+  // PDF del cliente: fuente única `abrirPdfCotizacion` (también la usa
+  // «Ver PDF real» de la vista previa, F1).
   const handlePdf = async () => {
     setPdfLoading(true);
     try {
-      const supabase = createSupabaseBrowserClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${env.API_URL}/v1/quotes/${quote.id}/pdf`, {
-        method: "POST",
-        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
-      if (!res.ok) {
-        toast.error("No se pudo generar el PDF");
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await abrirPdfCotizacion(quote.id);
     } catch {
       toast.error("No se pudo generar el PDF");
     } finally {
@@ -140,20 +159,11 @@ export function QuoteActionsBar({
   };
 
   const canConfirm = quote.estado === "COTIZADO" || quote.estado === "SOLICITUD";
-  // Candados de «Revisar»: FUENTE ÚNICA `candadoRevision` (compartida con la
-  // barra del total del cotizador en lectura y con `?revisar=1`). Revisable
-  // mientras no se haya cobrado/facturado y dentro de la ventana de mes;
-  // CANCELADA también se revisa (1-sep-2026); vuelo de SERVICIO no se cotiza.
-  const {
-    canRevise,
-    esCancelada,
-    bloqueadaPorMes,
-    bloqueadaPorCobro,
-    esVueloServicio,
-  } = candadoRevision(quote);
-  // Cobrado (sin factura): la revisión cambiaría un total YA cobrado. En vez
-  // de esconder el botón, se explica el porqué y se lleva al cobro para
-  // eliminarlo (la card de cobros vive en esta misma página).
+  // Candado por COBRO (fuente única `candadoRevision`): en vez de esconderlo,
+  // se explica el porqué y se lleva al cobro para eliminarlo (la card de
+  // cobros vive en esta misma página). El resto de razones (facturada, mes
+  // cerrado, servicio) se leen en la barra del total del documento.
+  const { bloqueadaPorCobro } = candadoRevision(quote, cobrosInfo);
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -201,6 +211,18 @@ export function QuoteActionsBar({
           Ver vuelo
         </Link>
       )}
+      {/* «Vista previa hoja 1» (F1): la hoja REAL del PDF, en vivo. */}
+      {onVistaPrevia && (
+        <Button
+          variant="outline"
+          onClick={onVistaPrevia}
+          className="gap-2"
+          title="Ver la hoja 1 del PDF tal como la verá el cliente (se actualiza al editar)."
+        >
+          <EyeIcon className="h-4 w-4" />
+          Vista previa hoja 1
+        </Button>
+      )}
       <Button
         variant="outline"
         onClick={handlePdf}
@@ -226,70 +248,51 @@ export function QuoteActionsBar({
           {pdfInternoLoading ? "Generando…" : "PDF interno"}
         </Button>
       )}
-      {/* «Ajuste rápido»: lleva al bloque (visible solo cuando el ajuste
-          está disponible — lo decide la página). */}
-      {onAjusteRapido && !editando && (
+      {/* «Ajuste rápido» (D2): lleva a los pasajeros del documento — la
+          cotización ya se edita directo. */}
+      {onAjusteRapido && !edicion?.sucio && (
         <Button
           variant="outline"
           onClick={onAjusteRapido}
           className="gap-2"
-          title="Ir al ajuste rápido: conceptos extra y pasajeros sin abrir la revisión completa."
+          title="Ir a pasajeros y extras del documento: se editan directo y se guardan como versión nueva."
         >
           <BoltIcon className="h-4 w-4" />
           Ajuste rápido
         </Button>
       )}
-      {canRevise &&
-        !editando &&
-        (onRevisar ? (
+      {/* Edición directa con cambios: Descartar / Guardar → vN (espejo de la
+          barra del total). */}
+      {edicion?.sucio && (
+        <>
           <Button
             variant="outline"
-            onClick={onRevisar}
-            className={
-              esCancelada
-                ? "gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400"
-                : "gap-2"
-            }
-            title={esCancelada ? RAZON_REVISION.cancelada : undefined}
+            onClick={edicion.onDescartar}
+            disabled={edicion.saving}
+            className="gap-2"
+            title="Descarta los cambios (se confirma)."
           >
-            <PencilSquareIcon className="h-4 w-4" />
-            {esCancelada ? "Revisar (cancelada)" : "Revisar"}
+            <ArrowUturnLeftIcon className="h-4 w-4" />
+            Descartar
           </Button>
-        ) : (
-          <Link
-            href={`/admin/quotes/${quote.id}?revisar=1`}
-            className={
-              esCancelada
-                ? `${buttonVariants({ variant: "outline" })} border-amber-500/40 text-amber-700 dark:text-amber-400`
-                : buttonVariants({ variant: "outline" })
+          <Button
+            onClick={edicion.onGuardar}
+            disabled={edicion.saving}
+            className="gap-2 bg-brand-600 hover:bg-brand-600/90"
+            title={
+              edicion.soloPresentacion
+                ? "Solo cambió cómo se ve el PDF (notas/toggles): se guarda sin versión nueva. Ctrl/⌘+S"
+                : "Guarda una versión nueva (pide el motivo). Ctrl/⌘+S"
             }
-            title={esCancelada ? RAZON_REVISION.cancelada : undefined}
           >
-            <PencilSquareIcon className="h-4 w-4" />
-            {esCancelada ? "Revisar (cancelada)" : "Revisar"}
-          </Link>
-        ))}
-      {esVueloServicio && !editando && (
-        <Button
-          variant="outline"
-          disabled
-          className="gap-2"
-          title={RAZON_REVISION.servicio}
-        >
-          <PencilSquareIcon className="h-4 w-4" />
-          Revisar · vuelo de servicio
-        </Button>
-      )}
-      {bloqueadaPorMes && !esVueloServicio && (
-        <Button
-          variant="outline"
-          disabled
-          className="gap-2"
-          title={RAZON_REVISION.mesCerrado}
-        >
-          <PencilSquareIcon className="h-4 w-4" />
-          Revisar · mes cerrado
-        </Button>
+            <BookmarkSquareIcon className="h-4 w-4" />
+            {edicion.saving
+              ? "Guardando…"
+              : edicion.soloPresentacion
+                ? "Guardar PDF (sin versión)"
+                : `Guardar → v${edicion.versionSiguiente}`}
+          </Button>
+        </>
       )}
       {bloqueadaPorCobro && (
         <Button
@@ -298,8 +301,8 @@ export function QuoteActionsBar({
           className="gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400"
           title={RAZON_REVISION.cobrado}
         >
-          <PencilSquareIcon className="h-4 w-4" />
-          Revisar · vuelo cobrado
+          <LockClosedIcon className="h-4 w-4" />
+          Bloqueada · vuelo cobrado
         </Button>
       )}
       {canConfirm && (
@@ -347,6 +350,7 @@ export function QuoteActionsBar({
                 <button
                   key={m}
                   type="button"
+                  aria-pressed={motivoCancel === m}
                   onClick={() => setMotivoCancel(m)}
                   className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
                     motivoCancel === m
@@ -388,11 +392,12 @@ export function QuoteActionsBar({
               El vuelo ya tiene cobros registrados
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Revisar la cotización cambiaría un total que el cliente YA pagó,
+              Cambiar la cotización movería un total que el cliente YA pagó,
               y los números dejarían de cuadrar. Para poder ajustarla: elimina
               primero el cobro registrado (abajo en esta página, sección
-              &ldquo;Cobros registrados en el vuelo&rdquo;), revisa la
-              cotización y vuelve a registrar el cobro con el monto correcto.
+              &ldquo;Cobros registrados en el vuelo&rdquo;), edita el
+              documento, guarda la versión y vuelve a registrar el cobro con el
+              monto correcto.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -112,9 +112,17 @@ export interface EscalaInput {
   notas?: string | null;
   /** Fecha/hora planeada del tramo. El 1er/último tramo heredan las fechas del vuelo si se omite. */
   fecha_salida_plan?: string | null;
-  // pdf_oculto se retiró del payload (1-sep): la visibilidad en PDF se cambia
-  // por escala desde el DETALLE (PATCH pdf-visibilidad) y el API conserva el
-  // valor cuando el cotizador guarda sin la bandera.
+  /**
+   * Presentación del PDF por tramo — SOLO en el ALTA (D4, F2 8-sep-2026):
+   * `POST /v1/quotes` acepta `pdf_oculto` / `pdf_fecha` ('YYYY-MM-DD' de
+   * pared) por escala para que la vista previa de una cotización nueva no
+   * muestre algo que no se guardará. NUNCA viajan a `/calculate` ni a
+   * `/revise` (`armarCalcPayload` los descarta): en una cotización guardada
+   * la visibilidad vive en la escala VIVA (PATCH pdf-visibilidad, sin
+   * versión) y el API la conserva cuando el cotizador guarda sin la bandera.
+   */
+  pdf_oculto?: boolean;
+  pdf_fecha?: string | null;
 }
 
 /** Tramo resuelto que devuelve el motor en el breakdown (defaults aplicados). */

@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 
 /**
- * Ruta LEGADA (5-sep-2026): la revisión vive ahora en la página única de la
- * cotización (`/admin/quotes/[id]`, botón «Revisar» edita en el lugar).
- * Se conserva solo como redirección para que links viejos (alertas,
- * correos, favoritos) sigan funcionando: `?revisar=1` abre directo en
- * edición (si los candados lo permiten; si no, abre en lectura y avisa).
+ * Ruta LEGADA (5-sep-2026 → F3, 8-sep-2026): la cotización se edita
+ * DIRECTO en su página única (`/admin/quotes/[id]`, sin «Revisar» ni
+ * `?revisar=1`). Se conserva solo como redirección para que links viejos
+ * (alertas, correos, favoritos) sigan funcionando.
  */
 export default async function ReviseQuotePage({
   params,
@@ -13,5 +12,5 @@ export default async function ReviseQuotePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/admin/quotes/${id}?revisar=1`);
+  redirect(`/admin/quotes/${id}`);
 }

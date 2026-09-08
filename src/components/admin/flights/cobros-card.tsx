@@ -40,17 +40,8 @@ import { fmtUsd } from "@/lib/format";
 import { descargarDelApi } from "@/lib/download";
 import type { FlightCobro } from "@/types/flights";
 import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
+import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
-
-export const METODO_LABELS: Record<string, string> = {
-  TRANSFERENCIA: "Transferencia",
-  HSBC_LINK: "HSBC link",
-  CHEQUE: "Cheque",
-  BILLPOCKET: "BillPocket",
-  EFECTIVO: "Efectivo",
-  DOLARES: "Dólares",
-  OTRO: "Otro",
-};
 
 interface CobrosCardProps {
   flightId: string;
@@ -215,7 +206,7 @@ export function CobrosCard({
                       )}
                     </p>
                     <p className="text-[11px] text-muted-foreground truncate">
-                      {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro}
+                      {metodoPagoLabel(c.metodo_cobro)}
                       {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
@@ -305,7 +296,7 @@ export function CobrosCard({
             <DialogTitle>¿Eliminar este cobro?</DialogTitle>
             <DialogDescription>
               {toDelete
-                ? `${fmtUsd(toDelete.monto)} ${toDelete.moneda} · ${METODO_LABELS[toDelete.metodo_cobro] ?? toDelete.metodo_cobro}. `
+                ? `${fmtUsd(toDelete.monto)} ${toDelete.moneda} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
                 : ""}
               Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula
               al instante y esta acción no se puede deshacer.

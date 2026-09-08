@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { haversineNm } from "@/lib/admin/geo";
 import { getDistanciasAction } from "@/app/admin/distancias/actions";
-import { PlusIcon, TrashIcon, ArrowRightIcon } from "@heroicons/react/24/outline";
+import {
+  PlusIcon,
+  TrashIcon,
+  ArrowRightIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,9 +56,22 @@ export function QuoteLegsEditor({
   defaultOrigin = "CUN",
   avisoAnclaCun = false,
   onAeropuertoCreado,
+  legExtra,
+  legAtenuado,
+  variant = "card",
 }: {
   value: EscalaInput[];
   onChange: (legs: EscalaInput[]) => void;
+  /**
+   * `fila` (F2, 8-sep-2026): itinerario EN LÍNEA como la tabla del PDF —
+   * `# | [CUN]→[HOL] | NM | Pax | (legExtra: fecha PDF · 👁)` con las
+   * banderas ferry / pernocta (+costo) / servicio / nota como chips por
+   * fila y el sobrevuelo como badge automático. `card` (default) es el
+   * editor de siempre (sheet de rutas).
+   */
+  variant?: "card" | "fila";
+  /** Tramo OCULTO del PDF: la fila se atenúa (no sale en la hoja). */
+  legAtenuado?: (idx: number, leg: EscalaInput) => boolean;
   routes?: RouteOption[];
   airports: AirportOption[];
   defaultOrigin?: string;
@@ -66,6 +85,12 @@ export function QuoteLegsEditor({
    * quedan en 0 y se teclean.
    */
   onAeropuertoCreado?: (airport: Airport) => void;
+  /**
+   * Contenido extra en el encabezado de cada tramo (edición directa,
+   * 8-sep-2026): aquí cuelgan los toggles de PDF (ocultar / fecha) que
+   * antes solo existían en lectura. null = nada para ese tramo.
+   */
+  legExtra?: (idx: number, leg: EscalaInput) => ReactNode;
 }) {
   // Inicializa con un tramo si está vacío.
   useEffect(() => {
@@ -298,6 +323,361 @@ export function QuoteLegsEditor({
   }, [value]);
   const esMultiDia = resumenDias.length > 1;
 
+  // Filas con la NOTA al piloto abierta (solo `fila`): estado de UI. Una
+  // nota con texto siempre se muestra; el chip solo abre el campo.
+  const [notasAbiertas, setNotasAbiertas] = useState<Set<number>>(() => new Set());
+  const abrirNota = (idx: number) =>
+    setNotasAbiertas((prev) => (prev.has(idx) ? prev : new Set(prev).add(idx)));
+  const cerrarNota = (idx: number) =>
+    setNotasAbiertas((prev) => {
+      if (!prev.has(idx)) return prev;
+      const next = new Set(prev);
+      next.delete(idx);
+      return next;
+    });
+
+  const avisoAnclaNode =
+    avisoAnclaCun &&
+    value.length > 0 &&
+    value[0].origen_iata &&
+    value[value.length - 1].destino_iata &&
+    (value[0].origen_iata !== "CUN" ||
+      value[value.length - 1].destino_iata !== "CUN") ? (
+      <p className="text-xs text-amber-600 dark:text-amber-400">
+        La ruta comercial normalmente abre y cierra en CUN (hoy:{" "}
+        {value[0].origen_iata} → … → {value[value.length - 1].destino_iata}).
+      </p>
+    ) : null;
+
+  const pieNode = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addLeg}
+            className="gap-1.5"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            {variant === "fila" ? "Tramo" : "Agregar tramo"}
+          </Button>
+          {onAeropuertoCreado && (
+            <AirportQuickCreateButton onCreated={onAeropuertoCreado} />
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-mono text-foreground">{fmtDecimal(nmTotal)}</span> NM totales ·{" "}
+          {value.length} {value.length === 1 ? "tramo" : "tramos"}
+        </p>
+      </div>
+
+      {esMultiDia && (
+        <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 p-3 space-y-1.5">
+          <p className="text-xs font-semibold">
+            Viaje de {resumenDias.length} días
+          </p>
+          {resumenDias.map((d, i) => (
+            <p key={d.dia} className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Día {i + 1} · {d.dia.split("-").reverse().join("/")}:
+              </span>{" "}
+              {d.tramos.join(" · ")}
+              {d.pernocta && (
+                <span className="text-amber-600 dark:text-amber-400"> · pernocta en {d.pernocta}</span>
+              )}
+            </p>
+          ))}
+          <p className="text-[11px] text-muted-foreground">
+            Todo el viaje se cotiza y cobra como UN solo vuelo (una hora
+            mínima, un folio). La pernocta se marca A MANO en el tramo donde
+            el piloto duerme fuera — el sistema no la activa solo.
+          </p>
+        </div>
+      )}
+    </>
+  );
+
+  if (variant === "fila") {
+    const chipCls = (on: boolean, tono: "amber" | "sky" | "neutral" = "neutral") =>
+      cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+        on
+          ? tono === "amber"
+            ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
+            : tono === "sky"
+              ? "border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-400"
+              : "border-foreground/40 bg-muted text-foreground"
+          : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+      );
+    // `@container` (revisión 8-sep): la fila responde al ancho REAL del
+    // editor (≥28rem = una línea; menos = NM/Pax bajan con su etiqueta), no
+    // al viewport — con el aside de la página única o la vista previa
+    // anclada el documento es mucho más angosto que la ventana. Los controles
+    // del PDF (fecha · ojito) viven en la línea de chips: en la cabecera
+    // aplastaban los selects de origen/destino.
+    return (
+      <div className="@container space-y-2">
+        <RutaRapidaInput
+          airports={airports}
+          hayDatos={hayDatosTramos}
+          onAplicar={aplicarRutaRapida}
+          onAeropuertoCreado={onAeropuertoCreado}
+        />
+        {avisoAnclaNode}
+        {/* Encabezado de la tabla (solo con ancho; en angosto cada fila se lee sola). */}
+        <div className="hidden @md:grid @md:grid-cols-[1.75rem_minmax(0,1fr)_5.5rem_4.5rem_2rem] @md:items-end @md:gap-2 px-1 text-[10px] uppercase tracking-wider text-foreground/60">
+          <span>#</span>
+          <span>Tramo</span>
+          <span className="text-right">NM</span>
+          <span className="text-right">Pax</span>
+          <span />
+        </div>
+        <ol className="space-y-1.5">
+          {value.map((leg, idx) => {
+            const isFirst = idx === 0;
+            const originLocked = !isFirst;
+            const sobrevuelo = !!leg.origen_iata && leg.origen_iata === leg.destino_iata;
+            const atenuado = legAtenuado?.(idx, leg) === true;
+            const notaVisible = notasAbiertas.has(idx) || (leg.notas ?? "").trim() !== "";
+            const extra = legExtra?.(idx, leg);
+            return (
+              <li
+                key={idx}
+                className={cn(
+                  "rounded-lg border border-border bg-card px-2 py-1.5 space-y-1.5 transition-opacity",
+                  atenuado && "opacity-60",
+                )}
+                title={atenuado ? "Oculto en el PDF del cliente (se sigue cobrando)" : undefined}
+              >
+                <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-2 @md:grid-cols-[1.75rem_minmax(0,1fr)_5.5rem_4.5rem_2rem]">
+                  <span className="font-mono text-xs text-muted-foreground">{idx + 1}</span>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+                    <SearchableSelect
+                      options={airportOptions}
+                      value={leg.origen_iata}
+                      onChange={(v) => updateLeg(idx, { origen_iata: v })}
+                      placeholder="IATA"
+                      disabled={originLocked}
+                      className="h-8"
+                    />
+                    <ArrowRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <SearchableSelect
+                      options={airportOptions}
+                      value={leg.destino_iata}
+                      onChange={(v) => updateLeg(idx, { destino_iata: v })}
+                      placeholder="IATA"
+                      className="h-8"
+                    />
+                  </div>
+                  <div className="col-start-2 flex flex-wrap items-center gap-2 @md:col-start-auto @md:contents">
+                    <label className="flex items-center gap-1 @md:contents">
+                      <span className="text-[10px] uppercase tracking-wider text-foreground/60 @md:hidden">
+                        NM
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        aria-label="Millas náuticas"
+                        value={leg.millas_nauticas || ""}
+                        onChange={(e) =>
+                          updateLeg(idx, {
+                            millas_nauticas: Number(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="NM"
+                        className={cn(
+                          "h-8 w-[5.5rem] text-right font-mono",
+                          leg.millas_nauticas > 0 ? "" : "border-amber-500/40",
+                        )}
+                      />
+                    </label>
+                    <label className="flex items-center gap-1 @md:contents">
+                      <span className="text-[10px] uppercase tracking-wider text-foreground/60 @md:hidden">
+                        Pax
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        disabled={leg.es_ferry}
+                        aria-label="Pasajeros del tramo (TUAS)"
+                        title="Pasajeros de ESTE tramo (TUAS). Vacío = usa el global."
+                        value={leg.es_ferry ? 0 : (leg.pasajeros ?? "")}
+                        onChange={(e) =>
+                          updateLeg(idx, {
+                            pasajeros:
+                              e.target.value === "" ? null : Number(e.target.value),
+                          })
+                        }
+                        placeholder="global"
+                        className="h-8 w-[4.5rem] text-right font-mono"
+                      />
+                    </label>
+                    <span className="flex items-center justify-end gap-1.5 @md:justify-self-end">
+                      {value.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeLeg(idx)}
+                          aria-label={`Quitar tramo ${idx + 1}`}
+                          title="Quitar tramo"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          <TrashIcon className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                {/* Banderas por fila: chips (aria-pressed) con su detalle en línea. */}
+                <div className="flex flex-wrap items-center gap-1.5 pl-[2.25rem]">
+                  <button
+                    type="button"
+                    aria-pressed={leg.es_ferry ?? false}
+                    onClick={() =>
+                      updateLeg(idx, {
+                        es_ferry: !leg.es_ferry,
+                        ...(!leg.es_ferry ? { pasajeros: 0 } : {}),
+                      })
+                    }
+                    title="Ferry (vacío): cobra tiempo y calzos, sin pasajeros ni TUAS."
+                    className={chipCls(leg.es_ferry ?? false)}
+                  >
+                    ⚑ Ferry
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={leg.requiere_pernocta ?? false}
+                    onClick={() =>
+                      updateLeg(idx, {
+                        requiere_pernocta: !leg.requiere_pernocta,
+                        ...(!leg.requiere_pernocta && leg.pernocta_costo_usd == null
+                          ? { pernocta_costo_usd: PERNOCTA_COSTO_DEFAULT_USD }
+                          : {}),
+                      })
+                    }
+                    title="El piloto pernocta tras este tramo: viático cobrado al cliente (sin IVA)."
+                    className={chipCls(leg.requiere_pernocta ?? false, "amber")}
+                  >
+                    ⛺ Pernocta
+                  </button>
+                  {leg.requiere_pernocta && (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      $
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        aria-label="Costo de la pernocta (USD)"
+                        value={leg.pernocta_costo_usd ?? ""}
+                        onChange={(e) =>
+                          updateLeg(idx, {
+                            pernocta_costo_usd:
+                              e.target.value === "" ? null : Number(e.target.value),
+                          })
+                        }
+                        placeholder={String(PERNOCTA_COSTO_DEFAULT_USD)}
+                        className="h-7 w-20 text-right font-mono"
+                      />
+                      USD
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-pressed={leg.tipo_parada === "SERVICIO"}
+                    onClick={() =>
+                      updateLeg(idx, {
+                        tipo_parada: leg.tipo_parada === "SERVICIO" ? "NORMAL" : "SERVICIO",
+                        ...(leg.tipo_parada === "SERVICIO" ? { servicio_notas: null } : {}),
+                      })
+                    }
+                    title="Parada de servicio / técnica (cambiar llanta, revisión, carga de material)."
+                    className={chipCls(leg.tipo_parada === "SERVICIO", "sky")}
+                  >
+                    🔧 Servicio
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={notaVisible}
+                    onClick={() => abrirNota(idx)}
+                    title="Nota del tramo para el piloto (no se imprime en el PDF)."
+                    className={chipCls(notaVisible)}
+                  >
+                    📝 Nota
+                  </button>
+                  {sobrevuelo && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] border-sky-500/40 text-sky-600 dark:text-sky-400"
+                      title="Mismo aeropuerto: tramo de sobrevuelo (ej. Zona Hotelera / Isla Mujeres). Las millas definen el tiempo cobrado."
+                    >
+                      Sobrevuelo
+                    </Badge>
+                  )}
+                  {atenuado && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-amber-600 dark:text-amber-400"
+                    >
+                      Oculto en el PDF
+                    </Badge>
+                  )}
+                  {/* Solo PDF (fecha · ojito): a la derecha de los chips, con
+                      su etiqueta para que no se confunda con la operación. */}
+                  {extra && (
+                    <span className="ml-auto inline-flex flex-wrap items-center justify-end gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider text-foreground/60">
+                        PDF
+                      </span>
+                      {extra}
+                    </span>
+                  )}
+                </div>
+                {leg.tipo_parada === "SERVICIO" && (
+                  <div className="pl-[2.25rem]">
+                    <Input
+                      value={leg.servicio_notas ?? ""}
+                      onChange={(e) => updateLeg(idx, { servicio_notas: e.target.value })}
+                      placeholder="Detalle del servicio · ej. aterriza en Toledo a cambiar llanta"
+                      aria-label="Detalle de la parada de servicio"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                )}
+                {notaVisible && (
+                  <div className="flex items-center gap-1.5 pl-[2.25rem]">
+                    <Input
+                      value={leg.notas ?? ""}
+                      onChange={(e) => updateLeg(idx, { notas: e.target.value })}
+                      placeholder='Nota para el piloto · ej. "cargar gasolina aquí" (no se imprime)'
+                      aria-label="Nota del tramo para el piloto"
+                      className="h-8 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateLeg(idx, { notas: null });
+                        cerrarNota(idx);
+                      }}
+                      aria-label="Quitar la nota del tramo"
+                      title="Quitar la nota"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <XMarkIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        {pieNode}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <RutaRapidaInput
@@ -306,17 +686,7 @@ export function QuoteLegsEditor({
         onAplicar={aplicarRutaRapida}
         onAeropuertoCreado={onAeropuertoCreado}
       />
-      {avisoAnclaCun &&
-        value.length > 0 &&
-        value[0].origen_iata &&
-        value[value.length - 1].destino_iata &&
-        (value[0].origen_iata !== "CUN" ||
-          value[value.length - 1].destino_iata !== "CUN") && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
-            La ruta comercial normalmente abre y cierra en CUN (hoy:{" "}
-            {value[0].origen_iata} → … → {value[value.length - 1].destino_iata}).
-          </p>
-        )}
+      {avisoAnclaNode}
       <div className="space-y-2">
         {value.map((leg, idx) => {
           const isFirst = idx === 0;
@@ -333,6 +703,11 @@ export function QuoteLegsEditor({
                   {isFirst && " · salida"}
                   {isLast && value.length > 1 && " · llegada"}
                 </span>
+                {legExtra && (
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    {legExtra(idx, leg)}
+                  </span>
+                )}
                 {value.length > 1 && (
                   <button
                     type="button"
@@ -515,51 +890,7 @@ export function QuoteLegsEditor({
         })}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={addLeg}
-            className="gap-1.5"
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-            Agregar tramo
-          </Button>
-          {onAeropuertoCreado && (
-            <AirportQuickCreateButton onCreated={onAeropuertoCreado} />
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          <span className="font-mono text-foreground">{fmtDecimal(nmTotal)}</span> NM totales ·{" "}
-          {value.length} {value.length === 1 ? "tramo" : "tramos"}
-        </p>
-      </div>
-
-      {esMultiDia && (
-        <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 p-3 space-y-1.5">
-          <p className="text-xs font-semibold">
-            Viaje de {resumenDias.length} días
-          </p>
-          {resumenDias.map((d, i) => (
-            <p key={d.dia} className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">
-                Día {i + 1} · {d.dia.split("-").reverse().join("/")}:
-              </span>{" "}
-              {d.tramos.join(" · ")}
-              {d.pernocta && (
-                <span className="text-amber-600 dark:text-amber-400"> · pernocta en {d.pernocta}</span>
-              )}
-            </p>
-          ))}
-          <p className="text-[11px] text-muted-foreground">
-            Todo el viaje se cotiza y cobra como UN solo vuelo (una hora
-            mínima, un folio). La pernocta se marca A MANO en el tramo donde
-            el piloto duerme fuera — el sistema no la activa solo.
-          </p>
-        </div>
-      )}
+      {pieNode}
     </div>
   );
 }

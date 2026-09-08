@@ -1,13 +1,16 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type ReactNode,
+  type SyntheticEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -19,6 +22,13 @@ import {
   PlusIcon,
   PencilSquareIcon,
   XMarkIcon,
+  LockClosedIcon,
+  DocumentDuplicateIcon,
+  ArrowPathIcon,
+  ExclamationTriangleIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
@@ -71,6 +81,8 @@ import {
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { tuasLineasAPayload, upsertTuaLinea } from "@/lib/admin/tuas";
 import { modelosCotizadosTexto } from "@/lib/admin/avion-cotizado";
+import { METODOS_PAGO, metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import type { VueloConGrupo } from "@/types/grupos";
 import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
 import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
@@ -78,7 +90,7 @@ import { AirportQuickCreateButton } from "@/components/admin/airports/airport-qu
 import type { Airport } from "@/types/airports";
 import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
-import { calculateQuote } from "@/lib/api/quotes-browser";
+import { abrirPdfCotizacion, calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import {
@@ -88,10 +100,34 @@ import {
   TZ_LABEL,
 } from "@/lib/datetime";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useCambiosSinGuardar } from "@/hooks/use-cambios-sin-guardar";
+import {
+  PREVIEW_ANCLADA_QUERY,
+  PREVIEW_ANGOSTA_QUERY,
+  useMediaQuery,
+  useQuotePreviewHtml,
+  useQuotePreviewPrefs,
+  type EscalaPdfPreview,
+  type QuotePreviewPayload,
+} from "@/hooks/use-quote-preview-html";
+import {
+  QuotePreviewDialog,
+  QuotePreviewPane,
+} from "@/components/admin/quotes/quote-preview-pane";
+import {
+  armarMotivoRevision,
+  cambiosTocanTripulacion,
+  MOTIVOS_REVISION,
+  resumirCambios,
+  textoResumenCambios,
+  type MotivoRevisionChip,
+} from "@/lib/admin/quote-revision";
 import {
   createQuoteAction,
   getRutasSugeridasAction,
   reviseQuoteAction,
+  setQuotePdfPresentacionAction,
+  type PdfPresentacionPayload,
   type RutaSugerida,
 } from "@/app/admin/quotes/actions";
 import { createRouteAction } from "@/app/admin/routes/actions";
@@ -162,6 +198,26 @@ export interface AirportOption {
   longitud: number | null;
 }
 
+/**
+ * Tramo de la ruta OPERATIVA (solo alta): vive en react-hook-form desde F0.5
+ * (8-sep-2026) — antes era `useState` aparte y ni el borrador ?d= ni el
+ * diff lo veían.
+ */
+interface OpsLegForm {
+  origen: string;
+  destino: string;
+  ferry: boolean;
+  pax: string;
+  hora: string; // datetime-local (hora Cancún)
+  nota: string;
+  pernocta: boolean;
+  servicio: boolean;
+  servicioNotas: string;
+  /** Manifiesto: un nombre por línea (colapsado tras "+ nombres de pasajeros"). */
+  nombres: string;
+  showNombres: boolean;
+}
+
 interface QuoteFormValues {
   cliente_id: string;
   tipo: TipoVuelo;
@@ -228,8 +284,46 @@ interface QuoteFormValues {
   iva_pct_override: number | null;
   notas: string;
   notas_internas: string;
-  // Solo en mode='revise': razon de la revision (requerida).
+  // Solo en mode='revise': texto libre del motivo (el chip vive aparte; el
+  // diff lo IGNORA — no es un dato de la cotización).
   motivo: string;
+  /**
+   * Modo «Personalizada» del segmento de tarifa (F0.5: era `useState`). Es
+   * un estado de UI pegajoso, no un dato: el diff lo ignora.
+   */
+  tarifa_personalizada: boolean;
+  /** Ruta OPERATIVA opcional (solo alta). Vacía = usa la comercial. */
+  escalas_operacion: OpsLegForm[];
+}
+
+/**
+ * Estado de edición que el cotizador reporta al padre (página única, F0):
+ * badge «v2 → v3 ●», botones Descartar / Guardar en la barra de acciones y
+ * el atajo «Ajuste rápido» (scroll+focus a pasajeros del documento).
+ */
+export interface EstadoEdicionCotizador {
+  /** Hay cambios REALES vs lo guardado (diff semántico, no isDirty). */
+  sucio: boolean;
+  /**
+   * D5 (F2): lo ÚNICO que cambió es presentación del PDF (notas del
+   * cliente, tarifa/hr, itinerario) → se guarda por PATCH pdf-visibilidad
+   * SIN versión nueva (badge «v2 · PDF ●», botón «Guardar PDF»).
+   */
+  soloPresentacion: boolean;
+  /** «Pasajeros 4→6 · +Extra Handler $1,500 · +2 más». */
+  resumen: string;
+  cambios: string[];
+  canSave: boolean;
+  saving: boolean;
+  versionSiguiente: number;
+  /** Abre el diálogo «Guardar vN» (mismos candados que la barra del total). */
+  guardar: () => void;
+  /** Descarta con confirmación si hay cambios. */
+  descartar: () => void;
+  /** Scroll+focus al campo de pasajeros del documento. */
+  enfocarPasajeros: () => void;
+  /** «Vista previa hoja 1» (F1): abre la hoja real (diálogo / pestaña). */
+  abrirVistaPrevia: () => void;
 }
 
 type QuoteCalculatorProps = {
@@ -245,14 +339,14 @@ type QuoteCalculatorProps = {
       initialQuote?: undefined;
       clientName?: undefined;
       clientEsInterno?: undefined;
-      lectura?: undefined;
-      onRevisar?: undefined;
-      revisarBloqueado?: undefined;
-      revisarLabel?: undefined;
-      onCancelar?: undefined;
+      bloqueadoRazon?: undefined;
+      requiereConfirmacionEdicion?: undefined;
+      onEstadoEdicion?: undefined;
       onGuardado?: undefined;
-      tramoExtraLectura?: undefined;
-      notaTramosLectura?: undefined;
+      tramoExtra?: undefined;
+      notaTramos?: undefined;
+      escalasPdf?: undefined;
+      internoSlot?: undefined;
     }
   | {
       mode: "revise";
@@ -263,40 +357,68 @@ type QuoteCalculatorProps = {
       /** El cliente de la cotización es interno (operación propia): puede ir en $0. */
       clientEsInterno?: boolean;
       /**
-       * Página ÚNICA de la cotización (5-sep-2026): el mismo layout del
-       * cotizador sirve para VER (lectura) y para REVISAR (edición) sin
-       * cambiar de página. `lectura=true` pinta cada sección con valores
-       * legibles (texto, sin inputs ni botones de agregar/quitar), NO
-       * recalcula por tecla (el breakdown es el `calculo_snapshot`
-       * persistido) y muestra «Revisar» en la barra del total; el padre
-       * controla el modo con `onRevisar`/`onCancelar`/`onGuardado`.
+       * EDICIÓN DIRECTA (F0, 8-sep-2026): el documento se abre EDITABLE
+       * desde el primer render — sin «Revisar» ni motivo de entrada. Solo
+       * con `bloqueadoRazon` (cobrado, facturado, mes cerrado, servicio —
+       * fuente única `candadoRevision`) se pinta en LECTURA: valores como
+       * texto, 🔒 por sección, la razón en la barra del total y «Copiar como
+       * nueva cotización». Sin cambios reales (diff semántico) el desglose
+       * es el `calculo_snapshot` y NO se llama al motor; al primer cambio se
+       * recalcula en vivo y aparecen «v2 → v3 ●», Descartar y Guardar.
        */
-      lectura?: boolean;
-      /** Lectura: pasa a edición ahí mismo (botón «Revisar» de la barra). */
-      onRevisar?: () => void;
-      /** Lectura: razón por la que NO se puede revisar (botón deshabilitado
-       *  con el mismo texto que la barra de acciones); null = se puede. */
-      revisarBloqueado?: string | null;
-      /** Texto del botón «Revisar» (p. ej. «Revisar (cancelada)»). */
-      revisarLabel?: string;
-      /** Edición: descarta los cambios y vuelve a lectura (sin recargar). */
-      onCancelar?: () => void;
+      bloqueadoRazon?: string | null;
       /**
-       * Edición: revisión guardada. Con este handler el cotizador NO navega
-       * (`router.push`) — solo hace `router.refresh()`; el padre vuelve a
-       * lectura y la página se rehidrata con la versión nueva.
+       * CONFIRMADO/RESERVA con tripulación asignada: el PRIMER cambio pide una
+       * confirmación única («¿editar?») — reemplaza la barrera consciente
+       * que era «Revisar».
+       */
+      requiereConfirmacionEdicion?: boolean;
+      /** Estado de edición para la cabecera / barra de acciones del padre. */
+      onEstadoEdicion?: (estado: EstadoEdicionCotizador) => void;
+      /**
+       * Versión guardada. El cotizador NO navega (`router.push`) — solo hace
+       * `router.refresh()`; la página se rehidrata con la versión nueva.
        */
       onGuardado?: (quote: PersistedQuote) => void;
       /**
-       * Lectura: contenido extra por tramo del itinerario cotizado (índice
-       * 0..N-1 en el MISMO orden que los tramos rehidratados) — aquí viven los
-       * toggles de PDF (ocultar tramo / fecha por tramo) del detalle.
+       * Contenido extra por tramo del itinerario cotizado (índice 0..N-1 en
+       * el MISMO orden que los tramos rehidratados): los toggles de PDF
+       * (ocultar tramo / fecha). En edición solo se pintan en los tramos que
+       * siguen coincidiendo con lo guardado (mismo par y misma cantidad).
        */
-      tramoExtraLectura?: (idx: number, leg: EscalaInput) => ReactNode;
-      /** Lectura: nota al pie de la lista de tramos (leyenda de los toggles). */
-      notaTramosLectura?: ReactNode;
+      tramoExtra?: (idx: number, leg: EscalaInput) => ReactNode;
+      /** Nota al pie de la lista de tramos (leyenda de los toggles). */
+      notaTramos?: ReactNode;
+      /**
+       * Visibilidad/fecha de PDF por tramo GUARDADO (F1): `orden` = índice+1
+       * en el MISMO orden que los tramos rehidratados. Viaja a la vista
+       * previa (`escalas_pdf`) solo en tramos que siguen coincidiendo con lo
+       * guardado (misma regla que los toggles).
+       */
+      escalasPdf?: EscalaPdfPreview[];
+      /**
+       * F2: contenedor del padre (aside de la página única) donde el bloque
+       * «Interno · no se imprime» se monta por portal en ≥1440 px; sin él, o
+       * en pantallas menores, el bloque va como acordeón al pie del documento.
+       * El estado del form no cambia de sitio (portal = mismo árbol React).
+       */
+      internoSlot?: HTMLElement | null;
     }
 );
+
+/** Fecha de PDF por tramo ('YYYY-MM-DD' de pared) completa y con año razonable. */
+function fechaPdfValida(v: string | null | undefined): v is string {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const anio = Number(v.slice(0, 4));
+  return anio >= 2000 && anio <= 2100;
+}
+
+/** Claves del diff que son SOLO presentación del PDF (D5). */
+const CLAVES_PRESENTACION: ReadonlySet<string> = new Set([
+  "notas",
+  "pdf_tarifa",
+  "pdf_itinerario",
+]);
 
 /**
  * Lleva al operador al campo de TC (se monta siempre que hay renglones MXN,
@@ -308,18 +430,8 @@ function focusTcField() {
   el?.querySelector("input")?.focus();
 }
 
-const METODOS_PAGO: { value: MetodoPago; label: string; hint: string }[] = [
-  { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
-  { value: "HSBC_LINK", label: "HSBC link", hint: "Con factura · IVA 16%" },
-  { value: "CHEQUE", label: "Cheque", hint: "Con factura · IVA 16%" },
-  { value: "BILLPOCKET", label: "BillPocket", hint: "Sin factura" },
-  { value: "EFECTIVO", label: "Efectivo", hint: "Sin IVA" },
-  { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA" },
-  // Método MANUAL: la oficina escribe cuál es. Sin IVA por defecto (el
-  // override de IVA de "Overrides avanzados" es la válvula si sí factura);
-  // el piloto NO puede cobrarlo en campo (candado del API).
-  { value: "OTRO", label: "Otro (escríbelo)", hint: "Manual · sin IVA por defecto" },
-];
+// METODOS_PAGO: fuente única `lib/admin/metodos-pago.ts` (la copia local se
+// retiró en F2, 8-sep-2026).
 
 /** Mapea una Route del API a la opción local del dropdown (con detalle por tramo). */
 function routeToOption(route: Route): RouteOption {
@@ -446,41 +558,235 @@ function tramoToEscala(t: {
   };
 }
 
+/**
+ * Payload de `/calculate` a partir del form (PURO, F0.5): lo usa el preview
+ * en vivo (form debounced) y la detección de deriva del motor (form base).
+ * Devuelve null si faltan aeronave, tramos completos o pasajeros.
+ */
+function armarCalcPayload(
+  debounced: QuoteFormValues,
+  {
+    clienteInterno,
+    teniaModeloPersistido,
+    teniaMatriculaPersistida,
+  }: {
+    clienteInterno: boolean;
+    teniaModeloPersistido: boolean;
+    teniaMatriculaPersistida: boolean;
+  },
+): CalculateQuoteRequest | null {
+  if (!debounced.aeronave_id) return null;
+  // Borradores viejos en la URL podían traer el centinela del modo
+  // sin-avión (retirado 29-ago): se trata como "sin aeronave" — el estado
+  // vacío pide elegir un avión real en lugar de un 400 críptico del motor.
+  if (debounced.aeronave_id === "SIN_AVION") return null;
+  const modeloTrim = debounced.avion_externo_modelo?.trim() ?? "";
+  const matriculaTrim = debounced.avion_externo_matricula?.trim() ?? "";
+  const modoPorHoraDeb = debounced.comision_vendedor_modo === "POR_HORA";
+  const base: CalculateQuoteRequest = {
+    aeronave_id: debounced.aeronave_id,
+    ...(debounced.es_externo
+      ? {
+          es_externo: true,
+          // El DTO exige 2-80 / 2-20 SOLO en valores no vacíos: '' explícito
+          // = BORRAR la ficha (viaja cuando el campo TENÍA valor persistido
+          // y se vació); a medio teclear (1 char) la clave se omite —
+          // conserva — para no tirar el preview con un 400 en cada tecla.
+          ...(modeloTrim.length >= 2
+            ? { avion_externo_modelo: modeloTrim }
+            : modeloTrim === "" && teniaModeloPersistido
+              ? { avion_externo_modelo: "" }
+              : {}),
+          ...(matriculaTrim.length >= 2
+            ? { avion_externo_matricula: matriculaTrim }
+            : matriculaTrim === "" && teniaMatriculaPersistida
+              ? { avion_externo_matricula: "" }
+              : {}),
+        }
+      : {}),
+    // Con cliente, el motor aplica su tarifa preferencial si la tiene pactada.
+    cliente_id: debounced.cliente_id || undefined,
+    tipo: "MULTIESCALA",
+    tipo_tarifa: debounced.tipo_tarifa,
+    pasajeros: Number(debounced.pasajeros) || 0,
+    pase_abordar: debounced.pase_abordar,
+    sobrevuelo_hr:
+      Number(debounced.sobrevuelo_hr) > 0
+        ? Number(debounced.sobrevuelo_hr)
+        : undefined,
+    tiempo_cobrable_override_hr:
+      Number(debounced.tiempo_cobrable_override_hr) > 0
+        ? Number(debounced.tiempo_cobrable_override_hr)
+        : undefined,
+    cotizacion_abierta: debounced.cotizacion_abierta,
+    pdf_mostrar_tarifa: debounced.pdf_mostrar_tarifa,
+    pdf_mostrar_itinerario: debounced.pdf_mostrar_itinerario,
+    // Un extra MXN sin TC no puede convertirse (el motor lo rechaza con
+    // 400 y tiraría el preview): se retiene fuera del cálculo — el editor
+    // avisa en ámbar y guardar queda bloqueado (mxnSinTc). Con cantidad ×
+    // unitario el monto NO se calcula aquí: lo deriva el motor.
+    extras: extrasAPayload(debounced.extras, {
+      tcCapturado: Number(debounced.tc_usd_mxn) > 0,
+    }),
+    // Con redondeo automático solo viaja el descuento; el motor resuelve el
+    // redondeo exacto al siguiente múltiplo de $10.
+    ajuste_final_usd: debounced.redondeo_auto
+      ? -(Number(debounced.descuento_usd) || 0)
+      : (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
+    redondeo_automatico: debounced.redondeo_auto || undefined,
+    // Externos LEGADO (2-sep-2026): sin input ya no viaja captura nueva —
+    // aquí solo pasa el pactado REHIDRATADO de folios que ya lo tenían,
+    // para que el preview y la revisión sigan aterrizando su total exacto.
+    total_pactado_usd:
+      debounced.es_externo && Number(debounced.total_pactado_usd) > 0
+        ? Number(debounced.total_pactado_usd)
+        : undefined,
+    metodo_pago: debounced.metodo_pago,
+    metodo_pago_detalle:
+      debounced.metodo_pago === "OTRO" && debounced.metodo_pago_detalle.trim()
+        ? debounced.metodo_pago_detalle.trim()
+        : undefined,
+    tc_usd_mxn:
+      Number(debounced.tc_usd_mxn) > 0 ? Number(debounced.tc_usd_mxn) : undefined,
+    comision_billpocket_pct:
+      debounced.metodo_pago === "BILLPOCKET" &&
+      Number(debounced.comision_billpocket_pct) > 0
+        ? Math.min(Number(debounced.comision_billpocket_pct), 20)
+        : undefined,
+    // Comisión del vendedor: SOLO viaja lo que aplica a la modalidad activa
+    // (sin ceros falsos). POR_HORA ⇒ modo + tarifa (el motor resuelve
+    // tarifa × horas cobradas); FIJA (default del API) ⇒ solo el monto.
+    comision_vendedor_modo:
+      modoPorHoraDeb && Number(debounced.comision_vendedor_tarifa_hr) > 0
+        ? "POR_HORA"
+        : undefined,
+    comision_vendedor_tarifa_hr:
+      modoPorHoraDeb && Number(debounced.comision_vendedor_tarifa_hr) > 0
+        ? Number(debounced.comision_vendedor_tarifa_hr)
+        : undefined,
+    comision_vendedor_usd:
+      !modoPorHoraDeb && Number(debounced.comision_vendedor_usd) > 0
+        ? Number(debounced.comision_vendedor_usd)
+        : undefined,
+    comision_vendedor_nombre:
+      ((modoPorHoraDeb &&
+        Number(debounced.comision_vendedor_tarifa_hr) > 0) ||
+        (!modoPorHoraDeb &&
+          Number(debounced.comision_vendedor_usd) > 0)) &&
+      debounced.comision_vendedor_nombre.trim()
+        ? debounced.comision_vendedor_nombre.trim()
+        : undefined,
+  };
+  const legs = debounced.escalas ?? [];
+  if (legs.length >= 1) {
+    // Itinerario propio de la cotización (plantilla hidratada y ajustable).
+    const incomplete = legs.some(
+      (l) =>
+        !l.origen_iata ||
+        !l.destino_iata ||
+        !(Number(l.millas_nauticas) > 0),
+    );
+    if (incomplete) return null;
+    base.escalas = legs.map((l) => ({
+      origen_iata: l.origen_iata,
+      destino_iata: l.destino_iata,
+      millas_nauticas: Number(l.millas_nauticas),
+      pasajeros: l.es_ferry ? 0 : (l.pasajeros ?? null),
+      pasajeros_nombres: l.es_ferry
+        ? []
+        : (l.pasajeros_nombres ?? []).map((n) => n.trim()).filter(Boolean),
+      es_ferry: l.es_ferry ?? false,
+      requiere_pernocta: l.requiere_pernocta ?? false,
+      pernocta_costo_usd: l.pernocta_costo_usd ?? null,
+      tipo_parada: l.tipo_parada ?? "NORMAL",
+      servicio_notas: l.servicio_notas ?? null,
+      notas: l.notas?.trim() ? l.notas.trim() : null,
+      fecha_salida_plan: l.fecha_salida_plan ? cancunInputToIso(l.fecha_salida_plan) : null,
+    }));
+    // La ruta guardada queda solo como referencia de la plantilla usada.
+    if (debounced.ruta_id) base.ruta_id = debounced.ruta_id;
+  } else if (debounced.ruta_id) {
+    // Sin tramos locales: el backend hidrata los de la ruta guardada.
+    base.ruta_id = debounced.ruta_id;
+  } else {
+    return null;
+  }
+  // Con pax POR TRAMO completo, el "global" que viaja (y que la lista y
+  // el PDF muestran) es el MÁXIMO de los tramos — el capturado queda
+  // congelado sin efecto en el precio (cada tramo manda su propio pax).
+  const tramosPaxDeb = (debounced.escalas ?? []).filter((l) => !l.es_ferry);
+  const paxPorTramoDebounced =
+    tramosPaxDeb.length > 0 &&
+    tramosPaxDeb.every((l) => l.pasajeros != null && `${l.pasajeros}` !== "");
+  const maxPaxTramosDebounced = paxPorTramoDebounced
+    ? Math.max(...tramosPaxDeb.map((l) => Number(l.pasajeros) || 0))
+    : 0;
+  if (paxPorTramoDebounced) {
+    base.pasajeros = Math.max(1, maxPaxTramosDebounced);
+  }
+  if (base.pasajeros < 1) return null;
+  // Campo vacío = sin override (el input devuelve "" y Number("") es 0: no
+  // se puede confiar en la verdad/falsedad del valor crudo).
+  const tarifaRaw = `${debounced.tarifa_hora_override_usd ?? ""}`.trim();
+  if (tarifaRaw !== "" && Number(tarifaRaw) > 0) {
+    base.tarifa_hora_override_usd = Number(tarifaRaw);
+  } else if (clienteInterno && tarifaRaw !== "" && Number(tarifaRaw) === 0) {
+    // Cliente INTERNO: el 0 tecleado es intencional (vuelo de la empresa sin
+    // cobro) y debe ganarle a la tarifa preferencial pactada del cliente.
+    // En clientes normales el 0 se sigue ignorando: el motor respondería 400
+    // "sin tarifa configurada" y tiraría el preview en cada tecla.
+    base.tarifa_hora_override_usd = 0;
+  }
+  if (!debounced.cobrar_tuas) {
+    // Switch rápido apagado: la TUAS no se cobra en esta cotización.
+    base.tuas_override_usd_pax = 0;
+  } else {
+    if (debounced.tuas_override_usd_pax !== null && debounced.tuas_override_usd_pax !== undefined) {
+      base.tuas_override_usd_pax = Number(debounced.tuas_override_usd_pax);
+    }
+    // TUAS capturadas por aeropuerto (mandan sobre catálogo y override).
+    // Regla compartida con la cotización de GRUPO (`tuasLineasAPayload`):
+    // $0 capturado viaja (pass-through cero); una línea MXN > 0 sin TC se
+    // retiene fuera del cálculo — la card lo avisa y guardar se bloquea.
+    const lineas = tuasLineasAPayload(debounced.tuas_lineas, {
+      tcCapturado: Number(debounced.tc_usd_mxn) > 0,
+    });
+    if (lineas.length > 0) base.tuas_lineas = lineas;
+  }
+  if (debounced.iva_pct_override !== null && debounced.iva_pct_override !== undefined) {
+    base.iva_pct_override = Number(debounced.iva_pct_override);
+  }
+  return base;
+}
+
+/** uuid v4 para `client_request_id` (con fallback si no hay crypto.randomUUID). */
+function uuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export function QuoteCalculator(props: QuoteCalculatorProps) {
   const { aircraft, routes, airports: airportsCatalogo } = props;
   const mode = props.mode ?? "create";
   const isRevise = mode === "revise";
-  // Página única (5-sep): modo LECTURA controlado por el padre (solo revise).
-  const lectura = isRevise ? (props.lectura ?? false) : false;
-  const onRevisar = isRevise ? props.onRevisar : undefined;
-  const revisarBloqueado = isRevise ? (props.revisarBloqueado ?? null) : null;
-  const revisarLabel = isRevise ? (props.revisarLabel ?? "Revisar") : "Revisar";
-  const onCancelar = isRevise ? props.onCancelar : undefined;
+  // Edición directa (F0): LECTURA solo cuando el candado lo exige.
+  const bloqueadoRazon = isRevise ? (props.bloqueadoRazon ?? null) : null;
+  const lectura = isRevise && !!bloqueadoRazon;
+  const requiereConfirmacionEdicion = isRevise
+    ? !!props.requiereConfirmacionEdicion
+    : false;
+  const onEstadoEdicion = isRevise ? props.onEstadoEdicion : undefined;
   const onGuardado = isRevise ? props.onGuardado : undefined;
-  const tramoExtraLectura = isRevise ? props.tramoExtraLectura : undefined;
-  const notaTramosLectura = isRevise ? props.notaTramosLectura : undefined;
+  const tramoExtra = isRevise ? props.tramoExtra : undefined;
+  const notaTramos = isRevise ? props.notaTramos : undefined;
+  const escalasPdfProp = isRevise ? props.escalasPdf : undefined;
+  const internoSlot = isRevise ? (props.internoSlot ?? null) : null;
 
-  // Ruta OPERATIVA opcional al crear: SIEMPRE existe una ruta real del avión
-  // (gastos/avión); la comercial de abajo es la que se cobra. Se persiste con
-  // itinerario_operativo=true y el cotizador nunca la pisa. Cada tramo captura
-  // el mismo detalle que el cotizador (pernocta, servicio, nota, nombres…):
-  // estos tramos son los que ve el piloto en su app.
-  const [opsLegs, setOpsLegs] = useState<
-    Array<{
-      origen: string;
-      destino: string;
-      ferry: boolean;
-      pax: string;
-      hora: string; // datetime-local (hora Cancún)
-      nota: string;
-      pernocta: boolean;
-      servicio: boolean;
-      servicioNotas: string;
-      /** Manifiesto: un nombre por línea (colapsado tras "+ nombres de pasajeros"). */
-      nombres: string;
-      showNombres: boolean;
-    }>
-  >([]);
   const initialQuote = isRevise ? props.initialQuote : undefined;
   // Hijo de una cotización de GRUPO (4-sep): los renglones de extras con
   // origen GRUPO se pintan bloqueados con la liga al grupo.
@@ -515,10 +821,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     ]);
     router.refresh();
   };
-  // Al revisar una versión con tarifa AJUSTADA a mano, la sección de
-  // "Personalizada" en Tipo de tarifa (25-ago): modo elegido a mano; el
-  // derivado overrideTarifaActivo cubre revises y "todo en $0".
-  const [tarifaCustom, setTarifaCustom] = useState(false);
   // (26-ago) La TotalBar fija de arriba sustituyó al observer de
   // visibilidad + barra flotante inferior del layout de 2 columnas.
 
@@ -797,6 +1099,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         notas: q.notas ?? "",
         notas_internas: q.notas_internas ?? "",
         motivo: "",
+        // Con override manual el segmento arranca en «Personalizada».
+        tarifa_personalizada:
+          q.calculo_snapshot?.tarifa?.proviene_de_override === true &&
+          Number(q.tarifa_hora_usd) > 0,
+        escalas_operacion: [],
       };
     }
     return {
@@ -844,6 +1151,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       notas: "",
       notas_internas: "",
       motivo: "",
+      tarifa_personalizada: false,
+      escalas_operacion: [],
     };
   }, [initialQuote, defaultAircraftId, defaultRutaId]);
 
@@ -852,58 +1161,155 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     watch,
     setValue,
     reset,
+    getValues,
   } = useForm<QuoteFormValues>({
     mode: "onChange",
     defaultValues: formDefaults,
   });
 
-  // Restaura el borrador de la URL UNA vez al montar (solo alta nueva: en
-  // revise la verdad viene del snapshot y no se toca).
+  // «Personalizada» del segmento de tarifa (F0.5: vive en RHF).
+  const setTarifaCustom = useCallback(
+    (v: boolean) => setValue("tarifa_personalizada", v),
+    [setValue],
+  );
+
+  // BASE de comparación del diff (F0): los defaults con los que se hizo el
+  // último reset + la versión que representan (candado optimista). No es
+  // `formDefaults` a secas: tras un router.refresh() con el form SUCIO los
+  // defaults nuevos NO se aplican (el borrador es del operador) y la base
+  // sigue siendo la versión que él abrió.
+  const [base, setBase] = useState<{ defaults: QuoteFormValues; version: number }>(
+    () => ({ defaults: formDefaults, version: initialQuote?.cotizacion_version ?? 0 }),
+  );
+  // Tras guardar con éxito: el siguiente refresh SÍ resetea (trae la vN+1).
+  const esperandoRefreshRef = useRef(false);
+  // Otra persona guardó una versión mientras había borrador (409 / refresh).
+  const [conflictoVersion, setConflictoVersion] = useState<number | null>(null);
+
+  // Restaura el borrador de la URL UNA vez al montar. Alta: tal cual (?d= se
+  // va escribiendo con el mismo debounce). Revisión (F0): el borrador que
+  // dejó «Recargar conservando borrador» se REAPLICA sobre la versión actual
+  // (nunca el cliente ni la versión) y el parámetro se quita para que un F5
+  // no lo reaplique dos veces.
   const draftRestaurado = useRef(false);
   useEffect(() => {
-    if (isRevise || draftRestaurado.current) return;
+    if (draftRestaurado.current) return;
     draftRestaurado.current = true;
-    const raw = new URLSearchParams(window.location.search).get(DRAFT_PARAM);
+    const url = new URL(window.location.href);
+    const raw = url.searchParams.get(DRAFT_PARAM);
     if (!raw) return;
     const f = decodeDraft(raw);
-    if (f) {
-      reset({ ...formDefaults, ...f });
-      toast.info("Se restauró tu avance desde la URL.");
+    if (!f) return;
+    if (isRevise) {
+      if (lectura) return;
+      const resto: Partial<QuoteFormValues> = { ...f };
+      delete resto.cliente_id;
+      delete resto.motivo;
+      delete resto.escalas_operacion;
+      reset({ ...formDefaults, ...resto });
+      url.searchParams.delete(DRAFT_PARAM);
+      window.history.replaceState(null, "", url.toString());
+      toast.info(
+        `Se reaplicó tu borrador sobre la v${initialQuote?.cotizacion_version ?? ""}. Revísalo antes de guardar.`,
+      );
+      return;
     }
+    reset({ ...formDefaults, ...f });
+    toast.info("Se restauró tu avance desde la URL.");
     // Solo al montar; formDefaults es estable en el alta nueva.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // LECTURA (página única): el form SIEMPRE espeja lo persistido — al entrar
-  // a lectura (montaje, «Cancelar» o tras guardar) y cada vez que el server
-  // rehidrata la cotización (router.refresh tras revisar / ajuste rápido /
-  // toggles del PDF) se resetea a los defaults recién derivados. En edición
-  // no se toca: lo que el operador teclea es suyo hasta guardar o cancelar.
+  // El server rehidrató la cotización (router.refresh tras guardar, toggles
+  // del PDF, acciones de la barra, alta inline de rutas/aeropuertos):
+  // - form LIMPIO, lectura o recién guardado → se resetea a lo persistido;
+  // - form SUCIO → el borrador NO se pisa; si además cambió la versión, se
+  //   avisa (banner) y la base sigue siendo la versión que se abrió.
+  //
+  // Reacciona SOLO a un `formDefaults` nuevo del servidor (ref de "ya
+  // procesado"), nunca a un cambio de `base`: tras guardar, `setBase(
+  // getValues())` cambia la base y, si este efecto dependiera de ella,
+  // resetearía el form a los defaults VIEJOS (la vN) antes de que llegue el
+  // refresh con la vN+1 — parpadeo de valores/total anteriores y el
+  // `esperandoRefreshRef` consumido a destiempo (revisión 8-sep).
+  const baseRef = useRef(base);
+  baseRef.current = base;
+  const defaultsProcesadosRef = useRef(formDefaults);
   useEffect(() => {
-    if (!lectura) return;
-    reset(formDefaults);
-    setTarifaCustom(false);
-  }, [lectura, formDefaults, reset]);
+    // Solo revisión: en el alta los defaults no representan nada guardado.
+    if (!isRevise || formDefaults === defaultsProcesadosRef.current) return;
+    defaultsProcesadosRef.current = formDefaults;
+    const b = baseRef.current;
+    const versionNueva = initialQuote?.cotizacion_version ?? 0;
+    const sucioAhora = resumirCambios(b.defaults, getValues()).length > 0;
+    if (lectura || !sucioAhora || esperandoRefreshRef.current) {
+      esperandoRefreshRef.current = false;
+      reset(formDefaults);
+      setBase({ defaults: formDefaults, version: versionNueva });
+      setConflictoVersion(null);
+      return;
+    }
+    if (versionNueva !== b.version) setConflictoVersion(versionNueva);
+  }, [formDefaults, lectura, isRevise, initialQuote, reset, getValues]);
 
   const values = watch();
+  // Ruta operativa (solo alta) — mismos nombres de antes sobre RHF.
+  const opsLegs = values.escalas_operacion ?? [];
+  const setOpsLegs = (
+    upd: OpsLegForm[] | ((prev: OpsLegForm[]) => OpsLegForm[]),
+  ) =>
+    setValue(
+      "escalas_operacion",
+      typeof upd === "function" ? upd(getValues("escalas_operacion") ?? []) : upd,
+      { shouldDirty: true },
+    );
+  const tarifaCustom = values.tarifa_personalizada === true;
   // IMPORTANTE: serializamos el form a JSON antes de pasarlo al debounce.
   // watch() devuelve un objeto NUEVO en cada render (referencia distinta aunque
   // los valores sean iguales), lo que provocaría un bucle infinito de debounce
   // → useEffect → setState → re-render → watch() nuevo objeto → debounce otra vez.
   // Con string, la comparación es por valor: solo cambia cuando los datos cambian.
-  const valuesJson = JSON.stringify(values);
+  // `motivo` (texto libre del diálogo «Guardar vN») queda FUERA: no es un
+  // dato de la cotización (el diff lo ignora) y, si entrara, cada tecla del
+  // motivo reabriría la ventana del debounce y apagaría el botón Guardar del
+  // diálogo (previewFresco) sin motivo.
+  const valuesJson = JSON.stringify({ ...values, motivo: undefined });
   const debouncedJson = useDebouncedValue(valuesJson, 350);
   const debounced = useMemo<QuoteFormValues>(
     () => JSON.parse(debouncedJson),
     [debouncedJson],
   );
 
+  // DIFF SEMÁNTICO vs la base (F0): decide «hay algo que guardar», el badge
+  // «v2 → v3 ●», el resumen del diálogo y el prefijo del motivo. Ignora
+  // normalizaciones ("4" vs 4, espacios) y campos que no son datos (motivo,
+  // modo de tarifa). Solo en revisión: el alta no compara contra nada.
+  const cambios = useMemo(
+    () =>
+      isRevise
+        ? resumirCambios(base.defaults, JSON.parse(valuesJson) as QuoteFormValues, {
+            aviones: aircraft,
+          })
+        : [],
+    [isRevise, base.defaults, valuesJson, aircraft],
+  );
+  const sucio = isRevise && !lectura && cambios.length > 0;
+  // D5 (F2): solo notas del cliente / toggles del PDF → sin versión.
+  const soloPresentacion =
+    sucio && cambios.every((c) => CLAVES_PRESENTACION.has(c.clave));
+  const resumenCambios = textoResumenCambios(cambios, 4);
+  const versionSiguiente = (initialQuote?.cotizacion_version ?? 0) + 1;
+  // Teclas en curso: el debounce aún no asienta (el motor espera).
+  const enEsperaDebounce = debouncedJson !== valuesJson;
+
   // Escribe el borrador en la URL con el MISMO debounce del cálculo.
   // Pristino (igual a los defaults) = sin parámetro, para no ensuciar URLs.
   useEffect(() => {
     if (isRevise || typeof window === "undefined") return;
     const url = new URL(window.location.href);
-    if (debouncedJson === JSON.stringify(formDefaults)) {
+    // Misma serialización que valuesJson (sin `motivo`): pristino = igual a
+    // los defaults.
+    if (debouncedJson === JSON.stringify({ ...formDefaults, motivo: undefined })) {
       if (!url.searchParams.has(DRAFT_PARAM)) return;
       url.searchParams.delete(DRAFT_PARAM);
     } else {
@@ -974,205 +1380,47 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     toast.success("Cotización en $0 — revisa y guarda");
   };
 
-  const calcPayload = useMemo<CalculateQuoteRequest | null>(() => {
-    if (!debounced.aeronave_id) return null;
-    // Borradores viejos en la URL podían traer el centinela del modo
-    // sin-avión (retirado 29-ago): se trata como "sin aeronave" — el estado
-    // vacío pide elegir un avión real en lugar de un 400 críptico del motor.
-    if (debounced.aeronave_id === "SIN_AVION") return null;
-    const modeloTrim = debounced.avion_externo_modelo?.trim() ?? "";
-    const matriculaTrim = debounced.avion_externo_matricula?.trim() ?? "";
-    const modoPorHoraDeb = debounced.comision_vendedor_modo === "POR_HORA";
-    const base: CalculateQuoteRequest = {
-      aeronave_id: debounced.aeronave_id,
-      ...(debounced.es_externo
-        ? {
-            es_externo: true,
-            // El DTO exige 2-80 / 2-20 SOLO en valores no vacíos: '' explícito
-            // = BORRAR la ficha (viaja cuando el campo TENÍA valor persistido
-            // y se vació); a medio teclear (1 char) la clave se omite —
-            // conserva — para no tirar el preview con un 400 en cada tecla.
-            ...(modeloTrim.length >= 2
-              ? { avion_externo_modelo: modeloTrim }
-              : modeloTrim === "" && teniaModeloPersistido
-                ? { avion_externo_modelo: "" }
-                : {}),
-            ...(matriculaTrim.length >= 2
-              ? { avion_externo_matricula: matriculaTrim }
-              : matriculaTrim === "" && teniaMatriculaPersistida
-                ? { avion_externo_matricula: "" }
-                : {}),
-          }
-        : {}),
-      // Con cliente, el motor aplica su tarifa preferencial si la tiene pactada.
-      cliente_id: debounced.cliente_id || undefined,
-      tipo: "MULTIESCALA",
-      tipo_tarifa: debounced.tipo_tarifa,
-      pasajeros: Number(debounced.pasajeros) || 0,
-      pase_abordar: debounced.pase_abordar,
-      sobrevuelo_hr:
-        Number(debounced.sobrevuelo_hr) > 0
-          ? Number(debounced.sobrevuelo_hr)
-          : undefined,
-      tiempo_cobrable_override_hr:
-        Number(debounced.tiempo_cobrable_override_hr) > 0
-          ? Number(debounced.tiempo_cobrable_override_hr)
-          : undefined,
-      cotizacion_abierta: debounced.cotizacion_abierta,
-      pdf_mostrar_tarifa: debounced.pdf_mostrar_tarifa,
-      pdf_mostrar_itinerario: debounced.pdf_mostrar_itinerario,
-      // Un extra MXN sin TC no puede convertirse (el motor lo rechaza con
-      // 400 y tiraría el preview): se retiene fuera del cálculo — el editor
-      // avisa en ámbar y guardar queda bloqueado (mxnSinTc). Con cantidad ×
-      // unitario el monto NO se calcula aquí: lo deriva el motor.
-      extras: extrasAPayload(debounced.extras, {
-        tcCapturado: Number(debounced.tc_usd_mxn) > 0,
-      }),
-      // Con redondeo automático solo viaja el descuento; el motor resuelve el
-      // redondeo exacto al siguiente múltiplo de $10.
-      ajuste_final_usd: debounced.redondeo_auto
-        ? -(Number(debounced.descuento_usd) || 0)
-        : (Number(debounced.redondeo_usd) || 0) - (Number(debounced.descuento_usd) || 0),
-      redondeo_automatico: debounced.redondeo_auto || undefined,
-      // Externos LEGADO (2-sep-2026): sin input ya no viaja captura nueva —
-      // aquí solo pasa el pactado REHIDRATADO de folios que ya lo tenían,
-      // para que el preview y la revisión sigan aterrizando su total exacto.
-      total_pactado_usd:
-        debounced.es_externo && Number(debounced.total_pactado_usd) > 0
-          ? Number(debounced.total_pactado_usd)
-          : undefined,
-      metodo_pago: debounced.metodo_pago,
-      metodo_pago_detalle:
-        debounced.metodo_pago === "OTRO" && debounced.metodo_pago_detalle.trim()
-          ? debounced.metodo_pago_detalle.trim()
-          : undefined,
-      tc_usd_mxn:
-        Number(debounced.tc_usd_mxn) > 0 ? Number(debounced.tc_usd_mxn) : undefined,
-      comision_billpocket_pct:
-        debounced.metodo_pago === "BILLPOCKET" &&
-        Number(debounced.comision_billpocket_pct) > 0
-          ? Math.min(Number(debounced.comision_billpocket_pct), 20)
-          : undefined,
-      // Comisión del vendedor: SOLO viaja lo que aplica a la modalidad activa
-      // (sin ceros falsos). POR_HORA ⇒ modo + tarifa (el motor resuelve
-      // tarifa × horas cobradas); FIJA (default del API) ⇒ solo el monto.
-      comision_vendedor_modo:
-        modoPorHoraDeb && Number(debounced.comision_vendedor_tarifa_hr) > 0
-          ? "POR_HORA"
-          : undefined,
-      comision_vendedor_tarifa_hr:
-        modoPorHoraDeb && Number(debounced.comision_vendedor_tarifa_hr) > 0
-          ? Number(debounced.comision_vendedor_tarifa_hr)
-          : undefined,
-      comision_vendedor_usd:
-        !modoPorHoraDeb && Number(debounced.comision_vendedor_usd) > 0
-          ? Number(debounced.comision_vendedor_usd)
-          : undefined,
-      comision_vendedor_nombre:
-        ((modoPorHoraDeb &&
-          Number(debounced.comision_vendedor_tarifa_hr) > 0) ||
-          (!modoPorHoraDeb &&
-            Number(debounced.comision_vendedor_usd) > 0)) &&
-        debounced.comision_vendedor_nombre.trim()
-          ? debounced.comision_vendedor_nombre.trim()
-          : undefined,
-    };
-    const legs = debounced.escalas ?? [];
-    if (legs.length >= 1) {
-      // Itinerario propio de la cotización (plantilla hidratada y ajustable).
-      const incomplete = legs.some(
-        (l) =>
-          !l.origen_iata ||
-          !l.destino_iata ||
-          !(Number(l.millas_nauticas) > 0),
-      );
-      if (incomplete) return null;
-      base.escalas = legs.map((l) => ({
-        origen_iata: l.origen_iata,
-        destino_iata: l.destino_iata,
-        millas_nauticas: Number(l.millas_nauticas),
-        pasajeros: l.es_ferry ? 0 : (l.pasajeros ?? null),
-        pasajeros_nombres: l.es_ferry
-          ? []
-          : (l.pasajeros_nombres ?? []).map((n) => n.trim()).filter(Boolean),
-        es_ferry: l.es_ferry ?? false,
-        requiere_pernocta: l.requiere_pernocta ?? false,
-        pernocta_costo_usd: l.pernocta_costo_usd ?? null,
-        tipo_parada: l.tipo_parada ?? "NORMAL",
-        servicio_notas: l.servicio_notas ?? null,
-        notas: l.notas?.trim() ? l.notas.trim() : null,
-        fecha_salida_plan: l.fecha_salida_plan ? cancunInputToIso(l.fecha_salida_plan) : null,
-      }));
-      // La ruta guardada queda solo como referencia de la plantilla usada.
-      if (debounced.ruta_id) base.ruta_id = debounced.ruta_id;
-    } else if (debounced.ruta_id) {
-      // Sin tramos locales: el backend hidrata los de la ruta guardada.
-      base.ruta_id = debounced.ruta_id;
-    } else {
-      return null;
-    }
-    // Con pax POR TRAMO completo, el "global" que viaja (y que la lista y
-    // el PDF muestran) es el MÁXIMO de los tramos — el capturado queda
-    // congelado sin efecto en el precio (cada tramo manda su propio pax).
-    const tramosPaxDeb = (debounced.escalas ?? []).filter((l) => !l.es_ferry);
-    const paxPorTramoDebounced =
-      tramosPaxDeb.length > 0 &&
-      tramosPaxDeb.every((l) => l.pasajeros != null && `${l.pasajeros}` !== "");
-    const maxPaxTramosDebounced = paxPorTramoDebounced
-      ? Math.max(...tramosPaxDeb.map((l) => Number(l.pasajeros) || 0))
-      : 0;
-    if (paxPorTramoDebounced) {
-      base.pasajeros = Math.max(1, maxPaxTramosDebounced);
-    }
-    if (base.pasajeros < 1) return null;
-    // Campo vacío = sin override (el input devuelve "" y Number("") es 0: no
-    // se puede confiar en la verdad/falsedad del valor crudo).
-    const tarifaRaw = `${debounced.tarifa_hora_override_usd ?? ""}`.trim();
-    if (tarifaRaw !== "" && Number(tarifaRaw) > 0) {
-      base.tarifa_hora_override_usd = Number(tarifaRaw);
-    } else if (clienteInterno && tarifaRaw !== "" && Number(tarifaRaw) === 0) {
-      // Cliente INTERNO: el 0 tecleado es intencional (vuelo de la empresa sin
-      // cobro) y debe ganarle a la tarifa preferencial pactada del cliente.
-      // En clientes normales el 0 se sigue ignorando: el motor respondería 400
-      // "sin tarifa configurada" y tiraría el preview en cada tecla.
-      base.tarifa_hora_override_usd = 0;
-    }
-    if (!debounced.cobrar_tuas) {
-      // Switch rápido apagado: la TUAS no se cobra en esta cotización.
-      base.tuas_override_usd_pax = 0;
-    } else {
-      if (debounced.tuas_override_usd_pax !== null && debounced.tuas_override_usd_pax !== undefined) {
-        base.tuas_override_usd_pax = Number(debounced.tuas_override_usd_pax);
-      }
-      // TUAS capturadas por aeropuerto (mandan sobre catálogo y override).
-      // Regla compartida con la cotización de GRUPO (`tuasLineasAPayload`):
-      // $0 capturado viaja (pass-through cero); una línea MXN > 0 sin TC se
-      // retiene fuera del cálculo — la card lo avisa y guardar se bloquea.
-      const lineas = tuasLineasAPayload(debounced.tuas_lineas, {
-        tcCapturado: Number(debounced.tc_usd_mxn) > 0,
-      });
-      if (lineas.length > 0) base.tuas_lineas = lineas;
-    }
-    if (debounced.iva_pct_override !== null && debounced.iva_pct_override !== undefined) {
-      base.iva_pct_override = Number(debounced.iva_pct_override);
-    }
-    return base;
+  // Identidad ESTABLE por contenido: el payload se compara como JSON, así un
+  // cambio del form que NO toca el motor (notas del cliente, notas internas,
+  // fechas de traslado, modo de tarifa, ruta operativa del alta) no vuelve a
+  // llamar a /calculate con el mismo cuerpo ni apaga «Guardar» mientras se
+  // teclea (revisión 8-sep: antes cada tecla en Notas re-disparaba el motor).
+  const calcPayloadJson = useMemo<string | null>(() => {
+    const p = armarCalcPayload(debounced, {
+      clienteInterno,
+      teniaModeloPersistido,
+      teniaMatriculaPersistida,
+    });
+    return p ? JSON.stringify(p) : null;
   }, [debounced, clienteInterno, teniaModeloPersistido, teniaMatriculaPersistida]);
+  const calcPayload = useMemo<CalculateQuoteRequest | null>(
+    () => (calcPayloadJson ? (JSON.parse(calcPayloadJson) as CalculateQuoteRequest) : null),
+    [calcPayloadJson],
+  );
 
   // En LECTURA el breakdown es el snapshot PERSISTIDO (lo que se guardó, sin
   // recalcular): arranca con él para que el primer render ya pinte el total.
   const snapshotPersistido = initialQuote?.calculo_snapshot ?? null;
+  // Revisión (editable o bloqueada): el primer render ya pinta el snapshot —
+  // al montar nunca hay cambios, así que arrancar en null solo producía un
+  // parpadeo (TUAS «se llenan al calcular», total de respaldo) hasta que el
+  // efecto de abajo lo asentara (revisión 8-sep).
   const [breakdown, setBreakdown] = useState<QuoteBreakdown | null>(
-    lectura ? snapshotPersistido : null,
+    isRevise ? snapshotPersistido : null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Revisión SIN cambios reales: cero llamadas al motor — se pinta el
+  // snapshot guardado (regla del rediseño: sin cambios, cero llamadas).
+  // D5 (F2): si SOLO cambió presentación (notas/toggles del PDF) el dinero
+  // no se mueve — se sigue pintando el snapshot sin llamar al motor.
+  const pintaSnapshot = lectura || (isRevise && (!sucio || soloPresentacion));
   useEffect(() => {
-    if (lectura) {
-      // Sin llamadas al motor en lectura: el desglose es el guardado. Al
-      // pasar a edición el efecto re-corre con calcPayload y recalcula.
-      setBreakdown(snapshotPersistido);
+    if (pintaSnapshot) {
+      // Recién guardado (esperando el refresh con la vN+1): se conserva el
+      // breakdown fresco — el snapshot viejo parpadearía un total anterior.
+      if (!esperandoRefreshRef.current) setBreakdown(snapshotPersistido);
       setError(null);
       setLoading(false);
       return;
@@ -1183,16 +1431,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       setLoading(false);
       return;
     }
-    let cancelled = false;
+    if (enEsperaDebounce) {
+      // Teclas en curso: la petición se dispara cuando el debounce asiente
+      // (evita el disparo con el payload viejo al primer cambio).
+      setLoading(true);
+      return;
+    }
+    // AbortController (F0.5): la petición anterior se CANCELA al cambiar el
+    // payload — la respuesta vieja ni siquiera llega (última petición gana).
+    const ctrl = new AbortController();
     setLoading(true);
     setError(null);
-    calculateQuote(calcPayload)
+    calculateQuote(calcPayload, ctrl.signal)
       .then((data) => {
-        if (cancelled) return;
+        if (ctrl.signal.aborted) return;
         setBreakdown(data);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (ctrl.signal.aborted) return;
         if (isApiError(err)) {
           setError(err.message);
         } else {
@@ -1201,12 +1457,201 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         setBreakdown(null);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!ctrl.signal.aborted) setLoading(false);
       });
     return () => {
-      cancelled = true;
+      ctrl.abort();
     };
-  }, [calcPayload, lectura, snapshotPersistido]);
+  }, [calcPayload, pintaSnapshot, snapshotPersistido, enEsperaDebounce]);
+
+  // DERIVA DEL MOTOR (F0): al PRIMER cambio se calcula UNA vez el payload
+  // limpio (la base) y se compara con el snapshot. Si el total ya no coincide
+  // sin que el operador tocara nada (tarifa preferencial, catálogo, TC), el
+  // diálogo de guardar lo dice aparte: «La tarifa cambió desde v2». Con el
+  // form limpio jamás se llama al motor.
+  const [derivaMotor, setDerivaMotor] = useState<{
+    snapshot: number;
+    fresco: number;
+  } | null>(null);
+  const derivaRevisadaRef = useRef(false);
+  useEffect(() => {
+    if (!isRevise || lectura || !sucio || soloPresentacion || derivaRevisadaRef.current) return;
+    if (!snapshotPersistido) return;
+    derivaRevisadaRef.current = true;
+    const payloadBase = armarCalcPayload(base.defaults, {
+      clienteInterno,
+      teniaModeloPersistido,
+      teniaMatriculaPersistida,
+    });
+    if (!payloadBase) return;
+    calculateQuote(payloadBase)
+      .then((b) => {
+        const guardado = Number(snapshotPersistido.totales.total_usd) || 0;
+        const fresco = Number(b.totales.total_usd) || 0;
+        if (Math.abs(guardado - fresco) >= 0.01) {
+          setDerivaMotor({ snapshot: guardado, fresco });
+        }
+      })
+      .catch(() => {
+        // Solo informativo: sin baseline no hay aviso.
+      });
+  }, [
+    isRevise,
+    lectura,
+    sucio,
+    soloPresentacion,
+    snapshotPersistido,
+    base.defaults,
+    clienteInterno,
+    teniaModeloPersistido,
+    teniaMatriculaPersistida,
+  ]);
+
+  // ===== VISTA PREVIA REAL de la hoja 1 (F1, 8-sep-2026) =====
+  // El payload es el MISMO de /calculate + presentación (fechas de
+  // traslado, notas, toggles, ojito/fecha por tramo, externo). Con el form
+  // LIMPIO (revisión sin cambios o bloqueada) viaja el payload BASE con
+  // `quote_id` y `sucio:false`: el API devuelve la hoja del PDF guardado sin
+  // recalcular; se pide UNA vez (caché por hash) hasta que cambie la versión.
+  // Sucio: viaja el payload debounced y `listo` solo cuando el breakdown ya
+  // corresponde a ese payload (encadenado al cálculo, nunca antes).
+  // Con solo presentación (D5) la hoja SÍ debe reflejar el borrador (notas,
+  // toggles): viaja el payload vivo con sucio:true aunque el dinero sea el
+  // snapshot.
+  const previewLimpio = isRevise && (lectura || !sucio);
+  const previewPayload = useMemo<QuotePreviewPayload | null>(() => {
+    const src = previewLimpio ? base.defaults : debounced;
+    const calc = previewLimpio
+      ? (armarCalcPayload(base.defaults, {
+          clienteInterno,
+          teniaModeloPersistido,
+          teniaMatriculaPersistida,
+        }) ??
+        // Limpia con datos que el motor rechazaría (folio legado: millas en
+        // 0, sin avión): con `quote_id` + `sucio:false` el API arma la hoja
+        // desde lo persistido SIN correr el motor y relaja los obligatorios
+        // (PreviewQuoteDto), así que basta la identidad de la cotización.
+        (initialQuote
+          ? ({
+              aeronave_id: base.defaults.aeronave_id,
+              tipo_tarifa: base.defaults.tipo_tarifa,
+              pasajeros: Number(base.defaults.pasajeros) || 0,
+              metodo_pago: base.defaults.metodo_pago,
+            } satisfies CalculateQuoteRequest)
+          : null))
+      : calcPayload;
+    if (!calc) return null;
+    // Ojito/fecha por tramo: solo tramos que coinciden con lo guardado
+    // (mismo par y misma cantidad) — regla de los toggles en edición.
+    let escalas_pdf: EscalaPdfPreview[] | undefined;
+    const escalasSrc = src.escalas ?? [];
+    if (
+      escalasPdfProp &&
+      escalasPdfProp.length > 0 &&
+      escalasSrc.length === base.defaults.escalas.length
+    ) {
+      const coinciden = escalasPdfProp.filter((e) => {
+        const b = base.defaults.escalas[e.orden - 1];
+        const l = escalasSrc[e.orden - 1];
+        return (
+          !!b &&
+          !!l &&
+          b.origen_iata === l.origen_iata &&
+          b.destino_iata === l.destino_iata
+        );
+      });
+      if (coinciden.length > 0) escalas_pdf = coinciden;
+    }
+    // Alta (D4): el ojito/fecha viven en el form y viajan igual que al crear.
+    if (!initialQuote) {
+      const locales = escalasSrc
+        .map((l, i) => ({
+          orden: i + 1,
+          ...(l.pdf_oculto === true ? { pdf_oculto: true } : {}),
+          ...(fechaPdfValida(l.pdf_fecha) ? { pdf_fecha: l.pdf_fecha } : {}),
+        }))
+        .filter((e) => e.pdf_oculto || e.pdf_fecha);
+      if (locales.length > 0) escalas_pdf = locales;
+    }
+    const notasTrim = (src.notas ?? "").trim();
+    const operadorTrim = (src.operador_externo ?? "").trim();
+    return {
+      ...calc,
+      ...(initialQuote ? { quote_id: initialQuote.id } : {}),
+      cliente_id: src.cliente_id || undefined,
+      ...(src.fecha_vuelo
+        ? { fecha_traslado_inicial: cancunInputToIso(src.fecha_vuelo) }
+        : {}),
+      ...(src.fecha_traslado_final
+        ? { fecha_traslado_final: cancunInputToIso(src.fecha_traslado_final) }
+        : {}),
+      ...(notasTrim ? { notas: src.notas } : {}),
+      ...(escalas_pdf ? { escalas_pdf } : {}),
+      ...(src.es_externo && operadorTrim.length >= 2
+        ? { operador_externo: operadorTrim }
+        : {}),
+      sucio: !previewLimpio,
+    };
+  }, [
+    previewLimpio,
+    base.defaults,
+    debounced,
+    calcPayload,
+    clienteInterno,
+    teniaModeloPersistido,
+    teniaMatriculaPersistida,
+    escalasPdfProp,
+    initialQuote,
+  ]);
+  // Listo = el breakdown en pantalla corresponde a ESTE payload (limpio:
+  // no hay cálculo que esperar; el API arma la hoja del snapshot).
+  const previewListo =
+    previewLimpio || (!loading && !enEsperaDebounce && !!breakdown && !error);
+
+  // Ubicación (D6): anclada a la derecha solo en ≥1600 px (preferencia
+  // recordada por usuario); en menores, botón de la barra → diálogo grande;
+  // en <1024 px pill «Formulario | Vista previa».
+  const previewPrefs = useQuotePreviewPrefs();
+  const pantallaAncha = useMediaQuery(PREVIEW_ANCLADA_QUERY);
+  const pantallaAngosta = useMediaQuery(PREVIEW_ANGOSTA_QUERY);
+  const previewAnclada = previewPrefs.hidratado && pantallaAncha && previewPrefs.anclada;
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [vistaAngosta, setVistaAngosta] = useState<"form" | "preview">("form");
+  const previewEnPill = pantallaAngosta && vistaAngosta === "preview";
+  const previewActivo = previewAnclada || previewDialogOpen || previewEnPill;
+  const preview = useQuotePreviewHtml({
+    // Con error del motor no hay hoja que pedir (el API respondería lo
+    // mismo): esqueleto con la razón.
+    payload: error ? null : previewPayload,
+    listo: previewListo,
+    activo: previewActivo,
+  });
+  const previewMotivoSinDatos = error
+    ? "Corrige el error del cálculo para ver la hoja 1."
+    : undefined;
+  const abrirVistaPrevia = () => {
+    if (pantallaAngosta) {
+      setVistaAngosta("preview");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setPreviewDialogOpen(true);
+  };
+  // «Ver PDF real» (revisión): con cambios sin guardar se guarda primero
+  // (diálogo «Guardar vN») y el PDF de la versión nueva se abre al terminar.
+  const [pdfRealLoading, setPdfRealLoading] = useState(false);
+  const verPdfTrasGuardarRef = useRef(false);
+  const verPdfReal = async () => {
+    if (!initialQuote) return;
+    setPdfRealLoading(true);
+    try {
+      await abrirPdfCotizacion(initialQuote.id);
+    } catch {
+      toast.error("No se pudo generar el PDF");
+    } finally {
+      setPdfRealLoading(false);
+    }
+  };
 
   const selectedAircraft = aircraft.find((a) => a.id === values.aeronave_id);
   // Un tramo posterior puede subir más pax: valida contra el máximo del itinerario.
@@ -1243,7 +1688,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // desmontaría el campo al caer el derivado. Solo el segmento lo apaga.
   useEffect(() => {
     if (overrideTarifaActivo && !tarifaCustom) setTarifaCustom(true);
-  }, [overrideTarifaActivo, tarifaCustom]);
+  }, [overrideTarifaActivo, tarifaCustom, setTarifaCustom]);
   const tarifaSegment =
     tarifaCustom || overrideTarifaActivo ? "CUSTOM" : tipoTarifa;
 
@@ -1290,13 +1735,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   // Hidrata los tramos de la ruta preseleccionada (default) al cargar; el
   // onChange del selector cubre los cambios posteriores.
+  //
+  // Lee el form VIVO (`getValues`), no el cierre del render: en el mismo
+  // commit de montaje el efecto del borrador (?d= / «Copiar como nueva
+  // cotización») ya hizo `reset()` con sus tramos, y con `values` del
+  // primer render (escalas vacías + ruta default) este efecto los pisaba con
+  // la plantilla default en silencio (revisión 8-sep).
   useEffect(() => {
-    if (!values.ruta_id || values.escalas.length > 0) return;
-    const ruta = allRoutes.find((r) => r.id === values.ruta_id);
+    const rutaId = getValues("ruta_id");
+    const escalasVivas = getValues("escalas") ?? [];
+    if (!rutaId || escalasVivas.length > 0) return;
+    const ruta = allRoutes.find((r) => r.id === rutaId);
     if (ruta && ruta.tramos.length > 0) {
       setValue("escalas", ruta.tramos.map(tramoToEscala));
     }
-    // setValue es estable en RHF.
+    // setValue/getValues son estables en RHF; values.* solo re-dispara.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.ruta_id, values.escalas.length, allRoutes]);
 
@@ -1424,22 +1877,62 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !(Number(values.tc_usd_mxn) > 0) &&
     ((values.cobrar_tuas && hayTuasMxnActivas) || hayExtrasMxn);
 
-  const motivoTrim = values.motivo?.trim() ?? "";
   // El cliente ahora AFECTA el precio (tarifa preferencial): no se puede
   // guardar mientras el preview corresponda a otro cliente o siga recalculando
   // — lo persistido debe ser exactamente lo que el operador vio.
   const previewFresco =
-    !loading && calcPayload?.cliente_id === (values.cliente_id || undefined);
+    !loading &&
+    !enEsperaDebounce &&
+    calcPayload?.cliente_id === (values.cliente_id || undefined);
+  // Revisión: el motivo ya no gatea aquí (se elige en el diálogo «Guardar
+  // vN»); lo que gatea es que haya cambios REALES y un breakdown fresco.
   const canSave =
     !capacidadExcedida &&
     !mxnSinTc &&
     !costoExternoMxnSinTc &&
     previewFresco &&
     (isRevise
-      ? motivoTrim.length >= 3 && !!calcPayload && !!breakdown && !error
+      ? sucio && !!calcPayload && !!breakdown && !error
       : !!values.cliente_id && !!calcPayload && !!breakdown && !error);
 
-  const handleSave = () => {
+  // Alta: por qué «Crear v1» está apagado, en palabras del operador (antes
+  // el botón se deshabilitaba sin explicación). Solo texto; el candado real
+  // sigue siendo `canSave`.
+  const razonNoGuardarAlta: string | undefined = isRevise
+    ? undefined
+    : !values.cliente_id
+      ? "Falta elegir el cliente."
+      : capacidadExcedida
+        ? "Los pasajeros exceden la capacidad del avión."
+        : mxnSinTc
+          ? "Hay TUAS o extras en MXN sin tipo de cambio: captúralo en «Total MXN»."
+          : costoExternoMxnSinTc
+            ? "El costo del operador externo va en MXN: captura el tipo de cambio."
+            : !calcPayload
+              ? "Faltan aeronave, tramos con millas o pasajeros."
+              : error
+                ? "Corrige el error del cálculo."
+                : !breakdown || !previewFresco
+                  ? "Espera a que termine el cálculo…"
+                  : undefined;
+
+  // Diálogo «Guardar vN» (F0): chip de motivo obligatorio + texto opcional;
+  // el resumen automático del diff viaja como prefijo del motivo.
+  const [guardarOpen, setGuardarOpen] = useState(false);
+  const [motivoChip, setMotivoChip] = useState<MotivoRevisionChip | null>(null);
+  // Idempotencia (contrato 8-sep): un uuid por INTENTO de guardado, reusado
+  // en los reintentos del mismo intento (doble clic / red caída). Se
+  // renueva solo tras éxito o al cerrar el diálogo sin guardar.
+  const saveRequestIdRef = useRef<string | null>(null);
+  const nuevoIntentoGuardado = () => {
+    if (!saveRequestIdRef.current) saveRequestIdRef.current = uuid();
+    return saveRequestIdRef.current;
+  };
+  // Error de candado del API al guardar (409 COTIZACION_COBRADA): banner con
+  // liga a los cobros de la página.
+  const [errorCobrada, setErrorCobrada] = useState<string | null>(null);
+
+  const handleSave = (motivoFinal?: string) => {
     // Invariante de dinero: un costo MXN sin TC no puede derivar su USD — se
     // rechaza en captura (el API respondería 400), nunca se persiste a medias.
     if (costoExternoMxnSinTc) {
@@ -1464,15 +1957,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }
 
     if (isRevise) {
-      if (motivoTrim.length < 3) {
-        toast.error("Indica un motivo (mínimo 3 caracteres)");
+      const motivo = (motivoFinal ?? "").trim();
+      if (motivo.length < 3) {
+        toast.error("Elige el motivo de la versión");
+        focusMotivo();
         return;
       }
+      if (!sucio) {
+        toast.info("No hay cambios que guardar");
+        return;
+      }
+      const client_request_id = nuevoIntentoGuardado();
       startSaving(async () => {
         const res = await reviseQuoteAction(initialQuote!.id, {
           ...calcPayload,
-          motivo: motivoTrim,
-          notas: values.notas || undefined,
+          motivo,
+          client_request_id,
+          // Siempre viaja (también ''): el API hace `dto.notas ?? current.notas`,
+          // así que omitirla al vaciarla CONSERVABA la nota anterior en
+          // silencio aunque el diff dijera «Notas del PDF» (revisión 8-sep).
+          notas: values.notas.trim(),
           // Externo (28-ago): operador y lo que cobra el operador externo se
           // editan también al revisar; el costo vacío se limpia (monto null).
           // 29-ago: viaja NATIVO (monto + moneda); con MXN el API deriva el
@@ -1499,20 +2003,70 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         });
         if (res.ok && res.data) {
           toast.success(
-            `Cotización #${res.data.folio} revisada (v${res.data.cotizacion_version})`,
+            `Cotización #${res.data.folio} guardada como v${res.data.cotizacion_version}`,
           );
+          saveRequestIdRef.current = null;
+          setGuardarOpen(false);
+          setMotivoChip(null);
+          setValue("motivo", "");
+          setErrorCobrada(null);
+          setConflictoVersion(null);
+          setDerivaMotor(null);
+          derivaRevisadaRef.current = false;
+          // «Guardar y ver PDF» (F1): el PDF real de la versión recién creada.
+          if (verPdfTrasGuardarRef.current) {
+            verPdfTrasGuardarRef.current = false;
+            void abrirPdfCotizacion(res.data.id).catch(() =>
+              toast.error("La versión se guardó, pero no se pudo generar el PDF"),
+            );
+          }
+          // Limpio de inmediato (el badge se apaga) y el refresh que viene
+          // SÍ resetea el form con la vN+1 recién guardada.
+          esperandoRefreshRef.current = true;
+          setBase({
+            defaults: getValues(),
+            version: res.data.cotizacion_version,
+          });
           if (onGuardado) {
-            // Página única: sin navegar — el padre vuelve a lectura y el
-            // refresh trae la versión nueva al mismo lugar.
+            // Página única: sin navegar — el refresh trae la versión nueva
+            // al mismo lugar.
             onGuardado(res.data);
             router.refresh();
           } else {
             router.push(`/admin/quotes/${res.data.id}`);
             router.refresh();
           }
-        } else {
-          toast.error(res.error ?? "Error al revisar");
+          return;
         }
+        // 409 del API (contrato 8-sep): cobrada en cualquier estado → liga a
+        // los cobros; versión cambiada → banner «recargar conservando».
+        if (res.status === 409 && res.code === "COTIZACION_COBRADA") {
+          // El intento terminó (rechazado): llave nueva la próxima vez y sin
+          // arrastrar la intención «…y ver PDF» a un guardado posterior.
+          setGuardarOpen(false);
+          saveRequestIdRef.current = null;
+          verPdfTrasGuardarRef.current = false;
+          setErrorCobrada(
+            res.error ??
+              "El vuelo ya tiene cobros registrados: la cotización no puede cambiar.",
+          );
+          toast.error("El vuelo ya tiene cobros: no se puede guardar", {
+            action: {
+              label: "Ir a los cobros",
+              onClick: () => irACobros(),
+            },
+          });
+          return;
+        }
+        if (res.status === 409) {
+          setGuardarOpen(false);
+          setConflictoVersion(-1);
+          saveRequestIdRef.current = null;
+          verPdfTrasGuardarRef.current = false;
+          toast.error(res.error ?? "La cotización cambió mientras editabas");
+          return;
+        }
+        toast.error(res.error ?? "Error al guardar la versión");
       });
       return;
     }
@@ -1521,10 +2075,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       toast.error("Selecciona un cliente");
       return;
     }
+    const client_request_id = nuevoIntentoGuardado();
     startSaving(async () => {
       const opsValidos = opsLegs.filter((l) => l.origen && l.destino);
+      // D4 (F2): ojito/fecha del PDF por tramo capturados en el ALTA viajan
+      // en el DTO de create (nunca a /calculate). Mismo índice que las
+      // escalas del payload (el debounce ya asentó: previewFresco).
+      const escalasCreate = calcPayload.escalas?.map((e, i) => {
+        const l = debounced.escalas[i];
+        return {
+          ...e,
+          ...(l?.pdf_oculto === true ? { pdf_oculto: true } : {}),
+          ...(fechaPdfValida(l?.pdf_fecha) ? { pdf_fecha: l.pdf_fecha } : {}),
+        };
+      });
       const res = await createQuoteAction({
         ...calcPayload,
+        ...(escalasCreate ? { escalas: escalasCreate } : {}),
+        client_request_id,
         cliente_id: values.cliente_id,
         escalas_operacion:
           opsValidos.length > 0
@@ -1582,12 +2150,107 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           : {}),
       });
       if (res.ok && res.data) {
+        saveRequestIdRef.current = null;
         toast.success(`Cotización #${res.data.folio} creada`);
         router.push(`/admin/quotes/${res.data.id}`);
       } else {
         toast.error(res.error ?? "Error al guardar");
       }
     });
+  };
+
+  /** Scroll a los cobros de la página (card `#cobros-vuelo`). */
+  const irACobros = () => {
+    const el = document.getElementById("cobros-vuelo");
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  /**
+   * D5 (F2): notas del cliente y toggles tarifa/itinerario, cuando son lo
+   * ÚNICO que cambió, se guardan por PATCH pdf-visibilidad SIN versión.
+   * Solo viaja lo que cambió. 404 (backend aún sin el contrato) → se cae al
+   * guardado con versión (diálogo «Guardar vN»), avisando.
+   */
+  const guardarPresentacion = () => {
+    if (!initialQuote || !soloPresentacion) return;
+    const claves = new Set(cambios.map((c) => c.clave));
+    const payload: PdfPresentacionPayload = {
+      ...(claves.has("notas") ? { notas: values.notas.trim() } : {}),
+      ...(claves.has("pdf_tarifa")
+        ? { pdf_mostrar_tarifa: values.pdf_mostrar_tarifa === true }
+        : {}),
+      ...(claves.has("pdf_itinerario")
+        ? { pdf_mostrar_itinerario: values.pdf_mostrar_itinerario !== false }
+        : {}),
+    };
+    startSaving(async () => {
+      const res = await setQuotePdfPresentacionAction(initialQuote.id, payload);
+      if (res.ok) {
+        toast.success("Presentación del PDF guardada (sin versión nueva)");
+        setErrorCobrada(null);
+        setConflictoVersion(null);
+        if (verPdfTrasGuardarRef.current) {
+          verPdfTrasGuardarRef.current = false;
+          void abrirPdfCotizacion(initialQuote.id).catch(() =>
+            toast.error("Se guardó, pero no se pudo generar el PDF"),
+          );
+        }
+        // Limpio de inmediato (la base es el form actual, misma versión) y
+        // el refresh trae notas/toggles ya persistidos.
+        esperandoRefreshRef.current = true;
+        setBase({ defaults: getValues(), version: base.version });
+        router.refresh();
+        return;
+      }
+      verPdfTrasGuardarRef.current = false;
+      if (res.status === 404) {
+        toast.info(
+          "El servidor aún no guarda la presentación sin versión: se guarda como versión nueva.",
+        );
+        nuevoIntentoGuardado();
+        setGuardarOpen(true);
+        return;
+      }
+      toast.error(res.error ?? "No se pudo guardar la presentación del PDF");
+    });
+  };
+
+  /**
+   * Botón primario en revisión: mismos candados que handleSave, pero en vez
+   * de guardar abre el diálogo «Guardar vN» (motivo + resumen + avisos).
+   * Con SOLO presentación (D5) guarda directo sin versión.
+   */
+  const abrirGuardar = (): boolean => {
+    if (!sucio) return false;
+    if (soloPresentacion) {
+      guardarPresentacion();
+      return true;
+    }
+    if (costoExternoMxnSinTc) {
+      toast.error("El costo del operador externo va en MXN: captura el tipo de cambio.");
+      focusTc();
+      return false;
+    }
+    if (mxnSinTc) {
+      toast.error("Hay TUAS o extras en MXN sin tipo de cambio: captúralo para guardar.");
+      focusTc();
+      return false;
+    }
+    if (capacidadExcedida) {
+      toast.error("Los pasajeros exceden la capacidad del avión.");
+      return false;
+    }
+    if (!calcPayload || !breakdown || error) {
+      toast.error("Faltan datos o el cálculo tiene error: revisa los avisos.");
+      return false;
+    }
+    if (!previewFresco) {
+      toast.info("Espera a que termine el cálculo…");
+      return false;
+    }
+    nuevoIntentoGuardado();
+    setGuardarOpen(true);
+    return true;
   };
 
   // ===== Secciones colapsables (SOLO presentación; nada entra al form) =====
@@ -1632,10 +2295,37 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const abrirSeccion = (id: SeccionId) =>
     setAbiertas((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
 
-  // Al prender «cubierto por externo» (switch o borrador ?d= restaurado) la
-  // sección se auto-abre: sus campos requeridos no deben quedar escondidos.
+  // Bloque «INTERNO · NO SE IMPRIME» (F2, D6): CERRADO por defecto para
+  // todos, con memoria por usuario (localStorage) en alta y revisión. Nunca
+  // se abre solo — salvo por un atajo explícito (tarifa, cobrable, TC…) o
+  // porque un campo requerido vive ahí (externo).
+  const [internoAbierto, setInternoAbierto] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(INTERNO_LS_KEY);
+      if (!raw) return;
+      const g = JSON.parse(raw) as { abierto?: unknown };
+      if (g && typeof g.abierto === "boolean") setInternoAbierto(g.abierto);
+    } catch {
+      // Sin storage: queda cerrado.
+    }
+  }, []);
+  const setInternoAbiertoPersistente = (v: boolean) => {
+    setInternoAbierto(v);
+    try {
+      localStorage.setItem(INTERNO_LS_KEY, JSON.stringify({ abierto: v }));
+    } catch {
+      // Sin storage, vive solo en la sesión.
+    }
+  };
+  /** Apertura programática del bloque interno (atajos): no persiste. */
+  const abrirInterno = () => setInternoAbierto(true);
+
+  // Al prender «cubierto por externo» (switch o borrador ?d= restaurado) el
+  // sub-bloque se auto-abre: sus campos requeridos no deben quedar escondidos.
   useEffect(() => {
     if (!isRevise && values.es_externo) {
+      setInternoAbierto(true);
       setAbiertas((prev) => (prev.externo ? prev : { ...prev, externo: true }));
     }
   }, [isRevise, values.es_externo]);
@@ -1644,53 +2334,282 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // existe pero no tiene layout y scrollIntoView muere en silencio — hay que
   // ABRIR primero la sección contenedora y esperar un tick (mismo patrón
   // setTimeout(60) del acceso a la tarifa override).
+  const scrollFocus = (id: string, selector = "input") =>
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const ctl = el?.querySelector<HTMLElement>(selector);
+      if (ctl && !(ctl as HTMLInputElement).disabled) ctl.focus();
+    }, 60);
+  /** El TC vive en «Total MXN (T.C.)» del desglose del documento (F2). */
   const focusTc = () => {
-    abrirSeccion("cobro");
+    abrirSeccion("desglose");
     setTimeout(focusTcField, 60);
   };
+  /** El Cobrable pactado vive en Interno › Tarifa y horas (F2). */
   const focusCobrable = () => {
-    abrirSeccion("detalle");
+    abrirInterno();
+    scrollFocus("cobrable-field");
+  };
+  /** Tarifa personalizada ($/hr override) en Interno › Tarifa y horas. */
+  const focusTarifaOverride = () => {
+    setTarifaCustom(true);
+    abrirInterno();
+    scrollFocus("tarifa-override-field");
+  };
+  /** «Servicio aéreo» y «IVA» del desglose son derivados: clic → productor. */
+  const focusTarifa = () => {
+    abrirInterno();
+    scrollFocus("tarifa-tipo-field", "button");
+  };
+  const focusMetodoPago = () => {
+    abrirInterno();
+    scrollFocus("metodo-pago-field", "button, input");
+  };
+  const focusBillPocket = () => {
+    abrirInterno();
+    scrollFocus("billpocket-field");
+  };
+  const focusRedondeo = () => {
+    abrirInterno();
+    scrollFocus("redondeo-field", "input, button");
+  };
+  const focusItinerario = () => {
+    abrirSeccion("itinerario");
     setTimeout(() => {
-      const el = document.getElementById("cobrable-field");
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      el?.querySelector("input")?.focus();
+      document
+        .getElementById("seccion-itinerario")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
   };
+  /** Ancla `motivo-revision-field`: ahora vive en el diálogo «Guardar vN». */
   const focusMotivo = () => {
-    const el = document.getElementById("motivo-revision-field");
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    el?.querySelector("textarea")?.focus();
+    setGuardarOpen(true);
+    setTimeout(() => {
+      const el = document.getElementById("motivo-revision-field");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.querySelector("textarea")?.focus();
+    }, 120);
   };
-
-  // «Cancelar» la revisión en el lugar (página única 5-sep): si el operador
-  // ya capturó algo distinto a lo persistido (motivo incluido) se confirma
-  // antes de descartar — regla del cliente: toda acción que tira trabajo
-  // pide confirmación (mismo patrón que el grupo). Sin cambios, sale directo.
-  const [confirmDescartar, setConfirmDescartar] = useState(false);
-  const hayCambiosRevision =
-    isRevise && !lectura && JSON.stringify(values) !== JSON.stringify(formDefaults);
-  const pedirCancelar = () => {
-    if (!onCancelar) return;
-    if (hayCambiosRevision) {
-      setConfirmDescartar(true);
+  /**
+   * «Ajuste rápido» de la barra (D2): scroll+focus a pasajeros del
+   * documento. Con pax definido POR TRAMO el campo global está deshabilitado
+   * (no se toma en cuenta): se va al pax del primer tramo del itinerario,
+   * que es donde sí se edita.
+   */
+  const enfocarPasajeros = () => {
+    if (paxPorTramo) {
+      abrirSeccion("itinerario");
+      scrollFocus("seccion-itinerario", 'input[aria-label="Pasajeros del tramo (TUAS)"]:not([disabled])');
       return;
     }
-    onCancelar();
+    abrirSeccion("ruta");
+    scrollFocus("pasajeros-field");
+  };
+  /** «Guardar y ver PDF» (F1): abre el diálogo de guardar y marca la intención. */
+  const guardarYVerPdf = () => {
+    // La intención se marca ANTES: con solo presentación (D5) el guardado
+    // arranca dentro de abrirGuardar y lee la bandera al terminar.
+    verPdfTrasGuardarRef.current = true;
+    if (!abrirGuardar()) verPdfTrasGuardarRef.current = false;
+  };
+  const previewVerPdf =
+    isRevise && initialQuote
+      ? sucio
+        ? {
+            label: "Guardar y ver PDF",
+            onClick: guardarYVerPdf,
+            disabled: saving,
+            title: "Guarda la versión nueva (pide el motivo) y abre el PDF real.",
+          }
+        : {
+            label: "Ver PDF real",
+            onClick: verPdfReal,
+            loading: pdfRealLoading,
+            title: "PDF completo para el cliente (con fichas de aeronave).",
+          }
+      : undefined;
+  // Props comunes del panel de vista previa (anclado, pill y diálogo).
+  const previewPaneProps = {
+    html: preview.html,
+    estado: preview.estado,
+    error: preview.error,
+    noDisponible: preview.noDisponible,
+    onReintentar: preview.reintentar,
+    motivoSinDatos: previewMotivoSinDatos,
+    verPdf: previewVerPdf,
+    // «Al día · incluye tus cambios sin guardar» vs «· la que verá el
+    // cliente»: con borrador vivo la hoja aún no es la del cliente.
+    conCambiosSinGuardar: sucio,
+    // Sin `pie`: el panel muestra la nota de fuente solo mientras el HTML no
+    // traiga `@font-face` (desaparece sola cuando pyservices la incruste).
+  } as const;
+
+  // «Descartar» (F0): con cambios se confirma antes de tirar el borrador —
+  // regla del cliente: toda acción que tira trabajo pide confirmación. El
+  // form vuelve a la BASE (lo guardado); no se genera versión.
+  const [confirmDescartar, setConfirmDescartar] = useState(false);
+  const descartarCambios = () => {
+    // Si el servidor ya rehidrató una versión MÁS NUEVA mientras había
+    // borrador (banner «Alguien guardó la vN»), descartar adopta ESA versión:
+    // si volviera a la base vieja, la página diría vN+1 y el documento
+    // mostraría los valores de la vN (revisión 8-sep).
+    const adoptaNuevos = formDefaults !== base.defaults;
+    reset(adoptaNuevos ? formDefaults : base.defaults);
+    if (adoptaNuevos) {
+      defaultsProcesadosRef.current = formDefaults;
+      setBase({
+        defaults: formDefaults,
+        version: initialQuote?.cotizacion_version ?? 0,
+      });
+      setDerivaMotor(null);
+      derivaRevisadaRef.current = false;
+    }
+    setConflictoVersion(null);
+    setMotivoChip(null);
+    setErrorCobrada(null);
+    saveRequestIdRef.current = null;
+    verPdfTrasGuardarRef.current = false;
+    setConfirmDescartar(false);
+    toast.success("Cambios descartados");
+  };
+  const pedirDescartar = () => {
+    if (!sucio) return;
+    setConfirmDescartar(true);
   };
 
-  // SOLO presentación de la TotalBar: cuando lo ÚNICO que falta para guardar
-  // es el motivo de la revisión, el botón guía al textarea (scroll+focus) en
-  // lugar de quedarse muerto. canSave NO cambia.
-  const faltaSoloMotivo =
+  // «No perder cambios»: aviso al cerrar/recargar y confirmación propia al
+  // navegar dentro del panel con el form sucio.
+  const guardCambios = useCambiosSinGuardar(sucio);
+
+  // «Recargar conservando borrador» (concurrencia sin lock, D6): el borrador
+  // vivo viaja en ?d= y se reaplica sobre la versión nueva al montar.
+  const recargarConservandoBorrador = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set(DRAFT_PARAM, encodeDraft(getValues()));
+    guardCambios.saltar();
+    window.location.assign(url.toString());
+  };
+
+  // «Copiar como nueva cotización» (candado): prellena /new con el
+  // documento actual como borrador (?d=). Lo que no aplica al alta se vacía.
+  const copiarComoNueva = () => {
+    const f: QuoteFormValues = {
+      ...getValues(),
+      motivo: "",
+      escalas_operacion: [],
+    };
+    router.push(`/admin/quotes/new?${DRAFT_PARAM}=${encodeDraft(f)}`);
+  };
+
+  // CONFIRMADO/RESERVA con tripulación (F0-d): confirmación ÚNICA al primer
+  // intento de editar. Se intercepta la interacción en fase de captura
+  // (click / teclado sobre un control del documento — no pointerdown: el
+  // diálogo que se abre entre pointerdown y click contaría como "clic
+  // fuera" y se cerraría solo); tras confirmar se edita normal. Los
+  // encabezados de sección (plegar), la barra del total y los diálogos
+  // quedan exentos (`data-guard-exempt`).
+  const [confirmEdicionOpen, setConfirmEdicionOpen] = useState(false);
+  const [edicionConfirmada, setEdicionConfirmada] = useState(false);
+  const interceptarPrimerCambio = (e: SyntheticEvent) => {
+    if (!requiereConfirmacionEdicion || edicionConfirmada || lectura || sucio) return;
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== "function") return;
+    if (t.closest("[data-guard-exempt]")) return;
+    if (
+      !t.closest(
+        'input, textarea, select, button, [role="switch"], [role="combobox"], [role="option"], [contenteditable="true"]',
+      )
+    ) {
+      return;
+    }
+    if (e.type === "keydown") {
+      const k = (e as unknown as React.KeyboardEvent).key;
+      const edita = k.length === 1 || k === "Backspace" || k === "Delete" || k === "Enter" || k === " ";
+      if (!edita) return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmEdicionOpen(true);
+  };
+
+  // Estado de edición hacia el padre (cabecera + barra de acciones). Las
+  // acciones van por ref para no re-disparar el efecto en cada render.
+  const accionesRef = useRef({
+    guardar: () => {},
+    descartar: () => {},
+    enfocarPasajeros: () => {},
+    abrirVistaPrevia: () => {},
+    guardarAtajo: () => {},
+  });
+  accionesRef.current = {
+    guardar: () => {
+      abrirGuardar();
+    },
+    descartar: pedirDescartar,
+    enfocarPasajeros,
+    abrirVistaPrevia,
+    // Ctrl/⌘+S (F2): mismo camino que el botón primario de cada modo.
+    guardarAtajo: () => {
+      if (lectura || saving) return;
+      if (isRevise) {
+        if (sucio) abrirGuardar();
+        else toast.info("No hay cambios que guardar");
+        return;
+      }
+      if (canSave) handleSave();
+      else toast.info("Completa cliente, aeronave, tramos y pasajeros para guardar");
+    },
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      accionesRef.current.guardarAtajo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const cambiosTexto = cambios.map((c) => c.texto).join("\u0001");
+  useEffect(() => {
+    if (!onEstadoEdicion) return;
+    onEstadoEdicion({
+      sucio,
+      soloPresentacion,
+      resumen: resumenCambios,
+      cambios: cambiosTexto ? cambiosTexto.split("\u0001") : [],
+      canSave,
+      saving,
+      versionSiguiente,
+      guardar: () => accionesRef.current.guardar(),
+      descartar: () => accionesRef.current.descartar(),
+      enfocarPasajeros: () => accionesRef.current.enfocarPasajeros(),
+      abrirVistaPrevia: () => accionesRef.current.abrirVistaPrevia(),
+    });
+  }, [
+    onEstadoEdicion,
+    sucio,
+    soloPresentacion,
+    resumenCambios,
+    cambiosTexto,
+    canSave,
+    saving,
+    versionSiguiente,
+  ]);
+
+  // Avisos del diálogo «Guardar vN».
+  const avisaTripulacion =
     isRevise &&
-    motivoTrim.length < 3 &&
-    !capacidadExcedida &&
-    !mxnSinTc &&
-    !costoExternoMxnSinTc &&
-    previewFresco &&
-    !!calcPayload &&
-    !!breakdown &&
-    !error;
+    !!initialQuote &&
+    (initialQuote.estado === "CONFIRMADO" || initialQuote.estado === "RESERVA") &&
+    !!initialQuote.piloto_id &&
+    cambiosTocanTripulacion(cambios);
+  const motivoPreview = armarMotivoRevision({
+    chip: motivoChip,
+    texto: values.motivo,
+    resumen: resumenCambios,
+  });
 
   // Margen informativo del vuelo externo — MISMA fórmula que la leyenda de
   // la card (hoisted para que el resumen del encabezado muestre el mismo
@@ -1718,18 +2637,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const clienteNombreResumen = isRevise
     ? (clientName ?? null)
     : (allClients.find((c) => c.id === values.cliente_id)?.nombre ?? null);
-  const resumenCliente = [
-    clienteNombreResumen ?? "Sin cliente",
-    fechaCortaDeInput(values.fecha_vuelo),
-    `${maxPasajeros || 0} pax`,
-    values.cotizacion_abierta ? "abierta" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
+  // Texto para el operador (sin jerga): «manual» en vez de «override».
   const origenTarifaResumen = breakdown
     ? breakdown.tarifa.proviene_de_override
-      ? "override"
+      ? "manual"
       : breakdown.tarifa.preferencial_cliente
         ? "pactada"
         : breakdown.tarifa.tipo === "BROKER"
@@ -1799,13 +2710,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         .join(" · ")
     : "Se llena al calcular";
 
-  const metodoPagoLabel =
-    METODOS_PAGO.find((m) => m.value === values.metodo_pago)?.label ??
-    values.metodo_pago;
+  // Etiqueta del método (fuente única `metodoPagoLabel`: OTRO → «Otro (x)»).
+  const metodoPagoTexto = metodoPagoLabel(
+    values.metodo_pago,
+    values.metodo_pago_detalle,
+  );
   const resumenCobro = [
-    values.metodo_pago === "OTRO" && values.metodo_pago_detalle.trim()
-      ? `Otro: ${values.metodo_pago_detalle.trim()}`
-      : metodoPagoLabel,
+    metodoPagoTexto,
     breakdown ? `IVA ${(breakdown.iva.porcentaje * 100).toFixed(0)}%` : null,
     Number(values.tc_usd_mxn) > 0
       ? `TC ${fmtDecimal(Number(values.tc_usd_mxn), 2)}`
@@ -1838,12 +2749,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             .join(" → "),
           `${opsLegs.length} ${opsLegs.length === 1 ? "tramo" : "tramos"}`,
         ].join(" · ");
-
-  const resumenNotas = [
-    values.notas.trim() ? "1 nota" : "sin notas",
-    `PDF ${values.pdf_mostrar_tarifa ? "con" : "sin"} tarifa/hr`,
-    `${values.pdf_mostrar_itinerario ? "con" : "sin"} itinerario`,
-  ].join(" · ");
 
   // MODELO cotizado (feedback 4-sep): el cliente ve el TIPO de avión con el
   // que se cotizó, nunca la matrícula. En revisión SIN cambio de avión manda
@@ -2059,1209 +2964,445 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     return `${fmtUsd(Number(values.comision_vendedor_usd))} (monto fijo)${sufijo}`;
   })();
 
-  return (
-    // UNA columna: formulario en secciones colapsables (encabezado = título +
-    // resumen compacto + chevron) y la barra del TOTAL fija arriba, ahora con
-    // el botón primario de guardar siempre a la vista.
-    <div className="mx-auto max-w-4xl space-y-6">
-      <TotalBar
-        breakdown={breakdown}
-        loading={loading}
-        error={error}
-        sinDatos={lectura ? false : !calcPayload}
-        // Lectura sin snapshot (cotización de un motor anterior): el total
-        // persistido se pinta tal cual — nunca "Calculando…".
-        totalFallback={
-          lectura && initialQuote
-            ? {
-                usd: Number(initialQuote.monto_total_usd) || 0,
-                mxn:
-                  initialQuote.monto_total_mxn != null
-                    ? Number(initialQuote.monto_total_mxn)
-                    : null,
-                tarifaTipo: initialQuote.tarifa_tipo,
-              }
-            : null
+  // ===== F2 (8-sep-2026): el formulario ES la hoja 1 =====
+  // Ubicación del bloque «Interno · no se imprime»: por PORTAL al aside de la
+  // página única (revisión, ≥1440 px), como columna propia en el alta
+  // (≥1440 px sin la vista previa anclada) o como acordeón al pie del
+  // documento en el resto. El form no cambia de árbol (portal = mismo React).
+  const pantalla1440 = useMediaQuery("(min-width: 1440px)");
+  const internoUbicacion: "portal" | "aside" | "pie" =
+    pantalla1440 && internoSlot
+      ? "portal"
+      : pantalla1440 && !isRevise && !previewAnclada
+        ? "aside"
+        : "pie";
+
+  // Tramo OCULTO del PDF (atenúa la fila y sale de la ruta grande). Alta:
+  // bandera del form (D4). Revisión: escala viva (prop) solo si los tramos
+  // siguen coincidiendo con lo guardado — misma regla que los toggles.
+  const escalasCoincidenConBase =
+    isRevise &&
+    !!escalasPdfProp &&
+    values.escalas.length === base.defaults.escalas.length;
+  const tramoOculto = (idx: number): boolean => {
+    const l = values.escalas[idx];
+    if (!l) return false;
+    if (!isRevise) return l.pdf_oculto === true;
+    if (!escalasCoincidenConBase) return false;
+    const b = base.defaults.escalas[idx];
+    if (!b || b.origen_iata !== l.origen_iata || b.destino_iata !== l.destino_iata) {
+      return false;
+    }
+    return escalasPdfProp!.find((e) => e.orden === idx + 1)?.pdf_oculto === true;
+  };
+  const tramosOcultos = values.escalas.filter((_, i) => tramoOculto(i)).length;
+  // Ruta GRANDE de la hoja (derivada de los tramos visibles, como el PDF).
+  const rutaGrande = puntosRuta(
+    values.escalas
+      .filter((l, i) => !tramoOculto(i) && (l.origen_iata || l.destino_iata))
+      .map((l) => ({ origen: l.origen_iata, destino: l.destino_iata })),
+  );
+
+  // Cabecera de la hoja: tipo y fecha de cotización (derivados, texto).
+  const tipoTexto = initialQuote?.tipo ?? values.tipo;
+  const fechaCotizacionTexto = initialQuote
+    ? fmtDateTime(initialQuote.fecha_confirmacion ?? initialQuote.fecha_solicitud)
+    : "se fija al guardar";
+
+  // «Servicio aéreo» tal como se IMPRIME: el API absorbe ahí el redondeo
+  // (> 0) y la comisión del vendedor (misma composición que
+  // quotes-pdf.service: subtotal_vuelo + ajuste>0 + Σ COMISION_VENDEDOR).
+  // Solo se suman números del motor; el ⓘ muestra la cuenta.
+  const comisionAbsorbidaUsd = breakdown
+    ? (() => {
+        const lineas = (breakdown.desglose ?? []).filter(
+          (d) => d.clave === "COMISION_VENDEDOR",
+        );
+        if (lineas.length > 0) {
+          return lineas.reduce((acc, d) => acc + (Number(d.monto_usd) || 0), 0);
         }
-        avion={cotizadoEnTexto}
-        // Identidad al lado derecho (pedido 28-ago): cliente + folio·versión
-        // llenan el hueco de la barra y se leen sin bajar al formulario.
-        titulo={
-          isRevise
-            ? (clientName ?? null)
-            : ((clients ?? []).find((c) => c.id === debounced.cliente_id)
-                ?.nombre ??
-              null)
+        return Number(breakdown.meta?.comision_vendedor_usd) || 0;
+      })()
+    : 0;
+  const redondeoAbsorbidoUsd = Math.max(
+    0,
+    Number(breakdown?.totales.ajuste_final_usd) || 0,
+  );
+  const servicioAereoImpresoUsd = breakdown
+    ? Math.round(
+        (Number(breakdown.totales.subtotal_vuelo_usd) +
+          redondeoAbsorbidoUsd +
+          comisionAbsorbidaUsd) *
+          100,
+      ) / 100
+    : null;
+  const [servicioInfoAbierto, setServicioInfoAbierto] = useState(false);
+  // «Subtotal (sin IVA)» del PDF = total − IVA (misma resta del armador).
+  const subtotalSinIvaUsd = breakdown
+    ? Math.round(
+        (Number(breakdown.totales.total_usd) - Number(breakdown.totales.iva_usd)) * 100,
+      ) / 100
+    : null;
+  const nPernoctas = values.escalas.filter((l) => l.requiere_pernocta).length;
+  const descuentoUsd = Number(values.descuento_usd) || 0;
+  // Línea sintetizada por el motor (BillPocket %): se imprime como extra.
+  const extraBillPocket = (breakdown?.extras ?? []).find((e) =>
+    e.concepto?.startsWith("Comisión BillPocket"),
+  );
+  // IVA % del desglose: el form guarda la FRACCIÓN (0.16); el input muestra %.
+  const ivaOverrideRaw = `${values.iva_pct_override ?? ""}`.trim();
+  const ivaPctInput =
+    ivaOverrideRaw !== "" ? Math.round(Number(ivaOverrideRaw) * 10000) / 100 : "";
+  const ivaPctMotor = breakdown ? Math.round(breakdown.iva.porcentaje * 10000) / 100 : null;
+
+  // Resúmenes de los encabezados plegados (puro formateo).
+  const resumenCabecera = [
+    clienteNombreResumen ?? "Sin cliente",
+    selectedAircraft ? selectedAircraft.modelo : "Sin avión",
+  ].join(" · ");
+  const resumenRuta = [
+    rutaGrande.length > 0 ? rutaGrande.join(" → ") : "Sin ruta",
+    `${maxPasajeros || 0} pax`,
+  ].join(" · ");
+  const resumenTraslados = [
+    fechaCortaDeInput(values.fecha_vuelo) ?? "sin fecha inicial",
+    fechaCortaDeInput(values.fecha_traslado_final) ?? "sin fecha final",
+  ].join(" · ");
+  const resumenDesglose = breakdown
+    ? [
+        resumenCargos,
+        `IVA ${(breakdown.iva.porcentaje * 100).toFixed(0)}%`,
+        Number(values.tc_usd_mxn) > 0 ? `TC ${fmtDecimal(Number(values.tc_usd_mxn), 2)}` : "sin TC",
+      ].join(" · ")
+    : "Se llena al calcular";
+  const resumenInterno = [
+    resumenAvion,
+    resumenCobro,
+    values.es_externo ? resumenExterno : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const avisoRuta = avisoCliente;
+  const avisoDesglose = avisoCargos ?? avisoCobro;
+  const avisoInterno = avisoExterno ?? avisoDetalle;
+
+  // Ojito/fecha PDF por fila. Revisión: toggles del padre (escala viva) solo
+  // en tramos que coinciden con lo guardado. Alta (D4): bandera y fecha en
+  // el form, viajan en el DTO de create.
+  const legExtraFila = isRevise
+    ? tramoExtra
+      ? (idx: number, leg: EscalaInput) => {
+          const b = base.defaults.escalas[idx];
+          if (
+            !b ||
+            values.escalas.length !== base.defaults.escalas.length ||
+            b.origen_iata !== leg.origen_iata ||
+            b.destino_iata !== leg.destino_iata
+          ) {
+            return null;
+          }
+          // Los toggles ojito/fecha son PATCH directos (sin versión, sin
+          // aviso a tripulación): exentos de la confirmación única de
+          // CONFIRMADO/RESERVA — antes de F0 ya se usaban sin confirmar.
+          return (
+            <span data-guard-exempt className="contents">
+              {tramoExtra(idx, leg)}
+            </span>
+          );
         }
-        subtitulo={
-          isRevise && initialQuote
-            ? lectura
-              ? `#${initialQuote.folio} · v${initialQuote.cotizacion_version}`
-              : `#${initialQuote.folio} · v${initialQuote.cotizacion_version} → v${
-                  initialQuote.cotizacion_version + 1
-                }`
-            : "Nueva cotización"
-        }
-        // LECTURA: el botón primario es «Revisar» (pasa a edición ahí
-        // mismo, mismos candados/razones que la barra de acciones).
-        // EDICIÓN: «Guardar revisión» + «Cancelar». Alta: «Guardar».
-        saveLabel={
-          lectura
-            ? revisarLabel
-            : saving
-              ? "Guardando…"
-              : isRevise
-                ? "Guardar revisión"
-                : "Guardar cotización"
-        }
-        saveIcon={lectura ? "revisar" : "guardar"}
-        saveTitle={lectura ? (revisarBloqueado ?? undefined) : undefined}
-        saveDisabled={
-          lectura
-            ? !onRevisar || !!revisarBloqueado
-            : saving || (!canSave && !faltaSoloMotivo)
-        }
-        onSave={
-          lectura
-            ? onRevisar
-            : () => {
-                // En revise con motivo pendiente el botón GUÍA al textarea del
-                // motivo (scroll+focus, mismo patrón focusTcField) en vez de
-                // quedarse muerto; el guardado real pasa por handleSave con
-                // TODOS sus candados intactos.
-                if (faltaSoloMotivo) {
-                  focusMotivo();
-                  return;
-                }
-                handleSave();
-              }
-        }
-        onCancel={isRevise && !lectura && onCancelar ? pedirCancelar : undefined}
-        cancelDisabled={saving}
+      : undefined
+    : (idx: number, leg: EscalaInput) => (
+        <LegPdfLocal
+          leg={leg}
+          onChange={(patch) =>
+            setValue(
+              "escalas",
+              getValues("escalas").map((l, i) => (i === idx ? { ...l, ...patch } : l)),
+            )
+          }
+        />
+      );
+
+  const mapaNode =
+    values.escalas.length > 0 ? (
+      <RoutePreviewMap
+        airports={airports}
+        legs={values.escalas
+          .filter((_, i) => !tramoOculto(i))
+          .map((l) => ({
+            origen_iata: l.origen_iata,
+            destino_iata: l.destino_iata,
+            es_ferry: l.es_ferry,
+            requiere_pernocta: l.requiere_pernocta,
+            tipo_parada: l.tipo_parada,
+          }))}
       />
+    ) : null;
 
-      {/* Motivo de la revisión (EDICIÓN, página única 5-sep): a la vista
-          justo bajo la barra del total — «Revisar» pide el motivo aquí y
-          guarda/cancela en la barra. Ancla del botón de la barra: con el
-          motivo pendiente el clic guía aquí (scroll+focus). */}
-      {isRevise && !lectura && initialQuote && (
-        <Card
-          id="motivo-revision-field"
-          className="scroll-mt-24 border-t-2 border-t-amber-500/70"
-        >
-          <CardContent className="p-4 space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="text-sm">
-                <p className="font-medium">
-                  Revisando · se generará la v
-                  {initialQuote.cotizacion_version + 1}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Edita lo que necesites abajo. La versión actual queda en el
-                  historial; guarda o cancela en la barra del total.
-                </p>
-              </div>
-              {onCancelar && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={pedirCancelar}
-                  disabled={saving}
-                  className="gap-1.5"
-                >
-                  <XMarkIcon className="h-4 w-4" />
-                  Cancelar revisión
-                </Button>
-              )}
-            </div>
-            <Field label="Motivo de la revisión" required>
-              <Textarea
-                rows={2}
-                placeholder="Ej. Cliente cambió fecha y aumentó pasajeros"
-                {...register("motivo")}
-              />
-            </Field>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 1 · Cliente y fechas */}
+  // ===== Bloque INTERNO · NO SE IMPRIME (lo que produce números sin imprimirse) =====
+  const internoNode = (
+    <div
+      className="min-w-0"
+      // Misma confirmación única que el documento (el bloque puede vivir en
+      // otro contenedor del DOM por portal; el árbol React es el mismo).
+      onClickCapture={interceptarPrimerCambio}
+      onKeyDownCapture={interceptarPrimerCambio}
+    >
       <SeccionCotizador
-        id="cliente"
-        titulo="Cliente y fechas"
-        resumen={resumenCliente}
-        aviso={avisoCliente}
-        abierta={abiertas.cliente}
-        onToggle={() => toggleSeccion("cliente")}
+        id="interno"
+        titulo="Interno · no se imprime"
+        resumen={resumenInterno}
+        aviso={avisoInterno}
+        abierta={internoAbierto}
+        onToggle={() => setInternoAbiertoPersistente(!internoAbierto)}
+        bloqueada={lectura}
+        variante="interno"
       >
-        {lectura && initialQuote ? (
-          // ===== LECTURA: mismos bloques y mismo orden que la edición, con
-          // los valores como texto (fechas ISO → hora Cancún con fmtDateTime).
-          <>
-            <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2 space-y-0.5">
-              <p className="text-[11px] uppercase tracking-wider text-foreground/70">
-                Cliente · folio
-              </p>
-              <p className="text-sm font-medium">
-                {clientName ?? initialQuote.cliente_id}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-mono">#{initialQuote.folio}</span> ·{" "}
-                <span className="font-mono">v{initialQuote.cotizacion_version}</span>
-                {clienteInterno
-                  ? " · cliente interno (operación propia: puede ir en $0)"
-                  : ""}
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Dato
-                label="Fecha de traslado inicial"
-                value={
-                  initialQuote.fecha_vuelo
-                    ? fmtDateTime(initialQuote.fecha_vuelo)
-                    : "—"
-                }
-                hint={TZ_LABEL}
-              />
-              <Dato
-                label="Fecha de traslado final"
-                value={
-                  initialQuote.fecha_traslado_final ? (
-                    fmtDateTime(initialQuote.fecha_traslado_final)
-                  ) : initialQuote.fecha_fin &&
-                    initialQuote.fecha_fin !== initialQuote.fecha_vuelo ? (
-                    // Sin traslado capturado pero el viaje termina otro día:
-                    // fecha_fin la deriva el trigger (GREATEST de los tramos).
-                    <>
-                      {fmtDateTime(initialQuote.fecha_fin)}
-                      <span className="text-xs text-muted-foreground">
-                        {" "}
-                        · derivado del itinerario
-                      </span>
-                    </>
-                  ) : (
-                    "—"
-                  )
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Dato
-                label="Pasajeros"
-                value={
-                  paxPorTramo
-                    ? `${maxPaxTramos} · definido por tramo`
-                    : String(Number(values.pasajeros) || 0)
-                }
-                hint={
-                  <>
-                    {selectedAircraft && selectedAircraft.asientos > 0 && (
-                      <span
-                        className={cn(
-                          "block",
-                          capacidadExcedida && "text-destructive font-medium",
-                        )}
-                      >
-                        {capacidadExcedida
-                          ? `Excede la capacidad: ${maxPasajeros} pax en un tramo vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo}).`
-                          : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
-                      </span>
-                    )}
-                    {/* Cuánto pagan de TUAS estos pasajeros, aeropuerto por
-                        aeropuerto — mismas filas del desglose guardado. */}
-                    {values.cobrar_tuas &&
-                      breakdown &&
-                      (breakdown.tuas.filas ?? []).map((f) => (
-                        <span key={f.iata} className="block">
-                          TUA <span className="font-mono">{f.iata}</span>:{" "}
-                          <span className="font-mono">
-                            {f.pax} ×{" "}
-                            {f.moneda === "MXN"
-                              ? fmtMxn(f.monto_pax)
-                              : fmtUsd(f.monto_pax)}{" "}
-                            = {fmtUsd(f.total_usd)} USD
-                          </span>
-                        </span>
-                      ))}
-                  </>
-                }
-              />
-              <Dato
-                label="Pase de abordar"
-                value={values.pase_abordar ? "Sí" : "No"}
-                hint="Exenta TUAS (excepto CZM)"
-              />
-            </div>
-            <Dato
-              label="Cotización abierta"
-              value={
-                values.cotizacion_abierta
-                  ? "Sí — el itinerario/precio se cierra al final"
-                  : "No"
-              }
-              hint="Abierta = permite re-cotizar con los tramos reales hasta antes de cobrar/facturar."
-            />
-          </>
-        ) : (
-          <>
-          {/* Cliente */}
-          {isRevise && initialQuote ? (
-            <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2 space-y-0.5">
-              <p className="text-[11px] uppercase tracking-wider text-foreground/70">
-                Cliente · folio
-              </p>
-              <p className="text-sm font-medium">{clientName ?? initialQuote.cliente_id}</p>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-mono">#{initialQuote.folio}</span> ·{" "}
-                <span className="font-mono">v{initialQuote.cotizacion_version}</span>{" "}
-                · revisar genera v{initialQuote.cotizacion_version + 1}
-              </p>
-              {clienteInterno && (
-                <div className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/15 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400 space-y-1.5">
-                  <p>
-                    Cliente interno — la cotización puede ir en $0 (vuelo de la
-                    empresa, sin cobro).
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => setCeroOpen(true)}
-                  >
-                    Poner todo en $0
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <Field label="Cliente" required>
-              <div className="space-y-2">
-                {/* Nombre destacado: Itzel identifica el tipo de vuelo por el
-                    nombre del cliente (ej. "Punta Pájaros"). */}
-                {(() => {
-                  const sel = allClients.find((c) => c.id === values.cliente_id);
-                  if (!sel) return null;
-                  return (
-                    <div className="rounded-lg border border-brand-500/30 bg-brand-500/15 px-3 py-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
-                        <button
-                          type="button"
-                          title="Corregir el nombre del cliente"
-                          onClick={() => {
-                            setEditClienteNombre(sel.nombre);
-                            setEditClienteOpen(true);
-                          }}
-                          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <PencilSquareIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {[
-                          sel.es_interno ? "Interno · operación propia" : null,
-                          sel.es_broker ? "Broker · tarifa broker" : null,
-                          sel.rfc,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Cliente directo"}
-                      </p>
-                      {/* Lo que se le cobra por hora A ESTE cliente (resuelto
-                          por el motor: preferencial pactada > default del
-                          avión > override), visible al momento de elegirlo. */}
-                      {breakdown && (
-                        <p className="mt-1 text-xs">
-                          <span className="font-mono font-semibold">
-                            {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
-                          </span>{" "}
-                          <span
-                            className={
-                              breakdown.tarifa.proviene_de_override
-                                ? "text-amber-600 dark:text-amber-400"
-                                : breakdown.tarifa.preferencial_cliente
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-muted-foreground"
-                            }
-                          >
-                            {breakdown.tarifa.proviene_de_override
-                              ? "· cambiada SOLO para esta cotización"
-                              : breakdown.tarifa.preferencial_cliente
-                                ? "· tarifa pactada con este cliente"
-                                : `· tarifa ${breakdown.tarifa.tipo === "PUBLICO" ? "público" : "broker"} del avión`}
-                          </span>{" "}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Activa "Personalizada", ABRE la sección del
-                              // avión (puede estar plegada: hidden no tiene
-                              // layout y el scroll moriría en silencio) y
-                              // espera el render antes del scroll.
-                              setTarifaCustom(true);
-                              abrirSeccion("avion");
-                              setTimeout(() => {
-                                const el = document.getElementById(
-                                  "tarifa-override-field",
-                                );
-                                el?.scrollIntoView({
-                                  behavior: "smooth",
-                                  block: "center",
-                                });
-                                el?.querySelector("input")?.focus();
-                              }, 60);
-                            }}
-                            className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
-                          >
-                            ¿cobrar diferente en esta cotización?
-                          </button>
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
-                {clienteInterno && (
-                  <div className="rounded-md border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 space-y-2">
-                    <p>
-                      Cliente interno — la cotización puede ir en $0 (vuelo de la
-                      empresa, sin cobro).
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => setCeroOpen(true)}
-                    >
-                      Poner todo en $0
-                    </Button>
-                  </div>
-                )}
-                <SearchableSelect
-                  options={allClients.map((c) => ({
-                    value: c.id,
-                    label: c.nombre,
-                    description: [
-                      c.rfc,
-                      c.es_broker ? "Broker" : null,
-                      c.es_interno ? "Interno" : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · "),
-                  }))}
-                  value={values.cliente_id}
-                  onChange={(v) => {
-                    setValue("cliente_id", v);
-                    // Si el cliente es broker, sugiere tarifa broker.
-                    const cli = allClients.find((c) => c.id === v);
-                    if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
-                  }}
-                  placeholder="Selecciona cliente"
-                  emptyText="Sin clientes activos"
-                />
-                {/* Frecuentes de un tap + alta inline (la mayoría son recurrentes). */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {frequentClientIds
-                    .map((id) => allClients.find((c) => c.id === id))
-                    .filter((c): c is ClientOption => !!c)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          setValue("cliente_id", c.id);
-                          if (c.es_broker) setValue("tipo_tarifa", "BROKER");
-                        }}
-                        className={cn(
-                          "max-w-[12rem] truncate rounded-full border px-2.5 py-1 text-xs transition-colors",
-                          values.cliente_id === c.id
-                            ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
-                            : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                        )}
-                      >
-                        {c.nombre}
-                      </button>
-                    ))}
-                  <button
-                    type="button"
-                    onClick={() => setClientDialogOpen(true)}
-                    className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600"
-                  >
-                    + Nuevo cliente
-                  </button>
-                </div>
-              </div>
-            </Field>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            {/* Calendario nativo para la FECHA + hora en TEXTO LIBRE
-                ("8pm", "20:00", "0830"): el popup nativo de la hora era un
-                fastidio para la oficina (26-ago). */}
-            <Field label="Fecha de traslado inicial" hint="Opcional · salida (fecha y hora)">
-              <FechaHoraCampo
-                value={values.fecha_vuelo ?? ""}
-                onChange={(v) => setValue("fecha_vuelo", v)}
-              />
-            </Field>
-            <Field label="Fecha de traslado final" hint="Opcional · regreso (fecha y hora)">
-              <FechaHoraCampo
-                value={values.fecha_traslado_final ?? ""}
-                onChange={(v) => setValue("fecha_traslado_final", v)}
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Pasajeros" required>
-              {paxPorTramo ? (
-                <>
-                  <Input
-                    type="number"
-                    disabled
-                    value={maxPaxTramos}
-                    readOnly
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Definido POR TRAMO: cada tramo usa su propio número (máx.{" "}
-                    {maxPaxTramos}); este global no se toma en cuenta.
-                  </p>
-                </>
-              ) : (
-                <Input
-                  type="number"
-                  min={1}
-                  max={selectedAircraft?.asientos || undefined}
-                  {...register("pasajeros")}
-                />
-              )}
-              {selectedAircraft && selectedAircraft.asientos > 0 && (
-                <p
-                  className={cn(
-                    "text-xs mt-1",
-                    capacidadExcedida ? "text-destructive font-medium" : "text-muted-foreground",
-                  )}
-                >
-                  {capacidadExcedida
-                    ? `Excede la capacidad: ${maxPasajeros} pax en un tramo vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo}).`
-                    : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
-                </p>
-              )}
-              {/* Cuánto pagan de TUAS estos pasajeros, aeropuerto por
-                  aeropuerto (26-ago): "4 × $25.00 = $100.00 USD". */}
-              {values.cobrar_tuas &&
-                breakdown &&
-                (breakdown.tuas.filas ?? []).length > 0 && (
-                  <div className="mt-1 space-y-0.5">
-                    {(breakdown.tuas.filas ?? []).map((f) => (
-                      <p key={f.iata} className="text-xs text-muted-foreground">
-                        TUA <span className="font-mono">{f.iata}</span>:{" "}
-                        <span className="font-mono">
-                          {f.pax} ×{" "}
-                          {f.moneda === "MXN"
-                            ? fmtMxn(f.monto_pax)
-                            : fmtUsd(f.monto_pax)}{" "}
-                          = {fmtUsd(f.total_usd)} USD
-                        </span>
-                      </p>
-                    ))}
-                  </div>
-                )}
-            </Field>
-            <div className="flex flex-col gap-1">
-              <Label className="text-sm font-medium">Pase de abordar</Label>
-              <div className="flex items-center h-9">
-                <Switch
-                  checked={values.pase_abordar}
-                  onCheckedChange={(c) => setValue("pase_abordar", c)}
-                />
-                <span className="text-xs text-muted-foreground ml-3">
-                  Exenta TUAS (excepto CZM)
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border border-border bg-navy-800/50 p-3">
-            <div className="space-y-0.5">
-              <Label className="text-sm font-medium">Cotización abierta</Label>
-              <p className="text-xs text-muted-foreground">
-                El itinerario/precio se cierra al final: permite re-cotizar con
-                los tramos reales hasta antes de cobrar/facturar.
-              </p>
-            </div>
-            <Switch
-              checked={values.cotizacion_abierta}
-              onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
-            />
-          </div>
-          </>
-        )}
-      </SeccionCotizador>
-
-      {/* 2 · Avión y tarifa */}
-      <SeccionCotizador
-        id="avion"
-        titulo="Avión y tarifa"
-        resumen={resumenAvion}
-        abierta={abiertas.avion}
-        onToggle={() => toggleSeccion("avion")}
-      >
-        {lectura ? (
-          <>
-            <Dato
-              label="Aeronave"
-              value={
-                selectedAircraft
-                  ? `${selectedAircraft.matricula} — ${selectedAircraft.modelo}`
-                  : breakdown?.aeronave?.modelo
-                    ? [breakdown.aeronave.matricula, breakdown.aeronave.modelo]
-                        .filter(Boolean)
-                        .join(" — ")
-                    : "—"
-              }
-              hint={
-                <>
-                  {selectedAircraft && (
-                    <span className="block">
-                      Tarifa público {fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr
-                      · broker {fmtUsd(selectedAircraft.tarifa_hora_broker_usd)} / hr
-                    </span>
-                  )}
-                  {values.es_externo && (
-                    <span className="block">
-                      Vuelo externo: este avión es solo la referencia de tarifa
-                      para cotizar — el vuelo no lo opera la flota.
-                    </span>
-                  )}
-                </>
-              }
-            />
-            <Dato
-              label="Tipo de tarifa"
-              value={
-                <span className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="font-mono text-xs">
-                    {tarifaSegment === "CUSTOM"
-                      ? "Personalizada"
-                      : tipoTarifa === "BROKER"
-                        ? "Broker"
-                        : "Público"}
-                  </Badge>
-                  {/* Tarifa efectiva: del snapshot; sin snapshot (motor
-                      anterior) la columna persistida tarifa_hora_usd. */}
-                  {breakdown ? (
-                    <span className="font-mono">
-                      {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
-                    </span>
-                  ) : Number(initialQuote?.tarifa_hora_usd) > 0 ? (
-                    <span className="font-mono">
-                      {fmtUsd(Number(initialQuote!.tarifa_hora_usd))}/hr
-                    </span>
-                  ) : null}
-                  {origenTarifaResumen && (
-                    <span className="text-xs text-muted-foreground">
-                      · {origenTarifaResumen}
-                    </span>
-                  )}
-                </span>
-              }
-              hint={
-                tarifaSegment === "CUSTOM"
-                  ? "Tarifa ajustada SOLO para esta cotización (no cambia la tarifa del cliente)."
-                  : breakdown?.tarifa.preferencial_cliente
-                    ? "Tarifa pactada con este cliente para este avión."
-                    : undefined
-              }
-            />
-            <div className="grid grid-cols-2 gap-3">
-              {/* Tiempo cobrable PERSISTIDO (la card «Tarifa» del detalle
-                  anterior lo mostraba): el desglose de Tiempos vive en
-                  «Detalle del cálculo». */}
-              <Dato
-                label="Tiempo cobrable"
-                value={
-                  breakdown
-                    ? `${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`
-                    : Number(initialQuote?.tiempo_cobrable_hr) > 0
-                      ? `${fmtDecimal(Number(initialQuote!.tiempo_cobrable_hr), 4)} hr`
-                      : "—"
-                }
-                hint={
-                  breakdown?.tiempos.cobrable_proviene_de_override
-                    ? "Pactado a mano (override)"
-                    : breakdown?.tiempos.minimo_hora_aplicado
-                      ? "Vuelo corto: se cobra la hora completa (mínimo 1 hr)"
-                      : undefined
-                }
-              />
-              <Dato
-                label="Sobrevuelo (hr)"
-                value={
-                  Number(values.sobrevuelo_hr) > 0
-                    ? `${fmtDecimal(Number(values.sobrevuelo_hr))} hr`
-                    : "—"
-                }
-                hint={
-                  <>
-                    Tiempo extra sobre la zona; se suma al cobrable
-                    {sobrevueloAporteNode}
-                  </>
-                }
-              />
-            </div>
-          </>
-        ) : (
-          <>
-          {/* Aeronave: SIEMPRE de la flota. En externos es la referencia de
-              tarifa con la que se cotiza (el vuelo persiste sin avión propio)
-              — el modo "sin avión / monto pactado por tramo" se retiró
-              29-ago: el precio sale de completar la cotización normal. */}
-          <Field label="Aeronave" required>
-            <SearchableSelect
-              options={aircraft.map((a) => {
-                const sinTarifa =
-                  !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
-                return {
-                  value: a.id,
-                  label: `${a.matricula} — ${a.modelo}`,
-                  description: `${a.velocidad_crucero_kts} kts${
-                    sinTarifa
-                      ? clienteInterno
-                        ? " · sin tarifa · interno cotiza $0"
-                        : " · sin tarifa configurada"
-                      : ""
-                  }`,
-                  // Cliente interno: el motor acepta tarifa $0, así que un
-                  // avión sin tarifa configurada SÍ se puede cotizar.
-                  disabled: sinTarifa && !clienteInterno,
-                };
-              })}
-              value={values.aeronave_id}
-              onChange={(v) => setValue("aeronave_id", v)}
-              placeholder="Selecciona aeronave"
-            />
-            {selectedAircraft && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Tarifa público {fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr · broker{" "}
-                {fmtUsd(selectedAircraft.tarifa_hora_broker_usd)} / hr
-              </p>
-            )}
-            {values.es_externo && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Vuelo externo: este avión es solo la referencia de tarifa para
-                cotizar — el vuelo no lo opera la flota.
-              </p>
-            )}
-          </Field>
-
-          {/* Tarifa tipo — "Personalizada" = override de USD/hr SOLO de esta
-              cotización (antes vivía escondido en Overrides; pedido 25-ago). */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Tipo de tarifa</Label>
-            <Segmented
-              value={tarifaSegment}
-              onChange={(v) => {
-                if (v === "CUSTOM") {
-                  setTarifaCustom(true);
-                  return;
-                }
-                setTarifaCustom(false);
-                // Volver a la tarifa estándar LIMPIA el override: si no,
-                // seguiría mandando sobre Público/Broker en silencio.
-                setValue("tarifa_hora_override_usd", null);
-                setValue("tipo_tarifa", v as TipoTarifa);
-              }}
-              options={[
-                {
-                  value: "PUBLICO",
-                  label: "Público",
-                  sub: tarifaSub(selectedAircraft?.tarifa_hora_pub_usd),
-                },
-                {
-                  value: "BROKER",
-                  label: "Broker",
-                  sub: tarifaSub(selectedAircraft?.tarifa_hora_broker_usd),
-                },
-                {
-                  value: "CUSTOM",
-                  label: "Personalizada",
-                  // Solo con override capturado (puede ser $0: interno).
-                  sub: overrideTarifaActivo
-                    ? tarifaSub(values.tarifa_hora_override_usd)
-                    : undefined,
-                },
-              ]}
-            />
-            {tarifaSegment === "CUSTOM" && (
-              <div id="tarifa-override-field" className="scroll-mt-24">
-                <Field
-                  label="Tarifa USD/hr — SOLO esta cotización"
-                  hint={
-                    clienteInterno
-                      ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
-                      : "Por tiempos u otro acuerdo se cobra más o menos. Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
-                  }
-                >
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="Auto"
-                    {...register("tarifa_hora_override_usd")}
-                  />
-                </Field>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Sobrevuelo (hr)"
-              hint="Tiempo extra sobre la zona; se suma al cobrable"
-            >
-              <Input
-                type="number"
-                step="0.1"
-                min={0}
-                max={24}
-                placeholder="0"
-                {...register("sobrevuelo_hr")}
-              />
-              {sobrevueloAporteNode}
-            </Field>
-            {/* El switch de Cobrar TUAS vive en la card "TUAS por
-                aeropuerto" de Cargos adicionales (26-ago): junto a donde se
-                editan los montos, que es donde tiene sentido. */}
-          </div>
-          </>
-        )}
-      </SeccionCotizador>
-
-      {/* 3 · Tramos (ruta comercial que se cobra) */}
-      <SeccionCotizador
-        id="tramos"
-        titulo="Tramos"
-        resumen={resumenTramos}
-        aviso={avisoTramos}
-        abierta={abiertas.tramos}
-        onToggle={() => toggleSeccion("tramos")}
-      >
-        {lectura ? (
-          <>
-            <Dato
-              label="Ruta guardada"
-              value={
-                selectedRouteOpt
-                  ? rutaPathTexto(selectedRouteOpt)
-                  : "Itinerario propio (sin ruta del catálogo)"
-              }
-              hint={
-                selectedRouteOpt && itinerarioAjustado
-                  ? "El itinerario de esta cotización difiere de la ruta guardada."
-                  : undefined
-              }
-            />
-            {rutaOperativaLectura}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">
-                Tramos de esta cotización
-              </Label>
-              {/* Ruta COMERCIAL cotizada (lo que paga el cliente). Los
-                  toggles del PDF por tramo (ocultar / fecha) los cuelga el
-                  padre en `tramoExtraLectura` sobre la escala VIVA. */}
-              <TramosLectura legs={values.escalas} extra={tramoExtraLectura} />
-              {notaTramosLectura}
-            </div>
-            {values.escalas.length > 0 && (
-              <div className="hidden lg:block">
-                <RoutePreviewMap
-                  airports={airports}
-                  legs={values.escalas.map((l) => ({
-                    origen_iata: l.origen_iata,
-                    destino_iata: l.destino_iata,
-                    es_ferry: l.es_ferry,
-                    requiere_pernocta: l.requiere_pernocta,
-                    tipo_parada: l.tipo_parada,
-                  }))}
-                />
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-          {/* Ruta */}
-          <Field label="Ruta guardada" required>
-            {/* Sugeridas por historial: lo que este cliente suele pedir. */}
-            {rutasSugeridas.length > 0 && (
-              <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] uppercase tracking-wider text-foreground/70">
-                  Suele pedir:
-                </span>
-                {rutasSugeridas.map((s) => {
-                  const activa =
-                    values.escalas.length > 0 &&
-                    s.clave ===
-                      values.escalas
-                        .map((l) => `${l.origen_iata}-${l.destino_iata}`)
-                        .join("|");
-                  return (
-                    <button
-                      key={s.clave}
-                      type="button"
-                      onClick={() => aplicarSugerencia(s)}
-                      title={
-                        s.ultima_fecha
-                          ? `Última vez: ${new Date(s.ultima_fecha).toLocaleDateString("es-MX", { dateStyle: "medium" })}`
-                          : undefined
-                      }
-                      className={cn(
-                        "max-w-[16rem] truncate rounded-full border px-2.5 py-1 font-mono text-xs transition-colors",
-                        activa
-                          ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
-                          : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                      )}
-                    >
-                      {s.etiqueta}
-                      {s.veces > 1 && (
-                        <span className="ml-1 opacity-70">×{s.veces}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <SearchableSelect
-              options={allRoutes.map((r) => {
-                const path =
-                  r.tramos.length > 0
-                    ? [
-                        r.tramos[0]?.origen_iata,
-                        ...r.tramos.map((t) => t.destino_iata),
-                      ]
-                        .filter(Boolean)
-                        .join(" → ")
-                    : `${r.origen_iata} → ${r.destino_iata}`;
-                return {
-                  value: r.id,
-                  label: path,
-                  description: `${r.millas_nauticas} NM · ${r.tramos.length} ${
-                    r.tramos.length === 1 ? "tramo" : "tramos"
-                  }`,
-                };
-              })}
-              value={values.ruta_id}
-              onChange={(v) => {
-                setValue("ruta_id", v);
-                const ruta = allRoutes.find((r) => r.id === v);
-                if (ruta && ruta.tramos.length > 0) {
-                  // Carga los tramos de la plantilla como itinerario editable
-                  // de ESTA cotización (la ruta guardada no se modifica).
-                  setValue("escalas", ruta.tramos.map(tramoToEscala));
-                }
-              }}
-              placeholder="Selecciona ruta"
-              emptyText="Sin rutas — crea una abajo"
-            />
-            <button
-              type="button"
-              onClick={() => setRouteSheetOpen(true)}
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              Crear nueva ruta
-            </button>
-          </Field>
-
-          {initialQuote?.itinerario_operativo && (
-            <div className="rounded-lg border border-sky-500/40 bg-sky-500/15 p-3 space-y-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
-                  RUTA OPERATIVA (la vuela el piloto — aquí no se cotiza)
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  disabled={opsComoEscalas().length === 0}
-                  title="Copia origen→destino de los tramos con pasajeros como punto de partida de la cotización. Los pax se capturan aquí, no se copian."
-                  onClick={() => {
-                    const nuevos = opsComoEscalas();
-                    if (
-                      values.escalas.length > 0 &&
-                      legsSignature(values.escalas) !== legsSignature(nuevos)
-                    ) {
-                      // Ya hay tramos capturados distintos: confirmar antes
-                      // de sobreescribir (regla permanente del cliente).
-                      setOpsATramosOpen(true);
-                    } else {
-                      aplicarOpsComoEscalas();
-                    }
-                  }}
-                >
-                  Cotizar con estos tramos
-                </Button>
-              </div>
-              <p className="font-mono text-sm">
-                {(() => {
-                  const ops = initialQuote.escalas ?? [];
-                  if (ops.length === 0) return "—";
-                  return [ops[0].origen_iata, ...ops.map((e) => e.destino_iata)].join(" → ");
-                })()}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {(initialQuote.escalas ?? [])
-                  .map((e, i) =>
-                    e.es_ferry || e.solo_operativa ? `T${i + 1} ferry` : null,
-                  )
-                  .filter(Boolean)
-                  .join(" · ") || "Todos los tramos con pasajeros"}
-                {" · "}Los tramos de abajo son la ruta COMERCIAL (lo que paga el
-                cliente, abre y cierra en CUN); la operativa no se toca al cotizar.
-              </p>
-              <AlertDialog open={opsATramosOpen} onOpenChange={setOpsATramosOpen}>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      ¿Reemplazar los tramos capturados?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Los tramos de la cotización se sustituyen por los de la
-                      ruta operativa (sin pasajeros: esos se capturan aquí).
-                      El total se recalcula en vivo.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={aplicarOpsComoEscalas}>
-                      Reemplazar tramos
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          )}
-
-          {values.escalas.length > 0 ? (
+        {/* --- TARIFA Y HORAS --- */}
+        <div className="space-y-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+            Tarifa y horas
+          </p>
+          {lectura ? (
             <>
-              <Field
-                label="Tramos de esta cotización"
-                hint="Los ajustes (pax, ferry, pernocta) aplican solo a esta cotización; la ruta guardada no se modifica; la fecha que ve el cliente en el PDF se captura en el detalle de la cotización."
-              >
-                <QuoteLegsEditor
-                  value={values.escalas}
-                  onChange={(legs) => setValue("escalas", legs)}
-                  routes={allRoutes}
-                  airports={airports}
-                  onAeropuertoCreado={onAeropuertoCreado}
-                  avisoAnclaCun
+              <Dato
+                label="Tipo de tarifa"
+                value={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {tarifaSegment === "CUSTOM"
+                        ? "Personalizada"
+                        : tipoTarifa === "BROKER"
+                          ? "Broker"
+                          : "Público"}
+                    </Badge>
+                    {breakdown ? (
+                      <span className="font-mono">{fmtUsd(breakdown.tarifa.usd_por_hora)}/hr</span>
+                    ) : Number(initialQuote?.tarifa_hora_usd) > 0 ? (
+                      <span className="font-mono">
+                        {fmtUsd(Number(initialQuote!.tarifa_hora_usd))}/hr
+                      </span>
+                    ) : null}
+                    {origenTarifaResumen && (
+                      <span className="text-xs text-muted-foreground">· {origenTarifaResumen}</span>
+                    )}
+                  </span>
+                }
+                hint={
+                  tarifaSegment === "CUSTOM"
+                    ? "Tarifa ajustada SOLO para esta cotización (no cambia la tarifa del cliente)."
+                    : breakdown?.tarifa.preferencial_cliente
+                      ? "Tarifa pactada con este cliente para este avión."
+                      : selectedAircraft
+                        ? `Tarifa público ${fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr · broker ${fmtUsd(selectedAircraft.tarifa_hora_broker_usd)} / hr`
+                        : undefined
+                }
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Dato
+                  label="Sobrevuelo (hr)"
+                  value={
+                    Number(values.sobrevuelo_hr) > 0
+                      ? `${fmtDecimal(Number(values.sobrevuelo_hr))} hr`
+                      : "—"
+                  }
+                  hint={
+                    <>
+                      Tiempo extra sobre la zona; se suma al cobrable
+                      {sobrevueloAporteNode}
+                    </>
+                  }
                 />
-                {/* Acceso al COBRABLE pactado: vive en «Detalle del
-                    cálculo» — se abre esa sección y se lleva al input. */}
-                {breakdown && (
-                  <button
-                    type="button"
-                    onClick={focusCobrable}
-                    className="mt-1 text-left text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                  >
-                    ¿Pactar las horas a cobrar? El Cobrable se edita en el
-                    detalle del cálculo.
-                  </button>
-                )}
-              </Field>
-              {itinerarioAjustado && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-navy-800/50 p-2.5">
-                  <p className="text-xs text-muted-foreground">
-                    Este itinerario difiere de la ruta guardada. Si se va a
-                    repetir, guárdalo en el catálogo (la ruta original no se
-                    toca).
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleSaveAsRoute}
-                    disabled={savingRoute}
-                    className="shrink-0"
-                  >
-                    {savingRoute ? "Guardando…" : "Guardar como nueva ruta"}
-                  </Button>
-                </div>
-              )}
-              <div className="hidden lg:block">
-                <RoutePreviewMap
-                  airports={airports}
-                  legs={values.escalas.map((l) => ({
-                    origen_iata: l.origen_iata,
-                    destino_iata: l.destino_iata,
-                    es_ferry: l.es_ferry,
-                    requiere_pernocta: l.requiere_pernocta,
-                    tipo_parada: l.tipo_parada,
-                  }))}
+                <Dato
+                  label="Tiempo cobrable"
+                  value={
+                    breakdown
+                      ? `${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`
+                      : Number(initialQuote?.tiempo_cobrable_hr) > 0
+                        ? `${fmtDecimal(Number(initialQuote!.tiempo_cobrable_hr), 4)} hr`
+                        : "—"
+                  }
+                  hint={
+                    breakdown?.tiempos.cobrable_proviene_de_override
+                      ? "Pactado a mano"
+                      : breakdown?.tiempos.minimo_hora_aplicado
+                        ? "Vuelo corto: se cobra la hora completa (mínimo 1 hr)"
+                        : breakdown
+                          ? `Vuelo ${fmtDecimal(breakdown.tiempos.vuelo_hr, 2)} + calzos ${fmtDecimal(breakdown.tiempos.calzos_hr, 2)} hr`
+                          : undefined
+                  }
                 />
               </div>
             </>
           ) : (
-            <Field
-              label="Tramos de esta cotización"
-              hint="Selecciona una ruta guardada para cargar su itinerario, o escribe la ruta aquí."
-            >
-              <RutaRapidaInput
-                airports={airports}
-                hayDatos={false}
-                onAeropuertoCreado={onAeropuertoCreado}
-                onAplicar={(codigos) =>
-                  setValue(
-                    "escalas",
-                    codigos.slice(0, -1).map((c, i) => ({
-                      origen_iata: c,
-                      destino_iata: codigos[i + 1],
-                      // El autollenado del editor las completa al montar.
-                      millas_nauticas: 0,
-                    })),
-                  )
-                }
-              />
-            </Field>
-          )}
-          </>
-        )}
-      </SeccionCotizador>
-
-      {/* 4 · Cargos adicionales (TUAS + extras + pernoctas) */}
-      <SeccionCotizador
-        id="cargos"
-        titulo="Cargos adicionales"
-        resumen={resumenCargos}
-        aviso={avisoCargos}
-        abierta={abiertas.cargos}
-        onToggle={() => toggleSeccion("cargos")}
-      >
-        {/* Card «TUAS por aeropuerto» (vivía en el Preview; 26-ago el switch
-            quedó junto a los montos): editable, manda sobre el catálogo. Sin
-            breakdown aún no hay desglose que editar. */}
-        {breakdown ? (
-          <TuasCard
-            breakdown={breakdown}
-            tuasLineas={values.tuas_lineas ?? []}
-            onTuaChange={setTuaLinea}
-            cobrarTuas={values.cobrar_tuas}
-            onCobrarTuasChange={(c) => setValue("cobrar_tuas", c)}
-            tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
-            onFocusTc={focusTc}
-            readOnly={lectura}
-          />
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            {lectura
-              ? "Esta versión no guardó el desglose de TUAS por aeropuerto (cotización de un motor anterior)."
-              : "TUAS por aeropuerto: captura los tramos para ver el desglose editable."}
-          </p>
-        )}
-
-          {/* Conceptos extra (lectura: lista legible, sin agregar/quitar) */}
-          <ExtrasEditor
-            value={values.extras}
-            onChange={(extras) => setValue("extras", extras)}
-            tcCapturado={Number(values.tc_usd_mxn) > 0}
-            onFocusTc={focusTc}
-            pasajeros={Number(values.pasajeros) > 0 ? Number(values.pasajeros) : null}
-            grupo={grupoDelHijo}
-            readOnly={lectura}
-          />
-          {breakdown && (
-            <AporteChip
-              usd={breakdown.totales.extras_total_usd}
-              nota="conceptos extra"
-            />
-          )}
-        {/* Línea informativa de pernoctas (viático cobrado al cliente); el
-            costo por tramo se captura en la sección de Tramos. */}
-        {breakdown && (
-          <AporteChip
-            usd={breakdown.totales.viaticos_pernocta_usd}
-            nota="pernoctas cobradas al cliente"
-          />
-        )}
-      </SeccionCotizador>
-
-      {/* 5 · Cobro y cierre */}
-      <SeccionCotizador
-        id="cobro"
-        titulo="Cobro y cierre"
-        resumen={resumenCobro}
-        aviso={avisoCobro}
-        abierta={abiertas.cobro}
-        onToggle={() => toggleSeccion("cobro")}
-      >
-        {lectura ? (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <Dato
-                label="Método de pago"
-                value={
-                  values.metodo_pago === "OTRO"
-                    ? `Otro${
-                        values.metodo_pago_detalle.trim()
-                          ? ` — ${values.metodo_pago_detalle.trim()}`
-                          : ""
-                      }`
-                    : metodoPagoLabel
-                }
-                hint={
-                  METODOS_PAGO.find((m) => m.value === values.metodo_pago)?.hint
-                }
-              />
-              {values.metodo_pago === "BILLPOCKET" && (
-                <Dato
-                  label="Comisión BillPocket"
-                  value={
-                    Number(values.comision_billpocket_pct) > 0
-                      ? `${values.comision_billpocket_pct}%`
-                      : "—"
-                  }
-                  hint="Custom por operación · sin IVA · aparece en el desglose como «Comisión BillPocket»"
+            <>
+              <div id="tarifa-tipo-field" className="scroll-mt-24 space-y-2">
+                <Label className="text-sm font-medium">Tipo de tarifa</Label>
+                <Segmented
+                  value={tarifaSegment}
+                  onChange={(v) => {
+                    if (v === "CUSTOM") {
+                      setTarifaCustom(true);
+                      return;
+                    }
+                    setTarifaCustom(false);
+                    // Volver a la tarifa estándar LIMPIA el override: si no,
+                    // seguiría mandando sobre Público/Broker en silencio.
+                    setValue("tarifa_hora_override_usd", null);
+                    setValue("tipo_tarifa", v as TipoTarifa);
+                  }}
+                  options={[
+                    {
+                      value: "PUBLICO",
+                      label: "Pública",
+                      sub: tarifaSub(selectedAircraft?.tarifa_hora_pub_usd),
+                    },
+                    {
+                      value: "BROKER",
+                      label: "Broker",
+                      sub: tarifaSub(selectedAircraft?.tarifa_hora_broker_usd),
+                    },
+                    {
+                      value: "CUSTOM",
+                      label: "Personalizada",
+                      sub: overrideTarifaActivo
+                        ? tarifaSub(values.tarifa_hora_override_usd)
+                        : undefined,
+                    },
+                  ]}
                 />
+                {breakdown && (
+                  <p className="text-xs text-muted-foreground">
+                    Aplica{" "}
+                    <span className="font-mono font-semibold text-foreground">
+                      {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
+                    </span>{" "}
+                    <span
+                      className={
+                        breakdown.tarifa.proviene_de_override
+                          ? "text-amber-600 dark:text-amber-400"
+                          : breakdown.tarifa.preferencial_cliente
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : undefined
+                      }
+                    >
+                      {breakdown.tarifa.proviene_de_override
+                        ? "· cambiada SOLO para esta cotización"
+                        : breakdown.tarifa.preferencial_cliente
+                          ? "· tarifa pactada con este cliente"
+                          : `· tarifa ${breakdown.tarifa.tipo === "PUBLICO" ? "pública" : "broker"} del avión`}
+                    </span>
+                  </p>
+                )}
+                {tarifaSegment === "CUSTOM" && (
+                  <div id="tarifa-override-field" className="scroll-mt-24">
+                    <Field
+                      label="$/hr — SOLO esta cotización"
+                      hint={
+                        clienteInterno
+                          ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
+                          : "Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
+                      }
+                    >
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder="Auto"
+                        className="w-36 font-mono"
+                        {...register("tarifa_hora_override_usd")}
+                      />
+                    </Field>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Sobrevuelo (hr)" hint="Tiempo extra sobre la zona; se suma al cobrable">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={24}
+                    placeholder="0"
+                    className="font-mono"
+                    {...register("sobrevuelo_hr")}
+                  />
+                  {sobrevueloAporteNode}
+                </Field>
+                {/* COBRABLE pactado: la suma final de horas (vacío = regla,
+                    mínimo 1 hr). Ancla `cobrable-field` del atajo del itinerario. */}
+                <div id="cobrable-field" className="scroll-mt-24">
+                  <Field
+                    label="Cobrable pactado (hr)"
+                    hint={
+                      breakdown
+                        ? breakdown.tiempos.cobrable_proviene_de_override
+                          ? `Pactado a mano · la regla daría ${fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
+                          : `Vuelo ${fmtDecimal(breakdown.tiempos.vuelo_hr, 2)} · calzos ${fmtDecimal(breakdown.tiempos.calzos_hr, 2)}${
+                              Number(breakdown.tiempos.sobrevuelo_hr) > 0
+                                ? ` · sobrevuelo ${fmtDecimal(breakdown.tiempos.sobrevuelo_hr!, 2)}`
+                                : ""
+                            } · vacío = regla (mínimo 1 hr)`
+                        : "Vacío = regla (vuelo + calzos + sobrevuelo, mínimo 1 hr)"
+                    }
+                  >
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={48}
+                      placeholder={
+                        breakdown
+                          ? fmtDecimal(
+                              breakdown.tiempos.cobrable_hr_regla ?? breakdown.tiempos.cobrable_hr,
+                              4,
+                            )
+                          : "Auto"
+                      }
+                      className="font-mono"
+                      value={values.tiempo_cobrable_override_hr ?? ""}
+                      onChange={(e) =>
+                        setValue(
+                          "tiempo_cobrable_override_hr",
+                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                    />
+                  </Field>
+                </div>
+              </div>
+              {breakdown?.tiempos.cobrable_proviene_de_override &&
+                Number(breakdown.tiempos.cobrable_hr) <
+                  Number(breakdown.tiempos.vuelo_hr) +
+                    Number(breakdown.tiempos.calzos_hr) +
+                    Number(breakdown.tiempos.sobrevuelo_hr ?? 0) && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Ojo: el cobrable pactado es MENOR al tiempo real (vuelo + calzos): se
+                    cobraría de menos.
+                  </p>
+                )}
+              {breakdown?.tiempos.minimo_hora_aplicado && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Vuelo corto: se cobra la hora completa (mínimo 1 hr). Escribe otro valor en
+                  Cobrable si quieres pactarlo distinto.
+                </p>
               )}
-              <Dato
-                label="Tipo de cambio (MXN por USD)"
-                value={
-                  Number(values.tc_usd_mxn) > 0
-                    ? fmtDecimal(Number(values.tc_usd_mxn), 4)
-                    : "Sin capturar"
-                }
-                hint={
-                  Number(values.tc_usd_mxn) > 0 &&
-                  breakdown?.totales.total_mxn != null
-                    ? `Total ${fmtMxn(breakdown.totales.total_mxn)}`
-                    : hayLineasMxn || costoExternoEnMxn
-                      ? "Hay renglones en pesos: sin TC no pueden convertirse."
-                      : "Solo si el pago entra en pesos."
-                }
-              />
-              <Dato
-                label="IVA"
-                value={
-                  breakdown
-                    ? `${(breakdown.iva.porcentaje * 100).toFixed(0)}%${
-                        `${values.iva_pct_override ?? ""}`.trim() !== ""
-                          ? " · override manual"
-                          : ""
-                      }`
-                    : `${values.iva_pct_override ?? ""}`.trim() !== ""
-                      ? `${(Number(values.iva_pct_override) * 100).toFixed(0)}% · override manual`
-                      : "Automático (según método de pago)"
-                }
-                hint={breakdown?.iva.nota}
-              />
-            </div>
+            </>
+          )}
+        </div>
+
+        {/* --- COMISIÓN DEL VENDEDOR --- */}
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+            Comisión del vendedor
+          </p>
+          {lectura ? (
             <Dato
-              label="Comisión del vendedor (interna)"
+              label="Comisión (interna)"
               value={comisionVendedorTexto}
               hint={
                 <>
-                  Se SUMA al precio del cliente · interna, no aparece en el PDF.
+                  Se SUMA al precio del cliente · no aparece en el PDF.
                   {breakdown?.meta?.comision_vendedor_usd &&
                   breakdown.meta.neto_vuelatour_usd != null ? (
                     <span className="block font-mono">
@@ -3271,218 +3412,34 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 </>
               }
             />
-            <div className="space-y-3 rounded-lg border border-border p-3">
-              <p className="text-sm font-medium">Cierre del total</p>
-              {breakdown && (
-                <AporteChip
-                  usd={breakdown.totales.ajuste_final_usd}
-                  nota="ajuste neto (redondeo − descuento)"
-                />
-              )}
-              <div className="grid grid-cols-3 gap-3">
-                <Dato
-                  label="Redondeo automático"
-                  value={values.redondeo_auto ? "Sí" : "No"}
-                  hint="Al siguiente múltiplo de $10 (976→980)."
-                />
-                {!values.redondeo_auto && (
-                  <Dato
-                    label="Redondeo manual"
-                    value={
-                      Number(values.redondeo_usd) > 0
-                        ? fmtUsd(Number(values.redondeo_usd))
-                        : "—"
-                    }
-                  />
-                )}
-                <Dato
-                  label="Descuento"
-                  value={
-                    Number(values.descuento_usd) > 0
-                      ? fmtUsd(Number(values.descuento_usd))
-                      : "—"
-                  }
-                />
-              </div>
-              {cierreResumenNode}
-            </div>
-          </>
-        ) : (
-          <>
-          <Field label="Método de pago" required>
-            <SearchableSelect
-              options={METODOS_PAGO.map((m) => ({
-                value: m.value,
-                label: m.label,
-                description: m.hint,
-              }))}
-              value={values.metodo_pago}
-              onChange={(v) => setValue("metodo_pago", v as MetodoPago)}
-              placeholder="Selecciona método"
-            />
-          </Field>
-
-          {values.metodo_pago === "OTRO" && (
-            <Field
-              label="¿Cuál método?"
-              required
-              hint="Escríbelo tal como quieren verlo (ej. PayPal, depósito en ventanilla)"
-            >
-              <Input
-                value={values.metodo_pago_detalle}
-                onChange={(e) => setValue("metodo_pago_detalle", e.target.value)}
-                placeholder="Nombre del método"
-                maxLength={80}
-              />
-            </Field>
-          )}
-
-          {/* BillPocket no factura (sin IVA) pero cobra comisión CUSTOM por
-              operación (5%, 9%… tope 20%): entra al total como línea sin IVA. */}
-          {values.metodo_pago === "BILLPOCKET" && (
-            <Field
-              label="Comisión BillPocket (%)"
-              hint="Custom por operación · tope 20% · sin IVA"
-            >
-              <div className="flex items-center gap-3">
-                <Input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={20}
-                  placeholder="Ej. 9"
-                  className="w-32"
-                  value={values.comision_billpocket_pct ?? ""}
-                  onChange={(e) =>
-                    setValue(
-                      "comision_billpocket_pct",
-                      e.target.value === ""
-                        ? null
-                        : Math.min(20, Math.max(0, Number(e.target.value))),
-                    )
-                  }
-                />
-                {Number(values.comision_billpocket_pct) > 0 && breakdown && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    la línea aparece en el desglose como “Comisión BillPocket”
-                  </span>
-                )}
-              </div>
-            </Field>
-          )}
-
-          {/* El pago puede entrar en pesos (BillPocket/transferencia): el TC
-              pactado fija el total MXN y convierte los cobros MXN sin TC.
-              Con renglones nativos en MXN (TUAS/extras) o el costo del
-              operador externo en MXN, el campo también aparece con método
-              DOLARES: sin TC no pueden convertirse. */}
-          {(values.metodo_pago !== "DOLARES" ||
-            hayLineasMxn ||
-            costoExternoEnMxn) && (
-            <div id="tc-usd-mxn-field" className="scroll-mt-24">
-            <Field
-              label="Tipo de cambio (MXN por USD)"
-              hint={
-                hayLineasMxn
-                  ? "Requerido: hay TUAS/extras capturados en pesos"
-                  : costoExternoEnMxn
-                    ? "Requerido: el costo del operador externo va en pesos"
-                    : "Opcional · si el pago entrará en pesos"
-              }
-            >
-              <div className="flex items-center gap-3">
-                <Input
-                  type="number"
-                  step="0.0001"
-                  min={0}
-                  placeholder="Ej. 18.50"
-                  className="w-32"
-                  value={values.tc_usd_mxn ?? ""}
-                  onChange={(e) =>
-                    setValue(
-                      "tc_usd_mxn",
-                      e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                    )
-                  }
-                />
-                {Number(values.tc_usd_mxn) > 0 && breakdown && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {/* total_mxn del motor = EXACTO por composición (USD×tc +
-                        nativos MXN tal cual); el producto local es respaldo. */}
-                    {breakdown.totales.total_mxn != null
-                      ? `= ${fmtMxn(breakdown.totales.total_mxn)}`
-                      : `≈ ${fmtMxn(
-                          Number(breakdown.totales.total_usd) *
-                            Number(values.tc_usd_mxn),
-                        )}`}
-                  </span>
-                )}
-              </div>
-            </Field>
-            </div>
-          )}
-
-          {/* IVA (override): junto al método de pago/TC — la válvula cuando
-              el trato SÍ factura distinto (antes escondida hasta abajo en
-              "Overrides avanzados"; pedido 25-ago). */}
-          <Field label="IVA % (override)" hint="0.16 = 16%. Vacío = automático">
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              max={1}
-              placeholder="Auto"
-              className="w-32"
-              {...register("iva_pct_override")}
-            />
-          </Field>
-
-          {/* Comisión del VENDEDOR (Itzy/Pablo/broker): se SUMA al precio del
-              cliente — el neto VuelaTour queda en el precio base y lo manda el
-              motor en meta (no calcularlo aquí). Modalidades: monto fijo o
-              $/hr × horas cobradas (la resuelve el motor). INTERNA: jamás
-              aparece en el PDF del cliente. */}
-          <Field
-            label="Comisión del vendedor (interna)"
-            hint="Se SUMA al precio del cliente · interna, no aparece en el PDF"
-          >
+          ) : (
             <div className="space-y-2">
-              {breakdown && (
-                <AporteChip
-                  usd={breakdown.meta?.comision_vendedor_usd}
-                  nota="la paga el cliente"
-                />
-              )}
               <div className="w-56">
                 <Segmented
                   value={values.comision_vendedor_modo}
                   onChange={(v) =>
-                    setValue(
-                      "comision_vendedor_modo",
-                      v === "POR_HORA" ? "POR_HORA" : "FIJA",
-                    )
+                    setValue("comision_vendedor_modo", v === "POR_HORA" ? "POR_HORA" : "FIJA")
                   }
                   options={[
-                    { value: "FIJA", label: "Monto fijo" },
+                    { value: "FIJA", label: "Fija" },
                     { value: "POR_HORA", label: "Por hora" },
                   ]}
                 />
               </div>
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex flex-wrap items-center gap-2">
                 {values.comision_vendedor_modo === "POR_HORA" ? (
                   <Input
                     type="number"
                     step="0.01"
                     min={0}
                     placeholder="$/hr · Ej. 50"
-                    className="w-32"
+                    aria-label="Comisión del vendedor por hora (USD)"
+                    className="w-32 font-mono"
                     value={values.comision_vendedor_tarifa_hr ?? ""}
                     onChange={(e) =>
                       setValue(
                         "comision_vendedor_tarifa_hr",
-                        e.target.value === ""
-                          ? null
-                          : Math.max(0, Number(e.target.value)),
+                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
                       )
                     }
                   />
@@ -3491,91 +3448,184 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     type="number"
                     step="0.01"
                     min={0}
-                    placeholder="USD · Ej. 50"
-                    className="w-32"
+                    placeholder="USD · Ej. 150"
+                    aria-label="Comisión del vendedor (USD)"
+                    className="w-32 font-mono"
                     value={values.comision_vendedor_usd ?? ""}
                     onChange={(e) =>
                       setValue(
                         "comision_vendedor_usd",
-                        e.target.value === ""
-                          ? null
-                          : Math.max(0, Number(e.target.value)),
+                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
                       )
                     }
                   />
                 )}
                 <Input
                   placeholder="Quién vendió (Itzy, Pablo…)"
-                  className="w-48"
+                  aria-label="Quién vendió"
+                  className="w-44"
                   value={values.comision_vendedor_nombre}
                   onChange={(e) => setValue("comision_vendedor_nombre", e.target.value)}
                 />
               </div>
-              {/* Vista en vivo POR_HORA: tarifa × horas cobradas del cálculo. */}
               {values.comision_vendedor_modo === "POR_HORA" &&
                 Number(values.comision_vendedor_tarifa_hr) > 0 && (
                   <p className="text-xs text-muted-foreground font-mono">
                     {breakdown && Number(breakdown.tiempos.cobrable_hr) > 0
                       ? `= ${fmtUsd(Number(values.comision_vendedor_tarifa_hr))} × ${fmtDecimal(
                           breakdown.tiempos.cobrable_hr,
-                        )} hr = ${fmtUsd(
-                          Math.round(
-                            Number(values.comision_vendedor_tarifa_hr) *
-                              Number(breakdown.tiempos.cobrable_hr) *
-                              100,
-                          ) / 100,
-                        )}`
+                        )} hr = ${fmtUsd(breakdown.meta?.comision_vendedor_usd ?? 0)}`
                       : "= se calcula con las horas al cotizar"}
                   </p>
                 )}
-              {/* Neto VuelaTour: viene del motor (total − comisión), fuente única. */}
-              {values.comision_vendedor_modo !== "POR_HORA" &&
-                Number(values.comision_vendedor_usd) > 0 &&
-                breakdown?.meta?.neto_vuelatour_usd != null && (
-                  <p className="text-xs text-muted-foreground font-mono">
-                    Neto VuelaTour: {fmtUsd(breakdown.meta.neto_vuelatour_usd)}
-                  </p>
-                )}
-            </div>
-          </Field>
-
-          {/* Cierre del total: el redondeo es AUTOMÁTICO (regla del cliente:
-              siempre arriba al siguiente múltiplo de $10; 976→980, 991→1000)
-              — lo resuelve el motor con el IVA considerado. El descuento se
-              aplica antes. Hacia el motor viaja UNA línea de ajuste para que
-              el desglose siga cuadrando. */}
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <p className="text-sm font-medium">Cierre del total</p>
-            {breakdown && (
-              <AporteChip
-                usd={breakdown.totales.ajuste_final_usd}
-                nota="ajuste neto (redondeo − descuento)"
-              />
-            )}
-            {/* 2-sep-2026: el aviso "el pactado manda" se eliminó junto con
-                la captura del precio pactado (ya no existe la opción). */}
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm">Redondeo automático a número cerrado</p>
+              {/* Lo absorbido se explica con la cuenta visible (§2.7). */}
+              {breakdown && comisionAbsorbidaUsd > 0 && servicioAereoImpresoUsd != null && (
                 <p className="text-xs text-muted-foreground">
-                  Siempre hacia arriba al siguiente múltiplo de $10 (976→980, 991→1000).
+                  → impreso «Servicio aéreo»{" "}
+                  <span className="font-mono text-foreground">{fmtUsd(servicioAereoImpresoUsd)}</span>{" "}
+                  = {fmtUsd(breakdown.totales.subtotal_vuelo_usd)} + comisión{" "}
+                  {fmtUsd(comisionAbsorbidaUsd)}
+                  {redondeoAbsorbidoUsd > 0 ? ` + redondeo ${fmtUsd(redondeoAbsorbidoUsd)}` : ""}
+                  {breakdown.meta?.neto_vuelatour_usd != null && (
+                    <>
+                      {" "}· Neto VuelaTour{" "}
+                      <span className="font-mono">{fmtUsd(breakdown.meta.neto_vuelatour_usd)}</span>
+                    </>
+                  )}
                 </p>
-              </div>
-              <Switch
-                checked={values.redondeo_auto}
-                onCheckedChange={(c) => setValue("redondeo_auto", c)}
-              />
+              )}
+              {!(comisionAbsorbidaUsd > 0) && (
+                <p className="text-[11px] text-muted-foreground">
+                  Se SUMA al precio del cliente y se absorbe en «Servicio aéreo»: nunca sale
+                  como línea en el PDF.
+                </p>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {!values.redondeo_auto && (
-                <Field label="Redondeo manual" hint="Solo con el automático apagado.">
-                  <div className="flex items-center gap-2">
+          )}
+        </div>
+
+        {/* --- COBRO --- */}
+        <div className="space-y-3 border-t border-border pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+            Cobro
+          </p>
+          {lectura ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Dato
+                  label="Método de pago"
+                  value={metodoPagoTexto}
+                  hint={METODOS_PAGO.find((m) => m.value === values.metodo_pago)?.hint}
+                />
+                {values.metodo_pago === "BILLPOCKET" && (
+                  <Dato
+                    label="Comisión BillPocket"
+                    value={
+                      Number(values.comision_billpocket_pct) > 0
+                        ? `${values.comision_billpocket_pct}%`
+                        : "—"
+                    }
+                    hint="Sin IVA · sale en el desglose como «Comisión BillPocket»"
+                  />
+                )}
+                <Dato
+                  label="Redondeo"
+                  value={
+                    values.redondeo_auto
+                      ? "Automático (múltiplo de $10)"
+                      : Number(values.redondeo_usd) > 0
+                        ? `Manual ${fmtUsd(Number(values.redondeo_usd))}`
+                        : "—"
+                  }
+                  hint="Hacia arriba; se absorbe en «Servicio aéreo»."
+                />
+                <Dato label="Cotización abierta" value={values.cotizacion_abierta ? "Sí" : "No"} />
+                <Dato
+                  label="Pase de abordar"
+                  value={values.pase_abordar ? "Sí" : "No"}
+                  hint="Exenta TUAS (excepto CZM)"
+                />
+              </div>
+              {cierreResumenNode}
+            </>
+          ) : (
+            <>
+              <div id="metodo-pago-field" className="scroll-mt-24">
+                <Field label="Método de pago" required hint="Decide el IVA (16 % con factura)">
+                  <SearchableSelect
+                    options={METODOS_PAGO.map((m) => ({
+                      value: m.value,
+                      label: m.label,
+                      description: m.hint,
+                    }))}
+                    value={values.metodo_pago}
+                    onChange={(v) => setValue("metodo_pago", v as MetodoPago)}
+                    placeholder="Selecciona método"
+                  />
+                </Field>
+              </div>
+              {values.metodo_pago === "OTRO" && (
+                <Field
+                  label="¿Cuál método?"
+                  required
+                  hint="Escríbelo tal como quieren verlo (ej. PayPal, depósito en ventanilla)"
+                >
+                  <Input
+                    value={values.metodo_pago_detalle}
+                    onChange={(e) => setValue("metodo_pago_detalle", e.target.value)}
+                    placeholder="Nombre del método"
+                    maxLength={80}
+                  />
+                </Field>
+              )}
+              {values.metodo_pago === "BILLPOCKET" && (
+                <div id="billpocket-field" className="scroll-mt-24">
+                  <Field
+                    label="Comisión BillPocket (%)"
+                    hint="Custom por operación · tope 20% · sin IVA · sale como línea «Comisión BillPocket»"
+                  >
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={20}
+                      placeholder="Ej. 9"
+                      className="w-32 font-mono"
+                      value={values.comision_billpocket_pct ?? ""}
+                      onChange={(e) =>
+                        setValue(
+                          "comision_billpocket_pct",
+                          e.target.value === ""
+                            ? null
+                            : Math.min(20, Math.max(0, Number(e.target.value))),
+                        )
+                      }
+                    />
+                  </Field>
+                </div>
+              )}
+              <div id="redondeo-field" className="scroll-mt-24 space-y-2 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm">Redondeo automático a número cerrado</p>
+                    <p className="text-xs text-muted-foreground">
+                      Hacia arriba al siguiente múltiplo de $10 (976→980). Se absorbe en
+                      «Servicio aéreo».
+                    </p>
+                  </div>
+                  <Switch
+                    checked={values.redondeo_auto}
+                    onCheckedChange={(c) => setValue("redondeo_auto", c)}
+                  />
+                </div>
+                {!values.redondeo_auto && (
+                  <Field label="Redondeo manual (USD)" hint="Solo con el automático apagado.">
                     <Input
                       type="number"
                       step="0.01"
                       min={0}
                       placeholder="0.00"
-                      className="w-24"
+                      className="w-28 font-mono"
                       value={values.redondeo_usd ?? ""}
                       onChange={(e) =>
                         setValue(
@@ -3584,279 +3634,231 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         )
                       }
                     />
-                  </div>
-                </Field>
-              )}
-              <Field label="Descuento" hint="Negociado: “ciérramelo en 750”.">
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="0.00"
-                  className="w-28"
-                  value={values.descuento_usd ?? ""}
-                  onChange={(e) =>
-                    setValue(
-                      "descuento_usd",
-                      e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                    )
-                  }
-                />
-              </Field>
-            </div>
-            {cierreResumenNode}
-          </div>
-          </>
-        )}
-      </SeccionCotizador>
-
-          {/* Vuelo cubierto por operador EXTERNO. Al crear: se prende AQUÍ
-              cuando la venta nace con un avión AJENO (broker, ej. HAWKER
-              400 A) — con avión propio se puede seguir cubriendo después
-              desde el detalle del vuelo («Cubrir con externo»). Al revisar:
-              muestra el estado y edita la ficha del avión y el costo del
-              operador (el precio pactado se retiró el 2-sep-2026). */}
-      {(!isRevise || initialQuote?.es_externo) && (
-        <SeccionCotizador
-          id="externo"
-          titulo="Operador externo"
-          resumen={resumenExterno}
-          aviso={avisoExterno}
-          abierta={abiertas.externo}
-          onToggle={() => toggleSeccion("externo")}
-        >
-          {lectura && initialQuote ? (
-            // LECTURA: la card ámbar "Cubierto por operador externo" que
-            // vivía en el aside del detalle, en el mismo sitio de la sección.
-            <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                Otro operador vuela este servicio; VuelaTour cobra al cliente y
-                paga al apoyo. Sin avión propio ni tacómetros; los gastos sí se
-                registran en el vuelo. El avión de «Avión y tarifa» es solo la
-                referencia de tarifa.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Dato
-                  label="Operador externo"
-                  value={initialQuote.operador_externo ?? "—"}
-                  hint="Quién vuela el servicio"
-                />
-                <Dato
-                  label="Avión"
-                  value={
-                    [
-                      initialQuote.avion_externo_modelo,
-                      initialQuote.avion_externo_matricula,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "—"
-                  }
-                  hint="Sale en el PDF del cliente"
-                />
-                <Dato
-                  label="Lo que cobra el operador externo (costo)"
-                  value={
-                    Number(initialQuote.costo_externo_usd) > 0 ? (
-                      <>
-                        {fmtUsd(Number(initialQuote.costo_externo_usd))}
-                        {/* Costo capturado en MXN: el USD es DERIVADO por el
-                            API (monto ÷ tc); el nativo se muestra al lado. */}
-                        {initialQuote.costo_externo_moneda === "MXN" &&
-                          Number(initialQuote.costo_externo_monto) > 0 && (
-                            <span className="ml-1.5 text-xs text-muted-foreground">
-                              ({fmtMxn(Number(initialQuote.costo_externo_monto))}
-                              {Number(initialQuote.costo_externo_tc) > 0
-                                ? ` · tc ${Number(initialQuote.costo_externo_tc)}`
-                                : ""}
-                              )
-                            </span>
-                          )}
-                      </>
-                    ) : (
-                      "Sin capturar"
-                    )
-                  }
-                  hint="Interno, no lo ve el cliente"
-                />
-                {Number(initialQuote.calculo_snapshot?.meta?.total_pactado_usd) > 0 && (
-                  <Dato
-                    label="Precio pactado (folio legado)"
-                    value={fmtUsd(
-                      Number(initialQuote.calculo_snapshot!.meta!.total_pactado_usd),
-                    )}
-                  />
-                )}
-              </div>
-              {margenExternoNode}
-              <p className="text-[11px] text-muted-foreground">
-                Antes de IVA/comisiones y otros costos. El operador y su costo
-                se editan con «Revisar» o en{" "}
-                <Link
-                  href={`/admin/flights/${initialQuote.id}`}
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  el vuelo → Editar externo
-                </Link>{" "}
-                (ahí también se regresa a vuelo propio).
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-              {isRevise && initialQuote?.es_externo ? (
-                <>
-                  <div className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                    Vuelo cubierto por{" "}
-                    <strong>{initialQuote.operador_externo}</strong>. El avión
-                    de abajo es solo la referencia de tarifa. Aquí capturas lo
-                    que cobra el operador externo y lo que se le cobra al
-                    cliente: no son lo mismo.
-                  </div>
-                  <Field
-                    label="Operador externo"
-                    hint="Quién vuela el servicio (vacío = se conserva el actual)"
-                  >
-                    <Input
-                      placeholder="Ej. Aerocharter del Caribe"
-                      maxLength={120}
-                      value={values.operador_externo}
-                      onChange={(e) =>
-                        setValue("operador_externo", e.target.value)
-                      }
-                    />
                   </Field>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">
-                        Cubierto por operador externo
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Otro operador vuela el servicio (ej. venta broker de
-                        un jet ajeno). Sin tacómetros; los gastos sí se
-                        registran en el vuelo.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={values.es_externo}
-                      onCheckedChange={(c) => setValue("es_externo", c)}
+                )}
+                {cierreResumenNode}
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-navy-800/50 p-3">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Cotización abierta</Label>
+                  <p className="text-xs text-muted-foreground">
+                    El itinerario/precio se cierra al final: permite re-cotizar con los tramos
+                    reales hasta antes de cobrar/facturar.
+                  </p>
+                </div>
+                <Switch
+                  checked={values.cotizacion_abierta}
+                  onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-navy-800/50 p-3">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Pase de abordar</Label>
+                  <p className="text-xs text-muted-foreground">Exenta TUAS (excepto CZM).</p>
+                </div>
+                <Switch
+                  checked={values.pase_abordar}
+                  onCheckedChange={(c) => setValue("pase_abordar", c)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* --- OPERADOR EXTERNO (sub-bloque) --- */}
+        {(!isRevise || initialQuote?.es_externo) && (
+          <SubBloque
+            id="externo"
+            titulo="Operador externo"
+            resumen={resumenExterno}
+            aviso={avisoExterno}
+            abierto={abiertas.externo}
+            onToggle={() => toggleSeccion("externo")}
+          >
+            {lectura && initialQuote ? (
+              <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Otro operador vuela este servicio; VuelaTour cobra al cliente y paga al apoyo.
+                  Sin avión propio ni tacómetros; los gastos sí se registran en el vuelo. El
+                  avión cotizado es solo la referencia de tarifa.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Dato
+                    label="Operador externo"
+                    value={initialQuote.operador_externo ?? "—"}
+                    hint="Quién vuela el servicio"
+                  />
+                  <Dato
+                    label="Avión"
+                    value={
+                      [initialQuote.avion_externo_modelo, initialQuote.avion_externo_matricula]
+                        .filter(Boolean)
+                        .join(" · ") || "—"
+                    }
+                    hint="Sale en el PDF del cliente"
+                  />
+                  <Dato
+                    label="Lo que cobra el operador externo (costo)"
+                    value={
+                      Number(initialQuote.costo_externo_usd) > 0 ? (
+                        <>
+                          {fmtUsd(Number(initialQuote.costo_externo_usd))}
+                          {initialQuote.costo_externo_moneda === "MXN" &&
+                            Number(initialQuote.costo_externo_monto) > 0 && (
+                              <span className="ml-1.5 text-xs text-muted-foreground">
+                                ({fmtMxn(Number(initialQuote.costo_externo_monto))}
+                                {Number(initialQuote.costo_externo_tc) > 0
+                                  ? ` · tc ${Number(initialQuote.costo_externo_tc)}`
+                                  : ""}
+                                )
+                              </span>
+                            )}
+                        </>
+                      ) : (
+                        "Sin capturar"
+                      )
+                    }
+                    hint="Interno, no lo ve el cliente"
+                  />
+                  {Number(initialQuote.calculo_snapshot?.meta?.total_pactado_usd) > 0 && (
+                    <Dato
+                      label="Precio pactado (folio legado)"
+                      value={fmtUsd(Number(initialQuote.calculo_snapshot!.meta!.total_pactado_usd))}
                     />
-                  </div>
-                  {values.es_externo && (
+                  )}
+                </div>
+                {margenExternoNode}
+                <p className="text-[11px] text-muted-foreground">
+                  El operador y su costo también se editan en{" "}
+                  <Link
+                    href={`/admin/flights/${initialQuote.id}`}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    el vuelo → Editar externo
+                  </Link>{" "}
+                  (ahí también se regresa a vuelo propio).
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                {isRevise && initialQuote?.es_externo ? (
+                  <>
+                    <div className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                      Vuelo cubierto por <strong>{initialQuote.operador_externo}</strong>. El
+                      avión cotizado es solo la referencia de tarifa. Aquí capturas lo que cobra
+                      el operador externo; lo que se le cobra al cliente es el documento.
+                    </div>
                     <Field
                       label="Operador externo"
-                      required
-                      hint="Quién vuela el servicio"
+                      hint="Quién vuela el servicio (vacío = se conserva el actual)"
                     >
                       <Input
                         placeholder="Ej. Aerocharter del Caribe"
                         maxLength={120}
                         value={values.operador_externo}
-                        onChange={(e) =>
-                          setValue("operador_externo", e.target.value)
-                        }
+                        onChange={(e) => setValue("operador_externo", e.target.value)}
                       />
                     </Field>
-                  )}
-                </>
-              )}
-              {values.es_externo && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field
-                      label="Modelo del avión"
-                      hint="Sale en el PDF del cliente"
-                    >
-                      <Input
-                        placeholder="HAWKER 400 A"
-                        maxLength={80}
-                        value={values.avion_externo_modelo}
-                        onChange={(e) =>
-                          setValue("avion_externo_modelo", e.target.value)
-                        }
-                      />
-                    </Field>
-                    <Field label="Matrícula (opcional)">
-                      <Input
-                        placeholder="XA-REG"
-                        maxLength={20}
-                        value={values.avion_externo_matricula}
-                        onChange={(e) =>
-                          setValue("avion_externo_matricula", e.target.value)
-                        }
-                      />
-                    </Field>
-                  </div>
-                  {/* Regla 28-ago: lo que COBRA el operador externo (costo,
-                      interno) y lo que se le COBRA al cliente son dos cosas
-                      distintas — ambas se capturan aquí, al crear y al
-                      revisar. 29-ago: el costo lleva su MONEDA (USD|MXN). */}
-                  <Field
-                    label="Lo que cobra el operador externo (costo)"
-                    hint="Lo que el operador nos cobra por el vuelo, en su moneda · interno, no lo ve el cliente"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        placeholder="0.00"
-                        value={values.costo_externo_monto ?? ""}
-                        onChange={(e) =>
-                          setValue(
-                            "costo_externo_monto",
-                            e.target.value === ""
-                              ? null
-                              : Math.max(0, Number(e.target.value)),
-                          )
-                        }
-                      />
-                      <MonedaSelect
-                        value={values.costo_externo_moneda}
-                        onChange={(m) => setValue("costo_externo_moneda", m)}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm font-medium">Cubierto por operador externo</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Otro operador vuela el servicio (ej. venta broker de un jet ajeno). Sin
+                          tacómetros; los gastos sí se registran en el vuelo.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={values.es_externo}
+                        onCheckedChange={(c) => setValue("es_externo", c)}
                       />
                     </div>
-                    {costoExternoMxnSinTc && (
-                      <button
-                        type="button"
-                        onClick={focusTc}
-                        className="mt-1 text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
-                      >
-                        Costo en MXN: captura el TC en «Cobro y cierre» — sin
-                        tipo de cambio no se puede derivar el USD ni guardar.
-                      </button>
+                    {values.es_externo && (
+                      <Field label="Operador externo" required hint="Quién vuela el servicio">
+                        <Input
+                          placeholder="Ej. Aerocharter del Caribe"
+                          maxLength={120}
+                          value={values.operador_externo}
+                          onChange={(e) => setValue("operador_externo", e.target.value)}
+                        />
+                      </Field>
                     )}
-                  </Field>
-                  {/* El input "Precio pactado con el cliente (total, USD)" se
-                      ELIMINÓ (decisión del cliente, 2-sep-2026: "no tiene por
-                      qué existir"). El precio al cliente sale del cálculo
-                      normal; en folios viejos con pactado persistido
-                      (24/69/148) el motor sigue aterrizando su total vía la
-                      rehidratación silenciosa (initialValues/calcPayload). */}
-                  {/* Margen = lo que paga el cliente − lo que cobra el
-                      operador externo (solo informativo; el API es la
-                      fuente). Derivado ARRIBA (hoisted) para que el resumen
-                      del encabezado de la sección muestre el mismo número. */}
-                  {margenExternoNode}
-                </>
-              )}
-            </div>
-          )}
-        </SeccionCotizador>
-      )}
+                  </>
+                )}
+                {values.es_externo && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Modelo del avión" hint="Sale en el PDF del cliente">
+                        <Input
+                          placeholder="HAWKER 400 A"
+                          maxLength={80}
+                          value={values.avion_externo_modelo}
+                          onChange={(e) => setValue("avion_externo_modelo", e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Matrícula (opcional)">
+                        <Input
+                          placeholder="XA-REG"
+                          maxLength={20}
+                          value={values.avion_externo_matricula}
+                          onChange={(e) => setValue("avion_externo_matricula", e.target.value)}
+                        />
+                      </Field>
+                    </div>
+                    <Field
+                      label="Lo que cobra el operador externo (costo)"
+                      hint="En su moneda · interno, no lo ve el cliente"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          placeholder="0.00"
+                          className="font-mono"
+                          value={values.costo_externo_monto ?? ""}
+                          onChange={(e) =>
+                            setValue(
+                              "costo_externo_monto",
+                              e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                            )
+                          }
+                        />
+                        <MonedaSelect
+                          value={values.costo_externo_moneda}
+                          onChange={(m) => setValue("costo_externo_moneda", m)}
+                        />
+                      </div>
+                      {costoExternoMxnSinTc && (
+                        <button
+                          type="button"
+                          onClick={focusTc}
+                          className="mt-1 text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
+                        >
+                          Costo en MXN: captura el T.C. en «Total MXN» del desglose — sin tipo de
+                          cambio no se puede derivar el USD ni guardar.
+                        </button>
+                      )}
+                    </Field>
+                    {margenExternoNode}
+                  </>
+                )}
+              </div>
+            )}
+          </SubBloque>
+        )}
 
-          {/* Ruta OPERATIVA opcional (solo al crear): la ruta real del avión
-              para gastos/tacómetros; puede salir de otra base y llevar ferries.
-              Es independiente de los tramos comerciales de arriba (el dinero). */}
-      {!isRevise && (
-        <SeccionCotizador
-          id="operativa"
-          titulo="Ruta operativa"
-          resumen={resumenOperativa}
-          abierta={abiertas.operativa}
-          onToggle={() => toggleSeccion("operativa")}
-        >
+        {/* --- RUTA OPERATIVA (solo alta; sub-bloque) --- */}
+        {!isRevise && (
+          <SubBloque
+            id="operativa"
+            titulo="Ruta operativa"
+            resumen={resumenOperativa}
+            abierto={abiertas.operativa}
+            onToggle={() => toggleSeccion("operativa")}
+          >
             <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/15 p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
@@ -3873,9 +3875,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       setOpsLegs((prev) => [
                         ...prev,
                         {
-                          origen: prev.length
-                            ? prev[prev.length - 1].destino
-                            : "",
+                          origen: prev.length ? prev[prev.length - 1].destino : "",
                           destino: "",
                           ferry: prev.length === 0,
                           pax: "",
@@ -3896,10 +3896,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               </div>
               {opsLegs.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  La ruta REAL del avión (puede salir de otra base, con
-                  ferries). Aquí se cargan los gastos y tacómetros; los tramos
-                  de arriba son solo lo que paga el cliente. Si la dejas
-                  vacía, la operación usa la ruta comercial.
+                  La ruta REAL del avión (puede salir de otra base, con ferries). Aquí se cargan
+                  los gastos y tacómetros; el itinerario del documento es solo lo que paga el
+                  cliente. Si la dejas vacía, la operación usa la ruta comercial.
                 </p>
               ) : (
                 opsLegs.map((l, i) => (
@@ -3938,9 +3937,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         size="sm"
                         variant="ghost"
                         className="h-8 px-2 text-destructive"
-                        onClick={() =>
-                          setOpsLegs((prev) => prev.filter((_, j) => j !== i))
-                        }
+                        onClick={() => setOpsLegs((prev) => prev.filter((_, j) => j !== i))}
                       >
                         Quitar
                       </Button>
@@ -3957,10 +3954,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                                       ...x,
                                       ferry: c,
                                       pax: c ? "" : x.pax,
-                                      // Ferry vuela vacío: sin nombres.
-                                      ...(c
-                                        ? { nombres: "", showNombres: false }
-                                        : {}),
+                                      ...(c ? { nombres: "", showNombres: false } : {}),
                                     }
                                   : x,
                               ),
@@ -3971,15 +3965,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       </label>
                       <label
                         className="flex items-center gap-2 text-xs"
-                        title="El piloto pernocta tras este tramo (viático en la cotización). SOLO se marca a mano — el sistema ya no la activa por salto de fecha."
+                        title="El piloto pernocta tras este tramo (viático en la cotización). SOLO se marca a mano."
                       >
                         <Switch
                           checked={l.pernocta}
                           onCheckedChange={(c) =>
                             setOpsLegs((prev) =>
-                              prev.map((x, j) =>
-                                j === i ? { ...x, pernocta: c } : x,
-                              ),
+                              prev.map((x, j) => (j === i ? { ...x, pernocta: c } : x)),
                             )
                           }
                         />
@@ -3993,9 +3985,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           checked={l.servicio}
                           onCheckedChange={(c) =>
                             setOpsLegs((prev) =>
-                              prev.map((x, j) =>
-                                j === i ? { ...x, servicio: c } : x,
-                              ),
+                              prev.map((x, j) => (j === i ? { ...x, servicio: c } : x)),
                             )
                           }
                         />
@@ -4010,9 +4000,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         value={l.pax}
                         onChange={(e) =>
                           setOpsLegs((prev) =>
-                            prev.map((x, j) =>
-                              j === i ? { ...x, pax: e.target.value } : x,
-                            ),
+                            prev.map((x, j) => (j === i ? { ...x, pax: e.target.value } : x)),
                           )
                         }
                       />
@@ -4032,21 +4020,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                       />
                     )}
                     <div className="flex flex-wrap items-start gap-2">
-                      {/* Calendario + hora en TEXTO libre ("8pm"/"20:00"):
-                          emite el mismo string datetime-local pared-Cancún
-                          que guarda opsLegs[].hora. */}
                       <div
                         className="w-[264px] shrink-0"
-                        title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo. Es la salida programada del piloto; la fecha del PDF del cliente se captura en el detalle de la cotización."
+                        title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo. Es la salida programada del piloto; la fecha del PDF del cliente va en el itinerario del documento."
                       >
                         <FechaHoraCampo
                           className="[&_input]:h-8"
                           value={l.hora}
                           onChange={(v) =>
                             setOpsLegs((prev) =>
-                              prev.map((x, j) =>
-                                j === i ? { ...x, hora: v } : x,
-                              ),
+                              prev.map((x, j) => (j === i ? { ...x, hora: v } : x)),
                             )
                           }
                         />
@@ -4057,15 +4040,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         value={l.nota}
                         onChange={(e) =>
                           setOpsLegs((prev) =>
-                            prev.map((x, j) =>
-                              j === i ? { ...x, nota: e.target.value } : x,
-                            ),
+                            prev.map((x, j) => (j === i ? { ...x, nota: e.target.value } : x)),
                           )
                         }
                       />
                     </div>
-                    {/* Manifiesto colapsado: en el caso común va vacío y no
-                        alarga la card; un ferry vuela sin nombres. */}
                     {!l.ferry &&
                       (l.showNombres ? (
                         <div className="space-y-1">
@@ -4082,8 +4061,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                             placeholder={"Nombres de pasajeros, uno por línea\nJuan Pérez\nMaría López"}
                           />
                           <p className="text-[10px] text-muted-foreground">
-                            Específico de este tramo. Útil para permisos; puede
-                            ir vacío.
+                            Específico de este tramo. Útil para permisos; puede ir vacío.
                           </p>
                         </div>
                       ) : (
@@ -4091,9 +4069,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           type="button"
                           onClick={() =>
                             setOpsLegs((prev) =>
-                              prev.map((x, j) =>
-                                j === i ? { ...x, showNombres: true } : x,
-                              ),
+                              prev.map((x, j) => (j === i ? { ...x, showNombres: true } : x)),
                             )
                           }
                           className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
@@ -4105,281 +4081,1506 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 ))
               )}
             </div>
-        </SeccionCotizador>
-      )}
+          </SubBloque>
+        )}
 
-      {/* 8 · Notas y PDF */}
-      <SeccionCotizador
-        id="notas"
-        titulo="Notas y PDF"
-        resumen={resumenNotas}
-        abierta={abiertas.notas}
-        onToggle={() => toggleSeccion("notas")}
-      >
-        {lectura ? (
-          <>
-            <Dato
-              label="Notas (visibles en PDF)"
-              value={
-                values.notas.trim() ? (
-                  <span className="whitespace-pre-wrap font-normal">
-                    {values.notas}
-                  </span>
-                ) : (
-                  "Sin notas"
-                )
-              }
-            />
-            {/* Notas internas: el DTO de revisión no las acepta (se editan
-                desde el detalle del vuelo), pero en lectura SÍ se muestran
-                — vivían en el detalle y no se pierden. */}
+        {/* --- NOTAS INTERNAS --- */}
+        <div className="space-y-2 border-t border-border pt-3">
+          {!isRevise ? (
+            <Field label="Notas internas" hint="Solo para el equipo · no aparecen en el PDF">
+              <Textarea rows={2} placeholder="Solo para el equipo" {...register("notas_internas")} />
+            </Field>
+          ) : (
             <Dato
               label="Notas internas"
               value={
                 initialQuote?.notas_internas ? (
-                  <span className="whitespace-pre-wrap font-normal">
-                    {initialQuote.notas_internas}
-                  </span>
+                  <span className="whitespace-pre-wrap font-normal">{initialQuote.notas_internas}</span>
                 ) : (
                   "—"
                 )
               }
-              hint="Solo para el equipo. No aparecen en el PDF al cliente; se editan desde el detalle del vuelo (Editar datos)."
+              hint="Solo para el equipo. No aparecen en el PDF; se editan desde el detalle del vuelo (Editar datos)."
             />
-            <div className="space-y-1 rounded-lg border border-border bg-navy-800/50 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-                PDF de la cotización
-              </p>
-              <p className="text-sm">
+          )}
+        </div>
+
+        {/* --- PDF (toggles de presentación) --- */}
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+            PDF del cliente
+          </p>
+          {lectura ? (
+            <div className="space-y-0.5 text-sm">
+              <p>
                 Mostrar tarifa por hora:{" "}
-                <span className="font-medium">
-                  {values.pdf_mostrar_tarifa ? "Sí" : "No"}
-                </span>
+                <span className="font-medium">{values.pdf_mostrar_tarifa ? "Sí" : "No"}</span>
               </p>
-              <p className="text-sm">
+              <p>
                 Mostrar itinerario de tramos:{" "}
-                <span className="font-medium">
-                  {values.pdf_mostrar_itinerario ? "Sí" : "No"}
-                </span>
+                <span className="font-medium">{values.pdf_mostrar_itinerario ? "Sí" : "No"}</span>
               </p>
             </div>
-          </>
-        ) : (
-          <>
-          <Field label="Notas (visibles en PDF)" hint="Opcional">
-            <Textarea rows={2} placeholder="Ej. Sujeto a slot CUN…" {...register("notas")} />
-          </Field>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Mostrar tarifa por hora</Label>
+                  <p className="text-xs text-muted-foreground">
+                    «Servicio aéreo (1.6 h × $1,650/hr)». Apagado, solo el monto.
+                  </p>
+                </div>
+                <Switch
+                  checked={values.pdf_mostrar_tarifa}
+                  onCheckedChange={(c) => setValue("pdf_mostrar_tarifa", c)}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Mostrar itinerario de tramos</Label>
+                  <p className="text-xs text-muted-foreground">
+                    La tabla de tramos de la hoja 1; apagado queda solo el mapa.
+                  </p>
+                </div>
+                <Switch
+                  checked={values.pdf_mostrar_itinerario}
+                  onCheckedChange={(c) => setValue("pdf_mostrar_itinerario", c)}
+                />
+              </div>
+              {isRevise && (
+                <p className="text-[11px] text-muted-foreground">
+                  Estos toggles y las notas del cliente se guardan sin versión nueva cuando son
+                  lo único que cambia.
+                </p>
+              )}
+            </>
+          )}
+        </div>
 
-          {/* En REVISE no se muestra: el DTO de revisión no acepta
-              notas_internas (forbidNonWhitelisted) y lo editado se descartaba
-              en silencio. Se editan desde el detalle del vuelo (Editar datos). */}
-          {!isRevise && (
-            <Field label="Notas internas" hint="Opcional · no aparecen en PDF">
-              <Textarea
-                rows={2}
-                placeholder="Solo para el equipo"
-                {...register("notas_internas")}
+        {/* --- DETALLE DEL CÁLCULO (sub-bloque) --- */}
+        <SubBloque
+          id="detalle"
+          titulo="Detalle del cálculo"
+          resumen={resumenDetalle}
+          aviso={avisoDetalle}
+          abierto={abiertas.detalle}
+          onToggle={() => toggleSeccion("detalle")}
+        >
+          {lectura && initialQuote ? (
+            <>
+              {breakdown ? (
+                <Preview
+                  breakdown={breakdown}
+                  loading={false}
+                  avion={cotizadoEnTexto}
+                  tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Esta versión no guardó el detalle del cálculo (cotización de un motor
+                  anterior): abajo va el desglose reconstruido desde las columnas guardadas.
+                </p>
+              )}
+              <QuoteDesgloseCard quote={initialQuote} />
+            </>
+          ) : error ? (
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardHeader>
+                <CardTitle className="text-base text-destructive">Error al calcular</CardTitle>
+                <CardDescription className="text-destructive/80">{error}</CardDescription>
+              </CardHeader>
+            </Card>
+          ) : !calcPayload ? (
+            <Card className="border-t-2 border-t-brand-600/60">
+              <CardHeader>
+                <CardTitle className="text-base text-muted-foreground">
+                  Completa los parámetros
+                </CardTitle>
+                <CardDescription>Necesito aeronave, ruta y pasajeros para calcular.</CardDescription>
+              </CardHeader>
+            </Card>
+          ) : breakdown ? (
+            <>
+              <Preview
+                breakdown={breakdown}
+                loading={loading}
+                avion={cotizadoEnTexto}
+                tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
               />
+              {isRevise && initialQuote && (
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-wider text-foreground/70">
+                    Desglose de la versión guardada (v{initialQuote.cotizacion_version})
+                  </p>
+                  <QuoteDesgloseCard quote={initialQuote} />
+                </div>
+              )}
+            </>
+          ) : (
+            <PreviewSkeleton />
+          )}
+        </SubBloque>
+      </SeccionCotizador>
+    </div>
+  );
+
+  return (
+    // El formulario ES la hoja 1 (F2): cabecera → ruta+pax → traslados →
+    // itinerario → desglose → notas, con la barra del TOTAL fija arriba y el
+    // bloque interno aparte (aside / portal / acordeón al pie).
+    <div
+      className={cn(
+        "mx-auto space-y-6",
+        previewAnclada || internoUbicacion === "aside" ? "max-w-none" : "max-w-4xl",
+      )}
+    >
+      <TotalBar
+        breakdown={breakdown}
+        // «Vista previa» en la barra cuando la hoja no está anclada (F1).
+        onVistaPrevia={previewAnclada ? undefined : abrirVistaPrevia}
+        loading={loading}
+        error={error}
+        sinDatos={pintaSnapshot ? false : !calcPayload}
+        // Snapshot sin detalle (cotización de un motor anterior) — en lectura
+        // o en revisión sin cambios (no se llama al motor): el total
+        // persistido se pinta tal cual — nunca "Calculando…".
+        totalFallback={
+          pintaSnapshot && initialQuote
+            ? {
+                usd: Number(initialQuote.monto_total_usd) || 0,
+                mxn:
+                  initialQuote.monto_total_mxn != null
+                    ? Number(initialQuote.monto_total_mxn)
+                    : null,
+                tarifaTipo: initialQuote.tarifa_tipo,
+              }
+            : null
+        }
+        avion={cotizadoEnTexto}
+        titulo={
+          isRevise
+            ? (clientName ?? null)
+            : // allClients: incluye al cliente recién creado con «+ Nuevo
+              // cliente» (antes la barra lo ignoraba hasta el refresh).
+              (allClients.find((c) => c.id === values.cliente_id)?.nombre ?? null)
+        }
+        subtitulo={
+          isRevise && initialQuote
+            ? sucio
+              ? soloPresentacion
+                ? `#${initialQuote.folio} · v${initialQuote.cotizacion_version} · PDF ●`
+                : `#${initialQuote.folio} · v${initialQuote.cotizacion_version} → v${versionSiguiente} ●`
+              : `#${initialQuote.folio} · v${initialQuote.cotizacion_version}`
+            : "Nueva cotización"
+        }
+        // BLOQUEADA: 🔒 + razón + «Copiar como nueva cotización».
+        // REVISIÓN: sin cambios no hay botones; con cambios «Descartar» y
+        // «Guardar → vN» (o «Guardar PDF» si solo cambió presentación, D5).
+        // Alta: «Crear v1».
+        bloqueoRazon={lectura ? (bloqueadoRazon ?? undefined) : undefined}
+        onCopiar={lectura ? copiarComoNueva : undefined}
+        saveLabel={
+          saving
+            ? "Guardando…"
+            : isRevise
+              ? soloPresentacion
+                ? "Guardar PDF (sin versión)"
+                : `Guardar → v${versionSiguiente}`
+              : "Crear v1"
+        }
+        saveDisabled={saving || (isRevise ? !sucio : !canSave)}
+        saveTitle={!isRevise && !canSave ? razonNoGuardarAlta : undefined}
+        onSave={
+          lectura
+            ? undefined
+            : isRevise
+              ? sucio
+                ? abrirGuardar
+                : undefined
+              : () => handleSave()
+        }
+        onCancel={isRevise && !lectura && sucio ? pedirDescartar : undefined}
+        cancelLabel="Descartar"
+        cancelDisabled={saving}
+      />
+
+      {/* Avisos de edición directa (F0). */}
+      {conflictoVersion != null && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              {conflictoVersion > 0
+                ? `Alguien guardó la v${conflictoVersion} mientras editabas.`
+                : "La cotización cambió mientras editabas (otra versión o facturación)."}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Tu borrador sigue aquí y no se ha perdido, pero se basa en la v
+              {base.version}. Recarga para partir de la versión actual: el
+              borrador se reaplica encima y lo revisas antes de guardar.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" onClick={recargarConservandoBorrador} className="gap-1.5">
+                <ArrowPathIcon className="h-4 w-4" />
+                Recargar conservando borrador
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={pedirDescartar}>
+                Descartar mi borrador
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {errorCobrada && (
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm">
+          <LockClosedIcon className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium text-destructive">{errorCobrada}</p>
+            <p className="text-xs text-muted-foreground">
+              Para ajustarla elimina primero el cobro (abajo, en «Cobros
+              registrados en el vuelo»), guarda la versión y vuelve a
+              registrarlo con el monto correcto.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href="#cobros-vuelo"
+                onClick={(e) => {
+                  e.preventDefault();
+                  irACobros();
+                }}
+                className="text-xs font-medium underline underline-offset-2"
+              >
+                Ir a los cobros
+              </a>
+              {/* Lo capturado no se pierde: puede seguir como cotización nueva. */}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={copiarComoNueva}
+                className="gap-1.5"
+                title="Crea una cotización nueva con estos mismos datos (esta no se toca)."
+              >
+                <DocumentDuplicateIcon className="h-4 w-4" />
+                Copiar como nueva cotización
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pantalla angosta (<1024 px): pill «Formulario | Vista previa» —
+          nada se esconde, se apila (F1). El form sigue montado (hidden). */}
+      {pantallaAngosta && (
+        <div
+          role="tablist"
+          aria-label="Formulario o vista previa"
+          data-guard-exempt
+          className="flex rounded-lg border border-border bg-muted/40 p-0.5 lg:hidden"
+        >
+          {(
+            [
+              ["form", sucio ? "Formulario ●" : "Formulario"],
+              ["preview", "Vista previa"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={vistaAngosta === id}
+              onClick={() => setVistaAngosta(id)}
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                vistaAngosta === id
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Documento (+ save bar) y, a la derecha: la vista previa REAL anclada
+          (≥1600 px, F1) o el bloque interno como columna (alta, ≥1440 px). */}
+      <div
+        className={cn(
+          previewAnclada &&
+            "grid items-start gap-6 min-[1600px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]",
+          internoUbicacion === "aside" &&
+            "grid items-start gap-6 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(300px,22rem)]",
+        )}
+      >
+      <div className={cn("min-w-0 space-y-6", previewEnPill && "max-lg:hidden")}>
+      {/* Documento: en CONFIRMADO/RESERVA con tripulación el primer cambio se
+          confirma (captura); los encabezados y diálogos están exentos. */}
+      <div
+        className="space-y-6"
+        onClickCapture={interceptarPrimerCambio}
+        onKeyDownCapture={interceptarPrimerCambio}
+      >
+
+      {/* 1 · CABECERA de la hoja: cliente · aeronave cotizada · tipo · fecha */}
+      <SeccionCotizador
+        id="cabecera"
+        titulo="Cotización de servicio aéreo"
+        resumen={resumenCabecera}
+        abierta={abiertas.cabecera}
+        onToggle={() => toggleSeccion("cabecera")}
+        bloqueada={lectura}
+      >
+        <div className="grid gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          {/* Cliente */}
+          {isRevise && initialQuote ? (
+            <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2 space-y-0.5">
+              <p className="text-[11px] uppercase tracking-wider text-foreground/70">
+                Cliente · folio
+              </p>
+              <p className="text-sm font-medium">{clientName ?? initialQuote.cliente_id}</p>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-mono">#{initialQuote.folio}</span> ·{" "}
+                <span className="font-mono">v{initialQuote.cotizacion_version}</span>
+                {lectura
+                  ? clienteInterno
+                    ? " · cliente interno (operación propia: puede ir en $0)"
+                    : ""
+                  : ` · al guardar se genera la v${versionSiguiente}`}
+              </p>
+              {clienteInterno && !lectura && (
+                <div className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/15 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400 space-y-1.5">
+                  <p>Cliente interno — la cotización puede ir en $0 (vuelo de la empresa, sin cobro).</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => setCeroOpen(true)}
+                  >
+                    Poner todo en $0
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Field label="Cliente" required>
+              <div className="space-y-2">
+                {(() => {
+                  const sel = allClients.find((c) => c.id === values.cliente_id);
+                  if (!sel) return null;
+                  return (
+                    <div className="rounded-lg border border-brand-500/30 bg-brand-500/15 px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
+                        <button
+                          type="button"
+                          title="Corregir el nombre del cliente"
+                          onClick={() => {
+                            setEditClienteNombre(sel.nombre);
+                            setEditClienteOpen(true);
+                          }}
+                          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <PencilSquareIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {[
+                          sel.es_interno ? "Interno · operación propia" : null,
+                          sel.es_broker ? "Broker · tarifa broker" : null,
+                          sel.rfc,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Cliente directo"}
+                      </p>
+                      {breakdown && (
+                        <p className="mt-1 text-xs">
+                          <span className="font-mono font-semibold">
+                            {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
+                          </span>{" "}
+                          <span
+                            className={
+                              breakdown.tarifa.proviene_de_override
+                                ? "text-amber-600 dark:text-amber-400"
+                                : breakdown.tarifa.preferencial_cliente
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {breakdown.tarifa.proviene_de_override
+                              ? "· cambiada SOLO para esta cotización"
+                              : breakdown.tarifa.preferencial_cliente
+                                ? "· tarifa pactada con este cliente"
+                                : `· tarifa ${breakdown.tarifa.tipo === "PUBLICO" ? "pública" : "broker"} del avión`}
+                          </span>{" "}
+                          <button
+                            type="button"
+                            onClick={focusTarifaOverride}
+                            className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
+                          >
+                            ¿cobrar diferente en esta cotización?
+                          </button>
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+                {clienteInterno && (
+                  <div className="rounded-md border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 space-y-2">
+                    <p>Cliente interno — la cotización puede ir en $0 (vuelo de la empresa, sin cobro).</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => setCeroOpen(true)}
+                    >
+                      Poner todo en $0
+                    </Button>
+                  </div>
+                )}
+                <SearchableSelect
+                  options={allClients.map((c) => ({
+                    value: c.id,
+                    label: c.nombre,
+                    description: [c.rfc, c.es_broker ? "Broker" : null, c.es_interno ? "Interno" : null]
+                      .filter(Boolean)
+                      .join(" · "),
+                  }))}
+                  value={values.cliente_id}
+                  onChange={(v) => {
+                    setValue("cliente_id", v);
+                    const cli = allClients.find((c) => c.id === v);
+                    if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
+                  }}
+                  placeholder="Selecciona cliente"
+                  emptyText="Sin clientes activos"
+                />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {frequentClientIds
+                    .map((id) => allClients.find((c) => c.id === id))
+                    .filter((c): c is ClientOption => !!c)
+                    .map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        aria-pressed={values.cliente_id === c.id}
+                        onClick={() => {
+                          setValue("cliente_id", c.id);
+                          if (c.es_broker) setValue("tipo_tarifa", "BROKER");
+                        }}
+                        className={cn(
+                          "max-w-[12rem] truncate rounded-full border px-2.5 py-1 text-xs transition-colors",
+                          values.cliente_id === c.id
+                            ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
+                            : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                        )}
+                      >
+                        {c.nombre}
+                      </button>
+                    ))}
+                  <button
+                    type="button"
+                    onClick={() => setClientDialogOpen(true)}
+                    className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600"
+                  >
+                    + Nuevo cliente
+                  </button>
+                </div>
+              </div>
             </Field>
           )}
 
-          {/* Presentación del PDF (27-ago): configurable por cotización. */}
-          <div className="space-y-2 rounded-lg border border-border bg-navy-800/50 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-              PDF de la cotización
-            </p>
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">
-                  Mostrar tarifa por hora
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  El desglose dice «Servicio aéreo (1.6 h × $1,650/hr)».
-                  Apagado, solo el monto.
-                </p>
-              </div>
-              <Switch
-                checked={values.pdf_mostrar_tarifa}
-                onCheckedChange={(c) => setValue("pdf_mostrar_tarifa", c)}
+          {/* Aeronave cotizada (MODELO en el PDF) + tipo + fecha */}
+          <div className="space-y-3">
+            {lectura ? (
+              <Dato
+                label="Aeronave cotizada"
+                value={
+                  selectedAircraft
+                    ? `${selectedAircraft.matricula} — ${selectedAircraft.modelo}`
+                    : breakdown?.aeronave?.modelo
+                      ? [breakdown.aeronave.matricula, breakdown.aeronave.modelo]
+                          .filter(Boolean)
+                          .join(" — ")
+                      : "—"
+                }
+                hint={
+                  <>
+                    {modeloCotizadoTexto && (
+                      <span className="block">El cliente ve: {modeloCotizadoTexto}</span>
+                    )}
+                    {values.es_externo && (
+                      <span className="block">
+                        Vuelo externo: este avión es solo la referencia de tarifa — el vuelo no lo
+                        opera la flota.
+                      </span>
+                    )}
+                  </>
+                }
               />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">
-                  Mostrar itinerario de tramos
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  La tabla de tramos de la hoja 1; apagado queda solo el mapa
-                  de la ruta.
+            ) : (
+              <Field label="Aeronave cotizada" required>
+                <SearchableSelect
+                  options={aircraft.map((a) => {
+                    const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
+                    return {
+                      value: a.id,
+                      label: `${a.matricula} — ${a.modelo}`,
+                      description: `${a.velocidad_crucero_kts} kts · ${a.asientos} asientos${
+                        sinTarifa
+                          ? clienteInterno
+                            ? " · sin tarifa · interno cotiza $0"
+                            : " · sin tarifa configurada"
+                          : ""
+                      }`,
+                      disabled: sinTarifa && !clienteInterno,
+                    };
+                  })}
+                  value={values.aeronave_id}
+                  onChange={(v) => setValue("aeronave_id", v)}
+                  placeholder="Selecciona aeronave"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {modeloCotizadoTexto ? `El cliente ve el modelo: ${modeloCotizadoTexto}` : "El cliente ve el MODELO, nunca la matrícula."}
+                  {selectedAircraft &&
+                    ` · pública ${fmtUsd(selectedAircraft.tarifa_hora_pub_usd)}/hr · broker ${fmtUsd(selectedAircraft.tarifa_hora_broker_usd)}/hr`}
                 </p>
-              </div>
-              <Switch
-                checked={values.pdf_mostrar_itinerario}
-                onCheckedChange={(c) => setValue("pdf_mostrar_itinerario", c)}
-              />
+                {values.es_externo && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Vuelo externo: este avión es solo la referencia de tarifa — el vuelo no lo
+                    opera la flota.
+                  </p>
+                )}
+              </Field>
+            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                Tipo: <span className="font-mono text-foreground">{tipoTexto}</span>
+              </span>
+              <span>
+                Fecha de cotización:{" "}
+                <span className="font-mono text-foreground">{fechaCotizacionTexto}</span>
+              </span>
             </div>
           </div>
-          </>
+        </div>
+      </SeccionCotizador>
+
+      {/* 2 · RUTA GRANDE + PASAJEROS */}
+      <SeccionCotizador
+        id="ruta"
+        titulo="Ruta y pasajeros"
+        resumen={resumenRuta}
+        aviso={avisoRuta}
+        abierta={abiertas.ruta}
+        onToggle={() => toggleSeccion("ruta")}
+        bloqueada={lectura}
+      >
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <button
+            type="button"
+            onClick={focusItinerario}
+            title="La ruta sale de los tramos del itinerario (clic para ir)"
+            className="min-w-0 text-left"
+            data-guard-exempt
+          >
+            {rutaGrande.length > 0 ? (
+              <p className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
+                {rutaGrande.join(" → ")}
+              </p>
+            ) : (
+              <p className="text-lg text-muted-foreground">Sin ruta — captura los tramos abajo</p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Derivada de los tramos visibles del itinerario
+              {tramosOcultos > 0
+                ? ` · ${tramosOcultos} ${tramosOcultos === 1 ? "tramo oculto" : "tramos ocultos"} en el PDF`
+                : ""}
+            </p>
+          </button>
+          <div className="w-44">
+            {lectura ? (
+              <Dato
+                label="Pasajeros"
+                value={
+                  paxPorTramo
+                    ? `${maxPaxTramos} · definido por tramo`
+                    : String(Number(values.pasajeros) || 0)
+                }
+              />
+            ) : (
+              <Field label="Pasajeros" required>
+                <div id="pasajeros-field" className="scroll-mt-24 flex items-center gap-2">
+                  {paxPorTramo ? (
+                    <Input
+                      type="number"
+                      disabled
+                      value={maxPaxTramos}
+                      readOnly
+                      aria-label="Pasajeros (definido por tramo)"
+                      title="Definido por tramo: se edita en el pax de cada tramo del itinerario."
+                      className="w-24 font-mono"
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      min={1}
+                      max={selectedAircraft?.asientos || undefined}
+                      aria-label="Pasajeros"
+                      className="w-24 font-mono"
+                      {...register("pasajeros")}
+                    />
+                  )}
+                  <span className="text-sm text-muted-foreground">pasajeros</span>
+                </div>
+              </Field>
+            )}
+          </div>
+        </div>
+        <div className="space-y-0.5 text-xs">
+          {paxPorTramo && (
+            <p className="text-muted-foreground">
+              Definido POR TRAMO: cada tramo usa su propio número (máx. {maxPaxTramos}); el
+              global no se toma en cuenta.
+            </p>
+          )}
+          {selectedAircraft && selectedAircraft.asientos > 0 && (
+            <p className={cn(capacidadExcedida ? "text-destructive font-medium" : "text-muted-foreground")}>
+              {capacidadExcedida
+                ? `Excede la capacidad: ${maxPasajeros} pax en un tramo vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo}).`
+                : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
+            </p>
+          )}
+          {values.cobrar_tuas &&
+            breakdown &&
+            (breakdown.tuas.filas ?? []).map((f) => (
+              <p key={f.iata} className="text-muted-foreground">
+                TUA <span className="font-mono">{f.iata}</span>:{" "}
+                <span className="font-mono">
+                  {f.pax} × {f.moneda === "MXN" ? fmtMxn(f.monto_pax) : fmtUsd(f.monto_pax)} ={" "}
+                  {fmtUsd(f.total_usd)} USD
+                </span>
+              </p>
+            ))}
+        </div>
+      </SeccionCotizador>
+
+      {/* 3 · TRASLADOS */}
+      <SeccionCotizador
+        id="traslados"
+        titulo="Traslados"
+        resumen={resumenTraslados}
+        abierta={abiertas.traslados}
+        onToggle={() => toggleSeccion("traslados")}
+        bloqueada={lectura}
+      >
+        {lectura && initialQuote ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Dato
+              label="Traslado inicial"
+              value={initialQuote.fecha_vuelo ? fmtDateTime(initialQuote.fecha_vuelo) : "—"}
+              hint={TZ_LABEL}
+            />
+            <Dato
+              label="Traslado final"
+              value={
+                initialQuote.fecha_traslado_final ? (
+                  fmtDateTime(initialQuote.fecha_traslado_final)
+                ) : initialQuote.fecha_fin && initialQuote.fecha_fin !== initialQuote.fecha_vuelo ? (
+                  <>
+                    {fmtDateTime(initialQuote.fecha_fin)}
+                    <span className="text-xs text-muted-foreground"> · derivado del itinerario</span>
+                  </>
+                ) : (
+                  "—"
+                )
+              }
+            />
+          </div>
+        ) : (
+          <div className="grid gap-3 @xl:grid-cols-2">
+            <Field label="Traslado inicial" hint="Opcional · salida (fecha y hora, Cancún)">
+              <FechaHoraCampo
+                value={values.fecha_vuelo ?? ""}
+                onChange={(v) => setValue("fecha_vuelo", v)}
+                ariaLabel="Fecha del traslado inicial"
+              />
+            </Field>
+            <Field label="Traslado final" hint="Opcional · regreso (fecha y hora, Cancún)">
+              <FechaHoraCampo
+                value={values.fecha_traslado_final ?? ""}
+                onChange={(v) => setValue("fecha_traslado_final", v)}
+                ariaLabel="Fecha del traslado final"
+              />
+            </Field>
+          </div>
         )}
       </SeccionCotizador>
 
-      {/* 9 · Detalle del cálculo — el total vive en la TotalBar
-          fija; aquí queda el detalle (solo lectura salvo Cobrable). */}
+      {/* 4 · ITINERARIO en línea + mapa */}
       <SeccionCotizador
-        id="detalle"
-        titulo="Detalle del cálculo"
-        resumen={resumenDetalle}
-        aviso={avisoDetalle}
-        abierta={abiertas.detalle}
-        onToggle={() => toggleSeccion("detalle")}
+        id="itinerario"
+        titulo="Itinerario"
+        resumen={resumenTramos}
+        aviso={avisoTramos}
+        abierta={abiertas.itinerario}
+        onToggle={() => toggleSeccion("itinerario")}
+        bloqueada={lectura}
       >
-        {lectura && initialQuote ? (
-          // LECTURA: el desglose GUARDADO (snapshot) tal cual + el desglose
-          // canónico para balance (líneas que suman exacto, copiar, cotizado
-          // en / opera en, partición avión/VuelaTour) que vivía en el detalle.
-          <>
-            {breakdown ? (
-              <Preview
-                breakdown={breakdown}
-                loading={false}
-                avion={cotizadoEnTexto}
-                tcUsdMxn={
-                  Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null
+        {lectura ? (
+          <div className="grid gap-4 @3xl:grid-cols-[minmax(0,1fr)_minmax(220px,300px)]">
+            <div className="space-y-3">
+              {rutaOperativaLectura}
+              <TramosLectura legs={values.escalas} extra={tramoExtra} />
+              {notaTramos}
+              <Dato
+                label="Plantilla (ruta guardada)"
+                value={
+                  selectedRouteOpt
+                    ? rutaPathTexto(selectedRouteOpt)
+                    : "Itinerario propio (sin ruta del catálogo)"
                 }
-                tiempoOverride={values.tiempo_cobrable_override_hr}
-                onTiempoOverride={() => {}}
-                readOnly
+                hint={
+                  selectedRouteOpt && itinerarioAjustado
+                    ? "El itinerario de esta cotización difiere de la ruta guardada."
+                    : undefined
+                }
+              />
+            </div>
+            <div className="hidden lg:block">{mapaNode}</div>
+          </div>
+        ) : (
+          // Ancho del DOCUMENTO (container query, no del viewport): el mapa
+          // va al costado solo si la columna mide ≥48rem; si no, se apila
+          // debajo — en 1366 px con el aside de la página única los tramos
+          // quedaban aplastados contra el mapa (revisión 8-sep).
+          <div className="grid gap-4 @3xl:grid-cols-[minmax(0,1fr)_minmax(220px,300px)]">
+            <div className="space-y-3">
+              {/* Plantilla: chips «Suele pedir» + ruta guardada del catálogo. */}
+              <div className="space-y-1.5">
+                {rutasSugeridas.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] uppercase tracking-wider text-foreground/70">
+                      Suele pedir:
+                    </span>
+                    {rutasSugeridas.map((s) => {
+                      const activa =
+                        values.escalas.length > 0 &&
+                        s.clave ===
+                          values.escalas.map((l) => `${l.origen_iata}-${l.destino_iata}`).join("|");
+                      return (
+                        <button
+                          key={s.clave}
+                          type="button"
+                          aria-pressed={activa}
+                          onClick={() => aplicarSugerencia(s)}
+                          title={
+                            s.ultima_fecha
+                              ? `Última vez: ${new Date(s.ultima_fecha).toLocaleDateString("es-MX", { dateStyle: "medium" })}`
+                              : undefined
+                          }
+                          className={cn(
+                            "max-w-[16rem] truncate rounded-full border px-2.5 py-1 font-mono text-xs transition-colors",
+                            activa
+                              ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
+                              : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                          )}
+                        >
+                          {s.etiqueta}
+                          {s.veces > 1 && <span className="ml-1 opacity-70">×{s.veces}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-[14rem] flex-1">
+                    <SearchableSelect
+                      options={allRoutes.map((r) => ({
+                        value: r.id,
+                        label: rutaPathTexto(r),
+                        description: `${r.millas_nauticas} NM · ${r.tramos.length} ${
+                          r.tramos.length === 1 ? "tramo" : "tramos"
+                        }`,
+                      }))}
+                      value={values.ruta_id}
+                      onChange={(v) => {
+                        setValue("ruta_id", v);
+                        const ruta = allRoutes.find((r) => r.id === v);
+                        if (ruta && ruta.tramos.length > 0) {
+                          // Carga los tramos de la plantilla como itinerario
+                          // editable de ESTA cotización (la ruta guardada no se modifica).
+                          setValue("escalas", ruta.tramos.map(tramoToEscala));
+                        }
+                      }}
+                      placeholder="Plantilla: ruta guardada del catálogo"
+                      emptyText="Sin rutas — créala aquí"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRouteSheetOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    Crear ruta
+                  </button>
+                  {itinerarioAjustado && values.escalas.length > 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSaveAsRoute}
+                      disabled={savingRoute}
+                      className="h-7 text-xs"
+                      title="Este itinerario difiere de la ruta guardada: guárdalo en el catálogo (la original no se toca)."
+                    >
+                      {savingRoute ? "Guardando…" : "Guardar como nueva ruta"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {initialQuote?.itinerario_operativo && (
+                <div className="rounded-lg border border-sky-500/40 bg-sky-500/15 p-3 space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                      RUTA OPERATIVA (la vuela el piloto — aquí no se cotiza)
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={opsComoEscalas().length === 0}
+                      title="Copia origen→destino de los tramos operativos como punto de partida de la cotización. Los pax se capturan aquí, no se copian."
+                      onClick={() => {
+                        const nuevos = opsComoEscalas();
+                        if (
+                          values.escalas.length > 0 &&
+                          legsSignature(values.escalas) !== legsSignature(nuevos)
+                        ) {
+                          setOpsATramosOpen(true);
+                        } else {
+                          aplicarOpsComoEscalas();
+                        }
+                      }}
+                    >
+                      Cotizar con estos tramos
+                    </Button>
+                  </div>
+                  <p className="font-mono text-sm">
+                    {(() => {
+                      const ops = initialQuote.escalas ?? [];
+                      if (ops.length === 0) return "—";
+                      return [ops[0].origen_iata, ...ops.map((e) => e.destino_iata)].join(" → ");
+                    })()}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {(initialQuote.escalas ?? [])
+                      .map((e, i) => (e.es_ferry || e.solo_operativa ? `T${i + 1} ferry` : null))
+                      .filter(Boolean)
+                      .join(" · ") || "Todos los tramos con pasajeros"}
+                    {" · "}El itinerario de abajo es la ruta COMERCIAL (lo que paga el cliente,
+                    abre y cierra en CUN); la operativa no se toca al cotizar.
+                  </p>
+                  <AlertDialog open={opsATramosOpen} onOpenChange={setOpsATramosOpen}>
+                    <AlertDialogContent data-guard-exempt>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>¿Reemplazar los tramos capturados?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Los tramos de la cotización se sustituyen por los de la ruta operativa
+                          (sin pasajeros: esos se capturan aquí). El total se recalcula en vivo.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={aplicarOpsComoEscalas}>
+                          Reemplazar tramos
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              )}
+
+              {values.escalas.length > 0 ? (
+                <>
+                  <QuoteLegsEditor
+                    variant="fila"
+                    value={values.escalas}
+                    onChange={(legs) => setValue("escalas", legs)}
+                    routes={allRoutes}
+                    airports={airports}
+                    onAeropuertoCreado={onAeropuertoCreado}
+                    avisoAnclaCun
+                    legExtra={legExtraFila}
+                    legAtenuado={(idx) => tramoOculto(idx)}
+                  />
+                  {isRevise && tramoExtra && !escalasCoincidenConBase && sucio && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      Cambiaste los tramos: la fecha y el ojito del PDF por tramo se habilitan
+                      al guardar la versión.
+                    </p>
+                  )}
+                  {isRevise && tramoExtra && notaTramos}
+                  {!isRevise && (
+                    <p className="text-[10px] text-muted-foreground">
+                      La fecha y el ojito de cada fila son SOLO para el PDF del cliente (sin
+                      hora): un tramo oculto no sale en la hoja pero se sigue cobrando.
+                    </p>
+                  )}
+                  {breakdown && (
+                    <button
+                      type="button"
+                      onClick={focusCobrable}
+                      className="text-left text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+                    >
+                      ¿Pactar las horas a cobrar? El Cobrable se edita en «Interno › Tarifa y
+                      horas».
+                    </button>
+                  )}
+                </>
+              ) : (
+                <Field
+                  label="Tramos"
+                  hint="Elige una plantilla o escribe la ruta aquí: «CUN, HOL, CUN» + Enter arma los tramos."
+                >
+                  <RutaRapidaInput
+                    airports={airports}
+                    hayDatos={false}
+                    onAeropuertoCreado={onAeropuertoCreado}
+                    onAplicar={(codigos) =>
+                      setValue(
+                        "escalas",
+                        codigos.slice(0, -1).map((c, i) => ({
+                          origen_iata: c,
+                          destino_iata: codigos[i + 1],
+                          // El autollenado del editor las completa al montar.
+                          millas_nauticas: 0,
+                        })),
+                      )
+                    }
+                  />
+                </Field>
+              )}
+            </div>
+            {/* Mapa del panel: al costado (pegajoso) si el documento es ancho,
+                debajo si es angosto; oculto solo en móvil (<lg). */}
+            <div className="hidden lg:block @3xl:sticky @3xl:top-28">{mapaNode}</div>
+          </div>
+        )}
+      </SeccionCotizador>
+
+      {/* 5 · DESGLOSE en línea con las etiquetas exactas del PDF */}
+      <SeccionCotizador
+        id="desglose"
+        titulo="Desglose"
+        resumen={resumenDesglose}
+        aviso={avisoDesglose}
+        abierta={abiertas.desglose}
+        onToggle={() => toggleSeccion("desglose")}
+        bloqueada={lectura}
+      >
+        {error && !lectura && (
+          <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            Error al calcular: {error}
+          </p>
+        )}
+        {!breakdown && !error && !lectura && (
+          <p className="text-xs text-muted-foreground">
+            {pintaSnapshot
+              ? "Esta versión no guardó el detalle del cálculo (cotización de un motor anterior): el desglose se llena al primer cambio."
+              : calcPayload
+                ? "Calculando…"
+                : "Completa aeronave, tramos y pasajeros para ver el desglose."}
+          </p>
+        )}
+        <div className="divide-y divide-border/60">
+          {/* Servicio aéreo (derivado) */}
+          <FilaDesglose
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={lectura ? undefined : focusTarifa}
+                  disabled={lectura}
+                  className={cn(!lectura && "underline-offset-2 hover:underline")}
+                  title={lectura ? undefined : "Derivado: horas × tarifa (Interno › Tarifa y horas)"}
+                  data-guard-exempt
+                >
+                  Servicio aéreo
+                  {values.pdf_mostrar_tarifa && breakdown
+                    ? ` (${fmtDecimal(breakdown.tiempos.cobrable_hr, 2)} h × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr)`
+                    : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setServicioInfoAbierto((v) => !v)}
+                  aria-expanded={servicioInfoAbierto}
+                  aria-label="Cómo se compone el servicio aéreo impreso"
+                  title="Cómo se compone"
+                  className="text-muted-foreground hover:text-foreground"
+                  data-guard-exempt
+                >
+                  <InformationCircleIcon className="h-4 w-4" />
+                </button>
+              </span>
+            }
+            value={servicioAereoImpresoUsd != null ? fmtUsd(servicioAereoImpresoUsd) : "—"}
+            hint={
+              servicioInfoAbierto && breakdown ? (
+                <>
+                  = {fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} h ×{" "}
+                  {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr ={" "}
+                  {fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
+                  {comisionAbsorbidaUsd > 0 && (
+                    <>
+                      {" "}+ comisión del vendedor {fmtUsd(comisionAbsorbidaUsd)} (absorbida)
+                    </>
+                  )}
+                  {redondeoAbsorbidoUsd > 0 && (
+                    <>
+                      {" "}+{" "}
+                      <button
+                        type="button"
+                        onClick={lectura ? undefined : focusRedondeo}
+                        disabled={lectura}
+                        className={cn(!lectura && "underline underline-offset-2")}
+                        data-guard-exempt
+                      >
+                        redondeo {fmtUsd(redondeoAbsorbidoUsd)}
+                      </button>{" "}
+                      (absorbido)
+                    </>
+                  )}
+                  {breakdown.tiempos.minimo_hora_aplicado && " · vuelo corto: mínimo 1 hr"}
+                  {breakdown.tiempos.cobrable_proviene_de_override && " · horas pactadas a mano"}
+                  {" · "}
+                  <span className="text-muted-foreground">
+                    tarifa {origenTarifaResumen}
+                    {values.pdf_mostrar_tarifa ? "" : " · el PDF imprime solo el monto"}
+                  </span>
+                </>
+              ) : undefined
+            }
+          />
+
+          {/* TUAS por aeropuerto (inline, con switch) */}
+          <div className="py-2">
+            {breakdown ? (
+              <TuasFilas
+                breakdown={breakdown}
+                tuasLineas={values.tuas_lineas ?? []}
+                onTuaChange={setTuaLinea}
+                cobrarTuas={values.cobrar_tuas}
+                onCobrarTuasChange={(c) => setValue("cobrar_tuas", c)}
+                tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
+                onFocusTc={focusTc}
+                readOnly={lectura}
               />
             ) : (
               <p className="text-xs text-muted-foreground">
-                Esta versión no guardó el detalle del cálculo (cotización de un
-                motor anterior): abajo va el desglose reconstruido desde las
-                columnas guardadas.
+                {lectura
+                  ? "Esta versión no guardó el desglose de TUAS por aeropuerto (cotización de un motor anterior)."
+                  : "TUAS por aeropuerto: se llenan al calcular."}
               </p>
             )}
-            <QuoteDesgloseCard quote={initialQuote} />
-          </>
-        ) : error ? (
-          <Card className="border-destructive/50 bg-destructive/5">
-            <CardHeader>
-              <CardTitle className="text-base text-destructive">
-                Error al calcular
-              </CardTitle>
-              <CardDescription className="text-destructive/80">{error}</CardDescription>
-            </CardHeader>
-          </Card>
-        ) : !calcPayload ? (
-          <Card className="border-t-2 border-t-brand-600/60">
-            <CardHeader>
-              <CardTitle className="text-base text-muted-foreground">
-                Completa los parámetros
-              </CardTitle>
-              <CardDescription>
-                Necesito aeronave, ruta y pasajeros para calcular.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : breakdown ? (
-          <Preview
-            breakdown={breakdown}
-            loading={loading}
-            avion={cotizadoEnTexto}
-            tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
-            tiempoOverride={values.tiempo_cobrable_override_hr}
-            onTiempoOverride={(v) => setValue("tiempo_cobrable_override_hr", v)}
+          </div>
+
+          {/* Extras (inline) + línea BillPocket sintetizada */}
+          <div className="py-2 space-y-1.5">
+            <ExtrasEditor
+              variant="fila"
+              value={values.extras}
+              onChange={(extras) => setValue("extras", extras)}
+              tcCapturado={Number(values.tc_usd_mxn) > 0}
+              onFocusTc={focusTc}
+              pasajeros={Number(values.pasajeros) > 0 ? Number(values.pasajeros) : null}
+              grupo={grupoDelHijo}
+              readOnly={lectura}
+            />
+            {extraBillPocket && (
+              <FilaDesglose
+                label={
+                  <button
+                    type="button"
+                    onClick={lectura ? undefined : focusBillPocket}
+                    disabled={lectura}
+                    className={cn(!lectura && "underline-offset-2 hover:underline")}
+                    title={lectura ? undefined : "Derivado del % de BillPocket (Interno › Cobro)"}
+                    data-guard-exempt
+                  >
+                    {extraBillPocket.concepto}
+                  </button>
+                }
+                value={fmtUsd(extraBillPocket.monto_usd)}
+                hint="sin IVA · la sintetiza el motor"
+              />
+            )}
+          </div>
+
+          {/* Pernocta (derivado del itinerario) */}
+          {(Number(breakdown?.totales.viaticos_pernocta_usd) > 0 || nPernoctas > 0) && (
+            <FilaDesglose
+              label={
+                <button
+                  type="button"
+                  onClick={lectura ? undefined : focusItinerario}
+                  disabled={lectura}
+                  className={cn(!lectura && "underline-offset-2 hover:underline")}
+                  title={lectura ? undefined : "Se marca por tramo en el itinerario (⛺)"}
+                  data-guard-exempt
+                >
+                  Viáticos por pernocta ({nPernoctas} {nPernoctas === 1 ? "tramo" : "tramos"})
+                </button>
+              }
+              value={fmtUsd(breakdown?.totales.viaticos_pernocta_usd ?? 0)}
+              hint="sin IVA"
+            />
+          )}
+
+          {/* Descuento (input) */}
+          <FilaDesglose
+            label="Descuento"
+            value={
+              lectura ? (
+                descuentoUsd > 0 ? `−${fmtUsd(descuentoUsd)}` : "—"
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-muted-foreground">−</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="0.00"
+                    aria-label="Descuento (USD)"
+                    className="h-8 w-28 text-right font-mono"
+                    value={values.descuento_usd ?? ""}
+                    onChange={(e) =>
+                      setValue(
+                        "descuento_usd",
+                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                      )
+                    }
+                  />
+                </span>
+              )
+            }
+            hint={lectura ? undefined : "Negociado («ciérramelo en 750»). Fuera de IVA; sale como línea en el PDF."}
+          />
+
+          {/* Subtotal (derivado) */}
+          <FilaDesglose
+            label="Subtotal (sin IVA)"
+            value={subtotalSinIvaUsd != null ? fmtUsd(subtotalSinIvaUsd) : "—"}
+          />
+
+          {/* IVA % (override) */}
+          <FilaDesglose
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={lectura ? undefined : focusMetodoPago}
+                  disabled={lectura}
+                  className={cn(!lectura && "underline-offset-2 hover:underline")}
+                  title={lectura ? undefined : "El % lo decide el método de pago (Interno › Cobro); aquí se puede forzar"}
+                  data-guard-exempt
+                >
+                  IVA
+                </button>
+                {lectura ? (
+                  <span className="font-mono text-xs">
+                    ({ivaPctMotor ?? (ivaPctInput || 0)} %{ivaOverrideRaw !== "" ? " · manual" : ""})
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-mono text-xs">
+                    (
+                    <Input
+                      type="number"
+                      step="1"
+                      min={0}
+                      max={100}
+                      placeholder={ivaPctMotor != null ? String(ivaPctMotor) : "auto"}
+                      aria-label="IVA % (vacío = según método de pago)"
+                      title="Vacío = según método de pago"
+                      className="h-7 w-16 px-1.5 text-right font-mono"
+                      value={ivaPctInput}
+                      onChange={(e) =>
+                        setValue(
+                          "iva_pct_override",
+                          e.target.value === ""
+                            ? null
+                            : Math.round(Math.min(100, Math.max(0, Number(e.target.value))) * 100) /
+                                10000,
+                        )
+                      }
+                    />
+                    %)
+                  </span>
+                )}
+              </span>
+            }
+            value={breakdown ? fmtUsd(breakdown.totales.iva_usd) : "—"}
+            hint={breakdown?.iva.nota}
+          />
+
+          {/* TOTAL */}
+          <div className="flex items-baseline justify-between gap-3 py-2">
+            <span className="font-heading text-base font-semibold">Total (USD)</span>
+            <span className="font-mono text-xl font-bold tabular-nums text-brand-600 dark:text-brand-400">
+              {breakdown
+                ? fmtUsd(breakdown.totales.total_usd)
+                : lectura && initialQuote
+                  ? fmtUsd(Number(initialQuote.monto_total_usd) || 0)
+                  : "—"}
+            </span>
+          </div>
+
+          {/* Total MXN (T.C. input, ancla tc-usd-mxn-field) */}
+          <FilaDesglose
+            label={
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                Total MXN
+                {lectura ? (
+                  <span className="font-mono text-xs">
+                    {Number(values.tc_usd_mxn) > 0
+                      ? `(T.C. ${fmtDecimal(Number(values.tc_usd_mxn), 4)})`
+                      : "(sin T.C.)"}
+                  </span>
+                ) : (
+                  <span id="tc-usd-mxn-field" className="scroll-mt-24 inline-flex items-center gap-1 font-mono text-xs">
+                    (T.C.
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min={0}
+                      placeholder="18.50"
+                      aria-label="Tipo de cambio (MXN por USD)"
+                      title={
+                        hayLineasMxn
+                          ? "Requerido: hay TUAS/extras capturados en pesos"
+                          : costoExternoEnMxn
+                            ? "Requerido: el costo del operador externo va en pesos"
+                            : "Opcional · si el pago entrará en pesos"
+                      }
+                      className={cn(
+                        "h-7 w-24 px-1.5 text-right font-mono",
+                        mxnSinTc || costoExternoMxnSinTc ? "border-amber-500/60" : undefined,
+                      )}
+                      value={values.tc_usd_mxn ?? ""}
+                      onChange={(e) =>
+                        setValue(
+                          "tc_usd_mxn",
+                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                    />
+                    )
+                  </span>
+                )}
+              </span>
+            }
+            value={
+              breakdown?.totales.total_mxn != null
+                ? fmtMxn(breakdown.totales.total_mxn)
+                : lectura && initialQuote?.monto_total_mxn != null
+                  ? fmtMxn(Number(initialQuote.monto_total_mxn))
+                  : "—"
+            }
+            hint={
+              mxnSinTc
+                ? "Hay TUAS o extras en MXN sin tipo de cambio: el total aún NO los incluye. Captura el T.C. para aplicarlos y poder guardar."
+                : costoExternoMxnSinTc
+                  ? "El costo del operador externo va en pesos: captura el T.C. para poder guardar."
+                  : Number(breakdown?.totales.mxn_nativos) > 0
+                    ? `Exacto por composición: USD × T.C. + ${fmtMxn(breakdown!.totales.mxn_nativos)} nativos en pesos`
+                    : lectura
+                      ? undefined
+                      : "Opcional · solo si el pago entra en pesos"
+            }
+            tono={mxnSinTc || costoExternoMxnSinTc ? "aviso" : undefined}
+          />
+        </div>
+      </SeccionCotizador>
+
+      {/* 6 · NOTAS del cliente (al pie de la hoja) */}
+      <SeccionCotizador
+        id="notas"
+        titulo="Notas"
+        resumen={values.notas.trim() ? "1 nota en el PDF" : "sin notas"}
+        abierta={abiertas.notas}
+        onToggle={() => toggleSeccion("notas")}
+        bloqueada={lectura}
+      >
+        {lectura ? (
+          <Dato
+            label="Notas (visibles en PDF)"
+            value={
+              values.notas.trim() ? (
+                <span className="whitespace-pre-wrap font-normal">{values.notas}</span>
+              ) : (
+                "Sin notas"
+              )
+            }
           />
         ) : (
-          <PreviewSkeleton />
+          <Field
+            label="Notas (visibles en PDF)"
+            hint={
+              isRevise
+                ? "Opcional · al pie de la hoja 1. Si es lo único que cambia, se guarda sin versión nueva."
+                : "Opcional · al pie de la hoja 1"
+            }
+          >
+            <Textarea rows={2} placeholder="Ej. Sujeto a slot en CUN…" {...register("notas")} />
+          </Field>
         )}
       </SeccionCotizador>
 
-        {/* Save bar (oculta en LECTURA: ahí el único botón es «Revisar» en
-            la barra del total). */}
-        {!lectura && (
+      {/* Bloque INTERNO como acordeón al pie (pantallas menores / preview anclada). */}
+      {internoUbicacion === "pie" && internoNode}
+      </div>
+
+        {/* Save bar (oculta en LECTURA bloqueada; en revisión solo con cambios). */}
+        {!lectura && (!isRevise || sucio) && (
         <Card className="border-t-2 border-t-brand-600/60">
           <CardContent className="p-4 space-y-3">
             {mxnSinTc && (
               <p className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                Hay TUAS o extras capturados en MXN sin tipo de cambio: el
-                total mostrado aún NO los incluye. Captura el TC (MXN por USD)
-                en «Cobro y cierre» para aplicarlos y poder guardar.
+                Hay TUAS o extras capturados en MXN sin tipo de cambio: el total mostrado aún NO
+                los incluye. Captura el T.C. en «Total MXN» del desglose para aplicarlos y poder
+                guardar.
               </p>
             )}
             {isRevise && initialQuote ? (
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-sm">
                   <p className="font-medium">
-                    Guardar revisión v{initialQuote.cotizacion_version + 1}
+                    {soloPresentacion ? "Guardar presentación del PDF" : `Guardar → v${versionSiguiente}`}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    La versión actual queda en el historial. El cálculo nuevo
-                    reemplaza el snapshot del vuelo. El motivo se captura
-                    arriba, bajo la barra del total.
+                    {resumenCambios || "Sin cambios"}.{" "}
+                    {soloPresentacion
+                      ? "Solo cambia cómo se ve el PDF: no se genera versión nueva."
+                      : `La v${initialQuote.cotizacion_version} queda en el historial; al guardar se pide el motivo.`}{" "}
+                    Atajo: Ctrl/⌘+S.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {onCancelar && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={pedirCancelar}
-                      disabled={saving}
-                    >
-                      Cancelar
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (faltaSoloMotivo) {
-                        focusMotivo();
-                        return;
-                      }
-                      handleSave();
-                    }}
-                    disabled={saving || (!canSave && !faltaSoloMotivo)}
-                    className="gap-2"
-                  >
+                  <Button type="button" variant="outline" onClick={pedirDescartar} disabled={saving}>
+                    Descartar
+                  </Button>
+                  <Button type="button" onClick={abrirGuardar} disabled={saving || !sucio} className="gap-2">
                     <BookmarkSquareIcon className="h-4 w-4" />
-                    {saving ? "Guardando…" : "Guardar revisión"}
+                    {saving
+                      ? "Guardando…"
+                      : soloPresentacion
+                        ? "Guardar PDF (sin versión)"
+                        : `Guardar → v${versionSiguiente}`}
                   </Button>
                 </div>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-sm">
-                  <p className="font-medium">Guardar cotización</p>
+                  <p className="font-medium">Crear v1</p>
                   <p className="text-xs text-muted-foreground">
-                    Se crea como v1 en estado COTIZADO. Podrás revisar o confirmar después.
+                    Se crea como v1 en estado COTIZADO. Podrás editar o confirmar después. Atajo:
+                    Ctrl/⌘+S.
                   </p>
+                  {razonNoGuardarAlta && (
+                    <p className="mt-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      {razonNoGuardarAlta}
+                    </p>
+                  )}
                 </div>
                 <Button
                   type="button"
-                  onClick={handleSave}
+                  onClick={() => handleSave()}
                   disabled={!canSave || saving}
+                  title={razonNoGuardarAlta}
                   className="gap-2"
                 >
                   <BookmarkSquareIcon className="h-4 w-4" />
-                  {saving ? "Guardando…" : "Guardar cotización"}
+                  {saving ? "Guardando…" : "Crear v1"}
                 </Button>
               </div>
             )}
           </CardContent>
         </Card>
         )}
+      </div>
 
-      {/* Cancelar la revisión en el lugar con cambios capturados: se confirma
-          (lo escrito se pierde; la cotización queda tal como está guardada). */}
+      {/* Vista previa ANCLADA (≥1600 px): sticky bajo la barra del total,
+          con scroll propio para recorrer la hoja completa. */}
+      {previewAnclada && (
+        <div className="min-w-0 min-[1600px]:sticky min-[1600px]:top-[7.5rem]" data-guard-exempt>
+          <QuotePreviewPane
+            {...previewPaneProps}
+            onAbrirGrande={() => setPreviewDialogOpen(true)}
+            anclaje={{
+              anclada: true,
+              onToggle: () => previewPrefs.setAnclada(false),
+            }}
+            className="max-h-[calc(100vh-8.5rem)]"
+          />
+        </div>
+      )}
+      {/* Bloque INTERNO como columna propia (alta, ≥1440 px). */}
+      {internoUbicacion === "aside" && (
+        <div className="min-w-0 min-[1440px]:sticky min-[1440px]:top-[7.5rem] min-[1440px]:max-h-[calc(100vh-8.5rem)] min-[1440px]:overflow-y-auto">
+          {internoNode}
+        </div>
+      )}
+      {/* Pestaña «Vista previa» de la pantalla angosta. */}
+      {previewEnPill && (
+        <div className="min-w-0 lg:hidden" data-guard-exempt>
+          <QuotePreviewPane
+            {...previewPaneProps}
+            onAbrirGrande={() => setPreviewDialogOpen(true)}
+          />
+        </div>
+      )}
+      </div>
+
+      {/* Bloque INTERNO por portal al aside de la página única (≥1440 px). */}
+      {internoUbicacion === "portal" && internoSlot && createPortal(internoNode, internoSlot)}
+
+      {/* «Abrir en grande» / botón de la barra sin anclaje: diálogo casi a
+          pantalla completa con la hoja a tamaño real. */}
+      <QuotePreviewDialog
+        open={previewDialogOpen}
+        onOpenChange={setPreviewDialogOpen}
+        {...previewPaneProps}
+        anclaje={
+          pantallaAncha && previewPrefs.hidratado
+            ? {
+                anclada: previewAnclada,
+                onToggle: () => {
+                  previewPrefs.setAnclada(!previewAnclada);
+                  if (!previewAnclada) setPreviewDialogOpen(false);
+                },
+              }
+            : undefined
+        }
+      />
+
+      {/* Descartar con cambios capturados: se confirma (lo escrito se
+          pierde; la cotización queda tal como está guardada). */}
       {isRevise && initialQuote && (
         <AlertDialog open={confirmDescartar} onOpenChange={setConfirmDescartar}>
-          <AlertDialogContent>
+          <AlertDialogContent data-guard-exempt>
             <AlertDialogHeader>
-              <AlertDialogTitle>¿Descartar los cambios de la revisión?</AlertDialogTitle>
+              <AlertDialogTitle>¿Descartar los cambios?</AlertDialogTitle>
               <AlertDialogDescription>
-                Lo que capturaste en esta revisión se pierde y la cotización
-                #{initialQuote.folio} queda tal como está guardada (v
-                {initialQuote.cotizacion_version}). No se genera ninguna versión
-                nueva.
+                {resumenCambios ? `${resumenCambios}. ` : ""}Lo capturado se
+                pierde y la cotización #{initialQuote.folio} queda tal como
+                está guardada (v{initialQuote.cotizacion_version}). No se
+                genera ninguna versión nueva.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -4387,8 +5588,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               <AlertDialogAction
                 onClick={(e) => {
                   e.preventDefault();
-                  setConfirmDescartar(false);
-                  onCancelar?.();
+                  descartarCambios();
                 }}
                 className="bg-destructive text-white hover:bg-destructive/90"
               >
@@ -4398,6 +5598,208 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      {/* Diálogo «Guardar vN» (F0/D1): chip de motivo obligatorio + texto
+          opcional; el resumen automático del diff se muestra y viaja como
+          prefijo del motivo. Avisos: tripulación (fechas/avión/pernocta en
+          CONFIRMADO/RESERVA con piloto) y deriva del motor. Esc lo cierra. */}
+      {isRevise && initialQuote && (
+        <Dialog
+          open={guardarOpen}
+          onOpenChange={(o) => {
+            setGuardarOpen(o);
+            // Cerrar sin guardar = fin del intento: la próxima vez es otro.
+            if (!o && !saving) {
+              saveRequestIdRef.current = null;
+              verPdfTrasGuardarRef.current = false;
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg" data-guard-exempt>
+            <DialogHeader>
+              <DialogTitle>Guardar v{versionSiguiente}</DialogTitle>
+              <DialogDescription>
+                La v{initialQuote.cotizacion_version} queda en el historial.
+                Elige por qué se guarda esta versión.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wider text-foreground/70">
+                  Qué cambia ({cambios.length})
+                </p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {cambios.slice(0, 12).map((c) => (
+                    <li key={c.clave}>
+                      <Badge variant="outline" className="font-mono text-[11px]">
+                        {c.texto}
+                      </Badge>
+                    </li>
+                  ))}
+                  {cambios.length > 12 && (
+                    <li className="text-xs text-muted-foreground">
+                      +{cambios.length - 12} más
+                    </li>
+                  )}
+                </ul>
+                {breakdown && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Total con IVA:{" "}
+                    <span className="font-mono text-foreground">
+                      {fmtUsd(breakdown.totales.total_usd)}
+                    </span>
+                    {Number(initialQuote.monto_total_usd) !==
+                      Number(breakdown.totales.total_usd) && (
+                      <>
+                        {" "}
+                        (antes {fmtUsd(Number(initialQuote.monto_total_usd))})
+                      </>
+                    )}
+                  </p>
+                )}
+              </div>
+              {avisaTripulacion && (
+                <p className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs text-violet-700 dark:text-violet-300">
+                  Se notificará a la tripulación: el cambio toca fechas, avión o
+                  pernocta de un vuelo con piloto asignado.
+                </p>
+              )}
+              {derivaMotor && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                  La tarifa cambió desde la v{initialQuote.cotizacion_version}:
+                  sin tocar nada, hoy el motor daría{" "}
+                  <span className="font-mono">{fmtUsd(derivaMotor.fresco)}</span>{" "}
+                  en vez de{" "}
+                  <span className="font-mono">{fmtUsd(derivaMotor.snapshot)}</span>{" "}
+                  (tarifa preferencial, catálogo o TC). Al guardar se aplica lo
+                  vigente.
+                </p>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Motivo <span className="text-destructive">*</span>
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {MOTIVOS_REVISION.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      aria-pressed={motivoChip === m}
+                      onClick={() => setMotivoChip(m)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                        motivoChip === m
+                          ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
+                          : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <div id="motivo-revision-field" className="scroll-mt-24">
+                  <Textarea
+                    rows={2}
+                    placeholder="Detalle opcional · ej. el cliente llamó y subió a 6 pasajeros"
+                    {...register("motivo")}
+                  />
+                </div>
+                {motivoPreview && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Queda en el historial como:{" "}
+                    <span className="font-mono text-foreground">{motivoPreview}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setGuardarOpen(false)}
+                disabled={saving}
+              >
+                Seguir editando
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleSave(motivoPreview)}
+                disabled={saving || !motivoChip || !canSave}
+                className="gap-2"
+              >
+                <BookmarkSquareIcon className="h-4 w-4" />
+                {saving ? "Guardando…" : `Guardar v${versionSiguiente}`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Confirmación ÚNICA del primer cambio en CONFIRMADO/RESERVA con
+          tripulación (F0-d). */}
+      {isRevise && initialQuote && (
+        <AlertDialog open={confirmEdicionOpen} onOpenChange={setConfirmEdicionOpen}>
+          <AlertDialogContent data-guard-exempt>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Esta cotización tiene tripulación asignada. ¿Editar?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                El vuelo #{initialQuote.folio} está{" "}
+                {initialQuote.estado === "RESERVA" ? "reservado" : "confirmado"} con
+                piloto. Puedes editar normal; al guardar, si cambian fechas, avión
+                o pernocta, la tripulación recibe aviso (el precio no notifica).
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>No, solo ver</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEdicionConfirmada(true);
+                  setConfirmEdicionOpen(false);
+                }}
+              >
+                Sí, editar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Navegar con cambios sin guardar (F0-e). */}
+      <AlertDialog
+        open={guardCambios.navPendiente != null}
+        onOpenChange={(o) => {
+          if (!o) guardCambios.cancelarNav();
+        }}
+      >
+        <AlertDialogContent data-guard-exempt>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tienes cambios sin guardar</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resumenCambios ? `${resumenCambios}. ` : ""}Si sales ahora se
+              pierden. Guarda primero (Guardar → v{versionSiguiente}) o
+              descártalos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                const destino = guardCambios.navPendiente;
+                guardCambios.limpiarNav();
+                guardCambios.saltar();
+                if (destino) router.push(destino);
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              Salir sin guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {!isRevise && (
         <QuickClientDialog
           open={clientDialogOpen}
@@ -4439,7 +5841,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
       {/* Corregir el nombre del cliente sin salir del cotizador (26-ago). */}
       <Dialog open={editClienteOpen} onOpenChange={setEditClienteOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" data-guard-exempt>
           <DialogHeader>
             <DialogTitle>Corregir nombre del cliente</DialogTitle>
             <DialogDescription>
@@ -4497,7 +5899,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
       {/* Confirmación de "todo en $0": borra extras y overrides ya capturados. */}
       <Dialog open={ceroOpen} onOpenChange={setCeroOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" data-guard-exempt>
           <DialogHeader>
             <DialogTitle>Poner la cotización en $0</DialogTitle>
             <DialogDescription>
@@ -4737,52 +6139,44 @@ function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
 
 // ===== Secciones colapsables del cotizador (reorganización sep-2026) =====
 // El colapso es por CSS (hidden), NUNCA por desmontar: los hijos conservan
-// sus register() de RHF, los defaultValue no controlados (TuasAirportRow) y
-// los ids ancla de los atajos scroll+focus.
+// sus register() de RHF y los ids ancla de los atajos scroll+focus.
 
 type SeccionId =
-  | "cliente"
-  | "avion"
-  | "tramos"
-  | "cargos"
-  | "cobro"
+  // Documento (orden de la hoja 1)
+  | "cabecera"
+  | "ruta"
+  | "traslados"
+  | "itinerario"
+  | "desglose"
+  | "notas"
+  // Bloque interno y sus sub-bloques
+  | "interno"
   | "externo"
   | "operativa"
-  | "notas"
   | "detalle";
 
-/** Overrides de plegado del operador (solo alta nueva), patrón data-table. */
-const SECCIONES_LS_KEY = "vt-cotizador-plegado-v1";
+/** Overrides de plegado del operador (solo alta nueva), patrón data-table.
+ *  v2 (F2): las secciones cambiaron de nombre; la clave v1 se ignora. */
+const SECCIONES_LS_KEY = "vt-cotizador-plegado-v2";
+/** «Interno · no se imprime» abierto/cerrado, por usuario (alta y revisión). */
+const INTERNO_LS_KEY = "vt-cotizador-interno-v1";
 
-/** Defaults deterministas por modo (sin leer storage: hidratación estable). */
+/** Defaults deterministas por modo (sin leer storage: hidratación estable).
+ *  El documento se abre COMPLETO en ambos modos; los sub-bloques internos
+ *  (externo, ruta operativa, detalle del cálculo) arrancan plegados. */
 function seccionesDefault(isRevise: boolean): Record<SeccionId, boolean> {
-  return isRevise
-    ? {
-        // Página única (5-sep-2026): la cotización se abre en su formato
-        // COMPLETO — todas las secciones abiertas en lectura y el mismo
-        // acomodo al pasar a edición ("que no se revuelva todo"). El
-        // plegado sigue disponible a mano y no se persiste en revise.
-        cliente: true,
-        avion: true,
-        tramos: true,
-        cargos: true,
-        cobro: true,
-        externo: true,
-        operativa: false, // no se renderiza en revise
-        notas: true,
-        detalle: true,
-      }
-    : {
-        cliente: true,
-        avion: true,
-        tramos: true,
-        cargos: true,
-        cobro: true,
-        externo: false, // plegada: el resumen invita a prenderla
-        operativa: false,
-        notas: true,
-        detalle: false,
-      };
+  return {
+    cabecera: true,
+    ruta: true,
+    traslados: true,
+    itinerario: true,
+    desglose: true,
+    notas: true,
+    interno: false, // se maneja aparte (INTERNO_LS_KEY)
+    externo: isRevise, // en revisión solo se pinta si es externo: abierto
+    operativa: false,
+    detalle: false,
+  };
 }
 
 const MESES_CORTOS = [
@@ -4814,29 +6208,49 @@ function SeccionCotizador({
   aviso,
   abierta,
   onToggle,
+  bloqueada = false,
+  variante = "documento",
   children,
 }: {
   id: SeccionId;
   titulo: string;
+  /** «interno»: borde discreto (no es parte de la hoja). */
+  variante?: "documento" | "interno";
   /** Resumen compacto del contenido; visible solo con la sección plegada. */
   resumen?: ReactNode;
   /** Aviso activo: badge ámbar SIEMPRE visible — un warning no se esconde. */
   aviso?: string | null;
   abierta: boolean;
   onToggle: () => void;
+  /** Cotización bloqueada (candado): 🔒 en el encabezado, valores como texto. */
+  bloqueada?: boolean;
   children: ReactNode;
 }) {
   return (
-    <Card className="border-t-2 border-t-brand-600/60">
+    <Card
+      className={cn(
+        "border-t-2",
+        variante === "interno"
+          ? "border-dashed border-t-muted-foreground/40 bg-muted/20"
+          : "border-t-brand-600/60",
+      )}
+    >
       <button
         type="button"
         aria-expanded={abierta}
         aria-controls={`seccion-${id}`}
         onClick={onToggle}
+        data-guard-exempt
         className="flex w-full items-center gap-3 px-4 text-left"
       >
         <div className="min-w-0 flex-1 space-y-0.5">
           <span className="flex flex-wrap items-center gap-2 font-heading text-base font-medium leading-snug">
+            {bloqueada && (
+              <LockClosedIcon
+                className="h-3.5 w-3.5 text-muted-foreground"
+                aria-label="Sección bloqueada"
+              />
+            )}
             {titulo}
             {aviso && (
               <Badge
@@ -4860,8 +6274,10 @@ function SeccionCotizador({
           )}
         />
       </button>
-      {/* hidden (CSS), no render condicional: ver nota de arriba. */}
-      <div id={`seccion-${id}`} hidden={!abierta} className="px-4">
+      {/* hidden (CSS), no render condicional: ver nota de arriba.
+          `@container`: los grids internos (cabecera, traslados, itinerario +
+          mapa) responden al ancho REAL de la sección, no del viewport. */}
+      <div id={`seccion-${id}`} hidden={!abierta} className="@container px-4">
         <div className="space-y-4">{children}</div>
       </div>
     </Card>
@@ -4885,13 +6301,15 @@ function TotalBar({
   subtitulo,
   saveLabel,
   saveDisabled,
-  saveIcon = "guardar",
   saveTitle,
   onSave,
   onCancel,
   cancelLabel = "Cancelar",
   cancelDisabled,
   totalFallback,
+  bloqueoRazon,
+  onCopiar,
+  onVistaPrevia,
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
@@ -4907,8 +6325,6 @@ function TotalBar({
       vista con el total — el guardado real vive en el padre (handleSave). */
   saveLabel?: string;
   saveDisabled?: boolean;
-  /** Icono del primario: «revisar» (lápiz) en lectura, «guardar» si no. */
-  saveIcon?: "guardar" | "revisar";
   /** Tooltip del primario (razón del candado cuando está deshabilitado). */
   saveTitle?: string;
   onSave?: () => void;
@@ -4922,6 +6338,12 @@ function TotalBar({
     mxn: number | null;
     tarifaTipo?: string | null;
   } | null;
+  /** Cotización BLOQUEADA (F0): 🔒 + razón legible en vez del botón primario. */
+  bloqueoRazon?: string;
+  /** «Copiar como nueva cotización» (prellena /new con el documento). */
+  onCopiar?: () => void;
+  /** «Vista previa» de la hoja 1 (F1): solo cuando no está anclada. */
+  onVistaPrevia?: () => void;
 }) {
   // Desglose SIEMPRE visible bajo el total (27-ago; antes: chips solo en
   // ≥md): celdas compactas que PINTAN campos del breakdown canónico tal
@@ -4935,7 +6357,7 @@ function TotalBar({
       value: `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
     });
     const origenTarifa = breakdown.tarifa.proviene_de_override
-      ? "Override"
+      ? "Manual"
       : breakdown.tarifa.preferencial_cliente
         ? "Preferencial"
         : breakdown.tarifa.tipo === "BROKER"
@@ -4945,8 +6367,11 @@ function TotalBar({
       label: `Tarifa · ${origenTarifa}`,
       value: `${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`,
     });
+    // «Subtotal vuelo» (horas × tarifa), no «Servicio aéreo»: en el
+    // documento «Servicio aéreo» es el IMPRESO (absorbe comisión y
+    // redondeo) y dos números distintos con el mismo nombre confundían.
     celdas.push({
-      label: "Servicio aéreo",
+      label: "Subtotal vuelo",
       value: fmtUsd(t.subtotal_vuelo_usd),
     });
     if (t.tuas_total_usd) {
@@ -4979,7 +6404,7 @@ function TotalBar({
     celdas.push({ label: "IVA", value: fmtUsd(t.iva_usd) });
   }
   return (
-    <div className="sticky top-0 z-30 -mx-1 px-1 pt-1">
+    <div className="sticky top-0 z-30 -mx-1 px-1 pt-1" data-guard-exempt>
       {/* Rojo VuelaTour sólido (pedido 28-ago): al hacer scroll la barra
           fija debe RESALTAR como el módulo activo del sidebar. */}
       <div className="rounded-xl border border-brand-500 bg-brand-600 text-white shadow-md px-4 py-2.5">
@@ -5045,7 +6470,13 @@ function TotalBar({
               </Badge>
             </>
           )}
-          {(titulo || subtitulo || avion || onSave || onCancel) && (
+          {(titulo ||
+            subtitulo ||
+            avion ||
+            onSave ||
+            onCancel ||
+            bloqueoRazon ||
+            onVistaPrevia) && (
             <div className="ml-auto flex min-w-0 items-center gap-3">
               {(titulo || subtitulo || avion) && (
                 <div className="min-w-0 text-right">
@@ -5066,6 +6497,19 @@ function TotalBar({
                   )}
                 </div>
               )}
+              {onVistaPrevia && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onVistaPrevia}
+                  title="Ver la hoja 1 del PDF tal como la verá el cliente (se actualiza al editar)."
+                  className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white"
+                >
+                  <EyeIcon className="h-4 w-4" />
+                  Vista previa
+                </Button>
+              )}
               {onCancel && (
                 <Button
                   type="button"
@@ -5079,12 +6523,26 @@ function TotalBar({
                   {cancelLabel}
                 </Button>
               )}
-              {/* Lectura con candado: la razón se LEE (no solo tooltip),
-                  igual que en la barra del grupo. */}
-              {onSave && saveIcon === "revisar" && saveDisabled && saveTitle && (
-                <span className="max-w-[240px] text-right text-[11px] leading-tight text-white/85">
-                  {saveTitle}
+              {/* Bloqueada (candado): la razón se LEE (no solo tooltip) y se
+                  ofrece copiar el documento como cotización nueva. */}
+              {bloqueoRazon && (
+                <span className="flex max-w-[300px] items-start gap-1.5 text-right text-[11px] leading-tight text-white/90">
+                  <LockClosedIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{bloqueoRazon}</span>
                 </span>
+              )}
+              {bloqueoRazon && onCopiar && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onCopiar}
+                  title="Crea una cotización nueva con estos mismos datos (esta no se toca)."
+                  className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white"
+                >
+                  <DocumentDuplicateIcon className="h-4 w-4" />
+                  Copiar como nueva cotización
+                </Button>
               )}
               {onSave && (
                 <Button
@@ -5095,11 +6553,7 @@ function TotalBar({
                   title={saveTitle}
                   className="shrink-0 gap-1.5 bg-white text-brand-700 hover:bg-white/90 disabled:opacity-60"
                 >
-                  {saveIcon === "revisar" ? (
-                    <PencilSquareIcon className="h-4 w-4" />
-                  ) : (
-                    <BookmarkSquareIcon className="h-4 w-4" />
-                  )}
+                  <BookmarkSquareIcon className="h-4 w-4" />
                   {saveLabel}
                 </Button>
               )}
@@ -5163,9 +6617,6 @@ function Preview({
   loading,
   avion,
   tcUsdMxn,
-  tiempoOverride,
-  onTiempoOverride,
-  readOnly = false,
 }: {
   breakdown: QuoteBreakdown;
   loading: boolean;
@@ -5173,12 +6624,9 @@ function Preview({
   avion?: string | null;
   /** TC capturado; solo para el display del total por moneda. */
   tcUsdMxn: number | null;
-  /** COBRABLE pactado (hr) capturado en la card de Tiempos. */
-  tiempoOverride: number | null;
-  onTiempoOverride: (v: number | null) => void;
-  /** Lectura (página única): el Cobrable se pinta como valor, sin input. */
-  readOnly?: boolean;
 }) {
+  // F2: el «Detalle del cálculo» es SOLO lectura; el Cobrable pactado se
+  // edita en «Interno › Tarifa y horas» (ancla cobrable-field vive allá).
 
   // Composición del total MXN (motor): componentes USD × tc + nativos MXN.
   const mxnNativos = Number(breakdown.totales.mxn_nativos) || 0;
@@ -5465,49 +6913,19 @@ function Preview({
                 hint="Tiempo extra sobre la zona"
               />
             )}
-            {/* COBRABLE editable: la suma final de horas. Vacío = la regla
-                (vuelo + calzos + sobrevuelo, con mínimo de 1 hr); con valor
-                = pactado a mano (decide si se redondea o no). El id es el
-                ancla del acceso «¿pactar horas?» de la sección Tramos. */}
-            <div
-              id="cobrable-field"
-              className="flex items-center justify-between gap-2 pt-1 border-t border-border scroll-mt-24"
-            >
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
               <div>
                 <p className="font-semibold">Cobrable</p>
                 <p className="text-xs text-muted-foreground">
                   {breakdown.tiempos.cobrable_proviene_de_override
                     ? `pactado a mano · la regla daría ${fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
-                    : "vacío = regla (suma, mínimo 1 hr)"}
+                    : "regla (suma, mínimo 1 hr)"}
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {readOnly ? (
-                  <span className="font-mono font-semibold">
-                    {fmtDecimal(breakdown.tiempos.cobrable_hr, 4)}
-                  </span>
-                ) : (
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={48}
-                    placeholder={fmtDecimal(
-                      breakdown.tiempos.cobrable_hr_regla ??
-                        breakdown.tiempos.cobrable_hr,
-                      4,
-                    )}
-                    className="h-7 w-24 text-right font-mono font-semibold"
-                    value={tiempoOverride ?? ""}
-                    onChange={(e) =>
-                      onTiempoOverride(
-                        e.target.value === ""
-                          ? null
-                          : Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                )}
+                <span className="font-mono font-semibold">
+                  {fmtDecimal(breakdown.tiempos.cobrable_hr, 4)}
+                </span>
                 <span className="text-xs text-muted-foreground">hr</span>
               </div>
             </div>
@@ -5524,8 +6942,6 @@ function Preview({
             {breakdown.tiempos.minimo_hora_aplicado && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 Vuelo corto: se cobra la hora completa (mínimo 1 hr).
-                {!readOnly &&
-                  " Escribe otro valor en Cobrable si quieres pactarlo distinto."}
               </p>
             )}
           </CardContent>
@@ -5541,7 +6957,7 @@ function Preview({
               value={fmtUsd(breakdown.tarifa.usd_por_hora)}
               hint={
                 breakdown.tarifa.proviene_de_override
-                  ? "Override manual"
+                  ? "Ajustada a mano para esta cotización"
                   : breakdown.tarifa.preferencial_cliente
                     ? "Preferencial del cliente"
                     : "Del avión"
@@ -5614,11 +7030,13 @@ function PreviewSkeleton() {
 }
 
 /**
- * Card «TUAS por aeropuerto» (EDITABLE): vivía dentro del Preview y ahora se
- * renderiza en la sección «Cargos adicionales» — mismo contenido; las props
- * (tuas_lineas, setTuaLinea, cobrar_tuas, tc) ya se derivaban en el padre.
+ * TUAS por aeropuerto EN LÍNEA (F2, 8-sep-2026): una fila por aeropuerto con
+ * las etiquetas del PDF — «TUA CUN · [$25.00][USD▾] × 4 pax = $100.00» o
+ * «TUA HOL · exento» — más el switch «Se cobran TUAS». Sustituye a la card
+ * de «Cargos adicionales»; las props (tuas_lineas, setTuaLinea, cobrar_tuas,
+ * tc) se siguen derivando en el padre. Sin breakdown no hay filas.
  */
-function TuasCard({
+function TuasFilas({
   breakdown,
   tuasLineas,
   onTuaChange,
@@ -5634,9 +7052,9 @@ function TuasCard({
   cobrarTuas: boolean;
   onCobrarTuasChange: (c: boolean) => void;
   tcUsdMxn: number | null;
-  /** Abre la sección de Cobro antes del scroll+focus al campo de TC. */
+  /** Lleva al campo de T.C. («Total MXN» del desglose). */
   onFocusTc: () => void;
-  /** Lectura (página única): sin switch ni inputs; montos como texto. */
+  /** Lectura (bloqueada): sin switch ni inputs; montos como texto. */
   readOnly?: boolean;
 }) {
   // Aeropuertos ÚNICOS del itinerario (todos, no solo origen/destino).
@@ -5655,83 +7073,61 @@ function TuasCard({
       return true;
     });
   })();
-  const filaPorIata = new Map(
-    (breakdown.tuas.filas ?? []).map((f) => [f.iata, f]),
-  );
+  const filaPorIata = new Map((breakdown.tuas.filas ?? []).map((f) => [f.iata, f]));
   const lineaPorIata = new Map(tuasLineas.map((l) => [l.iata, l]));
+  const regla = breakdown.aeronave.matricula?.startsWith("XA")
+    ? "XA"
+    : breakdown.aeronave.matricula?.startsWith("XB")
+      ? "XB"
+      : "N";
   return (
-      <Card className={cn("border-t-2 border-t-brand-600/60 transition-opacity", !cobrarTuas && "opacity-60")}>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm">TUAS por aeropuerto</CardTitle>
-            {/* El switch vive AQUÍ, junto a donde se editan los montos. */}
-            {readOnly ? (
-              <Badge variant="outline" className="shrink-0 text-[10px]">
-                {cobrarTuas ? "Se cobra" : "No se cobra"}
-              </Badge>
-            ) : (
-              <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-                {cobrarTuas ? "Se cobra" : "No se cobra"}
-                <Switch checked={cobrarTuas} onCheckedChange={onCobrarTuasChange} />
-              </label>
-            )}
-          </div>
-          <CardDescription className="text-xs">
-            {breakdown.tuas.pasajeros}{" "}
-            {breakdown.tuas.pasajeros === 1 ? "pasajero" : "pasajeros"} de
-            referencia (cada tramo puede llevar el suyo). Regla aplicada
-            por matrícula{" "}
-            {breakdown.aeronave.matricula?.startsWith("XA")
-              ? "XA"
-              : breakdown.aeronave.matricula?.startsWith("XB")
-                ? "XB"
-                : "N"}
-            .
-            {!readOnly &&
-              " Edita el monto por pasajero si el aeropuerto cobra distinto (USD o MXN); vacío = monto del catálogo."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!cobrarTuas && (
-            <p className="text-xs text-muted-foreground">
-              El switch «Cobrar TUAS» está apagado: no se cobran en esta
-              cotización.
-            </p>
+    <div className={cn("space-y-1 transition-opacity", !cobrarTuas && "opacity-60")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-wider text-foreground/70">
+          TUAS por aeropuerto · regla {regla}
+          {aeropuertos.length > 1 && (
+            <span className="ml-2 normal-case tracking-normal text-muted-foreground">
+              total {fmtUsd(breakdown.tuas.total_usd)}
+              {Number(breakdown.tuas.total_mxn_nativo) > 0
+                ? ` (incluye ${fmtMxn(breakdown.tuas.total_mxn_nativo)} nativos)`
+                : ""}
+            </span>
           )}
-          {aeropuertos.map((air) => (
-            <TuasAirportRow
-              key={air.iata}
-              air={air}
-              fila={filaPorIata.get(air.iata)}
-              linea={lineaPorIata.get(air.iata)}
-              paxGlobal={breakdown.tuas.pasajeros}
-              disabled={!cobrarTuas}
-              tcCapturado={tcUsdMxn != null}
-              onChange={onTuaChange}
-              onFocusTc={onFocusTc}
-              readOnly={readOnly}
-            />
-          ))}
-          <div className="pt-3 border-t border-border space-y-1">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-semibold">Total TUAS</span>
-              <span className="font-bold font-mono">{fmtUsd(breakdown.tuas.total_usd)}</span>
-            </div>
-            {Number(breakdown.tuas.total_mxn_nativo) > 0 && (
-              <p className="text-right text-xs text-muted-foreground">
-                incluye {fmtMxn(breakdown.tuas.total_mxn_nativo)} nativos —
-                entran al total MXN en pesos tal cual
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+        </span>
+        {readOnly ? (
+          <Badge variant="outline" className="shrink-0 text-[10px]">
+            {cobrarTuas ? "Se cobran" : "No se cobran"}
+          </Badge>
+        ) : (
+          <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+            {cobrarTuas ? "Se cobran TUAS" : "No se cobran TUAS"}
+            <Switch size="sm" checked={cobrarTuas} onCheckedChange={onCobrarTuasChange} />
+          </label>
+        )}
+      </div>
+      {aeropuertos.map((air) => (
+        <TuasAirportRow
+          key={air.iata}
+          air={air}
+          fila={filaPorIata.get(air.iata)}
+          linea={lineaPorIata.get(air.iata)}
+          paxGlobal={breakdown.tuas.pasajeros}
+          disabled={!cobrarTuas}
+          tcCapturado={tcUsdMxn != null}
+          onChange={onTuaChange}
+          onFocusTc={onFocusTc}
+          readOnly={readOnly}
+        />
+      ))}
+    </div>
   );
 }
 
 /**
- * Fila editable de TUA por aeropuerto: monto por pax capturable + moneda
- * propia. Vacío = monto del catálogo (placeholder gris); lo capturado manda.
+ * Fila de TUA por aeropuerto: «TUA CUN · [25.00][USD▾] × 4 pax  = $100.00».
+ * Vacío = monto del catálogo (placeholder gris); lo capturado manda; "0" =
+ * TUA capturada en $0. Exento («aplica=false» según el motor): se lee la
+ * razón y «capturar monto» destapa el input igual (el motor decide).
  */
 function TuasAirportRow({
   air,
@@ -5751,9 +7147,7 @@ function TuasAirportRow({
   disabled: boolean;
   tcCapturado: boolean;
   onChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
-  /** Abre la sección de Cobro antes del scroll+focus al campo de TC. */
   onFocusTc?: () => void;
-  /** Lectura: el monto por pax se pinta como texto (capturado o catálogo). */
   readOnly?: boolean;
 }) {
   // Moneda elegida antes de capturar monto (sin monto aún no viaja la línea).
@@ -5764,9 +7158,30 @@ function TuasAirportRow({
   const capturada = !!linea;
   const montoCatalogo = air.monto_pax ?? air.usd_pax;
   const pax = fila?.pax ?? (air.aplica ? paxGlobal : 0);
-  const editable = !disabled && air.aplica;
+  // Exento según el motor: la fila se lee; «capturar monto» destapa el input.
+  const [forzarCaptura, setForzarCaptura] = useState(false);
+  const exento = !air.aplica && !capturada && !forzarCaptura;
+  const editable = !disabled && !readOnly && !exento;
+
+  // Input CONTROLADO desde RHF (F0.5; antes defaultValue): un reset/descartar
+  // o «Recargar conservando borrador» actualizan el campo. El borrador local
+  // solo conserva lo tecleado a medias ("25.") mientras el número coincide.
+  const [montoDraft, setMontoDraft] = useState(linea ? String(linea.monto_pax) : "");
+  const montoLinea = linea ? Number(linea.monto_pax) : null;
+  // Patrón "estado derivado durante el render" (react.dev): cuando la línea
+  // cambia desde afuera (reset/descartar/rehidratar) y ya no coincide con lo
+  // tecleado, el borrador se realinea sin un efecto extra.
+  const [montoLineaPrev, setMontoLineaPrev] = useState(montoLinea);
+  if (montoLineaPrev !== montoLinea) {
+    setMontoLineaPrev(montoLinea);
+    const draftNum = montoDraft.trim() === "" ? null : Number(montoDraft);
+    if (draftNum !== montoLinea) {
+      setMontoDraft(montoLinea === null ? "" : String(montoLinea));
+    }
+  }
 
   const handleMonto = (raw: string) => {
+    setMontoDraft(raw);
     // Vacío = des-capturar (vuelve al catálogo). "0" = TUA capturada en $0
     // (pass-through cero: el aeropuerto no cobra) — SÍ viaja al motor.
     if (raw.trim() === "") {
@@ -5781,59 +7196,46 @@ function TuasAirportRow({
     if (linea) onChange(air.iata, linea.monto_pax, m);
   };
 
+  const totalNode = fila ? (
+    fila.moneda === "MXN" ? (
+      <>
+        {fmtUsd(fila.total_usd)}
+        <span className="ml-1.5 text-xs text-muted-foreground">({fmtMxn(fila.total_nativo)})</span>
+      </>
+    ) : (
+      fmtUsd(fila.total_usd)
+    )
+  ) : (
+    "—"
+  );
+
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-border p-2.5 space-y-1.5",
-        !air.aplica && "opacity-70",
-      )}
-    >
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="flex items-center gap-2 text-sm font-medium">
+    <div className={cn("space-y-0.5 py-1", !air.aplica && "opacity-80")}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="inline-flex items-center gap-1.5">
           {air.aplica ? (
-            <CheckCircleIcon className="h-4 w-4 text-green-600 shrink-0" />
+            <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-green-600" />
           ) : (
-            <XCircleIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+            <XCircleIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           )}
-          <span className="font-mono">{air.iata}</span>
-          {capturada && (
-            <Badge variant="outline" className="text-[10px]">
-              {linea!.monto_pax === 0 ? "TUA en $0 (capturada)" : "monto capturado"}
-            </Badge>
-          )}
+          TUA <span className="font-mono">{air.iata}</span> ·
         </span>
-        {/* Cuenta EXPLÍCITA (26-ago): "N pax × unitario = total" — la
-            oficina ve de dónde sale el número, no solo el resultado. */}
-        <span className="font-mono text-sm">
-          {fila ? (
-            <>
-              <span className="text-xs text-muted-foreground">
-                {fila.pax} ×{" "}
-                {fila.moneda === "MXN"
-                  ? fmtMxn(fila.monto_pax)
-                  : fmtUsd(fila.monto_pax)}{" "}
-                ={" "}
-              </span>
-              {fila.moneda === "MXN" ? (
-                <>
-                  {fmtMxn(fila.total_nativo)}
-                  <span className="ml-1.5 text-xs text-muted-foreground">
-                    = {fmtUsd(fila.total_usd)}
-                  </span>
-                </>
-              ) : (
-                fmtUsd(fila.total_usd)
-              )}
-            </>
-          ) : (
-            "$0"
-          )}
-        </span>
-      </div>
-      {readOnly ? (
-        <p className="text-xs text-muted-foreground">
-          Por pasajero:{" "}
-          <span className="font-mono text-foreground">
+        {exento ? (
+          <span className="inline-flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            exento
+            {!readOnly && !disabled && (
+              <button
+                type="button"
+                onClick={() => setForzarCaptura(true)}
+                className="underline underline-offset-2 hover:text-foreground"
+                title="Captura un monto por pasajero para este aeropuerto (el motor decide si aplica)."
+              >
+                capturar monto
+              </button>
+            )}
+          </span>
+        ) : readOnly ? (
+          <span className="font-mono text-xs">
             {capturada
               ? moneda === "MXN"
                 ? fmtMxn(linea!.monto_pax)
@@ -5842,40 +7244,51 @@ function TuasAirportRow({
                 ? air.moneda === "MXN"
                   ? fmtMxn(montoCatalogo)
                   : fmtUsd(montoCatalogo)
-                : "$0"}
-          </span>{" "}
-          {capturada ? "(monto capturado)" : "(catálogo)"} × {pax} pax
-        </p>
-      ) : (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            step="0.01"
-            min={0}
-            className="h-8 w-28"
-            disabled={!editable}
-            defaultValue={linea ? String(linea.monto_pax) : ""}
-            placeholder={montoCatalogo > 0 ? montoCatalogo.toFixed(2) : "0.00"}
-            aria-label={`TUA por pasajero en ${air.iata}`}
-            onChange={(ev) => handleMonto(ev.target.value)}
-          />
-          <MonedaSelect value={moneda} onChange={handleMoneda} disabled={!editable} />
-          <span className="text-xs text-muted-foreground">
-            por pax × {pax} pax
+                : "$0"}{" "}
+            <span className="text-muted-foreground">
+              {capturada ? "(capturado)" : "(catálogo)"} × {pax} pax
+            </span>
           </span>
-        </div>
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              className="h-7 w-24 px-1.5 text-right font-mono"
+              disabled={!editable}
+              value={montoDraft}
+              placeholder={montoCatalogo > 0 ? montoCatalogo.toFixed(2) : "0.00"}
+              aria-label={`TUA por pasajero en ${air.iata}`}
+              onChange={(ev) => handleMonto(ev.target.value)}
+            />
+            <MonedaSelect
+              value={moneda}
+              onChange={handleMoneda}
+              disabled={!editable}
+              className="h-7"
+            />
+            <span className="text-xs text-muted-foreground">× {pax} pax</span>
+            {capturada && (
+              <Badge variant="outline" className="text-[10px]">
+                {linea!.monto_pax === 0 ? "en $0" : "capturado"}
+              </Badge>
+            )}
+          </span>
+        )}
+        <span className="ml-auto font-mono text-sm tabular-nums">{totalNode}</span>
+      </div>
+      {(!air.aplica || capturada) && (
+        <p className="pl-5 text-[11px] text-muted-foreground">{air.razon}</p>
       )}
-      <p className="text-xs text-muted-foreground">{air.razon}</p>
-      {/* Solo con línea CAPTURADA >0 en MXN: con puro select flipeado (sin
-          monto) no viaja nada, y el campo de TC ni estaría montado. */}
       {!readOnly && capturada && linea!.monto_pax > 0 && moneda === "MXN" && !tcCapturado && editable && (
         <button
           type="button"
           onClick={onFocusTc ?? focusTcField}
-          className="text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
+          className="pl-5 text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
         >
-          Captura el TC en «Cobro y cierre» — sin tipo de cambio esta TUA en
-          MXN no entra al total.
+          Captura el T.C. en «Total MXN» — sin tipo de cambio esta TUA en MXN no entra al
+          total.
         </button>
       )}
     </div>
@@ -5950,6 +7363,7 @@ function Segmented({
             type="button"
             key={opt.value}
             disabled={opt.disabled}
+            aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
               "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
@@ -5978,3 +7392,153 @@ function Segmented({
   );
 }
 
+/**
+ * Sub-bloque plegable DENTRO de «Interno · no se imprime» (F2): externo,
+ * ruta operativa, detalle del cálculo. Mismo patrón de `SeccionCotizador`
+ * (hidden, nunca desmonta) en un contenedor más discreto.
+ */
+function SubBloque({
+  id,
+  titulo,
+  resumen,
+  aviso,
+  abierto,
+  onToggle,
+  children,
+}: {
+  id: SeccionId;
+  titulo: string;
+  resumen?: ReactNode;
+  aviso?: string | null;
+  abierto: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        aria-expanded={abierto}
+        aria-controls={`seccion-${id}`}
+        onClick={onToggle}
+        data-guard-exempt
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            {titulo}
+            {aviso && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/50 bg-amber-500/15 text-[10px] text-amber-600 dark:text-amber-400"
+              >
+                {aviso}
+              </Badge>
+            )}
+          </span>
+          {!abierto && resumen && (
+            <span className="block truncate text-xs text-muted-foreground">{resumen}</span>
+          )}
+        </span>
+        <ChevronDownIcon
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            abierto && "rotate-180",
+          )}
+        />
+      </button>
+      <div id={`seccion-${id}`} hidden={!abierto} className="px-3 pb-3">
+        <div className="space-y-3">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Fila del DESGLOSE del documento (F2): etiqueta del PDF a la izquierda
+ * (texto o control), monto mono a la derecha, pista opcional debajo. Los
+ * derivados van como texto; su etiqueta puede ser un botón que enfoca al
+ * productor.
+ */
+function FilaDesglose({
+  label,
+  value,
+  hint,
+  tono,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  hint?: ReactNode;
+  tono?: "aviso";
+}) {
+  return (
+    <div className="py-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+        <span className="min-w-0">{label}</span>
+        <span className="ml-auto font-mono tabular-nums">{value}</span>
+      </div>
+      {hint ? (
+        <p
+          className={cn(
+            "mt-0.5 text-[11px]",
+            tono === "aviso"
+              ? "font-medium text-amber-600 dark:text-amber-400"
+              : "text-muted-foreground",
+          )}
+        >
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Ojito + fecha de PDF por tramo en el ALTA (D4, F2): viven en el form
+ * (`escalas[].pdf_oculto` / `pdf_fecha`) y viajan en el DTO de create.
+ * Misma semántica que los toggles del detalle: presentación pura, el
+ * tramo oculto se sigue cobrando; la fecha es 'YYYY-MM-DD' de pared.
+ */
+function LegPdfLocal({
+  leg,
+  onChange,
+}: {
+  leg: EscalaInput;
+  onChange: (patch: Pick<EscalaInput, "pdf_oculto" | "pdf_fecha">) => void;
+}) {
+  const oculto = leg.pdf_oculto === true;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Input
+        type="date"
+        value={leg.pdf_fecha ?? ""}
+        min="2000-01-01"
+        max="2100-12-31"
+        disabled={oculto}
+        aria-label="Fecha del tramo en el PDF (solo PDF)"
+        title="Fecha que verá el cliente en el PDF para este tramo (solo fecha, sin hora). No cambia la operación."
+        className="h-7 w-[8.75rem] px-1.5 py-0 font-mono text-[11px] md:text-[11px]"
+        onChange={(e) => onChange({ pdf_fecha: e.target.value || null })}
+      />
+      <button
+        type="button"
+        onClick={() => onChange({ pdf_oculto: !oculto })}
+        aria-pressed={oculto}
+        aria-label={oculto ? "Tramo oculto en el PDF" : "Tramo visible en el PDF"}
+        title={
+          oculto
+            ? "Oculto en el PDF del cliente (se sigue cobrando). Clic para mostrarlo."
+            : "Visible en el PDF del cliente. Clic para ocultarlo (se sigue cobrando)."
+        }
+        className={cn(
+          "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+          oculto
+            ? "text-amber-600 hover:text-amber-500 dark:text-amber-400"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {oculto ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+      </button>
+    </span>
+  );
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -48,42 +48,63 @@ const SELECT_CLS =
 const HORAS_12 = ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
 const MINUTOS = ["0", "5", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
 
+/**
+ * "YYYY-MM-DDTHH:mm" (o "") → partes del control. Vacío = sin fecha con los
+ * defaults pedidos por el cliente (28-ago): 6 · 00 · a.m. Puro texto: jamás
+ * `new Date()` sobre el string (regla de fechas del workspace).
+ */
+function partesDeValor(value: string): {
+  fecha: string;
+  hora12: string;
+  minuto: string;
+  ampm: "am" | "pm";
+} {
+  if (!value) return { fecha: "", hora12: "6", minuto: "0", ampm: "am" };
+  const [f, h] = value.split("T");
+  const out = { fecha: f ?? "", hora12: "6", minuto: "0", ampm: "am" as "am" | "pm" };
+  if (h) {
+    const [hh, mm] = h.slice(0, 5).split(":").map(Number);
+    out.hora12 = String(((hh + 11) % 12) + 1);
+    out.minuto = String(mm);
+    out.ampm = hh < 12 ? "am" : "pm";
+  }
+  return out;
+}
+
 export function FechaHoraCampo({
   value,
   onChange,
   className,
+  ariaLabel,
 }: {
   /** String datetime-local ("YYYY-MM-DDTHH:mm") o "". */
   value: string;
   onChange: (v: string) => void;
   className?: string;
+  /** Nombre accesible del input de fecha (el `Field` que lo envuelve no
+   *  puede ligar su label a un div). Opcional; default "Fecha". */
+  ariaLabel?: string;
 }) {
-  const [fecha, setFecha] = useState("");
-  // Defaults pedidos por el cliente (28-ago): 6 · 00 · a.m.
-  const [hora12, setHora12] = useState("6");
-  const [minuto, setMinuto] = useState("0");
-  const [ampm, setAmpm] = useState<"am" | "pm">("am");
+  // Estado local derivado del valor externo al montar; ver `valuePrev` abajo.
+  const inicial = partesDeValor(value);
+  const [fecha, setFecha] = useState(inicial.fecha);
+  const [hora12, setHora12] = useState(inicial.hora12);
+  const [minuto, setMinuto] = useState(inicial.minuto);
+  const [ampm, setAmpm] = useState<"am" | "pm">(inicial.ampm);
 
-  // Hidrata desde el valor externo (revise, plantillas, reset del form).
-  useEffect(() => {
-    if (!value) {
-      setFecha("");
-      setHora12("6");
-      setMinuto("0");
-      setAmpm("am");
-      return;
-    }
-    const [f, h] = value.split("T");
-    setFecha(f ?? "");
-    if (h) {
-      const [hh, mm] = h.slice(0, 5).split(":").map(Number);
-      setHora12(String(((hh + 11) % 12) + 1));
-      setMinuto(String(mm));
-      setAmpm(hh < 12 ? "am" : "pm");
-    }
-    // Solo cuando cambia el valor EXTERNO: no pelear con la edición local.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  // Hidrata desde el valor EXTERNO (revise, plantillas, reset del form) con
+  // el patrón "estado derivado durante el render" (react.dev) en vez de un
+  // efecto con setState: solo cuando cambia `value`, sin pelear con la
+  // edición local ni provocar un render en cascada.
+  const [valuePrev, setValuePrev] = useState(value);
+  if (valuePrev !== value) {
+    setValuePrev(value);
+    const p = partesDeValor(value);
+    setFecha(p.fecha);
+    setHora12(p.hora12);
+    setMinuto(p.minuto);
+    setAmpm(p.ampm);
+  }
 
   const emitir = (f: string, h12: string, min: string, sufijo: "am" | "pm") => {
     if (!f) {
@@ -110,6 +131,7 @@ export function FechaHoraCampo({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           type="date"
+          aria-label={ariaLabel ?? "Fecha"}
           className="min-w-[150px] flex-1 basis-[150px]"
           value={fecha}
           onChange={(e) => {

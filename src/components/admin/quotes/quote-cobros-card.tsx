@@ -30,7 +30,7 @@ import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { descargarDelApi } from "@/lib/download";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
-import { METODO_LABELS } from "@/components/admin/flights/cobros-card";
+import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
 import {
   CobroConciliadoBadge,
@@ -44,9 +44,9 @@ import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
 /**
  * Cobros del vuelo VISIBLES desde la cotización: el desglose a cobrar no
  * cambiaba al registrarse un cobro y parecía que "no pasó nada". Además,
- * mientras exista un cobro la cotización no puede revisarse (cambiaría un
+ * mientras exista un cobro la cotización no puede editarse (cambiaría un
  * total ya cobrado): desde aquí se elimina el cobro (con confirmación) para
- * desbloquear la revisión, o se navega al vuelo.
+ * desbloquear la edición, o se navega al vuelo.
  */
 export function QuoteCobrosCard({
   quoteId,
@@ -106,7 +106,7 @@ export function QuoteCobrosCard({
           </CardTitle>
           <CardDescription className="text-xs mt-1">
             Cobrado {fmtUsd(totalCobrado)} de {fmtUsd(montoTotalUsd)}. Mientras
-            exista un cobro, la cotización no puede revisarse (cambiaría un
+            exista un cobro, la cotización no puede editarse (cambiaría un
             total ya cobrado): elimínalo aquí si necesitas ajustarla.
             {haySobre && (
               <>
@@ -167,7 +167,7 @@ export function QuoteCobrosCard({
                 <CobroConciliadoBadge cobro={c} />
               </p>
               <p className="text-xs text-muted-foreground">
-                {METODO_LABELS[c.metodo_cobro] ?? c.metodo_cobro}
+                {metodoPagoLabel(c.metodo_cobro)}
                 {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""} ·{" "}
                 {fmtDate(c.fecha_cobro)}
                 {c.comision_banco_monto != null &&
@@ -236,12 +236,10 @@ export function QuoteCobrosCard({
             <DialogTitle>¿Eliminar este cobro?</DialogTitle>
             <DialogDescription>
               {toDelete
-                ? `$${Number(toDelete.monto).toLocaleString("en-US")} ${toDelete.moneda} · ${
-                    METODO_LABELS[toDelete.metodo_cobro] ?? toDelete.metodo_cobro
-                  }. `
+                ? `$${Number(toDelete.monto).toLocaleString("en-US")} ${toDelete.moneda} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
                 : ""}
               El vuelo volverá a quedar pendiente de cobro y la cotización se
-              podrá revisar. Esta acción no se puede deshacer.
+              podrá editar. Esta acción no se puede deshacer.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -261,7 +259,7 @@ export function QuoteCobrosCard({
                   const res = await deleteCobroAction(quoteId, toDelete.id);
                   if (res.ok) {
                     toast.success(
-                      "Cobro eliminado; la cotización ya puede revisarse.",
+                      "Cobro eliminado; la cotización ya puede editarse.",
                     );
                     setToDelete(null);
                     router.refresh();

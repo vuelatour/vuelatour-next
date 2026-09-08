@@ -1,12 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
-import {
-  BoltIcon,
-  ExclamationTriangleIcon,
-} from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -23,24 +19,20 @@ import {
   QuoteCalculator,
   type AircraftOption,
   type AirportOption,
+  type EstadoEdicionCotizador,
   type RouteOption,
 } from "@/components/admin/quotes/quote-calculator";
 import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
 import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-fecha";
 import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
-import { QuoteQuickAdjustCard } from "@/components/admin/quotes/quote-quick-adjust-card";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
+import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
-import {
-  cotizacionEditablePorFecha,
-  fmtDateOnly,
-  fmtDateTime,
-  TZ_LABEL,
-} from "@/lib/datetime";
+import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { combinadoFolio, type FlightCobro } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
 import type {
@@ -50,21 +42,26 @@ import type {
 } from "@/types/quotes-persisted";
 
 /**
- * PÁGINA ÚNICA de la cotización (pedido del cliente, 5-sep-2026): una sola
- * cara. La cotización se abre en el formato completo del cotizador en
- * LECTURA y «Revisar» habilita la edición AHÍ MISMO (motivo + Guardar /
- * Cancelar en la barra del total) — sin saltar a otra página donde "se
- * revuelve todo porque cambia el orden de dónde está todo".
+ * PÁGINA ÚNICA de la cotización (5-sep-2026) con EDICIÓN DIRECTA (F0,
+ * 8-sep-2026): el documento se abre EDITABLE si `candadoRevision` lo permite
+ * — ya no existe «Revisar» ni motivo de entrada. Sin cambios reales no pasa
+ * nada (se pinta el snapshot, cero llamadas al motor); al primer cambio la
+ * cabecera muestra «v2 → v3 ●» y aparecen Descartar / Guardar → v3 (barra
+ * del total y barra de acciones). Guardar pide el motivo (chip + texto) en
+ * un diálogo y crea la versión. Bloqueada (cobrada, facturada, mes cerrado,
+ * servicio): lectura con 🔒, la razón en la barra del total y «Copiar como
+ * nueva cotización».
  *
- * Lo que vivía solo en el detalle sigue aquí y en el mismo sitio: barra de
- * acciones (PDF, confirmar, cancelar, ver vuelo), presencia, badges de
- * grupo/combinado, AJUSTE RÁPIDO (intacto, prominente en la columna
- * lateral; en pausa mientras se revisa), cobros, historial de versiones,
- * operación (fechas de solicitud/confirmación/cancelación) y los toggles de
- * PDF por tramo (dentro de la sección Tramos del cotizador, en lectura).
+ * Lo demás sigue aquí y en el mismo sitio: barra de acciones (PDF, confirmar,
+ * cancelar, ver vuelo), presencia, badges de grupo/combinado, cobros,
+ * historial, operación y los toggles de PDF por tramo (dentro del
+ * itinerario, también en edición). La card «Ajuste rápido» se retiró (F3,
+ * D2): pasajeros y extras se editan en el documento; el botón de la barra
+ * solo lleva al campo de pasajeros.
  *
- * `?revisar=1` abre directo en edición (links viejos a /revise redirigen
- * aquí); si no se puede revisar, abre en lectura y explica por qué.
+ * `?revisar=1` (links viejos a /revise) ya no activa nada: se limpia de la
+ * URL. El documento se abre editable si el candado lo permite, y si no, la
+ * razón se lee en la barra del total.
  */
 export function QuoteWorkspace({
   quote,
@@ -77,7 +74,6 @@ export function QuoteWorkspace({
   cobros,
   totalCobrado,
   rol,
-  revisarInicial,
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -90,51 +86,55 @@ export function QuoteWorkspace({
   cobros: FlightCobro[];
   totalCobrado: number;
   rol: string | null;
-  /** Llegó con `?revisar=1`: intentar abrir en edición. */
-  revisarInicial: boolean;
 }) {
-  const candado = candadoRevision(quote);
+  // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
+  // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
+  const cobrosInfo = {
+    totalCobrado,
+    cobrosSinTc: cobros.filter(
+      (c) => c.moneda === "MXN" && !c.tc_usd_mxn && !quote.tc_usd_mxn,
+    ).length,
+  };
+  const candado = candadoRevision(quote, cobrosInfo);
   const puedeEditarPdf = rol === "ADMIN" || rol === "COORDINADOR";
+  // Edición directa: editable desde el primer render si el candado lo permite.
+  const editable = candado.canRevise;
 
-  // Modo: lectura (default) o edición en el lugar. Con ?revisar=1 se abre
-  // en edición SOLO si los candados lo permiten; si no, lectura + aviso.
-  const [editando, setEditando] = useState(
-    () => revisarInicial && candado.canRevise,
-  );
-  const avisoInicialDado = useRef(false);
-  useEffect(() => {
-    if (avisoInicialDado.current) return;
-    avisoInicialDado.current = true;
-    if (revisarInicial && !candado.canRevise) {
-      toast.warning("La cotización se abre en lectura", {
-        description: candado.razon ?? "No se puede revisar en este momento.",
-      });
-    }
-  }, [revisarInicial, candado.canRevise, candado.razon]);
+  // Estado de edición que reporta el cotizador (sucio, resumen, acciones).
+  const [edicion, setEdicion] = useState<EstadoEdicionCotizador | null>(null);
+  const sucio = edicion?.sucio === true;
+  const soloPresentacion = sucio && edicion?.soloPresentacion === true;
+  // Contenedor del bloque «Interno · no se imprime» (F2): el cotizador lo
+  // monta aquí por portal en ≥1440 px (callback ref: sin efectos, el
+  // elemento llega al cotizador en cuanto existe).
+  const [internoSlot, setInternoSlot] = useState<HTMLElement | null>(null);
 
-  // Al salir de edición se limpia `?revisar=1` de la URL (sin navegar) para
-  // que un F5 no vuelva a abrir el editor.
+  // `?revisar=1` (links viejos a /revise, F3): ya no activa nada — solo se
+  // limpia de la URL para que favoritos/correos viejos no la arrastren.
   useEffect(() => {
-    if (editando || typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (!url.searchParams.has("revisar")) return;
     url.searchParams.delete("revisar");
     window.history.replaceState(null, "", url.toString());
-  }, [editando]);
+  }, []);
 
-  const entrarAEdicion = () => {
-    if (!candado.canRevise) {
-      toast.error(candado.razon ?? "No se puede revisar en este momento.");
+  // «Ajuste rápido» de la barra (D2): scroll+focus a los pasajeros del
+  // documento (extras y pasajeros se editan ahí y se guardan como versión).
+  // Si el cotizador aún no reporta su estado, se va directo al campo.
+  const irAjusteRapido = () => {
+    if (edicion) {
+      edicion.enfocarPasajeros();
       return;
     }
-    setEditando(true);
-  };
-
-  const irAjusteRapido = () => {
-    const el = document.getElementById("ajuste-rapido");
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const el = document.getElementById("pasajeros-field");
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
     window.setTimeout(() => el?.querySelector("input")?.focus(), 400);
   };
+
+  // CONFIRMADO/RESERVA con tripulación: el primer cambio pide confirmación.
+  const requiereConfirmacionEdicion =
+    (quote.estado === "CONFIRMADO" || quote.estado === "RESERVA") &&
+    !!quote.piloto_id;
 
   // ===== Derivados de presentación (mismos criterios del detalle anterior) =====
   const quoteConGrupo = quote as PersistedQuote & VueloConGrupo;
@@ -232,6 +232,30 @@ export function QuoteWorkspace({
       </>
     );
   };
+  /**
+   * Ojito/fecha por tramo para la VISTA PREVIA (F1): misma fuente y mismo
+   * orden que `tramoExtraLectura` (escala viva manda; snapshot de respaldo).
+   * El cotizador solo lo manda en tramos que siguen coincidiendo.
+   */
+  const escalasPdfPreview: EscalaPdfPreview[] = (() => {
+    if (quote.itinerario_operativo === true && !usaSnapshot) return [];
+    if (usaSnapshot) {
+      return quote.calculo_snapshot!.tramos!.map((t, idx) => {
+        const viva = escalaVivaPorOrden.get(t.orden);
+        return {
+          orden: idx + 1,
+          pdf_oculto:
+            viva?.pdf_oculto != null ? viva.pdf_oculto === true : t.pdf_oculto === true,
+          pdf_fecha: viva?.pdf_fecha ?? null,
+        };
+      });
+    }
+    return escalasComerciales.map((esc, idx) => ({
+      orden: idx + 1,
+      pdf_oculto: esc.pdf_oculto === true,
+      pdf_fecha: esc.pdf_fecha ?? null,
+    }));
+  })();
   const notaTramosLectura = puedeEditarPdf ? (
     <p className="pt-1 text-[10px] text-muted-foreground">
       La fecha es solo para el PDF del cliente (sin hora). No cambia la ruta
@@ -240,17 +264,6 @@ export function QuoteWorkspace({
       precio no cambia.
     </p>
   ) : null;
-
-  // Ajuste rápido: extras y pasajeros sin rearmar el cotizador. Solo dentro
-  // de la ventana de edición (mes corriente o anterior, hora Cancún).
-  // CANCELADO queda fuera A PROPÓSITO (1-sep-2026): el camino de una
-  // cancelada es el cotizador completo (el API también lo rechaza).
-  const puedeAjusteRapido =
-    quote.estado !== "CANCELADO" &&
-    quote.estado !== "RESERVA" &&
-    !quote.cobrado &&
-    !quote.facturado &&
-    cotizacionEditablePorFecha(quote.fecha_vuelo);
 
   return (
     <div className="space-y-6">
@@ -266,15 +279,32 @@ export function QuoteWorkspace({
               <Badge variant="outline" className={ESTADO_STYLES[quote.estado]}>
                 {ESTADO_LABELS[quote.estado]}
               </Badge>
-              <Badge variant="secondary" className="font-mono">
-                v{quote.cotizacion_version}
-              </Badge>
-              {editando && (
+              {sucio ? (
                 <Badge
                   variant="outline"
-                  className="border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                  className="border-amber-500/50 bg-amber-500/15 font-mono text-amber-700 dark:text-amber-400"
+                  title={
+                    soloPresentacion
+                      ? `${edicion?.resumen || "Presentación del PDF"} · se guarda sin versión nueva`
+                      : edicion?.resumen || "Cambios sin guardar"
+                  }
                 >
-                  Revisando → v{quote.cotizacion_version + 1}
+                  {soloPresentacion
+                    ? `v${quote.cotizacion_version} · PDF ●`
+                    : `v${quote.cotizacion_version} → v${quote.cotizacion_version + 1} ●`}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="font-mono">
+                  v{quote.cotizacion_version}
+                </Badge>
+              )}
+              {!editable && (
+                <Badge
+                  variant="outline"
+                  className="border-border text-muted-foreground"
+                  title={candado.razon ?? undefined}
+                >
+                  🔒 Bloqueada
                 </Badge>
               )}
               {quote.es_externo && (
@@ -323,9 +353,25 @@ export function QuoteWorkspace({
           <div className="flex items-center gap-2 flex-wrap">
             <QuoteActionsBar
               quote={quote}
-              onRevisar={entrarAEdicion}
-              editando={editando}
-              onAjusteRapido={puedeAjusteRapido && !editando ? irAjusteRapido : undefined}
+              cobrosInfo={cobrosInfo}
+              edicion={
+                editable
+                  ? {
+                      sucio,
+                      soloPresentacion,
+                      canSave: edicion?.canSave === true,
+                      saving: edicion?.saving === true,
+                      versionSiguiente: quote.cotizacion_version + 1,
+                      onGuardar: () => edicion?.guardar(),
+                      onDescartar: () => edicion?.descartar(),
+                    }
+                  : undefined
+              }
+              // «Ajuste rápido» (D2): atajo al campo de pasajeros del documento;
+              // solo tiene sentido si el documento se puede editar.
+              onAjusteRapido={editable ? irAjusteRapido : undefined}
+              // «Vista previa hoja 1» (F1): también con la cotización bloqueada.
+              onVistaPrevia={edicion ? () => edicion.abrirVistaPrevia() : undefined}
               rol={rol}
             />
           </div>
@@ -366,26 +412,29 @@ export function QuoteWorkspace({
           );
         })()}
 
-      {/* Revisando una CANCELADA (1-sep-2026): la revisión es para efectos
-          financieros/documentales — el vuelo NO se reactiva. */}
-      {editando && candado.esCancelada && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-4 text-sm">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+      {/* CANCELADA editable (1-sep-2026 / F0): banda gris — la edición es
+          para efectos financieros/documentales; el vuelo NO se reactiva. */}
+      {editable && candado.esCancelada && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" />
           <div className="space-y-1">
-            <p className="font-medium text-amber-700 dark:text-amber-400">
-              Vuelo cancelado: editas la cotización para efectos
-              financieros/documentales.
+            <p className="font-medium">
+              Vuelo cancelado: los cambios son para efectos financieros/documentales.
             </p>
             <p className="text-muted-foreground">
-              En balances la venta sigue siendo lo cobrado y el vuelo NO se
-              reactiva: permanece CANCELADO, sus tramos cancelados no reviven
-              y la tripulación no recibe avisos.
+              No revive tramos ni notifica a la tripulación; en balances la
+              venta sigue siendo lo cobrado y el vuelo permanece CANCELADO.
             </p>
           </div>
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      {/* Dos columnas solo desde xl (≥1280 px): entre 1024 y 1279 el aside de
+          22rem dejaba al documento ~340 px (con el sidebar de 16rem) y el
+          itinerario se aplastaba — ahí se apila (revisión 8-sep).
+          ≥1600 px (F1): la vista previa real puede ir anclada dentro de la
+          columna del documento; el aside cede ancho (20rem) para que quepa. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] min-[1600px]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
         {/* Columna principal: el cotizador completo (lectura ⇄ edición). */}
         <div className="min-w-0">
           <QuoteCalculator
@@ -396,44 +445,28 @@ export function QuoteWorkspace({
             initialQuote={quote}
             clientName={clientName ?? quote.cliente_id}
             clientEsInterno={clientEsInterno}
-            lectura={!editando}
-            onRevisar={entrarAEdicion}
-            revisarBloqueado={candado.razon}
-            revisarLabel={candado.label}
-            onCancelar={() => setEditando(false)}
-            onGuardado={() => setEditando(false)}
-            tramoExtraLectura={tramoExtraLectura}
-            notaTramosLectura={notaTramosLectura}
+            bloqueadoRazon={editable ? null : candado.razon}
+            requiereConfirmacionEdicion={requiereConfirmacionEdicion}
+            onEstadoEdicion={setEdicion}
+            // El cotizador ya hace router.refresh() tras guardar; aquí no hay
+            // modo que cerrar (la edición es directa).
+            onGuardado={() => undefined}
+            tramoExtra={tramoExtraLectura}
+            notaTramos={notaTramosLectura}
+            escalasPdf={escalasPdfPreview}
+            internoSlot={internoSlot}
           />
         </div>
 
-        {/* Columna lateral: ajuste rápido (arriba, siempre en el mismo
-            lugar), cobros, historial, operación. */}
+        {/* Columna lateral: bloque interno del cotizador (portal, ≥1440 px),
+            cobros, historial, operación. */}
         <aside className="min-w-0 space-y-6">
-          {puedeAjusteRapido &&
-            (editando ? (
-              <Card
-                id="ajuste-rapido"
-                className="scroll-mt-24 border-t-2 border-t-brand-600/30 opacity-80"
-              >
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <BoltIcon className="h-4 w-4 text-muted-foreground" />
-                    Ajuste rápido · en pausa
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Estás revisando la cotización completa: los extras y
-                    pasajeros se editan ahí. Guarda o cancela la revisión para
-                    volver a usar el ajuste rápido.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ) : (
-              <div id="ajuste-rapido" className="scroll-mt-24">
-                <QuoteQuickAdjustCard quote={quote} />
-              </div>
-            ))}
-
+          {/* «Interno · no se imprime» (F2): lo llena el cotizador por portal
+              en ≥1440 px; en pantallas menores va al pie del documento. */}
+          <div
+            ref={setInternoSlot}
+            className="hidden min-w-0 min-[1440px]:block empty:hidden"
+          />
           {cobros.length > 0 && (
             <QuoteCobrosCard
               quoteId={quote.id}
@@ -451,7 +484,7 @@ export function QuoteWorkspace({
               <CardTitle className="text-sm">Historial</CardTitle>
               <CardDescription className="text-xs">
                 {versions.length} {versions.length === 1 ? "versión" : "versiones"}. Cada
-                revisión (y cada ajuste rápido) genera un nuevo registro inmutable.
+                guardado con cambios de precio genera un registro inmutable.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -480,7 +513,7 @@ export function QuoteWorkspace({
                   hint={quote.motivo_cancelacion ?? undefined}
                 />
               )}
-              {candado.esCancelada && !editando && candado.canRevise && (
+              {candado.esCancelada && candado.canRevise && !sucio && (
                 <p className="col-span-2 text-[11px] text-muted-foreground">
                   {RAZON_REVISION.cancelada}
                 </p>

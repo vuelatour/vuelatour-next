@@ -10,10 +10,16 @@ export interface ActionResult<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+  /** HTTP del API cuando el error viene de él (409 = candado/concurrencia). */
+  status?: number;
+  /** Código estructurado del API (p. ej. `COTIZACION_COBRADA`). */
+  code?: string;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  if (isApiError(err)) {
+    return { ok: false, error: err.message, status: err.status, code: err.code };
+  }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -36,6 +42,9 @@ export interface OperationalLegInput {
 export interface CreateQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
   cliente_id: string;
+  /** Idempotencia (contrato 8-sep-2026): misma llave → misma cotización
+      (un doble clic o un reintento no crean dos folios). uuid por intento. */
+  client_request_id?: string;
   /** Ruta OPERATIVA real (opcional): escalas del piloto; la cotización no las pisa. */
   escalas_operacion?: OperationalLegInput[];
   tipo?: "REDONDO" | "MULTIESCALA";
@@ -102,44 +111,6 @@ export async function getRutasSugeridasAction(
   }
 }
 
-export interface QuickAdjustPayload {
-  /** monto_usd = monto NATIVO en la moneda del renglón (nombre legado). Con
-   *  cantidad × unitario (4-sep) el motor deriva el monto; las líneas de
-   *  GRUPO viajan tal cual (el API las ancla). */
-  extras?: {
-    concepto: string;
-    monto_usd: number;
-    moneda?: "USD" | "MXN";
-    aplica_iva?: boolean;
-    cantidad?: number;
-    unitario?: number;
-    por_persona?: boolean;
-    origen?: "GRUPO" | "VUELO";
-    grupo_extra_id?: string;
-  }[];
-  pasajeros?: number;
-  motivo?: string;
-}
-
-/** Ajuste rápido (extras/pasajeros) desde el detalle; versiona como revisión. */
-export async function quickAdjustQuoteAction(
-  id: string,
-  payload: QuickAdjustPayload,
-): Promise<ActionResult<PersistedQuote>> {
-  try {
-    const updated = await apiServer<PersistedQuote>(`/v1/quotes/${id}/ajuste`, {
-      method: "POST",
-      body: payload,
-    });
-    revalidatePath("/admin/quotes");
-    revalidatePath(`/admin/quotes/${id}`);
-    revalidatePath(`/admin/flights/${id}`);
-    return { ok: true, data: updated };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
 /**
  * Visibilidad en PDF de UN tramo, directo sobre la escala VIVA (1-sep): el
  * switch del cotizador se retiró (rehidrataba del snapshot y un guardado sin
@@ -189,11 +160,49 @@ export async function setEscalaPdfFechaAction(
   }
 }
 
+/**
+ * Presentación del PDF a nivel COTIZACIÓN sin versión (D5, F2 8-sep-2026):
+ * notas del cliente y los toggles «tarifa/hr» e «itinerario» son
+ * presentación, igual que el ojito por tramo — cuando son lo ÚNICO que
+ * cambió no generan versión. Contrato (5): `PATCH /v1/quotes/:id/pdf-visibilidad`
+ * acepta `notas`, `pdf_mostrar_tarifa`, `pdf_mostrar_itinerario` (parcial:
+ * solo viaja lo que cambió). Backend en paralelo: mientras no esté
+ * desplegado responde 404 → el cotizador cae al guardado con versión.
+ */
+export interface PdfPresentacionPayload {
+  notas?: string;
+  pdf_mostrar_tarifa?: boolean;
+  pdf_mostrar_itinerario?: boolean;
+}
+
+export async function setQuotePdfPresentacionAction(
+  vueloId: string,
+  payload: PdfPresentacionPayload,
+): Promise<ActionResult> {
+  if (Object.keys(payload).length === 0) {
+    return { ok: false, error: "Nada que guardar" };
+  }
+  try {
+    const data = await apiServer<unknown>(`/v1/quotes/${vueloId}/pdf-visibilidad`, {
+      method: "PATCH",
+      body: payload,
+    });
+    revalidatePath(`/admin/quotes/${vueloId}`);
+    revalidatePath(`/admin/flights/${vueloId}`);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 export interface ReviseQuotePayload extends CalculateQuoteRequest {
   pasajeros_nombres?: string[];
   fecha_vuelo?: string;
   fecha_traslado_final?: string;
   motivo: string;
+  /** Idempotencia (contrato 8-sep-2026): misma llave → misma versión; se
+      reusa en los reintentos del MISMO intento de guardado. */
+  client_request_id?: string;
   notas?: string;
   /** Vuelo externo (28-ago): operador y lo que cobra el operador externo se
       editan también al revisar. monto null limpia el costo; con MXN el API

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "gen:api-types": "openapi-typescript \"${API_URL:-http://localhost:3001}/v1/docs-json\" -o src/types/api.ts"
+    "gen:api-types": "openapi-typescript \"${API_URL:-http://localhost:3001}/v1/docs-json\" -o src/types/api.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -45,6 +46,7 @@
     "eslint-config-next": "16.2.6",
     "openapi-typescript": "^7.9.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }

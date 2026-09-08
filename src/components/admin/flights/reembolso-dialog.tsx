@@ -34,21 +34,11 @@ import {
   type CuentaCobro,
 } from "@/lib/admin/cobros";
 import { registerReembolsoAction } from "@/app/admin/flights/actions";
-import { METODO_LABELS } from "@/components/admin/flights/cobros-card";
+import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
 
 /** Métodos que tocan banco: solo en ellos se pregunta de qué cuenta salió. */
 const METODOS_CON_CUENTA: MetodoPago[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"];
-
-const METODOS: MetodoPago[] = [
-  "TRANSFERENCIA",
-  "HSBC_LINK",
-  "CHEQUE",
-  "BILLPOCKET",
-  "EFECTIVO",
-  "DOLARES",
-  "OTRO",
-];
 
 /** Hoy en hora Cancún (UTC−5 fija) para el default del formulario. */
 function hoyCancun(): string {
@@ -245,9 +235,10 @@ export function ReembolsoButton({
             <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field label="Método de devolución">
                 <SearchableSelect
-                  options={METODOS.map((m) => ({
-                    value: m,
-                    label: METODO_LABELS[m] ?? m,
+                  // Misma lista que el cobro (fuente única metodos-pago.ts).
+                  options={METODOS_PAGO.map((m) => ({
+                    value: m.value,
+                    label: m.label,
                   }))}
                   value={form.metodo_cobro}
                   onChange={(v) => set("metodo_cobro", v as MetodoPago)}

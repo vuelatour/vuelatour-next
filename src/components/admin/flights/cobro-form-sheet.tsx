@@ -28,21 +28,16 @@ import {
   monedaDeCuenta,
 } from "@/lib/admin/cobros";
 import { registerCobroAction } from "@/app/admin/flights/actions";
+import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
 import { Field } from "@/components/admin/form-field";
 
 type Moneda = "USD" | "MXN";
 
-const METODOS: { value: MetodoPago; label: string; hint: string }[] = [
-  { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%" },
-  { value: "HSBC_LINK", label: "HSBC link", hint: "Con factura · IVA 16%" },
-  { value: "CHEQUE", label: "Cheque", hint: "Con factura · lo deposita oficina" },
-  { value: "BILLPOCKET", label: "BillPocket", hint: "Terminal · sin factura" },
-  { value: "EFECTIVO", label: "Efectivo (MXN)", hint: "Sin IVA" },
-  { value: "DOLARES", label: "Dólares en mano", hint: "Sin IVA" },
-  // Método manual (solo oficina): descríbelo en referencia/notas.
-  { value: "OTRO", label: "Otro", hint: "Método manual · descríbelo en la referencia" },
-];
+// Métodos de pago: FUENTE ÚNICA `lib/admin/metodos-pago.ts` (misma lista y
+// etiquetas que el cotizador, el grupo y los reembolsos). OTRO = método
+// manual: se describe en la referencia/notas.
+const METODO_VALUES = METODOS_PAGO.map((m) => m.value) as [MetodoPago, ...MetodoPago[]];
 
 /** Métodos que tocan banco: solo en ellos se pregunta a qué cuenta llegó. */
 const METODOS_CON_CUENTA: MetodoPago[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"];
@@ -51,15 +46,7 @@ const CobroFormSchema = z
   .object({
     monto: z.coerce.number().positive("Monto debe ser > 0"),
     moneda: z.enum(["USD", "MXN"]),
-    metodo_cobro: z.enum([
-      "TRANSFERENCIA",
-      "HSBC_LINK",
-      "CHEQUE",
-      "BILLPOCKET",
-      "EFECTIVO",
-      "DOLARES",
-      "OTRO",
-    ]),
+    metodo_cobro: z.enum(METODO_VALUES),
     tc_usd_mxn: z
       .union([z.coerce.number(), z.literal("")])
       .optional()
@@ -429,7 +416,7 @@ export function CobroFormSheet({
 
           <Field label="Método de cobro" required>
             <SearchableSelect
-              options={METODOS.map((m) => ({
+              options={METODOS_PAGO.map((m) => ({
                 value: m.value,
                 label: m.label,
                 description: m.hint,

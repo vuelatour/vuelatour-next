@@ -12,27 +12,18 @@ export const dynamic = "force-dynamic";
 
 interface QuoteDetailPageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{
-    /** `1` = abrir directo en edición (links viejos a /revise redirigen aquí). */
-    revisar?: string;
-  }>;
 }
 
 /**
- * PÁGINA ÚNICA de la cotización (5-sep-2026): lectura y revisión en el
- * mismo lugar — ver `QuoteWorkspace`. El server solo carga: la cotización
- * (+ versiones), el cliente, los cobros del vuelo y los catálogos del
- * cotizador (necesarios para revisar sin salir de la página).
+ * PÁGINA ÚNICA de la cotización (5-sep-2026) con EDICIÓN DIRECTA (F0–F3,
+ * 8-sep-2026): el documento se abre editable si el candado lo permite — ver
+ * `QuoteWorkspace`. El server solo carga: la cotización (+ versiones), el
+ * cliente, los cobros del vuelo y los catálogos del cotizador (los mismos
+ * que usa el alta: `cargarCatalogosCotizador`). `?revisar=1` (links viejos
+ * a /revise) ya no significa nada: el workspace lo limpia de la URL.
  */
-export default async function QuoteDetailPage({
-  params,
-  searchParams,
-}: QuoteDetailPageProps) {
-  const [{ id }, sp, me] = await Promise.all([
-    params,
-    searchParams,
-    getMe().catch(() => null),
-  ]);
+export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) {
+  const [{ id }, me] = await Promise.all([params, getMe().catch(() => null)]);
 
   let quote, versions;
   try {
@@ -66,7 +57,6 @@ export default async function QuoteDetailPage({
       cobros={cobrosVuelo?.cobros ?? []}
       totalCobrado={cobrosVuelo?.total_cobrado ?? 0}
       rol={me?.rol ?? null}
-      revisarInicial={sp.revisar === "1"}
     />
   );
 }
