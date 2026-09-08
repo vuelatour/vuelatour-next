@@ -7,6 +7,7 @@ import {
   ArrowDownTrayIcon,
   BoltIcon,
   CheckCircleIcon,
+  DocumentChartBarIcon,
   PaperAirplaneIcon,
   PencilSquareIcon,
   XCircleIcon,
@@ -34,11 +35,28 @@ import {
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
+/**
+ * Roles que pueden generar el PDF INTERNO (espejo del `@Roles` de
+ * `POST /v1/quotes/:id/pdf-interno` en el API: sin SOCIO, nunca
+ * PILOTO/MECANICO/VISITANTE). El panel solo esconde el botón; el gate real
+ * es el API (403 → toast).
+ */
+const ROLES_PDF_INTERNO: ReadonlySet<string> = new Set([
+  "ADMIN",
+  "COORDINADOR",
+  "FACTURACION",
+  "ANALISTA",
+]);
+
+const TITULO_PDF_INTERNO =
+  "Versión interna: comisiones, horas, cobros. No se manda al cliente";
+
 export function QuoteActionsBar({
   quote,
   onRevisar,
   editando = false,
   onAjusteRapido,
+  rol = null,
 }: {
   quote: PersistedQuote;
   /**
@@ -51,6 +69,11 @@ export function QuoteActionsBar({
   editando?: boolean;
   /** Lleva/enfoca al bloque «Ajuste rápido» (solo cuando está disponible). */
   onAjusteRapido?: () => void;
+  /**
+   * Rol del usuario (de /v1/me). Decide si se pinta «PDF interno»
+   * (8-sep-2026); sin rol el botón no aparece. El PDF de cliente no se gatea.
+   */
+  rol?: string | null;
 }) {
   const router = useRouter();
   const [confirming, startConfirm] = useTransition();
@@ -58,7 +81,9 @@ export function QuoteActionsBar({
   const [openCancel, setOpenCancel] = useState(false);
   const [motivoCancel, setMotivoCancel] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfInternoLoading, setPdfInternoLoading] = useState(false);
   const [openCobradoInfo, setOpenCobradoInfo] = useState(false);
+  const puedePdfInterno = rol != null && ROLES_PDF_INTERNO.has(rol);
 
   const handlePdf = async () => {
     setPdfLoading(true);
@@ -80,6 +105,37 @@ export function QuoteActionsBar({
       toast.error("No se pudo generar el PDF");
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  /**
+   * PDF INTERNO (8-sep-2026): una hoja para la oficina con comisiones, horas
+   * de taco, partición, cobros y gastos — NUNCA al cliente. Va por el proxy
+   * `/api/quotes/:id/pdf-interno` (cookie de sesión, sin token en el
+   * cliente; el proxy traduce 401/403/502 a `{ message }` para el toast).
+   */
+  const handlePdfInterno = async () => {
+    setPdfInternoLoading(true);
+    try {
+      const res = await fetch(`/api/quotes/${quote.id}/pdf-interno`, { method: "POST" });
+      if (!res.ok) {
+        let msg = "No se pudo generar el PDF interno";
+        try {
+          const body = (await res.json()) as { message?: string };
+          if (body.message) msg = body.message;
+        } catch {
+          // sin JSON: mensaje genérico
+        }
+        toast.error(msg);
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("No se pudo generar el PDF interno");
+    } finally {
+      setPdfInternoLoading(false);
     }
   };
 
@@ -145,10 +201,31 @@ export function QuoteActionsBar({
           Ver vuelo
         </Link>
       )}
-      <Button variant="outline" onClick={handlePdf} disabled={pdfLoading} className="gap-2">
+      <Button
+        variant="outline"
+        onClick={handlePdf}
+        disabled={pdfLoading}
+        className="gap-2"
+        title="PDF para el cliente (con fichas de aeronave)."
+      >
         <ArrowDownTrayIcon className="h-4 w-4" />
         {pdfLoading ? "Generando…" : "PDF"}
       </Button>
+      {/* «PDF interno»: solo roles de oficina (ROLES_PDF_INTERNO); icono
+          distinto para que no se confunda con el PDF que se manda al cliente. */}
+      {puedePdfInterno && (
+        <Button
+          variant="outline"
+          onClick={handlePdfInterno}
+          disabled={pdfInternoLoading}
+          className="gap-2"
+          title={TITULO_PDF_INTERNO}
+          aria-label={`PDF interno. ${TITULO_PDF_INTERNO}`}
+        >
+          <DocumentChartBarIcon className="h-4 w-4" />
+          {pdfInternoLoading ? "Generando…" : "PDF interno"}
+        </Button>
+      )}
       {/* «Ajuste rápido»: lleva al bloque (visible solo cuando el ajuste
           está disponible — lo decide la página). */}
       {onAjusteRapido && !editando && (

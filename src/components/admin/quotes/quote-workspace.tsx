@@ -326,6 +326,7 @@ export function QuoteWorkspace({
               onRevisar={entrarAEdicion}
               editando={editando}
               onAjusteRapido={puedeAjusteRapido && !editando ? irAjusteRapido : undefined}
+              rol={rol}
             />
           </div>
         </div>
