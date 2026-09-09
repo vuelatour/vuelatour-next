@@ -1,0 +1,305 @@
+/* CSS de PANTALLA de la hoja editable (form-as-document, 8-sep-2026).
+   Va DESPUÉS de cotizacion-fuente.css + cotizacion-hoja.css (los sincroniza
+   `npm run sync:hoja-css` desde pyservices; aquí NO se replica ni una regla
+   del PDF). Tres cosas viven aquí:
+   1. La GEOMETRÍA de pantalla (= `_estilos_pantalla` de pyservices, que en la
+      vista previa aplica a html/body): hoja Carta de 794 px, márgenes
+      66/74/96, marca de agua anclada a la hoja, pie como bloque.
+   2. Los INPUTS INVISIBLES en reposo (sin borde, sin fondo, sin label;
+      placeholder gris) que heredan la tipografía del texto impreso; el
+      borde/fondo aparece en hover y foco.
+   3. La CROMA de edición fuera del área impresa (márgenes de fila, filas
+      «+ Agregar», estados). Todo selector cuelga de `.cot-hoja` para ganar la
+      cascada a `cotizacion-hoja.css` (`.cot-hoja *` fija font/color/box-
+      sizing) y no tocar nada fuera del papel. */
+
+/* ---------- 1. Geometría de pantalla (misma que la vista previa) ---------- */
+.cot-hoja.cot-hoja--pantalla {
+  width: 794px;
+  min-height: 1027px;
+  margin: 0;
+  padding: 66px 74px 96px;
+  box-sizing: border-box;
+  background: #fff;
+  position: relative;
+  /* Contexto de apilamiento propio: la marca de agua lleva z-index -1 y, sin
+     esto, se pintaría DETRÁS del fondo blanco de la hoja (en la vista previa
+     el fondo del body se propaga al lienzo y por eso ahí sí se ve). */
+  isolation: isolate;
+}
+.cot-hoja--pantalla .marca { position: absolute; }
+.cot-hoja--pantalla .pie-pantalla {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  text-align: center;
+  font-size: 10px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+/* La hoja como OBJETO sobre el fondo del shell (sombra y borde son del
+   panel, no del papel: el PDF no los tiene). */
+.cot-hoja--pantalla.cot-hoja--papel {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 14px 44px rgba(0, 0, 0, 0.38);
+  border-radius: 2px;
+}
+/* Escenario: fondo del shell, hoja centrada. La escala (columna angosta)
+   la fija el componente con --cot-escala; el alto reservado con --cot-alto. */
+.cot-escenario {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+.cot-escenario__lienzo {
+  position: relative;
+  margin: 0 auto;
+  width: 794px;
+  max-width: 100%;
+  transform-origin: top left;
+}
+
+/* ---------- 2. Inputs invisibles en reposo ---------- */
+.cot-hoja .cot-in {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  box-shadow: none;
+  outline: none;
+  margin: 0 -2px;
+  padding: 0 2px;
+  min-width: 1ch;
+  box-sizing: content-box;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.cot-hoja .cot-in::placeholder { color: #9ca3af; opacity: 1; }
+.cot-hoja .cot-in::-webkit-outer-spin-button,
+.cot-hoja .cot-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cot-hoja .cot-in:hover:not(:disabled):not(:focus) { background: rgba(16, 42, 67, 0.07); }
+.cot-hoja .cot-in:focus,
+.cot-hoja .cot-in:focus-visible {
+  background: #fff;
+  outline: 2px solid var(--ring, #e63946);
+  outline-offset: 0;
+}
+.cot-hoja .cot-in:disabled { cursor: default; }
+/* Sin `tabular-nums`: el PDF no lo fija y cambiaría el ancho de las cifras. */
+.cot-hoja .cot-in--num { text-align: right; }
+.cot-hoja .cot-in--der { text-align: right; }
+
+/* Ancho = contenido (espejo invisible en la misma celda de un grid inline). */
+.cot-hoja .cot-auto {
+  display: inline-grid;
+  vertical-align: baseline;
+  align-items: baseline;
+  max-width: 100%;
+}
+.cot-hoja .cot-auto > * { grid-area: 1 / 1; }
+.cot-hoja .cot-auto__espejo {
+  visibility: hidden;
+  white-space: pre;
+  padding: 0 2px;
+  margin: 0 -2px;
+  min-width: 1ch;
+  pointer-events: none;
+}
+.cot-hoja .cot-auto > .cot-in { width: 100%; min-width: 0; }
+/* `.cot-hoja *` fija color #1d1d1d a TODO descendiente (no por herencia):
+   los envoltorios del panel deben ser transparentes al color de la celda
+   (.lbl gris, .total-mxn navy) para que el input herede el color impreso. */
+.cot-hoja .cot-auto,
+.cot-hoja .cot-auto__espejo,
+.cot-hoja .cot-fecha,
+.cot-hoja .cot-fecha__texto,
+.cot-hoja .cot-sel { color: inherit; }
+
+/* Texto largo (notas): span editable EN FLUJO tras «Notas:», como el texto
+   del PDF (un textarea rompería la línea en otro sitio: sus renglones
+   siguientes no vuelven al margen). `white-space: normal` porque el PDF
+   colapsa los saltos de línea (`escape(notas)` en un div normal). */
+.cot-hoja .cot-in--flujo {
+  display: inline;
+  white-space: normal;
+  min-width: 1ch;
+  overflow-wrap: anywhere;
+}
+.cot-hoja .cot-in--flujo:empty::before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+/* Fecha disfrazada: en reposo el texto del PDF; con foco, el input nativo. */
+.cot-hoja .cot-fecha { position: relative; display: inline-block; vertical-align: baseline; }
+.cot-hoja .cot-fecha__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: text;
+}
+.cot-hoja .cot-fecha:hover .cot-fecha__texto { background: rgba(16, 42, 67, 0.07); border-radius: 3px; }
+.cot-hoja .cot-fecha:focus-within .cot-fecha__input { position: static; opacity: 1; width: auto; height: auto; }
+.cot-hoja .cot-fecha:focus-within .cot-fecha__texto { display: none; }
+/* Sin fecha el PDF IMPRIME «Por confirmar» / «—» en el color normal: no es
+   placeholder, es contenido (fidelidad); `--vacio` solo marca el estado. */
+.cot-hoja input[type="datetime-local"].cot-in::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.55;
+}
+
+/* Selector (combobox de Base UI) como texto: sin chevron en reposo. */
+.cot-hoja .cot-sel {
+  display: inline;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: inherit;
+}
+.cot-hoja .cot-sel[data-popup-open] { background: #fff; outline: 2px solid var(--ring, #e63946); }
+.cot-hoja .cot-sel--vacio { color: #9ca3af; }
+/* Select nativo de moneda (USD/MXN) como texto. */
+.cot-hoja select.cot-in { cursor: pointer; padding-right: 2px; }
+/* Croma que solo aparece con la fila en hover/foco (moneda de un extra USD,
+   acciones de fila, «+ Agregar»). */
+.cot-hoja .cot-fantasma { opacity: 0; transition: opacity 120ms ease; }
+.cot-hoja .cot-fila:hover .cot-fantasma,
+.cot-hoja .cot-fila:focus-within .cot-fantasma,
+.cot-hoja .cot-fantasma:focus-visible { opacity: 1; }
+
+/* ---------- 3. Croma fuera del área impresa ---------- */
+/* Celda ancla del margen izquierdo de la fila. */
+.cot-hoja .cot-ancla { position: relative; }
+.cot-hoja .cot-margen {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 6px;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1;
+  color: #9ca3af;
+  pointer-events: auto;
+}
+.cot-hoja .cot-margen--der { right: auto; left: 100%; padding-right: 0; padding-left: 6px; }
+.cot-hoja .cot-marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+.cot-hoja .cot-marca--aviso { color: #d97706; }
+.cot-hoja .cot-marca svg { width: 11px; height: 11px; }
+.cot-hoja .cot-margen__accion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.cot-hoja .cot-margen__accion svg { width: 13px; height: 13px; }
+.cot-hoja .cot-margen__accion:hover { background: rgba(16, 42, 67, 0.08); color: #102a43; }
+.cot-hoja .cot-margen__accion--peligro:hover { color: #dc2626; background: rgba(220, 38, 38, 0.1); }
+.cot-hoja .cot-margen__accion:focus-visible { opacity: 1; outline: 2px solid var(--ring, #e63946); }
+.cot-hoja .cot-fila:hover .cot-margen__accion,
+.cot-hoja .cot-fila:focus-within .cot-margen__accion,
+.cot-hoja .cot-margen__accion[aria-expanded="true"] { opacity: 1; }
+.cot-hoja .cot-margen__accion:disabled { opacity: 0 !important; pointer-events: none; }
+
+/* Fila OCULTA en el PDF (sigue editable, no se imprime). */
+.cot-hoja .cot-fila--oculta > td { opacity: 0.42; }
+.cot-hoja .cot-fila--oculta > td.cot-ancla { opacity: 1; }
+.cot-hoja .cot-fila--oculta > td.cot-ancla > * { opacity: 0.42; }
+.cot-hoja .cot-fila--oculta > td.cot-ancla > .cot-margen { opacity: 1; }
+/* Fila FANTASMA: existe para poder capturar (descuento en 0, notas vacías,
+   Total MXN sin T.C., TUA exenta) pero NO se imprime mientras esté vacía. */
+.cot-hoja .cot-fila--fantasma > td,
+.cot-hoja .cot-fila--fantasma > td.lbl,
+.cot-hoja .cot-fila--fantasma > td.val,
+.cot-hoja .notas.cot-fantasma-bloque,
+.cot-hoja .notas.cot-fantasma-bloque strong { color: #9ca3af; }
+.cot-hoja .cot-fila--fantasma > td .cot-in { color: #1d1d1d; }
+.cot-hoja .cot-fila--fantasma > td.val .cot-in { font-weight: inherit; }
+/* Filas «+ Agregar tramo» / «+ Agregar concepto»: dentro de la tabla, discretas. */
+.cot-hoja .cot-fila-agregar > td { color: #9ca3af; }
+.cot-hoja .grid .cot-fila-agregar > td { border-style: dashed; }
+.cot-hoja .cot-fila-agregar .cot-btn {
+  font: inherit;
+  color: #9ca3af;
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  margin: 0 -2px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.cot-hoja .cot-fila-agregar .cot-btn:hover { color: #102a43; background: rgba(16, 42, 67, 0.07); }
+.cot-hoja .cot-fila-agregar .cot-btn:focus-visible { outline: 2px solid var(--ring, #e63946); }
+.cot-hoja .cot-fila-agregar .cot-sep { margin: 0 8px; color: #d1d5db; }
+/* Lo TECLEADO en la ruta rápida va en negro: la fila es gris (placeholder)
+   y el input hereda el color, así que sin esto no se distingue de la pista. */
+.cot-hoja .cot-fila-agregar .cot-in { color: #1d1d1d; }
+/* Acción en línea discreta («capturar», «quitar»). */
+.cot-hoja .cot-liga {
+  font: inherit;
+  font-size: 11px;
+  color: #9ca3af;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-left: 6px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cot-hoja .cot-liga:hover { color: #102a43; }
+.cot-hoja .cot-liga:focus-visible { color: #102a43; outline: 2px solid var(--ring, #e63946); outline-offset: 1px; border-radius: 2px; }
+.cot-hoja .cot-tenue { color: #9ca3af; }
+
+/* Ruta grande sin tramos: placeholder gris con el tamaño del título. */
+.cot-hoja .route.cot-route--vacia { color: #9ca3af; font-weight: 400; }
+
+/* Estados: calculando (totales atenuados, nunca vacíos) y mapa actualizando. */
+.cot-hoja--calculando .totales .val,
+.cot-hoja--calculando .totales .total-row td.val { opacity: 0.45; transition: opacity 160ms ease; }
+.cot-hoja .mapa.mapa--actualizando svg { opacity: 0.5; transition: opacity 160ms ease; }
+.cot-hoja .mapa.mapa--vacio {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #9ca3af;
+}
+.cot-hoja .mapa.mapa--vacio { border-style: dashed; }
+
+/* Lectura bloqueada: cursor normal, sin hover. */
+.cot-hoja--lectura .cot-in { cursor: default; }

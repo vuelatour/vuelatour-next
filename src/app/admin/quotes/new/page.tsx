@@ -43,7 +43,8 @@ export default async function NewQuotePage() {
           Nueva cotización
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Calcula y guarda como v1. El cliente queda asociado al vuelo.
+          La hoja que ves es la que verá el cliente: captúrala en su lugar y guarda como v1.
+          Lo interno (tarifa, cobro, externo) va en el panel «Interno · no se imprime».
         </p>
       </div>
       <QuoteCalculator

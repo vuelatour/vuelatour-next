@@ -10,7 +10,6 @@ import {
   BookmarkSquareIcon,
   CheckCircleIcon,
   DocumentChartBarIcon,
-  EyeIcon,
   LockClosedIcon,
   PaperAirplaneIcon,
   XCircleIcon,
@@ -73,7 +72,6 @@ export function QuoteActionsBar({
   quote,
   edicion,
   onAjusteRapido,
-  onVistaPrevia,
   rol = null,
   cobrosInfo,
 }: {
@@ -92,12 +90,6 @@ export function QuoteActionsBar({
   edicion?: EdicionBarra;
   /** «Ajuste rápido»: scroll+focus a pasajeros del documento (D2). */
   onAjusteRapido?: () => void;
-  /**
-   * «Vista previa hoja 1» (F1): abre la hoja real del PDF (diálogo grande;
-   * en pantallas angostas cambia a la pestaña de vista previa). Se pinta
-   * también con la cotización bloqueada (la hoja guardada se puede ver).
-   */
-  onVistaPrevia?: () => void;
   /**
    * Rol del usuario (de /v1/me). Decide si se pinta «PDF interno»
    * (8-sep-2026); sin rol el botón no aparece. El PDF de cliente no se gatea.
@@ -210,18 +202,6 @@ export function QuoteActionsBar({
           <PaperAirplaneIcon className="h-4 w-4" />
           Ver vuelo
         </Link>
-      )}
-      {/* «Vista previa hoja 1» (F1): la hoja REAL del PDF, en vivo. */}
-      {onVistaPrevia && (
-        <Button
-          variant="outline"
-          onClick={onVistaPrevia}
-          className="gap-2"
-          title="Ver la hoja 1 del PDF tal como la verá el cliente (se actualiza al editar)."
-        >
-          <EyeIcon className="h-4 w-4" />
-          Vista previa hoja 1
-        </Button>
       )}
       <Button
         variant="outline"

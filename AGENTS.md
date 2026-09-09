@@ -66,7 +66,9 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
 - `components/admin/quotes/quote-calculator.tsx` = `QuoteCalculator`, el
   MISMO en el alta (`mode="create"`, `app/admin/quotes/new/page.tsx`) y en
   la página única (`mode="revise"`, `QuoteWorkspace` en
-  `quote-workspace.tsx`, montada por `app/admin/quotes/[id]/page.tsx`).
+  `quote-workspace.tsx`, montada por `app/admin/quotes/[id]/page.tsx`:
+  cabecera + avisos + cotizador a lo ancho (hoja + panel interno) y, DEBAJO
+  de la hoja, cobros, historial y operación — sin aside ni portal).
   Catálogos de ambos: `lib/api/quote-catalogos-server.ts`.
 - Flujo de alta: borrador `?d=` (base64url) → «Crear v1» → `createQuoteAction`
   (`client_request_id` uuid por intento) → `router.push('/admin/quotes/:id')`
@@ -78,94 +80,71 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   flujo y NO se toca desde aquí; los hijos abren esta pantalla con extras
   `GRUPO` bloqueados.
 
-### Orden de la hoja 1 (el documento)
+### La hoja 1 ES el formulario (ensamble form-as-document, 8-sep-2026)
 
-`SeccionId` en el orden del PDF, colapso con `hidden` (RHF siempre
-montado, ids ancla vivos), avisos ámbar nunca se esconden (badge por
-sección + auto-abre). El cuerpo de cada sección es `@container`: los grids
-internos (cabecera `@2xl`, traslados `@xl`, itinerario+mapa `@3xl`) responden
-al ancho REAL del documento, no del viewport (con aside/preview anclada la
-columna es mucho más angosta que la ventana). La página única parte en dos
-columnas desde `xl` (aside 24rem; 20rem en ≥1600 px con la preview anclada):
+- `QuoteCalculator` ya NO pinta tarjetas/secciones de formulario: renderiza
+  `<QuoteSheet>` (la hoja 1 editable, `components/admin/quotes/quote-sheet.tsx`)
+  al centro sobre el fondo del shell (papel claro 794 px, sombra, escala al
+  ancho del contenedor) y `<QuoteInternalPanel>` a la derecha. Arriba una
+  barra de ESTADO fija (`TotalBar`, roja): total con IVA del breakdown,
+  cliente · folio · vN, «Ver PDF real» / «Guardar y ver PDF», Descartar /
+  Guardar → vN (o «Crear v1» en el alta) y chips de avisos (capacidad,
+  ancla CUN, millas en 0, costo externo MXN sin T.C.). Debajo de la hoja, la
+  save bar (Crear v1 / Guardar → vN con el resumen del diff).
+- Todo lo que se IMPRIME se edita en su lugar en la hoja (cliente, aeronave
+  = modelo, pasajeros, traslados, itinerario + mapa, desglose, notas) con
+  inputs invisibles en reposo; el cotizador conserva intactos el estado RHF,
+  el debounce + AbortController de `/calculate`, `resumirCambios`, «v2 → v3
+  ●», el diálogo «Guardar vN», candados, confirmación única, beforeunload,
+  409, `?d=` y los ids ancla. Contrato hoja ⇄ cotizador: `valores` (subconjunto
+  RHF que se imprime) + `onCambio(campo, valor)` → `setValue(campo, valor,
+  {shouldDirty:true})` (+ cliente broker ⇒ tarifa BROKER); `documento`,
+  `catalogos`, `tramosPdf` (revisión: `oculto`/`fechaPdf` con la regla de
+  coincidencia + `margen` = toggles del workspace; alta: `onOcultoChange`/
+  `onFechaPdfChange` sobre `escalas[].pdf_oculto`/`pdf_fecha`),
+  `pasajerosPorTramo`, `mapaSvg` (con form limpio: `extraerMapaSvgDeHtml`
+  de la hoja del PDF guardado), `totalRespaldo`, `grupo`, `clienteExtra`
+  (alta: «+ nuevo cliente» / «corregir nombre» en el margen).
+- Lectura bloqueada (`bloqueadoRazon`): la hoja se pinta como texto (sin
+  inputs), 🔒 + razón en la barra de estado y «Copiar como nueva cotización».
 
-1. `cabecera` — cliente (alta: selector + frecuentes + «Nuevo cliente» +
-   «Corregir nombre»; revisión: card fija Cliente · folio · vN), aeronave
-   cotizada («El cliente ve el modelo: …»), tipo y fecha como texto.
-2. `ruta` — ruta GRANDE derivada de los tramos VISIBLES (`puntosRuta`),
-   `[N] pasajeros` (`#pasajeros-field`; deshabilitado con pax por tramo),
-   capacidad, filas «TUA CUN: 4 × $25 = $100».
-3. `traslados` — `FechaHoraCampo` inicial/final (pared Cancún; ISO solo al
-   armar payload con `cancunInputToIso`).
-4. `itinerario` — `QuoteLegsEditor variant="fila"` (`# | [CUN]→[HOL] | NM |
-   Pax | 🗑`; la fila es `@container`: ≥28rem una línea, menos NM/Pax bajan
-   con etiqueta), chips ferry/pernocta(+costo)/servicio/nota + a la derecha
-   «PDF: fecha · 👁» (solo PDF), ruta
-   rápida «CUN, HOL, CUN ⏎» (`RutaRapidaInput`), plantilla («Suele pedir»,
-   ruta guardada, crear/guardar ruta), card azul RUTA OPERATIVA (revisión con
-   itinerario operativo), mapa del panel a la derecha (solo tramos visibles).
-5. `desglose` — etiquetas EXACTAS del PDF: «Servicio aéreo ⓘ» DERIVADO
-   (= subtotal_vuelo + redondeo>0 + Σ COMISION_VENDEDOR, misma composición
-   que `quotes-pdf.service`), `TuasFilas` por aeropuerto + switch «Se cobran
-   TUAS», `ExtrasEditor variant="fila"`, «Comisión BillPocket (x%)»,
-   «Viáticos por pernocta», «Descuento −[ ]», «Subtotal (sin IVA)», «IVA
-   ([16] %)» (input en % → `iva_pct_override` fracción), «Total (USD)»,
-   «Total MXN (T.C. [ ])» (`#tc-usd-mxn-field`).
-6. `notas` — notas del cliente (se imprimen).
+### Panel «Interno · no se imprime» (`quote-internal-panel.tsx`)
 
-Derivados = texto, nunca input; su etiqueta enfoca al productor
-(`focusTarifa`, `focusTarifaOverride`, `focusMetodoPago`, `focusBillPocket`,
-`focusRedondeo`, `focusItinerario`, `focusTc`, `focusCobrable`). Bloqueada
-(`bloqueadoRazon`): cada control se pinta como texto (`Dato`,
-`TramosLectura`, `TuasFilas readOnly`, `ExtrasEditor readOnly`) con 🔒 por
-sección.
+`QuoteInternalPanel`: panel lateral DERECHO colapsable (botón «Interno» en
+el borde, vertical en ≥xl; cerrado por defecto con memoria por usuario
+`vt-cotizador-interno-v1`, estado en el cotizador — se abre solo al prender
+«cubierto por externo»), con banda «Interno · no se imprime». Contiene TODO
+lo que produce números sin imprimirse (código movido del cotizador):
+avisos ámbar (nunca se esconden; el botón cerrado muestra el conteo),
+cliente frecuente + «+ Nuevo cliente» (alta), «Poner todo en $0» (cliente
+interno), plantilla de ruta («Suele pedir», ruta guardada, crear/guardar
+como nueva ruta), card azul RUTA OPERATIVA del vuelo (revisión con
+itinerario operativo, «Cotizar con estos tramos» con confirmación), Tarifa y
+horas (Pública/Broker/Personalizada `#tarifa-tipo-field`, `$/hr — SOLO esta
+cotización` `#tarifa-override-field`, sobrevuelo, Cobrable pactado
+`#cobrable-field`), comisión del vendedor (Fija | Por hora, «→ impreso»),
+Cobro (método `#metodo-pago-field` + ¿cuál? con OTRO, BillPocket %
+`#billpocket-field`, redondeo `#redondeo-field`, switch «Se cobran TUAS»,
+cotización abierta, pase de abordar), sub-bloques `SubBloque` (operador
+externo con modelo/matrícula/costo+moneda y margen; ruta operativa —solo
+alta—; Detalle del cálculo = `Preview` solo lectura + `QuoteDesgloseCard`),
+notas internas, toggles del PDF (tarifa/hr, itinerario) + leyenda de los
+toggles por tramo. El panel NO calcula dinero: pinta `values` + `breakdown`
+y escribe con `setValue`/`register` del cotizador. Tipos del form en
+`quote-form-types.ts` (los re-exporta el cotizador).
 
-### Bloque «Interno · no se imprime»
+### Hoja del PDF guardado (mapa) y PDF real
 
-`SeccionCotizador variante="interno"` (ids `interno`, `externo`,
-`operativa`, `detalle`), cerrado por defecto con memoria por usuario
-`vt-cotizador-interno-v1` (nunca se abre solo salvo atajo/externo). Contiene
-TODO lo que produce números sin imprimirse: tarifa Pública/Broker/
-Personalizada + `$/hr — SOLO esta cotización` (`#tarifa-override-field`),
-sobrevuelo, Cobrable pactado (`#cobrable-field`), comisión del vendedor
-(Fija | Por hora, «→ impreso X = servicio + comisión»), método de pago
-(`#metodo-pago-field`, ¿cuál? con OTRO), BillPocket % (`#billpocket-field`),
-redondeo (`#redondeo-field`), cotización abierta, pase de abordar,
-sub-bloques `SubBloque` (operador externo con costo+moneda y margen; ruta
-operativa —solo alta—; Detalle del cálculo = `Preview` solo lectura +
-`QuoteDesgloseCard`), notas internas (alta), toggles PDF tarifa/itinerario.
-Ubicación: página única → PORTAL al aside del workspace (`internoSlot`,
-callback ref, ≥1440 px); alta → columna propia sticky (≥1440 px sin la
-preview anclada); si no, acordeón al pie del documento.
-
-### Vista previa REAL de la hoja 1
-
-- NUNCA una réplica en React del PDF: es el HTML del armador de pyservices
-  vía `POST /v1/quotes/preview-html` (proxy `app/api/quotes/preview-html/
-  route.ts`, JWT de sesión, `Cache-Control: no-store`; 404 del API →
-  `code: PREVIEW_NO_DISPONIBLE` = aviso ámbar, no error; jamás bloquea
-  guardar).
-- Hook `hooks/use-quote-preview-html.ts` (`useQuotePreviewHtml`): payload =
-  `armarCalcPayload` + presentación (`quote_id`, `cliente_id`, fechas de
-  traslado, notas, `pdf_mostrar_*`, `escalas_pdf`, externo, `sucio`),
-  ENCADENADO al breakdown fresco (mismo debounce de 350 ms), `AbortController`
-  por request, caché LRU 20 por hash (`lib/admin/quote-preview-cache.ts`).
-  Form limpio + `quote_id` → `sucio:false` (hoja del PDF guardado, una vez
-  por versión). Estados: al día / actualizando (hoja atenuada) / sin vista
-  previa (banda + reintentar) / faltan datos.
-- Panel `quote-preview-pane.tsx`: iframe `sandbox=""` + `srcdoc`, 794 px
-  escalados con ResizeObserver, `pointer-events:none`; `QuotePreviewDialog`
-  = «Abrir en grande». Ubicación (D6): anclada a la derecha del documento
-  solo en ≥1600 px (preferencia `vt-cotizador-preview-v1`, Anclar/Desanclar);
-  si no, botón «Vista previa» (TotalBar y `QuoteActionsBar`) → diálogo;
-  <1024 px pill «Formulario | Vista previa» (el form sigue montado con
-  `hidden`). «Ver PDF real» / «Guardar y ver PDF» usan `abrirPdfCotizacion`
-  (`lib/api/quotes-browser.ts`, fuente única con el botón PDF).
-- FUENTE: el armador declara `'Helvetica Neue', Arial, sans-serif` sin
-  `@font-face` → en pantalla se ve la fuente local del operador y en el PDF
-  la sans del contenedor; el pie del panel lo avisa mientras el HTML no
-  traiga `@font-face` (`htmlTraeFuente`). El iframe honra un `@font-face`
-  con `data:` embebido: incrustarlo en pyservices (`_estilos_cuerpo`) los
-  iguala sin tocar el panel.
+- La hoja editable ES la vista previa: `quote-preview-pane.tsx`, el anclaje
+  (`vt-cotizador-preview-v1`), el pill «Formulario | Vista previa» y
+  `useMediaQuery` se retiraron. `useQuotePreviewHtml` sigue vivo solo para
+  pedir, con el form LIMPIO (`sucio:false`, una vez por versión, caché LRU),
+  la hoja del PDF guardado y reutilizar su MAPA en la hoja (en lectura es la
+  única fuente del mapa); con cambios la hoja pide el mapa en vivo a
+  `/api/quotes/mapa-svg`.
+- «Ver PDF real» / «Guardar y ver PDF» (barra de estado) usan
+  `abrirPdfCotizacion` (`lib/api/quotes-browser.ts`, fuente única con el
+  botón PDF de la barra de acciones).
 
 ### Edición directa y versiones
 
@@ -219,16 +198,50 @@ preview anclada); si no, acordeón al pie del documento.
   (`METODOS_PAGO`, `metodoPagoLabel`) en cotizador, cobro, reembolso,
   cobros del vuelo/cotización, grupo y el diff.
 
+### Hoja editable `QuoteSheet` (form-as-document, 8-sep-2026)
+
+- `components/admin/quotes/quote-sheet.tsx` = la hoja 1 COMO formulario:
+  `<div class="cot-hoja cot-hoja--pantalla">` con el MISMO marcado y clases
+  que `_build_html` de pyservices (membrete, `.meta`, `.route`, TRASLADOS,
+  ITINERARIO + `.mapa`, `.totales`, `.notas`, `.pie-pantalla`). Sub-partes:
+  `quote-sheet-fields.tsx` (`CampoHoja`/`CampoNumero`/`CampoTextoLargo`/
+  `CampoFecha`/`CampoDia`/`CampoSelect`/`CampoMoneda`: invisibles en reposo,
+  `font: inherit`, clase `cot-in`), `quote-sheet-itinerario.tsx` (tabla del
+  PDF con selector de aeropuerto, margen izquierdo con marcas/⋯/🗑, popover
+  de detalle por portal, fila «+ Agregar tramo» con ruta rápida),
+  `quote-sheet-desglose.tsx` (`.totales` fila por fila; TUA unitario, extras,
+  descuento, IVA %, T.C. en su posición), tipos en `quote-sheet-types.ts`,
+  helpers puros en `lib/admin/quote-sheet.ts` (`moneyPdf`, `fechaLegible`,
+  `fechaDia`, `servicioAereoImpresoUsd`, `tramosVisibles`…).
+- CSS COMPARTIDO: `src/styles/cotizacion-fuente.css` + `cotizacion-hoja.css`
+  son COPIAS de pyservices (`npm run sync:hoja-css`; test de deriva
+  `styles/__tests__/hoja-css-deriva.test.ts`). Lo de pantalla (geometría
+  794 px, inputs invisibles, márgenes de fila, filas fantasma) vive en
+  `cotizacion-hoja-pantalla.css`. Todo selector cuelga de `.cot-hoja`.
+- MAPA: `hooks/use-quote-mapa-svg.ts` → proxy `app/api/quotes/mapa-svg/
+  route.ts` → `POST /v1/quotes/mapa-svg` (el mismo `<svg>` del PDF, inline).
+  Con form limpio se reutiliza el de la vista previa
+  (`extraerMapaSvgDeHtml`, prop `mapaSvg`).
+- Contrato: `valores` (subconjunto RHF que se imprime) + `onCambio(campo,
+  valor)`; el dinero SIEMPRE del `breakdown`; `data-cot-ui` marca la croma
+  que no se imprime. Test de estructura vs el HTML de pyservices:
+  `components/admin/quotes/__tests__/quote-sheet.test.tsx` (fixture
+  `__fixtures__/hoja1.html` generado con `npm run gen:hoja-fixture`).
+- `useLookupNm` (`hooks/use-lookup-nm.ts`) es la fuente única del
+  autollenado de millas (la usan `QuoteLegsEditor` y la hoja).
+
 ### Ids ancla, memoria y teclado
 
 - Ids DOM que otros componentes/enlaces usan: `cobrable-field`,
   `tarifa-override-field`, `motivo-revision-field` (en el diálogo),
   `tc-usd-mxn-field`, `pasajeros-field`, `metodo-pago-field`,
   `billpocket-field`, `redondeo-field`, `tarifa-tipo-field`,
-  `seccion-<id>`, `cobros-vuelo` (card de cobros del workspace).
-- localStorage: `vt-cotizador-plegado-v2` (secciones del alta),
-  `vt-cotizador-interno-v1` (`{abierto}`), `vt-cotizador-preview-v1`
-  (anclaje de la preview).
+  `seccion-<id>` (sub-bloques del panel interno), `cobros-vuelo` (card de
+  cobros del workspace). En la hoja, `pasajeros-field` y `tc-usd-mxn-field`
+  son el PROPIO input invisible (no un contenedor).
+- localStorage: `vt-cotizador-interno-v1` (`{abierto}` del panel interno).
+  Las claves `vt-cotizador-plegado-v2` y `vt-cotizador-preview-v1` ya no se
+  usan (no hay secciones plegables ni preview anclada).
 - Teclado: Enter en la ruta rápida arma tramos; Ctrl/⌘+S guarda por el
   mismo camino que el botón primario (revisión: diálogo / presentación;
   alta: «Crear v1»); Esc cierra diálogos (Base UI: `DropdownMenuItem` usa

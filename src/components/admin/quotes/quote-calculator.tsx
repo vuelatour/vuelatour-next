@@ -10,42 +10,26 @@ import {
   type ReactNode,
   type SyntheticEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type PathValue } from "react-hook-form";
 import { toast } from "sonner";
 import {
-  CheckCircleIcon,
-  XCircleIcon,
-  BookmarkSquareIcon,
-  ChevronDownIcon,
-  PlusIcon,
-  PencilSquareIcon,
-  XMarkIcon,
-  LockClosedIcon,
-  DocumentDuplicateIcon,
+  ArrowDownTrayIcon,
   ArrowPathIcon,
+  BookmarkSquareIcon,
+  DocumentDuplicateIcon,
   ExclamationTriangleIcon,
-  EyeIcon,
-  EyeSlashIcon,
-  InformationCircleIcon,
+  LockClosedIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
-import Link from "next/link";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
-import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { updateClientAction } from "@/app/admin/clients/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
 import type { Client } from "@/types/clients";
 import type { Route } from "@/types/routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,54 +50,26 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
-import { ExtrasEditor } from "@/components/admin/quotes/extras-editor";
-import {
-  extrasAPayload,
-  montoExtraActivo,
-  normalizarExtrasEditor,
-  textoCantidadUnitario,
-} from "@/lib/admin/extras";
+import { extrasAPayload, montoExtraActivo, normalizarExtrasEditor } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
-import { tuasLineasAPayload, upsertTuaLinea } from "@/lib/admin/tuas";
+import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import { modelosCotizadosTexto } from "@/lib/admin/avion-cotizado";
-import { METODOS_PAGO, metodoPagoLabel } from "@/lib/admin/metodos-pago";
-import { puntosRuta } from "@/lib/admin/ruta-comercial";
+import { extraerMapaSvgDeHtml } from "@/lib/admin/quote-sheet";
 import type { VueloConGrupo } from "@/types/grupos";
-import { QuoteLegsEditor } from "@/components/admin/quotes/quote-legs-editor";
-import { RutaRapidaInput } from "@/components/admin/ruta-rapida-input";
-import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
 import type { Airport } from "@/types/airports";
-import { RoutePreviewMap } from "@/components/admin/route-preview-map";
 import { cn } from "@/lib/utils";
 import { abrirPdfCotizacion, calculateQuote } from "@/lib/api/quotes-browser";
 import { isApiError } from "@/lib/api/errors";
-import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
-import {
-  cancunInputToIso,
-  fmtDateTime,
-  isoToCancunInput,
-  TZ_LABEL,
-} from "@/lib/datetime";
+import { fmtMxn, fmtUsd } from "@/lib/format";
+import { cancunInputToIso, isoToCancunInput } from "@/lib/datetime";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useCambiosSinGuardar } from "@/hooks/use-cambios-sin-guardar";
 import {
-  PREVIEW_ANCLADA_QUERY,
-  PREVIEW_ANGOSTA_QUERY,
-  useMediaQuery,
   useQuotePreviewHtml,
-  useQuotePreviewPrefs,
   type EscalaPdfPreview,
   type QuotePreviewPayload,
 } from "@/hooks/use-quote-preview-html";
-import {
-  QuotePreviewDialog,
-  QuotePreviewPane,
-} from "@/components/admin/quotes/quote-preview-pane";
 import {
   armarMotivoRevision,
   cambiosTocanTripulacion,
@@ -133,168 +89,36 @@ import {
 import { createRouteAction } from "@/app/admin/routes/actions";
 import type {
   CalculateQuoteRequest,
-  ComisionVendedorModo,
   EscalaInput,
-  ExtraConcepto,
   MetodoPago,
   QuoteBreakdown,
-  TipoTarifa,
   TipoVuelo,
-  TuaLinea,
-  TuasAeropuerto,
-  TuasFila,
 } from "@/types/quote";
 import type { PersistedQuote } from "@/types/quotes-persisted";
-import { Field } from "@/components/admin/form-field";
-import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
+import { QuoteSheet } from "@/components/admin/quotes/quote-sheet";
+import { QuoteInternalPanel } from "@/components/admin/quotes/quote-internal-panel";
+import type {
+  DocumentoHoja,
+  OnCambioHoja,
+  TramoPdfAccesores,
+} from "@/components/admin/quotes/quote-sheet-types";
+import type {
+  AircraftOption,
+  AirportOption,
+  ClientOption,
+  QuoteFormValues,
+  RouteOption,
+} from "./quote-form-types";
 
-export interface AircraftOption {
-  id: string;
-  matricula: string;
-  modelo: string;
-  pais_registro: "MX" | "USA";
-  velocidad_crucero_kts: number;
-  asientos: number;
-  tarifa_hora_pub_usd: number | null;
-  tarifa_hora_broker_usd: number | null;
-}
-
-interface RouteOptionTramo {
-  origen_iata: string;
-  destino_iata: string;
-  millas_nauticas: number;
-  pasajeros?: number | null;
-  es_ferry?: boolean;
-  requiere_pernocta?: boolean;
-  pernocta_costo_usd?: number | null;
-  tipo_parada?: "NORMAL" | "SERVICIO";
-  servicio_notas?: string | null;
-}
-
-export interface RouteOption {
-  id: string;
-  tipo: "SIMPLE" | "MULTIESCALA";
-  origen_iata: string;
-  destino_iata: string;
-  millas_nauticas: number;
-  es_redondo_auto: boolean;
-  num_aterrizajes: number;
-  tramos: RouteOptionTramo[];
-}
-
-interface ClientOption {
-  id: string;
-  nombre: string;
-  es_broker: boolean;
-  /** Cliente interno (operación propia): la cotización puede ir en $0. */
-  es_interno?: boolean;
-  rfc: string | null;
-}
-
-export interface AirportOption {
-  iata: string;
-  nombre: string;
-  latitud: number | null;
-  longitud: number | null;
-}
-
-/**
- * Tramo de la ruta OPERATIVA (solo alta): vive en react-hook-form desde F0.5
- * (8-sep-2026) — antes era `useState` aparte y ni el borrador ?d= ni el
- * diff lo veían.
- */
-interface OpsLegForm {
-  origen: string;
-  destino: string;
-  ferry: boolean;
-  pax: string;
-  hora: string; // datetime-local (hora Cancún)
-  nota: string;
-  pernocta: boolean;
-  servicio: boolean;
-  servicioNotas: string;
-  /** Manifiesto: un nombre por línea (colapsado tras "+ nombres de pasajeros"). */
-  nombres: string;
-  showNombres: boolean;
-}
-
-interface QuoteFormValues {
-  cliente_id: string;
-  tipo: TipoVuelo;
-  fecha_vuelo: string;
-  fecha_traslado_final: string;
-  aeronave_id: string;
-  ruta_id: string;
-  escalas: EscalaInput[];
-  tipo_tarifa: TipoTarifa;
-  pasajeros: number;
-  pase_abordar: boolean;
-  /** Horas de sobrevuelo (reconocimiento/foto): se suman al tiempo cobrable. */
-  sobrevuelo_hr: number | null;
-  /** COBRABLE pactado (hr): sustituye la suma final de horas a cobrar. */
-  tiempo_cobrable_override_hr: number | null;
-  /** Switch rápido de TUAS: apagado = no se cobra (override $0/pax). */
-  cobrar_tuas: boolean;
-  /** TUAS capturadas POR AEROPUERTO (pass-through): mandan sobre el catálogo. */
-  tuas_lineas: TuaLinea[];
-  cotizacion_abierta: boolean;
-  /** PDF: mostrar tarifa por hora (default apagado) e itinerario (default prendido). */
-  pdf_mostrar_tarifa: boolean;
-  pdf_mostrar_itinerario: boolean;
-  /** Vuelo CUBIERTO por operador externo (sin avión propio ni tacómetros). */
-  es_externo: boolean;
-  operador_externo: string;
-  /** Ficha del avión AJENO (ej. HAWKER 400 A / XA-REG): sale en el PDF. */
-  avion_externo_modelo: string;
-  avion_externo_matricula: string;
-  /** Lo que cobra el operador externo (costo para VuelaTour) en su moneda. */
-  costo_externo_monto: number | null;
-  /** Moneda del costo del externo (29-ago). MXN exige TC para derivar USD. */
-  costo_externo_moneda: "USD" | "MXN";
-  /**
-   * LEGADO (2-sep-2026): la captura del precio pactado se eliminó del
-   * cotizador (sin input). El valor solo se rehidrata del snapshot en folios
-   * viejos (24/69/148) para que revisar/ajustar no mueva su total acordado.
-   */
-  total_pactado_usd: number | null;
-  /** Conceptos extra (handler, comisariato, extensión…). */
-  extras: ExtraConcepto[];
-  /** Redondeo AUTOMÁTICO al siguiente múltiplo de $10 (regla del cliente). */
-  redondeo_auto: boolean;
-  /** Redondeo manual (solo con el automático apagado). */
-  redondeo_usd: number | null;
-  /** Descuento negociado ("ciérramelo en 750"). Se captura en positivo. */
-  descuento_usd: number | null;
-  metodo_pago: MetodoPago;
-  /** Nombre MANUAL del método cuando metodo_pago = OTRO. */
-  metodo_pago_detalle: string;
-  /** TC MXN por USD con el que entrará el pago (BillPocket/transferencia en pesos). */
-  tc_usd_mxn: number | null;
-  /** Comisión BillPocket % (custom por operación, tope 20). */
-  comision_billpocket_pct: number | null;
-  /** Modalidad de la comisión del VENDEDOR: monto fijo o $/hr × horas cobradas. */
-  comision_vendedor_modo: ComisionVendedorModo;
-  /** Comisión del VENDEDOR en USD (modo FIJA): se SUMA al precio del cliente. */
-  comision_vendedor_usd: number | null;
-  /** Tarifa $/hr del vendedor (modo POR_HORA): el motor la multiplica por las horas cobradas. */
-  comision_vendedor_tarifa_hr: number | null;
-  comision_vendedor_nombre: string;
-  tarifa_hora_override_usd: number | null;
-  tuas_override_usd_pax: number | null;
-  iva_pct_override: number | null;
-  notas: string;
-  notas_internas: string;
-  // Solo en mode='revise': texto libre del motivo (el chip vive aparte; el
-  // diff lo IGNORA — no es un dato de la cotización).
-  motivo: string;
-  /**
-   * Modo «Personalizada» del segmento de tarifa (F0.5: era `useState`). Es
-   * un estado de UI pegajoso, no un dato: el diff lo ignora.
-   */
-  tarifa_personalizada: boolean;
-  /** Ruta OPERATIVA opcional (solo alta). Vacía = usa la comercial. */
-  escalas_operacion: OpsLegForm[];
-}
+// Tipos del form y catálogos: `quote-form-types.ts` (compartidos con la hoja
+// y el panel interno). Se re-exportan para los consumidores existentes.
+export type {
+  AircraftOption,
+  AirportOption,
+  ClientOption,
+  QuoteFormValues,
+  RouteOption,
+} from "./quote-form-types";
 
 /**
  * Estado de edición que el cotizador reporta al padre (página única, F0):
@@ -322,8 +146,6 @@ export interface EstadoEdicionCotizador {
   descartar: () => void;
   /** Scroll+focus al campo de pasajeros del documento. */
   enfocarPasajeros: () => void;
-  /** «Vista previa hoja 1» (F1): abre la hoja real (diálogo / pestaña). */
-  abrirVistaPrevia: () => void;
 }
 
 type QuoteCalculatorProps = {
@@ -346,7 +168,6 @@ type QuoteCalculatorProps = {
       tramoExtra?: undefined;
       notaTramos?: undefined;
       escalasPdf?: undefined;
-      internoSlot?: undefined;
     }
   | {
       mode: "revise";
@@ -396,13 +217,6 @@ type QuoteCalculatorProps = {
        * guardado (misma regla que los toggles).
        */
       escalasPdf?: EscalaPdfPreview[];
-      /**
-       * F2: contenedor del padre (aside de la página única) donde el bloque
-       * «Interno · no se imprime» se monta por portal en ≥1440 px; sin él, o
-       * en pantallas menores, el bloque va como acordeón al pie del documento.
-       * El estado del form no cambia de sitio (portal = mismo árbol React).
-       */
-      internoSlot?: HTMLElement | null;
     }
 );
 
@@ -427,7 +241,10 @@ const CLAVES_PRESENTACION: ReadonlySet<string> = new Set([
 function focusTcField() {
   const el = document.getElementById("tc-usd-mxn-field");
   el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  el?.querySelector("input")?.focus();
+  // En la hoja el id vive en el propio input invisible; en otros contextos,
+  // en su contenedor.
+  const ctl = el instanceof HTMLInputElement ? el : el?.querySelector("input");
+  ctl?.focus();
 }
 
 // METODOS_PAGO: fuente única `lib/admin/metodos-pago.ts` (la copia local se
@@ -458,15 +275,6 @@ function routeToOption(route: Route): RouteOption {
   };
 }
 
-/** "$750/hr" compacto (sin decimales) para el sub del selector de tarifa. */
-function tarifaSub(
-  n: number | string | null | undefined,
-): string | undefined {
-  if (n == null || `${n}`.trim() === "") return undefined;
-  const v = Number(n);
-  if (!Number.isFinite(v)) return undefined;
-  return `$${Math.round(v).toLocaleString("en-US")}/hr`;
-}
 
 /**
  * Firma comparable de un itinerario (sin fechas, que son propias de cada
@@ -785,7 +593,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const tramoExtra = isRevise ? props.tramoExtra : undefined;
   const notaTramos = isRevise ? props.notaTramos : undefined;
   const escalasPdfProp = isRevise ? props.escalasPdf : undefined;
-  const internoSlot = isRevise ? (props.internoSlot ?? null) : null;
 
   const initialQuote = isRevise ? props.initialQuote : undefined;
   // Hijo de una cotización de GRUPO (4-sep): los renglones de extras con
@@ -793,7 +600,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const grupoDelHijo = grupoDeVuelo(initialQuote as (typeof initialQuote & VueloConGrupo) | undefined);
   const clientName = isRevise ? props.clientName : undefined;
   const reviseClienteInterno = isRevise ? (props.clientEsInterno ?? false) : false;
-  const clients = isRevise ? [] : props.clients;
+  // Catálogo de clientes solo en el alta (en revisión el cliente es fijo).
+  const clientsProp = isRevise ? undefined : props.clients;
   const frequentClientIds = isRevise ? [] : (props.frequentClientIds ?? []);
 
   const router = useRouter();
@@ -832,8 +640,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const [editClienteSaving, startEditCliente] = useTransition();
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
-  // Confirmación de "Cotizar con estos tramos" (pisa los tramos capturados).
-  const [opsATramosOpen, setOpsATramosOpen] = useState(false);
   const [saving, startSaving] = useTransition();
 
   // Clientes creados inline desde el cotizador (sin ir a "Clientes").
@@ -852,10 +658,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Dedupe por id: tras crear una ruta inline, router.refresh() la trae también
   // del servidor y sin esto aparecería duplicada en el dropdown.
   const allClients = useMemo(() => {
-    const base = clients ?? [];
+    const base = clientsProp ?? [];
     const seen = new Set(base.map((c) => c.id));
     return [...base, ...extraClients.filter((c) => !seen.has(c.id))];
-  }, [clients, extraClients]);
+  }, [clientsProp, extraClients]);
 
   const allRoutes = useMemo(() => {
     const seen = new Set(routes.map((r) => r.id));
@@ -1253,16 +1059,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   }, [formDefaults, lectura, isRevise, initialQuote, reset, getValues]);
 
   const values = watch();
-  // Ruta operativa (solo alta) — mismos nombres de antes sobre RHF.
+  // Ruta operativa (solo alta): vive en RHF; el panel interno la edita.
   const opsLegs = values.escalas_operacion ?? [];
-  const setOpsLegs = (
-    upd: OpsLegForm[] | ((prev: OpsLegForm[]) => OpsLegForm[]),
-  ) =>
-    setValue(
-      "escalas_operacion",
-      typeof upd === "function" ? upd(getValues("escalas_operacion") ?? []) : upd,
-      { shouldDirty: true },
-    );
   const tarifaCustom = values.tarifa_personalizada === true;
   // IMPORTANTE: serializamos el form a JSON antes de pasarlo al debounce.
   // watch() devuelve un objeto NUEVO en cada render (referencia distinta aunque
@@ -1608,35 +1406,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const previewListo =
     previewLimpio || (!loading && !enEsperaDebounce && !!breakdown && !error);
 
-  // Ubicación (D6): anclada a la derecha solo en ≥1600 px (preferencia
-  // recordada por usuario); en menores, botón de la barra → diálogo grande;
-  // en <1024 px pill «Formulario | Vista previa».
-  const previewPrefs = useQuotePreviewPrefs();
-  const pantallaAncha = useMediaQuery(PREVIEW_ANCLADA_QUERY);
-  const pantallaAngosta = useMediaQuery(PREVIEW_ANGOSTA_QUERY);
-  const previewAnclada = previewPrefs.hidratado && pantallaAncha && previewPrefs.anclada;
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [vistaAngosta, setVistaAngosta] = useState<"form" | "preview">("form");
-  const previewEnPill = pantallaAngosta && vistaAngosta === "preview";
-  const previewActivo = previewAnclada || previewDialogOpen || previewEnPill;
+  // Hoja del PDF GUARDADO (ensamble 8-sep): con el form limpio (revisión sin
+  // cambios o bloqueada) se pide UNA vez por versión (caché por hash) y de
+  // ahí sale el MAPA de la hoja editable (`extraerMapaSvgDeHtml`) — en
+  // lectura es su única fuente. Con cambios, la hoja pide el mapa en vivo a
+  // `/api/quotes/mapa-svg` (la misma función de dibujo de pyservices). La
+  // vista previa anclada/diálogo desapareció: la hoja ES la vista previa.
   const preview = useQuotePreviewHtml({
-    // Con error del motor no hay hoja que pedir (el API respondería lo
-    // mismo): esqueleto con la razón.
     payload: error ? null : previewPayload,
     listo: previewListo,
-    activo: previewActivo,
+    activo: previewLimpio,
   });
-  const previewMotivoSinDatos = error
-    ? "Corrige el error del cálculo para ver la hoja 1."
-    : undefined;
-  const abrirVistaPrevia = () => {
-    if (pantallaAngosta) {
-      setVistaAngosta("preview");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    setPreviewDialogOpen(true);
-  };
+  const mapaSvgGuardado =
+    previewLimpio && preview.html ? extraerMapaSvgDeHtml(preview.html) : undefined;
   // «Ver PDF real» (revisión): con cambios sin guardar se guarda primero
   // (diálogo «Guardar vN») y el PDF de la versión nueva se abre al terminar.
   const [pdfRealLoading, setPdfRealLoading] = useState(false);
@@ -1792,7 +1574,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     // cálculo en cero con los mismos extremos (verificación 27-ago); los
     // pares nuevos los completa el autollenado del editor.
     const prevPorPar = new Map(
-      (watch("escalas") ?? [])
+      (getValues("escalas") ?? [])
         .filter((e) => Number(e.millas_nauticas) > 0)
         .map((e) => [
           `${e.origen_iata}-${e.destino_iata}`,
@@ -1823,22 +1605,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       });
   };
 
-  const aplicarOpsComoEscalas = () => {
-    setValue("escalas", opsComoEscalas(), { shouldDirty: true });
-    setOpsATramosOpen(false);
-    // El autollenado de millas del editor completa las que vengan en 0.
+  const aplicarOpsComoEscalas = (legs: EscalaInput[]) => {
+    setValue("escalas", legs, { shouldDirty: true });
+    // El autollenado de millas de la hoja completa las que vengan en 0.
     toast.success("Tramos de la operación cargados — captura los pasajeros");
   };
 
-  // Upsert de una línea de TUA por aeropuerto; monto null = quitar la línea
-  // (vuelve al monto del catálogo). Regla compartida con el grupo.
-  const setTuaLinea = (
-    iata: string,
-    monto: number | null,
-    moneda: "USD" | "MXN",
-  ) => {
-    setValue("tuas_lineas", upsertTuaLinea(values.tuas_lineas, iata, monto, moneda));
-  };
 
   // ¿La TUA de este aeropuerto APLICA según el motor? Un aeropuerto exento
   // (aplica=false, p.ej. pase de abordar) no cobra la línea aunque esté
@@ -1868,9 +1640,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const hayExtrasMxn = (values.extras ?? []).some(
     (e) => e.moneda === "MXN" && montoExtraActivo(e) > 0,
   );
-  // ¿Hay renglones nativos en MXN (TUAS o extras)? Fuerza a mostrar el campo
-  // de TC aunque el método sea DOLARES: sin TC el motor no puede convertirlos.
-  const hayLineasMxn = hayTuasMxnActivas || hayExtrasMxn;
   // Renglones MXN sin TC (TUAS o extras): se retienen fuera del cálculo (el
   // preview sigue vivo) y se bloquea guardar — el total aún no los incluye.
   const mxnSinTc =
@@ -2253,47 +2022,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     return true;
   };
 
-  // ===== Secciones colapsables (SOLO presentación; nada entra al form) =====
-  // Estado local por sección con defaults deterministas por modo — sin leer
-  // storage en el primer render (no romper la hidratación); un useEffect
-  // aplica los overrides guardados (solo alta nueva). El plegado JAMÁS entra
-  // a QuoteFormValues: contaminaría el borrador ?d= y el pristino.
-  const [abiertas, setAbiertas] = useState<Record<SeccionId, boolean>>(() =>
-    seccionesDefault(isRevise),
-  );
-  useEffect(() => {
-    if (isRevise) return;
-    try {
-      const raw = localStorage.getItem(SECCIONES_LS_KEY);
-      if (!raw) return;
-      const guardado = JSON.parse(raw) as Record<string, unknown>;
-      if (!guardado || typeof guardado !== "object") return;
-      setAbiertas((prev) => {
-        const next = { ...prev };
-        for (const k of Object.keys(next) as SeccionId[]) {
-          if (typeof guardado[k] === "boolean") next[k] = guardado[k] as boolean;
-        }
-        return next;
-      });
-    } catch {
-      // Storage no disponible (modo privado/bloqueado): quedan los defaults.
-    }
-  }, [isRevise]);
-  const toggleSeccion = (id: SeccionId) => {
-    const next = { ...abiertas, [id]: !abiertas[id] };
-    setAbiertas(next);
-    // Solo el alta nueva persiste la preferencia (patrón data-table).
-    if (!isRevise) {
-      try {
-        localStorage.setItem(SECCIONES_LS_KEY, JSON.stringify(next));
-      } catch {
-        // Sin storage, el plegado vive solo en la sesión.
-      }
-    }
-  };
-  /** Apertura programática (atajos scroll+focus): no persiste preferencia. */
-  const abrirSeccion = (id: SeccionId) =>
-    setAbiertas((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
 
   // Bloque «INTERNO · NO SE IMPRIME» (F2, D6): CERRADO por defecto para
   // todos, con memoria por usuario (localStorage) en alta y revisión. Nunca
@@ -2318,71 +2046,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       // Sin storage, vive solo en la sesión.
     }
   };
-  /** Apertura programática del bloque interno (atajos): no persiste. */
-  const abrirInterno = () => setInternoAbierto(true);
-
   // Al prender «cubierto por externo» (switch o borrador ?d= restaurado) el
-  // sub-bloque se auto-abre: sus campos requeridos no deben quedar escondidos.
+  // panel interno se abre: sus campos requeridos no deben quedar escondidos.
   useEffect(() => {
-    if (!isRevise && values.es_externo) {
-      setInternoAbierto(true);
-      setAbiertas((prev) => (prev.externo ? prev : { ...prev, externo: true }));
-    }
+    if (!isRevise && values.es_externo) setInternoAbierto(true);
   }, [isRevise, values.es_externo]);
 
-  // Atajos de scroll+focus: con la sección plegada (hidden) el elemento
-  // existe pero no tiene layout y scrollIntoView muere en silencio — hay que
-  // ABRIR primero la sección contenedora y esperar un tick (mismo patrón
-  // setTimeout(60) del acceso a la tarifa override).
+  // Atajos de scroll+focus (ensamble 8-sep): los ids ancla de la hoja viven
+  // en el propio input invisible (`pasajeros-field`, `tc-usd-mxn-field`);
+  // los del panel interno en su contenedor. Un tick de espera por si el
+  // panel/sub-bloque acaba de abrirse (mismo patrón setTimeout(60)).
   const scrollFocus = (id: string, selector = "input") =>
     setTimeout(() => {
       const el = document.getElementById(id);
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      const ctl = el?.querySelector<HTMLElement>(selector);
+      const ctl = el && el.matches(selector) ? el : el?.querySelector<HTMLElement>(selector);
       if (ctl && !(ctl as HTMLInputElement).disabled) ctl.focus();
     }, 60);
-  /** El TC vive en «Total MXN (T.C.)» del desglose del documento (F2). */
-  const focusTc = () => {
-    abrirSeccion("desglose");
-    setTimeout(focusTcField, 60);
-  };
-  /** El Cobrable pactado vive en Interno › Tarifa y horas (F2). */
-  const focusCobrable = () => {
-    abrirInterno();
-    scrollFocus("cobrable-field");
-  };
-  /** Tarifa personalizada ($/hr override) en Interno › Tarifa y horas. */
-  const focusTarifaOverride = () => {
-    setTarifaCustom(true);
-    abrirInterno();
-    scrollFocus("tarifa-override-field");
-  };
-  /** «Servicio aéreo» y «IVA» del desglose son derivados: clic → productor. */
-  const focusTarifa = () => {
-    abrirInterno();
-    scrollFocus("tarifa-tipo-field", "button");
-  };
-  const focusMetodoPago = () => {
-    abrirInterno();
-    scrollFocus("metodo-pago-field", "button, input");
-  };
-  const focusBillPocket = () => {
-    abrirInterno();
-    scrollFocus("billpocket-field");
-  };
-  const focusRedondeo = () => {
-    abrirInterno();
-    scrollFocus("redondeo-field", "input, button");
-  };
-  const focusItinerario = () => {
-    abrirSeccion("itinerario");
-    setTimeout(() => {
-      document
-        .getElementById("seccion-itinerario")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 60);
-  };
-  /** Ancla `motivo-revision-field`: ahora vive en el diálogo «Guardar vN». */
+  /** El TC vive en «Total MXN (T.C.)» del desglose de la hoja. */
+  const focusTc = () => setTimeout(focusTcField, 60);
+  /** Ancla `motivo-revision-field`: vive en el diálogo «Guardar vN». */
   const focusMotivo = () => {
     setGuardarOpen(true);
     setTimeout(() => {
@@ -2392,18 +2075,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }, 120);
   };
   /**
-   * «Ajuste rápido» de la barra (D2): scroll+focus a pasajeros del
-   * documento. Con pax definido POR TRAMO el campo global está deshabilitado
-   * (no se toma en cuenta): se va al pax del primer tramo del itinerario,
-   * que es donde sí se edita.
+   * «Ajuste rápido» de la barra (D2): scroll+focus a pasajeros de la hoja.
+   * Con pax definido POR TRAMO el global se imprime derivado (sin input): se
+   * lleva al itinerario, donde el detalle «⋯» de cada fila sí lo edita.
    */
   const enfocarPasajeros = () => {
     if (paxPorTramo) {
-      abrirSeccion("itinerario");
-      scrollFocus("seccion-itinerario", 'input[aria-label="Pasajeros del tramo (TUAS)"]:not([disabled])');
+      toast.info(
+        "Los pasajeros están definidos por tramo: edítalos en el detalle (⋯) de cada fila del itinerario.",
+      );
+      document
+        .querySelector(".cot-hoja table.grid")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    abrirSeccion("ruta");
     scrollFocus("pasajeros-field");
   };
   /** «Guardar y ver PDF» (F1): abre el diálogo de guardar y marca la intención. */
@@ -2429,21 +2114,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             title: "PDF completo para el cliente (con fichas de aeronave).",
           }
       : undefined;
-  // Props comunes del panel de vista previa (anclado, pill y diálogo).
-  const previewPaneProps = {
-    html: preview.html,
-    estado: preview.estado,
-    error: preview.error,
-    noDisponible: preview.noDisponible,
-    onReintentar: preview.reintentar,
-    motivoSinDatos: previewMotivoSinDatos,
-    verPdf: previewVerPdf,
-    // «Al día · incluye tus cambios sin guardar» vs «· la que verá el
-    // cliente»: con borrador vivo la hoja aún no es la del cliente.
-    conCambiosSinGuardar: sucio,
-    // Sin `pie`: el panel muestra la nota de fuente solo mientras el HTML no
-    // traiga `@font-face` (desaparece sola cuando pyservices la incruste).
-  } as const;
 
   // «Descartar» (F0): con cambios se confirma antes de tirar el borrador —
   // regla del cliente: toda acción que tira trabajo pide confirmación. El
@@ -2518,7 +2188,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     if (t.closest("[data-guard-exempt]")) return;
     if (
       !t.closest(
-        'input, textarea, select, button, [role="switch"], [role="combobox"], [role="option"], [contenteditable="true"]',
+        // `[contenteditable]` sin valor fijo: las notas de la hoja usan
+        // `contenteditable="plaintext-only"` (no "true").
+        'input, textarea, select, button, [role="switch"], [role="combobox"], [role="option"], [contenteditable]:not([contenteditable="false"])',
       )
     ) {
       return;
@@ -2539,7 +2211,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     guardar: () => {},
     descartar: () => {},
     enfocarPasajeros: () => {},
-    abrirVistaPrevia: () => {},
     guardarAtajo: () => {},
   });
   accionesRef.current = {
@@ -2548,7 +2219,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     },
     descartar: pedirDescartar,
     enfocarPasajeros,
-    abrirVistaPrevia,
     // Ctrl/⌘+S (F2): mismo camino que el botón primario de cada modo.
     guardarAtajo: () => {
       if (lectura || saving) return;
@@ -2585,7 +2255,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       guardar: () => accionesRef.current.guardar(),
       descartar: () => accionesRef.current.descartar(),
       enfocarPasajeros: () => accionesRef.current.enfocarPasajeros(),
-      abrirVistaPrevia: () => accionesRef.current.abrirVistaPrevia(),
     });
   }, [
     onEstadoEdicion,
@@ -2611,78 +2280,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     resumen: resumenCambios,
   });
 
-  // Margen informativo del vuelo externo — MISMA fórmula que la leyenda de
-  // la card (hoisted para que el resumen del encabezado muestre el mismo
-  // número). Costo MXN: se convierte con el TC capturado; sin TC no hay
-  // margen que mostrar (el candado costoExternoMxnSinTc ya bloquea guardar).
-  const costoExtNativo = Number(values.costo_externo_monto) || 0;
-  const costoExtEsMxn = values.costo_externo_moneda === "MXN";
-  const costoExtTc = Number(values.tc_usd_mxn) || 0;
-  const costoExtUsd = costoExtEsMxn
-    ? costoExtTc > 0
-      ? Math.round((costoExtNativo / costoExtTc) * 100) / 100
-      : 0
-    : costoExtNativo;
-  // El total del preview YA incluye un pactado legado rehidratado (el motor
-  // aterriza ahí): el precio al cliente es siempre el total calculado.
-  const precioClienteUsd = Number(breakdown?.totales.total_usd) || 0;
-  const margenExternoUsd =
-    costoExtUsd > 0 && precioClienteUsd > 0
-      ? Math.round((precioClienteUsd - costoExtUsd) * 100) / 100
-      : null;
-
-  // ===== Resúmenes de encabezado plegado: PURO formateo de valores que ya
-  // existen (values/breakdown/estado local) — cero cálculos de dinero
-  // nuevos; montos y horas salen del breakdown canónico del motor. =====
-  const clienteNombreResumen = isRevise
-    ? (clientName ?? null)
-    : (allClients.find((c) => c.id === values.cliente_id)?.nombre ?? null);
-  // Texto para el operador (sin jerga): «manual» en vez de «override».
-  const origenTarifaResumen = breakdown
-    ? breakdown.tarifa.proviene_de_override
-      ? "manual"
-      : breakdown.tarifa.preferencial_cliente
-        ? "pactada"
-        : breakdown.tarifa.tipo === "BROKER"
-          ? "broker"
-          : "público"
-    : null;
-  const resumenAvion = [
-    selectedAircraft
-      ? `${selectedAircraft.matricula} ${selectedAircraft.modelo}`
-      : "Sin avión",
-    values.es_externo ? "referencia (externo)" : null,
-    breakdown
-      ? `${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr · ${origenTarifaResumen}`
-      : null,
-    Number(values.sobrevuelo_hr) > 0
-      ? `sobrevuelo ${fmtDecimal(Number(values.sobrevuelo_hr))} hr`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const rutaResumen =
-    values.escalas.length > 0
-      ? [
-          values.escalas[0].origen_iata,
-          ...values.escalas.map((l) => l.destino_iata),
-        ]
-          .filter(Boolean)
-          .join(" → ")
-      : null;
-  const resumenTramos = rutaResumen
-    ? [
-        rutaResumen,
-        `${values.escalas.length} ${values.escalas.length === 1 ? "tramo" : "tramos"}`,
-        breakdown
-          ? `${fmtDecimal(breakdown.ruta.millas_nauticas_totales)} NM`
-          : null,
-        breakdown ? `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "Sin tramos capturados";
   // Avisos del itinerario (mismos criterios que el editor de tramos).
   const anclaCunPendiente =
     values.escalas.length > 0 &&
@@ -2693,62 +2290,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const hayMillasEnCero =
     values.escalas.length > 0 &&
     values.escalas.some((l) => !(Number(l.millas_nauticas) > 0));
-
-  const resumenCargos = breakdown
-    ? [
-        values.cobrar_tuas
-          ? `TUAS ${fmtUsd(breakdown.totales.tuas_total_usd)}`
-          : "sin TUAS",
-        Number(breakdown.totales.extras_total_usd) > 0
-          ? `Extras ${fmtUsd(breakdown.totales.extras_total_usd)}`
-          : null,
-        Number(breakdown.totales.viaticos_pernocta_usd) > 0
-          ? `Pernocta ${fmtUsd(breakdown.totales.viaticos_pernocta_usd)}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "Se llena al calcular";
-
-  // Etiqueta del método (fuente única `metodoPagoLabel`: OTRO → «Otro (x)»).
-  const metodoPagoTexto = metodoPagoLabel(
-    values.metodo_pago,
-    values.metodo_pago_detalle,
-  );
-  const resumenCobro = [
-    metodoPagoTexto,
-    breakdown ? `IVA ${(breakdown.iva.porcentaje * 100).toFixed(0)}%` : null,
-    Number(values.tc_usd_mxn) > 0
-      ? `TC ${fmtDecimal(Number(values.tc_usd_mxn), 2)}`
-      : null,
-    breakdown?.meta?.comision_vendedor_usd
-      ? `comisión ${fmtUsd(breakdown.meta.comision_vendedor_usd)}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const resumenExterno = values.es_externo
-    ? [
-        `Cubierto por ${values.operador_externo.trim() || "(sin operador)"}`,
-        costoExtNativo > 0
-          ? `costo ${costoExtEsMxn ? fmtMxn(costoExtNativo) : fmtUsd(costoExtNativo)}`
-          : "sin costo capturado",
-        margenExternoUsd != null ? `margen ${fmtUsd(margenExternoUsd)}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "Vuelo con avión propio — ábrela si lo cubre otro operador";
-
-  const resumenOperativa =
-    opsLegs.length === 0
-      ? "Vacía = usa la ruta comercial"
-      : [
-          [opsLegs[0].origen, ...opsLegs.map((l) => l.destino)]
-            .filter(Boolean)
-            .join(" → "),
-          `${opsLegs.length} ${opsLegs.length === 1 ? "tramo" : "tramos"}`,
-        ].join(" · ");
 
   // MODELO cotizado (feedback 4-sep): el cliente ve el TIPO de avión con el
   // que se cotizó, nunca la matrícula. En revisión SIN cambio de avión manda
@@ -2769,214 +2310,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     : null;
   const cotizadoEnTexto = modeloCotizadoTexto ? `Cotizado en: ${modeloCotizadoTexto}` : null;
 
-  const resumenDetalle = breakdown
-    ? [
-        modeloCotizadoTexto,
-        `Subtotal ${fmtUsd(breakdown.totales.subtotal_vuelo_usd)}`,
-        `IVA ${fmtUsd(breakdown.totales.iva_usd)}`,
-        `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "Se llena al calcular";
-
-  // Regla transversal: una sección con aviso activo pinta badge ámbar en su
-  // encabezado (plegada o abierta) — un warning JAMÁS se esconde al plegar.
-  const avisoCliente = capacidadExcedida ? "Capacidad excedida" : null;
-  const avisoTramos = anclaCunPendiente
-    ? "No ancla en CUN"
-    : hayMillasEnCero
-      ? "Millas en 0"
-      : null;
-  const avisoCargos = mxnSinTc ? "MXN sin TC" : null;
-  const avisoCobro = mxnSinTc || costoExternoMxnSinTc ? "Falta TC" : null;
-  const avisoExterno = costoExternoMxnSinTc
-    ? "Costo MXN sin TC"
-    : margenExternoUsd != null && margenExternoUsd < 0
-      ? "Margen negativo"
-      : null;
-  const avisoDetalle = error ? "Error al calcular" : null;
-
-  // ===== Nodos compartidos entre EDICIÓN y LECTURA (página única 5-sep):
-  // la misma presentación en ambos modos, definida una sola vez. =====
-  const sobrevueloAporteNode =
-    breakdown && Number(breakdown.tiempos.sobrevuelo_hr) > 0
-      ? (() => {
-          // Aporte REAL: la parte del sobrevuelo absorbida por la hora
-          // mínima no suma (0.7 + 0.5 hr cobra 1.2 → solo 0.2 hr son del
-          // sobrevuelo). min(sob, cobrable − 1).
-          const sob = Number(breakdown.tiempos.sobrevuelo_hr);
-          const deltaHr = Math.min(
-            sob,
-            Math.max(0, breakdown.tiempos.cobrable_hr - 1),
-          );
-          if (deltaHr <= 0) {
-            return (
-              <p className="text-xs text-muted-foreground mt-1">
-                Queda dentro de la hora mínima: no suma al total.
-              </p>
-            );
-          }
-          return (
-            <AporteChip
-              usd={deltaHr * breakdown.tarifa.usd_por_hora}
-              nota={`${fmtDecimal(deltaHr, 2)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`}
-            />
-          );
-        })()
-      : null;
-
-  const cierreResumenNode =
-    breakdown &&
-    ((breakdown.totales.ajuste_final_usd ?? 0) !== 0 ||
-      (Number(values.descuento_usd) || 0) > 0)
-      ? (() => {
-          const cotizado =
-            breakdown.totales.total_usd -
-            (breakdown.totales.ajuste_final_usd ?? 0);
-          const descuento = Number(values.descuento_usd) || 0;
-          // Con auto: el redondeo real lo reporta el motor; manual: lo del campo.
-          const redondeo = values.redondeo_auto
-            ? (breakdown.meta?.redondeo_auto_usd ?? 0)
-            : Number(values.redondeo_usd) || 0;
-          return (
-            <div className="rounded-md border border-border bg-navy-800/50 px-3 py-2 text-sm space-y-0.5">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Cotizado</span>
-                <span className="font-mono text-foreground">{fmtUsd(cotizado)}</span>
-              </div>
-              {redondeo > 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>+ Redondeo</span>
-                  <span className="font-mono text-foreground">{fmtUsd(redondeo)}</span>
-                </div>
-              )}
-              {descuento > 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>− Descuento</span>
-                  <span className="font-mono text-foreground">−{fmtUsd(descuento)}</span>
-                </div>
-              )}
-              {/* 2-sep-2026: la línea "Ajuste al precio pactado" se eliminó
-                  junto con la captura del pactado. En folios legado
-                  (24/69/148) el motor sigue aterrizando el total en lo
-                  pactado vía el ajuste; ese delta ya no se desglosa aquí. */}
-              <div className="flex justify-between border-t border-border pt-1 font-semibold">
-                <span>Total a cobrar</span>
-                <span className="font-mono">
-                  {fmtUsd(breakdown.totales.total_usd)}
-                </span>
-              </div>
-            </div>
-          );
-        })()
-      : null;
-
-  // Margen = lo que paga el cliente − lo que cobra el operador externo (solo
-  // informativo; el API es la fuente). Derivado ARRIBA (hoisted) para que el
-  // resumen del encabezado de la sección muestre el mismo número.
-  const margenExternoNode =
-    margenExternoUsd != null ? (
-      <p
-        className={`text-xs ${margenExternoUsd < 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
-      >
-        Margen VuelaTour: {fmtUsd(precioClienteUsd)} al cliente −{" "}
-        {fmtUsd(costoExtUsd)} del operador externo
-        {costoExtEsMxn && (
-          <span className="font-mono">
-            {" "}
-            ({fmtMxn(costoExtNativo)} ÷ tc {fmtDecimal(costoExtTc, 4)})
-          </span>
-        )}{" "}
-        ={" "}
-        <span className="font-mono font-semibold">
-          {fmtUsd(margenExternoUsd)}
-        </span>
-        {margenExternoUsd < 0 && " · el costo supera el precio al cliente"}
-      </p>
-    ) : null;
-
-  // Ruta OPERATIVA en LECTURA (la card azul que vivía en el detalle): la
-  // vuela el piloto y es distinta de la comercial cuando el vuelo salió de
-  // otra base o lleva ferries. Los tramos operativos se editan en el vuelo.
-  const escalasOperativas = initialQuote?.escalas ?? [];
-  const rutaOperativaLectura =
-    lectura &&
-    initialQuote &&
-    escalasOperativas.length > 0 &&
-    (initialQuote.itinerario_operativo === true ||
-      escalasOperativas.some((e) => e.solo_operativa || e.es_ferry)) ? (
-      <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-2.5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
-          Ruta operativa (la vuela el piloto — no se cotiza)
-        </p>
-        <ol className="mt-1.5 space-y-1">
-          {[...escalasOperativas]
-            .sort((a, b) => a.orden - b.orden)
-            .map((esc) => (
-              <li key={esc.id} className="flex items-center gap-2 text-xs font-mono">
-                <span className="text-muted-foreground">{esc.orden}.</span>
-                {esc.origen_iata} → {esc.destino_iata}
-                {esc.es_ferry && (
-                  <Badge variant="outline" className="text-[9px] px-1 py-0">
-                    ferry
-                  </Badge>
-                )}
-                {esc.solo_operativa && (
-                  <Badge
-                    variant="outline"
-                    className="text-[9px] px-1 py-0 border-sky-500/40 text-sky-600 dark:text-sky-400"
-                  >
-                    operativo
-                  </Badge>
-                )}
-                {esc.cancelada_at && (
-                  <Badge
-                    variant="outline"
-                    className="text-[9px] px-1 py-0 text-muted-foreground"
-                  >
-                    cancelado
-                  </Badge>
-                )}
-              </li>
-            ))}
-        </ol>
-        <p className="mt-1.5 text-[10px] text-muted-foreground">
-          Abajo está la ruta COMERCIAL (lo que paga el cliente, abre y cierra
-          en CUN). Los tramos operativos se editan en el detalle del vuelo.
-        </p>
-      </div>
-    ) : null;
-
-  // Comisión del vendedor en LECTURA: modalidad + monto/tarifa + quién
-  // vendió; el efectivo POR_HORA lo manda el motor en meta (fuente única).
-  const comisionVendedorTexto = (() => {
-    const nombre = values.comision_vendedor_nombre?.trim() ?? "";
-    const sufijo = nombre ? ` · ${nombre}` : "";
-    if (values.comision_vendedor_modo === "POR_HORA") {
-      if (!(Number(values.comision_vendedor_tarifa_hr) > 0)) return "—";
-      const efectiva = breakdown?.meta?.comision_vendedor_usd;
-      return `${fmtUsd(Number(values.comision_vendedor_tarifa_hr))}/hr × horas cobradas${
-        efectiva ? ` = ${fmtUsd(efectiva)}` : ""
-      }${sufijo}`;
-    }
-    if (!(Number(values.comision_vendedor_usd) > 0)) return "—";
-    return `${fmtUsd(Number(values.comision_vendedor_usd))} (monto fijo)${sufijo}`;
-  })();
-
-  // ===== F2 (8-sep-2026): el formulario ES la hoja 1 =====
-  // Ubicación del bloque «Interno · no se imprime»: por PORTAL al aside de la
-  // página única (revisión, ≥1440 px), como columna propia en el alta
-  // (≥1440 px sin la vista previa anclada) o como acordeón al pie del
-  // documento en el resto. El form no cambia de árbol (portal = mismo React).
-  const pantalla1440 = useMediaQuery("(min-width: 1440px)");
-  const internoUbicacion: "portal" | "aside" | "pie" =
-    pantalla1440 && internoSlot
-      ? "portal"
-      : pantalla1440 && !isRevise && !previewAnclada
-        ? "aside"
-        : "pie";
-
   // Tramo OCULTO del PDF (atenúa la fila y sale de la ruta grande). Alta:
   // bandera del form (D4). Revisión: escala viva (prop) solo si los tramos
   // siguen coincidiendo con lo guardado — misma regla que los toggles.
@@ -2995,96 +2328,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }
     return escalasPdfProp!.find((e) => e.orden === idx + 1)?.pdf_oculto === true;
   };
-  const tramosOcultos = values.escalas.filter((_, i) => tramoOculto(i)).length;
-  // Ruta GRANDE de la hoja (derivada de los tramos visibles, como el PDF).
-  const rutaGrande = puntosRuta(
-    values.escalas
-      .filter((l, i) => !tramoOculto(i) && (l.origen_iata || l.destino_iata))
-      .map((l) => ({ origen: l.origen_iata, destino: l.destino_iata })),
-  );
 
   // Cabecera de la hoja: tipo y fecha de cotización (derivados, texto).
   const tipoTexto = initialQuote?.tipo ?? values.tipo;
-  const fechaCotizacionTexto = initialQuote
-    ? fmtDateTime(initialQuote.fecha_confirmacion ?? initialQuote.fecha_solicitud)
-    : "se fija al guardar";
-
-  // «Servicio aéreo» tal como se IMPRIME: el API absorbe ahí el redondeo
-  // (> 0) y la comisión del vendedor (misma composición que
-  // quotes-pdf.service: subtotal_vuelo + ajuste>0 + Σ COMISION_VENDEDOR).
-  // Solo se suman números del motor; el ⓘ muestra la cuenta.
-  const comisionAbsorbidaUsd = breakdown
-    ? (() => {
-        const lineas = (breakdown.desglose ?? []).filter(
-          (d) => d.clave === "COMISION_VENDEDOR",
-        );
-        if (lineas.length > 0) {
-          return lineas.reduce((acc, d) => acc + (Number(d.monto_usd) || 0), 0);
-        }
-        return Number(breakdown.meta?.comision_vendedor_usd) || 0;
-      })()
-    : 0;
-  const redondeoAbsorbidoUsd = Math.max(
-    0,
-    Number(breakdown?.totales.ajuste_final_usd) || 0,
-  );
-  const servicioAereoImpresoUsd = breakdown
-    ? Math.round(
-        (Number(breakdown.totales.subtotal_vuelo_usd) +
-          redondeoAbsorbidoUsd +
-          comisionAbsorbidaUsd) *
-          100,
-      ) / 100
-    : null;
-  const [servicioInfoAbierto, setServicioInfoAbierto] = useState(false);
-  // «Subtotal (sin IVA)» del PDF = total − IVA (misma resta del armador).
-  const subtotalSinIvaUsd = breakdown
-    ? Math.round(
-        (Number(breakdown.totales.total_usd) - Number(breakdown.totales.iva_usd)) * 100,
-      ) / 100
-    : null;
-  const nPernoctas = values.escalas.filter((l) => l.requiere_pernocta).length;
-  const descuentoUsd = Number(values.descuento_usd) || 0;
-  // Línea sintetizada por el motor (BillPocket %): se imprime como extra.
-  const extraBillPocket = (breakdown?.extras ?? []).find((e) =>
-    e.concepto?.startsWith("Comisión BillPocket"),
-  );
-  // IVA % del desglose: el form guarda la FRACCIÓN (0.16); el input muestra %.
-  const ivaOverrideRaw = `${values.iva_pct_override ?? ""}`.trim();
-  const ivaPctInput =
-    ivaOverrideRaw !== "" ? Math.round(Number(ivaOverrideRaw) * 10000) / 100 : "";
-  const ivaPctMotor = breakdown ? Math.round(breakdown.iva.porcentaje * 10000) / 100 : null;
-
-  // Resúmenes de los encabezados plegados (puro formateo).
-  const resumenCabecera = [
-    clienteNombreResumen ?? "Sin cliente",
-    selectedAircraft ? selectedAircraft.modelo : "Sin avión",
-  ].join(" · ");
-  const resumenRuta = [
-    rutaGrande.length > 0 ? rutaGrande.join(" → ") : "Sin ruta",
-    `${maxPasajeros || 0} pax`,
-  ].join(" · ");
-  const resumenTraslados = [
-    fechaCortaDeInput(values.fecha_vuelo) ?? "sin fecha inicial",
-    fechaCortaDeInput(values.fecha_traslado_final) ?? "sin fecha final",
-  ].join(" · ");
-  const resumenDesglose = breakdown
-    ? [
-        resumenCargos,
-        `IVA ${(breakdown.iva.porcentaje * 100).toFixed(0)}%`,
-        Number(values.tc_usd_mxn) > 0 ? `TC ${fmtDecimal(Number(values.tc_usd_mxn), 2)}` : "sin TC",
-      ].join(" · ")
-    : "Se llena al calcular";
-  const resumenInterno = [
-    resumenAvion,
-    resumenCobro,
-    values.es_externo ? resumenExterno : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const avisoRuta = avisoCliente;
-  const avisoDesglose = avisoCargos ?? avisoCobro;
-  const avisoInterno = avisoExterno ?? avisoDetalle;
 
   // Ojito/fecha PDF por fila. Revisión: toggles del padre (escala viva) solo
   // en tramos que coinciden con lo guardado. Alta (D4): bandera y fecha en
@@ -3111,1134 +2357,156 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           );
         }
       : undefined
-    : (idx: number, leg: EscalaInput) => (
-        <LegPdfLocal
-          leg={leg}
-          onChange={(patch) =>
-            setValue(
-              "escalas",
-              getValues("escalas").map((l, i) => (i === idx ? { ...l, ...patch } : l)),
-            )
-          }
-        />
-      );
+    : undefined;
 
-  const mapaNode =
-    values.escalas.length > 0 ? (
-      <RoutePreviewMap
-        airports={airports}
-        legs={values.escalas
-          .filter((_, i) => !tramoOculto(i))
-          .map((l) => ({
-            origen_iata: l.origen_iata,
-            destino_iata: l.destino_iata,
-            es_ferry: l.es_ferry,
-            requiere_pernocta: l.requiere_pernocta,
-            tipo_parada: l.tipo_parada,
-          }))}
-      />
-    ) : null;
+  // Avisos de captura FUERA del papel (barra de estado + panel interno):
+  // nunca se esconden. TUAS/extras en MXN sin T.C. los avisa la propia hoja
+  // (banda con «Capturar T.C.»).
+  const avisosCaptura = [
+    capacidadExcedida && selectedAircraft
+      ? `Capacidad excedida: ${maxPasajeros} pax vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo})`
+      : null,
+    anclaCunPendiente ? "La ruta no ancla en CUN" : null,
+    hayMillasEnCero ? "Tramos con millas en 0" : null,
+    costoExternoMxnSinTc ? "Costo del operador externo en MXN sin T.C." : null,
+  ].filter((a): a is string => !!a);
 
-  // ===== Bloque INTERNO · NO SE IMPRIME (lo que produce números sin imprimirse) =====
-  const internoNode = (
-    <div
-      className="min-w-0"
-      // Misma confirmación única que el documento (el bloque puede vivir en
-      // otro contenedor del DOM por portal; el árbol React es el mismo).
-      onClickCapture={interceptarPrimerCambio}
-      onKeyDownCapture={interceptarPrimerCambio}
-    >
-      <SeccionCotizador
-        id="interno"
-        titulo="Interno · no se imprime"
-        resumen={resumenInterno}
-        aviso={avisoInterno}
-        abierta={internoAbierto}
-        onToggle={() => setInternoAbiertoPersistente(!internoAbierto)}
-        bloqueada={lectura}
-        variante="interno"
-      >
-        {/* --- TARIFA Y HORAS --- */}
-        <div className="space-y-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-            Tarifa y horas
-          </p>
-          {lectura ? (
-            <>
-              <Dato
-                label="Tipo de tarifa"
-                value={
-                  <span className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {tarifaSegment === "CUSTOM"
-                        ? "Personalizada"
-                        : tipoTarifa === "BROKER"
-                          ? "Broker"
-                          : "Público"}
-                    </Badge>
-                    {breakdown ? (
-                      <span className="font-mono">{fmtUsd(breakdown.tarifa.usd_por_hora)}/hr</span>
-                    ) : Number(initialQuote?.tarifa_hora_usd) > 0 ? (
-                      <span className="font-mono">
-                        {fmtUsd(Number(initialQuote!.tarifa_hora_usd))}/hr
-                      </span>
-                    ) : null}
-                    {origenTarifaResumen && (
-                      <span className="text-xs text-muted-foreground">· {origenTarifaResumen}</span>
-                    )}
-                  </span>
-                }
-                hint={
-                  tarifaSegment === "CUSTOM"
-                    ? "Tarifa ajustada SOLO para esta cotización (no cambia la tarifa del cliente)."
-                    : breakdown?.tarifa.preferencial_cliente
-                      ? "Tarifa pactada con este cliente para este avión."
-                      : selectedAircraft
-                        ? `Tarifa público ${fmtUsd(selectedAircraft.tarifa_hora_pub_usd)} / hr · broker ${fmtUsd(selectedAircraft.tarifa_hora_broker_usd)} / hr`
-                        : undefined
-                }
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Dato
-                  label="Sobrevuelo (hr)"
-                  value={
-                    Number(values.sobrevuelo_hr) > 0
-                      ? `${fmtDecimal(Number(values.sobrevuelo_hr))} hr`
-                      : "—"
-                  }
-                  hint={
-                    <>
-                      Tiempo extra sobre la zona; se suma al cobrable
-                      {sobrevueloAporteNode}
-                    </>
-                  }
-                />
-                <Dato
-                  label="Tiempo cobrable"
-                  value={
-                    breakdown
-                      ? `${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`
-                      : Number(initialQuote?.tiempo_cobrable_hr) > 0
-                        ? `${fmtDecimal(Number(initialQuote!.tiempo_cobrable_hr), 4)} hr`
-                        : "—"
-                  }
-                  hint={
-                    breakdown?.tiempos.cobrable_proviene_de_override
-                      ? "Pactado a mano"
-                      : breakdown?.tiempos.minimo_hora_aplicado
-                        ? "Vuelo corto: se cobra la hora completa (mínimo 1 hr)"
-                        : breakdown
-                          ? `Vuelo ${fmtDecimal(breakdown.tiempos.vuelo_hr, 2)} + calzos ${fmtDecimal(breakdown.tiempos.calzos_hr, 2)} hr`
-                          : undefined
-                  }
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div id="tarifa-tipo-field" className="scroll-mt-24 space-y-2">
-                <Label className="text-sm font-medium">Tipo de tarifa</Label>
-                <Segmented
-                  value={tarifaSegment}
-                  onChange={(v) => {
-                    if (v === "CUSTOM") {
-                      setTarifaCustom(true);
-                      return;
-                    }
-                    setTarifaCustom(false);
-                    // Volver a la tarifa estándar LIMPIA el override: si no,
-                    // seguiría mandando sobre Público/Broker en silencio.
-                    setValue("tarifa_hora_override_usd", null);
-                    setValue("tipo_tarifa", v as TipoTarifa);
-                  }}
-                  options={[
-                    {
-                      value: "PUBLICO",
-                      label: "Pública",
-                      sub: tarifaSub(selectedAircraft?.tarifa_hora_pub_usd),
-                    },
-                    {
-                      value: "BROKER",
-                      label: "Broker",
-                      sub: tarifaSub(selectedAircraft?.tarifa_hora_broker_usd),
-                    },
-                    {
-                      value: "CUSTOM",
-                      label: "Personalizada",
-                      sub: overrideTarifaActivo
-                        ? tarifaSub(values.tarifa_hora_override_usd)
-                        : undefined,
-                    },
-                  ]}
-                />
-                {breakdown && (
-                  <p className="text-xs text-muted-foreground">
-                    Aplica{" "}
-                    <span className="font-mono font-semibold text-foreground">
-                      {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
-                    </span>{" "}
-                    <span
-                      className={
-                        breakdown.tarifa.proviene_de_override
-                          ? "text-amber-600 dark:text-amber-400"
-                          : breakdown.tarifa.preferencial_cliente
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : undefined
-                      }
-                    >
-                      {breakdown.tarifa.proviene_de_override
-                        ? "· cambiada SOLO para esta cotización"
-                        : breakdown.tarifa.preferencial_cliente
-                          ? "· tarifa pactada con este cliente"
-                          : `· tarifa ${breakdown.tarifa.tipo === "PUBLICO" ? "pública" : "broker"} del avión`}
-                    </span>
-                  </p>
-                )}
-                {tarifaSegment === "CUSTOM" && (
-                  <div id="tarifa-override-field" className="scroll-mt-24">
-                    <Field
-                      label="$/hr — SOLO esta cotización"
-                      hint={
-                        clienteInterno
-                          ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
-                          : "Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
-                      }
-                    >
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        placeholder="Auto"
-                        className="w-36 font-mono"
-                        {...register("tarifa_hora_override_usd")}
-                      />
-                    </Field>
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Sobrevuelo (hr)" hint="Tiempo extra sobre la zona; se suma al cobrable">
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={24}
-                    placeholder="0"
-                    className="font-mono"
-                    {...register("sobrevuelo_hr")}
-                  />
-                  {sobrevueloAporteNode}
-                </Field>
-                {/* COBRABLE pactado: la suma final de horas (vacío = regla,
-                    mínimo 1 hr). Ancla `cobrable-field` del atajo del itinerario. */}
-                <div id="cobrable-field" className="scroll-mt-24">
-                  <Field
-                    label="Cobrable pactado (hr)"
-                    hint={
-                      breakdown
-                        ? breakdown.tiempos.cobrable_proviene_de_override
-                          ? `Pactado a mano · la regla daría ${fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
-                          : `Vuelo ${fmtDecimal(breakdown.tiempos.vuelo_hr, 2)} · calzos ${fmtDecimal(breakdown.tiempos.calzos_hr, 2)}${
-                              Number(breakdown.tiempos.sobrevuelo_hr) > 0
-                                ? ` · sobrevuelo ${fmtDecimal(breakdown.tiempos.sobrevuelo_hr!, 2)}`
-                                : ""
-                            } · vacío = regla (mínimo 1 hr)`
-                        : "Vacío = regla (vuelo + calzos + sobrevuelo, mínimo 1 hr)"
-                    }
-                  >
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={48}
-                      placeholder={
-                        breakdown
-                          ? fmtDecimal(
-                              breakdown.tiempos.cobrable_hr_regla ?? breakdown.tiempos.cobrable_hr,
-                              4,
-                            )
-                          : "Auto"
-                      }
-                      className="font-mono"
-                      value={values.tiempo_cobrable_override_hr ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "tiempo_cobrable_override_hr",
-                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                        )
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
-              {breakdown?.tiempos.cobrable_proviene_de_override &&
-                Number(breakdown.tiempos.cobrable_hr) <
-                  Number(breakdown.tiempos.vuelo_hr) +
-                    Number(breakdown.tiempos.calzos_hr) +
-                    Number(breakdown.tiempos.sobrevuelo_hr ?? 0) && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Ojo: el cobrable pactado es MENOR al tiempo real (vuelo + calzos): se
-                    cobraría de menos.
-                  </p>
-                )}
-              {breakdown?.tiempos.minimo_hora_aplicado && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Vuelo corto: se cobra la hora completa (mínimo 1 hr). Escribe otro valor en
-                  Cobrable si quieres pactarlo distinto.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* --- COMISIÓN DEL VENDEDOR --- */}
-        <div className="space-y-2 border-t border-border pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-            Comisión del vendedor
-          </p>
-          {lectura ? (
-            <Dato
-              label="Comisión (interna)"
-              value={comisionVendedorTexto}
-              hint={
-                <>
-                  Se SUMA al precio del cliente · no aparece en el PDF.
-                  {breakdown?.meta?.comision_vendedor_usd &&
-                  breakdown.meta.neto_vuelatour_usd != null ? (
-                    <span className="block font-mono">
-                      Neto VuelaTour: {fmtUsd(breakdown.meta.neto_vuelatour_usd)}
-                    </span>
-                  ) : null}
-                </>
-              }
-            />
-          ) : (
-            <div className="space-y-2">
-              <div className="w-56">
-                <Segmented
-                  value={values.comision_vendedor_modo}
-                  onChange={(v) =>
-                    setValue("comision_vendedor_modo", v === "POR_HORA" ? "POR_HORA" : "FIJA")
-                  }
-                  options={[
-                    { value: "FIJA", label: "Fija" },
-                    { value: "POR_HORA", label: "Por hora" },
-                  ]}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {values.comision_vendedor_modo === "POR_HORA" ? (
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="$/hr · Ej. 50"
-                    aria-label="Comisión del vendedor por hora (USD)"
-                    className="w-32 font-mono"
-                    value={values.comision_vendedor_tarifa_hr ?? ""}
-                    onChange={(e) =>
-                      setValue(
-                        "comision_vendedor_tarifa_hr",
-                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                ) : (
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="USD · Ej. 150"
-                    aria-label="Comisión del vendedor (USD)"
-                    className="w-32 font-mono"
-                    value={values.comision_vendedor_usd ?? ""}
-                    onChange={(e) =>
-                      setValue(
-                        "comision_vendedor_usd",
-                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                )}
-                <Input
-                  placeholder="Quién vendió (Itzy, Pablo…)"
-                  aria-label="Quién vendió"
-                  className="w-44"
-                  value={values.comision_vendedor_nombre}
-                  onChange={(e) => setValue("comision_vendedor_nombre", e.target.value)}
-                />
-              </div>
-              {values.comision_vendedor_modo === "POR_HORA" &&
-                Number(values.comision_vendedor_tarifa_hr) > 0 && (
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {breakdown && Number(breakdown.tiempos.cobrable_hr) > 0
-                      ? `= ${fmtUsd(Number(values.comision_vendedor_tarifa_hr))} × ${fmtDecimal(
-                          breakdown.tiempos.cobrable_hr,
-                        )} hr = ${fmtUsd(breakdown.meta?.comision_vendedor_usd ?? 0)}`
-                      : "= se calcula con las horas al cotizar"}
-                  </p>
-                )}
-              {/* Lo absorbido se explica con la cuenta visible (§2.7). */}
-              {breakdown && comisionAbsorbidaUsd > 0 && servicioAereoImpresoUsd != null && (
-                <p className="text-xs text-muted-foreground">
-                  → impreso «Servicio aéreo»{" "}
-                  <span className="font-mono text-foreground">{fmtUsd(servicioAereoImpresoUsd)}</span>{" "}
-                  = {fmtUsd(breakdown.totales.subtotal_vuelo_usd)} + comisión{" "}
-                  {fmtUsd(comisionAbsorbidaUsd)}
-                  {redondeoAbsorbidoUsd > 0 ? ` + redondeo ${fmtUsd(redondeoAbsorbidoUsd)}` : ""}
-                  {breakdown.meta?.neto_vuelatour_usd != null && (
-                    <>
-                      {" "}· Neto VuelaTour{" "}
-                      <span className="font-mono">{fmtUsd(breakdown.meta.neto_vuelatour_usd)}</span>
-                    </>
-                  )}
-                </p>
-              )}
-              {!(comisionAbsorbidaUsd > 0) && (
-                <p className="text-[11px] text-muted-foreground">
-                  Se SUMA al precio del cliente y se absorbe en «Servicio aéreo»: nunca sale
-                  como línea en el PDF.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* --- COBRO --- */}
-        <div className="space-y-3 border-t border-border pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-            Cobro
-          </p>
-          {lectura ? (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <Dato
-                  label="Método de pago"
-                  value={metodoPagoTexto}
-                  hint={METODOS_PAGO.find((m) => m.value === values.metodo_pago)?.hint}
-                />
-                {values.metodo_pago === "BILLPOCKET" && (
-                  <Dato
-                    label="Comisión BillPocket"
-                    value={
-                      Number(values.comision_billpocket_pct) > 0
-                        ? `${values.comision_billpocket_pct}%`
-                        : "—"
-                    }
-                    hint="Sin IVA · sale en el desglose como «Comisión BillPocket»"
-                  />
-                )}
-                <Dato
-                  label="Redondeo"
-                  value={
-                    values.redondeo_auto
-                      ? "Automático (múltiplo de $10)"
-                      : Number(values.redondeo_usd) > 0
-                        ? `Manual ${fmtUsd(Number(values.redondeo_usd))}`
-                        : "—"
-                  }
-                  hint="Hacia arriba; se absorbe en «Servicio aéreo»."
-                />
-                <Dato label="Cotización abierta" value={values.cotizacion_abierta ? "Sí" : "No"} />
-                <Dato
-                  label="Pase de abordar"
-                  value={values.pase_abordar ? "Sí" : "No"}
-                  hint="Exenta TUAS (excepto CZM)"
-                />
-              </div>
-              {cierreResumenNode}
-            </>
-          ) : (
-            <>
-              <div id="metodo-pago-field" className="scroll-mt-24">
-                <Field label="Método de pago" required hint="Decide el IVA (16 % con factura)">
-                  <SearchableSelect
-                    options={METODOS_PAGO.map((m) => ({
-                      value: m.value,
-                      label: m.label,
-                      description: m.hint,
-                    }))}
-                    value={values.metodo_pago}
-                    onChange={(v) => setValue("metodo_pago", v as MetodoPago)}
-                    placeholder="Selecciona método"
-                  />
-                </Field>
-              </div>
-              {values.metodo_pago === "OTRO" && (
-                <Field
-                  label="¿Cuál método?"
-                  required
-                  hint="Escríbelo tal como quieren verlo (ej. PayPal, depósito en ventanilla)"
-                >
-                  <Input
-                    value={values.metodo_pago_detalle}
-                    onChange={(e) => setValue("metodo_pago_detalle", e.target.value)}
-                    placeholder="Nombre del método"
-                    maxLength={80}
-                  />
-                </Field>
-              )}
-              {values.metodo_pago === "BILLPOCKET" && (
-                <div id="billpocket-field" className="scroll-mt-24">
-                  <Field
-                    label="Comisión BillPocket (%)"
-                    hint="Custom por operación · tope 20% · sin IVA · sale como línea «Comisión BillPocket»"
-                  >
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={20}
-                      placeholder="Ej. 9"
-                      className="w-32 font-mono"
-                      value={values.comision_billpocket_pct ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "comision_billpocket_pct",
-                          e.target.value === ""
-                            ? null
-                            : Math.min(20, Math.max(0, Number(e.target.value))),
-                        )
-                      }
-                    />
-                  </Field>
-                </div>
-              )}
-              <div id="redondeo-field" className="scroll-mt-24 space-y-2 rounded-lg border border-border p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm">Redondeo automático a número cerrado</p>
-                    <p className="text-xs text-muted-foreground">
-                      Hacia arriba al siguiente múltiplo de $10 (976→980). Se absorbe en
-                      «Servicio aéreo».
-                    </p>
-                  </div>
-                  <Switch
-                    checked={values.redondeo_auto}
-                    onCheckedChange={(c) => setValue("redondeo_auto", c)}
-                  />
-                </div>
-                {!values.redondeo_auto && (
-                  <Field label="Redondeo manual (USD)" hint="Solo con el automático apagado.">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="0.00"
-                      className="w-28 font-mono"
-                      value={values.redondeo_usd ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "redondeo_usd",
-                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                        )
-                      }
-                    />
-                  </Field>
-                )}
-                {cierreResumenNode}
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-navy-800/50 p-3">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Cotización abierta</Label>
-                  <p className="text-xs text-muted-foreground">
-                    El itinerario/precio se cierra al final: permite re-cotizar con los tramos
-                    reales hasta antes de cobrar/facturar.
-                  </p>
-                </div>
-                <Switch
-                  checked={values.cotizacion_abierta}
-                  onCheckedChange={(c) => setValue("cotizacion_abierta", c)}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-navy-800/50 p-3">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Pase de abordar</Label>
-                  <p className="text-xs text-muted-foreground">Exenta TUAS (excepto CZM).</p>
-                </div>
-                <Switch
-                  checked={values.pase_abordar}
-                  onCheckedChange={(c) => setValue("pase_abordar", c)}
-                />
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* --- OPERADOR EXTERNO (sub-bloque) --- */}
-        {(!isRevise || initialQuote?.es_externo) && (
-          <SubBloque
-            id="externo"
-            titulo="Operador externo"
-            resumen={resumenExterno}
-            aviso={avisoExterno}
-            abierto={abiertas.externo}
-            onToggle={() => toggleSeccion("externo")}
-          >
-            {lectura && initialQuote ? (
-              <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-                <p className="text-xs text-amber-700 dark:text-amber-400">
-                  Otro operador vuela este servicio; VuelaTour cobra al cliente y paga al apoyo.
-                  Sin avión propio ni tacómetros; los gastos sí se registran en el vuelo. El
-                  avión cotizado es solo la referencia de tarifa.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Dato
-                    label="Operador externo"
-                    value={initialQuote.operador_externo ?? "—"}
-                    hint="Quién vuela el servicio"
-                  />
-                  <Dato
-                    label="Avión"
-                    value={
-                      [initialQuote.avion_externo_modelo, initialQuote.avion_externo_matricula]
-                        .filter(Boolean)
-                        .join(" · ") || "—"
-                    }
-                    hint="Sale en el PDF del cliente"
-                  />
-                  <Dato
-                    label="Lo que cobra el operador externo (costo)"
-                    value={
-                      Number(initialQuote.costo_externo_usd) > 0 ? (
-                        <>
-                          {fmtUsd(Number(initialQuote.costo_externo_usd))}
-                          {initialQuote.costo_externo_moneda === "MXN" &&
-                            Number(initialQuote.costo_externo_monto) > 0 && (
-                              <span className="ml-1.5 text-xs text-muted-foreground">
-                                ({fmtMxn(Number(initialQuote.costo_externo_monto))}
-                                {Number(initialQuote.costo_externo_tc) > 0
-                                  ? ` · tc ${Number(initialQuote.costo_externo_tc)}`
-                                  : ""}
-                                )
-                              </span>
-                            )}
-                        </>
-                      ) : (
-                        "Sin capturar"
-                      )
-                    }
-                    hint="Interno, no lo ve el cliente"
-                  />
-                  {Number(initialQuote.calculo_snapshot?.meta?.total_pactado_usd) > 0 && (
-                    <Dato
-                      label="Precio pactado (folio legado)"
-                      value={fmtUsd(Number(initialQuote.calculo_snapshot!.meta!.total_pactado_usd))}
-                    />
-                  )}
-                </div>
-                {margenExternoNode}
-                <p className="text-[11px] text-muted-foreground">
-                  El operador y su costo también se editan en{" "}
-                  <Link
-                    href={`/admin/flights/${initialQuote.id}`}
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    el vuelo → Editar externo
-                  </Link>{" "}
-                  (ahí también se regresa a vuelo propio).
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-                {isRevise && initialQuote?.es_externo ? (
-                  <>
-                    <div className="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                      Vuelo cubierto por <strong>{initialQuote.operador_externo}</strong>. El
-                      avión cotizado es solo la referencia de tarifa. Aquí capturas lo que cobra
-                      el operador externo; lo que se le cobra al cliente es el documento.
-                    </div>
-                    <Field
-                      label="Operador externo"
-                      hint="Quién vuela el servicio (vacío = se conserva el actual)"
-                    >
-                      <Input
-                        placeholder="Ej. Aerocharter del Caribe"
-                        maxLength={120}
-                        value={values.operador_externo}
-                        onChange={(e) => setValue("operador_externo", e.target.value)}
-                      />
-                    </Field>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm font-medium">Cubierto por operador externo</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Otro operador vuela el servicio (ej. venta broker de un jet ajeno). Sin
-                          tacómetros; los gastos sí se registran en el vuelo.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={values.es_externo}
-                        onCheckedChange={(c) => setValue("es_externo", c)}
-                      />
-                    </div>
-                    {values.es_externo && (
-                      <Field label="Operador externo" required hint="Quién vuela el servicio">
-                        <Input
-                          placeholder="Ej. Aerocharter del Caribe"
-                          maxLength={120}
-                          value={values.operador_externo}
-                          onChange={(e) => setValue("operador_externo", e.target.value)}
-                        />
-                      </Field>
-                    )}
-                  </>
-                )}
-                {values.es_externo && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Modelo del avión" hint="Sale en el PDF del cliente">
-                        <Input
-                          placeholder="HAWKER 400 A"
-                          maxLength={80}
-                          value={values.avion_externo_modelo}
-                          onChange={(e) => setValue("avion_externo_modelo", e.target.value)}
-                        />
-                      </Field>
-                      <Field label="Matrícula (opcional)">
-                        <Input
-                          placeholder="XA-REG"
-                          maxLength={20}
-                          value={values.avion_externo_matricula}
-                          onChange={(e) => setValue("avion_externo_matricula", e.target.value)}
-                        />
-                      </Field>
-                    </div>
-                    <Field
-                      label="Lo que cobra el operador externo (costo)"
-                      hint="En su moneda · interno, no lo ve el cliente"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          placeholder="0.00"
-                          className="font-mono"
-                          value={values.costo_externo_monto ?? ""}
-                          onChange={(e) =>
-                            setValue(
-                              "costo_externo_monto",
-                              e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                            )
-                          }
-                        />
-                        <MonedaSelect
-                          value={values.costo_externo_moneda}
-                          onChange={(m) => setValue("costo_externo_moneda", m)}
-                        />
-                      </div>
-                      {costoExternoMxnSinTc && (
-                        <button
-                          type="button"
-                          onClick={focusTc}
-                          className="mt-1 text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
-                        >
-                          Costo en MXN: captura el T.C. en «Total MXN» del desglose — sin tipo de
-                          cambio no se puede derivar el USD ni guardar.
-                        </button>
-                      )}
-                    </Field>
-                    {margenExternoNode}
-                  </>
-                )}
-              </div>
-            )}
-          </SubBloque>
-        )}
-
-        {/* --- RUTA OPERATIVA (solo alta; sub-bloque) --- */}
-        {!isRevise && (
-          <SubBloque
-            id="operativa"
-            titulo="Ruta operativa"
-            resumen={resumenOperativa}
-            abierto={abiertas.operativa}
-            onToggle={() => toggleSeccion("operativa")}
-          >
-            <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/15 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
-                  Ruta operativa (opcional · no se cotiza)
-                </p>
-                <div className="flex items-center gap-2">
-                  <AirportQuickCreateButton onCreated={onAeropuertoCreado} />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() =>
-                      setOpsLegs((prev) => [
-                        ...prev,
-                        {
-                          origen: prev.length ? prev[prev.length - 1].destino : "",
-                          destino: "",
-                          ferry: prev.length === 0,
-                          pax: "",
-                          hora: "",
-                          nota: "",
-                          pernocta: false,
-                          servicio: false,
-                          servicioNotas: "",
-                          nombres: "",
-                          showNombres: false,
-                        },
-                      ])
-                    }
-                  >
-                    + Tramo
-                  </Button>
-                </div>
-              </div>
-              {opsLegs.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  La ruta REAL del avión (puede salir de otra base, con ferries). Aquí se cargan
-                  los gastos y tacómetros; el itinerario del documento es solo lo que paga el
-                  cliente. Si la dejas vacía, la operación usa la ruta comercial.
-                </p>
-              ) : (
-                opsLegs.map((l, i) => (
-                  <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
-                    <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-                      <SearchableSelect
-                        options={airports.map((a) => ({
-                          value: a.iata,
-                          label: a.iata,
-                          description: a.nombre,
-                        }))}
-                        value={l.origen}
-                        onChange={(v) =>
-                          setOpsLegs((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, origen: v } : x)),
-                          )
-                        }
-                        placeholder="Sale de"
-                      />
-                      <SearchableSelect
-                        options={airports.map((a) => ({
-                          value: a.iata,
-                          label: a.iata,
-                          description: a.nombre,
-                        }))}
-                        value={l.destino}
-                        onChange={(v) =>
-                          setOpsLegs((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, destino: v } : x)),
-                          )
-                        }
-                        placeholder="Destino"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 px-2 text-destructive"
-                        onClick={() => setOpsLegs((prev) => prev.filter((_, j) => j !== i))}
-                      >
-                        Quitar
-                      </Button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                      <label className="flex items-center gap-2 text-xs">
-                        <Switch
-                          checked={l.ferry}
-                          onCheckedChange={(c) =>
-                            setOpsLegs((prev) =>
-                              prev.map((x, j) =>
-                                j === i
-                                  ? {
-                                      ...x,
-                                      ferry: c,
-                                      pax: c ? "" : x.pax,
-                                      ...(c ? { nombres: "", showNombres: false } : {}),
-                                    }
-                                  : x,
-                              ),
-                            )
-                          }
-                        />
-                        Ferry (vacío)
-                      </label>
-                      <label
-                        className="flex items-center gap-2 text-xs"
-                        title="El piloto pernocta tras este tramo (viático en la cotización). SOLO se marca a mano."
-                      >
-                        <Switch
-                          checked={l.pernocta}
-                          onCheckedChange={(c) =>
-                            setOpsLegs((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, pernocta: c } : x)),
-                            )
-                          }
-                        />
-                        Pernocta
-                      </label>
-                      <label
-                        className="flex items-center gap-2 text-xs"
-                        title="Parada técnica / de servicio: cambiar llanta, revisión, carga de material."
-                      >
-                        <Switch
-                          checked={l.servicio}
-                          onCheckedChange={(c) =>
-                            setOpsLegs((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, servicio: c } : x)),
-                            )
-                          }
-                        />
-                        Servicio
-                      </label>
-                      <Input
-                        type="number"
-                        min={0}
-                        placeholder="Pax"
-                        disabled={l.ferry}
-                        className="w-20 h-8"
-                        value={l.pax}
-                        onChange={(e) =>
-                          setOpsLegs((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, pax: e.target.value } : x)),
-                          )
-                        }
-                      />
-                    </div>
-                    {l.servicio && (
-                      <Input
-                        className="h-8"
-                        placeholder="Detalle del servicio · ej. aterriza en Toledo a cambiar llanta"
-                        value={l.servicioNotas}
-                        onChange={(e) =>
-                          setOpsLegs((prev) =>
-                            prev.map((x, j) =>
-                              j === i ? { ...x, servicioNotas: e.target.value } : x,
-                            ),
-                          )
-                        }
-                      />
-                    )}
-                    <div className="flex flex-wrap items-start gap-2">
-                      <div
-                        className="w-[264px] shrink-0"
-                        title="Fecha y hora del tramo (opcional, hora Cancún). Vacía = tramo 1 sale a la fecha del vuelo. Es la salida programada del piloto; la fecha del PDF del cliente va en el itinerario del documento."
-                      >
-                        <FechaHoraCampo
-                          className="[&_input]:h-8"
-                          value={l.hora}
-                          onChange={(v) =>
-                            setOpsLegs((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, hora: v } : x)),
-                            )
-                          }
-                        />
-                      </div>
-                      <Input
-                        className="h-8 min-w-[12rem] flex-1"
-                        placeholder='Nota del tramo para el piloto · ej. "cargar gasolina aquí"'
-                        value={l.nota}
-                        onChange={(e) =>
-                          setOpsLegs((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, nota: e.target.value } : x)),
-                          )
-                        }
-                      />
-                    </div>
-                    {!l.ferry &&
-                      (l.showNombres ? (
-                        <div className="space-y-1">
-                          <Textarea
-                            rows={3}
-                            value={l.nombres}
-                            onChange={(e) =>
-                              setOpsLegs((prev) =>
-                                prev.map((x, j) =>
-                                  j === i ? { ...x, nombres: e.target.value } : x,
-                                ),
-                              )
-                            }
-                            placeholder={"Nombres de pasajeros, uno por línea\nJuan Pérez\nMaría López"}
-                          />
-                          <p className="text-[10px] text-muted-foreground">
-                            Específico de este tramo. Útil para permisos; puede ir vacío.
-                          </p>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setOpsLegs((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, showNombres: true } : x)),
-                            )
-                          }
-                          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
-                        >
-                          + nombres de pasajeros
-                        </button>
-                      ))}
-                  </div>
-                ))
-              )}
-            </div>
-          </SubBloque>
-        )}
-
-        {/* --- NOTAS INTERNAS --- */}
-        <div className="space-y-2 border-t border-border pt-3">
-          {!isRevise ? (
-            <Field label="Notas internas" hint="Solo para el equipo · no aparecen en el PDF">
-              <Textarea rows={2} placeholder="Solo para el equipo" {...register("notas_internas")} />
-            </Field>
-          ) : (
-            <Dato
-              label="Notas internas"
-              value={
-                initialQuote?.notas_internas ? (
-                  <span className="whitespace-pre-wrap font-normal">{initialQuote.notas_internas}</span>
-                ) : (
-                  "—"
-                )
-              }
-              hint="Solo para el equipo. No aparecen en el PDF; se editan desde el detalle del vuelo (Editar datos)."
-            />
-          )}
-        </div>
-
-        {/* --- PDF (toggles de presentación) --- */}
-        <div className="space-y-2 border-t border-border pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-            PDF del cliente
-          </p>
-          {lectura ? (
-            <div className="space-y-0.5 text-sm">
-              <p>
-                Mostrar tarifa por hora:{" "}
-                <span className="font-medium">{values.pdf_mostrar_tarifa ? "Sí" : "No"}</span>
-              </p>
-              <p>
-                Mostrar itinerario de tramos:{" "}
-                <span className="font-medium">{values.pdf_mostrar_itinerario ? "Sí" : "No"}</span>
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Mostrar tarifa por hora</Label>
-                  <p className="text-xs text-muted-foreground">
-                    «Servicio aéreo (1.6 h × $1,650/hr)». Apagado, solo el monto.
-                  </p>
-                </div>
-                <Switch
-                  checked={values.pdf_mostrar_tarifa}
-                  onCheckedChange={(c) => setValue("pdf_mostrar_tarifa", c)}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Mostrar itinerario de tramos</Label>
-                  <p className="text-xs text-muted-foreground">
-                    La tabla de tramos de la hoja 1; apagado queda solo el mapa.
-                  </p>
-                </div>
-                <Switch
-                  checked={values.pdf_mostrar_itinerario}
-                  onCheckedChange={(c) => setValue("pdf_mostrar_itinerario", c)}
-                />
-              </div>
-              {isRevise && (
-                <p className="text-[11px] text-muted-foreground">
-                  Estos toggles y las notas del cliente se guardan sin versión nueva cuando son
-                  lo único que cambia.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* --- DETALLE DEL CÁLCULO (sub-bloque) --- */}
-        <SubBloque
-          id="detalle"
-          titulo="Detalle del cálculo"
-          resumen={resumenDetalle}
-          aviso={avisoDetalle}
-          abierto={abiertas.detalle}
-          onToggle={() => toggleSeccion("detalle")}
-        >
-          {lectura && initialQuote ? (
-            <>
-              {breakdown ? (
-                <Preview
-                  breakdown={breakdown}
-                  loading={false}
-                  avion={cotizadoEnTexto}
-                  tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
-                />
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Esta versión no guardó el detalle del cálculo (cotización de un motor
-                  anterior): abajo va el desglose reconstruido desde las columnas guardadas.
-                </p>
-              )}
-              <QuoteDesgloseCard quote={initialQuote} />
-            </>
-          ) : error ? (
-            <Card className="border-destructive/50 bg-destructive/5">
-              <CardHeader>
-                <CardTitle className="text-base text-destructive">Error al calcular</CardTitle>
-                <CardDescription className="text-destructive/80">{error}</CardDescription>
-              </CardHeader>
-            </Card>
-          ) : !calcPayload ? (
-            <Card className="border-t-2 border-t-brand-600/60">
-              <CardHeader>
-                <CardTitle className="text-base text-muted-foreground">
-                  Completa los parámetros
-                </CardTitle>
-                <CardDescription>Necesito aeronave, ruta y pasajeros para calcular.</CardDescription>
-              </CardHeader>
-            </Card>
-          ) : breakdown ? (
-            <>
-              <Preview
-                breakdown={breakdown}
-                loading={loading}
-                avion={cotizadoEnTexto}
-                tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
-              />
-              {isRevise && initialQuote && (
-                <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-wider text-foreground/70">
-                    Desglose de la versión guardada (v{initialQuote.cotizacion_version})
-                  </p>
-                  <QuoteDesgloseCard quote={initialQuote} />
-                </div>
-              )}
-            </>
-          ) : (
-            <PreviewSkeleton />
-          )}
-        </SubBloque>
-      </SeccionCotizador>
-    </div>
+  // ===== La HOJA 1 como formulario (ensamble 8-sep-2026) =====
+  // `QuoteSheet` edita el subconjunto del form que se IMPRIME, en su lugar;
+  // el dinero que pinta es SIEMPRE el breakdown de /calculate (o el snapshot).
+  /** Cambios de la hoja → RHF (mismos nombres). Cliente broker fuerza tarifa BROKER. */
+  const onCambioHoja: OnCambioHoja = (campo, valor) => {
+    setValue(campo, valor as unknown as PathValue<QuoteFormValues, typeof campo>, {
+      shouldDirty: true,
+    });
+    if (campo === "cliente_id") {
+      const cli = allClients.find((c) => c.id === valor);
+      if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
+    }
+  };
+  const documentoHoja: DocumentoHoja = {
+    folio: initialQuote?.folio ?? null,
+    fechaCotizacion: initialQuote
+      ? (initialQuote.fecha_confirmacion ?? initialQuote.fecha_solicitud)
+      : null,
+    tipo: tipoTexto,
+    clienteNombre: isRevise ? (clientName ?? initialQuote?.cliente_id ?? null) : undefined,
+    // MODELO cotizado (feedback 4-sep): en revisión SIN cambio de avión manda
+    // la lista del API; al cambiar de avión, el del breakdown (lo deriva la hoja).
+    modelosCotizados:
+      isRevise &&
+      initialQuote &&
+      initialQuote.calculo_snapshot?.aeronave?.id === values.aeronave_id
+        ? (initialQuote.modelos_cotizados ?? null)
+        : null,
+    matricula: breakdown?.aeronave.matricula ?? selectedAircraft?.matricula ?? null,
+    quoteId: initialQuote?.id,
+  };
+  const catalogosHoja = useMemo(
+    () => ({
+      clientes: isRevise
+        ? undefined
+        : allClients.map((c) => ({
+            id: c.id,
+            nombre: c.nombre,
+            descripcion:
+              [c.rfc, c.es_broker ? "Broker" : null, c.es_interno ? "Interno" : null]
+                .filter(Boolean)
+                .join(" · ") || undefined,
+          })),
+      // Las aeronaves "sin tarifa" siguen en el selector (marcadas) pero no
+      // se pueden elegir: el motor las rechaza con 400 (salvo cliente interno).
+      aeronaves: aircraft.map((a) => {
+        const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
+        return {
+          id: a.id,
+          matricula: a.matricula,
+          modelo: a.modelo,
+          asientos: a.asientos,
+          velocidad_crucero_kts: a.velocidad_crucero_kts,
+          descripcion: `${a.velocidad_crucero_kts} kts · ${a.asientos} asientos${
+            sinTarifa
+              ? clienteInterno
+                ? " · sin tarifa · interno cotiza $0"
+                : " · sin tarifa configurada"
+              : ""
+          }`,
+          disabled: sinTarifa && !clienteInterno,
+        };
+      }),
+      aeropuertos: airports,
+      rutas: allRoutes,
+    }),
+    [isRevise, allClients, aircraft, clienteInterno, airports, allRoutes],
   );
+  // Fecha del PDF por tramo GUARDADA (revisión): misma regla de coincidencia
+  // que el ojito y los toggles del workspace.
+  const tramoFechaPdf = (idx: number): string | null => {
+    if (!escalasCoincidenConBase) return null;
+    const l = values.escalas[idx];
+    const b = base.defaults.escalas[idx];
+    if (!l || !b || b.origen_iata !== l.origen_iata || b.destino_iata !== l.destino_iata) {
+      return null;
+    }
+    return escalasPdfProp!.find((e) => e.orden === idx + 1)?.pdf_fecha ?? null;
+  };
+  const tramosPdfHoja: TramoPdfAccesores = isRevise
+    ? { oculto: (idx) => tramoOculto(idx), fechaPdf: (idx) => tramoFechaPdf(idx), margen: legExtraFila }
+    : {
+        // D4: en el ALTA el ojito/fecha viven en el form y viajan solo en el DTO de create.
+        onOcultoChange: (idx, oculto) =>
+          setValue(
+            "escalas",
+            getValues("escalas").map((l, i) => (i === idx ? { ...l, pdf_oculto: oculto } : l)),
+            { shouldDirty: true },
+          ),
+        onFechaPdfChange: (idx, fecha) =>
+          setValue(
+            "escalas",
+            getValues("escalas").map((l, i) => (i === idx ? { ...l, pdf_fecha: fecha } : l)),
+            { shouldDirty: true },
+          ),
+      };
+  // Croma junto al cliente (alta, en el margen del papel): nuevo / corregir nombre.
+  const clienteExtraNode = !isRevise ? (
+    <>
+      <button type="button" className="cot-liga" onClick={() => setClientDialogOpen(true)}>
+        + nuevo cliente
+      </button>
+      {values.cliente_id && (
+        <button
+          type="button"
+          className="cot-liga"
+          title="Corregir el nombre del cliente (aplica en todo el catálogo)"
+          onClick={() => {
+            const sel = allClients.find((c) => c.id === values.cliente_id);
+            if (!sel) return;
+            setEditClienteNombre(sel.nombre);
+            setEditClienteOpen(true);
+          }}
+        >
+          corregir nombre
+        </button>
+      )}
+    </>
+  ) : undefined;
+  /** Plantilla del catálogo → tramos editables de ESTA cotización (la ruta guardada no se modifica). */
+  const seleccionarRutaPlantilla = (v: string) => {
+    setValue("ruta_id", v);
+    const ruta = allRoutes.find((r) => r.id === v);
+    if (ruta && ruta.tramos.length > 0) {
+      setValue("escalas", ruta.tramos.map(tramoToEscala));
+    }
+  };
 
   return (
-    // El formulario ES la hoja 1 (F2): cabecera → ruta+pax → traslados →
-    // itinerario → desglose → notas, con la barra del TOTAL fija arriba y el
-    // bloque interno aparte (aside / portal / acordeón al pie).
-    <div
-      className={cn(
-        "mx-auto space-y-6",
-        previewAnclada || internoUbicacion === "aside" ? "max-w-none" : "max-w-4xl",
-      )}
-    >
+    // La hoja ES el formulario (form-as-document, 8-sep-2026): barra de
+    // estado fija arriba, la hoja al centro sobre el fondo del shell y el
+    // panel «Interno · no se imprime» colapsable a la derecha.
+    <div className="space-y-5">
       <TotalBar
         breakdown={breakdown}
-        // «Vista previa» en la barra cuando la hoja no está anclada (F1).
-        onVistaPrevia={previewAnclada ? undefined : abrirVistaPrevia}
-        loading={loading}
+        loading={loading || enEsperaDebounce}
         error={error}
         sinDatos={pintaSnapshot ? false : !calcPayload}
         // Snapshot sin detalle (cotización de un motor anterior) — en lectura
@@ -4256,13 +2524,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               }
             : null
         }
-        avion={cotizadoEnTexto}
         titulo={
           isRevise
             ? (clientName ?? null)
-            : // allClients: incluye al cliente recién creado con «+ Nuevo
-              // cliente» (antes la barra lo ignoraba hasta el refresh).
-              (allClients.find((c) => c.id === values.cliente_id)?.nombre ?? null)
+            : (allClients.find((c) => c.id === values.cliente_id)?.nombre ?? null)
         }
         subtitulo={
           isRevise && initialQuote
@@ -4302,6 +2567,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         onCancel={isRevise && !lectura && sucio ? pedirDescartar : undefined}
         cancelLabel="Descartar"
         cancelDisabled={saving}
+        verPdf={previewVerPdf}
+        avisos={avisosCaptura}
       />
 
       {/* Avisos de edición directa (F0). */}
@@ -4369,1081 +2636,42 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </div>
       )}
 
-      {/* Pantalla angosta (<1024 px): pill «Formulario | Vista previa» —
-          nada se esconde, se apila (F1). El form sigue montado (hidden). */}
-      {pantallaAngosta && (
-        <div
-          role="tablist"
-          aria-label="Formulario o vista previa"
-          data-guard-exempt
-          className="flex rounded-lg border border-border bg-muted/40 p-0.5 lg:hidden"
-        >
-          {(
-            [
-              ["form", sucio ? "Formulario ●" : "Formulario"],
-              ["preview", "Vista previa"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={vistaAngosta === id}
-              onClick={() => setVistaAngosta(id)}
-              className={cn(
-                "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                vistaAngosta === id
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Documento (+ save bar) y, a la derecha: la vista previa REAL anclada
-          (≥1600 px, F1) o el bloque interno como columna (alta, ≥1440 px). */}
+      {/* Centro: la hoja (papel claro con sombra sobre el fondo del shell) y
+          la save bar; derecha: panel «Interno · no se imprime» colapsable.
+          CONFIRMADO/RESERVA con tripulación: el primer cambio se confirma
+          (captura); la barra y los diálogos están exentos (data-guard-exempt). */}
       <div
-        className={cn(
-          previewAnclada &&
-            "grid items-start gap-6 min-[1600px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]",
-          internoUbicacion === "aside" &&
-            "grid items-start gap-6 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(300px,22rem)]",
-        )}
-      >
-      <div className={cn("min-w-0 space-y-6", previewEnPill && "max-lg:hidden")}>
-      {/* Documento: en CONFIRMADO/RESERVA con tripulación el primer cambio se
-          confirma (captura); los encabezados y diálogos están exentos. */}
-      <div
-        className="space-y-6"
+        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_auto]"
         onClickCapture={interceptarPrimerCambio}
         onKeyDownCapture={interceptarPrimerCambio}
       >
-
-      {/* 1 · CABECERA de la hoja: cliente · aeronave cotizada · tipo · fecha */}
-      <SeccionCotizador
-        id="cabecera"
-        titulo="Cotización de servicio aéreo"
-        resumen={resumenCabecera}
-        abierta={abiertas.cabecera}
-        onToggle={() => toggleSeccion("cabecera")}
-        bloqueada={lectura}
-      >
-        <div className="grid gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          {/* Cliente */}
-          {isRevise && initialQuote ? (
-            <div className="rounded-lg border border-border bg-navy-800/50 px-3 py-2 space-y-0.5">
-              <p className="text-[11px] uppercase tracking-wider text-foreground/70">
-                Cliente · folio
-              </p>
-              <p className="text-sm font-medium">{clientName ?? initialQuote.cliente_id}</p>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-mono">#{initialQuote.folio}</span> ·{" "}
-                <span className="font-mono">v{initialQuote.cotizacion_version}</span>
-                {lectura
-                  ? clienteInterno
-                    ? " · cliente interno (operación propia: puede ir en $0)"
-                    : ""
-                  : ` · al guardar se genera la v${versionSiguiente}`}
-              </p>
-              {clienteInterno && !lectura && (
-                <div className="mt-1 rounded-md border border-sky-500/40 bg-sky-500/15 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400 space-y-1.5">
-                  <p>Cliente interno — la cotización puede ir en $0 (vuelo de la empresa, sin cobro).</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => setCeroOpen(true)}
-                  >
-                    Poner todo en $0
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <Field label="Cliente" required>
-              <div className="space-y-2">
-                {(() => {
-                  const sel = allClients.find((c) => c.id === values.cliente_id);
-                  if (!sel) return null;
-                  return (
-                    <div className="rounded-lg border border-brand-500/30 bg-brand-500/15 px-3 py-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-lg font-bold leading-tight">{sel.nombre}</p>
-                        <button
-                          type="button"
-                          title="Corregir el nombre del cliente"
-                          onClick={() => {
-                            setEditClienteNombre(sel.nombre);
-                            setEditClienteOpen(true);
-                          }}
-                          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <PencilSquareIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {[
-                          sel.es_interno ? "Interno · operación propia" : null,
-                          sel.es_broker ? "Broker · tarifa broker" : null,
-                          sel.rfc,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Cliente directo"}
-                      </p>
-                      {breakdown && (
-                        <p className="mt-1 text-xs">
-                          <span className="font-mono font-semibold">
-                            {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr
-                          </span>{" "}
-                          <span
-                            className={
-                              breakdown.tarifa.proviene_de_override
-                                ? "text-amber-600 dark:text-amber-400"
-                                : breakdown.tarifa.preferencial_cliente
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-muted-foreground"
-                            }
-                          >
-                            {breakdown.tarifa.proviene_de_override
-                              ? "· cambiada SOLO para esta cotización"
-                              : breakdown.tarifa.preferencial_cliente
-                                ? "· tarifa pactada con este cliente"
-                                : `· tarifa ${breakdown.tarifa.tipo === "PUBLICO" ? "pública" : "broker"} del avión`}
-                          </span>{" "}
-                          <button
-                            type="button"
-                            onClick={focusTarifaOverride}
-                            className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
-                          >
-                            ¿cobrar diferente en esta cotización?
-                          </button>
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
-                {clienteInterno && (
-                  <div className="rounded-md border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 space-y-2">
-                    <p>Cliente interno — la cotización puede ir en $0 (vuelo de la empresa, sin cobro).</p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => setCeroOpen(true)}
-                    >
-                      Poner todo en $0
-                    </Button>
-                  </div>
-                )}
-                <SearchableSelect
-                  options={allClients.map((c) => ({
-                    value: c.id,
-                    label: c.nombre,
-                    description: [c.rfc, c.es_broker ? "Broker" : null, c.es_interno ? "Interno" : null]
-                      .filter(Boolean)
-                      .join(" · "),
-                  }))}
-                  value={values.cliente_id}
-                  onChange={(v) => {
-                    setValue("cliente_id", v);
-                    const cli = allClients.find((c) => c.id === v);
-                    if (cli?.es_broker) setValue("tipo_tarifa", "BROKER");
-                  }}
-                  placeholder="Selecciona cliente"
-                  emptyText="Sin clientes activos"
-                />
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {frequentClientIds
-                    .map((id) => allClients.find((c) => c.id === id))
-                    .filter((c): c is ClientOption => !!c)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        aria-pressed={values.cliente_id === c.id}
-                        onClick={() => {
-                          setValue("cliente_id", c.id);
-                          if (c.es_broker) setValue("tipo_tarifa", "BROKER");
-                        }}
-                        className={cn(
-                          "max-w-[12rem] truncate rounded-full border px-2.5 py-1 text-xs transition-colors",
-                          values.cliente_id === c.id
-                            ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
-                            : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                        )}
-                      >
-                        {c.nombre}
-                      </button>
-                    ))}
-                  <button
-                    type="button"
-                    onClick={() => setClientDialogOpen(true)}
-                    className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600"
-                  >
-                    + Nuevo cliente
-                  </button>
-                </div>
-              </div>
-            </Field>
-          )}
-
-          {/* Aeronave cotizada (MODELO en el PDF) + tipo + fecha */}
-          <div className="space-y-3">
-            {lectura ? (
-              <Dato
-                label="Aeronave cotizada"
-                value={
-                  selectedAircraft
-                    ? `${selectedAircraft.matricula} — ${selectedAircraft.modelo}`
-                    : breakdown?.aeronave?.modelo
-                      ? [breakdown.aeronave.matricula, breakdown.aeronave.modelo]
-                          .filter(Boolean)
-                          .join(" — ")
-                      : "—"
-                }
-                hint={
-                  <>
-                    {modeloCotizadoTexto && (
-                      <span className="block">El cliente ve: {modeloCotizadoTexto}</span>
-                    )}
-                    {values.es_externo && (
-                      <span className="block">
-                        Vuelo externo: este avión es solo la referencia de tarifa — el vuelo no lo
-                        opera la flota.
-                      </span>
-                    )}
-                  </>
-                }
-              />
-            ) : (
-              <Field label="Aeronave cotizada" required>
-                <SearchableSelect
-                  options={aircraft.map((a) => {
-                    const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
-                    return {
-                      value: a.id,
-                      label: `${a.matricula} — ${a.modelo}`,
-                      description: `${a.velocidad_crucero_kts} kts · ${a.asientos} asientos${
-                        sinTarifa
-                          ? clienteInterno
-                            ? " · sin tarifa · interno cotiza $0"
-                            : " · sin tarifa configurada"
-                          : ""
-                      }`,
-                      disabled: sinTarifa && !clienteInterno,
-                    };
-                  })}
-                  value={values.aeronave_id}
-                  onChange={(v) => setValue("aeronave_id", v)}
-                  placeholder="Selecciona aeronave"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {modeloCotizadoTexto ? `El cliente ve el modelo: ${modeloCotizadoTexto}` : "El cliente ve el MODELO, nunca la matrícula."}
-                  {selectedAircraft &&
-                    ` · pública ${fmtUsd(selectedAircraft.tarifa_hora_pub_usd)}/hr · broker ${fmtUsd(selectedAircraft.tarifa_hora_broker_usd)}/hr`}
-                </p>
-                {values.es_externo && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Vuelo externo: este avión es solo la referencia de tarifa — el vuelo no lo
-                    opera la flota.
-                  </p>
-                )}
-              </Field>
-            )}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>
-                Tipo: <span className="font-mono text-foreground">{tipoTexto}</span>
-              </span>
-              <span>
-                Fecha de cotización:{" "}
-                <span className="font-mono text-foreground">{fechaCotizacionTexto}</span>
-              </span>
-            </div>
-          </div>
-        </div>
-      </SeccionCotizador>
-
-      {/* 2 · RUTA GRANDE + PASAJEROS */}
-      <SeccionCotizador
-        id="ruta"
-        titulo="Ruta y pasajeros"
-        resumen={resumenRuta}
-        aviso={avisoRuta}
-        abierta={abiertas.ruta}
-        onToggle={() => toggleSeccion("ruta")}
-        bloqueada={lectura}
-      >
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <button
-            type="button"
-            onClick={focusItinerario}
-            title="La ruta sale de los tramos del itinerario (clic para ir)"
-            className="min-w-0 text-left"
-            data-guard-exempt
-          >
-            {rutaGrande.length > 0 ? (
-              <p className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
-                {rutaGrande.join(" → ")}
-              </p>
-            ) : (
-              <p className="text-lg text-muted-foreground">Sin ruta — captura los tramos abajo</p>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              Derivada de los tramos visibles del itinerario
-              {tramosOcultos > 0
-                ? ` · ${tramosOcultos} ${tramosOcultos === 1 ? "tramo oculto" : "tramos ocultos"} en el PDF`
-                : ""}
-            </p>
-          </button>
-          <div className="w-44">
-            {lectura ? (
-              <Dato
-                label="Pasajeros"
-                value={
-                  paxPorTramo
-                    ? `${maxPaxTramos} · definido por tramo`
-                    : String(Number(values.pasajeros) || 0)
-                }
-              />
-            ) : (
-              <Field label="Pasajeros" required>
-                <div id="pasajeros-field" className="scroll-mt-24 flex items-center gap-2">
-                  {paxPorTramo ? (
-                    <Input
-                      type="number"
-                      disabled
-                      value={maxPaxTramos}
-                      readOnly
-                      aria-label="Pasajeros (definido por tramo)"
-                      title="Definido por tramo: se edita en el pax de cada tramo del itinerario."
-                      className="w-24 font-mono"
-                    />
-                  ) : (
-                    <Input
-                      type="number"
-                      min={1}
-                      max={selectedAircraft?.asientos || undefined}
-                      aria-label="Pasajeros"
-                      className="w-24 font-mono"
-                      {...register("pasajeros")}
-                    />
-                  )}
-                  <span className="text-sm text-muted-foreground">pasajeros</span>
-                </div>
-              </Field>
-            )}
-          </div>
-        </div>
-        <div className="space-y-0.5 text-xs">
-          {paxPorTramo && (
-            <p className="text-muted-foreground">
-              Definido POR TRAMO: cada tramo usa su propio número (máx. {maxPaxTramos}); el
-              global no se toma en cuenta.
-            </p>
-          )}
-          {selectedAircraft && selectedAircraft.asientos > 0 && (
-            <p className={cn(capacidadExcedida ? "text-destructive font-medium" : "text-muted-foreground")}>
-              {capacidadExcedida
-                ? `Excede la capacidad: ${maxPasajeros} pax en un tramo vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo}).`
-                : `Máx. ${selectedAircraft.asientos} pasajeros (${selectedAircraft.modelo}).`}
-            </p>
-          )}
-          {values.cobrar_tuas &&
-            breakdown &&
-            (breakdown.tuas.filas ?? []).map((f) => (
-              <p key={f.iata} className="text-muted-foreground">
-                TUA <span className="font-mono">{f.iata}</span>:{" "}
-                <span className="font-mono">
-                  {f.pax} × {f.moneda === "MXN" ? fmtMxn(f.monto_pax) : fmtUsd(f.monto_pax)} ={" "}
-                  {fmtUsd(f.total_usd)} USD
-                </span>
-              </p>
-            ))}
-        </div>
-      </SeccionCotizador>
-
-      {/* 3 · TRASLADOS */}
-      <SeccionCotizador
-        id="traslados"
-        titulo="Traslados"
-        resumen={resumenTraslados}
-        abierta={abiertas.traslados}
-        onToggle={() => toggleSeccion("traslados")}
-        bloqueada={lectura}
-      >
-        {lectura && initialQuote ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Dato
-              label="Traslado inicial"
-              value={initialQuote.fecha_vuelo ? fmtDateTime(initialQuote.fecha_vuelo) : "—"}
-              hint={TZ_LABEL}
-            />
-            <Dato
-              label="Traslado final"
-              value={
-                initialQuote.fecha_traslado_final ? (
-                  fmtDateTime(initialQuote.fecha_traslado_final)
-                ) : initialQuote.fecha_fin && initialQuote.fecha_fin !== initialQuote.fecha_vuelo ? (
-                  <>
-                    {fmtDateTime(initialQuote.fecha_fin)}
-                    <span className="text-xs text-muted-foreground"> · derivado del itinerario</span>
-                  </>
-                ) : (
-                  "—"
-                )
-              }
-            />
-          </div>
-        ) : (
-          <div className="grid gap-3 @xl:grid-cols-2">
-            <Field label="Traslado inicial" hint="Opcional · salida (fecha y hora, Cancún)">
-              <FechaHoraCampo
-                value={values.fecha_vuelo ?? ""}
-                onChange={(v) => setValue("fecha_vuelo", v)}
-                ariaLabel="Fecha del traslado inicial"
-              />
-            </Field>
-            <Field label="Traslado final" hint="Opcional · regreso (fecha y hora, Cancún)">
-              <FechaHoraCampo
-                value={values.fecha_traslado_final ?? ""}
-                onChange={(v) => setValue("fecha_traslado_final", v)}
-                ariaLabel="Fecha del traslado final"
-              />
-            </Field>
-          </div>
-        )}
-      </SeccionCotizador>
-
-      {/* 4 · ITINERARIO en línea + mapa */}
-      <SeccionCotizador
-        id="itinerario"
-        titulo="Itinerario"
-        resumen={resumenTramos}
-        aviso={avisoTramos}
-        abierta={abiertas.itinerario}
-        onToggle={() => toggleSeccion("itinerario")}
-        bloqueada={lectura}
-      >
-        {lectura ? (
-          <div className="grid gap-4 @3xl:grid-cols-[minmax(0,1fr)_minmax(220px,300px)]">
-            <div className="space-y-3">
-              {rutaOperativaLectura}
-              <TramosLectura legs={values.escalas} extra={tramoExtra} />
-              {notaTramos}
-              <Dato
-                label="Plantilla (ruta guardada)"
-                value={
-                  selectedRouteOpt
-                    ? rutaPathTexto(selectedRouteOpt)
-                    : "Itinerario propio (sin ruta del catálogo)"
-                }
-                hint={
-                  selectedRouteOpt && itinerarioAjustado
-                    ? "El itinerario de esta cotización difiere de la ruta guardada."
-                    : undefined
-                }
-              />
-            </div>
-            <div className="hidden lg:block">{mapaNode}</div>
-          </div>
-        ) : (
-          // Ancho del DOCUMENTO (container query, no del viewport): el mapa
-          // va al costado solo si la columna mide ≥48rem; si no, se apila
-          // debajo — en 1366 px con el aside de la página única los tramos
-          // quedaban aplastados contra el mapa (revisión 8-sep).
-          <div className="grid gap-4 @3xl:grid-cols-[minmax(0,1fr)_minmax(220px,300px)]">
-            <div className="space-y-3">
-              {/* Plantilla: chips «Suele pedir» + ruta guardada del catálogo. */}
-              <div className="space-y-1.5">
-                {rutasSugeridas.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] uppercase tracking-wider text-foreground/70">
-                      Suele pedir:
-                    </span>
-                    {rutasSugeridas.map((s) => {
-                      const activa =
-                        values.escalas.length > 0 &&
-                        s.clave ===
-                          values.escalas.map((l) => `${l.origen_iata}-${l.destino_iata}`).join("|");
-                      return (
-                        <button
-                          key={s.clave}
-                          type="button"
-                          aria-pressed={activa}
-                          onClick={() => aplicarSugerencia(s)}
-                          title={
-                            s.ultima_fecha
-                              ? `Última vez: ${new Date(s.ultima_fecha).toLocaleDateString("es-MX", { dateStyle: "medium" })}`
-                              : undefined
-                          }
-                          className={cn(
-                            "max-w-[16rem] truncate rounded-full border px-2.5 py-1 font-mono text-xs transition-colors",
-                            activa
-                              ? "border-brand-500 bg-brand-500/15 font-medium text-brand-600 dark:text-brand-400"
-                              : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                          )}
-                        >
-                          {s.etiqueta}
-                          {s.veces > 1 && <span className="ml-1 opacity-70">×{s.veces}</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="min-w-[14rem] flex-1">
-                    <SearchableSelect
-                      options={allRoutes.map((r) => ({
-                        value: r.id,
-                        label: rutaPathTexto(r),
-                        description: `${r.millas_nauticas} NM · ${r.tramos.length} ${
-                          r.tramos.length === 1 ? "tramo" : "tramos"
-                        }`,
-                      }))}
-                      value={values.ruta_id}
-                      onChange={(v) => {
-                        setValue("ruta_id", v);
-                        const ruta = allRoutes.find((r) => r.id === v);
-                        if (ruta && ruta.tramos.length > 0) {
-                          // Carga los tramos de la plantilla como itinerario
-                          // editable de ESTA cotización (la ruta guardada no se modifica).
-                          setValue("escalas", ruta.tramos.map(tramoToEscala));
-                        }
-                      }}
-                      placeholder="Plantilla: ruta guardada del catálogo"
-                      emptyText="Sin rutas — créala aquí"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRouteSheetOpen(true)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-600/80 transition-colors"
-                  >
-                    <PlusIcon className="h-3.5 w-3.5" />
-                    Crear ruta
-                  </button>
-                  {itinerarioAjustado && values.escalas.length > 0 && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSaveAsRoute}
-                      disabled={savingRoute}
-                      className="h-7 text-xs"
-                      title="Este itinerario difiere de la ruta guardada: guárdalo en el catálogo (la original no se toca)."
-                    >
-                      {savingRoute ? "Guardando…" : "Guardar como nueva ruta"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {initialQuote?.itinerario_operativo && (
-                <div className="rounded-lg border border-sky-500/40 bg-sky-500/15 p-3 space-y-1">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
-                      RUTA OPERATIVA (la vuela el piloto — aquí no se cotiza)
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      disabled={opsComoEscalas().length === 0}
-                      title="Copia origen→destino de los tramos operativos como punto de partida de la cotización. Los pax se capturan aquí, no se copian."
-                      onClick={() => {
-                        const nuevos = opsComoEscalas();
-                        if (
-                          values.escalas.length > 0 &&
-                          legsSignature(values.escalas) !== legsSignature(nuevos)
-                        ) {
-                          setOpsATramosOpen(true);
-                        } else {
-                          aplicarOpsComoEscalas();
-                        }
-                      }}
-                    >
-                      Cotizar con estos tramos
-                    </Button>
-                  </div>
-                  <p className="font-mono text-sm">
-                    {(() => {
-                      const ops = initialQuote.escalas ?? [];
-                      if (ops.length === 0) return "—";
-                      return [ops[0].origen_iata, ...ops.map((e) => e.destino_iata)].join(" → ");
-                    })()}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {(initialQuote.escalas ?? [])
-                      .map((e, i) => (e.es_ferry || e.solo_operativa ? `T${i + 1} ferry` : null))
-                      .filter(Boolean)
-                      .join(" · ") || "Todos los tramos con pasajeros"}
-                    {" · "}El itinerario de abajo es la ruta COMERCIAL (lo que paga el cliente,
-                    abre y cierra en CUN); la operativa no se toca al cotizar.
-                  </p>
-                  <AlertDialog open={opsATramosOpen} onOpenChange={setOpsATramosOpen}>
-                    <AlertDialogContent data-guard-exempt>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>¿Reemplazar los tramos capturados?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Los tramos de la cotización se sustituyen por los de la ruta operativa
-                          (sin pasajeros: esos se capturan aquí). El total se recalcula en vivo.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={aplicarOpsComoEscalas}>
-                          Reemplazar tramos
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              )}
-
-              {values.escalas.length > 0 ? (
-                <>
-                  <QuoteLegsEditor
-                    variant="fila"
-                    value={values.escalas}
-                    onChange={(legs) => setValue("escalas", legs)}
-                    routes={allRoutes}
-                    airports={airports}
-                    onAeropuertoCreado={onAeropuertoCreado}
-                    avisoAnclaCun
-                    legExtra={legExtraFila}
-                    legAtenuado={(idx) => tramoOculto(idx)}
-                  />
-                  {isRevise && tramoExtra && !escalasCoincidenConBase && sucio && (
-                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                      Cambiaste los tramos: la fecha y el ojito del PDF por tramo se habilitan
-                      al guardar la versión.
-                    </p>
-                  )}
-                  {isRevise && tramoExtra && notaTramos}
-                  {!isRevise && (
-                    <p className="text-[10px] text-muted-foreground">
-                      La fecha y el ojito de cada fila son SOLO para el PDF del cliente (sin
-                      hora): un tramo oculto no sale en la hoja pero se sigue cobrando.
-                    </p>
-                  )}
-                  {breakdown && (
-                    <button
-                      type="button"
-                      onClick={focusCobrable}
-                      className="text-left text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                    >
-                      ¿Pactar las horas a cobrar? El Cobrable se edita en «Interno › Tarifa y
-                      horas».
-                    </button>
-                  )}
-                </>
-              ) : (
-                <Field
-                  label="Tramos"
-                  hint="Elige una plantilla o escribe la ruta aquí: «CUN, HOL, CUN» + Enter arma los tramos."
-                >
-                  <RutaRapidaInput
-                    airports={airports}
-                    hayDatos={false}
-                    onAeropuertoCreado={onAeropuertoCreado}
-                    onAplicar={(codigos) =>
-                      setValue(
-                        "escalas",
-                        codigos.slice(0, -1).map((c, i) => ({
-                          origen_iata: c,
-                          destino_iata: codigos[i + 1],
-                          // El autollenado del editor las completa al montar.
-                          millas_nauticas: 0,
-                        })),
-                      )
-                    }
-                  />
-                </Field>
-              )}
-            </div>
-            {/* Mapa del panel: al costado (pegajoso) si el documento es ancho,
-                debajo si es angosto; oculto solo en móvil (<lg). */}
-            <div className="hidden lg:block @3xl:sticky @3xl:top-28">{mapaNode}</div>
-          </div>
-        )}
-      </SeccionCotizador>
-
-      {/* 5 · DESGLOSE en línea con las etiquetas exactas del PDF */}
-      <SeccionCotizador
-        id="desglose"
-        titulo="Desglose"
-        resumen={resumenDesglose}
-        aviso={avisoDesglose}
-        abierta={abiertas.desglose}
-        onToggle={() => toggleSeccion("desglose")}
-        bloqueada={lectura}
-      >
-        {error && !lectura && (
-          <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            Error al calcular: {error}
-          </p>
-        )}
-        {!breakdown && !error && !lectura && (
-          <p className="text-xs text-muted-foreground">
-            {pintaSnapshot
-              ? "Esta versión no guardó el detalle del cálculo (cotización de un motor anterior): el desglose se llena al primer cambio."
-              : calcPayload
-                ? "Calculando…"
-                : "Completa aeronave, tramos y pasajeros para ver el desglose."}
-          </p>
-        )}
-        <div className="divide-y divide-border/60">
-          {/* Servicio aéreo (derivado) */}
-          <FilaDesglose
-            label={
-              <span className="inline-flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={lectura ? undefined : focusTarifa}
-                  disabled={lectura}
-                  className={cn(!lectura && "underline-offset-2 hover:underline")}
-                  title={lectura ? undefined : "Derivado: horas × tarifa (Interno › Tarifa y horas)"}
-                  data-guard-exempt
-                >
-                  Servicio aéreo
-                  {values.pdf_mostrar_tarifa && breakdown
-                    ? ` (${fmtDecimal(breakdown.tiempos.cobrable_hr, 2)} h × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr)`
-                    : ""}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setServicioInfoAbierto((v) => !v)}
-                  aria-expanded={servicioInfoAbierto}
-                  aria-label="Cómo se compone el servicio aéreo impreso"
-                  title="Cómo se compone"
-                  className="text-muted-foreground hover:text-foreground"
-                  data-guard-exempt
-                >
-                  <InformationCircleIcon className="h-4 w-4" />
-                </button>
-              </span>
+        <div className="min-w-0 space-y-5">
+          <QuoteSheet
+            valores={values}
+            onCambio={onCambioHoja}
+            breakdown={breakdown}
+            calculando={loading || enEsperaDebounce}
+            errorMotor={error}
+            lectura={lectura}
+            documento={documentoHoja}
+            catalogos={catalogosHoja}
+            tramosPdf={tramosPdfHoja}
+            pasajerosPorTramo={paxPorTramo ? { max: maxPaxTramos } : null}
+            mapaSvg={mapaSvgGuardado}
+            totalRespaldo={
+              pintaSnapshot && initialQuote
+                ? {
+                    total_usd: Number(initialQuote.monto_total_usd) || 0,
+                    total_mxn:
+                      initialQuote.monto_total_mxn != null
+                        ? Number(initialQuote.monto_total_mxn)
+                        : null,
+                  }
+                : undefined
             }
-            value={servicioAereoImpresoUsd != null ? fmtUsd(servicioAereoImpresoUsd) : "—"}
-            hint={
-              servicioInfoAbierto && breakdown ? (
-                <>
-                  = {fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} h ×{" "}
-                  {fmtUsd(breakdown.tarifa.usd_por_hora)}/hr ={" "}
-                  {fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
-                  {comisionAbsorbidaUsd > 0 && (
-                    <>
-                      {" "}+ comisión del vendedor {fmtUsd(comisionAbsorbidaUsd)} (absorbida)
-                    </>
-                  )}
-                  {redondeoAbsorbidoUsd > 0 && (
-                    <>
-                      {" "}+{" "}
-                      <button
-                        type="button"
-                        onClick={lectura ? undefined : focusRedondeo}
-                        disabled={lectura}
-                        className={cn(!lectura && "underline underline-offset-2")}
-                        data-guard-exempt
-                      >
-                        redondeo {fmtUsd(redondeoAbsorbidoUsd)}
-                      </button>{" "}
-                      (absorbido)
-                    </>
-                  )}
-                  {breakdown.tiempos.minimo_hora_aplicado && " · vuelo corto: mínimo 1 hr"}
-                  {breakdown.tiempos.cobrable_proviene_de_override && " · horas pactadas a mano"}
-                  {" · "}
-                  <span className="text-muted-foreground">
-                    tarifa {origenTarifaResumen}
-                    {values.pdf_mostrar_tarifa ? "" : " · el PDF imprime solo el monto"}
-                  </span>
-                </>
-              ) : undefined
-            }
+            grupo={grupoDelHijo}
+            clienteExtra={clienteExtraNode}
           />
-
-          {/* TUAS por aeropuerto (inline, con switch) */}
-          <div className="py-2">
-            {breakdown ? (
-              <TuasFilas
-                breakdown={breakdown}
-                tuasLineas={values.tuas_lineas ?? []}
-                onTuaChange={setTuaLinea}
-                cobrarTuas={values.cobrar_tuas}
-                onCobrarTuasChange={(c) => setValue("cobrar_tuas", c)}
-                tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
-                onFocusTc={focusTc}
-                readOnly={lectura}
-              />
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {lectura
-                  ? "Esta versión no guardó el desglose de TUAS por aeropuerto (cotización de un motor anterior)."
-                  : "TUAS por aeropuerto: se llenan al calcular."}
-              </p>
-            )}
-          </div>
-
-          {/* Extras (inline) + línea BillPocket sintetizada */}
-          <div className="py-2 space-y-1.5">
-            <ExtrasEditor
-              variant="fila"
-              value={values.extras}
-              onChange={(extras) => setValue("extras", extras)}
-              tcCapturado={Number(values.tc_usd_mxn) > 0}
-              onFocusTc={focusTc}
-              pasajeros={Number(values.pasajeros) > 0 ? Number(values.pasajeros) : null}
-              grupo={grupoDelHijo}
-              readOnly={lectura}
-            />
-            {extraBillPocket && (
-              <FilaDesglose
-                label={
-                  <button
-                    type="button"
-                    onClick={lectura ? undefined : focusBillPocket}
-                    disabled={lectura}
-                    className={cn(!lectura && "underline-offset-2 hover:underline")}
-                    title={lectura ? undefined : "Derivado del % de BillPocket (Interno › Cobro)"}
-                    data-guard-exempt
-                  >
-                    {extraBillPocket.concepto}
-                  </button>
-                }
-                value={fmtUsd(extraBillPocket.monto_usd)}
-                hint="sin IVA · la sintetiza el motor"
-              />
-            )}
-          </div>
-
-          {/* Pernocta (derivado del itinerario) */}
-          {(Number(breakdown?.totales.viaticos_pernocta_usd) > 0 || nPernoctas > 0) && (
-            <FilaDesglose
-              label={
-                <button
-                  type="button"
-                  onClick={lectura ? undefined : focusItinerario}
-                  disabled={lectura}
-                  className={cn(!lectura && "underline-offset-2 hover:underline")}
-                  title={lectura ? undefined : "Se marca por tramo en el itinerario (⛺)"}
-                  data-guard-exempt
-                >
-                  Viáticos por pernocta ({nPernoctas} {nPernoctas === 1 ? "tramo" : "tramos"})
-                </button>
-              }
-              value={fmtUsd(breakdown?.totales.viaticos_pernocta_usd ?? 0)}
-              hint="sin IVA"
-            />
-          )}
-
-          {/* Descuento (input) */}
-          <FilaDesglose
-            label="Descuento"
-            value={
-              lectura ? (
-                descuentoUsd > 0 ? `−${fmtUsd(descuentoUsd)}` : "—"
-              ) : (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-muted-foreground">−</span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="0.00"
-                    aria-label="Descuento (USD)"
-                    className="h-8 w-28 text-right font-mono"
-                    value={values.descuento_usd ?? ""}
-                    onChange={(e) =>
-                      setValue(
-                        "descuento_usd",
-                        e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                </span>
-              )
-            }
-            hint={lectura ? undefined : "Negociado («ciérramelo en 750»). Fuera de IVA; sale como línea en el PDF."}
-          />
-
-          {/* Subtotal (derivado) */}
-          <FilaDesglose
-            label="Subtotal (sin IVA)"
-            value={subtotalSinIvaUsd != null ? fmtUsd(subtotalSinIvaUsd) : "—"}
-          />
-
-          {/* IVA % (override) */}
-          <FilaDesglose
-            label={
-              <span className="inline-flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={lectura ? undefined : focusMetodoPago}
-                  disabled={lectura}
-                  className={cn(!lectura && "underline-offset-2 hover:underline")}
-                  title={lectura ? undefined : "El % lo decide el método de pago (Interno › Cobro); aquí se puede forzar"}
-                  data-guard-exempt
-                >
-                  IVA
-                </button>
-                {lectura ? (
-                  <span className="font-mono text-xs">
-                    ({ivaPctMotor ?? (ivaPctInput || 0)} %{ivaOverrideRaw !== "" ? " · manual" : ""})
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 font-mono text-xs">
-                    (
-                    <Input
-                      type="number"
-                      step="1"
-                      min={0}
-                      max={100}
-                      placeholder={ivaPctMotor != null ? String(ivaPctMotor) : "auto"}
-                      aria-label="IVA % (vacío = según método de pago)"
-                      title="Vacío = según método de pago"
-                      className="h-7 w-16 px-1.5 text-right font-mono"
-                      value={ivaPctInput}
-                      onChange={(e) =>
-                        setValue(
-                          "iva_pct_override",
-                          e.target.value === ""
-                            ? null
-                            : Math.round(Math.min(100, Math.max(0, Number(e.target.value))) * 100) /
-                                10000,
-                        )
-                      }
-                    />
-                    %)
-                  </span>
-                )}
-              </span>
-            }
-            value={breakdown ? fmtUsd(breakdown.totales.iva_usd) : "—"}
-            hint={breakdown?.iva.nota}
-          />
-
-          {/* TOTAL */}
-          <div className="flex items-baseline justify-between gap-3 py-2">
-            <span className="font-heading text-base font-semibold">Total (USD)</span>
-            <span className="font-mono text-xl font-bold tabular-nums text-brand-600 dark:text-brand-400">
-              {breakdown
-                ? fmtUsd(breakdown.totales.total_usd)
-                : lectura && initialQuote
-                  ? fmtUsd(Number(initialQuote.monto_total_usd) || 0)
-                  : "—"}
-            </span>
-          </div>
-
-          {/* Total MXN (T.C. input, ancla tc-usd-mxn-field) */}
-          <FilaDesglose
-            label={
-              <span className="inline-flex flex-wrap items-center gap-1.5">
-                Total MXN
-                {lectura ? (
-                  <span className="font-mono text-xs">
-                    {Number(values.tc_usd_mxn) > 0
-                      ? `(T.C. ${fmtDecimal(Number(values.tc_usd_mxn), 4)})`
-                      : "(sin T.C.)"}
-                  </span>
-                ) : (
-                  <span id="tc-usd-mxn-field" className="scroll-mt-24 inline-flex items-center gap-1 font-mono text-xs">
-                    (T.C.
-                    <Input
-                      type="number"
-                      step="0.0001"
-                      min={0}
-                      placeholder="18.50"
-                      aria-label="Tipo de cambio (MXN por USD)"
-                      title={
-                        hayLineasMxn
-                          ? "Requerido: hay TUAS/extras capturados en pesos"
-                          : costoExternoEnMxn
-                            ? "Requerido: el costo del operador externo va en pesos"
-                            : "Opcional · si el pago entrará en pesos"
-                      }
-                      className={cn(
-                        "h-7 w-24 px-1.5 text-right font-mono",
-                        mxnSinTc || costoExternoMxnSinTc ? "border-amber-500/60" : undefined,
-                      )}
-                      value={values.tc_usd_mxn ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "tc_usd_mxn",
-                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                        )
-                      }
-                    />
-                    )
-                  </span>
-                )}
-              </span>
-            }
-            value={
-              breakdown?.totales.total_mxn != null
-                ? fmtMxn(breakdown.totales.total_mxn)
-                : lectura && initialQuote?.monto_total_mxn != null
-                  ? fmtMxn(Number(initialQuote.monto_total_mxn))
-                  : "—"
-            }
-            hint={
-              mxnSinTc
-                ? "Hay TUAS o extras en MXN sin tipo de cambio: el total aún NO los incluye. Captura el T.C. para aplicarlos y poder guardar."
-                : costoExternoMxnSinTc
-                  ? "El costo del operador externo va en pesos: captura el T.C. para poder guardar."
-                  : Number(breakdown?.totales.mxn_nativos) > 0
-                    ? `Exacto por composición: USD × T.C. + ${fmtMxn(breakdown!.totales.mxn_nativos)} nativos en pesos`
-                    : lectura
-                      ? undefined
-                      : "Opcional · solo si el pago entra en pesos"
-            }
-            tono={mxnSinTc || costoExternoMxnSinTc ? "aviso" : undefined}
-          />
-        </div>
-      </SeccionCotizador>
-
-      {/* 6 · NOTAS del cliente (al pie de la hoja) */}
-      <SeccionCotizador
-        id="notas"
-        titulo="Notas"
-        resumen={values.notas.trim() ? "1 nota en el PDF" : "sin notas"}
-        abierta={abiertas.notas}
-        onToggle={() => toggleSeccion("notas")}
-        bloqueada={lectura}
-      >
-        {lectura ? (
-          <Dato
-            label="Notas (visibles en PDF)"
-            value={
-              values.notas.trim() ? (
-                <span className="whitespace-pre-wrap font-normal">{values.notas}</span>
-              ) : (
-                "Sin notas"
-              )
-            }
-          />
-        ) : (
-          <Field
-            label="Notas (visibles en PDF)"
-            hint={
-              isRevise
-                ? "Opcional · al pie de la hoja 1. Si es lo único que cambia, se guarda sin versión nueva."
-                : "Opcional · al pie de la hoja 1"
-            }
-          >
-            <Textarea rows={2} placeholder="Ej. Sujeto a slot en CUN…" {...register("notas")} />
-          </Field>
-        )}
-      </SeccionCotizador>
-
-      {/* Bloque INTERNO como acordeón al pie (pantallas menores / preview anclada). */}
-      {internoUbicacion === "pie" && internoNode}
-      </div>
 
         {/* Save bar (oculta en LECTURA bloqueada; en revisión solo con cambios). */}
         {!lectura && (!isRevise || sucio) && (
@@ -5513,61 +2741,66 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </CardContent>
         </Card>
         )}
+        </div>
+
+        <QuoteInternalPanel
+          abierto={internoAbierto}
+          onAbiertoChange={setInternoAbiertoPersistente}
+          lectura={lectura}
+          isRevise={isRevise}
+          initialQuote={initialQuote}
+          values={values}
+          setValue={setValue}
+          register={register}
+          breakdown={breakdown}
+          loading={loading}
+          error={error}
+          hayPayload={pintaSnapshot || !!calcPayload}
+          selectedAircraft={selectedAircraft}
+          clienteInterno={clienteInterno}
+          tarifaSegment={tarifaSegment}
+          overrideTarifaActivo={overrideTarifaActivo}
+          setTarifaCustom={setTarifaCustom}
+          costoExternoMxnSinTc={costoExternoMxnSinTc}
+          focusTc={focusTc}
+          cotizadoEnTexto={cotizadoEnTexto}
+          onPonerTodoEnCero={() => setCeroOpen(true)}
+          airports={airports}
+          onAeropuertoCreado={onAeropuertoCreado}
+          avisos={avisosCaptura}
+          captura={
+            isRevise
+              ? undefined
+              : {
+                  clientes: allClients,
+                  frecuentes: frequentClientIds,
+                  onNuevoCliente: () => setClientDialogOpen(true),
+                }
+          }
+          plantilla={
+            lectura
+              ? undefined
+              : {
+                  rutas: allRoutes,
+                  sugeridas: rutasSugeridas,
+                  onAplicarSugerencia: aplicarSugerencia,
+                  onSeleccionarRuta: seleccionarRutaPlantilla,
+                  onCrearRuta: () => setRouteSheetOpen(true),
+                  onGuardarComoRuta: handleSaveAsRoute,
+                  savingRoute,
+                }
+          }
+          rutaSeleccionada={selectedRouteOpt}
+          itinerarioAjustado={itinerarioAjustado}
+          operativa={
+            isRevise && !lectura && initialQuote?.itinerario_operativo
+              ? { opsComoEscalas, onAplicar: aplicarOpsComoEscalas, legsSignature }
+              : undefined
+          }
+          notaTramos={isRevise && tramoExtra ? notaTramos : undefined}
+          avisoTramosCambiaron={isRevise && !!tramoExtra && !escalasCoincidenConBase && sucio}
+        />
       </div>
-
-      {/* Vista previa ANCLADA (≥1600 px): sticky bajo la barra del total,
-          con scroll propio para recorrer la hoja completa. */}
-      {previewAnclada && (
-        <div className="min-w-0 min-[1600px]:sticky min-[1600px]:top-[7.5rem]" data-guard-exempt>
-          <QuotePreviewPane
-            {...previewPaneProps}
-            onAbrirGrande={() => setPreviewDialogOpen(true)}
-            anclaje={{
-              anclada: true,
-              onToggle: () => previewPrefs.setAnclada(false),
-            }}
-            className="max-h-[calc(100vh-8.5rem)]"
-          />
-        </div>
-      )}
-      {/* Bloque INTERNO como columna propia (alta, ≥1440 px). */}
-      {internoUbicacion === "aside" && (
-        <div className="min-w-0 min-[1440px]:sticky min-[1440px]:top-[7.5rem] min-[1440px]:max-h-[calc(100vh-8.5rem)] min-[1440px]:overflow-y-auto">
-          {internoNode}
-        </div>
-      )}
-      {/* Pestaña «Vista previa» de la pantalla angosta. */}
-      {previewEnPill && (
-        <div className="min-w-0 lg:hidden" data-guard-exempt>
-          <QuotePreviewPane
-            {...previewPaneProps}
-            onAbrirGrande={() => setPreviewDialogOpen(true)}
-          />
-        </div>
-      )}
-      </div>
-
-      {/* Bloque INTERNO por portal al aside de la página única (≥1440 px). */}
-      {internoUbicacion === "portal" && internoSlot && createPortal(internoNode, internoSlot)}
-
-      {/* «Abrir en grande» / botón de la barra sin anclaje: diálogo casi a
-          pantalla completa con la hoja a tamaño real. */}
-      <QuotePreviewDialog
-        open={previewDialogOpen}
-        onOpenChange={setPreviewDialogOpen}
-        {...previewPaneProps}
-        anclaje={
-          pantallaAncha && previewPrefs.hidratado
-            ? {
-                anclada: previewAnclada,
-                onToggle: () => {
-                  previewPrefs.setAnclada(!previewAnclada);
-                  if (!previewAnclada) setPreviewDialogOpen(false);
-                },
-              }
-            : undefined
-        }
-      />
 
       {/* Descartar con cambios capturados: se confirma (lo escrito se
           pierde; la cotización queda tal como está guardada). */}
@@ -5939,176 +3172,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   );
 }
 
-/**
- * Mini-desglose EN VIVO (26-ago): bajo cada ajuste del formulario se ve
- * cuánto suma/resta ese apartado al total — para entender la cotización sin
- * ir a buscar al panel de la derecha ("sencillo, no tedioso").
- */
-function AporteChip({
-  usd,
-  nota,
-}: {
-  usd: number | null | undefined;
-  nota?: string;
-}) {
-  const v = Math.round((Number(usd) || 0) * 100) / 100;
-  if (v === 0) return null;
-  return (
-    <p
-      className={cn(
-        "text-xs font-medium mt-1",
-        v > 0
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-amber-600 dark:text-amber-400",
-      )}
-    >
-      {v > 0 ? "+" : "−"}
-      {fmtUsd(Math.abs(v))} en el total
-      {nota ? (
-        <span className="text-muted-foreground font-normal"> · {nota}</span>
-      ) : null}
-    </p>
-  );
-}
-
-/**
- * Campo en LECTURA (página única 5-sep): etiqueta discreta + valor legible
- * como texto — nunca un input gris deshabilitado. Mismo ritmo visual que
- * `Field` para que el acomodo de cada sección sea el MISMO en ambos modos.
- */
-function Dato({
-  label,
-  value,
-  hint,
-  className,
-}: {
-  label: string;
-  value: ReactNode;
-  hint?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn("space-y-0.5", className)}>
-      <p className="text-[11px] uppercase tracking-wider text-foreground/70">
-        {label}
-      </p>
-      <div className="text-sm font-medium break-words">{value}</div>
-      {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
-    </div>
-  );
-}
-
-/** "CUN → HOL → CUN" de una ruta del catálogo (mismo texto del selector). */
-function rutaPathTexto(r: RouteOption): string {
-  return r.tramos.length > 0
-    ? [r.tramos[0]?.origen_iata, ...r.tramos.map((t) => t.destino_iata)]
-        .filter(Boolean)
-        .join(" → ")
-    : `${r.origen_iata} → ${r.destino_iata}`;
-}
-
-/**
- * Tramos de la cotización en LECTURA: un renglón legible por tramo
- * (origen → destino · NM · pax/ferry · pernocta · servicio) con un slot
- * `extra` por tramo donde el padre cuelga los toggles del PDF. Misma
- * información que el editor, sin inputs ni agregar/quitar.
- */
-function TramosLectura({
-  legs,
-  extra,
-}: {
-  legs: EscalaInput[];
-  extra?: (idx: number, leg: EscalaInput) => ReactNode;
-}) {
-  if (legs.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground">Sin tramos capturados.</p>
-    );
-  }
-  // Suma de MILLAS (no dinero): misma cuenta del pie del editor.
-  const nmTotal = legs.reduce(
-    (acc, l) => acc + (Number(l.millas_nauticas) || 0),
-    0,
-  );
-  return (
-    <ol className="space-y-1.5">
-      {legs.map((l, idx) => {
-        const conPax =
-          !l.es_ferry && l.pasajeros != null && `${l.pasajeros}` !== "";
-        return (
-          <li
-            key={`${idx}-${l.origen_iata}-${l.destino_iata}`}
-            className="rounded-lg border border-border bg-navy-800/50 px-2.5 py-2 text-sm"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono">
-                <span className="text-muted-foreground mr-2">{idx + 1}.</span>
-                {l.origen_iata} → {l.destino_iata}
-              </span>
-              <span className="flex flex-wrap items-center justify-end gap-2">
-                <span className="font-mono text-xs text-muted-foreground">
-                  {Number(l.millas_nauticas) > 0
-                    ? `${fmtDecimal(Number(l.millas_nauticas))} NM`
-                    : "—"}
-                </span>
-                {l.es_ferry ? (
-                  <Badge variant="outline" className="text-[10px]">
-                    Ferry · vacío
-                  </Badge>
-                ) : conPax ? (
-                  <Badge variant="outline" className="text-[10px]">
-                    {l.pasajeros} pax
-                  </Badge>
-                ) : null}
-                {l.requiere_pernocta && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                  >
-                    Pernocta
-                    {l.pernocta_costo_usd != null
-                      ? ` · ${fmtUsd(l.pernocta_costo_usd)}`
-                      : ""}
-                  </Badge>
-                )}
-                {l.tipo_parada === "SERVICIO" && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
-                  >
-                    Servicio
-                  </Badge>
-                )}
-                {l.origen_iata && l.origen_iata === l.destino_iata && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] border-sky-500/40 text-sky-600 dark:text-sky-400"
-                  >
-                    Sobrevuelo
-                  </Badge>
-                )}
-                {extra?.(idx, l)}
-              </span>
-            </div>
-            {l.tipo_parada === "SERVICIO" && l.servicio_notas && (
-              <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">
-                {l.servicio_notas}
-              </p>
-            )}
-          </li>
-        );
-      })}
-      <li className="pt-2 mt-1 border-t border-border flex items-center justify-between text-xs">
-        <span className="font-semibold">Total</span>
-        <span className="font-mono font-bold">
-          {fmtDecimal(nmTotal)} NM · {legs.length}{" "}
-          {legs.length === 1 ? "tramo" : "tramos"}
-        </span>
-      </li>
-    </ol>
-  );
-}
-
 // ===== Borrador del cotizador EN LA URL (26-ago) =====
 // Recargar no pierde el avance: el form viaja comprimido en un query param
 // (?d=) que se actualiza con replaceState (sin ensuciar historial) y se
@@ -6137,166 +3200,21 @@ function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
   }
 }
 
-// ===== Secciones colapsables del cotizador (reorganización sep-2026) =====
-// El colapso es por CSS (hidden), NUNCA por desmontar: los hijos conservan
-// sus register() de RHF y los ids ancla de los atajos scroll+focus.
-
-type SeccionId =
-  // Documento (orden de la hoja 1)
-  | "cabecera"
-  | "ruta"
-  | "traslados"
-  | "itinerario"
-  | "desglose"
-  | "notas"
-  // Bloque interno y sus sub-bloques
-  | "interno"
-  | "externo"
-  | "operativa"
-  | "detalle";
-
-/** Overrides de plegado del operador (solo alta nueva), patrón data-table.
- *  v2 (F2): las secciones cambiaron de nombre; la clave v1 se ignora. */
-const SECCIONES_LS_KEY = "vt-cotizador-plegado-v2";
 /** «Interno · no se imprime» abierto/cerrado, por usuario (alta y revisión). */
 const INTERNO_LS_KEY = "vt-cotizador-interno-v1";
 
-/** Defaults deterministas por modo (sin leer storage: hidratación estable).
- *  El documento se abre COMPLETO en ambos modos; los sub-bloques internos
- *  (externo, ruta operativa, detalle del cálculo) arrancan plegados. */
-function seccionesDefault(isRevise: boolean): Record<SeccionId, boolean> {
-  return {
-    cabecera: true,
-    ruta: true,
-    traslados: true,
-    itinerario: true,
-    desglose: true,
-    notas: true,
-    interno: false, // se maneja aparte (INTERNO_LS_KEY)
-    externo: isRevise, // en revisión solo se pinta si es externo: abierto
-    operativa: false,
-    detalle: false,
-  };
-}
-
-const MESES_CORTOS = [
-  "ene", "feb", "mar", "abr", "may", "jun",
-  "jul", "ago", "sep", "oct", "nov", "dic",
-];
 
 /**
- * "YYYY-MM-DDTHH:mm" (pared Cancún del datetime-local) → "12 sep 14:00".
- * PURO formateo de texto: jamás new Date() sobre el string crudo (regla de
- * fechas del workspace — el parseo local correría la hora).
- */
-function fechaCortaDeInput(v: string | null | undefined): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v ?? "");
-  if (!m) return null;
-  const mes = MESES_CORTOS[Number(m[2]) - 1] ?? m[2];
-  return `${Number(m[3])} ${mes} ${m[4]}:${m[5]}`;
-}
-
-/**
- * Card-sección colapsable del cotizador: encabezado clickeable (título +
- * resumen compacto cuando está plegada + badge ámbar de aviso + chevron),
- * accesible (button + aria-expanded). El cuerpo se esconde con hidden.
- */
-function SeccionCotizador({
-  id,
-  titulo,
-  resumen,
-  aviso,
-  abierta,
-  onToggle,
-  bloqueada = false,
-  variante = "documento",
-  children,
-}: {
-  id: SeccionId;
-  titulo: string;
-  /** «interno»: borde discreto (no es parte de la hoja). */
-  variante?: "documento" | "interno";
-  /** Resumen compacto del contenido; visible solo con la sección plegada. */
-  resumen?: ReactNode;
-  /** Aviso activo: badge ámbar SIEMPRE visible — un warning no se esconde. */
-  aviso?: string | null;
-  abierta: boolean;
-  onToggle: () => void;
-  /** Cotización bloqueada (candado): 🔒 en el encabezado, valores como texto. */
-  bloqueada?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Card
-      className={cn(
-        "border-t-2",
-        variante === "interno"
-          ? "border-dashed border-t-muted-foreground/40 bg-muted/20"
-          : "border-t-brand-600/60",
-      )}
-    >
-      <button
-        type="button"
-        aria-expanded={abierta}
-        aria-controls={`seccion-${id}`}
-        onClick={onToggle}
-        data-guard-exempt
-        className="flex w-full items-center gap-3 px-4 text-left"
-      >
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <span className="flex flex-wrap items-center gap-2 font-heading text-base font-medium leading-snug">
-            {bloqueada && (
-              <LockClosedIcon
-                className="h-3.5 w-3.5 text-muted-foreground"
-                aria-label="Sección bloqueada"
-              />
-            )}
-            {titulo}
-            {aviso && (
-              <Badge
-                variant="outline"
-                className="border-amber-500/50 bg-amber-500/15 text-[10px] text-amber-600 dark:text-amber-400"
-              >
-                {aviso}
-              </Badge>
-            )}
-          </span>
-          {!abierta && resumen && (
-            <span className="block truncate text-xs text-muted-foreground">
-              {resumen}
-            </span>
-          )}
-        </div>
-        <ChevronDownIcon
-          className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-            abierta && "rotate-180",
-          )}
-        />
-      </button>
-      {/* hidden (CSS), no render condicional: ver nota de arriba.
-          `@container`: los grids internos (cabecera, traslados, itinerario +
-          mapa) responden al ancho REAL de la sección, no del viewport. */}
-      <div id={`seccion-${id}`} hidden={!abierta} className="@container px-4">
-        <div className="space-y-4">{children}</div>
-      </div>
-    </Card>
-  );
-}
-
-
-/**
- * Barra FIJA del total (26-ago): siempre visible al hacer scroll — se va
- * ajustando la cotización y el total + mini-desglose se actualizan en vivo,
- * sin regresar arriba. Sustituye a la barra flotante inferior y al panel
- * lateral pegajoso (el cotizador pasó a UNA columna).
+ * Barra de ESTADO fija (ensamble 8-sep-2026): fuera del papel, siempre a la
+ * vista al hacer scroll — total con IVA (del breakdown), cliente · folio ·
+ * versión, «Ver PDF real», Descartar/Guardar y los avisos de captura. Sin
+ * celdas del desglose: ese vive en la hoja (y el detalle en el panel interno).
  */
 function TotalBar({
   breakdown,
   loading,
   error,
   sinDatos,
-  avion,
   titulo,
   subtitulo,
   saveLabel,
@@ -6309,26 +3227,24 @@ function TotalBar({
   totalFallback,
   bloqueoRazon,
   onCopiar,
-  onVistaPrevia,
+  verPdf,
+  avisos = [],
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
   error: string | null;
   sinDatos: boolean;
-  /** «Cotizado en: Piper Seneca V» (modelo, nunca matrícula). */
-  avion?: string | null;
   /** Cliente de la cotización (lado derecho de la barra). */
   titulo?: string | null;
   /** Folio · versión (o "Nueva cotización"). */
   subtitulo?: string | null;
-  /** Botón primario de la barra (guardar/aplicar revisión), siempre a la
-      vista con el total — el guardado real vive en el padre (handleSave). */
+  /** Botón primario (guardar/crear) — el guardado real vive en el padre. */
   saveLabel?: string;
   saveDisabled?: boolean;
   /** Tooltip del primario (razón del candado cuando está deshabilitado). */
   saveTitle?: string;
   onSave?: () => void;
-  /** Botón secundario «Cancelar» (edición de la página única). */
+  /** Botón secundario «Descartar» (revisión con cambios). */
   onCancel?: () => void;
   cancelLabel?: string;
   cancelDisabled?: boolean;
@@ -6342,67 +3258,11 @@ function TotalBar({
   bloqueoRazon?: string;
   /** «Copiar como nueva cotización» (prellena /new con el documento). */
   onCopiar?: () => void;
-  /** «Vista previa» de la hoja 1 (F1): solo cuando no está anclada. */
-  onVistaPrevia?: () => void;
+  /** «Ver PDF real» / «Guardar y ver PDF» (revisión). */
+  verPdf?: { label: string; onClick: () => void; disabled?: boolean; loading?: boolean; title?: string };
+  /** Avisos de captura (capacidad, ancla CUN…): chips, nunca se esconden. */
+  avisos?: string[];
 }) {
-  // Desglose SIEMPRE visible bajo el total (27-ago; antes: chips solo en
-  // ≥md): celdas compactas que PINTAN campos del breakdown canónico tal
-  // cual — cero cálculos aquí. Las de $0 se omiten, salvo las estructurales
-  // (Horas, Tarifa, Servicio aéreo, IVA) que anclan la lectura.
-  const celdas: { label: string; value: string }[] = [];
-  if (breakdown) {
-    const t = breakdown.totales;
-    celdas.push({
-      label: "Horas",
-      value: `${fmtDecimal(breakdown.tiempos.cobrable_hr)} hr`,
-    });
-    const origenTarifa = breakdown.tarifa.proviene_de_override
-      ? "Manual"
-      : breakdown.tarifa.preferencial_cliente
-        ? "Preferencial"
-        : breakdown.tarifa.tipo === "BROKER"
-          ? "Broker"
-          : "Pública";
-    celdas.push({
-      label: `Tarifa · ${origenTarifa}`,
-      value: `${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`,
-    });
-    // «Subtotal vuelo» (horas × tarifa), no «Servicio aéreo»: en el
-    // documento «Servicio aéreo» es el IMPRESO (absorbe comisión y
-    // redondeo) y dos números distintos con el mismo nombre confundían.
-    celdas.push({
-      label: "Subtotal vuelo",
-      value: fmtUsd(t.subtotal_vuelo_usd),
-    });
-    if (t.tuas_total_usd) {
-      celdas.push({ label: "TUAS", value: fmtUsd(t.tuas_total_usd) });
-    }
-    if (t.viaticos_pernocta_usd) {
-      celdas.push({
-        label: "Pernocta",
-        value: fmtUsd(t.viaticos_pernocta_usd),
-      });
-    }
-    if (t.extras_total_usd) {
-      celdas.push({ label: "Extras", value: fmtUsd(t.extras_total_usd) });
-    }
-    // La comisión del vendedor SÍ es parte del total (la paga el cliente)
-    // pero viaja en meta, no en totales: sin esta celda el desglose no
-    // sumaría el número grande de arriba.
-    if (breakdown.meta?.comision_vendedor_usd) {
-      celdas.push({
-        label: "Comisión vendedor",
-        value: fmtUsd(breakdown.meta.comision_vendedor_usd),
-      });
-    }
-    if (t.ajuste_final_usd) {
-      celdas.push({
-        label: (t.ajuste_final_usd ?? 0) < 0 ? "Descuento" : "Redondeo",
-        value: fmtUsd(t.ajuste_final_usd),
-      });
-    }
-    celdas.push({ label: "IVA", value: fmtUsd(t.iva_usd) });
-  }
   return (
     <div className="sticky top-0 z-30 -mx-1 px-1 pt-1" data-guard-exempt>
       {/* Rojo VuelaTour sólido (pedido 28-ago): al hacer scroll la barra
@@ -6414,19 +3274,14 @@ function TotalBar({
             loading && "opacity-60",
           )}
         >
-          {/* total_usd YA incluye IVA (las celdas de abajo lo desglosan):
-              la etiqueta lo dice explícito — cambio de texto, no de dato. */}
+          {/* total_usd YA incluye IVA: la etiqueta lo dice explícito. */}
           <span className="text-[11px] uppercase tracking-wider text-white/80">
             Total con IVA
           </span>
           {error ? (
-            <span className="text-sm font-semibold text-white">
-              Error al calcular
-            </span>
+            <span className="text-sm font-semibold text-white">Error al calcular</span>
           ) : sinDatos ? (
-            <span className="text-sm text-white/85">
-              Completa aeronave, ruta y pasajeros
-            </span>
+            <span className="text-sm text-white/85">Completa aeronave, ruta y pasajeros</span>
           ) : !breakdown ? (
             totalFallback ? (
               <>
@@ -6435,15 +3290,10 @@ function TotalBar({
                 </span>
                 <span className="text-xs text-white/80">USD</span>
                 {totalFallback.mxn != null && (
-                  <span className="text-xs text-white/80 font-mono">
-                    {fmtMxn(totalFallback.mxn)}
-                  </span>
+                  <span className="text-xs text-white/80 font-mono">{fmtMxn(totalFallback.mxn)}</span>
                 )}
                 {totalFallback.tarifaTipo && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] border-white/50 text-white"
-                  >
+                  <Badge variant="outline" className="text-[10px] border-white/50 text-white">
                     {totalFallback.tarifaTipo}
                   </Badge>
                 )}
@@ -6462,1083 +3312,99 @@ function TotalBar({
                   {fmtMxn(breakdown.totales.total_mxn)}
                 </span>
               )}
-              <Badge
-                variant="outline"
-                className="text-[10px] border-white/50 text-white"
-              >
+              <Badge variant="outline" className="text-[10px] border-white/50 text-white">
                 {breakdown.tarifa.tipo}
               </Badge>
             </>
           )}
-          {(titulo ||
-            subtitulo ||
-            avion ||
-            onSave ||
-            onCancel ||
-            bloqueoRazon ||
-            onVistaPrevia) && (
-            <div className="ml-auto flex min-w-0 items-center gap-3">
-              {(titulo || subtitulo || avion) && (
-                <div className="min-w-0 text-right">
-                  {titulo && (
-                    <p className="truncate text-sm font-semibold leading-tight max-w-[280px]">
-                      {titulo}
-                    </p>
-                  )}
-                  {subtitulo && (
-                    <p className="font-mono text-[11px] leading-tight text-white/80">
-                      {subtitulo}
-                    </p>
-                  )}
-                  {avion && !error && (
-                    <p className="truncate text-[11px] leading-tight text-white/80 max-w-[280px]">
-                      {avion}
-                    </p>
-                  )}
-                </div>
-              )}
-              {onVistaPrevia && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onVistaPrevia}
-                  title="Ver la hoja 1 del PDF tal como la verá el cliente (se actualiza al editar)."
-                  className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white"
-                >
-                  <EyeIcon className="h-4 w-4" />
-                  Vista previa
-                </Button>
-              )}
-              {onCancel && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onCancel}
-                  disabled={cancelDisabled}
-                  className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white disabled:opacity-60"
-                >
-                  <XMarkIcon className="h-4 w-4" />
-                  {cancelLabel}
-                </Button>
-              )}
-              {/* Bloqueada (candado): la razón se LEE (no solo tooltip) y se
-                  ofrece copiar el documento como cotización nueva. */}
-              {bloqueoRazon && (
-                <span className="flex max-w-[300px] items-start gap-1.5 text-right text-[11px] leading-tight text-white/90">
-                  <LockClosedIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{bloqueoRazon}</span>
-                </span>
-              )}
-              {bloqueoRazon && onCopiar && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onCopiar}
-                  title="Crea una cotización nueva con estos mismos datos (esta no se toca)."
-                  className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white"
-                >
-                  <DocumentDuplicateIcon className="h-4 w-4" />
-                  Copiar como nueva cotización
-                </Button>
-              )}
-              {onSave && (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={onSave}
-                  disabled={saveDisabled}
-                  title={saveTitle}
-                  className="shrink-0 gap-1.5 bg-white text-brand-700 hover:bg-white/90 disabled:opacity-60"
-                >
-                  <BookmarkSquareIcon className="h-4 w-4" />
-                  {saveLabel}
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-        {breakdown && !error && (
-          <div
-            className={cn(
-              "mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-white/25 pt-1.5 transition-opacity",
-              loading && "opacity-60",
-            )}
-          >
-            {celdas.map((c) => (
-              <div key={c.label}>
-                <p className="text-[11px] uppercase tracking-wider leading-tight text-white/75 whitespace-nowrap">
-                  {c.label}
-                </p>
-                <p className="font-mono tabular-nums text-xs whitespace-nowrap">
-                  {c.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Fila del desglose del TOTAL, estilo recibo: etiqueta a la izquierda, monto
- * mono a la derecha. Sustituye al grid de celdas (26-ago): las celdas
- * condicionales desbordaban a una segunda fila y "Redondeo" quedaba huérfano
- * y desalineado — el recibo nunca se rompe y se lee en el orden de la suma.
- */
-function FilaTotal({
-  label,
-  hint,
-  value,
-}: {
-  label: string;
-  hint?: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-muted-foreground">
-        {label}
-        {hint ? (
-          <span className="text-xs"> · {hint}</span>
-        ) : null}
-      </span>
-      <span className="font-mono tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function Preview({
-  breakdown,
-  loading,
-  avion,
-  tcUsdMxn,
-}: {
-  breakdown: QuoteBreakdown;
-  loading: boolean;
-  /** «Cotizado en: Piper Seneca V» — modelo cotizado, nunca matrícula. */
-  avion?: string | null;
-  /** TC capturado; solo para el display del total por moneda. */
-  tcUsdMxn: number | null;
-}) {
-  // F2: el «Detalle del cálculo» es SOLO lectura; el Cobrable pactado se
-  // edita en «Interno › Tarifa y horas» (ancla cobrable-field vive allá).
-
-  // Composición del total MXN (motor): componentes USD × tc + nativos MXN.
-  const mxnNativos = Number(breakdown.totales.mxn_nativos) || 0;
-  const usdDeMxn =
-    Math.round(
-      ((breakdown.tuas.filas ?? [])
-        .filter((f) => f.moneda === "MXN")
-        .reduce((acc, f) => acc + f.total_usd, 0) +
-        (breakdown.extras ?? [])
-          .filter((e) => e.moneda === "MXN")
-          .reduce((acc, e) => acc + e.monto_usd, 0)) *
-        100,
-    ) / 100;
-  const componentesUsd =
-    Math.round((breakdown.totales.total_usd - usdDeMxn) * 100) / 100;
-  const componentesUsdEnMxn =
-    breakdown.totales.total_mxn != null
-      ? Math.round((breakdown.totales.total_mxn - mxnNativos) * 100) / 100
-      : null;
-
-  return (
-    <>
-      {/* TOTAL */}
-      <Card className={cn("border-t-2 border-t-brand-600/60 transition-opacity", loading && "opacity-60")}>
-        <CardContent className="p-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Total</p>
-              <p className="text-4xl md:text-5xl font-bold tracking-tight">
-                {fmtUsd(breakdown.totales.total_usd)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">USD</p>
-              {/* Tipo de avión cotizado (feedback 4-sep): el MODELO, nunca
-                  la matrícula — a veces se cotiza en un avión y la ruta
-                  operativa va en otro. */}
-              {avion && <p className="text-xs text-muted-foreground mt-1">{avion}</p>}
-              {/* Comisión del vendedor: se SUMA al precio (la paga el
-                  cliente); el neto VuelaTour lo manda el motor en meta —
-                  fuente única, no se calcula aquí. */}
-              {!!breakdown.meta?.comision_vendedor_usd && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Comisión vendedor
-                  {breakdown.meta.comision_vendedor_nombre
-                    ? ` (${breakdown.meta.comision_vendedor_nombre})`
-                    : ""}
-                  : +{fmtUsd(breakdown.meta.comision_vendedor_usd)} (la paga el
-                  cliente)
-                  {breakdown.meta.neto_vuelatour_usd != null && (
-                    <>
-                      {" "}·{" "}
-                      <span className="font-semibold text-foreground">
-                        Neto VuelaTour:{" "}
-                        {fmtUsd(breakdown.meta.neto_vuelatour_usd)}
-                      </span>
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-            <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30">
-              {breakdown.tarifa.tipo}
-            </Badge>
-          </div>
-          {/* Desglose tipo RECIBO, en el MISMO orden de la suma canónica
-              (subtotal + TUAS + pernocta + extras + ajuste + IVA = total):
-              se lee de arriba a abajo y siempre queda alineado. */}
-          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-sm">
-            <FilaTotal
-              label="Subtotal vuelo"
-              value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
-            />
-            <FilaTotal
-              label="TUAS"
-              hint={`${breakdown.tuas.pasajeros} pax${
-                Number(breakdown.tuas.total_mxn_nativo) > 0 ? ", incluye MXN" : ""
-              }`}
-              value={fmtUsd(breakdown.totales.tuas_total_usd)}
-            />
-            {!!breakdown.totales.viaticos_pernocta_usd && (
-              <FilaTotal
-                label="Pernocta"
-                hint="viáticos, sin IVA"
-                value={fmtUsd(breakdown.totales.viaticos_pernocta_usd)}
-              />
-            )}
-            {!!breakdown.totales.extras_total_usd && (
-              <FilaTotal
-                label="Extras"
-                hint={`${breakdown.extras?.length ?? 0} ${
-                  (breakdown.extras?.length ?? 0) === 1 ? "concepto" : "conceptos"
-                }`}
-                value={fmtUsd(breakdown.totales.extras_total_usd)}
-              />
-            )}
-            {!!breakdown.totales.ajuste_final_usd && (
-              <FilaTotal
-                label={
-                  (breakdown.totales.ajuste_final_usd ?? 0) < 0
-                    ? "Descuento"
-                    : "Redondeo"
-                }
-                hint="fuera de IVA"
-                value={fmtUsd(breakdown.totales.ajuste_final_usd!)}
-              />
-            )}
-            <FilaTotal
-              label="IVA"
-              hint={
-                breakdown.iva.porcentaje > 0
-                  ? `${(breakdown.iva.porcentaje * 100).toFixed(0)}%`
-                  : "0%"
-              }
-              value={fmtUsd(breakdown.totales.iva_usd)}
-            />
-          </div>
-          {(breakdown.extras?.length ?? 0) > 0 && (
-            <div className="mt-3 pt-3 border-t border-border space-y-1">
-              {breakdown.extras!.map((e, i) => (
-                <div
-                  key={`${e.concepto}-${i}`}
-                  className="flex items-center justify-between gap-3 text-xs"
-                >
-                  <span className="text-muted-foreground min-w-0 break-words">
-                    {e.concepto}
-                    {/* Renglón cantidad × unitario: el motor ya derivó el
-                        monto; aquí solo la leyenda. */}
-                    {e.unitario != null && (
-                      <span className="ml-1 font-mono text-[10px]">
-                        · {textoCantidadUnitario(e, e.cantidad ?? null)}
-                      </span>
-                    )}
-                    {e.aplica_iva === false && (
-                      <span className="ml-1 text-[10px]">(sin IVA)</span>
-                    )}
-                    {e.origen === "GRUPO" && (
-                      <span className="ml-1 rounded bg-fuchsia-500/15 px-1 text-[10px] text-fuchsia-700 dark:text-fuchsia-300">
-                        grupo
-                      </span>
-                    )}
-                  </span>
-                  <span className="font-mono shrink-0">
-                    {/* Renglón MXN: pesos nativos primero, canon USD al lado. */}
-                    {e.moneda === "MXN" && e.monto_nativo != null && (
-                      <span className="mr-1.5 text-muted-foreground">
-                        {fmtMxn(e.monto_nativo)} =
-                      </span>
-                    )}
-                    {fmtUsd(e.monto_usd)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Total consolidado en MXN (motor ≥1.3.1): EXACTO por composición
-              — componentes USD × tc + renglones nativos MXN tal cual. */}
-          {breakdown.totales.total_mxn != null && (
-            <div className="mt-3 rounded-lg border border-border bg-navy-800/50 px-3 py-2 text-sm">
-              {mxnNativos > 0 ? (
-                <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-wider text-foreground/70">
-                    Total por moneda
-                  </p>
-                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span>
-                      Componentes USD: {fmtUsd(componentesUsd)}
-                      {tcUsdMxn ? ` × tc ${fmtDecimal(tcUsdMxn, 4)}` : ""}
-                    </span>
-                    <span className="font-mono shrink-0 text-foreground">
-                      {componentesUsdEnMxn != null ? fmtMxn(componentesUsdEnMxn) : "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span>Nativos MXN (TUAS/extras en pesos, tal cual)</span>
-                    <span className="font-mono shrink-0 text-foreground">{fmtMxn(mxnNativos)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-border pt-1 font-semibold">
-                    <span>Total MXN</span>
-                    <span className="font-mono">{fmtMxn(breakdown.totales.total_mxn)}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">
-                    Total MXN{tcUsdMxn ? ` (tc ${fmtDecimal(tcUsdMxn, 4)})` : ""}
-                  </span>
-                  <span className="font-mono font-semibold">
-                    {fmtMxn(breakdown.totales.total_mxn)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Detalle por tramo (MULTIESCALA) */}
-      {breakdown.tramos && breakdown.tramos.length > 0 && (
-        <Card className="border-t-2 border-t-brand-600/60">
-          <CardHeader>
-            <CardTitle className="text-sm">Detalle por tramo</CardTitle>
-            <CardDescription className="text-xs">
-              Pasajeros, TUAS, ferry, pernocta y paradas de servicio por tramo.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {breakdown.tramos.map((t) => (
-              <div
-                key={t.orden}
-                className="rounded-lg border border-border p-2.5 text-sm space-y-1"
-              >
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="font-mono">
-                    <span className="text-muted-foreground mr-1">{t.orden}.</span>
-                    {t.origen} → {t.destino}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {t.es_ferry ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        Ferry · vacío
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px]">
-                        {t.pasajeros} pax
-                      </Badge>
-                    )}
-                    {t.requiere_pernocta && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                      >
-                        Pernocta · {fmtUsd(t.pernocta_usd)}
-                      </Badge>
-                    )}
-                    {t.tipo_parada === "SERVICIO" && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
-                      >
-                        Servicio
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span>
-                    {fmtDecimal(t.millas)} NM · {fmtDecimal(t.tiempo_hr, 4)} hr
-                  </span>
-                  <span>TUAS {fmtUsd(t.tuas_usd)}</span>
-                </div>
-                {t.tipo_parada === "SERVICIO" && t.servicio_notas && (
-                  <p className="text-xs text-sky-700 dark:text-sky-300">
-                    {t.servicio_notas}
-                  </p>
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            {(titulo || subtitulo) && (
+              <div className="min-w-0 text-right">
+                {titulo && (
+                  <p className="truncate text-sm font-semibold leading-tight max-w-[280px]">{titulo}</p>
+                )}
+                {subtitulo && (
+                  <p className="font-mono text-[11px] leading-tight text-white/80">{subtitulo}</p>
                 )}
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tiempos + Tarifa */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-t-2 border-t-brand-600/60">
-          <CardHeader>
-            <CardTitle className="text-sm">Tiempos</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {/* Vuelo y calzos SIEMPRE calculados (26-ago, corrige al 25-ago:
-                lo pactable no es el componente, es la SUMA final). */}
-            <Row
-              label="Vuelo"
-              value={`${fmtDecimal(breakdown.tiempos.vuelo_hr, 4)} hr`}
-              hint={`${fmtDecimal(breakdown.ruta.millas_nauticas_totales)} NM ÷ ${breakdown.aeronave.velocidad_crucero_kts} kts`}
-            />
-            <Row
-              label="Calzos"
-              value={`${fmtDecimal(breakdown.tiempos.calzos_hr, 4)} hr`}
-              hint={`${breakdown.ruta.num_aterrizajes} aterrizajes × 0.15 hr`}
-            />
-            {Number(breakdown.tiempos.sobrevuelo_hr) > 0 && (
-              <Row
-                label="Sobrevuelo"
-                value={`${fmtDecimal(breakdown.tiempos.sobrevuelo_hr!, 4)} hr`}
-                hint="Tiempo extra sobre la zona"
-              />
             )}
-            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
-              <div>
-                <p className="font-semibold">Cobrable</p>
-                <p className="text-xs text-muted-foreground">
-                  {breakdown.tiempos.cobrable_proviene_de_override
-                    ? `pactado a mano · la regla daría ${fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
-                    : "regla (suma, mínimo 1 hr)"}
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-mono font-semibold">
-                  {fmtDecimal(breakdown.tiempos.cobrable_hr, 4)}
-                </span>
-                <span className="text-xs text-muted-foreground">hr</span>
-              </div>
-            </div>
-            {breakdown.tiempos.cobrable_proviene_de_override &&
-              Number(breakdown.tiempos.cobrable_hr) <
-                Number(breakdown.tiempos.vuelo_hr) +
-                  Number(breakdown.tiempos.calzos_hr) +
-                  Number(breakdown.tiempos.sobrevuelo_hr ?? 0) && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Ojo: el cobrable pactado es MENOR al tiempo real (vuelo +
-                  calzos): se cobraría de menos.
-                </p>
-              )}
-            {breakdown.tiempos.minimo_hora_aplicado && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                Vuelo corto: se cobra la hora completa (mínimo 1 hr).
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-t-2 border-t-brand-600/60">
-          <CardHeader>
-            <CardTitle className="text-sm">Tarifa</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row
-              label="USD / hr"
-              value={fmtUsd(breakdown.tarifa.usd_por_hora)}
-              hint={
-                breakdown.tarifa.proviene_de_override
-                  ? "Ajustada a mano para esta cotización"
-                  : breakdown.tarifa.preferencial_cliente
-                    ? "Preferencial del cliente"
-                    : "Del avión"
-              }
-            />
-            {breakdown.tarifa.preferencial_cliente && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                Este cliente tiene tarifa preferencial pactada para este avión; manda
-                sobre la tarifa {breakdown.tarifa.tipo === "PUBLICO" ? "público" : "broker"} default.
-              </p>
-            )}
-            <Row
-              label="Subtotal"
-              value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
-              hint={`${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}`}
-              bold
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* IVA */}
-      <Card className="border-t-2 border-t-brand-600/60">
-        <CardHeader>
-          <CardTitle className="text-sm">IVA</CardTitle>
-          <CardDescription className="text-xs">{breakdown.iva.nota}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-3 gap-3 text-sm">
-          <Cell label="Porcentaje" value={`${(breakdown.iva.porcentaje * 100).toFixed(2)}%`} />
-          <Cell label="Base" value={fmtUsd(breakdown.iva.base_usd)} />
-          <Cell label="Monto" value={fmtUsd(breakdown.iva.monto_usd)} bold />
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-function PreviewSkeleton() {
-  return (
-    <>
-      <Card className="border-t-2 border-t-brand-600/60">
-        <CardContent className="p-6 space-y-4">
-          <Skeleton className="h-3 w-12" />
-          <Skeleton className="h-12 w-48" />
-          <div className="grid grid-cols-3 gap-3">
-            <Skeleton className="h-12" />
-            <Skeleton className="h-12" />
-            <Skeleton className="h-12" />
-          </div>
-        </CardContent>
-      </Card>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-t-2 border-t-brand-600/60">
-          <CardContent className="p-6 space-y-3">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-full" />
-          </CardContent>
-        </Card>
-        <Card className="border-t-2 border-t-brand-600/60">
-          <CardContent className="p-6 space-y-3">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-full" />
-          </CardContent>
-        </Card>
-      </div>
-    </>
-  );
-}
-
-/**
- * TUAS por aeropuerto EN LÍNEA (F2, 8-sep-2026): una fila por aeropuerto con
- * las etiquetas del PDF — «TUA CUN · [$25.00][USD▾] × 4 pax = $100.00» o
- * «TUA HOL · exento» — más el switch «Se cobran TUAS». Sustituye a la card
- * de «Cargos adicionales»; las props (tuas_lineas, setTuaLinea, cobrar_tuas,
- * tc) se siguen derivando en el padre. Sin breakdown no hay filas.
- */
-function TuasFilas({
-  breakdown,
-  tuasLineas,
-  onTuaChange,
-  cobrarTuas,
-  onCobrarTuasChange,
-  tcUsdMxn,
-  onFocusTc,
-  readOnly = false,
-}: {
-  breakdown: QuoteBreakdown;
-  tuasLineas: TuaLinea[];
-  onTuaChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
-  cobrarTuas: boolean;
-  onCobrarTuasChange: (c: boolean) => void;
-  tcUsdMxn: number | null;
-  /** Lleva al campo de T.C. («Total MXN» del desglose). */
-  onFocusTc: () => void;
-  /** Lectura (bloqueada): sin switch ni inputs; montos como texto. */
-  readOnly?: boolean;
-}) {
-  // Aeropuertos ÚNICOS del itinerario (todos, no solo origen/destino).
-  const aeropuertos = (() => {
-    const list =
-      breakdown.tuas.aeropuertos ??
-      [
-        breakdown.tuas.origen,
-        ...(breakdown.tuas.intermedios ?? []),
-        breakdown.tuas.destino,
-      ].filter(Boolean);
-    const seen = new Set<string>();
-    return list.filter((a) => {
-      if (!a || seen.has(a.iata)) return false;
-      seen.add(a.iata);
-      return true;
-    });
-  })();
-  const filaPorIata = new Map((breakdown.tuas.filas ?? []).map((f) => [f.iata, f]));
-  const lineaPorIata = new Map(tuasLineas.map((l) => [l.iata, l]));
-  const regla = breakdown.aeronave.matricula?.startsWith("XA")
-    ? "XA"
-    : breakdown.aeronave.matricula?.startsWith("XB")
-      ? "XB"
-      : "N";
-  return (
-    <div className={cn("space-y-1 transition-opacity", !cobrarTuas && "opacity-60")}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] uppercase tracking-wider text-foreground/70">
-          TUAS por aeropuerto · regla {regla}
-          {aeropuertos.length > 1 && (
-            <span className="ml-2 normal-case tracking-normal text-muted-foreground">
-              total {fmtUsd(breakdown.tuas.total_usd)}
-              {Number(breakdown.tuas.total_mxn_nativo) > 0
-                ? ` (incluye ${fmtMxn(breakdown.tuas.total_mxn_nativo)} nativos)`
-                : ""}
-            </span>
-          )}
-        </span>
-        {readOnly ? (
-          <Badge variant="outline" className="shrink-0 text-[10px]">
-            {cobrarTuas ? "Se cobran" : "No se cobran"}
-          </Badge>
-        ) : (
-          <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-            {cobrarTuas ? "Se cobran TUAS" : "No se cobran TUAS"}
-            <Switch size="sm" checked={cobrarTuas} onCheckedChange={onCobrarTuasChange} />
-          </label>
-        )}
-      </div>
-      {aeropuertos.map((air) => (
-        <TuasAirportRow
-          key={air.iata}
-          air={air}
-          fila={filaPorIata.get(air.iata)}
-          linea={lineaPorIata.get(air.iata)}
-          paxGlobal={breakdown.tuas.pasajeros}
-          disabled={!cobrarTuas}
-          tcCapturado={tcUsdMxn != null}
-          onChange={onTuaChange}
-          onFocusTc={onFocusTc}
-          readOnly={readOnly}
-        />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Fila de TUA por aeropuerto: «TUA CUN · [25.00][USD▾] × 4 pax  = $100.00».
- * Vacío = monto del catálogo (placeholder gris); lo capturado manda; "0" =
- * TUA capturada en $0. Exento («aplica=false» según el motor): se lee la
- * razón y «capturar monto» destapa el input igual (el motor decide).
- */
-function TuasAirportRow({
-  air,
-  fila,
-  linea,
-  paxGlobal,
-  disabled,
-  tcCapturado,
-  onChange,
-  onFocusTc,
-  readOnly = false,
-}: {
-  air: TuasAeropuerto;
-  fila?: TuasFila;
-  linea?: TuaLinea;
-  paxGlobal: number;
-  disabled: boolean;
-  tcCapturado: boolean;
-  onChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
-  onFocusTc?: () => void;
-  readOnly?: boolean;
-}) {
-  // Moneda elegida antes de capturar monto (sin monto aún no viaja la línea).
-  const [monedaDraft, setMonedaDraft] = useState<"USD" | "MXN">(
-    linea?.moneda ?? (air.moneda === "MXN" ? "MXN" : "USD"),
-  );
-  const moneda = linea?.moneda ?? monedaDraft;
-  const capturada = !!linea;
-  const montoCatalogo = air.monto_pax ?? air.usd_pax;
-  const pax = fila?.pax ?? (air.aplica ? paxGlobal : 0);
-  // Exento según el motor: la fila se lee; «capturar monto» destapa el input.
-  const [forzarCaptura, setForzarCaptura] = useState(false);
-  const exento = !air.aplica && !capturada && !forzarCaptura;
-  const editable = !disabled && !readOnly && !exento;
-
-  // Input CONTROLADO desde RHF (F0.5; antes defaultValue): un reset/descartar
-  // o «Recargar conservando borrador» actualizan el campo. El borrador local
-  // solo conserva lo tecleado a medias ("25.") mientras el número coincide.
-  const [montoDraft, setMontoDraft] = useState(linea ? String(linea.monto_pax) : "");
-  const montoLinea = linea ? Number(linea.monto_pax) : null;
-  // Patrón "estado derivado durante el render" (react.dev): cuando la línea
-  // cambia desde afuera (reset/descartar/rehidratar) y ya no coincide con lo
-  // tecleado, el borrador se realinea sin un efecto extra.
-  const [montoLineaPrev, setMontoLineaPrev] = useState(montoLinea);
-  if (montoLineaPrev !== montoLinea) {
-    setMontoLineaPrev(montoLinea);
-    const draftNum = montoDraft.trim() === "" ? null : Number(montoDraft);
-    if (draftNum !== montoLinea) {
-      setMontoDraft(montoLinea === null ? "" : String(montoLinea));
-    }
-  }
-
-  const handleMonto = (raw: string) => {
-    setMontoDraft(raw);
-    // Vacío = des-capturar (vuelve al catálogo). "0" = TUA capturada en $0
-    // (pass-through cero: el aeropuerto no cobra) — SÍ viaja al motor.
-    if (raw.trim() === "") {
-      onChange(air.iata, null, moneda);
-      return;
-    }
-    const n = Number(raw);
-    onChange(air.iata, Number.isFinite(n) && n >= 0 ? n : null, moneda);
-  };
-  const handleMoneda = (m: "USD" | "MXN") => {
-    setMonedaDraft(m);
-    if (linea) onChange(air.iata, linea.monto_pax, m);
-  };
-
-  const totalNode = fila ? (
-    fila.moneda === "MXN" ? (
-      <>
-        {fmtUsd(fila.total_usd)}
-        <span className="ml-1.5 text-xs text-muted-foreground">({fmtMxn(fila.total_nativo)})</span>
-      </>
-    ) : (
-      fmtUsd(fila.total_usd)
-    )
-  ) : (
-    "—"
-  );
-
-  return (
-    <div className={cn("space-y-0.5 py-1", !air.aplica && "opacity-80")}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className="inline-flex items-center gap-1.5">
-          {air.aplica ? (
-            <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-green-600" />
-          ) : (
-            <XCircleIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          )}
-          TUA <span className="font-mono">{air.iata}</span> ·
-        </span>
-        {exento ? (
-          <span className="inline-flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            exento
-            {!readOnly && !disabled && (
-              <button
+            {verPdf && (
+              <Button
                 type="button"
-                onClick={() => setForzarCaptura(true)}
-                className="underline underline-offset-2 hover:text-foreground"
-                title="Captura un monto por pasajero para este aeropuerto (el motor decide si aplica)."
+                size="sm"
+                variant="outline"
+                onClick={verPdf.onClick}
+                disabled={verPdf.disabled || verPdf.loading}
+                title={verPdf.title}
+                className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white disabled:opacity-60"
               >
-                capturar monto
-              </button>
+                <ArrowDownTrayIcon className="h-4 w-4" />
+                {verPdf.loading ? "Generando…" : verPdf.label}
+              </Button>
             )}
-          </span>
-        ) : readOnly ? (
-          <span className="font-mono text-xs">
-            {capturada
-              ? moneda === "MXN"
-                ? fmtMxn(linea!.monto_pax)
-                : fmtUsd(linea!.monto_pax)
-              : montoCatalogo > 0
-                ? air.moneda === "MXN"
-                  ? fmtMxn(montoCatalogo)
-                  : fmtUsd(montoCatalogo)
-                : "$0"}{" "}
-            <span className="text-muted-foreground">
-              {capturada ? "(capturado)" : "(catálogo)"} × {pax} pax
-            </span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5">
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              className="h-7 w-24 px-1.5 text-right font-mono"
-              disabled={!editable}
-              value={montoDraft}
-              placeholder={montoCatalogo > 0 ? montoCatalogo.toFixed(2) : "0.00"}
-              aria-label={`TUA por pasajero en ${air.iata}`}
-              onChange={(ev) => handleMonto(ev.target.value)}
-            />
-            <MonedaSelect
-              value={moneda}
-              onChange={handleMoneda}
-              disabled={!editable}
-              className="h-7"
-            />
-            <span className="text-xs text-muted-foreground">× {pax} pax</span>
-            {capturada && (
-              <Badge variant="outline" className="text-[10px]">
-                {linea!.monto_pax === 0 ? "en $0" : "capturado"}
-              </Badge>
-            )}
-          </span>
-        )}
-        <span className="ml-auto font-mono text-sm tabular-nums">{totalNode}</span>
-      </div>
-      {(!air.aplica || capturada) && (
-        <p className="pl-5 text-[11px] text-muted-foreground">{air.razon}</p>
-      )}
-      {!readOnly && capturada && linea!.monto_pax > 0 && moneda === "MXN" && !tcCapturado && editable && (
-        <button
-          type="button"
-          onClick={onFocusTc ?? focusTcField}
-          className="pl-5 text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
-        >
-          Captura el T.C. en «Total MXN» — sin tipo de cambio esta TUA en MXN no entra al
-          total.
-        </button>
-      )}
-    </div>
-  );
-}
-
-function Cell({
-  label,
-  value,
-  hint,
-  bold,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  bold?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("font-mono", bold ? "font-bold" : "font-medium")}>{value}</p>
-      {hint && <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>}
-    </div>
-  );
-}
-
-function Row({
-  label,
-  value,
-  hint,
-  bold,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  bold?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <p className={cn(bold && "font-semibold")}>{label}</p>
-        {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
-      </div>
-      <p className={cn("font-mono", bold && "font-bold")}>{value}</p>
-    </div>
-  );
-}
-
-
-function Segmented({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: {
-    value: string;
-    label: string;
-    /** Dato sutil junto al label (ej. "$750/hr" en el selector de tarifa). */
-    sub?: string;
-    /** Opción no disponible en el contexto actual (ej. POR_HORA sin avión). */
-    disabled?: boolean;
-  }[];
-}) {
-  return (
-    <div className="inline-flex w-full rounded-lg border border-border bg-navy-800/50 p-1">
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            type="button"
-            key={opt.value}
-            disabled={opt.disabled}
-            aria-pressed={active}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
-              active
-                ? "bg-navy-700 text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-              opt.disabled && "opacity-50 cursor-not-allowed",
-            )}
-          >
-            {opt.label}
-            {opt.sub && (
-              <span
-                className={cn(
-                  "ml-1 font-mono text-[10px] font-normal tabular-nums",
-                  // En el activo apenas más visible; en el resto, muted.
-                  active ? "text-foreground/70" : "text-muted-foreground",
-                )}
+            {onCancel && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onCancel}
+                disabled={cancelDisabled}
+                className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white disabled:opacity-60"
               >
-                {opt.sub}
+                <XMarkIcon className="h-4 w-4" />
+                {cancelLabel}
+              </Button>
+            )}
+            {/* Bloqueada (candado): la razón se LEE (no solo tooltip) y se
+                ofrece copiar el documento como cotización nueva. */}
+            {bloqueoRazon && (
+              <span className="flex max-w-[300px] items-start gap-1.5 text-right text-[11px] leading-tight text-white/90">
+                <LockClosedIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{bloqueoRazon}</span>
               </span>
             )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * Sub-bloque plegable DENTRO de «Interno · no se imprime» (F2): externo,
- * ruta operativa, detalle del cálculo. Mismo patrón de `SeccionCotizador`
- * (hidden, nunca desmonta) en un contenedor más discreto.
- */
-function SubBloque({
-  id,
-  titulo,
-  resumen,
-  aviso,
-  abierto,
-  onToggle,
-  children,
-}: {
-  id: SeccionId;
-  titulo: string;
-  resumen?: ReactNode;
-  aviso?: string | null;
-  abierto: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-border">
-      <button
-        type="button"
-        aria-expanded={abierto}
-        aria-controls={`seccion-${id}`}
-        onClick={onToggle}
-        data-guard-exempt
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
-      >
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-            {titulo}
-            {aviso && (
-              <Badge
+            {bloqueoRazon && onCopiar && (
+              <Button
+                type="button"
+                size="sm"
                 variant="outline"
-                className="border-amber-500/50 bg-amber-500/15 text-[10px] text-amber-600 dark:text-amber-400"
+                onClick={onCopiar}
+                title="Crea una cotización nueva con estos mismos datos (esta no se toca)."
+                className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white"
               >
-                {aviso}
-              </Badge>
+                <DocumentDuplicateIcon className="h-4 w-4" />
+                Copiar como nueva cotización
+              </Button>
             )}
-          </span>
-          {!abierto && resumen && (
-            <span className="block truncate text-xs text-muted-foreground">{resumen}</span>
-          )}
-        </span>
-        <ChevronDownIcon
-          className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-            abierto && "rotate-180",
-          )}
-        />
-      </button>
-      <div id={`seccion-${id}`} hidden={!abierto} className="px-3 pb-3">
-        <div className="space-y-3">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Fila del DESGLOSE del documento (F2): etiqueta del PDF a la izquierda
- * (texto o control), monto mono a la derecha, pista opcional debajo. Los
- * derivados van como texto; su etiqueta puede ser un botón que enfoca al
- * productor.
- */
-function FilaDesglose({
-  label,
-  value,
-  hint,
-  tono,
-}: {
-  label: ReactNode;
-  value: ReactNode;
-  hint?: ReactNode;
-  tono?: "aviso";
-}) {
-  return (
-    <div className="py-2">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
-        <span className="min-w-0">{label}</span>
-        <span className="ml-auto font-mono tabular-nums">{value}</span>
-      </div>
-      {hint ? (
-        <p
-          className={cn(
-            "mt-0.5 text-[11px]",
-            tono === "aviso"
-              ? "font-medium text-amber-600 dark:text-amber-400"
-              : "text-muted-foreground",
-          )}
-        >
-          {hint}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * Ojito + fecha de PDF por tramo en el ALTA (D4, F2): viven en el form
- * (`escalas[].pdf_oculto` / `pdf_fecha`) y viajan en el DTO de create.
- * Misma semántica que los toggles del detalle: presentación pura, el
- * tramo oculto se sigue cobrando; la fecha es 'YYYY-MM-DD' de pared.
- */
-function LegPdfLocal({
-  leg,
-  onChange,
-}: {
-  leg: EscalaInput;
-  onChange: (patch: Pick<EscalaInput, "pdf_oculto" | "pdf_fecha">) => void;
-}) {
-  const oculto = leg.pdf_oculto === true;
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Input
-        type="date"
-        value={leg.pdf_fecha ?? ""}
-        min="2000-01-01"
-        max="2100-12-31"
-        disabled={oculto}
-        aria-label="Fecha del tramo en el PDF (solo PDF)"
-        title="Fecha que verá el cliente en el PDF para este tramo (solo fecha, sin hora). No cambia la operación."
-        className="h-7 w-[8.75rem] px-1.5 py-0 font-mono text-[11px] md:text-[11px]"
-        onChange={(e) => onChange({ pdf_fecha: e.target.value || null })}
-      />
-      <button
-        type="button"
-        onClick={() => onChange({ pdf_oculto: !oculto })}
-        aria-pressed={oculto}
-        aria-label={oculto ? "Tramo oculto en el PDF" : "Tramo visible en el PDF"}
-        title={
-          oculto
-            ? "Oculto en el PDF del cliente (se sigue cobrando). Clic para mostrarlo."
-            : "Visible en el PDF del cliente. Clic para ocultarlo (se sigue cobrando)."
-        }
-        className={cn(
-          "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-          oculto
-            ? "text-amber-600 hover:text-amber-500 dark:text-amber-400"
-            : "text-muted-foreground hover:text-foreground",
+            {onSave && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={onSave}
+                disabled={saveDisabled}
+                title={saveTitle}
+                className="shrink-0 gap-1.5 bg-white text-brand-700 hover:bg-white/90 disabled:opacity-60"
+              >
+                <BookmarkSquareIcon className="h-4 w-4" />
+                {saveLabel}
+              </Button>
+            )}
+          </div>
+        </div>
+        {avisos.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5 border-t border-white/25 pt-1.5">
+            {avisos.map((a) => (
+              <span
+                key={a}
+                className="inline-flex items-center gap-1 rounded-full border border-white/40 bg-white/15 px-2 py-0.5 text-[11px] font-medium"
+              >
+                <ExclamationTriangleIcon className="h-3 w-3" />
+                {a}
+              </span>
+            ))}
+          </div>
         )}
-      >
-        {oculto ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
-      </button>
-    </span>
+      </div>
+    </div>
   );
 }

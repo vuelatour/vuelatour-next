@@ -1,17 +1,16 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PreviewCache } from "@/lib/admin/quote-preview-cache";
 import type { CalculateQuoteRequest } from "@/types/quote";
 
 /**
- * VISTA PREVIA REAL de la hoja 1 (F1, 8-sep-2026).
+ * HOJA REAL del PDF (F1, 8-sep-2026). Desde el ensamble form-as-document
+ * (8-sep) la hoja editable `QuoteSheet` ES la vista previa; este hook queda
+ * para pedir la hoja del PDF GUARDADO con el form limpio (una vez por
+ * versión) y reutilizar su MAPA (`extraerMapaSvgDeHtml`) — en lectura es la
+ * única fuente del mapa. El panel/diálogo de vista previa, el anclaje
+ * (`vt-cotizador-preview-v1`) y `useMediaQuery` se retiraron con él.
  *
  * Principio (§6 del rediseño): la preview NO es un dibujo del panel — es el
  * HTML que WeasyPrint convierte en PDF, armado por el API con el MISMO
@@ -171,105 +170,4 @@ export function useQuotePreviewHtml({
     noDisponible: error?.code === PREVIEW_NO_DISPONIBLE,
     reintentar,
   };
-}
-
-// ===== Preferencia de ubicación (D6) =====
-
-const PREFS_LS_KEY = "vt-cotizador-preview-v1";
-
-/** Ancho mínimo para ANCLAR la vista previa a la derecha del documento. */
-export const PREVIEW_ANCLADA_MIN_PX = 1600;
-export const PREVIEW_ANCLADA_QUERY = `(min-width: ${PREVIEW_ANCLADA_MIN_PX}px)`;
-/** Pantalla ANGOSTA: pill «Formulario | Vista previa» (< lg). */
-export const PREVIEW_ANGOSTA_QUERY = "(max-width: 1023.98px)";
-
-interface PrefsPreview {
-  /** Anclada a la derecha del documento (solo aplica en ≥1600 px). */
-  anclada: boolean;
-}
-
-function leerPrefs(): Partial<PrefsPreview> | null {
-  try {
-    const raw = localStorage.getItem(PREFS_LS_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<PrefsPreview>;
-    return p && typeof p === "object" ? p : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * `matchMedia` como store externo: en el servidor y en la hidratación
- * devuelve false (layout estable); tras montar sigue al viewport.
- */
-export function useMediaQuery(query: string): boolean {
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      if (typeof window === "undefined") return () => {};
-      const mql = window.matchMedia(query);
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    },
-    [query],
-  );
-  return useSyncExternalStore(
-    subscribe,
-    () => (typeof window === "undefined" ? false : window.matchMedia(query).matches),
-    () => false,
-  );
-}
-
-// Store externo mínimo de la preferencia: localStorage (+ evento `storage`
-// entre pestañas) y, sin preferencia guardada, el media query de 1600 px.
-const prefsListeners = new Set<() => void>();
-let prefsSesion: PrefsPreview | null = null; // respaldo si no hay storage
-
-function subscribePrefs(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  prefsListeners.add(onChange);
-  const mql = window.matchMedia(PREVIEW_ANCLADA_QUERY);
-  mql.addEventListener("change", onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    prefsListeners.delete(onChange);
-    mql.removeEventListener("change", onChange);
-    window.removeEventListener("storage", onChange);
-  };
-}
-
-function snapshotAnclada(): boolean {
-  const guardado = leerPrefs() ?? prefsSesion;
-  if (typeof guardado?.anclada === "boolean") return guardado.anclada;
-  return window.matchMedia(PREVIEW_ANCLADA_QUERY).matches;
-}
-
-const noop = () => () => {};
-
-/**
- * Preferencia «anclada» con memoria por usuario (localStorage). Default:
- * anclada solo en ≥1600 px (D6). `hidratado` evita decidir el layout con el
- * valor del servidor (en SSR/hidratación ambos son false).
- */
-export function useQuotePreviewPrefs(): {
-  anclada: boolean;
-  setAnclada: (v: boolean) => void;
-  hidratado: boolean;
-} {
-  const anclada = useSyncExternalStore(subscribePrefs, snapshotAnclada, () => false);
-  const hidratado = useSyncExternalStore(
-    noop,
-    () => true,
-    () => false,
-  );
-  const setAnclada = useCallback((v: boolean) => {
-    prefsSesion = { anclada: v };
-    try {
-      localStorage.setItem(PREFS_LS_KEY, JSON.stringify({ anclada: v }));
-    } catch {
-      // Sin storage: vive solo en la sesión (prefsSesion).
-    }
-    prefsListeners.forEach((l) => l());
-  }, []);
-  return { anclada, setAnclada, hidratado };
 }

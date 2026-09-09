@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "gen:api-types": "openapi-typescript \"${API_URL:-http://localhost:3001}/v1/docs-json\" -o src/types/api.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:hoja-css": "node scripts/sync-hoja-css.mjs",
+    "gen:hoja-fixture": "../vuelatour-pyservices/.venv/bin/python scripts/gen-hoja1-fixture.py"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

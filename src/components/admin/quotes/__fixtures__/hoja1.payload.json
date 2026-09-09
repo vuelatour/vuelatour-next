@@ -1,0 +1,43 @@
+{
+  "folio": "1042",
+  "fecha": "2026-09-08T14:00:00Z",
+  "cliente": "Cliente Demo S.A.",
+  "origen": "CUN",
+  "destino": "CUN",
+  "tipo": "REDONDO",
+  "pasajeros": 4,
+  "fecha_traslado_inicial": "2026-09-12T13:00:00Z",
+  "fecha_traslado_final": "2026-09-12T23:00:00Z",
+  "ruta": "CUN → HOL → CZM → CUN",
+  "escalas": [
+    { "orden": 1, "origen": "CUN", "destino": "HOL", "fecha": "2026-09-12" },
+    { "orden": 2, "origen": "HOL", "destino": "CZM", "fecha": null },
+    { "orden": 3, "origen": "CZM", "destino": "CUN", "fecha": null }
+  ],
+  "tiempo_cobrable_hr": 2.4,
+  "tarifa_hora_usd": 1650,
+  "subtotal_usd": 4110,
+  "tuas_usd": 100,
+  "tuas_detalle": ["TUA CUN · $25.00 × 4 pax"],
+  "extras": [{ "concepto": "Catering", "monto_usd": 170, "moneda": "USD", "monto_nativo": 170, "aplica_iva": true }],
+  "extras_total_usd": 170,
+  "viaticos_pernocta_usd": 150,
+  "descuento_usd": 20,
+  "iva_pct": 16,
+  "iva_usd": 734.4,
+  "total_usd": 5324.4,
+  "total_mxn": 96371.64,
+  "tc_usd_mxn": 18.1,
+  "moneda": "USD",
+  "notas": "Sujeto a slot en CUN",
+  "mostrar_tarifa_hora": true,
+  "mostrar_itinerario": true,
+  "matricula": "XA-VGV",
+  "aeronave_cotizada_modelo": "Piper Seneca V",
+  "modelos_cotizados": ["Piper Seneca V"],
+  "mapa_puntos": [
+    { "orden": 1, "origen_iata": "CUN", "destino_iata": "HOL", "o_lat": 21.0365, "o_lon": -86.8771, "d_lat": 21.5216, "d_lon": -87.3796, "es_ferry": false },
+    { "orden": 2, "origen_iata": "HOL", "destino_iata": "CZM", "o_lat": 21.5216, "o_lon": -87.3796, "d_lat": 20.5224, "d_lon": -86.9256, "es_ferry": false },
+    { "orden": 3, "origen_iata": "CZM", "destino_iata": "CUN", "o_lat": 20.5224, "o_lon": -86.9256, "d_lat": 21.0365, "d_lon": -86.8771, "es_ferry": false }
+  ]
+}

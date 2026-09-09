@@ -1,0 +1,43 @@
+{
+  "folio": "1044",
+  "fecha": "2026-09-09T03:15:00Z",
+  "cliente": "Grupo Mérida",
+  "origen": "CUN",
+  "destino": "CUN",
+  "tipo": "MULTIESCALA",
+  "pasajeros": 3,
+  "fecha_traslado_inicial": "2026-11-20T11:00:00Z",
+  "fecha_traslado_final": "2026-11-22T14:00:00Z",
+  "ruta": "CUN → MID → VSA → MID",
+  "escalas": [
+    { "orden": 1, "origen": "CUN", "destino": "MID", "fecha": "2026-11-20" },
+    { "orden": 2, "origen": "MID", "destino": "VSA", "fecha": null },
+    { "orden": 3, "origen": "VSA", "destino": "MID", "fecha": "2026-11-22" }
+  ],
+  "tiempo_cobrable_hr": 5.2,
+  "tarifa_hora_usd": 1650,
+  "subtotal_usd": 8580,
+  "tuas_usd": 75,
+  "tuas_detalle": ["TUA CUN · $25.00 × 3 pax"],
+  "extras": [],
+  "extras_total_usd": 0,
+  "viaticos_pernocta_usd": 300,
+  "descuento_usd": 0,
+  "iva_pct": 0,
+  "iva_usd": 0,
+  "total_usd": 8955,
+  "total_mxn": null,
+  "tc_usd_mxn": null,
+  "moneda": "USD",
+  "notas": null,
+  "mostrar_tarifa_hora": true,
+  "mostrar_itinerario": true,
+  "matricula": "XA-KOD",
+  "aeronave_cotizada_modelo": "Kodiak 100",
+  "modelos_cotizados": ["Kodiak 100"],
+  "mapa_puntos": [
+    { "orden": 1, "origen_iata": "CUN", "destino_iata": "MID", "o_lat": 21.0365, "o_lon": -86.8771, "d_lat": 20.937, "d_lon": -89.6577, "es_ferry": false },
+    { "orden": 2, "origen_iata": "MID", "destino_iata": "VSA", "o_lat": 20.937, "o_lon": -89.6577, "d_lat": 17.997, "d_lon": -92.8174, "es_ferry": false },
+    { "orden": 3, "origen_iata": "VSA", "destino_iata": "MID", "o_lat": 17.997, "o_lon": -92.8174, "d_lat": 20.937, "d_lon": -89.6577, "es_ferry": false }
+  ]
+}

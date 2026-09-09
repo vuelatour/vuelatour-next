@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { haversineNm } from "@/lib/admin/geo";
-import { getDistanciasAction } from "@/app/admin/distancias/actions";
+import { useLookupNm } from "@/hooks/use-lookup-nm";
 import {
   PlusIcon,
   TrashIcon,
@@ -110,99 +109,11 @@ export function QuoteLegsEditor({
     [airports],
   );
 
-  // Mapa par origen-destino → NM, construido desde los tramos de las rutas
-  // Catálogo de distancias por aerovía (fuente prioritaria del autollenado:
-  // la distancia directa queda corta cuando hay que volar por aerovía).
-  const [distanciasCatalogo, setDistanciasCatalogo] = useState<
-    Map<string, number>
-  >(new Map());
-  // Hasta que el catálogo responda, lookupNm NO cae al haversine: una ruta
-  // aplicada en frío congelaría la distancia directa (más corta que la
-  // aerovía) y el efecto de autollenado ya no la corrige (millas > 0).
-  const [catalogoListo, setCatalogoListo] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    getDistanciasAction().then((r) => {
-      if (!alive || !r.ok || !r.data) return;
-      const map = new Map<string, number>();
-      for (const d of r.data) {
-        const o = d.origen_iata.toUpperCase();
-        const dd = d.destino_iata.toUpperCase();
-        const nm = Number(d.millas_nauticas);
-        if (!nm) continue;
-        map.set(`${o}-${dd}`, nm);
-        // La aerovía de regreso puede diferir: solo se asume simétrica si el
-        // par inverso no está cargado explícitamente.
-        if (!map.has(`${dd}-${o}`)) map.set(`${dd}-${o}`, nm);
-      }
-      // Reaplica los pares explícitos por si el inverso pisó alguno.
-      for (const d of r.data) {
-        map.set(
-          `${d.origen_iata.toUpperCase()}-${d.destino_iata.toUpperCase()}`,
-          Number(d.millas_nauticas),
-        );
-      }
-      setDistanciasCatalogo(map);
-    })
-      .catch(() => {})
-      .finally(() => {
-        // Aun si el fetch falla, liberamos el haversine (mejor una distancia
-        // directa editable que millas en 0 para siempre).
-        if (alive) setCatalogoListo(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // guardadas (cada tramo es one-way). Ambos sentidos comparten millas.
-  const nmByPair = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of routes ?? []) {
-      for (const t of r.tramos ?? []) {
-        const o = t.origen_iata.toUpperCase();
-        const d = t.destino_iata.toUpperCase();
-        const nm = Number(t.millas_nauticas);
-        if (!nm) continue;
-        if (!map.has(`${o}-${d}`)) map.set(`${o}-${d}`, nm);
-        if (!map.has(`${d}-${o}`)) map.set(`${d}-${o}`, nm);
-      }
-    }
-    return map;
-  }, [routes]);
-
-  // Coordenadas por IATA (para calcular distancia cuando no hay ruta guardada).
-  const coordByIata = useMemo(() => {
-    const map = new Map<string, { lat: number; lon: number }>();
-    for (const a of airports) {
-      const lat = Number(a.latitud);
-      const lon = Number(a.longitud);
-      if (a.latitud == null || a.longitud == null) continue;
-      if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
-      map.set(a.iata.toUpperCase(), { lat, lon });
-    }
-    return map;
-  }, [airports]);
-
-  /**
-   * Millas náuticas del par: primero busca en los tramos de rutas guardadas
-   * (dato medido); si no existe, calcula la distancia ortodrómica con las
-   * coordenadas del catálogo (editable después).
-   */
-  const lookupNm = (origen: string, destino: string): number | null => {
-    if (!origen || !destino) return null;
-    const o = origen.toUpperCase();
-    const d = destino.toUpperCase();
-    // 1) Catálogo de distancias por aerovía (dato validado por operaciones).
-    const catalogo = distanciasCatalogo.get(`${o}-${d}`);
-    if (catalogo != null) return catalogo;
-    const saved = nmByPair.get(`${o}-${d}`);
-    if (saved != null) return saved;
-    const co = coordByIata.get(o);
-    const cd = coordByIata.get(d);
-    if (!co || !cd || !catalogoListo) return null;
-    return Math.round(haversineNm(co.lat, co.lon, cd.lat, cd.lon) * 100) / 100;
-  };
+  // Millas náuticas del par (catálogo de distancias por aerovía → rutas
+  // guardadas → haversine cuando el catálogo ya respondió). FUENTE ÚNICA
+  // `useLookupNm` (8-sep-2026): la hoja editable (`QuoteSheetItinerario`)
+  // autocompleta con la misma regla.
+  const { lookupNm } = useLookupNm(routes, airports);
 
   // Rellena millas faltantes en tramos ya completos (origen+destino) — p. ej.
   // al hidratar una plantilla o al cargar el catálogo de coordenadas. Se dispara
@@ -224,10 +135,10 @@ export function QuoteLegsEditor({
       return { ...l, millas_nauticas: nm };
     });
     if (changed) onChange(next);
-    // lookupNm depende de nmByPair/coordByIata/distanciasCatalogo (incluidos);
+    // lookupNm ya es estable por sus fuentes (useCallback en el hook);
     // value se cubre con endpointsKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpointsKey, nmByPair, coordByIata, distanciasCatalogo, catalogoListo]);
+  }, [endpointsKey, lookupNm]);
 
   const updateLeg = (idx: number, patch: Partial<EscalaInput>) => {
     const next = [...value];

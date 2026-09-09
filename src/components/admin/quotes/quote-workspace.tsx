@@ -52,10 +52,12 @@ import type {
  * servicio): lectura con 🔒, la razón en la barra del total y «Copiar como
  * nueva cotización».
  *
- * Lo demás sigue aquí y en el mismo sitio: barra de acciones (PDF, confirmar,
- * cancelar, ver vuelo), presencia, badges de grupo/combinado, cobros,
- * historial, operación y los toggles de PDF por tramo (dentro del
- * itinerario, también en edición). La card «Ajuste rápido» se retiró (F3,
+ * Lo demás sigue aquí: barra de acciones (PDF, confirmar, cancelar, ver
+ * vuelo), presencia, badges de grupo/combinado y, DEBAJO de la hoja,
+ * cobros, historial y operación. Los toggles de PDF por tramo van al margen
+ * de la fila del itinerario de la hoja (`tramoExtra`, también en edición).
+ * Ensamble form-as-document (8-sep-2026): la hoja 1 editable ES la vista
+ * previa; el panel «Interno · no se imprime» colapsable va a su derecha. La card «Ajuste rápido» se retiró (F3,
  * D2): pasajeros y extras se editan en el documento; el botón de la barra
  * solo lleva al campo de pasajeros.
  *
@@ -104,11 +106,6 @@ export function QuoteWorkspace({
   const [edicion, setEdicion] = useState<EstadoEdicionCotizador | null>(null);
   const sucio = edicion?.sucio === true;
   const soloPresentacion = sucio && edicion?.soloPresentacion === true;
-  // Contenedor del bloque «Interno · no se imprime» (F2): el cotizador lo
-  // monta aquí por portal en ≥1440 px (callback ref: sin efectos, el
-  // elemento llega al cotizador en cuanto existe).
-  const [internoSlot, setInternoSlot] = useState<HTMLElement | null>(null);
-
   // `?revisar=1` (links viejos a /revise, F3): ya no activa nada — solo se
   // limpia de la URL para que favoritos/correos viejos no la arrastren.
   useEffect(() => {
@@ -126,9 +123,13 @@ export function QuoteWorkspace({
       edicion.enfocarPasajeros();
       return;
     }
+    // En la hoja `pasajeros-field` ES el input invisible (no un contenedor).
     const el = document.getElementById("pasajeros-field");
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    window.setTimeout(() => el?.querySelector("input")?.focus(), 400);
+    window.setTimeout(() => {
+      const ctl = el instanceof HTMLInputElement ? el : el?.querySelector("input");
+      ctl?.focus();
+    }, 400);
   };
 
   // CONFIRMADO/RESERVA con tripulación: el primer cambio pide confirmación.
@@ -370,8 +371,6 @@ export function QuoteWorkspace({
               // «Ajuste rápido» (D2): atajo al campo de pasajeros del documento;
               // solo tiene sentido si el documento se puede editar.
               onAjusteRapido={editable ? irAjusteRapido : undefined}
-              // «Vista previa hoja 1» (F1): también con la cotización bloqueada.
-              onVistaPrevia={edicion ? () => edicion.abrirVistaPrevia() : undefined}
               rol={rol}
             />
           </div>
@@ -429,45 +428,33 @@ export function QuoteWorkspace({
         </div>
       )}
 
-      {/* Dos columnas solo desde xl (≥1280 px): entre 1024 y 1279 el aside de
-          22rem dejaba al documento ~340 px (con el sidebar de 16rem) y el
-          itinerario se aplastaba — ahí se apila (revisión 8-sep).
-          ≥1600 px (F1): la vista previa real puede ir anclada dentro de la
-          columna del documento; el aside cede ancho (20rem) para que quepa. */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] min-[1600px]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
-        {/* Columna principal: el cotizador completo (lectura ⇄ edición). */}
-        <div className="min-w-0">
-          <QuoteCalculator
-            mode="revise"
-            aircraft={aircraft}
-            routes={routes}
-            airports={airports}
-            initialQuote={quote}
-            clientName={clientName ?? quote.cliente_id}
-            clientEsInterno={clientEsInterno}
-            bloqueadoRazon={editable ? null : candado.razon}
-            requiereConfirmacionEdicion={requiereConfirmacionEdicion}
-            onEstadoEdicion={setEdicion}
-            // El cotizador ya hace router.refresh() tras guardar; aquí no hay
-            // modo que cerrar (la edición es directa).
-            onGuardado={() => undefined}
-            tramoExtra={tramoExtraLectura}
-            notaTramos={notaTramosLectura}
-            escalasPdf={escalasPdfPreview}
-            internoSlot={internoSlot}
-          />
-        </div>
+      {/* La hoja 1 (papel claro sobre el fondo del shell) con el panel
+          «Interno · no se imprime» colapsable a su derecha: los pinta el
+          cotizador. Cobros, historial y operación van DEBAJO de la hoja
+          (ensamble form-as-document, 8-sep-2026). */}
+      <QuoteCalculator
+        mode="revise"
+        aircraft={aircraft}
+        routes={routes}
+        airports={airports}
+        initialQuote={quote}
+        clientName={clientName ?? quote.cliente_id}
+        clientEsInterno={clientEsInterno}
+        bloqueadoRazon={editable ? null : candado.razon}
+        requiereConfirmacionEdicion={requiereConfirmacionEdicion}
+        onEstadoEdicion={setEdicion}
+        // El cotizador ya hace router.refresh() tras guardar; aquí no hay
+        // modo que cerrar (la edición es directa).
+        onGuardado={() => undefined}
+        tramoExtra={tramoExtraLectura}
+        notaTramos={notaTramosLectura}
+        escalasPdf={escalasPdfPreview}
+      />
 
-        {/* Columna lateral: bloque interno del cotizador (portal, ≥1440 px),
-            cobros, historial, operación. */}
-        <aside className="min-w-0 space-y-6">
-          {/* «Interno · no se imprime» (F2): lo llena el cotizador por portal
-              en ≥1440 px; en pantallas menores va al pie del documento. */}
-          <div
-            ref={setInternoSlot}
-            className="hidden min-w-0 min-[1440px]:block empty:hidden"
-          />
-          {cobros.length > 0 && (
+      {/* Debajo de la hoja: cobros, historial y operación. */}
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {cobros.length > 0 && (
+          <div className="min-w-0 md:col-span-2 xl:col-span-1">
             <QuoteCobrosCard
               quoteId={quote.id}
               quoteFolio={quote.folio}
@@ -477,53 +464,53 @@ export function QuoteWorkspace({
               // Reembolsos: solo roles de oficina.
               puedeReembolsar={rol === "ADMIN" || rol === "COORDINADOR"}
             />
-          )}
+          </div>
+        )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Historial</CardTitle>
-              <CardDescription className="text-xs">
-                {versions.length} {versions.length === 1 ? "versión" : "versiones"}. Cada
-                guardado con cambios de precio genera un registro inmutable.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <QuoteVersionsTimeline
-                versions={versions}
-                currentVersion={quote.cotizacion_version}
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle className="text-sm">Historial</CardTitle>
+            <CardDescription className="text-xs">
+              {versions.length} {versions.length === 1 ? "versión" : "versiones"}. Cada
+              guardado con cambios de precio genera un registro inmutable.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <QuoteVersionsTimeline
+              versions={versions}
+              currentVersion={quote.cotizacion_version}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Operación: lo que no vive en la hoja ni en el panel interno. */}
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle className="text-sm">Operación</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3 text-sm">
+            <Cell label="Tipo de vuelo" value={quote.tipo} />
+            <Cell label="Fecha solicitud" value={fmtDateTime(quote.fecha_solicitud)} />
+            {quote.fecha_confirmacion && (
+              <Cell label="Confirmado" value={fmtDateTime(quote.fecha_confirmacion)} />
+            )}
+            {quote.fecha_cancelacion && (
+              <Cell
+                label="Cancelado"
+                value={fmtDateTime(quote.fecha_cancelacion)}
+                hint={quote.motivo_cancelacion ?? undefined}
               />
-            </CardContent>
-          </Card>
-
-          {/* Operación: lo que no vive en las secciones del cotizador. */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Operación</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              <Cell label="Tipo de vuelo" value={quote.tipo} />
-              <Cell label="Fecha solicitud" value={fmtDateTime(quote.fecha_solicitud)} />
-              {quote.fecha_confirmacion && (
-                <Cell label="Confirmado" value={fmtDateTime(quote.fecha_confirmacion)} />
-              )}
-              {quote.fecha_cancelacion && (
-                <Cell
-                  label="Cancelado"
-                  value={fmtDateTime(quote.fecha_cancelacion)}
-                  hint={quote.motivo_cancelacion ?? undefined}
-                />
-              )}
-              {candado.esCancelada && candado.canRevise && !sucio && (
-                <p className="col-span-2 text-[11px] text-muted-foreground">
-                  {RAZON_REVISION.cancelada}
-                </p>
-              )}
-              <p className="col-span-2 px-1 pt-1 text-[11px] text-muted-foreground">
-                {TZ_LABEL}
+            )}
+            {candado.esCancelada && candado.canRevise && !sucio && (
+              <p className="col-span-2 text-[11px] text-muted-foreground">
+                {RAZON_REVISION.cancelada}
               </p>
-            </CardContent>
-          </Card>
-        </aside>
+            )}
+            <p className="col-span-2 px-1 pt-1 text-[11px] text-muted-foreground">
+              {TZ_LABEL}
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

@@ -1,0 +1,44 @@
+{
+  "folio": "1043",
+  "fecha": "2026-09-08T20:30:00Z",
+  "cliente": "Viajes Península & Cía.",
+  "origen": "CUN",
+  "destino": "CUN",
+  "tipo": "MULTIESCALA",
+  "pasajeros": 6,
+  "fecha_traslado_inicial": "2026-10-01T12:00:00Z",
+  "fecha_traslado_final": "2026-10-02T00:30:00Z",
+  "ruta": "CUN → PCE → CUN",
+  "escalas": [
+    { "orden": 1, "origen": "CUN", "destino": "PCE", "fecha": null },
+    { "orden": 2, "origen": "PCE", "destino": "CUN", "fecha": null }
+  ],
+  "tiempo_cobrable_hr": 3.5,
+  "tarifa_hora_usd": 1200,
+  "subtotal_usd": 4200,
+  "tuas_usd": 259.59,
+  "tuas_detalle": ["TUA CUN · $25.00 × 6 pax", "TUA PCE · $330.60 MXN × 6 pax = $1983.60 MXN"],
+  "extras": [
+    { "concepto": "Catering", "monto_usd": 200, "moneda": "USD", "monto_nativo": 200, "aplica_iva": true },
+    { "concepto": "Transporte terrestre", "monto_usd": 82.87, "moneda": "MXN", "monto_nativo": 1500, "aplica_iva": true }
+  ],
+  "extras_total_usd": 282.87,
+  "viaticos_pernocta_usd": 0,
+  "descuento_usd": 50,
+  "iva_pct": 16,
+  "iva_usd": 750.79,
+  "total_usd": 5443.25,
+  "total_mxn": 98522.83,
+  "tc_usd_mxn": 18.1,
+  "moneda": "USD",
+  "notas": "Incluye espera en PCE.\nSujeto a disponibilidad de slot.",
+  "mostrar_tarifa_hora": false,
+  "mostrar_itinerario": true,
+  "matricula": "XA-ABC",
+  "aeronave_cotizada_modelo": "Cessna Grand Caravan",
+  "modelos_cotizados": ["Cessna Grand Caravan"],
+  "mapa_puntos": [
+    { "orden": 1, "origen_iata": "CUN", "destino_iata": "PCE", "o_lat": 21.0365, "o_lon": -86.8771, "d_lat": 15.8769, "d_lon": -97.0892, "es_ferry": false },
+    { "orden": 2, "origen_iata": "PCE", "destino_iata": "CUN", "o_lat": 15.8769, "o_lon": -97.0892, "d_lat": 21.0365, "d_lon": -86.8771, "es_ferry": false }
+  ]
+}
