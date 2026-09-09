@@ -800,6 +800,7 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
                         : undefined
                 }
               />
+              <HorasPorTramo breakdown={breakdown} lectura />
               <div className="grid grid-cols-2 gap-3">
                 <Dato
                   label="Sobrevuelo (hr)"
@@ -928,19 +929,25 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
                   </div>
                 )}
               </div>
+              {/* Horas POR TRAMO (solo lectura) arriba de sobrevuelo/cobrable:
+                  aquí se ve de dónde sale el total que se pacta abajo. */}
+              <HorasPorTramo breakdown={breakdown} lectura={false} />
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Sobrevuelo (hr)" hint="Tiempo extra sobre la zona; se suma al cobrable">
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={24}
-                    placeholder="0"
-                    className="font-mono"
-                    {...register("sobrevuelo_hr")}
-                  />
-                  {sobrevueloAporteNode}
-                </Field>
+                {/* Ancla `sobrevuelo-field` (atajo desde la hoja). */}
+                <div id="sobrevuelo-field" className="scroll-mt-24">
+                  <Field label="Sobrevuelo (hr)" hint="Tiempo extra sobre la zona; se suma al cobrable">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={24}
+                      placeholder="0"
+                      className="font-mono"
+                      {...register("sobrevuelo_hr")}
+                    />
+                    {sobrevueloAporteNode}
+                  </Field>
+                </div>
                 {/* COBRABLE pactado: la suma final de horas (vacío = regla,
                     mínimo 1 hr). Ancla `cobrable-field`. */}
                 <div id="cobrable-field" className="scroll-mt-24">
@@ -1801,6 +1808,78 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
         </SubBloque>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Horas POR TRAMO (feedback 9-sep-2026: «¿dónde se ajusta la hora volada por
+ * tramo?»): tabla compacta de SOLO lectura desde `breakdown.tramos` (millas
+ * ÷ velocidad + calzos, ya resuelto por el motor) con la fila total de
+ * `breakdown.tiempos`. El motor NO tiene override por tramo: las horas de un
+ * tramo cambian con sus millas (⋯ en la hoja) y el total se pacta en
+ * «Cobrable pactado». Aquí no se calcula nada — ni la suma.
+ */
+function HorasPorTramo({ breakdown, lectura }: { breakdown: QuoteBreakdown | null; lectura: boolean }) {
+  const tramos = breakdown?.tramos ?? [];
+  if (!breakdown || tramos.length === 0) return null;
+  const t = breakdown.tiempos;
+  const sobrevuelo = Number(t.sobrevuelo_hr) > 0 ? Number(t.sobrevuelo_hr) : 0;
+  const h = (n: number | null | undefined) => (n == null ? "—" : `${fmtDecimal(n, 2)} h`);
+  const nm = (n: number) => new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 }).format(Number(n) || 0);
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] uppercase tracking-wider text-foreground/70">Horas por tramo</p>
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-xs">
+          <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1 text-left font-medium">#</th>
+              <th className="px-2 py-1 text-left font-medium">Tramo</th>
+              <th className="px-2 py-1 text-right font-medium">NM</th>
+              <th className="px-2 py-1 text-right font-medium">h</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tramos.map((tr) => (
+              <tr key={tr.orden} className="border-t border-border/60">
+                <td className="px-2 py-1 text-muted-foreground">{tr.orden}</td>
+                <td className="px-2 py-1 font-mono">
+                  {tr.origen} → {tr.destino}
+                  {tr.es_ferry && <span className="ml-1 font-sans text-[10px] text-muted-foreground">ferry</span>}
+                </td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">{nm(tr.millas)}</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">{fmtDecimal(tr.tiempo_hr, 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border">
+              <td colSpan={4} className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                Vuelo {h(t.vuelo_hr)} + calzos {h(t.calzos_hr)}
+                {sobrevuelo > 0 ? ` + sobrevuelo ${h(sobrevuelo)}` : ""} ={" "}
+                {t.cobrable_proviene_de_override ? (
+                  <>
+                    regla {h(t.cobrable_hr_regla ?? null)} ·{" "}
+                    <span className="font-medium text-foreground">pactado {h(t.cobrable_hr)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-foreground">cobrable {h(t.cobrable_hr)}</span>
+                    {t.minimo_hora_aplicado ? " (hora mínima)" : ""}
+                  </>
+                )}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {!lectura && (
+        <p className="text-[11px] text-muted-foreground">
+          Las horas por tramo se calculan; se ajustan cambiando las millas del tramo (⋯ en la hoja) o
+          pactando el total aquí.
+        </p>
+      )}
+    </div>
   );
 }
 

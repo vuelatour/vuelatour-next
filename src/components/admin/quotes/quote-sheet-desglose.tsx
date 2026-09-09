@@ -36,7 +36,10 @@ import {
   useCerrarFuera,
   useFocoPopover,
 } from "./quote-sheet-fields";
-import type { OnCambioHoja, QuoteSheetValores } from "./quote-sheet-types";
+import type { OnAbrirInterno, OnCambioHoja, QuoteSheetValores } from "./quote-sheet-types";
+
+/** Tooltip del atajo «ajustar» junto a «Servicio aéreo» (tarifa y horas NO se editan en la hoja). */
+const TITULO_AJUSTAR_TARIFA = "Tarifa por hora y horas cobrables se ajustan en Interno › Tarifa y horas";
 
 /**
  * DESGLOSE de la hoja editable (form-as-document, 8-sep-2026): la MISMA
@@ -73,6 +76,11 @@ export interface QuoteSheetDesgloseProps {
   grupo?: { id: string; folio: number | string | null } | null;
   /** id DOM del input de T.C. (ancla `tc-usd-mxn-field` del cotizador). */
   idTc?: string;
+  /**
+   * Atajo a «Interno › Tarifa y horas» junto a «Servicio aéreo» (feedback
+   * 9-sep-2026). Solo en edición; sin la prop no se pinta.
+   */
+  onAbrirInterno?: OnAbrirInterno;
 }
 
 export function QuoteSheetDesglose({
@@ -84,6 +92,7 @@ export function QuoteSheetDesglose({
   totalRespaldo,
   grupo,
   idTc = "tc-usd-mxn-field",
+  onAbrirInterno,
 }: QuoteSheetDesgloseProps) {
   const b = breakdown;
   const val = (n: number | null | undefined) => (n == null ? "—" : moneyPdf(n));
@@ -98,6 +107,14 @@ export function QuoteSheetDesglose({
   const etiquetaServicio = conTarifa
     ? `Servicio aéreo (${numeroG(b!.tiempos.cobrable_hr)} h × ${moneyPdf(b!.tarifa.usd_por_hora)}/hr)`
     : "Servicio aéreo";
+  // Atajo «ajustar» (croma, no se imprime): si la etiqueta impresa ya trae
+  // «(h × $/hr)» —toggle «mostrar tarifa» encendido— o no hay cálculo, solo
+  // «ajustar»; si no, antepone las horas × tarifa del breakdown para que el
+  // operador VEA con qué se está cobrando el servicio aéreo.
+  const textoAjustar =
+    conTarifa || !b
+      ? "ajustar"
+      : `${numero2(b.tiempos.cobrable_hr)} h × ${moneyPdf(b.tarifa.usd_por_hora)}/hr · ajustar`;
 
   // ----- TUAS por aeropuerto -----
   const filas: TuasFila[] = b?.tuas.filas ?? [];
@@ -164,9 +181,32 @@ export function QuoteSheetDesglose({
       <h2>Desglose</h2>
       <table className="totales">
         <tbody>
-          {/* Servicio aéreo */}
+          {/* Servicio aéreo. La etiqueta impresa NO cambia; en edición, EN
+              LA LÍNEA (`.cot-acciones`, como «+ nuevo cliente»: en el margen
+              izquierdo —74 px— «1.60 h × $650.00/hr · ajustar» se saldría
+              del papel y en el derecho caería sobre el monto) va el atajo a
+              Interno › Tarifa y horas, donde SÍ se ajustan tarifa y horas. */}
           <tr className="cot-fila">
-            <td className="lbl">{etiquetaServicio}</td>
+            <td className="lbl">
+              {etiquetaServicio}
+              {!lectura && onAbrirInterno && (
+                <span className="cot-acciones" {...UI}>
+                  {/* Espacio real = oportunidad de salto antes del «·». */}
+                  {" "}
+                  <span className="cot-sep">·</span>
+                  <button
+                    type="button"
+                    className="cot-liga"
+                    data-guard-exempt
+                    onClick={() => onAbrirInterno("tarifa")}
+                    title={TITULO_AJUSTAR_TARIFA}
+                    aria-label={`${textoAjustar} — ${TITULO_AJUSTAR_TARIFA}`}
+                  >
+                    {textoAjustar}
+                  </button>
+                </span>
+              )}
+            </td>
             <td className="val">{val(servicio)}</td>
           </tr>
 

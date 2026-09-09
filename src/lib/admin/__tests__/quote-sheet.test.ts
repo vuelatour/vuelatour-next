@@ -9,6 +9,7 @@ import {
   fechaLegibleDeInput,
   fechaLegibleFlexible,
   fechasTrasladoImpresas,
+  horasTramoTexto,
   modelosCotizadosPdf,
   moneyPdf,
   numeroG,
@@ -17,11 +18,12 @@ import {
   servicioAereoImpresoUsd,
   porcentajeEntero,
   subtotalSinIvaUsd,
+  tramoCalculado,
   tramosParaMapa,
   tramosVisibles,
   tuasDetalleLegado,
 } from "@/lib/admin/quote-sheet";
-import type { QuoteBreakdown } from "@/types/quote";
+import type { QuoteBreakdown, TramoBreakdown } from "@/types/quote";
 
 describe("formatos idénticos al armador de pyservices", () => {
   it("moneyPdf = _money (en-US, 2 decimales)", () => {
@@ -231,5 +233,31 @@ describe("reglas del armador replicadas (fidelidad 8-sep-2026)", () => {
     expect(tuasDetalleLegado(b)).toEqual(["TUA CUN · $25.00 × 4 pax"]);
     expect(tuasDetalleLegado({ ...b, tuas: { filas: [] } } as unknown as QuoteBreakdown)).toEqual([]);
     expect(tuasDetalleLegado(null)).toEqual([]);
+  });
+});
+
+describe("horas por tramo (feedback 9-sep-2026: solo se pintan, nunca se calculan)", () => {
+  const tramo = (orden: number, origen: string, destino: string, tiempo_hr: number): TramoBreakdown =>
+    ({ orden, origen, destino, millas: 60, pasajeros: 4, es_ferry: false, tiempo_hr, tuas_usd: 0 }) as TramoBreakdown;
+  const tramos = [tramo(1, "CUN", "HOL", 0.4833), tramo(2, "HOL", "CZM", 0.5944)];
+
+  it("tramoCalculado: mismo índice y mismos extremos; si no, null (breakdown atrasado)", () => {
+    expect(tramoCalculado(tramos, 0, { origen_iata: "CUN", destino_iata: "HOL" })?.tiempo_hr).toBe(0.4833);
+    expect(tramoCalculado(tramos, 1, { origen_iata: "HOL", destino_iata: "CZM" })?.orden).toBe(2);
+    // Fila nueva sin cálculo todavía.
+    expect(tramoCalculado(tramos, 2, { origen_iata: "CZM", destino_iata: "CUN" })).toBeNull();
+    // Tramo quitado: el índice ya apunta a otro tramo → no se atribuyen sus horas.
+    expect(tramoCalculado(tramos, 0, { origen_iata: "HOL", destino_iata: "CZM" })).toBeNull();
+    // El motor devuelve IATA en mayúsculas: lo capturado se compara sin distinguirlas.
+    expect(tramoCalculado(tramos, 0, { origen_iata: "cun", destino_iata: " hol " })?.orden).toBe(1);
+    expect(tramoCalculado(null, 0, { origen_iata: "CUN", destino_iata: "HOL" })).toBeNull();
+    expect(tramoCalculado(undefined, 0, { origen_iata: "CUN", destino_iata: "HOL" })).toBeNull();
+  });
+
+  it("horasTramoTexto: «1.20 h» a 2 decimales; sin cálculo «—»", () => {
+    expect(horasTramoTexto({ tiempo_hr: 1.2 })).toBe("1.20 h");
+    expect(horasTramoTexto({ tiempo_hr: 0.4833 })).toBe("0.48 h");
+    expect(horasTramoTexto(null)).toBe("—");
+    expect(horasTramoTexto(undefined)).toBe("—");
   });
 });

@@ -452,3 +452,61 @@ describe("acento de interacción (solo edición)", () => {
     expect(meta).not.toContain("cot-margen");
   });
 });
+
+// ---------- Atajos a «Interno › Tarifa y horas» (feedback 9-sep-2026) ----------
+
+/**
+ * Tarifa y horas NO se editan en la hoja: solo se SEÑALAN con croma
+ * (`data-cot-ui`) que llama `onAbrirInterno`. Nada de esto se imprime ni
+ * cambia el texto impreso; en lectura no existe.
+ */
+describe("atajos a Interno › Tarifa y horas (solo edición, nada impreso)", () => {
+  const conAtajo = () => ({ ...hoja1().props(), onAbrirInterno: () => undefined });
+
+  it("«· ajustar» en la línea de Servicio aéreo (toggle de tarifa encendido: la etiqueta impresa ya trae h × $/hr)", () => {
+    const html = renderToString(<QuoteSheet {...conAtajo()} />);
+    expect(html).toMatch(
+      /Servicio aéreo \(2\.4 h × \$1,650\.00\/hr\)<span class="cot-acciones" data-cot-ui=""> <span class="cot-sep">·<\/span><button[^>]*class="cot-liga"[^>]*>ajustar<\/button><\/span>/,
+    );
+    // El texto impreso de la hoja sigue idéntico al del PDF.
+    expect(sinEspacios(textoImpreso(parsearHoja(html), true))).toBe(
+      sinEspacios(colapsar(textoImpreso(parsearHoja(hoja1().html), false))),
+    );
+    expect(tokens(parsearHoja(html))).toEqual(tokens(parsearHoja(hoja1().html)));
+  });
+
+  it("toggle de tarifa apagado: la marca antepone las horas × tarifa del breakdown", () => {
+    const p = conAtajo();
+    p.valores = { ...p.valores, pdf_mostrar_tarifa: false };
+    const html = renderToString(<QuoteSheet {...p} />);
+    expect(html).toContain(">2.40 h × $1,650.00/hr · ajustar</button>");
+    expect(html).toContain('<td class="lbl">Servicio aéreo<span class="cot-acciones"');
+  });
+
+  it("sin onAbrirInterno no hay «ajustar»; en lectura tampoco (ni marcas de horas)", () => {
+    expect(renderToString(<QuoteSheet {...hoja1().props()} />)).not.toContain("ajustar");
+    const lectura = renderToString(<QuoteSheet {...conAtajo()} lectura />);
+    expect(lectura).not.toContain("ajustar");
+    expect(lectura).not.toContain("cot-marca--horas");
+  });
+
+  it("itinerario: marca «—» por tramo sin breakdown.tramos; con tramos, las horas del motor (mismos extremos)", () => {
+    const sin = renderToString(<QuoteSheet {...conAtajo()} />);
+    expect(sin.match(/cot-marca--horas[^>]*>—<\/button>/g)?.length).toBe(3);
+
+    const p = conAtajo();
+    p.breakdown = {
+      ...p.breakdown!,
+      tramos: [
+        { orden: 1, origen: "CUN", destino: "HOL", millas: 60, pasajeros: 4, es_ferry: false, tiempo_hr: 0.4833, tuas_usd: 100 },
+        // Breakdown atrasado: el tramo 2 ya no coincide con la fila (HOL → CZM) → «—».
+        { orden: 2, origen: "HOL", destino: "CUN", millas: 80, pasajeros: 4, es_ferry: false, tiempo_hr: 0.5944, tuas_usd: 0 },
+      ],
+    } as QuoteBreakdown;
+    const con = renderToString(<QuoteSheet {...p} />);
+    expect(con).toMatch(/cot-marca--horas[^>]*>0\.48 h<\/button>/);
+    expect(con.match(/cot-marca--horas[^>]*>—<\/button>/g)?.length).toBe(2);
+    // Sigue siendo croma: la estructura y el texto impreso no cambian.
+    expect(tokens(parsearHoja(con))).toEqual(tokens(parsearHoja(hoja1().html)));
+  });
+});

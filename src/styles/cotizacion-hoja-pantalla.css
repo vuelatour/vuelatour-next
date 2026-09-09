@@ -240,6 +240,25 @@
 .cot-hoja .cot-fila:focus-within .cot-margen__accion,
 .cot-hoja .cot-margen__accion[aria-expanded="true"] { opacity: 1; }
 .cot-hoja .cot-margen__accion:disabled { opacity: 0 !important; pointer-events: none; }
+/* Marca CLICABLE del margen («1.20 h» = horas calculadas del tramo, abre el
+   detalle ⋯; feedback 9-sep-2026): un <button> con el mismo aspecto que
+   `.cot-marca`, sin cromo de botón. Las horas no van en mayúsculas. */
+.cot-hoja button.cot-marca--liga {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 1px;
+  margin: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: inherit;
+}
+.cot-hoja .cot-marca--horas { text-transform: none; }
+.cot-hoja button.cot-marca--liga:hover { color: #102a43; text-decoration: underline; text-underline-offset: 2px; }
+.cot-hoja button.cot-marca--liga:focus-visible { outline: 2px solid var(--ring, #e63946); outline-offset: 1px; }
+/* Mientras el motor recalcula, las horas por tramo se atenúan como los totales. */
+.cot-hoja--calculando .cot-marca--horas { opacity: 0.45; transition: opacity 160ms ease; }
 
 /* Fila OCULTA en el PDF (sigue editable, no se imprime). */
 .cot-hoja .cot-fila--oculta > td { opacity: 0.42; }
@@ -353,6 +372,14 @@
 .cot-hoja:not(.cot-hoja--lectura) .cot-liga { color: var(--cot-acento); font-size: 12px; }
 .cot-hoja:not(.cot-hoja--lectura) .cot-liga:hover,
 .cot-hoja:not(.cot-hoja--lectura) .cot-liga:focus-visible {
+  color: var(--cot-acento-hover);
+  text-decoration: underline;
+}
+/* Marca clicable del margen («1.20 h» del tramo): se puede tocar y no se
+   imprime → acento; en lectura no existe (la marca solo se pinta en edición). */
+.cot-hoja:not(.cot-hoja--lectura) .cot-marca--liga { color: var(--cot-acento); }
+.cot-hoja:not(.cot-hoja--lectura) .cot-marca--liga:hover,
+.cot-hoja:not(.cot-hoja--lectura) .cot-marca--liga:focus-visible {
   color: var(--cot-acento-hover);
   text-decoration: underline;
 }

@@ -137,7 +137,14 @@ export interface TramoBreakdown {
   millas: number;
   pasajeros: number;
   es_ferry: boolean;
+  /** Horas del tramo CON calzos (millas ÷ velocidad + 0.15 h por aterrizaje). */
   tiempo_hr: number;
+  /**
+   * Calzos del tramo (hr). El motor v1.3 aún NO lo devuelve por tramo (solo
+   * `tiempos.calzos_hr` global): si algún día viaja, el detalle «⋯» de la
+   * hoja desglosa «vuelo + calzos»; mientras, solo pinta `tiempo_hr`.
+   */
+  calzos_hr?: number;
   tuas_usd: number;
   requiere_pernocta: boolean;
   pernocta_usd: number;

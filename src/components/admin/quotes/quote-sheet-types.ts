@@ -41,6 +41,17 @@ export type CampoHojaId = keyof QuoteSheetValores;
 
 export type OnCambioHoja = <K extends CampoHojaId>(campo: K, valor: QuoteSheetValores[K]) => void;
 
+/**
+ * Destino en «Interno · no se imprime › Tarifa y horas» que la hoja pide
+ * abrir (feedback 9-sep-2026: «¿dónde se ajusta la hora volada por tramo y
+ * la tarifa por hora?»). La hoja NO edita tarifa ni horas: solo señala dónde
+ * viven. Anclas: `tarifa-override-field` (o `tarifa-tipo-field` sin
+ * override), `cobrable-field`, `sobrevuelo-field`.
+ */
+export type DestinoInterno = "tarifa" | "cobrable" | "sobrevuelo";
+
+export type OnAbrirInterno = (destino: DestinoInterno) => void;
+
 export interface AeropuertoHoja {
   iata: string;
   nombre: string;

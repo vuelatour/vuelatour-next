@@ -1,4 +1,4 @@
-import type { EscalaInput, ExtraConcepto, QuoteBreakdown, TuasFila } from "@/types/quote";
+import type { EscalaInput, ExtraConcepto, QuoteBreakdown, TramoBreakdown, TuasFila } from "@/types/quote";
 
 /**
  * Helpers PUROS de la HOJA editable de cotización (`QuoteSheet`,
@@ -393,4 +393,33 @@ export function tramosParaMapa(
     });
   });
   return out;
+}
+
+/**
+ * Tramo del breakdown que corresponde a la fila `idx` de la hoja: mismo
+ * índice (`orden` = idx + 1, como lo arma el motor desde `escalas[]`,
+ * ocultos incluidos) y MISMOS extremos — el breakdown puede ir un debounce
+ * atrás de lo capturado (fila nueva, tramo quitado) y entonces no se le
+ * atribuyen a la fila las horas de otro tramo. null = «—».
+ */
+export function tramoCalculado(
+  tramos: TramoBreakdown[] | null | undefined,
+  idx: number,
+  leg: Pick<EscalaInput, "origen_iata" | "destino_iata">,
+): TramoBreakdown | null {
+  const t = tramos?.[idx];
+  if (!t) return null;
+  // El motor devuelve los IATA en MAYÚSCULAS (`resolveLegs`); lo capturado
+  // se compara igual para no pintar «—» por una minúscula.
+  if (iataNorm(t.origen) !== iataNorm(leg.origen_iata) || iataNorm(t.destino) !== iataNorm(leg.destino_iata)) {
+    return null;
+  }
+  return t;
+}
+
+const iataNorm = (s: string | null | undefined): string => (s ?? "").trim().toUpperCase();
+
+/** «1.20 h» de un tramo calculado (2 decimales, como la marca del margen); sin cálculo → «—». */
+export function horasTramoTexto(t: Pick<TramoBreakdown, "tiempo_hr"> | null | undefined): string {
+  return t ? `${numero2(t.tiempo_hr)} h` : "—";
 }

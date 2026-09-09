@@ -28,9 +28,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { parseCodigosRuta } from "@/components/admin/ruta-rapida-input";
 import { useLookupNm } from "@/hooks/use-lookup-nm";
 import type { MapaEstado } from "@/hooks/use-quote-mapa-svg";
-import { fechaDia, tramosVisibles } from "@/lib/admin/quote-sheet";
+import { fechaDia, horasTramoTexto, numero2, tramoCalculado, tramosVisibles } from "@/lib/admin/quote-sheet";
 import { cn } from "@/lib/utils";
-import type { EscalaInput } from "@/types/quote";
+import type { EscalaInput, TramoBreakdown } from "@/types/quote";
 import {
   CampoDia,
   CampoHoja,
@@ -44,7 +44,7 @@ import {
   useFocoPopover,
   type CampoSelectOption,
 } from "./quote-sheet-fields";
-import type { AeropuertoHoja, RutaHoja, TramoPdfAccesores } from "./quote-sheet-types";
+import type { AeropuertoHoja, OnAbrirInterno, RutaHoja, TramoPdfAccesores } from "./quote-sheet-types";
 
 const PERNOCTA_COSTO_DEFAULT_USD = 150;
 
@@ -76,6 +76,14 @@ export interface QuoteSheetItinerarioProps {
   mostrarItinerario: boolean;
   mapa: { svg: string | null; estado: MapaEstado; error?: string | null };
   defaultOrigin?: string;
+  /**
+   * Tramos resueltos por el motor (`breakdown.tramos`): pintan las horas
+   * calculadas de cada fila en el margen («1.20 h»; «—» sin cálculo). Nunca
+   * se calculan aquí.
+   */
+  tramos?: TramoBreakdown[] | null;
+  /** «Pactar horas» del detalle ⋯ → Interno › Cobrable pactado (solo edición). */
+  onAbrirInterno?: OnAbrirInterno;
 }
 
 export function QuoteSheetItinerario({
@@ -88,6 +96,8 @@ export function QuoteSheetItinerario({
   mostrarItinerario,
   mapa,
   defaultOrigin = "CUN",
+  tramos = null,
+  onAbrirInterno,
 }: QuoteSheetItinerarioProps) {
   const oculto = useMemo(
     () => pdf.oculto ?? ((_: number, l: EscalaInput) => l.pdf_oculto === true),
@@ -268,6 +278,7 @@ export function QuoteSheetItinerario({
     const fecha = fechaPdf(idx, leg);
     const sobrevuelo = !!leg.origen_iata && leg.origen_iata === leg.destino_iata;
     const sinNm = !!leg.origen_iata && !!leg.destino_iata && !(Number(leg.millas_nauticas) > 0);
+    const tramoCalc = tramoCalculado(tramos, idx, leg);
     return (
       <tr
         key={idx}
@@ -342,6 +353,31 @@ export function QuoteSheetItinerario({
                   NM?
                 </span>
               )}
+              {/* Horas CALCULADAS del tramo (feedback 9-sep-2026): la última
+                  marca, pegada a la tabla, para que quede siempre en el mismo
+                  sitio. Abre el detalle ⋯ («Tiempo estimado» + «Pactar horas»);
+                  no se edita aquí: no hay override de horas por tramo. Como el
+                  ⋯, NO va exenta del guard de CONFIRMADO/RESERVA: el popover
+                  que abre sí edita (millas, pasajeros…). */}
+              <button
+                type="button"
+                className="cot-marca cot-marca--liga cot-marca--horas"
+                onClick={(e) => {
+                  const ancla = e.currentTarget;
+                  setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
+                }}
+                aria-expanded={detalleIdx === idx}
+                aria-label={`Tiempo estimado del tramo ${idx + 1}: ${
+                  tramoCalc ? horasTramoTexto(tramoCalc) : "sin cálculo"
+                } (abre el detalle)`}
+                title={
+                  tramoCalc
+                    ? "Horas calculadas del tramo (millas ÷ velocidad del avión + calzos). Abre el detalle para ver de dónde salen y dónde se pactan."
+                    : "Aún no hay cálculo del motor para este tramo (faltan millas, avión o pasajeros)."
+                }
+              >
+                {horasTramoTexto(tramoCalc)}
+              </button>
             </span>
           )}
         </td>
@@ -476,6 +512,8 @@ export function QuoteSheetItinerario({
           pdf={pdf}
           oculto={oculto(detalle.idx, legs[detalle.idx])}
           fechaPdf={fechaPdf(detalle.idx, legs[detalle.idx])}
+          tramo={tramoCalculado(tramos, detalle.idx, legs[detalle.idx])}
+          onAbrirInterno={onAbrirInterno}
         />
       )}
       <AlertDialog open={confirmarQuitar !== null} onOpenChange={(o) => !o && setConfirmarQuitar(null)}>
@@ -537,6 +575,8 @@ function DetalleTramo({
   pdf,
   oculto,
   fechaPdf,
+  tramo,
+  onAbrirInterno,
 }: {
   idx: number;
   leg: EscalaInput;
@@ -546,6 +586,9 @@ function DetalleTramo({
   pdf: TramoPdfAccesores;
   oculto: boolean;
   fechaPdf: string | null;
+  /** Tramo del breakdown que corresponde a la fila (null = sin cálculo). */
+  tramo: TramoBreakdown | null;
+  onAbrirInterno?: OnAbrirInterno;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useCerrarFuera(true, onCerrar, ref, ancla);
@@ -592,6 +635,46 @@ function DetalleTramo({
           className={cn("h-8 w-28 text-right font-mono", !(leg.millas_nauticas > 0) && "border-amber-500/60")}
           onChange={(e) => onChange({ millas_nauticas: Number(e.target.value) || 0 })}
         />
+      </DetalleFila>
+      {/* Horas del tramo: SOLO lectura (feedback 9-sep-2026). El motor no
+          tiene override por tramo: salen de millas ÷ velocidad + calzos; el
+          total se pacta en Interno › Cobrable pactado. «vuelo + calzos» solo
+          si el breakdown trae `calzos_hr` por tramo (hoy no). */}
+      <DetalleFila
+        label="Tiempo estimado"
+        hint={
+          <>
+            Sale de las millas y la velocidad del avión. Para pactar las horas totales usa Interno ›
+            Cobrable pactado
+            {onAbrirInterno && (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400"
+                  aria-label="Pactar horas: abre Interno › Cobrable pactado"
+                  onClick={() => {
+                    onCerrar();
+                    onAbrirInterno("cobrable");
+                  }}
+                >
+                  Pactar horas
+                </button>
+              </>
+            )}
+            .
+          </>
+        }
+      >
+        {/* `title` y no `aria-label`: un <span> sin rol no expone aria-label. */}
+        <span className="font-mono text-xs" title="Horas del tramo con calzos (millas ÷ velocidad + 0.15 h)">
+          {horasTramoTexto(tramo)}
+          {tramo && tramo.calzos_hr != null && (
+            <span className="text-muted-foreground">
+              {` (${numero2(tramo.tiempo_hr - tramo.calzos_hr)} vuelo + ${numero2(tramo.calzos_hr)} calzos)`}
+            </span>
+          )}
+        </span>
       </DetalleFila>
       <DetalleFila label="Ferry (vacío)">
         <label className="flex items-center gap-2 text-xs">

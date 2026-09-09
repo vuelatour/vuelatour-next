@@ -104,7 +104,22 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   `onFechaPdfChange` sobre `escalas[].pdf_oculto`/`pdf_fecha`),
   `pasajerosPorTramo`, `mapaSvg` (con form limpio: `extraerMapaSvgDeHtml`
   de la hoja del PDF guardado), `totalRespaldo`, `grupo`, `clienteExtra`
-  (alta: «+ nuevo cliente» · «corregir nombre» en la línea del cliente).
+  (alta: «+ nuevo cliente» · «corregir nombre» en la línea del cliente),
+  `onAbrirInterno(destino)` (`'tarifa' | 'cobrable' | 'sobrevuelo'`).
+- Tarifa y horas NO se editan en la hoja (feedback 9-sep-2026: «¿dónde se
+  ajusta la hora volada por tramo y la tarifa por hora?»): la hoja solo las
+  SEÑALA con croma de edición y `onAbrirInterno` (el cotizador abre el panel
+  interno si está cerrado —misma memoria— y, en un efecto cuando el panel ya
+  está pintado, hace scroll+focus al ancla; la marca «1.20 h» NO va exenta
+  del guard de CONFIRMADO/RESERVA porque su popover edita):
+  «· ajustar» en la línea de «Servicio aéreo» (con «h × $/hr» delante cuando
+  el toggle de tarifa está apagado), «1.20 h» por tramo en el margen del
+  itinerario (abre el ⋯: fila «Tiempo estimado» + «Pactar horas» →
+  cobrable) y en el panel la tabla «Horas por tramo» (solo lectura, desde
+  `breakdown.tramos`; `tramoCalculado` exige mismo índice Y mismos
+  extremos porque el breakdown va un debounce atrás). El motor NO tiene
+  override de horas por tramo: se cambian las millas del tramo o se pacta
+  el total (Cobrable pactado / Sobrevuelo).
 - Lectura bloqueada (`bloqueadoRazon`): la hoja se pinta como texto (sin
   inputs), 🔒 + razón en la barra de estado y «Copiar como nueva cotización».
 
@@ -195,8 +210,44 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   el panel; el botón de la barra solo hace scroll+focus a `#pasajeros-field`
   (pasajeros y extras se editan en el documento y se guardan como versión).
   Métodos de pago: FUENTE ÚNICA `lib/admin/metodos-pago.ts`
-  (`METODOS_PAGO`, `metodoPagoLabel`) en cotizador, cobro, reembolso,
-  cobros del vuelo/cotización, grupo y el diff.
+  (`METODOS_PAGO` con `facturable`, `metodoPagoLabel`, `METODOS_CON_CUENTA`
+  = a qué cuenta llegó/salió, `cuentaSugeridaPorMetodo`,
+  `PAYWISE_COMISION_PCT_DEFAULT`) en cotizador, cobro, reembolso, cobros del
+  vuelo/cotización, grupo, meta del vuelo y el diff. PAYWISE (9-sep-2026):
+  link/pasarela de oficina, sin IVA por defecto (como BillPocket), cuenta
+  «Paywise», comisión sugerida 8.857 % (config `paywise_comision_pct` vía
+  `lib/api/paywise-config-server.ts`) que el estado de cuenta de Paywise
+  sustituye por la real al conciliar. Test: `__tests__/metodos-pago.test.ts`.
+
+### Cobros junto al total (9-sep-2026)
+
+- En revisión, `QuoteWorkspace` pasa `cobro` (`CobroTotalBar`: cobrado,
+  saldo = `pendienteCobro`, semáforo = `estadoCobroSemaforo`, `onRegistrar`)
+  a `QuoteCalculator` → `TotalBar` pinta «Cobrado $X · Saldo $Y» + «Registrar
+  cobro» (ADMIN/COORDINADOR/FACTURACION, no en SOLICITUD; nunca en el alta).
+  El botón abre el MISMO `CobroFormSheet` del detalle del vuelo (montado en
+  el workspace) y `router.refresh()` rehidrata cobros y candado.
+- `QuoteCobrosCard` (#cobros-vuelo) se pinta SIEMPRE debajo de la hoja
+  (0 cobros = «Sin cobros registrados» + botón); la página trae el snapshot
+  en todo estado (best-effort). Nada de cobros dentro del papel.
+
+## Conciliación Paywise (9-sep-2026)
+
+- Cuenta bancaria con `tipo` BANCO | PASARELA (Paywise = PASARELA): el
+  estado de cuenta de Paywise se importa en esa cuenta con el mismo
+  `ImportDialog`; formato `paywise` trae bruto/comisión/neto (`monto` = NETO).
+  Si el parser no lo reconoce y la cuenta es pasarela, se abre el mapeo
+  manual de columnas (`mapeo` de `POST /v1/conciliacion/parse`, encabezados
+  de `columnas`).
+- Pestañas nuevas en `/admin/conciliacion`: «Cobros sin banco»
+  (`cobros-sin-banco-table.tsx`, espejo de gastos sin banco) y «Auditoría
+  Paywise» (`paywise-auditoria.tsx`: desde/hasta por GET, coinciden /
+  comisión distinta / en Paywise sin cobro con «Registrar cobro» prellenado
+  (elige vuelo ±15 días → `CobroFormSheet` con `prefill`) / cobros sin
+  Paywise / referencia-monto / ambiguos; «Conciliar los que cuadran»
+  confirma y llama `conciliarPaywiseAction`; «Descargar reporte» baja
+  `paywise/auditoria.xlsx`). El panel SOLO pinta el cruce del API
+  (`types/conciliacion.ts` `PaywiseAuditoria`).
 
 ### Hoja editable `QuoteSheet` (form-as-document, 8-sep-2026)
 
@@ -248,7 +299,7 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
 - Ids DOM que otros componentes/enlaces usan: `cobrable-field`,
   `tarifa-override-field`, `motivo-revision-field` (en el diálogo),
   `tc-usd-mxn-field`, `pasajeros-field`, `metodo-pago-field`,
-  `billpocket-field`, `redondeo-field`, `tarifa-tipo-field`,
+  `billpocket-field`, `redondeo-field`, `tarifa-tipo-field`, `sobrevuelo-field`,
   `seccion-<id>` (sub-bloques del panel interno), `cobros-vuelo` (card de
   cobros del workspace). En la hoja, `pasajeros-field` y `tc-usd-mxn-field`
   son el PROPIO input invisible (no un contenedor).

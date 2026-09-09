@@ -34,13 +34,21 @@ import type {
   AeropuertoHoja,
   ClienteHoja,
   DocumentoHoja,
+  OnAbrirInterno,
   OnCambioHoja,
   QuoteSheetValores,
   RutaHoja,
   TramoPdfAccesores,
 } from "./quote-sheet-types";
 
-export type { QuoteSheetValores, OnCambioHoja, DocumentoHoja, TramoPdfAccesores } from "./quote-sheet-types";
+export type {
+  QuoteSheetValores,
+  OnCambioHoja,
+  DocumentoHoja,
+  TramoPdfAccesores,
+  DestinoInterno,
+  OnAbrirInterno,
+} from "./quote-sheet-types";
 
 /**
  * LA HOJA 1 como formulario (form-as-document, aprobado por el cliente el
@@ -99,6 +107,14 @@ export interface QuoteSheetProps {
   grupo?: { id: string; folio: number | string | null } | null;
   /** Croma junto al cliente (alta: «+ nuevo cliente» · «corregir nombre»), en la línea del campo. */
   clienteExtra?: ReactNode;
+  /**
+   * Abre «Interno · no se imprime › Tarifa y horas» (feedback 9-sep-2026:
+   * «¿dónde se ajusta la hora volada por tramo y la tarifa por hora?»). La
+   * hoja NO edita tarifa ni horas — solo las señala: «· ajustar» junto a
+   * «Servicio aéreo» y «Pactar horas» en el detalle ⋯ del tramo. Sin la
+   * prop (o en lectura) esa croma no se pinta.
+   */
+  onAbrirInterno?: OnAbrirInterno;
   /** Escala fija (1 = tamaño natural); por default se ajusta al ancho del contenedor. */
   escala?: number;
   /** Fondo/sombra (true por default). */
@@ -123,6 +139,7 @@ export function QuoteSheet({
   totalRespaldo,
   grupo,
   clienteExtra,
+  onAbrirInterno,
   escala,
   papel = true,
   className,
@@ -467,6 +484,8 @@ export function QuoteSheet({
             pdf={pdf}
             mostrarItinerario={valores.pdf_mostrar_itinerario !== false}
             mapa={mapaHoja}
+            tramos={breakdown?.tramos ?? null}
+            onAbrirInterno={lectura ? undefined : onAbrirInterno}
           />
 
           {/* 6 · Desglose */}
@@ -478,6 +497,7 @@ export function QuoteSheet({
             totalRespaldo={totalRespaldo}
             grupo={grupo}
             idTc={idTc}
+            onAbrirInterno={lectura ? undefined : onAbrirInterno}
           />
 
           {/* 7 · Notas (solo si hay texto; fantasma para capturar) */}

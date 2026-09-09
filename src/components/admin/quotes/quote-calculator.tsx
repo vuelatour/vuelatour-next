@@ -100,6 +100,7 @@ import type { PersistedQuote } from "@/types/quotes-persisted";
 import { QuoteSheet } from "@/components/admin/quotes/quote-sheet";
 import { QuoteInternalPanel } from "@/components/admin/quotes/quote-internal-panel";
 import type {
+  DestinoInterno,
   DocumentoHoja,
   OnCambioHoja,
   TramoPdfAccesores,
@@ -2088,6 +2089,42 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }, 60);
   /** El TC vive en «Total MXN (T.C.)» del desglose de la hoja. */
   const focusTc = () => setTimeout(focusTcField, 60);
+  /**
+   * La hoja señala dónde se ajustan tarifa y horas (feedback 9-sep-2026:
+   * «¿dónde se ajusta la hora volada por tramo y la tarifa por hora?»): abre
+   * el panel interno si está cerrado (misma memoria `vt-cotizador-interno-v1`)
+   * y lleva al ancla de «Tarifa y horas». Esa sección no es sub-bloque
+   * plegable (nada que desplegar). Sin override activo `tarifa-override-field`
+   * no existe: cae al segmento `tarifa-tipo-field`. El panel cerrado NO monta
+   * sus campos: el destino queda PENDIENTE y el scroll+focus corre en un
+   * efecto cuando el panel ya está pintado (sin adivinar milisegundos).
+   */
+  const [destinoInternoPendiente, setDestinoInternoPendiente] = useState<DestinoInterno | null>(null);
+  const abrirInterno = (destino: DestinoInterno) => {
+    if (!internoAbierto) setInternoAbiertoPersistente(true);
+    setDestinoInternoPendiente(destino);
+  };
+  useEffect(() => {
+    if (!destinoInternoPendiente || !internoAbierto) return;
+    const anclas: Record<DestinoInterno, string[]> = {
+      tarifa: ["tarifa-override-field", "tarifa-tipo-field"],
+      cobrable: ["cobrable-field"],
+      sobrevuelo: ["sobrevuelo-field"],
+    };
+    const el =
+      anclas[destinoInternoPendiente].map((id) => document.getElementById(id)).find((x) => !!x) ?? null;
+    setDestinoInternoPendiente(null);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Prioridad del foco: el input del campo (override / sobrevuelo /
+    // cobrable) → el segmento ACTIVO de Pública/Broker/Personalizada →
+    // cualquier control. `preventScroll`: no pisar el scroll suave.
+    const ctl =
+      el.querySelector<HTMLElement>("input:not([disabled])") ??
+      el.querySelector<HTMLElement>('button[aria-pressed="true"]:not([disabled])') ??
+      el.querySelector<HTMLElement>("button:not([disabled])");
+    ctl?.focus({ preventScroll: true });
+  }, [destinoInternoPendiente, internoAbierto]);
   /** Ancla `motivo-revision-field`: vive en el diálogo «Guardar vN». */
   const focusMotivo = () => {
     setGuardarOpen(true);
@@ -2700,6 +2737,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             }
             grupo={grupoDelHijo}
             clienteExtra={clienteExtraNode}
+            onAbrirInterno={lectura ? undefined : abrirInterno}
           />
 
         {/* Save bar (oculta en LECTURA bloqueada; en revisión solo con cambios). */}
