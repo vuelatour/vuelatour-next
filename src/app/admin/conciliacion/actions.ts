@@ -3,11 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { candidatosCobroMovimiento } from "@/lib/api/conciliacion-server";
+import {
+  auditoriaPaywise,
+  candidatosCobroMovimiento,
+  type PaywiseAuditoriaQuery,
+} from "@/lib/api/conciliacion-server";
+import { getFlightSnapshot } from "@/lib/api/flights-server";
 import type {
   CandidatosCobroResponse,
+  MapeoColumnasPaywise,
   MovimientoBancario,
   ParsedStatement,
+  PaywiseAuditoria,
 } from "@/types/conciliacion";
 
 export interface ActionResult<T = unknown> {
@@ -39,11 +46,16 @@ function fail<T>(err: unknown): ActionResult<T> {
 export async function parseEstadoCuentaAction(
   filename: string,
   fileBase64: string,
+  /** Mapeo manual de columnas Paywise (solo cuando la detección automática
+      no reconoció el archivo): fuerza el parser Paywise con esas columnas. */
+  mapeo?: MapeoColumnasPaywise,
 ): Promise<ActionResult<ParsedStatement>> {
   try {
     const data = await apiServer<ParsedStatement>("/v1/conciliacion/parse", {
       method: "POST",
-      body: { filename, file_base64: fileBase64 },
+      body: mapeo
+        ? { filename, file_base64: fileBase64, mapeo }
+        : { filename, file_base64: fileBase64 },
     });
     return { ok: true, data };
   } catch (err) {
@@ -54,9 +66,13 @@ export async function parseEstadoCuentaAction(
 export interface MovimientoImport {
   fecha: string;
   descripcion?: string;
+  /** Positivo; en Paywise es el NETO depositado. */
   monto: number;
   tipo: "CARGO" | "ABONO";
   referencia?: string;
+  /** ADITIVOS (Paywise): bruto cobrado y comisión retenida del movimiento. */
+  monto_bruto?: number;
+  comision_monto?: number;
 }
 
 export async function importarMovimientosAction(payload: {
@@ -271,6 +287,77 @@ export async function candidatosCobroAction(
   try {
     const data = await candidatosCobroMovimiento(movId, dias);
     return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Paywise (9-sep-2026) =====
+
+/** Auditoría Paywise (solo lectura) desde un componente cliente. */
+export async function auditoriaPaywiseAction(
+  q: PaywiseAuditoriaQuery,
+): Promise<ActionResult<PaywiseAuditoria>> {
+  try {
+    const data = await auditoriaPaywise(q);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Conciliar los que cuadran»: liga automáticamente los cruces NETO/BRUTO
+ * exactos (escribe la comisión REAL de Paywise en el cobro de vuelo antes de
+ * ligar; los sobres solo se ligan) y devuelve la auditoría recalculada con
+ * `resumen.conciliados_ahora` y `errores` por liga.
+ */
+export async function conciliarPaywiseAction(
+  q: PaywiseAuditoriaQuery,
+): Promise<ActionResult<PaywiseAuditoria>> {
+  try {
+    const data = await apiServer<PaywiseAuditoria>(
+      "/v1/conciliacion/paywise/auditoria/conciliar",
+      {
+        method: "POST",
+        body: {},
+        searchParams: { ...q } as Record<string, string | number | undefined>,
+      },
+    );
+    revalidatePath("/admin/conciliacion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Contexto mínimo de un vuelo para abrir el formulario de cobro desde la
+ *  auditoría (abono de Paywise sin cobro → «Registrar cobro»). */
+export interface VueloParaCobro {
+  id: string;
+  folio: number;
+  estado: string;
+  monto_total_usd: number;
+  total_cobrado: number;
+  tc_usd_mxn: number | null;
+}
+
+export async function vueloParaCobroAction(
+  vueloId: string,
+): Promise<ActionResult<VueloParaCobro>> {
+  try {
+    const s = await getFlightSnapshot(vueloId);
+    return {
+      ok: true,
+      data: {
+        id: s.id,
+        folio: s.folio,
+        estado: s.estado,
+        monto_total_usd: Number(s.monto_total_usd) || 0,
+        total_cobrado: Number(s.total_cobrado) || 0,
+        tc_usd_mxn: s.tc_usd_mxn != null ? Number(s.tc_usd_mxn) : null,
+      },
+    };
   } catch (err) {
     return fail(err);
   }

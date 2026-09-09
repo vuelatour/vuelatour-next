@@ -34,11 +34,10 @@ import {
   type CuentaCobro,
 } from "@/lib/admin/cobros";
 import { registerReembolsoAction } from "@/app/admin/flights/actions";
-import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
+// Métodos y "¿toca cuenta?": FUENTE ÚNICA `lib/admin/metodos-pago.ts` (solo
+// en los métodos bancarios/pasarela se pregunta de qué cuenta salió).
+import { METODOS_CON_CUENTA, METODOS_PAGO } from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
-
-/** Métodos que tocan banco: solo en ellos se pregunta de qué cuenta salió. */
-const METODOS_CON_CUENTA: MetodoPago[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"];
 
 /** Hoy en hora Cancún (UTC−5 fija) para el default del formulario. */
 function hoyCancun(): string {

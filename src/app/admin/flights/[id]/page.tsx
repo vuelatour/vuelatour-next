@@ -41,6 +41,7 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
+import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { ApiError } from "@/lib/api/errors";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -145,7 +146,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ? null
       : new Intl.DateTimeFormat("en-CA", { timeZone: CANCUN_TZ }).format(d);
   })();
-  const tcOficial = diaCotizacion ? await getTipoCambioOficial(diaCotizacion) : null;
+  const [tcOficial, paywiseComisionPct] = await Promise.all([
+    diaCotizacion ? getTipoCambioOficial(diaCotizacion) : Promise.resolve(null),
+    getPaywiseComisionPct(),
+  ]);
   const vueloAnterior = vueloAnteriorRes.anterior;
   const gastos = gastosRes.data;
   // Resumen para el aviso al cancelar el vuelo (los gastos se conservan).
@@ -773,6 +777,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
             tcOficial={tcOficial}
             tcOficialFecha={diaCotizacion}
+            paywiseComisionPct={paywiseComisionPct}
             // Reembolsos: solo roles de oficina.
             puedeReembolsar={me?.rol === "ADMIN" || me?.rol === "COORDINADOR"}
           />

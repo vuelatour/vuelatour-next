@@ -16,12 +16,14 @@ import { toast } from "sonner";
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
+  BanknotesIcon,
   BookmarkSquareIcon,
   DocumentDuplicateIcon,
   ExclamationTriangleIcon,
   LockClosedIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+import type { EstadoCobroSemaforo } from "@/lib/admin/cobros";
 import { RouteFormSheet } from "@/components/admin/routes/route-form-sheet";
 import { updateClientAction } from "@/app/admin/clients/actions";
 import { QuickClientDialog } from "@/components/admin/clients/quick-client-dialog";
@@ -168,6 +170,7 @@ type QuoteCalculatorProps = {
       tramoExtra?: undefined;
       notaTramos?: undefined;
       escalasPdf?: undefined;
+      cobro?: undefined;
     }
   | {
       mode: "revise";
@@ -217,8 +220,27 @@ type QuoteCalculatorProps = {
        * guardado (misma regla que los toggles).
        */
       escalasPdf?: EscalaPdfPreview[];
+      /**
+       * COBROS junto al total (pedido del cliente 9-sep-2026): «Cobrado $X ·
+       * Saldo $Y» con el semáforo (fuente única `estadoCobroSemaforo`) y el
+       * botón «Registrar cobro» en la barra de estado. Solo en revisión: en
+       * el alta aún no hay vuelo que cobrar. El dinero viene del padre
+       * (snapshot del vuelo), nunca se calcula aquí.
+       */
+      cobro?: CobroTotalBar;
     }
 );
+
+/** Estado de cobro que pinta la barra de estado (ver `cobro` en props). */
+export interface CobroTotalBar {
+  totalCobradoUsd: number;
+  /** Pendiente REAL (`pendienteCobro`, tolerancia 1 USD); 0 en cancelados. */
+  pendienteUsd: number;
+  semaforo: EstadoCobroSemaforo;
+  /** Abre el formulario de cobro; undefined = sin permiso (no se pinta). */
+  onRegistrar?: () => void;
+  registrarTitle?: string;
+}
 
 /** Fecha de PDF por tramo ('YYYY-MM-DD' de pared) completa y con año razonable. */
 function fechaPdfValida(v: string | null | undefined): v is string {
@@ -593,6 +615,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const tramoExtra = isRevise ? props.tramoExtra : undefined;
   const notaTramos = isRevise ? props.notaTramos : undefined;
   const escalasPdfProp = isRevise ? props.escalasPdf : undefined;
+  const cobroBarra = isRevise ? props.cobro : undefined;
 
   const initialQuote = isRevise ? props.initialQuote : undefined;
   // Hijo de una cotización de GRUPO (4-sep): los renglones de extras con
@@ -2574,6 +2597,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         cancelDisabled={saving}
         verPdf={previewVerPdf}
         avisos={avisosCaptura}
+        cobro={cobroBarra}
       />
 
       {/* Avisos de edición directa (F0). */}
@@ -3234,6 +3258,7 @@ function TotalBar({
   onCopiar,
   verPdf,
   avisos = [],
+  cobro,
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
@@ -3267,6 +3292,8 @@ function TotalBar({
   verPdf?: { label: string; onClick: () => void; disabled?: boolean; loading?: boolean; title?: string };
   /** Avisos de captura (capacidad, ancla CUN…): chips, nunca se esconden. */
   avisos?: string[];
+  /** «Cobrado · Saldo» + «Registrar cobro» a la derecha del total (revisión). */
+  cobro?: CobroTotalBar;
 }) {
   return (
     <div className="sticky top-0 z-30 -mx-1 px-1 pt-1" data-guard-exempt>
@@ -3322,6 +3349,7 @@ function TotalBar({
               </Badge>
             </>
           )}
+          {cobro && <CobroChipBarra cobro={cobro} />}
           <div className="ml-auto flex min-w-0 items-center gap-3">
             {(titulo || subtitulo) && (
               <div className="min-w-0 text-right">
@@ -3411,5 +3439,62 @@ function TotalBar({
         )}
       </div>
     </div>
+  );
+}
+
+/** Punto del semáforo sobre el rojo de la barra (misma taxonomía que
+ *  `CobroEstadoBadge`, colores para fondo oscuro). */
+const DOT_BARRA: Record<EstadoCobroSemaforo["key"], string> = {
+  COBRADO: "bg-emerald-300",
+  PARCIAL: "bg-amber-300",
+  SIN_COBROS: "bg-white",
+  NO_APLICA: "bg-white/50",
+};
+
+/**
+ * «Cobrado $X · Saldo $Y» + «Registrar cobro» junto al total (9-sep-2026):
+ * el cliente pidió ver y registrar cobros desde la cotización sin bajar al
+ * detalle del vuelo. Solo pinta lo que le pasa el workspace (semáforo de
+ * `estadoCobroSemaforo`, saldo de `pendienteCobro`).
+ */
+function CobroChipBarra({ cobro }: { cobro: CobroTotalBar }) {
+  const { semaforo } = cobro;
+  const sinDinero = semaforo.key === "NO_APLICA" && cobro.totalCobradoUsd <= 0;
+  return (
+    <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 self-center" data-guard-exempt>
+      <span
+        title={semaforo.title ?? semaforo.label}
+        className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/15 px-2 py-0.5 text-[11px] font-medium"
+      >
+        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT_BARRA[semaforo.key])} />
+        {sinDinero ? (
+          <span>{semaforo.label}</span>
+        ) : (
+          <>
+            <span className="text-white/85">Cobrado</span>
+            <span className="font-mono tabular-nums">{fmtUsd(cobro.totalCobradoUsd)}</span>
+            <span className="text-white/60">·</span>
+            <span className="text-white/85">Saldo</span>
+            <span className="font-mono tabular-nums">{fmtUsd(cobro.pendienteUsd)}</span>
+            {semaforo.key !== "SIN_COBROS" && semaforo.key !== "PARCIAL" && (
+              <span className="text-white/85">· {semaforo.label}</span>
+            )}
+          </>
+        )}
+      </span>
+      {cobro.onRegistrar && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={cobro.onRegistrar}
+          title={cobro.registrarTitle}
+          className="h-7 shrink-0 gap-1.5 border-white/60 bg-transparent px-2 text-white hover:bg-white/15 hover:text-white"
+        >
+          <BanknotesIcon className="h-4 w-4" />
+          Registrar cobro
+        </Button>
+      )}
+    </span>
   );
 }

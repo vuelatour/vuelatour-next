@@ -56,7 +56,26 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
         header: "Monto",
         headClassName: "text-right",
         cellClassName: "text-right tabular-nums",
-        cell: (m) => fmtMoney(m.monto),
+        // PASARELA (Paywise): el monto es el NETO depositado; debajo, el
+        // bruto que pagó el cliente y la comisión retenida (si el archivo
+        // los trajo).
+        cell: (m) => {
+          const bruto = m.monto_bruto != null ? Number(m.monto_bruto) : null;
+          const comision = m.comision_monto != null ? Number(m.comision_monto) : null;
+          if (!(bruto != null && bruto > 0) && !(comision != null && comision > 0)) {
+            return fmtMoney(m.monto);
+          }
+          return (
+            <span className="block">
+              {fmtMoney(m.monto)}
+              <span className="block text-[10px] font-normal text-muted-foreground whitespace-nowrap">
+                {bruto != null && bruto > 0 ? `bruto ${fmtMoney(String(bruto))}` : null}
+                {bruto != null && bruto > 0 && comision != null && comision > 0 ? " · " : null}
+                {comision != null && comision > 0 ? `comisión ${fmtMoney(String(comision))}` : null}
+              </span>
+            </span>
+          );
+        },
       },
       {
         key: "conciliacion",

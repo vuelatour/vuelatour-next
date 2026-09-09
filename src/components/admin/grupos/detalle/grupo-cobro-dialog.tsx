@@ -51,7 +51,12 @@ import {
   explicacionModoParticion,
   mensajeErrorGrupo,
 } from "@/lib/admin/grupos-ui";
-import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
+import {
+  cuentaSugeridaPorMetodo,
+  METODOS_CON_CUENTA,
+  METODOS_PAGO,
+  PAYWISE_COMISION_PCT_DEFAULT,
+} from "@/lib/admin/metodos-pago";
 import { cancunInputToIso, fmtDateOnly, todayCancun } from "@/lib/datetime";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -84,8 +89,7 @@ import type {
 
 export type TipoSobre = "COBRO" | "REEMBOLSO";
 
-/** Métodos que tocan banco: solo en ellos se pregunta a qué cuenta llegó. */
-const METODOS_CON_CUENTA: MetodoPago[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"];
+// "¿Toca cuenta?" y lista de métodos: fuente única `lib/admin/metodos-pago.ts`.
 
 const METODO_VALUES = METODOS_PAGO.map((m) => m.value) as [MetodoPago, ...MetodoPago[]];
 
@@ -259,12 +263,36 @@ export function GrupoCobroDialog({
     setTcPrefill(tcSugerido);
   };
 
+  // Comisión % SUGERIDA por el método (Paywise): solo se retira al cambiar de
+  // método si sigue siendo la sugerida (nunca pisa una comisión tecleada).
+  const [comisionSugerida, setComisionSugerida] = useState<number | null>(null);
+
   const handleMetodoChange = (v: string) => {
     const m = v as MetodoPago;
     setValue("metodo_cobro", m);
     if (!METODOS_CON_CUENTA.includes(m)) setValue("cuenta_destino", "");
+    // PAYWISE (9-sep-2026): sugiere la cuenta Paywise y, en un COBRO, la
+    // comisión de la pasarela (editable; el estado de cuenta de Paywise la
+    // sustituye por la real al conciliar el sobre).
+    const cuentaSugerida = cuentaSugeridaPorMetodo(m);
+    if (cuentaSugerida && !getValues("cuenta_destino")) {
+      setValue("cuenta_destino", cuentaSugerida, { shouldValidate: true });
+    }
+    if (m === "PAYWISE" && !esReembolso) {
+      const pctActual = Number(getValues("comision_banco_pct"));
+      const montoActual = Number(getValues("comision_banco_monto"));
+      if (!(pctActual > 0) && !(montoActual > 0)) {
+        setValue("comision_banco_pct", PAYWISE_COMISION_PCT_DEFAULT, { shouldValidate: true });
+        setComisionSugerida(PAYWISE_COMISION_PCT_DEFAULT);
+      }
+    } else if (comisionSugerida != null) {
+      if (Number(getValues("comision_banco_pct")) === comisionSugerida) {
+        setValue("comision_banco_pct", "");
+      }
+      setComisionSugerida(null);
+    }
     if (m === "DOLARES") handleMonedaChange("USD");
-    else if (m === "EFECTIVO") handleMonedaChange("MXN");
+    else if (m === "EFECTIVO" || m === "PAYWISE") handleMonedaChange("MXN");
   };
 
   const tcHint =
@@ -604,8 +632,12 @@ export function GrupoCobroDialog({
             <>
               <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
                 <Field
-                  label="Comisión del banco (%)"
-                  hint="Si conoces el porcentaje."
+                  label={metodo === "PAYWISE" ? "Comisión de Paywise (%)" : "Comisión del banco (%)"}
+                  hint={
+                    metodo === "PAYWISE"
+                      ? `Sugerida: comisión de Paywise (${PAYWISE_COMISION_PCT_DEFAULT} %). Se sustituye por la real al conciliar el estado de cuenta de Paywise.`
+                      : "Si conoces el porcentaje."
+                  }
                   error={errors.comision_banco_pct?.message}
                 >
                   <Input

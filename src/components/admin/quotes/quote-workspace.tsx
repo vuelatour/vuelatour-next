@@ -23,6 +23,7 @@ import {
   type RouteOption,
 } from "@/components/admin/quotes/quote-calculator";
 import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
+import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
 import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-fecha";
 import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
@@ -30,6 +31,7 @@ import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
@@ -76,6 +78,9 @@ export function QuoteWorkspace({
   cobros,
   totalCobrado,
   rol,
+  tcOficial = null,
+  tcOficialFecha = null,
+  paywiseComisionPct,
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -84,10 +89,16 @@ export function QuoteWorkspace({
   aircraft: AircraftOption[];
   routes: RouteOption[];
   airports: AirportOption[];
-  /** Cobros del vuelo (misma entidad); [] en SOLICITUD/COTIZADO. */
+  /** Cobros del vuelo (misma entidad); [] si el snapshot no cargó. */
   cobros: FlightCobro[];
   totalCobrado: number;
   rol: string | null;
+  /** TC oficial de referencia del día de la cotización (respaldo al cobrar
+      en MXN cuando la cotización no fijó TC) y su día. */
+  tcOficial?: number | null;
+  tcOficialFecha?: string | null;
+  /** Comisión % sugerida para cobros Paywise (config del sistema). */
+  paywiseComisionPct?: number;
 }) {
   // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
   // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
@@ -99,6 +110,32 @@ export function QuoteWorkspace({
   };
   const candado = candadoRevision(quote, cobrosInfo);
   const puedeEditarPdf = rol === "ADMIN" || rol === "COORDINADOR";
+
+  // ---- COBROS junto al total (pedido del cliente 9-sep-2026) ----
+  // Registrar: mismos roles que POST /v1/flights/:id/payments en oficina.
+  // En SOLICITUD aún no hay precio que cobrar; cancelado registra el cargo
+  // por cancelación (sin noción de pendiente, regla 28-ago).
+  const puedeRegistrarCobro =
+    (rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION") &&
+    quote.estado !== "SOLICITUD";
+  const [cobroOpen, setCobroOpen] = useState(false);
+  const montoTotalUsd = Number(quote.monto_total_usd) || 0;
+  const vueloCancelado = quote.estado === "CANCELADO";
+  const pendienteUsd = vueloCancelado ? 0 : pendienteCobro(montoTotalUsd, totalCobrado);
+  const semaforoCobro = estadoCobroSemaforo({
+    montoTotalUsd,
+    cobrado: quote.cobrado,
+    totalCobradoUsd: totalCobrado,
+    sinTcCount: cobrosInfo.cobrosSinTc,
+    cotizacionAbierta: quote.cotizacion_abierta === true,
+    enCotizacion: quote.estado === "SOLICITUD" || quote.estado === "COTIZADO",
+    cancelado: vueloCancelado,
+    esInterno: clientEsInterno,
+  });
+  const registrarTitle = vueloCancelado
+    ? "Vuelo cancelado: registra el cargo por cancelación o el anticipo retenido"
+    : "Al registrar un cobro la cotización queda bloqueada para edición";
+  const abrirCobro = puedeRegistrarCobro ? () => setCobroOpen(true) : undefined;
   // Edición directa: editable desde el primer render si el candado lo permite.
   const editable = candado.canRevise;
 
@@ -449,23 +486,48 @@ export function QuoteWorkspace({
         tramoExtra={tramoExtraLectura}
         notaTramos={notaTramosLectura}
         escalasPdf={escalasPdfPreview}
+        cobro={{
+          totalCobradoUsd: totalCobrado,
+          pendienteUsd,
+          semaforo: semaforoCobro,
+          onRegistrar: abrirCobro,
+          registrarTitle,
+        }}
       />
 
-      {/* Debajo de la hoja: cobros, historial y operación. */}
+      {/* El MISMO formulario de cobro del detalle del vuelo (cotización =
+          vuelo, misma fila). Tras guardar, router.refresh() rehidrata los
+          cobros y el candado de edición. */}
+      <CobroFormSheet
+        open={cobroOpen}
+        onOpenChange={setCobroOpen}
+        flightId={quote.id}
+        flightFolio={quote.folio}
+        montoTotalUsd={montoTotalUsd}
+        pendingUsd={pendienteUsd}
+        cancelado={vueloCancelado}
+        tcCotizacion={quote.tc_usd_mxn != null ? Number(quote.tc_usd_mxn) : null}
+        tcOficial={tcOficial}
+        tcOficialFecha={tcOficialFecha}
+        paywiseComisionPct={paywiseComisionPct}
+      />
+
+      {/* Debajo de la hoja: cobros (SIEMPRE, también con 0), historial y
+          operación. Nada de cobros dentro del papel. */}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {cobros.length > 0 && (
-          <div className="min-w-0 md:col-span-2 xl:col-span-1">
-            <QuoteCobrosCard
-              quoteId={quote.id}
-              quoteFolio={quote.folio}
-              montoTotalUsd={Number(quote.monto_total_usd)}
-              totalCobrado={totalCobrado}
-              cobros={cobros}
-              // Reembolsos: solo roles de oficina.
-              puedeReembolsar={rol === "ADMIN" || rol === "COORDINADOR"}
-            />
-          </div>
-        )}
+        <div className="min-w-0 md:col-span-2 xl:col-span-1">
+          <QuoteCobrosCard
+            quoteId={quote.id}
+            quoteFolio={quote.folio}
+            montoTotalUsd={montoTotalUsd}
+            totalCobrado={totalCobrado}
+            cobros={cobros}
+            // Reembolsos: solo roles de oficina.
+            puedeReembolsar={rol === "ADMIN" || rol === "COORDINADOR"}
+            onRegistrar={abrirCobro}
+            registrarTitle={registrarTitle}
+          />
+        </div>
 
         <Card className="min-w-0">
           <CardHeader>

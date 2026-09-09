@@ -28,19 +28,22 @@ import {
   monedaDeCuenta,
 } from "@/lib/admin/cobros";
 import { registerCobroAction } from "@/app/admin/flights/actions";
-import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
+import {
+  cuentaSugeridaPorMetodo,
+  METODOS_CON_CUENTA,
+  METODOS_PAGO,
+  PAYWISE_COMISION_PCT_DEFAULT,
+} from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
 import { Field } from "@/components/admin/form-field";
 
 type Moneda = "USD" | "MXN";
 
 // Métodos de pago: FUENTE ÚNICA `lib/admin/metodos-pago.ts` (misma lista y
-// etiquetas que el cotizador, el grupo y los reembolsos). OTRO = método
-// manual: se describe en la referencia/notas.
+// etiquetas que el cotizador, el grupo y los reembolsos; METODOS_CON_CUENTA
+// decide cuándo se pregunta a qué cuenta llegó). OTRO = método manual: se
+// describe en la referencia/notas.
 const METODO_VALUES = METODOS_PAGO.map((m) => m.value) as [MetodoPago, ...MetodoPago[]];
-
-/** Métodos que tocan banco: solo en ellos se pregunta a qué cuenta llegó. */
-const METODOS_CON_CUENTA: MetodoPago[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"];
 
 const CobroFormSchema = z
   .object({
@@ -87,6 +90,24 @@ const CobroFormSchema = z
 
 type CobroFormValues = z.input<typeof CobroFormSchema>;
 
+/**
+ * Prellenado externo del formulario (p. ej. «Registrar cobro» desde un abono
+ * de Paywise sin cobro en la auditoría): solo lo que viene se pisa sobre los
+ * defaults. `fecha_cobro` en YYYY-MM-DD.
+ */
+export interface CobroPrefill {
+  monto?: number;
+  moneda?: Moneda;
+  metodo_cobro?: MetodoPago;
+  tc_usd_mxn?: number;
+  comision_banco_pct?: number;
+  comision_banco_monto?: number;
+  referencia?: string;
+  cuenta_destino?: CobroFormValues["cuenta_destino"];
+  fecha_cobro?: string;
+  notas?: string;
+}
+
 interface CobroFormSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -108,6 +129,13 @@ interface CobroFormSheetProps {
   tcOficial?: number | null;
   /** Día (YYYY-MM-DD) al que corresponde `tcOficial` (para decirlo en la UI). */
   tcOficialFecha?: string | null;
+  /** Comisión (%) sugerida al elegir Paywise (config `paywise_comision_pct`;
+      default 8.857). Editable; el API aplica la misma si no viaja ninguna. */
+  paywiseComisionPct?: number;
+  /** Prellenado de campos (ver `CobroPrefill`). Se aplica al abrir. */
+  prefill?: CobroPrefill | null;
+  /** Tras registrar con éxito (además del router.refresh() propio). */
+  onRegistrado?: () => void;
 }
 
 type TcSugerido = { valor: number; fuente: "cotizacion" | "oficial" };
@@ -120,9 +148,9 @@ function todayLocal(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function defaults(pendingUsd: number): CobroFormValues {
+function defaults(pendingUsd: number, prefill?: CobroPrefill | null): CobroFormValues {
   // Prefill útil: si hay pendiente, sugiere ese monto en USD.
-  return {
+  const base: CobroFormValues = {
     monto: pendingUsd > 0 ? Number(pendingUsd.toFixed(2)) : 0,
     moneda: "USD",
     metodo_cobro: "TRANSFERENCIA",
@@ -133,6 +161,28 @@ function defaults(pendingUsd: number): CobroFormValues {
     cuenta_destino: "",
     fecha_cobro: todayLocal(),
     notas: "",
+  };
+  if (!prefill) return base;
+  return {
+    ...base,
+    ...(prefill.monto != null && prefill.monto > 0
+      ? { monto: Number(prefill.monto.toFixed(2)) }
+      : {}),
+    ...(prefill.moneda ? { moneda: prefill.moneda } : {}),
+    ...(prefill.metodo_cobro ? { metodo_cobro: prefill.metodo_cobro } : {}),
+    ...(prefill.tc_usd_mxn != null && prefill.tc_usd_mxn > 0
+      ? { tc_usd_mxn: prefill.tc_usd_mxn }
+      : {}),
+    ...(prefill.comision_banco_pct != null && prefill.comision_banco_pct > 0
+      ? { comision_banco_pct: prefill.comision_banco_pct }
+      : {}),
+    ...(prefill.comision_banco_monto != null && prefill.comision_banco_monto > 0
+      ? { comision_banco_monto: Number(prefill.comision_banco_monto.toFixed(2)) }
+      : {}),
+    ...(prefill.referencia ? { referencia: prefill.referencia.slice(0, 100) } : {}),
+    ...(prefill.cuenta_destino ? { cuenta_destino: prefill.cuenta_destino } : {}),
+    ...(prefill.fecha_cobro ? { fecha_cobro: prefill.fecha_cobro.slice(0, 10) } : {}),
+    ...(prefill.notas ? { notas: prefill.notas.slice(0, 1000) } : {}),
   };
 }
 
@@ -147,12 +197,19 @@ export function CobroFormSheet({
   tcCotizacion = null,
   tcOficial = null,
   tcOficialFecha = null,
+  paywiseComisionPct = PAYWISE_COMISION_PCT_DEFAULT,
+  prefill = null,
+  onRegistrado,
 }: CobroFormSheetProps) {
   const diaTcOficial = tcOficialFecha ? fmtDateOnly(tcOficialFecha) : null;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // Qué TC se prellenó (para el hint); se apaga si el usuario lo edita.
   const [tcPrefill, setTcPrefill] = useState<TcSugerido | null>(null);
+  // Comisión % SUGERIDA por el método (Paywise): se recuerda para retirarla
+  // al cambiar de método solo si sigue siendo la sugerida (nunca pisa una
+  // comisión tecleada a mano).
+  const [comisionSugerida, setComisionSugerida] = useState<number | null>(null);
   // En cancelado NO se sugiere el pendiente: el importe retenido lo decide la
   // oficina (anticipo, % de cancelación…), así que se teclea siempre.
   const montoPrefill = cancelado ? 0 : pendingUsd;
@@ -167,15 +224,16 @@ export function CobroFormSheet({
     formState: { errors },
   } = useForm<CobroFormValues>({
     resolver: zodResolver(CobroFormSchema),
-    defaultValues: defaults(montoPrefill),
+    defaultValues: defaults(montoPrefill, prefill),
   });
 
   useEffect(() => {
     if (open) {
-      reset(defaults(montoPrefill));
+      reset(defaults(montoPrefill, prefill));
       setTcPrefill(null);
+      setComisionSugerida(null);
     }
-  }, [open, montoPrefill, reset]);
+  }, [open, montoPrefill, prefill, reset]);
 
   const moneda = watch("moneda");
   const metodo = watch("metodo_cobro");
@@ -218,16 +276,44 @@ export function CobroFormSheet({
     setTcPrefill(tcSugerido);
   };
 
-  // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD, EFECTIVO→MXN).
+  // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD,
+  // EFECTIVO/PAYWISE→MXN). PAYWISE (9-sep-2026) además sugiere la cuenta
+  // Paywise y la comisión de la pasarela (editable; el estado de cuenta de
+  // Paywise la sustituye por la real al conciliar).
   const handleMetodoChange = (v: string) => {
     const m = v as MetodoPago;
     setValue("metodo_cobro", m);
     // La cuenta destino solo aplica a métodos bancarios: al salir de ellos se
     // limpia para no mandar una cuenta oculta en un cobro en efectivo.
     if (!METODOS_CON_CUENTA.includes(m)) setValue("cuenta_destino", "");
+    const cuentaSugerida = cuentaSugeridaPorMetodo(m);
+    if (cuentaSugerida && !getValues("cuenta_destino")) {
+      setValue("cuenta_destino", cuentaSugerida, { shouldValidate: true });
+    }
+    if (m === "PAYWISE") {
+      const pctActual = Number(getValues("comision_banco_pct"));
+      const montoActual = Number(getValues("comision_banco_monto"));
+      if (!(pctActual > 0) && !(montoActual > 0) && paywiseComisionPct > 0) {
+        setValue("comision_banco_pct", paywiseComisionPct, { shouldValidate: true });
+        setComisionSugerida(paywiseComisionPct);
+      }
+    } else if (comisionSugerida != null) {
+      // Solo se retira la comisión si sigue siendo la sugerida de Paywise.
+      if (Number(getValues("comision_banco_pct")) === comisionSugerida) {
+        setValue("comision_banco_pct", "");
+      }
+      setComisionSugerida(null);
+    }
     if (m === "DOLARES") handleMonedaChange("USD");
-    else if (m === "EFECTIVO") handleMonedaChange("MXN");
+    else if (m === "EFECTIVO" || m === "PAYWISE") handleMonedaChange("MXN");
   };
+
+  const comisionPctHint =
+    metodo === "PAYWISE"
+      ? comisionSugerida != null && Number(comisionPct) === comisionSugerida
+        ? `Sugerida: comisión de Paywise (${paywiseComisionPct} %). Se sustituye por la real al conciliar el estado de cuenta de Paywise.`
+        : "Comisión de Paywise sobre este cobro; se sustituye por la real al conciliar el estado de cuenta."
+      : "Si conoces el porcentaje.";
 
   const tcHint =
     tcPrefill && Number(tc) === tcPrefill.valor
@@ -308,6 +394,7 @@ export function CobroFormSheet({
         );
         onOpenChange(false);
         router.refresh();
+        onRegistrado?.();
       } else {
         toast.error(res.error ?? "Error al registrar cobro");
       }
@@ -492,8 +579,8 @@ export function CobroFormSheet({
 
           <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
             <Field
-              label="Comisión del banco (%)"
-              hint="Si conoces el porcentaje."
+              label={metodo === "PAYWISE" ? "Comisión de Paywise (%)" : "Comisión del banco (%)"}
+              hint={comisionPctHint}
               error={errors.comision_banco_pct?.message}
             >
               <Input
@@ -595,7 +682,11 @@ export function CobroFormSheet({
 
           <Field
             label="Referencia"
-            hint="Folio bancario, ticket, voucher BillPocket, etc."
+            hint={
+              metodo === "PAYWISE"
+                ? "ID de operación / autorización de Paywise: con ella la auditoría cruza el abono aunque cambie la comisión."
+                : "Folio bancario, ticket, voucher BillPocket, etc."
+            }
             error={errors.referencia?.message}
           >
             <Input placeholder="Opcional" {...register("referencia")} />

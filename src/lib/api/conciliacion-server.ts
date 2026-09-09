@@ -1,9 +1,11 @@
 import { apiServer } from "./server";
 import type {
   CandidatosCobroResponse,
+  CobrosSinBancoResponse,
   ConciliacionResumenCuenta,
   EstadoCuentaArchivo,
   MovimientoListResponse,
+  PaywiseAuditoria,
 } from "@/types/conciliacion";
 
 export interface ListConciliacionQuery {
@@ -69,4 +71,41 @@ export function candidatosCobroMovimiento(movId: string, dias = 60) {
     `/v1/conciliacion/movimientos/${movId}/candidatos-cobro`,
     { searchParams: { dias }, cache: "no-store" },
   );
+}
+
+// ===== Paywise (9-sep-2026) =====
+
+export interface PaywiseAuditoriaQuery {
+  /** YYYY-MM-DD (abonos de Paywise en el periodo). */
+  desde: string;
+  hasta: string;
+  /** Cuenta PASARELA concreta; sin ella, todas las PASARELA. */
+  cuenta_bancaria_id?: string;
+  /** Ventana ±días abono↔cobro (default 5: liquidación diferida). */
+  dias?: number;
+}
+
+/**
+ * Auditoría Paywise (solo lectura): cruza los ABONOS importados de las
+ * cuentas PASARELA en el periodo contra los cobros con método PAYWISE
+ * (fecha ±días, NETO exacto → BRUTO exacto → referencia). El API responde
+ * 400 si no hay ninguna cuenta PASARELA: el llamador lo muestra como guía.
+ */
+export function auditoriaPaywise(q: PaywiseAuditoriaQuery) {
+  return apiServer<PaywiseAuditoria>("/v1/conciliacion/paywise/auditoria", {
+    searchParams: { ...q } as Record<string, string | number | undefined>,
+    cache: "no-store",
+  });
+}
+
+/**
+ * Cobros BANCARIOS (transferencia / HSBC link / cheque / Paywise; cobros de
+ * vuelo y sobres) sin liga con ningún abono importado — el espejo de
+ * gastos-sin-banco. Default del API: últimos 90 días por fecha_cobro.
+ */
+export function conciliacionCobrosSinBanco(desde?: string, hasta?: string) {
+  return apiServer<CobrosSinBancoResponse>("/v1/conciliacion/cobros-sin-banco", {
+    searchParams: { desde, hasta },
+    cache: "no-store",
+  });
 }

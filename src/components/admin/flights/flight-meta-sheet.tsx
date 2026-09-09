@@ -22,6 +22,7 @@ import { cancunInputToIso, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import { updateFlightAction } from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
+import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
 
 interface PilotOption {
   id: string;
@@ -43,15 +44,20 @@ interface MetaFormValues {
   cobrado: boolean;
 }
 
-const METODO_COBRO_OPTS: { value: MetodoPago; label: string; description: string }[] = [
-  { value: "TRANSFERENCIA", label: "Transferencia", description: "Facturable · entra a Facturas antes de cobrar" },
-  { value: "HSBC_LINK", label: "HSBC link", description: "Facturable · entra a Facturas antes de cobrar" },
-  { value: "BILLPOCKET", label: "BillPocket (terminal)", description: "Facturable · entra a Facturas antes de cobrar" },
-  { value: "CHEQUE", label: "Cheque", description: "Facturable · entra a Facturas antes de cobrar" },
-  { value: "EFECTIVO", label: "Efectivo", description: "Entra a Facturas hasta que se cobra" },
-  { value: "DOLARES", label: "Dólares directo", description: "Entra a Facturas hasta que se cobra" },
-  { value: "OTRO", label: "Otro (manual)", description: "Entra a Facturas hasta que se cobra · FormaPago SAT 99" },
-];
+// Métodos de cobro: FUENTE ÚNICA `lib/admin/metodos-pago.ts` (antes una
+// lista local que se quedaba atrás al agregar un método, p. ej. Paywise).
+// La descripción aquí es la de FACTURACIÓN: si entra a Facturas antes de
+// cobrarse (`facturable`) o hasta que se cobra.
+const METODO_COBRO_OPTS: { value: MetodoPago; label: string; description: string }[] =
+  METODOS_PAGO.map((m) => ({
+    value: m.value,
+    label: m.value === "BILLPOCKET" ? "BillPocket (terminal)" : m.label,
+    description: m.facturable
+      ? "Facturable · entra a Facturas antes de cobrar"
+      : m.value === "OTRO"
+        ? "Entra a Facturas hasta que se cobra · FormaPago SAT 99"
+        : "Entra a Facturas hasta que se cobra",
+  }));
 
 const PERMISO_OPTS: { value: EstadoPermiso; label: string; description: string }[] = [
   { value: "no_aplica", label: "No aplica", description: "Ruta sin pista que requiera permiso" },
@@ -267,8 +273,8 @@ export function FlightMetaSheet({
                 placeholder="Sin definir"
               />
               <p className="text-xs text-muted-foreground">
-                Con método facturable (transferencia, link, terminal o cheque)
-                el vuelo aparece en Facturas antes de cobrarse. Sin método, no
+                Con método facturable (transferencia, link, terminal, cheque o
+                Paywise) el vuelo aparece en Facturas antes de cobrarse. Sin método, no
                 aparece hasta que se registre el cobro.
               </p>
             </div>

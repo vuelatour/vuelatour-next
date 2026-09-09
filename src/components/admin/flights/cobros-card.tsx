@@ -60,6 +60,8 @@ interface CobrosCardProps {
   tcOficial?: number | null;
   /** Día (YYYY-MM-DD, Cancún) al que corresponde `tcOficial`. */
   tcOficialFecha?: string | null;
+  /** Comisión % sugerida para cobros Paywise (config `paywise_comision_pct`). */
+  paywiseComisionPct?: number;
   /** Rol de oficina (ADMIN/COORDINADOR): habilita "Registrar reembolso". */
   puedeReembolsar?: boolean;
 }
@@ -76,6 +78,7 @@ export function CobrosCard({
   tcCotizacion = null,
   tcOficial = null,
   tcOficialFecha = null,
+  paywiseComisionPct,
   puedeReembolsar = false,
 }: CobrosCardProps) {
   const router = useRouter();
@@ -352,6 +355,7 @@ export function CobrosCard({
         tcCotizacion={tcCotizacion}
         tcOficial={tcOficial}
         tcOficialFecha={tcOficialFecha}
+        paywiseComisionPct={paywiseComisionPct}
       />
     </>
   );

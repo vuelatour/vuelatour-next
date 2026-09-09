@@ -105,6 +105,10 @@ const LINK_POR_CLAVE: Record<
   // folios del item llevan directo a cada vuelo).
   externos_sin_honorario: () => "/admin/expenses",
   sin_conciliar: () => "/admin/conciliacion",
+  // Gastos / cobros bancarios que no aparecen en ningún estado de cuenta:
+  // las pestañas espejo de Conciliación (Paywise incluido).
+  gastos_bancarios_sin_conciliar: () => "/admin/conciliacion?f=sin_banco",
+  cobros_bancarios_sin_conciliar: () => "/admin/conciliacion?f=cobros_sin_banco",
   repartos_incoherentes: () => "/admin/otros-gastos",
   // Cotizaciones de GRUPO: la lista de grupos del periodo (cada grupo del
   // item lleva además su link directo). El saldo se cobra desde "Cobros del

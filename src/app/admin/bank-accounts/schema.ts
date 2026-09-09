@@ -2,6 +2,8 @@ import { z } from "zod";
 
 const MonedaEnum = z.enum(["MXN", "USD"]);
 const RazonEnum = z.enum(["AEROCHARTER", "AERODINAMICA", "OTRA"]);
+// BANCO (estado de cuenta clásico) | PASARELA (Paywise: bruto/comisión/neto).
+const TipoEnum = z.enum(["BANCO", "PASARELA"]);
 
 export const BankAccountFormSchema = z.object({
   alias: z.string().min(1, "Requerido").max(50),
@@ -10,6 +12,7 @@ export const BankAccountFormSchema = z.object({
   clabe: z.string().length(18, "CLABE son 18 dígitos").optional().or(z.literal("")),
   moneda: MonedaEnum,
   razon_social: RazonEnum,
+  tipo: TipoEnum.optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
 });
 

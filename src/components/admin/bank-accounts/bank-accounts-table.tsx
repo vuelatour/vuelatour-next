@@ -21,7 +21,20 @@ const columns: Array<DataTableColumn<BankAccount>> = [
   {
     key: "banco",
     header: "Banco",
-    cell: (a) => a.banco,
+    cell: (a) => (
+      <span className="inline-flex items-center gap-2">
+        {a.banco}
+        {a.tipo === "PASARELA" && (
+          <Badge
+            variant="outline"
+            className="border-violet-500/40 text-violet-600 dark:text-violet-400 text-[10px]"
+            title="Pasarela de cobro: sus abonos traen bruto, comisión y neto (auditoría Paywise)"
+          >
+            Pasarela
+          </Badge>
+        )}
+      </span>
+    ),
   },
   {
     key: "moneda",

@@ -6,6 +6,10 @@ export type MetodoPago =
   | "CHEQUE"
   | "EFECTIVO"
   | "DOLARES"
+  /** Link/pasarela Paywise (9-sep-2026): lo registra la OFICINA; sin IVA por
+      defecto (como BillPocket) y con comisión bancaria del COBRO (≈8.857 %)
+      que el estado de cuenta de Paywise sustituye por la real al conciliar. */
+  | "PAYWISE"
   /** Método MANUAL (solo oficina): el nombre va en metodo_pago_detalle. */
   | "OTRO";
 export type PaisAeronave = "MX" | "USA";

@@ -5,8 +5,10 @@ import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
 import { cargarCatalogosCotizador } from "@/lib/api/quote-catalogos-server";
 import { getClient } from "@/lib/api/clients-server";
 import { getMe } from "@/lib/api/me";
+import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
+import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { ApiError } from "@/lib/api/errors";
-import type { FlightSnapshot } from "@/types/flights";
+import { CANCUN_TZ } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -33,17 +35,30 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
     throw err;
   }
 
-  // Cliente (nombre + interno), cobros del vuelo y catálogos, en paralelo.
-  // Cobros: best-effort — en SOLICITUD/COTIZADO aún no hay vuelo operativo.
-  // Visibles desde la cotización porque un cobro bloquea la revisión y desde
-  // aquí se elimina para desbloquear.
-  const [client, cobrosVuelo, catalogos] = await Promise.all([
-    getClient(quote.cliente_id).catch(() => null),
-    quote.estado !== "SOLICITUD" && quote.estado !== "COTIZADO"
-      ? getFlightSnapshot(id).catch(() => null)
-      : Promise.resolve<FlightSnapshot | null>(null),
-    cargarCatalogosCotizador(),
-  ]);
+  // Día de la cotización en pared Cancún (fecha_solicitud ?? fecha_vuelo):
+  // el TC oficial de ESE día respalda el cobro en MXN cuando la cotización
+  // no fijó TC (misma regla que el detalle del vuelo y los Excel).
+  const diaCotizacion = (() => {
+    const iso = quote.fecha_solicitud ?? quote.fecha_vuelo;
+    if (!iso) return null;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? null
+      : new Intl.DateTimeFormat("en-CA", { timeZone: CANCUN_TZ }).format(d);
+  })();
+
+  // Cliente (nombre + interno), cobros del vuelo, catálogos, TC oficial y
+  // comisión Paywise, en paralelo. Cobros: best-effort y en TODO estado
+  // (9-sep-2026: la card de cobros se pinta siempre y desde la cotización
+  // se registran anticipos; antes se omitía en SOLICITUD/COTIZADO).
+  const [client, cobrosVuelo, catalogos, tcOficial, paywiseComisionPct] =
+    await Promise.all([
+      getClient(quote.cliente_id).catch(() => null),
+      getFlightSnapshot(id).catch(() => null),
+      cargarCatalogosCotizador(),
+      diaCotizacion ? getTipoCambioOficial(diaCotizacion) : Promise.resolve(null),
+      getPaywiseComisionPct(),
+    ]);
 
   return (
     <QuoteWorkspace
@@ -57,6 +72,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
       cobros={cobrosVuelo?.cobros ?? []}
       totalCobrado={cobrosVuelo?.total_cobrado ?? 0}
       rol={me?.rol ?? null}
+      tcOficial={tcOficial}
+      tcOficialFecha={diaCotizacion}
+      paywiseComisionPct={paywiseComisionPct}
     />
   );
 }

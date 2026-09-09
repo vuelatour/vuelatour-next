@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { DocumentArrowUpIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
-import { ImportDialog } from "./import-dialog";
+import { ImportDialog, type CuentaImportOption } from "./import-dialog";
 
-export function ImportButton({ cuentas }: { cuentas: { id: string; label: string }[] }) {
+export function ImportButton({ cuentas }: { cuentas: CuentaImportOption[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>

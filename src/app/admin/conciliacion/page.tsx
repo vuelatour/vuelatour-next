@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly, todayCancun } from "@/lib/datetime";
 import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -17,16 +17,24 @@ import {
   GastosSinBancoTable,
   type GastoSinBancoRow,
 } from "@/components/admin/conciliacion/gastos-sin-banco-table";
+import { CobrosSinBancoTable } from "@/components/admin/conciliacion/cobros-sin-banco-table";
+import { PaywiseAuditoriaPanel } from "@/components/admin/conciliacion/paywise-auditoria";
 import {
+  auditoriaPaywise,
+  conciliacionCobrosSinBanco,
+  conciliacionGastosSinBanco,
   conciliacionResumen,
   listEstadosCuenta,
   listMovimientosBancarios,
   type ListConciliacionQuery,
 } from "@/lib/api/conciliacion-server";
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
-import { conciliacionGastosSinBanco } from "@/lib/api/conciliacion-server";
 import { listGastos } from "@/lib/api/expenses-server";
+import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { medioPagoLabel } from "@/lib/admin/medios-pago";
+import { isApiError } from "@/lib/api/errors";
+import type { PaywiseAuditoria } from "@/types/conciliacion";
 
 export const dynamic = "force-dynamic";
 // Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
@@ -34,45 +42,105 @@ export const dynamic = "force-dynamic";
 // cortaba antes de que el API respondiera.
 export const maxDuration = 300;
 
-type Filtro = "todos" | "pendientes" | "conciliados" | "sin_banco";
+type Filtro =
+  | "todos"
+  | "pendientes"
+  | "conciliados"
+  | "sin_banco"
+  | "cobros_sin_banco"
+  | "paywise";
+
+const FILTROS: Filtro[] = [
+  "todos",
+  "pendientes",
+  "conciliados",
+  "sin_banco",
+  "cobros_sin_banco",
+  "paywise",
+];
+
+/** Ventana ±días abono Paywise ↔ cobro (liquidación diferida; default del API). */
+const PAYWISE_DIAS = 5;
 
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
 const fmtDate = fmtDateOnly;
 
+const esFecha = (v: string | undefined): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
 export default async function ConciliacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ f?: string }>;
+  searchParams: Promise<{ f?: string; desde?: string; hasta?: string; cuenta?: string }>;
 }) {
   const sp = await searchParams;
-  const filtro: Filtro =
-    sp.f === "pendientes" || sp.f === "conciliados" || sp.f === "sin_banco"
-      ? sp.f
-      : "todos";
+  const filtro: Filtro = FILTROS.includes(sp.f as Filtro) ? (sp.f as Filtro) : "todos";
 
   const query: ListConciliacionQuery = { limit: 300 };
   if (filtro === "pendientes") query.conciliado = false;
   if (filtro === "conciliados") query.conciliado = true;
 
-  const [{ data: movs }, cuentasRes, gastosRes, resumen, estadosRes, sinBanco] =
-    await Promise.all([
-      listMovimientosBancarios(query),
-      listBankAccounts({ limit: 100 }),
-      listGastos({ limit: 200 }),
-      conciliacionResumen().catch(() => []),
-      // Best-effort: la página no se cae si el archivado aún no responde.
-      listEstadosCuenta().catch(() => ({ data: [] })),
-      // El INVERSO de la bandeja (28-ago): gastos bancarios del sistema que
-      // no aparecen en ningún estado de cuenta. Best-effort (skew de deploy).
-      conciliacionGastosSinBanco().catch(() => null),
-    ]);
+  // Periodo de la auditoría Paywise: mes corriente en hora Cancún por default.
+  const hoy = todayCancun();
+  const pwDesde = esFecha(sp.desde) ? sp.desde : `${hoy.slice(0, 7)}-01`;
+  const pwHasta = esFecha(sp.hasta) ? sp.hasta : hoy;
+  const pwCuenta = sp.cuenta && /^[0-9a-f-]{36}$/i.test(sp.cuenta) ? sp.cuenta : "";
+
+  const [
+    { data: movs },
+    cuentasRes,
+    gastosRes,
+    resumen,
+    estadosRes,
+    sinBanco,
+    cobrosSinBanco,
+    paywiseComisionPct,
+  ] = await Promise.all([
+    listMovimientosBancarios(query),
+    listBankAccounts({ limit: 100 }),
+    listGastos({ limit: 200 }),
+    conciliacionResumen().catch(() => []),
+    // Best-effort: la página no se cae si el archivado aún no responde.
+    listEstadosCuenta().catch(() => ({ data: [] })),
+    // El INVERSO de la bandeja (28-ago): gastos bancarios del sistema que
+    // no aparecen en ningún estado de cuenta. Best-effort (skew de deploy).
+    conciliacionGastosSinBanco().catch(() => null),
+    // Espejo para COBROS (9-sep): transferencia / HSBC link / cheque /
+    // Paywise sin abono importado. Best-effort.
+    conciliacionCobrosSinBanco().catch(() => null),
+    getPaywiseComisionPct(),
+  ]);
   const estadosCuenta = estadosRes.data;
+
+  // Auditoría Paywise solo en su pestaña (cruce completo del periodo). El
+  // 400 «sin cuenta PASARELA» se muestra como guía, no como error de página.
+  let auditoria: PaywiseAuditoria | null = null;
+  let auditoriaError: string | null = null;
+  if (filtro === "paywise") {
+    try {
+      auditoria = await auditoriaPaywise({
+        desde: pwDesde,
+        hasta: pwHasta,
+        dias: PAYWISE_DIAS,
+        ...(pwCuenta ? { cuenta_bancaria_id: pwCuenta } : {}),
+      });
+    } catch (err) {
+      auditoriaError = isApiError(err)
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : "No se pudo consultar la auditoría";
+    }
+  }
 
   const cuentas = cuentasRes.data.map((c) => ({
     id: c.id,
-    label: `${c.alias} · ${c.banco} (${c.moneda})`,
+    label: `${c.alias} · ${c.banco} (${c.moneda})${c.tipo === "PASARELA" ? " · pasarela" : ""}`,
+    tipo: c.tipo ?? null,
   }));
+  const cuentasPasarela = cuentasRes.data
+    .filter((c) => c.tipo === "PASARELA")
+    .map((c) => ({ id: c.id, label: `${c.alias} (${c.moneda})`, moneda: c.moneda }));
   const gastosOpts = gastosRes.data
     // Los gastos BODEGA (salida de inventario) NO son egresos bancarios: la
     // conciliación los excluye por diseño (igual que el auto-cruce del API),
@@ -101,10 +169,12 @@ export default async function ConciliacionPage({
           ? ` · ${g.lugar}`
           : ""
     }`,
+    // Etiqueta del medio: fuente única (antes PAYWISE se pintaba como
+    // "Transferencia").
     medio:
       g.medio_pago === "TARJETA_CORP"
         ? `Tarjeta${g.tarjeta_terminacion ? ` **** ${g.tarjeta_terminacion}` : ""}`
-        : "Transferencia",
+        : medioPagoLabel(g.medio_pago),
     capturo: uno(g.captura)?.nombre ?? "—",
     vuelo: uno(g.vuelo)?.folio != null ? `#${uno(g.vuelo)!.folio}` : "—",
     monto: `$${fmtMoney(g.monto)} ${g.moneda ?? "MXN"}`,
@@ -118,6 +188,11 @@ export default async function ConciliacionPage({
       key: "sin_banco",
       label: `Gastos sin banco${sinBanco ? ` (${sinBanco.total})` : ""}`,
     },
+    {
+      key: "cobros_sin_banco",
+      label: `Cobros sin banco${cobrosSinBanco ? ` (${cobrosSinBanco.total})` : ""}`,
+    },
+    { key: "paywise", label: "Auditoría Paywise" },
   ];
 
   return (
@@ -129,10 +204,16 @@ export default async function ConciliacionPage({
           <p className="text-sm text-muted-foreground mt-1">
             Sube el estado de cuenta: los cargos se cruzan automáticamente con los gastos y los
             abonos con los cobros de vuelos, por monto y fecha. Los ambiguos se vinculan a mano.
+            El de Paywise se sube en su cuenta (pasarela) y se audita en «Auditoría Paywise».
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <ReporteConciliacionButton cuentas={cuentas} filtroActivo={filtro} />
+          <ReporteConciliacionButton
+            cuentas={cuentas}
+            filtroActivo={
+              filtro === "cobros_sin_banco" || filtro === "paywise" ? "todos" : filtro
+            }
+          />
           <ImportButton cuentas={cuentas} />
         </div>
       </div>
@@ -184,16 +265,59 @@ export default async function ConciliacionPage({
         ))}
       </div>
 
-      {filtro === "sin_banco" ? (
+      {filtro === "paywise" ? (
+        <PaywiseAuditoriaPanel
+          auditoria={auditoria}
+          error={auditoriaError}
+          desde={pwDesde}
+          hasta={pwHasta}
+          dias={auditoria?.dias ?? PAYWISE_DIAS}
+          cuentaId={pwCuenta}
+          cuentasPasarela={cuentasPasarela}
+          paywiseComisionPct={paywiseComisionPct}
+        />
+      ) : filtro === "cobros_sin_banco" ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Cobros que no aparecen en ningún estado de cuenta
+            </CardTitle>
+            <CardDescription>
+              Transferencia, HSBC link, cheque o Paywise (cobros de vuelo y sobres de grupo)
+              sin cruzar con ningún abono importado (últimos 90 días). Puede faltar el periodo
+              por importar, no coincidir fecha/monto, o el dinero nunca llegó.
+              {cobrosSinBanco && cobrosSinBanco.por_moneda.length > 0 && (
+                <>
+                  {" "}
+                  Sin cruzar:{" "}
+                  {cobrosSinBanco.por_moneda
+                    .map((m) => `$${fmtMoney(String(m.monto))} ${m.moneda}`)
+                    .join(" · ")}
+                  .
+                </>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {cobrosSinBanco ? (
+              <CobrosSinBancoTable rows={cobrosSinBanco.data} />
+            ) : (
+              <p className="px-4 pb-4 text-sm text-muted-foreground">
+                No se pudo consultar la lista (el API no respondió). Recarga la página.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : filtro === "sin_banco" ? (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Gastos que no aparecen en el estado de cuenta
             </CardTitle>
             <CardDescription>
-              Pagados con tarjeta corporativa o transferencia y aún sin cruzar
-              con ninguna línea del banco (últimos 90 días). Puede faltar el
-              periodo por importar, no coincidir fecha/monto, o el cargo nunca
+              Pagados con tarjeta corporativa, transferencia o Paywise y aún sin
+              cruzar con ninguna línea del banco (últimos 90 días). Puede faltar
+              el periodo por importar, no coincidir fecha/monto, o el cargo nunca
               llegó al banco.
               {sinBanco && sinBanco.por_moneda.length > 0 && (
                 <>
@@ -234,7 +358,7 @@ export default async function ConciliacionPage({
       {/* Archivo histórico: cada importación guarda el archivo original del
           banco para volver a consultarlo. Sin importaciones archivadas la
           sección no aparece (no hay nada que mostrar). */}
-      {estadosCuenta.length > 0 && (
+      {estadosCuenta.length > 0 && filtro !== "paywise" && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Estados de cuenta importados</CardTitle>

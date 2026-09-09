@@ -47,6 +47,10 @@ import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
  * mientras exista un cobro la cotización no puede editarse (cambiaría un
  * total ya cobrado): desde aquí se elimina el cobro (con confirmación) para
  * desbloquear la edición, o se navega al vuelo.
+ *
+ * SIEMPRE visible (pedido del cliente 9-sep-2026): con 0 cobros pinta el
+ * estado vacío «Sin cobros registrados» + «Registrar cobro» — antes con 0
+ * cobros no había dónde registrar desde la cotización.
  */
 export function QuoteCobrosCard({
   quoteId,
@@ -55,6 +59,8 @@ export function QuoteCobrosCard({
   totalCobrado,
   cobros,
   puedeReembolsar = false,
+  onRegistrar,
+  registrarTitle,
 }: {
   quoteId: string;
   /** Folio del vuelo (encabezado del diálogo de reembolso). */
@@ -64,6 +70,10 @@ export function QuoteCobrosCard({
   cobros: FlightCobro[];
   /** Rol de oficina (ADMIN/COORDINADOR): habilita "Registrar reembolso". */
   puedeReembolsar?: boolean;
+  /** Abre el formulario de cobro (el mismo del detalle del vuelo); undefined
+      = sin permiso o vuelo aún no cobrable (no se pinta el botón). */
+  onRegistrar?: () => void;
+  registrarTitle?: string;
 }) {
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -88,26 +98,54 @@ export function QuoteCobrosCard({
     setReciboDe(null);
   };
 
-  if (cobros.length === 0) return null;
-
+  const sinCobros = cobros.length === 0;
   // Misma tolerancia que el API (1 USD): los centavos de la conversión
   // MXN→USD no cuentan como deuda.
-  const cubierto = totalCobrado >= montoTotalUsd - TOLERANCIA_COBRO_USD;
+  const cubierto = !sinCobros && totalCobrado >= montoTotalUsd - TOLERANCIA_COBRO_USD;
   // ¿Hay partes de un sobre de grupo? Esas no se eliminan desde aquí.
   const haySobre = cobros.some(esParteDeSobre);
 
+  const botonRegistrar = onRegistrar ? (
+    <Button
+      type="button"
+      size="sm"
+      variant={sinCobros ? "default" : "outline"}
+      onClick={onRegistrar}
+      title={registrarTitle}
+      className="gap-1.5"
+    >
+      <BanknotesIcon className="h-4 w-4" />
+      Registrar cobro
+    </Button>
+  ) : null;
+
   return (
-    <Card id="cobros-vuelo" className="scroll-mt-24 border-emerald-500/40">
+    <Card
+      id="cobros-vuelo"
+      className={`scroll-mt-24 ${sinCobros ? "border-border" : "border-emerald-500/40"}`}
+    >
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
         <div>
           <CardTitle className="text-sm flex items-center gap-2">
-            <BanknotesIcon className="h-4 w-4 text-emerald-500" />
-            Cobros registrados en el vuelo
+            <BanknotesIcon
+              className={`h-4 w-4 ${sinCobros ? "text-muted-foreground" : "text-emerald-500"}`}
+            />
+            Cobros del vuelo
           </CardTitle>
           <CardDescription className="text-xs mt-1">
-            Cobrado {fmtUsd(totalCobrado)} de {fmtUsd(montoTotalUsd)}. Mientras
-            exista un cobro, la cotización no puede editarse (cambiaría un
-            total ya cobrado): elimínalo aquí si necesitas ajustarla.
+            {sinCobros ? (
+              <>
+                Total a cobrar {fmtUsd(montoTotalUsd)}. Al registrar el primer
+                cobro la cotización queda bloqueada para edición (cambiaría un
+                total ya cobrado).
+              </>
+            ) : (
+              <>
+                Cobrado {fmtUsd(totalCobrado)} de {fmtUsd(montoTotalUsd)}. Mientras
+                exista un cobro, la cotización no puede editarse (cambiaría un
+                total ya cobrado): elimínalo aquí si necesitas ajustarla.
+              </>
+            )}
             {haySobre && (
               <>
                 {" "}
@@ -118,24 +156,37 @@ export function QuoteCobrosCard({
           </CardDescription>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
-          {/* Reembolso: solo oficina (la card ya implica cobros > 0). */}
-          {puedeReembolsar && (
+          {botonRegistrar}
+          {/* Reembolso: solo oficina y solo si hay algo cobrado. */}
+          {puedeReembolsar && !sinCobros && (
             <ReembolsoButton flightId={quoteId} flightFolio={quoteFolio} />
           )}
-          <Badge
-            variant="outline"
-            className={
-              cubierto
-                ? "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
-                : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-            }
-          >
-            {/* El neto puede quedar en 0 tras un reembolso: no es "parcial". */}
-            {cubierto ? "Cobrado" : totalCobrado > 0 ? "Parcial" : "Reembolsado"}
-          </Badge>
+          {!sinCobros && (
+            <Badge
+              variant="outline"
+              className={
+                cubierto
+                  ? "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30"
+                  : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+              }
+            >
+              {/* El neto puede quedar en 0 tras un reembolso: no es "parcial". */}
+              {cubierto ? "Cobrado" : totalCobrado > 0 ? "Parcial" : "Reembolsado"}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
+        {sinCobros && (
+          <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center">
+            <p className="text-sm font-medium">Sin cobros registrados</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {onRegistrar
+                ? "Registra aquí el anticipo o la liquidación del cliente: transferencia, HSBC link, Paywise, cheque, BillPocket, efectivo o dólares."
+                : "Los cobros los registra la oficina (administración, coordinación o facturación)."}
+            </p>
+          </div>
+        )}
         {cobros.map((c) => {
           // Reembolso = cobro NEGATIVO (derivado del signo): en rojo, con
           // badge — RESTA del cobrado del vuelo.

@@ -32,6 +32,15 @@ const MONEDAS = [
   { value: "USD", label: "Dólares (USD)" },
 ];
 
+const TIPOS = [
+  { value: "BANCO", label: "Banco", description: "Estado de cuenta clásico (cargos y abonos)" },
+  {
+    value: "PASARELA",
+    label: "Pasarela (Paywise)",
+    description: "Cada abono trae bruto, comisión y neto; la auditoría Paywise cruza contra los cobros",
+  },
+];
+
 const RAZONES = [
   { value: "AEROCHARTER", label: "Aero Charter Cancún" },
   { value: "AERODINAMICA", label: "Aerodinámica de Monterrey" },
@@ -121,6 +130,19 @@ export function BankAccountFormDialog({ open, onOpenChange, initialAccount }: Pr
             </Field>
           </div>
 
+          <Field
+            label="Tipo de cuenta"
+            hint="Elige «Pasarela» para la cuenta de Paywise: ahí se importa su estado de cuenta y corre la auditoría."
+            error={errors.tipo?.message}
+          >
+            <SearchableSelect
+              options={TIPOS}
+              value={(watch("tipo") as string | undefined) ?? "BANCO"}
+              onChange={(v) => setValue("tipo", v as never)}
+              placeholder="Tipo de cuenta"
+            />
+          </Field>
+
           <Field label="Número de cuenta" error={errors.numero_cuenta?.message}>
             <Input {...register("numero_cuenta")} className="font-mono" />
           </Field>
@@ -157,6 +179,7 @@ function defaults(account?: BankAccount): BankAccountFormValues {
       clabe: "",
       moneda: "MXN",
       razon_social: "AEROCHARTER",
+      tipo: "BANCO",
       notas: "",
     };
   }
@@ -167,6 +190,7 @@ function defaults(account?: BankAccount): BankAccountFormValues {
     clabe: account.clabe ?? "",
     moneda: account.moneda,
     razon_social: account.razon_social,
+    tipo: account.tipo ?? "BANCO",
     notas: account.notas ?? "",
   };
 }
