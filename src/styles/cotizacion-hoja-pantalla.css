@@ -11,7 +11,9 @@
    3. La CROMA de edición fuera del área impresa (márgenes de fila, filas
       «+ Agregar», estados). Todo selector cuelga de `.cot-hoja` para ganar la
       cascada a `cotizacion-hoja.css` (`.cot-hoja *` fija font/color/box-
-      sizing) y no tocar nada fuera del papel. */
+      sizing) y no tocar nada fuera del papel.
+   4. El ACENTO DE INTERACCIÓN (`--cot-acento`, solo en edición): color
+      llamativo en lo que se puede tocar y NO se imprime o está vacío. */
 
 /* ---------- 1. Geometría de pantalla (misma que la vista previa) ---------- */
 .cot-hoja.cot-hoja--pantalla {
@@ -26,6 +28,11 @@
      esto, se pintaría DETRÁS del fondo blanco de la hoja (en la vista previa
      el fondo del body se propaga al lienzo y por eso ahí sí se ve). */
   isolation: isolate;
+  /* Acento de interacción (sección 4): el rojo del sistema (brand-600 /
+     brand-700 en hover). Tokens propios de la hoja porque `.cot-hoja *`
+     fija el color de TODO descendiente y el papel no hereda el tema. */
+  --cot-acento: #dc2626;
+  --cot-acento-hover: #b91c1c;
 }
 .cot-hoja--pantalla .marca { position: absolute; }
 .cot-hoja--pantalla .pie-pantalla {
@@ -267,10 +274,11 @@
 /* Lo TECLEADO en la ruta rápida va en negro: la fila es gris (placeholder)
    y el input hereda el color, así que sin esto no se distingue de la pista. */
 .cot-hoja .cot-fila-agregar .cot-in { color: #1d1d1d; }
-/* Acción en línea discreta («capturar», «quitar»). */
+/* Acción en línea («capturar», «capturado · quitar», «+ nuevo cliente»,
+   «corregir nombre»): color y tamaño en edición los fija la sección 4. */
 .cot-hoja .cot-liga {
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   color: #9ca3af;
   background: transparent;
   border: 0;
@@ -282,6 +290,16 @@
 }
 .cot-hoja .cot-liga:hover { color: #102a43; }
 .cot-hoja .cot-liga:focus-visible { color: #102a43; outline: 2px solid var(--ring, #e63946); outline-offset: 1px; border-radius: 2px; }
+/* Acciones EN LA LÍNEA del campo (a la derecha de «Selecciona cliente», de
+   «× 4 pax»…), separadas por «·». Antes iban en el margen izquierdo del papel
+   (74 px): a 12 px se salían de la hoja y caían sobre el fondo del shell. */
+.cot-hoja .cot-acciones { display: inline; font-size: 12px; font-weight: 400; }
+/* El marcado pone un ESPACIO real antes de cada «·» (U+00B7 no rompe línea
+   por sí solo y los enlaces son nowrap): con un nombre de cliente largo las
+   acciones bajan al renglón siguiente DENTRO del papel, con el «·» pegado al
+   enlace que sigue, en vez de empujar la columna derecha de `.meta`. */
+.cot-hoja .cot-acciones .cot-sep { margin: 0 6px 0 2px; color: #d1d5db; }
+.cot-hoja .cot-acciones .cot-liga { margin-left: 0; white-space: nowrap; }
 .cot-hoja .cot-tenue { color: #9ca3af; }
 
 /* Ruta grande sin tramos: placeholder gris con el tamaño del título. */
@@ -303,3 +321,47 @@
 
 /* Lectura bloqueada: cursor normal, sin hover. */
 .cot-hoja--lectura .cot-in { cursor: default; }
+
+/* ---------- 4. Acento de interacción (SOLO edición) ----------
+   Feedback del cliente (9-sep-2026): lo que se tiene que tocar sobre la hoja
+   debe verse con un color llamativo. Un solo tono (`--cot-acento`) y SOLO en
+   lo que no se imprime o está vacío: placeholders de los campos invisibles,
+   filas «+ Agregar…» con sus chips, enlaces en línea. Lo ya capturado sigue
+   idéntico al PDF; en lectura bloqueada (`.cot-hoja--lectura`) nada de esto
+   aplica. Hover/foco: tono más oscuro y subrayado. */
+.cot-hoja:not(.cot-hoja--lectura) .cot-in::placeholder { color: var(--cot-acento); }
+.cot-hoja:not(.cot-hoja--lectura) .cot-in--flujo:empty::before { color: var(--cot-acento); }
+.cot-hoja:not(.cot-hoja--lectura) .cot-sel--vacio { color: var(--cot-acento); }
+/* Un control DESHABILITADO no se puede tocar (origen de un tramo > 1, TUAS
+   con el switch apagado): su placeholder se queda gris, no invita. */
+.cot-hoja:not(.cot-hoja--lectura) .cot-in:disabled::placeholder,
+.cot-hoja:not(.cot-hoja--lectura) .cot-sel--vacio:disabled { color: #9ca3af; }
+/* «+ Agregar tramo» · «o escribe la ruta…» · «+ Agregar concepto» y los chips
+   sugeridos (Handler · Comisariato · Extensión de servicios). Lo TECLEADO en
+   la ruta rápida sigue en negro (regla de la sección 3). */
+.cot-hoja:not(.cot-hoja--lectura) .cot-fila-agregar > td,
+.cot-hoja:not(.cot-hoja--lectura) .cot-fila-agregar .cot-btn { color: var(--cot-acento); }
+.cot-hoja:not(.cot-hoja--lectura) .cot-fila-agregar .cot-btn:hover,
+.cot-hoja:not(.cot-hoja--lectura) .cot-fila-agregar .cot-btn:focus-visible {
+  color: var(--cot-acento-hover);
+  background: rgba(220, 38, 38, 0.07);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Enlaces («+ nuevo cliente», «corregir nombre», «capturar», «capturado ·
+   quitar»): legibles (12 px) y siempre dentro del papel (`.cot-acciones`). */
+.cot-hoja:not(.cot-hoja--lectura) .cot-liga { color: var(--cot-acento); font-size: 12px; }
+.cot-hoja:not(.cot-hoja--lectura) .cot-liga:hover,
+.cot-hoja:not(.cot-hoja--lectura) .cot-liga:focus-visible {
+  color: var(--cot-acento-hover);
+  text-decoration: underline;
+}
+/* Valores VACÍOS que el PDF imprime como texto («Por confirmar» en traslados,
+   «—» en la fecha de un tramo): conservan el color impreso, pero llevan un
+   punteado del acento para que se vea que se pueden tocar. Con valor:
+   idénticos al PDF (sin subrayado). */
+.cot-hoja:not(.cot-hoja--lectura) .cot-fecha__texto--vacio {
+  text-decoration: underline dotted var(--cot-acento);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}

@@ -97,7 +97,7 @@ export interface QuoteSheetProps {
   /** Lectura sin breakdown (snapshot viejo): totales persistidos. */
   totalRespaldo?: { total_usd: number | null; total_mxn: number | null };
   grupo?: { id: string; folio: number | string | null } | null;
-  /** Croma junto al cliente (alta: «+ Nuevo cliente», «Corregir nombre»), en el margen. */
+  /** Croma junto al cliente (alta: «+ nuevo cliente» · «corregir nombre»), en la línea del campo. */
   clienteExtra?: ReactNode;
   /** Escala fija (1 = tamaño natural); por default se ajusta al ancho del contenedor. */
   escala?: number;
@@ -326,14 +326,13 @@ export function QuoteSheet({
                 ` ${clienteNombre}`
               )}
               {clienteExtra && !lectura && (
-                // Apiladas y alineadas al borde del texto: en una sola línea
-                // («+ nuevo cliente · corregir nombre») la croma rebasaba el
-                // margen de 74 px del papel y caía sobre el fondo del shell.
-                <span
-                  className="cot-margen"
-                  {...UI}
-                  style={{ top: "auto", bottom: 0, flexDirection: "column", alignItems: "flex-end", gap: 2 }}
-                >
+                // EN LA LÍNEA del campo, a la derecha de «Selecciona cliente»
+                // y separadas por «·»: en el margen izquierdo del papel
+                // (74 px) los enlaces se salían de la hoja y no se veían.
+                <span className="cot-acciones" {...UI}>
+                  {/* Espacio real = oportunidad de salto antes del «·» (nombre largo). */}
+                  {" "}
+                  <span className="cot-sep">·</span>
                   {clienteExtra}
                 </span>
               )}

@@ -38,3 +38,53 @@ describe("CSS de la hoja sincronizado con pyservices", () => {
     }
   });
 });
+
+/**
+ * CSS de PANTALLA (`cotizacion-hoja-pantalla.css`): no se sincroniza con
+ * pyservices, pero tiene invariantes propios: todo cuelga de `.cot-` (nunca
+ * sale del papel/escenario) y el ACENTO de interacción (`--cot-acento`,
+ * feedback del cliente 9-sep-2026) SOLO existe en edición — cada regla que
+ * lo use va bajo `.cot-hoja:not(.cot-hoja--lectura)` y ninguna regla de
+ * lectura pinta acento ni subrayado. En lectura bloqueada la hoja ES el PDF.
+ */
+describe("CSS de pantalla de la hoja (acento solo en edición)", () => {
+  const css = readFileSync(path.join(RAIZ, "src/styles/cotizacion-hoja-pantalla.css"), "utf8");
+  const sinComentarios = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const reglas = [...sinComentarios.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selectores: m[1]
+      .trim()
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    cuerpo: m[2],
+  }));
+
+  it("llaves balanceadas y sin bloques anidados (el parser del test es plano)", () => {
+    expect((sinComentarios.match(/\{/g) ?? []).length).toBe((sinComentarios.match(/\}/g) ?? []).length);
+    expect(sinComentarios).not.toMatch(/@media|@supports|@container|@layer/);
+    expect(reglas.length).toBeGreaterThan(20);
+  });
+
+  it("todo selector cuelga de .cot-", () => {
+    for (const r of reglas) for (const s of r.selectores) expect(s.startsWith(".cot-"), s).toBe(true);
+  });
+
+  it("toda regla que usa var(--cot-acento) va bajo :not(.cot-hoja--lectura)", () => {
+    const conAcento = reglas.filter((r) => /var\(--cot-acento/.test(r.cuerpo));
+    expect(conAcento.length).toBeGreaterThan(0);
+    for (const r of conAcento) {
+      for (const s of r.selectores) {
+        expect(s.includes(":not(.cot-hoja--lectura)"), `${s} usa el acento fuera de edición`).toBe(true);
+      }
+    }
+  });
+
+  it("ninguna regla de lectura pinta acento ni subrayado", () => {
+    // `.cot-hoja--lectura` como selector real (no dentro de `:not(...)`).
+    const deLectura = reglas.filter((r) => r.selectores.some((s) => /(^|[^(])\.cot-hoja--lectura/.test(s)));
+    expect(deLectura.length).toBeGreaterThan(0);
+    for (const r of deLectura) {
+      expect(r.cuerpo, r.selectores.join(", ")).not.toMatch(/--cot-acento|text-decoration|#dc2626|#b91c1c|220, 38, 38/);
+    }
+  });
+});

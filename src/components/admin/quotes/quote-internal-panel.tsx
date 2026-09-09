@@ -488,7 +488,7 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
     <aside
       id="panel-interno"
       className={cn(
-        "min-w-0 rounded-xl border border-dashed border-muted-foreground/40 bg-muted/20 xl:w-[22rem] xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto",
+        "min-w-0 rounded-xl border border-dashed border-muted-foreground/40 bg-muted/20 xl:w-[24rem] xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto",
         className,
       )}
       aria-label={titulo}
@@ -1864,6 +1864,13 @@ function Dato({
   );
 }
 
+/**
+ * Selector segmentado que NUNCA recorta (feedback 9-sep-2026: «Personalizada»
+ * se salía): grid de N columnas iguales, texto envolvible y centrado, con el
+ * nombre arriba y el dato (p. ej. "$1,050/hr") abajo en mono. Si alguna
+ * opción lleva `sub`, las demás reservan esa línea para que los nombres
+ * queden alineados.
+ */
 function Segmented({
   value,
   onChange,
@@ -1874,13 +1881,18 @@ function Segmented({
   options: {
     value: string;
     label: string;
-    /** Dato sutil junto al label (ej. "$750/hr" en el selector de tarifa). */
+    /** Dato sutil bajo el label (ej. "$750/hr" en el selector de tarifa). */
     sub?: string;
     disabled?: boolean;
   }[];
 }) {
+  const conSub = options.some((o) => !!o.sub);
   return (
-    <div className="inline-flex w-full rounded-lg border border-border bg-navy-800/50 p-1">
+    <div
+      role="group"
+      className="grid w-full gap-0.5 rounded-lg border border-border bg-navy-800/50 p-1"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+    >
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -1891,20 +1903,20 @@ function Segmented({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "flex-1 h-8 px-3 text-xs font-medium rounded-md transition-colors",
+              "flex min-h-8 min-w-0 flex-col items-center justify-center whitespace-normal break-words rounded-md px-1.5 py-1 text-center text-xs font-medium leading-tight transition-colors",
               active ? "bg-navy-700 text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               opt.disabled && "opacity-50 cursor-not-allowed",
             )}
           >
-            {opt.label}
-            {opt.sub && (
+            <span className="block">{opt.label}</span>
+            {conSub && (
               <span
                 className={cn(
-                  "ml-1 font-mono text-[10px] font-normal tabular-nums",
+                  "block font-mono text-[11px] font-normal tabular-nums",
                   active ? "text-foreground/70" : "text-muted-foreground",
                 )}
               >
-                {opt.sub}
+                {opt.sub ?? "\u00a0"}
               </span>
             )}
           </button>

@@ -390,3 +390,65 @@ describe("variantes de la hoja", () => {
     expect(html).toContain("TUAS (total)");
   });
 });
+
+// ---------- Acento de interacción (feedback del cliente, 9-sep-2026) ----------
+
+/**
+ * Croma que SOLO existe en edición (enlaces, filas «+ Agregar», marcas de
+ * vacío, inputs, márgenes). En lectura bloqueada la hoja ES el PDF: nada de
+ * esto puede aparecer, y el CSS del acento cuelga de `:not(.cot-hoja--lectura)`
+ * (ver `styles/__tests__/hoja-css-deriva.test.ts`).
+ */
+const CROMA_EDICION =
+  /cot-liga|cot-acciones|cot-fila-agregar|cot-btn|cot-sel--vacio|cot-fecha__texto--vacio|cot-in\b|placeholder=|cot-margen|cot-tenue|cot-fila--fantasma/;
+
+describe("acento de interacción (solo edición)", () => {
+  const clienteExtra = (
+    <button type="button" className="cot-liga">
+      + nuevo cliente
+    </button>
+  );
+
+  it.each(CASOS.map((c) => [c.nombre, c] as const))(
+    "lectura · %s: raíz --lectura y CERO croma de edición (ni con clienteExtra)",
+    (_nombre, caso) => {
+      const html = renderToString(<QuoteSheet {...caso.props()} lectura clienteExtra={clienteExtra} />);
+      expect(html).toMatch(/class="cot-hoja[^"]*cot-hoja--lectura/);
+      expect(html).not.toMatch(CROMA_EDICION);
+      expect(html).not.toContain("nuevo cliente");
+    },
+  );
+
+  it("edición (hoja1): lo capturado NO lleva marca de vacío; --vacio solo donde el PDF imprime «—»", () => {
+    const html = renderToString(<QuoteSheet {...hoja1().props()} />);
+    expect(html).not.toContain("cot-hoja--lectura");
+    // Selectores con valor (cliente, aeronave, IATA): sin --vacio.
+    expect(html).not.toContain("cot-sel--vacio");
+    // Fechas capturadas: el span impreso va limpio (idéntico al PDF).
+    for (const t of ['cot-fecha__texto">12/09/2026 08:00<', 'cot-fecha__texto">12/09/2026 18:00<', 'cot-fecha__texto">12 sep 2026<']) {
+      expect(html, t).toContain(t);
+    }
+    // Los tramos 2 y 3 no tienen pdf_fecha: el PDF imprime «—» y SOLO ahí va la marca.
+    const vacios = html.match(/cot-fecha__texto--vacio"[^>]*>([^<]*)</g) ?? [];
+    expect(vacios.length).toBe(2);
+    for (const v of vacios) expect(v.endsWith(">—<"), v).toBe(true);
+  });
+
+  it("edición con vacíos: selector y fecha sin valor llevan --vacio y el texto impreso se conserva", () => {
+    const p = hoja1().props();
+    p.valores = { ...p.valores, cliente_id: "", fecha_traslado_final: "" };
+    const html = renderToString(<QuoteSheet {...p} />);
+    expect(html).toMatch(/cot-sel cot-sel--vacio[^>]*>Selecciona cliente</);
+    expect(html).toMatch(/cot-fecha__texto cot-fecha__texto--vacio">Por confirmar</);
+  });
+
+  it("«+ nuevo cliente» va EN LA LÍNEA del cliente (.meta, croma data-cot-ui, con espacio antes del «·»)", () => {
+    const html = renderToString(<QuoteSheet {...hoja1().props()} clienteExtra={clienteExtra} />);
+    const meta = html.slice(html.indexOf('class="meta"'), html.indexOf('class="route'));
+    expect(meta).toMatch(
+      /<span class="cot-acciones" data-cot-ui=""> <span class="cot-sep">·<\/span><button[^>]*class="cot-liga"[^>]*>\+ nuevo cliente<\/button><\/span>/,
+    );
+    // Nunca en el margen del papel (a 12 px se salía de la hoja).
+    expect(meta).not.toContain("cot-margen");
+  });
+});

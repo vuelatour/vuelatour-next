@@ -104,7 +104,7 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   `onFechaPdfChange` sobre `escalas[].pdf_oculto`/`pdf_fecha`),
   `pasajerosPorTramo`, `mapaSvg` (con form limpio: `extraerMapaSvgDeHtml`
   de la hoja del PDF guardado), `totalRespaldo`, `grupo`, `clienteExtra`
-  (alta: «+ nuevo cliente» / «corregir nombre» en el margen).
+  (alta: «+ nuevo cliente» · «corregir nombre» en la línea del cliente).
 - Lectura bloqueada (`bloqueadoRazon`): la hoja se pinta como texto (sin
   inputs), 🔒 + razón en la barra de estado y «Copiar como nueva cotización».
 
@@ -218,6 +218,19 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   `styles/__tests__/hoja-css-deriva.test.ts`). Lo de pantalla (geometría
   794 px, inputs invisibles, márgenes de fila, filas fantasma) vive en
   `cotizacion-hoja-pantalla.css`. Todo selector cuelga de `.cot-hoja`.
+  Ahí también vive el ACENTO DE INTERACCIÓN (`--cot-acento` = brand-600,
+  solo en edición `.cot-hoja:not(.cot-hoja--lectura)`): placeholders, filas
+  «+ Agregar…» y chips, enlaces `.cot-liga` (12 px, en la línea del campo
+  dentro de `.cot-acciones`, nunca en el margen) y punteado en los vacíos
+  que el PDF imprime como texto (`.cot-fecha__texto--vacio`). Lo capturado
+  sigue idéntico al PDF; un control `disabled` conserva el placeholder gris.
+  Dentro de `.cot-acciones` va un ESPACIO real (`{" "}`) antes de cada
+  `.cot-sep` «·»: es la oportunidad de salto de línea (U+00B7 no rompe y los
+  enlaces son nowrap) para que con un nombre largo las acciones bajen de
+  renglón dentro del papel. Guardias: `quote-sheet.test.tsx` («acento de
+  interacción»: lectura sin croma, capturado sin `--vacio`) y
+  `hoja-css-deriva.test.ts` (toda regla con `var(--cot-acento)` bajo
+  `:not(.cot-hoja--lectura)`).
 - MAPA: `hooks/use-quote-mapa-svg.ts` → proxy `app/api/quotes/mapa-svg/
   route.ts` → `POST /v1/quotes/mapa-svg` (el mismo `<svg>` del PDF, inline).
   Con form limpio se reutiliza el de la vista previa

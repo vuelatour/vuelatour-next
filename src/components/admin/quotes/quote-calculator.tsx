@@ -2467,26 +2467,31 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             { shouldDirty: true },
           ),
       };
-  // Croma junto al cliente (alta, en el margen del papel): nuevo / corregir nombre.
+  // Croma junto al cliente (alta, en la línea del campo de la hoja):
+  // «+ nuevo cliente» · «corregir nombre».
   const clienteExtraNode = !isRevise ? (
     <>
       <button type="button" className="cot-liga" onClick={() => setClientDialogOpen(true)}>
         + nuevo cliente
       </button>
       {values.cliente_id && (
-        <button
-          type="button"
-          className="cot-liga"
-          title="Corregir el nombre del cliente (aplica en todo el catálogo)"
-          onClick={() => {
-            const sel = allClients.find((c) => c.id === values.cliente_id);
-            if (!sel) return;
-            setEditClienteNombre(sel.nombre);
-            setEditClienteOpen(true);
-          }}
-        >
-          corregir nombre
-        </button>
+        <>
+          {" "}
+          <span className="cot-sep">·</span>
+          <button
+            type="button"
+            className="cot-liga"
+            title="Corregir el nombre del cliente (aplica en todo el catálogo)"
+            onClick={() => {
+              const sel = allClients.find((c) => c.id === values.cliente_id);
+              if (!sel) return;
+              setEditClienteNombre(sel.nombre);
+              setEditClienteOpen(true);
+            }}
+          >
+            corregir nombre
+          </button>
+        </>
       )}
     </>
   ) : undefined;

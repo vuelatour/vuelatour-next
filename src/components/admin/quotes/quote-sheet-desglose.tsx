@@ -555,6 +555,21 @@ function FilaTua({
             minCh={4}
           />
           {p.despues}
+          {/* En la línea (no en el margen: a 12 px se saldría del papel). */}
+          {capturada && (
+            <span className="cot-acciones" {...UI}>
+              {" "}
+              <span className="cot-sep">·</span>
+              <button
+                type="button"
+                className="cot-liga"
+                onClick={() => onChange(fila.iata, null, moneda)}
+                title="Quitar la captura: vuelve al monto del catálogo"
+              >
+                capturado · quitar
+              </button>
+            </span>
+          )}
           </>
         )}
         {!lectura && (
@@ -570,16 +585,6 @@ function FilaTua({
               <option value="USD">USD</option>
               <option value="MXN">MXN</option>
             </select>
-            {capturada && (
-              <button
-                type="button"
-                className="cot-liga"
-                onClick={() => onChange(fila.iata, null, moneda)}
-                title="Quitar la captura: vuelve al monto del catálogo"
-              >
-                capturado · quitar
-              </button>
-            )}
             {!capturada && fila.tc_aplicado != null && (
               <span className="cot-marca" title={`Convertido con T.C. ${fila.tc_aplicado}`}>
                 T.C. {numeroG(fila.tc_aplicado)}
