@@ -10,6 +10,7 @@ import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
+import { cn } from "@/lib/utils";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 
 const ESTATUS_STYLE: Record<string, string> = {
@@ -129,9 +130,14 @@ export function FlightGastosTable({
     {
       key: "comprobante",
       header: "Comp.",
-      cellClassName: "align-top",
+      // 10-sep-2026: la columna es angosta en el detalle del vuelo y la
+      // miniatura + «Factura» se ENCIMABAN sobre «Pendiente» de la columna
+      // vecina (el badge no envolvía). Ancho mínimo + wrap: con poco espacio
+      // el badge baja debajo de la miniatura, nunca invade la otra columna.
+      headClassName: "min-w-[7rem]",
+      cellClassName: "align-top min-w-[7rem]",
       cell: (g) => (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {g.foto_url && fotoUrls[g.foto_url] && (
             <ComprobantePreview
               path={g.foto_url}
@@ -141,7 +147,7 @@ export function FlightGastosTable({
           )}
           <Badge
             variant="outline"
-            className={ESTATUS_STYLE[g.estatus_comprobante] ?? ""}
+            className={cn("whitespace-nowrap shrink-0", ESTATUS_STYLE[g.estatus_comprobante] ?? "")}
           >
             {g.estatus_comprobante === "SIN_COMPROBANTE"
               ? "Sin comp."
@@ -165,7 +171,8 @@ export function FlightGastosTable({
       // Mismo semáforo "¿ya lo facturé?" que en Gastos (oficina).
       key: "facturacion",
       header: "Facturación",
-      cellClassName: "align-top",
+      headClassName: "min-w-[6.5rem]",
+      cellClassName: "align-top min-w-[6.5rem] whitespace-nowrap",
       cell: (g) => <FacturacionBadge gasto={g} />,
     },
     {
