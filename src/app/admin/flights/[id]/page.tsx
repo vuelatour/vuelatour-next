@@ -851,7 +851,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
           {/* Historial de gastos: quién capturó/editó/eliminó y qué cambió
               (gasto_bitacora por trigger — auditoría pedida el 31-ago). */}
-          <FlightGastosHistorialCard eventos={gastosHistorial} />
+          <FlightGastosHistorialCard
+            eventos={gastosHistorial}
+            edicion={{
+              gastos,
+              aircraft: aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula })),
+              providers: providerOptions,
+              fotoUrls: gastoFotoUrls,
+            }}
+          />
 
           {/* Bitácora: recordatorios de tacómetro + capturas (punto 5) */}
           <FlightBitacoraCard eventos={bitacora} />

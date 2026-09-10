@@ -15,6 +15,21 @@ import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { cn } from "@/lib/utils";
 import type { GastoHistorialEvento } from "@/lib/api/flights-server";
+import type { Gasto } from "@/types/expenses";
+import { HistorialGastoEditar } from "@/components/admin/flights/historial-gasto-editar";
+
+/**
+ * Datos para poder EDITAR desde el historial (10-sep-2026): el gasto vivo
+ * (el historial solo trae el diff), catálogos del modal y fotos firmadas.
+ * Opcionales: sin ellos la card sigue siendo solo lectura.
+ */
+export interface HistorialEdicion {
+  gastos: Gasto[];
+  aircraft: { id: string; matricula: string }[];
+  providers: { id: string; nombre: string }[];
+  /** foto_url (path) → URL firmada, como en la tabla de gastos. */
+  fotoUrls: Record<string, string>;
+}
 
 /**
  * Historial de gastos del vuelo (gasto_bitacora, escrita por trigger de BD):
@@ -211,9 +226,22 @@ function DiffLinea({
   );
 }
 
-function EventoItem({ evento }: { evento: GastoHistorialEvento }) {
+function EventoItem({
+  evento,
+  edicion,
+}: {
+  evento: GastoHistorialEvento;
+  edicion?: HistorialEdicion;
+}) {
   const ui = ACCION_UI[evento.accion] ?? ACCION_UI.UPDATE;
   const Icon = ui.icon;
+  // El gasto TAL COMO ESTÁ HOY (si sigue en este vuelo): habilita «Editar»
+  // con el mismo modal de Gastos. Un gasto eliminado o movido a otro vuelo
+  // ya no está en la lista: la línea queda como evidencia, sin botón.
+  const gastoVivo =
+    edicion && evento.accion !== "DELETE"
+      ? edicion.gastos.find((g) => g.id === evento.gasto_id)
+      : undefined;
   // Moneda del gasto para pintar monto/propina: solo se conoce con certeza
   // si viaja en el propio diff (cambió o es la del alta). Por lado: si la
   // moneda cambió, el monto "antes" era en la moneda vieja.
@@ -244,9 +272,21 @@ function EventoItem({ evento }: { evento: GastoHistorialEvento }) {
             </span>
           )}
         </p>
-        <p className="text-[11px] text-muted-foreground">
-          {evento.actor_nombre ?? "Sistema"} · {fmtDateTime(evento.created_at)}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] text-muted-foreground">
+            {evento.actor_nombre ?? "Sistema"} · {fmtDateTime(evento.created_at)}
+          </p>
+          {gastoVivo && edicion && (
+            <HistorialGastoEditar
+              gasto={gastoVivo}
+              aircraft={edicion.aircraft}
+              providers={edicion.providers}
+              fotoUrl={
+                gastoVivo.foto_url ? edicion.fotoUrls[gastoVivo.foto_url] : undefined
+              }
+            />
+          )}
+        </div>
       </div>
       {evento.descripcion_gasto && (
         <p className="text-xs text-muted-foreground">{evento.descripcion_gasto}</p>
@@ -277,8 +317,11 @@ const EVENTOS_VISIBLES = 8;
 
 export function FlightGastosHistorialCard({
   eventos,
+  edicion,
 }: {
   eventos: GastoHistorialEvento[];
+  /** Con esto cada línea de un gasto vivo trae «Editar» (modal de Gastos). */
+  edicion?: HistorialEdicion;
 }) {
   if (eventos.length === 0) return null;
 
@@ -301,7 +344,7 @@ export function FlightGastosHistorialCard({
       <CardContent>
         <ol className={RIEL}>
           {visibles.map((e, i) => (
-            <EventoItem key={`${e.gasto_id}-${e.created_at}-${i}`} evento={e} />
+            <EventoItem key={`${e.gasto_id}-${e.created_at}-${i}`} evento={e} edicion={edicion} />
           ))}
         </ol>
         {anteriores.length > 0 && (
@@ -312,7 +355,7 @@ export function FlightGastosHistorialCard({
             </summary>
             <ol className={cn(RIEL, "mt-3")}>
               {anteriores.map((e, i) => (
-                <EventoItem key={`${e.gasto_id}-${e.created_at}-${i}`} evento={e} />
+                <EventoItem key={`${e.gasto_id}-${e.created_at}-${i}`} evento={e} edicion={edicion} />
               ))}
             </ol>
           </details>
