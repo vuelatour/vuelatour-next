@@ -14,11 +14,19 @@ export interface ActionResult<T = unknown> {
   status?: number;
   /** Código estructurado del API (p. ej. `COTIZACION_COBRADA`). */
   code?: string;
+  /** Detalle estructurado del API (p. ej. `{discrepancias}` del squawk ALTA). */
+  details?: unknown;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
   if (isApiError(err)) {
-    return { ok: false, error: err.message, status: err.status, code: err.code };
+    return {
+      ok: false,
+      error: err.message,
+      status: err.status,
+      code: err.code,
+      details: err.details,
+    };
   }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
@@ -210,15 +218,28 @@ export interface ReviseQuotePayload extends CalculateQuoteRequest {
   operador_externo?: string;
   costo_externo_monto?: number | null;
   costo_externo_moneda?: "USD" | "MXN";
+  /** Guardar la versión AUNQUE el avión nuevo tenga un squawk ALTA abierto
+      (confirmación de la oficina en el diálogo; el API avisa al mecánico).
+      Solo pesa cuando el cotizador CAMBIA el avión — invariante 14 del API. */
+  aceptar_discrepancia_alta?: boolean;
+}
+
+/**
+ * Respuesta de `revise` (API 0.0.6): la cotización guardada + `avisos[]` NO
+ * bloqueantes (siempre presente; p. ej. «los tramos con tacómetro no se
+ * movieron al avión nuevo»). Se pintan con `toastAvisos` DESPUÉS de guardar.
+ */
+export interface RevisedQuote extends PersistedQuote {
+  avisos?: string[] | null;
 }
 
 export async function reviseQuoteAction(
   id: string,
   payload: ReviseQuotePayload,
-): Promise<ActionResult<PersistedQuote>> {
+): Promise<ActionResult<RevisedQuote>> {
   if (!payload.motivo) return { ok: false, error: "motivo es requerido" };
   try {
-    const updated = await apiServer<PersistedQuote>(`/v1/quotes/${id}/revise`, {
+    const updated = await apiServer<RevisedQuote>(`/v1/quotes/${id}/revise`, {
       method: "POST",
       body: payload,
     });

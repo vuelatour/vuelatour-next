@@ -231,6 +231,15 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   «La tarifa cambió desde vN» (deriva del motor, calculada una sola vez) →
   `reviseQuoteAction` con `client_request_id` (uuid por intento; se renueva
   tras éxito/cancelar/409 de versión).
+- Respuesta y candados de `revise` (API 0.0.6, invariante 14 — el cotizador
+  valida el avión como `assign` cuando lo CAMBIA): `avisos[]` se pinta tras
+  guardar con el `toastAvisos` de siempre (`lib/admin/avisos.ts`); el rechazo
+  se clasifica con `decidirErrorRevise` (`lib/admin/quote-revise-errores.ts`,
+  PURO + test, porque taller y squawk también son 409): `SQUAWK_ALTA_SIN_RESOLVER`
+  abre el MISMO `SquawkAltaDialog` de vuelos (detección pura en
+  `lib/admin/squawk-alta.ts`) y al confirmar reintenta con
+  `aceptar_discrepancia_alta` y el MISMO `client_request_id`;
+  `AERONAVE_EN_TALLER` va al banner rojo («elige otro avión», sin reintento).
 - CONFIRMADO/RESERVA con piloto: confirmación ÚNICA al primer intento de
   editar (captura de click/keydown; `data-guard-exempt` exime cabeceras,
   TotalBar y diálogos). CANCELADA: editable si no facturada, banda gris (no

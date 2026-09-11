@@ -12,70 +12,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-/** Código del candado en el API (filtro de excepciones). */
-const SQUAWK_ALTA_CODE = "SQUAWK_ALTA_SIN_RESOLVER";
-
-/** Shape mínimo del ActionResult fallido (evita acoplarse a un módulo "use server"). */
-interface ResultadoFallido {
-  ok: boolean;
-  error?: string;
-  code?: string;
-  details?: unknown;
-}
-
-function listaDeDetails(details: unknown): string[] {
-  const cruda: unknown[] = Array.isArray(details)
-    ? details
-    : details &&
-        typeof details === "object" &&
-        Array.isArray((details as { discrepancias?: unknown }).discrepancias)
-      ? (details as { discrepancias: unknown[] }).discrepancias
-      : [];
-  return cruda
-    .map((d) => {
-      if (typeof d === "string") return d;
-      if (
-        d &&
-        typeof d === "object" &&
-        typeof (d as { descripcion?: unknown }).descripcion === "string"
-      ) {
-        return (d as { descripcion: string }).descripcion;
-      }
-      return null;
-    })
-    .filter((s): s is string => !!s && s.trim().length > 0);
-}
-
-/**
- * Detecta el candado "discrepancia (squawk) de severidad ALTA sin resolver"
- * en un ActionResult fallido de asignar avión. Devuelve la lista de
- * descripciones para el diálogo de confirmación, o null si el error es otro.
- *
- * Detección robusta por `code` (el API lo emite en el filtro de excepciones)
- * con respaldo por regex del mensaje (precedente: cargos sin TC en compras),
- * por si el API desplegado aún manda el CONFLICT genérico.
- */
-export function squawkAltaDe(res: ResultadoFallido): string[] | null {
-  if (res.ok) return null;
-  const msg = res.error ?? "";
-  const esCandado =
-    res.code === SQUAWK_ALTA_CODE ||
-    /discrepancia de severidad ALTA/i.test(msg);
-  if (!esCandado) return null;
-  const deDetails = listaDeDetails(res.details);
-  if (deDetails.length > 0) return deDetails;
-  // Respaldo: las descripciones van entre paréntesis en el propio mensaje
-  // ("… sin resolver (fuga de aceite; tren dañado)").
-  const m = /\(([^()]+)\)/.exec(msg);
-  if (m) {
-    const partes = m[1]
-      .split(";")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (partes.length > 0) return partes;
-  }
-  return [msg];
-}
+// Detección del candado: fuente única PURA en `lib/admin/squawk-alta.ts`
+// (la comparte el cotizador, que desde el 11-sep-2026 valida el avión al
+// revisar). Se re-exporta aquí para no tocar los imports existentes.
+export {
+  SQUAWK_ALTA_CODE,
+  squawkAltaDe,
+  type ResultadoFallido,
+} from "@/lib/admin/squawk-alta";
 
 /**
  * Confirmación en dos pasos del candado de squawk ALTA (misma mecánica que
@@ -83,16 +27,29 @@ export function squawkAltaDe(res: ResultadoFallido): string[] | null {
  * rechaza por discrepancia ALTA, este diálogo ofrece asignar de todas formas
  * (reintento con `aceptar_discrepancia_alta: true` — el API avisa al
  * mecánico para que valide el avión).
+ *
+ * Los textos del botón y de la pregunta son OPCIONALES: por default hablan
+ * de asignar (vuelos) y el cotizador los cambia a «guardar la versión»
+ * (11-sep-2026) — mismo diálogo, no una copia.
  */
 export function SquawkAltaDialog({
   lista,
   pending = false,
+  pregunta,
+  confirmLabel,
+  pendingLabel,
   onCancel,
   onConfirm,
 }: {
   /** Descripciones de las discrepancias ALTA abiertas; null = cerrado. */
   lista: string[] | null;
   pending?: boolean;
+  /** Pregunta bajo la lista (default: asignar el avión). */
+  pregunta?: string;
+  /** Texto del botón de confirmar (default: «Asignar de todas formas»). */
+  confirmLabel?: string;
+  /** Texto del botón mientras corre (default: «Asignando…»). */
+  pendingLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -115,8 +72,8 @@ export function SquawkAltaDialog({
           ))}
         </ul>
         <p className="text-sm text-muted-foreground">
-          ¿Asignar de todas formas? Se notificará al mecánico para que valide
-          que el avión puede volar.
+          {pregunta ??
+            "¿Asignar de todas formas? Se notificará al mecánico para que valide que el avión puede volar."}
         </p>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Volver</AlertDialogCancel>
@@ -128,7 +85,9 @@ export function SquawkAltaDialog({
             }}
             className="bg-amber-500 text-white hover:bg-amber-500/90"
           >
-            {pending ? "Asignando…" : "Asignar de todas formas"}
+            {pending
+              ? (pendingLabel ?? "Asignando…")
+              : (confirmLabel ?? "Asignar de todas formas")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

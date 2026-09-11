@@ -53,6 +53,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toastAvisos } from "@/lib/admin/avisos";
+import { SquawkAltaDialog } from "@/components/admin/flights/squawk-alta-dialog";
+import { decidirErrorRevise } from "@/lib/admin/quote-revise-errores";
 import { extrasAPayload, montoExtraActivo, normalizarExtrasEditor } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
@@ -1724,6 +1727,161 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Error de candado del API al guardar (409 COTIZACION_COBRADA): banner con
   // liga a los cobros de la página.
   const [errorCobrada, setErrorCobrada] = useState<string | null>(null);
+  // 409 AERONAVE_EN_TALLER al cambiar el avión desde el cotizador (API 0.0.6,
+  // invariante 14): NO hay confirmación posible — banner rojo con el mensaje
+  // del API y «elige otro avión».
+  const [errorTaller, setErrorTaller] = useState<{
+    mensaje: string;
+    matricula: string | null;
+  } | null>(null);
+  // 409 SQUAWK_ALTA_SIN_RESOLVER: MISMO diálogo que assign; al confirmar se
+  // reintenta el revise con la bandera y el motivo de ESTE intento.
+  const [squawkRevise, setSquawkRevise] = useState<{
+    lista: string[];
+    motivo: string;
+  } | null>(null);
+
+  /**
+   * Guarda la versión (`POST /v1/quotes/:id/revise`). `aceptarSquawk` = el
+   * REINTENTO tras confirmar el diálogo de discrepancia ALTA: viaja
+   * `aceptar_discrepancia_alta` y se CONSERVA el `client_request_id` del
+   * intento (idempotencia: si el primero alcanzó a escribir, el reintento no
+   * crea una segunda versión).
+   */
+  const ejecutarRevision = (motivo: string, aceptarSquawk: boolean) => {
+    if (!initialQuote || !calcPayload) {
+      toast.error("Faltan datos para guardar");
+      return;
+    }
+    const client_request_id = nuevoIntentoGuardado();
+    setErrorTaller(null);
+    startSaving(async () => {
+      const res = await reviseQuoteAction(initialQuote.id, {
+        ...calcPayload,
+        motivo,
+        client_request_id,
+        // Solo en el reintento confirmado (el API lo ignora si el avión no
+        // cambió): asigna a sabiendas y avisa al mecánico.
+        ...(aceptarSquawk ? { aceptar_discrepancia_alta: true } : {}),
+        // Siempre viaja (también ''): el API hace `dto.notas ?? current.notas`,
+        // así que omitirla al vaciarla CONSERVABA la nota anterior en
+        // silencio aunque el diff dijera «Notas del PDF» (revisión 8-sep).
+        notas: values.notas.trim(),
+        // Externo (28-ago): operador y lo que cobra el operador externo se
+        // editan también al revisar; el costo vacío se limpia (monto null).
+        // 29-ago: viaja NATIVO (monto + moneda); con MXN el API deriva el
+        // USD con el tc_usd_mxn del calcPayload.
+        ...(initialQuote.es_externo
+          ? {
+              ...(values.operador_externo.trim().length >= 2
+                ? { operador_externo: values.operador_externo.trim() }
+                : {}),
+              ...(Number(values.costo_externo_monto) > 0
+                ? {
+                    costo_externo_monto: Number(values.costo_externo_monto),
+                    costo_externo_moneda: values.costo_externo_moneda,
+                  }
+                : { costo_externo_monto: null }),
+            }
+          : {}),
+        // Las fechas del vuelo también se actualizan al revisar (antes no
+        // viajaban y la cotización no aparecía en el calendario).
+        fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
+        fecha_traslado_final: values.fecha_traslado_final
+          ? cancunInputToIso(values.fecha_traslado_final)
+          : undefined,
+      });
+      if (res.ok && res.data) {
+        toast.success(
+          `Cotización #${res.data.folio} guardada como v${res.data.cotizacion_version}`,
+        );
+        // Avisos NO bloqueantes del API (0.0.6): la versión YA se guardó —
+        // p. ej. «los tramos con tacómetro no se movieron al avión nuevo».
+        // Mismo `toastAvisos` que la reserva y assign (fuente única).
+        toastAvisos(res.data.avisos);
+        saveRequestIdRef.current = null;
+        setGuardarOpen(false);
+        setMotivoChip(null);
+        setValue("motivo", "");
+        setErrorCobrada(null);
+        setErrorTaller(null);
+        setSquawkRevise(null);
+        setConflictoVersion(null);
+        setDerivaMotor(null);
+        derivaRevisadaRef.current = false;
+        // «Guardar y ver PDF» (F1): el PDF real de la versión recién creada.
+        if (verPdfTrasGuardarRef.current) {
+          verPdfTrasGuardarRef.current = false;
+          void abrirPdfCotizacion(res.data.id).catch(() =>
+            toast.error("La versión se guardó, pero no se pudo generar el PDF"),
+          );
+        }
+        // Limpio de inmediato (el badge se apaga) y el refresh que viene
+        // SÍ resetea el form con la vN+1 recién guardada.
+        esperandoRefreshRef.current = true;
+        setBase({
+          defaults: getValues(),
+          version: res.data.cotizacion_version,
+        });
+        if (onGuardado) {
+          // Página única: sin navegar — el refresh trae la versión nueva
+          // al mismo lugar.
+          onGuardado(res.data);
+          router.refresh();
+        } else {
+          router.push(`/admin/quotes/${res.data.id}`);
+          router.refresh();
+        }
+        return;
+      }
+      // Rechazos del API (contrato 8-sep + invariante 14 del 11-sep): la
+      // decisión es PURA (`decidirErrorRevise`, probada en vitest) porque
+      // taller y squawk también son 409 y no deben caer en «otra versión».
+      const decision = decidirErrorRevise(res, { yaAceptoSquawk: aceptarSquawk });
+      if (decision.tipo === "squawk") {
+        // Se confirma en el diálogo compartido con assign y se reintenta con
+        // la bandera: el intento sigue vivo (misma llave, misma intención de
+        // ver el PDF).
+        setGuardarOpen(false);
+        setSquawkRevise({ lista: decision.discrepancias, motivo });
+        return;
+      }
+      setSquawkRevise(null);
+      if (decision.tipo === "cobrada") {
+        // El intento terminó (rechazado): llave nueva la próxima vez y sin
+        // arrastrar la intención «…y ver PDF» a un guardado posterior.
+        setGuardarOpen(false);
+        saveRequestIdRef.current = null;
+        verPdfTrasGuardarRef.current = false;
+        setErrorCobrada(decision.mensaje);
+        toast.error("El vuelo ya tiene cobros: no se puede guardar", {
+          action: {
+            label: "Ir a los cobros",
+            onClick: () => irACobros(),
+          },
+        });
+        return;
+      }
+      if (decision.tipo === "taller") {
+        // Sin reintento posible: el avión está en mantenimiento.
+        setGuardarOpen(false);
+        saveRequestIdRef.current = null;
+        verPdfTrasGuardarRef.current = false;
+        setErrorTaller({ mensaje: decision.mensaje, matricula: decision.matricula });
+        toast.error(decision.mensaje);
+        return;
+      }
+      if (decision.tipo === "version") {
+        setGuardarOpen(false);
+        setConflictoVersion(-1);
+        saveRequestIdRef.current = null;
+        verPdfTrasGuardarRef.current = false;
+        toast.error(decision.mensaje);
+        return;
+      }
+      toast.error(decision.mensaje);
+    });
+  };
 
   const handleSave = (motivoFinal?: string) => {
     // Invariante de dinero: un costo MXN sin TC no puede derivar su USD — se
@@ -1760,107 +1918,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         toast.info("No hay cambios que guardar");
         return;
       }
-      const client_request_id = nuevoIntentoGuardado();
-      startSaving(async () => {
-        const res = await reviseQuoteAction(initialQuote!.id, {
-          ...calcPayload,
-          motivo,
-          client_request_id,
-          // Siempre viaja (también ''): el API hace `dto.notas ?? current.notas`,
-          // así que omitirla al vaciarla CONSERVABA la nota anterior en
-          // silencio aunque el diff dijera «Notas del PDF» (revisión 8-sep).
-          notas: values.notas.trim(),
-          // Externo (28-ago): operador y lo que cobra el operador externo se
-          // editan también al revisar; el costo vacío se limpia (monto null).
-          // 29-ago: viaja NATIVO (monto + moneda); con MXN el API deriva el
-          // USD con el tc_usd_mxn del calcPayload.
-          ...(initialQuote?.es_externo
-            ? {
-                ...(values.operador_externo.trim().length >= 2
-                  ? { operador_externo: values.operador_externo.trim() }
-                  : {}),
-                ...(Number(values.costo_externo_monto) > 0
-                  ? {
-                      costo_externo_monto: Number(values.costo_externo_monto),
-                      costo_externo_moneda: values.costo_externo_moneda,
-                    }
-                  : { costo_externo_monto: null }),
-              }
-            : {}),
-          // Las fechas del vuelo también se actualizan al revisar (antes no
-          // viajaban y la cotización no aparecía en el calendario).
-          fecha_vuelo: values.fecha_vuelo ? cancunInputToIso(values.fecha_vuelo) : undefined,
-          fecha_traslado_final: values.fecha_traslado_final
-            ? cancunInputToIso(values.fecha_traslado_final)
-            : undefined,
-        });
-        if (res.ok && res.data) {
-          toast.success(
-            `Cotización #${res.data.folio} guardada como v${res.data.cotizacion_version}`,
-          );
-          saveRequestIdRef.current = null;
-          setGuardarOpen(false);
-          setMotivoChip(null);
-          setValue("motivo", "");
-          setErrorCobrada(null);
-          setConflictoVersion(null);
-          setDerivaMotor(null);
-          derivaRevisadaRef.current = false;
-          // «Guardar y ver PDF» (F1): el PDF real de la versión recién creada.
-          if (verPdfTrasGuardarRef.current) {
-            verPdfTrasGuardarRef.current = false;
-            void abrirPdfCotizacion(res.data.id).catch(() =>
-              toast.error("La versión se guardó, pero no se pudo generar el PDF"),
-            );
-          }
-          // Limpio de inmediato (el badge se apaga) y el refresh que viene
-          // SÍ resetea el form con la vN+1 recién guardada.
-          esperandoRefreshRef.current = true;
-          setBase({
-            defaults: getValues(),
-            version: res.data.cotizacion_version,
-          });
-          if (onGuardado) {
-            // Página única: sin navegar — el refresh trae la versión nueva
-            // al mismo lugar.
-            onGuardado(res.data);
-            router.refresh();
-          } else {
-            router.push(`/admin/quotes/${res.data.id}`);
-            router.refresh();
-          }
-          return;
-        }
-        // 409 del API (contrato 8-sep): cobrada en cualquier estado → liga a
-        // los cobros; versión cambiada → banner «recargar conservando».
-        if (res.status === 409 && res.code === "COTIZACION_COBRADA") {
-          // El intento terminó (rechazado): llave nueva la próxima vez y sin
-          // arrastrar la intención «…y ver PDF» a un guardado posterior.
-          setGuardarOpen(false);
-          saveRequestIdRef.current = null;
-          verPdfTrasGuardarRef.current = false;
-          setErrorCobrada(
-            res.error ??
-              "El vuelo ya tiene cobros registrados: la cotización no puede cambiar.",
-          );
-          toast.error("El vuelo ya tiene cobros: no se puede guardar", {
-            action: {
-              label: "Ir a los cobros",
-              onClick: () => irACobros(),
-            },
-          });
-          return;
-        }
-        if (res.status === 409) {
-          setGuardarOpen(false);
-          setConflictoVersion(-1);
-          saveRequestIdRef.current = null;
-          verPdfTrasGuardarRef.current = false;
-          toast.error(res.error ?? "La cotización cambió mientras editabas");
-          return;
-        }
-        toast.error(res.error ?? "Error al guardar la versión");
-      });
+      // Primer intento: SIN la bandera de squawk (el diálogo la agrega).
+      ejecutarRevision(motivo, false);
       return;
     }
 
@@ -2701,6 +2760,25 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </div>
         </div>
       )}
+      {/* 409 AERONAVE_EN_TALLER (API 0.0.6): el cotizador cambió el avión y
+          el nuevo está en mantenimiento. NO hay «de todas formas»: se elige
+          otro avión (o se deshace el cambio) y se vuelve a guardar. */}
+      {errorTaller && (
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium text-destructive">{errorTaller.mensaje}</p>
+            <p className="text-xs text-muted-foreground">
+              La versión NO se guardó: elige otro avión
+              {errorTaller.matricula
+                ? ` (el ${errorTaller.matricula} está en taller)`
+                : ""}{" "}
+              en «Aeronave» —o deja el que tenía la cotización— y vuelve a
+              guardar.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Centro: la hoja (papel claro con sombra sobre el fondo del shell) y
           la save bar; derecha: panel «Interno · no se imprime» colapsable.
@@ -3034,6 +3112,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* 409 SQUAWK_ALTA_SIN_RESOLVER al cambiar el avión desde el cotizador:
+          el MISMO diálogo que assign (no una copia). Confirmar reintenta el
+          revise con `aceptar_discrepancia_alta` y el MISMO client_request_id;
+          «Volver» cierra el intento (llave nueva la próxima vez). */}
+      <SquawkAltaDialog
+        lista={squawkRevise?.lista ?? null}
+        pending={saving}
+        pregunta="¿Guardar la versión con este avión de todas formas? Se notificará al mecánico para que valide que el avión puede volar."
+        confirmLabel="Guardar de todas formas"
+        pendingLabel="Guardando…"
+        onCancel={() => {
+          setSquawkRevise(null);
+          saveRequestIdRef.current = null;
+          verPdfTrasGuardarRef.current = false;
+        }}
+        onConfirm={() => {
+          if (squawkRevise) ejecutarRevision(squawkRevise.motivo, true);
+        }}
+      />
 
       {/* Confirmación ÚNICA del primer cambio en CONFIRMADO/RESERVA con
           tripulación (F0-d). */}
