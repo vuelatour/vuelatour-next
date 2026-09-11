@@ -10,7 +10,7 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -28,16 +28,15 @@ import {
 } from "@/components/ui/dialog";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
-import { descargarDelApi } from "@/lib/download";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
 import {
   CobroConciliadoBadge,
   CobroSobreNota,
   esParteDeSobre,
 } from "@/components/admin/flights/cobro-sobre-nota";
-import { folioTexto } from "@/lib/admin/grupos-ui";
 import type { FlightCobro } from "@/types/flights";
 import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
 
@@ -78,25 +77,6 @@ export function QuoteCobrosCard({
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, startDelete] = useTransition();
-  // Id del cobro cuyo recibo se está generando (carga por fila).
-  const [reciboDe, setReciboDe] = useState<string | null>(null);
-
-  const descargarRecibo = async (c: FlightCobro) => {
-    setReciboDe(c.id);
-    // Parte de un SOBRE de grupo: el recibo del cliente es el del sobre
-    // completo (REC-G), no el de la parte (el cliente pagó un solo monto).
-    const sobre = c.cobro_grupo;
-    const fol = quoteFolio != null ? String(quoteFolio) : quoteId.slice(0, 8);
-    const err = sobre
-      ? await descargarDelApi(`/v1/grupos/cobros/${sobre.id}/recibo.pdf`, {
-          filename: `recibo-${folioTexto(sobre.grupo_folio)}-${sobre.id.slice(0, 8)}.pdf`,
-        })
-      : await descargarDelApi(`/v1/flights/cobros/${c.id}/recibo.pdf`, {
-          filename: `recibo-${fol}-${c.id.slice(0, 8)}.pdf`,
-        });
-    if (err) toast.error("No se pudo generar el recibo", { description: err });
-    setReciboDe(null);
-  };
 
   const sinCobros = cobros.length === 0;
   // Misma tolerancia que el API (1 USD): los centavos de la conversión
@@ -233,24 +213,20 @@ export function QuoteCobrosCard({
               {/* Recibo para el cliente: solo cobros reales (un reembolso no
                   tiene recibo de pago). */}
               {Number(c.monto) > 0 && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                <a
+                  href={rutaReciboDeCobro(c)}
+                  target="_blank"
+                  rel="noopener"
+                  className={`${buttonVariants({ variant: "ghost", size: "icon" })} h-8 w-8 text-muted-foreground hover:text-foreground`}
                   title={
                     esParteDeSobre(c)
-                      ? "Recibo de pago (PDF) del sobre del grupo"
-                      : "Recibo de pago (PDF) para el cliente"
+                      ? "Recibo de pago (PDF) del sobre del grupo — se abre en otra pestaña"
+                      : "Recibo de pago (PDF) para el cliente — se abre en otra pestaña"
                   }
-                  disabled={reciboDe === c.id}
-                  onClick={() => descargarRecibo(c)}
+                  aria-label="Abrir el recibo de pago (PDF)"
                 >
-                  <DocumentArrowDownIcon
-                    className={`h-4 w-4 ${
-                      reciboDe === c.id ? "animate-pulse" : ""
-                    }`}
-                  />
-                </Button>
+                  <DocumentArrowDownIcon className="h-4 w-4" />
+                </a>
               )}
               {/* Parte de un sobre de grupo: NO se elimina por vuelo (el
                   API responde 409 COBRO_DE_GRUPO); se hace desde el grupo. */}

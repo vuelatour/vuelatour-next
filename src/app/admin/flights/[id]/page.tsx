@@ -51,8 +51,6 @@ import {
   estadoCobroSemaforo,
   pendienteCobro,
 } from "@/lib/admin/cobros";
-import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
-import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import { apoyosDeVuelo, combinadoFolio, type FlightSnapshot } from "@/types/flights";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
@@ -534,88 +532,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          {/* Cobro (reutilizado en ambos layouts) */}
+          {/* Asignación (por tramo o a nivel de vuelo). El COBRO ya no es
+              una card aparte: vive fusionado con la lista de cobros más
+              abajo (11-sep-2026, una sola fuente de los totales). */}
           {(() => {
-            const cobroCard = (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <BanknotesIcon className="h-4 w-4 text-muted-foreground" />
-                    Cobro
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <Row label={vueloCancelado ? "Cotizado" : "Monto total"}>
-                    <span className="font-mono font-semibold">
-                      {fmtUsd(snapshot.monto_total_usd)}
-                    </span>
-                  </Row>
-                  <ParticipacionAvionesNota
-                    aviones={participacionAviones}
-                    fuente={participacionFuente}
-                    className="text-right"
-                  />
-                  <Row label="Cobrado">
-                    <span className="font-mono">
-                      {fmtUsd(snapshot.total_cobrado)}
-                    </span>
-                  </Row>
-                  <Row label="Pendiente">
-                    {vueloCancelado ? (
-                      <span
-                        className="font-mono text-muted-foreground"
-                        title="Vuelo cancelado: no hay saldo por cobrar; lo cobrado queda retenido."
-                      >
-                        —
-                      </span>
-                    ) : (
-                    <span
-                      className={`font-mono ${pendingCobro > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}
-                      title={
-                        redondeoCobro > 0
-                          ? `Diferencia de redondeo de ${fmtUsd(redondeoCobro)} USD por la conversión MXN→USD: cuenta como pagado.`
-                          : undefined
-                      }
-                    >
-                      {fmtUsd(pendingCobro)}
-                      {redondeoCobro > 0 && (
-                        <span className="ml-1 text-[10px] font-sans text-muted-foreground">
-                          (redondeo {fmtUsd(redondeoCobro)})
-                        </span>
-                      )}
-                    </span>
-                    )}
-                  </Row>
-                  <Row label="Estado">
-                    <div className="flex gap-1">
-                      {/* Misma fuente única que las listas: un cancelado con
-                          cobros pinta "Con cobros" (gris), nunca "Por cobrar". */}
-                      <CobroEstadoBadge
-                        estado={estadoCobroSemaforo({
-                          montoTotalUsd: Number(snapshot.monto_total_usd) || 0,
-                          cobrado: snapshot.cobrado,
-                          esInterno: client?.es_interno ?? false,
-                          totalCobradoUsd: snapshot.total_cobrado,
-                          cotizacionAbierta: snapshot.cotizacion_abierta,
-                          enCotizacion: snapshot.estado === "COTIZADO",
-                          cancelado: vueloCancelado,
-                        })}
-                      />
-                      {snapshot.facturado ? (
-                        <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
-                          Facturado
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px]">
-                          Sin factura
-                        </Badge>
-                      )}
-                    </div>
-                  </Row>
-                </CardContent>
-              </Card>
-            );
-
             // Con tramos (REDONDO/MULTIESCALA ya inicializados): asignación por tramo.
             if (snapshot.escalas.length > 0) {
               return (
@@ -640,14 +560,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                       nombre: a.nombre,
                     }))}
                   />
-                  {cobroCard}
                 </div>
               );
             }
 
             // Fallback (sin tramos, p. ej. externo): asignación a nivel de vuelo.
             return (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4">
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -750,7 +669,6 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     <p className="px-1 pt-1 text-[11px] text-muted-foreground">{TZ_LABEL}</p>
                   </CardContent>
                 </Card>
-                {cobroCard}
               </div>
             );
           })()}
@@ -764,7 +682,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             vueloAnterior={vueloAnterior}
           />
 
-          {/* Cobros */}
+          {/* COBRO: una sola card (resumen + lista). Los totales salen del
+              snapshot del API (cobrosEnUsd) y el semáforo de la fuente única
+              `estadoCobroSemaforo`; la lista pinta el método REAL de cada
+              cobro (nunca el previsto en la cotización). */}
           <CobrosCard
             flightId={snapshot.id}
             flightFolio={snapshot.folio}
@@ -772,6 +693,30 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             montoTotalUsd={Number(snapshot.monto_total_usd)}
             pendingUsd={pendingCobro}
             cobradoUsd={snapshot.total_cobrado}
+            redondeoUsd={redondeoCobro}
+            estadoCobro={estadoCobroSemaforo({
+              montoTotalUsd: Number(snapshot.monto_total_usd) || 0,
+              cobrado: snapshot.cobrado,
+              esInterno: client?.es_interno ?? false,
+              totalCobradoUsd: snapshot.total_cobrado,
+              cotizacionAbierta: snapshot.cotizacion_abierta,
+              enCotizacion: snapshot.estado === "COTIZADO",
+              cancelado: vueloCancelado,
+            })}
+            facturado={snapshot.facturado}
+            participacionAviones={participacionAviones}
+            participacionFuente={participacionFuente}
+            // `vuelo.metodo_cobro`: la INTENCIÓN pactada mientras no se
+            // liquide y, en cuanto se liquida, el método del cobro que lo
+            // liquidó (lo sella el API). La card lo etiqueta según el caso;
+            // el método real de cada pago vive en su cobro.
+            metodoPrevisto={snapshot.metodo_cobro ?? quote?.metodo_cobro ?? null}
+            metodoPrevistoDetalle={quote?.metodo_cobro_detalle ?? null}
+            liquidado={snapshot.cobrado === true}
+            // «Cómo se cobró al final»: lo DERIVA el API de los cobros
+            // (método del último abono que dejó el vuelo liquidado); el
+            // previsto nunca se reescribe porque define el IVA cotizado.
+            metodoCobroFinal={snapshot.metodo_cobro_final ?? null}
             cobros={snapshot.cobros}
             voucherUrls={voucherUrls}
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}

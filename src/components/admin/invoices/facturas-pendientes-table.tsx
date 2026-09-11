@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { EmitirFacturaButton } from "@/components/admin/invoices/emitir-factura-button";
 import { fmtDate } from "@/lib/datetime";
+import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { PendingFlight } from "@/types/invoices";
 
 interface EmisoraOption {
@@ -70,14 +71,24 @@ export function FacturasPendientesTable({
               Sin datos fiscales
             </span>
           )}
+          {/* `vuelo.metodo_cobro` es lo PREVISTO en la cotización, no el
+              método real del pago (ese vive en cada cobro): se etiqueta como
+              tal para que nadie lo lea como el método con el que pagaron. */}
           {v.cobrado === false && (
-            <span className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-600">
-              Por cobrar{v.metodo_cobro ? ` · ${v.metodo_cobro}` : ""}
+            <span
+              className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 text-[10px] text-amber-600"
+              title="Método previsto en la cotización; el real será el del cobro que se registre."
+            >
+              Por cobrar
+              {v.metodo_cobro ? ` · previsto ${metodoPagoLabel(v.metodo_cobro)}` : ""}
             </span>
           )}
           {v.cobrado === true && (
-            <span className="ml-2 rounded-full border border-green-500/50 px-1.5 py-0.5 text-[10px] text-green-600 dark:text-green-400">
-              Pagado{v.metodo_cobro ? ` · ${v.metodo_cobro}` : ""}
+            <span
+              className="ml-2 rounded-full border border-green-500/50 px-1.5 py-0.5 text-[10px] text-green-600 dark:text-green-400"
+              title="Ya cobrado. El método real de cada pago se ve en el vuelo → Cobro."
+            >
+              Pagado
             </span>
           )}
         </>
@@ -144,7 +155,7 @@ export function FacturasPendientesTable({
       searchText={(v) =>
         `#${v.folio} ${clienteNombre(v.cliente)} ${clienteRfc(v.cliente) ?? ""} ${
           v.ruta ?? `${v.origen_iata} ${v.destino_iata}`
-        } ${v.metodo_cobro ?? ""}`
+        } ${v.metodo_cobro ?? ""} ${metodoPagoLabel(v.metodo_cobro)}`
       }
       searchPlaceholder="Buscar por folio, cliente, RFC o ruta…"
     />

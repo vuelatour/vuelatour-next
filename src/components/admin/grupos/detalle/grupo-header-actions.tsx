@@ -7,6 +7,7 @@ import {
   ArrowDownTrayIcon,
   CalendarDaysIcon,
   CheckCircleIcon,
+  DocumentTextIcon,
   PencilSquareIcon,
   XCircleIcon,
 } from "@heroicons/react/24/outline";
@@ -39,6 +40,8 @@ import {
   fechaGrupoAction,
 } from "@/app/admin/quotes/grupo/actions";
 import { toastAvisos } from "@/lib/admin/avisos";
+import { rutaPdfGrupo } from "@/lib/admin/pdf-urls";
+import { abrirPdfEnPestana } from "@/lib/api/quotes-browser";
 import { mensajeErrorGrupo } from "@/lib/admin/grupos-ui";
 import { cancunInputToIso, fmtDateTime, isoToCancunInput, TZ_LABEL } from "@/lib/datetime";
 import type { GrupoDetalle } from "@/types/grupos";
@@ -69,7 +72,6 @@ export function GrupoHeaderActions({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
   const [openFecha, setOpenFecha] = useState(false);
   const [fecha, setFecha] = useState(() => isoToCancunInput(grupo.fecha_vuelo));
@@ -100,29 +102,17 @@ export function GrupoHeaderActions({
     return (data.avisos ?? []).filter((a) => !previos.has(a));
   };
 
-  const handlePdf = async () => {
-    setPdfLoading(true);
+  /**
+   * PDF del grupo: se abre la URL del proxy (cookie de sesión, sin token en
+   * el cliente) en una pestaña. NUNCA por `blob:` — el botón «Descargar» del
+   * visor de Chrome vuelve a pedir la URL y con un blob falla con «Check
+   * internet connection» (11-sep-2026).
+   */
+  const handlePdf = () => {
     try {
-      // Proxy autenticado por cookie de sesión (sin token en el cliente).
-      const res = await fetch(`/api/grupos/${grupo.id}/pdf`, { method: "POST" });
-      if (!res.ok) {
-        let msg = "No se pudo generar el PDF del grupo";
-        try {
-          const body = (await res.json()) as { message?: string };
-          if (body.message) msg = body.message;
-        } catch {
-          // sin JSON: mensaje genérico
-        }
-        toast.error(msg);
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("No se pudo generar el PDF del grupo");
-    } finally {
-      setPdfLoading(false);
+      abrirPdfEnPestana(rutaPdfGrupo(grupo.id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo abrir el PDF del grupo");
     }
   };
 
@@ -182,10 +172,28 @@ export function GrupoHeaderActions({
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <Button variant="outline" onClick={handlePdf} disabled={pdfLoading} className="gap-2">
-        <ArrowDownTrayIcon className="h-4 w-4" />
-        {pdfLoading ? "Generando…" : "PDF"}
-      </Button>
+      {/* Ver el PDF del grupo en una pestaña; al lado, descargarlo como
+          archivo (el proxy responde `attachment` con `?descargar=1`). */}
+      <div className="flex items-center">
+        <Button
+          variant="outline"
+          onClick={handlePdf}
+          className="gap-2 rounded-r-none border-r-0"
+          title="Ver el PDF del grupo en una pestaña."
+        >
+          <DocumentTextIcon className="h-4 w-4" />
+          PDF
+        </Button>
+        <a
+          href={rutaPdfGrupo(grupo.id, { descargar: true })}
+          download
+          className={`${buttonVariants({ variant: "outline", size: "icon" })} rounded-l-none`}
+          title="Descargar el PDF del grupo como archivo."
+          aria-label="Descargar el PDF del grupo"
+        >
+          <ArrowDownTrayIcon className="h-4 w-4" />
+        </a>
+      </div>
       {canRevise &&
         (onRevisar ? (
           <Button variant="outline" onClick={onRevisar} className="gap-2" title={tituloRevisar}>

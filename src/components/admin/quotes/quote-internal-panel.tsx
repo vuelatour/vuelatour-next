@@ -1154,7 +1154,11 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
           ) : (
             <>
               <div id="metodo-pago-field" className="scroll-mt-24">
-                <Field label="Método de pago" required hint="Decide el IVA (16 % con factura)">
+                <Field
+                  label="Método de pago previsto"
+                  required
+                  hint="Decide el IVA (16 % con factura). Es lo previsto: el método REAL es el de cada cobro registrado."
+                >
                   <SearchableSelect
                     options={METODOS_PAGO.map((m) => ({
                       value: m.value,

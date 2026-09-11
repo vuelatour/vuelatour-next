@@ -1,8 +1,7 @@
 "use client";
 
 import { apiBrowser } from "./browser";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { env } from "@/lib/env";
+import { rutaPdfCotizacion } from "@/lib/admin/pdf-urls";
 import type { CalculateQuoteRequest, QuoteBreakdown } from "@/types/quote";
 
 /**
@@ -22,24 +21,34 @@ export function calculateQuote(
 }
 
 /**
- * PDF REAL del cliente (`POST /v1/quotes/:id/pdf`, binario): lo descarga
- * con el JWT de la sesión y lo abre en una pestaña nueva. Fuente única del
- * botón «PDF» de la barra de acciones y de «Ver PDF real» de la vista
- * previa (F1). Lanza si el API falla (el caller pinta el toast).
+ * PDF REAL del cliente: abre el proxy `/api/quotes/:id/pdf` en una pestaña
+ * nueva (fuente única con el botón «PDF» de la barra de acciones y «Ver PDF
+ * real» de la hoja).
+ *
+ * 11-sep-2026 — por qué NO se usa un blob: antes se hacía
+ * `URL.createObjectURL(await res.blob())` + `window.open`; el visor de Chrome
+ * pintaba el PDF en una URL `blob:` y al pulsar «Descargar» volvía a pedir
+ * ese blob, fallando con «Check internet connection». Con la URL del proxy
+ * (inline + Content-Length) el visor descarga bien, y el botón «Descargar»
+ * del panel usa la misma ruta con `?descargar=1` (attachment).
+ *
+ * Lanza si el navegador bloqueó la pestaña (el caller pinta el toast).
  */
 export async function abrirPdfCotizacion(quoteId: string): Promise<void> {
-  const supabase = createSupabaseBrowserClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const res = await fetch(`${env.API_URL}/v1/quotes/${quoteId}/pdf`, {
-    method: "POST",
-    headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-  });
-  if (!res.ok) throw new Error("No se pudo generar el PDF");
-  const url = URL.createObjectURL(await res.blob());
-  window.open(url, "_blank");
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  abrirPdfEnPestana(rutaPdfCotizacion(quoteId));
+}
+
+/**
+ * Abre una URL de PDF del panel en pestaña nueva. `noopener` por seguridad;
+ * si el navegador la bloquea se lanza con un mensaje accionable.
+ */
+export function abrirPdfEnPestana(url: string): void {
+  const w = window.open(url, "_blank", "noopener");
+  if (!w) {
+    throw new Error(
+      "El navegador bloqueó la pestaña del PDF: permite las ventanas emergentes de este sitio.",
+    );
+  }
 }
 
 export interface AirportDistance {

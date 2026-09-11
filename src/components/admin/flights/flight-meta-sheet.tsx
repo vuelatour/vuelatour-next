@@ -261,7 +261,9 @@ export function FlightMetaSheet({
 
           {metodoCobroEditable && (
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Método de cobro</Label>
+              <Label className="text-sm font-medium">
+                Método de cobro previsto en la cotización
+              </Label>
               <SearchableSelect
                 options={METODO_COBRO_OPTS.map((o) => ({
                   value: o.value,
@@ -273,9 +275,19 @@ export function FlightMetaSheet({
                 placeholder="Sin definir"
               />
               <p className="text-xs text-muted-foreground">
-                Con método facturable (transferencia, link, terminal, cheque o
-                Paywise) el vuelo aparece en Facturas antes de cobrarse. Sin método, no
-                aparece hasta que se registre el cobro.
+                Es la intención de cobro: con método facturable (transferencia,
+                link, terminal, cheque o Paywise) el vuelo aparece en Facturas
+                antes de cobrarse; sin método, no aparece hasta que se registre
+                el cobro. El método REAL es el de cada cobro registrado (Cobro
+                del vuelo) y puede ser otro.
+                {flight.cobrado && (
+                  <>
+                    {" "}
+                    Este vuelo ya está liquidado: arriba sigue lo que se
+                    pactó; cómo se cobró al final se ve en «Cobro del vuelo»
+                    («Liquidado con: …»).
+                  </>
+                )}
               </p>
             </div>
           )}

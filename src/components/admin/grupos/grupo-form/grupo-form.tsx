@@ -858,7 +858,14 @@ export function GrupoForm(props: GrupoFormProps) {
                   {grupo.tarifa_tipo === "BROKER" ? "Broker" : "Público"}
                 </Badge>
               </DatoLectura>
-              <DatoLectura label="Método de pago">{metodoPagoLabel(grupo.metodo_cobro)}</DatoLectura>
+              {/* Previsto en la cotización del grupo; el real es el de cada
+                  sobre de cobro (Cobros del grupo). */}
+              <DatoLectura
+                label="Método de pago previsto"
+                hint="El método REAL es el de cada sobre de cobro registrado."
+              >
+                {metodoPagoLabel(grupo.metodo_cobro)}
+              </DatoLectura>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <DatoLectura

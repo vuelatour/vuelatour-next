@@ -64,6 +64,15 @@ export interface FlightListItem {
   combinado?: { folio: number } | { folio: number }[] | null;
   /** Método de cobro pactado (define si entra a Facturas antes de cobrar). */
   metodo_cobro?: MetodoPago | null;
+  /**
+   * Cómo se cobró AL FINAL (11-sep-2026): método del último abono positivo
+   * cuando el vuelo quedó liquidado. Lo DERIVA el API de los cobros (solo
+   * lectura; `vuelo.metodo_cobro` nunca se reescribe porque define el IVA).
+   * null mientras no esté liquidado. Opcional por skew de deploy.
+   */
+  metodo_cobro_final?: MetodoPago | null;
+  /** true cuando el método final difiere del previsto en la cotización. */
+  metodo_cobro_final_difiere?: boolean;
   cotizacion_version: number;
   origen_iata: string;
   destino_iata: string;

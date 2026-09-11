@@ -1,6 +1,11 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { env } from "@/lib/env";
+import { type NextRequest } from "next/server";
+import {
+  errorPdf,
+  esNavegacion,
+  esUuid,
+  pidioDescarga,
+  proxyPdfDelApi,
+} from "@/lib/api/pdf-proxy";
 
 /**
  * PDF INTERNO de la cotización (8-sep-2026): una hoja carta para la oficina
@@ -11,91 +16,51 @@ import { env } from "@/lib/env";
  * manda el API ("cotizacion-interna-<folio>.pdf").
  *
  * El API gatea por rol (ADMIN, COORDINADOR, FACTURACION, ANALISTA); el panel
- * solo esconde el botón. Uso desde la UI: `fetch("/api/quotes/:id/pdf-interno",
- * { method: "POST" })` + blob (mismo patrón que el PDF de grupo) o un
- * `<a href target="_blank">` (GET es alias). Errores: JSON `{ message, code }`
- * con el status del API (401 sin sesión, 403 sin rol, 404 cotización
+ * solo esconde el botón. Uso desde la UI: `rutaPdfInternoCotizacion(id)`
+ * (`lib/admin/pdf-urls.ts`) en `window.open` / `<a href target="_blank">`;
+ * `?descargar=1` responde `attachment`. Jamás por `blob:` (11-sep-2026: el
+ * botón «Descargar» del visor de Chrome vuelve a pedir la URL y el blob ya no
+ * existe). Errores: JSON `{ message, code }` para `fetch` y página HTML en
+ * es-MX para una navegación (401 sin sesión, 403 sin rol, 404 cotización
  * inexistente, 502 pyservices caído).
  */
 
 export const dynamic = "force-dynamic";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-async function proxyPdfInterno(id: string): Promise<Response> {
-  if (!UUID_RE.test(id)) {
-    return NextResponse.json(
-      { message: "Cotización inválida.", code: "BAD_REQUEST" },
-      { status: 400 },
-    );
-  }
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    return NextResponse.json(
-      { message: "Tu sesión expiró: vuelve a iniciar sesión.", code: "UNAUTHORIZED" },
-      { status: 401 },
-    );
-  }
-
-  const base = env.API_URL.replace(/\/$/, "");
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${base}/v1/quotes/${id}/pdf-interno`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        Accept: "application/pdf, application/json",
-      },
-      cache: "no-store",
-    });
-  } catch {
-    return NextResponse.json(
-      { message: "No hay conexión con el API. Intenta de nuevo.", code: "UPSTREAM_DOWN" },
-      { status: 502 },
-    );
-  }
-
-  if (!upstream.ok) {
-    let message = "No se pudo generar el PDF interno de la cotización.";
-    let code = "PDF_ERROR";
-    if (upstream.status === 403) {
-      message = "Tu rol no puede generar el PDF interno.";
-      code = "FORBIDDEN";
-    }
-    try {
-      const body = (await upstream.json()) as { message?: unknown; code?: unknown };
-      if (typeof body.message === "string" && body.message) message = body.message;
-      if (typeof body.code === "string" && body.code) code = body.code;
-    } catch {
-      // El API respondió sin JSON (p. ej. 502 de pyservices): mensaje genérico.
-    }
-    return NextResponse.json({ message, code }, { status: upstream.status });
-  }
-
-  const disposition =
-    upstream.headers.get("content-disposition") ??
-    `inline; filename="cotizacion-interna-${id}.pdf"`;
-  return new Response(upstream.body, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": disposition,
-      "Cache-Control": "no-store",
-    },
-  });
-}
+/**
+ * El render de el PDF interno lo hace pyservices y puede tardar
+ * DECENAS de segundos. Antes el navegador hablaba directo con el API y no
+ * había límite; ahora pasa por esta función, así que sin `maxDuration` se
+ * cortaría con un 504 (y el operador vería «no se pudo abrir el PDF» en
+ * vez del documento). 60 s es el tope que admiten todos los planes de
+ * Vercel; si algún día no alcanza, se sube aquí, no en el cliente.
+ */
+export const maxDuration = 60;
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx) {
+async function handler(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id } = await ctx.params;
-  return proxyPdfInterno(id);
+  const html = esNavegacion(req);
+  if (!esUuid(id)) {
+    return errorPdf("Cotización inválida.", "BAD_REQUEST", 400, html);
+  }
+  return proxyPdfDelApi({
+    path: `/v1/quotes/${id}/pdf-interno`,
+    method: "POST",
+    filename: `cotizacion-interna-${id.slice(0, 8)}.pdf`,
+    descargar: pidioDescarga(req),
+    errorMsg: "No se pudo generar el PDF interno de la cotización.",
+    mensajes: {
+      403: { message: "Tu rol no puede generar el PDF interno.", code: "FORBIDDEN" },
+    },
+    html,
+  });
 }
 
-export async function POST(_req: NextRequest, ctx: Ctx) {
-  const { id } = await ctx.params;
-  return proxyPdfInterno(id);
+export async function GET(req: NextRequest, ctx: Ctx) {
+  return handler(req, ctx);
+}
+
+export async function POST(req: NextRequest, ctx: Ctx) {
+  return handler(req, ctx);
 }

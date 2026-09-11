@@ -8,22 +8,22 @@ import {
 } from "@/lib/api/pdf-proxy";
 
 /**
- * Recibo de pago (PDF, NO fiscal) de un SOBRE de cobro de grupo: proxy con
- * el JWT de la sesión hacia `GET /v1/grupos/cobros/:id/recibo.pdf` (API →
- * pyservices). Mismo patrón que `/api/grupos/[id]/pdf`: sin token en el
- * cliente, se abre con `window.open(rutaReciboSobreGrupo(id), "_blank")`. Se
- * fuerza `inline` (conservando el nombre de archivo del API,
- * "recibo-REC-G12-1.pdf") para que la pestaña MUESTRE el recibo en vez de
- * descargarlo a ciegas; `?descargar=1` sí lo baja como archivo.
+ * Recibo de pago (PDF, NO fiscal) de un COBRO de vuelo: proxy con el JWT de
+ * la sesión hacia `GET /v1/flights/cobros/:id/recibo.pdf` (API → pyservices).
+ * Espejo de `/api/grupos/cobros/[id]/recibo` (el del SOBRE de grupo).
+ *
+ * Se sirve `inline` para que la pestaña MUESTRE el recibo antes de mandarlo
+ * al cliente; `?descargar=1` lo baja como archivo. Nunca por `blob:`: el
+ * botón «Descargar» del visor de Chrome vuelve a pedir la URL (11-sep-2026).
  *
  * Errores: JSON `{ message, code }` para `fetch` y página HTML en es-MX para
- * una navegación (401 sin sesión, 403 sin rol, 404 sobre inexistente, 409
- * sobre negativo = reembolso sin recibo, 502 pyservices caído).
+ * una navegación (401 sin sesión, 403 sin rol, 404 cobro inexistente, 409
+ * cobro negativo = reembolso sin recibo, 502 pyservices caído).
  */
 
 export const dynamic = "force-dynamic";
 /**
- * El render de el recibo del sobre del grupo lo hace pyservices y puede tardar
+ * El render de el recibo de pago lo hace pyservices y puede tardar
  * DECENAS de segundos. Antes el navegador hablaba directo con el API y no
  * había límite; ahora pasa por esta función, así que sin `maxDuration` se
  * cortaría con un 504 (y el operador vería «no se pudo abrir el PDF» en
@@ -38,17 +38,20 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const html = esNavegacion(req);
   if (!esUuid(id)) {
-    return errorPdf("Cobro del grupo inválido.", "BAD_REQUEST", 400, html);
+    return errorPdf("Cobro inválido.", "BAD_REQUEST", 400, html);
   }
   return proxyPdfDelApi({
-    path: `/v1/grupos/cobros/${id}/recibo.pdf`,
+    path: `/v1/flights/cobros/${id}/recibo.pdf`,
     method: "GET",
-    filename: `recibo-grupo-${id.slice(0, 8)}.pdf`,
+    filename: `recibo-${id.slice(0, 8)}.pdf`,
     descargar: pidioDescarga(req),
-    errorMsg: "No se pudo generar el recibo del cobro del grupo.",
+    errorMsg: "No se pudo generar el recibo del cobro.",
     mensajes: {
       403: { message: "Tu rol no puede generar recibos de cobro.", code: "FORBIDDEN" },
-      409: { message: "Un reembolso no tiene recibo de pago.", code: "COBRO_NEGATIVO" },
+      409: {
+        message: "Un reembolso no tiene recibo de pago.",
+        code: "COBRO_NEGATIVO",
+      },
     },
     html,
   });

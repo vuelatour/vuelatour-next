@@ -7,10 +7,11 @@ import {
   ArchiveBoxArrowDownIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { descargarDelApi } from "@/lib/download";
+import { rutaPdfReparto } from "@/lib/admin/pdf-urls";
 
-type Kind = "pdf" | "xlsx" | "dinero" | "cierre";
+type Kind = "xlsx" | "dinero" | "cierre";
 
 export function ReportDownloads({
   desde,
@@ -28,11 +29,10 @@ export function ReportDownloads({
   const veExcel = esAdmin || rol === "ANALISTA";
   const veCierre = esAdmin || rol === "FACTURACION";
 
-  const download = async (kind: Kind, path: string, filename: string, openInTab = false) => {
+  const download = async (kind: Kind, path: string, filename: string) => {
     setLoading(kind);
     const err = await descargarDelApi(path, {
       filename,
-      openInTab,
       query: { desde, hasta },
     });
     if (err) toast.error("No se pudo generar el reporte", { description: err });
@@ -41,16 +41,18 @@ export function ReportDownloads({
 
   return (
     <div className="flex gap-2 flex-wrap">
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading !== null}
-        onClick={() => download("pdf", "/v1/profit-sharing/pdf", "reparto.pdf", true)}
+      {/* PDF socios: se abre por la URL del proxy (nunca `blob:`, si no el
+          botón «Descargar» del visor de Chrome falla). */}
+      <a
+        href={rutaPdfReparto(desde, hasta)}
+        target="_blank"
+        rel="noopener"
+        className={`${buttonVariants({ variant: "outline", size: "sm" })} gap-2`}
+        title="Ver el PDF del reparto en una pestaña."
       >
         <DocumentArrowDownIcon className="h-4 w-4" />
-        {loading === "pdf" ? "Generando…" : "PDF socios"}
-      </Button>
+        PDF socios
+      </a>
       {veExcel && (
         <Button
           variant="outline"

@@ -12,7 +12,14 @@ export async function descargarDelApi(
   path: string,
   opts: {
     filename?: string;
-    /** Abrir en pestaña (PDFs) en vez de descargar. */
+    /**
+     * Abrir en pestaña en vez de descargar. NO usar para PDF que se vean en
+     * el visor: el blob se abre bien pero el botón «Descargar» del visor de
+     * Chrome vuelve a pedir la URL y falla con «Check internet connection»
+     * (11-sep-2026). Para eso va un proxy en `app/api/**` + `lib/admin/
+     * pdf-urls.ts`. Descargar con `<a download>` (el camino por defecto de
+     * esta función) sí funciona con blob.
+     */
     openInTab?: boolean;
     query?: Record<string, string | undefined>;
   } = {},

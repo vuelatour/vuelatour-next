@@ -1452,8 +1452,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     setPdfRealLoading(true);
     try {
       await abrirPdfCotizacion(initialQuote.id);
-    } catch {
-      toast.error("No se pudo generar el PDF");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo abrir el PDF");
     } finally {
       setPdfRealLoading(false);
     }

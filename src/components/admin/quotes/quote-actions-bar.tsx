@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
+  DocumentTextIcon,
   BoltIcon,
   BookmarkSquareIcon,
   CheckCircleIcon,
@@ -15,7 +16,11 @@ import {
   XCircleIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
-import { abrirPdfCotizacion } from "@/lib/api/quotes-browser";
+import { abrirPdfCotizacion, abrirPdfEnPestana } from "@/lib/api/quotes-browser";
+import {
+  rutaPdfCotizacion,
+  rutaPdfInternoCotizacion,
+} from "@/lib/admin/pdf-urls";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,52 +106,29 @@ export function QuoteActionsBar({
   const [cancelling, startCancel] = useTransition();
   const [openCancel, setOpenCancel] = useState(false);
   const [motivoCancel, setMotivoCancel] = useState("");
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfInternoLoading, setPdfInternoLoading] = useState(false);
   const [openCobradoInfo, setOpenCobradoInfo] = useState(false);
   const puedePdfInterno = rol != null && ROLES_PDF_INTERNO.has(rol);
 
   // PDF del cliente: fuente única `abrirPdfCotizacion` (también la usa
-  // «Ver PDF real» de la vista previa, F1).
-  const handlePdf = async () => {
-    setPdfLoading(true);
-    try {
-      await abrirPdfCotizacion(quote.id);
-    } catch {
-      toast.error("No se pudo generar el PDF");
-    } finally {
-      setPdfLoading(false);
-    }
+  // «Ver PDF real» de la hoja, F1). Abre la URL del proxy —nunca un blob—
+  // para que «Descargar» del visor de Chrome funcione (11-sep-2026).
+  const handlePdf = () => {
+    abrirPdfCotizacion(quote.id).catch((e: unknown) => {
+      toast.error(e instanceof Error ? e.message : "No se pudo abrir el PDF");
+    });
   };
 
   /**
    * PDF INTERNO (8-sep-2026): una hoja para la oficina con comisiones, horas
    * de taco, partición, cobros y gastos — NUNCA al cliente. Va por el proxy
    * `/api/quotes/:id/pdf-interno` (cookie de sesión, sin token en el
-   * cliente; el proxy traduce 401/403/502 a `{ message }` para el toast).
+   * cliente; el proxy traduce 401/403/502 a una página legible).
    */
-  const handlePdfInterno = async () => {
-    setPdfInternoLoading(true);
+  const handlePdfInterno = () => {
     try {
-      const res = await fetch(`/api/quotes/${quote.id}/pdf-interno`, { method: "POST" });
-      if (!res.ok) {
-        let msg = "No se pudo generar el PDF interno";
-        try {
-          const body = (await res.json()) as { message?: string };
-          if (body.message) msg = body.message;
-        } catch {
-          // sin JSON: mensaje genérico
-        }
-        toast.error(msg);
-        return;
-      }
-      const url = URL.createObjectURL(await res.blob());
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("No se pudo generar el PDF interno");
-    } finally {
-      setPdfInternoLoading(false);
+      abrirPdfEnPestana(rutaPdfInternoCotizacion(quote.id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo abrir el PDF interno");
     }
   };
 
@@ -203,29 +185,41 @@ export function QuoteActionsBar({
           Ver vuelo
         </Link>
       )}
-      <Button
-        variant="outline"
-        onClick={handlePdf}
-        disabled={pdfLoading}
-        className="gap-2"
-        title="PDF para el cliente (con fichas de aeronave)."
-      >
-        <ArrowDownTrayIcon className="h-4 w-4" />
-        {pdfLoading ? "Generando…" : "PDF"}
-      </Button>
+      {/* Ver el PDF del cliente en una pestaña (URL real del proxy) y, al
+          lado, descargarlo como archivo (`attachment`): el visor tarda unos
+          segundos en generarlo y desde ahí «Descargar» ya funciona. */}
+      <div className="flex items-center">
+        <Button
+          variant="outline"
+          onClick={handlePdf}
+          className="gap-2 rounded-r-none border-r-0"
+          title="Ver el PDF del cliente en una pestaña (con fichas de aeronave)."
+        >
+          <DocumentTextIcon className="h-4 w-4" />
+          PDF
+        </Button>
+        <a
+          href={rutaPdfCotizacion(quote.id, { descargar: true })}
+          download
+          className={`${buttonVariants({ variant: "outline", size: "icon" })} rounded-l-none`}
+          title="Descargar el PDF del cliente como archivo."
+          aria-label="Descargar el PDF de la cotización"
+        >
+          <ArrowDownTrayIcon className="h-4 w-4" />
+        </a>
+      </div>
       {/* «PDF interno»: solo roles de oficina (ROLES_PDF_INTERNO); icono
           distinto para que no se confunda con el PDF que se manda al cliente. */}
       {puedePdfInterno && (
         <Button
           variant="outline"
           onClick={handlePdfInterno}
-          disabled={pdfInternoLoading}
           className="gap-2"
           title={TITULO_PDF_INTERNO}
           aria-label={`PDF interno. ${TITULO_PDF_INTERNO}`}
         >
           <DocumentChartBarIcon className="h-4 w-4" />
-          {pdfInternoLoading ? "Generando…" : "PDF interno"}
+          PDF interno
         </Button>
       )}
       {/* «Ajuste rápido» (D2): lleva a los pasajeros del documento — la

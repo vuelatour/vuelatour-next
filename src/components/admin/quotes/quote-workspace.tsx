@@ -31,6 +31,7 @@ import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { aeronavesDeCotizacion } from "@/lib/admin/avion-cotizado";
 import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
@@ -175,6 +176,9 @@ export function QuoteWorkspace({
     !!quote.piloto_id;
 
   // ===== Derivados de presentación (mismos criterios del detalle anterior) =====
+  // Aeronave COTIZADA (modelo del snapshot) vs UTILIZADA (la asignada hoy):
+  // control interno, tolera que el API aún no mande los campos nuevos.
+  const aeronaves = aeronavesDeCotizacion(quote, aircraft);
   const quoteConGrupo = quote as PersistedQuote & VueloConGrupo;
   const grupoHijo = grupoDeVuelo(quoteConGrupo);
 
@@ -551,6 +555,30 @@ export function QuoteWorkspace({
             <CardTitle className="text-sm">Operación</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3 text-sm">
+            {/* Control interno (11-sep-2026): con qué avión se PACTÓ el
+                precio vs. cuál opera hoy. El PDF del cliente no cambia. */}
+            <Cell
+              label="Aeronave cotizada"
+              value={aeronaves.cotizada ?? "—"}
+              hint="Modelo del snapshot vigente: con él se pactó el precio."
+            />
+            <Cell
+              label="Aeronave utilizada"
+              value={
+                aeronaves.utilizada ? (
+                  <span className={aeronaves.difieren ? "text-amber-600 dark:text-amber-400" : ""}>
+                    {aeronaves.utilizada}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Sin asignar</span>
+                )
+              }
+              hint={
+                aeronaves.difieren
+                  ? "Opera en un avión distinto al cotizado: el precio NO cambia solo."
+                  : "La que tiene asignada el vuelo hoy."
+              }
+            />
             <Cell label="Tipo de vuelo" value={quote.tipo} />
             <Cell label="Fecha solicitud" value={fmtDateTime(quote.fecha_solicitud)} />
             {quote.fecha_confirmacion && (

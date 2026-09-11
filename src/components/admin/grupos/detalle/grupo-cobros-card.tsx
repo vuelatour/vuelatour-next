@@ -51,6 +51,7 @@ import { toastAvisos } from "@/lib/admin/avisos";
 import { pendienteCobro, type EstadoCobroSemaforo } from "@/lib/admin/cobros";
 import { etiquetaModoParticion, mensajeErrorGrupo } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import { rutaReciboSobreGrupo } from "@/lib/admin/pdf-urls";
 import { fmtDate } from "@/lib/datetime";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -114,8 +115,9 @@ export function GrupoCobrosCard({
 
   const abrirRecibo = (s: SobreSalida) => {
     // Proxy autenticado por cookie (sin token en el cliente); el handler
-    // fuerza `inline` para que la pestaña muestre el PDF.
-    window.open(`/api/grupos/cobros/${s.id}/recibo`, "_blank", "noopener");
+    // fuerza `inline` para que la pestaña muestre el PDF (fuente única de
+    // rutas: `lib/admin/pdf-urls.ts`).
+    window.open(rutaReciboSobreGrupo(s.id), "_blank", "noopener");
   };
 
   const handleRepartir = () => {

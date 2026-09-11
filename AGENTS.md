@@ -15,6 +15,49 @@ This version has breaking changes — APIs, conventions, and file structure may 
   inyecta el JWT). Mutaciones = server actions en `actions.ts` que devuelven
   `ActionResult` y revalidan (`revalidateFlight`, `revalidatePath`).
 
+## PDF del panel (proxy, NUNCA `blob:`) — 11-sep-2026
+
+- Bug del cliente: el PDF de una cotización se abría con
+  `URL.createObjectURL(await res.blob())` + `window.open`. El visor de Chrome
+  lo pintaba en una URL `blob:` (se veía como `…vercel.app/<uuid>`) y al
+  pulsar **Descargar** volvía a pedir ese blob → «Check internet connection».
+- REGLA: todo PDF que se VEA en el visor se sirve por una URL real de un
+  proxy en `app/api/**` (cookie de sesión, sin token en el cliente) con
+  `Content-Type: application/pdf`, `Content-Disposition` y `Content-Length`.
+  Blob solo para descarga directa con `<a download>`; `descargarDelApi(...,
+  {openInTab:true})` NO se usa para PDF.
+- Fuente única del proxy: `lib/api/pdf-proxy.ts` (`proxyPdfDelApi`,
+  `errorPdf`, `esNavegacion`, `pidioDescarga`, `esUuid`) + helpers puros de
+  cabecera en `lib/pdf-http.ts` (conserva el `filename` que manda el API,
+  `filename*` con acentos). Errores: JSON `{message, code}` para `fetch` y
+  una página HTML en es-MX cuando es una navegación (401/403/404/409/502).
+  `Cache-Control: no-store` a propósito: un toggle del PDF no crea versión,
+  así que nunca se sirve un PDF viejo.
+- Fuente única de las URLs: `lib/admin/pdf-urls.ts` — `rutaPdfCotizacion`,
+  `rutaPdfInternoCotizacion`, `rutaPdfGrupo`, `rutaReciboCobro`,
+  `rutaReciboSobreGrupo`, `rutaReciboDeCobro` (parte de un sobre ⇒ recibo del
+  SOBRE), `rutaPdfReparto`. `{descargar:true}` agrega `?descargar=1` y el
+  proxy responde `attachment` (el botón «Descargar» es un `<a download>`).
+  Tests: `lib/__tests__/pdf-http.test.ts`, `lib/admin/__tests__/pdf-urls.test.ts`.
+- Rutas vivas: `/api/quotes/[id]/pdf` (cliente), `/api/quotes/[id]/pdf-interno`,
+  `/api/grupos/[id]/pdf`, `/api/flights/cobros/[id]/recibo`,
+  `/api/grupos/cobros/[id]/recibo`, `/api/profit-sharing/pdf`. Todas GET
+  (POST alias donde el API usa POST) y todas `inline` por defecto.
+- **`export const maxDuration = 60`** en TODAS ellas (obligatorio): el render
+  vive en pyservices y tarda decenas de segundos. Antes el navegador hablaba
+  directo con el API y no había límite; ahora pasa por una función de Vercel
+  y sin `maxDuration` el PDF se cortaría con 504. 60 s es el tope que admiten
+  todos los planes — si algún PDF nuevo tarda más, se sube aquí, nunca en el
+  cliente. Toda ruta de PDF nueva nace con esta línea.
+- Test del proxy: `lib/api/__tests__/pdf-proxy.test.ts` (Content-Type,
+  inline/attachment, `Content-Length` exacto, `no-store`, el JWT viaja al API
+  y no al navegador, 401 sin llamar al API, errores del API legibles).
+- `abrirPdfCotizacion` / `abrirPdfEnPestana` (`lib/api/quotes-browser.ts`)
+  solo abren la URL; lanzan si el navegador bloqueó la pestaña (toast). Los
+  recibos de cobro se abren con un `<a target="_blank">` a su proxy.
+- PENDIENTE conocido: la vista previa del CFDI (`emitir-factura-button.tsx`)
+  sigue con blob porque el API la genera con un POST con cuerpo.
+
 ## Fuentes únicas de UI (no duplicar)
 
 - Estados de vuelo: `estado-vuelo.ts` + `estadoVueloStyle` (labels/colores).
@@ -159,7 +202,10 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   `/api/quotes/mapa-svg`.
 - «Ver PDF real» / «Guardar y ver PDF» (barra de estado) usan
   `abrirPdfCotizacion` (`lib/api/quotes-browser.ts`, fuente única con el
-  botón PDF de la barra de acciones).
+  botón PDF de la barra de acciones): abre `/api/quotes/:id/pdf` en una
+  pestaña — NUNCA un blob (ver «PDF del panel»). La barra de acciones pinta
+  «PDF» (ver) + un `<a download>` a `?descargar=1`, y «PDF interno» abre
+  `/api/quotes/:id/pdf-interno`.
 
 ### Edición directa y versiones
 
@@ -230,6 +276,59 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
 - `QuoteCobrosCard` (#cobros-vuelo) se pinta SIEMPRE debajo de la hoja
   (0 cobros = «Sin cobros registrados» + botón); la página trae el snapshot
   en todo estado (best-effort). Nada de cobros dentro del papel.
+
+## Aeronave cotizada vs utilizada (11-sep-2026)
+
+- Fuente única: `lib/admin/avion-cotizado.ts` → `aeronavesDeCotizacion(quote,
+  catalogo)` devuelve `{cotizada, utilizada, difieren}` y lo pinta la card
+  «Operación» de `quote-workspace.tsx`. COTIZADA = solo el MODELO del
+  snapshot (con ese se pactó el precio; es lo único que ve el cliente);
+  UTILIZADA = `matrícula · modelo` del avión asignado HOY (vista interna).
+- El API manda `aeronave_cotizada` / `aeronave_utilizada` / `aeronaves_
+  utilizadas` en la RAÍZ de `GET /v1/quotes/:id` y del snapshot del vuelo —
+  **no** dentro de `calculo_snapshot`. El helper lee la raíz primero y solo
+  después cae a `calculo_snapshot`, `aeronave_operativa`,
+  `modelos_cotizados` y el catálogo por `aeronave_id`: `aeronave_utilizada`
+  también resuelve el avión del primer tramo vivo cuando el vuelo no lo
+  tiene en la cabecera (ahí `aeronave_operativa` viene null).
+- `difieren` (pinta ámbar) se decide por **ID** cuando llegan las dos fichas
+  — misma regla del API: dos aviones distintos pueden compartir modelo, así
+  que comparar el texto diría «es el mismo». Sin ids se compara el modelo
+  utilizado contra el CONJUNTO de modelos cotizados (una cotización puede
+  rotar de avión por tramo y `modelos_cotizados` trae varios). Sin datos:
+  false — no se inventan alertas.
+- El PDF del CLIENTE no cambia (solo el modelo cotizado); el PDF INTERNO sí
+  pinta las dos líneas y marca «Distinto al cotizado» en ámbar.
+
+## Cobro del vuelo: UNA card (11-sep-2026)
+
+- `components/admin/flights/cobros-card.tsx` (`CobrosCard`, ancla `#cobros`)
+  es la ÚNICA card de cobro del detalle del vuelo: cabecera con «Registrar
+  cobro» / «Registrar reembolso», resumen **Monto total · Cobrado ·
+  Pendiente · Estado** (badges `CobroEstadoBadge` + Facturado/Sin factura) y
+  DEBAJO la lista de cobros. La card «Cobro» suelta de
+  `app/admin/flights/[id]/page.tsx` se eliminó: repetía los mismos números.
+- Los totales NO se calculan en el componente: la página pasa
+  `montoTotalUsd`, `cobradoUsd` (= `total_cobrado` del snapshot =
+  cobrosEnUsd), `pendingUsd`/`redondeoUsd` (`pendienteCobro`,
+  `diferenciaRedondeo`) y `estadoCobro` (`estadoCobroSemaforo`).
+- MÉTODO: la lista pinta el método REAL de cada cobro
+  (`cobro.metodo_cobro`) — ÚNICA fuente de «con qué se pagó» (también del
+  recibo y de la conciliación). `vuelo.metodo_cobro` NO es el de ningún
+  cobro: es SIEMPRE la intención pactada al cotizar (decide el IVA del
+  desglose v1.3) y el API NUNCA la reescribe (invariante 15 del API,
+  11-sep-2026). «Cómo se cobró al final» lo DERIVA el API de los cobros y
+  viaja solo lectura en el snapshot: `metodo_cobro_final` (método del último
+  abono positivo cuando el vuelo quedó liquidado; null antes) y
+  `metodo_cobro_final_difiere`. La card pinta «Previsto en la cotización: …»
+  siempre que exista y, debajo, «Liquidado con: …» cuando llega
+  `metodo_cobro_final` (con «(distinto al previsto)» en ámbar si difiere).
+  El cotizador («Método de pago previsto») y `grupo-form` lo llaman previsto
+  porque ahí se EDITA la intención, y con cobros el documento está bloqueado
+  por `candadoRevision`. Facturas («Por cobrar · previsto …») solo lo pinta
+  en vuelos sin cobrar, que es cuando de verdad es previsto.
+- El recibo de cada cobro es un `<a target="_blank">` al proxy
+  (`rutaReciboDeCobro`): se ve en una pestaña y desde ahí se descarga.
 
 ## Conciliación Paywise (9-sep-2026)
 
