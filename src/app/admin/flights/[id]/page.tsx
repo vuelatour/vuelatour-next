@@ -269,6 +269,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     matricula: a.matricula,
     modelo: a.modelo,
     velocidad_crucero_kts: Number(a.velocidad_crucero_kts),
+    // Marca «En taller» de los selectores (asignar, cambiar aeronave,
+    // revertir externo): NO filtra ni deshabilita (11-sep-2026).
+    en_taller: a.en_taller === true,
   }));
   const pilotOptions = pilotsRes.data.map((p) => ({
     id: p.id,

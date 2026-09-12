@@ -24,7 +24,11 @@ describe("decidirErrorRevise", () => {
     );
   });
 
-  it("AERONAVE_EN_TALLER → banner rojo con mensaje y matrícula, sin reintento", () => {
+  // TALLER (11-sep-2026): dejó de ser candado. El API vigente NO manda este
+  // 409 — guarda y devuelve el aviso en `avisos[]`. Lo que sigue solo cubre
+  // la compatibilidad con un backend sin desplegar: se clasifica aparte (no
+  // como conflicto de versión) y el texto ya NO limita al operador.
+  it("AERONAVE_EN_TALLER (API viejo) se clasifica aparte, con la matrícula", () => {
     const d = decidirErrorRevise({
       ok: false,
       status: 409,
@@ -34,10 +38,21 @@ describe("decidirErrorRevise", () => {
     });
     expect(d).toEqual({
       tipo: "taller",
-      mensaje:
-        "No se puede asignar: la aeronave está en taller (mantenimiento en curso).",
+      mensaje: "El API rechazó el avión en taller; actualiza el API.",
       matricula: "XA-VGV",
     });
+  });
+
+  it("el texto del caso taller no le dice al operador que no se puede", () => {
+    const d = decidirErrorRevise({
+      ok: false,
+      status: 409,
+      code: "AERONAVE_EN_TALLER",
+      error: "No se puede asignar: la aeronave está en taller (mantenimiento en curso).",
+    });
+    expect(d.tipo === "taller" && d.mensaje).not.toMatch(
+      /no se puede|no disponible|elige otro avión/i,
+    );
   });
 
   it("taller sin `code` (API viejo) se detecta por el mensaje", () => {

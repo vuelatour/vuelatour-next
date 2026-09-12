@@ -194,6 +194,8 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
                 id: a.id,
                 matricula: a.matricula,
                 modelo: a.modelo,
+                // Marca «En taller»: NO filtra ni deshabilita (11-sep-2026).
+                en_taller: a.en_taller === true,
               }))}
             pilots={pilotsRes.data.map((p) => ({
               id: p.id,

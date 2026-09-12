@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { toastAvisos } from "@/lib/admin/avisos";
+import { descripcionAeronave } from "@/lib/admin/aviso-taller";
+import { NotaTaller } from "@/components/admin/nota-taller";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cancunInputToIso, TZ_LABEL } from "@/lib/datetime";
@@ -47,6 +49,9 @@ interface AircraftOption {
   id: string;
   matricula: string;
   modelo: string;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 interface PilotOption {
@@ -137,6 +142,8 @@ export function ReservaFormSheet({
   const [pending, startTransition] = useTransition();
 
   const [aeronaveId, setAeronaveId] = useState("");
+  // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026).
+  const avionEnTaller = aircraft.find((a) => a.id === aeronaveId && a.en_taller) ?? null;
   const [legs, setLegs] = useState<LegRow[]>([emptyLeg("CUN")]);
   const [pilotoId, setPilotoId] = useState("");
   const [copilotoId, setCopilotoId] = useState("");
@@ -351,15 +358,21 @@ export function ReservaFormSheet({
           {/* 1. Avión */}
           <Field label="Avión" required>
             <SearchableSelect
+              // «En taller» solo MARCA la opción (11-sep-2026): la reserva es
+              // a futuro — se guarda igual y el API devuelve el aviso.
               options={aircraft.map((a) => ({
                 value: a.id,
                 label: a.matricula,
-                description: a.modelo,
+                description: descripcionAeronave([a.modelo], a.en_taller),
+                descriptionClassName: a.en_taller
+                  ? "truncate text-amber-600 dark:text-amber-400"
+                  : undefined,
               }))}
               value={aeronaveId}
               onChange={setAeronaveId}
               placeholder="Matrícula"
             />
+            {avionEnTaller && <NotaTaller matricula={avionEnTaller.matricula} />}
           </Field>
 
           {/* 2. Fecha y hora de salida — arriba del itinerario (27-ago):

@@ -159,7 +159,14 @@ export function GrupoWorkspace({
       grupo={g}
       aircraft={aircraft
         .filter((a) => a.activa)
-        .map((a) => ({ id: a.id, matricula: a.matricula, modelo: a.modelo, asientos: a.asientos ?? null }))}
+        .map((a) => ({
+          id: a.id,
+          matricula: a.matricula,
+          modelo: a.modelo,
+          asientos: a.asientos ?? null,
+          // Marca «En taller»: NO filtra ni deshabilita (11-sep-2026).
+          en_taller: a.en_taller === true,
+        }))}
       pilots={pilots.map((p) => ({ id: p.id, nombre: p.nombre }))}
       puedeEditar={puedeEditar}
     />

@@ -109,10 +109,14 @@ export interface FlightListItem {
   created_at: string;
   updated_at: string;
   /**
-   * Avisos NO bloqueantes que devuelven assign / createReserva (4-sep-2026):
-   * capacidad del avión vs pasajeros, doble reserva del avión ese día. Solo
-   * viajan en la respuesta de esas escrituras (no en listas/snapshot); el
-   * panel los muestra como toast ámbar con `toastAvisos`.
+   * Avisos NO bloqueantes que devuelven las escrituras que eligen avión:
+   * assign, reserva, reassign-aircraft, combinar y revertir-externo
+   * (4-sep-2026; campo ADITIVO, el API lo manda siempre aunque vaya vacío).
+   * Contenido: avión EN TALLER (11-sep-2026, texto único de
+   * `lib/admin/aviso-taller.ts` — advertencia, NUNCA candado), capacidad del
+   * avión vs pasajeros y doble reserva del avión ese día. Solo viajan en la
+   * respuesta de esas escrituras (no en listas/snapshot); el panel los
+   * muestra como toast ámbar con `toastAvisos`.
    */
   avisos?: string[];
 }
@@ -190,7 +194,8 @@ export interface FlightEscala {
   notas: string | null;
   created_at: string;
   updated_at: string;
-  /** Avisos NO bloqueantes de assignEscala (capacidad/doble reserva). */
+  /** Avisos NO bloqueantes de assignEscala: avión EN TALLER (ámbar, nunca
+   *  candado — 11-sep-2026), capacidad del tramo y doble reserva. */
   avisos?: string[];
 }
 

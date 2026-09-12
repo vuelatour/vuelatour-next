@@ -20,6 +20,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SquawkAltaDialog } from "@/components/admin/flights/squawk-alta-dialog";
 import { reemplazarAvionAction } from "@/app/admin/quotes/grupo/actions";
 import { toastAvisos } from "@/lib/admin/avisos";
+import { descripcionAeronave } from "@/lib/admin/aviso-taller";
+import { NotaTaller } from "@/components/admin/nota-taller";
 import { mensajeErrorGrupo } from "@/lib/admin/grupos-ui";
 import { cn } from "@/lib/utils";
 import type {
@@ -35,6 +37,9 @@ export interface AeronaveOpcion {
   matricula: string;
   modelo: string;
   asientos: number | null;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 export interface PilotoOpcion {
@@ -162,15 +167,24 @@ export function GrupoReemplazarAvionDialog({
               <SearchableSelect
                 options={aircraft
                   .filter((a) => a.id !== avion?.aeronave?.id)
+                  // «En taller» solo MARCA la opción (11-sep-2026): sigue
+                  // elegible — el API reemplaza igual y devuelve el aviso.
                   .map((a) => ({
                     value: a.id,
                     label: `${a.matricula} — ${a.modelo}`,
-                    description: a.asientos != null ? `${a.asientos} asientos` : undefined,
+                    description: descripcionAeronave(
+                      [a.asientos != null ? `${a.asientos} asientos` : null],
+                      a.en_taller,
+                    ),
+                    descriptionClassName: a.en_taller
+                      ? "truncate text-amber-600 dark:text-amber-400"
+                      : undefined,
                   }))}
                 value={aeronaveId}
                 onChange={setAeronaveId}
                 placeholder="Selecciona la matrícula que sí vuela"
               />
+              {nuevo?.en_taller && <NotaTaller matricula={nuevo.matricula} />}
               {noCabe && (
                 <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
                   El {nuevo?.matricula} tiene {nuevo?.asientos} asientos

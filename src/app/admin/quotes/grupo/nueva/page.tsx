@@ -52,6 +52,8 @@ export default async function NuevoGrupoPage() {
     tarifa_hora_pub_usd: a.tarifa_hora_pub_usd ? Number(a.tarifa_hora_pub_usd) : null,
     tarifa_hora_broker_usd: a.tarifa_hora_broker_usd ? Number(a.tarifa_hora_broker_usd) : null,
     activa: a.activa,
+    // Marca «En taller» del selector: NO filtra ni deshabilita (11-sep-2026).
+    en_taller: a.en_taller === true,
   }));
 
   const routes = routesRes.data.map((r) => ({

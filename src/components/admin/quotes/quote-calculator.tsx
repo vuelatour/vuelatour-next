@@ -54,6 +54,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toastAvisos } from "@/lib/admin/avisos";
+import {
+  chipAeronaveEnTaller,
+  descripcionAeronave,
+  notaAeronaveEnTaller,
+} from "@/lib/admin/aviso-taller";
 import { SquawkAltaDialog } from "@/components/admin/flights/squawk-alta-dialog";
 import { decidirErrorRevise } from "@/lib/admin/quote-revise-errores";
 import { extrasAPayload, montoExtraActivo, normalizarExtrasEditor } from "@/lib/admin/extras";
@@ -1488,6 +1493,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !!selectedAircraft &&
     !!selectedAircraft.asientos &&
     maxPasajeros > selectedAircraft.asientos;
+  // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026): se cotiza a
+  // futuro con un avión en mantenimiento; solo se avisa. Nota ámbar + chip.
+  const avionEnTaller = selectedAircraft?.en_taller ? selectedAircraft : null;
   const tipoTarifa = values.tipo_tarifa;
   // Con override capturado (o modo elegido), el segmento muestra Personalizada.
   const overrideTarifaActivo =
@@ -1727,9 +1735,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Error de candado del API al guardar (409 COTIZACION_COBRADA): banner con
   // liga a los cobros de la página.
   const [errorCobrada, setErrorCobrada] = useState<string | null>(null);
-  // 409 AERONAVE_EN_TALLER al cambiar el avión desde el cotizador (API 0.0.6,
-  // invariante 14): NO hay confirmación posible — banner rojo con el mensaje
-  // del API y «elige otro avión».
+  // COMPATIBILIDAD (11-sep-2026): el taller dejó de ser candado. Un API sin
+  // desplegar todavía puede responder 409 AERONAVE_EN_TALLER; se pinta como
+  // aviso ÁMBAR de «actualiza el API», nunca como «elige otro avión».
   const [errorTaller, setErrorTaller] = useState<{
     mensaje: string;
     matricula: string | null;
@@ -1863,12 +1871,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         return;
       }
       if (decision.tipo === "taller") {
-        // Sin reintento posible: el avión está en mantenimiento.
+        // Solo puede venir de un API viejo: el vigente guarda y avisa. Se
+        // informa en ámbar (no es un error del operador) y los cambios se
+        // conservan para reintentar cuando el API esté desplegado.
         setGuardarOpen(false);
         saveRequestIdRef.current = null;
         verPdfTrasGuardarRef.current = false;
         setErrorTaller({ mensaje: decision.mensaje, matricula: decision.matricula });
-        toast.error(decision.mensaje);
+        toast.warning(decision.mensaje);
         return;
       }
       if (decision.tipo === "version") {
@@ -2004,6 +2014,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       if (res.ok && res.data) {
         saveRequestIdRef.current = null;
         toast.success(`Cotización #${res.data.folio} creada`);
+        // Avisos NO bloqueantes de `POST /v1/quotes` (11-sep-2026): la
+        // cotización YA se creó — p. ej. «el avión está en taller». Mismo
+        // `toastAvisos` que revise/assign/reserva (los toasts sobreviven al
+        // push a la página única).
+        toastAvisos(res.data.avisos);
         router.push(`/admin/quotes/${res.data.id}`);
       } else {
         toast.error(res.error ?? "Error al guardar");
@@ -2488,6 +2503,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     anclaCunPendiente ? "La ruta no ancla en CUN" : null,
     hayMillasEnCero ? "Tramos con millas en 0" : null,
     costoExternoMxnSinTc ? "Costo del operador externo en MXN sin T.C." : null,
+    // Informativo (no limita): el detalle va en la nota ámbar de arriba.
+    avionEnTaller ? chipAeronaveEnTaller(avionEnTaller.matricula) : null,
   ].filter((a): a is string => !!a);
 
   // ===== La HOJA 1 como formulario (ensamble 8-sep-2026) =====
@@ -2535,6 +2552,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           })),
       // Las aeronaves "sin tarifa" siguen en el selector (marcadas) pero no
       // se pueden elegir: el motor las rechaza con 400 (salvo cliente interno).
+      // EN TALLER (11-sep-2026) solo se MARCA: se cotiza a futuro con ella y
+      // el API responde con el aviso — jamás `disabled` ni filtrada.
       aeronaves: aircraft.map((a) => {
         const sinTarifa = !a.tarifa_hora_pub_usd && !a.tarifa_hora_broker_usd;
         return {
@@ -2543,14 +2562,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           modelo: a.modelo,
           asientos: a.asientos,
           velocidad_crucero_kts: a.velocidad_crucero_kts,
-          descripcion: `${a.velocidad_crucero_kts} kts · ${a.asientos} asientos${
-            sinTarifa
-              ? clienteInterno
-                ? " · sin tarifa · interno cotiza $0"
-                : " · sin tarifa configurada"
-              : ""
-          }`,
+          descripcion: descripcionAeronave(
+            [
+              `${a.velocidad_crucero_kts} kts`,
+              `${a.asientos} asientos`,
+              sinTarifa
+                ? clienteInterno
+                  ? "sin tarifa · interno cotiza $0"
+                  : "sin tarifa configurada"
+                : null,
+            ],
+            a.en_taller,
+          ),
           disabled: sinTarifa && !clienteInterno,
+          enTaller: a.en_taller === true,
         };
       }),
       aeropuertos: airports,
@@ -2760,21 +2785,40 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </div>
         </div>
       )}
-      {/* 409 AERONAVE_EN_TALLER (API 0.0.6): el cotizador cambió el avión y
-          el nuevo está en mantenimiento. NO hay «de todas formas»: se elige
-          otro avión (o se deshace el cambio) y se vuelve a guardar. */}
-      {errorTaller && (
-        <div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm">
-          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+      {/* AVIÓN EN TALLER (11-sep-2026): advertencia, NUNCA candado. Se cotiza
+          a futuro con un avión en mantenimiento; solo se avisa para que la
+          oficina lo confirme con el mecánico. Informativa (ámbar), sin modal
+          ni confirmación, y el guardado sigue habilitado. */}
+      {avionEnTaller && !lectura && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
           <div className="min-w-0 flex-1 space-y-1">
-            <p className="font-medium text-destructive">{errorTaller.mensaje}</p>
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              {notaAeronaveEnTaller(avionEnTaller.matricula)}
+            </p>
             <p className="text-xs text-muted-foreground">
-              La versión NO se guardó: elige otro avión
-              {errorTaller.matricula
-                ? ` (el ${errorTaller.matricula} está en taller)`
-                : ""}{" "}
-              en «Aeronave» —o deja el que tenía la cotización— y vuelve a
-              guardar.
+              Las cotizaciones son a futuro: el mantenimiento de hoy no
+              condiciona la fecha del vuelo.
+            </p>
+          </div>
+        </div>
+      )}
+      {/* COMPATIBILIDAD: un API anterior al 11-sep-2026 todavía responde 409
+          AERONAVE_EN_TALLER. No es culpa del avión ni del operador — es la
+          versión del backend, y así se dice (ámbar, no rojo). */}
+      {errorTaller && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              {errorTaller.mensaje}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              La versión quedó sin guardar porque el API todavía trata el
+              taller como candado
+              {errorTaller.matricula ? ` (${errorTaller.matricula})` : ""}.
+              Avisa a sistemas para desplegar el API: con la versión vigente
+              se guarda y solo avisa. Tus cambios siguen aquí.
             </p>
           </div>
         </div>

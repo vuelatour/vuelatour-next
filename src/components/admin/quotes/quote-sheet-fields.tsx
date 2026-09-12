@@ -363,6 +363,9 @@ export interface CampoSelectOption {
   value: string;
   label: string;
   description?: string;
+  /** Clases de la descripción (misma convención que `SearchableSelect`):
+   *  p. ej. ámbar para marcar «En taller» sin deshabilitar la opción. */
+  descriptionClassName?: string;
   disabled?: boolean;
   /** Lo que se IMPRIME en la hoja (default: `label`). Ej. aeronave: solo el modelo. */
   textoImpreso?: string;
@@ -434,7 +437,14 @@ export function CampoSelect({
               <div className="flex min-w-0 flex-col">
                 <span className="truncate">{item.label}</span>
                 {item.description && (
-                  <span className="truncate text-[10px] text-muted-foreground">{item.description}</span>
+                  <span
+                    className={cn(
+                      "truncate text-[10px]",
+                      item.descriptionClassName ?? "text-muted-foreground",
+                    )}
+                  >
+                    {item.description}
+                  </span>
                 )}
               </div>
             </ComboboxItem>

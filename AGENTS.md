@@ -239,7 +239,9 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   abre el MISMO `SquawkAltaDialog` de vuelos (detección pura en
   `lib/admin/squawk-alta.ts`) y al confirmar reintenta con
   `aceptar_discrepancia_alta` y el MISMO `client_request_id`;
-  `AERONAVE_EN_TALLER` va al banner rojo («elige otro avión», sin reintento).
+  `AERONAVE_EN_TALLER` YA NO lo emite el API (11-sep-2026, ver «Avión en
+  taller» más abajo): si llega, es un backend sin desplegar y va a un banner
+  ÁMBAR que pide actualizar el API — nunca «elige otro avión».
 - CONFIRMADO/RESERVA con piloto: confirmación ÚNICA al primer intento de
   editar (captura de click/keydown; `data-guard-exempt` exime cabeceras,
   TotalBar y diálogos). CANCELADA: editable si no facturada, banda gris (no
@@ -308,6 +310,49 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   false — no se inventan alertas.
 - El PDF del CLIENTE no cambia (solo el modelo cotizado); el PDF INTERNO sí
   pinta las dos líneas y marca «Distinto al cotizado» en ámbar.
+
+## Avión en taller: ADVERTENCIA, NUNCA CANDADO (11-sep-2026)
+
+- Pedido del cliente: «al cotizar debe poder elegirse un avión aunque esté
+  en taller (son cotizaciones a futuro), y aunque no lo fueran debe dejarte;
+  la advertencia está bien pero con eso es suficiente, no debe limitarte; lo
+  mismo para el vuelo». Aplica a cotización (create / revise / grupo) y a
+  vuelo (assign, assign por tramo, reserva, reassign-aircraft, combinar,
+  revertir externo).
+- Contrato con el API: **ya no responde 409 `AERONAVE_EN_TALLER`** en ningún
+  camino — guarda y agrega el texto a `avisos: string[]` (campo ADITIVO,
+  siempre presente aunque vacío). `GET /aircraft` sigue exponiendo
+  `en_taller` y es lo único que el panel usa: la MARCA del selector.
+- FUENTE ÚNICA del texto en el panel: `lib/admin/aviso-taller.ts`
+  (`avisoAeronaveEnTaller` = texto exacto del contrato con el API y la app;
+  `notaAeronaveEnTaller` = el MISMO aviso en el momento de ELEGIR el avión,
+  cuando todavía no se guardó nada; `chipAeronaveEnTaller` para la TotalBar;
+  `MARCA_EN_TALLER` y `descripcionAeronave(partes, enTaller)` para la
+  descripción de las opciones). Test: `__tests__/aviso-taller.test.ts`
+  (incluye el guard de que ningún texto diga «no se puede» / «no
+  disponible»). Si el texto cambia, cambia en los tres repos.
+- Regla de UI (toda pantalla con selector de avión): la opción se MARCA
+  «En taller» en ámbar (`description` + `descriptionClassName`) y **nunca**
+  se filtra ni se pone `disabled`; al elegirla aparece `<NotaTaller>`
+  (`components/admin/nota-taller.tsx`, ámbar, informativa — sin modal, sin
+  confirm, sin rojo) y el botón de guardar sigue habilitado. Los `avisos[]`
+  que devuelva el API se pintan con `toastAvisos` (o, en el grupo, en la
+  lista ámbar de la fila del avión). En el ARMADOR del grupo el aviso de
+  taller del API se filtra de la fila cuando ya se pinta `<NotaTaller>`: el
+  del API viene en pasado («se guardó») y dentro de un formulario abierto
+  todavía no se guardó nada — un solo mensaje, y en el tiempo verbal correcto. Cubierto hoy: cotizador
+  (`quote-calculator` + `quote-sheet`), grupo (`aviones-editor`,
+  `grupo-reemplazar-avion-dialog`), y vuelo (`flight-assign-sheet`,
+  `escala-assign-sheet`, `flight-danger-actions`, `cubrir-externo-dialog`,
+  `reserva-form-sheet`). Un selector de avión NUEVO nace con esta regla.
+- Compatibilidad (sin promover): `decidirErrorRevise` conserva el caso
+  `taller` y `mensajeErrorGrupo` el código `AERONAVE_EN_TALLER` por si se
+  habla con un API sin desplegar, pero su texto ya NO limita al operador —
+  dice que hay que actualizar el API, y se pinta ÁMBAR (antes era un banner
+  rojo «No se puede guardar… elige otro avión», retirado).
+- Lo que NO cambió: el **squawk ALTA** sigue siendo candado (409
+  estructurado + `aceptar_discrepancia_alta` + aviso al mecánico) y los
+  documentos vencidos siguen solo avisando.
 
 ## Cobro del vuelo: UNA card (11-sep-2026)
 

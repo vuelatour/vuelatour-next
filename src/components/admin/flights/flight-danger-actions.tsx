@@ -40,12 +40,18 @@ import {
   reassignAircraftAction,
 } from "@/app/admin/flights/actions";
 import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
+import { toastAvisos } from "@/lib/admin/avisos";
+import { descripcionAeronave } from "@/lib/admin/aviso-taller";
+import { NotaTaller } from "@/components/admin/nota-taller";
 import type { FlightListItem } from "@/types/flights";
 
 interface AircraftOption {
   id: string;
   matricula: string;
   modelo: string;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 /** Paso del diálogo "Cambiar aeronave": elegir el tipo de cambio primero. */
@@ -118,6 +124,24 @@ export function FlightDangerActions({
   const matriculaDe = (id: string) =>
     aircraft.find((a) => a.id === id)?.matricula ?? "la nueva matrícula";
 
+  /**
+   * Opciones de «Cambiar aeronave» (los dos caminos). TALLER = ADVERTENCIA,
+   * NUNCA CANDADO (cliente, 11-sep-2026): la matrícula en mantenimiento se
+   * MARCA en ámbar y sigue elegible — el API asigna y devuelve el aviso.
+   */
+  const opcionesAvion = aircraft
+    .filter((a) => a.id !== flight.aeronave_id)
+    .map((a) => ({
+      value: a.id,
+      label: `${a.matricula} — ${a.modelo}`,
+      description: descripcionAeronave([], a.en_taller),
+      descriptionClassName: a.en_taller
+        ? "truncate text-amber-600 dark:text-amber-400"
+        : undefined,
+    }));
+  const avionEnTaller =
+    aircraft.find((a) => a.id === nuevaAeronave && a.en_taller) ?? null;
+
   /** Camino A: SOLO cambiar el avión del MISMO vuelo (asignación nivel vuelo). */
   const handleCambioSimple = (aceptarSquawk = false) => {
     if (!nuevaAeronave) {
@@ -135,6 +159,9 @@ export function FlightDangerActions({
             ? `Vuelo #${flight.folio}: ahora vuela ${matriculaDe(nuevaAeronave)} — se avisó al mecánico de las discrepancias abiertas`
             : `Vuelo #${flight.folio}: ahora vuela ${matriculaDe(nuevaAeronave)} (cotización, cobros y gastos quedan igual)`,
         );
+        // Avisos NO bloqueantes del API (p. ej. «el avión está en taller»):
+        // el cambio YA se aplicó, solo se informan en ámbar.
+        toastAvisos(res.data?.avisos);
         setSquawk(null);
         setReassignOpen(false);
         router.refresh();
@@ -168,6 +195,8 @@ export function FlightDangerActions({
             ? `Vuelo reasignado · nuevo vuelo #${res.data.folio} (el #${flight.folio} queda cancelado con sus gastos) — se avisó al mecánico de las discrepancias abiertas`
             : `Vuelo reasignado · nuevo vuelo #${res.data.folio} (el #${flight.folio} queda cancelado con sus gastos)`,
         );
+        // Avisos NO bloqueantes del API (p. ej. «el avión está en taller»).
+        toastAvisos(res.data.avisos);
         setSquawk(null);
         setReassignOpen(false);
         router.push(`/admin/flights/${res.data.id}`);
@@ -397,16 +426,12 @@ export function FlightDangerActions({
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Nueva aeronave</Label>
                 <SearchableSelect
-                  options={aircraft
-                    .filter((a) => a.id !== flight.aeronave_id)
-                    .map((a) => ({
-                      value: a.id,
-                      label: `${a.matricula} — ${a.modelo}`,
-                    }))}
+                  options={opcionesAvion}
                   value={nuevaAeronave}
                   onChange={setNuevaAeronave}
                   placeholder="Selecciona la matrícula que sí vuela"
                 />
+                {avionEnTaller && <NotaTaller matricula={avionEnTaller.matricula} />}
               </div>
               <DialogFooter>
                 <Button
@@ -456,16 +481,12 @@ export function FlightDangerActions({
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Nueva aeronave</Label>
                   <SearchableSelect
-                    options={aircraft
-                      .filter((a) => a.id !== flight.aeronave_id)
-                      .map((a) => ({
-                        value: a.id,
-                        label: `${a.matricula} — ${a.modelo}`,
-                      }))}
+                    options={opcionesAvion}
                     value={nuevaAeronave}
                     onChange={setNuevaAeronave}
                     placeholder="Selecciona la matrícula que sí vuela"
                   />
+                  {avionEnTaller && <NotaTaller matricula={avionEnTaller.matricula} />}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Motivo (opcional)</Label>

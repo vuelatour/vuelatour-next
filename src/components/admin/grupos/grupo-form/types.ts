@@ -45,6 +45,9 @@ export interface AeronaveOption {
   tarifa_hora_broker_usd: number | null;
   /** false = dada de baja (solo aparece en revise si un hijo la usa). */
   activa: boolean;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 export interface PilotoOption {

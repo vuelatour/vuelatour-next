@@ -17,6 +17,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 import { isoToCancunInput } from "@/lib/datetime";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { avisoAeronaveEnTaller, descripcionAeronave } from "@/lib/admin/aviso-taller";
+import { NotaTaller } from "@/components/admin/nota-taller";
 import { cn } from "@/lib/utils";
 import type { AvionArmado, RotacionesGrupo } from "@/types/grupos";
 import {
@@ -117,16 +119,20 @@ export function AvionesEditor({
         return {
           value: a.id,
           label: `${a.matricula} — ${a.modelo}`,
-          description: [
-            `${a.asientos} asientos`,
-            `${a.velocidad_crucero_kts} kts`,
-            !a.activa ? "dada de baja" : null,
-            sinTarifa ? "sin tarifa configurada" : null,
-            repetido ? `ya está en el avión ${en}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          descriptionClassName: repetido ? "text-amber-600 dark:text-amber-400" : undefined,
+          // «En taller» solo MARCA la opción (11-sep-2026): sigue elegible —
+          // un grupo se cotiza a futuro y el API responde con el aviso.
+          description: descripcionAeronave(
+            [
+              `${a.asientos} asientos`,
+              `${a.velocidad_crucero_kts} kts`,
+              !a.activa ? "dada de baja" : null,
+              sinTarifa ? "sin tarifa configurada" : null,
+              repetido ? `ya está en el avión ${en}` : null,
+            ],
+            a.en_taller,
+          ),
+          descriptionClassName:
+            repetido || a.en_taller ? "text-amber-600 dark:text-amber-400" : undefined,
         };
       });
 
@@ -179,6 +185,15 @@ export function AvionesEditor({
         const excede = capacidadFila != null && a.pax > capacidadFila;
         const salidaEfectiva = a.fecha_salida_plan || (arm ? isoToCancunInput(arm.fecha_salida_plan) : "");
         const calculo = arm?.calculo ?? null;
+        // TALLER = advertencia, nunca candado (11-sep-2026): la nota va al
+        // elegir el avión y el aviso del armador (mismo texto, en pasado) se
+        // descarta para no decirlo dos veces —ni afirmar «se guardó» dentro
+        // de un formulario abierto—. Si el avión está congelado no hay nota,
+        // así que el aviso del API se conserva tal cual.
+        const notaTaller = !!ficha?.en_taller && !congelado;
+        const avisosFila = (arm?.avisos ?? []).filter(
+          (t) => !(notaTaller && t === avisoAeronaveEnTaller(ficha!.matricula)),
+        );
         return (
           <div
             key={a.uid}
@@ -407,10 +422,22 @@ export function AvionesEditor({
               </div>
             </div>
 
-            {/* Avisos del armador para esta fila (nunca se esconden) */}
-            {arm && arm.avisos.length > 0 && (
+            {/* Avión en taller: ADVERTENCIA, nunca candado (11-sep-2026).
+                Se muestra al ELEGIRLO, antes de que el API mande su aviso. */}
+            {notaTaller && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                <NotaTaller matricula={ficha!.matricula} />
+              </div>
+            )}
+
+            {/* Avisos del armador para esta fila (nunca se esconden). El de
+                TALLER se descarta si ya lo pinta <NotaTaller> arriba: el del
+                armador viene en pasado («se guardó») y en el formulario
+                todavía no se guarda nada — decirlo dos veces, y una de ellas
+                en falso, es peor que no decirlo. */}
+            {avisosFila.length > 0 && (
               <ul className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                {arm.avisos.map((t) => (
+                {avisosFila.map((t) => (
                   <li key={t} className="flex items-start gap-1.5">
                     <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <span>{t}</span>

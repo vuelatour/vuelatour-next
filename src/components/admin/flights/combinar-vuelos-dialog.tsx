@@ -21,6 +21,7 @@ import {
   type CombinarCandidato,
 } from "@/app/admin/flights/actions";
 import { fmtDateOnly } from "@/lib/datetime";
+import { toastAvisos } from "@/lib/admin/avisos";
 import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
 import type { FlightListItem } from "@/types/flights";
 
@@ -91,6 +92,9 @@ export function CombinarVuelosDialog({
             ? `Vuelos combinados: #${flight.folio} ♻ #${sel.folio} — se avisó al mecánico de las discrepancias abiertas`
             : `Vuelos combinados: #${flight.folio} ♻ #${sel.folio}`,
         );
+        // Avisos NO bloqueantes del API (p. ej. «el avión del anfitrión está
+        // en taller»): la combinación YA ocurrió, solo se informan en ámbar.
+        toastAvisos(res.data?.avisos);
         setSquawk(null);
         onOpenChange(false);
         router.refresh();

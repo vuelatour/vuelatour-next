@@ -70,10 +70,20 @@ export interface CreateQuotePayload extends CalculateQuoteRequest {
   costo_externo_moneda?: "USD" | "MXN";
 }
 
-export async function createQuoteAction(payload: CreateQuotePayload): Promise<ActionResult<PersistedQuote>> {
+/**
+ * Respuesta de `POST /v1/quotes`: la cotización creada + `avisos[]` NO
+ * bloqueantes (campo ADITIVO, siempre presente aunque vacío desde el
+ * 11-sep-2026; p. ej. «el avión está en taller»). Se pintan con
+ * `toastAvisos` DESPUÉS de crear — nunca bloquean el alta.
+ */
+export interface CreatedQuote extends PersistedQuote {
+  avisos?: string[] | null;
+}
+
+export async function createQuoteAction(payload: CreateQuotePayload): Promise<ActionResult<CreatedQuote>> {
   if (!payload.cliente_id) return { ok: false, error: "cliente_id es requerido" };
   try {
-    const created = await apiServer<PersistedQuote>("/v1/quotes", {
+    const created = await apiServer<CreatedQuote>("/v1/quotes", {
       method: "POST",
       body: payload,
     });

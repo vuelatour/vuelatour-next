@@ -24,6 +24,9 @@ export interface AircraftOption {
   asientos: number;
   tarifa_hora_pub_usd: number | null;
   tarifa_hora_broker_usd: number | null;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 export interface RouteOptionTramo {

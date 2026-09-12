@@ -21,12 +21,18 @@ import {
   cubrirExternoAction,
   revertirExternoAction,
 } from "@/app/admin/flights/actions";
+import { toastAvisos } from "@/lib/admin/avisos";
+import { descripcionAeronave } from "@/lib/admin/aviso-taller";
+import { NotaTaller } from "@/components/admin/nota-taller";
 import type { FlightListItem } from "@/types/flights";
 
 interface AircraftOption {
   id: string;
   matricula: string;
   modelo: string;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 interface CubrirExternoDialogProps {
@@ -86,10 +92,18 @@ export function CubrirExternoDialog({
   // volará el vuelo (con referencia, ese avión se conserva).
   const necesitaAvion = yaExterno && !flight.aeronave_id;
   const [aeronaveRevert, setAeronaveRevert] = useState("");
+  // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026): al regresar a
+  // vuelo propio la matrícula en mantenimiento se MARCA y sigue elegible.
   const aircraftOptions = aircraft.map((a) => ({
     value: a.id,
     label: `${a.matricula} — ${a.modelo}`,
+    description: descripcionAeronave([], a.en_taller),
+    descriptionClassName: a.en_taller
+      ? "truncate text-amber-600 dark:text-amber-400"
+      : undefined,
   }));
+  const avionRevertEnTaller =
+    aircraft.find((a) => a.id === aeronaveRevert && a.en_taller) ?? null;
 
   const handleRevert = () => {
     if (necesitaAvion && !aeronaveRevert) {
@@ -110,6 +124,8 @@ export function CubrirExternoDialog({
             ? `Vuelo #${flight.folio} regresó a vuelo propio con ${matriculaPropia}; asigna piloto`
             : `Vuelo #${flight.folio} regresó a vuelo propio: asigna avión y piloto.`,
         );
+        // Avisos NO bloqueantes del API (p. ej. «el avión está en taller»).
+        toastAvisos(res.data?.avisos);
         setConfirmRevert(false);
         onOpenChange(false);
         router.refresh();
@@ -309,6 +325,9 @@ export function CubrirExternoDialog({
                         emptyText="Sin aviones activos"
                         disabled={reverting}
                       />
+                      {avionRevertEnTaller && (
+                        <NotaTaller matricula={avionRevertEnTaller.matricula} />
+                      )}
                       <p className="text-xs text-muted-foreground">
                         Este vuelo externo no tenía avión de referencia: la
                         cotización se queda igual; el avión solo define quién

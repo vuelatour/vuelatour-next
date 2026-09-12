@@ -222,18 +222,20 @@ export async function combinarVuelosAction(
         (confirmado en el diálogo; el API avisa al mecánico). */
     aceptar_discrepancia_alta?: boolean;
   },
-): Promise<ActionResult> {
+): Promise<ActionResult<{ avisos?: string[] }>> {
   try {
-    await apiServer(`/v1/flights/${id}/combinar`, {
-      method: "POST",
-      body: payload,
-    });
+    // La respuesta trae `avisos[]` NO bloqueantes (campo aditivo del API,
+    // 11-sep-2026; p. ej. «el avión del anfitrión está en taller»).
+    const data = await apiServer<{ avisos?: string[] } | null>(
+      `/v1/flights/${id}/combinar`,
+      { method: "POST", body: payload },
+    );
     revalidateFlight(id);
     // El anfitrión también cambió (ferry cancelado, pernocta, liga).
     revalidatePath(`/admin/flights/${payload.vuelo_anfitrion_id}`);
     revalidatePath(`/admin/quotes/${id}`);
     revalidatePath(`/admin/quotes/${payload.vuelo_anfitrion_id}`);
-    return { ok: true };
+    return { ok: true, data: data ?? {} };
   } catch (err) {
     return fail(err);
   }

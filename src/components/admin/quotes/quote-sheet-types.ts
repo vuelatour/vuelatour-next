@@ -69,6 +69,12 @@ export interface AeronaveHoja {
   descripcion?: string;
   /** Sin tarifa configurada (y cliente no interno): no seleccionable. */
   disabled?: boolean;
+  /**
+   * Mantenimiento en curso: la opción se MARCA en ámbar («En taller») pero
+   * SIGUE elegible — las cotizaciones son a futuro (cliente, 11-sep-2026).
+   * Nunca implica `disabled`.
+   */
+  enTaller?: boolean;
 }
 
 export interface ClienteHoja {

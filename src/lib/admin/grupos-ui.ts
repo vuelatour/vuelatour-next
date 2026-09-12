@@ -561,10 +561,15 @@ export function mensajeErrorGrupo(err: GrupoApiError): string {
     case "PILOTO_DUPLICADO":
       if (Array.isArray(d) && d.length > 0) texto = textoPilotoDuplicado(d as PilotoDuplicadoDetails);
       break;
+    // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026). El API
+    // vigente ya no emite este 409: agrega el aviso en `avisos` del avión y
+    // el editor lo pinta en ámbar en su fila. Este caso sobrevive SOLO por
+    // compatibilidad con un backend sin desplegar, y su texto tampoco
+    // limita: el problema es la versión del API, no el avión.
     case "AERONAVE_EN_TALLER":
       if (esObjeto(d) && typeof d.matricula === "string") {
         const t = d as unknown as AeronaveEnTallerDetails;
-        texto = `El ${t.matricula} (avión ${t.posicion}) está en taller: no se puede vender en el grupo. Cámbialo por otro avión.`;
+        texto = `El API rechazó el ${t.matricula} (avión ${t.posicion}) por estar en taller; actualiza el API: desde el 11-sep-2026 el taller solo avisa y el grupo se guarda igual.`;
       }
       break;
     case "SQUAWK_ALTA_SIN_RESOLVER":
@@ -576,7 +581,7 @@ export function mensajeErrorGrupo(err: GrupoApiError): string {
       break;
     case "SIN_FLOTA":
       texto =
-        "No hay aviones activos disponibles (fuera de taller) con asientos para armar el grupo. Reactiva un avión en Aeronaves o cotiza con un externo.";
+        "No hay aviones activos con asientos para armar el grupo. Reactiva un avión en Aeronaves o cotiza con un externo.";
       break;
     case "HIJOS_CONGELADOS":
       if (Array.isArray(d) && d.length > 0) texto = textoCongelados(d as HijosCongeladosDetails);

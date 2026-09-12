@@ -60,6 +60,9 @@ interface AircraftOption {
   matricula: string;
   modelo: string;
   velocidad_crucero_kts: number;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 interface PilotOption {

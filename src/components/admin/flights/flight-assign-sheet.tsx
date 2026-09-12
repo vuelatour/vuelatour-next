@@ -26,6 +26,8 @@ import {
 } from "@/app/admin/flights/actions";
 import { apoyosDeVuelo, type FlightListItem } from "@/types/flights";
 import { toastAvisos } from "@/lib/admin/avisos";
+import { descripcionAeronave } from "@/lib/admin/aviso-taller";
+import { NotaTaller } from "@/components/admin/nota-taller";
 import { ApoyosField, mismoConjunto } from "./apoyos-field";
 import { SquawkAltaDialog, squawkAltaDe } from "./squawk-alta-dialog";
 
@@ -34,6 +36,9 @@ interface AircraftOption {
   matricula: string;
   modelo: string;
   velocidad_crucero_kts: number;
+  /** Mantenimiento en curso: MARCA ámbar del selector, nunca candado
+   *  (11-sep-2026, `lib/admin/aviso-taller.ts`). */
+  en_taller?: boolean;
 }
 
 interface PilotOption {
@@ -123,6 +128,9 @@ export function FlightAssignSheet({
   }, [open, flight.id]);
 
   const aeronaveId = watch("aeronave_id");
+  // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026): se asigna
+  // igual; solo se avisa para confirmarlo con el mecánico.
+  const avionEnTaller = aircraft.find((a) => a.id === aeronaveId && a.en_taller) ?? null;
   const pilotoId = watch("piloto_id");
   const copilotoId = watch("copiloto_id");
   const apoyoIds = watch("apoyo_ids");
@@ -271,16 +279,26 @@ export function FlightAssignSheet({
               <SearchableSelect
                 options={[
                   { value: "", label: "Sin asignar" },
+                  // «En taller» solo MARCA la opción (11-sep-2026): sigue
+                  // elegible — el vuelo puede ser a futuro y el API asigna
+                  // igual, devolviendo el aviso.
                   ...aircraft.map((a) => ({
                     value: a.id,
                     label: `${a.matricula} — ${a.modelo}`,
-                    description: `${a.velocidad_crucero_kts} kts`,
+                    description: descripcionAeronave(
+                      [`${a.velocidad_crucero_kts} kts`],
+                      a.en_taller,
+                    ),
+                    descriptionClassName: a.en_taller
+                      ? "truncate text-amber-600 dark:text-amber-400"
+                      : undefined,
                   })),
                 ]}
                 value={aeronaveId}
                 onChange={(v) => setValue("aeronave_id", v)}
                 placeholder="Selecciona aeronave"
               />
+              {avionEnTaller && <NotaTaller matricula={avionEnTaller.matricula} />}
             </div>
           )}
           <div className="space-y-1.5">

@@ -51,6 +51,14 @@ export interface Aircraft {
   /** Semáforo APTO/NO APTO (solo en el listado; mismo cálculo que el detalle). */
   apto?: boolean;
   no_apto_razones?: string[];
+  /**
+   * Mantenimiento EN CURSO. Desde el 11-sep-2026 es SOLO una marca ámbar de
+   * los selectores («En taller», ver `lib/admin/aviso-taller.ts`): jamás
+   * deshabilita ni filtra la opción — se cotiza y se asigna igual, y el API
+   * responde con el aviso en `avisos[]`. Opcional-defensivo: un API sin
+   * desplegar no lo manda y la marca simplemente no aparece.
+   */
+  en_taller?: boolean;
 }
 
 /** Etapa del programa de servicio: intervalo + nombre + checklist de tareas. */

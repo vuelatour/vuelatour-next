@@ -176,6 +176,10 @@ export function QuoteSheet({
         value: a.id,
         label: `${a.matricula} — ${a.modelo}`,
         description: a.descripcion,
+        // «En taller» va marcado en ámbar y SIGUE elegible (11-sep-2026).
+        descriptionClassName: a.enTaller
+          ? "truncate text-amber-600 dark:text-amber-400"
+          : undefined,
         disabled: a.disabled,
         textoImpreso: a.modelo,
       })),

@@ -8,11 +8,16 @@ import { squawkAltaDe, type ResultadoFallido } from "./squawk-alta";
  * llegar cuatro rechazos distintos y cada uno se atiende diferente:
  *
  * - `cobrada`  → banner rojo con liga a los cobros (candado D3, sin reintento).
- * - `taller`   → banner rojo con el mensaje del API + «elige otro avión»
- *                (NO hay confirmación posible: el avión está en mantenimiento).
+ * - `taller`   → SOLO COMPATIBILIDAD con un API anterior al 11-sep-2026.
+ *                El taller dejó de ser candado (pedido del cliente: «la
+ *                advertencia está bien, no debe limitarte»): el API vigente
+ *                guarda y devuelve el aviso en `avisos[]`. Si aun así llega
+ *                el 409 viejo, el panel lo pinta ÁMBAR diciendo que hay que
+ *                actualizar el API — nunca «no se puede».
  * - `squawk`   → diálogo de confirmación (el MISMO de assign) y, si la
  *                oficina acepta, reintento con `aceptar_discrepancia_alta`
- *                CONSERVANDO el `client_request_id` del intento.
+ *                CONSERVANDO el `client_request_id` del intento. Este SÍ
+ *                sigue siendo candado (no cambió).
  * - `version`  → 409 optimista: «alguien guardó la vN mientras editabas».
  * - `otro`     → toast con el mensaje del API.
  *
@@ -21,7 +26,11 @@ import { squawkAltaDe, type ResultadoFallido } from "./squawk-alta";
  * antes que el conflicto de versión genérico.
  */
 
-/** Código del 409 «la aeronave está en taller» (filtro de excepciones). */
+/**
+ * Código del 409 «la aeronave está en taller». LEGADO: el API vigente ya no
+ * lo emite (ver `lib/admin/aviso-taller.ts`); se conserva para no romper
+ * contra un backend sin desplegar.
+ */
 export const AERONAVE_EN_TALLER_CODE = "AERONAVE_EN_TALLER";
 /** Código del 409 «el vuelo ya tiene cobros» (candado D3 del cotizador). */
 export const COTIZACION_COBRADA_CODE = "COTIZACION_COBRADA";
@@ -35,8 +44,12 @@ export type DecisionErrorRevise =
 
 const MSG_COBRADA =
   "El vuelo ya tiene cobros registrados: la cotización no puede cambiar.";
-const MSG_TALLER =
-  "No se puede guardar: la aeronave está en taller (mantenimiento en curso).";
+/**
+ * COMPATIBILIDAD: el mensaje del API viejo dice «No se puede asignar…», que
+ * ya no es la regla — por eso NO se reusa: el panel explica que el problema
+ * es la versión del backend, no el avión.
+ */
+const MSG_TALLER = "El API rechazó el avión en taller; actualiza el API.";
 const MSG_VERSION = "La cotización cambió mientras editabas";
 const MSG_OTRO = "Error al guardar la versión";
 
@@ -63,14 +76,16 @@ export function decidirErrorRevise(
   if (res.code === COTIZACION_COBRADA_CODE) {
     return { tipo: "cobrada", mensaje: mensaje || MSG_COBRADA };
   }
-  // Taller: sin salida por confirmación — hay que elegir otro avión.
+  // Taller: SOLO puede llegar de un API anterior al 11-sep-2026. El mensaje
+  // que mande ese API se descarta a propósito (dice «no se puede», que ya no
+  // es la regla): se responde con el diagnóstico del panel.
   if (
     res.code === AERONAVE_EN_TALLER_CODE ||
     /aeronave está en taller/i.test(mensaje)
   ) {
     return {
       tipo: "taller",
-      mensaje: mensaje || MSG_TALLER,
+      mensaje: MSG_TALLER,
       matricula: matriculaDeDetails(res.details),
     };
   }
