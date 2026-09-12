@@ -18,6 +18,7 @@ import { NewReservaButton } from "@/components/admin/flights/new-reserva-button"
 import { EmptyState } from "@/components/admin/empty-state";
 import { getGrupo } from "@/lib/api/grupos-server";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { idAeronaveCotizada } from "@/lib/admin/avion-cotizado";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import type { VueloConGrupo } from "@/types/grupos";
 
@@ -32,6 +33,24 @@ interface QuotesPageProps {
     /** Solo los aviones (hijos) de una cotización de GRUPO. */
     grupo_id?: string;
   }>;
+}
+
+/**
+ * Ficha del avión COTIZADO de una fila de la lista (12-sep-2026: la
+ * cotización es independiente de la operación). Snapshot vigente primero
+ * (`aeronave_cotizada` → `calculo_snapshot.aeronave`) y, si ese avión ya no
+ * está en el catálogo activo o la cotización aún no tiene snapshot, el avión
+ * del vuelo.
+ */
+function avionCotizadoDeFila(
+  q: PersistedQuote,
+  aircraftById: Map<string, { matricula: string; modelo: string }>,
+): { matricula: string; modelo: string } | null {
+  const cotizadoId = idAeronaveCotizada(q);
+  return (
+    (cotizadoId ? (aircraftById.get(cotizadoId) ?? null) : null) ??
+    (q.aeronave_id ? (aircraftById.get(q.aeronave_id) ?? null) : null)
+  );
 }
 
 export default async function QuotesPage({ searchParams }: QuotesPageProps) {
@@ -88,14 +107,18 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       ? q.ruta_iatas
       : [q.origen_iata, q.destino_iata]
     ).join(" → "),
-    // Avión cotizado (pedido 3-sep): matrícula de la flota o, en externos,
-    // la matrícula del avión ajeno; multi-avión agrega "+N".
+    // Avión COTIZADO (pedido 3-sep; corregido 12-sep-2026): el del snapshot
+    // vigente —con el que se pactó el precio—, no el operativo del vuelo; la
+    // columna dice «cotizado» y con un cambio de avión del vuelo mostraba el
+    // otro. En externos, la matrícula del avión ajeno; multi-avión agrega
+    // "+N". Si el cotizado ya no está en el catálogo activo se cae al avión
+    // del vuelo para no dejar la celda vacía.
     avionMatricula: q.es_externo
       ? (q.avion_externo_matricula ?? null)
-      : (q.aeronave_id ? (aircraftById.get(q.aeronave_id)?.matricula ?? null) : null),
+      : (avionCotizadoDeFila(q, aircraftById)?.matricula ?? null),
     avionModelo: q.es_externo
       ? null
-      : (q.aeronave_id ? (aircraftById.get(q.aeronave_id)?.modelo ?? null) : null),
+      : (avionCotizadoDeFila(q, aircraftById)?.modelo ?? null),
     avionesExtra: Math.max(0, (q.participacion_aviones?.length ?? 1) - 1),
     fechaVuelo: q.fecha_vuelo,
     // Cuándo se capturó: ordena las filas sin fecha de vuelo (nuevas arriba).

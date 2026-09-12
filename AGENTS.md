@@ -308,8 +308,65 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   utilizado contra el CONJUNTO de modelos cotizados (una cotización puede
   rotar de avión por tramo y `modelos_cotizados` trae varios). Sin datos:
   false — no se inventan alertas.
-- El PDF del CLIENTE no cambia (solo el modelo cotizado); el PDF INTERNO sí
-  pinta las dos líneas y marca «Distinto al cotizado» en ámbar.
+- El PDF del CLIENTE enseña SOLO el avión COTIZADO — desde el 12-sep-2026
+  también su FICHA (fotos, modelo, asientos, velocidad, motores,
+  características y la sublínea de matrícula del VGV), que el API arma con el
+  avión del snapshot y ya no con `vuelo.aeronave_id`. El PDF INTERNO sí pinta
+  las dos líneas y marca «Distinto al cotizado» en ámbar.
+
+## La cotización es INDEPENDIENTE de la operación (12-sep-2026)
+
+- Pedido del cliente (folio #298): «al realizar un ajuste en el vuelo
+  operativo (cambio de avión) terminó afectando a la cotización; esto no debe
+  ser así: se cotiza con un avión y se vuela con otro por distintos motivos,
+  pero la cotización no debe verse afectada por cambios en el vuelo
+  operativo». Bug: el cotizador rehidrataba `aeronave_id` desde
+  `q.aeronave_id` (= `vuelo.aeronave_id`, el OPERATIVO) → el motor
+  recalculaba con la tarifa del avión operativo, la hoja imprimía SU modelo y
+  al Guardar → vN el precio pactado quedaba cambiado.
+- Avión **COTIZADO** = `aeronave_cotizada` (raíz de `GET /v1/quotes/:id`) o,
+  en su defecto, `calculo_snapshot.aeronave`: con él se pactó el precio.
+  Avión **OPERATIVO** = `vuelo.aeronave_id` / los tramos. Fuente única de
+  ambos en el panel: `lib/admin/avion-cotizado.ts`.
+- **R1 — hidratación**: el cotizador arranca SIEMPRE con el cotizado,
+  `aeronaveInicialDeCotizacion(quote, defaultAircraftId, aircraft)` =
+  `aeronave_cotizada.id → calculo_snapshot.aeronave.id → aeronave_id → default`
+  (sin snapshot todavía no hay nada pactado; el default solo evita el 400 del
+  motor en snapshots legados sin id y externos). Externos igual: la
+  referencia de tarifa del snapshot. Ningún flujo del panel puede mandar el
+  avión operativo como referencia de tarifa.
+- El TERCER argumento (el catálogo ACTIVO del selector) NO es opcional en la
+  práctica: `POST /v1/quotes/calculate` responde **400 «Aeronave inactiva»**,
+  así que arrancar con un avión cotizado ya dado de baja dejaría la cotización
+  imposible de abrir. Se salta al operativo/default y el cotizador lo dice en
+  ámbar con `avisoAvionCotizadoNoSeleccionable` (nunca se recalcula un precio
+  en silencio). Si algún día el catálogo del cotizador incluyera inactivos,
+  este salto deja de dispararse solo.
+- «Sin cambio de avión» (pinta `modelos_cotizados` del API en la hoja y en
+  «Cotizado en: …») se mide con `esAeronaveCotizada(quote, values.aeronave_id)`
+  — contra el COTIZADO, nunca contra `vuelo.aeronave_id`. Cambiar el selector
+  a otro avión SÍ es deliberado: el API lo trata como cambio de avión (mueve
+  el vuelo y sus tramos vivos, squawk ALTA confirma).
+- **R5 — textos**: junto al selector de la hoja va una nota TENUE
+  «Opera en N990GG (Seneca V)» (`fraseOperaEn`, `documento.operaEn`,
+  `data-cot-ui` ⇒ fuera del PDF y fuera de lectura) cuando el avión utilizado
+  difiere del elegido; nunca cambia el selector sola. El diálogo del primer
+  cambio con tripulación ya no dice «esta cotización tiene tripulación
+  asignada»: `textoConfirmarEdicionCotizacion` explica la separación y en qué
+  avión opera hoy el vuelo.
+- Dónde se pinta cada uno: la LISTA `/admin/quotes` y la hoja/PDF del cliente
+  muestran el COTIZADO (la lista cae al avión del vuelo solo si el cotizado ya
+  no está en el catálogo activo); la card «Operación», el PDF interno y la
+  nota tenue de la hoja son los únicos que enseñan el UTILIZADO.
+- La card «Operación» del workspace y el PDF interno siguen mostrando
+  cotizada vs utilizada (`aeronavesDeCotizacion`). Tests:
+  `lib/admin/__tests__/avion-cotizado.test.ts` (caso #298 completo) y
+  `components/admin/quotes/__tests__/quote-sheet.test.tsx` («Opera en …»).
+- EXCEPCIÓN conocida: el cotizador de GRUPO (`grupo-form/types.ts`) hidrata
+  cada hijo con `a.aeronave?.id ?? a.aeronave_cotizada_id` A PROPÓSITO — ahí
+  la tabla «Aviones» ASIGNA el avión del hijo (recotiza al reemplazarlo) y el
+  API avisa con `precio_desactualizado` cuando vuela en otro distinto al
+  cotizado. No cambiar sin decidir antes el contrato del grupo con el API.
 
 ## Avión en taller: ADVERTENCIA, NUNCA CANDADO (11-sep-2026)
 

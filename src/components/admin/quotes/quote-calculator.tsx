@@ -64,7 +64,17 @@ import { decidirErrorRevise } from "@/lib/admin/quote-revise-errores";
 import { extrasAPayload, montoExtraActivo, normalizarExtrasEditor } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
-import { modelosCotizadosTexto } from "@/lib/admin/avion-cotizado";
+import {
+  aeronaveInicialDeCotizacion,
+  avisoAvionCotizadoNoSeleccionable,
+  aeronavesDeCotizacion,
+  esAeronaveCotizada,
+  fichaAeronaveUtilizada,
+  fraseOperaEn,
+  modelosCotizadosTexto,
+  modelosCotizadosVigentes,
+  textoConfirmarEdicionCotizacion,
+} from "@/lib/admin/avion-cotizado";
 import { extraerMapaSvgDeHtml } from "@/lib/admin/quote-sheet";
 import type { VueloConGrupo } from "@/types/grupos";
 import type { Airport } from "@/types/airports";
@@ -753,13 +763,23 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         fecha_traslado_final: q.fecha_traslado_final
           ? isoToCancunInput(q.fecha_traslado_final)
           : "",
-        // Externo: el vuelo no tiene avión propio; la referencia de tarifa con
-        // la que se cotizó vive en el snapshot. El revise SIEMPRE manda una
-        // referencia (el modo sin-avión se retiró 29-ago; snapshots legados
-        // con aeronave.id null — 0 en prod — caen al avión default para no
-        // tirar el cálculo con un 400 críptico).
-        aeronave_id:
-          q.aeronave_id ?? q.calculo_snapshot?.aeronave?.id ?? defaultAircraftId,
+        // LA COTIZACIÓN ES INDEPENDIENTE DE LA OPERACIÓN (12-sep-2026, R1):
+        // el formulario arranca con el avión COTIZADO (snapshot vigente),
+        // NUNCA con `q.aeronave_id` (= vuelo.aeronave_id, el OPERATIVO). Si
+        // el vuelo se reasignó a otro avión (caso #298: cotizado Cessna 205,
+        // operando en N990GG · Seneca V), rehidratar el operativo recalculaba
+        // el precio con SU tarifa, la hoja imprimía su modelo y al guardar la
+        // vN el precio pactado quedaba cambiado. Externo: la referencia de
+        // tarifa con la que se cotizó vive en el snapshot (misma regla). Sin
+        // snapshot todavía no hay nada pactado → el avión del vuelo; y si
+        // tampoco (snapshots legados con aeronave.id null, externos sin avión
+        // propio) el default del catálogo, para no tirar el cálculo con un
+        // 400 críptico. Fuente única: `aeronaveInicialDeCotizacion`.
+        // `aircraft` = catálogo ACTIVO del selector: si el avión cotizado ya
+        // se dio de baja NO se puede arrancar con él (el motor responde 400
+        // «Aeronave inactiva» y la cotización quedaría imposible de abrir);
+        // se cae al operativo/default y se AVISA en ámbar.
+        aeronave_id: aeronaveInicialDeCotizacion(q, defaultAircraftId, aircraft),
         // El vínculo a la ruta del catálogo se conserva (antes se perdía al
         // revisar y salía el aviso falso "difiere de la ruta guardada").
         ruta_id: q.ruta_id ?? "",
@@ -992,7 +1012,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       tarifa_personalizada: false,
       escalas_operacion: [],
     };
-  }, [initialQuote, defaultAircraftId, defaultRutaId]);
+  }, [initialQuote, defaultAircraftId, defaultRutaId, aircraft]);
 
   const {
     register,
@@ -2427,22 +2447,74 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   // MODELO cotizado (feedback 4-sep): el cliente ve el TIPO de avión con el
   // que se cotizó, nunca la matrícula. En revisión SIN cambio de avión manda
-  // la lista del API (modelos distintos de los tramos vivos, si son ≥2); al
+  // la lista del API (`modelos_cotizados`, fuente única con el PDF); al
   // cambiar de avión, el del breakdown. Externo → solo el modelo ajeno.
+  // 12-sep-2026 (R1): «sin cambio de avión» se mide contra el COTIZADO
+  // (`aeronave_cotizada` → snapshot), no contra el operativo del vuelo.
+  const sinCambioDeAvion =
+    isRevise && !!initialQuote && esAeronaveCotizada(initialQuote, values.aeronave_id);
+  // R3: la lista del API solo vale si habla del avión COTIZADO. Un API sin
+  // desplegar podía listar los modelos OPERATIVOS de los tramos (el dato de
+  // la operación colándose a la hoja y al PDF del cliente): en ese caso se
+  // descarta y manda el modelo del cálculo.
+  const modelosCotizadosApi = sinCambioDeAvion
+    ? modelosCotizadosVigentes(
+        initialQuote!.modelos_cotizados,
+        breakdown?.aeronave.modelo ?? selectedAircraft?.modelo ?? null,
+      )
+    : null;
   const modeloCotizadoTexto = breakdown
     ? modelosCotizadosTexto({
         esExterno: values.es_externo,
         externoModelo: values.avion_externo_modelo,
-        modelos:
-          isRevise &&
-          initialQuote &&
-          initialQuote.calculo_snapshot?.aeronave?.id === values.aeronave_id
-            ? initialQuote.modelos_cotizados
-            : null,
+        modelos: modelosCotizadosApi,
         modelo: breakdown.aeronave.modelo,
       })
     : null;
   const cotizadoEnTexto = modeloCotizadoTexto ? `Cotizado en: ${modeloCotizadoTexto}` : null;
+
+  // «Opera en N990GG (Seneca V)» (12-sep-2026, R5): el vuelo vuela HOY en un
+  // avión distinto al que se está cotizando. Es una nota TENUE e informativa
+  // junto al selector — la cotización no se toca y el selector nunca se
+  // cambia solo. Se compara contra el avión ELEGIDO en el cotizador: si el
+  // operador decide cotizar con el avión operativo, la nota desaparece.
+  const fichaUtilizada = useMemo(
+    () => (isRevise && initialQuote ? fichaAeronaveUtilizada(initialQuote, aircraft) : null),
+    [isRevise, initialQuote, aircraft],
+  );
+  // Texto del diálogo de confirmación (puro y probado): explica que la
+  // cotización es independiente de la operación (R5). «Aeronave utilizada» =
+  // matrícula · modelo, misma fuente única que la card «Operación».
+  const textoConfirmarEdicion = useMemo(
+    () =>
+      textoConfirmarEdicionCotizacion({
+        folio: initialQuote?.folio ?? null,
+        estado: initialQuote?.estado ?? null,
+        aeronaveUtilizada:
+          initialQuote && !initialQuote.es_externo
+            ? aeronavesDeCotizacion(initialQuote, aircraft).utilizada
+            : null,
+      }),
+    [initialQuote, aircraft],
+  );
+  // El avión COTIZADO ya no se puede elegir (dado de baja): el formulario
+  // arrancó con OTRO avión y el desglose que se ve ya NO es el pactado. Se
+  // dice en ámbar — nunca en silencio (la fiabilidad numérica es sagrada).
+  const avisoCotizadoNoSeleccionable = useMemo(
+    () => (isRevise && initialQuote ? avisoAvionCotizadoNoSeleccionable(initialQuote, aircraft) : null),
+    [isRevise, initialQuote, aircraft],
+  );
+  const notaOperaEn =
+    isRevise && !values.es_externo && selectedAircraft
+      ? fraseOperaEn(
+          {
+            id: selectedAircraft.id,
+            matricula: selectedAircraft.matricula,
+            modelo: selectedAircraft.modelo,
+          },
+          fichaUtilizada,
+        )
+      : null;
 
   // Tramo OCULTO del PDF (atenúa la fila y sale de la ruta grande). Alta:
   // bandera del form (D4). Revisión: escala viva (prop) solo si los tramos
@@ -2529,12 +2601,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     clienteNombre: isRevise ? (clientName ?? initialQuote?.cliente_id ?? null) : undefined,
     // MODELO cotizado (feedback 4-sep): en revisión SIN cambio de avión manda
     // la lista del API; al cambiar de avión, el del breakdown (lo deriva la hoja).
-    modelosCotizados:
-      isRevise &&
-      initialQuote &&
-      initialQuote.calculo_snapshot?.aeronave?.id === values.aeronave_id
-        ? (initialQuote.modelos_cotizados ?? null)
-        : null,
+    modelosCotizados: modelosCotizadosApi,
+    // Nota TENUE junto al selector cuando el vuelo opera en otro avión (R5).
+    operaEn: notaOperaEn,
     matricula: breakdown?.aeronave.matricula ?? selectedAircraft?.matricula ?? null,
     quoteId: initialQuote?.id,
   };
@@ -2782,6 +2851,25 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 Copiar como nueva cotización
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* AVIÓN COTIZADO DADO DE BAJA (12-sep-2026, R1): el selector no lo
+          ofrece y el motor lo rechaza («Aeronave inactiva»), así que la hoja
+          se recalculó con otro avión. Informativo, sin candado: guardar sigue
+          disponible, pero nadie se entera por accidente. */}
+      {avisoCotizadoNoSeleccionable && !lectura && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              {avisoCotizadoNoSeleccionable}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              La cotización sigue siendo independiente de la operación: esto
+              pasa porque el avión con el que se pactó ya no está activo en el
+              catálogo, no porque el vuelo haya cambiado de aeronave.
+            </p>
           </div>
         </div>
       )}
@@ -3178,20 +3266,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       />
 
       {/* Confirmación ÚNICA del primer cambio en CONFIRMADO/RESERVA con
-          tripulación (F0-d). */}
+          tripulación (F0-d). 12-sep-2026 (R5): el texto ya no dice «esta
+          cotización tiene tripulación asignada» —confundía cotización con
+          operación—: explica que son independientes y, si el API manda el
+          avión utilizado, en cuál opera hoy el vuelo. */}
       {isRevise && initialQuote && (
         <AlertDialog open={confirmEdicionOpen} onOpenChange={setConfirmEdicionOpen}>
           <AlertDialogContent data-guard-exempt>
             <AlertDialogHeader>
-              <AlertDialogTitle>
-                Esta cotización tiene tripulación asignada. ¿Editar?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                El vuelo #{initialQuote.folio} está{" "}
-                {initialQuote.estado === "RESERVA" ? "reservado" : "confirmado"} con
-                piloto. Puedes editar normal; al guardar, si cambian fechas, avión
-                o pernocta, la tripulación recibe aviso (el precio no notifica).
-              </AlertDialogDescription>
+              <AlertDialogTitle>{textoConfirmarEdicion.titulo}</AlertDialogTitle>
+              <AlertDialogDescription>{textoConfirmarEdicion.cuerpo}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>No, solo ver</AlertDialogCancel>
@@ -3202,7 +3286,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   setConfirmEdicionOpen(false);
                 }}
               >
-                Sí, editar
+                Sí, editar la cotización
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -354,6 +354,25 @@ describe("variantes de la hoja", () => {
     expect(html).not.toContain("Piper Seneca V · piper");
   });
 
+  /**
+   * LA COTIZACIÓN ES INDEPENDIENTE DE LA OPERACIÓN (12-sep-2026, R5): si el
+   * vuelo opera hoy en otro avión se dice junto al selector, TENUE y FUERA
+   * del PDF — la estructura impresa no cambia y el cliente nunca lo ve.
+   */
+  it("«Opera en …»: nota tenue en edición, jamás impresa ni en lectura", () => {
+    const p = hoja1().props();
+    p.documento = { ...p.documento, operaEn: "Opera en N990GG (Seneca V)" };
+    const html = renderToString(<QuoteSheet {...p} />);
+    expect(html).toContain("Opera en N990GG (Seneca V)");
+    // No entra en el papel: misma secuencia de tags/clases que el PDF…
+    expect(tokens(parsearHoja(html))).toEqual(tokens(parsearHoja(hoja1().html)));
+    // …ni en el texto impreso (subárbol `data-cot-ui`).
+    expect(colapsar(textoImpreso(parsearHoja(html), true))).not.toContain("Opera en");
+    // En lectura bloqueada la hoja ES el PDF: ni la nota ni su croma.
+    const lectura = renderToString(<QuoteSheet {...p} lectura />);
+    expect(lectura).not.toContain("Opera en N990GG");
+  });
+
   it("primer tramo oculto: el traslado inicial impreso es la salida del primer tramo VISIBLE", () => {
     const p = hoja1().props();
     p.valores = {

@@ -105,6 +105,13 @@ export interface DocumentoHoja {
   modelosCotizados?: string[] | null;
   /** Matrícula del avión cotizado (regla VGV en la sublínea de la ruta). */
   matricula?: string | null;
+  /**
+   * «Opera en N990GG (Seneca V)» (12-sep-2026): nota TENUE junto al selector
+   * cuando el vuelo vuela hoy en un avión distinto al COTIZADO. NO se imprime
+   * (`data-cot-ui`) y jamás cambia el selector: la cotización es independiente
+   * de la operación. null = no se pinta.
+   */
+  operaEn?: string | null;
   quoteId?: string;
 }
 

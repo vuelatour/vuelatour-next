@@ -402,6 +402,20 @@ export function QuoteSheet({
                   </span>
                 )
               )}
+              {/* LA COTIZACIÓN ES INDEPENDIENTE DE LA OPERACIÓN (12-sep-2026):
+                  si el vuelo vuela hoy en otro avión se dice aquí, TENUE y
+                  fuera del PDF (`data-cot-ui`). Informativa: el selector del
+                  avión cotizado no se cambia solo. */}
+              {!externo && !lectura && documento.operaEn && (
+                <span
+                  className="cot-tenue"
+                  title="Avión con el que opera hoy el vuelo. Lo cotizado (y su precio) no cambia."
+                  {...UI}
+                >
+                  <br />
+                  {documento.operaEn}
+                </span>
+              )}
             </div>
           </div>
 

@@ -238,6 +238,13 @@ export interface PersistedQuote {
   /** Avión OPERATIVO (vuelo.aeronave_id); null en externos. ADITIVO. */
   aeronave_operativa?: AvionFichaMin | null;
   /**
+   * Avión UTILIZADO (11-sep-2026, ADITIVO): el que HOY tiene asignado el
+   * vuelo — `vuelo.aeronave_id` o, si la cabecera no lo trae, el del primer
+   * tramo vivo. Va en la RAÍZ, no dentro de `calculo_snapshot`. Cambiarlo
+   * NUNCA cambia lo cotizado (contrato 12-sep-2026).
+   */
+  aeronave_utilizada?: AvionFichaMin | null;
+  /**
    * MODELO(S) del avión cotizado para el cliente (nunca matrícula): con ≥2
    * aviones distintos en tramos vivos comerciales, los modelos en orden de
    * tramo sin repetir; si no, [modelo del snapshot]; externo → [modelo del

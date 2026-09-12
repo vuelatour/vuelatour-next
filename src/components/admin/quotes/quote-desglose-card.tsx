@@ -16,7 +16,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { fmtUsd } from "@/lib/format";
-import { textoCotizadoEn, textoOperaEn } from "@/lib/admin/avion-cotizado";
+import {
+  fichaAeronaveUtilizada,
+  textoCotizadoEn,
+  textoOperaEn,
+} from "@/lib/admin/avion-cotizado";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
@@ -109,9 +113,12 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
     modelos: quote.modelos_cotizados,
     modelo: quote.calculo_snapshot?.aeronave?.modelo,
   });
+  // El avión UTILIZADO sale de la fuente única (`aeronave_utilizada` del raíz
+  // → snapshot → `aeronave_operativa` → catálogo): con vuelos cuyo avión vive
+  // en el tramo, `aeronave_operativa` viene null y esta línea se perdía.
   const operaEn = quote.es_externo
     ? null
-    : textoOperaEn(quote.aeronave_cotizada, quote.aeronave_operativa);
+    : textoOperaEn(quote.aeronave_cotizada, fichaAeronaveUtilizada(quote));
 
   const handleCopy = async () => {
     const filas = [
