@@ -529,29 +529,69 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
 
 Pedido del cliente: «queremos que se sincronicen los vuelos, eventos,
 mantenimientos, etc. que tenemos en el calendario del sistema de VuelaTour al
-Google Calendar de **aerochartercancunflightplanner@gmail.com**». La sync es
-UNIDIRECCIONAL (sistema → Google) y vive en el API; el panel solo la DISPARA
-y la MUESTRA.
+Google Calendar de **aerochartercancunflightplanner@gmail.com**» y, el mismo
+día, «el calendario debe sincronizarse de forma **AUTOMÁTICA** cada que se
+realizan cambios, **sin sincronización manual**». La sync es UNIDIRECCIONAL
+(sistema → Google) y vive en el API; el panel solo la MUESTRA (y conserva el
+backfill manual para el arranque).
 
+- **Cómo sincroniza el API ahora**: cada cambio en vuelo/escala/descanso/
+  evento de flota/mantenimiento lo encola un **trigger de la BD** en
+  `calendar_sync_cola` y un **worker del API lo drena cada 20 s** con
+  reintentos y espera progresiva; el reconcile nocturno y el resync manual
+  quedan como red de seguridad. Lo que la app sube al reconectar entra por los
+  MISMOS endpoints ⇒ por la misma cola. El panel NO orquesta nada de esto: lo
+  reporta.
 - **Fuente única de los textos**: `lib/admin/calendar-sync.ts` —
-  `chipSyncGoogle(estado)` (chip) y `toastResyncGoogle(res)` /
+  `chipSyncGoogle(estado, ahora?)` (chip), `syncEsAutomatica(estado)`,
+  `tituloBotonResync(automatica)` y `toastResyncGoogle(res)` /
   `toastResyncFallo(status)` (toast del backfill). Helpers PUROS, probados en
   `lib/admin/__tests__/calendar-sync.test.ts`. Ningún componente redacta
-  textos de la sync por su cuenta.
+  textos de la sync por su cuenta. `ahora` es **parámetro** (epoch ms, default
+  `Date.now()`) para poder probar la regla de los 15 min sin fingir el reloj.
 - **Chip** (`components/admin/calendar/google-sync-chip.tsx`, server): lee
   `getCalendarSyncEstado()` (`lib/api/calendar-server.ts`, GET
-  `/v1/calendar/sync-estado`). Tres estados y NO se confunden: verde
-  «Google Calendar: activo · <calendar_id>» con la última revisión automática
-  y la última re-sincronización manual en **hora de Cancún**; ámbar
-  «apagado — faltan las variables en Railway»; gris «estado no disponible»
-  cuando el API de ese ambiente responde 404/403. `null` = no se pudo saber,
-  que NO es «apagado» (afirmarlo sería mentirle a la oficina).
+  `/v1/calendar/sync-estado`). Estados que NO se confunden entre sí:
+  - verde «Google Calendar: **activo · automática**» + «Sin cambios en espera»
+    / «N cambios en espera · el más antiguo lleva X min» (menos de 15 min y sin
+    errores ⇒ normal: el worker corre cada 20 s) y «última subida …»;
+  - ámbar «Google Calendar: **automática · N cambios en espera**» cuando
+    `mas_antiguo_at` pasa de **15 min** (`MINUTOS_ESPERA_AMBAR`) o
+    `con_error > 0`; el detalle dice desde cuándo y el **texto del error** del
+    API (recortado a 140 caracteres: el chip no es un log), y el tooltip que
+    nada se pierde y cuándo avisar a soporte;
+  - verde «Google Calendar: **activo · automática**» con «los cambios en espera
+    no se pudieron leer» cuando `automatica:true` llega **sin `cola`** (los
+    conteos fallaron en ese instante): se afirma lo que sí se sabe y NO se
+    inventan números — el flag autoritativo es `automatica`, nunca `cola`;
+  - ámbar «Google Calendar: **activo · sin cola (migración pendiente)**» cuando
+    `enabled` y `automatica:false` con `cola` **`null`** (o `activa:false`): la migración
+    `20260912000002_calendar_sync_cola.sql` no está aplicada, así que un fallo
+    de Google se corrige hasta la madrugada. El tooltip dice que al aplicarla
+    el API la detecta solo (sonda cada 10 min) **sin volver a desplegar**;
+  - ámbar «apagado — <motivo>» (faltan las variables en Railway); si hay
+    cambios encolados lo dice: «N cambios quedaron en espera y se publicarán en
+    cuanto se encienda» (la cola NO se descarta con la sync apagada);
+  - gris «estado no disponible» cuando el API responde 404/403. `null` = no se
+    pudo saber, que NO es «apagado» (afirmarlo sería mentirle a la oficina).
+  - Una **pausa por cuota de Google** (`pausada_hasta`) se pinta solo mientras
+    está vigente: «Google pidió esperar hasta HH:MM; se reanuda solo».
+- **Tolerancia al API viejo, y la diferencia que importa**: `cola` **ausente**
+  (el API todavía no sabe de colas) ⇒ el chip se pinta como antes, verde con el
+  `calendar_id`, sin afirmar nada de la cola; `cola: null` ⇒ ámbar «sin cola».
+  `automatica` se toma del API si viene y si no se deriva de `cola.activa`
+  (`syncEsAutomatica`), nunca se supone.
 - **Botón «Re-sincronizar Google»** (ADMIN) llama DIRECTO al API, no por
   server action: el backfill `[hoy−30d, hoy+365d]` es secuencial contra
   Google y puede pasarse del límite de una función de Vercel. Al terminar
   canta los conteos por tipo (`{vuelos, descansos, eventos, mantenimientos,
   errores, nota}`), tolera el `{enabled, total}` del API viejo y hace
-  `router.refresh()` para que el chip muestre la nueva fecha.
+  `router.refresh()` para que el chip muestre la nueva fecha. Con la sync
+  automática **ya no es el camino normal**: la página le pasa
+  `automatica={syncEsAutomatica(syncEstado)}` y su tooltip
+  (`tituloBotonResync`) aclara que solo sirve para el arranque o una duda, para
+  que nadie crea que hay que pulsarlo tras cada cambio. NO se esconde: sigue
+  siendo la salida si alguien sospecha que falta algo viejo.
 - El toast **dice la VENTANA** que se publicó (`desde`/`hasta` del API, días
   Cancún vía `fmtDateOnly` para no correr el día): sin eso la oficina cree que
   subió todo el historial y reporta como bug que no ve un vuelo viejo. Si el
@@ -560,9 +600,11 @@ y la MUESTRA.
   Google dice 404/410): volver a pulsar el botón tras un corte de red o un
   timeout no duplica nada en el calendario de la oficina — es la salida
   recomendada si el backfill no alcanza a responder.
-- El estado del API vive **en memoria del proceso**: tras un despliegue de
-  Railway el chip dice «Aún no ha corrido ninguna sincronización desde el
-  último reinicio del servidor». No es un historial persistido.
+- El estado del API persiste el resumen del último reconcile/resync, pero si
+  el ambiente todavía no lo hace el chip dice «Aún no ha corrido ninguna
+  sincronización desde el último reinicio del servidor» en lugar de inventar
+  una fecha. Los conteos de la **cola** sí son del momento (los consulta el
+  worker en la BD).
 - **Los eventos que la oficina capturó A MANO en ese Google Calendar no se
   tocan** (ni se borran ni se deduplican): decisión pendiente del cliente. El
   API lo repite en `nota` y el toast la muestra tal cual; no escribir en el

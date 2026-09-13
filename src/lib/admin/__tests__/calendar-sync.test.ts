@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   VARS_GOOGLE_SYNC,
   chipSyncGoogle,
+  syncEsAutomatica,
+  tituloBotonResync,
   toastResyncFallo,
   toastResyncGoogle,
 } from "@/lib/admin/calendar-sync";
-import type { CalendarSyncEstado } from "@/types/calendar";
+import type { CalendarSyncCola, CalendarSyncEstado } from "@/types/calendar";
 
 /**
  * C5 del pedido del 12-sep-2026: la oficina tiene que ENTERARSE de si el
@@ -224,5 +226,235 @@ describe("toastResyncFallo", () => {
     const t = toastResyncFallo();
     expect(t.texto).toBe("No se pudo re-sincronizar con Google Calendar");
     expect(t.detalle).toMatch(/calendario del panel no se afecta/);
+  });
+});
+
+/**
+ * Segunda parte del pedido del 12-sep-2026: «el calendario debe sincronizarse
+ * de forma AUTOMÁTICA cada que se realizan cambios, sin sincronización
+ * manual». El API ahora encola cada cambio en la BD (triggers) y un worker la
+ * drena con reintentos; el chip tiene que decir tres cosas distintas SIN
+ * confundirlas:
+ *  - automática y al día (verde),
+ *  - automática pero con cambios ATORADOS (ámbar, con el error y desde cuándo),
+ *  - encendida pero SIN cola porque falta la migración (ámbar, no verde: un
+ *    fallo de Google se corregiría hasta la madrugada).
+ * Y un API viejo (sin `cola` ni `automatica`) debe seguir pintándose como antes.
+ */
+describe("chipSyncGoogle · cola automática", () => {
+  // 15:00 UTC = 10:00 en Cancún.
+  const AHORA = new Date("2026-09-12T15:00:00Z").getTime();
+
+  const cola: CalendarSyncCola = {
+    activa: true,
+    pendientes: 0,
+    con_error: 0,
+    mas_antiguo_at: null,
+    ultimo_drenado_at: null,
+    pausada_hasta: null,
+  };
+
+  const conCola = (parcial: Partial<CalendarSyncCola> = {}): CalendarSyncEstado => ({
+    ...base,
+    cola: { ...cola, ...parcial },
+    automatica: true,
+  });
+
+  it("automática y al día: verde, «activo · automática» y sin nada en espera", () => {
+    const chip = chipSyncGoogle(conCola(), AHORA);
+    expect(chip.tono).toBe("activo");
+    expect(chip.texto).toBe("Google Calendar: activo · automática");
+    expect(chip.detalle).toBe("Sin cambios en espera");
+    // Lo que el cliente pidió entender: ya no hay que pulsar nada.
+    expect(chip.titulo).toMatch(/se publica solo/);
+    expect(chip.titulo).toMatch(/app sube al reconectar/);
+    expect(chip.titulo).toMatch(/no hace falta pulsar «Re-sincronizar Google»/i);
+    expect(chip.titulo).toMatch(/a mano en Google no se tocan/);
+  });
+
+  it("última subida en hora de Cancún, nunca en UTC", () => {
+    const chip = chipSyncGoogle(conCola({ ultimo_drenado_at: "2026-09-12T14:55:00Z" }), AHORA);
+    expect(chip.tono).toBe("activo");
+    expect(chip.detalle).toContain("última subida");
+    expect(chip.detalle).toContain("9:55");
+    expect(chip.detalle).toContain("hora de Cancún");
+    expect(chip.detalle).not.toContain("14:55");
+  });
+
+  it("cambios recién encolados NO alarman (el worker corre cada 20 s)", () => {
+    const chip = chipSyncGoogle(
+      conCola({ pendientes: 2, mas_antiguo_at: "2026-09-12T14:58:00Z" }),
+      AHORA,
+    );
+    expect(chip.tono).toBe("activo");
+    expect(chip.texto).toBe("Google Calendar: activo · automática");
+    expect(chip.detalle).toContain("2 cambios en espera");
+    expect(chip.detalle).toContain("el más antiguo lleva 2 min");
+  });
+
+  it("más de 15 min en espera: ámbar y el conteo en el propio chip", () => {
+    const chip = chipSyncGoogle(
+      conCola({ pendientes: 1, mas_antiguo_at: "2026-09-12T14:20:00Z" }),
+      AHORA,
+    );
+    expect(chip.tono).toBe("atencion");
+    expect(chip.texto).toBe("Google Calendar: automática · 1 cambio en espera");
+    expect(chip.detalle).toContain("el más antiguo lleva 40 min");
+    expect(chip.detalle).toContain("9:20"); // hora de Cancún, no 14:20
+    expect(chip.detalle).not.toContain("14:20");
+    // Lo importante para la oficina: no se perdió nada y qué hacer.
+    expect(chip.titulo).toMatch(/Nada se pierde/);
+    expect(chip.titulo).toMatch(/avisa a soporte/);
+  });
+
+  it("esperas largas se dicen en horas y minutos", () => {
+    const chip = chipSyncGoogle(
+      conCola({ pendientes: 3, mas_antiguo_at: "2026-09-12T13:25:00Z" }),
+      AHORA,
+    );
+    expect(chip.texto).toBe("Google Calendar: automática · 3 cambios en espera");
+    expect(chip.detalle).toContain("lleva 1 h 35 min");
+  });
+
+  it("con_error: ámbar aunque sea reciente, y muestra el texto del error", () => {
+    const chip = chipSyncGoogle(
+      conCola({
+        pendientes: 2,
+        con_error: 2,
+        mas_antiguo_at: "2026-09-12T14:59:00Z",
+        ultimo_error: "Google respondió 403: quota exceeded",
+      }),
+      AHORA,
+    );
+    expect(chip.tono).toBe("atencion");
+    expect(chip.texto).toBe("Google Calendar: automática · 2 cambios en espera");
+    expect(chip.detalle).toContain("2 con error: Google respondió 403: quota exceeded");
+  });
+
+  it("un error larguísimo se recorta (el chip no es un log)", () => {
+    const chip = chipSyncGoogle(
+      conCola({ pendientes: 1, con_error: 1, ultimo_error: "x".repeat(400) }),
+      AHORA,
+    );
+    expect(chip.detalle).toContain("1 con error: ");
+    expect(chip.detalle!.length).toBeLessThan(220);
+    expect(chip.detalle).toContain("…");
+  });
+
+  it("con_error sin texto: no inventa ninguno", () => {
+    const chip = chipSyncGoogle(conCola({ pendientes: 1, con_error: 1 }), AHORA);
+    expect(chip.detalle).toContain("1 con error");
+    expect(chip.detalle).not.toContain("con error:");
+  });
+
+  it("pausa por cuota de Google: se dice mientras esté vigente", () => {
+    const pausada = chipSyncGoogle(
+      conCola({ pendientes: 4, pausada_hasta: "2026-09-12T15:04:00Z" }),
+      AHORA,
+    );
+    expect(pausada.detalle).toContain("Google pidió esperar hasta");
+    expect(pausada.detalle).toContain("10:04");
+    expect(pausada.detalle).toContain("se reanuda solo");
+    // Una pausa YA VENCIDA no se pinta (asustaría por nada).
+    const vencida = chipSyncGoogle(
+      conCola({ pendientes: 4, pausada_hasta: "2026-09-12T14:50:00Z" }),
+      AHORA,
+    );
+    expect(vencida.detalle).not.toContain("Google pidió esperar");
+  });
+
+  it("cola null (migración pendiente): ámbar, NO verde, y dice qué falta", () => {
+    const chip = chipSyncGoogle({ ...base, cola: null, automatica: false }, AHORA);
+    expect(chip.tono).toBe("atencion");
+    expect(chip.texto).toBe("Google Calendar: activo · sin cola (migración pendiente)");
+    expect(chip.detalle).toContain("si Google falla se corrigen hasta la revisión automática");
+    expect(chip.titulo).toContain("20260912000002_calendar_sync_cola.sql");
+    expect(chip.titulo).toMatch(/sin volver a desplegar/);
+  });
+
+  it("automatica true SIN conteos: verde «automática» y sin inventar números", () => {
+    // El API manda `automatica` como flag autoritativo; `cola` puede venir
+    // null si los conteos fallaron en ese instante (revisión adversaria
+    // 12-sep-2026). Antes se caía al chip genérico y perdía el «automática».
+    const chip = chipSyncGoogle({ ...base, cola: null, automatica: true }, AHORA);
+    expect(chip.tono).toBe("activo");
+    expect(chip.texto).toBe("Google Calendar: activo · automática");
+    expect(chip.detalle).toContain("no se pudieron leer");
+    expect(chip.detalle).not.toMatch(/\d+ cambios en espera/);
+    expect(chip.texto).not.toContain("migración pendiente");
+  });
+
+  it("cola presente pero inactiva = igual que sin cola", () => {
+    const chip = chipSyncGoogle(
+      { ...base, cola: { ...cola, activa: false }, automatica: false },
+      AHORA,
+    );
+    expect(chip.tono).toBe("atencion");
+    expect(chip.texto).toContain("sin cola (migración pendiente)");
+  });
+
+  it("API viejo (sin `cola` ni `automatica`): se pinta como antes, sin mentir", () => {
+    const chip = chipSyncGoogle(base, AHORA);
+    expect(chip.tono).toBe("activo");
+    expect(chip.texto).toBe(`Google Calendar: activo · ${CALENDARIO}`);
+    expect(chip.texto).not.toContain("automática");
+    expect(chip.texto).not.toContain("sin cola");
+  });
+
+  it("apagada con cambios encolados: avisa que esperan, no que se perdieron", () => {
+    const chip = chipSyncGoogle(
+      { ...base, enabled: false, automatica: false, cola: { ...cola, activa: true, pendientes: 5 } },
+      AHORA,
+    );
+    expect(chip.tono).toBe("apagado");
+    expect(chip.detalle).toContain("5 cambios quedaron en espera");
+    expect(chip.detalle).toContain("se publicarán en cuanto se encienda");
+  });
+
+  it("apagada sin cola: el detalle no habla de la cola", () => {
+    const chip = chipSyncGoogle({ ...base, enabled: false }, AHORA);
+    expect(chip.detalle).not.toContain("en espera");
+  });
+
+  it("sin estado sigue siendo «no disponible» aunque haya cola en otros casos", () => {
+    expect(chipSyncGoogle(null, AHORA).tono).toBe("desconocido");
+  });
+});
+
+describe("syncEsAutomatica", () => {
+  const cola: CalendarSyncCola = {
+    activa: true,
+    pendientes: 0,
+    con_error: 0,
+    mas_antiguo_at: null,
+    ultimo_drenado_at: null,
+    pausada_hasta: null,
+  };
+
+  it("true solo con la sync encendida Y la cola activa", () => {
+    expect(syncEsAutomatica({ ...base, cola, automatica: true })).toBe(true);
+    // Sin el campo `automatica` se deriva de la cola.
+    expect(syncEsAutomatica({ ...base, cola })).toBe(true);
+  });
+
+  it("false si está apagada, sin cola, con cola inactiva o sin estado", () => {
+    expect(syncEsAutomatica({ ...base, enabled: false, cola, automatica: true })).toBe(false);
+    expect(syncEsAutomatica({ ...base, cola: null })).toBe(false);
+    expect(syncEsAutomatica({ ...base, cola: { ...cola, activa: false } })).toBe(false);
+    expect(syncEsAutomatica(base)).toBe(false); // API viejo
+    expect(syncEsAutomatica(null)).toBe(false);
+  });
+});
+
+describe("tituloBotonResync", () => {
+  it("con sync automática aclara que el botón ya no es el camino normal", () => {
+    expect(tituloBotonResync(true)).toMatch(/No hace falta para el día a día/);
+    expect(tituloBotonResync(true)).toMatch(/arranque/);
+  });
+
+  it("sin sync automática explica la ventana y que no duplica", () => {
+    expect(tituloBotonResync(false)).toMatch(/ventana completa/);
+    expect(tituloBotonResync(false)).toMatch(/No duplica nada/);
+    expect(tituloBotonResync(false)).not.toMatch(/No hace falta/);
   });
 });

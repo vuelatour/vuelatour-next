@@ -136,9 +136,37 @@ export interface CalendarResyncResumen {
 }
 
 /**
+ * Cola PERSISTENTE de cambios pendientes de subir a Google (`cola` de GET
+ * /v1/calendar/sync-estado, 12-sep-2026). La alimentan triggers de la BD y la
+ * drena un worker del API cada 20 s con reintentos y espera progresiva: es lo
+ * que hace que la sincronización sea AUTOMÁTICA y no se pierda un cambio
+ * aunque Google falle (incluidos los que la app sube al reconectar).
+ *
+ * `cola: null` (campo presente, valor nulo) = el API ya sabe de colas pero la
+ * migración `20260912000002_calendar_sync_cola.sql` todavía NO está aplicada.
+ * Campo AUSENTE (`undefined`) = API viejo que ni siquiera reporta la cola. No
+ * son lo mismo y el chip los dice distinto.
+ */
+export interface CalendarSyncCola {
+  /** La tabla y los triggers existen en la BD (sonda del API). */
+  activa: boolean;
+  /** Cambios encolados que todavía no llegaron a Google. */
+  pendientes: number;
+  /** De esos, cuántos ya fallaron al menos una vez. */
+  con_error: number;
+  /** Alta del más antiguo que sigue en espera (ISO). */
+  mas_antiguo_at: string | null;
+  /** Última vez que el worker vació/drenó la cola (ISO). */
+  ultimo_drenado_at: string | null;
+  /** Pausa por cuota/límite de Google: hasta cuándo (ISO); null = no hay. */
+  pausada_hasta: string | null;
+  /** Texto del último error (sin secretos); puede no venir. */
+  ultimo_error?: string | null;
+}
+
+/**
  * GET /v1/calendar/sync-estado (oficina) — estado VISIBLE de la sync
- * unidireccional sistema → Google Calendar. Vive en memoria del proceso del
- * API: tras un despliegue vuelve a `null` (no es historial persistido).
+ * unidireccional sistema → Google Calendar.
  * El API viejo responde 404 ⇒ el panel usa `null` = «estado no disponible».
  */
 export interface CalendarSyncEstado {
@@ -153,6 +181,12 @@ export interface CalendarSyncEstado {
   /** Por qué NO está activa (API 0.0.10+): texto sin secretos para el chip;
    *  null cuando `enabled` o en un API que aún no lo manda. */
   motivo?: string | null;
+  /** Cola persistente de cambios pendientes; `null` = migración pendiente,
+   *  ausente = API viejo (ver `CalendarSyncCola`). */
+  cola?: CalendarSyncCola | null;
+  /** `enabled && cola.activa`: cada cambio se publica solo, con reintentos.
+   *  Ausente = API viejo (el panel lo deriva de `cola`). */
+  automatica?: boolean;
 }
 
 /**

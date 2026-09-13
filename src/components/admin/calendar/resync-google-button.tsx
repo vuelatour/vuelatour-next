@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
 import {
+  tituloBotonResync,
   toastResyncFallo,
   toastResyncGoogle,
   type ToastResyncGoogle,
@@ -27,8 +28,18 @@ import type { CalendarResyncResultado } from "@/types/calendar";
  * más que el límite de una función de Vercel. Al terminar, `router.refresh()`
  * vuelve a pedir el estado en el servidor para que el chip de al lado muestre
  * la nueva fecha de re-sincronización.
+ *
+ * Desde el 12-sep-2026 la sync es AUTOMÁTICA (cola en el API): este botón ya
+ * NO es el camino normal, solo el backfill de la ventana para el arranque o
+ * una duda. Con `automatica` el tooltip lo dice (`tituloBotonResync`) para que
+ * nadie crea que hay que pulsarlo después de cada cambio.
  */
-export function ResyncGoogleButton() {
+export function ResyncGoogleButton({
+  automatica = false,
+}: {
+  /** `syncEsAutomatica(estado)` del estado que ya pide la página. */
+  automatica?: boolean;
+} = {}) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -73,7 +84,14 @@ export function ResyncGoogleButton() {
   };
 
   return (
-    <Button variant="outline" size="sm" className="gap-2" disabled={loading} onClick={run}>
+    <Button
+      variant="outline"
+      size="sm"
+      className="gap-2"
+      disabled={loading}
+      onClick={run}
+      title={tituloBotonResync(automatica)}
+    >
       <ArrowPathIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
       {loading ? "Sincronizando…" : "Re-sincronizar Google"}
     </Button>

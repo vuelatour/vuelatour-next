@@ -13,6 +13,7 @@ import {
 } from "@/components/admin/calendar/eventos";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
 import { GoogleSyncChip } from "@/components/admin/calendar/google-sync-chip";
+import { syncEsAutomatica } from "@/lib/admin/calendar-sync";
 import {
   CalendarGrid,
   type CalendarDay,
@@ -196,7 +197,7 @@ export default async function CalendarPage({
           <CreateEventoButton aircraft={aircraftOpts} responsables={responsables} />
           <MarkRestButton pilots={pilots} />
           <GoogleSyncChip estado={syncEstado} />
-          <ResyncGoogleButton />
+          <ResyncGoogleButton automatica={syncEsAutomatica(syncEstado)} />
           <Link
             href={`/admin/calendar?y=${prev.y}&m=${prev.m}`}
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"

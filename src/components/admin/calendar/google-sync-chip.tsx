@@ -9,8 +9,11 @@ import type { CalendarSyncEstado } from "@/types/calendar";
  * saberlo y la sync podía estar apagada sin que nadie se enterara.
  *
  * Todo el texto viene del helper puro `chipSyncGoogle` (probado con vitest);
- * aquí solo se pinta. Verde = encendida, ámbar = apagada (faltan variables en
- * Railway), gris = el API de este ambiente todavía no reporta el estado.
+ * aquí solo se pinta. Verde = al día (desde el 12-sep-2026, «activo ·
+ * automática»: cada cambio se publica solo por la cola del API), ámbar =
+ * apagada (faltan variables en Railway) o necesita atención (cambios atorados
+ * en la cola / migración de la cola pendiente), gris = el API de este ambiente
+ * todavía no reporta el estado.
  */
 
 const ESTILO: Record<TonoSyncGoogle, { chip: string; punto: string }> = {
@@ -21,6 +24,12 @@ const ESTILO: Record<TonoSyncGoogle, { chip: string; punto: string }> = {
   apagado: {
     chip: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
     punto: "bg-amber-500",
+  },
+  // Encendida pero algo no está subiendo (cola atorada) o falta la migración
+  // de la cola: mismo ámbar, el punto late para que se note sin leer.
+  atencion: {
+    chip: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    punto: "bg-amber-500 animate-pulse",
   },
   desconocido: {
     chip: "border-border bg-muted text-muted-foreground",
