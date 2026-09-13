@@ -370,6 +370,16 @@ export interface ToastResyncGoogle {
  * (si hubo): 401/403 = no es ADMIN, 404 = el API viejo no tiene la ruta.
  */
 export function toastResyncFallo(status?: number): ToastResyncGoogle {
+  // API 0.0.10: 409 = ya hay un barrido en curso (otro resync o el reconcile
+  // nocturno). No es un error: se espera y se vuelve a intentar.
+  if (status === 409) {
+    return {
+      tono: "warning",
+      texto: "Ya hay una sincronización con Google en curso",
+      detalle:
+        "El sistema está publicando el calendario en este momento (otro «Re-sincronizar» o la revisión nocturna). Espera unos minutos y vuelve a intentarlo; nada se pierde.",
+    };
+  }
   if (status === 401 || status === 403) {
     return {
       tono: "error",

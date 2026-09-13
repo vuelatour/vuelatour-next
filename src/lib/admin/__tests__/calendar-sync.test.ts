@@ -29,6 +29,15 @@ const base: CalendarSyncEstado = {
   ultimo_resumen: null,
 };
 
+describe("toastResyncFallo · 409 = barrido en curso", () => {
+  it("409 es un aviso (no error) y pide esperar", () => {
+    const t = toastResyncFallo(409);
+    expect(t.tono).toBe("warning");
+    expect(t.texto).toContain("en curso");
+    expect(t.detalle).toContain("Espera");
+  });
+});
+
 describe("chipSyncGoogle", () => {
   it("apagado CON motivo del API: el chip dice el motivo (sin entrar a los logs)", () => {
     const chip = chipSyncGoogle({
