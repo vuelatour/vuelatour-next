@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
-import { listCalendar } from "@/lib/api/calendar-server";
+import { getCalendarSyncEstado, listCalendar } from "@/lib/api/calendar-server";
 import { listPilots } from "@/lib/api/pilots-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -12,6 +12,7 @@ import {
   type OpcionResponsable,
 } from "@/components/admin/calendar/eventos";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
+import { GoogleSyncChip } from "@/components/admin/calendar/google-sync-chip";
 import {
   CalendarGrid,
   type CalendarDay,
@@ -67,7 +68,7 @@ export default async function CalendarPage({
     `${year}-${mes}-${String(ultimoDia).padStart(2, "0")}T23:59:59-05:00`,
   );
 
-  const [{ events }, pilotsRes, aircraftRes, usersRes] = await Promise.all([
+  const [{ events }, pilotsRes, aircraftRes, usersRes, syncEstado] = await Promise.all([
     listCalendar({
       from: monthStart.toISOString(),
       to: monthEnd.toISOString(),
@@ -80,6 +81,9 @@ export default async function CalendarPage({
     listAircraft({ activa: true, limit: 100 }).catch(() => ({ data: [] as Aircraft[] })),
     // /v1/users es solo ADMIN: COORDINADOR cae al catálogo de pilotos.
     listUsers({ estado: "ACTIVO", limit: 200 }).catch(() => null),
+    // Estado de la sync a Google Calendar para el chip (nunca lanza; null =
+    // el API de este ambiente todavía no lo reporta).
+    getCalendarSyncEstado(),
   ]);
   const pilots = (pilotsRes.data as { id: string; nombre: string; es_piloto_externo?: boolean }[]).map((p) => ({
     id: p.id,
@@ -191,6 +195,7 @@ export default async function CalendarPage({
         <div className="flex flex-wrap items-center gap-2">
           <CreateEventoButton aircraft={aircraftOpts} responsables={responsables} />
           <MarkRestButton pilots={pilots} />
+          <GoogleSyncChip estado={syncEstado} />
           <ResyncGoogleButton />
           <Link
             href={`/admin/calendar?y=${prev.y}&m=${prev.m}`}

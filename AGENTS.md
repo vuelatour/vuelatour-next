@@ -525,6 +525,49 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   del API; `datetime-local` vía `cancunInputToIso`/`isoToCancunInput`; toda
   acción destructiva confirma; dejar `npx tsc --noEmit` en 0 y eslint limpio.
 
+## Calendario: estado de la sync a Google Calendar (12-sep-2026)
+
+Pedido del cliente: «queremos que se sincronicen los vuelos, eventos,
+mantenimientos, etc. que tenemos en el calendario del sistema de VuelaTour al
+Google Calendar de **aerochartercancunflightplanner@gmail.com**». La sync es
+UNIDIRECCIONAL (sistema → Google) y vive en el API; el panel solo la DISPARA
+y la MUESTRA.
+
+- **Fuente única de los textos**: `lib/admin/calendar-sync.ts` —
+  `chipSyncGoogle(estado)` (chip) y `toastResyncGoogle(res)` /
+  `toastResyncFallo(status)` (toast del backfill). Helpers PUROS, probados en
+  `lib/admin/__tests__/calendar-sync.test.ts`. Ningún componente redacta
+  textos de la sync por su cuenta.
+- **Chip** (`components/admin/calendar/google-sync-chip.tsx`, server): lee
+  `getCalendarSyncEstado()` (`lib/api/calendar-server.ts`, GET
+  `/v1/calendar/sync-estado`). Tres estados y NO se confunden: verde
+  «Google Calendar: activo · <calendar_id>» con la última revisión automática
+  y la última re-sincronización manual en **hora de Cancún**; ámbar
+  «apagado — faltan las variables en Railway»; gris «estado no disponible»
+  cuando el API de ese ambiente responde 404/403. `null` = no se pudo saber,
+  que NO es «apagado» (afirmarlo sería mentirle a la oficina).
+- **Botón «Re-sincronizar Google»** (ADMIN) llama DIRECTO al API, no por
+  server action: el backfill `[hoy−30d, hoy+365d]` es secuencial contra
+  Google y puede pasarse del límite de una función de Vercel. Al terminar
+  canta los conteos por tipo (`{vuelos, descansos, eventos, mantenimientos,
+  errores, nota}`), tolera el `{enabled, total}` del API viejo y hace
+  `router.refresh()` para que el chip muestre la nueva fecha.
+- El toast **dice la VENTANA** que se publicó (`desde`/`hasta` del API, días
+  Cancún vía `fmtDateOnly` para no correr el día): sin eso la oficina cree que
+  subió todo el historial y reporta como bug que no ve un vuelo viejo. Si el
+  API no manda ventana, no se inventa ninguna.
+- El resync es IDEMPOTENTE de verdad (el API solo re-crea un evento cuando
+  Google dice 404/410): volver a pulsar el botón tras un corte de red o un
+  timeout no duplica nada en el calendario de la oficina — es la salida
+  recomendada si el backfill no alcanza a responder.
+- El estado del API vive **en memoria del proceso**: tras un despliegue de
+  Railway el chip dice «Aún no ha corrido ninguna sincronización desde el
+  último reinicio del servidor». No es un historial persistido.
+- **Los eventos que la oficina capturó A MANO en ese Google Calendar no se
+  tocan** (ni se borran ni se deduplican): decisión pendiente del cliente. El
+  API lo repite en `nota` y el toast la muestra tal cual; no escribir en el
+  panel ninguna promesa de limpiarlos.
+
 ## Fechas
 
 - `datetime-local` SIEMPRE vía `cancunInputToIso` / `isoToCancunInput`

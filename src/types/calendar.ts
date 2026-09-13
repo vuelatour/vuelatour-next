@@ -118,3 +118,53 @@ export interface EventoMe {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * Conteos de un backfill a Google Calendar (POST /v1/calendar/resync y
+ * `ultimo_resumen` de GET /v1/calendar/sync-estado, 12-sep-2026). Todos los
+ * campos son opcionales a propósito: un API viejo solo manda `total` (vuelos
+ * redondos) y el panel debe tolerarlo sin inventar conteos por tipo.
+ */
+export interface CalendarResyncResumen {
+  vuelos?: number;
+  descansos?: number;
+  eventos?: number;
+  mantenimientos?: number;
+  errores?: number;
+  /** API viejo: total de vuelos re-sincronizados (sin desglose por tipo). */
+  total?: number;
+}
+
+/**
+ * GET /v1/calendar/sync-estado (oficina) — estado VISIBLE de la sync
+ * unidireccional sistema → Google Calendar. Vive en memoria del proceso del
+ * API: tras un despliegue vuelve a `null` (no es historial persistido).
+ * El API viejo responde 404 ⇒ el panel usa `null` = «estado no disponible».
+ */
+export interface CalendarSyncEstado {
+  /** Las 3 variables de Google están puestas en el ambiente. */
+  enabled: boolean;
+  calendar_id: string | null;
+  /** Última pasada del cron de reconciliación de la ventana. */
+  ultimo_reconcile_at: string | null;
+  /** Último backfill manual desde el panel. */
+  ultimo_resync_at: string | null;
+  ultimo_resumen: CalendarResyncResumen | null;
+  /** Por qué NO está activa (API 0.0.10+): texto sin secretos para el chip;
+   *  null cuando `enabled` o en un API que aún no lo manda. */
+  motivo?: string | null;
+}
+
+/**
+ * POST /v1/calendar/resync — backfill completo (vuelos, descansos, eventos y
+ * mantenimientos de la ventana). `nota` recuerda que los eventos capturados a
+ * mano en Google NO se tocan. Compatible con el API viejo (`{enabled,total}`).
+ */
+export interface CalendarResyncResultado extends CalendarResyncResumen {
+  enabled: boolean;
+  calendar_id?: string | null;
+  /** Ventana efectiva del backfill en DÍAS Cancún (YYYY-MM-DD). */
+  desde?: string | null;
+  hasta?: string | null;
+  nota?: string | null;
+}
