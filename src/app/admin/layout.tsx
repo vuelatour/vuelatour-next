@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/admin/admin-shell";
+import { RefreshOnFocus } from "@/components/admin/refresh-on-focus";
 import { ForceDarkMode } from "@/components/admin/force-dark-mode";
 import { InvitedScreen } from "@/components/admin/invited-screen";
 import { VisitanteScreen } from "@/components/admin/visitante-screen";
@@ -32,7 +33,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return (
       <>
         <ForceDarkMode />
-        <AdminShell me={me}>{children}</AdminShell>
+        <AdminShell me={me}>
+          <RefreshOnFocus />
+          {children}
+        </AdminShell>
       </>
     );
   } catch (err) {

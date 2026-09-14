@@ -717,3 +717,14 @@ backfill manual para el arranque).
   Fuente única `src/lib/admin/comprobante-badge.ts#etiquetaComprobante`
   (prueba `comprobante-badge.test.ts`); no volver a escribir el ternario en
   las tablas.
+
+## El panel se pone al día al volver a la pestaña (14-sep-2026)
+
+- `RefreshOnFocus` (montado UNA vez en `src/app/admin/layout.tsx`) llama
+  `router.refresh()` al recuperar el foco / visibilidad, con mínimo 10 s
+  entre refrescos (`src/lib/admin/refresh-on-focus.ts`, con prueba). Motivo:
+  todas las páginas son `force-dynamic` + `no-store`, pero una pestaña ya
+  abierta (p. ej. el detalle del vuelo) no se vuelve a pedir sola: la
+  oficina movía un gasto de vuelo en Gastos y al volver a la otra pestaña
+  seguía viendo la lista vieja. No toca el estado de formularios abiertos
+  (refresh re-renderiza Server Components, no remonta clientes).
