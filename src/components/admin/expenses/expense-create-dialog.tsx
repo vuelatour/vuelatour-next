@@ -68,6 +68,13 @@ import {
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
 import { MEDIOS_CAPTURA, medioPagoLabel } from "@/lib/admin/medios-pago";
+import {
+  AYUDA_COMPROBANTE,
+  COMPROBANTE_CON,
+  COMPROBANTE_SIN,
+  opcionesComprobante,
+} from "@/lib/admin/comprobante-badge";
+import { opcionesFacturacionForm } from "@/lib/admin/facturacion-estatus";
 import { cn } from "@/lib/utils";
 
 const TIPOS_FACTURA = [
@@ -92,18 +99,15 @@ const MEDIOS = MEDIOS_CAPTURA;
 /** Mensaje único del candado de medio de pago (inline, toast y schema). */
 const MSG_MEDIO_REQUERIDO = "Elige el medio de pago";
 
-const ESTATUS = [
-  { value: "SIN_COMPROBANTE", label: "Sin comprobante (factura por llegar)" },
-  { value: "FACTURA", label: "Factura" },
-  { value: "VALE", label: "Vale (sin factura)" },
-];
+// Comprobante: DOS opciones (14-sep-2026) desde la FUENTE ÚNICA
+// @/lib/admin/comprobante-badge. En el ALTA nunca hay valor legado VALE:
+// «Con comprobante» guarda FACTURA, igual que la app cuando sube foto.
+const ESTATUS = opcionesComprobante();
 
-// Seguimiento de oficina "¿ya lo facturé?" — independiente del comprobante.
-const FACTURACION = [
-  { value: "PENDIENTE", label: "🔴 Pendiente de facturar" },
-  { value: "SOLICITADA", label: "🟡 Factura solicitada" },
-  { value: "FACTURADA", label: "🟢 Facturada" },
-];
+// Seguimiento de oficina "¿ya lo facturé?" — independiente del comprobante
+// (FUENTE ÚNICA @/lib/admin/facturacion-estatus; incluye ⚪ No requiere
+// factura desde el 14-sep-2026).
+const FACTURACION = opcionesFacturacionForm();
 
 /** Hoy en hora Cancún (UTC−5 fija) para el default del formulario. */
 function hoyCancun(): string {
@@ -126,7 +130,7 @@ function emptyValues(defaults?: {
     // TRANSFERENCIA y el valor viajaba sin que nadie lo eligiera.
     medio_pago: "",
     tarjeta_terminacion: "",
-    estatus_comprobante: "SIN_COMPROBANTE",
+    estatus_comprobante: COMPROBANTE_SIN,
     estatus_facturacion: "PENDIENTE",
     aeronave_id: defaults?.aeronaveId ?? "",
     vuelo_id: defaults?.vueloId ?? "",
@@ -489,11 +493,11 @@ export function ExpenseCreateDialog({
     // también se adjunta aquí y "archivo = facturado" es la misma señal
     // contaminada que se descartó en la app. Jamás afirmar facturado en
     // falso: la oficina lo marca en el select si de verdad es la factura.
-    if (file && watch("estatus_comprobante") === "SIN_COMPROBANTE") {
-      setValue("estatus_comprobante", "FACTURA");
+    if (file && watch("estatus_comprobante") === COMPROBANTE_SIN) {
+      setValue("estatus_comprobante", COMPROBANTE_CON);
     }
-    if (!file && watch("estatus_comprobante") === "FACTURA") {
-      setValue("estatus_comprobante", "SIN_COMPROBANTE");
+    if (!file && watch("estatus_comprobante") === COMPROBANTE_CON) {
+      setValue("estatus_comprobante", COMPROBANTE_SIN);
     }
     if (file) void leerConIA(file);
   };
@@ -1033,12 +1037,12 @@ export function ExpenseCreateDialog({
                   placeholder="Categoría"
                 />
               </Field>
-              <Field label="Comprobante">
+              <Field label="Comprobante" hint={AYUDA_COMPROBANTE}>
                 <SearchableSelect
                   options={ESTATUS}
                   value={watch("estatus_comprobante")}
                   onChange={(v) => setValue("estatus_comprobante", v)}
-                  placeholder="Estatus"
+                  placeholder="¿Trae comprobante?"
                 />
               </Field>
               <Field label="Facturación (oficina)">

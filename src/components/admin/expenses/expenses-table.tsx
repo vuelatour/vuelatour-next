@@ -32,9 +32,10 @@ import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
 const fmtMoney = (monto: string | number, moneda: string) =>
   Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
 
+// Solo se pinta badge cuando NO hay comprobante (14-sep-2026: la columna
+// responde «¿hay papel?» y con papel la miniatura ya lo dice). Las etiquetas
+// salen de @/lib/admin/comprobante-badge.
 const ESTATUS_STYLE: Record<string, string> = {
-  FACTURA: "border-emerald-500/50 text-emerald-600",
-  VALE: "border-amber-500/50 text-amber-600",
   SIN_COMPROBANTE: "border-navy-400/50 text-muted-foreground",
 };
 

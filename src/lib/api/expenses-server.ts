@@ -38,7 +38,9 @@ export interface ListGastosQuery {
   usuario_captura_id?: string;
   categoria?: string;
   estatus_comprobante?: string;
-  /** PENDIENTE | SOLICITADA | FACTURADA | NO_FACTURADA (pend. o sol.). */
+  /** PENDIENTE | SOLICITADA | FACTURADA | NO_FACTURABLE, o el agregado
+   *  NO_FACTURADA (pend. o sol. — NO_FACTURABLE queda fuera: no está por
+   *  facturar). */
   estatus_facturacion?: string;
   medio_pago?: string;
   /** Pagos de una compra de refacciones concreta. */

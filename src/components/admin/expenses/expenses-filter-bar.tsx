@@ -5,6 +5,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
+import { opcionesFacturacionFiltro } from "@/lib/admin/facturacion-estatus";
 
 // Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
 // el ORDEN del filtro. BODEGA queda fuera a propósito (cargo contable de
@@ -18,14 +19,12 @@ const MEDIOS = [
   "PERSONAL_ALE",
 ].map((value) => ({ value, label: medioPagoLabel(value) }));
 
-// Semáforo de facturación de oficina; "Sin facturar" agrupa pendiente +
-// solicitada (lo que aún falta por resolver, en un solo filtro).
-const FACTURACION = [
-  { value: "PENDIENTE", label: "🔴 Pendiente" },
-  { value: "SOLICITADA", label: "🟡 Solicitada" },
-  { value: "FACTURADA", label: "🟢 Facturada" },
-  { value: "NO_FACTURADA", label: "Sin facturar (pend. + sol.)" },
-];
+// Semáforo de facturación de oficina (FUENTE ÚNICA
+// @/lib/admin/facturacion-estatus): 🔴 Pendiente → 🟡 Solicitada →
+// 🟢 Facturada → ⚪ No requiere factura. "Sin facturar" agrupa pendiente +
+// solicitada (lo que aún falta por resolver, en un solo filtro) y deja fuera
+// ⚪ No requiere factura a propósito: ese no está por facturar.
+const FACTURACION = opcionesFacturacionFiltro();
 
 // Orden del listado (7-sep): por fecha del consumo (default) o por el
 // momento real de captura — "lo último que subieron", sin importar la fecha

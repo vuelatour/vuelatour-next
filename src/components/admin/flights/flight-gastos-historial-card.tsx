@@ -15,6 +15,8 @@ import {
 import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
+import { textoComprobante } from "@/lib/admin/comprobante-badge";
+import { etiquetaFacturacion } from "@/lib/admin/facturacion-estatus";
 import { cn } from "@/lib/utils";
 import {
   destinoDeGastosMovidos,
@@ -109,19 +111,6 @@ const CAMPO_LABELS: Record<string, string> = {
 /** Campos cuyo valor es un uuid: jamás se pinta el id crudo. */
 const CAMPOS_ID = new Set(["vuelo_id", "aeronave_id", "escala_id", "proveedor_id"]);
 
-const ESTATUS_COMPROBANTE_LABELS: Record<string, string> = {
-  FACTURA: "Factura",
-  VALE: "Vale",
-  SIN_COMPROBANTE: "Sin comprobante",
-};
-
-// Semáforo de facturación de oficina (misma fuente conceptual que
-// FACTURACION_ESTADOS de facturacion-badge, que es módulo cliente).
-const ESTATUS_FACTURACION_LABELS: Record<string, string> = {
-  PENDIENTE: "Pendiente",
-  SOLICITADA: "Solicitada",
-  FACTURADA: "Facturada",
-};
 
 /** Monto con su moneda cuando se conoce (mismo formato que fmtMoney de las
  *  tablas de gastos); sin moneda en el diff, número es-MX a secas. */
@@ -155,10 +144,14 @@ function fmtValor(campo: string, v: unknown, moneda: string | null): string {
       return fmtDateTime(String(v));
     case "medio_pago":
       return MEDIO_PAGO_LABELS[String(v)] ?? String(v);
+    // DOS opciones (14-sep-2026): FACTURA y el legado VALE se leen igual,
+    // «Con comprobante» (fuente única @/lib/admin/comprobante-badge).
     case "estatus_comprobante":
-      return ESTATUS_COMPROBANTE_LABELS[String(v)] ?? String(v);
+      return textoComprobante(String(v)) ?? String(v);
+    // Semáforo de facturación de oficina (fuente única
+    // @/lib/admin/facturacion-estatus, módulo puro: esta card es server).
     case "estatus_facturacion":
-      return ESTATUS_FACTURACION_LABELS[String(v)] ?? String(v);
+      return etiquetaFacturacion(String(v)) ?? String(v);
     case "tarjeta_terminacion":
       return `**** ${String(v)}`;
     case "litros": {

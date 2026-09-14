@@ -32,9 +32,16 @@ export interface Gasto {
   tipo_combustible: "TURBOSINA" | "AVGAS" | null;
   lugar: string | null;
   fecha_hora_carga: string | null;
+  /** Enum de Postgres FACTURA | VALE | SIN_COMPROBANTE. La UI son DOS
+   *  opciones (14-sep-2026): «Con comprobante» = FACTURA (lo que ya manda la
+   *  app con foto) y «Sin comprobante»; VALE es LEGADO y se LEE como «con
+   *  comprobante». Leerlo SIEMPRE vía @/lib/admin/comprobante-badge
+   *  (hayComprobante / etiquetaComprobante / textoComprobante). */
   estatus_comprobante: string;
-  /** Seguimiento de oficina: PENDIENTE | SOLICITADA | FACTURADA (semáforo
-   *  "¿ya facturé este gasto?"). Independiente del comprobante del piloto. */
+  /** Seguimiento de oficina: PENDIENTE | SOLICITADA | FACTURADA |
+   *  NO_FACTURABLE (semáforo "¿ya facturé este gasto?"). Independiente del
+   *  comprobante del piloto. Etiquetas y colores en
+   *  @/lib/admin/facturacion-estatus. */
   estatus_facturacion?: string;
   foto_url: string | null;
   /** Lectura IA del comprobante (jsonb: matricula, conceptos, folio…). */

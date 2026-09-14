@@ -48,14 +48,24 @@ export const MedioPagoEnum = z.enum([
   "BODEGA",
 ]);
 
+/** Comprobante del gasto. DOS opciones en la UI (14-sep-2026): «Con
+ *  comprobante» GUARDA `FACTURA` y «Sin comprobante» `SIN_COMPROBANTE`.
+ *  `VALE` se conserva en el enum porque es LEGADO (gastos históricos y la
+ *  carga masiva de combustibles): el panel lo LEE como «con comprobante» y
+ *  jamás lo escribe — sin él aquí, verificar un gasto viejo lo mutaría.
+ *  Sin migración: el enum de Postgres sigue igual. */
 export const EstatusEnum = z.enum(["FACTURA", "VALE", "SIN_COMPROBANTE"]);
 
 /** Seguimiento de oficina "¿ya facturé este gasto?" — independiente del
- *  comprobante que entregó el piloto (ese NO se toca al marcarlo). */
+ *  comprobante que entregó el piloto (ese NO se toca al marcarlo).
+ *  `NO_FACTURABLE` (14-sep-2026, «No requiere factura») necesita la migración
+ *  20260914000002: sin ella el API responde 400 con un mensaje claro y el
+ *  panel lo muestra tal cual (nunca 500). */
 export const FacturacionEnum = z.enum([
   "PENDIENTE",
   "SOLICITADA",
   "FACTURADA",
+  "NO_FACTURABLE",
 ]);
 
 export const GastoVerifySchema = z.object({

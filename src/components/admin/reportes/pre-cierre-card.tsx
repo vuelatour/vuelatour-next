@@ -15,6 +15,11 @@ import { apiServer } from "@/lib/api/server";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { folioTexto } from "@/lib/admin/grupos-ui";
+import {
+  lineasTramosTacos,
+  MAX_TRAMOS_TACOS,
+  type PreCierreTacoTramo,
+} from "@/lib/admin/pre-cierre-tacos";
 
 interface PreCierreVuelo {
   id: string;
@@ -62,6 +67,10 @@ interface PreCierreItem {
   /** ADITIVOS (grupos): lista de grupos / sobres del aviso. */
   grupos?: PreCierreGrupo[];
   sobres?: PreCierreSobre[];
+  /** ADITIVO (tacos_en_revision, 14-sep-2026): QUÉ tramos hay que revisar.
+      Pedido del cliente: el item solo decía "· 3" y había que ir a buscarlos
+      a taco-live. Ausente con un API sin desplegar = card como antes. */
+  tramos?: PreCierreTacoTramo[];
   /** ADITIVO: aviso informativo (el dinero YA cuenta; nada que resolver
       salvo confirmar). Se pinta en azul, sin "Resolver". */
   informativo?: boolean;
@@ -85,6 +94,9 @@ const LINK_POR_CLAVE: Record<
   // se completan a mano en su detalle y NO aparecen en taco-live).
   vuelos_sin_completar: (p) =>
     `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
+  // Tacómetros en revisión: el item lista los vuelos y los TRAMOS (14-sep),
+  // pero "Resolver" sigue yendo a taco-live — ahí es donde se anota,
+  // corrige o confirma la lectura.
   tacos_en_revision: () => "/admin/taco-live",
   cobros_pendientes: (p) =>
     `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
@@ -201,6 +213,15 @@ export async function PreCierreCard({
             const monto = fmtMonto(item);
             const href = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
             const info = item.informativo === true;
+            // Tramos con tacómetro en revisión: las líneas las arma el
+            // helper PURO (no se recalcula ningún conteo del API). El «y N
+            // más…» sale del `count` del item, no del largo del arreglo: el
+            // API topa `tramos` en 200 y `count` siempre es el total real.
+            const tacos = lineasTramosTacos(
+              item.tramos,
+              MAX_TRAMOS_TACOS,
+              item.count,
+            );
             return (
               <div
                 key={item.clave}
@@ -263,6 +284,30 @@ export async function PreCierreCard({
                         </span>
                       )}
                     </p>
+                  )}
+                  {/* Tacómetros en revisión: QUÉ tramo y por qué, agrupado
+                      por vuelo. El chip de arriba lleva al vuelo; "Resolver"
+                      sigue yendo a /admin/taco-live, que es donde se anota o
+                      se confirma la lectura. */}
+                  {tacos.lineas.length > 0 && (
+                    <ul className="text-xs mt-1 space-y-0.5">
+                      {tacos.lineas.map((l) => (
+                        <li key={l.key} className="text-muted-foreground">
+                          <Link
+                            href={l.href}
+                            className="underline underline-offset-2 hover:text-foreground"
+                          >
+                            {l.folio}
+                          </Link>{" "}
+                          · {l.texto}
+                        </li>
+                      ))}
+                      {tacos.restantes > 0 && (
+                        <li className="text-muted-foreground">
+                          y {tacos.restantes} más…
+                        </li>
+                      )}
+                    </ul>
                   )}
                   {/* Grupos con saldo: total / cobrado / saldo por grupo
                       (montos del API) con link al detalle del grupo. */}

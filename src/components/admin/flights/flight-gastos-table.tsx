@@ -14,9 +14,10 @@ import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { cn } from "@/lib/utils";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 
+// Solo se pinta badge cuando NO hay comprobante (14-sep-2026: la columna
+// responde «¿hay papel?» y con papel la miniatura ya lo dice). Las etiquetas
+// salen de @/lib/admin/comprobante-badge.
 const ESTATUS_STYLE: Record<string, string> = {
-  FACTURA: "border-emerald-500/50 text-emerald-600",
-  VALE: "border-amber-500/50 text-amber-600",
   SIN_COMPROBANTE: "border-navy-400/50 text-muted-foreground",
 };
 

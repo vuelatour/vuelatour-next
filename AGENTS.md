@@ -708,15 +708,86 @@ backfill manual para el arranque).
 - Push a `main` = deploy automático en Vercel (autorizado sin preguntar).
 - Verificar con `npx tsc --noEmit` + eslint sobre lo tocado antes de commit.
 
-## Columna «Comp.» de gastos (14-sep-2026)
+## Comprobante del gasto: DOS opciones (14-sep-2026)
 
-- El badge «Factura» YA NO se pinta en la columna «Comp.» de Gastos ni del
-  detalle del vuelo (pedido del cliente: se confundía con el semáforo
-  «Facturada / Pendiente» de la columna «Facturación»). Con una factura como
-  comprobante la miniatura basta. Solo se etiquetan «Vale» y «Sin comp.».
-  Fuente única `src/lib/admin/comprobante-badge.ts#etiquetaComprobante`
-  (prueba `comprobante-badge.test.ts`); no volver a escribir el ternario en
-  las tablas.
+- Pedido del cliente: «en lugar de Factura solo colocar dos opciones:
+  **Comprobante** (aplica para tickets, vouchers, etc.) y **Sin
+  comprobante**». Aquí la pregunta es «¿hay papel?», no «¿de qué tipo?»: que
+  ese papel sea FACTURA se sigue en la columna vecina «Facturación (oficina)»
+  — confundir las dos fue justo el reporte anterior («Factura» vs
+  «Facturada»).
+- **SIN MIGRACIÓN**: `gasto.estatus_comprobante` sigue siendo el enum de
+  Postgres `FACTURA | VALE | SIN_COMPROBANTE`. «Con comprobante» GUARDA
+  `FACTURA` (es lo que ya manda la app cuando el gasto trae foto) y `VALE`
+  queda como valor **LEGADO**: se LEE como «Con comprobante» y el panel nunca
+  lo escribe.
+- FUENTE ÚNICA `src/lib/admin/comprobante-badge.ts` (PURO, prueba
+  `comprobante-badge.test.ts`): `hayComprobante` (misma regla que
+  `comprobante.util.ts` del API: todo lo que no sea `SIN_COMPROBANTE`),
+  `etiquetaComprobante` (badge de la columna «Comp.»: **solo** «Sin comp.» —
+  ni FACTURA ni VALE pintan badge, con papel la miniatura basta),
+  `textoComprobante` («Con comprobante» / «Sin comprobante», historial del
+  vuelo), `opcionesComprobante(actual)` y `AYUDA_COMPROBANTE`. No volver a
+  escribir el ternario ni la lista de opciones en las tablas/diálogos.
+- **La opción legada no se muestra salvo que el gasto ya la traiga**:
+  `opcionesComprobante('VALE')` agrega «Con comprobante (vale)» con ese mismo
+  value para que verificar un gasto histórico SIN tocar el campo no lo mute.
+  Con cualquier otro valor son dos opciones y `VALE` no es elegible.
+- Dónde se ve: `expenses-table.tsx` y `flight-gastos-table.tsx` (badge; su
+  `ESTATUS_STYLE` ya solo tiene `SIN_COMPROBANTE`), `expense-create-dialog` /
+  `expense-verify-dialog` (selector de 2 opciones + hint que manda la factura
+  a «Facturación (oficina)») y `flight-gastos-historial-card` (diff).
+
+## Facturación (oficina): ⚪ No requiere factura (14-sep-2026)
+
+- Pedido del cliente: «en Facturación (oficina) agregar la opción **No
+  requiere factura / No facturable**». Valor nuevo `NO_FACTURABLE` de
+  `gasto.estatus_facturacion` (migración del API
+  `20260914000002_estatus_facturacion_no_facturable.sql`).
+- FUENTE ÚNICA `src/lib/admin/facturacion-estatus.ts` (PURO — el historial
+  del vuelo es Server Component y no puede importar del badge cliente):
+  `FACTURACION_ESTADOS` (value/label/labelForm/emoji/dot/pill),
+  `estadoFacturacion` (desconocido o ausente ⇒ PENDIENTE: jamás afirmar
+  «facturado» en falso), `etiquetaFacturacion`, `opcionesFacturacionForm`
+  (diálogos) y `opcionesFacturacionFiltro` (barra de Gastos). Prueba
+  `facturacion-estatus.test.ts`. Lo consumen `facturacion-badge.tsx`,
+  `expenses-filter-bar.tsx`, los dos diálogos y
+  `flight-gastos-historial-card.tsx`.
+- Semántica (la decide el API, el panel solo la refleja): un gasto
+  `NO_FACTURABLE` **no está «por facturar»** — el filtro agregado
+  `NO_FACTURADA` sigue siendo pendiente + solicitada — y queda FUERA del
+  pendiente `gastos_sin_comprobante` del pre-cierre. Si alguien le amarra una
+  factura recibida, el trigger del API lo pasa a FACTURADA.
+- **TOLERANCIA a la migración no aplicada**: el API responde **400** con un
+  mensaje claro («esta opción necesita la migración…; mientras, usa
+  Pendiente»), nunca 500. El panel NO esconde la opción ni adivina el estado
+  del servidor: el mensaje del API se pinta TAL CUAL en el toast del badge y
+  en el de los diálogos (`ActionResult.error`).
+
+## Pre-cierre: qué tacómetros hay que revisar (14-sep-2026)
+
+- Pedido del cliente: «en Tacómetros pendientes por revisar (pre-cierre)
+  ¿podría indicar cuáles son?». El item `tacos_en_revision` solo decía «· 3»
+  y había que ir a buscarlos a mano en taco-live.
+- El API agrega al item dos campos **ADITIVOS**: `vuelos` (los mismos chips
+  que ya pintan los demás pendientes — salen gratis con el renderer que ya
+  existía) y `tramos: [{vuelo_id, folio, orden, origen_iata, destino_iata,
+  fecha_salida_plan, motivo, piloto_nombre}]`. Sin ellos (API sin desplegar)
+  la card se comporta exactamente como antes.
+- FUENTE ÚNICA de las líneas: `src/lib/admin/pre-cierre-tacos.ts` (PURO,
+  prueba `pre-cierre-tacos.test.ts`) — `lineasTramosTacos` arma
+  «#248 · T1 CUN → CZM · 14 sep, 01:30 p.m. · Juan Pérez · motivo»,
+  deduplica por vuelo+tramo, agrupa por vuelo (folio asc), recorta el motivo
+  a su primera línea y tope `MAX_TRAMOS_TACOS = 12` + «y N más…». El conteo
+  del item lo manda el API y NO se recalcula: el «y N más…» se calcula contra
+  el `count` del item (tercer argumento de `lineasTramosTacos`), **no** contra
+  `tramos.length` — el API topa ese arreglo en 200 y `count` siempre es el
+  total real; un `count` ausente o MENOR que lo recibido nunca esconde líneas.
+  `folio`/`orden` en 0 son «no lo sé» (así los emite el API cuando no
+  resuelve): se pintan «vuelo» y «Tramo», nunca «#0» ni «T0».
+- El folio de cada línea liga a `/admin/flights/<id>`; **«Resolver» sigue
+  yendo a `/admin/taco-live`**, que es donde se anota, corrige o confirma la
+  lectura.
 
 ## El panel se pone al día al volver a la pestaña (14-sep-2026)
 

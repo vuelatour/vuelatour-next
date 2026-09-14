@@ -66,6 +66,11 @@ import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
 import { Field } from "@/components/admin/form-field";
 import { MEDIOS_VERIFICACION } from "@/lib/admin/medios-pago";
 import {
+  AYUDA_COMPROBANTE,
+  opcionesComprobante,
+} from "@/lib/admin/comprobante-badge";
+import { opcionesFacturacionForm } from "@/lib/admin/facturacion-estatus";
+import {
   VueloCanceladoHint,
   esVueloCancelado,
   vueloCercanoLabel,
@@ -88,19 +93,11 @@ const CATEGORIAS = CATEGORIAS_CAPTURA.flatMap((c) =>
 // inventario al verificarla).
 const MEDIOS = MEDIOS_VERIFICACION;
 
-const ESTATUS = [
-  { value: "FACTURA", label: "Factura" },
-  { value: "VALE", label: "Vale (sin factura)" },
-  { value: "SIN_COMPROBANTE", label: "Sin comprobante" },
-];
-
 // Seguimiento de oficina "¿ya lo facturé?" — independiente del comprobante
-// que entregó el piloto (semáforo pedido por el cliente, ago 2026).
-const FACTURACION = [
-  { value: "PENDIENTE", label: "🔴 Pendiente de facturar" },
-  { value: "SOLICITADA", label: "🟡 Factura solicitada" },
-  { value: "FACTURADA", label: "🟢 Facturada" },
-];
+// que entregó el piloto (semáforo pedido por el cliente, ago 2026; ⚪ No
+// requiere factura desde el 14-sep-2026). FUENTE ÚNICA:
+// @/lib/admin/facturacion-estatus.
+const FACTURACION = opcionesFacturacionForm();
 
 interface ExpenseVerifyDialogProps {
   open: boolean;
@@ -1093,12 +1090,15 @@ export function ExpenseVerifyDialog({
                 placeholder="Categoría"
               />
             </Field>
-            <Field label="Comprobante">
+            {/* DOS opciones (14-sep-2026). Si el gasto trae el valor LEGADO
+                VALE, `opcionesComprobante` agrega su opción oculta con ese
+                mismo valor: guardar sin tocar el campo NO lo muta. */}
+            <Field label="Comprobante" hint={AYUDA_COMPROBANTE}>
               <SearchableSelect
-                options={ESTATUS}
+                options={opcionesComprobante(gasto.estatus_comprobante)}
                 value={watch("estatus_comprobante")}
                 onChange={(v) => setValue("estatus_comprobante", v)}
-                placeholder="Estatus"
+                placeholder="¿Trae comprobante?"
               />
             </Field>
           </div>

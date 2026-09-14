@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
+import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
 import type {
   Gasto,
@@ -337,14 +338,19 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
 
 /**
  * Seguimiento de facturación de OFICINA (pedido del cliente, ago 2026):
- * 🔴 PENDIENTE → 🟡 SOLICITADA → 🟢 FACTURADA. Campo propio del gasto
+ * 🔴 PENDIENTE → 🟡 SOLICITADA → 🟢 FACTURADA → ⚪ NO_FACTURABLE («No
+ * requiere factura», 14-sep-2026). Campo propio del gasto
  * (estatus_facturacion) — NO toca estatus_comprobante: lo que entregó el
  * piloto se conserva (el toggle viejo lo mutaba y se perdía el registro).
  * Sin confirmación: reversible con el mismo control.
+ *
+ * NO_FACTURABLE necesita la migración 20260914000002. Si el ambiente no la
+ * tiene, el API responde 400 con un mensaje claro («usa Pendiente mientras»)
+ * y `fail` lo devuelve tal cual para que el badge lo muestre en el toast.
  */
 export async function marcarFacturacionAction(
   id: string,
-  estatus: "PENDIENTE" | "SOLICITADA" | "FACTURADA",
+  estatus: EstatusFacturacion,
 ): Promise<ActionResult<Gasto>> {
   try {
     const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
