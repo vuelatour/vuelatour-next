@@ -707,3 +707,13 @@ backfill manual para el arranque).
 
 - Push a `main` = deploy automático en Vercel (autorizado sin preguntar).
 - Verificar con `npx tsc --noEmit` + eslint sobre lo tocado antes de commit.
+
+## Columna «Comp.» de gastos (14-sep-2026)
+
+- El badge «Factura» YA NO se pinta en la columna «Comp.» de Gastos ni del
+  detalle del vuelo (pedido del cliente: se confundía con el semáforo
+  «Facturada / Pendiente» de la columna «Facturación»). Con una factura como
+  comprobante la miniatura basta. Solo se etiquetan «Vale» y «Sin comp.».
+  Fuente única `src/lib/admin/comprobante-badge.ts#etiquetaComprobante`
+  (prueba `comprobante-badge.test.ts`); no volver a escribir el ternario en
+  las tablas.

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import {
   CompraEstadoBadge,
@@ -440,13 +441,13 @@ export function ExpensesTable({
                   alt={`Comprobante · ${g.categoria}`}
                 />
               )}
-              <Badge variant="outline" className={ESTATUS_STYLE[g.estatus_comprobante] ?? ""}>
-                {g.estatus_comprobante === "SIN_COMPROBANTE"
-                  ? "Sin comp."
-                  : g.estatus_comprobante === "VALE"
-                    ? "Vale"
-                    : "Factura"}
-              </Badge>
+              {/* «Factura» ya no se pinta (14-sep-2026): se confundía con el
+                  semáforo «Facturada/Pendiente» de al lado; la miniatura basta. */}
+              {etiquetaComprobante(g.estatus_comprobante) && (
+                <Badge variant="outline" className={ESTATUS_STYLE[g.estatus_comprobante] ?? ""}>
+                  {etiquetaComprobante(g.estatus_comprobante)}
+                </Badge>
+              )}
               {/* Sello de confirmación del panel (opcional: skew de deploy). */}
               {g.verificado_at && (
                 <span
