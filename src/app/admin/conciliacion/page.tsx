@@ -32,6 +32,10 @@ import { listBankAccounts } from "@/lib/api/bank-accounts-server";
 import { listGastos } from "@/lib/api/expenses-server";
 import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import {
+  notaParcialGasto,
+  textoFaltanteGasto,
+} from "@/lib/admin/conciliacion-parcial";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { isApiError } from "@/lib/api/errors";
 import type { PaywiseAuditoria } from "@/types/conciliacion";
@@ -146,15 +150,33 @@ export default async function ConciliacionPage({
     // conciliación los excluye por diseño (igual que el auto-cruce del API),
     // así que tampoco se ofrecen para vincular a mano un cargo del banco.
     .filter((g) => g.medio_pago !== "BODEGA")
-    .map((g) => ({
-      value: g.id,
-      // La moneda VISIBLE: una compra en dólares (Aircraft Spruce) se vincula
-      // contra su cargo en pesos — al ligarla, el sistema guarda el tipo de
-      // cambio real del banco en el gasto.
-      label: `${categoriaGastoLabel(g.categoria)} · $${fmtMoney(g.monto)} ${g.moneda ?? "MXN"} · ${fmtDate(g.fecha_gasto)}${
-        g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""
-      }`,
-    }));
+    .map((g) => {
+      // PAGOS PARCIALES (14-sep-2026): una factura pagada en dos cargos deja
+      // el gasto ligado pero NO cubierto — el diálogo lo dice antes de ligar
+      // el segundo («faltan $X de $Y»). Sin los aditivos del API: como hoy.
+      const parcial = textoFaltanteGasto(g);
+      return {
+        value: g.id,
+        // La moneda VISIBLE: una compra en dólares (Aircraft Spruce) se vincula
+        // contra su cargo en pesos — al ligarla, el sistema guarda el tipo de
+        // cambio real del banco en el gasto.
+        label: `${categoriaGastoLabel(g.categoria)} · $${fmtMoney(g.monto)} ${g.moneda ?? "MXN"} · ${fmtDate(g.fecha_gasto)}${
+          g.proveedor?.nombre ? ` · ${g.proveedor.nombre}` : ""
+        }`,
+        ...(parcial
+          ? {
+              description: `Pago parcial: ${parcial}`,
+              descriptionClassName:
+                "truncate text-amber-600 dark:text-amber-400 font-medium",
+            }
+          : g.conciliado
+            ? // Ya cubierto por el banco: se sigue ofreciendo (el API decide)
+              // pero se avisa antes de elegirlo — el 409 GASTO_YA_CUBIERTO
+              // explica el resto.
+              { description: "Ya cubierto por el banco" }
+            : {}),
+      };
+    });
 
   // PostgREST puede devolver los joins como arreglo: tomar el primero.
   const uno = <T,>(v: T | T[] | null | undefined): T | null =>
@@ -178,6 +200,9 @@ export default async function ConciliacionPage({
     capturo: uno(g.captura)?.nombre ?? "—",
     vuelo: uno(g.vuelo)?.folio != null ? `#${uno(g.vuelo)!.folio}` : "—",
     monto: `$${fmtMoney(g.monto)} ${g.moneda ?? "MXN"}`,
+    // «Parcial»: ya tiene cargos del banco ligados pero no lo cubren todavía
+    // (1 factura pagada en 2 cargos). null = sin ligar o API sin desplegar.
+    parcial: notaParcialGasto(g),
   }));
 
   const tabs: { key: Filtro; label: string }[] = [
@@ -318,7 +343,8 @@ export default async function ConciliacionPage({
               Pagados con tarjeta corporativa, transferencia o Paywise y aún sin
               cruzar con ninguna línea del banco (últimos 90 días). Puede faltar
               el periodo por importar, no coincidir fecha/monto, o el cargo nunca
-              llegó al banco.
+              llegó al banco. Un gasto pagado en VARIOS cargos aparece aquí
+              hasta que la suma de los ligados lo cubra (columna «Parcial»).
               {sinBanco && sinBanco.por_moneda.length > 0 && (
                 <>
                   {" "}

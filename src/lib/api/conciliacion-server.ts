@@ -42,6 +42,11 @@ export interface GastoSinBanco {
   proveedor: { nombre: string } | { nombre: string }[] | null;
   captura: { nombre: string } | { nombre: string }[] | null;
   vuelo: { folio: number } | { folio: number }[] | null;
+  /** PAGOS PARCIALES (14-sep-2026, ADITIVOS): un gasto con cargos ligados que
+      todavía NO lo cubren sigue apareciendo aquí, con la suma ligada y el
+      faltante (columna «Parcial»). API sin desplegar: no vienen. */
+  monto_vinculado?: string | number | null;
+  faltante?: string | number | null;
 }
 
 export function conciliacionGastosSinBanco() {

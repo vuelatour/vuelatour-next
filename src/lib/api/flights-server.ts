@@ -6,6 +6,9 @@ import type {
   TacoPhoto,
 } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import type { MovimientoGastoHistorial } from "@/lib/admin/gasto-historial";
+
+export type { MovimientoGastoHistorial };
 
 export interface ListFlightsQuery {
   cliente_id?: string;
@@ -110,6 +113,13 @@ export interface GastoHistorialEvento {
   /** Columnas de negocio que cambiaron: { col: { antes, despues } }. */
   diff: Record<string, { antes: unknown; despues: unknown }>;
   descripcion_gasto: string | null;
+  /**
+   * ADITIVO (14-sep-2026): el UPDATE cambió el `vuelo_id` del gasto —
+   * `salio` en el vuelo de ORIGEN (folio del destino) y `llego` en el vuelo
+   * DESTINO (folio del origen). null/ausente en todo lo demás y con un API
+   * sin desplegar (la card se comporta como hoy).
+   */
+  movimiento?: MovimientoGastoHistorial | null;
 }
 
 /**

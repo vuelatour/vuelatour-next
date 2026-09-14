@@ -29,7 +29,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +51,10 @@ import {
   type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
+import {
+  textoGastoYaCubierto,
+  toastVinculoGasto,
+} from "@/lib/admin/conciliacion-parcial";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { CandidatoCobro, MovimientoBancario } from "@/types/conciliacion";
@@ -72,7 +79,9 @@ const cuadraExacto = (c: CandidatoCobro) => c.dif_monto === 0;
 
 interface MovimientoActionsProps {
   movimiento: MovimientoBancario;
-  gastos: { value: string; label: string }[];
+  /** Opciones de gasto precargadas por la página (`/v1/expenses`). La
+   *  descripción trae «faltan $X de $Y» en los gastos con pago parcial. */
+  gastos: SearchableSelectOption[];
 }
 
 /**
@@ -267,15 +276,27 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         r = await linkMovimientoAction(movimiento.id, seleccion);
       }
       if (r.ok) {
-        toast.success(
-          esAbono
-            ? seleccionado?.tipo === "SOBRE_GRUPO"
+        if (esAbono) {
+          toast.success(
+            seleccionado?.tipo === "SOBRE_GRUPO"
               ? `Cobro de grupo ${folioTexto(seleccionado.grupo_folio)} vinculado`
-              : "Cobro vinculado"
-            : "Gasto vinculado",
-        );
+              : "Cobro vinculado",
+          );
+        } else {
+          // Pagos parciales (14-sep-2026): el API dice si el gasto quedó
+          // CUBIERTO o si todavía falta — el toast no puede decir "listo"
+          // cuando el gasto sigue en «Gastos sin banco».
+          const t = toastVinculoGasto(r.data);
+          toast.success(t.titulo, t.descripcion ? { description: t.descripcion } : undefined);
+        }
         setOpenLink(false);
         setSeleccion("");
+      } else if (r.code === "GASTO_YA_CUBIERTO") {
+        // Los cargos ya ligados CUBREN el gasto: este cargo no cabe. El
+        // mensaje del API ya explica qué hacer si es otro pago de la misma
+        // factura (el gasto debe valer la suma de los dos).
+        const t = textoGastoYaCubierto(r.error, r.details);
+        toast.error(t.titulo, { description: t.descripcion });
       } else if (r.code === "COBRO_DE_GRUPO") {
         // Candado del API: una PARTE de sobre nunca se concilia; se concilia
         // el sobre del grupo (el mensaje del API ya lo dice).
@@ -591,6 +612,8 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
               quedará libre para vincularse con otro movimiento.
               {vinculadoASobre &&
                 " Las partes por avión del sobre dejan de verse como conciliadas."}
+              {!vinculadoACobro &&
+                " Si el gasto se pagó en varios cargos, los demás siguen ligados: el gasto queda como pago parcial hasta que lo cubran."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -7,8 +7,10 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { textoFaltanteGasto } from "@/lib/admin/conciliacion-parcial";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { MovimientoBancario } from "@/types/conciliacion";
 
 const fmtMoney = (monto: string) =>
@@ -17,7 +19,9 @@ const fmtDate = fmtDateOnly;
 
 interface MovimientosTableProps {
   movimientos: MovimientoBancario[];
-  gastos: { value: string; label: string }[];
+  /** Opciones del diálogo «Vincular gasto» (la página las precarga; los
+   *  gastos con pago parcial traen «faltan $X de $Y» en la descripción). */
+  gastos: SearchableSelectOption[];
 }
 
 export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps) {
@@ -105,6 +109,13 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
                   .filter(Boolean)
                   .join(" · ") || "Gasto conciliado"}
               </span>
+              {/* Pago parcial (14-sep-2026): este cargo es solo una parte del
+                  gasto (1 factura pagada en 2 cargos). */}
+              {textoFaltanteGasto(m.gasto) && (
+                <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                  Pago parcial: {textoFaltanteGasto(m.gasto)}
+                </span>
+              )}
             </Link>
           ) : m.conciliado && m.cobro_grupo_id ? (
             // Conciliado contra el SOBRE de un grupo (lo que depositó el

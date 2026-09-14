@@ -40,6 +40,13 @@ export interface Gasto {
   /** Lectura IA del comprobante (jsonb: matricula, conceptos, folio…). */
   valor_ia_extraido: Record<string, unknown> | null;
   conciliado: boolean;
+  /** PAGOS PARCIALES (14-sep-2026, ADITIVOS): un gasto puede tener N cargos
+   *  del banco ligados (misma moneda); `conciliado` solo es true cuando lo
+   *  CUBREN. `monto_vinculado` = suma ligada, `faltante` = lo que falta.
+   *  Opcionales por skew de deploy: leerlos vía `estadoParcialDeGasto`
+   *  (@/lib/admin/conciliacion-parcial). */
+  monto_vinculado?: string | number | null;
+  faltante?: string | number | null;
   duplicado_sospechado: boolean;
   /** Prellenado con IA desde la app (flujo admin): pendiente del visto bueno. */
   requiere_visto_bueno?: boolean;

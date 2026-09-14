@@ -459,6 +459,83 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   `paywise/auditoria.xlsx`). El panel SOLO pinta el cruce del API
   (`types/conciliacion.ts` `PaywiseAuditoria`).
 
+## Conciliación: 1 gasto ↔ N cargos (pagos parciales) — 14-sep-2026
+
+- Caso del cliente: «1 factura se hizo en 2 pagos y al conciliar solo me deja
+  asociar 1» (ASUR cobra a veces operación y FBO por separado). Desde hoy un
+  gasto acepta VARIOS movimientos bancarios ligados, todos en la MISMA moneda
+  del gasto; `gasto.conciliado` es true SOLO cuando la suma de los cargos
+  CUBRE su monto (tolerancia 1.00 en la moneda del gasto). Un gasto USD contra
+  cuenta MXN (T.C. derivado) sigue siendo 1 ↔ 1. La regla vive en el API
+  (`conciliacion-parcial.util.ts` + trigger de BD): **el panel nunca la
+  recalcula**, solo pinta lo que respondió.
+- FUENTE ÚNICA del panel: `lib/admin/conciliacion-parcial.ts` (PURO, con test
+  `__tests__/conciliacion-parcial.test.ts`): `faltanteDe`, `cubreGasto`,
+  `estadoParcialDeGasto` (devuelve **null** si el API no mandó los aditivos —
+  skew de deploy = comportamiento de hoy), `textoFaltanteGasto`
+  («faltan $125.82 de $403.61»), `notaParcialGasto` («faltan $125.82»),
+  `toastVinculoGasto` («Gasto cubierto» / «Pago parcial: faltan $X») y
+  `textoGastoYaCubierto` (409). Ningún componente formatea estos textos a mano.
+- Campos ADITIVOS del API (opcionales SIEMPRE): `monto_vinculado` y `faltante`
+  en el gasto (`types/expenses.ts`, `GastoSinBanco` de
+  `lib/api/conciliacion-server.ts`, `MovimientoGasto` de
+  `types/conciliacion.ts`) y, en la RESPUESTA de
+  `PATCH /v1/conciliacion/movimientos/:id`, `gasto_conciliado` +
+  `monto_vinculado` + `faltante` (`MovimientoBancario`).
+- Dónde se ve: diálogo «Vincular gasto» (`movimiento-actions.tsx`; las
+  opciones las precarga `app/admin/conciliacion/page.tsx` con `listGastos`)
+  — descripción ámbar «Pago parcial: faltan $X de $Y»; el toast tras vincular
+  distingue cubierto de parcial; la pestaña «Gastos sin banco» gana la columna
+  **Parcial** (`gastos-sin-banco-table.tsx`, fila `parcial`) porque un gasto
+  parcial SIGUE ahí hasta que lo cubran; la columna «Conciliación» de
+  `movimientos-table.tsx` marca «Pago parcial: faltan $X» bajo el gasto.
+- 409 `GASTO_YA_CUBIERTO` (código en `ApiError.code`, `details` con
+  `{monto_gasto, suma_ligada, faltante, movimientos:[{id,fecha,monto}]}`): se
+  pinta con el MENSAJE del API (explica que si es otro pago de la misma
+  factura el gasto debe valer la suma de los dos) + la lista de cargos ya
+  ligados. Va ANTES del `status === 409` genérico en `vincular`.
+- Desvincular sigue confirmando (regla permanente) y ahora avisa que los demás
+  cargos del gasto se conservan: el gasto vuelve a «pago parcial», no a cero.
+- Candados del API (no del panel): un gasto con CUALQUIER cargo ligado no se
+  edita en monto/moneda/medio de pago ni se borra sin desvincular antes — el
+  mensaje llega del API y se pinta tal cual. El API compara contra el valor
+  VIGENTE, así que el diálogo «Verificar» puede seguir mandando
+  monto/moneda/medio sin cambiarlos (reclasificar o ligar el vuelo de un
+  gasto con cargos sigue funcionando).
+- **Un cargo MÁS GRANDE que el gasto también se rechaza** (revisión
+  14-sep-2026), aunque el gasto no tenga ningún cargo ligado: la regla mira
+  la SUMA. Ahí el 409 trae su propio mensaje («Ese cargo ($1,850.00) es
+  MAYOR que el gasto ($277.79)…») y `details.movimientos` viene VACÍO, así
+  que `textoGastoYaCubierto` no manda a «desvincular» nada — dice que se
+  corrija el monto del gasto. `details` trae además `moneda` y `monto_nuevo`
+  (aditivos).
+
+## Historial de gastos del vuelo: gastos que cambian de vuelo (14-sep-2026)
+
+- Caso del cliente (vuelo #260): «Gastos del vuelo» decía «1 gasto» y el
+  «Historial de gastos» mostraba DOS capturas, la segunda sin descripción ni
+  «Editar» — el gasto de CZM se había movido al vuelo #268 y su línea de
+  captura quedaba muda.
+- El API manda ahora, en el UPDATE que cambió `vuelo_id`, el campo ADITIVO
+  `movimiento: {tipo:'salio'|'llego', vuelo_id, folio} | null`
+  (`GastoHistorialEvento` en `lib/api/flights-server.ts`) y resuelve la
+  descripción también de gastos que ya no viven en el vuelo.
+- Panel: `flight-gastos-historial-card.tsx` pinta «Gasto movido al vuelo #268»
+  / «Gasto traído del vuelo #260» (ícono `ArrowsRightLeftIcon`, azul) con liga
+  a `/admin/flights/<id>`; las líneas ANTERIORES de un gasto que ya no vive
+  aquí pierden «Editar» y ganan «Ahora vive en el vuelo #268» (también liga).
+  Textos y el mapa gasto → destino en `lib/admin/gasto-historial.ts` (PURO,
+  `__tests__/gasto-historial.test.ts`). Sin el aditivo (API sin desplegar) la
+  card se comporta exactamente como antes.
+- **`movimiento.vuelo_id` puede venir null** (revisión 14-sep-2026) y es el
+  caso MÁS común: `llego` con null = al gasto se le ASIGNÓ este vuelo estando
+  suelto (la oficina liga un gasto de la bandeja), `salio` con null = se le
+  QUITÓ el vuelo. Sin contraparte no hay «otro vuelo»: el título dice «Gasto
+  asignado a este vuelo» / «Gasto desligado de este vuelo», NO se pinta liga
+  y `destinoDeGastosMovidos` los descarta (si no, «Ahora vive en otro vuelo»
+  con enlace a `/admin/flights/null`). El tipo es `vuelo_id: string | null`:
+  no volver a declararlo `string`.
+
 ### Hoja editable `QuoteSheet` (form-as-document, 8-sep-2026)
 
 - `components/admin/quotes/quote-sheet.tsx` = la hoja 1 COMO formulario:

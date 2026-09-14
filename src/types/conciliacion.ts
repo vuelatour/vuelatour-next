@@ -10,6 +10,11 @@ export interface MovimientoGasto {
   /** Vuelo al que pertenece el gasto conciliado (para verificar de un clic). */
   vuelo_id?: string | null;
   vuelo?: { folio: number | null } | null;
+  /** PAGOS PARCIALES (14-sep-2026, ADITIVOS): suma de los cargos ligados al
+      gasto y lo que falta para cubrirlo. Sin ellos (API sin desplegar) la UI
+      se comporta como hoy — leerlos SIEMPRE por `estadoParcialDeGasto`. */
+  monto_vinculado?: string | number | null;
+  faltante?: string | number | null;
 }
 
 export interface MovimientoBancario {
@@ -38,6 +43,14 @@ export interface MovimientoBancario {
   monto_bruto?: string | number | null;
   comision_monto?: string | number | null;
   gasto?: MovimientoGasto | null;
+  /** PAGOS PARCIALES (14-sep-2026, ADITIVOS de la RESPUESTA de
+      `PATCH /v1/conciliacion/movimientos/:id`): cómo quedó el GASTO tras
+      ligar/desvincular este cargo — `gasto_conciliado` = los cargos ligados
+      CUBREN su monto; `monto_vinculado` = suma ligada; `faltante` = lo que
+      falta. Un gasto parcial sigue en «Gastos sin banco». */
+  gasto_conciliado?: boolean | null;
+  monto_vinculado?: string | number | null;
+  faltante?: string | number | null;
   /** Cobro de vuelo conciliado (ABONOS): detalle + navegación al vuelo. */
   cobro?: {
     monto?: string | null;

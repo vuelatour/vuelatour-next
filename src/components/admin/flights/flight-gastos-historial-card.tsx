@@ -1,4 +1,6 @@
+import Link from "next/link";
 import {
+  ArrowsRightLeftIcon,
   PencilSquareIcon,
   PlusCircleIcon,
   TrashIcon,
@@ -14,6 +16,14 @@ import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { cn } from "@/lib/utils";
+import {
+  destinoDeGastosMovidos,
+  hrefVuelo,
+  notaGastoEnOtroVuelo,
+  textoVueloOtro,
+  tituloGastoMovido,
+  type MovimientoGastoHistorial,
+} from "@/lib/admin/gasto-historial";
 import type { GastoHistorialEvento } from "@/lib/api/flights-server";
 import type { Gasto } from "@/types/expenses";
 import { HistorialGastoEditar } from "@/components/admin/flights/historial-gasto-editar";
@@ -40,6 +50,13 @@ export interface HistorialEdicion {
  *
  * Server component: misma estructura que FlightBitacoraCard (sin eventos no
  * se pinta) con el riel vertical de QuoteVersionsTimeline.
+ *
+ * 14-sep-2026 — gastos que CAMBIAN de vuelo: el API marca esos eventos con
+ * `movimiento` («salió» hacia otro vuelo / «llegó» de otro vuelo) y la línea
+ * lo dice con enlace al otro vuelo. Las líneas anteriores de un gasto que ya
+ * no vive aquí (su captura, sus ediciones) pierden «Editar» y ganan la nota
+ * «Ahora vive en el vuelo #N»: antes quedaban MUDAS y parecían un gasto
+ * fantasma (caso del vuelo #260).
  */
 
 const ACCION_UI: Record<
@@ -229,12 +246,22 @@ function DiffLinea({
 function EventoItem({
   evento,
   edicion,
+  destinoMovido,
 }: {
   evento: GastoHistorialEvento;
   edicion?: HistorialEdicion;
+  /** A dónde se fue este gasto (si salió de este vuelo): lo dicen las líneas
+   *  ANTERIORES al movimiento, que ya no pueden editarse desde aquí. */
+  destinoMovido?: MovimientoGastoHistorial;
 }) {
+  // El evento que cambió el vuelo del gasto manda sobre el ícono/título:
+  // «movido al vuelo #268» / «traído del vuelo #260» explican la línea mejor
+  // que «Gasto editado».
+  const mov = evento.movimiento ?? null;
   const ui = ACCION_UI[evento.accion] ?? ACCION_UI.UPDATE;
-  const Icon = ui.icon;
+  const Icon = mov ? ArrowsRightLeftIcon : ui.icon;
+  const color = mov ? "text-sky-600 dark:text-sky-400" : ui.color;
+  const titulo = mov ? tituloGastoMovido(mov) : ui.titulo;
   // El gasto TAL COMO ESTÁ HOY (si sigue en este vuelo): habilita «Editar»
   // con el mismo modal de Gastos. Un gasto eliminado o movido a otro vuelo
   // ya no está en la lista: la línea queda como evidencia, sin botón.
@@ -242,6 +269,13 @@ function EventoItem({
     edicion && evento.accion !== "DELETE"
       ? edicion.gastos.find((g) => g.id === evento.gasto_id)
       : undefined;
+  // Se fue a otro vuelo: en lugar de «Editar», a dónde vive ahora (con liga).
+  // Solo con vuelo DESTINO real: un gasto al que le quitaron el vuelo no
+  // «vive» en ningún otro (destinoDeGastosMovidos ya los descarta).
+  const viveEnOtro =
+    !gastoVivo && destinoMovido?.vuelo_id && !mov && evento.accion !== "DELETE"
+      ? { ...destinoMovido, vuelo_id: destinoMovido.vuelo_id }
+      : null;
   // Moneda del gasto para pintar monto/propina: solo se conoce con certeza
   // si viaja en el propio diff (cambió o es la del alta). Por lado: si la
   // moneda cambió, el monto "antes" era en la moneda vieja.
@@ -255,17 +289,21 @@ function EventoItem({
   const monedaAntes = monedaDiff?.antes != null ? String(monedaDiff.antes) : monedaDespues;
   // El INSERT trae en diff TODOS los valores iniciales (así lo escribe el
   // trigger): listarlos duplicaría la descripción — la sub-lista de cambios
-  // es solo para ediciones.
-  const diffs = evento.accion === "UPDATE" ? Object.entries(evento.diff ?? {}) : [];
+  // es solo para ediciones. En un movimiento entre vuelos, `vuelo_id` ya está
+  // dicho en el título: repetir «Vuelo: se reasignó» sobra.
+  const diffs =
+    evento.accion === "UPDATE"
+      ? Object.entries(evento.diff ?? {}).filter(([campo]) => !(mov && campo === "vuelo_id"))
+      : [];
 
   return (
     <li className="relative pl-7">
-      <span className={cn("absolute left-0 top-0.5 rounded-full bg-card", ui.color)}>
+      <span className={cn("absolute left-0 top-0.5 rounded-full bg-card", color)}>
         <Icon className="h-4 w-4" />
       </span>
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <p className="text-sm font-medium">
-          {ui.titulo}
+          {titulo}
           {evento.sintetizado && (
             <span className="ml-2 text-[10px] font-normal italic text-muted-foreground">
               (captura registrada antes del historial)
@@ -276,7 +314,7 @@ function EventoItem({
           <p className="text-[11px] text-muted-foreground">
             {evento.actor_nombre ?? "Sistema"} · {fmtDateTime(evento.created_at)}
           </p>
-          {gastoVivo && edicion && (
+          {gastoVivo && edicion ? (
             <HistorialGastoEditar
               gasto={gastoVivo}
               aircraft={edicion.aircraft}
@@ -285,11 +323,38 @@ function EventoItem({
                 gastoVivo.foto_url ? edicion.fotoUrls[gastoVivo.foto_url] : undefined
               }
             />
-          )}
+          ) : viveEnOtro ? (
+            // Sin «Editar»: el gasto ya no vive en este vuelo. Se dice dónde
+            // está y se llega de un clic.
+            <Link
+              href={hrefVuelo(viveEnOtro.vuelo_id)}
+              className="text-[11px] text-sky-600 hover:underline dark:text-sky-400"
+              title="Abrir el vuelo donde vive ahora este gasto"
+            >
+              {notaGastoEnOtroVuelo(viveEnOtro.folio)}
+            </Link>
+          ) : null}
         </div>
       </div>
       {evento.descripcion_gasto && (
         <p className="text-xs text-muted-foreground">{evento.descripcion_gasto}</p>
+      )}
+      {mov?.vuelo_id && (
+        <p className="text-xs">
+          <Link
+            href={hrefVuelo(mov.vuelo_id)}
+            className="text-sky-600 hover:underline dark:text-sky-400"
+            title={
+              mov.tipo === "salio"
+                ? "Abrir el vuelo al que se movió el gasto"
+                : "Abrir el vuelo del que vino el gasto"
+            }
+          >
+            {mov.tipo === "salio"
+              ? `Ver el ${textoVueloOtro(mov.folio)} (ahí vive ahora)`
+              : `Ver el ${textoVueloOtro(mov.folio)} (de ahí vino)`}
+          </Link>
+        </p>
       )}
       {diffs.length > 0 && (
         <ul className="mt-1 space-y-0.5">
@@ -331,20 +396,29 @@ export function FlightGastosHistorialCard({
   );
   const visibles = ordenados.slice(0, EVENTOS_VISIBLES);
   const anteriores = ordenados.slice(EVENTOS_VISIBLES);
+  // Gastos que SALIERON de este vuelo: sus líneas viejas dicen dónde viven
+  // ahora en lugar de quedarse mudas.
+  const destinos = destinoDeGastosMovidos(eventos);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">Historial de gastos</CardTitle>
         <CardDescription className="text-xs">
-          Quién capturó, editó o eliminó cada gasto del vuelo y qué cambió.
+          Quién capturó, editó o eliminó cada gasto del vuelo y qué cambió —
+          incluidos los gastos que se movieron a otro vuelo o llegaron de uno.
           Lo escribe la base de datos: ningún camino lo esquiva.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ol className={RIEL}>
           {visibles.map((e, i) => (
-            <EventoItem key={`${e.gasto_id}-${e.created_at}-${i}`} evento={e} edicion={edicion} />
+            <EventoItem
+              key={`${e.gasto_id}-${e.created_at}-${i}`}
+              evento={e}
+              edicion={edicion}
+              destinoMovido={destinos[e.gasto_id]}
+            />
           ))}
         </ol>
         {anteriores.length > 0 && (
@@ -355,7 +429,12 @@ export function FlightGastosHistorialCard({
             </summary>
             <ol className={cn(RIEL, "mt-3")}>
               {anteriores.map((e, i) => (
-                <EventoItem key={`${e.gasto_id}-${e.created_at}-${i}`} evento={e} edicion={edicion} />
+                <EventoItem
+                  key={`${e.gasto_id}-${e.created_at}-${i}`}
+                  evento={e}
+                  edicion={edicion}
+                  destinoMovido={destinos[e.gasto_id]}
+                />
               ))}
             </ol>
           </details>
