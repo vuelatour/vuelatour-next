@@ -63,6 +63,140 @@ export interface MovimientoBancario {
   /** Sobre de grupo conciliado (ABONOS): detalle + navegación al grupo.
       Aditivo; null cuando la liga es por cobro de vuelo o gasto. */
   cobro_grupo?: SobreConciliacion | null;
+  /** POR QUÉ sigue pendiente (ADITIVOS del 15-sep-2026, siempre opcionales):
+      `motivo_pendiente` = código del API ('SIN_CANDIDATOS' | 'SE_PUEDE_CRUZAR' | 'AMBIGUO' |
+      'SOLO_PARCIAL' | 'GASTO_YA_CUBIERTO' | 'FUERA_DE_VENTANA' |
+      'NO_ES_DE_VUELO' | 'ERROR'), `candidatos_n` = cuántos gastos/cobros
+      cuadraban y `auto_match_error` = el error que tumbó SU cruce (el resto
+      del lote sí se procesó). Se leen SIEMPRE por `motivoPendienteDe`
+      (`lib/admin/conciliacion-auto.ts`): sin ellos, badge «Pendiente». */
+  motivo_pendiente?: string | null;
+  candidatos_n?: number | null;
+  auto_match_error?: string | null;
+  /** Conciliado por una REGLA automática (traspaso interno, comisión del
+      banco…): el API deja `notas = 'Regla: <patrón>'`; este flag es el
+      camino explícito si el API lo manda. */
+  clasificacion_auto?: boolean | null;
+}
+
+// ===== Cruce automático y sugerencias IA (15-sep-2026) =====
+
+/** Qué pasó con UN movimiento en el cruce automático. */
+export interface AutoMatchDetalle {
+  movimiento_id: string;
+  /** CONCILIADO | AMBIGUO | SIN_CANDIDATO | TRASPASO | ERROR (tolerante). */
+  resultado?: string | null;
+  /** Con qué criterio se ligó: MONTO | TARJETA | DESCRIPCION | REGLA | … */
+  criterio?: string | null;
+  gasto_id?: string | null;
+  cobro_id?: string | null;
+  candidatos_n?: number | null;
+  motivo?: string | null;
+  error?: string | null;
+  fecha?: string | null;
+  monto?: string | number | null;
+  descripcion?: string | null;
+}
+
+/**
+ * Resultado de `POST /v1/conciliacion/auto-match` («Cruzar pendientes»): el
+ * lote NUNCA se cae por un movimiento — lo que falla se cuenta en `errores`
+ * y se explica en `detalle`.
+ */
+export interface AutoMatchResultado {
+  revisados: number;
+  conciliados: number;
+  ambiguos: number;
+  sin_candidato: number;
+  /** Clasificados por regla (traspasos internos, comisiones…). Aditivo. */
+  traspasos?: number | null;
+  /** El gasto candidato ya no admitía el cargo (409 legítimo). Aditivo. */
+  rechazados?: number | null;
+  errores: number;
+  detalle?: AutoMatchDetalle[] | null;
+  /** {MONTO: 15, TARJETA: 4, …} — desglose del cruce. Aditivo. */
+  por_criterio?: Record<string, number> | null;
+  /** Si el API lo corre como JOB (mismo diálogo de progreso). Aditivo. */
+  job_id?: string | null;
+  /** true = se alcanzó el tope de la corrida y quedan pendientes sin revisar. */
+  truncado?: boolean | null;
+}
+
+/** Gasto candidato para vincular un CARGO (sugerencia y «Vincular gasto»). */
+export interface GastoCandidato {
+  id: string;
+  fecha?: string | null;
+  fecha_gasto?: string | null;
+  monto: string | number;
+  moneda?: string | null;
+  proveedor?: string | null;
+  categoria?: string | null;
+  lugar?: string | null;
+  notas?: string | null;
+  notas_primera_linea?: string | null;
+  tarjeta_terminacion?: string | null;
+  matricula?: string | null;
+  vuelo_folio?: number | null;
+  medio_pago?: string | null;
+  conciliado?: boolean | null;
+  tc_implicito?: number | string | null;
+  monto_vinculado?: string | number | null;
+  faltante?: string | number | null;
+}
+
+/** Respuesta de `POST /v1/conciliacion/movimientos/:id/sugerir`. */
+export interface SugerenciaConciliacion {
+  /** false = la IA no está configurada o falló: quedan los candidatos. */
+  disponible: boolean;
+  gasto_id_sugerido: string | null;
+  confianza: number;
+  razon: string | null;
+  /** Hechos citados por la IA («terminación 0577 == tarjeta del gasto»). */
+  evidencias?: string[] | null;
+  candidatos: GastoCandidato[];
+  /** 2.ª y 3.ª opción de la IA. OJO: NO son fichas de gasto — el API manda
+      `{gasto_id, confianza, razon}` y sus ids YA vienen en `candidatos`
+      (los valida contra ellos). Aditivo. */
+  alternativas?: Array<{ gasto_id: string; confianza: number; razon: string }> | null;
+  /** Frase en español de por qué ningún candidato encaja (la redacta
+      pyservices, NO es un código). Solo cuando no hay sugerido. Aditivo. */
+  motivo_sin_match?: string | null;
+}
+
+/** Una propuesta del lote (`POST /v1/conciliacion/sugerir-lote`). */
+export interface PropuestaConciliacion {
+  movimiento_id: string;
+  gasto_id_sugerido: string | null;
+  confianza: number;
+  razon: string | null;
+  evidencias?: string[] | null;
+  /** {gasto_id, confianza, razon} del API (no fichas): sus ids están en
+      `candidatos`. */
+  alternativas?: Array<{ gasto_id: string; confianza?: number; razon?: string }> | null;
+  candidatos?: GastoCandidato[] | null;
+  /** Fichas embebidas (aditivas): evitan una consulta por fila en el panel. */
+  gasto?: GastoCandidato | null;
+  movimiento?: {
+    id?: string;
+    fecha?: string | null;
+    monto?: string | number | null;
+    tipo?: string | null;
+    descripcion?: string | null;
+    referencia?: string | null;
+    cuenta_bancaria_id?: string | null;
+  } | null;
+  motivo_sin_match?: string | null;
+}
+
+export interface SugerirLoteResponse {
+  propuestas: PropuestaConciliacion[];
+  /** Cuántos pendientes se revisaron y cuántos quedaron sin propuesta. */
+  revisados?: number | null;
+  sin_propuesta?: number | null;
+  errores?: number | null;
+  /** false = el asistente no está configurado (pyservices). */
+  disponible?: boolean | null;
+  nota?: string | null;
 }
 
 /**

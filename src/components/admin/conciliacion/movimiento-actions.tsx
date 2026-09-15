@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   LinkIcon,
   EllipsisHorizontalIcon,
+  SparklesIcon,
   TagIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
@@ -48,16 +49,28 @@ import {
   linkMovimientoAction,
   linkMovimientoCobroAction,
   listClasificacionesAction,
+  sugerirMovimientoAction,
   type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
+import {
+  descripcionCandidatoGasto,
+  etiquetaCandidatoGasto,
+  motivoPendienteDe,
+  textoConfianza,
+} from "@/lib/admin/conciliacion-auto";
 import {
   textoGastoYaCubierto,
   toastVinculoGasto,
 } from "@/lib/admin/conciliacion-parcial";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
-import type { CandidatoCobro, MovimientoBancario } from "@/types/conciliacion";
+import type {
+  CandidatoCobro,
+  GastoCandidato,
+  MovimientoBancario,
+  SugerenciaConciliacion,
+} from "@/types/conciliacion";
 
 const fmtMoney = (monto: string | number) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
@@ -100,6 +113,13 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   const [candidatos, setCandidatos] = useState<CandidatoCobro[] | null>(null);
   const [exactos, setExactos] = useState(0);
   const [pending, startTransition] = useTransition();
+  // CARGO (15-sep-2026): candidatos del API + sugerencia de la IA. El
+  // selector de gastos precargado son los 200 más recientes de TODA la
+  // empresa: con >100 gastos por semana el gasto correcto de un cargo de
+  // hace tres semanas simplemente no aparecía.
+  const [sugerencia, setSugerencia] = useState<SugerenciaConciliacion | null>(null);
+  const [cargandoSug, setCargandoSug] = useState(false);
+  const [usarCandidatos, setUsarCandidatos] = useState(false);
 
   // Qué tiene vinculado realmente el movimiento (manda sobre el tipo al
   // desvincular, por si un dato viejo quedó cruzado distinto). Un ABONO se
@@ -192,10 +212,53 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
     });
   };
 
-  const abrirVincular = () => {
+  /**
+   * Candidatos del API para un CARGO + sugerencia de la IA (si está
+   * configurada). La IA PROPONE: preselecciona, nunca liga sola.
+   */
+  const cargarSugerencia = () => {
+    setCargandoSug(true);
+    void sugerirMovimientoAction(movimiento.id)
+      .then((r) => {
+        setCargandoSug(false);
+        if (!r.ok || !r.data) {
+          toast.error(r.error ?? "No se pudieron buscar los gastos candidatos", {
+            description:
+              r.status === 404
+                ? "El servidor todavía no tiene esta ayuda (falta desplegar el API)."
+                : r.status === 403
+                  ? "El asistente de conciliación es solo para ADMIN; los candidatos sí puedes verlos en «Ver todos los gastos recientes»."
+                  : undefined,
+          });
+          return;
+        }
+        setSugerencia(r.data);
+        setUsarCandidatos(true);
+        if (r.data.gasto_id_sugerido) {
+          setSeleccion(r.data.gasto_id_sugerido);
+        } else if ((r.data.candidatos?.length ?? 0) === 0) {
+          toast.info("No hay gastos candidatos cerca de este movimiento", {
+            description:
+              "Puedes buscar entre todos los gastos recientes o capturar el gasto que falta.",
+          });
+          setUsarCandidatos(false);
+        }
+      })
+      .catch((err: unknown) => {
+        setCargandoSug(false);
+        toast.error(err instanceof Error ? err.message : "No se pudieron buscar los gastos");
+      });
+  };
+
+  const abrirVincular = (conIa = false) => {
     setSeleccion("");
     setOpenLink(true);
-    if (!esAbono) return;
+    if (!esAbono) {
+      setSugerencia(null);
+      setUsarCandidatos(false);
+      if (conIa) cargarSugerencia();
+      return;
+    }
     // Candidatos del API (cobros de vuelo + sobres de grupo, ±60 días,
     // misma moneda que la cuenta, ordenados por cercanía del neto).
     cargarCandidatos();
@@ -238,6 +301,50 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
     () => (candidatos ?? []).find((c) => valorCandidato(c) === seleccion) ?? null,
     [candidatos, seleccion],
   );
+
+  /** Candidatos de GASTO (sin repetir) que devolvió el API, sugerido primero. */
+  const candidatosGasto = useMemo<GastoCandidato[]>(() => {
+    if (!sugerencia) return [];
+    const vistos = new Set<string>();
+    const unicos: GastoCandidato[] = [];
+    // `alternativas` del API son {gasto_id, confianza, razon} y sus ids ya
+    // están en `candidatos` (el API los valida contra esa lista): mezclarlas
+    // aquí no aportaba nada y escondía el tipo real.
+    for (const g of sugerencia.candidatos ?? []) {
+      if (!g?.id || vistos.has(g.id)) continue;
+      vistos.add(g.id);
+      unicos.push(g);
+    }
+    const sug = sugerencia.gasto_id_sugerido;
+    return sug ? [...unicos.filter((g) => g.id === sug), ...unicos.filter((g) => g.id !== sug)] : unicos;
+  }, [sugerencia]);
+
+  const opcionesGastoCandidatos = useMemo(
+    () =>
+      candidatosGasto.map((g) => {
+        const esSugerido = g.id === sugerencia?.gasto_id_sugerido;
+        const desc = descripcionCandidatoGasto(g);
+        return {
+          value: g.id,
+          label: `${esSugerido ? "★ " : ""}${etiquetaCandidatoGasto(g)}`,
+          description:
+            [esSugerido ? "Sugerido por la IA" : null, desc].filter(Boolean).join(" · ") ||
+            undefined,
+          descriptionClassName: esSugerido
+            ? "truncate text-emerald-600 dark:text-emerald-400 font-medium"
+            : undefined,
+        };
+      }),
+    [candidatosGasto, sugerencia],
+  );
+
+  const gastoSeleccionado = useMemo(
+    () => candidatosGasto.find((g) => g.id === seleccion) ?? null,
+    [candidatosGasto, seleccion],
+  );
+
+  /** Por qué quedó pendiente (lo dice el API; null = no lo sabe). */
+  const motivo = motivoPendienteDe(movimiento);
 
   const desvincular = () => {
     startTransition(async () => {
@@ -291,6 +398,8 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         }
         setOpenLink(false);
         setSeleccion("");
+        setSugerencia(null);
+        setUsarCandidatos(false);
       } else if (r.code === "GASTO_YA_CUBIERTO") {
         // Los cargos ya ligados CUBREN el gasto: este cargo no cabe. El
         // mensaje del API ya explica qué hacer si es otro pago de la misma
@@ -356,10 +465,19 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
             </>
           ) : (
             <>
-              <DropdownMenuItem onClick={abrirVincular} className="gap-2">
+              <DropdownMenuItem onClick={() => abrirVincular()} className="gap-2">
                 <LinkIcon className="h-4 w-4" />
                 {esAbono ? "Vincular cobro" : "Vincular gasto"}
               </DropdownMenuItem>
+              {/* La IA PROPONE el gasto más probable (descripción del banco,
+                  terminación de tarjeta, monto y fecha): abre el mismo
+                  diálogo con el candidato preseleccionado. Nunca liga sola. */}
+              {!esAbono && (
+                <DropdownMenuItem onClick={() => abrirVincular(true)} className="gap-2">
+                  <SparklesIcon className="h-4 w-4" />
+                  Sugerir con IA
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={abrirClasificar} className="gap-2">
                 <TagIcon className="h-4 w-4" />
                 Clasificar (no es de un vuelo)
@@ -369,7 +487,17 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={openLink} onOpenChange={setOpenLink}>
+      <Dialog
+        open={openLink}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSugerencia(null);
+            setUsarCandidatos(false);
+            setSeleccion("");
+          }
+          setOpenLink(o);
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{esAbono ? "Vincular cobro" : "Vincular gasto"}</DialogTitle>
@@ -380,14 +508,57 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">
-              {esAbono ? "Cobro o sobre de grupo" : "Gasto"}
-            </Label>
-            {esAbono && candidatos === null ? (
-              <p className="text-sm text-muted-foreground">Buscando cobros cercanos…</p>
+            <div className="flex items-end justify-between gap-2 flex-wrap">
+              <Label className="text-sm font-medium">
+                {esAbono
+                  ? "Cobro o sobre de grupo"
+                  : usarCandidatos
+                    ? `Gastos candidatos (${candidatosGasto.length})`
+                    : "Gasto"}
+              </Label>
+              {/* CARGO: los candidatos del API (misma moneda, ventana de
+                  fechas, monto o faltante) en vez de los 200 gastos más
+                  recientes de toda la empresa. */}
+              {!esAbono &&
+                (usarCandidatos ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    onClick={() => setUsarCandidatos(false)}
+                  >
+                    Ver todos los gastos recientes
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-xs text-brand-600 hover:underline underline-offset-2 disabled:opacity-50"
+                    onClick={cargarSugerencia}
+                    disabled={cargandoSug || pending}
+                  >
+                    {cargandoSug
+                      ? "Buscando candidatos…"
+                      : sugerencia
+                        ? "Ver solo los candidatos"
+                        : "Buscar el gasto que corresponde (IA)"}
+                  </button>
+                ))}
+            </div>
+            {/* Por qué quedó pendiente: el mismo dato de la tabla, aquí es
+                donde el operador lo necesita. */}
+            {!esAbono && motivo && (
+              <p className="text-xs text-muted-foreground" title={motivo.detalle}>
+                Quedó pendiente: {motivo.etiqueta.toLowerCase()}.
+              </p>
+            )}
+            {(esAbono && candidatos === null) || (!esAbono && cargandoSug) ? (
+              <p className="text-sm text-muted-foreground">
+                {esAbono ? "Buscando cobros cercanos…" : "Buscando gastos candidatos…"}
+              </p>
             ) : (
               <SearchableSelect
-                options={esAbono ? opcionesCobros : gastos}
+                options={
+                  esAbono ? opcionesCobros : usarCandidatos ? opcionesGastoCandidatos : gastos
+                }
                 value={seleccion}
                 onChange={setSeleccion}
                 placeholder={
@@ -396,9 +567,78 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                 emptyText={
                   esAbono
                     ? "Sin cobros ni sobres candidatos cerca de la fecha del abono"
-                    : "Sin resultados"
+                    : usarCandidatos
+                      ? "Sin gastos candidatos en la ventana de fechas"
+                      : "Sin resultados"
                 }
               />
+            )}
+            {/* Propuesta de la IA: razón, confianza y evidencias. Se
+                preselecciona, pero vincular lo confirma una persona. */}
+            {!esAbono && sugerencia && sugerencia.gasto_id_sugerido && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  >
+                    Sugerencia de la IA
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {textoConfianza(sugerencia.confianza).texto}
+                  </span>
+                </div>
+                {sugerencia.razon && <p className="text-muted-foreground">{sugerencia.razon}</p>}
+                {(sugerencia.evidencias?.length ?? 0) > 0 && (
+                  <ul className="text-[11px] text-muted-foreground space-y-0.5">
+                    {sugerencia.evidencias!.map((e) => (
+                      <li key={e}>· {e}</li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Revísala antes de vincular: la IA propone, tú confirmas.
+                </p>
+              </div>
+            )}
+            {!esAbono && sugerencia && !sugerencia.disponible && (
+              <p className="text-xs text-muted-foreground">
+                El asistente de IA no está disponible en el servidor: se muestran
+                los gastos candidatos para que elijas.
+              </p>
+            )}
+            {/* Contestó y NO propuso ninguno: su motivo vale tanto como una
+                propuesta (evita que el operador crea que la IA falló). */}
+            {!esAbono &&
+              sugerencia &&
+              sugerencia.disponible &&
+              !sugerencia.gasto_id_sugerido &&
+              (sugerencia.motivo_sin_match ?? sugerencia.razon) && (
+                <p className="text-xs text-muted-foreground">
+                  La IA no propuso ninguno: {sugerencia.motivo_sin_match ?? sugerencia.razon}
+                </p>
+              )}
+            {/* Candidato elegido: terminación de tarjeta, nota/lugar, matrícula
+                y pago parcial — lo que de verdad desempata a ojo. */}
+            {!esAbono && gastoSeleccionado && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{etiquetaCandidatoGasto(gastoSeleccionado)}</span>
+                  {gastoSeleccionado.id === sugerencia?.gasto_id_sugerido && (
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    >
+                      Sugerido
+                    </Badge>
+                  )}
+                </div>
+                {descripcionCandidatoGasto(gastoSeleccionado) && (
+                  <p className="text-xs text-muted-foreground">
+                    {descripcionCandidatoGasto(gastoSeleccionado)}
+                  </p>
+                )}
+              </div>
             )}
             {esAbono && candidatos !== null && exactos > 0 && (
               <p className="text-xs text-emerald-600 dark:text-emerald-400">

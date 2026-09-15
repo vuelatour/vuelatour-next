@@ -10,11 +10,14 @@ import {
 } from "@/lib/api/conciliacion-server";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
 import type {
+  AutoMatchResultado,
   CandidatosCobroResponse,
   MapeoColumnasPaywise,
   MovimientoBancario,
   ParsedStatement,
   PaywiseAuditoria,
+  SugerenciaConciliacion,
+  SugerirLoteResponse,
 } from "@/types/conciliacion";
 
 export interface ActionResult<T = unknown> {
@@ -127,6 +130,18 @@ export interface ImportJobStatus {
   conciliados_auto: number | null;
   duplicados_omitidos: number | null;
   error: string | null;
+  /** CONTEO POR RESULTADO (ADITIVOS 15-sep-2026): un movimiento que falla ya
+      NO tumba el job — se cuenta aquí y el resto sigue. Sin estos campos
+      (API sin desplegar) el resumen se comporta como antes. */
+  ambiguos?: number | null;
+  sin_candidato?: number | null;
+  traspasos?: number | null;
+  rechazados?: number | null;
+  errores?: number | null;
+  errores_detalle?: Array<{ error?: string | null; movimiento_id?: string }> | null;
+  por_criterio?: Record<string, number> | null;
+  /** 'IMPORT' | 'RECRUCE' (el re-cruce reusa la tabla de jobs). */
+  tipo?: string | null;
 }
 
 export async function importJobStatusAction(
@@ -138,7 +153,98 @@ export async function importJobStatusAction(
       { cache: "no-store" },
     );
     // Al terminar, refresca la página de conciliación (movimientos nuevos).
-    if (data.estado === "LISTO") revalidatePath("/admin/conciliacion");
+    // TAMBIÉN en ERROR (15-sep-2026): el job puede morir a medias con los
+    // movimientos YA insertados — el 15-sep el operador no los vio y volvió
+    // a importar dos veces.
+    if (data.estado === "LISTO" || data.estado === "ERROR") {
+      revalidatePath("/admin/conciliacion");
+    }
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Volver a cruzar pendientes / sugerencias IA (15-sep-2026) =====
+
+/** Rango y alcance de «Cruzar pendientes» (el de la vista por default). */
+export interface AutoMatchQuery {
+  cuenta_bancaria_id?: string;
+  /** YYYY-MM-DD (fecha del movimiento, día de pared). */
+  desde?: string;
+  hasta?: string;
+  /** Alternativa: solo estos movimientos. */
+  movimiento_ids?: string[];
+}
+
+/**
+ * «Cruzar pendientes»: vuelve a correr el cruce automático sobre los
+ * movimientos NO conciliados del rango. Existe porque el auto-cruce solo
+ * corría dentro de la importación: si el cruce falló (o el gasto se capturó
+ * después), esos movimientos quedaban pendientes para siempre.
+ *
+ * NUNCA liga lo ambiguo: lo cuenta y lo deja para el operador.
+ */
+export async function autoMatchAction(
+  q: AutoMatchQuery,
+): Promise<ActionResult<AutoMatchResultado>> {
+  try {
+    const data = await apiServer<AutoMatchResultado>("/v1/conciliacion/auto-match", {
+      method: "POST",
+      body: {
+        ...(q.cuenta_bancaria_id ? { cuenta_bancaria_id: q.cuenta_bancaria_id } : {}),
+        ...(q.desde ? { desde: q.desde } : {}),
+        ...(q.hasta ? { hasta: q.hasta } : {}),
+        ...(q.movimiento_ids?.length ? { movimiento_ids: q.movimiento_ids } : {}),
+      },
+    });
+    revalidatePath("/admin/conciliacion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Sugerencia IA de UN movimiento: devuelve los candidatos (deterministas,
+ * del API) y —si el asistente está configurado— cuál propone y por qué.
+ * La IA PROPONE; vincular siempre lo confirma una persona.
+ */
+export async function sugerirMovimientoAction(
+  movId: string,
+): Promise<ActionResult<SugerenciaConciliacion>> {
+  try {
+    const data = await apiServer<SugerenciaConciliacion>(
+      `/v1/conciliacion/movimientos/${movId}/sugerir`,
+      { method: "POST", body: {} },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Sugerencias IA para TODOS los pendientes del rango (una por movimiento). */
+export async function sugerirLoteAction(q: {
+  cuenta_bancaria_id?: string;
+  desde?: string;
+  hasta?: string;
+  /** Tope de movimientos a consultar (el API lo llama `limite`, 1..40). */
+  limite?: number;
+}): Promise<ActionResult<SugerirLoteResponse>> {
+  try {
+    const data = await apiServer<SugerirLoteResponse>("/v1/conciliacion/sugerir-lote", {
+      method: "POST",
+      body: {
+        ...(q.cuenta_bancaria_id ? { cuenta_bancaria_id: q.cuenta_bancaria_id } : {}),
+        ...(q.desde ? { desde: q.desde } : {}),
+        ...(q.hasta ? { hasta: q.hasta } : {}),
+        // OJO: el DTO del API es `limite` y su ValidationPipe rechaza
+        // propiedades desconocidas (forbidNonWhitelisted): mandar `limit`
+        // devolvía 400 en cuanto alguien pasara el tope.
+        ...(q.limite ? { limite: q.limite } : {}),
+      },
+    });
     return { ok: true, data };
   } catch (err) {
     return fail(err);

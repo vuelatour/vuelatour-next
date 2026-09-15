@@ -510,6 +510,98 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   corrija el monto del gasto. `details` trae además `moneda` y `monto_nuevo`
   (aditivos).
 
+## Conciliación: cruzar pendientes, POR QUÉ siguen pendientes y la IA (15-sep-2026)
+
+- Pedido del cliente: «no se están conciliando los gastos, salen como
+  pendiente. Revisa a profundidad todo esto de la conciliación […] También
+  revisa lo de la IA que tenemos por API». El cruce automático solo corría
+  DENTRO de la importación: cuando falló (trigger con `moneda` ENUM comparada
+  contra text) los 101 movimientos quedaron insertados y sin conciliar, y
+  re-importar el archivo respondía «101 duplicados» sin reintentar nada.
+- **FUENTE ÚNICA del panel**: `lib/admin/conciliacion-auto.ts` (PURO, prueba
+  `__tests__/conciliacion-auto.test.ts`) — `motivoPendienteDe` + `tonoMotivo`
+  (badge y tooltip de por qué está pendiente), `resumenAutoMatch` /
+  `lineaCriterios` / `etiquetaCriterio` (resultado del cruce por RESULTADO),
+  `resumenImportJob` + `motivoMasComun` (resultado de la importación, también
+  cuando el job murió a medias), `textoConfianza`, `etiquetaCandidatoGasto` /
+  `descripcionCandidatoGasto` (terminación de tarjeta · lugar/nota ·
+  matrícula · vuelo · pago parcial · T.C.), `gastoDePropuesta` /
+  `alternativasDePropuesta`, `reglaAutomaticaDe` y `diaMas`. Ningún
+  componente redacta estos textos a mano.
+- **Contratos del API (TODOS aditivos; sin ellos la UI se comporta como
+  antes)**: `POST /v1/conciliacion/auto-match` → `{revisados, conciliados,
+  ambiguos, sin_candidato, traspasos?, errores, detalle[], por_criterio?,
+  job_id?}` (si manda `job_id` el panel consulta `importar-status`, el mismo
+  diálogo de progreso); `POST /v1/conciliacion/sugerir-lote` → `{propuestas:
+  [{movimiento_id, gasto_id_sugerido, confianza, razon, evidencias?,
+  alternativas[]}]}`; `POST /movimientos/:id/sugerir` devuelve además
+  `alternativas` y `motivo_sin_match`; el job de importación expone los
+  conteos por resultado (`ambiguos`, `sin_candidato`, `traspasos`, `errores`,
+  `errores_detalle`, `por_criterio`); cada movimiento no conciliado puede
+  traer `motivo_pendiente`, `candidatos_n` y `auto_match_error`.
+- **Dónde se ve**:
+  - «**Cruzar pendientes**» (`auto-match-button.tsx`) en la cabecera: cuenta
+    + rango (los de la vista, `?cuenta`/`?desde`/`?hasta`) y resumen por
+    resultado. Es la salida cuando algo quedó pendiente por un fallo o
+    porque el gasto se capturó DESPUÉS del estado de cuenta.
+  - «**Sugerir con IA (pendientes)**» (`sugerencias-lote-dialog.tsx`): lista
+    de propuestas con confianza, razón y evidencias, cada una con
+    **Vincular** / **Descartar**. La IA PROPONE y una persona confirma —
+    NUNCA se liga sola (fiabilidad numérica: un cruce equivocado ensucia el
+    dinero de un vuelo). Cada consulta gasta créditos y se registra en
+    Configuración → Consumo de IA: por eso se pide a mano, no al abrir.
+  - Columna «Conciliación» (`movimientos-table.tsx`): el badge «Pendiente»
+    lleva debajo el motivo («Sin candidato», «Ambiguo entre 3», «Error al
+    cruzar» en rojo) con el tooltip que dice qué hacer; lo clasificado por
+    una REGLA automática (traspaso entre cuentas, comisión del banco) se
+    marca «automático». Columna «Cuenta» solo cuando la vista mezcla varias.
+  - Diálogo «**Vincular gasto**» (`movimiento-actions.tsx`): «Sugerir con
+    IA» en el menú y, dentro del diálogo, «Buscar el gasto que corresponde
+    (IA)» — las opciones pasan a ser los CANDIDATOS del API (moneda, ventana
+    de fechas, monto o faltante) con ★ y verde en el sugerido, cada uno con
+    terminación de tarjeta, nota/lugar, matrícula y pago parcial; «Ver todos
+    los gastos recientes» regresa a la lista precargada de la página.
+  - `import-dialog.tsx`: al terminar canta los conteos por resultado; si el
+    job termina en ERROR **refresca la bandeja** y dice cuántos movimientos
+    SÍ entraron, cuántos fallaron y el motivo más común, e insiste en NO
+    volver a importar el archivo (se detecta como duplicado): la salida es
+    «Cruzar pendientes».
+- **Filtro por cuenta**: `?cuenta=<uuid>` viaja a `listMovimientosBancarios`
+  (el API ya lo soportaba) y los chips de cuenta conservan pestaña y rango
+  (`hrefVista`). El API rechaza parámetros desconocidos
+  (`forbidNonWhitelisted`): NO mandar `desde`/`hasta` a la lista hasta que el
+  DTO los acepte.
+- **REVISIÓN ADVERSARIA (15-sep-2026) — contratos que NO cuadraban**:
+  - `sugerirLoteAction` mandaba `limit` y el DTO del API se llama **`limite`**:
+    con `forbidNonWhitelisted` eso es un **400** en cuanto alguien pase el
+    tope. Hoy va `limite`. Misma trampa para cualquier parámetro nuevo:
+    revisar el DTO del API, no inventar el nombre.
+  - `autoMatchAction` ya podía mandar `movimiento_ids` pero el API no lo
+    aceptaba (otro 400 latente): el DTO del API lo acepta desde hoy y **manda
+    sobre `desde`/`hasta`** (re-cruce dirigido de las filas señaladas).
+  - `importar-status` devolvía el desglose ANIDADO en `resultados` y el panel
+    lo lee PLANO: el API lo devuelve en las dos formas, así que el resumen del
+    job ya no sale en ceros.
+  - **`rechazados`** (el gasto candidato ya no admitía el cargo, 409 legítimo)
+    faltaba en el resumen: sin él las cifras NO sumaban («44 revisados» con
+    21+2+4+15 = 42). `resumenAutoMatch`/`resumenImportJob` lo nombran y el tipo
+    lo declara.
+  - **`truncado`**: cuando la corrida alcanza su tope, el resumen dice «vuelve
+    a ejecutarlo para los que faltan» en vez de sonar a terminado.
+  - Motivo nuevo del API **`SE_PUEDE_CRUZAR`** («Se puede cruzar»): hay UN
+    gasto que cuadra y el auto-cruce no ha corrido sobre ese movimiento —
+    exactamente el caso del 15-sep. Alias tolerado: `CRUZABLE`.
+  - `sugerir-lote` embebe ahora `gasto` (ficha del propuesto), `candidatos[]`,
+    `motivo_sin_match` y `disponible`/`nota`: sin ellos el diálogo pintaba un
+    uuid pelón y decía «la IA no encontró propuestas» aunque el asistente
+    nunca hubiera contestado.
+- Pendiente (necesita API): reglas de clasificación administrables desde el
+  diálogo «Clasificar» («aplicar siempre a los que digan…»), borrar una
+  importación, alta manual de un movimiento y «Buscar su cargo» desde
+  «Gastos sin banco». El **motivo de los ABONOS** pendientes tampoco viaja
+  (el API solo lo calcula para CARGOS): ahí el badge sigue siendo «Pendiente»
+  a secas, y está bien — inventarlo sería mentir.
+
 ## Historial de gastos del vuelo: gastos que cambian de vuelo (14-sep-2026)
 
 - Caso del cliente (vuelo #260): «Gastos del vuelo» decía «1 gasto» y el

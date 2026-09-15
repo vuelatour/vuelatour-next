@@ -7,6 +7,11 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import {
+  motivoPendienteDe,
+  reglaAutomaticaDe,
+  tonoMotivo,
+} from "@/lib/admin/conciliacion-auto";
 import { textoFaltanteGasto } from "@/lib/admin/conciliacion-parcial";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
@@ -22,9 +27,20 @@ interface MovimientosTableProps {
   /** Opciones del diálogo «Vincular gasto» (la página las precarga; los
    *  gastos con pago parcial traen «faltan $X de $Y» en la descripción). */
   gastos: SearchableSelectOption[];
+  /** Alias por cuenta bancaria: la bandeja mezcla cuentas y el operador
+   *  necesita ver de cuál es cada línea (columna «Cuenta»). */
+  cuentas?: Record<string, string>;
 }
 
-export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps) {
+export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTableProps) {
+  // La columna «Cuenta» solo aparece cuando la vista mezcla varias (con una
+  // sola cuenta filtrada sería una columna que repite lo mismo en cada fila).
+  const variasCuentas = useMemo(
+    () => new Set(movimientos.map((m) => m.cuenta_bancaria_id)).size > 1,
+    [movimientos],
+  );
+  const nombreCuenta = (id: string) => cuentas?.[id] ?? "—";
+
   const columns = useMemo<Array<DataTableColumn<MovimientoBancario>>>(
     () => [
       {
@@ -33,6 +49,16 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
         cellClassName: "whitespace-nowrap",
         cell: (m) => fmtDate(m.fecha),
       },
+      ...(variasCuentas
+        ? [
+            {
+              key: "cuenta",
+              header: "Cuenta",
+              cellClassName: "whitespace-nowrap text-muted-foreground text-xs",
+              cell: (m: MovimientoBancario) => nombreCuenta(m.cuenta_bancaria_id),
+            } as DataTableColumn<MovimientoBancario>,
+          ]
+        : []),
       {
         key: "descripcion",
         header: "Descripción",
@@ -191,6 +217,18 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
               title={m.notas ?? undefined}
             >
               {m.clasificacion?.nombre ?? "Clasificado"}
+              {/* Clasificado por una REGLA automática (traspaso entre cuentas,
+                  comisión del banco…): se distingue de lo que decidió una
+                  persona. */}
+              {reglaAutomaticaDe(m) && (
+                <Badge
+                  variant="outline"
+                  className="ml-1.5 border-sky-500/40 px-1 py-0 text-[10px] text-sky-600 dark:text-sky-400"
+                  title={`Clasificado automáticamente por la regla «${reglaAutomaticaDe(m)}»`}
+                >
+                  automático
+                </Badge>
+              )}
               {m.notas && (
                 <span className="block text-[10px] text-muted-foreground truncate max-w-[220px]">
                   {m.notas}
@@ -198,9 +236,39 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
               )}
             </span>
           ) : (
-            <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-              Pendiente
-            </Badge>
+            // PENDIENTE: POR QUÉ lo está, cuando el API lo sabe (15-sep-2026).
+            // «Pendiente» a secas no le decía nada al operador («no se están
+            // conciliando los gastos, salen como pendiente»).
+            (() => {
+              const motivo = motivoPendienteDe(m);
+              if (!motivo) {
+                return (
+                  <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+                    Pendiente
+                  </Badge>
+                );
+              }
+              const tono = tonoMotivo(motivo.codigo);
+              return (
+                <span className="block" title={motivo.detalle}>
+                  <Badge
+                    variant="outline"
+                    className={
+                      tono === "rojo"
+                        ? "border-destructive/50 text-destructive"
+                        : tono === "gris"
+                          ? "border-border text-muted-foreground"
+                          : "border-amber-500/50 text-amber-600"
+                    }
+                  >
+                    Pendiente
+                  </Badge>
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                    {motivo.etiqueta}
+                  </span>
+                </span>
+              );
+            })()
           ),
       },
       {
@@ -213,7 +281,9 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
         cell: (m) => <MovimientoActions movimiento={m} gastos={gastos} />,
       },
     ],
-    [gastos],
+    // `nombreCuenta` deriva de `cuentas`: se recalcula con ella.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [gastos, cuentas, variasCuentas],
   );
 
   return (
@@ -226,6 +296,8 @@ export function MovimientosTable({ movimientos, gastos }: MovimientosTableProps)
       searchText={(m) =>
         `${m.descripcion ?? ""} ${m.monto} ${m.referencia ?? ""} ${
           m.cobro_grupo ? folioTexto(m.cobro_grupo.grupo_folio) : ""
+        } ${cuentas?.[m.cuenta_bancaria_id] ?? ""} ${
+          motivoPendienteDe(m)?.etiqueta ?? ""
         }`
       }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"

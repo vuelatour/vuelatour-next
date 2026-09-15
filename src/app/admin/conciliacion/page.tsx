@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { EstadosCuentaTable } from "@/components/admin/conciliacion/estados-cuenta-table";
+import { AutoMatchButton } from "@/components/admin/conciliacion/auto-match-button";
+import { SugerenciasLoteDialog } from "@/components/admin/conciliacion/sugerencias-lote-dialog";
 import { ImportButton } from "@/components/admin/conciliacion/import-button";
 import { ReporteConciliacionButton } from "@/components/admin/conciliacion/reporte-conciliacion-button";
 import { MovimientosTable } from "@/components/admin/conciliacion/movimientos-table";
@@ -80,15 +82,22 @@ export default async function ConciliacionPage({
   const sp = await searchParams;
   const filtro: Filtro = FILTROS.includes(sp.f as Filtro) ? (sp.f as Filtro) : "todos";
 
-  const query: ListConciliacionQuery = { limit: 300 };
-  if (filtro === "pendientes") query.conciliado = false;
-  if (filtro === "conciliados") query.conciliado = true;
-
   // Periodo de la auditoría Paywise: mes corriente en hora Cancún por default.
   const hoy = todayCancun();
   const pwDesde = esFecha(sp.desde) ? sp.desde : `${hoy.slice(0, 7)}-01`;
   const pwHasta = esFecha(sp.hasta) ? sp.hasta : hoy;
   const pwCuenta = sp.cuenta && /^[0-9a-f-]{36}$/i.test(sp.cuenta) ? sp.cuenta : "";
+  // Rango EXPLÍCITO de la vista (?desde/?hasta): es el que heredan «Cruzar
+  // pendientes» y las sugerencias IA. Sin él, cada diálogo pone su default.
+  const desdeVista = esFecha(sp.desde) ? sp.desde : undefined;
+  const hastaVista = esFecha(sp.hasta) ? sp.hasta : undefined;
+
+  const query: ListConciliacionQuery = { limit: 300 };
+  if (filtro === "pendientes") query.conciliado = false;
+  if (filtro === "conciliados") query.conciliado = true;
+  // La bandeja mezclaba TODAS las cuentas: ?cuenta= la filtra (el API ya lo
+  // soportaba) y los chips de arriba la cambian.
+  if (pwCuenta) query.cuenta_bancaria_id = pwCuenta;
 
   const [
     { data: movs },
@@ -205,6 +214,18 @@ export default async function ConciliacionPage({
     parcial: notaParcialGasto(g),
   }));
 
+  /** URL de la vista: pestaña + cuenta + rango explícito (fuente única). */
+  const hrefVista = (f: Filtro, cuentaId: string) => {
+    const q = new URLSearchParams();
+    if (f !== "todos") q.set("f", f);
+    if (cuentaId) q.set("cuenta", cuentaId);
+    if (desdeVista) q.set("desde", desdeVista);
+    if (hastaVista) q.set("hasta", hastaVista);
+    const qs = q.toString();
+    return qs ? `/admin/conciliacion?${qs}` : "/admin/conciliacion";
+  };
+  const hrefConCuenta = (cuentaId: string) => hrefVista(filtro, cuentaId);
+
   const tabs: { key: Filtro; label: string }[] = [
     { key: "todos", label: "Todos" },
     { key: "pendientes", label: "Pendientes" },
@@ -233,6 +254,36 @@ export default async function ConciliacionPage({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* «Cruzar pendientes» (15-sep-2026): el auto-cruce ya no vive solo
+              dentro de la importación — se puede volver a correr cuando falló
+              o cuando el gasto se capturó después del estado de cuenta. La
+              auditoría Paywise tiene su propio «Conciliar los que cuadran». */}
+          {filtro !== "paywise" && (
+            <>
+              <AutoMatchButton
+                cuentas={cuentas.map((c) => ({ id: c.id, label: c.label }))}
+                cuentaId={pwCuenta || undefined}
+                desde={desdeVista}
+                hasta={hastaVista}
+              />
+              {/* La IA PROPONE (nunca liga sola): una lista de propuestas con
+                  confianza y razón, cada una con Vincular / Descartar. */}
+              <SugerenciasLoteDialog
+                cuentas={cuentas.map((c) => ({ id: c.id, label: c.label }))}
+                movimientos={movs.map((m) => ({
+                  id: m.id,
+                  fecha: m.fecha,
+                  monto: m.monto,
+                  tipo: m.tipo,
+                  descripcion: m.descripcion,
+                  referencia: m.referencia,
+                }))}
+                cuentaId={pwCuenta || undefined}
+                desde={desdeVista}
+                hasta={hastaVista}
+              />
+            </>
+          )}
           <ReporteConciliacionButton
             cuentas={cuentas}
             filtroActivo={
@@ -277,7 +328,7 @@ export default async function ConciliacionPage({
         {tabs.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "todos" ? "/admin/conciliacion" : `/admin/conciliacion?f=${t.key}`}
+            href={hrefVista(t.key, pwCuenta)}
             className={cn(
               "inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
               filtro === t.key
@@ -289,6 +340,28 @@ export default async function ConciliacionPage({
           </Link>
         ))}
       </div>
+
+      {/* Chips de CUENTA: la bandeja mezclaba todas y el operador no sabía a
+          cuál pertenecía cada línea. Conservan el filtro y el rango. */}
+      {cuentas.length > 1 && filtro !== "paywise" && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <span className="text-xs text-muted-foreground">Cuenta:</span>
+          {[{ id: "", label: "Todas" }, ...cuentas].map((c) => (
+            <Link
+              key={c.id || "todas"}
+              href={hrefConCuenta(c.id)}
+              className={cn(
+                "inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                pwCuenta === c.id
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+      )}
 
       {filtro === "paywise" ? (
         <PaywiseAuditoriaPanel
@@ -376,7 +449,11 @@ export default async function ConciliacionPage({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <MovimientosTable movimientos={movs} gastos={gastosOpts} />
+            <MovimientosTable
+              movimientos={movs}
+              gastos={gastosOpts}
+              cuentas={Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.alias]))}
+            />
           </CardContent>
         </Card>
       )}

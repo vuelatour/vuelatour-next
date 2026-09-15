@@ -21,6 +21,7 @@ import {
   parseEstadoCuentaAction,
   type ImportJobStatus,
 } from "@/app/admin/conciliacion/actions";
+import { resumenImportJob } from "@/lib/admin/conciliacion-auto";
 import type { MapeoColumnasPaywise, ParsedStatement } from "@/types/conciliacion";
 
 /** Cuenta del selector; `tipo` PASARELA = Paywise (bruto/comisión/neto). */
@@ -235,22 +236,27 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         setJob(st.data);
         if (st.data.estado === "PROCESANDO") return;
         stopPolling();
+        // Resumen POR RESULTADO (15-sep-2026): cuántos entraron, cuántos se
+        // cruzaron y con qué criterio, cuántos quedaron pendientes y —si el
+        // job murió a medias— cuántos con error y el motivo más común.
+        const res = resumenImportJob(st.data);
         if (st.data.estado === "ERROR") {
-          toast.error(st.data.error ?? "Error al importar");
+          toast.error(res.titulo, { description: res.descripcion, duration: 12000 });
+          // Lo ya insertado SÍ está en la bandeja: que se vea (el 15-sep el
+          // operador no lo vio y reimportó el mismo archivo dos veces).
+          router.refresh();
           return;
         }
-        const dups = st.data.duplicados_omitidos ?? 0;
-        if ((st.data.importados ?? 0) === 0 && dups > 0) {
-          // Re-importación del mismo estado de cuenta: nada nuevo, sin duplicar.
-          toast.info(
-            `Los ${dups} movimientos ya estaban importados: no se duplicó nada. El archivo quedó archivado.`,
-            { duration: 8000 },
-          );
+        if (res.tono === "exito") {
+          toast.success(res.titulo, {
+            description: res.descripcion || undefined,
+            duration: 10000,
+          });
         } else {
-          toast.success(
-            `Importados ${st.data.importados ?? 0} · conciliados automáticamente ${st.data.conciliados_auto ?? 0}` +
-              (dups > 0 ? ` · ${dups} ya existían (omitidos)` : ""),
-          );
+          toast.info(res.titulo, {
+            description: res.descripcion || undefined,
+            duration: 10000,
+          });
         }
         reset();
         onOpenChange(false);
@@ -333,10 +339,29 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
                   style={{ width: `${Math.max(2, job.progreso)}%` }}
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                La importación corre en el servidor: puedes cerrar esta ventana
-                y terminará igual.
-              </p>
+              {job.estado === "PROCESANDO" ? (
+                <p className="text-[11px] text-muted-foreground">
+                  La importación corre en el servidor: puedes cerrar esta ventana
+                  y terminará igual.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">{resumenImportJob(job).titulo}</p>
+                  {resumenImportJob(job).descripcion && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {resumenImportJob(job).descripcion}
+                    </p>
+                  )}
+                  {resumenImportJob(job).sugerirRecruce && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      Cierra esta ventana y usa «Cruzar pendientes» para volver a
+                      intentar el cruce de los que quedaron pendientes: NO vuelvas
+                      a importar el mismo archivo (se detecta como duplicado y no
+                      reintenta nada).
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
