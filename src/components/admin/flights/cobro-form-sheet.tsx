@@ -21,11 +21,12 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cancunInputToIso, fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import {
   CUENTAS_COBRO,
   CUENTAS_COBRO_VALUES,
   monedaDeCuenta,
+  montoSugeridoMxn,
 } from "@/lib/admin/cobros";
 import { registerCobroAction } from "@/app/admin/flights/actions";
 import {
@@ -124,6 +125,21 @@ interface CobroFormSheetProps {
   /** TC USD→MXN con el que se cotizó (null si la cotización no lo fijó).
       Manda como sugerencia al cobrar en MXN. */
   tcCotizacion?: number | null;
+  /**
+   * `vuelo.monto_total_mxn`: el total en pesos EXACTO que el cliente vio en
+   * su cotización (lo compuso el motor con los renglones capturados en pesos
+   * tal cual). FUENTE ÚNICA del «Total MXN» de esta ficha: multiplicar
+   * `usd × tc` por nuestra cuenta daba $99,999.81 donde la hoja decía
+   * $100,000.00 (vuelo #314, 17-sep-2026). null = el API no lo trae (vuelo
+   * sin pesos pactados o respuesta previa al deploy): entonces sí se estima.
+   */
+  montoTotalMxn?: number | null;
+  /**
+   * ¿El vuelo YA tiene cobros registrados? Decide el monto que se sugiere al
+   * pasar a MXN: sin cobros, los pesos completos de la cotización; con
+   * cobros, el pendiente convertido con el TC.
+   */
+  tieneCobros?: boolean;
   /** TC oficial de referencia (open.er-api / BCE) del DÍA DE LA COTIZACIÓN:
       respaldo cuando la cotización no fijó TC. null si el API no tiene dato. */
   tcOficial?: number | null;
@@ -195,6 +211,8 @@ export function CobroFormSheet({
   pendingUsd,
   cancelado = false,
   tcCotizacion = null,
+  montoTotalMxn = null,
+  tieneCobros = false,
   tcOficial = null,
   tcOficialFecha = null,
   paywiseComisionPct = PAYWISE_COMISION_PCT_DEFAULT,
@@ -206,6 +224,10 @@ export function CobroFormSheet({
   const [pending, startTransition] = useTransition();
   // Qué TC se prellenó (para el hint); se apaga si el usuario lo edita.
   const [tcPrefill, setTcPrefill] = useState<TcSugerido | null>(null);
+  // Último monto SUGERIDO por la hoja (USD al abrir, pesos al pasar a MXN):
+  // solo se pisa el importe mientras siga siendo esa sugerencia — un monto
+  // tecleado a mano nunca se toca.
+  const [montoSugerido, setMontoSugerido] = useState<number | null>(null);
   // Comisión % SUGERIDA por el método (Paywise): se recuerda para retirarla
   // al cambiar de método solo si sigue siendo la sugerida (nunca pisa una
   // comisión tecleada a mano).
@@ -229,9 +251,15 @@ export function CobroFormSheet({
 
   useEffect(() => {
     if (open) {
-      reset(defaults(montoPrefill, prefill));
+      const base = defaults(montoPrefill, prefill);
+      reset(base);
       setTcPrefill(null);
       setComisionSugerida(null);
+      // Con un prefill explícito de monto (p. ej. el abono de Paywise) NO hay
+      // sugerencia que pisar: ese importe es el dato bueno.
+      setMontoSugerido(
+        prefill?.monto != null && prefill.monto > 0 ? null : (base.monto as number),
+      );
     }
   }, [open, montoPrefill, prefill, reset]);
 
@@ -252,6 +280,22 @@ export function CobroFormSheet({
         ? { valor: tcOficial, fuente: "oficial" }
         : null;
 
+  /** Monto sugerido al cobrar en pesos (regla ÚNICA en `lib/admin/cobros`). */
+  const montoMxnSugerido = (tc: number): number | null =>
+    montoSugeridoMxn({ montoTotalMxn, pendienteUsd: pendingUsd, tc, tieneCobros, cancelado });
+
+  /** Solo se pisa el importe mientras siga siendo el que sugerimos nosotros. */
+  const montoEsSugerido = () => {
+    const actual = Number(getValues("monto"));
+    return !(actual > 0) || (montoSugerido != null && actual === montoSugerido);
+  };
+
+  const aplicarSugerenciaMonto = (n: number | null) => {
+    if (n == null || !montoEsSugerido()) return;
+    setValue("monto", n, { shouldValidate: true });
+    setMontoSugerido(n);
+  };
+
   // ÚNICO camino para cambiar la moneda: al pasar a MXN con el TC vacío,
   // se prellena con el sugerido (editable). Nunca pisa un TC ya tecleado.
   // Al salir de MXN el input del TC se desmonta pero RHF CONSERVA el valor:
@@ -259,6 +303,9 @@ export function CobroFormSheet({
   // se vuelva a sugerir con su hint). Un TC tecleado a mano se conserva
   // oculto — nunca viaja en USD por el guard de onSubmit — y reaparece al
   // regresar a MXN: cambiar de moneda por error no borra lo capturado.
+  // El MONTO viaja con la moneda por el mismo camino y con la misma regla:
+  // al pasar a MXN se sugiere en pesos y al volver a USD se restaura el
+  // pendiente, siempre que el operador no lo haya tecleado.
   const handleMonedaChange = (v: Moneda) => {
     setValue("moneda", v);
     if (v !== "MXN") {
@@ -267,13 +314,20 @@ export function CobroFormSheet({
         setValue("tc_usd_mxn", "");
       }
       setTcPrefill(null);
+      // De vuelta a dólares: el importe vuelve a ser el pendiente en USD.
+      if (!cancelado && pendingUsd > 0) {
+        aplicarSugerenciaMonto(Number(pendingUsd.toFixed(2)));
+      }
       return;
     }
-    if (!tcSugerido) return;
     const actual = getValues("tc_usd_mxn");
-    if (actual !== undefined && actual !== "" && Number(actual) > 0) return;
-    setValue("tc_usd_mxn", tcSugerido.valor, { shouldValidate: true });
-    setTcPrefill(tcSugerido);
+    const yaTecleado = actual !== undefined && actual !== "" && Number(actual) > 0;
+    if (!yaTecleado && tcSugerido) {
+      setValue("tc_usd_mxn", tcSugerido.valor, { shouldValidate: true });
+      setTcPrefill(tcSugerido);
+    }
+    const tcEfectivo = yaTecleado ? Number(actual) : (tcSugerido?.valor ?? 0);
+    aplicarSugerenciaMonto(montoMxnSugerido(tcEfectivo));
   };
 
   // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD,
@@ -343,11 +397,27 @@ export function CobroFormSheet({
       ? `Ojo: la cuenta es en ${monedaCuenta} y el cobro en ${moneda}. Verifica que sea la correcta.`
       : "Opcional · primero aparecen las cuentas en la moneda del cobro";
 
-  // Referencia de la cotización en pesos (informativa): con el TC de la
-  // cotización si existe; si no, con el oficial del día.
+  // Total en pesos de la ficha. FUENTE ÚNICA: `monto_total_mxn`, el número
+  // EXACTO que salió impreso en la cotización del cliente (lo compuso el
+  // motor, con las TUAS/extras capturados en pesos entrando tal cual). Solo
+  // cuando el vuelo no lo tiene se ESTIMA con `usd × tc` y se etiqueta «≈»:
+  // ese producto es el que decía $99,999.81 donde la hoja decía $100,000.00.
   const tcReferencia = tcSugerido?.valor ?? null;
-  const totalMxnReferencia =
-    tcReferencia != null ? montoTotalUsd * tcReferencia : null;
+  const totalMxnCotizado =
+    montoTotalMxn != null && Number.isFinite(montoTotalMxn) ? montoTotalMxn : null;
+  const totalMxnEstimado =
+    tcReferencia != null ? Math.round(montoTotalUsd * tcReferencia * 100) / 100 : null;
+  const totalMxnReferencia = totalMxnCotizado ?? totalMxnEstimado;
+
+  // Por qué el importe viene puesto (solo mientras siga siendo la sugerencia).
+  const montoHint =
+    montoSugerido == null || Number(monto) !== montoSugerido
+      ? undefined
+      : moneda === "MXN"
+        ? totalMxnCotizado != null && montoSugerido === totalMxnCotizado
+          ? "Los pesos EXACTOS de la cotización (lo que el cliente tiene enfrente)."
+          : "El pendiente convertido con el tipo de cambio."
+        : undefined;
 
   const usdEquivalente =
     moneda === "USD"
@@ -477,10 +547,10 @@ export function CobroFormSheet({
                     ? "TC oficial de referencia (hoy)"
                     : "TC de la cotización"
                 }
-                value={tcReferencia != null ? fmtDecimal(tcReferencia, 4) : "—"}
+                value={tcReferencia != null ? fmtTc(tcReferencia) : "—"}
               />
               <Dato
-                label="Total ≈ MXN"
+                label={totalMxnCotizado != null ? "Total MXN (cotización)" : "Total ≈ MXN"}
                 value={totalMxnReferencia != null ? fmtMxn(totalMxnReferencia) : "—"}
               />
             </div>
@@ -489,7 +559,7 @@ export function CobroFormSheet({
                 La cotización no fijó tipo de cambio; se usa el TC oficial de
                 referencia del día en que se cotizó
                 {diaTcOficial ? ` (${diaTcOficial})` : ""}:{" "}
-                {fmtDecimal(tcSugerido.valor, 4)} — el mismo que usan los Excel
+                {fmtTc(tcSugerido.valor)} — el mismo que usan los Excel
                 del balance.
               </p>
             )}
@@ -515,7 +585,7 @@ export function CobroFormSheet({
           </Field>
 
           <div className="grid grid-cols-[1fr_120px] gap-3">
-            <Field label="Monto" required error={errors.monto?.message}>
+            <Field label="Monto" required hint={montoHint} error={errors.monto?.message}>
               <Input
                 type="number"
                 step="0.01"
@@ -546,7 +616,7 @@ export function CobroFormSheet({
             >
               <Input
                 type="number"
-                step="0.0001"
+                step="0.000001"
                 min={0}
                 placeholder="20.50"
                 {...register("tc_usd_mxn")}

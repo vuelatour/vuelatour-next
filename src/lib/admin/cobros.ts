@@ -144,3 +144,37 @@ export function estadoCobroSemaforo(v: {
     title: `Total $${v.montoTotalUsd.toLocaleString("en-US")} USD sin ningún cobro${avisoSinTc}`,
   };
 }
+
+/**
+ * Monto SUGERIDO al cambiar el cobro a PESOS (17-sep-2026, pedido del cliente
+ * sobre el vuelo #314).
+ *
+ * El operador cobra lo que el cliente vio impreso. Ese número es
+ * `vuelo.monto_total_mxn` — lo compuso el motor y lo persistió el API — y NO
+ * es `monto_total_usd × tc`: los renglones capturados en pesos (TUAS, extras)
+ * entran al total tal cual sin pasar por el tipo de cambio, y el producto se
+ * desvía centavos («la hoja dice $100,000.00 y aquí sale $99,999.81»).
+ *
+ * - Vuelo SIN cobros: los pesos EXACTOS de la cotización.
+ * - Vuelo CON cobros: ya no aplica el total (parte está pagada) → el
+ *   pendiente en USD convertido con el TC, a centavos.
+ * - Cancelado: sin sugerencia — el importe retenido lo decide la oficina.
+ * - Sin datos suficientes: `null` (el campo se queda como está).
+ */
+export function montoSugeridoMxn(v: {
+  /** `vuelo.monto_total_mxn` (null = el vuelo no pactó pesos). */
+  montoTotalMxn: number | null;
+  /** Pendiente en USD (ya con la tolerancia de `pendienteCobro`). */
+  pendienteUsd: number;
+  /** TC que se va a usar en este cobro. */
+  tc: number;
+  tieneCobros: boolean;
+  cancelado: boolean;
+}): number | null {
+  if (v.cancelado) return null;
+  if (!v.tieneCobros && v.montoTotalMxn != null && v.montoTotalMxn > 0) {
+    return v.montoTotalMxn;
+  }
+  if (!(v.tc > 0) || !(v.pendienteUsd > 0)) return null;
+  return Math.round(v.pendienteUsd * v.tc * 100) / 100;
+}

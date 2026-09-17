@@ -423,7 +423,7 @@ export function EmitirFacturaButton({
                 type="number"
                 inputMode="decimal"
                 min="0"
-                step="0.0001"
+                step="0.000001"
                 value={tc}
                 onChange={(e) => setTc(e.target.value)}
                 className="font-mono"

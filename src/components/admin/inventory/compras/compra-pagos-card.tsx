@@ -38,6 +38,7 @@ import {
   updatePagoRolAction,
 } from "@/app/admin/inventory/compras/actions";
 import { fmtDateOnly } from "@/lib/datetime";
+import { fmtTc } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
   COMPRA_ROL_OPTIONS,
@@ -159,7 +160,7 @@ export function CompraPagosCard({
                   <TableCell className="text-right tabular-nums whitespace-nowrap">
                     {fmtMontoMoneda(p.monto, p.moneda)}
                     {p.moneda !== compra.moneda && p.tc_gasto != null && (
-                      <p className="text-[10px] text-muted-foreground">TC {Number(p.tc_gasto).toFixed(4)}</p>
+                      <p className="text-[10px] text-muted-foreground">TC {fmtTc(p.tc_gasto)}</p>
                     )}
                   </TableCell>
                   <TableCell className="text-xs">{MEDIO_PAGO_LABELS[p.medio_pago] ?? p.medio_pago}</TableCell>

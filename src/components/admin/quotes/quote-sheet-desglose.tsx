@@ -23,6 +23,7 @@ import {
   tuasDetalleLegado,
 } from "@/lib/admin/quote-sheet";
 import { upsertTuaLinea } from "@/lib/admin/tuas";
+import { fmtTc } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExtraConcepto, QuoteBreakdown, TuaLinea, TuasAeropuerto, TuasFila } from "@/types/quote";
 import {
@@ -490,7 +491,7 @@ export function QuoteSheetDesglose({
             <tr className={cn("total-mxn cot-fila", !filaMxnImpresa && "cot-fila--fantasma")} {...(!filaMxnImpresa ? UI : {})}>
               <td className="cot-ancla">
                 {lectura ? (
-                  `Total MXN${tc != null ? ` (T.C. ${numeroG(tc)})` : ""}`
+                  `Total MXN${tc != null ? ` (T.C. ${fmtTc(tc)})` : ""}`
                 ) : (
                   <>
                     {"Total MXN (T.C. "}
@@ -498,7 +499,7 @@ export function QuoteSheetDesglose({
                       id={idTc}
                       value={tc}
                       onChange={(n) => onCambio("tc_usd_mxn", n != null && n > 0 ? n : null)}
-                      formato={numeroG}
+                      formato={fmtTc}
                       placeholder="18.50"
                       ariaLabel="Tipo de cambio (MXN por USD)"
                       title="Opcional · si el pago entrará en pesos. Requerido con TUAS/extras en MXN."
@@ -626,8 +627,8 @@ function FilaTua({
               <option value="MXN">MXN</option>
             </select>
             {!capturada && fila.tc_aplicado != null && (
-              <span className="cot-marca" title={`Convertido con T.C. ${fila.tc_aplicado}`}>
-                T.C. {numeroG(fila.tc_aplicado)}
+              <span className="cot-marca" title={`Convertido con T.C. ${fmtTc(fila.tc_aplicado)}`}>
+                T.C. {fmtTc(fila.tc_aplicado)}
               </span>
             )}
           </span>

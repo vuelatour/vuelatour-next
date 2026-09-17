@@ -267,7 +267,7 @@ export function CubrirExternoDialog({
             </Label>
             <Input
               type="number"
-              step="0.0001"
+              step="0.000001"
               min={0}
               placeholder="Ej. 18.50"
               value={tc}

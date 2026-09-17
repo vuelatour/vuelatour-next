@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { EmitirFacturaButton } from "@/components/admin/invoices/emitir-factura-button";
 import { fmtDate } from "@/lib/datetime";
+import { fmtMxn, fmtUsd } from "@/lib/format";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { PendingFlight } from "@/types/invoices";
 
@@ -113,9 +114,13 @@ export function FacturasPendientesTable({
       cellClassName: "text-right font-mono text-xs",
       cell: (v) => (
         <>
+          {/* Los pesos EXACTOS de la cotización (`monto_total_mxn`), con los
+              MISMOS centavos que el resto del panel: `toLocaleString` sin
+              decimales fijos pintaba «$100,000» donde la hoja decía
+              «$100,000.00 MXN» (17-sep-2026). */}
           {v.monto_total_mxn
-            ? `$${Number(v.monto_total_mxn).toLocaleString("es-MX")} MXN`
-            : `$${Number(v.monto_total_usd).toLocaleString("en-US")} USD`}
+            ? fmtMxn(v.monto_total_mxn)
+            : `${fmtUsd(v.monto_total_usd)} USD`}
           {!v.monto_total_mxn && (
             <span
               className="ml-2 rounded-full border border-amber-500/50 px-1.5 py-0.5 font-sans text-[10px] text-amber-600"

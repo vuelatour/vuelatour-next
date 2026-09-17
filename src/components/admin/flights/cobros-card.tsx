@@ -95,6 +95,10 @@ interface CobrosCardProps {
   voucherUrls?: Record<string, string>;
   /** TC con el que se cotizó (sugerencia al cobrar en MXN). */
   tcCotizacion?: number | null;
+  /** `vuelo.monto_total_mxn`: los pesos EXACTOS que el cliente vio en su
+   *  cotización. Se pasan al formulario de cobro para no recalcularlos
+   *  (`usd × tc` daba un centavo de diferencia, vuelo #314). */
+  montoTotalMxn?: number | null;
   /** TC oficial de referencia del día de la cotización (respaldo si la
    *  cotización no fijó TC). */
   tcOficial?: number | null;
@@ -124,6 +128,7 @@ export function CobrosCard({
   cobros,
   voucherUrls = {},
   tcCotizacion = null,
+  montoTotalMxn = null,
   tcOficial = null,
   tcOficialFecha = null,
   paywiseComisionPct,
@@ -453,6 +458,8 @@ export function CobrosCard({
         pendingUsd={pendingUsd}
         cancelado={cancelado}
         tcCotizacion={tcCotizacion}
+        montoTotalMxn={montoTotalMxn}
+        tieneCobros={cobros.length > 0}
         tcOficial={tcOficial}
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}

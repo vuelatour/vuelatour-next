@@ -58,7 +58,7 @@ import {
   PAYWISE_COMISION_PCT_DEFAULT,
 } from "@/lib/admin/metodos-pago";
 import { cancunInputToIso, fmtDateOnly, todayCancun } from "@/lib/datetime";
-import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { MetodoPago } from "@/types/quote";
 import type {
@@ -526,7 +526,7 @@ export function GrupoCobroDialog({
               <Dato label="Total USD" value={fmtUsd(total)} />
               <Dato
                 label={tcSugerido?.fuente === "oficial" ? "TC oficial de referencia" : "TC del grupo"}
-                value={tcSugerido ? fmtDecimal(tcSugerido.valor, 4) : "—"}
+                value={tcSugerido ? fmtTc(tcSugerido.valor) : "—"}
               />
               <Dato
                 label="Aviones vivos"
@@ -588,7 +588,7 @@ export function GrupoCobroDialog({
             >
               <Input
                 type="number"
-                step="0.0001"
+                step="0.000001"
                 min={0}
                 placeholder="20.50"
                 {...register("tc_usd_mxn")}
@@ -792,7 +792,7 @@ export function GrupoCobroDialog({
               </div>
               {preview.moneda === "MXN" && preview.tc_usd_mxn != null && (
                 <p className="mt-1.5 text-muted-foreground">
-                  TC {fmtDecimal(preview.tc_usd_mxn, 4)} · cada parte se guarda en pesos con
+                  TC {fmtTc(preview.tc_usd_mxn)} · cada parte se guarda en pesos con
                   este mismo TC.
                 </p>
               )}

@@ -446,6 +446,11 @@ export interface VueloParaCobro {
   monto_total_usd: number;
   total_cobrado: number;
   tc_usd_mxn: number | null;
+  /** Los pesos EXACTOS de la cotización (`vuelo.monto_total_mxn`): el
+   *  formulario los muestra tal cual en vez de recalcular `usd × tc`. */
+  monto_total_mxn: number | null;
+  /** ¿El vuelo ya tiene cobros? (decide el monto sugerido al cobrar en MXN). */
+  tiene_cobros: boolean;
 }
 
 export async function vueloParaCobroAction(
@@ -462,6 +467,9 @@ export async function vueloParaCobroAction(
         monto_total_usd: Number(s.monto_total_usd) || 0,
         total_cobrado: Number(s.total_cobrado) || 0,
         tc_usd_mxn: s.tc_usd_mxn != null ? Number(s.tc_usd_mxn) : null,
+        monto_total_mxn:
+          s.monto_total_mxn != null ? Number(s.monto_total_mxn) : null,
+        tiene_cobros: (s.cobros?.length ?? 0) > 0,
       },
     };
   } catch (err) {

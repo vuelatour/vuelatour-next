@@ -53,7 +53,7 @@ import { etiquetaModoParticion, mensajeErrorGrupo } from "@/lib/admin/grupos-ui"
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { rutaReciboSobreGrupo } from "@/lib/admin/pdf-urls";
 import { fmtDate } from "@/lib/datetime";
-import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { GrupoDetalle, SobreSalida } from "@/types/grupos";
 import { GrupoCobroDialog, type TipoSobre } from "./grupo-cobro-dialog";
@@ -262,7 +262,7 @@ export function GrupoCobrosCard({
                         )}
                         {s.moneda === "MXN" && s.tc_usd_mxn != null && s.tc_usd_mxn > 0 && (
                           <span className="text-[10px] text-muted-foreground font-normal">
-                            (tc {fmtDecimal(s.tc_usd_mxn, 4)})
+                            (tc {fmtTc(s.tc_usd_mxn)})
                           </span>
                         )}
                         <Badge

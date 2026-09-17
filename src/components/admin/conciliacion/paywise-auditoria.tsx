@@ -935,6 +935,8 @@ function RegistrarCobroDesdePaywise({
           }
           cancelado={ctx.estado === "CANCELADO"}
           tcCotizacion={ctx.tc_usd_mxn}
+          montoTotalMxn={ctx.monto_total_mxn}
+          tieneCobros={ctx.tiene_cobros}
           paywiseComisionPct={paywiseComisionPct}
           prefill={prefill}
           onRegistrado={() => {

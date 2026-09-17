@@ -43,7 +43,7 @@ import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import { tuasMxnSinTc, upsertTuaLinea } from "@/lib/admin/tuas";
 import { TuasGrupoCard } from "@/components/admin/grupos/tuas-grupo-card";
 import { fmtDateTime, TZ_LABEL } from "@/lib/datetime";
-import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Airport } from "@/types/airports";
 import type { Client } from "@/types/clients";
@@ -872,7 +872,7 @@ export function GrupoForm(props: GrupoFormProps) {
                 label="Tipo de cambio (MXN por USD)"
                 hint={grupo.tc_usd_mxn == null ? "Sin TC · el grupo se cobra en dólares" : undefined}
               >
-                {grupo.tc_usd_mxn != null ? fmtDecimal(grupo.tc_usd_mxn, 4) : "—"}
+                {grupo.tc_usd_mxn != null ? fmtTc(grupo.tc_usd_mxn) : "—"}
               </DatoLectura>
               <DatoLectura label="Pase de abordar" hint="Exenta TUAS (excepto CZM)">
                 {grupo.pase_abordar ? "Sí" : "No"}
@@ -960,7 +960,7 @@ export function GrupoForm(props: GrupoFormProps) {
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       type="number"
-                      step="0.0001"
+                      step="0.000001"
                       min={0}
                       placeholder="Ej. 18.50"
                       className="w-32"

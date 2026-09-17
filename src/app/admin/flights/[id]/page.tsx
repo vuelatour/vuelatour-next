@@ -723,6 +723,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             cobros={snapshot.cobros}
             voucherUrls={voucherUrls}
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
+            // Los pesos EXACTOS de la cotización (fuente única del API): el
+            // formulario de cobro los muestra y los sugiere tal cual.
+            montoTotalMxn={
+              snapshot.monto_total_mxn != null ? Number(snapshot.monto_total_mxn) : null
+            }
             tcOficial={tcOficial}
             tcOficialFecha={diaCotizacion}
             paywiseComisionPct={paywiseComisionPct}

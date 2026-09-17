@@ -511,6 +511,12 @@ export function QuoteWorkspace({
         pendingUsd={pendienteUsd}
         cancelado={vueloCancelado}
         tcCotizacion={quote.tc_usd_mxn != null ? Number(quote.tc_usd_mxn) : null}
+        // Los pesos EXACTOS que salieron impresos en esta cotización: el
+        // formulario los muestra y los sugiere sin recalcular `usd × tc`.
+        montoTotalMxn={
+          quote.monto_total_mxn != null ? Number(quote.monto_total_mxn) : null
+        }
+        tieneCobros={cobros.length > 0}
         tcOficial={tcOficial}
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}

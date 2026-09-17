@@ -11,7 +11,7 @@ import {
   textoOperacionParte,
   textoOperacionPorPersona,
 } from "@/lib/admin/grupos-ui";
-import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Consolidado, LineaConsolidada } from "@/types/grupos";
 
@@ -142,7 +142,7 @@ export function ConsolidadoCard({
             <div className="flex justify-end">
               <span className="font-mono text-xs text-muted-foreground">
                 {fmtMxn(c.total_mxn)}
-                {tcUsdMxn ? ` · tc ${fmtDecimal(tcUsdMxn, 4)}` : ""}
+                {tcUsdMxn ? ` · tc ${fmtTc(tcUsdMxn)}` : ""}
               </span>
             </div>
           )}

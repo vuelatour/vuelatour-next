@@ -72,6 +72,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
   botones/menús llevan `noLink: true` si la fila tiene `rowHref`.
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
+- Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
+  `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
+  ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
+  pinta con `fmtDecimal(tc, 4)`, `toFixed(4)` ni `numeroG`.
 - Cotización de GRUPO (4-sep-2026): `types/grupos.ts` (1:1 con /v1/grupos),
   `lib/admin/grupos-ui.ts` (folioTexto "G-12", estados, semáforos vía
   estadoCobroSemaforo, `mensajeErrorGrupo` para TODOS los 409 estructurados),
@@ -441,6 +445,60 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
 - El recibo de cada cobro es un `<a target="_blank">` al proxy
   (`rutaReciboDeCobro`): se ve en una pestaña y desde ahí se descarga.
 
+## Tipo de cambio: 6 decimales y el total en pesos se LEE (17-sep-2026)
+
+- **El bug (vuelo #314, pedido del cliente)**: la hoja imprimía «Total MXN
+  (T.C. 16.9916) $100,000.00 MXN» y el diálogo «Registrar cobro» decía
+  «Total ≈ MXN $99,999.81». El operador captura el T.C. con los decimales que
+  hacen cuadrar los pesos (100000 / 5885.25 = 16.991631…), pero (a) la BD
+  guardaba el T.C. en `numeric(10,4)` y lo redondeaba a espaldas del motor, y
+  (b) el panel lo PINTABA con `fmtDecimal(tc, 4)` / `numeroG` (el `:g` de
+  Python = 6 cifras SIGNIFICATIVAS). Cita: «ese cambio cuando hace la
+  conversión a pesos, no sé por qué cuando son muchos decimales como que
+  siempre cambia a como está en la cotización».
+- **REGLA 1 — el total en pesos de un vuelo se LEE, jamás se recalcula.**
+  `vuelo.monto_total_mxn` es el número EXACTO que el cliente vio impreso (lo
+  compuso el motor: los renglones capturados en pesos —TUAS, extras— entran
+  tal cual SIN pasar por el T.C.). `monto_total_usd × tc_usd_mxn` NO es ese
+  número, aunque el T.C. tenga todos sus decimales. Solo se estima con el
+  producto cuando el vuelo no trae `monto_total_mxn`, y entonces se etiqueta
+  «≈» en la UI.
+- **REGLA 2 — un T.C. se ESCRIBE con `fmtTc`** (`lib/format.ts`): hasta
+  **6 decimales, sin ceros de cola** (`16.991632` → «16.991632»; `16.9916` →
+  «16.9916»; `18` → «18»; null/vacío → cadena VACÍA, quien llama decide el
+  «—»). Es la traducción literal de `_tc_txt` de pyservices
+  (`app/services/_formato.py`) y la misma precisión que persiste el API
+  (`numeric(12,6)`, `common/tc.util.ts`). **Nunca** `fmtDecimal(tc, 4)`,
+  `toFixed(4)` ni `numeroG` para un T.C.: `numeroG` queda SOLO para las horas
+  (`{tiempo_cobrable_hr:g}` del armador). Inputs de T.C.: `step="0.000001"`.
+  - Cubre: `vuelo.tc_usd_mxn`, `cobro_vuelo`/`cobro_grupo`, `vuelo_grupo`,
+    `cotizacion_version_history` y `gasto.tc_gasto`. **NO** cubre
+    `tipo_cambio_oficial.tc`, `compra.tc_usd_mxn` ni
+    `inventario_movimiento.tc_usd_mxn` (siguen en 4 decimales a propósito:
+    referencia diaria y compras/inventario, no el precio que el cliente ve).
+  - Inputs de T.C. con `step="0.000001"` INCLUIDO el del CFDI
+    (`invoices/emitir-factura-button.tsx`): su T.C. se persiste en
+    `vuelo.tc_usd_mxn`, así que un `step` de 4 decimales invalidaba el
+    número exacto que hace cuadrar los pesos.
+  - Un total en pesos se pinta con `fmtMxn` (dos decimales + «MXN»), nunca
+    con `toLocaleString("es-MX")` a secas: la bandeja de facturas decía
+    «$100,000» donde la hoja decía «$100,000.00 MXN».
+- **Paridad entre repos** (panel ⇄ pyservices ⇄ API): el texto del T.C. es
+  el MISMO carácter por carácter. Lo congelan `lib/__tests__/format.test.ts`
+  (misma tabla que `tests/test_cotizacion_pdf.py::test_tc_txt…` de
+  pyservices) y, de punta a punta, el fixture **`hoja-tc6`** de la hoja
+  editable (`__fixtures__/hoja-tc6.payload.json`, T.C. 16.991632): si el
+  panel o pyservices recortan el T.C., ese fixture falla. Tras tocar el
+  armador de pyservices hay que regenerar con `npm run gen:hoja-fixture`.
+- **«Registrar cobro»** (`flights/cobro-form-sheet.tsx`): recibe
+  `montoTotalMxn` (= `vuelo.monto_total_mxn`) y `tieneCobros`. La ficha pinta
+  **«Total MXN (cotización)»** con el persistido (y «Total ≈ MXN» solo cuando
+  no existe). Al pasar la moneda a MXN, el importe sugerido sale de
+  `montoSugeridoMxn` (`lib/admin/cobros.ts`, regla ÚNICA): sin cobros = los
+  pesos exactos de la cotización; con cobros = `round2(pendiente_usd × tc)`;
+  cancelado = sin sugerencia. La sugerencia NUNCA pisa un importe tecleado
+  (misma regla que el T.C. prellenado) y volver a USD restaura el pendiente.
+
 ## Conciliación Paywise (9-sep-2026)
 
 - Cuenta bancaria con `tipo` BANCO | PASARELA (Paywise = PASARELA): el
@@ -668,8 +726,10 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
 - Contrato: `valores` (subconjunto RHF que se imprime) + `onCambio(campo,
   valor)`; el dinero SIEMPRE del `breakdown`; `data-cot-ui` marca la croma
   que no se imprime. Test de estructura vs el HTML de pyservices:
-  `components/admin/quotes/__tests__/quote-sheet.test.tsx` (fixture
-  `__fixtures__/hoja1.html` generado con `npm run gen:hoja-fixture`).
+  `components/admin/quotes/__tests__/quote-sheet.test.tsx` (fixtures
+  `__fixtures__/*.html` generados con `npm run gen:hoja-fixture`: `hoja1`,
+  `hoja-normal`, `hoja-multidia`, `hoja-externo` y `hoja-tc6` — este último
+  congela el T.C. de 6 decimales, ver «Tipo de cambio» más arriba).
 - SIN horas para el cliente (15-sep-2026, pedido sobre el PDF del folio
   #314): la hoja ya NO tiene el bloque «Traslados». En `.meta`, bajo «Fecha
   de cotización», va **`Fecha del vuelo: dd/mm/aaaa`** (plural + rango

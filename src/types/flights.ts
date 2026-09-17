@@ -82,8 +82,16 @@ export interface FlightListItem {
   monto_total_usd: string;
   /** TC USD→MXN con el que se cotizó (numeric como string; null si la
       cotización no lo fijó). Sirve para prellenar el TC al cobrar en MXN.
+      Desde el 17-sep-2026 llega con hasta 6 DECIMALES (`numeric(12,6)`):
+      píntalo SIEMPRE con `fmtTc`, nunca con 4 decimales fijos.
       Opcional-defensivo: listados/respuestas previas al deploy no lo traen. */
   tc_usd_mxn?: string | null;
+  /** Total en PESOS de la cotización (`vuelo.monto_total_mxn`), compuesto y
+      persistido por el motor: es el número que el cliente vio impreso. FUENTE
+      ÚNICA — no lo recalcules con `monto_total_usd × tc_usd_mxn` (daba
+      $99,999.81 donde la hoja decía $100,000.00, vuelo #314). null = el vuelo
+      no pactó pesos; opcional-defensivo por respuestas previas al deploy. */
+  monto_total_mxn?: string | null;
   /** Nombres de los pasajeros (manifiesto, para tramitar permisos). */
   pasajeros_nombres?: string[];
   /** Vuelo abierto: el itinerario/precio se cierra al final. */

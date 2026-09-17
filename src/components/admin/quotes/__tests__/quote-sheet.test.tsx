@@ -229,8 +229,28 @@ const CASOS: Caso[] = Object.entries(ESCENARIOS)
 const render = (props: QuoteSheetProps) => parsearHoja(renderToString(<QuoteSheet {...props} />));
 
 describe("fixtures", () => {
-  it("existen los 4 fixtures generados con pyservices (npm run gen:hoja-fixture)", () => {
-    expect(CASOS.map((c) => c.nombre).sort()).toEqual(["hoja-externo", "hoja-multidia", "hoja-normal", "hoja1"]);
+  it("existen los 5 fixtures generados con pyservices (npm run gen:hoja-fixture)", () => {
+    expect(CASOS.map((c) => c.nombre).sort()).toEqual([
+      "hoja-externo",
+      "hoja-multidia",
+      "hoja-normal",
+      "hoja-tc6",
+      "hoja1",
+    ]);
+  });
+
+  /**
+   * DERIVA DEL T.C. ENTRE REPOS (17-sep-2026): el fixture `hoja-tc6` lleva el
+   * tipo de cambio del vuelo #314 (16.991632, 6 decimales). pyservices lo
+   * imprime con `_tc_txt` y el panel con `fmtTc`; con el `numeroG`/`:g` de
+   * antes el texto se recortaba a «16.9916» y el documento dejaba de cuadrar
+   * con sus propios pesos. Los cinco casos de `describe.each` comparan el
+   * texto completo, esto solo deja el porqué a la vista de quien lo rompa.
+   */
+  it("hoja-tc6 congela el T.C. COMPLETO del PDF (no «16.9916»)", () => {
+    const html = CASOS.find((c) => c.nombre === "hoja-tc6")!.html;
+    expect(html).toContain("Total MXN (T.C. 16.991632)");
+    expect(html).not.toMatch(/T\.C\. 16\.9916(?!32)/);
   });
 });
 

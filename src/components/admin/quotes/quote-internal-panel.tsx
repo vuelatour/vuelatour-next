@@ -44,7 +44,7 @@ import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card
 import type { RutaSugerida } from "@/app/admin/quotes/actions";
 import { textoCantidadUnitario } from "@/lib/admin/extras";
 import { METODOS_PAGO, metodoPagoLabel } from "@/lib/admin/metodos-pago";
-import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Airport } from "@/types/airports";
 import type { EscalaInput, MetodoPago, QuoteBreakdown, TipoTarifa } from "@/types/quote";
@@ -375,7 +375,7 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
         {costoExtEsMxn && (
           <span className="font-mono">
             {" "}
-            ({fmtMxn(costoExtNativo)} ÷ tc {fmtDecimal(costoExtTc, 4)})
+            ({fmtMxn(costoExtNativo)} ÷ tc {fmtTc(costoExtTc)})
           </span>
         )}{" "}
         = <span className="font-mono font-semibold">{fmtUsd(margenExternoUsd)}</span>
@@ -2221,7 +2221,7 @@ function Preview({
                   <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                     <span>
                       Componentes USD: {fmtUsd(componentesUsd)}
-                      {tcUsdMxn ? ` × tc ${fmtDecimal(tcUsdMxn, 4)}` : ""}
+                      {tcUsdMxn ? ` × tc ${fmtTc(tcUsdMxn)}` : ""}
                     </span>
                     <span className="font-mono shrink-0 text-foreground">
                       {componentesUsdEnMxn != null ? fmtMxn(componentesUsdEnMxn) : "—"}
@@ -2239,7 +2239,7 @@ function Preview({
               ) : (
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">
-                    Total MXN{tcUsdMxn ? ` (tc ${fmtDecimal(tcUsdMxn, 4)})` : ""}
+                    Total MXN{tcUsdMxn ? ` (tc ${fmtTc(tcUsdMxn)})` : ""}
                   </span>
                   <span className="font-mono font-semibold">{fmtMxn(breakdown.totales.total_mxn)}</span>
                 </div>

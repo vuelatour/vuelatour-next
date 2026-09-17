@@ -441,10 +441,35 @@ export function escenarioExterno(): Omit<QuoteSheetProps, "mapaSvg"> {
   };
 }
 
+// ===== hoja-tc6: el MISMO escenario que `hoja-normal` pero con un T.C. de 6
+// DECIMALES (el caso del vuelo #314, 17-sep-2026). El operador captura el
+// tipo de cambio con los decimales que hacen cuadrar los pesos y la hoja
+// tiene que imprimirlo COMPLETO: con el `:g` de antes («16.9916») el texto
+// del panel dejaba de coincidir con el del PDF y el total en pesos no se
+// reproducía. Es la prueba de deriva entre `fmtTc` (panel) y `_tc_txt`
+// (pyservices): si alguno recorta el T.C., este fixture falla. =====
+const TC_SEIS_DECIMALES = 16.991632;
+/** `round2(total_usd × TC)` con el T.C. COMPLETO (con «16.9916» daría 92,489.53). */
+const TOTAL_MXN_TC6 = 92489.7;
+
+export function escenarioTc6(): Omit<QuoteSheetProps, "mapaSvg"> {
+  const base = escenarioNormal();
+  return {
+    ...base,
+    valores: { ...base.valores, tc_usd_mxn: TC_SEIS_DECIMALES },
+    breakdown: {
+      ...base.breakdown,
+      totales: { ...base.breakdown!.totales, total_mxn: TOTAL_MXN_TC6 },
+    } as QuoteBreakdown,
+    documento: { ...base.documento, folio: "1314" },
+  };
+}
+
 /** Nombre del fixture → escenario (props sin `mapaSvg`, que sale del HTML). */
 export const ESCENARIOS: Record<string, () => Omit<QuoteSheetProps, "mapaSvg">> = {
   hoja1: escenarioHoja1,
   "hoja-normal": escenarioNormal,
   "hoja-multidia": escenarioMultidia,
   "hoja-externo": escenarioExterno,
+  "hoja-tc6": escenarioTc6,
 };

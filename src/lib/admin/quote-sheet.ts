@@ -41,7 +41,15 @@ export function numero2(v: number | string | null | undefined): string {
   return moneyFmt.format(Number.isFinite(n) ? n : 0);
 }
 
-/** Python `:g` (6 dígitos significativos, sin ceros de cola): 2.4 → "2.4", 18.1 → "18.1", 1 → "1". */
+/**
+ * Python `:g` (6 dígitos SIGNIFICATIVOS, sin ceros de cola): 2.4 → "2.4",
+ * 18.1 → "18.1", 1 → "1".
+ *
+ * SOLO para las HORAS (`{tiempo_cobrable_hr:g}` del armador). Para un TIPO DE
+ * CAMBIO usa `fmtTc` de `@/lib/format` (hasta 6 DECIMALES): `:g` recortaba
+ * 16.991632 a «16.9916» y la hoja dejaba de cuadrar con sus propios pesos
+ * (vuelo #314, 17-sep-2026) — pyservices tampoco imprime ya el T.C. con `:g`.
+ */
 export function numeroG(v: number | string | null | undefined): string {
   const n = typeof v === "string" ? Number(v) : (v ?? 0);
   if (!Number.isFinite(n)) return "0";
