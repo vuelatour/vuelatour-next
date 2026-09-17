@@ -84,6 +84,18 @@ function buildColumns(meId: string): Array<DataTableColumn<User>> {
               {u.id === meId && (
                 <Badge variant="outline" className="text-[10px]">Tú</Badge>
               )}
+              {/* Nombre corto del calendario (17-sep-2026): solo si la
+                  oficina lo capturó — sin él, Google muestra el primer
+                  nombre. Ausente con API viejo. */}
+              {u.apodo && (
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[10px] text-muted-foreground"
+                  title={`Nombre corto en Google Calendar: “${u.apodo} N4142R cun-mid-cun 10:00”`}
+                >
+                  {u.apodo}
+                </Badge>
+              )}
             </div>
             <div className="text-xs text-muted-foreground truncate">{u.email}</div>
           </div>
@@ -162,7 +174,7 @@ export function UsersTable({ users, meId }: { users: User[]; meId: string }) {
       columns={columns}
       rows={users}
       rowKey={(u) => u.id}
-      searchText={(u) => `${u.nombre} ${u.email ?? ""} ${u.rol}`}
+      searchText={(u) => `${u.nombre} ${u.apodo ?? ""} ${u.email ?? ""} ${u.rol}`}
       searchPlaceholder="Buscar usuario (nombre, correo, rol)…"
     />
   );

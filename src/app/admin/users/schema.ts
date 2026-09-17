@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { APODO_MAX } from "@/lib/admin/usuario-apodo";
 
 const RolEnum = z.enum([
   "ADMIN",
@@ -26,6 +27,15 @@ export const UserFormSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("")),
+  // Nombre corto para el título del evento de Google Calendar (17-sep-2026).
+  // null explícito = BORRARLO (sobrevive al stripEmpty del action; el "" se
+  // descartaría y vaciarlo sería un no-op silencioso). Tope = @MaxLength del
+  // DTO del API.
+  apodo: z
+    .string()
+    .max(APODO_MAX, `Máximo ${APODO_MAX} caracteres`)
+    .nullable()
+    .optional(),
   es_piloto: z.boolean().default(false),
   es_piloto_externo: z.boolean().default(false),
   telefono: z
@@ -44,6 +54,8 @@ export const UserInviteSchema = z.object({
   email: z.string().email("Email inválido").max(200),
   rol: RolEnum,
   estado: EstadoEnum.default("ACTIVO"),
+  /** Opcional en el alta: se puede capturar después al editar. */
+  apodo: z.string().max(APODO_MAX, `Máximo ${APODO_MAX} caracteres`).optional(),
 });
 
 export type UserInviteValues = z.input<typeof UserInviteSchema>;

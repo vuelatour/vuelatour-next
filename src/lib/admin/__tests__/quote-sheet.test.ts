@@ -4,10 +4,13 @@ import {
   descuentoImpresoUsd,
   etiquetaExtra,
   extraerMapaSvgDeHtml,
+  fechaCorta,
+  fechaCortaFlexible,
   fechaDia,
   fechaLegible,
   fechaLegibleDeInput,
   fechaLegibleFlexible,
+  fechaVueloImpresa,
   fechasTrasladoImpresas,
   horasTramoTexto,
   modelosCotizadosPdf,
@@ -192,8 +195,8 @@ describe("reglas del armador replicadas (fidelidad 8-sep-2026)", () => {
       },
       (_, l) => l.pdf_oculto === true,
     );
-    expect(r.inicial).toEqual({ texto: "20/11/2026 06:00", tramoIdx: null });
-    expect(r.final).toEqual({ texto: "23/11/2026 12:00", tramoIdx: null });
+    expect(r.inicial).toEqual({ texto: "20/11/2026 06:00", tramoIdx: null, valor: "2026-11-20T06:00" });
+    expect(r.final).toEqual({ texto: "23/11/2026 12:00", tramoIdx: null, valor: "2026-11-23T12:00" });
   });
 
   it("fechasTrasladoImpresas: último tramo oculto → salida planeada del último visible (cascada del API)", () => {
@@ -207,10 +210,18 @@ describe("reglas del armador replicadas (fidelidad 8-sep-2026)", () => {
       ],
     };
     const oc = (_: number, l: { pdf_oculto?: boolean }) => l.pdf_oculto === true;
-    expect(fechasTrasladoImpresas(base, oc).final).toEqual({ texto: "22/11/2026 09:00", tramoIdx: 1 });
+    expect(fechasTrasladoImpresas(base, oc).final).toEqual({
+      texto: "22/11/2026 09:00",
+      tramoIdx: 1,
+      valor: "2026-11-22T09:00",
+    });
     // Sin plan propio: el visible no es primero ni último → cae a la fecha del vuelo.
     const sinPlan = { ...base, escalas: base.escalas.map((e) => ({ ...e, fecha_salida_plan: undefined })) };
-    expect(fechasTrasladoImpresas(sinPlan, oc).final).toEqual({ texto: "23/11/2026 12:00", tramoIdx: null });
+    expect(fechasTrasladoImpresas(sinPlan, oc).final).toEqual({
+      texto: "23/11/2026 12:00",
+      tramoIdx: null,
+      valor: "2026-11-23T12:00",
+    });
     // Primer tramo oculto y el único visible es el último: hereda la fecha final.
     const soloUltimo = {
       ...base,
@@ -219,7 +230,61 @@ describe("reglas del armador replicadas (fidelidad 8-sep-2026)", () => {
         { origen_iata: "MID", destino_iata: "CUN", millas_nauticas: 1 },
       ],
     };
-    expect(fechasTrasladoImpresas(soloUltimo, oc).inicial).toEqual({ texto: "23/11/2026 12:00", tramoIdx: 1 });
+    expect(fechasTrasladoImpresas(soloUltimo, oc).inicial).toEqual({
+      texto: "23/11/2026 12:00",
+      tramoIdx: 1,
+      valor: "2026-11-23T12:00",
+    });
+  });
+
+  /**
+   * «Fecha del vuelo» de `.meta` (15-sep-2026): espejo de `_fecha_corta` /
+   * `_fecha_vuelo_html` de pyservices. Sin hora, día de PARED de Cancún.
+   */
+  it("fechaCorta: ISO → día de pared en Cancún, sin hora", () => {
+    // 02:30 UTC del 16 es todavía el 15 en Cancún (UTC−5).
+    expect(fechaCorta("2026-09-16T02:30:00Z")).toBe("15/09/2026");
+    expect(fechaCorta("2026-09-15T21:00:00Z")).toBe("15/09/2026");
+    // Un día suelto YA es pared: no pasa por la zona (no retrocede un día).
+    expect(fechaCorta("2026-09-15")).toBe("15/09/2026");
+    // Sin dato → "" (la línea no se pinta; jamás «Por confirmar»).
+    expect(fechaCorta(null)).toBe("");
+    expect(fechaCorta("")).toBe("");
+    expect(fechaCorta("   ")).toBe("");
+    // Sin zona se asume UTC (como `_fecha_corta`), nunca la del navegador.
+    expect(fechaCorta("2026-09-16T02:30:00")).toBe("15/09/2026");
+    expect(fechaCorta("2026-09-16T02:30")).toBe("15/09/2026");
+    // No parseable → tal cual (React lo escapa).
+    expect(fechaCorta("por confirmar")).toBe("por confirmar");
+  });
+
+  it("fechaCortaFlexible: el datetime-local de pared no se convierte", () => {
+    expect(fechaCortaFlexible("2026-09-12T08:00")).toBe("12/09/2026");
+    // Pared 23:00 del 12: si se tratara como UTC caería el 12 a las 18:00…
+    // pero como ISO con Z el 13T02:30 sí es el 12 en Cancún.
+    expect(fechaCortaFlexible("2026-09-12T23:00")).toBe("12/09/2026");
+    expect(fechaCortaFlexible("2026-09-13T02:30:00Z")).toBe("12/09/2026");
+    expect(fechaCortaFlexible("")).toBe("");
+  });
+
+  it("fechaVueloImpresa: un día, rango en dos días, nada sin fecha", () => {
+    const t = (inicial: string, final: string) => ({ inicial: { valor: inicial }, final: { valor: final } });
+    expect(fechaVueloImpresa(t("2026-09-15T16:00", "2026-09-15T20:00"))).toEqual({
+      etiqueta: "Fecha del vuelo",
+      texto: "15/09/2026",
+    });
+    expect(fechaVueloImpresa(t("2026-09-15T13:00", "2026-09-17T18:00"))).toEqual({
+      etiqueta: "Fechas del vuelo",
+      texto: "15/09/2026 – 17/09/2026",
+    });
+    // Solo salida (regreso «Por confirmar» en el form): singular.
+    expect(fechaVueloImpresa(t("2026-12-05T08:00", ""))).toEqual({
+      etiqueta: "Fecha del vuelo",
+      texto: "05/12/2026",
+    });
+    // Sin salida no hay línea, aunque haya regreso (la fuente es la inicial).
+    expect(fechaVueloImpresa(t("", ""))).toBeNull();
+    expect(fechaVueloImpresa(t("", "2026-09-17T18:00"))).toBeNull();
   });
 
   it("tuasDetalleLegado: solo sin filas y con líneas TUAS del desglose", () => {

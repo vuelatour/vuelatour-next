@@ -392,3 +392,40 @@
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
+
+/* ---------- 5. Salida/regreso del vuelo: SOLO edición (15-sep-2026) ----------
+   El PDF del cliente dejó de imprimir el bloque «Traslados» (y sus horas): en
+   `.meta` queda la FECHA del vuelo. La salida y el regreso CON hora siguen
+   siendo dato operativo y solo se capturan en esta hoja, así que viven en un
+   bloque `data-cot-ui` que el React NO monta en lectura; el selector cuelga
+   además de `:not(.cot-hoja--lectura)` para que jamás pinte sobre el papel
+   impreso. En LECTURA la hoja es idéntica al armador de pyservices. */
+.cot-hoja:not(.cot-hoja--lectura) .cot-horas {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cot-hoja:not(.cot-hoja--lectura) .cot-horas__campos {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 14px;
+}
+.cot-hoja:not(.cot-hoja--lectura) .cot-horas__campo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+.cot-hoja:not(.cot-hoja--lectura) .cot-horas__etq {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+.cot-hoja:not(.cot-hoja--lectura) .cot-horas__ayuda { font-size: 10px; color: #9ca3af; }

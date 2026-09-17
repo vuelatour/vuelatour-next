@@ -15,6 +15,12 @@ export interface User {
   es_piloto: boolean;
   es_piloto_externo: boolean;
   telefono: string | null;
+  /**
+   * Nombre corto con el que la oficina lo conoce, para el título del evento
+   * de Google Calendar (`Saab N4142R cun-mid-cun 10:00`). Ausente con API
+   * viejo; vacío ⇒ el API usa el primer nombre.
+   */
+  apodo?: string | null;
   avatar_url: string | null;
   created_at: string;
   updated_at: string;

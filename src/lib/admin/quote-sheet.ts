@@ -107,6 +107,49 @@ export function fechaLegibleFlexible(v: string | null | undefined): string {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? fechaLegibleDeInput(v) : fechaLegible(v);
 }
 
+const cortaFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: CANCUN_TZ,
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+/**
+ * `_fecha_corta` (pyservices, 15-sep-2026): instante ISO → día de PARED en
+ * Cancún "dd/mm/aaaa", SIN hora. Vacío → "" (el llamador NO pinta la línea;
+ * nunca «Por confirmar»); un día suelto "YYYY-MM-DD" ya ES pared y no pasa
+ * por la zona; texto no parseable → tal cual (React lo escapa).
+ */
+export function fechaCorta(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const txt = iso.trim();
+  if (!txt) return "";
+  const dia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(txt);
+  if (dia) return `${dia[3]}/${dia[2]}/${dia[1]}`;
+  // Sin zona se asume UTC, como `_fecha_corta` (`datetime.fromisoformat` +
+  // `replace(tzinfo=UTC)`); `new Date` a secas lo leería en la zona del
+  // navegador y podría mover el día. Con hora de pared usa `fechaCortaFlexible`.
+  const sinZona = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(txt);
+  const d = new Date(sinZona ? `${txt.replace(" ", "T")}Z` : txt);
+  if (Number.isNaN(d.getTime())) return txt;
+  const p = Object.fromEntries(
+    cortaFmt.formatToParts(d).map((x) => [x.type, x.value]),
+  ) as Record<string, string>;
+  return `${p.day}/${p.month}/${p.year}`;
+}
+
+/**
+ * Como `fechaCorta` pero desde lo que guarda el form: un `datetime-local` de
+ * pared Cancún ("YYYY-MM-DDTHH:mm") se corta sin tocar la zona (el PDF recibe
+ * el ISO de `cancunInputToIso` y lo regresa a Cancún = la misma pared); un ISO
+ * con zona/segundos (escala cargada del API) sí se convierte.
+ */
+export function fechaCortaFlexible(v: string | null | undefined): string {
+  if (!v) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}$/.exec(v);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : fechaCorta(v);
+}
+
 const MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 /** `_fecha_dia`: "2026-09-03" → "3 sep 2026"; vacío → "" (la tabla pinta "—"). */
@@ -201,13 +244,21 @@ export function puntosRutaVisibles(visibles: TramoVisible[]): string[] {
 
 /** Fecha de traslado tal como la IMPRIME el PDF (ver `fechasTrasladoImpresas`). */
 export interface FechaTrasladoImpresa {
-  /** Texto impreso ("dd/mm/aaaa HH:MM" o "Por confirmar"). */
+  /** Texto con hora ("dd/mm/aaaa HH:MM" o "Por confirmar"). SOLO edición: el
+   * PDF del cliente ya no imprime horas (15-sep-2026). */
   texto: string;
   /**
    * Índice del tramo VISIBLE del que se tomó la fecha cuando el primer/último
    * tramo real está oculto; null = es el campo del vuelo (editable).
    */
   tramoIdx: number | null;
+  /**
+   * Valor CRUDO del que sale `texto` (datetime-local de pared o ISO del API);
+   * "" sin dato. Es la MISMA fuente que el API manda como
+   * `fecha_traslado_inicial`/`_final` al armador del PDF, así que la línea
+   * «Fecha del vuelo» de `.meta` se construye de aquí (`fechaVueloImpresa`).
+   */
+  valor: string;
 }
 
 /**
@@ -232,21 +283,52 @@ export function fechasTrasladoImpresas(
     if (idx === n - 1 && v.fecha_traslado_final) return v.fecha_traslado_final;
     return null;
   };
-  let inicial: FechaTrasladoImpresa = { texto: fechaLegibleFlexible(v.fecha_vuelo), tramoIdx: null };
-  let final: FechaTrasladoImpresa = { texto: fechaLegibleFlexible(v.fecha_traslado_final), tramoIdx: null };
+  let inicial: FechaTrasladoImpresa = {
+    texto: fechaLegibleFlexible(v.fecha_vuelo),
+    tramoIdx: null,
+    valor: v.fecha_vuelo ?? "",
+  };
+  let final: FechaTrasladoImpresa = {
+    texto: fechaLegibleFlexible(v.fecha_traslado_final),
+    tramoIdx: null,
+    valor: v.fecha_traslado_final ?? "",
+  };
   if (visibles.length > 0) {
     const primera = visibles[0].idx;
     if (primera !== 0) {
       const plan = planDe(primera);
-      if (plan) inicial = { texto: fechaLegibleFlexible(plan), tramoIdx: primera };
+      if (plan) inicial = { texto: fechaLegibleFlexible(plan), tramoIdx: primera, valor: plan };
     }
     const ultima = visibles[visibles.length - 1].idx;
     if (ultima !== n - 1) {
       const plan = planDe(ultima);
-      if (plan) final = { texto: fechaLegibleFlexible(plan), tramoIdx: ultima };
+      if (plan) final = { texto: fechaLegibleFlexible(plan), tramoIdx: ultima, valor: plan };
     }
   }
   return { inicial, final };
+}
+
+/**
+ * Línea «Fecha del vuelo: dd/mm/aaaa» del bloque `.meta` — espejo EXACTO de
+ * `_fecha_vuelo_html` de pyservices (15-sep-2026, pedido del cliente sobre el
+ * PDF del folio #314): el bloque «Traslados» (con hora) salió del documento
+ * del cliente y solo queda la FECHA, en día de pared de Cancún.
+ *
+ * Misma fuente que imprimía «Traslado inicial» (`fechasTrasladoImpresas`, que
+ * ya respeta los tramos ocultos igual que `escalasVisiblesPdf` del API). Si el
+ * regreso cae en OTRO día de pared la etiqueta pasa a plural y el valor a un
+ * rango. Sin fecha inicial → null: la línea NO se pinta (jamás «Por
+ * confirmar», como en el armador).
+ */
+export function fechaVueloImpresa(t: {
+  inicial: Pick<FechaTrasladoImpresa, "valor">;
+  final: Pick<FechaTrasladoImpresa, "valor">;
+}): { etiqueta: string; texto: string } | null {
+  const inicio = fechaCortaFlexible(t.inicial.valor);
+  if (!inicio) return null;
+  const fin = fechaCortaFlexible(t.final.valor);
+  if (fin && fin !== inicio) return { etiqueta: "Fechas del vuelo", texto: `${inicio} – ${fin}` };
+  return { etiqueta: "Fecha del vuelo", texto: inicio };
 }
 
 /**

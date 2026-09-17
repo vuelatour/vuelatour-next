@@ -281,8 +281,7 @@ describe("variantes de la hoja", () => {
       "<strong>Aeronave cotizada:</strong> Piper Seneca V",
       "CUN → HOL → CZM → CUN",
       "4 pasajeros · XA-VGV",
-      "12/09/2026 08:00",
-      "12/09/2026 18:00",
+      "<strong>Fecha del vuelo:</strong> 12/09/2026",
       "<th>Fecha</th>",
       "12 sep 2026",
       "Servicio aéreo (2.4 h × $1,650.00/hr)",
@@ -310,6 +309,11 @@ describe("variantes de la hoja", () => {
     // Lo que el PDF descarta también aquí: matrícula solo por la regla VGV
     // (aparece en la sublínea, nunca en «Aeronave cotizada»).
     expect(html).not.toContain("XA-VGV — ");
+    // SIN horas para el cliente (15-sep-2026): ni el bloque «Traslados» ni
+    // las horas de salida/regreso que antes imprimía.
+    expect(html).not.toContain("Traslado");
+    expect(html).not.toContain("08:00");
+    expect(html).not.toContain("18:00");
   });
 
   it("sin mapa: tabla del itinerario sola, sin itin-row (misma variante del PDF)", () => {
@@ -338,12 +342,46 @@ describe("variantes de la hoja", () => {
     expect(html).toContain("Notas:");
   });
 
-  it("«Por confirmar» y «—» se imprimen (son contenido, no placeholder gris)", () => {
+  it("«—» se imprime (es contenido, no placeholder gris); «Por confirmar» ya no: sin regreso la fecha queda en singular", () => {
     const p = hoja1().props();
     p.valores = { ...p.valores, fecha_traslado_final: "" };
     const html = renderToString(<QuoteSheet {...p} />);
-    expect(html).toContain("Por confirmar");
-    expect(colapsar(textoImpreso(parsearHoja(html), true))).toContain("Traslado final Por confirmar");
+    const impreso = colapsar(textoImpreso(parsearHoja(html), true));
+    // La fecha del tramo sin capturar SÍ es contenido del PDF.
+    expect(impreso).toContain("—");
+    // El regreso sin capturar no pinta nada en el papel: la línea de `.meta`
+    // sigue en singular (el armador jamás imprime «Por confirmar» ahí).
+    expect(impreso).toContain("Fecha del vuelo: 12/09/2026");
+    expect(impreso).not.toContain("Fechas del vuelo");
+    expect(impreso).not.toContain("Por confirmar");
+    // «Por confirmar» sobrevive SOLO como texto del input de edición.
+    expect(html).toMatch(/cot-fecha__texto cot-fecha__texto--vacio">Por confirmar</);
+    expect(renderToString(<QuoteSheet {...p} lectura />)).not.toContain("Por confirmar");
+  });
+
+  /**
+   * SALIDA y REGRESO con hora (15-sep-2026): dato OPERATIVO que solo se
+   * captura en esta hoja. Se editan igual que antes (mismos campos del form)
+   * pero NUNCA se imprimen: subárbol `data-cot-ui` que el React no monta en
+   * lectura, así que la hoja bloqueada es idéntica al PDF.
+   */
+  it("salida/regreso: editables con hora en edición, inexistentes en lectura", () => {
+    const cambios: Array<[string, unknown]> = [];
+    const p = hoja1().props();
+    const html = renderToString(<QuoteSheet {...p} onCambio={(c, v) => cambios.push([c, v])} />);
+    // Los dos inputs siguen ahí, con la hora de pared Cancún del form.
+    expect(html).toContain('aria-label="Salida del vuelo (hora de Cancún)"');
+    expect(html).toContain('aria-label="Regreso del vuelo (hora de Cancún)"');
+    expect(html).toContain('value="2026-09-12T08:00"');
+    expect(html).toContain('value="2026-09-12T18:00"');
+    expect(html).toContain("Las horas no se imprimen: el cliente solo ve la fecha.");
+    // …y no tocan ni la estructura ni el texto impreso.
+    expect(tokens(parsearHoja(html))).toEqual(tokens(parsearHoja(hoja1().html)));
+    expect(colapsar(textoImpreso(parsearHoja(html), true))).not.toContain("08:00");
+    const lectura = renderToString(<QuoteSheet {...p} lectura />);
+    expect(lectura).not.toContain("cot-horas");
+    expect(lectura).not.toContain("Las horas no se imprimen");
+    expect(cambios).toEqual([]);
   });
 
   it("aeronaves cotizadas: sin repetidos y jamás con la matrícula (como _modelos_cotizados)", () => {
@@ -373,20 +411,27 @@ describe("variantes de la hoja", () => {
     expect(lectura).not.toContain("Opera en N990GG");
   });
 
-  it("primer tramo oculto: el traslado inicial impreso es la salida del primer tramo VISIBLE", () => {
+  it("primer tramo oculto: la fecha del vuelo impresa es la del primer tramo VISIBLE (nunca delata el oculto)", () => {
     const p = hoja1().props();
     p.valores = {
       ...p.valores,
+      // El tramo 1 sale el 12 y está OCULTO; el primero visible sale el 13.
       escalas: [
         { ...p.valores.escalas[0], pdf_oculto: true },
-        { ...p.valores.escalas[1], fecha_salida_plan: "2026-09-12T11:30" },
+        { ...p.valores.escalas[1], fecha_salida_plan: "2026-09-13T11:30" },
         p.valores.escalas[2],
       ],
     };
     const html = renderToString(<QuoteSheet {...p} />);
     const texto = colapsar(textoImpreso(parsearHoja(html), true));
-    expect(texto).toContain("Traslado inicial 12/09/2026 11:30");
-    expect(texto).not.toContain("Traslado inicial 12/09/2026 08:00");
+    // Rango: sale el 13 (tramo visible) y regresa el 12 (campo del vuelo).
+    expect(texto).toContain("Fechas del vuelo: 13/09/2026 – 12/09/2026");
+    expect(texto).not.toContain("Fecha del vuelo: 12/09/2026");
+    // Sin hora, ni la del vuelo ni la del tramo del que se derivó.
+    expect(texto).not.toContain("11:30");
+    expect(texto).not.toContain("08:00");
+    // El operador sí ve de dónde salió la fecha impresa (croma de edición).
+    expect(html).toContain("impreso: tramo 2");
     // La ruta también une solo los visibles.
     expect(texto).toContain("HOL → CZM → CUN");
     expect(texto).not.toContain("CUN → HOL → CZM");

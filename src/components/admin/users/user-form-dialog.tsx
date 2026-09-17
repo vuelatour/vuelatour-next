@@ -22,6 +22,13 @@ import { updateUserAction, listCardsOptionsAction, type CardOption } from "@/app
 import { UserFormSchema, type UserFormValues } from "@/app/admin/users/schema";
 import type { User } from "@/types/users";
 import { Field } from "@/components/admin/form-field";
+import {
+  APODO_HINT,
+  APODO_LABEL,
+  APODO_MAX,
+  APODO_PLACEHOLDER,
+  apodoParaPayload,
+} from "@/lib/admin/usuario-apodo";
 
 const ROLES = [
   { value: "ADMIN", label: "ADMIN", description: "Acceso total" },
@@ -90,6 +97,11 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
     } else if (tarjetaNueva === "") {
       payload.tarjeta_terminacion = null;
     }
+    // Apodo (nombre corto del calendario): mismo trato — viaja SOLO si
+    // cambió y vaciarlo manda null explícito (17-sep-2026).
+    const apodo = apodoParaPayload(user.apodo, values.apodo);
+    if (apodo.cambio) payload.apodo = apodo.valor;
+    else delete payload.apodo;
     startTransition(async () => {
       const result = await updateUserAction(user.id, payload);
       if (result.ok) {
@@ -115,9 +127,23 @@ export function UserFormDialog({ open, onOpenChange, user }: Props) {
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Field label="Nombre" required error={errors.nombre?.message}>
-            <Input {...register("nombre")} />
-          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Nombre" required error={errors.nombre?.message}>
+              <Input {...register("nombre")} />
+            </Field>
+            {/* Nombre corto del calendario (17-sep-2026): Luis, el mecánico,
+                es el único que sigue leyendo Google Calendar y la oficina
+                escribe «Saab», «Zamora», «Pab» — NO el primer nombre. Vacío
+                ⇒ el API usa el primer nombre. */}
+            <Field label={APODO_LABEL} hint={APODO_HINT} error={errors.apodo?.message}>
+              <Input
+                {...register("apodo")}
+                placeholder={APODO_PLACEHOLDER}
+                maxLength={APODO_MAX}
+                autoComplete="off"
+              />
+            </Field>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Rol" required error={errors.rol?.message}>
@@ -227,6 +253,9 @@ function defaults(user: User): UserFormValues {
     estado: user.estado,
     tiene_fondo_caja: user.tiene_fondo_caja,
     tarjeta_terminacion: user.tarjeta_terminacion ?? "",
+    // API viejo (sin el campo) ⇒ "" y nunca viaja: solo se manda si el
+    // capturista lo escribe.
+    apodo: user.apodo ?? "",
     es_piloto: user.es_piloto,
     es_piloto_externo: user.es_piloto_externo,
     // Legado normalizado: el form debe validar LO QUE SE MUESTRA.

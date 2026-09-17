@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { listCards } from "@/lib/api/cards-server";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
+import {
+  APODO_API_VIEJO,
+  esRechazoPorApodo,
+  normalizarApodo,
+} from "@/lib/admin/usuario-apodo";
 import { UserFormSchema, UserInviteSchema } from "./schema";
 import type { User } from "@/types/users";
 
@@ -28,33 +33,68 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return out;
 }
 
+/**
+ * API viejo (todavía sin `apodo` en el DTO): Nest corre con
+ * `forbidNonWhitelisted` y responde 400 «property apodo should not exist».
+ * Se cambia por un mensaje que la oficina entienda, solo cuando ESTE guardado
+ * mandó el campo (tolerancia pedida el 17-sep-2026).
+ */
+function fallaUsuario<T>(err: unknown, mandoApodo: boolean): ActionResult<T> {
+  if (mandoApodo && isApiError(err) && esRechazoPorApodo(err.message)) {
+    return { ok: false, error: APODO_API_VIEJO };
+  }
+  return fail(err);
+}
+
+/**
+ * Apodo normalizado para el API: sin espacios de sobra (el título del evento
+ * pega piezas con un espacio) y `null` explícito cuando se vació — el `""`
+ * lo tiraría `stripEmpty` y borrarlo sería un no-op silencioso.
+ */
+function normalizarApodoPayload<T extends Record<string, unknown>>(
+  data: T,
+): T & { apodo?: string | null } {
+  if (!("apodo" in data)) return data;
+  const valor = data.apodo;
+  if (typeof valor !== "string") return data; // null explícito o ausente
+  const limpio = normalizarApodo(valor);
+  return { ...data, apodo: limpio === "" ? null : limpio };
+}
+
 export async function createUserAction(raw: unknown): Promise<ActionResult<User>> {
   const parsed = UserInviteSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  // En el alta no hay valor previo: el apodo solo viaja si se capturó
+  // (`stripEmpty` tira el "" y el `null` no llega a armarse aquí).
+  const body = stripEmpty(normalizarApodoPayload(parsed.data));
+  if (body.apodo === null) delete body.apodo;
   try {
     const created = await apiServer<User>("/v1/users", {
       method: "POST",
-      body: stripEmpty(parsed.data),
+      body,
     });
     revalidatePath("/admin/users");
     return { ok: true, data: created };
   } catch (err) {
-    return fail(err);
+    return fallaUsuario(err, "apodo" in body);
   }
 }
 
 export async function updateUserAction(id: string, raw: unknown): Promise<ActionResult<User>> {
   const parsed = UserFormSchema.partial().safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  // El diálogo manda `apodo` SOLO si cambió (null = borrarlo); aquí solo se
+  // normaliza lo que haya llegado.
+  const body = stripEmpty(normalizarApodoPayload(parsed.data));
   try {
     const updated = await apiServer<User>(`/v1/users/${id}`, {
       method: "PATCH",
-      body: stripEmpty(parsed.data),
+      body,
     });
     revalidatePath("/admin/users");
     return { ok: true, data: updated };
   } catch (err) {
-    return fail(err);
+    return fallaUsuario(err, "apodo" in body);
   }
 }
 

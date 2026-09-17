@@ -14,6 +14,7 @@ import {
   TZ_NOTA,
   avionExternoTexto,
   fechaLegible,
+  fechaVueloImpresa,
   fechasTrasladoImpresas,
   modelosCotizadosPdf,
   mostrarMatricula,
@@ -68,9 +69,17 @@ export type {
  * bloque «Interno · no se imprime».
  *
  * Marcado de la hoja 1 (contrato con pyservices; entre [] lo condicional):
- * marca · header · meta · route + sublínea · TRASLADOS · ITINERARIO (+mapa)
- * · DESGLOSE · [notas] · pie. La hoja 2 («La aeronave», fotos) queda solo en
- * el PDF descargado.
+ * marca · header · meta ([Fecha del vuelo]) · route + sublínea · ITINERARIO
+ * (+mapa) · DESGLOSE · [notas] · pie. La hoja 2 («La aeronave», fotos) queda
+ * solo en el PDF descargado.
+ *
+ * SIN horas para el cliente (15-sep-2026, pedido sobre el PDF del folio #314):
+ * el bloque «Traslados» salió del documento y en su lugar `.meta` lleva la
+ * FECHA del vuelo (sin hora; rango si el regreso cae en otro día de pared).
+ * La salida y el regreso CON hora siguen siendo dato operativo y solo se
+ * editan aquí: viven en un bloque `data-cot-ui` que existe únicamente en
+ * EDICIÓN (CSS bajo `.cot-hoja:not(.cot-hoja--lectura)`), de modo que en
+ * LECTURA la hoja es idéntica al PDF.
  */
 export interface QuoteSheetProps {
   valores: QuoteSheetValores;
@@ -237,9 +246,13 @@ export function QuoteSheet({
     escala ?? (anchoDisponible > 0 ? Math.min(1, anchoDisponible / HOJA_ANCHO_PX) : 1);
   const altoReservado = altoHoja > 0 ? Math.round(altoHoja * escalaEfectiva) : undefined;
 
-  // ----- Traslados como los imprime el PDF (primer/último tramo oculto →
-  // salida del primer/último VISIBLE; ver `fechasTrasladoImpresas`) -----
+  // ----- Salida/regreso del vuelo (primer/último tramo oculto → salida del
+  // primer/último VISIBLE; ver `fechasTrasladoImpresas`). El PDF ya no los
+  // imprime con hora: de aquí sale la línea «Fecha del vuelo» de `.meta`
+  // (`fechaVueloImpresa`, espejo de `_fecha_vuelo_html`) y los dos inputs
+  // SOLO de edición. -----
   const traslados = useMemo(() => fechasTrasladoImpresas(valores, oculto), [valores, oculto]);
+  const fechaVuelo = useMemo(() => fechaVueloImpresa(traslados), [traslados]);
 
   const notasVacias = valores.notas.trim() === "";
   const empresa = documento.empresa ?? EMPRESA_DEFAULT;
@@ -361,6 +374,16 @@ export function QuoteSheet({
             <div style={{ textAlign: "right" }}>
               <strong>Fecha de cotización:</strong>
               {` ${fechaLegible(documento.fechaCotizacion)}`}
+              {/* Fecha del vuelo (15-sep-2026): SIN hora, día de pared de
+                  Cancún; plural + rango si el regreso cae en otro día. Sin
+                  fecha la línea no existe (igual que `_fecha_vuelo_html`). */}
+              {fechaVuelo && (
+                <>
+                  <br />
+                  <strong>{`${fechaVuelo.etiqueta}:`}</strong>
+                  {` ${fechaVuelo.texto}`}
+                </>
+              )}
               <br />
               <strong>Tipo:</strong>
               {` ${documento.tipo}`}
@@ -416,6 +439,41 @@ export function QuoteSheet({
                   {documento.operaEn}
                 </span>
               )}
+              {/* SALIDA y REGRESO con hora: dato OPERATIVO que solo se captura
+                  aquí (15-sep-2026). Nunca se imprime — subárbol `data-cot-ui`
+                  y CSS bajo `:not(.cot-hoja--lectura)` — así que en lectura la
+                  hoja es idéntica al PDF. El cliente solo ve la fecha (arriba). */}
+              {!lectura && (
+                <div className="cot-horas" {...UI}>
+                  <div className="cot-horas__campos">
+                    <span className="cot-horas__campo">
+                      <span className="cot-horas__etq">Salida</span>
+                      <CampoFecha
+                        value={valores.fecha_vuelo ?? ""}
+                        onChange={(v) => onCambio("fecha_vuelo", v)}
+                        ariaLabel="Salida del vuelo"
+                      />
+                      {traslados.inicial.tramoIdx != null && (
+                        <MarcaTrasladoDerivado tramo={traslados.inicial.tramoIdx} primero />
+                      )}
+                    </span>
+                    <span className="cot-horas__campo">
+                      <span className="cot-horas__etq">Regreso</span>
+                      <CampoFecha
+                        value={valores.fecha_traslado_final ?? ""}
+                        onChange={(v) => onCambio("fecha_traslado_final", v)}
+                        ariaLabel="Regreso del vuelo"
+                      />
+                      {traslados.final.tramoIdx != null && (
+                        <MarcaTrasladoDerivado tramo={traslados.final.tramoIdx} />
+                      )}
+                    </span>
+                  </div>
+                  <span className="cot-horas__ayuda">
+                    Las horas no se imprimen: el cliente solo ve la fecha.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -449,50 +507,7 @@ export function QuoteSheet({
             )}
           </div>
 
-          {/* 4 · Traslados */}
-          <h2>Traslados</h2>
-          <table className="grid">
-            <tbody>
-              <tr>
-                <td>Traslado inicial</td>
-                <td className="cot-ancla">
-                  {traslados.inicial.tramoIdx == null ? (
-                    <CampoFecha
-                      value={valores.fecha_vuelo ?? ""}
-                      onChange={(v) => onCambio("fecha_vuelo", v)}
-                      ariaLabel="Traslado inicial"
-                      lectura={lectura}
-                    />
-                  ) : (
-                    <>
-                      {traslados.inicial.texto}
-                      {!lectura && <MarcaTrasladoDerivado tramo={traslados.inicial.tramoIdx} primero />}
-                    </>
-                  )}
-                </td>
-              </tr>
-              <tr>
-                <td>Traslado final</td>
-                <td className="cot-ancla">
-                  {traslados.final.tramoIdx == null ? (
-                    <CampoFecha
-                      value={valores.fecha_traslado_final ?? ""}
-                      onChange={(v) => onCambio("fecha_traslado_final", v)}
-                      ariaLabel="Traslado final"
-                      lectura={lectura}
-                    />
-                  ) : (
-                    <>
-                      {traslados.final.texto}
-                      {!lectura && <MarcaTrasladoDerivado tramo={traslados.final.tramoIdx} />}
-                    </>
-                  )}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* 5 · Itinerario + mapa */}
+          {/* 4 · Itinerario + mapa */}
           <QuoteSheetItinerario
             legs={valores.escalas}
             onLegsChange={(legs) => onCambio("escalas", legs)}
@@ -506,7 +521,7 @@ export function QuoteSheet({
             onAbrirInterno={lectura ? undefined : onAbrirInterno}
           />
 
-          {/* 6 · Desglose */}
+          {/* 5 · Desglose */}
           <QuoteSheetDesglose
             breakdown={breakdown}
             valores={valores}
@@ -518,7 +533,7 @@ export function QuoteSheet({
             onAbrirInterno={lectura ? undefined : onAbrirInterno}
           />
 
-          {/* 7 · Notas (solo si hay texto; fantasma para capturar) */}
+          {/* 6 · Notas (solo si hay texto; fantasma para capturar) */}
           {(!notasVacias || !lectura) && (
             <div className={cn("notas", notasVacias && "cot-fantasma-bloque")} {...(notasVacias ? UI : {})}>
               <strong>Notas:</strong>
@@ -538,7 +553,7 @@ export function QuoteSheet({
             </div>
           )}
 
-          {/* 8 · Pie de la hoja 1 (en el PDF vive en @page :first) */}
+          {/* 7 · Pie de la hoja 1 (en el PDF vive en @page :first) */}
           <div className="pie-pantalla">
             {TZ_NOTA}
             <br />
@@ -553,21 +568,21 @@ export function QuoteSheet({
 }
 
 /**
- * Marca del margen cuando la fecha de traslado impresa NO es la del vuelo
- * sino la salida del primer/último tramo VISIBLE (el real está oculto en el
- * PDF): se edita en el detalle «⋯» de ese tramo, no aquí.
+ * Aviso INLINE cuando la fecha que IMPRIME el PDF no sale de este campo sino
+ * de la salida planeada del primer/último tramo VISIBLE (el real está oculto):
+ * esa se edita en el detalle «⋯» de ese tramo. Vive dentro del bloque de
+ * edición (`data-cot-ui`), nunca en el papel — por eso ya no usa `.cot-margen`
+ * (posición absoluta sobre `.cot-ancla`, que aquí no existe).
  */
 function MarcaTrasladoDerivado({ tramo, primero = false }: { tramo: number; primero?: boolean }) {
   return (
-    <span className="cot-margen" {...UI}>
-      <span
-        className="cot-marca"
-        title={`El ${primero ? "primer" : "último"} tramo está oculto en el PDF: se imprime la salida planeada del tramo ${
-          tramo + 1
-        } (edítala en el detalle ⋯ de ese tramo).`}
-      >
-        del tramo {tramo + 1}
-      </span>
+    <span
+      className="cot-marca"
+      title={`El ${primero ? "primer" : "último"} tramo está oculto en el PDF: la fecha impresa es la salida planeada del tramo ${
+        tramo + 1
+      } (edítala en el detalle ⋯ de ese tramo).`}
+    >
+      {`impreso: tramo ${tramo + 1}`}
     </span>
   );
 }

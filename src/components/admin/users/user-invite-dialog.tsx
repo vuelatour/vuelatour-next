@@ -18,6 +18,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createUserAction } from "@/app/admin/users/actions";
 import { UserInviteSchema, type UserInviteValues } from "@/app/admin/users/schema";
 import { Field } from "@/components/admin/form-field";
+import {
+  APODO_HINT,
+  APODO_LABEL,
+  APODO_MAX,
+  APODO_PLACEHOLDER,
+} from "@/lib/admin/usuario-apodo";
 
 const ROLES = [
   { value: "ADMIN", label: "ADMIN", description: "Acceso total" },
@@ -53,11 +59,11 @@ export function UserInviteDialog({
     formState: { errors },
   } = useForm<UserInviteValues>({
     resolver: zodResolver(UserInviteSchema),
-    defaultValues: { nombre: "", email: "", rol: "PILOTO", estado: "ACTIVO" },
+    defaultValues: { nombre: "", email: "", rol: "PILOTO", estado: "ACTIVO", apodo: "" },
   });
 
   useEffect(() => {
-    if (open) reset({ nombre: "", email: "", rol: "PILOTO", estado: "ACTIVO" });
+    if (open) reset({ nombre: "", email: "", rol: "PILOTO", estado: "ACTIVO", apodo: "" });
   }, [open, reset]);
 
   const onSubmit = handleSubmit((values) => {
@@ -89,6 +95,17 @@ export function UserInviteDialog({
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="Nombre" required error={errors.nombre?.message}>
             <Input placeholder="Nombre y apellido" {...register("nombre")} />
+          </Field>
+
+          {/* Opcional en el alta (17-sep-2026): si se deja vacío no viaja al
+              API y se puede capturar después al editar. */}
+          <Field label={APODO_LABEL} hint={APODO_HINT} error={errors.apodo?.message}>
+            <Input
+              placeholder={APODO_PLACEHOLDER}
+              maxLength={APODO_MAX}
+              autoComplete="off"
+              {...register("apodo")}
+            />
           </Field>
 
           <Field

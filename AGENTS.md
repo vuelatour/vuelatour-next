@@ -135,7 +135,7 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   ancla CUN, millas en 0, costo externo MXN sin T.C.). Debajo de la hoja, la
   save bar (Crear v1 / Guardar → vN con el resumen del diff).
 - Todo lo que se IMPRIME se edita en su lugar en la hoja (cliente, aeronave
-  = modelo, pasajeros, traslados, itinerario + mapa, desglose, notas) con
+  = modelo, pasajeros, fecha del vuelo, itinerario + mapa, desglose, notas) con
   inputs invisibles en reposo; el cotizador conserva intactos el estado RHF,
   el debounce + AbortController de `/calculate`, `resumirCambios`, «v2 → v3
   ●», el diálogo «Guardar vN», candados, confirmación única, beforeunload,
@@ -632,7 +632,7 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
 
 - `components/admin/quotes/quote-sheet.tsx` = la hoja 1 COMO formulario:
   `<div class="cot-hoja cot-hoja--pantalla">` con el MISMO marcado y clases
-  que `_build_html` de pyservices (membrete, `.meta`, `.route`, TRASLADOS,
+  que `_build_html` de pyservices (membrete, `.meta`, `.route`,
   ITINERARIO + `.mapa`, `.totales`, `.notas`, `.pie-pantalla`). Sub-partes:
   `quote-sheet-fields.tsx` (`CampoHoja`/`CampoNumero`/`CampoTextoLargo`/
   `CampoFecha`/`CampoDia`/`CampoSelect`/`CampoMoneda`: invisibles en reposo,
@@ -670,6 +670,26 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   que no se imprime. Test de estructura vs el HTML de pyservices:
   `components/admin/quotes/__tests__/quote-sheet.test.tsx` (fixture
   `__fixtures__/hoja1.html` generado con `npm run gen:hoja-fixture`).
+- SIN horas para el cliente (15-sep-2026, pedido sobre el PDF del folio
+  #314): la hoja ya NO tiene el bloque «Traslados». En `.meta`, bajo «Fecha
+  de cotización», va **`Fecha del vuelo: dd/mm/aaaa`** (plural + rango
+  «15/09/2026 – 17/09/2026» si el regreso cae en otro día de pared; sin
+  fecha la línea no existe) — `fechaVueloImpresa` + `fechaCorta` /
+  `fechaCortaFlexible` de `lib/admin/quote-sheet.ts`, espejo de
+  `_fecha_vuelo_html` / `_fecha_corta` de pyservices, alimentado por
+  `fechasTrasladoImpresas` (campo `valor`) para que los tramos ocultos se
+  respeten igual que en el API.
+  La SALIDA y el REGRESO con hora siguen siendo dato OPERATIVO y solo se
+  capturan aquí: viven en `.cot-horas` (dos `CampoFecha` datetime-local +
+  la ayuda «Las horas no se imprimen: el cliente solo ve la fecha»), un
+  subárbol `data-cot-ui` que el React NO monta en lectura y cuyo CSS cuelga
+  de `.cot-hoja:not(.cot-hoja--lectura)`. El guardado no cambia: siguen
+  siendo `fecha_vuelo` / `fecha_traslado_final` del form (el calculador los
+  manda con `cancunInputToIso`). Cuando el primer/último tramo está oculto,
+  junto al campo aparece la marca «impreso: tramo N» (esa fecha se edita en
+  el detalle ⋯ del tramo). Tras tocar `cotizacion_pdf.py` hay que
+  REGENERAR los fixtures (`npm run gen:hoja-fixture`), nunca editarlos a
+  mano.
 - `useLookupNm` (`hooks/use-lookup-nm.ts`) es la fuente única del
   autollenado de millas (la usan `QuoteLegsEditor` y la hoja).
 
@@ -778,6 +798,36 @@ backfill manual para el arranque).
   tocan** (ni se borran ni se deduplican): decisión pendiente del cliente. El
   API lo repite en `nota` y el toast la muestra tal cual; no escribir en el
   panel ninguna promesa de limpiarlos.
+
+### Nombre corto del piloto para el título del evento (17-sep-2026)
+
+Pedido del cliente: el evento de Google debe leerse como los que la oficina
+escribía a mano — `Saab N4142R cun-mid-cun 10:00` — porque **Luis (mecánico)
+es el único que sigue usando Google Calendar**; los demás usan la app. El
+apodo NO se puede derivar del nombre: a «Alexander E. Saab» le dicen «Saab»,
+a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
+
+- El título lo arma el **API** (`google-evento.util.ts`); el panel solo
+  CAPTURA el apodo (`usuario.apodo`, ≤ 20 caracteres). Vacío ⇒ el API usa el
+  primer nombre, así que el campo nunca es obligatorio.
+- Fuente única del panel: `lib/admin/usuario-apodo.ts` (`APODO_MAX`,
+  `APODO_LABEL/PLACEHOLDER/HINT`, `normalizarApodo`, `apodoParaPayload`,
+  `esRechazoPorApodo`), probada en
+  `lib/admin/__tests__/usuario-apodo.test.ts`. Ningún diálogo redacta la
+  etiqueta ni recorta a mano.
+- Se captura en **Usuarios**: `users/user-form-dialog.tsx` (edición) y
+  `users/user-invite-dialog.tsx` (alta, opcional). Viaja al API **solo si
+  cambió** y vaciarlo manda `null` explícito — mismo patrón que la tarjeta
+  corp. (el `""` lo tira `stripEmpty` y borrarlo sería un no-op silencioso).
+  Mandarlo en cada guardado re-escribiría al usuario y re-encolaría sus
+  vuelos en el espejo del calendario.
+- `users-table.tsx` lo pinta como chip junto al nombre (solo si viene) y el
+  buscador de la tabla también busca por apodo.
+- **API viejo**: el campo es opcional en `types/users.ts` (`apodo?`), así que
+  el panel no rompe si no llega. Si el guardado lo manda y el API todavía no
+  lo acepta, Nest responde 400 «property apodo should not exist» y la action
+  lo cambia por un mensaje en es-MX (`APODO_API_VIEJO`) en vez del error
+  técnico. Regla de deploy: **API antes que panel**.
 
 ## Fechas
 
