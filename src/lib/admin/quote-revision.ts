@@ -1,5 +1,6 @@
 import { cotizacionEditablePorFecha } from "@/lib/datetime";
 import { mismasHoras, textoCambioHoras } from "@/lib/admin/horas";
+import { esEcoDeTarifa, mismaTarifa, textoCambioTarifa } from "@/lib/admin/tarifa";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { PersistedEscala, PersistedQuote } from "@/types/quotes-persisted";
 
@@ -267,6 +268,25 @@ function mismasHorasDiff(a: unknown, b: unknown): boolean {
   return mismasHoras(a as number | string | null, b as number | string | null);
 }
 
+/**
+ * TARIFA: se compara a 6 decimales, NO a los 4 de `num` (22-sep-2026), y un
+ * ECO TRUNCADO no es un cambio.
+ *
+ * La #105 se pactó a 989.583333 $/hr (2.4 hr ⇒ $2,375.00 exactos) y la BD la
+ * guardaba con 2 decimales. Un borrador `?d=` viejo —o un API a medio
+ * desplegar— devuelve ese 989.58 contra los 989.583333 de la base: anunciarlo
+ * como «Tarifa/hr $989.58→$989.58» sería prometer un cambio que el API
+ * DESCARTA (ancla el eco a lo persistido para no bajar el total un centavo).
+ * Una edición de verdad (989.58 → 990, o agregarle decimales a propósito) sí
+ * se cuenta, y el TEXTO lo arma `textoCambioTarifa` subiendo la precisión
+ * hasta que los dos números se distinguen.
+ */
+function mismaTarifaDiff(a: unknown, b: unknown): boolean {
+  const prev = a as number | string | null;
+  const next = b as number | string | null;
+  return mismaTarifa(prev, next) || esEcoDeTarifa(next, prev);
+}
+
 // ---- formato (compacto, sin importar lib/format: puro) -------------------
 
 function fmtMonto(n: number | null, moneda?: string | null): string {
@@ -369,16 +389,20 @@ export function resumirCambios(
   if (str(prev.tipo_tarifa) !== str(next.tipo_tarifa)) {
     push("tipo_tarifa", `Tarifa ${tarifaLabel(prev.tipo_tarifa)}→${tarifaLabel(next.tipo_tarifa)}`);
   }
-  if (!mismoNum(prev.tarifa_hora_override_usd, next.tarifa_hora_override_usd)) {
+  if (!mismaTarifaDiff(prev.tarifa_hora_override_usd, next.tarifa_hora_override_usd)) {
     const a = num(prev.tarifa_hora_override_usd);
     const b = num(next.tarifa_hora_override_usd);
+    const [ta, tb] = textoCambioTarifa(
+      prev.tarifa_hora_override_usd,
+      next.tarifa_hora_override_usd,
+    );
     push(
       "tarifa_override",
       b === null
         ? "Tarifa/hr vuelve a la del cliente/avión"
         : a === null
-          ? `Tarifa/hr manual ${fmtMonto(b)}`
-          : `Tarifa/hr ${fmtMonto(a)}→${fmtMonto(b)}`,
+          ? `Tarifa/hr manual ${tb}`
+          : `Tarifa/hr ${ta}→${tb}`,
     );
   }
   if (!mismasHorasDiff(prev.sobrevuelo_hr, next.sobrevuelo_hr)) {

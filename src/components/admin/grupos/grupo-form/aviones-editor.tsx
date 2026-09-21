@@ -18,6 +18,7 @@ import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 import { isoToCancunInput } from "@/lib/datetime";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { HORAS_EPSILON_4, fmtHorasDecimal, mismasHoras } from "@/lib/admin/horas";
+import { moneyTarifa, textoTarifaInput } from "@/lib/admin/tarifa";
 import { CampoHorasPactadas } from "@/components/admin/quotes/campo-horas-pactadas";
 import { avisoAeronaveEnTaller, descripcionAeronave } from "@/lib/admin/aviso-taller";
 import { NotaTaller } from "@/components/admin/nota-taller";
@@ -239,7 +240,9 @@ export function AvionesEditor({
                 </p>
                 {calculo && (
                   <p className="font-mono text-[11px] text-muted-foreground">
-                    {fmtDecimal(calculo.tiempos.cobrable_hr)} hr × {fmtUsd(arm!.aeronave.tarifa_hora_usd)}/hr
+                    {/* Enseña la MULTIPLICACIÓN: la tarifa va con todos sus
+                        decimales (con 2 se leería descuadrada por centavos). */}
+                    {fmtDecimal(calculo.tiempos.cobrable_hr)} hr × {moneyTarifa(arm!.aeronave.tarifa_hora_usd)}/hr
                     {calculo.totales.tuas_total_usd ? ` · TUAS ${fmtUsd(calculo.totales.tuas_total_usd)}` : ""}
                     {calculo.totales.extras_total_usd ? ` · cargos ${fmtUsd(calculo.totales.extras_total_usd)}` : ""}
                   </p>
@@ -377,10 +380,21 @@ export function AvionesEditor({
                   <div className="space-y-1">
                     <Input
                       type="number"
-                      step="0.01"
+                      // 6 decimales, como el «$/hr — SOLO esta cotización» del
+                      // cotizador (22-sep-2026, #105): con `step="0.01"` el
+                      // navegador marcaba inválida la tarifa que hace cuadrar
+                      // el total (989.583333). El placeholder enseña la tarifa
+                      // VIGENTE tal cual se teclearía, sin ceros de cola.
+                      step="0.000001"
                       min={0}
                       disabled={bloqueado}
-                      placeholder={arm ? `${arm.aeronave.tarifa_hora_usd}` : a.tarifa_actual_usd != null ? `${a.tarifa_actual_usd}` : "USD/hr"}
+                      placeholder={
+                        arm
+                          ? textoTarifaInput(arm.aeronave.tarifa_hora_usd)
+                          : a.tarifa_actual_usd != null
+                            ? textoTarifaInput(a.tarifa_actual_usd)
+                            : "USD/hr"
+                      }
                       value={a.tarifa_hora_override_usd ?? ""}
                       onChange={(e) =>
                         update(i, {

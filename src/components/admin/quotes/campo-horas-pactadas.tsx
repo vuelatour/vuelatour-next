@@ -11,6 +11,7 @@ import {
   parseHorasPactadas,
 } from "@/lib/admin/horas";
 import { moneyPdf } from "@/lib/admin/quote-sheet";
+import { moneyTarifa } from "@/lib/admin/tarifa";
 import { cn } from "@/lib/utils";
 
 /**
@@ -145,7 +146,11 @@ export function CampoHorasPactadas({
             {conTarifa && (
               <>
                 {" × "}
-                {moneyPdf(tarifaUsdHr)}
+                {/* La tarifa va con TODOS sus decimales (22-sep-2026, #105):
+                    con «$989.58» esta línea enseñaba una cuenta que no
+                    cuadraba por un centavo. Con tarifas de 2 decimales el
+                    texto es idéntico al de siempre. */}
+                {moneyTarifa(tarifaUsdHr)}
                 {importeVigente && importeUsd != null ? (
                   <> = {moneyPdf(importeUsd)}</>
                 ) : (

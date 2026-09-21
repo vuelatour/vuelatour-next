@@ -71,6 +71,7 @@ import {
 } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { preferirHorasPersistidas } from "@/lib/admin/horas";
+import { tarifaOverrideRehidratada } from "@/lib/admin/tarifa";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import {
   aeronaveInicialDeCotizacion,
@@ -413,6 +414,16 @@ function tramoToEscala(t: {
     // datetime-local (sin segundos) para el input del editor de tramos.
     fecha_salida_plan: t.fecha_salida_plan ? isoToCancunInput(t.fecha_salida_plan) : null,
   };
+}
+
+/**
+ * Tarifa $/hr PACTADA A MANO que hay que rehidratar, o `null` (se re-resuelve
+ * desde el cliente/avión). La REGLA vive en `lib/admin/tarifa.ts`
+ * (`tarifaOverrideRehidratada`, pura y probada); aquí solo se le pasan los dos
+ * caminos por los que el API manda el mismo número.
+ */
+function tarifaPersistidaDeCotizacion(q: PersistedQuote): number | null {
+  return tarifaOverrideRehidratada(q.calculo_snapshot?.tarifa, q.tarifa_hora_usd);
 }
 
 /**
@@ -954,11 +965,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // fue override manual (proviene_de_override): una tarifa que venía
         // del avión o de la preferencial del cliente debe RE-resolverse
         // (cambiar PUBLICO↔BROKER o el avión debe recalcular).
-        tarifa_hora_override_usd:
-          q.calculo_snapshot?.tarifa?.proviene_de_override === true &&
-          Number(q.tarifa_hora_usd) > 0
-            ? Number(q.tarifa_hora_usd)
-            : null,
+        //
+        // TARIFA COMPLETA (22-sep-2026, la MISMA #105): se rehidrata el valor
+        // persistido con TODOS sus decimales. La oficina tecleó 989.583333
+        // para cerrar en $2,375.00 con 2.4 hr; la columna era `numeric(10,2)`
+        // y el snapshot guardaba `round2`, así que reabrir rehidrataba 989.58
+        // y el motor devolvía 2.4 × 989.58 = $2,374.99: guardar sin tocar nada
+        // bajaba un centavo. `preferirTarifaPersistida` se queda con el que
+        // conserva más precisión cuando son el MISMO número (snapshot viejo de
+        // 2 decimales + columna nueva `numeric(14,6)` o al revés) y con el
+        // SNAPSHOT cuando de verdad difieren (es la foto del dinero impreso).
+        tarifa_hora_override_usd: tarifaPersistidaDeCotizacion(q),
         tuas_override_usd_pax:
           Number(q.calculo_snapshot?.tuas?.usd_pax_default) > 0
             ? Number(q.calculo_snapshot!.tuas.usd_pax_default)
@@ -975,9 +992,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         notas_internas: q.notas_internas ?? "",
         motivo: "",
         // Con override manual el segmento arranca en «Personalizada».
-        tarifa_personalizada:
-          q.calculo_snapshot?.tarifa?.proviene_de_override === true &&
-          Number(q.tarifa_hora_usd) > 0,
+        tarifa_personalizada: tarifaPersistidaDeCotizacion(q) !== null,
         escalas_operacion: [],
       };
     }

@@ -173,6 +173,11 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `fmtHorasDecimal`, `fmtHorasMinutos`, `horasATexto`…) — ver «Horas
   pactadas: 8 decimales y captura h:mm» más abajo. Se persisten y se
   multiplican con 8 decimales; se PINTAN con 4 (o con `numeroG` en la hoja).
+- TARIFA $/hr: `lib/admin/tarifa.ts` (`tarifaOverrideRehidratada`,
+  `preferirTarifaPersistida`, `esEcoDeTarifa`, `moneyTarifa`,
+  `textoCuentaTarifa`…) — ver «Tarifa por hora: 6 decimales» más abajo. Se
+  persiste y se multiplica con 6 decimales; se PINTA con `fmtUsd`/`moneyPdf`
+  (2), salvo los textos que enseñan la multiplicación (`moneyTarifa`).
 - Cotización de GRUPO (4-sep-2026): `types/grupos.ts` (1:1 con /v1/grupos),
   `lib/admin/grupos-ui.ts` (folioTexto "G-12", estados, semáforos vía
   estadoCobroSemaforo, `mensajeErrorGrupo` para TODOS los 409 estructurados),
@@ -684,6 +689,93 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   suelta el pactado (precio nuevo, avión nuevo). Rehidratarlo de verdad
   exige decidir antes cómo se expresa «vuelve a la regla» en el contrato del
   grupo con el API — no tocar sin esa decisión.
+
+## Tarifa por hora: 6 decimales (22-sep-2026)
+
+- **El bug (cotización #105, COMPLETADO y cobrado)**: la oficina tecleó
+  **989.583333** $/hr para cerrar el SERVICIO AÉREO en **$2,375.00** con
+  2.4 hr. (Al probarlo en pantalla: #105 lleva un descuento de $200.00 y $0
+  de IVA, así que la **TotalBar dice $2,175.00** y la línea «Servicio aéreo»
+  $2,375.00 — con la tarifa truncada el par bajaba a $2,174.99 / $2,374.99.
+  No esperar $2,375.00 en la barra de total.) El motor
+  multiplicó con la tarifa completa, pero `vuelo.tarifa_hora_usd` era
+  `numeric(10,2)` y `calculo_snapshot.tarifa.usd_por_hora` guardaba
+  `round2(...)`: quedó **989.58**. Al reabrir, el panel rehidrataba ESE 989.58
+  en «$/hr — SOLO esta cotización» y el motor devolvía 2.4 × 989.58 =
+  **$2,374.99**: guardar sin tocar nada bajaba un centavo. Es el MISMO defecto
+  de la #322 (horas, 22-sep) y del T.C. (17-sep), por el otro factor del
+  producto. **El invariante es uno solo: lo que se persiste es EXACTAMENTE lo
+  que se usó para multiplicar** (tc, horas y tarifa).
+- **Fuente única `lib/admin/tarifa.ts`** (PURA, sin React ni `lib/format`,
+  congelada en `__tests__/tarifa.test.ts`): `TARIFA_DECIMALES = 6`, `round6`,
+  `normalizarTarifa` (conserva el **0** = «Poner todo en $0» del cliente
+  interno), `tarifaPactadaONull` (0 → null: el `> 0` que ya exigía la
+  rehidratación), `mismaTarifa`, `preferirTarifaPersistida`,
+  `tarifaOverrideRehidratada`, `esEcoDeTarifa`, `tarifaConDecimalesFinos`,
+  `textoTarifaInput` (placeholders), `moneyTarifa`, `textoCuentaTarifa` y
+  `textoCambioTarifa`.
+- **Rehidratación** (`quote-calculator.tsx` → `tarifaPersistidaDeCotizacion`):
+  `tarifaOverrideRehidratada(q.calculo_snapshot?.tarifa, q.tarifa_hora_usd)`.
+  Sigue exigiendo `proviene_de_override` (una tarifa que salió del avión o de
+  la preferencial del cliente DEBE re-resolverse al cambiar PUBLICO↔BROKER o
+  de avión) y, de los dos caminos, se queda con el que conserva MÁS precisión
+  cuando son el mismo número (snapshot viejo de 2 decimales + columna nueva
+  `numeric(14,6)` o al revés) y con el SNAPSHOT cuando de verdad difieren.
+  `tarifa_personalizada` (el segmento «Personalizada») sale del MISMO helper:
+  una sola regla decide las dos cosas. En el camino de ida (`armarCalcPayload`
+  → `/calculate`, `create`, `revise`, borrador `?d=`) el número viaja ENTERO:
+  ningún `toFixed(2)`/round2 sobre la tarifa.
+- **Captura**: el input `#tarifa-override-field` pasó a `step="0.000001"`
+  (con `0.01` el navegador marcaba inválida la tarifa que hace cuadrar el
+  total) — igual que los inputs de T.C. desde el 17-sep. Lo mismo en el avión
+  hijo del grupo (`grupo-form/aviones-editor.tsx`), cuyo placeholder pinta la
+  tarifa vigente con `textoTarifaInput` (sin ceros de cola).
+- **La CUENTA VIVA** bajo el campo: cuando la tarifa trae MÁS de 2 decimales,
+  el panel dice «2.4 hr × $989.583333 = $2,375.00» (`textoCuentaTarifa`), con
+  el importe del **MOTOR** (`breakdown.totales.subtotal_vuelo_usd`), jamás una
+  multiplicación local; mientras el motor va un debounce atrás dice
+  «calculando…» (la coincidencia tarifa⇄breakdown se mide con tolerancia de 2
+  decimales, que es lo que devuelve un API sin desplegar). Con tarifas de 2
+  decimales NO se pinta nada: la cuenta se ve sola.
+- **Presentación**: la tarifa se sigue pintando con `fmtUsd` (2 decimales) y
+  la hoja la IMPRIME con `moneyPdf` — paridad carácter por carácter con el
+  `_money` de pyservices, **ningún fixture cambia**. La excepción son los
+  textos que ENSEÑAN la multiplicación, que usan `moneyTarifa` (2 decimales de
+  piso, 6 de techo) para no leerse descuadrados por un centavo: la línea viva
+  de `CampoHorasPactadas`, el atajo «1.60 h × $650.00/hr · ajustar» de la hoja
+  (croma `data-cot-ui`, no se imprime), el hint «Subtotal» del detalle del
+  cálculo, el chip de aporte del sobrevuelo, la fila por avión del wizard de
+  grupo y el desglose LEGADO de `quote-desglose-card` (que además lee el monto
+  PERSISTIDO: nunca recalcula). `tarifaSub` (el sub del selector) enseña sus
+  2 decimales cuando la tarifa no es redonda — «$990/hr» sobre 989.583333
+  decía otro número del que se cobra.
+- **Diff de versiones** (`quote-revision.ts`): la tarifa se compara a 6
+  decimales (no a los 4 de `num`) y **un ECO TRUNCADO no es un cambio**
+  (`esEcoDeTarifa`: difieren, |Δ| ≤ 0.005 y el entrante tiene MENOS
+  decimales) — un borrador `?d=` viejo o un API a medio desplegar devuelven
+  989.58 contra 989.583333, y anunciarlo sería prometer un cambio que el API
+  DESCARTA (ancla el eco a lo persistido). Una edición real (990, o agregar
+  decimales a propósito) sí se cuenta, y el texto lo arma `textoCambioTarifa`
+  subiendo la precisión (2 → 4 → 6) hasta que los dos números se distinguen:
+  nunca «Tarifa/hr $989.58→$989.58». Vaciar el campo y ponerlo en $0 siguen
+  contándose como siempre.
+- **Efecto colateral bueno**: la «deriva del motor» («La tarifa cambió desde
+  vN» del diálogo de guardar) dejó de dispararse en falso en la #105 — el
+  baseline se recalcula con la tarifa completa y vuelve a dar el total del
+  snapshot.
+- **Compatibilidad**: `tarifa_hora_usd` y `calculo_snapshot.tarifa.
+  usd_por_hora` llegan de `numeric` de PostgREST como **número O cadena**
+  (con ceros de cola): las dos formas se normalizan igual. Con el API todavía
+  sin migrar (los dos caminos en 2 decimales) el panel se comporta
+  EXACTAMENTE como antes — no inventa precisión que no le mandaron.
+- **Comisión del vendedor POR_HORA**: NO tiene este defecto.
+  `comision_vendedor_tarifa_hr` no vive en ninguna columna `numeric`: se
+  rehidrata de `calculo_snapshot.meta` (jsonb, precisión completa) y su input
+  se queda en `step="0.01"` a propósito.
+- Pendiente conocido: si el toggle «tarifa/hr» del PDF está ENCENDIDO, la hoja
+  y el PDF imprimen «Servicio aéreo (2.4 h × $989.58/hr) … $2,375.00» — la
+  etiqueta impresa se recorta a 2 decimales por paridad con pyservices. El
+  monto es el correcto; la etiqueta la decide el armador, no el panel.
 
 ## Conciliación Paywise (9-sep-2026)
 

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { fmtUsd } from "@/lib/format";
 import { fmtHorasDecimal } from "@/lib/admin/horas";
+import { moneyTarifa } from "@/lib/admin/tarifa";
 import {
   fichaAeronaveUtilizada,
   textoCotizadoEn,
@@ -44,7 +45,11 @@ function buildLineas(quote: PersistedQuote): Linea[] {
       clave: "TIEMPO_VUELO",
       // Horas de PRESENTACIÓN (4 decimales): desde el 22-sep-2026 el API
       // persiste hasta 8 y el número crudo pintaba «2.33333333 hr».
-      concepto: `Tiempo de vuelo · ${fmtHorasDecimal(quote.tiempo_cobrable_hr, 4)} hr × $${Number(quote.tarifa_hora_usd)}/hr`,
+      // La TARIFA, en cambio, va con todos sus decimales (`moneyTarifa`):
+      // esta línea enseña la multiplicación contra un monto PERSISTIDO
+      // (`subtotal_vuelo_usd`, nunca recalculado aquí), y con «$989.58» la
+      // cuenta de la #105 se leía descuadrada por un centavo.
+      concepto: `Tiempo de vuelo · ${fmtHorasDecimal(quote.tiempo_cobrable_hr, 4)} hr × ${moneyTarifa(quote.tarifa_hora_usd)}/hr`,
       monto_usd: Number(quote.subtotal_vuelo_usd) || 0,
     },
   ];

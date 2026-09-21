@@ -29,6 +29,7 @@ import {
   subtotalSinIvaUsd,
   tuasDetalleLegado,
 } from "@/lib/admin/quote-sheet";
+import { moneyTarifa } from "@/lib/admin/tarifa";
 import { upsertTuaLinea } from "@/lib/admin/tuas";
 import { fmtTc } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -119,10 +120,14 @@ export function QuoteSheetDesglose({
   // «(h × $/hr)» —toggle «mostrar tarifa» encendido— o no hay cálculo, solo
   // «ajustar»; si no, antepone las horas × tarifa del breakdown para que el
   // operador VEA con qué se está cobrando el servicio aéreo.
+  // La tarifa de ESTE atajo (croma, nunca se imprime) va con todos sus
+  // decimales: enseña la multiplicación y con «$989.58» se leería
+  // descuadrada. La etiqueta IMPRESA de arriba sigue con `moneyPdf`
+  // (2 decimales, paridad carácter por carácter con `_money` de pyservices).
   const textoAjustar =
     conTarifa || !b
       ? "ajustar"
-      : `${numero2(b.tiempos.cobrable_hr)} h × ${moneyPdf(b.tarifa.usd_por_hora)}/hr · ajustar`;
+      : `${numero2(b.tiempos.cobrable_hr)} h × ${moneyTarifa(b.tarifa.usd_por_hora)}/hr · ajustar`;
 
   // ----- TUAS por aeropuerto -----
   const filas: TuasFila[] = b?.tuas.filas ?? [];

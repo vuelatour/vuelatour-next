@@ -51,6 +51,12 @@ import {
   mismasHoras,
 } from "@/lib/admin/horas";
 import { METODOS_PAGO, metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import {
+  TARIFA_EPSILON_2,
+  mismaTarifa,
+  moneyTarifa,
+  textoCuentaTarifa,
+} from "@/lib/admin/tarifa";
 import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Airport } from "@/types/airports";
@@ -308,6 +314,22 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
       ) / 100
     : null;
 
+  // CUENTA VIVA de la tarifa personalizada (22-sep-2026, #105): cuando el
+  // operador teclea una tarifa con más de 2 decimales —989.583333 para cerrar
+  // en $2,375.00 con 2.4 hr— el campo dice en voz alta la multiplicación del
+  // MOTOR. `vigente` = el breakdown ya corresponde a la tarifa que se ve; la
+  // tolerancia es de 2 decimales a propósito, que es lo que devuelve un API
+  // todavía sin desplegar.
+  const cuentaTarifaVigente =
+    !!breakdown &&
+    breakdown.tarifa.proviene_de_override === true &&
+    mismaTarifa(breakdown.tarifa.usd_por_hora, values.tarifa_hora_override_usd, TARIFA_EPSILON_2);
+  const cuentaTarifa = textoCuentaTarifa({
+    horas: breakdown?.tiempos.cobrable_hr,
+    tarifa: values.tarifa_hora_override_usd,
+    importeUsd: cuentaTarifaVigente ? breakdown?.totales.subtotal_vuelo_usd : null,
+  });
+
   // ===== Nodos compartidos entre EDICIÓN y LECTURA =====
   const sobrevueloAporteNode =
     breakdown && Number(breakdown.tiempos.sobrevuelo_hr) > 0
@@ -327,7 +349,9 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
           return (
             <AporteChip
               usd={deltaHr * breakdown.tarifa.usd_por_hora}
-              nota={`${fmtDecimal(deltaHr, 2)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}/hr`}
+              // La nota ENSEÑA la multiplicación: la tarifa va con todos sus
+              // decimales (`moneyTarifa`), si no la cuenta se lee descuadrada.
+              nota={`${fmtDecimal(deltaHr, 2)} hr × ${moneyTarifa(breakdown.tarifa.usd_por_hora)}/hr`}
             />
           );
         })()
@@ -921,14 +945,38 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
                     <Field
                       label="$/hr — SOLO esta cotización"
                       hint={
-                        clienteInterno
-                          ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
-                          : "Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."
+                        <>
+                          {clienteInterno
+                            ? "Cliente interno: puedes poner 0 para cotizar sin cobro. Vacío = la pactada del cliente o la del avión."
+                            : "Vacío = la pactada del cliente o la del avión. No cambia la tarifa del cliente."}
+                          {/* CUENTA VIVA cuando la tarifa trae más de 2
+                              decimales: «2.4 hr × $989.583333 = $2,375.00».
+                              El importe es el del MOTOR (subtotal del
+                              servicio aéreo), nunca una multiplicación
+                              local; mientras el motor va un debounce atrás
+                              dice «calculando…». Con 2 decimales no se pinta
+                              nada: la cuenta se ve sola. Va DENTRO del hint
+                              (un solo hijo) para que `Field` siga ligando la
+                              etiqueta con el input. */}
+                          {cuentaTarifa && (
+                            <span className="mt-1 block font-mono">
+                              {cuentaTarifa}
+                              {!cuentaTarifaVigente && (
+                                <span className="font-sans"> · calculando…</span>
+                              )}
+                            </span>
+                          )}
+                        </>
                       }
                     >
                       <Input
                         type="number"
-                        step="0.01"
+                        // 6 decimales (22-sep-2026, #105): para cerrar en
+                        // $2,375.00 con 2.4 hr hay que teclear 989.583333, y
+                        // con `step="0.01"` el navegador marcaba el campo
+                        // inválido. Los mismos decimales que persiste el API
+                        // y que el T.C. (17-sep).
+                        step="0.000001"
                         min={0}
                         placeholder="Auto"
                         className="w-36 font-mono"
@@ -1912,12 +1960,20 @@ function HorasPorTramo({ breakdown, lectura }: { breakdown: QuoteBreakdown | nul
   );
 }
 
-/** "$750/hr" compacto (sin decimales) para el sub del selector de tarifa. */
+/**
+ * "$750/hr" compacto para el sub del selector de tarifa. Las tarifas del
+ * catálogo son redondas y se pintan sin decimales; una PERSONALIZADA con
+ * centavos sí los enseña (2 decimales, que es lo que cabe en el sub de un
+ * botón): redondear 989.583333 a «$990/hr» justo bajo «Personalizada» decía
+ * otro número del que se está cobrando. El valor EXACTO se ve en el campo de
+ * abajo y en su cuenta viva.
+ */
 function tarifaSub(n: number | string | null | undefined): string | undefined {
   if (n == null || `${n}`.trim() === "") return undefined;
   const v = Number(n);
   if (!Number.isFinite(v)) return undefined;
-  return `$${Math.round(v).toLocaleString("en-US")}/hr`;
+  if (Number.isInteger(v)) return `$${v.toLocaleString("en-US")}/hr`;
+  return `${fmtUsd(v)}/hr`;
 }
 
 /** "CUN → HOL → CUN" de una ruta del catálogo (mismo texto del selector). */
@@ -2416,7 +2472,9 @@ function Preview({
             <Row
               label="Subtotal"
               value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
-              hint={`${fmtHorasDecimal(breakdown.tiempos.cobrable_hr, 4)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}`}
+              // El hint ENSEÑA la multiplicación del subtotal: la tarifa va
+              // completa (`moneyTarifa`), el valor sigue siendo el del motor.
+              hint={`${fmtHorasDecimal(breakdown.tiempos.cobrable_hr, 4)} hr × ${moneyTarifa(breakdown.tarifa.usd_por_hora)}`}
               bold
             />
           </CardContent>
