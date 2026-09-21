@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { fmtUsd } from "@/lib/format";
+import { fmtHorasDecimal } from "@/lib/admin/horas";
 import {
   fichaAeronaveUtilizada,
   textoCotizadoEn,
@@ -41,7 +42,9 @@ function buildLineas(quote: PersistedQuote): Linea[] {
   const lineas: Linea[] = [
     {
       clave: "TIEMPO_VUELO",
-      concepto: `Tiempo de vuelo · ${Number(quote.tiempo_cobrable_hr)} hr × $${Number(quote.tarifa_hora_usd)}/hr`,
+      // Horas de PRESENTACIÓN (4 decimales): desde el 22-sep-2026 el API
+      // persiste hasta 8 y el número crudo pintaba «2.33333333 hr».
+      concepto: `Tiempo de vuelo · ${fmtHorasDecimal(quote.tiempo_cobrable_hr, 4)} hr × $${Number(quote.tarifa_hora_usd)}/hr`,
       monto_usd: Number(quote.subtotal_vuelo_usd) || 0,
     },
   ];

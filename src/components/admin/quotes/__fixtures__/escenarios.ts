@@ -465,6 +465,106 @@ export function escenarioTc6(): Omit<QuoteSheetProps, "mapaSvg"> {
   };
 }
 
+// ===== hoja-horas8: HORAS PACTADAS con 8 DECIMALES (cotización #322,
+// 22-sep-2026). El cliente pactó 2:20 de tiempo cobrable a $600/hr: el motor
+// multiplica 2.33333333 × 600 = $1,400.00 y desde hoy PERSISTE esos ocho
+// decimales (antes guardaba 2.3333 y al reabrir la cotización el total caía
+// a $1,399.98). Con la tarifa/hr visible, el PDF imprime «Servicio aéreo
+// (2.33333 h × $600.00/hr)» — el `:g` de Python son 6 cifras
+// SIGNIFICATIVAS — y la hoja del panel tiene que decir lo MISMO con
+// `numeroG`. Si alguno de los dos cambia de formato, este fixture falla. =====
+const breakdownHoras8 = {
+  aeronave: { id: "a3", matricula: "XA-KOD", modelo: "Kodiak 100", pais_registro: "MX", velocidad_crucero_kts: 165 },
+  ruta: {
+    id: null,
+    origen_iata: "CUN",
+    destino_iata: "CUN",
+    millas_nauticas_base: 86,
+    millas_nauticas_totales: 86,
+    es_redondo_auto: false,
+    num_aterrizajes: 2,
+    escalas: null,
+  },
+  // Pactado a mano: la regla daría 0.82 hr (vuelo 0.52 + calzos 0.30).
+  tiempos: {
+    vuelo_hr: 0.52,
+    calzos_hr: 0.3,
+    cobrable_hr: 2.33333333,
+    cobrable_hr_regla: 1,
+    cobrable_proviene_de_override: true,
+  },
+  tarifa: { tipo: "CUSTOM", usd_por_hora: 600, proviene_de_override: true },
+  tuas: {
+    usd_pax_default: 25,
+    pasajeros: 2,
+    origen: airport("CUN", true, 25),
+    destino: airport("CUN", true, 25),
+    aeropuertos: [airport("CUN", true, 25), airport("HOL", false)],
+    filas: [tua("CUN", 25, 2)],
+    total_usd: 50,
+  },
+  tramos: null,
+  extras: [],
+  desglose: [
+    { clave: "TIEMPO_VUELO", concepto: "Tiempo de vuelo · 2.33333333 hr × $600/hr", monto_usd: 1400 },
+    { clave: "TUAS", concepto: "TUA CUN · $25.00 × 2 pax", monto_usd: 50 },
+    { clave: "IVA", concepto: "IVA 16%", monto_usd: 232 },
+  ],
+  iva: { aplica_por_metodo_pago: true, porcentaje: 0.16, base_usd: 1450, monto_usd: 232, nota: "" },
+  totales: {
+    subtotal_vuelo_usd: 1400,
+    tuas_total_usd: 50,
+    viaticos_pernocta_usd: 0,
+    extras_total_usd: 0,
+    ajuste_final_usd: 0,
+    iva_usd: 232,
+    total_usd: 1682,
+    total_mxn: null,
+  },
+  meta: { calculado_at: "2026-09-18T22:07:00Z", version_motor: "1.3.1" },
+} as unknown as QuoteBreakdown;
+
+export function escenarioHoras8(): Omit<QuoteSheetProps, "mapaSvg"> {
+  return {
+    valores: {
+      cliente_id: "c1",
+      aeronave_id: "a3",
+      pasajeros: 2,
+      fecha_vuelo: "2026-10-05T09:00",
+      fecha_traslado_final: "2026-10-05T15:00",
+      escalas: [
+        { origen_iata: "CUN", destino_iata: "HOL", millas_nauticas: 43 },
+        { origen_iata: "HOL", destino_iata: "CUN", millas_nauticas: 43 },
+      ],
+      tuas_lineas: [],
+      cobrar_tuas: true,
+      extras: [],
+      descuento_usd: null,
+      iva_pct_override: null,
+      tc_usd_mxn: null,
+      notas: "Tiempo cobrable pactado con el cliente.",
+      pdf_mostrar_tarifa: true,
+      pdf_mostrar_itinerario: true,
+      es_externo: false,
+      avion_externo_modelo: "",
+      avion_externo_matricula: "",
+    },
+    onCambio: () => undefined,
+    breakdown: breakdownHoras8,
+    documento: {
+      folio: "322",
+      fechaCotizacion: "2026-09-18T22:07:00Z",
+      tipo: "MULTIESCALA",
+      clienteNombre: "Cliente Demo S.A.",
+      modelosCotizados: ["Kodiak 100"],
+      matricula: "XA-KOD",
+    },
+    catalogos: { clientes: CLIENTES, aeronaves: AERONAVES, aeropuertos: AEROPUERTOS },
+    tramosPdf: { onFechaPdfChange: () => undefined, onOcultoChange: () => undefined },
+    escala: 1,
+  };
+}
+
 /** Nombre del fixture → escenario (props sin `mapaSvg`, que sale del HTML). */
 export const ESCENARIOS: Record<string, () => Omit<QuoteSheetProps, "mapaSvg">> = {
   hoja1: escenarioHoja1,
@@ -472,4 +572,5 @@ export const ESCENARIOS: Record<string, () => Omit<QuoteSheetProps, "mapaSvg">> 
   "hoja-multidia": escenarioMultidia,
   "hoja-externo": escenarioExterno,
   "hoja-tc6": escenarioTc6,
+  "hoja-horas8": escenarioHoras8,
 };

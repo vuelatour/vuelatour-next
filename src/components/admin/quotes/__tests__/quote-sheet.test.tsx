@@ -229,9 +229,10 @@ const CASOS: Caso[] = Object.entries(ESCENARIOS)
 const render = (props: QuoteSheetProps) => parsearHoja(renderToString(<QuoteSheet {...props} />));
 
 describe("fixtures", () => {
-  it("existen los 5 fixtures generados con pyservices (npm run gen:hoja-fixture)", () => {
+  it("existen los 6 fixtures generados con pyservices (npm run gen:hoja-fixture)", () => {
     expect(CASOS.map((c) => c.nombre).sort()).toEqual([
       "hoja-externo",
+      "hoja-horas8",
       "hoja-multidia",
       "hoja-normal",
       "hoja-tc6",
@@ -251,6 +252,19 @@ describe("fixtures", () => {
     const html = CASOS.find((c) => c.nombre === "hoja-tc6")!.html;
     expect(html).toContain("Total MXN (T.C. 16.991632)");
     expect(html).not.toMatch(/T\.C\. 16\.9916(?!32)/);
+  });
+
+  /**
+   * HORAS PACTADAS de 8 DECIMALES (cotización #322, 22-sep-2026): 2:20 a
+   * $600/hr son $1,400.00 exactos y lo persistido es 2.33333333, no 2.3333
+   * (con el truncado el total caía a $1,399.98 al reabrir la cotización).
+   * En el PDF esas horas se imprimen con `:g` —6 cifras significativas— y el
+   * panel las pinta con `numeroG`: el texto tiene que ser el MISMO.
+   */
+  it("hoja-horas8 congela las horas pactadas del PDF («2.33333 h», no «2.3333»)", () => {
+    const html = CASOS.find((c) => c.nombre === "hoja-horas8")!.html;
+    expect(html).toContain("Servicio aéreo (2.33333 h × $600.00/hr)");
+    expect(html).not.toContain("2.3333 h ×");
   });
 });
 

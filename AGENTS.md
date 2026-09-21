@@ -169,6 +169,10 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
   ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
   pinta con `fmtDecimal(tc, 4)`, `toFixed(4)` ni `numeroG`.
+- HORAS pactadas: `lib/admin/horas.ts` (`parseHorasPactadas`,
+  `fmtHorasDecimal`, `fmtHorasMinutos`, `horasATexto`…) — ver «Horas
+  pactadas: 8 decimales y captura h:mm» más abajo. Se persisten y se
+  multiplican con 8 decimales; se PINTAN con 4 (o con `numeroG` en la hoja).
 - Cotización de GRUPO (4-sep-2026): `types/grupos.ts` (1:1 con /v1/grupos),
   `lib/admin/grupos-ui.ts` (folioTexto "G-12", estados, semáforos vía
   estadoCobroSemaforo, `mensajeErrorGrupo` para TODOS los 409 estructurados),
@@ -591,6 +595,95 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   pesos exactos de la cotización; con cobros = `round2(pendiente_usd × tc)`;
   cancelado = sin sugerencia. La sugerencia NUNCA pisa un importe tecleado
   (misma regla que el T.C. prellenado) y volver a USD restaura el pendiente.
+
+## Horas pactadas: 8 decimales y captura h:mm (22-sep-2026)
+
+- **El bug (cotizaciones #322 y #302, pedido del cliente)**: mismos datos
+  (XB-PEV, CUN→PTU→CUN, tarifa personalizada $600/hr, cobrable pactado
+  2.333333333) y dos resultados: la #322 salía $1,399.98 / $1,623.98 y la
+  #302 $1,400.00 / $1,624.00. «No me lo redondea en la primer captura… aquí
+  sí en la segunda.» El motor multiplicaba con la precisión COMPLETA
+  (2.333333333 × 600 = 1,400.00) pero lo PERSISTIDO eran 4 decimales; el
+  panel rehidrataba ese 2.3333, el cálculo en vivo daba 1,399.98 y al
+  Guardar el descuadre quedaba grabado. Misma familia que el T.C. de 4
+  decimales (17-sep) — y la misma regla: **lo que se persiste es lo que se
+  usó para multiplicar**.
+- **Fuente única `lib/admin/horas.ts`** (PURA, sin React ni `lib/format`,
+  congelada en `__tests__/horas.test.ts`): `HORAS_DECIMALES = 8`, `round8`,
+  `horasONull` (descarta vacío/negativo/0), `mismasHoras`, `parseHorasPactadas`
+  (decimal «2.3333» · «2,5», h:mm «2:20», «2 h 20 min», «45 min»; vacío =
+  regla; `parcial` para lo que se está tecleando; errores en es-MX),
+  `fmtHorasDecimal` (presentación, 4 decimales por default),
+  `fmtHorasMinutos` («2 h 20 min», «≈» cuando no cae en minuto exacto),
+  `horasATexto` (texto canónico del input: decimal corto, h:mm cuando hace
+  falta, nunca «2.33333333» crudo), `preferirHorasPersistidas` y
+  `textoCambioHoras`.
+- **Rehidratación** (`quote-calculator.tsx`): el pactado se re-hidrata con
+  `preferirHorasPersistidas(calculo_snapshot.tiempos.cobrable_hr,
+  quote.tiempo_cobrable_hr)` — de los dos caminos gana el que conserva MÁS
+  precisión cuando son el mismo número (snapshot viejo de 4 decimales +
+  columna nueva `numeric(14,8)`), y el SNAPSHOT cuando de verdad difieren
+  (es la foto con la que se compuso el dinero impreso). En el camino de ida
+  (`armarCalcPayload` → `/calculate`, `create`, `revise`) el número viaja
+  ENTERO: ningún `toFixed(4)`/round4 sobre horas.
+- **Captura amigable** (`CampoHorasPactadas`,
+  `components/admin/quotes/campo-horas-pactadas.tsx`): sustituye al
+  `type="number" step="0.1"` del «Cobrable pactado» (`#cobrable-field`) y al
+  del avión hijo del grupo (`grupo-form/aviones-editor.tsx`). Acepta decimal
+  o h:mm, no normaliza mientras se teclea (el cursor no salta) y solo
+  re-sincroniza cuando el valor cambia desde FUERA (rehidratación,
+  Descartar, `?d=`). Debajo, línea viva «= 2 h 20 min · 2.3333 hr × $600.00 =
+  $1,400.00»: el importe es `breakdown.totales.subtotal_vuelo_usd` del
+  MOTOR, jamás una multiplicación local; mientras el motor va un debounce
+  atrás dice «calculando…» (la coincidencia horas⇄breakdown se mide con
+  tolerancia de 4 decimales, que es lo que devuelve un API sin desplegar).
+- **Presentación**: las horas se pintan con `fmtHorasDecimal(v, 4)` (panel) y
+  con `numeroG` en la hoja (el `:g` de pyservices = 6 cifras
+  SIGNIFICATIVAS: 2.33333333 → «2.33333»). Un número de 8 decimales NUNCA se
+  pinta crudo (`quote-desglose-card.tsx` lo hacía en el desglose legado).
+  Paridad panel ⇄ pyservices congelada en el fixture **`hoja-horas8`**
+  (`__fixtures__/hoja-horas8.payload.json`, «Servicio aéreo (2.33333 h ×
+  $600.00/hr)»): si alguno de los dos cambia de formato, el test falla.
+  Esa paridad depende de que el API mande al PDF las horas del SNAPSHOT y no
+  las de la columna (revisión adversaria 22-sep, corregido en
+  `quotes-pdf.service`): con la columna todavía en `numeric(10,4)` la hoja de
+  pantalla decía «2.33333 h» y el PDF real «2.3333 h» para la misma
+  cotización. Si vuelve a divergir, el bug está allá, no aquí.
+- **Diff de versiones** (`quote-revision.ts`): las HORAS (`cobrable`,
+  `sobrevuelo`) se comparan a 8 decimales, no a los 4 de `num` — con la
+  comparación vieja, pactar «2:20» sobre una cotización que guardaba 2.3333
+  no contaba como cambio, no aparecía «Guardar» y la cotización no se podía
+  arreglar. El texto lo arma `textoCambioHoras`, que sube la precisión (2 →
+  4 → 8) hasta que los dos números se distinguen: nunca «Cobrable pactado
+  2.3333→2.3333 hr».
+- **Captura h:mm, decisiones congeladas**: los minutos son LITERALES tengan
+  uno o dos dígitos («2:5» = 2 h **5** min = 2.08333333, no 2:50) y un
+  «:30» suelto NO se adivina (error que enseña los dos formatos; media hora
+  se escribe «0:30» o «30 min»). Nada de esto queda en la sombra: la línea
+  viva bajo el campo dice «= 2 h 5 min · 2.0833 hr × $600.00 = $1,250.00»
+  antes de guardar. Congelado en `__tests__/horas.test.ts`.
+- **El ciclo completo está probado** (`horas.test.ts` → «ciclo completo
+  pactar → guardar → reabrir»): pactar «2:20»/«1:45»/«0:50» a $600, $3,500 y
+  $9,750/hr, persistir, rehidratar lo que devuelve el API —`numeric` de
+  PostgREST llega como **número O cadena**, y `to_jsonb` conserva los ceros
+  de cola («2.50000000»)— y volver a multiplicar: el total no se mueve.
+- PENDIENTE conocido: `sobrevuelo_hr` se rehidrata del snapshot y SÍ mueve
+  dinero (se suma al cobrable). El API ya lo persiste con 8 decimales desde
+  el 22-sep, pero su input sigue siendo `type="number" step="0.1"` (nadie
+  pacta un sobrevuelo en minutos); queda pendiente subirlo a
+  `CampoHorasPactadas` si alguna vez hace falta.
+- **El GRUPO no pierde el pactado del hijo** (verificado en la revisión
+  adversaria, 22-sep): `grupo-form/types.ts` rehidrata
+  `tiempo_cobrable_override_hr: null` y `payload.ts` **omite** el campo
+  cuando es null, así que el API cae a lo persistido
+  (`groups.service`: `a.tiempo_cobrable_override_hr ?? prev…`, y `prev` sale
+  de `horasPactadasPersistidas`). Lo que sí hay que saber: el campo del
+  wizard se VE VACÍO aunque el hijo tenga horas pactadas, y ahí vacío NO
+  significa «vuelve a la regla» sino «conserva lo pactado» (lo contrario de
+  lo que dice el mismo campo en el cotizador). Cambiar de avión al hijo SÍ
+  suelta el pactado (precio nuevo, avión nuevo). Rehidratarlo de verdad
+  exige decidir antes cómo se expresa «vuelve a la regla» en el contrato del
+  grupo con el API — no tocar sin esa decisión.
 
 ## Conciliación Paywise (9-sep-2026)
 

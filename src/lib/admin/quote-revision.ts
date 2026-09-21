@@ -1,4 +1,5 @@
 import { cotizacionEditablePorFecha } from "@/lib/datetime";
+import { mismasHoras, textoCambioHoras } from "@/lib/admin/horas";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type { PersistedEscala, PersistedQuote } from "@/types/quotes-persisted";
 
@@ -253,6 +254,19 @@ function mismoNum(a: unknown, b: unknown): boolean {
   return num(a) === num(b);
 }
 
+/**
+ * HORAS: se comparan a 8 decimales, NO a los 4 de `num` (22-sep-2026).
+ * Pactar 2:20 (2.33333333 hr) sobre una cotización vieja que guardaba
+ * 2.3333 mueve el dinero de $1,399.98 a $1,400.00: con la comparación de 4
+ * decimales el diff decía «no hay cambios», el botón Guardar no aparecía y
+ * el operador no podía arreglar su propia cotización. El TEXTO del cambio se
+ * arma con `textoCambioHoras`, que sube la precisión hasta que los dos
+ * números se distinguen (nunca «2.3333→2.3333 hr»).
+ */
+function mismasHorasDiff(a: unknown, b: unknown): boolean {
+  return mismasHoras(a as number | string | null, b as number | string | null);
+}
+
 // ---- formato (compacto, sin importar lib/format: puro) -------------------
 
 function fmtMonto(n: number | null, moneda?: string | null): string {
@@ -367,19 +381,23 @@ export function resumirCambios(
           : `Tarifa/hr ${fmtMonto(a)}→${fmtMonto(b)}`,
     );
   }
-  if (!mismoNum(prev.sobrevuelo_hr, next.sobrevuelo_hr)) {
-    push(
-      "sobrevuelo",
-      `Sobrevuelo ${fmtNum(num(prev.sobrevuelo_hr) ?? 0)}→${fmtNum(num(next.sobrevuelo_hr) ?? 0)} hr`,
+  if (!mismasHorasDiff(prev.sobrevuelo_hr, next.sobrevuelo_hr)) {
+    const [a, b] = textoCambioHoras(
+      prev.sobrevuelo_hr ?? 0,
+      next.sobrevuelo_hr ?? 0,
     );
+    push("sobrevuelo", `Sobrevuelo ${a === "—" ? "0" : a}→${b === "—" ? "0" : b} hr`);
   }
-  if (!mismoNum(prev.tiempo_cobrable_override_hr, next.tiempo_cobrable_override_hr)) {
-    const b = num(next.tiempo_cobrable_override_hr);
+  if (!mismasHorasDiff(prev.tiempo_cobrable_override_hr, next.tiempo_cobrable_override_hr)) {
+    const [a, b] = textoCambioHoras(
+      prev.tiempo_cobrable_override_hr,
+      next.tiempo_cobrable_override_hr,
+    );
     push(
       "cobrable",
-      b === null
+      b === "—"
         ? "Cobrable vuelve a la regla"
-        : `Cobrable pactado ${fmtNum(num(prev.tiempo_cobrable_override_hr))}→${fmtNum(b)} hr`,
+        : `Cobrable pactado ${a}→${b} hr`,
     );
   }
 

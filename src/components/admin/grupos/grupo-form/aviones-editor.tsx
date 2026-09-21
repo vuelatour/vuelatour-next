@@ -17,6 +17,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 import { isoToCancunInput } from "@/lib/datetime";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { HORAS_EPSILON_4, fmtHorasDecimal, mismasHoras } from "@/lib/admin/horas";
+import { CampoHorasPactadas } from "@/components/admin/quotes/campo-horas-pactadas";
 import { avisoAeronaveEnTaller, descripcionAeronave } from "@/lib/admin/aviso-taller";
 import { NotaTaller } from "@/components/admin/nota-taller";
 import { cn } from "@/lib/utils";
@@ -389,23 +391,30 @@ export function AvionesEditor({
                     />
                     <p className="text-[10px] text-muted-foreground">USD/hr</p>
                   </div>
+                  {/* Horas pactadas del hijo: MISMA captura que el cotizador
+                      (22-sep-2026) — decimal o h:mm, 8 decimales hacia el
+                      API, para que 2:20 × $600 sigan siendo $1,400.00. */}
                   <div className="space-y-1">
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={48}
+                    <CampoHorasPactadas
+                      valor={a.tiempo_cobrable_override_hr}
+                      onChange={(v) => update(i, { tiempo_cobrable_override_hr: v })}
                       disabled={bloqueado}
-                      placeholder={calculo ? fmtDecimal(calculo.tiempos.cobrable_hr, 1) : "hr"}
-                      value={a.tiempo_cobrable_override_hr ?? ""}
-                      onChange={(e) =>
-                        update(i, {
-                          tiempo_cobrable_override_hr: e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                        })
+                      placeholder={calculo ? fmtHorasDecimal(calculo.tiempos.cobrable_hr, 4) : "2:20 o 2.5"}
+                      tarifaUsdHr={arm?.aeronave.tarifa_hora_usd ?? null}
+                      importeUsd={calculo?.totales.subtotal_vuelo_usd ?? null}
+                      importeVigente={
+                        !!calculo &&
+                        calculo.tiempos.cobrable_proviene_de_override === true &&
+                        mismasHoras(
+                          calculo.tiempos.cobrable_hr,
+                          a.tiempo_cobrable_override_hr,
+                          HORAS_EPSILON_4,
+                        )
                       }
-                      title="Horas cobrables pactadas SOLO para este avión (vacío = las calcula el motor)"
+                      title="Horas cobrables pactadas SOLO para este avión (vacío = las calcula el motor). Escribe horas decimales o h:mm, p. ej. 2:20"
+                      aria-label="Horas cobrables pactadas"
                     />
-                    <p className="text-[10px] text-muted-foreground">hr cobrables</p>
+                    <p className="text-[10px] text-muted-foreground">hr cobrables (decimal o h:mm)</p>
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground">

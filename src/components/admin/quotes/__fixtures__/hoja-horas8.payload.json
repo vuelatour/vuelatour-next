@@ -1,0 +1,57 @@
+{
+  "folio": "322",
+  "fecha": "2026-09-18T22:07:00Z",
+  "cliente": "Cliente Demo S.A.",
+  "origen": "CUN",
+  "destino": "CUN",
+  "tipo": "MULTIESCALA",
+  "pasajeros": 2,
+  "fecha_traslado_inicial": "2026-10-05T14:00:00Z",
+  "fecha_traslado_final": "2026-10-05T20:00:00Z",
+  "ruta": "CUN → HOL → CUN",
+  "escalas": [
+    { "orden": 1, "origen": "CUN", "destino": "HOL", "fecha": null },
+    { "orden": 2, "origen": "HOL", "destino": "CUN", "fecha": null }
+  ],
+  "tiempo_cobrable_hr": 2.33333333,
+  "tarifa_hora_usd": 600,
+  "subtotal_usd": 1400,
+  "tuas_usd": 50,
+  "tuas_detalle": ["TUA CUN · $25.00 × 2 pax"],
+  "extras": [],
+  "extras_total_usd": 0,
+  "viaticos_pernocta_usd": 0,
+  "descuento_usd": 0,
+  "iva_pct": 16,
+  "iva_usd": 232,
+  "total_usd": 1682,
+  "moneda": "USD",
+  "notas": "Tiempo cobrable pactado con el cliente.",
+  "mostrar_tarifa_hora": true,
+  "mostrar_itinerario": true,
+  "matricula": "XA-KOD",
+  "aeronave_cotizada_modelo": "Kodiak 100",
+  "modelos_cotizados": ["Kodiak 100"],
+  "mapa_puntos": [
+    {
+      "orden": 1,
+      "origen_iata": "CUN",
+      "destino_iata": "HOL",
+      "o_lat": 21.0365,
+      "o_lon": -86.8771,
+      "d_lat": 21.5216,
+      "d_lon": -87.3796,
+      "es_ferry": false
+    },
+    {
+      "orden": 2,
+      "origen_iata": "HOL",
+      "destino_iata": "CUN",
+      "o_lat": 21.5216,
+      "o_lon": -87.3796,
+      "d_lat": 21.0365,
+      "d_lon": -86.8771,
+      "es_ferry": false
+    }
+  ]
+}

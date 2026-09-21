@@ -194,6 +194,54 @@ describe("resumirCambios", () => {
     ]);
   });
 
+  /**
+   * HORAS PACTADAS a 8 decimales (22-sep-2026, cotizaciones #322 / #302).
+   * Pactar «2:20» sobre una cotización que guardaba 2.3333 mueve el dinero
+   * dos centavos ($1,399.98 → $1,400.00): el diff TIENE que verlo (si no,
+   * no aparece «Guardar» y la cotización no se puede arreglar) y tiene que
+   * contarlo de forma legible, nunca «2.3333→2.3333 hr».
+   */
+  it("cobrable pactado: un cambio más allá del 4.º decimal SE VE y se lee distinto", () => {
+    const prev = { ...base(), tiempo_cobrable_override_hr: 2.3333 };
+    const next = { ...base(), tiempo_cobrable_override_hr: 2.33333333 };
+    expect(textos(prev, next)).toEqual(["Cobrable pactado 2.3333→2.33333333 hr"]);
+  });
+
+  it("cobrable pactado: lo de siempre se cuenta corto y volver a la regla se dice", () => {
+    const prev = { ...base(), tiempo_cobrable_override_hr: 2.4 };
+    expect(textos(prev, { ...prev, tiempo_cobrable_override_hr: 3 })).toEqual([
+      "Cobrable pactado 2.4→3 hr",
+    ]);
+    expect(textos(prev, { ...prev, tiempo_cobrable_override_hr: null })).toEqual([
+      "Cobrable vuelve a la regla",
+    ]);
+    // Contra «sin pactar» los textos ya se distinguen: no hace falta subir
+    // la precisión (el resumen es corto a propósito).
+    expect(textos(base(), { ...base(), tiempo_cobrable_override_hr: 2.33333333 })).toEqual([
+      "Cobrable pactado —→2.33 hr",
+    ]);
+  });
+
+  it("cobrable pactado: el MISMO número (string vs number) no es un cambio", () => {
+    const prev = { ...base(), tiempo_cobrable_override_hr: 2.33333333 };
+    expect(textos(prev, { ...prev, tiempo_cobrable_override_hr: "2.33333333" })).toEqual([]);
+  });
+
+  it("sobrevuelo también se compara con la precisión de las horas", () => {
+    const prev = { ...base(), sobrevuelo_hr: 0.5 };
+    expect(textos(prev, { ...prev, sobrevuelo_hr: 0.75 })).toEqual([
+      "Sobrevuelo 0.5→0.75 hr",
+    ]);
+    expect(textos(base(), { ...base(), sobrevuelo_hr: 0.33333333 })).toEqual([
+      "Sobrevuelo 0→0.33 hr",
+    ]);
+    // Pero un ajuste fino sobre un sobrevuelo YA pactado no se traga.
+    const fino = { ...base(), sobrevuelo_hr: 0.3333 };
+    expect(textos(fino, { ...fino, sobrevuelo_hr: 0.33333333 })).toEqual([
+      "Sobrevuelo 0.3333→0.33333333 hr",
+    ]);
+  });
+
   it("notas y toggles del PDF", () => {
     const next = { ...base(), notas: "Otra nota", pdf_mostrar_tarifa: true, pdf_mostrar_itinerario: false };
     expect(textos(base(), next)).toEqual([

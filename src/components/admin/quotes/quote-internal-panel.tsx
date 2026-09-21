@@ -40,9 +40,16 @@ import { Field } from "@/components/admin/form-field";
 import { FechaHoraCampo } from "@/components/admin/fecha-hora-campo";
 import { AirportQuickCreateButton } from "@/components/admin/airports/airport-quick-create-button";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
+import { CampoHorasPactadas } from "@/components/admin/quotes/campo-horas-pactadas";
 import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import type { RutaSugerida } from "@/app/admin/quotes/actions";
 import { textoCantidadUnitario } from "@/lib/admin/extras";
+import {
+  HORAS_EPSILON_4,
+  fmtHorasDecimal,
+  fmtHorasMinutos,
+  mismasHoras,
+} from "@/lib/admin/horas";
 import { METODOS_PAGO, metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -814,18 +821,20 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
                     </>
                   }
                 />
+                {/* Las horas se pintan a 4 decimales (presentación); el
+                    número vivo puede traer 8 y ahí el reloj lo dice claro. */}
                 <Dato
                   label="Tiempo cobrable"
                   value={
                     breakdown
-                      ? `${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`
+                      ? `${fmtHorasDecimal(breakdown.tiempos.cobrable_hr, 4)} hr`
                       : Number(initialQuote?.tiempo_cobrable_hr) > 0
-                        ? `${fmtDecimal(Number(initialQuote!.tiempo_cobrable_hr), 4)} hr`
+                        ? `${fmtHorasDecimal(Number(initialQuote!.tiempo_cobrable_hr), 4)} hr`
                         : "—"
                   }
                   hint={
                     breakdown?.tiempos.cobrable_proviene_de_override
-                      ? "Pactado a mano"
+                      ? `Pactado a mano · ${fmtHorasMinutos(breakdown.tiempos.cobrable_hr)}`
                       : breakdown?.tiempos.minimo_hora_aplicado
                         ? "Vuelo corto: se cobra la hora completa (mínimo 1 hr)"
                         : breakdown
@@ -949,38 +958,54 @@ export function QuoteInternalPanel(props: QuoteInternalPanelProps) {
                   </Field>
                 </div>
                 {/* COBRABLE pactado: la suma final de horas (vacío = regla,
-                    mínimo 1 hr). Ancla `cobrable-field`. */}
+                    mínimo 1 hr). Ancla `cobrable-field`. Captura DECIMAL o
+                    h:mm (22-sep-2026): «2:20» son 2.33333333 hr, las que el
+                    API persiste y con las que el motor multiplica — teclear
+                    «2.3333» a mano costaba dos centavos en la #322. */}
                 <div id="cobrable-field" className="scroll-mt-24">
                   <Field
                     label="Cobrable pactado (hr)"
                     hint={
-                      breakdown
-                        ? breakdown.tiempos.cobrable_proviene_de_override
-                          ? `Pactado a mano · la regla daría ${fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
-                          : `Vuelo ${fmtDecimal(breakdown.tiempos.vuelo_hr, 2)} · calzos ${fmtDecimal(breakdown.tiempos.calzos_hr, 2)}${
-                              Number(breakdown.tiempos.sobrevuelo_hr) > 0
-                                ? ` · sobrevuelo ${fmtDecimal(breakdown.tiempos.sobrevuelo_hr!, 2)}`
-                                : ""
-                            } · vacío = regla (mínimo 1 hr)`
-                        : "Vacío = regla (vuelo + calzos + sobrevuelo, mínimo 1 hr)"
+                      <>
+                        {breakdown
+                          ? breakdown.tiempos.cobrable_proviene_de_override
+                            ? `Pactado a mano · la regla daría ${fmtHorasDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
+                            : `Vuelo ${fmtDecimal(breakdown.tiempos.vuelo_hr, 2)} · calzos ${fmtDecimal(breakdown.tiempos.calzos_hr, 2)}${
+                                Number(breakdown.tiempos.sobrevuelo_hr) > 0
+                                  ? ` · sobrevuelo ${fmtDecimal(breakdown.tiempos.sobrevuelo_hr!, 2)}`
+                                  : ""
+                              } · vacío = regla (mínimo 1 hr)`
+                          : "Vacío = regla (vuelo + calzos + sobrevuelo, mínimo 1 hr)"}
+                        <br />
+                        Escribe horas decimales o h:mm, p. ej. 2:20.
+                      </>
                     }
                   >
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={48}
+                    <CampoHorasPactadas
+                      id="cobrable-input"
+                      valor={values.tiempo_cobrable_override_hr}
+                      onChange={(v) => setValue("tiempo_cobrable_override_hr", v)}
                       placeholder={
                         breakdown
-                          ? fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? breakdown.tiempos.cobrable_hr, 4)
-                          : "Auto"
+                          ? fmtHorasDecimal(
+                              breakdown.tiempos.cobrable_hr_regla ?? breakdown.tiempos.cobrable_hr,
+                              4,
+                            )
+                          : "2:20 o 2.5"
                       }
-                      className="font-mono"
-                      value={values.tiempo_cobrable_override_hr ?? ""}
-                      onChange={(e) =>
-                        setValue(
-                          "tiempo_cobrable_override_hr",
-                          e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                      tarifaUsdHr={breakdown?.tarifa.usd_por_hora ?? null}
+                      importeUsd={breakdown?.totales.subtotal_vuelo_usd ?? null}
+                      // El breakdown va un debounce atrás: el importe solo se
+                      // enseña cuando corresponde a las horas que se ven. La
+                      // tolerancia es de 4 decimales a propósito — un API aún
+                      // sin desplegar devuelve el cobrable redondeado ahí.
+                      importeVigente={
+                        !!breakdown &&
+                        breakdown.tiempos.cobrable_proviene_de_override === true &&
+                        mismasHoras(
+                          breakdown.tiempos.cobrable_hr,
+                          values.tiempo_cobrable_override_hr,
+                          HORAS_EPSILON_4,
                         )
                       }
                     />
@@ -2338,12 +2363,14 @@ function Preview({
                 <p className="font-semibold">Cobrable</p>
                 <p className="text-xs text-muted-foreground">
                   {breakdown.tiempos.cobrable_proviene_de_override
-                    ? `pactado a mano · la regla daría ${fmtDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
+                    ? `pactado a mano (${fmtHorasMinutos(breakdown.tiempos.cobrable_hr)}) · la regla daría ${fmtHorasDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
                     : "regla (suma, mínimo 1 hr)"}
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-mono font-semibold">{fmtDecimal(breakdown.tiempos.cobrable_hr, 4)}</span>
+                <span className="font-mono font-semibold">
+                  {fmtHorasDecimal(breakdown.tiempos.cobrable_hr, 4)}
+                </span>
                 <span className="text-xs text-muted-foreground">hr</span>
               </div>
             </div>
@@ -2389,7 +2416,7 @@ function Preview({
             <Row
               label="Subtotal"
               value={fmtUsd(breakdown.totales.subtotal_vuelo_usd)}
-              hint={`${fmtDecimal(breakdown.tiempos.cobrable_hr, 4)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}`}
+              hint={`${fmtHorasDecimal(breakdown.tiempos.cobrable_hr, 4)} hr × ${fmtUsd(breakdown.tarifa.usd_por_hora)}`}
               bold
             />
           </CardContent>

@@ -70,6 +70,7 @@ import {
   type ExtraFueraDelTotal,
 } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { preferirHorasPersistidas } from "@/lib/admin/horas";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import {
   aeronaveInicialDeCotizacion,
@@ -823,10 +824,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           Number(q.calculo_snapshot?.tiempos?.sobrevuelo_hr) > 0
             ? Number(q.calculo_snapshot!.tiempos.sobrevuelo_hr)
             : null,
+        // HORAS PACTADAS (22-sep-2026, #322): se rehidrata el valor
+        // persistido COMPLETO. El snapshot viejo guardaba 4 decimales
+        // (2.3333) y la columna del vuelo ya trae los 8 (2.33333333): con el
+        // truncado, reabrir y guardar sin tocar nada bajaba el total de
+        // $1,400.00 a $1,399.98. `preferirHorasPersistidas` se queda con el
+        // que conserva más precisión cuando son el MISMO número, y con el
+        // snapshot cuando de verdad difieren (es la foto del dinero).
         tiempo_cobrable_override_hr:
-          q.calculo_snapshot?.tiempos?.cobrable_proviene_de_override === true &&
-          Number(q.calculo_snapshot?.tiempos?.cobrable_hr) > 0
-            ? Number(q.calculo_snapshot!.tiempos.cobrable_hr)
+          q.calculo_snapshot?.tiempos?.cobrable_proviene_de_override === true
+            ? preferirHorasPersistidas(
+                q.calculo_snapshot?.tiempos?.cobrable_hr,
+                q.tiempo_cobrable_hr,
+              )
             : null,
         // El switch de TUAS apagado se guardó como override $0/pax; un override
         // distinto de 0 se re-hidrata en el campo avanzado para no perderlo.
