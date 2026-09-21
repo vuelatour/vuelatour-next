@@ -1001,3 +1001,72 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   oficina movía un gasto de vuelo en Gastos y al volver a la otra pestaña
   seguía viendo la lista vieja. No toca el estado de formularios abiertos
   (refresh re-renderiza Server Components, no remonta clientes).
+
+## Próximo servicio: la orden se ve, no solo «faltan 9.8 h» (19-sep-2026)
+
+- Pedido del cliente (Porfirio, ADMIN, captura del XA-VGV a las 08:49):
+  «retomando el tema de que se generara automáticamente la instrucción de
+  generar una orden de servicio de mantenimiento 10 hrs antes del tiempo
+  estimado, no se generó, mejor dicho solo marca una leyenda. Entonces es
+  enunciativa y posterior la agrego». La tarjeta decía «Próximo servicio · a
+  las 2,250 h · Servicio 500 hrs · faltan 9.8 h» y NO había orden: el avión
+  cruzó el umbral a las 08:40 (captura de tacos del vuelo #295) y la revisión
+  que crea la orden corría UNA vez al día, a las 08:00.
+- Corrección del API: la revisión se dispara también al capturar/confirmar
+  cualquier tacómetro (+ red de seguridad cada 10 min) y
+  `proximo_servicio` gana el campo **ADITIVO**
+  `orden: { id, estado: 'PROGRAMADO'|'EN_TALLER', fecha_programada: string|null,
+  automatica: boolean } | null` — el mantenimiento ABIERTO que cubre ese hito,
+  resuelto con el MISMO criterio del dedupe de la creación automática. Llega en
+  los dos sitios: `/v1/aircraft/:id/metrics` (`faltan_hr`) y
+  `/v1/aircraft/:id/tacometros` (`faltan`).
+- **FUENTE ÚNICA del panel**: `src/lib/admin/proximo-servicio.ts` (PURO,
+  prueba `__tests__/proximo-servicio.test.ts`) — `estadoOrdenServicio`
+  devuelve `{texto, tono, detalle?, accion}` ya redactado en es-MX:
+  PROGRAMADO sin fecha ⇒ **«Orden programada · falta confirmar fecha»**
+  (ámbar + enlace «Poner fecha» a `#mantenimientos`); con fecha ⇒ «Orden
+  programada para 25 sep 2026»; EN_TALLER ⇒ «En taller»; **sin orden** y
+  dentro del umbral ⇒ «La orden se genera sola en unos minutos» (ya no «solo
+  una leyenda»); sin orden y lejos ⇒ `null` (no se pinta nada). El `detalle`
+  (tooltip) dice si la creó el sistema o la oficina: es justo la duda que
+  levantó el reporte. Ningún componente redacta estos textos a mano.
+- **`orden` AUSENTE (`undefined`) ⇒ `null`**: API sin desplegar = la UI se
+  comporta EXACTAMENTE como antes. Prometer «se genera sola» contra un backend
+  sin el hook sería repetir la mentira que reportó el cliente. `orden: null`
+  (el API miró y no hay) sí pinta la promesa. Mismo patrón que
+  `estadoParcialDeGasto`.
+- **La promesa la respalda el API, no una constante** (revisión adversaria
+  20-sep-2026): `proximo_servicio.aviso_automatico` (ADITIVO)
+  `= {activo, umbral_hr} | null` dice si la regla `servicio_horas` está
+  ENCENDIDA y con qué margen. Con `activo:false` la línea cambia a **«La orden
+  NO se crea sola · hay que capturarla»** (ámbar + «Crear orden») — con la
+  regla apagada nadie la crea, y prometer lo contrario sería otra vez «es
+  enunciativa». `null` (el API no pudo leer la config) o ausente (API sin
+  desplegar) ⇒ se conserva la promesa, que es el comportamiento normal. El
+  margen sale de `umbralServicio(prox, umbralHr?)`: override explícito →
+  `aviso_automatico.umbral_hr` → `UMBRAL_ORDEN_HR`. Bajar el aviso a 5 h en
+  Configuración ya no deja la tarjeta prometiendo desde las 10 h.
+- `dentroDelUmbral` (≤ el margen VIGENTE; `UMBRAL_ORDEN_HR` = 10 es solo el
+  respaldo, espejo de `alerta_config.servicio_horas.horas_anticipacion`)
+  sustituye al `< 10`
+  suelto que tenía el KPI: a las 10.0 h exactas el API ya disparó y la tarjeta
+  no pintaba ámbar. El umbral se puede sobreescribir por parámetro; el panel
+  **no lo adivina** desde otro lado. Las horas NO se recalculan aquí: vienen
+  del API (`faltanHoras` acepta los dos nombres del campo a propósito —
+  mapearlo a mano en cada card es donde se cuela un número equivocado).
+- Pruebas: `lib/admin/__tests__/proximo-servicio.test.ts` (los textos y la
+  tolerancia al API viejo) y
+  `components/admin/aircraft/__tests__/aircraft-kpi-strip.test.tsx` (el
+  CABLEADO: que la línea y el enlace lleguen al marcado y que sin el aditivo la
+  tarjeta quede idéntica a antes).
+- Dónde se ve: `aircraft/aircraft-kpi-strip.tsx` (KPI «Próximo servicio»,
+  segunda línea bajo el hint) y `aircraft/aircraft-tacometros-card.tsx`
+  (métrica «Faltan»), con el MISMO helper para que las dos digan lo mismo. El
+  enlace es el ancla **`#mantenimientos`** = la card «Mantenimientos» de
+  `aircraft-engineering.tsx` (`id` + `scroll-mt-24`), que es donde se confirma
+  la fecha. Tipos aditivos: `OrdenServicioProgramada` en `types/aircraft.ts`
+  (`TacometroHistorial.proximo_servicio.orden`) y
+  `AircraftMetricsDetalle.proximo_servicio.orden` en `lib/api/aircraft.ts`.
+- La fecha se pinta con `fmtDateOnly` («25 sep 2026»), no en dd/mm/aaaa: es el
+  MISMO formato con el que la card de Mantenimientos muestra esa orden, y dos
+  formatos para el mismo dato confunden al operador.

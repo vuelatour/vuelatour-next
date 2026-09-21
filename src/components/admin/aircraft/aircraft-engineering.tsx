@@ -220,8 +220,9 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
 
   return (
     <>
-      {/* Mantenimientos */}
-      <Card className="lg:col-span-2">
+      {/* Mantenimientos — `id` ancla: el KPI «Próximo servicio» enlaza aquí
+          («Confirmar fecha» de una orden creada sola por el sistema). */}
+      <Card id="mantenimientos" className="scroll-mt-24 lg:col-span-2">
         <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
           <div className="space-y-1">
             <CardTitle className="text-base flex items-center gap-2">

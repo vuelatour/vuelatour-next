@@ -7,6 +7,12 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtDecimal, fmtMxn, fmtUsd } from "@/lib/format";
 import type { AircraftMetricsDetalle } from "@/lib/api/aircraft";
+import {
+  CLASE_TONO_SERVICIO,
+  dentroDelUmbral,
+  estadoOrdenServicio,
+  type EstadoServicioUi,
+} from "@/lib/admin/proximo-servicio";
 
 /**
  * Strip de KPIs del expediente del avión (patrón de profit-sharing/kpi-strip):
@@ -35,6 +41,12 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
     Math.abs(metrics.tiempo_total_planeador - metrics.horas_actuales) > 0.05
       ? metrics.tiempo_total_planeador
       : null;
+
+  // Orden de servicio del próximo hito (19-sep-2026): el KPI ya no se queda
+  // en «faltan 9.8 h» — dice si la orden YA existe, si falta ponerle fecha o
+  // si el sistema está por crearla. Textos y reglas: lib/admin/proximo-servicio.
+  const estadoServicio = estadoOrdenServicio(prox);
+  const cercaDelServicio = dentroDelUmbral(prox);
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -84,13 +96,16 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
               ? "Sin vigilancia por horas: configúralo en Tacómetros → Editar programa"
               : undefined
         }
+        estado={
+          estadoServicio ? <LineaEstadoServicio estado={estadoServicio} /> : undefined
+        }
         tooltip={
           prox && (prox.tareas?.length ?? 0) > 0
             ? `Incluye: ${prox.tareas!.join(", ")}`
             : undefined
         }
         valueClass={
-          prox && prox.faltan_hr < 10
+          cercaDelServicio
             ? "text-amber-600 dark:text-amber-400"
             : metrics.programa_configurado === false
               ? "text-amber-600 dark:text-amber-400"
@@ -114,11 +129,39 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
   );
 }
 
+/**
+ * Segunda línea del KPI «Próximo servicio»: en qué va la ORDEN de servicio.
+ * El texto, el tono y el enlace los decide `estadoOrdenServicio` — aquí solo
+ * se pintan (fuente única, para que la card de tacómetros diga lo mismo).
+ */
+function LineaEstadoServicio({ estado }: { estado: EstadoServicioUi }) {
+  return (
+    <p
+      className={`mt-0.5 text-[11px] font-medium ${CLASE_TONO_SERVICIO[estado.tono]}`}
+      title={estado.detalle}
+    >
+      {estado.texto}
+      {estado.accion && (
+        <>
+          {" · "}
+          <a
+            href={estado.accion.href}
+            className="underline underline-offset-2 hover:no-underline"
+          >
+            {estado.accion.texto}
+          </a>
+        </>
+      )}
+    </p>
+  );
+}
+
 function Kpi({
   icon: Icon,
   label,
   value,
   hint,
+  estado,
   tooltip,
   valueClass,
   mono = false,
@@ -127,6 +170,8 @@ function Kpi({
   label: string;
   value: string;
   hint?: string;
+  /** Línea extra BAJO el hint (estado de la orden de servicio): puede llevar enlace. */
+  estado?: React.ReactNode;
   /** Tooltip nativo del card completo (detalle largo, ej. checklist del servicio). */
   tooltip?: string;
   valueClass?: string;
@@ -149,6 +194,7 @@ function Kpi({
               {hint}
             </p>
           )}
+          {estado}
         </div>
         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
       </CardContent>

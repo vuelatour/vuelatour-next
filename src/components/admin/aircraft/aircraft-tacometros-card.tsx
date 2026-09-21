@@ -23,6 +23,11 @@ import {
 import { fmtDateTime } from "@/lib/datetime";
 import { fmtDecimal } from "@/lib/format";
 import {
+  CLASE_TONO_SERVICIO,
+  dentroDelUmbral,
+  estadoOrdenServicio,
+} from "@/lib/admin/proximo-servicio";
+import {
   aircraftTacometrosAction,
   updatePlaneadorBaseAction,
   updateServicioEtapasAction,
@@ -218,6 +223,9 @@ export function AircraftTacometrosCard({
 
   const prox = data?.proximo_servicio;
   const vencido = prox != null && prox.faltan <= 0;
+  // Misma línea que el KPI del expediente (fuente única): si la orden ya
+  // existe se dice aquí, junto al «faltan X h» que la dispara.
+  const estadoServicio = estadoOrdenServicio(prox);
   const etapasLectura = data?.servicio_etapas ?? [];
   const tienePrograma =
     etapasLectura.length > 0 || (data?.servicio_intervalos?.length ?? 0) > 0;
@@ -264,11 +272,40 @@ export function AircraftTacometrosCard({
           <Metric
             label="Faltan"
             value={prox ? `${prox.faltan} h` : "—"}
-            tone={prox ? (vencido ? "danger" : prox.faltan <= 10 ? "warn" : "ok") : undefined}
+            tone={
+              prox
+                ? vencido
+                  ? "danger"
+                  : dentroDelUmbral(prox)
+                    ? "warn"
+                    : "ok"
+                : undefined
+            }
             hint={
               prox
                 ? `Servicio de ${prox.intervalo} h${prox.nombre ? ` — ${prox.nombre}` : ""}`
                 : undefined
+            }
+            extra={
+              estadoServicio ? (
+                <div
+                  className={`mt-0.5 text-[11px] font-medium ${CLASE_TONO_SERVICIO[estadoServicio.tono]}`}
+                  title={estadoServicio.detalle}
+                >
+                  {estadoServicio.texto}
+                  {estadoServicio.accion && (
+                    <>
+                      {" · "}
+                      <a
+                        href={estadoServicio.accion.href}
+                        className="underline underline-offset-2 hover:no-underline"
+                      >
+                        {estadoServicio.accion.texto}
+                      </a>
+                    </>
+                  )}
+                </div>
+              ) : undefined
             }
           />
         </div>
@@ -815,11 +852,14 @@ function Metric({
   value,
   tone,
   hint,
+  extra,
 }: {
   label: string;
   value: string;
   tone?: "ok" | "warn" | "danger";
   hint?: string;
+  /** Línea extra bajo el hint (estado de la orden de servicio). */
+  extra?: React.ReactNode;
 }) {
   const toneCls =
     tone === "danger"
@@ -834,6 +874,7 @@ function Metric({
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 text-lg font-semibold ${toneCls}`}>{value}</div>
       {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}
+      {extra}
     </div>
   );
 }

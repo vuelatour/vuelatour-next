@@ -61,6 +61,25 @@ export interface Aircraft {
   en_taller?: boolean;
 }
 
+/**
+ * Orden de servicio ABIERTA que cubre el próximo hito por horas (campo
+ * ADITIVO de `proximo_servicio`, 19-sep-2026). La resuelve el API con el
+ * MISMO criterio con el que deduplica la creación automática (mismo hito
+ * ±0.05 h, o una orden manual de la misma etapa sin horas capturadas), así
+ * que si aquí llega una orden es exactamente la que impide que se cree otra.
+ *
+ * `automatica` = la creó el sistema al entrar el avión al margen de aviso
+ * (el API lo deriva de que las notas empiecen con «Creado automáticamente»).
+ * Opcional en todos los consumidores: un API sin desplegar no lo manda.
+ */
+export interface OrdenServicioProgramada {
+  id: string;
+  estado: "PROGRAMADO" | "EN_TALLER";
+  /** Día acordado con el taller (`date`); null = todavía sin confirmar. */
+  fecha_programada: string | null;
+  automatica: boolean;
+}
+
 /** Etapa del programa de servicio: intervalo + nombre + checklist de tareas. */
 export interface ServicioEtapa {
   id: string;
@@ -126,6 +145,15 @@ export interface TacometroHistorial {
     etapas_incluidas?: number[];
     /** Tareas unidas de las etapas incluidas. */
     tareas?: string[];
+    /**
+     * Orden de servicio ABIERTA que cubre este hito (ADITIVO). `undefined` =
+     * API sin desplegar (no se afirma nada); `null` = el API miró y no hay
+     * orden. Se pinta con `lib/admin/proximo-servicio.ts`.
+     */
+    orden?: OrdenServicioProgramada | null;
+    /** Estado del programa AUTOMÁTICO (ADITIVO, 20-sep-2026): ver
+     *  `AvisoAutomaticoServicio` en `lib/admin/proximo-servicio.ts`. */
+    aviso_automatico?: { activo: boolean; umbral_hr: number } | null;
   } | null;
   /** Motores y hélices con derivados vivos (para selector de componente y cards). */
   componentes?: TacoComponente[];
@@ -302,9 +330,17 @@ export interface AircraftSnapshot extends Aircraft {
 export interface AircraftMetrics {
   airworthiness: {
     apto: boolean;
-    documentos_vencidos: { id: string; tipo_nombre: string; objetivo: string }[];
+    documentos_vencidos: {
+      id: string;
+      tipo_nombre: string;
+      objetivo: string;
+    }[];
     en_taller: boolean;
-    componentes_vencidos: { posicion: string; numero_serie: string; restantes: number }[];
+    componentes_vencidos: {
+      posicion: string;
+      numero_serie: string;
+      restantes: number;
+    }[];
   };
   utilizacion: {
     horas_total: number;

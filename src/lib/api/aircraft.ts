@@ -4,6 +4,7 @@ import type {
   AircraftMetrics,
   AircraftSnapshot,
   ListResponse,
+  OrdenServicioProgramada,
   PaisAeronave,
 } from "@/types/aircraft";
 
@@ -17,7 +18,10 @@ export interface ListAircraftQuery {
 
 export function listAircraft(query: ListAircraftQuery = {}) {
   return apiServer<ListResponse<Aircraft>>("/v1/aircraft", {
-    searchParams: query as Record<string, string | number | boolean | undefined>,
+    searchParams: query as Record<
+      string,
+      string | number | boolean | undefined
+    >,
     cache: "no-store",
   });
 }
@@ -53,6 +57,20 @@ export interface AircraftMetricsDetalle extends AircraftMetrics {
     faltan_hr: number;
     /** Checklist de la(s) etapa(s) que caen en ese hito. */
     tareas?: string[];
+    /**
+     * Orden de servicio ABIERTA que cubre ese hito (ADITIVO, 19-sep-2026).
+     * `undefined` = API sin desplegar; `null` = no hay orden. La línea que se
+     * pinta la arma `lib/admin/proximo-servicio.ts` — el panel no decide
+     * solo si «ya existe la orden».
+     */
+    orden?: OrdenServicioProgramada | null;
+    /**
+     * ¿La orden se crea sola y con qué margen? (ADITIVO, 20-sep-2026). Con
+     * `activo:false` la tarjeta deja de prometer «se genera sola»: con la
+     * regla apagada esa promesa es justo la queja del cliente. `null` = el
+     * API no pudo leer la configuración; ausente = API sin desplegar.
+     */
+    aviso_automatico?: { activo: boolean; umbral_hr: number } | null;
   } | null;
   /** false = el avión NO tiene programa de servicio capturado (distinto de
    *  "sin datos"): el KPI lo dice y pide configurarlo. */
