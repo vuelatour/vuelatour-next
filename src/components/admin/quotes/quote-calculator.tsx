@@ -60,7 +60,11 @@ import {
   notaAeronaveEnTaller,
 } from "@/lib/admin/aviso-taller";
 import { SquawkAltaDialog } from "@/components/admin/flights/squawk-alta-dialog";
-import { decidirErrorRevise } from "@/lib/admin/quote-revise-errores";
+import {
+  decidirErrorRevise,
+  esApiSinTramosBase,
+  MSG_TRAMOS_BASE_API_VIEJO,
+} from "@/lib/admin/quote-revise-errores";
 import {
   ariaLabelCampoExtra,
   bloqueoGuardadoExtras,
@@ -84,6 +88,14 @@ import {
   modelosCotizadosVigentes,
   textoConfirmarEdicionCotizacion,
 } from "@/lib/admin/avion-cotizado";
+import {
+  chipDivergencia,
+  divergenciasDeOperacion,
+  ETIQUETA_ACTUALIZAR,
+  textoDivergencia,
+  tramosDeCotizacion,
+  tramosDeOperacion,
+} from "@/lib/admin/tramos-cotizados";
 import { extraerMapaSvgDeHtml } from "@/lib/admin/quote-sheet";
 import type { VueloConGrupo } from "@/types/grupos";
 import type { Airport } from "@/types/airports";
@@ -113,6 +125,7 @@ import {
   reviseQuoteAction,
   setQuotePdfPresentacionAction,
   type PdfPresentacionPayload,
+  type ReviseQuotePayload,
   type RutaSugerida,
 } from "@/app/admin/quotes/actions";
 import { createRouteAction } from "@/app/admin/routes/actions";
@@ -358,29 +371,11 @@ function legsSignature(
   );
 }
 
-/** Convierte un tramo de ruta (o escala persistida) a EscalaInput con su detalle. */
 /**
- * Sugerencia de ruta COMERCIAL para un vuelo con itinerario operativo: abre en
- * CUN y va al último destino comercial (tramos con pasajeros, excluye CUN),
- * ida y vuelta. Es solo un punto de partida editable.
+ * Convierte un tramo de RUTA del catálogo (plantilla) a EscalaInput con su
+ * detalle. La hidratación de una cotización GUARDADA ya no pasa por aquí:
+ * vive en `lib/admin/tramos-cotizados.ts` (22-sep-2026, caso #326).
  */
-function comercialSugerida(q: PersistedQuote): EscalaInput[] {
-  const comerciales = (q.escalas ?? []).filter(
-    (e) => !e.solo_operativa && !e.es_ferry,
-  );
-  const destino =
-    [...comerciales].reverse().find((e) => e.destino_iata !== "CUN")
-      ?.destino_iata ??
-    comerciales[comerciales.length - 1]?.destino_iata ??
-    q.destino_iata;
-  if (!destino || destino === "CUN") return [];
-  const pax = q.pasajeros || 1;
-  return [
-    tramoToEscala({ origen_iata: "CUN", destino_iata: destino, millas_nauticas: 0, pasajeros: pax }),
-    tramoToEscala({ origen_iata: destino, destino_iata: "CUN", millas_nauticas: 0, pasajeros: pax }),
-  ];
-}
-
 function tramoToEscala(t: {
   origen_iata: string;
   destino_iata: string;
@@ -749,30 +744,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const formDefaults = useMemo<QuoteFormValues>(() => {
     if (initialQuote) {
       const q = initialQuote;
-      // Para revise arrancamos en modo manual con las escalas del snapshot del
-      // vuelo (no del catalogo, que pudo haber cambiado). Una cotización legacy
-      // REDONDO sin escalas se traduce a sus 2 tramos equivalentes (ida+regreso).
-      const nmOneWay = q.millas_nauticas_one_way
-        ? Number(q.millas_nauticas_one_way)
-        : 0;
-      const legacyLegs: EscalaInput[] = [
-        tramoToEscala({
-          origen_iata: q.origen_iata,
-          destino_iata: q.destino_iata,
-          millas_nauticas: nmOneWay,
-          pasajeros: q.pasajeros,
-        }),
-        ...(q.es_redondo_auto
-          ? [
-              tramoToEscala({
-                origen_iata: q.destino_iata,
-                destino_iata: q.origen_iata,
-                millas_nauticas: nmOneWay,
-                pasajeros: q.pasajeros,
-              }),
-            ]
-          : []),
-      ];
       return {
         cliente_id: q.cliente_id,
         tipo: "MULTIESCALA" as TipoVuelo,
@@ -802,32 +773,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // El vínculo a la ruta del catálogo se conserva (antes se perdía al
         // revisar y salía el aviso falso "difiere de la ruta guardada").
         ruta_id: q.ruta_id ?? "",
-        escalas: q.itinerario_operativo
-          ? // Itinerario operativo: las escalas del vuelo son la ruta REAL del
-            // piloto, no la comercial. La comercial COTIZADA vive en el
-            // snapshot del cálculo — si ya se cotizó, se prefill con ESOS
-            // tramos (revisar debe partir de lo pactado); la convención
-            // CUN→destino→CUN solo aplica la primera vez (sin snapshot).
-            (q.calculo_snapshot?.tramos?.length ?? 0) > 0
-            ? q.calculo_snapshot!.tramos!.map((t) =>
-                tramoToEscala({
-                  origen_iata: t.origen,
-                  destino_iata: t.destino,
-                  millas_nauticas: t.millas,
-                  pasajeros: t.pasajeros,
-                  es_ferry: t.es_ferry,
-                  requiere_pernocta: t.requiere_pernocta,
-                  pernocta_costo_usd: t.pernocta_usd,
-                  tipo_parada: t.tipo_parada,
-                  servicio_notas: t.servicio_notas,
-                }),
-              )
-            : comercialSugerida(q)
-          : q.escalas && q.escalas.filter((e) => !e.solo_operativa).length > 0
-            ? q.escalas
-                .filter((e) => !e.solo_operativa)
-                .map((e) => tramoToEscala(e))
-            : legacyLegs,
+        // LA COTIZACIÓN ES INDEPENDIENTE DE LA OPERACIÓN — TRAMOS
+        // (22-sep-2026, caso #326): los tramos que PRECIAN salen de lo
+        // COTIZADO (`calculo_snapshot`), nunca de la escala VIVA que el
+        // piloto edita desde la app. Antes, con `itinerario_operativo=false`
+        // el formulario arrancaba con `escala.pasajeros`/`es_ferry` de la
+        // operación y al PRIMER cambio (teclear el T.C.) el motor repreciaba
+        // con ellos: $3,596.00 → $3,712.00 sin que nadie tocara el precio.
+        // Lo que NO precia (fecha del tramo, nota al piloto, nombres) sí se
+        // hereda de la escala viva del mismo `orden` cuando la ruta coincide.
+        // Fuente única: `lib/admin/tramos-cotizados.ts`.
+        escalas: tramosDeCotizacion(q),
         tipo_tarifa: q.tarifa_tipo,
         pasajeros: q.pasajeros,
         pase_abordar: q.pase_abordar,
@@ -1183,6 +1139,39 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   const versionSiguiente = (initialQuote?.cotizacion_version ?? 0) + 1;
   // Teclas en curso: el debounce aún no asienta (el motor espera).
   const enEsperaDebounce = debouncedJson !== valuesJson;
+
+  // ===== LA OPERACIÓN CAMBIÓ RESPECTO DE LO COTIZADO (22-sep-2026, #326) =====
+  // El formulario arranca con los tramos COTIZADOS, así que si el piloto
+  // cambió pax/ferry/ruta en el vuelo, la pantalla ya no lo refleja. Eso se
+  // dice en voz alta (chip + banda ámbar) y se ofrece adoptarlo como un acto
+  // DELIBERADO: el botón carga los tramos vivos, el formulario queda SUCIO y
+  // la oficina VE el total nuevo antes de guardar. Nunca se recalcula solo.
+  const divergencias = useMemo(
+    () => (isRevise && initialQuote ? divergenciasDeOperacion(initialQuote) : []),
+    [isRevise, initialQuote],
+  );
+  const avisoDivergencia = textoDivergencia(divergencias);
+  const chipOperacionCambio = chipDivergencia(divergencias);
+  /**
+   * De dónde salieron los tramos que viajan a `revise` (campo ADITIVO
+   * `tramos_base`): COTIZADO por default —lo que difiera del snapshot es una
+   * edición deliberada— y OPERACION solo cuando se pulsó el botón del aviso.
+   * Un borrador restaurado (`?d=`) vuelve a COTIZADO a propósito: la decisión
+   * del API es POR TRAMO contra el snapshot, así que lo que el operador
+   * cambió sigue contando como cambio.
+   */
+  const baseTramosRef = useRef<"COTIZADO" | "OPERACION">("COTIZADO");
+  const [actualizarOpsOpen, setActualizarOpsOpen] = useState(false);
+  const adoptarTramosDeOperacion = () => {
+    if (!initialQuote) return;
+    setValue("escalas", tramosDeOperacion(initialQuote), { shouldDirty: true });
+    baseTramosRef.current = "OPERACION";
+    setActualizarOpsOpen(false);
+    toast.success(
+      "Tramos de la operación cargados. Revisa el total y guarda la versión.",
+    );
+  };
+
 
   // Escribe el borrador en la URL con el MISMO debounce del cálculo.
   // Pristino (igual a los defaults) = sin parámetro, para no ensuciar URLs.
@@ -1802,6 +1791,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     mensaje: string;
     matricula: string | null;
   } | null>(null);
+  // API sin desplegar que todavía no conoce `tramos_base` (22-sep-2026,
+  // #326) Y la operación difiere de lo cotizado: guardar pisaría lo que
+  // capturó el piloto, así que se FRENA y se explica en ámbar.
+  const [errorTramosBase, setErrorTramosBase] = useState<string | null>(null);
   // 409 SQUAWK_ALTA_SIN_RESOLVER: MISMO diálogo que assign; al confirmar se
   // reintenta el revise con la bandera y el motivo de ESTE intento.
   const [squawkRevise, setSquawkRevise] = useState<{
@@ -1823,11 +1816,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }
     const client_request_id = nuevoIntentoGuardado();
     setErrorTaller(null);
+    setErrorTramosBase(null);
+    const tramosBase = baseTramosRef.current;
     startSaving(async () => {
-      const res = await reviseQuoteAction(initialQuote.id, {
+      /** El MISMO cuerpo, con o sin el campo aditivo `tramos_base`. */
+      const cuerpo = (conTramosBase: boolean): ReviseQuotePayload => ({
         ...calcPayload,
         motivo,
         client_request_id,
+        // De dónde salieron los tramos (22-sep-2026, #326): con el campo
+        // presente el API confía en el DTO — lo que difiera del snapshot es
+        // una edición deliberada de la oficina. Sin él, el API ancla los
+        // tramos a lo cotizado cuando lo entrante es un eco de la escala
+        // viva. JAMÁS viaja a `/calculate` (rebotaría 400).
+        ...(conTramosBase ? { tramos_base: tramosBase } : {}),
         // Solo en el reintento confirmado (el API lo ignora si el avión no
         // cambió): asigna a sabiendas y avisa al mecánico.
         ...(aceptarSquawk ? { aceptar_discrepancia_alta: true } : {}),
@@ -1859,6 +1861,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           ? cancunInputToIso(values.fecha_traslado_final)
           : undefined,
       });
+      let res = await reviseQuoteAction(initialQuote.id, cuerpo(true));
+      // API sin desplegar: `forbidNonWhitelisted` responde 400 por el campo
+      // nuevo. Si la operación NO difiere de lo cotizado no hay nada del
+      // piloto que pisar y se reintenta sin el campo (mismo
+      // `client_request_id`: si el primero hubiera escrito, no hay versión
+      // doble). Si SÍ difiere, se FRENA y se explica: guardar contra ese API
+      // borraría los pasajeros que capturó el piloto.
+      if (!res.ok && esApiSinTramosBase(res)) {
+        if (divergencias.length > 0) {
+          setErrorTramosBase(MSG_TRAMOS_BASE_API_VIEJO);
+          return;
+        }
+        res = await reviseQuoteAction(initialQuote.id, cuerpo(false));
+      }
       if (res.ok && res.data) {
         toast.success(
           `Cotización #${res.data.folio} guardada como v${res.data.cotizacion_version}`,
@@ -1873,6 +1889,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         setValue("motivo", "");
         setErrorCobrada(null);
         setErrorTaller(null);
+        setErrorTramosBase(null);
+        baseTramosRef.current = "COTIZADO";
         setSquawkRevise(null);
         setConflictoVersion(null);
         setDerivaMotor(null);
@@ -2366,6 +2384,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     setConflictoVersion(null);
     setMotivoChip(null);
     setErrorCobrada(null);
+    setErrorTramosBase(null);
+    // Se descartó también «Actualizar la cotización con la operación».
+    baseTramosRef.current = "COTIZADO";
     saveRequestIdRef.current = null;
     verPdfTrasGuardarRef.current = false;
     setConfirmDescartar(false);
@@ -2651,6 +2672,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     costoExternoMxnSinTc ? "Costo del operador externo en MXN sin T.C." : null,
     // Informativo (no limita): el detalle va en la nota ámbar de arriba.
     avionEnTaller ? chipAeronaveEnTaller(avionEnTaller.matricula) : null,
+    // La operación difiere de lo cotizado (22-sep-2026, #326): el detalle y
+    // el botón viven en la banda ámbar; aquí solo el chip, que nunca se
+    // esconde aunque el panel interno esté cerrado.
+    chipOperacionCambio,
   ].filter((a): a is string => !!a);
 
   // ===== La HOJA 1 como formulario (ensamble 8-sep-2026) =====
@@ -2928,6 +2953,65 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </div>
         </div>
       )}
+      {/* LA OPERACIÓN CAMBIÓ RESPECTO DE LO COTIZADO (22-sep-2026, #326).
+          El documento sigue diciendo lo PACTADO; aquí se explica en qué
+          difiere hoy el vuelo y se ofrece adoptarlo a propósito. En lectura
+          (cotización cobrada/facturada) se pinta igual pero SIN botón: la
+          oficina tiene derecho a enterarse aunque no pueda editar. */}
+      {divergencias.length > 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              {avisoDivergencia}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Se cotiza una cosa y a veces se vuela otra: el precio pactado no
+              cambia solo. Lo que el piloto capturó se conserva en el vuelo. Si
+              lo que se le va a cobrar al cliente SÍ debe cambiar, cárgalo aquí
+              y revisa el total antes de guardar la versión.
+            </p>
+            {!lectura && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setActualizarOpsOpen(true)}
+                >
+                  {ETIQUETA_ACTUALIZAR}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Confirmación (regla del cliente: toda acción que cambia dinero se
+          confirma). Al aceptar NO se guarda nada: se cargan los tramos vivos
+          en el formulario, que queda sucio y con el total recalculado. */}
+      {isRevise && initialQuote && (
+        <AlertDialog open={actualizarOpsOpen} onOpenChange={setActualizarOpsOpen}>
+          <AlertDialogContent data-guard-exempt>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                ¿Cotizar con los tramos que se volaron?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Los tramos de la cotización se sustituyen por los del vuelo
+                (pasajeros, ferry, ruta y pernocta). El total se recalcula y lo
+                verás en la barra de arriba: nada se guarda hasta que pulses
+                «Guardar → v{versionSiguiente}».
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={adoptarTramosDeOperacion}>
+                Cargar los tramos del vuelo
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
       {/* AVIÓN COTIZADO DADO DE BAJA (12-sep-2026, R1): el selector no lo
           ofrece y el motor lo rechaza («Aeronave inactiva»), así que la hoja
           se recalculó con otro avión. Informativo, sin candado: guardar sigue
@@ -2961,6 +3045,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             <p className="text-xs text-muted-foreground">
               Las cotizaciones son a futuro: el mantenimiento de hoy no
               condiciona la fecha del vuelo.
+            </p>
+          </div>
+        </div>
+      )}
+      {/* COMPATIBILIDAD: un API anterior al 22-sep-2026 no conoce
+          `tramos_base` y guardaría escribiendo los tramos COTIZADOS sobre
+          las escalas vivas — borrando los pasajeros que capturó el piloto.
+          Solo se frena cuando de verdad hay diferencia que perder. */}
+      {errorTramosBase && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              {errorTramosBase}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              La versión quedó SIN guardar a propósito. En cuanto el API esté
+              actualizado, vuelve a pulsar Guardar: el borrador sigue aquí.
             </p>
           </div>
         </div>

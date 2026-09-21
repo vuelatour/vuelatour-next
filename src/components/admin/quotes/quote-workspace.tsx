@@ -35,6 +35,7 @@ import { aeronavesDeCotizacion } from "@/lib/admin/avion-cotizado";
 import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
+import { tramosCotizadosDeCotizacion } from "@/lib/admin/tramos-cotizados";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { combinadoFolio, type FlightCobro } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
@@ -182,24 +183,19 @@ export function QuoteWorkspace({
   const quoteConGrupo = quote as PersistedQuote & VueloConGrupo;
   const grupoHijo = grupoDeVuelo(quoteConGrupo);
 
-  // Ruta COMERCIAL completa para el encabezado (2-sep-2026). MISMA
-  // precedencia que los tramos rehidratados del cotizador: (a) con
-  // itinerario operativo la ruta cotizada vive en el snapshot; (b) si no,
-  // las escalas vivas comerciales; (c) fallback al par corto.
-  const escalasComerciales = (quote.escalas ?? []).filter(
-    (e) => !e.solo_operativa,
-  );
-  const usaSnapshot =
-    quote.itinerario_operativo === true &&
-    (quote.calculo_snapshot?.tramos?.length ?? 0) > 0;
-  const rutaComercial = usaSnapshot
-    ? puntosRuta(quote.calculo_snapshot!.tramos!)
-    : escalasComerciales.filter((e) => !e.cancelada_at).length > 0
+  // Ruta COMERCIAL completa para el encabezado (2-sep-2026). MISMA fuente y
+  // MISMO orden que los tramos con los que arranca el cotizador
+  // (`lib/admin/tramos-cotizados.ts`, 22-sep-2026): lo COTIZADO manda; sin
+  // snapshot, las escalas vivas comerciales no canceladas; y en una
+  // cotización REDONDO legada, el par corto de siempre.
+  const tramosCotizados = tramosCotizadosDeCotizacion(quote);
+  const rutaComercial =
+    tramosCotizados.fuente !== "legado" && tramosCotizados.tramos.length > 0
       ? puntosRuta(
-          escalasComerciales
-            .filter((e) => !e.cancelada_at)
-            .sort((a, b) => a.orden - b.orden)
-            .map((e) => ({ origen: e.origen_iata, destino: e.destino_iata })),
+          tramosCotizados.tramos.map((t) => ({
+            origen: t.escala.origen_iata,
+            destino: t.escala.destino_iata,
+          })),
         )
       : [quote.origen_iata, quote.destino_iata];
 
@@ -210,35 +206,28 @@ export function QuoteWorkspace({
   for (const esc of quote.escalas ?? []) {
     if (!escalaVivaPorOrden.has(esc.orden)) escalaVivaPorOrden.set(esc.orden, esc);
   }
+  /** Respaldo del ojito cuando la escala viva no dice nada (eco del snapshot). */
+  const ocultoDelSnapshot = (orden: number): boolean =>
+    (quote.calculo_snapshot?.tramos ?? []).find((t) => t.orden === orden)
+      ?.pdf_oculto === true;
   /**
-   * Toggles por tramo del itinerario COTIZADO (índice = mismo orden que los
-   * tramos que rehidrata el cotizador: snapshot.tramos con itinerario
-   * operativo; si no, escalas no operativas en su orden).
+   * Ojito/fecha del PDF por tramo del itinerario COTIZADO. El índice es la
+   * POSICIÓN del tramo en la hoja y el cruce con la escala viva va por
+   * `orden` —nunca por posición— porque así cruza también el API
+   * (`escalasVisiblesPdf`): con un tramo nuevo o faltante en la operación,
+   * indexar por posición patchearía la escala equivocada (22-sep-2026).
    */
   const tramoExtraLectura = (idx: number) => {
-    // Itinerario operativo SIN snapshot (reserva/solicitud aún no cotizada):
-    // el cotizador rehidrata una ruta comercial SUGERIDA (CUN→destino→CUN),
-    // no escalas persistidas — no hay escala viva a la que colgar el toggle
-    // sin riesgo de patchear la equivocada. Se cotiza primero.
-    if (quote.itinerario_operativo === true && !usaSnapshot) return null;
-    let escalaId: string | null = null;
-    let oculto = false;
-    let pdfFecha: string | null = null;
-    if (usaSnapshot) {
-      const t = quote.calculo_snapshot!.tramos![idx];
-      if (!t) return null;
-      const viva = escalaVivaPorOrden.get(t.orden);
-      oculto =
-        viva?.pdf_oculto != null ? viva.pdf_oculto === true : t.pdf_oculto === true;
-      pdfFecha = viva?.pdf_fecha ?? null;
-      escalaId = viva?.id ?? null;
-    } else {
-      const esc = escalasComerciales[idx];
-      if (!esc) return null;
-      oculto = esc.pdf_oculto === true;
-      pdfFecha = esc.pdf_fecha ?? null;
-      escalaId = esc.id;
-    }
+    const t = tramosCotizados.tramos[idx];
+    // Sin `orden` no hay escala viva a la que colgar el toggle: itinerario
+    // operativo sin cotizar (ruta comercial SUGERIDA) o REDONDO legado. Se
+    // cotiza primero.
+    if (!t || t.orden == null) return null;
+    const viva = escalaVivaPorOrden.get(t.orden);
+    const oculto =
+      viva?.pdf_oculto != null ? viva.pdf_oculto === true : ocultoDelSnapshot(t.orden);
+    const pdfFecha = viva?.pdf_fecha ?? null;
+    const escalaId = viva?.id ?? null;
     if (puedeEditarPdf && escalaId) {
       return (
         <>
@@ -276,28 +265,24 @@ export function QuoteWorkspace({
   };
   /**
    * Ojito/fecha por tramo para la VISTA PREVIA (F1): misma fuente y mismo
-   * orden que `tramoExtraLectura` (escala viva manda; snapshot de respaldo).
-   * El cotizador solo lo manda en tramos que siguen coincidiendo.
+   * cruce que `tramoExtraLectura` (escala viva por `orden`; snapshot de
+   * respaldo). Aquí el `orden` que viaja es la POSICIÓN en la hoja, que es
+   * como lo lee el cotizador y el armador de la vista previa.
    */
-  const escalasPdfPreview: EscalaPdfPreview[] = (() => {
-    if (quote.itinerario_operativo === true && !usaSnapshot) return [];
-    if (usaSnapshot) {
-      return quote.calculo_snapshot!.tramos!.map((t, idx) => {
-        const viva = escalaVivaPorOrden.get(t.orden);
-        return {
-          orden: idx + 1,
-          pdf_oculto:
-            viva?.pdf_oculto != null ? viva.pdf_oculto === true : t.pdf_oculto === true,
-          pdf_fecha: viva?.pdf_fecha ?? null,
-        };
-      });
-    }
-    return escalasComerciales.map((esc, idx) => ({
-      orden: idx + 1,
-      pdf_oculto: esc.pdf_oculto === true,
-      pdf_fecha: esc.pdf_fecha ?? null,
-    }));
-  })();
+  const escalasPdfPreview: EscalaPdfPreview[] = tramosCotizados.tramos
+    .map((t, idx): EscalaPdfPreview | null => {
+      if (t.orden == null) return null;
+      const viva = escalaVivaPorOrden.get(t.orden);
+      return {
+        orden: idx + 1,
+        pdf_oculto:
+          viva?.pdf_oculto != null
+            ? viva.pdf_oculto === true
+            : ocultoDelSnapshot(t.orden),
+        pdf_fecha: viva?.pdf_fecha ?? null,
+      };
+    })
+    .filter((e) => e !== null);
   const notaTramosLectura = puedeEditarPdf ? (
     <p className="pt-1 text-[10px] text-muted-foreground">
       La fecha es solo para el PDF del cliente (sin hora). No cambia la ruta

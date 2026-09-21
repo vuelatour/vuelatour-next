@@ -474,6 +474,119 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   API avisa con `precio_desactualizado` cuando vuela en otro distinto al
   cotizado. No cambiar sin decidir antes el contrato del grupo con el API.
 
+## La cotización es INDEPENDIENTE de la operación — TRAMOS (22-sep-2026)
+
+- **El bug (cotización #326, pedido del cliente)**: «antes de poner el tipo de
+  cambio está en 3596 y después de ponerlo, se cambia en automático, no sé por
+  qué». Se cotizó `T1 CUN→PTU FERRY` + `T2 PTU→CUN 2 pax` ⇒ TUAS $0 ⇒
+  **$3,596.00** (la TUA se cobra en el aeropuerto de SALIDA de cada tramo con
+  pasajeros, y en PTU las matrículas N están exentas). Al día siguiente el
+  PILOTO editó los dos tramos vivos desde la app (4 pax, sin ferry) — cambio
+  OPERATIVO legítimo. El cotizador rehidrataba `escalas` de la **escala VIVA**
+  cuando `itinerario_operativo = false`, así que al PRIMER cambio real (teclear
+  el T.C.) llamaba a `/calculate` con 4 pax saliendo de CUN ⇒ TUA CUN $25 × 4
+  + IVA ⇒ **$3,712.00**. En revisión sin cambios el bug no se veía: se pinta el
+  snapshot y no se llama al motor. Misma familia que el avión (#298, 12-sep) y
+  la misma regla del cliente: «la cotización no debe verse afectada por cambios
+  en el vuelo operativo». En prod divergían **9 de 64** cotizaciones con
+  `itinerario_operativo = false`, y **8 versiones guardadas** ya se habían
+  llevado el pax de la operación al precio con un motivo que solo decía «[TC
+  —→16.97] Corrección».
+- **Fuente única `lib/admin/tramos-cotizados.ts`** (PURA, sin React; hermana de
+  `avion-cotizado.ts`), congelada en `__tests__/tramos-cotizados.test.ts`:
+  `tramosCotizadosDeCotizacion` (tramos + el `orden` con el que cruzan),
+  `tramosDeCotizacion`, `tramosDeOperacion`, `divergenciasDeOperacion`,
+  `textoDivergencia`, `chipDivergencia`, `ETIQUETA_ACTUALIZAR`, `mismaRuta`,
+  `paxDeTramo`, `escalasComerciales`. Ningún componente repite esta cascada ni
+  redacta estos textos.
+- **Qué PRECIA sale del SNAPSHOT** (origen, destino, millas, pasajeros,
+  `es_ferry`, pernocta y su costo, tipo de parada y sus notas) y **qué NO
+  precia sale de la escala VIVA** del MISMO `orden` y solo si su ruta sigue
+  siendo la del tramo cotizado (`fecha_salida_plan`, `notas` del tramo,
+  `pasajeros_nombres`). Con `itinerario_operativo = true` no se hereda nada: las
+  escalas del vuelo son OTRA ruta a propósito.
+- **La RUTA precia Y es de la operación**: el formulario arranca con la
+  COTIZADA (es la que imprime el PDF y la que compone el precio), pero
+  guardar **no** la escribe sobre el vuelo mientras la oficina no la haya
+  cambiado en el cotizador — lo decide el API comparando el DTO contra el
+  snapshot (invariante 24; casos reales #322 `CET→PTU` y #297 `PPS→CZM`, los
+  dos con tacómetro). Por eso el aviso ámbar dice la verdad completa: la
+  cotización conserva lo pactado **y** el vuelo conserva su ruta real. Para
+  cobrar lo que se voló está el botón «Actualizar la cotización con la
+  operación»; para corregir el vuelo, se edita el tramo desde el vuelo.
+- **Cascada**: `calculo_snapshot.ruta.escalas` (`ResolvedLeg[]`: el input
+  exacto con el que se pactó) → `calculo_snapshot.tramos` → escalas comerciales
+  VIVAS no canceladas (sin snapshot todavía no hay nada pactado: una RESERVA
+  que se cotiza por primera vez) → sugerencia CUN→destino→CUN (itinerario
+  operativo sin cotizar) → los 2 tramos del REDONDO legado. Las
+  `solo_operativa` NUNCA entran; los CANCELADOS tampoco (bug independiente que
+  esto arregla de paso: `formDefaults` filtraba `solo_operativa` pero no
+  `cancelada_at`, así que un tramo cancelado se PRECIABA).
+- **El aviso ámbar** (`quote-calculator.tsx`, FUERA del papel — no toca la hoja
+  ni sus fixtures): banda con `textoDivergencia(...)` + botón
+  «**Actualizar la cotización con la operación**» y chip
+  `chipDivergencia(...)` en la TotalBar (nunca se esconde, aunque el panel
+  interno esté cerrado). El botón **confirma** (regla del cliente) y al aceptar
+  solo hace `setValue('escalas', tramosDeOperacion(q), {shouldDirty:true})`: el
+  formulario queda SUCIO, el motor recalcula y la oficina **VE** el total nuevo
+  antes de guardar. **Nunca se guarda ni se recalcula solo.** En LECTURA
+  (cotización cobrada/facturada, caso #292) la banda se pinta igual pero SIN
+  botón: enterarse no depende de poder editar.
+- **Textos, en palabras de operador** (congelados en el test): «el tramo 1 ya
+  no es ferry y lleva 4 pasajeros (cotizado: ferry, sin pasajeros)», «el tramo
+  2 lleva 6 pasajeros (cotizados 2)», «el tramo 2 ahora va CZM → CET (cotizado
+  CZM → CUN)», «el tramo 2 ahora pernocta (no se cotizó pernocta)», «hay un
+  tramo 3 PTU → CUN que no se cotizó», «el tramo 3 cotizado (PTU → CUN) ya no
+  existe en la operación», «el tramo 2 se canceló en la operación». Siempre
+  cerrado con «La cotización conserva lo pactado.».
+- **Ruido**: el aviso sale con CUALQUIER divergencia —el pax también cambia lo
+  que IMPRIME el itinerario—, pero cada `Divergencia` trae `mueveDinero`
+  (false solo para un cambio de pax cuando las TUAS están apagadas, caso #319)
+  por si hay que filtrar. **Sin ninguna escala comercial viva se devuelve `[]`**:
+  un payload sin `escalas` no es «el piloto borró el itinerario», y N avisos
+  falsos «ya no existe» enseñan a ignorar los verdaderos.
+- **Campo ADITIVO `tramos_base: 'COTIZADO' | 'OPERACION'`**
+  (`ReviseQuotePayload`): viaja **SOLO** en `POST /v1/quotes/:id/revise`,
+  **jamás** en `/calculate` (el API corre con `forbidNonWhitelisted`:
+  respondería 400 en cada tecla). `COTIZADO` = los tramos salen del snapshot,
+  así que lo que difiera de él es una edición DELIBERADA de la oficina y lo que
+  coincida el API lo OMITE del UPDATE —la escala viva conserva el pax y el
+  ferry del piloto—. `OPERACION` = se pulsó el botón del aviso. Tras guardar o
+  Descartar vuelve a `COTIZADO`.
+- **Orden de deploy: API ANTES que panel.** Red de seguridad si se invierte
+  (`esApiSinTramosBase` + `MSG_TRAMOS_BASE_API_VIEJO` en
+  `lib/admin/quote-revise-errores.ts`, PUROS + test): ante el 400 «property
+  tramos_base should not exist», si la operación **no** difiere de lo cotizado
+  se reintenta sin el campo con el MISMO `client_request_id` (no hay nada del
+  piloto que pisar); si **sí** difiere se FRENA con banner ámbar, porque contra
+  ese API guardar escribiría los tramos cotizados sobre las escalas vivas y
+  borraría los pasajeros que capturó el piloto. El riesgo #1 de este cambio es
+  el inverso del bug: corregir la LECTURA sin la ESCRITURA destruye el trabajo
+  del piloto.
+- **`quote-workspace.tsx` cruza por `orden`, nunca por posición**:
+  `tramoExtraLectura` y `escalasPdfPreview` resuelven la escala viva con
+  `escalaVivaPorOrden.get(t.orden)` del tramo COTIZADO (es como cruza
+  `escalasVisiblesPdf` en el API). Con posiciones, un tramo nuevo o faltante en
+  la operación patcheaba el ojito/fecha de la escala equivocada.
+  `rutaComercial` de la cabecera sale de la misma fuente.
+- **Borrador `?d=` y «Copiar como nueva cotización»**: los dos serializan
+  `getValues()`, así que ahora llevan los tramos **COTIZADOS** (o los que el
+  operador editó a mano) — copiar una cotización copia lo que se pactó, no lo
+  que acabó volándose. Al restaurar un borrador en revisión, `tramos_base`
+  vuelve a `COTIZADO` A PROPÓSITO: la decisión del API es POR TRAMO contra el
+  snapshot, así que lo que el operador cambió sigue contando como cambio.
+- **Lo que NO cambia**: la app del piloto sigue editando sus tramos igual; la
+  bitácora, los manifiestos, el reporte por vuelo, el calendario y los toggles
+  `PATCH pdf-visibilidad` siguen leyendo la escala VIVA; el PDF del cliente ya
+  leía el snapshot (la corrección alinea la pantalla con el papel, no al
+  revés). Los fixtures de la hoja NO se regeneran: el aviso vive fuera del
+  papel.
+- **Cableado vigilado** en
+  `components/admin/quotes/__tests__/quote-calculator-tramos.test.ts`: que el
+  cotizador siga enchufado a `tramosDeCotizacion`, que `tramos_base` no se
+  cuele a `armarCalcPayload`, que el botón del aviso no guarde y que el
+  workspace no vuelva a indexar la escala viva por posición.
+
 ## Avión en taller: ADVERTENCIA, NUNCA CANDADO (11-sep-2026)
 
 - Pedido del cliente: «al cotizar debe poder elegirse un avión aunque esté

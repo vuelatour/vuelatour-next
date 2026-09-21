@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decidirErrorRevise,
+  esApiSinTramosBase,
   matriculaDeDetails,
 } from "@/lib/admin/quote-revise-errores";
 
@@ -144,5 +145,49 @@ describe("matriculaDeDetails", () => {
     expect(matriculaDeDetails({ matricula: "  " })).toBeNull();
     expect(matriculaDeDetails(null)).toBeNull();
     expect(matriculaDeDetails(["x"])).toBeNull();
+  });
+});
+
+/**
+ * `tramos_base` es ADITIVO, pero Nest corre con `forbidNonWhitelisted`: un
+ * API sin desplegar responde 400 y tiraría TODO guardado del cotizador
+ * (22-sep-2026, caso #326). El panel lo reconoce para reintentar sin el
+ * campo — o para frenar y explicarlo cuando la operación difiere de lo
+ * cotizado y guardar pisaría lo que capturó el piloto.
+ */
+describe("esApiSinTramosBase", () => {
+  it("reconoce el 400 de `forbidNonWhitelisted` por el campo nuevo", () => {
+    expect(
+      esApiSinTramosBase({
+        ok: false,
+        status: 400,
+        error: "property tramos_base should not exist",
+      }),
+    ).toBe(true);
+    expect(
+      esApiSinTramosBase({
+        ok: false,
+        status: 400,
+        error: "la propiedad tramos_base no debe existir",
+      }),
+    ).toBe(true);
+  });
+
+  it("NO confunde otros rechazos con el campo faltante", () => {
+    // Un 400 legítimo del motor.
+    expect(
+      esApiSinTramosBase({ ok: false, status: 400, error: "tc_usd_mxn es requerido" }),
+    ).toBe(false);
+    // Un 409 que MENCIONA el campo no es «el API no lo conoce».
+    expect(
+      esApiSinTramosBase({
+        ok: false,
+        status: 409,
+        error: "tramos_base no aplica en una cotización cobrada",
+      }),
+    ).toBe(false);
+    // Un 400 sin mensaje (fallo de red serializado) no se interpreta.
+    expect(esApiSinTramosBase({ ok: false, status: 400 })).toBe(false);
+    expect(esApiSinTramosBase({ ok: true })).toBe(false);
   });
 });

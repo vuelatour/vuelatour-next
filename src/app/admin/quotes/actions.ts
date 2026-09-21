@@ -232,6 +232,22 @@ export interface ReviseQuotePayload extends CalculateQuoteRequest {
       (confirmación de la oficina en el diálogo; el API avisa al mecánico).
       Solo pesa cuando el cotizador CAMBIA el avión — invariante 14 del API. */
   aceptar_discrepancia_alta?: boolean;
+  /**
+   * DE DÓNDE SALIERON LOS TRAMOS del DTO (22-sep-2026, caso #326; campo
+   * ADITIVO, solo en `revise` — a `/calculate` rebotaría 400 por
+   * `forbidNonWhitelisted`).
+   *
+   * - `COTIZADO` (lo que manda el panel salvo que se pulse el botón del
+   *   aviso): los tramos vienen del `calculo_snapshot`, así que lo que
+   *   difiera de él es una edición DELIBERADA de la oficina y lo que
+   *   coincida se OMITE del UPDATE — la escala viva conserva los pasajeros y
+   *   el ferry que capturó el piloto.
+   * - `OPERACION`: la oficina pulsó «Actualizar la cotización con la
+   *   operación»; el API escribe lo que llega.
+   * - AUSENTE (panel viejo): el API ancla los tramos a lo cotizado cuando lo
+   *   entrante es un eco de la escala viva.
+   */
+  tramos_base?: "COTIZADO" | "OPERACION";
 }
 
 /**

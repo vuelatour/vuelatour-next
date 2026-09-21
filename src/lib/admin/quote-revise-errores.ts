@@ -53,6 +53,32 @@ const MSG_TALLER = "El API rechazó el avión en taller; actualiza el API.";
 const MSG_VERSION = "La cotización cambió mientras editabas";
 const MSG_OTRO = "Error al guardar la versión";
 
+/**
+ * ¿El rechazo es «este API todavía no conoce `tramos_base`»? (22-sep-2026,
+ * caso #326.) El campo es ADITIVO, pero Nest corre con
+ * `whitelist + forbidNonWhitelisted`: un API sin desplegar responde **400
+ * "property tramos_base should not exist"** y TIRARÍA todo guardado del
+ * cotizador, no solo el de una cotización divergente. El panel lo detecta
+ * para poder reintentar sin el campo (cuando no hay nada del piloto que
+ * pisar) o explicarlo en ámbar (cuando sí lo hay).
+ *
+ * Se mira el TEXTO porque `class-validator` no manda código: el mensaje puede
+ * llegar como string o como lista de strings ya unida por `apiFetch`.
+ */
+export function esApiSinTramosBase(res: ResultadoFallido): boolean {
+  if (res.ok) return false;
+  if (res.status !== undefined && res.status !== 400) return false;
+  const mensaje = res.error ?? "";
+  if (!/tramos_base/i.test(mensaje)) return false;
+  return /should not exist|no debe existir|not allowed|property/i.test(mensaje);
+}
+
+/** Texto del banner cuando el API todavía no conoce `tramos_base`. */
+export const MSG_TRAMOS_BASE_API_VIEJO =
+  "Falta actualizar el API: todavía no sabe distinguir lo cotizado de lo que " +
+  "cambió el piloto, y guardar ahora pisaría los pasajeros que él capturó. " +
+  "Avisa a sistemas; tus cambios siguen aquí.";
+
 /** Matrícula del avión rechazado, si el API la mandó en `details`. */
 export function matriculaDeDetails(details: unknown): string | null {
   if (!details || typeof details !== "object") return null;
