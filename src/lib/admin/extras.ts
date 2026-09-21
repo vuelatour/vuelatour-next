@@ -80,23 +80,198 @@ export function normalizarExtrasEditor(
   }));
 }
 
+// ---------------------------------------------------------------------------
+// ¿Este renglón entra al total? (21-sep-2026)
+// ---------------------------------------------------------------------------
+
 /**
- * Renglones que SÍ viajan al API: con concepto y algo que cobrar (monto o
- * unitario > 0). Un renglón MXN sin TC se retiene (el motor lo rechazaría
- * con 400 y tiraría el preview). Las líneas de GRUPO viajan tal cual (el
- * API las ancla de todos modos). Nunca se recalcula el monto derivado.
+ * Estado de captura de un renglón de extras. FUENTE ÚNICA: con esto se decide
+ * qué viaja al motor (`extrasAPayload`), qué leyenda pinta la hoja y qué
+ * bloquea el guardado — si el filtro y el aviso vivieran en sitios distintos
+ * volverían a divergir, que es justo el bug del 21-sep-2026 (la hoja pintaba
+ * «$35.00» en la columna de importes, el total no lo sumaba y al guardar el
+ * renglón se descartaba en silencio).
+ *
+ * - `ok`: entra al total y se imprime.
+ * - `vacio`: sin nombre Y sin monto — renglón recién agregado; NO molesta.
+ * - `sin_nombre`: hay monto capturado pero falta el concepto (el API exige
+ *   `concepto` de 1–120 caracteres).
+ * - `sin_monto`: hay concepto pero no hay nada que cobrar (monto/unitario 0).
+ * - `mxn_sin_tc`: renglón en pesos sin T.C.; el motor lo rechazaría con 400 y
+ *   tiraría el preview, así que se retiene fuera del cálculo.
+ */
+export type EstadoExtra = "ok" | "vacio" | "sin_nombre" | "sin_monto" | "mxn_sin_tc";
+
+/** Estados en los que el renglón tiene ALGO capturado y aun así no cuenta. */
+export type MotivoExtraFuera = Exclude<EstadoExtra, "ok" | "vacio">;
+
+/**
+ * Textos ÚNICOS de los renglones que no entran al total (es-MX). El de
+ * `mxn_sin_tc` es el que ya usaba la hoja: se reutiliza, no se duplica.
+ */
+export const TEXTO_EXTRA_FUERA: Record<MotivoExtraFuera, string> = {
+  sin_nombre: "Falta el nombre: no se suma ni se imprime",
+  sin_monto: "Falta el monto: no se suma ni se imprime",
+  mxn_sin_tc: "Captura el T.C. en «Total MXN»: sin él el renglón no entra al total",
+};
+
+export function estadoExtra(
+  e: ExtraConcepto,
+  opts: { tcCapturado: boolean },
+): EstadoExtra {
+  const conNombre = (e.concepto ?? "").trim() !== "";
+  const conMonto = montoExtraActivo(e) > 0;
+  if (!conNombre && !conMonto) return "vacio";
+  if (!conNombre) return "sin_nombre";
+  if (!conMonto) return "sin_monto";
+  if (e.moneda === "MXN" && !opts.tcCapturado) return "mxn_sin_tc";
+  return "ok";
+}
+
+/** Campo que falta capturar para que el renglón cuente. */
+export type CampoFaltanteExtra = "concepto" | "monto" | "unitario" | "tc";
+
+/** Renglón con dinero o nombre capturado que NO entra al total, y por qué. */
+export interface ExtraFueraDelTotal {
+  /** Índice en la lista del form (el mismo del renglón en la hoja). */
+  indice: number;
+  estado: MotivoExtraFuera;
+  /** Texto en es-MX de `TEXTO_EXTRA_FUERA`. */
+  motivo: string;
+  /** Concepto ya recortado ("" cuando es justo lo que falta). */
+  concepto: string;
+  /** Monto NATIVO vivo del renglón (0 cuando lo que falta es el monto). */
+  monto: number;
+  moneda: "USD" | "MXN";
+  campo: CampoFaltanteExtra;
+  /** Línea materializada del GRUPO: aquí está bloqueada, se corrige allá. */
+  deGrupo: boolean;
+}
+
+function campoFaltante(e: ExtraConcepto, estado: MotivoExtraFuera): CampoFaltanteExtra {
+  if (estado === "sin_nombre") return "concepto";
+  if (estado === "mxn_sin_tc") return "tc";
+  return extraUsaUnitario(e) ? "unitario" : "monto";
+}
+
+/**
+ * Renglones que el operador ya empezó a capturar y que el total NO incluye
+ * (ni el PDF imprime). Los `vacio` quedan fuera a propósito: un renglón recién
+ * agregado no es un error. Es el complemento exacto de `extrasAPayload`.
+ */
+export function extrasFueraDelTotal(
+  list: ExtraConcepto[] | null | undefined,
+  opts: { tcCapturado: boolean },
+): ExtraFueraDelTotal[] {
+  const out: ExtraFueraDelTotal[] = [];
+  (list ?? []).forEach((e, indice) => {
+    const estado = estadoExtra(e, opts);
+    if (estado === "ok" || estado === "vacio") return;
+    out.push({
+      indice,
+      estado,
+      motivo: TEXTO_EXTRA_FUERA[estado],
+      concepto: (e.concepto ?? "").trim(),
+      monto: montoExtraActivo(e),
+      moneda: e.moneda === "MXN" ? "MXN" : "USD",
+      campo: campoFaltante(e, estado),
+      deGrupo: esExtraDeGrupo(e),
+    });
+  });
+  return out;
+}
+
+/**
+ * `aria-label` del control de la HOJA que hay que corregir (null = el campo
+ * del T.C., que tiene id propio `tc-usd-mxn-field`). El precio unitario se
+ * edita en el detalle «⋯», así que ahí el foco va al concepto: deja la fila
+ * —y su leyenda— a la vista.
+ */
+export function ariaLabelCampoExtra(f: Pick<ExtraFueraDelTotal, "campo" | "indice" | "moneda">): string | null {
+  const n = f.indice + 1;
+  if (f.campo === "tc") return null;
+  if (f.campo === "monto") {
+    return f.moneda === "MXN" ? `Monto en pesos del extra ${n}` : `Monto del extra ${n} (USD)`;
+  }
+  return `Concepto del extra ${n}`;
+}
+
+/** Suma por moneda, escrita («$35.00», «$500.00 MXN», «$35.00 + $500.00 MXN»). */
+function montosFuera(fuera: ExtraFueraDelTotal[]): string {
+  const usd = fuera.filter((f) => f.moneda === "USD").reduce((a, f) => a + f.monto, 0);
+  const mxn = fuera.filter((f) => f.moneda === "MXN").reduce((a, f) => a + f.monto, 0);
+  const partes: string[] = [];
+  if (usd > 0) partes.push(fmtMontoUnitario(Math.round(usd * 100) / 100, "USD"));
+  if (mxn > 0) partes.push(fmtMontoUnitario(Math.round(mxn * 100) / 100, "MXN"));
+  return partes.join(" + ");
+}
+
+/**
+ * Decisión PURA del candado de guardado: ningún renglón con dinero o nombre
+ * capturado puede perderse en silencio. La usan TODOS los caminos que
+ * persisten extras (alta, guardar versión, «Guardar y ver PDF», Ctrl+S).
+ */
+export interface BloqueoExtras {
+  bloquear: boolean;
+  /** Mensaje en es-MX ("" si no bloquea). */
+  mensaje: string;
+  /** Primer renglón a corregir (para el foco/scroll). */
+  primero: ExtraFueraDelTotal | null;
+  /** Renglones que FRENAN (los de GRUPO no, ver abajo). */
+  fuera: ExtraFueraDelTotal[];
+}
+
+export function bloqueoGuardadoExtras(
+  list: ExtraConcepto[] | null | undefined,
+  opts: { tcCapturado: boolean },
+): BloqueoExtras {
+  // Las líneas de GRUPO están bloqueadas en esta pantalla (se editan en el
+  // grupo): frenar por ellas dejaría la cotización imposible de guardar. La
+  // hoja SÍ las marca — el aviso es cierto, el candado sería una trampa. Un
+  // renglón de grupo en pesos sin T.C. sigue frenando por `mxnSinTc`, que es
+  // lo que de verdad se corrige aquí.
+  const fuera = extrasFueraDelTotal(list, opts).filter((f) => !f.deGrupo);
+  if (fuera.length === 0) return { bloquear: false, mensaje: "", primero: null, fuera };
+  const n = fuera.length;
+  const montos = montosFuera(fuera);
+  const cabeza =
+    n === 1
+      ? `Hay 1 concepto que no entra al total${montos ? ` (${montos})` : ""}`
+      : `Hay ${n} conceptos que no entran al total${montos ? ` (${montos})` : ""}`;
+  const estados = new Set(fuera.map((f) => f.estado));
+  const unico = estados.size === 1 ? [...estados][0] : null;
+  const arregla =
+    unico === "sin_nombre"
+      ? n === 1
+        ? "ponle nombre o quítalo"
+        : "ponles nombre o quítalos"
+      : unico === "sin_monto"
+        ? n === 1
+          ? "ponle monto o quítalo"
+          : "ponles monto o quítalos"
+        : unico === "mxn_sin_tc"
+          ? n === 1
+            ? "captura el T.C. en «Total MXN» o quítalo"
+            : "captura el T.C. en «Total MXN» o quítalos"
+          : n === 1
+            ? "ponle nombre y monto o quítalo"
+            : "ponles nombre y monto o quítalos";
+  return { bloquear: true, mensaje: `${cabeza}: ${arregla}.`, primero: fuera[0], fuera };
+}
+
+/**
+ * Renglones que SÍ viajan al API: los que `estadoExtra` da por `ok` (con
+ * concepto y algo que cobrar; un renglón MXN sin TC se retiene porque el motor
+ * lo rechazaría con 400 y tiraría el preview). Las líneas de GRUPO viajan tal
+ * cual (el API las ancla de todos modos). Nunca se recalcula el monto
+ * derivado. MISMA regla que el aviso de la hoja: un solo `estadoExtra`.
  */
 export function extrasAPayload(
   list: ExtraConcepto[] | null | undefined,
   opts: { tcCapturado: boolean },
 ): ExtraConcepto[] {
   return (list ?? [])
-    .filter(
-      (e) =>
-        e.concepto.trim() &&
-        montoExtraActivo(e) > 0 &&
-        (e.moneda !== "MXN" || opts.tcCapturado),
-    )
+    .filter((e) => estadoExtra(e, opts) === "ok")
     .map((e) => {
       const usaUnitario = extraUsaUnitario(e);
       return {

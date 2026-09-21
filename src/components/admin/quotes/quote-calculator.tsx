@@ -61,7 +61,14 @@ import {
 } from "@/lib/admin/aviso-taller";
 import { SquawkAltaDialog } from "@/components/admin/flights/squawk-alta-dialog";
 import { decidirErrorRevise } from "@/lib/admin/quote-revise-errores";
-import { extrasAPayload, montoExtraActivo, normalizarExtrasEditor } from "@/lib/admin/extras";
+import {
+  ariaLabelCampoExtra,
+  bloqueoGuardadoExtras,
+  extrasAPayload,
+  montoExtraActivo,
+  normalizarExtrasEditor,
+  type ExtraFueraDelTotal,
+} from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import {
@@ -1701,6 +1708,14 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !(Number(values.tc_usd_mxn) > 0) &&
     ((values.cobrar_tuas && hayTuasMxnActivas) || hayExtrasMxn);
 
+  // CONCEPTOS QUE NO ENTRAN AL TOTAL (21-sep-2026): un extra sin nombre (o sin
+  // monto) NO viaja al motor ni al API — el desglose lo pintaba como si
+  // contara y al guardar se perdía en silencio. Misma fuente que la leyenda de
+  // la hoja (`estadoExtra`), así que el aviso y el filtro no pueden divergir.
+  const bloqueoExtras = bloqueoGuardadoExtras(values.extras, {
+    tcCapturado: Number(values.tc_usd_mxn) > 0,
+  });
+
   // El cliente ahora AFECTA el precio (tarifa preferencial): no se puede
   // guardar mientras el preview corresponda a otro cliente o siga recalculando
   // — lo persistido debe ser exactamente lo que el operador vio.
@@ -1914,6 +1929,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   };
 
   const handleSave = (motivoFinal?: string) => {
+    // Invariante de dinero (21-sep-2026): un concepto a medias NO se guarda a
+    // espaldas del operador. `extrasAPayload` lo descartaría en silencio y el
+    // renglón no llegaría ni al total ni al PDF.
+    if (frenarPorExtras()) return;
     // Invariante de dinero: un costo MXN sin TC no puede derivar su USD — se
     // rechaza en captura (el API respondería 400), nunca se persiste a medias.
     if (costoExternoMxnSinTc) {
@@ -2123,6 +2142,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       focusTc();
       return false;
     }
+    // Conceptos a medias: ni al total ni al PDF — se avisa y se corrige, nunca
+    // se descartan al guardar (pedido del cliente del 21-sep-2026).
+    if (frenarPorExtras()) return false;
     if (capacidadExcedida) {
       toast.error("Los pasajeros exceden la capacidad del avión.");
       return false;
@@ -2183,6 +2205,33 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }, 60);
   /** El TC vive en «Total MXN (T.C.)» del desglose de la hoja. */
   const focusTc = () => setTimeout(focusTcField, 60);
+  /** Lleva a la fila del concepto que hay que corregir (o al campo del T.C.). */
+  const enfocarExtraFuera = (f: ExtraFueraDelTotal | null) => {
+    if (!f) return;
+    const label = ariaLabelCampoExtra(f);
+    if (!label) {
+      focusTc();
+      return;
+    }
+    setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(
+        `.cot-hoja [aria-label="${label.replace(/"/g, '\\"')}"]`,
+      );
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.focus({ preventScroll: true });
+    }, 60);
+  };
+  /**
+   * Candado ÚNICO de los caminos que PERSISTEN extras (alta «Crear v1»,
+   * «Guardar → vN», «Guardar y ver PDF», Ctrl/⌘+S): ningún renglón con dinero
+   * o nombre capturado se descarta en silencio. Devuelve true si frenó.
+   */
+  const frenarPorExtras = (): boolean => {
+    if (!bloqueoExtras.bloquear) return false;
+    toast.error(bloqueoExtras.mensaje);
+    enfocarExtraFuera(bloqueoExtras.primero);
+    return true;
+  };
   /**
    * La hoja señala dónde se ajustan tarifa y horas (feedback 9-sep-2026:
    * «¿dónde se ajusta la hora volada por tramo y la tarifa por hora?»): abre

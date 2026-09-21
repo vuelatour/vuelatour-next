@@ -1232,3 +1232,102 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   `components/admin/inventory/__tests__/movimientos-eliminados-card.test.tsx`
   (quién · cuándo en hora Cancún · motivo, y que un fallo de lectura nunca se
   pinte como «no hay eliminados»).
+
+## Conceptos extra: lo que no entra al total se DICE (21-sep-2026)
+
+- Pedido del cliente (captura de la hoja de una cotización CUN–CZM–CUN):
+  «Servicio aéreo $650.00 · TUA CZM $50.00 · [SIN IVA] Concepto $35.00 ·
+  Subtotal $700.00 · Total (USD) $700.00 — **¿por qué no suma el extra de 35
+  usd en el total?**». «Concepto» en rojo era el **placeholder** del campo
+  vacío: el renglón pintaba 35.00 en la columna de importes como si contara,
+  `extrasAPayload` no lo mandaba al motor (exige concepto; el API además pide
+  `concepto` de 1–120) y **al Guardar se descartaba en silencio** — tampoco
+  llegaba al PDF. Propuesta aprobada: «mientras falte el nombre, el renglón se
+  ve atenuado con la leyenda “Falta el nombre: no se suma ni se imprime”, y al
+  guardar avisa en lugar de descartarlo en silencio».
+- **FUENTE ÚNICA `src/lib/admin/extras.ts`** (PURA, prueba
+  `__tests__/extras.test.ts`): `estadoExtra(e, {tcCapturado})` → `ok` |
+  `vacio` | `sin_nombre` | `sin_monto` | `mxn_sin_tc`, y de ahí cuelgan las
+  tres cosas que antes vivían separadas: `extrasAPayload` (reescrito como
+  `estadoExtra === 'ok'`, **mismo resultado que antes**, congelado con una
+  prueba de paridad contra el filtro viejo), `extrasFueraDelTotal` (los que
+  tienen ALGO capturado y no cuentan, con motivo, monto NATIVO, moneda y
+  `campo` a corregir) y `bloqueoGuardadoExtras` (decisión PURA del candado:
+  `{bloquear, mensaje, primero, fuera}`). Si el filtro y el aviso volvieran a
+  vivir en sitios distintos, vuelve el bug.
+  - `vacio` = **sin nombre Y sin monto**: renglón recién agregado, no molesta
+    (se sigue descartando en silencio, como siempre).
+  - Textos ÚNICOS en `TEXTO_EXTRA_FUERA`: «Falta el nombre: no se suma ni se
+    imprime», «Falta el monto: no se suma ni se imprime» y, para MXN sin T.C.,
+    **el que ya usaba la hoja** («Captura el T.C. en «Total MXN»: sin él el
+    renglón no entra al total») — se reutiliza, no se duplica. Ningún
+    componente redacta estas frases a mano.
+  - El mensaje del candado se adapta al motivo: «Hay 1 concepto que no entra
+    al total ($35.00): ponle nombre o quítalo.» / «Hay 2 conceptos… ($35.00 +
+    $1,500.00 MXN): ponles nombre y monto o quítalos.» Dos monedas NUNCA se
+    suman entre sí, y sin monto capturado no se inventa cifra.
+- **HOJA** (`quote-sheet-desglose.tsx`, **solo en EDICIÓN**): la fila lleva
+  `cot-fila--fuera` (importe atenuado + tachado suave) y bajo el concepto sale
+  la leyenda ámbar `cot-aviso` (`data-cot-ui`). El clic lleva al campo que
+  falta — concepto, monto en USD o en pesos, el detalle «⋯» cuando el monto es
+  `cantidad × unitario`, o el campo del T.C. En **LECTURA la hoja no monta nada
+  de esto**: sigue siendo byte a byte el PDF y los fixtures de
+  `__tests__/quote-sheet.test.tsx` **no se regeneran**. CSS en
+  `styles/cotizacion-hoja-pantalla.css`, TODA regla bajo
+  `.cot-hoja:not(.cot-hoja--lectura)` (lo exige `hoja-css-deriva.test.ts`); el
+  texto va en ámbar-**700** (#b45309), no en el #d97706 de las marcas del
+  margen: a 10px sobre papel blanco ese ámbar da 3.2:1 y no llega al 4.5:1 de
+  AA — y la leyenda es quien CARGA el mensaje, el color solo acompaña.
+  - **`data-guard-exempt` solo cuando el clic únicamente MUEVE EL FOCO.** La
+    leyenda de `cantidad × unitario` abre el detalle «⋯», que EDITA y cuyo
+    popover entero va exento: exenta también la leyenda, la confirmación única
+    de CONFIRMADO/RESERVA se saltaba entera. Misma regla que la marca «1.20 h»
+    del itinerario — lo que abre un popover que edita NO va exento.
+  - **Una línea de GRUPO se DICE, no se toca**: aquí está bloqueada («se edita
+    desde el grupo»), así que su leyenda es TEXTO + « · se corrige en el grupo»,
+    sin botón. Con clic no habría a dónde ir (el concepto es texto, no input) y
+    el atajo al detalle «⋯» habría dado justo la edición que el candado niega.
+    La excepción es `mxn_sin_tc`: ese T.C. sí vive en esta hoja y sí se corrige
+    aquí, así que esa leyenda conserva su liga.
+- **GUARDAR SIN PERDER DINERO**: `frenarPorExtras()` corre en `handleSave`
+  (alta «Crear v1», revisión desde el diálogo, Ctrl/⌘+S) **y** en
+  `abrirGuardar` (botón primario y «Guardar y ver PDF»), DESPUÉS del candado
+  de `mxnSinTc` para que ese conserve su mensaje y su foco al T.C. No se
+  guarda: toast con el mensaje + scroll/foco al primer renglón
+  (`ariaLabelCampoExtra` → `.cot-hoja [aria-label=…]`). **El botón NO se
+  deshabilita** a propósito: un botón apagado no explica nada; el clic sí.
+  `guardarPresentacion` (D5, PATCH pdf-visibilidad) queda fuera porque no
+  persiste extras.
+- **Una línea de GRUPO se MARCA pero no BLOQUEA**: aquí va bloqueada (se edita
+  en el grupo), así que frenar por ella dejaría la cotización hija imposible de
+  guardar — `bloqueoGuardadoExtras` las descarta por `deGrupo`. Si un cargo del
+  grupo viene en pesos sin T.C., el candado que corresponde sigue siendo
+  `mxnSinTc`, que sí se corrige en esta pantalla.
+- **Editor clásico** (`extras-editor.tsx`, variantes `fila` y `card`): misma
+  leyenda con `AvisoFueraDelTotal`, que sustituyó a los dos textos sueltos de
+  «MXN sin TC» que tenía cada variante.
+- **GRUPO**: sus cargos son otro tipo (`ExtraGrupoForm`) y otra función, y ahí
+  la regla exige además la cantidad cuando no es por persona. **FUENTE ÚNICA en
+  `grupo-form/payload.ts`**: `motivoCargoGrupo` (privada) y de ella cuelgan las
+  TRES cosas que vivían copiadas — `extrasPayload` (qué viaja al armador y al
+  API), `cargoGrupoCompleto` (con la que `extras-grupo-editor.tsx` NUMERA las
+  filas contra el consolidado; una copia local de la regla desalinea esa
+  numeración y cada fila enseña el monto de OTRA) y `extrasGrupoIncompletos` +
+  `avisoCargosGrupo` (el candado, que `grupo-form.tsx` corre antes de guardar
+  abriendo la sección «Cargos»). Un renglón EN BLANCO no molesta; uno a medias
+  sí. Reutiliza los textos de `TEXTO_EXTRA_FUERA` y agrega
+  `TEXTO_CARGO_SIN_CANTIDAD`; `falta` ('nombre'|'monto'|'cantidad') existe para
+  redactar el aviso corto sin partir el motivo largo.
+- Pruebas: `lib/admin/__tests__/extras.test.ts` (tabla de estados; paridad
+  **exhaustiva** de `extrasAPayload` con el filtro anterior sobre el producto
+  cartesiano de concepto × monto × moneda × IVA × unitario × cantidad ×
+  por_persona × origen —36 000 casos, verificada además una vez contra el
+  archivo real de HEAD—; que payload + fuera + vacíos sumen SIEMPRE la lista
+  completa, y el mensaje del candado),
+  `components/admin/quotes/__tests__/quote-sheet-extras-fuera.test.tsx` (la
+  clase y la leyenda en edición; el TOTAL del motor: $700.00 con el renglón
+  fuera y $735.00 al ponerle nombre; a qué campo lleva cada leyenda y cuál va
+  exenta del guard; la línea de GRUPO sin clic; CERO rastro en lectura) y
+  `components/admin/grupos/grupo-form/__tests__/cargos-grupo.test.ts`
+  (`cargoGrupoCompleto` ≡ el filtro del payload en producto cartesiano, los
+  tres motivos con su índice y el texto del aviso).

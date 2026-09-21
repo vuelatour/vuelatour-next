@@ -1,4 +1,5 @@
 import { cancunInputToIso } from "@/lib/datetime";
+import { TEXTO_EXTRA_FUERA } from "@/lib/admin/extras";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import type {
   ArmarGrupoInput,
@@ -51,28 +52,95 @@ export function plantillaPayload(tramos: PlantillaTramoForm[]): EscalaPlantillaI
     });
 }
 
+/** Falta la cantidad: la exige el grupo (no la cotización de un avión). */
+export const TEXTO_CARGO_SIN_CANTIDAD = "Falta la cantidad: no se suma ni se imprime";
+
+/**
+ * REGLA ÚNICA del grupo (21-sep-2026): por qué un cargo NO viaja al armador
+ * ni al API (null = sí viaja). De ella cuelgan `extrasPayload` (el filtro),
+ * `cargoGrupoCompleto` (el editor, que numera las filas del armador) y
+ * `extrasGrupoIncompletos` (el candado de guardado). Vivían separadas en tres
+ * sitios: es exactamente la divergencia que trajo el bug de los extras.
+ */
+function motivoCargoGrupo(e: ExtraGrupoForm): string | null {
+  const unitario = num(e.unitario);
+  const cantidad = num(e.cantidad);
+  if (!e.concepto.trim()) return TEXTO_EXTRA_FUERA.sin_nombre;
+  if (unitario == null || unitario < 0) return TEXTO_EXTRA_FUERA.sin_monto;
+  // Sin cantidad no hay línea que materializar: se omite hasta capturarla.
+  if (!e.por_persona && (cantidad == null || cantidad < 0)) return TEXTO_CARGO_SIN_CANTIDAD;
+  return null;
+}
+
+/** El cargo está completo ⇒ `extrasPayload` lo manda (misma regla, un solo sitio). */
+export function cargoGrupoCompleto(e: ExtraGrupoForm): boolean {
+  return motivoCargoGrupo(e) === null;
+}
+
+/**
+ * Cargos del grupo que el operador YA empezó a capturar y que `extrasPayload`
+ * dejaría fuera (21-sep-2026, misma regla que los extras de una cotización:
+ * ningún renglón con algo capturado se descarta en silencio al guardar). Un
+ * renglón en blanco —recién agregado— no cuenta: no molesta.
+ */
+export interface CargoGrupoIncompleto {
+  indice: number;
+  concepto: string;
+  /** Texto largo, el MISMO de la cotización («Falta el monto: no se suma…»). */
+  motivo: string;
+  /** Qué falta, en una palabra: para redactar el aviso sin partir el motivo. */
+  falta: "nombre" | "monto" | "cantidad";
+}
+
+export function extrasGrupoIncompletos(extras: ExtraGrupoForm[]): CargoGrupoIncompleto[] {
+  const out: CargoGrupoIncompleto[] = [];
+  extras.forEach((e, indice) => {
+    const concepto = e.concepto.trim();
+    const enBlanco = !concepto && num(e.unitario) == null && num(e.cantidad) == null;
+    if (enBlanco) return;
+    const motivo = motivoCargoGrupo(e);
+    if (!motivo) return;
+    const falta =
+      motivo === TEXTO_EXTRA_FUERA.sin_nombre
+        ? "nombre"
+        : motivo === TEXTO_EXTRA_FUERA.sin_monto
+          ? "monto"
+          : "cantidad";
+    out.push({ indice, concepto, motivo, falta });
+  });
+  return out;
+}
+
+/**
+ * Aviso ÚNICO del candado de cargos del grupo (es-MX). "" = no hay nada que
+ * frenar. Se redacta aquí —no en el componente— para que diga lo mismo si
+ * mañana lo usa otra pantalla del grupo.
+ */
+export function avisoCargosGrupo(fuera: CargoGrupoIncompleto[]): string {
+  if (fuera.length === 0) return "";
+  if (fuera.length > 1) {
+    return `Hay ${fuera.length} cargos que no entran al total: complétalos o quítalos.`;
+  }
+  const c = fuera[0];
+  const quien = c.concepto ? `«${c.concepto}»` : `${c.indice + 1}`;
+  return `El cargo ${quien} no entra al total: falta el ${c.falta}. Complétalo o quítalo.`;
+}
+
 /** Extras completos (concepto + unitario); los renglones a medias no viajan. */
 export function extrasPayload(extras: ExtraGrupoForm[]): ExtraGrupoInput[] {
   const out: ExtraGrupoInput[] = [];
   for (const e of extras) {
-    const concepto = e.concepto.trim();
-    const unitario = num(e.unitario);
-    if (!concepto || unitario == null || unitario < 0) continue;
+    if (!cargoGrupoCompleto(e)) continue;
     const item: ExtraGrupoInput = {
-      concepto: concepto.slice(0, 120),
-      unitario,
+      concepto: e.concepto.trim().slice(0, 120),
+      unitario: num(e.unitario)!,
       moneda: e.moneda,
       aplica_iva: e.aplica_iva,
       por_persona: e.por_persona,
       reparto: e.por_persona ? "POR_PAX" : e.reparto,
     };
     if (e.id) item.id = e.id;
-    if (!e.por_persona) {
-      const cantidad = num(e.cantidad);
-      // Sin cantidad no hay línea que materializar: se omite hasta capturarla.
-      if (cantidad == null || cantidad < 0) continue;
-      item.cantidad = cantidad;
-    }
+    if (!e.por_persona) item.cantidad = num(e.cantidad)!;
     out.push(item);
   }
   return out;

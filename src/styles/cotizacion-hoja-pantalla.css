@@ -429,3 +429,62 @@
   color: #9ca3af;
 }
 .cot-hoja:not(.cot-hoja--lectura) .cot-horas__ayuda { font-size: 10px; color: #9ca3af; }
+
+/* ---------- 6. Renglón FUERA del total: SOLO edición (21-sep-2026) ----------
+   Pedido del cliente: la hoja pintaba «$35.00» en la columna de importes de un
+   concepto sin nombre, el total no lo sumaba y al guardar el renglón se
+   descartaba en silencio. Ahora el importe se ve atenuado y tachado (no
+   cuenta) y bajo el concepto sale la leyenda en ámbar, clicable, que lleva al
+   campo que falta. Todo cuelga de `:not(.cot-hoja--lectura)`: en lectura la
+   hoja ES el PDF y un renglón así ni siquiera existe (nunca se guardó). */
+.cot-hoja:not(.cot-hoja--lectura) .cot-fila--fuera > td.val {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-color: #d97706;
+  text-decoration-thickness: 1px;
+}
+/* El monto de un extra USD es un input: no hereda la decoración del td. */
+.cot-hoja:not(.cot-hoja--lectura) .cot-fila--fuera > td.val .cot-in {
+  text-decoration: line-through;
+  text-decoration-color: #d97706;
+  text-decoration-thickness: 1px;
+}
+/* El texto va en ámbar-700 (#b45309), no en el ámbar-600 de las marcas del
+   margen: a 10px sobre el papel blanco, #d97706 da 3.2:1 de contraste y no
+   llega al 4.5:1 de AA. La leyenda es la que CARGA el mensaje — el color solo
+   acompaña, nunca es el único portador. */
+.cot-hoja:not(.cot-hoja--lectura) .cot-aviso {
+  display: block;
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  color: #b45309;
+}
+.cot-hoja:not(.cot-hoja--lectura) .cot-aviso__nota {
+  color: #92400e;
+}
+.cot-hoja:not(.cot-hoja--lectura) button.cot-aviso__liga {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.cot-hoja:not(.cot-hoja--lectura) button.cot-aviso__liga:hover {
+  color: #92400e;
+  text-decoration: underline;
+}
+.cot-hoja:not(.cot-hoja--lectura) button.cot-aviso__liga:focus-visible {
+  outline: 2px solid var(--ring, #e63946);
+  outline-offset: 1px;
+  border-radius: 2px;
+}

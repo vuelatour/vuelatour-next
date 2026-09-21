@@ -67,7 +67,13 @@ import { PlantillaEditor } from "./plantilla-editor";
 import { DatoLectura, SeccionGrupo, type SeccionGrupoId } from "./seccion-grupo";
 import { SquawkGrupoDialog } from "./squawk-grupo-dialog";
 import { TotalBarGrupo, type CobroBarra } from "./total-bar-grupo";
-import { armarPayloadDe, createPayloadDe, revisePayloadDe } from "./payload";
+import {
+  armarPayloadDe,
+  avisoCargosGrupo,
+  createPayloadDe,
+  extrasGrupoIncompletos,
+  revisePayloadDe,
+} from "./payload";
 import {
   METODOS_PAGO_GRUPO,
   MOTIVO_BLOQUEO_LABEL,
@@ -577,6 +583,14 @@ export function GrupoForm(props: GrupoFormProps) {
           : `Sobran ${-d} pasajeros: los aviones suman ${paxCapturados} y el grupo es de ${pasajerosTotal}`,
       );
       abrirSeccion("aviones");
+      return;
+    }
+    // Cargos a medias (21-sep-2026): `extrasPayload` los omite, así que sin
+    // este candado el renglón desaparecía al guardar sin decir nada.
+    const cargosFuera = extrasGrupoIncompletos(values.extras_grupo);
+    if (cargosFuera.length > 0) {
+      toast.error(avisoCargosGrupo(cargosFuera));
+      abrirSeccion("cargos");
       return;
     }
     if (!canSave) {

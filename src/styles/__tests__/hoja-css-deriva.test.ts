@@ -79,6 +79,24 @@ describe("CSS de pantalla de la hoja (acento solo en edición)", () => {
     }
   });
 
+  /**
+   * Renglón de extras FUERA del total (21-sep-2026): el importe atenuado +
+   * tachado y la leyenda ámbar son croma de captura. En lectura la hoja ES el
+   * PDF —y un renglón así nunca se guardó—, así que ninguna de estas reglas
+   * puede aplicar ahí.
+   */
+  it("la croma del renglón fuera del total va bajo :not(.cot-hoja--lectura)", () => {
+    const croma = reglas.filter((r) =>
+      r.selectores.some((s) => /\.cot-fila--fuera|\.cot-aviso/.test(s)),
+    );
+    expect(croma.length).toBeGreaterThan(0);
+    for (const r of croma) {
+      for (const s of r.selectores) {
+        expect(s.includes(":not(.cot-hoja--lectura)"), `${s} pintaría sobre la hoja impresa`).toBe(true);
+      }
+    }
+  });
+
   it("ninguna regla de lectura pinta acento ni subrayado", () => {
     // `.cot-hoja--lectura` como selector real (no dentro de `:not(...)`).
     const deLectura = reglas.filter((r) => r.selectores.some((s) => /(^|[^(])\.cot-hoja--lectura/.test(s)));

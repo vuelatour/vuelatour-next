@@ -14,11 +14,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { MonedaSelect } from "@/components/admin/quotes/moneda-select";
 import {
+  TEXTO_EXTRA_FUERA,
   cantidadEfectiva,
   esExtraDeGrupo,
+  estadoExtra,
   extraUsaUnitario,
   montoReferencia,
   textoCantidadUnitario,
+  type EstadoExtra,
 } from "@/lib/admin/extras";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { fmtMxn, fmtUsd } from "@/lib/format";
@@ -26,6 +29,38 @@ import { cn } from "@/lib/utils";
 import type { ExtraConcepto } from "@/types/quote";
 
 export const EXTRAS_SUGERIDOS = ["Handler", "Comisariato", "Extensión de servicios"];
+
+/**
+ * Leyenda ÚNICA del renglón que no entra al total (21-sep-2026): misma regla
+ * (`estadoExtra`) y mismos textos que la hoja del cotizador. Un renglón recién
+ * agregado (`vacio`) no molesta; los demás se dicen en ámbar, nunca en
+ * silencio. Con `onFocusTc`, el de MXN sin T.C. además lleva al campo.
+ */
+function AvisoFueraDelTotal({
+  estado,
+  onFocusTc,
+  sinTcTexto,
+}: {
+  estado: EstadoExtra;
+  onFocusTc?: () => void;
+  sinTcTexto?: string;
+}) {
+  if (estado === "ok" || estado === "vacio") return null;
+  const texto =
+    estado === "mxn_sin_tc" ? (sinTcTexto ?? TEXTO_EXTRA_FUERA.mxn_sin_tc) : TEXTO_EXTRA_FUERA[estado];
+  if (estado === "mxn_sin_tc" && onFocusTc) {
+    return (
+      <button
+        type="button"
+        onClick={onFocusTc}
+        className="text-left text-xs font-medium text-amber-600 underline underline-offset-2 dark:text-amber-400"
+      >
+        {texto}
+      </button>
+    );
+  }
+  return <p className="text-xs text-amber-600 dark:text-amber-400">{texto}</p>;
+}
 
 /**
  * Editor de conceptos extra (FUENTE ÚNICA, 4-sep-2026): agrega, edita y
@@ -217,10 +252,7 @@ export function ExtrasEditor({
           const esMxn = e.moneda === "MXN";
           const referencia = montoReferencia(e, pasajeros);
           const fmt = esMxn ? fmtMxn : fmtUsd;
-          const mxnSinTc =
-            esMxn &&
-            (usaUnitario ? Number(e.unitario) > 0 : Number(e.monto_usd) > 0) &&
-            !tcCapturado;
+          const estado = estadoExtra(e, { tcCapturado });
 
           if (bloqueado) {
             return (
@@ -437,22 +469,7 @@ export function ExtrasEditor({
                   )}
                 </div>
               )}
-              {mxnSinTc &&
-                (onFocusTc ? (
-                  <button
-                    type="button"
-                    onClick={onFocusTc}
-                    className="text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
-                  >
-                    Captura el T.C. (abajo, en «Total MXN») — sin tipo de cambio
-                    este extra en MXN no entra al total.
-                  </button>
-                ) : (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    {sinTcTexto ??
-                      "Sin tipo de cambio este extra en MXN no entra al total."}
-                  </p>
-                ))}
+              <AvisoFueraDelTotal estado={estado} onFocusTc={onFocusTc} sinTcTexto={sinTcTexto} />
             </div>
           );
         })}
@@ -663,26 +680,13 @@ export function ExtrasEditor({
               </div>
             )}
 
-            {/* Extra MXN sin TC: se retiene fuera del cálculo (no tira el
-                preview con el 400 del motor) y guardar queda bloqueado. */}
-            {esMxn &&
-              (usaUnitario ? Number(e.unitario) > 0 : Number(e.monto_usd) > 0) &&
-              !tcCapturado &&
-              (onFocusTc ? (
-                <button
-                  type="button"
-                  onClick={onFocusTc}
-                  className="text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
-                >
-                  Captura el TC en «Cobro y cierre» — sin tipo de cambio este
-                  extra en MXN no entra al total.
-                </button>
-              ) : (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  {sinTcTexto ??
-                    "Sin tipo de cambio este extra en MXN no entra al total."}
-                </p>
-              ))}
+            {/* Renglón que NO entra al total (sin nombre, sin monto, o MXN sin
+                T.C.): se dice aquí mismo — nunca se descarta en silencio. */}
+            <AvisoFueraDelTotal
+              estado={estadoExtra(e, { tcCapturado })}
+              onFocusTc={onFocusTc}
+              sinTcTexto={sinTcTexto}
+            />
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-4">

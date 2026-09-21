@@ -6,7 +6,14 @@ import { EllipsisHorizontalIcon, LockClosedIcon, TrashIcon } from "@heroicons/re
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EXTRAS_SUGERIDOS } from "@/components/admin/quotes/extras-editor";
-import { cantidadEfectiva, esExtraDeGrupo, extraUsaUnitario } from "@/lib/admin/extras";
+import {
+  TEXTO_EXTRA_FUERA,
+  cantidadEfectiva,
+  esExtraDeGrupo,
+  estadoExtra,
+  extraUsaUnitario,
+  type EstadoExtra,
+} from "@/lib/admin/extras";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import {
   descuentoImpresoUsd,
@@ -146,6 +153,13 @@ export function QuoteSheetDesglose({
 
   // ----- Extras -----
   const extras = valores.extras ?? [];
+  // Lleva el foco al campo del T.C. («Total MXN», más abajo en esta misma
+  // tabla) desde la leyenda de un renglón en pesos sin tipo de cambio.
+  const enfocarTc = () => {
+    const el = document.getElementById(idTc);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    (el instanceof HTMLInputElement ? el : el?.querySelector("input"))?.focus({ preventScroll: true });
+  };
   const setExtras = (next: ExtraConcepto[]) => onCambio("extras", next);
   const updateExtra = (idx: number, patch: Partial<ExtraConcepto>) => {
     const next = [...extras];
@@ -284,8 +298,24 @@ export function QuoteSheetDesglose({
                 </tr>
               );
             }
+            // ¿Este renglón entra al total? (21-sep-2026) — misma regla que
+            // `extrasAPayload`: si no cuenta, el importe se atenúa y la
+            // leyenda lo dice EN LA FILA, en vez de pintar un monto que el
+            // total ignora y que al guardar se descartaba en silencio.
+            const estado: EstadoExtra = estadoExtra(e, { tcCapturado: tc != null });
+            const fuera = estado !== "ok" && estado !== "vacio";
+            // El precio unitario vive en el detalle «⋯», que EDITA: como la
+            // marca «1.20 h» del itinerario, esa leyenda NO puede ir exenta
+            // del guard de CONFIRMADO/RESERVA (el popover entero sí lo está,
+            // así que sin esto la confirmación única se saltaba).
+            const abreDetalle = estado === "sin_monto" && unitario;
+            // Un renglón de GRUPO se corrige EN EL GRUPO: la leyenda lo dice
+            // igual (es cierto que no suma), pero sin clic — aquí no hay campo
+            // que enfocar y abrir el detalle saltaría el candado «se edita
+            // desde el grupo». El T.C. es la excepción: ese SÍ vive en la hoja.
+            const corregibleAqui = !bloqueado || estado === "mxn_sin_tc";
             return (
-              <tr key={idx} className="cot-fila">
+              <tr key={idx} className={cn("cot-fila", fuera && "cot-fila--fuera")}>
                 <td className="lbl cot-ancla">
                   <CampoHoja
                     value={e.concepto}
@@ -357,6 +387,36 @@ export function QuoteSheetDesglose({
                         </span>
                       )}
                     </span>
+                  )}
+                  {fuera && (
+                    <FueraDelTotal
+                      estado={estado as Exclude<EstadoExtra, "ok" | "vacio">}
+                      exento={!abreDetalle}
+                      nota={corregibleAqui ? undefined : "se corrige en el grupo"}
+                      onCorregir={
+                        corregibleAqui
+                          ? (ancla) => {
+                              if (estado === "mxn_sin_tc") {
+                                enfocarTc();
+                                return;
+                              }
+                              if (abreDetalle) {
+                                // El precio unitario vive en el detalle «⋯»: se
+                                // abre anclado a la propia leyenda.
+                                setDetalle({ idx, ancla });
+                                return;
+                              }
+                              enfocarPorAriaLabel(
+                                estado === "sin_nombre"
+                                  ? `Concepto del extra ${idx + 1}`
+                                  : e.moneda === "MXN"
+                                    ? `Monto en pesos del extra ${idx + 1}`
+                                    : `Monto del extra ${idx + 1} (USD)`,
+                              );
+                            }
+                          : undefined
+                      }
+                    />
                   )}
                 </td>
                 <td className="val">
@@ -548,6 +608,52 @@ export function QuoteSheetDesglose({
         />
       )}
     </>
+  );
+}
+
+/**
+ * LEYENDA de un renglón de extras que NO entra al total (21-sep-2026). Croma
+ * de edición (`data-cot-ui`): no se imprime y en LECTURA ni se monta, así que
+ * la hoja bloqueada sigue siendo byte a byte el PDF. El clic lleva al campo
+ * que falta — nunca cambia el dato por su cuenta.
+ *
+ * - Sin `onCorregir` (línea de GRUPO) es TEXTO: el aviso sigue siendo cierto,
+ *   pero aquí no hay nada que corregir y un clic muerto confunde.
+ * - `exento` = el clic solo mueve el foco, así que queda fuera del guard de
+ *   CONFIRMADO/RESERVA (el guard se dispara al teclear de verdad). Cuando el
+ *   clic ABRE el detalle «⋯» —que edita— va SIN exención, igual que la marca
+ *   «1.20 h» del itinerario: si no, la confirmación única se saltaría.
+ */
+function FueraDelTotal({
+  estado,
+  onCorregir,
+  exento = true,
+  nota,
+}: {
+  estado: Exclude<EstadoExtra, "ok" | "vacio">;
+  onCorregir?: (ancla: HTMLButtonElement) => void;
+  exento?: boolean;
+  nota?: string;
+}) {
+  const texto = TEXTO_EXTRA_FUERA[estado];
+  const TITULO = "Este renglón no se suma al total ni sale en el PDF";
+  return (
+    <span className="cot-aviso" {...UI}>
+      {onCorregir ? (
+        <button
+          type="button"
+          className="cot-aviso__liga"
+          {...(exento ? { "data-guard-exempt": "" } : {})}
+          onClick={(ev) => onCorregir(ev.currentTarget)}
+          title={TITULO}
+        >
+          {texto}
+        </button>
+      ) : (
+        <span title={TITULO}>{texto}</span>
+      )}
+      {nota && <span className="cot-aviso__nota"> · {nota}</span>}
+    </span>
   );
 }
 
@@ -775,7 +881,10 @@ function DetalleExtra({
           </DetalleFila>
         </>
       )}
-      <DetalleFila label="Moneda" hint={e.moneda === "MXN" && !tcCapturado ? "Captura el T.C. en «Total MXN»: sin él el renglón no entra al total." : undefined}>
+      <DetalleFila
+        label="Moneda"
+        hint={e.moneda === "MXN" && !tcCapturado ? `${TEXTO_EXTRA_FUERA.mxn_sin_tc}.` : undefined}
+      >
         <select
           value={e.moneda ?? "USD"}
           aria-label="Moneda del extra"

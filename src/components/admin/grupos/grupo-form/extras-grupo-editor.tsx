@@ -10,6 +10,7 @@ import { REPARTO_EXTRA_LABEL, etiquetaReparto } from "@/lib/admin/grupos-ui";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ArmadoGrupo, RepartoExtraGrupo } from "@/types/grupos";
+import { cargoGrupoCompleto } from "./payload";
 import { extraVacio, type ExtraGrupoForm } from "./types";
 
 /** Unitario nativo legible ("—" si no está capturado). */
@@ -33,25 +34,17 @@ function montoServer(armado: ArmadoGrupo | null, idx: number): number | null {
   return linea ? linea.monto_usd : null;
 }
 
-/** Misma regla que `extrasPayload`: solo las líneas completas viajan al armador. */
-function esCompleta(e: ExtraGrupoForm): boolean {
-  return (
-    e.concepto.trim() !== "" &&
-    e.unitario !== "" &&
-    Number(e.unitario) >= 0 &&
-    (e.por_persona || (e.cantidad !== "" && Number(e.cantidad) >= 0))
-  );
-}
-
 /**
  * Índice de cada fila dentro de la lista que viajó al armador (solo las
- * completas cuentan); null si la fila está a medias.
+ * completas cuentan); null si la fila está a medias. La completitud la decide
+ * `cargoGrupoCompleto` —la MISMA que filtra `extrasPayload`—: una copia local
+ * de la regla desalinea la numeración y cada fila enseñaría el monto de otra.
  */
 function indicesServer(value: ExtraGrupoForm[]): (number | null)[] {
   const out: (number | null)[] = [];
   let n = -1;
   for (const e of value) {
-    if (esCompleta(e)) {
+    if (cargoGrupoCompleto(e)) {
       n += 1;
       out.push(n);
     } else {
