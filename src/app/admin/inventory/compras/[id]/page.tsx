@@ -17,6 +17,9 @@ import {
 import { CompraCargosFacturaCard } from "@/components/admin/inventory/compras/compra-cargos-factura-card";
 import { CompraPagosCard } from "@/components/admin/inventory/compras/compra-pagos-card";
 import type { CompraDetalle } from "@/types/compras";
+import { esUuid } from "@/lib/admin/url-params";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
@@ -26,15 +29,25 @@ export default async function CompraDetallePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
+  const degradado = new Degradaciones();
   let compra: CompraDetalle;
   let providers: { id: string; nombre: string }[];
   let items: ItemOption[];
   try {
+    // La COMPRA es el dato de la pantalla; proveedores e ítems solo llenan
+    // los selectores de sus diálogos: degradan con aviso.
     const [compraRes, providersRes, itemsRes] = await Promise.all([
       getCompra(id),
-      listProviders({ limit: 200 }),
-      listInventario({ limit: 500, activo: true }),
+      degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
+        data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
+      }),
+      degradado.opcional("los ítems de bodega", listInventario({ limit: 500, activo: true }), {
+        data: [] as Awaited<ReturnType<typeof listInventario>>["data"],
+      }),
     ]);
     compra = compraRes;
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
@@ -61,6 +74,8 @@ export default async function CompraDetallePage({
       >
         Compras
       </BackLink>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>

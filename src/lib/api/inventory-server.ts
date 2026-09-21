@@ -1,8 +1,10 @@
 import { apiServer } from "./server";
+import { isApiError } from "./errors";
 import type {
   InventarioItemDetail,
   InventarioItemResumen,
   InventarioListResponse,
+  MovimientoEliminado,
   MovimientoListResponse,
 } from "@/types/inventory";
 
@@ -84,6 +86,48 @@ export function getInventarioItem(id: string) {
   return apiServer<InventarioItemDetail>(`/v1/inventory/items/${id}`, {
     cache: "no-store",
   });
+}
+
+/**
+ * Historial de movimientos de cardex ELIMINADOS del ítem (21-sep-2026).
+ *
+ * Tres desenlaces, y se distinguen a propósito:
+ * - `disponible:false` → el API contestó 404 a la RUTA (backend sin
+ *   desplegar): la acción «Eliminar» no se muestra y no se pinta la sección.
+ * - `falla:true` → la lectura falló por otra cosa (502 de un deploy, red):
+ *   NO se esconde la acción y la sección lo DICE. Pintar «sin eliminados»
+ *   cuando la carga falló sería la mentira que la regla del panel prohíbe.
+ * - normal → las filas (el API devuelve [] si falta la migración).
+ *
+ * Nunca lanza: es una sección ACCESORIA del detalle del ítem y no puede
+ * tumbar la pantalla entera.
+ */
+export interface MovimientosEliminadosResultado {
+  disponible: boolean;
+  filas: MovimientoEliminado[];
+  falla: boolean;
+}
+
+export async function listMovimientosEliminados(
+  itemId: string,
+): Promise<MovimientosEliminadosResultado> {
+  try {
+    const filas = await apiServer<MovimientoEliminado[]>(
+      `/v1/inventory/items/${itemId}/movimientos-eliminados`,
+      { cache: "no-store" },
+    );
+    return { disponible: true, filas: Array.isArray(filas) ? filas : [], falla: false };
+  } catch (err) {
+    // 404 = la ruta no existe en ese API (el ítem sí: la página ya lo leyó).
+    if (isApiError(err) && err.status === 404) {
+      return { disponible: false, filas: [], falla: false };
+    }
+    // 401/403 (rol sin permiso) degrada en silencio: recargar no lo arregla.
+    if (isApiError(err) && (err.status === 401 || err.status === 403)) {
+      return { disponible: true, filas: [], falla: false };
+    }
+    return { disponible: true, filas: [], falla: true };
+  }
 }
 
 export interface ListMovimientosQuery {

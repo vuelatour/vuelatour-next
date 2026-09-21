@@ -1,5 +1,13 @@
 import { env } from "@/lib/env";
 import { ApiError, InvitedError, type ApiErrorBody } from "./errors";
+import {
+  cabecerasDeIntento,
+  dormir,
+  esErrorDeRed,
+  esEstadoReintentable,
+  esMetodoReintentable,
+  esperaReintento,
+} from "./reintento";
 
 export interface FetchOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
@@ -34,11 +42,49 @@ export async function apiFetch<T = unknown>(
     finalHeaders.Authorization = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(buildUrl(path, searchParams), {
+  const url = buildUrl(path, searchParams);
+  const init: RequestInit = {
     ...rest,
     headers: finalHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  };
+
+  // Reintento SOLO de lecturas y SOLO ante «el API no está ahí» (red, 502,
+  // 503, 504): la ventana de deploy de Railway tumbaba pantallas enteras
+  // (21-sep-2026). Ver `reintento.ts` para la regla completa y el porqué de
+  // no repetir mutaciones ni 4xx/500.
+  const reintentable = esMetodoReintentable(rest.method);
+  let response: Response;
+  for (let intento = 0; ; intento++) {
+    const espera = reintentable ? esperaReintento(intento) : null;
+    // Cada reintento va con una cabecera propia: sin ella, Next devuelve la
+    // MISMA respuesta memoizada del intento anterior y el reintento no sale a
+    // la red (ver `cabecerasDeIntento`).
+    const intentoInit: RequestInit =
+      intento === 0 ? init : { ...init, headers: cabecerasDeIntento(finalHeaders, intento) };
+    try {
+      response = await fetch(url, intentoInit);
+    } catch (e) {
+      // Un abort deliberado (AbortController del cotizador) nunca se reintenta.
+      if (espera !== null && !rest.signal?.aborted && esErrorDeRed(e)) {
+        await dormir(espera);
+        continue;
+      }
+      throw e;
+    }
+    if (espera !== null && esEstadoReintentable(response.status)) {
+      // Drenar el cuerpo para liberar la conexión (undici mantiene el socket
+      // ocupado si la respuesta no se consume).
+      try {
+        await response.arrayBuffer();
+      } catch {
+        /* da igual: solo se está liberando el socket */
+      }
+      await dormir(espera);
+      continue;
+    }
+    break;
+  }
 
   if (response.status === 204) {
     return undefined as T;

@@ -8,6 +8,7 @@ import { getMe } from "@/lib/api/me";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { ApiError } from "@/lib/api/errors";
+import { esUuid } from "@/lib/admin/url-params";
 import { CANCUN_TZ } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,9 @@ interface QuoteDetailPageProps {
  */
 export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) {
   const [{ id }, me] = await Promise.all([params, getMe().catch(() => null)]);
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
   let quote, versions;
   try {

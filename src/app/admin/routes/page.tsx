@@ -5,13 +5,20 @@ import { RouteCreateButton } from "@/components/admin/routes/route-create-button
 import { listRoutes } from "@/lib/api/routes-server";
 import { listAirports } from "@/lib/api/airports-server";
 import { EmptyState } from "@/components/admin/empty-state";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
 export default async function RoutesPage() {
+  // El catálogo de aeropuertos solo alimenta el alta/edición de ruta: si no
+  // carga, las rutas se siguen viendo (con aviso).
+  const degradado = new Degradaciones();
   const [routesRes, airportsRes] = await Promise.all([
     listRoutes({ limit: 200, activa: undefined }),
-    listAirports({ limit: 200, activo: true }),
+    degradado.opcional("los aeropuertos", listAirports({ limit: 200, activo: true }), {
+      data: [] as Awaited<ReturnType<typeof listAirports>>["data"],
+    }),
   ]);
   const { data: routes, count } = routesRes;
   const airports = airportsRes.data.map((a) => ({
@@ -35,6 +42,8 @@ export default async function RoutesPage() {
         </div>
         <RouteCreateButton airports={airports} />
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       {routes.length === 0 ? (
         <EmptyState

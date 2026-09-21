@@ -25,6 +25,8 @@ import { todayCancun } from "@/lib/datetime";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { getMe } from "@/lib/api/me";
 import { notFound } from "next/navigation";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
@@ -72,11 +74,18 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
   const { desde, hasta } = rangoDeMes(mes);
   const mesLabel = labelDeMes(mes);
 
+  // Los GASTOS son el dato principal; los catálogos del diálogo de alta
+  // degradan con aviso (21-sep-2026).
+  const degradado = new Degradaciones();
   const [{ data: gastos }, aircraftRes, providersRes] = await Promise.all([
     listGastosPersonales({ desde, hasta }),
     // Mismo armado que /admin/expenses para el dialog de alta.
-    listAircraft({ limit: 100 }),
-    listProviders({ limit: 200 }),
+    degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+    }),
+    degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
+      data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
+    }),
   ]);
 
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
@@ -163,6 +172,8 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
           />
         </div>
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <GastosPersonalesFilterBar mes={mes} />
 

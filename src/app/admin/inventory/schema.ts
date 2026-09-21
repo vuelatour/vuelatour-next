@@ -184,6 +184,20 @@ export const EditarCostoSchema = z
     path: ["tc_usd_mxn"],
   });
 
+/**
+ * Justificación OBLIGATORIA para dar de baja un movimiento de cardex
+ * (21-sep-2026). Mismos límites que el DTO del API (`@MinLength(10)`,
+ * `@MaxLength(500)`, trim) y que el `check` de la BD: se valida aquí para no
+ * gastar un viaje al API con un motivo que ya se sabe corto.
+ */
+export const MotivoEliminacionSchema = z.object({
+  motivo: z
+    .string()
+    .trim()
+    .min(10, "Explica por qué se elimina (al menos 10 caracteres)")
+    .max(500, "Máximo 500 caracteres"),
+});
+
 export type EditarCostoFormValues = {
   moneda: "MXN" | "USD";
   costo_unitario_usd: string;

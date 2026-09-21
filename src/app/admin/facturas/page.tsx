@@ -12,6 +12,9 @@ import { PacHealthButton } from "@/components/admin/invoices/pac-health-button";
 import { listPendingInvoices, listFacturas, signFacturaFiles } from "@/lib/api/invoices-server";
 import { listIssuingEntities } from "@/lib/api/issuing-entities-server";
 import { listClients } from "@/lib/api/clients-server";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { rangoFiltro, uuidFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +30,21 @@ interface PageProps {
 export default async function FacturasPage({ searchParams }: PageProps) {
   const sp = await searchParams;
 
+  // Parámetros validados (21-sep-2026) y catálogos degradables: un
+  // `?desde=` imposible o un `?cliente_id=` basura tumbaban la pantalla.
+  const rango = rangoFiltro(sp.desde, sp.hasta);
+  const clienteFiltro = uuidFiltro(sp.cliente_id);
+  const emisoraFiltro = uuidFiltro(sp.emisora_id);
+  const degradado = new Degradaciones();
   const [pendientesRes, facturasRes, emisorasRes, clientsRes] = await Promise.all([
-    listPendingInvoices({ desde: sp.desde, hasta: sp.hasta, cliente_id: sp.cliente_id }),
-    listFacturas({ emisora_id: sp.emisora_id }),
-    listIssuingEntities({ activa: true, limit: 100 }),
-    listClients({ limit: 200, activo: true }),
+    listPendingInvoices({ desde: rango.desde, hasta: rango.hasta, cliente_id: clienteFiltro }),
+    listFacturas({ emisora_id: emisoraFiltro }),
+    degradado.opcional("las emisoras", listIssuingEntities({ activa: true, limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listIssuingEntities>>["data"],
+    }),
+    degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
+      data: [] as Awaited<ReturnType<typeof listClients>>["data"],
+    }),
   ]);
 
   const emisoras = emisorasRes.data.map((e) => ({
@@ -64,14 +77,17 @@ export default async function FacturasPage({ searchParams }: PageProps) {
         <PacHealthButton />
       </div>
 
+      <AvisoDegradado faltantes={degradado.faltantes} />
+
       <FacturasFilterBar
         clients={clientsRes.data.map((c) => ({ id: c.id, nombre: c.nombre }))}
         emisoras={emisoras}
+        // Valores ya validados: la barra refleja el filtro aplicado.
         initial={{
-          desde: sp.desde ?? "",
-          hasta: sp.hasta ?? "",
-          cliente_id: sp.cliente_id ?? "",
-          emisora_id: sp.emisora_id ?? "",
+          desde: rango.desde ?? "",
+          hasta: rango.hasta ?? "",
+          cliente_id: clienteFiltro ?? "",
+          emisora_id: emisoraFiltro ?? "",
         }}
       />
 

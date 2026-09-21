@@ -9,7 +9,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { QuotesFilterBar } from "@/components/admin/quotes/quotes-filter-bar";
 import { QuotesTable, type QuoteListRow } from "@/components/admin/quotes/quotes-table";
 import { listQuotesAll } from "@/lib/api/quotes-server";
-import { getCobroStatus } from "@/lib/api/flights-server";
+import { getCobroStatusPorLotes } from "@/lib/api/flights-server";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { textoSinVerificar } from "@/lib/admin/lotes";
+import { estadoFiltro, uuidFiltro } from "@/lib/admin/url-params";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
@@ -55,25 +59,39 @@ function avionCotizadoDeFila(
 
 export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const sp = await searchParams;
-  const grupoFiltro = sp.grupo_id || undefined;
+  // Parámetros validados antes de llamar al API (21-sep-2026): un
+  // `?estado=<inválido>` de un enlace viejo daba 400 y tumbaba la pantalla.
+  const grupoFiltro = uuidFiltro(sp.grupo_id);
+  const estadoFilter = estadoFiltro(sp.estado);
+  const clienteFiltro = uuidFiltro(sp.cliente_id);
 
+  // Catálogos accesorios: degradan con aviso; la lista de cotizaciones no.
+  const degradado = new Degradaciones();
   const [quotesRes, clientsRes, aircraftRes, pilotsRes, airportsRes, grupoFiltrado] =
     await Promise.all([
       // SIN cap (anti-cap-200): con el corte, una cotización recién creada
       // podía quedar fuera y parecer "no guardada" (auditoría 29-ago).
       listQuotesAll({
-        estado: sp.estado || undefined,
-        cliente_id: sp.cliente_id || undefined,
+        estado: estadoFilter,
+        cliente_id: clienteFiltro,
         q: sp.q || undefined,
         grupo_id: grupoFiltro,
       }),
-      listClients({ limit: 200, activo: true }),
+      degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
+        data: [] as Awaited<ReturnType<typeof listClients>>["data"],
+      }),
       // TODA la flota (no solo activa): la columna "Avión" debe resolver la
       // matrícula aunque el avión ya esté dado de baja; el alta de reserva
       // filtra las activas abajo.
-      listAircraft({ limit: 100 }),
-      listPilots({ estado: "ACTIVO", limit: 200 }),
-      listAirports({ limit: 200, activo: true }),
+      degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
+        data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+      }),
+      degradado.opcional("los pilotos", listPilots({ estado: "ACTIVO", limit: 200 }), {
+        data: [] as Awaited<ReturnType<typeof listPilots>>["data"],
+      }),
+      degradado.opcional("los aeropuertos", listAirports({ limit: 200, activo: true }), {
+        data: [] as Awaited<ReturnType<typeof listAirports>>["data"],
+      }),
       // Cabecera del grupo filtrado (best-effort, solo para el banner).
       grupoFiltro ? getGrupo(grupoFiltro).catch(() => null) : Promise.resolve(null),
     ]);
@@ -92,9 +110,15 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       Number(q.monto_total_usd) > 0 &&
       q.cotizacion_abierta !== true,
   );
-  const cobroStatus = await getCobroStatus(
-    cobroRelevantes.map((q) => q.id),
-  ).catch(() => null);
+  // En LOTES de ≤200 (tope del DTO del API). Con 218 filas relevantes el
+  // batch entero devolvía 400 y el `.catch` lo tragaba: TODAS las filas
+  // quedaban sin semáforo y nadie se enteraba (21-sep-2026).
+  const cobroLotes = await getCobroStatusPorLotes(cobroRelevantes.map((q) => q.id));
+  const cobroSinVerificar = new Set(cobroLotes.idsSinVerificar);
+  const cobroStatus =
+    cobroRelevantes.length > 0 && cobroSinVerificar.size === cobroRelevantes.length
+      ? null
+      : cobroLotes.status;
 
   // Filas planas y serializables para el componente cliente (lookups resueltos).
   const rows: QuoteListRow[] = quotes.map((q) => ({
@@ -132,9 +156,12 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
     cobrado: q.cobrado,
     esInterno: clientsById.get(q.cliente_id)?.es_interno === true,
     cotizacionAbierta: q.cotizacion_abierta === true,
+    // `null` = no se sabe (lote fallido), NO «no ha pagado nada».
     totalCobradoUsd:
-      cobroStatus === null ? null : (cobroStatus[q.id]?.total_cobrado ?? 0),
-    sinTcCount: cobroStatus?.[q.id]?.sin_tc_count ?? 0,
+      cobroStatus === null || cobroSinVerificar.has(q.id)
+        ? null
+        : (cobroStatus[q.id]?.total_cobrado ?? 0),
+    sinTcCount: cobroSinVerificar.has(q.id) ? 0 : (cobroStatus?.[q.id]?.sin_tc_count ?? 0),
     // Hijo de una cotización de GRUPO (4-sep): el embed `grupo` ya viaja en
     // la fila; el total de aviones sale del snapshot (si el API lo selló).
     grupo: (() => {
@@ -229,6 +256,12 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         </div>
       </div>
 
+      {/* Catálogos caídos y lotes del semáforo que no se pudieron verificar. */}
+      <AvisoDegradado
+        faltantes={degradado.faltantes}
+        extra={[textoSinVerificar(cobroSinVerificar.size, "los cobros")]}
+      />
+
       {grupoFiltro && (
         <div className="flex items-center gap-3 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-4 py-3 text-sm text-fuchsia-800 dark:text-fuchsia-200 flex-wrap">
           <UserGroupIcon className="h-5 w-5 shrink-0" />
@@ -293,9 +326,10 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
 
       <QuotesFilterBar
         clients={clientsRes.data.map((c) => ({ id: c.id, nombre: c.nombre }))}
+        // Valores ya validados: la barra refleja el filtro aplicado de verdad.
         initial={{
-          estado: sp.estado ?? "",
-          cliente_id: sp.cliente_id ?? "",
+          estado: estadoFilter ?? "",
+          cliente_id: clienteFiltro ?? "",
           q: sp.q ?? "",
         }}
       />

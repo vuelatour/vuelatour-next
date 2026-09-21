@@ -1,6 +1,6 @@
 "use client";
 
-import { PencilSquareIcon } from "@heroicons/react/24/outline";
+import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
@@ -142,38 +142,65 @@ const columnaPresentacion: DataTableColumn<InventarioMovimiento> = {
       : "—",
 };
 
-/** Columna de acciones: corregir el costo SOLO de las ENTRADAS (rol oficina). */
+/**
+ * Columna de acciones de la fila: corregir el costo (SOLO ENTRADAS,
+ * ADMIN/MECANICO) y ELIMINAR el movimiento (SOLO ADMIN, 21-sep-2026). El
+ * bote se muestra en CUALQUIER tipo aunque el API bloquee algunos
+ * (devolución/ajuste, entradas de compra): la vista previa del diálogo
+ * explica por qué no se puede y qué hacer — esconder el botón dejaría al
+ * operador sin respuesta.
+ */
 function columnaAcciones(
-  onEditarCosto: (m: InventarioMovimiento) => void,
+  onEditarCosto?: (m: InventarioMovimiento) => void,
+  onEliminar?: (m: InventarioMovimiento) => void,
 ): DataTableColumn<InventarioMovimiento> {
   return {
     key: "acciones",
     header: "",
     noLink: true,
     cellClassName: "text-right",
-    cell: (m) =>
-      m.tipo === "ENTRADA" ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 text-muted-foreground hover:text-foreground"
-          onClick={() => onEditarCosto(m)}
-        >
-          <PencilSquareIcon className="h-4 w-4" />
-          Editar costo
-        </Button>
-      ) : null,
+    cell: (m) => (
+      <div className="flex items-center justify-end gap-1">
+        {onEditarCosto && m.tipo === "ENTRADA" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={() => onEditarCosto(m)}
+          >
+            <PencilSquareIcon className="h-4 w-4" />
+            Editar costo
+          </Button>
+        ) : null}
+        {onEliminar ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Eliminar movimiento"
+            title="Eliminar este movimiento (pide justificación)"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => onEliminar(m)}
+          >
+            <TrashIcon className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+    ),
   };
 }
 
 export function CardexTable({
   movimientos,
   onEditarCosto,
+  onEliminar,
 }: {
   movimientos: InventarioMovimiento[];
   /** Si viene, aparece la acción "Editar costo" en las filas ENTRADA. */
   onEditarCosto?: (m: InventarioMovimiento) => void;
+  /** Si viene (SOLO ADMIN), aparece el bote de "Eliminar movimiento". */
+  onEliminar?: (m: InventarioMovimiento) => void;
 }) {
   // La columna solo aparece si algún movimiento se capturó por empaque
   // (caja): a los ítems sin cajas no les estorba.
@@ -192,7 +219,9 @@ export function CardexTable({
     const idx = columns.findIndex((c) => c.key === "costo") + 1;
     columns = [...columns.slice(0, idx), columnaVenta, columnaGanancia, ...columns.slice(idx)];
   }
-  if (onEditarCosto) columns = [...columns, columnaAcciones(onEditarCosto)];
+  if (onEditarCosto || onEliminar) {
+    columns = [...columns, columnaAcciones(onEditarCosto, onEliminar)];
+  }
   return (
     <DataTable
       columns={columns}

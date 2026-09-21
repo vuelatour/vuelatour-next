@@ -31,6 +31,7 @@ import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import type { Rol } from "@/types/me";
+import { rangoFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -64,8 +65,13 @@ interface PageProps {
 export default async function DashboardsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const fallback = currentMonth();
-  const desde = sp.desde || fallback.desde;
-  const hasta = sp.hasta || fallback.hasta;
+  // Fechas VALIDADAS (21-sep-2026): una fecha imposible en la URL daba 400
+  // del API y tumbaba el tablero completo; ahora se ignora y manda el mes
+  // corriente. El rango invertido se endereza.
+  const rango = rangoFiltro(sp.desde, sp.hasta);
+  let desde = rango.desde ?? fallback.desde;
+  let hasta = rango.hasta ?? fallback.hasta;
+  if (desde > hasta) [desde, hasta] = [hasta, desde];
 
   const me = await getMe();
   const tabs = TABS.filter((t) => t.roles.includes(me.rol));

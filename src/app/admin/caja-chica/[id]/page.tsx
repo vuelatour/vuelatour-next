@@ -16,6 +16,9 @@ import {
 } from "@/components/admin/caja-chica/fondo-historial-table";
 import type { CajaFondoDetail } from "@/types/caja-chica";
 import type { Gasto } from "@/types/expenses";
+import { esUuid } from "@/lib/admin/url-params";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
@@ -30,11 +33,22 @@ const fmtDate = fmtDateOnly;
 
 export default async function CajaFondoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
+  const degradado = new Degradaciones();
   let fondo: CajaFondoDetail;
   let usuarios: { id: string; nombre: string }[];
   try {
-    const [fondoRes, usersRes] = await Promise.all([getFondo(id), listUsers({ limit: 200 })]);
+    // El FONDO es el dato de la pantalla; el catálogo de «Autorizado por»
+    // degrada con aviso (antes su 502 tumbaba el fondo entero).
+    const [fondoRes, usersRes] = await Promise.all([
+      getFondo(id),
+      degradado.opcional("los usuarios", listUsers({ limit: 200 }), {
+        data: [] as Awaited<ReturnType<typeof listUsers>>["data"],
+      }),
+    ]);
     fondo = fondoRes;
     usuarios = usersRes.data.map((u) => ({ id: u.id, nombre: u.nombre }));
   } catch (err) {
@@ -99,6 +113,8 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
       >
         Caja chica
       </BackLink>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>

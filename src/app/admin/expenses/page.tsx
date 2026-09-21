@@ -31,10 +31,25 @@ import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
 import { ExpensesSeleccionProvider } from "@/components/admin/expenses/expenses-seleccion";
 import { esCategoriaCompra } from "@/types/compras";
 import { todayCancun } from "@/lib/datetime";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "@/lib/admin/url-params";
+import { MEDIOS_CAPTURA_VALUES } from "@/lib/admin/medios-pago";
+import { FILTRO_NO_FACTURADA, FACTURACION_ESTADOS } from "@/lib/admin/facturacion-estatus";
 
 export const dynamic = "force-dynamic";
 
 type Filtro = "todos" | "pendientes" | "duplicados";
+
+/**
+ * Valores que el API acepta en `estatus_facturacion` (los 4 del enum + el
+ * meta-valor NO_FACTURADA). Derivado de la fuente única para que agregar un
+ * estado no deje el filtro fuera.
+ */
+const FACTURACION_FILTRO_VALUES = [
+  ...FACTURACION_ESTADOS.map((e) => e.value as string),
+  FILTRO_NO_FACTURADA,
+] as const;
 
 // Vista general en dos columnas (pedido del cliente): gastos OPERATIVOS
 // (ligados a operar el vuelo: combustible, pistas, TUAS, FBO, permisos) vs
@@ -82,9 +97,11 @@ export default async function ExpensesPage({
   }>;
 }) {
   const sp = await searchParams;
-  const esDia = (v?: string) => /^\d{4}-\d{2}-\d{2}$/.test(v ?? "");
-  const capDesdeExplicito = esDia(sp.cap_desde) ? sp.cap_desde : undefined;
-  const capHastaExplicito = esDia(sp.cap_hasta) ? sp.cap_hasta : undefined;
+  // Días de CAPTURA: antes bastaba con que tuvieran forma de fecha, así que
+  // `?cap_desde=2026-13-45` viajaba al API (que solo valida el patrón) y
+  // reventaba al armar el timestamp. `esDiaValido` exige que el día EXISTA.
+  const capDesdeExplicito = esDiaValido(sp.cap_desde) ? sp.cap_desde : undefined;
+  const capHastaExplicito = esDiaValido(sp.cap_hasta) ? sp.cap_hasta : undefined;
   const hayRangoCaptura = !!(capDesdeExplicito || capHastaExplicito);
   const capturadoSemana = sp.cap === "7d" && !hayRangoCaptura;
   const capturadoDesde = capturadoSemana
@@ -99,17 +116,23 @@ export default async function ExpensesPage({
     sp.f === "pendientes" || sp.f === "duplicados" ? sp.f : "todos";
   // Filtro por avión (link desde el expediente del avión). El API lo soporta
   // nativo en /v1/expenses; los contadores de las pestañas lo respetan.
-  const aeronaveId = sp.aeronave_id || undefined;
+  const aeronaveId = uuidFiltro(sp.aeronave_id);
   // Filtros de oficina (ago 2026): tipo de pago, quién capturó y fechas de
   // corte — los mismos que hereda "Exportar Excel" (reporte de efectivos por
   // piloto con dos clics).
+  //
+  // TODOS validados contra el catálogo del API (21-sep-2026): un enlace viejo
+  // con `?desde=2026-13-45` o un `?medio=` que ya no existe daba 400 y la
+  // pantalla entera caía al error boundary. Un filtro inválido se IGNORA.
+  const rango = rangoFiltro(sp.desde, sp.hasta);
   const filtrosExtra = {
-    medio_pago: sp.medio || undefined,
-    usuario_captura_id: sp.piloto || undefined,
-    desde: sp.desde || undefined,
-    hasta: sp.hasta || undefined,
-    // Semáforo de facturación (PENDIENTE/SOLICITADA/FACTURADA/NO_FACTURADA).
-    estatus_facturacion: sp.facturacion || undefined,
+    medio_pago: valorDeCatalogo(sp.medio, MEDIOS_CAPTURA_VALUES),
+    usuario_captura_id: uuidFiltro(sp.piloto),
+    desde: rango.desde,
+    hasta: rango.hasta,
+    // Semáforo de facturación (PENDIENTE/SOLICITADA/FACTURADA/NO_FACTURABLE
+    // + el meta-valor NO_FACTURADA).
+    estatus_facturacion: valorDeCatalogo(sp.facturacion, FACTURACION_FILTRO_VALUES),
     // Fecha de CAPTURA (28-ago): "¿por qué no veo lo que subí desde la app?"
     // — el ticket puede traer otra fecha (la IA leyó 2025) y quedar al fondo.
     // Desde el 7-sep el API corta sobre capturado_en (momento real de
@@ -126,6 +149,10 @@ export default async function ExpensesPage({
   if (filtro === "pendientes") query.pendientes = true;
   if (filtro === "duplicados") query.duplicados = true;
 
+  // Los GASTOS son la llamada principal (no se degrada: una lista de dinero
+  // vacía por un 502 llevaría a recapturar). Los contadores de pestaña y los
+  // catálogos de los selectores sí degradan, con aviso (21-sep-2026).
+  const degradado = new Degradaciones();
   const [
     { data: gastos, count: gastosCount },
     pendientesRes,
@@ -138,25 +165,43 @@ export default async function ExpensesPage({
       // SIN cap (anti-cap-200): prod ya rebasó los 500 gastos y el corte
       // silencioso hacía parecer "no guardado" un gasto que sí existía.
       listGastosAll(query),
-      listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
-      listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
-      listAircraft({ limit: 100 }),
-      listProviders({ limit: 200 }),
+      degradado.opcional(
+        "el contador de pendientes",
+        listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
+        // `null` = no se sabe; la pestaña NO pinta "0" (sería «ya no hay
+        // pendientes», justo lo contrario de lo que esta bandeja vigila).
+        { count: null as number | null },
+      ),
+      degradado.opcional(
+        "el contador de duplicados",
+        listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
+        { count: null as number | null },
+      ),
+      degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
+        data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+      }),
+      degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
+        data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
+      }),
       // Filtro "Capturó": TODO el personal activo — la oficina (Jimmy, Mary,
       // Itzi…) también captura gastos y con /pilots no aparecía (queja del
       // cliente, 24-ago). /users es solo ADMIN: si el rol no alcanza (403),
       // se cae a la lista de pilotos — mejor una lista corta que ninguna.
-      listUsers({ estado: "ACTIVO", limit: 200 })
-        .then((r) =>
-          r.data
-            .filter((u) => !u.es_piloto_externo) // externos jamás capturan (sin app)
-            .map((u) => ({ id: u.id, nombre: u.nombre })),
-        )
-        .catch(() =>
-          listPilots({ estado: "ACTIVO", limit: 200 })
-            .then((r) => r.data.map((u) => ({ id: u.id, nombre: u.nombre })))
-            .catch(() => [] as { id: string; nombre: string }[]),
-        ),
+      degradado.opcional(
+        "el personal que captura",
+        listUsers({ estado: "ACTIVO", limit: 200 })
+          .then((r) =>
+            r.data
+              .filter((u) => !u.es_piloto_externo) // externos jamás capturan (sin app)
+              .map((u) => ({ id: u.id, nombre: u.nombre })),
+          )
+          .catch(() =>
+            listPilots({ estado: "ACTIVO", limit: 200 }).then((r) =>
+              r.data.map((u) => ({ id: u.id, nombre: u.nombre })),
+            ),
+          ),
+        [] as { id: string; nombre: string }[],
+      ),
     ]);
   const personas = [...pilotsRes].sort((a, b) =>
     a.nombre.localeCompare(b.nombre, "es"),
@@ -229,7 +274,7 @@ export default async function ExpensesPage({
     .filter((g) => !g.compra_id && esCategoriaCompra(g.categoria))
     .map((g) => g.id);
 
-  const tabs: { key: Filtro; label: string; count?: number }[] = [
+  const tabs: { key: Filtro; label: string; count?: number | null }[] = [
     { key: "todos", label: "Todos" },
     { key: "pendientes", label: "Pendientes", count: pendientesRes.count },
     { key: "duplicados", label: "Duplicados", count: duplicadosRes.count },
@@ -249,7 +294,7 @@ export default async function ExpensesPage({
         <div className="flex gap-2 flex-wrap">
           <ExpenseCreateDialog aircraft={aircraft} providers={providers} />
           <PistasDialog />
-          <SuggestAssignmentsButton pendientes={pendientesRes.count} />
+          <SuggestAssignmentsButton pendientes={pendientesRes.count ?? 0} />
           <ExcelExportButton
             path="/v1/expenses/export"
             filename="gastos.xlsx"
@@ -313,6 +358,9 @@ export default async function ExpensesPage({
           </Link>
         )}
       </div>
+
+      {/* Catálogos/contadores que no cargaron: se dice en vez de pintar 0. */}
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       {huboCorte && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">

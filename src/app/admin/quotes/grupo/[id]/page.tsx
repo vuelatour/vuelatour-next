@@ -8,6 +8,7 @@ import { listRoutes } from "@/lib/api/routes-server";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { listUsers } from "@/lib/api/users-server";
 import { isoToCancunInput } from "@/lib/datetime";
+import { esUuid } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,9 @@ type PilotsData = { id: string; nombre: string; es_piloto_externo: boolean }[];
  */
 export default async function GrupoDetailPage({ params, searchParams }: GrupoDetailPageProps) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
   const [me, grupo] = await Promise.all([getMe().catch(() => null), getGrupo(id)]);
   if (!grupo) notFound();
 

@@ -53,12 +53,13 @@ export function pidioDescarga(req: Request): boolean {
   return v === "1" || v === "true";
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Valida el id de la ruta (los proxies solo aceptan uuid del API). */
-export function esUuid(id: string): boolean {
-  return UUID_RE.test(id);
-}
+/**
+ * Valida el id de la ruta (los proxies solo aceptan uuid del API).
+ * Fuente única desde el 21-sep-2026: `lib/admin/url-params.ts` — la misma
+ * función que usan las páginas de detalle para responder `notFound()` sin
+ * llamar al API. Se re-exporta aquí para no romper a quien ya la importa.
+ */
+export { esUuid } from "@/lib/admin/url-params";
 
 /**
  * Error del proxy: JSON `{ message, code }` para la UI y una página HTML

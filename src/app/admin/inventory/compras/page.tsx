@@ -10,6 +10,8 @@ import { ImportCompraButton } from "@/components/admin/inventory/import-compra-b
 import { listCompras } from "@/lib/api/compras-server";
 import { listProviders } from "@/lib/api/providers-server";
 import type { CompraEstado } from "@/types/compras";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
@@ -30,14 +32,21 @@ export default async function ComprasPage({
   const filtro: Filtro =
     sp.f === "recibidas" || sp.f === "todas" ? sp.f : "abiertas";
 
+  // Las COMPRAS son el dato principal; el contador de la pestaña y el
+  // catálogo de proveedores degradan con aviso.
+  const degradado = new Degradaciones();
   const [comprasRes, abiertasRes, providersRes] = await Promise.all([
     listCompras({ estado: FILTRO_ESTADO[filtro], limit: 200 }),
-    listCompras({ estado: "ABIERTA", limit: 1 }),
-    listProviders({ limit: 200 }),
+    degradado.opcional("el contador de compras abiertas", listCompras({ estado: "ABIERTA", limit: 1 }), {
+      count: null as number | null,
+    }),
+    degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
+      data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
+    }),
   ]);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
-  const tabs: { key: Filtro; label: string; count?: number }[] = [
+  const tabs: { key: Filtro; label: string; count?: number | null }[] = [
     { key: "abiertas", label: "Abiertas", count: abiertasRes.count },
     { key: "recibidas", label: "Recibidas" },
     { key: "todas", label: "Todas" },
@@ -68,6 +77,8 @@ export default async function ComprasPage({
           <CompraNuevaButton />
         </div>
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <div className="flex gap-2 flex-wrap items-center">
         {tabs.map((t) => (

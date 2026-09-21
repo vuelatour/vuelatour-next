@@ -10,6 +10,7 @@ import { AvionRepartoCard } from "@/components/admin/profit-sharing/avion-repart
 import { getProfitSharing } from "@/lib/api/profit-sharing-server";
 import { getMe } from "@/lib/api/me";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
+import { rangoFiltro } from "@/lib/admin/url-params";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { EmptyState } from "@/components/admin/empty-state";
 import {
@@ -36,10 +37,15 @@ interface PageProps {
 export default async function ProfitSharingPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const fallback = currentMonth();
-  let desde = sp.desde || fallback.desde;
-  let hasta = sp.hasta || fallback.hasta;
-  // Rango invertido (dedazo del selector): se normaliza en vez de dejar que
-  // el 400 del API tumbe la página completa — selector incluido.
+  // Fechas VALIDADAS (21-sep-2026): `?desde=nada` viajaba al API, Nest
+  // respondía 400 (`@IsDateString`) y la pantalla caía al error boundary.
+  // Una fecha imposible se ignora y se usa el mes corriente; el rango
+  // invertido (dedazo del selector) se endereza — igual que antes.
+  const rango = rangoFiltro(sp.desde, sp.hasta);
+  let desde = rango.desde ?? fallback.desde;
+  let hasta = rango.hasta ?? fallback.hasta;
+  // Un solo extremo válido puede dejar el rango al revés contra el default
+  // (p. ej. `?hasta=` de un mes pasado): se endereza aquí también.
   if (desde > hasta) [desde, hasta] = [hasta, desde];
 
   const [result, me] = await Promise.all([

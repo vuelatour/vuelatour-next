@@ -57,6 +57,7 @@ import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { daysUntilCancun, fmtDate } from "@/lib/datetime";
 import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
+import { esUuid } from "@/lib/admin/url-params";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -66,6 +67,9 @@ export const dynamic = "force-dynamic";
 
 export default async function AircraftDetailPage({ params }: PageProps) {
   const { id } = await params;
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
   let aircraft;
   try {

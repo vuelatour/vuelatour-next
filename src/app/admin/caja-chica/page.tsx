@@ -10,14 +10,23 @@ import { FondosTable } from "@/components/admin/caja-chica/fondos-table";
 import { FondoCreateButton } from "@/components/admin/caja-chica/fondo-create-button";
 import { listElegiblesFondo, listFondos } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
 export default async function CajaChicaPage() {
+  // Los FONDOS son el dato principal; los catálogos de "Abrir fondo" y
+  // "Autorizado por" degradan con aviso.
+  const degradado = new Degradaciones();
   const [{ data: fondos, count }, usersRes, elegiblesRes] = await Promise.all([
     listFondos({ limit: 200 }),
-    listUsers({ limit: 200 }),
-    listElegiblesFondo(),
+    degradado.opcional("los usuarios", listUsers({ limit: 200 }), {
+      data: [] as Awaited<ReturnType<typeof listUsers>>["data"],
+    }),
+    degradado.opcional("quién puede recibir fondo", listElegiblesFondo(), {
+      data: [] as Awaited<ReturnType<typeof listElegiblesFondo>>["data"],
+    }),
   ]);
 
   // Quién puede recibir fondo lo decide el API contra la tabla de fondos: el
@@ -45,6 +54,8 @@ export default async function CajaChicaPage() {
         </div>
         <FondoCreateButton usuarios={sinFondo} />
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       {fondos.length === 0 ? (
         <Card>

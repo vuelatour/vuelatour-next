@@ -8,12 +8,15 @@ import {
   EmpaqueFormSchema,
   EmpaqueUpdateSchema,
   ItemFormSchema,
+  MotivoEliminacionSchema,
   MovimientoFormSchema,
   normalizarCodigo,
 } from "./schema";
 import type {
   CodigoLookup,
   CompraExtraida,
+  EliminacionMovimientoPreview,
+  EliminarMovimientoResultado,
   ImportarItemsResultado,
   InventarioEmpaque,
   InventarioItem,
@@ -27,10 +30,18 @@ export interface ActionResult<T = unknown> {
   fieldErrors?: Record<string, string[]>;
   /** HTTP del API cuando falló (404 = no existe, 409 = conflicto…). */
   status?: number;
+  /**
+   * `code` ESTABLE del API cuando falló (MOVIMIENTO_DE_COMPRA,
+   * STOCK_NEGATIVO, MIGRACION_PENDIENTE…): la UI decide por el código, nunca
+   * por el texto del mensaje. Aditivo.
+   */
+  code?: string;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message, status: err.status };
+  if (isApiError(err)) {
+    return { ok: false, error: err.message, status: err.status, code: err.code };
+  }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -225,6 +236,61 @@ export async function updateMovimientoCostoAction(
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${itemId}`);
     return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ───────────────── Baja de un movimiento de cardex ─────────────────
+
+/**
+ * VISTA PREVIA de la baja (ADMIN, solo lee): qué se eliminaría, cómo queda la
+ * existencia y qué gastos de bodega se van con el movimiento — o por qué NO
+ * se puede. El diálogo la pide al abrirse: nunca se enseña un botón de
+ * eliminar sin haber preguntado antes al API.
+ */
+export async function previewEliminarMovimientoAction(
+  itemId: string,
+  movId: string,
+): Promise<ActionResult<EliminacionMovimientoPreview>> {
+  try {
+    const data = await apiServer<EliminacionMovimientoPreview>(
+      `/v1/inventory/items/${itemId}/movimientos/${movId}/eliminacion`,
+      { cache: "no-store" },
+    );
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Baja del movimiento con JUSTIFICACIÓN (SOLO ADMIN). El API re-evalúa TODOS
+ * los candados y borra en UNA transacción de BD (movimiento + sus gastos de
+ * bodega + la fila de auditoría): sus 409 con `code` estable y su 503
+ * (migración pendiente) llegan al diálogo tal cual para decidir por CÓDIGO.
+ * Se revalidan también los gastos: la baja borra gastos REFACCION/BODEGA.
+ */
+export async function eliminarMovimientoAction(
+  itemId: string,
+  movId: string,
+  motivoRaw: unknown,
+): Promise<ActionResult<EliminarMovimientoResultado>> {
+  const parsed = MotivoEliminacionSchema.safeParse({ motivo: motivoRaw });
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const data = await apiServer<EliminarMovimientoResultado>(
+      `/v1/inventory/items/${itemId}/movimientos/${movId}`,
+      { method: "DELETE", body: { motivo: parsed.data.motivo } },
+    );
+    revalidatePath("/admin/inventory");
+    revalidatePath(`/admin/inventory/${itemId}`);
+    // El movimiento pudo generar gastos del avión (SALIDA a BODEGA): al
+    // borrarlos, las pantallas de dinero también cambian.
+    revalidatePath("/admin/expenses");
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

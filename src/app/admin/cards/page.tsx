@@ -6,6 +6,8 @@ import { apiServer } from "@/lib/api/server";
 import { listCards } from "@/lib/api/cards-server";
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
 import { EmptyState } from "@/components/admin/empty-state";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +22,22 @@ interface UsuarioListResponse {
 }
 
 export default async function CardsPage() {
+  // Las TARJETAS son la llamada principal; cuentas y usuarios solo llenan el
+  // diálogo de alta, así que degradan con aviso en vez de tumbar la pantalla.
+  const degradado = new Degradaciones();
   const [cardsRes, accountsRes, usersRes] = await Promise.all([
     listCards({ limit: 200 }),
-    listBankAccounts({ limit: 200, activa: true }),
-    apiServer<UsuarioListResponse>("/v1/users", {
-      searchParams: { limit: 200 },
-      cache: "no-store",
+    degradado.opcional("las cuentas bancarias", listBankAccounts({ limit: 200, activa: true }), {
+      data: [] as Awaited<ReturnType<typeof listBankAccounts>>["data"],
     }),
+    degradado.opcional(
+      "los usuarios",
+      apiServer<UsuarioListResponse>("/v1/users", {
+        searchParams: { limit: 200 },
+        cache: "no-store",
+      }),
+      { data: [] as UsuarioMinimo[] },
+    ),
   ]);
 
   const cards = cardsRes.data;
@@ -50,6 +61,8 @@ export default async function CardsPage() {
         </div>
         <CardCreateButton users={users} bankAccounts={bankAccounts} />
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       {cards.length === 0 ? (
         <EmptyState

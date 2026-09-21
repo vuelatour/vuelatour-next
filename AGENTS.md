@@ -15,6 +15,99 @@ This version has breaking changes — APIs, conventions, and file structure may 
   inyecta el JWT). Mutaciones = server actions en `actions.ts` que devuelven
   `ActionResult` y revalidan (`revalidateFlight`, `revalidatePath`).
 
+## Cuando el API no contesta: reintento, degradar sin mentir — 21-sep-2026
+
+Reporte del cliente: en `/admin/inventory` salía «Algo se rompió — An error
+occurred in the Server Components render… digest» y al reintentar cargaba.
+Causa reproducida con build de PRODUCCIÓN: Railway responde «Application
+failed to respond» (502/503) ~30–60 s en CADA deploy del API (cinco entre el
+19 y el 21-sep) y (a) `apiFetch` lanzaba ante todo no-2xx, sin reintento, y
+(b) las páginas hacían `Promise.all` donde UNA llamada accesoria tumbaba la
+pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
+
+- **Reintento en el punto ÚNICO** (`lib/api/reintento.ts` + `fetcher.ts`):
+  solo **GET/HEAD**, solo ante **error de red / 502 / 503 / 504**, hasta **2**
+  reintentos con esperas **400 ms y 1200 ms**. JAMÁS en 4xx (respuesta
+  legítima), en **500** (bug del API: repetirlo lo esconde) ni en
+  POST/PATCH/PUT/DELETE/server actions (duplicaría dinero; la idempotencia
+  vive en el API con `client_request_id`). Un `AbortError` (el debounce del
+  cotizador) no se reintenta. Prueba con `fetch` simulado:
+  `lib/api/__tests__/fetcher-reintento.test.ts`.
+- **CADA reintento lleva la cabecera `x-vt-reintento: N`** (solo en el
+  servidor) y eso NO es cosmético: Next **deduplica** los `fetch` idénticos de
+  un mismo render (`next/dist/server/lib/dedupe-fetch.js`, memoización de
+  React; la clave incluye método y **cabeceras**). Sin cabecera distinta, el
+  2.º y el 3.º intento **no salían a la red**: devolvían un clon del mismo
+  503 y la pantalla caía igual, 1.6 s más tarde — el reintento era un placebo
+  justo en el caso que lo motivó. Medido con el arnés (el proxy veía UNA sola
+  petición); con la cabecera se ven las tres y las 7 pantallas se recuperan
+  solas. En el navegador NO se agrega (no hay memoización que romper y una
+  cabecera no-safelisted dispararía un preflight CORS en el peor momento).
+- **Pantalla de error en es-MX** (`lib/admin/pantalla-error.ts` +
+  `components/admin/pantalla-error.tsx`, usada por `app/admin/error.tsx`,
+  `app/error.tsx` y `app/global-error.tsx`): «No pudimos cargar esta
+  pantalla… Pulsa Reintentar; si sigue igual, manda este código a sistemas» +
+  **código (digest) · hora Cancún · ruta**, botones «Reintentar» / «Volver al
+  inicio». El `error.message` NO se pinta (en prod es el texto en inglés de
+  Next); el error completo sigue yendo a `console.error`.
+- **«Reintentar» de un boundary = `unstable_retry`, NUNCA `reset`.** La
+  documentación de esta versión de Next es explícita: «`reset()` solo limpia
+  el estado de error y vuelve a renderizar SIN volver a pedir los datos, así
+  que no se recupera de errores de Server Components»
+  (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md`).
+  Todos los fallos de esta sección son de Server Components: con `reset` el
+  botón repintaba el mismo error. Los tres boundaries pasan
+  `unstable_retry ?? reset` a `PantallaError` (prop `reintentar`).
+- **Los datos para soporte son UNO solo**: `components/admin/datos-soporte.tsx`
+  (`DatosSoporte`) pinta Código/Detalle · Hora (Cancún) · Pantalla y lo usan
+  el boundary **y** `UnknownErrorScreen`. Con el API caído del todo **ninguna
+  pantalla de `/admin` llega a su boundary** (el layout falla antes al leer
+  `/v1/me`), así que esa es la única pantalla que el operador ve: sin los
+  datos ahí, no había código ni ruta que mandar a sistemas. Su salida
+  principal es Reintentar, no «Cerrar sesión». La RUTA se lee con
+  `useSyncExternalStore` (snapshot de servidor «—» + snapshot del navegador):
+  con `suppressHydrationWarning` React NO corrige el texto al hidratar y la
+  pantalla se quedaba con «Pantalla —».
+- **Degradar POR TARJETA** (`lib/api/degradar.ts` +
+  `components/admin/aviso-degradado.tsx`): una llamada **ACCESORIA**
+  (catálogos de selectores: proveedores, aeronaves, cuentas, clientes,
+  aeropuertos, `/me`) va con `degradado.opcional("los proveedores", …, vacío)`
+  y la página pinta `<AvisoDegradado faltantes={degradado.faltantes} />` («No
+  se pudieron cargar los proveedores; recarga para reintentar» — el verbo
+  concuerda con la etiqueta: `textoDegradado` mira el artículo, porque «No se
+  pudo cargar los proveedores» es lo que salía en pantalla). Un **401/403**
+  degrada en SILENCIO (es falta de permiso, recargar no lo arregla). La llamada
+  **PRINCIPAL** nunca se traga: o sube al boundary (que ya reintenta) o se
+  envuelve con `principal()` y se pinta `TarjetaErrorCarga` (Reintentar =
+  `router.refresh()`). **Jamás pintar «sin datos» cuando la carga falló**:
+  «Sin ítems en bodega» con 71 partidas cargadas es la mentira a evitar.
+- **Batch con tope**: `taco-status` y `cobro-status` se parten en lotes de
+  **≤200 ids** (`TOPE_IDS_BATCH` de `lib/admin/lotes.ts`, espejo del
+  `@ArrayMaxSize(200)` del DTO del API). La lista mandaba 218 ⇒ 400 que el
+  `.catch(() => ({}))` tragaba: NINGÚN vuelo mostraba el badge de tacómetro y
+  nadie se enteraba. Un lote fallido NO se disfraza: sus ids quedan en
+  `idsSinVerificar` (su total cobrado se pinta `null` = «no se sabe», nunca 0)
+  y se avisa con `textoSinVerificar`.
+- **Parámetros de la URL** (`lib/admin/url-params.ts`, PURO + test): en una
+  ruta de detalle, un id que no es uuid ⇒ `notFound()` **sin llamar al API**
+  (`esUuid`); en una lista, un filtro fuera de su catálogo o una fecha que no
+  existe se **IGNORA** (`estadoFiltro`, `cobroFiltro`, `valorDeCatalogo`,
+  `uuidFiltro`, `fechaFiltro`, `rangoFiltro`) y la barra de filtros recibe el
+  valor YA validado. Enlaces viejos y marcadores reproducían el boundary en
+  `/admin/inventory/<no-uuid>`, `/admin/flights?cobro=…`,
+  `/admin/quotes?estado=…`, `/admin/expenses?desde=2026-13-45`,
+  `/admin/profit-sharing?desde=nada`.
+- **Verificado de punta a punta con el arnés** (build de PRODUCCIÓN contra
+  una copia del API y un proxy que finge el 502/503 de Railway, 21-sep-2026):
+  (a) con el API de vuelta dentro de la ventana, las 7 pantallas de muestra
+  cargan solas (200, sin digest, ~2.5 s); (b) con el API caído del todo sale
+  la pantalla en es-MX con detalle/hora/ruta y CERO texto en inglés; (c) con
+  un catálogo caído la pantalla carga y AVISA; `/admin/flights` parte sus
+  **219** ids en 2 lotes y los badges de tacómetro vuelven a salir (un lote
+  caído se anuncia y no se reintenta: es POST); las 6 URLs inválidas ya no
+  caen al boundary; recorrido de **315 rutas: 315 × 200, 0 digest, 0
+  pantallas de error**.
+
 ## PDF del panel (proxy, NUNCA `blob:`) — 11-sep-2026
 
 - Bug del cliente: el PDF de una cotización se abría con
@@ -1070,3 +1163,72 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
 - La fecha se pinta con `fmtDateOnly` («25 sep 2026»), no en dd/mm/aaaa: es el
   MISMO formato con el que la card de Mantenimientos muestra esa orden, y dos
   formatos para el mismo dato confunden al operador.
+
+## Cardex: eliminar un movimiento con justificación (21-sep-2026)
+
+- Pedido del cliente (captura del «Cardex completo» de un ítem con tres
+  movimientos capturados por error el 29-ago — Salida −10 a XA-VGV, Entrada
+  +1 de $350 MXN, Salida −1 a XA-VGV): «podemos agregar una opción para
+  eliminar algunos movimientos, pero que al momento de eliminarlos pida
+  justificación y sepamos quién lo hizo». Regla permanente: toda acción
+  destructiva confirma.
+- **La regla y los números son del API, no del panel.** `evaluarEliminacion`
+  (API) simula el cardex SIN el movimiento y solo permite la baja si la
+  existencia nunca queda negativa Y ninguna otra salida cambia su costo FIFO.
+  El panel **jamás** recalcula un stock ni un FIFO: un segundo motor de cardex
+  aquí es precisamente el «cálculo paralelo» que el proyecto prohíbe.
+- Dónde se ve: fila del **cardex del ítem** (`inventory/cardex-table.tsx`,
+  junto a «Editar costo») → bote «Eliminar» que abre
+  `inventory/eliminar-movimiento-dialog.tsx`. El diálogo, al abrirse, pide la
+  **VISTA PREVIA** (`previewEliminarMovimientoAction` →
+  `GET /v1/inventory/items/:id/movimientos/:movId/eliminacion`) y pinta en
+  claro qué va a pasar: «Se eliminará la SALIDA de 10 pzas del 29 ago 2026 a
+  XA-VGV. / Regresan 10 pzas a la existencia (de 111 a 121). / También se
+  elimina su gasto de $3,500.00 MXN cargado a XA-VGV.» Nunca se enseña el
+  botón destructivo antes de haber preguntado.
+- **Bloqueado ⇒ sin botón de eliminar**: título corto por `code`
+  (`TITULO_BLOQUEO`) + el **`mensaje` del API tal cual**, que es el único que
+  nombra QUÉ hay que eliminar primero (con su fecha). Códigos:
+  `MOVIMIENTO_DE_COMPRA`, `STOCK_NEGATIVO`, `CAMBIA_COSTO_FIFO`,
+  `GASTO_BLOQUEADO`, `TIPO_NO_SOPORTADO` (devolución/ajuste quedan fuera a
+  propósito: se corrigen con un movimiento contrario). Se decide por CÓDIGO,
+  nunca por el texto — `ActionResult` de inventario ganó `code` (aditivo).
+- El bote se muestra en **cualquier tipo** de movimiento aunque algunos estén
+  bloqueados: esconderlo dejaría al operador sin respuesta. La explicación la
+  da la vista previa.
+- **Justificación obligatoria**: textarea «¿Por qué se elimina?» con contador
+  (`estadoMotivo`, mínimo 10 caracteres YA recortados — mismos límites que el
+  DTO del API y el `check` de la BD) y el botón destructivo deshabilitado
+  hasta cumplirlo. Al terminar: toast con la existencia resultante
+  (`mensajeExito`) + `router.refresh()`.
+- **Historial** bajo el cardex: `inventory/movimientos-eliminados-card.tsx`,
+  sección plegable «Movimientos eliminados (N)» con fecha, tipo, cantidad,
+  avión, **QUIÉN**, **CUÁNDO** (hora Cancún, `fmtDateTime`) y el **MOTIVO**
+  completo. Sin filas no se pinta; si la lectura FALLÓ, se dice
+  (`TEXTO_HISTORIAL_NO_CARGO`) — nunca «no hay eliminados» cuando no se pudo
+  leer.
+- **Tolerancia al API viejo**: `listMovimientosEliminados`
+  (`lib/api/inventory-server.ts`) nunca lanza y distingue tres desenlaces —
+  `disponible:false` (404 de la RUTA = backend sin desplegar ⇒ el bote NO se
+  muestra), `falla:true` (502/red ⇒ el bote sigue y la sección avisa) y
+  normal. Si aun así el DELETE llega a un API viejo, `mensajeErrorEliminacion`
+  responde «falta actualizar el API» (404 sin `code` estable); el 503
+  `MIGRACION_PENDIENTE` y los 409 se pintan con el mensaje del API.
+- **FUENTE ÚNICA de los textos**: `lib/admin/inventario-eliminar.ts` (PURO,
+  prueba `__tests__/inventario-eliminar.test.ts` con el caso REAL de la
+  captura). Ningún componente redacta estas frases a mano.
+- Roles: la baja es **SOLO ADMIN** (mismo rol del DELETE del API; el panel lo
+  sabe por `getMe()`, igual que «Editar costo» con ADMIN/MECANICO); el
+  historial es OFICINA. La server action revalida también `/admin/expenses`:
+  la baja borra los gastos REFACCION/BODEGA que generó la salida.
+- **Probado con el arnés contra el API 0.0.18 real** (21-sep-2026, sin
+  ejecutar ningún DELETE): con rol ADMIN el bote sale y la vista previa del
+  aceite 15W-50 responde lo esperado (la SALIDA −10 del 29-ago se permite:
+  110 → 120; la ENTRADA +120 se bloquea con STOCK_NEGATIVO y la SALIDA −24
+  con CAMBIA_COSTO_FIFO, cada una nombrando qué borrar primero); con rol
+  MECANICO el bote NO aparece y «Editar costo» sigue; con la ruta del
+  historial en 404 (API viejo) el bote desaparece y con 503 el bote sigue y
+  la sección dice que no cargó. Renders congelados en
+  `components/admin/inventory/__tests__/movimientos-eliminados-card.test.tsx`
+  (quién · cuándo en hora Cancún · motivo, y que un fallo de lectura nunca se
+  pinte como «no hay eliminados»).

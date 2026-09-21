@@ -20,6 +20,7 @@ import { listFlights } from "@/lib/api/flights-server";
 import { fmtDate } from "@/lib/datetime";
 import { listAircraft } from "@/lib/api/aircraft";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
+import { rangoFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +40,11 @@ interface PageProps {
 export default async function ReportesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const fb = currentMonth();
-  const desde = sp.desde || fb.desde;
-  const hasta = sp.hasta || fb.hasta;
+  // Fechas VALIDADAS (21-sep-2026): ver `lib/admin/url-params.ts`.
+  const rango = rangoFiltro(sp.desde, sp.hasta);
+  let desde = rango.desde ?? fb.desde;
+  let hasta = rango.hasta ?? fb.hasta;
+  if (desde > hasta) [desde, hasta] = [hasta, desde];
 
   // Vuelos recientes para el selector del reporte por vuelo.
   let flightsPick: FlightPickItem[] = [];

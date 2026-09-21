@@ -6,6 +6,10 @@ import {
   EditarCostoDialog,
   type MovimientoCostoEditable,
 } from "./editar-costo-dialog";
+import {
+  EliminarMovimientoDialog,
+  type MovimientoEliminable,
+} from "./eliminar-movimiento-dialog";
 import type { InventarioMovimiento } from "@/types/inventory";
 
 interface CardexConEdicionProps {
@@ -15,13 +19,19 @@ interface CardexConEdicionProps {
   movimientos: InventarioMovimiento[];
   /** ADMIN/MECANICO (mismo rol del PATCH del API): habilita "Editar costo". */
   puedeEditarCosto: boolean;
+  /**
+   * SOLO ADMIN (mismo rol del DELETE del API) y solo si el API desplegado
+   * conoce la baja: habilita el bote de "Eliminar movimiento".
+   */
+  puedeEliminar?: boolean;
 }
 
 /**
- * Cardex del detalle del ítem + diálogo para corregir el costo de una
- * ENTRADA (la carga masiva dejó entradas a $0 que el cliente completa con el
- * precio real). El wrapper cliente solo carga el estado del diálogo; la
- * tabla sigue siendo la misma CardexTable.
+ * Cardex del detalle del ítem + los diálogos de fila: corregir el costo de
+ * una ENTRADA (la carga masiva dejó entradas a $0 que el cliente completa con
+ * el precio real) y ELIMINAR un movimiento con justificación (21-sep-2026).
+ * El wrapper cliente solo carga el estado de los diálogos; la tabla sigue
+ * siendo la misma CardexTable.
  */
 export function CardexConEdicion({
   itemId,
@@ -29,8 +39,10 @@ export function CardexConEdicion({
   unidad,
   movimientos,
   puedeEditarCosto,
+  puedeEliminar = false,
 }: CardexConEdicionProps) {
   const [editando, setEditando] = useState<MovimientoCostoEditable | null>(null);
+  const [eliminando, setEliminando] = useState<MovimientoEliminable | null>(null);
 
   return (
     <>
@@ -55,6 +67,11 @@ export function CardexConEdicion({
                 })
             : undefined
         }
+        onEliminar={
+          puedeEliminar
+            ? (m) => setEliminando({ id: m.id, itemId, itemNombre, unidad })
+            : undefined
+        }
       />
       <EditarCostoDialog
         open={editando != null}
@@ -63,6 +80,18 @@ export function CardexConEdicion({
         }}
         movimiento={editando}
       />
+      {/* `key` por movimiento: cada baja arranca con su motivo en blanco y su
+          propia vista previa — jamás se hereda lo escrito para otra fila. */}
+      {eliminando && (
+        <EliminarMovimientoDialog
+          key={eliminando.id}
+          open
+          onOpenChange={(o) => {
+            if (!o) setEliminando(null);
+          }}
+          movimiento={eliminando}
+        />
+      )}
     </>
   );
 }

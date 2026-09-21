@@ -3,15 +3,23 @@ import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
 import { listClients } from "@/lib/api/clients-server";
 import { listQuotes } from "@/lib/api/quotes-server";
 import { cargarCatalogosCotizador } from "@/lib/api/quote-catalogos-server";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewQuotePage() {
+  // Los catálogos del cotizador (aeronaves/rutas/aeropuertos) SON la
+  // pantalla: sin ellos no se puede cotizar y el error sube al boundary. La
+  // lista de clientes sí degrada, con aviso.
+  const degradado = new Degradaciones();
   const [catalogos, clientsRes, quotesRes] = await Promise.all([
     // Aeronaves, rutas y aeropuertos ya mapeados (fuente única con el
     // detalle de la cotización).
     cargarCatalogosCotizador(),
-    listClients({ limit: 200, activo: true }),
+    degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
+      data: [] as Awaited<ReturnType<typeof listClients>>["data"],
+    }),
     // Para clientes frecuentes: la mayoría son recurrentes (pocos).
     listQuotes({ limit: 100 }).catch(() => ({ data: [] }) as { data: { cliente_id: string | null }[] }),
   ]);
@@ -47,6 +55,7 @@ export default async function NewQuotePage() {
           Lo interno (tarifa, cobro, externo) va en el panel «Interno · no se imprime».
         </p>
       </div>
+      <AvisoDegradado faltantes={degradado.faltantes} />
       <QuoteCalculator
         aircraft={catalogos.aircraft}
         routes={catalogos.routes}

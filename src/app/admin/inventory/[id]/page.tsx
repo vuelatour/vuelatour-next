@@ -2,7 +2,13 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/admin/back-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isApiError } from "@/lib/api/errors";
-import { getInventarioItem, getInventarioItemResumen } from "@/lib/api/inventory-server";
+import { esUuid } from "@/lib/admin/url-params";
+import {
+  getInventarioItem,
+  getInventarioItemResumen,
+  listMovimientosEliminados,
+  type MovimientosEliminadosResultado,
+} from "@/lib/api/inventory-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
@@ -10,6 +16,7 @@ import { fmtMxn, fmtUsd } from "@/lib/format";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
 import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
+import { MovimientosEliminadosCard } from "@/components/admin/inventory/movimientos-eliminados-card";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
 import type {
@@ -37,29 +44,47 @@ export default async function InventoryItemPage({
 }) {
   const { id } = await params;
   const sp = await searchParams;
+  // Id que no es uuid (enlace viejo, marcador, dedazo) ⇒ 404 SIN llamar al
+  // API: su 400 de «uuid inválido» no es un 404 y se relanzaba abajo, así que
+  // la pantalla se iba al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
   let item: InventarioItemDetail;
   let resumen: InventarioItemResumen | null;
   let aircraft: { id: string; matricula: string }[];
   let providers: { id: string; nombre: string }[];
   let puedeEditarCosto = false;
+  let puedeEliminar = false;
+  let eliminados: MovimientosEliminadosResultado = {
+    disponible: false,
+    filas: [],
+    falla: false,
+  };
   try {
-    const [itemRes, resumenRes, aircraftRes, providersRes, me] = await Promise.all([
-      getInventarioItem(id),
-      // Bloques COMPRAS/VENTAS/RESUMEN. Tolerante: si el API aún no conoce la
-      // ruta (skew de deploy) el detalle no se cae — el bloque avisa.
-      getInventarioItemResumen(id).catch(() => null),
-      listAircraft({ limit: 100 }),
-      listProviders({ limit: 200 }),
-      getMe().catch(() => null),
-    ]);
+    const [itemRes, resumenRes, aircraftRes, providersRes, me, eliminadosRes] =
+      await Promise.all([
+        getInventarioItem(id),
+        // Bloques COMPRAS/VENTAS/RESUMEN. Tolerante: si el API aún no conoce la
+        // ruta (skew de deploy) el detalle no se cae — el bloque avisa.
+        getInventarioItemResumen(id).catch(() => null),
+        listAircraft({ limit: 100 }),
+        listProviders({ limit: 200 }),
+        getMe().catch(() => null),
+        // Bitácora de bajas del cardex (21-sep-2026). Nunca lanza: distingue
+        // «el API no conoce la ruta» de «no se pudo leer» (ver el helper).
+        listMovimientosEliminados(id),
+      ]);
     item = itemRes;
     resumen = resumenRes;
     aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
+    eliminados = eliminadosRes;
     // Mismos roles del PATCH del API: a los demás no se les muestra un botón
     // que les daría 403.
     puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
+    // La baja es SOLO ADMIN (mismo rol del DELETE) y solo con el API nuevo
+    // desplegado: con un backend viejo el bote daría un 404 sin explicación.
+    puedeEliminar = !!me && me.rol === "ADMIN" && eliminados.disponible;
   } catch (err) {
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
@@ -223,10 +248,18 @@ export default async function InventoryItemPage({
               unidad={item.unidad}
               movimientos={item.movimientos}
               puedeEditarCosto={puedeEditarCosto}
+              puedeEliminar={puedeEliminar}
             />
           )}
         </CardContent>
       </Card>
+
+      {/* Bajo el cardex: qué se eliminó de él, quién y por qué. */}
+      <MovimientosEliminadosCard
+        filas={eliminados.filas}
+        falla={eliminados.falla}
+        unidad={item.unidad}
+      />
     </div>
   );
 }

@@ -13,6 +13,9 @@ import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { FuelBulkUploadDialog } from "@/components/admin/expenses/fuel-bulk-upload-dialog";
 import { todayCancun } from "@/lib/datetime";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { uuidFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -60,13 +63,19 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
   const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "")
     ? (sp.mes as string)
     : todayCancun().slice(0, 7);
-  const aeronaveId = sp.aeronave_id || "";
+  // uuid o nada: un `?aeronave_id=` basura daba 400 y tumbaba la pantalla.
+  const aeronaveId = uuidFiltro(sp.aeronave_id) ?? "";
   const { desde, hasta } = rangoDeMes(mes);
   const mesLabel = labelDeMes(mes);
 
+  // Las CARGAS son el dato principal; la flota resuelve matrículas y llena
+  // el filtro: degrada con aviso (21-sep-2026).
+  const degradado = new Degradaciones();
   const [{ data: loads }, aircraftRes, cardsRes] = await Promise.all([
     listFuelLoads({ desde, hasta, aeronave_id: aeronaveId || undefined }),
-    listAircraft({ limit: 100 }),
+    degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+    }),
     listCards({ limit: 50 }).catch(() => ({ data: [] })),
   ]);
 
@@ -205,6 +214,8 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
           <FuelBulkUploadDialog />
         </div>
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <FuelFilterBar mes={mes} aeronaveId={aeronaveId} aircraft={aircraftOpts} />
 

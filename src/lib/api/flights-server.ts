@@ -1,4 +1,5 @@
 import { apiServer } from "./server";
+import { TOPE_IDS_BATCH, lotesDeIds } from "@/lib/admin/lotes";
 import type {
   FlightListItem,
   FlightListResponse,
@@ -177,4 +178,55 @@ export function getTacoStatus(ids: string[]) {
     body: { ids },
     cache: "no-store",
   });
+}
+
+/**
+ * Resultado de un batch partido en lotes: lo que SÍ se pudo consultar y los
+ * ids que quedaron sin verificar (su lote falló). Nunca se mezclan: un id sin
+ * verificar NO es un id con valor 0 — decir «sin cobros» de un vuelo que no se
+ * consultó sería mentir sobre dinero.
+ */
+export interface StatusPorLotes<T> {
+  status: Record<string, T>;
+  idsSinVerificar: string[];
+}
+
+async function statusPorLotes<T>(
+  ids: string[],
+  consulta: (lote: string[]) => Promise<Record<string, T>>,
+): Promise<StatusPorLotes<T>> {
+  const status: Record<string, T> = {};
+  const idsSinVerificar: string[] = [];
+  const lotes = lotesDeIds(ids, TOPE_IDS_BATCH);
+  const resultados = await Promise.all(
+    lotes.map((lote) =>
+      consulta(lote).then(
+        (r) => ({ lote, r }),
+        (e: unknown) => {
+          console.error("[admin] lote de status falló", e);
+          return { lote, r: null };
+        },
+      ),
+    ),
+  );
+  for (const { lote, r } of resultados) {
+    if (r === null) idsSinVerificar.push(...lote);
+    else Object.assign(status, r);
+  }
+  return { status, idsSinVerificar };
+}
+
+/**
+ * `cobro-status` PARTIDO en lotes de ≤200 (tope del DTO del API, ver
+ * `lib/admin/lotes.ts`). Antes se mandaban todos los ids de golpe: con 218
+ * vuelos el API respondía 400 y el `.catch` de la página lo tragaba en
+ * silencio (21-sep-2026).
+ */
+export function getCobroStatusPorLotes(ids: string[]) {
+  return statusPorLotes(ids, getCobroStatus);
+}
+
+/** `taco-status` partido en lotes de ≤200 (mismo tope y mismo motivo). */
+export function getTacoStatusPorLotes(ids: string[]) {
+  return statusPorLotes(ids, getTacoStatus);
 }

@@ -13,6 +13,9 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
 import { listEngines } from "@/lib/api/engines-server";
 import { EmptyState } from "@/components/admin/empty-state";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { uuidFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -32,23 +35,32 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
   const me = await getMe();
   const canManage = me.rol === "ADMIN" || me.rol === "COORDINADOR";
 
+  // Los VENCIMIENTOS son el dato principal; los catálogos resuelven nombres
+  // y llenan selectores: degradan con aviso (21-sep-2026).
+  const degradado = new Degradaciones();
   const [expRes, typesRes, aircraftRes, pilotsRes, enginesRes] = await Promise.all([
     listExpirations({
       ambito: sp.ambito || undefined,
       estado: sp.estado || undefined,
-      aeronave_id: sp.aeronave_id || undefined,
-      piloto_id: sp.piloto_id || undefined,
+      aeronave_id: uuidFiltro(sp.aeronave_id),
+      piloto_id: uuidFiltro(sp.piloto_id),
       limit: 500,
     }),
-    listDocumentTypes({ limit: 200, activo: true }),
-    listAircraft({ limit: 100 }),
+    degradado.opcional("los tipos de documento", listDocumentTypes({ limit: 200, activo: true }), {
+      data: [] as Awaited<ReturnType<typeof listDocumentTypes>>["data"],
+    }),
+    degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+    }),
     // Pilotos vía /pilots (ADMIN+COORDINADOR) y no /users (ADMIN): sin esto,
     // COORDINADOR no podía cargar la página. Tolerante: MECANICO (que ve la
     // lista pero no /pilots) cae a etiqueta genérica en vez de romper.
-    listPilots({ estado: "ACTIVO", limit: 100 }).catch(() => ({
+    degradado.opcional("los pilotos", listPilots({ estado: "ACTIVO", limit: 100 }), {
       data: [] as { id: string; nombre: string }[],
-    })),
-    listEngines({ limit: 100 }),
+    }),
+    degradado.opcional("los motores", listEngines({ limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listEngines>>["data"],
+    }),
   ]);
 
   const expiraciones = expRes.data;
@@ -118,6 +130,8 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
           />
         )}
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <ExpirationsFilterBar
         aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}

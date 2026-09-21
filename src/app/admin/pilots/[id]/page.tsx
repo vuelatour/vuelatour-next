@@ -43,6 +43,7 @@ import type {
   PilotFondo,
   PilotHonorarios,
 } from "@/types/pilots";
+import { esUuid } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,9 @@ export default async function PilotDetailPage({
 }) {
   const { id } = await params;
   const { mes } = await searchParams;
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
   let pilot: PilotDetail;
   try {

@@ -26,28 +26,44 @@ import { listProviders } from "@/lib/api/providers-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
 import { fmtMxn } from "@/lib/format";
+import { Degradaciones, principal } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 
 export const dynamic = "force-dynamic";
 
 export default async function InventoryPage() {
-  const [
-    { data: items, count, valor_total_mxn, ganancia_total_mxn },
-    providersRes,
-    aircraftRes,
-    me,
-    sinCostoRes,
-  ] =
+  // Degradación POR TARJETA (21-sep-2026): tres de estas cinco llamadas no
+  // tenían `.catch` y CUALQUIERA tumbaba la pantalla entera al error boundary
+  // («Algo se rompió… digest») cada vez que el API se reiniciaba. Los
+  // CATÁLOGOS de los selectores degradan a vacío + aviso; la bodega —el dato
+  // por el que existe la pantalla— jamás se disfraza de «sin ítems».
+  const degradado = new Degradaciones();
+  const [bodega, providersRes, aircraftRes, me, sinCostoRes] =
     await Promise.all([
-      // Toda la bodega (pagina hasta count): la tabla no debe "perder" ítems.
-      listInventarioTodo(),
-      listProviders({ limit: 200 }),
-      listAircraft({ limit: 100 }),
-      getMe().catch(() => null),
+      // PRINCIPAL. Toda la bodega (pagina hasta count): la tabla no debe
+      // "perder" ítems.
+      principal(listInventarioTodo()),
+      degradado.opcional("los proveedores", listProviders({ limit: 200 }), { data: [] }),
+      degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), { data: [] }),
+      degradado.opcional("tu usuario", getMe(), null),
       // ENTRADAS sin costo real (carga masiva a $0) por completar. Tolerante:
       // si el API aún no conoce `sin_costo` (skew de deploy), la portada no
-      // se cae — solo no aparece la sección.
+      // se cae — solo no aparece la sección. Por eso NO entra al aviso: su
+      // ausencia es esperada, no una falla que anunciar.
       listMovimientos({ tipo: "ENTRADA", sin_costo: true, limit: 500 }).catch(() => null),
     ]);
+  const {
+    data: items,
+    count,
+    valor_total_mxn,
+    ganancia_total_mxn,
+  } = bodega.datos ?? {
+    data: [],
+    count: 0,
+    valor_total_mxn: 0,
+    ganancia_total_mxn: 0,
+  };
   // Alta masiva: el API la permite a ADMIN/MECANICO (y COORDINADOR); SOCIO
   // solo consulta, así que no se le muestra un botón que le daría 403.
   const puedeAltaMasiva = !!me && me.rol !== "SOCIO";
@@ -81,26 +97,34 @@ export default async function InventoryPage() {
         <div>
           <p className="text-sm text-muted-foreground">Bodega</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado{" "}
-            {fmtMxn(valor_total_mxn)} (FIFO) · ganancia acumulada{" "}
-            {hayGanancia ? (
-              <span
-                className={
-                  ganancia_total_mxn > 0
-                    ? "font-medium text-emerald-600 dark:text-emerald-400"
-                    : ganancia_total_mxn < 0
-                      ? "font-medium text-red-600"
-                      : ""
-                }
-              >
-                {fmtMxn(ganancia_total_mxn)}
-              </span>
-            ) : (
-              <span title="Ningún producto ha vendido con precio todavía">—</span>
-            )}
-            . El consumo se carga al avión al registrar la salida.
-          </p>
+          {/* Con la bodega sin cargar NO se pinta ni un número: "0 ítems ·
+              valorizado $0.00" se leería como bodega vacía. */}
+          {!bodega.ok ? (
+            <p className="text-sm text-muted-foreground mt-1">
+              No se pudo cargar la bodega; los totales aparecen al reintentar.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground mt-1">
+              {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado{" "}
+              {fmtMxn(valor_total_mxn)} (FIFO) · ganancia acumulada{" "}
+              {hayGanancia ? (
+                <span
+                  className={
+                    ganancia_total_mxn > 0
+                      ? "font-medium text-emerald-600 dark:text-emerald-400"
+                      : ganancia_total_mxn < 0
+                        ? "font-medium text-red-600"
+                        : ""
+                  }
+                >
+                  {fmtMxn(ganancia_total_mxn)}
+                </span>
+              ) : (
+                <span title="Ningún producto ha vendido con precio todavía">—</span>
+              )}
+              . El consumo se carga al avión al registrar la salida.
+            </p>
+          )}
           <p className="text-xs text-muted-foreground/80 mt-1">
             Ganancia / pérdida = ventas al avión − costo FIFO de lo vendido (el mismo cálculo de la
             hoja Inventario del Balance general VuelaTour). Toca un producto para ver sus compras,
@@ -126,6 +150,10 @@ export default async function InventoryPage() {
         </div>
       </div>
 
+      {/* Catálogos que no cargaron (proveedores, aeronaves…): los selectores
+          salen cortos y la pantalla lo DICE, en vez de fingir que no hay. */}
+      <AvisoDegradado faltantes={degradado.faltantes} />
+
       {/* Lector de código de barras: abre el producto (o su caja) al instante;
           si el código no existe, ofrece darlo de alta ya con ese código. */}
       <CodigoSearch categorias={categorias} />
@@ -142,7 +170,21 @@ export default async function InventoryPage() {
       <EntradasSinCosto entradas={entradasSinCosto} puedeEditarCosto={puedeEditarCosto} />
 
 
-      {items.length === 0 ? (
+      {!bodega.ok ? (
+        // La bodega NO se pudo leer: tarjeta de error con reintento. Jamás el
+        // estado vacío de abajo — "Sin ítems en bodega" con 71 partidas
+        // cargadas es exactamente la mentira que hay que evitar.
+        <TarjetaErrorCarga
+          titulo="No se pudo cargar la bodega"
+          descripcion={
+            <>
+              El sistema no respondió al pedir el inventario. Suele ser momentáneo (por
+              ejemplo, mientras se actualiza); pulsa Reintentar. Lo que ves arriba no
+              refleja el stock real hasta que cargue.
+            </>
+          }
+        />
+      ) : items.length === 0 ? (
         <Card>
           <CardHeader className="text-center py-12">
             <div className="flex justify-center mb-4">

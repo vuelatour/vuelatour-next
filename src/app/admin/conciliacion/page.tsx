@@ -41,6 +41,8 @@ import {
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { isApiError } from "@/lib/api/errors";
 import type { PaywiseAuditoria } from "@/types/conciliacion";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 // Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
@@ -99,6 +101,7 @@ export default async function ConciliacionPage({
   // soportaba) y los chips de arriba la cambian.
   if (pwCuenta) query.cuenta_bancaria_id = pwCuenta;
 
+  const degradado = new Degradaciones();
   const [
     { data: movs },
     cuentasRes,
@@ -110,8 +113,14 @@ export default async function ConciliacionPage({
     paywiseComisionPct,
   ] = await Promise.all([
     listMovimientosBancarios(query),
-    listBankAccounts({ limit: 100 }),
-    listGastos({ limit: 200 }),
+    // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
+    // con aviso; los MOVIMIENTOS (el dato del dinero) nunca (21-sep-2026).
+    degradado.opcional("las cuentas bancarias", listBankAccounts({ limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listBankAccounts>>["data"],
+    }),
+    degradado.opcional("los gastos para vincular", listGastos({ limit: 200 }), {
+      data: [] as Awaited<ReturnType<typeof listGastos>>["data"],
+    }),
     conciliacionResumen().catch(() => []),
     // Best-effort: la página no se cae si el archivado aún no responde.
     listEstadosCuenta().catch(() => ({ data: [] })),
@@ -293,6 +302,8 @@ export default async function ConciliacionPage({
           <ImportButton cuentas={cuentas} />
         </div>
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       {resumen.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -10,14 +10,21 @@ import {
   FlightsTable,
   type FlightRow,
 } from "@/components/admin/flights/flights-table";
-import { listFlightsAll, getCobroStatus, getTacoStatus } from "@/lib/api/flights-server";
+import {
+  listFlightsAll,
+  getCobroStatusPorLotes,
+  getTacoStatusPorLotes,
+} from "@/lib/api/flights-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
-import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { EmptyState } from "@/components/admin/empty-state";
 import { getGrupo } from "@/lib/api/grupos-server";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { textoSinVerificar } from "@/lib/admin/lotes";
+import { cobroFiltro, estadoFiltro, rangoFiltro, uuidFiltro } from "@/lib/admin/url-params";
 import type { FlightListItem } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
 
@@ -39,32 +46,47 @@ interface FlightsPageProps {
 
 export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const sp = await searchParams;
-  const grupoFiltro = sp.grupo_id || undefined;
-
+  // Parámetros de la URL VALIDADOS antes de hablar con el API (21-sep-2026):
+  // un `?estado=`/`?cobro=` fuera del enum o una fecha imposible provocaban un
+  // 400 de Nest y la pantalla entera caía al error boundary. Un enlace viejo o
+  // un marcador ahora solo pierde ese filtro.
+  const grupoFiltro = uuidFiltro(sp.grupo_id);
   // Filtro default: vuelos activos (no solicitud/cotizado/cancelado).
   // Si el user no pasa estado, mostramos todos los operativos (CONFIRMADO+).
-  const estadoFilter = sp.estado as EstadoVuelo | undefined;
+  const estadoFilter = estadoFiltro(sp.estado);
+  const rango = rangoFiltro(sp.desde, sp.hasta);
+  const cobro = cobroFiltro(sp.cobro);
+  const pilotoFiltro = uuidFiltro(sp.piloto_id);
+  const aeronaveFiltro = uuidFiltro(sp.aeronave_id);
 
+  // Catálogos de los selectores: si uno falla, la lista SIGUE (con el aviso);
+  // lo que no se degrada es la lista de vuelos.
+  const degradado = new Degradaciones();
   const [flightsRes, clientsRes, aircraftRes, pilotsRes, grupoFiltrado] =
     await Promise.all([
       // SIN cap (anti-cap-200): prod ya rebasó los 200 vuelos y el corte
       // silencioso hacía parecer "no guardado" un vuelo que sí existía.
       listFlightsAll({
         estado: estadoFilter,
-        piloto_id: sp.piloto_id || undefined,
-        aeronave_id: sp.aeronave_id || undefined,
-        cobro: sp.cobro || undefined,
-        desde: sp.desde || undefined,
-        hasta: sp.hasta || undefined,
+        piloto_id: pilotoFiltro,
+        aeronave_id: aeronaveFiltro,
+        cobro,
+        desde: rango.desde,
+        hasta: rango.hasta,
         grupo_id: grupoFiltro,
       }),
       // Best-effort: /v1/clients está restringido por rol (PII fiscal); un
-      // rol operativo sin acceso ve la lista de vuelos sin nombre de cliente.
-      listClients({ limit: 200, activo: true }).catch(() => ({
+      // rol operativo sin acceso ve la lista de vuelos sin nombre de cliente
+      // (403 = degrada en silencio; una caída sí se anuncia).
+      degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
         data: [] as Awaited<ReturnType<typeof listClients>>["data"],
-      })),
-      listAircraft({ limit: 100, activa: true }),
-      listUsers({ rol: "PILOTO", limit: 50 }),
+      }),
+      degradado.opcional("las aeronaves", listAircraft({ limit: 100, activa: true }), {
+        data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+      }),
+      degradado.opcional("los pilotos", listUsers({ rol: "PILOTO", limit: 50 }), {
+        data: [] as Awaited<ReturnType<typeof listUsers>>["data"],
+      }),
       // Cabecera del grupo filtrado (best-effort, solo para el banner).
       grupoFiltro ? getGrupo(grupoFiltro).catch(() => null) : Promise.resolve(null),
     ]);
@@ -89,10 +111,13 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const tacoRelevantes = operativos.filter(
     (v) => !v.es_externo && (v.estado === "EN_VUELO" || v.estado === "COMPLETADO"),
   );
-  const tacoStatus = await getTacoStatus(tacoRelevantes.map((v) => v.id)).catch(
-    () => ({}) as Record<string, { falta: boolean }>,
-  );
-  const faltaTaco = (id: string) => tacoStatus[id]?.falta === true;
+  // En LOTES de ≤200 ids (tope `@ArrayMaxSize(200)` del DTO del API): hoy la
+  // lista manda 218 y el API respondía 400, que el `.catch` de antes tragaba
+  // en silencio — NINGÚN vuelo mostraba el badge de tacómetro faltante y nadie
+  // se enteraba (21-sep-2026). Si un lote falla se DICE, no se finge.
+  const taco = await getTacoStatusPorLotes(tacoRelevantes.map((v) => v.id));
+  const tacoSinVerificar = new Set(taco.idsSinVerificar);
+  const faltaTaco = (id: string) => taco.status[id]?.falta === true;
 
   // Semáforo de cobro: el flag `cobrado` ya viene en la fila; el batch trae
   // el total para distinguir PARCIAL de SIN COBRO. Solo se consultan filas
@@ -102,9 +127,13 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     (v) =>
       !v.cobrado && Number(v.monto_total_usd) > 0 && v.cotizacion_abierta !== true,
   );
-  const cobroStatus = await getCobroStatus(
-    cobroRelevantes.map((v) => v.id),
-  ).catch(() => null);
+  const cobroLotes = await getCobroStatusPorLotes(cobroRelevantes.map((v) => v.id));
+  const cobroSinVerificar = new Set(cobroLotes.idsSinVerificar);
+  // Si TODOS los lotes fallaron, el semáforo degrada igual que antes
+  // ("Por cobrar" sin total); si falló solo uno, solo esas filas.
+  const cobroStatus = cobroRelevantes.length > 0 && cobroSinVerificar.size === cobroRelevantes.length
+    ? null
+    : cobroLotes.status;
 
   // Filas-viewmodel serializables para el componente cliente (sin Maps).
   // La tabla incluye TAMBIÉN las filas en cotización (azules).
@@ -135,9 +164,16 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     cobrado: v.cobrado,
     es_interno: clientsById.get(v.cliente_id)?.es_interno === true,
     cotizacion_abierta: v.cotizacion_abierta === true,
+    // `null` = NO se sabe (no se consultó o su lote falló) — distinto de 0,
+    // que significa "sin un peso cobrado". Confundirlos pinta un semáforo
+    // rojo falso sobre un vuelo que quizá ya pagó.
     total_cobrado_usd:
-      cobroStatus === null ? null : (cobroStatus[v.id]?.total_cobrado ?? 0),
-    sin_tc_count: cobroStatus?.[v.id]?.sin_tc_count ?? 0,
+      cobroStatus === null || cobroSinVerificar.has(v.id)
+        ? null
+        : (cobroStatus[v.id]?.total_cobrado ?? 0),
+    sin_tc_count: cobroSinVerificar.has(v.id)
+      ? 0
+      : (cobroStatus?.[v.id]?.sin_tc_count ?? 0),
     // Hijo de una cotización de GRUPO (4-sep): el embed `grupo` ya viaja en
     // la fila de la lista; el total de aviones solo lo trae el snapshot, así
     // que aquí el badge omite "de N".
@@ -199,6 +235,16 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
             cubrir con externo se decide después, desde el detalle del vuelo. */}
       </div>
 
+      {/* Lo accesorio que no cargó (catálogos) y los lotes del batch que no se
+          pudieron verificar: se dice, nunca se finge. */}
+      <AvisoDegradado
+        faltantes={degradado.faltantes}
+        extra={[
+          textoSinVerificar(tacoSinVerificar.size, "el tacómetro"),
+          textoSinVerificar(cobroSinVerificar.size, "los cobros"),
+        ]}
+      />
+
       {grupoFiltro && (
         <div className="flex items-center gap-3 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-4 py-3 text-sm text-fuchsia-800 dark:text-fuchsia-200 flex-wrap">
           <UserGroupIcon className="h-5 w-5 shrink-0" />
@@ -254,13 +300,15 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
           id: p.id,
           nombre: p.es_piloto_externo ? `${p.nombre} · externo` : p.nombre,
         }))}
+        // Los valores YA validados: la barra debe reflejar el filtro que de
+        // verdad se aplicó, no el texto inválido que traía la URL.
         initial={{
-          estado: sp.estado ?? "",
-          piloto_id: sp.piloto_id ?? "",
-          aeronave_id: sp.aeronave_id ?? "",
-          cobro: sp.cobro ?? "",
-          desde: sp.desde ?? "",
-          hasta: sp.hasta ?? "",
+          estado: estadoFilter ?? "",
+          piloto_id: pilotoFiltro ?? "",
+          aeronave_id: aeronaveFiltro ?? "",
+          cobro: cobro ?? "",
+          desde: rango.desde ?? "",
+          hasta: rango.hasta ?? "",
         }}
       />
 

@@ -55,6 +55,9 @@ import { apoyosDeVuelo, combinadoFolio, type FlightSnapshot } from "@/types/flig
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { VueloConGrupo } from "@/types/grupos";
+import { esUuid } from "@/lib/admin/url-params";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +69,9 @@ interface FlightDetailPageProps {
 export default async function FlightDetailPage({ params }: FlightDetailPageProps) {
   const me = await getMe().catch(() => null);
   const { id } = await params;
+  // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
+  // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
+  if (!esUuid(id)) notFound();
 
   let snapshot;
   try {
@@ -106,12 +112,21 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     );
   }
 
+  const degradado = new Degradaciones();
   const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, gastosHistorial, planVuelo, quote, gastosRes, vueloAnteriorRes] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
-      listAircraft({ limit: 100, activa: true }),
-      listUsers({ rol: "PILOTO", limit: 50 }),
-      listAirports({ limit: 200, activo: true }),
+      // Catálogos de los diálogos (asignar avión/piloto, editar ruta): si uno
+      // falla, el vuelo SIGUE viéndose — antes tumbaban el detalle entero.
+      degradado.opcional("las aeronaves", listAircraft({ limit: 100, activa: true }), {
+        data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+      }),
+      degradado.opcional("los pilotos", listUsers({ rol: "PILOTO", limit: 50 }), {
+        data: [] as Awaited<ReturnType<typeof listUsers>>["data"],
+      }),
+      degradado.opcional("los aeropuertos", listAirports({ limit: 200, activo: true }), {
+        data: [] as Awaited<ReturnType<typeof listAirports>>["data"],
+      }),
       getFlightTacoPhotos(id).catch(() => []),
       getFlightBitacora(id),
       // Historial de gastos (gasto_bitacora): best-effort dentro del propio
@@ -316,6 +331,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
   return (
     <div className="space-y-6">
+      {/* Catálogos de los diálogos que no cargaron: se dice, no se finge. */}
+      <AvisoDegradado faltantes={degradado.faltantes} />
       {snapshot.estado === "COTIZADO" && (
         <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm flex items-center justify-between gap-3 flex-wrap">
           <p className="text-sky-700 dark:text-sky-300">

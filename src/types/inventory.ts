@@ -245,6 +245,88 @@ export interface InventarioItemResumen {
   };
 }
 
+// ───────── Baja de un movimiento de cardex (21-sep-2026) ─────────
+
+/**
+ * Por qué NO se puede eliminar un movimiento. Los decide el API
+ * (`eliminar-movimiento.util.ts`): el panel NUNCA los deduce ni recalcula el
+ * cardex — solo pinta el veredicto y el mensaje que vienen en la respuesta.
+ */
+export type CodigoBloqueoEliminacion =
+  | "MOVIMIENTO_DE_COMPRA"
+  | "STOCK_NEGATIVO"
+  | "CAMBIA_COSTO_FIFO"
+  | "GASTO_BLOQUEADO"
+  | "TIPO_NO_SOPORTADO";
+
+/** Gasto REFACCION/BODEGA que se iría con el movimiento (o que lo bloquea). */
+export interface GastoLigadoEliminacion {
+  id: string;
+  monto: number;
+  moneda: string;
+  aeronave_matricula: string | null;
+  fecha_gasto: string | null;
+  /** Ya está conciliado / facturado / dejó de ser de bodega: no se puede borrar. */
+  bloqueado: boolean;
+  motivo_bloqueo: string | null;
+}
+
+/**
+ * GET /v1/inventory/items/:id/movimientos/:movId/eliminacion (ADMIN) — vista
+ * previa: SOLO lee. `mensaje` ya viene en es-MX y dice qué eliminar primero.
+ */
+export interface EliminacionMovimientoPreview {
+  permitido: boolean;
+  codigo_bloqueo: CodigoBloqueoEliminacion | null;
+  mensaje: string;
+  stock_antes: number;
+  stock_despues: number;
+  movimiento: {
+    tipo: string;
+    cantidad: number;
+    /** YYYY-MM-DD. */
+    fecha: string;
+    /** Matrícula, 'FLOTA' (salida prorrateada) o null. */
+    aeronave: string | null;
+  };
+  gastos: GastoLigadoEliminacion[];
+  /** La ENTRADA nació de recibir una compra: se corrige desde Compras. */
+  de_compra: { folio: number | null } | null;
+}
+
+/** DELETE /v1/inventory/items/:id/movimientos/:movId (SOLO ADMIN). */
+export interface EliminarMovimientoResultado {
+  ok: true;
+  auditoria_id: string | null;
+  gastos_eliminados: number;
+  stock_resultante: number;
+  valor_usd: number;
+  valor_mxn: number;
+}
+
+/**
+ * GET /v1/inventory/items/:id/movimientos-eliminados (OFICINA) — bitácora:
+ * qué se borró, QUIÉN, CUÁNDO y con qué MOTIVO. [] cuando la migración
+ * 20260921000001 todavía no está aplicada.
+ */
+export interface MovimientoEliminado {
+  id: string;
+  movimiento_id: string;
+  tipo: string;
+  cantidad: number;
+  fecha_movimiento: string;
+  aeronave_matricula: string | null;
+  motivo: string;
+  /** Aditivo del API (uuid del autor); el nombre es lo que se pinta. */
+  eliminado_por?: string | null;
+  eliminado_por_nombre: string | null;
+  eliminado_at: string;
+  gastos_eliminados: number;
+  monto_gastos: number | null;
+  /** Sin la moneda, `monto_gastos` no se puede pintar sin mentir. Aditivo. */
+  moneda_gastos?: string | null;
+}
+
 /** GET /v1/inventory/codigo/:codigo — un código identifica un ítem O un empaque. */
 export interface CodigoLookup {
   tipo: "ITEM" | "EMPAQUE";
