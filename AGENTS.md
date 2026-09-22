@@ -1525,6 +1525,43 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   MISMO formato con el que la card de Mantenimientos muestra esa orden, y dos
   formatos para el mismo dato confunden al operador.
 
+## Valorizado de la bodega: JAMÁS un USD sumado como MXN (22-sep-2026)
+
+- Reporte del cliente sobre la hoja «inventario» del Balance general: «Aceite
+  15w 50 · 30 · **$3,300.00 MXN**» cuando la única entrada fueron 30 × 110
+  **USD sin tipo de cambio**. Medido en prod: **67 de las 68 ENTRADAs** (la
+  carga VTF-INV-001 del 29-ago) están así, o sea casi toda la bodega —
+  **78,398.88 dólares rotulados como pesos**.
+- El API (invariante 8, `inventario-cardex.util.ts#statsFromLayers`) partió el
+  valorizado en DOS campos que **nunca se suman entre sí**: `valor_mxn` /
+  `valor_total_mxn` / `totales.valor_costo_mxn` pasan a traer **SOLO pesos
+  reales** (compra en MXN, o USD con T.C.) y lo comprado en dólares sin T.C.
+  viaja aparte, EN DÓLARES, en los ADITIVOS `valor_usd_sin_tc`,
+  `valor_total_usd_sin_tc`, `totales.valor_costo_usd` y `pesos_exactos` /
+  `totales.valor_sin_tc`.
+- **`valor_mxn` CAMBIÓ DE SIGNIFICADO**: el panel pintaba ese campo tal cual en
+  `/admin/inventory` («valorizado $X (FIFO)») y en el detalle del producto
+  («Valorizado»), así que sin tocar nada las dos pantallas dirían **«$0.00
+  MXN»** para 63 de los 66 productos. No es mentira, pero es MUDO — y el
+  operador acaba de reportar justo lo contrario.
+- **FUENTE ÚNICA** `lib/admin/inventario-valorizado.ts` (PURA, prueba
+  `__tests__/inventario-valorizado.test.ts` con el caso real del 15W-50):
+  `textoValorizado({mxn, usdSinTc, pesosExactos})` → «$3,500.00 MXN» (sin
+  dólares, idéntico a antes) · «$1,785 USD (sin T.C.)» (todo en dólares) ·
+  «$2,000.00 MXN + $200 USD (sin T.C.)» (mixto), `tieneUsdSinTc`,
+  `NOTA_VALOR_SIN_TC` (dice qué hacer: capturar el T.C. con «Editar costo») y
+  `TITULO_VALOR_SIN_TC`. La moneda va SIEMPRE escrita porque `fmtUsd` y
+  `fmtMxn` comparten el símbolo «$». Ningún componente redacta estas frases.
+- `lib/api/inventory-server.ts#listInventarioTodo` suma **DOS totales**
+  (`valor_total_mxn` y `valor_total_usd_sin_tc`): juntarlos en su `reduce`
+  reintroduciría el bug del cliente, esta vez en el panel.
+- **SKEW**: el aditivo AUSENTE (API previo) ⇒ todo se comporta exactamente como
+  hoy. `pesos_exactos` ausente NO significa «hay dólares»: nada se adivina.
+- `costo_fifo_mxn_actual` («Costo FIFO» del detalle) **sigue trayendo el número
+  en dólares** cuando la capa más vieja no tiene T.C.: no es una suma de dinero
+  y el API lo dejó así a propósito (lo cualifica `pesos_exactos`). Si el cliente
+  lo reporta, el arreglo es del API, no de aquí.
+
 ## Cardex: eliminar un movimiento con justificación (21-sep-2026)
 
 - Pedido del cliente (captura del «Cardex completo» de un ítem con tres

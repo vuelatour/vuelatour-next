@@ -26,6 +26,12 @@ import { listProviders } from "@/lib/api/providers-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
 import { fmtMxn } from "@/lib/format";
+import {
+  NOTA_VALOR_SIN_TC,
+  TITULO_VALOR_SIN_TC,
+  textoValorizado,
+  tieneUsdSinTc,
+} from "@/lib/admin/inventario-valorizado";
 import { Degradaciones, principal } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
@@ -57,13 +63,20 @@ export default async function InventoryPage() {
     data: items,
     count,
     valor_total_mxn,
+    valor_total_usd_sin_tc,
     ganancia_total_mxn,
   } = bodega.datos ?? {
     data: [],
     count: 0,
     valor_total_mxn: 0,
+    valor_total_usd_sin_tc: 0,
     ganancia_total_mxn: 0,
   };
+  // Valorizado: pesos reales y dólares sin T.C. van SEPARADOS y cada uno con
+  // su moneda escrita (invariante 8 del API, 22-sep-2026). Con casi toda la
+  // bodega comprada en dólares sin T.C., pintar solo los pesos diría
+  // «valorizado $0.00» de una bodega de ~78,000 USD.
+  const valorizado = { mxn: valor_total_mxn, usdSinTc: valor_total_usd_sin_tc };
   // Alta masiva: el API la permite a ADMIN/MECANICO (y COORDINADOR); SOCIO
   // solo consulta, así que no se le muestra un botón que le daría 403.
   const puedeAltaMasiva = !!me && me.rol !== "SOCIO";
@@ -106,7 +119,10 @@ export default async function InventoryPage() {
           ) : (
             <p className="text-sm text-muted-foreground mt-1">
               {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado{" "}
-              {fmtMxn(valor_total_mxn)} (FIFO) · ganancia acumulada{" "}
+              <span title={tieneUsdSinTc(valorizado) ? TITULO_VALOR_SIN_TC : undefined}>
+                {textoValorizado(valorizado)}
+              </span>{" "}
+              (FIFO) · ganancia acumulada{" "}
               {hayGanancia ? (
                 <span
                   className={
@@ -130,6 +146,11 @@ export default async function InventoryPage() {
             hoja Inventario del Balance general VuelaTour). Toca un producto para ver sus compras,
             ventas y resumen por día.
           </p>
+          {/* Por qué el valorizado en pesos puede verse en cero: casi toda la
+              bodega se capturó en dólares sin tipo de cambio. */}
+          {bodega.ok && tieneUsdSinTc(valorizado) && (
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{NOTA_VALOR_SIN_TC}</p>
+          )}
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* Compras de refacciones: factura + envío + impuestos → costo real

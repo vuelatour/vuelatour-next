@@ -13,6 +13,12 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import {
+  NOTA_VALOR_SIN_TC,
+  TITULO_VALOR_SIN_TC,
+  textoValorizado,
+  tieneUsdSinTc,
+} from "@/lib/admin/inventario-valorizado";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
 import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
@@ -89,6 +95,15 @@ export default async function InventoryItemPage({
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
   }
+
+  // Valorizado en DOS monedas que jamás se suman: pesos reales
+  // (`valor_mxn`) y lo comprado en dólares sin T.C. (`valor_usd_sin_tc`,
+  // ADITIVO — ausente con un API previo ⇒ se pinta como siempre).
+  const valorizado = {
+    mxn: item.valor_mxn,
+    usdSinTc: item.valor_usd_sin_tc,
+    pesosExactos: item.pesos_exactos,
+  };
 
   const empaques = item.empaques ?? [];
   const empaqueEscaneado =
@@ -185,8 +200,19 @@ export default async function InventoryItemPage({
               : "A costo FIFO"
           }
         />
-        <Stat label="Valorizado" value={fmtMxn(item.valor_mxn)} />
+        {/* Valorizado: cada moneda en su sitio. `valor_mxn` ya solo trae
+            pesos REALES (invariante 8 del API, 22-sep-2026); lo comprado en
+            dólares sin T.C. se pinta en dólares en vez de desaparecer en un
+            «$0.00 MXN». Con un API previo (sin el aditivo) se ve como antes. */}
+        <Stat
+          label="Valorizado"
+          value={textoValorizado(valorizado)}
+          title={tieneUsdSinTc(valorizado) ? TITULO_VALOR_SIN_TC : undefined}
+        />
       </div>
+      {tieneUsdSinTc(valorizado) && (
+        <p className="text-xs text-amber-700 dark:text-amber-400 -mt-3">{NOTA_VALOR_SIN_TC}</p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,320px)]">
         <EmpaquesCard
@@ -264,9 +290,19 @@ export default async function InventoryItemPage({
   );
 }
 
-function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function Stat({
+  label,
+  value,
+  highlight,
+  title,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  title?: string;
+}) {
   return (
-    <Card>
+    <Card title={title}>
       <CardContent className="py-4">
         <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
         <p className={`text-xl font-semibold tabular-nums mt-1 ${highlight ? "text-amber-600" : ""}`}>

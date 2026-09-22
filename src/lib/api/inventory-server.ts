@@ -41,6 +41,8 @@ export async function listInventarioTodo(
   query: Omit<ListInventarioQuery, "limit" | "offset" | "bajo_stock"> = {},
 ): Promise<
   Pick<InventarioListResponse, "data" | "count" | "valor_total_usd" | "valor_total_mxn"> & {
+    /** Σ en DÓLARES de lo comprado sin T.C. — JAMÁS se suma con los pesos. */
+    valor_total_usd_sin_tc: number;
     ventas_total_mxn: number;
     ganancia_total_mxn: number;
   }
@@ -59,7 +61,14 @@ export async function listInventarioTodo(
     data,
     count: first.count,
     valor_total_usd: round2(data.reduce((s, d) => s + (Number(d.valor_usd) || 0), 0)),
+    // DOS monedas, DOS sumas: `valor_mxn` trae SOLO pesos reales y lo
+    // comprado en dólares sin T.C. se suma APARTE, en dólares (invariante 8
+    // del API, 22-sep-2026). Juntarlas aquí reintroduciría el bug que
+    // reportó el cliente, esta vez en el panel.
     valor_total_mxn: round2(data.reduce((s, d) => s + (Number(d.valor_mxn) || 0), 0)),
+    valor_total_usd_sin_tc: round2(
+      data.reduce((s, d) => s + (Number(d.valor_usd_sin_tc) || 0), 0),
+    ),
     // Ganancia / pérdida acumulada de la bodega (Σ de lo que manda el API por
     // ítem; null = ese ítem nunca vendió con precio y no suma).
     ventas_total_mxn: round2(data.reduce((s, d) => s + (Number(d.ventas_mxn) || 0), 0)),

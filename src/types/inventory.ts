@@ -59,8 +59,23 @@ export interface InventarioItemWithStock extends InventarioItem {
   stock: number;
   valor_usd: number;
   costo_fifo_actual: number;
-  /** Valorizado en pesos (moneda operativa del cliente); el USD es para el reparto. */
+  /**
+   * Valorizado en pesos REALES (moneda operativa del cliente); el USD es para
+   * el reparto. **Cambió de significado el 22-sep-2026** (invariante 8 del
+   * API): ya NO incluye lo comprado en dólares sin tipo de cambio — eso viaja
+   * en `valor_usd_sin_tc`. Jamás sumar los dos (ver `lib/admin/
+   * inventario-valorizado.ts`).
+   */
   valor_mxn: number;
+  /** ADITIVO: valorizado en DÓLARES de las capas sin T.C. Ausente = API previo. */
+  valor_usd_sin_tc?: number;
+  /** ADITIVO: `valor_mxn` ya es TODO el valorizado. Ausente = API previo. */
+  pesos_exactos?: boolean;
+  /**
+   * Costo unitario FIFO de la capa más antigua VIVA. OJO: sigue trayendo el
+   * número en dólares cuando esa capa se compró en USD sin T.C. (no es una
+   * suma de dinero; el API lo cualifica con `pesos_exactos`).
+   */
   costo_fifo_mxn_actual: number;
   bajo_stock: boolean;
   /**
@@ -140,7 +155,10 @@ export interface InventarioListResponse {
   limit: number;
   offset: number;
   valor_total_usd: number;
+  /** Σ `valor_mxn` — SOLO pesos reales desde el 22-sep-2026 (ver el ítem). */
   valor_total_mxn: number;
+  /** ADITIVO: Σ `valor_usd_sin_tc`, en DÓLARES y aparte. Ausente = API previo. */
+  valor_total_usd_sin_tc?: number;
   /** Por página, como valor_total_*; el cliente re-suma. Opcionales por skew. */
   ventas_total_mxn?: number;
   ganancia_total_mxn?: number;
@@ -252,7 +270,12 @@ export interface InventarioItemResumen {
     /** Algún movimiento del cardex está en USD sin TC (filas con `sin_tc`). */
     con_movimientos_sin_tc: boolean;
     existencia_actual: number;
+    /** SOLO pesos reales desde el 22-sep-2026 (invariante 8 del API). */
     valor_costo_mxn: number;
+    /** ADITIVO: la parte del valorizado que está en dólares sin T.C. */
+    valor_costo_usd?: number | null;
+    /** ADITIVO: alguna capa viva está en dólares sin T.C. */
+    valor_sin_tc?: boolean;
   };
 }
 
