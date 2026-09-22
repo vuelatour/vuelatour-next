@@ -362,6 +362,116 @@ export function subtotalSinIvaUsd(b: QuoteBreakdown | null): number | null {
   return Math.round((Number(b.totales.total_usd) - Number(b.totales.iva_usd)) * 100) / 100;
 }
 
+// ===== Conceptos SIN IVA debajo del IVA (22-sep-2026) =====
+// Port EXACTO de `particionar_por_iva` (`cotizacion_pdf.py`), la función que
+// comparten el PDF del cliente, el interno y el de grupo. La hoja REPLICA el
+// PDF del cliente, así que aquí no se decide nada: se traduce.
+
+/** Rótulo del bloque que va DEBAJO del IVA (= `ETIQUETA_SIN_IVA`). */
+export const ETIQUETA_SIN_IVA = "No causan IVA";
+/** Renglón sobre el IVA con la partición ACTIVA (= `ETIQUETA_BASE_GRAVABLE`). */
+export const ETIQUETA_BASE_GRAVABLE = "Subtotal gravable";
+/** Renglón sobre el IVA sin partición: el de siempre (= `ETIQUETA_SUBTOTAL`). */
+export const ETIQUETA_SUBTOTAL = "Subtotal (sin IVA)";
+/** Medio centavo: todo lo que llega del motor va redondeado a 2 decimales. */
+export const TOLERANCIA_USD = 0.005;
+
+/**
+ * Una fila del desglose lista para particionar: su `montoUsd`, si NO causa
+ * IVA y la `fila` que el documento pintará (en pyservices es el HTML ya
+ * armado; aquí, el `ReactNode` del renglón). El contenido es opaco: esta
+ * función solo ORDENA.
+ */
+export interface LineaIva<T> {
+  montoUsd: number;
+  exento: boolean;
+  fila: T;
+}
+
+/**
+ * Resultado de `particionarPorIva`. Con `activa: false` el documento pinta
+ * EXACTAMENTE lo de siempre (mismo orden, misma etiqueta de subtotal):
+ * `gravables` trae entonces TODAS las filas en su orden original y `exentos`
+ * va vacío.
+ */
+export interface ParticionIva<T> {
+  activa: boolean;
+  gravables: LineaIva<T>[];
+  exentos: LineaIva<T>[];
+  baseUsd: number;
+}
+
+/**
+ * Separa las filas del desglose en GRAVABLES (arriba, suman la base del IVA)
+ * y EXENTAS (bajan DEBAJO del IVA, bajo «No causan IVA»).
+ *
+ * Pedido del cliente (22-sep-2026): «los conceptos que estén SIN IVA que
+ * vayan ABAJO de donde está el IVA, para que se entienda visualmente que no
+ * lleva IVA». Eso obliga a redefinir el renglón que va SOBRE el IVA: hoy vale
+ * `total − IVA` e INCLUYE los exentos, así que bajarlos dejaría una columna
+ * que ni suma lo de arriba ni es la base del 16 %. Con la partición activa
+ * ese renglón pasa a ser la BASE GRAVABLE.
+ *
+ * NADA se recalcula: es una partición de PRESENTACIÓN sobre montos que ya
+ * vienen del motor. Por eso, antes de reordenar, se comprueban las dos
+ * identidades (tolerancia de medio centavo):
+ *
+ *     Σ(gravables)            == base
+ *     base + IVA + Σ(exentos) == total
+ *
+ * Si alguna falla —el caso conocido es el AJUSTE canónico, que mezcla la
+ * parte que entra a la base con el redondeo que se suma DESPUÉS del IVA— se
+ * DEGRADA al layout de siempre. Jamás una columna que no suma.
+ *
+ * ACTIVACIÓN CONDICIONAL: hace falta al menos un concepto exento con monto
+ * ≠ 0 **y** IVA > 0. Sin exentos, `subtotal == base` y «Subtotal (sin IVA)»
+ * sigue siendo verdad: la hoja sale idéntica a la de antes.
+ *
+ * `ivaBaseUsd` es `breakdown.iva.base_usd`; si no viaja (snapshot legado) se
+ * deriva como `total − IVA − Σ exentos`, que es RE-SUMAR la columna — lo
+ * único que se permite hacer aquí con dinero ajeno.
+ *
+ * TERCERA identidad, obligatoria SOLO cuando la base se derivó (22-sep-2026,
+ * revisión adversaria): una base derivada cumple la segunda identidad POR
+ * CONSTRUCCIÓN —se despejó de ella— y la primera también cuando el desvío
+ * vive en una fila de arriba, que es justo lo que hace el REDONDEO
+ * automático (se absorbe en «Servicio aéreo»). Sin este candado se rotularía
+ * «Subtotal gravable» un número cuyo 16 % NO es el IVA impreso. Por eso se
+ * exige además `base × ivaPct / 100 == IVA`, y sin `ivaPct` se degrada.
+ */
+export function particionarPorIva<T>(
+  lineas: ReadonlyArray<LineaIva<T>>,
+  ivaBaseUsd: number | null | undefined,
+  ivaUsd: number,
+  totalUsd: number,
+  ivaPct = 0,
+): ParticionIva<T> {
+  const gravables: LineaIva<T>[] = [];
+  const exentos: LineaIva<T>[] = [];
+  for (const ln of lineas) {
+    const destino = ln.exento && Math.abs(ln.montoUsd) >= TOLERANCIA_USD ? exentos : gravables;
+    destino.push(ln);
+  }
+  const deGracia = (): ParticionIva<T> => ({
+    activa: false,
+    gravables: [...lineas],
+    exentos: [],
+    baseUsd: 0,
+  });
+  if (exentos.length === 0 || ivaUsd <= TOLERANCIA_USD) return deGracia();
+  const sumaExentos = exentos.reduce((acc, ln) => acc + ln.montoUsd, 0);
+  // `Number.isFinite` cubre lo que en Python es `is not None`: un snapshot sin
+  // `iva.base_usd` llega como undefined/NaN y ahí se re-suma la columna.
+  const derivada = !(ivaBaseUsd != null && Number.isFinite(ivaBaseUsd));
+  const base = derivada ? totalUsd - ivaUsd - sumaExentos : Number(ivaBaseUsd);
+  const sumaGravables = gravables.reduce((acc, ln) => acc + ln.montoUsd, 0);
+  const cuadraBase = Math.abs(sumaGravables - base) <= TOLERANCIA_USD;
+  const cuadraTotal = Math.abs(base + ivaUsd + sumaExentos - totalUsd) <= TOLERANCIA_USD;
+  const cuadraPct = !derivada || Math.abs(base * (ivaPct / 100) - ivaUsd) <= TOLERANCIA_USD;
+  if (!cuadraBase || !cuadraTotal || !cuadraPct) return deGracia();
+  return { activa: true, gravables, exentos, baseUsd: base };
+}
+
 /** Descuento IMPRESO: |ajuste| solo si fue negativo (el redondeo nunca se lista). */
 export function descuentoImpresoUsd(b: QuoteBreakdown | null): number {
   const ajuste = Number(b?.totales.ajuste_final_usd) || 0;

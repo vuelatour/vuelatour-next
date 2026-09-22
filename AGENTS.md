@@ -1730,6 +1730,67 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   (`cargoGrupoCompleto` ≡ el filtro del payload en producto cartesiano, los
   tres motivos con su índice y el texto del aviso).
 
+## Desglose: conceptos sin IVA debajo del IVA (22-sep-2026)
+
+- Pedido del cliente: «los conceptos que estén SIN IVA que vayan ABAJO de
+  donde está el IVA, para que se entienda visualmente que no lleva IVA, igual
+  en la cotización». Aplica a los TRES PDF (cliente, interno, grupo) y a la
+  hoja WYSIWYG del panel, que replica el del cliente.
+- **No es mover renglones**: cambia el significado del que va SOBRE el IVA.
+  Hoy vale `total − IVA` e INCLUYE los exentos, así que bajarlos dejaría una
+  columna que ni suma lo de arriba ni es la base del 16 % — las dos lecturas
+  del Excel de la oficina rotas a la vez. Con la partición ACTIVA ese renglón
+  pasa a ser la BASE GRAVABLE y se rotula «**Subtotal gravable**»; los exentos
+  bajan bajo «**No causan IVA**», antes del Total.
+- **FUENTE ÚNICA `particionarPorIva`** (`lib/admin/quote-sheet.ts`, PURA,
+  genérica sobre la fila): port EXACTO de `particionar_por_iva` de
+  `cotizacion_pdf.py` — mismos umbrales, mismo orden de decisiones, mismas
+  etiquetas literales (`ETIQUETA_BASE_GRAVABLE`, `ETIQUETA_SUBTOTAL`,
+  `ETIQUETA_SIN_IVA`, `TOLERANCIA_USD = 0.005`). Si allá cambia, aquí también
+  o la pantalla y el papel divergen. Prueba:
+  `lib/admin/__tests__/quote-sheet.test.ts`.
+- **ACTIVACIÓN CONDICIONAL**: hace falta al menos un exento con monto ≠ 0 **y**
+  IVA > 0. Además se verifican las identidades (tolerancia de medio
+  centavo) antes de reordenar: `Σ gravables == base` y
+  `base + IVA + Σ exentos == total`. Si alguna falla se DEGRADA al layout de
+  siempre. **Jamás una columna que no suma** — y ningún monto cambia nunca:
+  solo su posición y la etiqueta.
+- **TERCERA identidad, solo si la base se DERIVÓ**: `base × ivaPct == IVA`.
+  Una base derivada cumple la segunda identidad por construcción, así que sin
+  este candado se rotularía «Subtotal gravable» un número cuyo 16 % no es el
+  IVA impreso (caso real: redondeo POST-IVA absorbido en «Servicio aéreo»).
+  El porcentaje se pasa desde `breakdown.iva.porcentaje × 100`, el mismo que
+  se pinta en la etiqueta. En la hoja **casi nunca aplica** (aquí la base SÍ
+  viaja, en `breakdown.iva.base_usd`): existe para que el port siga siendo
+  idéntico al de pyservices y para los snapshots legados sin base.
+- Qué cuenta como EXENTO en la hoja: extra con `aplica_iva === false` (también
+  el sintetizado, p. ej. la comisión BillPocket) y **SIEMPRE** la pernocta
+  (`viaticos_pernocta_usd`). El descuento entra como gravable con monto
+  NEGATIVO; las filas de detalle de TUAS sin importe llevan monto 0 y el total
+  va en «TUAS (total)».
+- **Un renglón que NO entra al total aporta 0 y NO se mueve**, aunque venga
+  marcado «sin IVA»: `estadoExtra` manda (21-sep-2026). Moverlo al bloque de
+  exentos lo haría parecer parte del total y desbalancearía la verificación.
+  Las filas FANTASMA (`data-cot-ui`: TUA exenta, «+ Agregar concepto»,
+  descuento en 0) también aportan 0.
+- `subtotalSinIvaUsd` sigue siendo el valor del renglón cuando la partición NO
+  está activa: no se borró ni se reemplazó.
+- **La base sale de `breakdown.iva.base_usd`**; si el snapshot no la trae se
+  deriva `total − IVA − Σ exentos` (re-sumar la columna, lo único permitido).
+  El API todavía NO manda `iva_base_usd` en el payload del PDF del CLIENTE
+  (Fase 1C), así que pyservices lo deriva; con redondeo POST-IVA + exentos +
+  IVA (0 cotizaciones de 231 en prod) los dos números difieren — y por eso
+  **los dos degradan**: la hoja por `Σ gravables ≠ base` y pyservices por la
+  tercera identidad. Sin ese candado la hoja degradaría y el PDF no.
+- CSS: la regla `.exentos-row` vive en `cotizacion-hoja.css`, que es COPIA de
+  pyservices — tras tocar el CSS allá, `npm run sync:hoja-css`.
+- Fixture **`hoja-sin-iva`** (`__fixtures__/escenarios.ts` + su
+  `.payload.json`): el ÚNICO donde la partición se activa (Servicio aéreo
+  3,700 + TUA 100 + Handler 200 = base 4,000; IVA 640; Transfers 100 +
+  Viáticos 150 debajo; total 4,890). Los otros seis NO cambiaron. Tras tocar
+  `cotizacion_pdf.py` hay que **regenerar** con `npm run gen:hoja-fixture`,
+  nunca a mano.
+
 ## Lista de flota = el pizarrón de Tacómetros (22-sep-2026)
 
 - Pedido del cliente con dos fotos: en `/admin/aircraft` tachó **Pax**,

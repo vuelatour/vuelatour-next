@@ -229,12 +229,13 @@ const CASOS: Caso[] = Object.entries(ESCENARIOS)
 const render = (props: QuoteSheetProps) => parsearHoja(renderToString(<QuoteSheet {...props} />));
 
 describe("fixtures", () => {
-  it("existen los 6 fixtures generados con pyservices (npm run gen:hoja-fixture)", () => {
+  it("existen los 7 fixtures generados con pyservices (npm run gen:hoja-fixture)", () => {
     expect(CASOS.map((c) => c.nombre).sort()).toEqual([
       "hoja-externo",
       "hoja-horas8",
       "hoja-multidia",
       "hoja-normal",
+      "hoja-sin-iva",
       "hoja-tc6",
       "hoja1",
     ]);
@@ -266,6 +267,52 @@ describe("fixtures", () => {
     expect(html).toContain("Servicio aéreo (2.33333 h × $600.00/hr)");
     expect(html).not.toContain("2.3333 h ×");
   });
+
+  /**
+   * CONCEPTOS SIN IVA DEBAJO DEL IVA (22-sep-2026, pedido del cliente). El
+   * fixture `hoja-sin-iva` congela el ORDEN del PDF: gravables → «Subtotal
+   * gravable» (la BASE del 16 %, ya sin los exentos) → IVA → rótulo «No
+   * causan IVA» → los exentos → Total. Los `describe.each` comparan todo el
+   * texto; esto deja a la vista qué se rompió para quien lo rompa.
+   */
+  it("hoja-sin-iva congela el orden del PDF (base gravable → IVA → No causan IVA)", () => {
+    const html = CASOS.find((c) => c.nombre === "hoja-sin-iva")!.html;
+    const orden = [
+      "Servicio aéreo",
+      "Handler",
+      "Subtotal gravable",
+      "$4,000.00",
+      "IVA (16%)",
+      "No causan IVA",
+      "Transfers",
+      "Viáticos por pernocta",
+      "Total (USD)",
+    ];
+    let desde = 0;
+    for (const t of orden) {
+      const i = html.indexOf(t, desde);
+      expect(i, `«${t}» fuera de orden en el PDF`).toBeGreaterThan(-1);
+      desde = i;
+    }
+    // El renglón sobre el IVA YA NO es «total − IVA» ($4,250.00): con
+    // exentos eso no era ni la suma de arriba ni la base del 16 %.
+    expect(html).not.toContain("Subtotal (sin IVA)");
+    expect(html).not.toContain("$4,250.00");
+  });
+
+  /**
+   * Los otros SEIS fixtures salen EXACTAMENTE como antes: o no tienen ningún
+   * concepto exento, o su IVA es 0, o (hoja1) sus identidades no cuadran y
+   * la partición DEGRADA. Nunca «Subtotal gravable» sin exentos debajo.
+   */
+  it.each(CASOS.filter((c) => c.nombre !== "hoja-sin-iva"))(
+    "$nombre conserva «Subtotal (sin IVA)» y no pinta el bloque de exentos",
+    ({ html }) => {
+      expect(html).toContain("Subtotal (sin IVA)");
+      expect(html).not.toContain("Subtotal gravable");
+      expect(html).not.toContain("No causan IVA");
+    },
+  );
 });
 
 describe.each(CASOS)("QuoteSheet = hoja 1 del PDF · $nombre", ({ html, props }) => {

@@ -565,6 +565,125 @@ export function escenarioHoras8(): Omit<QuoteSheetProps, "mapaSvg"> {
   };
 }
 
+// ===== hoja-sin-iva: CONCEPTOS QUE NO CAUSAN IVA (22-sep-2026, pedido del
+// cliente: «los conceptos que estén SIN IVA que vayan ABAJO de donde está el
+// IVA, para que se entienda visualmente que no lleva IVA»). Es el ÚNICO
+// escenario donde la partición se ACTIVA: hay un extra exento (Transfers) y
+// viáticos por pernocta, con IVA > 0. La columna cuadra por construcción:
+//
+//   Servicio aéreo 3,700 + TUA CUN 100 + Handler 200 = 4,000  ← base gravable
+//   IVA 16 %                                            640
+//   NO CAUSAN IVA: Transfers 100 + Viáticos 150         250
+//   Total                                             4,890
+//
+// Las dos identidades que verifica `particionarPorIva` se cumplen exactas
+// (Σ gravables = base; base + IVA + Σ exentos = total), así que la hoja y el
+// PDF imprimen «Subtotal gravable» y bajan los exentos bajo su rótulo. Los
+// otros seis fixtures NO cambian: o no tienen exentos, o tienen IVA 0, o sus
+// identidades no cuadran (hoja1) y caen en la DEGRADACIÓN al layout de antes.
+const breakdownSinIva = {
+  aeronave: { id: "a2", matricula: "XA-ABC", modelo: "Cessna Grand Caravan", pais_registro: "MX", velocidad_crucero_kts: 170 },
+  ruta: {
+    id: null,
+    origen_iata: "CUN",
+    destino_iata: "CUN",
+    millas_nauticas_base: 120,
+    millas_nauticas_totales: 120,
+    es_redondo_auto: false,
+    num_aterrizajes: 2,
+    escalas: null,
+  },
+  tiempos: { vuelo_hr: 1.7, calzos_hr: 0.3, cobrable_hr: 2 },
+  tarifa: { tipo: "PUBLICO", usd_por_hora: 1850, proviene_de_override: false },
+  tuas: {
+    usd_pax_default: 25,
+    pasajeros: 4,
+    origen: airport("CUN", true, 25),
+    destino: airport("CUN", true, 25),
+    aeropuertos: [airport("CUN", true, 25), airport("CZM", false)],
+    filas: [tua("CUN", 25, 4)],
+    total_usd: 100,
+  },
+  tramos: null,
+  extras: [
+    { concepto: "Handler", monto_usd: 200, moneda: "USD", monto_nativo: 200, tc_aplicado: null, aplica_iva: true },
+    { concepto: "Transfers", monto_usd: 100, moneda: "USD", monto_nativo: 100, tc_aplicado: null, aplica_iva: false },
+  ],
+  desglose: [
+    { clave: "TIEMPO_VUELO", concepto: "Tiempo de vuelo · 2 hr × $1850/hr", monto_usd: 3700 },
+    { clave: "TUAS", concepto: "TUA CUN · $25.00 × 4 pax", monto_usd: 100 },
+    { clave: "EXTRA", concepto: "Handler", monto_usd: 200 },
+    { clave: "EXTRA", concepto: "Transfers", monto_usd: 100 },
+    { clave: "VIATICOS", concepto: "Viáticos por pernocta (sin IVA)", monto_usd: 150 },
+    { clave: "IVA", concepto: "IVA 16%", monto_usd: 640 },
+  ],
+  // La BASE del 16 % NO incluye Transfers ni los viáticos: es justo el
+  // número que el renglón «Subtotal gravable» tiene que imprimir.
+  iva: { aplica_por_metodo_pago: true, porcentaje: 0.16, base_usd: 4000, monto_usd: 640, nota: "" },
+  totales: {
+    subtotal_vuelo_usd: 3700,
+    tuas_total_usd: 100,
+    viaticos_pernocta_usd: 150,
+    extras_total_usd: 300,
+    ajuste_final_usd: 0,
+    iva_usd: 640,
+    total_usd: 4890,
+    total_mxn: 90465,
+  },
+  meta: { calculado_at: "2026-09-22T15:00:00Z", version_motor: "1.3.1" },
+} as unknown as QuoteBreakdown;
+
+export function escenarioSinIva(): Omit<QuoteSheetProps, "mapaSvg"> {
+  return {
+    valores: {
+      cliente_id: "c1",
+      aeronave_id: "a2",
+      pasajeros: 4,
+      fecha_vuelo: "2026-11-05T07:00",
+      fecha_traslado_final: "2026-11-06T18:00",
+      escalas: [
+        {
+          origen_iata: "CUN",
+          destino_iata: "CZM",
+          millas_nauticas: 60,
+          requiere_pernocta: true,
+          pernocta_costo_usd: 150,
+          pdf_fecha: "2026-11-05",
+        },
+        { origen_iata: "CZM", destino_iata: "CUN", millas_nauticas: 60, pdf_fecha: "2026-11-06" },
+      ],
+      tuas_lineas: [],
+      cobrar_tuas: true,
+      extras: [
+        { concepto: "Handler", monto_usd: 200, moneda: "USD", aplica_iva: true },
+        { concepto: "Transfers", monto_usd: 100, moneda: "USD", aplica_iva: false },
+      ],
+      descuento_usd: null,
+      iva_pct_override: null,
+      tc_usd_mxn: 18.5,
+      notas: "Los transfers y los viáticos por pernocta no causan IVA.",
+      pdf_mostrar_tarifa: false,
+      pdf_mostrar_itinerario: true,
+      es_externo: false,
+      avion_externo_modelo: "",
+      avion_externo_matricula: "",
+    },
+    onCambio: () => undefined,
+    breakdown: breakdownSinIva,
+    documento: {
+      folio: "1046",
+      fechaCotizacion: "2026-09-22T15:00:00Z",
+      tipo: "MULTIESCALA",
+      clienteNombre: "Cliente Demo S.A.",
+      modelosCotizados: ["Cessna Grand Caravan"],
+      matricula: "XA-ABC",
+    },
+    catalogos: { clientes: CLIENTES, aeronaves: AERONAVES, aeropuertos: AEROPUERTOS },
+    tramosPdf: { onFechaPdfChange: () => undefined, onOcultoChange: () => undefined },
+    escala: 1,
+  };
+}
+
 /** Nombre del fixture → escenario (props sin `mapaSvg`, que sale del HTML). */
 export const ESCENARIOS: Record<string, () => Omit<QuoteSheetProps, "mapaSvg">> = {
   hoja1: escenarioHoja1,
@@ -573,4 +692,5 @@ export const ESCENARIOS: Record<string, () => Omit<QuoteSheetProps, "mapaSvg">> 
   "hoja-externo": escenarioExterno,
   "hoja-tc6": escenarioTc6,
   "hoja-horas8": escenarioHoras8,
+  "hoja-sin-iva": escenarioSinIva,
 };

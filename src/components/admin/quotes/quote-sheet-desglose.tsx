@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { EllipsisHorizontalIcon, LockClosedIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,9 @@ import {
 } from "@/lib/admin/extras";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import {
+  ETIQUETA_BASE_GRAVABLE,
+  ETIQUETA_SIN_IVA,
+  ETIQUETA_SUBTOTAL,
   descuentoImpresoUsd,
   esExtraSintetizado,
   etiquetaExtra,
@@ -23,11 +26,13 @@ import {
   montoExtraImpreso,
   numero2,
   numeroG,
+  particionarPorIva,
   piezasConceptoTua,
   porcentajeEntero,
   servicioAereoImpresoUsd,
   subtotalSinIvaUsd,
   tuasDetalleLegado,
+  type LineaIva,
 } from "@/lib/admin/quote-sheet";
 import { moneyTarifa } from "@/lib/admin/tarifa";
 import { upsertTuaLinea } from "@/lib/admin/tuas";
@@ -53,12 +58,22 @@ const TITULO_AJUSTAR_TARIFA = "Tarifa por hora y horas cobrables se ajustan en I
 /**
  * DESGLOSE de la hoja editable (form-as-document, 8-sep-2026): la MISMA
  * `<table class="totales">` del PDF, fila por fila y en el mismo orden
- * (Servicio aéreo · TUAS · extras · Viáticos · Descuento · Subtotal · IVA ·
- * Total · Total MXN), donde lo editable se captura en su posición final:
- * el unitario de cada TUA dentro de su concepto, concepto/monto/moneda de
- * cada extra, el descuento, el % de IVA en su etiqueta y el T.C. en la línea
- * «Total MXN». TODOS los montos vienen del breakdown de `/calculate`; aquí
- * solo se pintan en su celda `.val` (`moneyPdf` = `_money` del armador).
+ * (Servicio aéreo · TUAS · extras · Descuento · Subtotal · IVA · [No causan
+ * IVA: extras exentos · Viáticos] · Total · Total MXN), donde lo editable se
+ * captura en su posición final: el unitario de cada TUA dentro de su
+ * concepto, concepto/monto/moneda de cada extra, el descuento, el % de IVA en
+ * su etiqueta y el T.C. en la línea «Total MXN». TODOS los montos vienen del
+ * breakdown de `/calculate`; aquí solo se pintan en su celda `.val`
+ * (`moneyPdf` = `_money` del armador).
+ *
+ * CONCEPTOS SIN IVA DEBAJO DEL IVA (22-sep-2026, pedido del cliente): el
+ * orden lo decide `particionarPorIva` (`lib/admin/quote-sheet.ts`), port
+ * EXACTO de la función homónima de `cotizacion_pdf.py` que comparten los tres
+ * PDF. Ningún monto cambia: solo su posición y la etiqueta del renglón que va
+ * sobre el IVA, que con la partición activa pasa a ser la BASE GRAVABLE
+ * («Subtotal gravable»). Cada fila declara con cuánto SUMA al documento: las
+ * fantasma, las de detalle sin importe y los renglones que no entran al total
+ * declaran 0, así que nunca desbalancean la verificación.
  *
  * Filas FANTASMA (`data-cot-ui`, no se imprimen): descuento en 0, TUA
  * exenta (con «capturar»), Total MXN sin T.C., «+ Agregar concepto».
@@ -196,130 +211,173 @@ export function QuoteSheetDesglose({
   const tc = Number(valores.tc_usd_mxn) > 0 ? Number(valores.tc_usd_mxn) : null;
   const filaMxnImpresa = totalMxn != null;
 
-  return (
-    <>
-      <h2>Desglose</h2>
-      <table className="totales">
-        <tbody>
-          {/* Servicio aéreo. La etiqueta impresa NO cambia; en edición, EN
-              LA LÍNEA (`.cot-acciones`, como «+ nuevo cliente»: en el margen
-              izquierdo —74 px— «1.60 h × $650.00/hr · ajustar» se saldría
-              del papel y en el derecho caería sobre el monto) va el atajo a
-              Interno › Tarifa y horas, donde SÍ se ajustan tarifa y horas. */}
-          <tr className="cot-fila">
-            <td className="lbl">
-              {etiquetaServicio}
-              {!lectura && onAbrirInterno && (
-                <span className="cot-acciones" {...UI}>
-                  {/* Espacio real = oportunidad de salto antes del «·». */}
-                  {" "}
-                  <span className="cot-sep">·</span>
-                  <button
-                    type="button"
-                    className="cot-liga"
-                    data-guard-exempt
-                    onClick={() => onAbrirInterno("tarifa")}
-                    title={TITULO_AJUSTAR_TARIFA}
-                    aria-label={`${textoAjustar} — ${TITULO_AJUSTAR_TARIFA}`}
-                  >
-                    {textoAjustar}
-                  </button>
-                </span>
-              )}
-            </td>
-            <td className="val">{val(servicio)}</td>
-          </tr>
+  // ===== CUERPO del desglose: conceptos SIN IVA debajo del IVA (22-sep-2026) =====
+  // Las filas se arman ANTES de pintarlas para que `particionarPorIva` —el
+  // MISMO algoritmo de `cotizacion_pdf.py`, importado de `lib/admin/quote-sheet`—
+  // decida cuáles bajan DEBAJO del renglón del IVA. Ningún monto cambia: solo
+  // su posición y la etiqueta del renglón que va sobre el IVA (pasa a ser la
+  // BASE GRAVABLE). Cada fila declara el monto con el que SUMA al documento:
+  // las filas FANTASMA y las de detalle sin importe declaran 0.
+  const cuerpo: LineaIva<ReactNode>[] = [];
+  const agregarFila = (montoUsd: number, exento: boolean, nodo: ReactNode) => {
+    cuerpo.push({ montoUsd, exento, fila: nodo });
+  };
+  const tuasTotalUsd = b ? Number(b.tuas.total_usd) : 0;
 
-          {/* TUAS: sin filas → línea única; una → su concepto; varias → detalle + total */}
-          {filas.length === 0 && detalleLegado.length === 0 && (
-            <tr className="cot-fila">
-              <td className="lbl cot-ancla">
-                TUAS
-                {!lectura && !valores.cobrar_tuas && (
-                  <span className="cot-margen" {...UI}>
-                    <span className="cot-marca" title="Switch «Se cobran TUAS» apagado (Interno)">
-                      no se cobran
-                    </span>
-                  </span>
-                )}
-              </td>
-              <td className="val">{val(b ? b.tuas.total_usd : null)}</td>
-            </tr>
-          )}
-          {filas.length === 0 &&
-            detalleLegado.map((concepto, i) => (
-              <tr key={`leg-${i}`} className="cot-fila">
-                <td className="lbl">{concepto}</td>
-                <td className="val">{detalleLegado.length === 1 ? val(b!.tuas.total_usd) : ""}</td>
-              </tr>
-            ))}
-          {filas.map((f) => (
-            <FilaTua
-              key={f.iata}
-              fila={f}
-              linea={lineaPorIata.get(f.iata)}
-              lectura={lectura}
-              disabled={!valores.cobrar_tuas}
-              onChange={setTua}
-              valor={filas.length === 1 ? val(b!.tuas.total_usd) : ""}
-            />
-          ))}
-          {tuasConTotal && (
-            <tr className="cot-fila">
-              <td className="lbl">TUAS (total)</td>
-              <td className="val">{val(b!.tuas.total_usd)}</td>
-            </tr>
-          )}
-          {aeropuertosSinFila.map((a) => (
-            <FilaTuaExenta
-              key={a.iata}
-              air={a}
-              linea={lineaPorIata.get(a.iata)}
-              paxGlobal={b?.tuas.pasajeros ?? (Number(valores.pasajeros) || 0)}
-              disabled={!valores.cobrar_tuas}
-              onChange={setTua}
-            />
-          ))}
+  // --- Servicio aéreo. La etiqueta impresa NO cambia; en edición, EN LA
+  //     LÍNEA (`.cot-acciones`, como «+ nuevo cliente»: en el margen
+  //     izquierdo —74 px— «1.60 h × $650.00/hr · ajustar» se saldría del
+  //     papel y en el derecho caería sobre el monto) va el atajo a Interno ›
+  //     Tarifa y horas, donde SÍ se ajustan tarifa y horas. ---
+  agregarFila(
+    Number(servicio) || 0,
+    false,
+    <tr key="servicio" className="cot-fila">
+      <td className="lbl">
+        {etiquetaServicio}
+        {!lectura && onAbrirInterno && (
+          <span className="cot-acciones" {...UI}>
+            {/* Espacio real = oportunidad de salto antes del «·». */}
+            {" "}
+            <span className="cot-sep">·</span>
+            <button
+              type="button"
+              className="cot-liga"
+              data-guard-exempt
+              onClick={() => onAbrirInterno("tarifa")}
+              title={TITULO_AJUSTAR_TARIFA}
+              aria-label={`${textoAjustar} — ${TITULO_AJUSTAR_TARIFA}`}
+            >
+              {textoAjustar}
+            </button>
+          </span>
+        )}
+      </td>
+      <td className="val">{val(servicio)}</td>
+    </tr>,
+  );
 
-          {/* Extras capturados */}
-          {extras.map((e, idx) => {
-            const bloqueado = esExtraDeGrupo(e);
-            const unitario = extraUsaUnitario(e);
-            const impreso = montoExtraImpreso(e, idx, b);
-            const soloLectura = lectura || bloqueado;
-            const cantidad = cantidadEfectiva(e, Number(valores.pasajeros) > 0 ? Number(valores.pasajeros) : null);
-            if (lectura) {
-              // Texto EXACTO del PDF (`ExtraPdf`): "{concepto}[ · $X MXN]" + monto USD.
-              return (
-                <tr key={idx} className="cot-fila">
-                  <td className="lbl">
-                    {etiquetaExtra({
-                      concepto: e.concepto,
-                      moneda: e.moneda,
-                      monto_nativo: impreso.monto_nativo ?? undefined,
-                    })}
-                  </td>
-                  <td className="val">{val(impreso.monto_usd)}</td>
-                </tr>
-              );
-            }
-            // ¿Este renglón entra al total? (21-sep-2026) — misma regla que
-            // `extrasAPayload`: si no cuenta, el importe se atenúa y la
-            // leyenda lo dice EN LA FILA, en vez de pintar un monto que el
-            // total ignora y que al guardar se descartaba en silencio.
-            const estado: EstadoExtra = estadoExtra(e, { tcCapturado: tc != null });
-            const fuera = estado !== "ok" && estado !== "vacio";
-            // El precio unitario vive en el detalle «⋯», que EDITA: como la
-            // marca «1.20 h» del itinerario, esa leyenda NO puede ir exenta
-            // del guard de CONFIRMADO/RESERVA (el popover entero sí lo está,
-            // así que sin esto la confirmación única se saltaba).
-            const abreDetalle = estado === "sin_monto" && unitario;
-            // Un renglón de GRUPO se corrige EN EL GRUPO: la leyenda lo dice
-            // igual (es cierto que no suma), pero sin clic — aquí no hay campo
-            // que enfocar y abrir el detalle saltaría el candado «se edita
-            // desde el grupo». El T.C. es la excepción: ese SÍ vive en la hoja.
-            const corregibleAqui = !bloqueado || estado === "mxn_sin_tc";
-            return (
+  // --- TUAS: sin filas → línea única; una → su concepto; varias → detalle + total ---
+  if (filas.length === 0 && detalleLegado.length === 0) {
+    agregarFila(
+      tuasTotalUsd,
+      false,
+      <tr key="tuas" className="cot-fila">
+        <td className="lbl cot-ancla">
+          TUAS
+          {!lectura && !valores.cobrar_tuas && (
+            <span className="cot-margen" {...UI}>
+              <span className="cot-marca" title="Switch «Se cobran TUAS» apagado (Interno)">
+                no se cobran
+              </span>
+            </span>
+          )}
+        </td>
+        <td className="val">{val(b ? b.tuas.total_usd : null)}</td>
+      </tr>,
+    );
+  }
+  if (filas.length === 0) {
+    detalleLegado.forEach((concepto, i) => {
+      agregarFila(
+        detalleLegado.length === 1 ? tuasTotalUsd : 0,
+        false,
+        <tr key={`leg-${i}`} className="cot-fila">
+          <td className="lbl">{concepto}</td>
+          <td className="val">{detalleLegado.length === 1 ? val(b!.tuas.total_usd) : ""}</td>
+        </tr>,
+      );
+    });
+  }
+  filas.forEach((f) => {
+    agregarFila(
+      filas.length === 1 ? tuasTotalUsd : 0,
+      false,
+      <FilaTua
+        key={f.iata}
+        fila={f}
+        linea={lineaPorIata.get(f.iata)}
+        lectura={lectura}
+        disabled={!valores.cobrar_tuas}
+        onChange={setTua}
+        valor={filas.length === 1 ? val(b!.tuas.total_usd) : ""}
+      />,
+    );
+  });
+  if (tuasConTotal) {
+    agregarFila(
+      tuasTotalUsd,
+      false,
+      <tr key="tuas-total" className="cot-fila">
+        <td className="lbl">TUAS (total)</td>
+        <td className="val">{val(b!.tuas.total_usd)}</td>
+      </tr>,
+    );
+  }
+  aeropuertosSinFila.forEach((a) => {
+    agregarFila(
+      0,
+      false,
+      <FilaTuaExenta
+        key={a.iata}
+        air={a}
+        linea={lineaPorIata.get(a.iata)}
+        paxGlobal={b?.tuas.pasajeros ?? (Number(valores.pasajeros) || 0)}
+        disabled={!valores.cobrar_tuas}
+        onChange={setTua}
+      />,
+    );
+  });
+
+  // --- Extras capturados ---
+  extras.forEach((e, idx) => {
+    const bloqueado = esExtraDeGrupo(e);
+    const unitario = extraUsaUnitario(e);
+    const impreso = montoExtraImpreso(e, idx, b);
+    const soloLectura = lectura || bloqueado;
+    const cantidad = cantidadEfectiva(e, Number(valores.pasajeros) > 0 ? Number(valores.pasajeros) : null);
+    // ¿Este renglón entra al total? (21-sep-2026) — misma regla que
+    // `extrasAPayload`. Un renglón que NO cuenta aporta 0 a la partición y
+    // se queda donde está aunque venga marcado «sin IVA»: moverlo al bloque
+    // «No causan IVA» lo haría parecer parte del total.
+    const estado: EstadoExtra = estadoExtra(e, { tcCapturado: tc != null });
+    const fuera = estado !== "ok" && estado !== "vacio";
+    const montoParticion = fuera ? 0 : Number(impreso.monto_usd) || 0;
+    const exento = e.aplica_iva === false;
+    if (lectura) {
+      // Texto EXACTO del PDF (`ExtraPdf`): "{concepto}[ · $X MXN]" + monto USD.
+      agregarFila(
+        montoParticion,
+        exento,
+        <tr key={idx} className="cot-fila">
+          <td className="lbl">
+            {etiquetaExtra({
+              concepto: e.concepto,
+              moneda: e.moneda,
+              monto_nativo: impreso.monto_nativo ?? undefined,
+            })}
+          </td>
+          <td className="val">{val(impreso.monto_usd)}</td>
+        </tr>,
+      );
+      return;
+    }
+    // Si el renglón no cuenta, el importe se atenúa y la leyenda lo dice EN
+    // LA FILA, en vez de pintar un monto que el total ignora y que al guardar
+    // se descartaba en silencio (21-sep-2026).
+    // El precio unitario vive en el detalle «⋯», que EDITA: como la
+    // marca «1.20 h» del itinerario, esa leyenda NO puede ir exenta
+    // del guard de CONFIRMADO/RESERVA (el popover entero sí lo está,
+    // así que sin esto la confirmación única se saltaba).
+    const abreDetalle = estado === "sin_monto" && unitario;
+    // Un renglón de GRUPO se corrige EN EL GRUPO: la leyenda lo dice
+    // igual (es cierto que no suma), pero sin clic — aquí no hay campo
+    // que enfocar y abrir el detalle saltaría el candado «se edita
+    // desde el grupo». El T.C. es la excepción: ese SÍ vive en la hoja.
+    const corregibleAqui = !bloqueado || estado === "mxn_sin_tc";
+    agregarFila(
+      montoParticion,
+      exento,
               <tr key={idx} className={cn("cot-fila", fuera && "cot-fila--fuera")}>
                 <td className="lbl cot-ancla">
                   <CampoHoja
@@ -442,70 +500,121 @@ export function QuoteSheetDesglose({
                     </>
                   )}
                 </td>
-              </tr>
-            );
-          })}
-          {sintetizados.map((e, i) => (
-            <tr key={`sint-${i}`} className="cot-fila">
-              <td className="lbl">{e.concepto}</td>
-              <td className="val">{moneyPdf(e.monto_usd)}</td>
-            </tr>
+              </tr>,
+    );
+  });
+
+  // --- Comisión BillPocket y demás extras SINTETIZADOS por el motor ---
+  sintetizados.forEach((e, i) => {
+    agregarFila(
+      Number(e.monto_usd) || 0,
+      e.aplica_iva === false,
+      <tr key={`sint-${i}`} className="cot-fila">
+        <td className="lbl">{e.concepto}</td>
+        <td className="val">{moneyPdf(e.monto_usd)}</td>
+      </tr>,
+    );
+  });
+
+  // --- «+ Agregar concepto» (croma: no se imprime, no suma) ---
+  if (!lectura) {
+    agregarFila(
+      0,
+      false,
+      <tr key="agregar" className="cot-fila cot-fila-agregar" {...UI}>
+        <td className="lbl" colSpan={2}>
+          <button type="button" className="cot-btn" onClick={() => addExtra("")}>
+            + Agregar concepto
+          </button>
+          {EXTRAS_SUGERIDOS.map((s) => (
+            <span key={s}>
+              <span className="cot-sep">·</span>
+              <button type="button" className="cot-btn" onClick={() => addExtra(s)} title={`Agregar «${s}»`}>
+                {s}
+              </button>
+            </span>
           ))}
-          {!lectura && (
-            <tr className="cot-fila cot-fila-agregar" {...UI}>
-              <td className="lbl" colSpan={2}>
-                <button type="button" className="cot-btn" onClick={() => addExtra("")}>
-                  + Agregar concepto
-                </button>
-                {EXTRAS_SUGERIDOS.map((s) => (
-                  <span key={s}>
-                    <span className="cot-sep">·</span>
-                    <button type="button" className="cot-btn" onClick={() => addExtra(s)} title={`Agregar «${s}»`}>
-                      {s}
-                    </button>
-                  </span>
-                ))}
-              </td>
-            </tr>
-          )}
+        </td>
+      </tr>,
+    );
+  }
 
-          {/* Viáticos por pernocta (derivado del itinerario) */}
-          {Number(b?.totales.viaticos_pernocta_usd) > 0 && (
-            <tr className="cot-fila">
-              <td className="lbl">Viáticos por pernocta</td>
-              <td className="val">{moneyPdf(b!.totales.viaticos_pernocta_usd)}</td>
-            </tr>
-          )}
+  // --- Viáticos por pernocta (derivado del itinerario). SIEMPRE exento: es
+  //     el concepto que el motor publica como «Viáticos por pernocta (sin
+  //     IVA)» en el desglose canónico. ---
+  if (Number(b?.totales.viaticos_pernocta_usd) > 0) {
+    agregarFila(
+      Number(b!.totales.viaticos_pernocta_usd),
+      true,
+      <tr key="pernocta" className="cot-fila">
+        <td className="lbl">Viáticos por pernocta</td>
+        <td className="val">{moneyPdf(b!.totales.viaticos_pernocta_usd)}</td>
+      </tr>,
+    );
+  }
 
-          {/* Descuento: impreso si > 0; fantasma para capturar */}
-          {(filaDescuentoImpresa || !lectura) && (
-            <tr className={cn("cot-fila", !filaDescuentoImpresa && "cot-fila--fantasma")} {...(!filaDescuentoImpresa ? UI : {})}>
-              <td className="lbl">Descuento</td>
-              <td className="val">
-                {lectura ? (
-                  `−${moneyPdf(descuentoImpreso)}`
-                ) : (
-                  <>
-                    −$
-                    <CampoNumero
-                      value={descuentoCapturado > 0 ? descuentoCapturado : null}
-                      onChange={(n) => onCambio("descuento_usd", n != null && n > 0 ? n : null)}
-                      formato={numero2}
-                      placeholder="0.00"
-                      ariaLabel="Descuento (USD, fuera de IVA)"
-                      title="Negociado («ciérramelo en 750»). Fuera de IVA; sale como línea en el PDF."
-                      min={0}
-                      minCh={4}
-                    />
-                  </>
-                )}
-              </td>
-            </tr>
+  // --- Descuento: impreso si > 0; fantasma para capturar. Entra como
+  //     GRAVABLE con monto NEGATIVO (igual que en pyservices). ---
+  if (filaDescuentoImpresa || !lectura) {
+    agregarFila(
+      -descuentoImpreso,
+      false,
+      <tr
+        key="descuento"
+        className={cn("cot-fila", !filaDescuentoImpresa && "cot-fila--fantasma")}
+        {...(!filaDescuentoImpresa ? UI : {})}
+      >
+        <td className="lbl">Descuento</td>
+        <td className="val">
+          {lectura ? (
+            `−${moneyPdf(descuentoImpreso)}`
+          ) : (
+            <>
+              −$
+              <CampoNumero
+                value={descuentoCapturado > 0 ? descuentoCapturado : null}
+                onChange={(n) => onCambio("descuento_usd", n != null && n > 0 ? n : null)}
+                formato={numero2}
+                placeholder="0.00"
+                ariaLabel="Descuento (USD, fuera de IVA)"
+                title="Negociado («ciérramelo en 750»). Fuera de IVA; sale como línea en el PDF."
+                min={0}
+                minCh={4}
+              />
+            </>
           )}
+        </td>
+      </tr>,
+    );
+  }
+
+  // Partición: con exentos (y IVA > 0) el renglón sobre el IVA pasa a ser la
+  // BASE GRAVABLE y los exentos bajan debajo. Si las identidades no cuadran
+  // —el motor va un debounce atrás, o el AJUSTE mezcla base y redondeo
+  // post-IVA— se DEGRADA al layout de siempre. `iva.base_usd` puede faltar en
+  // snapshots legados: `particionarPorIva` re-suma la columna.
+  const particion = particionarPorIva(
+    cuerpo,
+    b?.iva?.base_usd,
+    b ? Number(b.totales.iva_usd) : 0,
+    b ? Number(b.totales.total_usd) : 0,
+    // Porcentaje del MOTOR (fracción → %), el mismo que se pinta en la
+    // etiqueta del IVA. Solo se usa cuando la base hay que derivarla.
+    ivaPctMotor ?? 0,
+  );
+
+  return (
+    <>
+      <h2>Desglose</h2>
+      <table className="totales">
+        <tbody>
+          {particion.gravables.map((ln) => ln.fila)}
 
           <tr className="sub-row cot-fila">
-            <td className="lbl">Subtotal (sin IVA)</td>
-            <td className="val">{val(subtotalSinIvaUsd(b))}</td>
+            <td className="lbl">{particion.activa ? ETIQUETA_BASE_GRAVABLE : ETIQUETA_SUBTOTAL}</td>
+            <td className="val">
+              {particion.activa ? moneyPdf(particion.baseUsd) : val(subtotalSinIvaUsd(b))}
+            </td>
           </tr>
 
           {/* IVA (% editable en la etiqueta) */}
@@ -545,6 +654,19 @@ export function QuoteSheetDesglose({
             </td>
             <td className="val">{val(b ? b.totales.iva_usd : null)}</td>
           </tr>
+
+          {/* Conceptos que NO causan IVA: van DEBAJO del IVA, bajo su rótulo
+              (pedido del cliente 22-sep-2026). Sin exentos —o con las
+              identidades rotas— este bloque no existe y la hoja sale
+              EXACTAMENTE como antes. */}
+          {particion.exentos.length > 0 && (
+            <tr className="exentos-row cot-fila">
+              <td className="lbl" colSpan={2}>
+                {ETIQUETA_SIN_IVA}
+              </td>
+            </tr>
+          )}
+          {particion.exentos.map((ln) => ln.fila)}
 
           <tr className="total-row cot-fila">
             <td>{`Total (${moneda})`}</td>

@@ -210,3 +210,75 @@ describe("hoja · a dónde lleva (y a dónde NO) la leyenda", () => {
     expect(html).not.toContain("se corrige en el grupo");
   });
 });
+
+/**
+ * CRUCE con «conceptos SIN IVA debajo del IVA» (22-sep-2026). Los renglones
+ * exentos bajan bajo el rótulo «No causan IVA» — pero SOLO los que de verdad
+ * suman. Un renglón marcado «sin IVA» que NO entra al total (le falta el
+ * nombre, el monto o el T.C.) se queda donde está, atenuado y con su leyenda:
+ * moverlo al bloque de exentos lo haría parecer parte del total, y además
+ * desbalancearía la verificación que decide si la partición se activa.
+ */
+describe("hoja · un renglón sin IVA que NO cuenta no baja del IVA", () => {
+  const escenario = () => ESCENARIOS["hoja-sin-iva"]() as QuoteSheetProps;
+  /** Cuerpo de la tabla de totales (donde vive el orden del desglose). */
+  const totales = (html: string) => html.slice(html.indexOf('<table class="totales">'));
+  const antesDe = (html: string, a: string, b: string) => {
+    const t = totales(html);
+    return t.indexOf(a) > -1 && t.indexOf(a) < t.indexOf(b);
+  };
+
+  it("el escenario base SÍ parte: Transfers y los viáticos van debajo del IVA", () => {
+    const html = renderToString(<QuoteSheet {...escenario()} lectura />);
+    expect(html).toContain("Subtotal gravable");
+    expect(html).toContain("No causan IVA");
+    expect(antesDe(html, "Handler", "Subtotal gravable")).toBe(true);
+    expect(antesDe(html, "IVA (16%)", "No causan IVA")).toBe(true);
+    expect(antesDe(html, "No causan IVA", "Transfers")).toBe(true);
+    expect(antesDe(html, "Viáticos por pernocta", "Total (USD)")).toBe(true);
+  });
+
+  it("un extra «sin IVA» a medias: sigue arriba del IVA, con su leyenda, y la partición NO se rompe", () => {
+    const p = escenario();
+    const html = renderToString(
+      <QuoteSheet
+        {...p}
+        valores={{
+          ...p.valores,
+          extras: [
+            ...(p.valores.extras ?? []),
+            // Lo que reportó el cliente el 21-sep: $35 capturados, sin nombre.
+            { concepto: "", monto_usd: 35, moneda: "USD", aplica_iva: false },
+          ],
+        }}
+      />,
+    );
+    // El renglón roto no entra al total ⇒ aporta 0 y la partición sigue viva.
+    expect(html).toContain("Subtotal gravable");
+    expect(html).toContain("cot-fila--fuera");
+    expect(html).toContain("Falta el nombre: no se suma ni se imprime");
+    // …y se queda ARRIBA del IVA: no se cuela entre los conceptos exentos.
+    expect(antesDe(html, "cot-fila--fuera", "Subtotal gravable")).toBe(true);
+  });
+
+  it("apagarle el IVA a TODO (efectivo): nada se mueve y vuelve «Subtotal (sin IVA)»", () => {
+    const p = escenario();
+    const b = p.breakdown!;
+    const html = renderToString(
+      <QuoteSheet
+        {...p}
+        lectura
+        breakdown={
+          {
+            ...b,
+            iva: { ...b.iva, aplica_por_metodo_pago: false, porcentaje: 0, base_usd: 4250, monto_usd: 0 },
+            totales: { ...b.totales, iva_usd: 0, total_usd: 4250, total_mxn: null },
+          } as QuoteBreakdown
+        }
+      />,
+    );
+    expect(html).toContain("Subtotal (sin IVA)");
+    expect(html).not.toContain("No causan IVA");
+    expect(antesDe(html, "Transfers", "Subtotal (sin IVA)")).toBe(true);
+  });
+});

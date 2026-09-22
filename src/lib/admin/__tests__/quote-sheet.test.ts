@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ETIQUETA_BASE_GRAVABLE,
+  ETIQUETA_SIN_IVA,
+  ETIQUETA_SUBTOTAL,
+  TOLERANCIA_USD,
   conceptoTua,
   descuentoImpresoUsd,
   etiquetaExtra,
@@ -16,6 +20,7 @@ import {
   modelosCotizadosPdf,
   moneyPdf,
   numeroG,
+  particionarPorIva,
   puntosRutaVisibles,
   rutaFontSize,
   servicioAereoImpresoUsd,
@@ -324,5 +329,121 @@ describe("horas por tramo (feedback 9-sep-2026: solo se pintan, nunca se calcula
     expect(horasTramoTexto({ tiempo_hr: 0.4833 })).toBe("0.48 h");
     expect(horasTramoTexto(null)).toBe("—");
     expect(horasTramoTexto(undefined)).toBe("—");
+  });
+});
+
+/**
+ * CONCEPTOS SIN IVA DEBAJO DEL IVA (22-sep-2026). `particionarPorIva` es el
+ * port EXACTO de la función homónima de `cotizacion_pdf.py`: los dos
+ * documentos (hoja del panel y PDF del cliente) tienen que decidir lo MISMO
+ * con los mismos umbrales, o la pantalla y el papel divergen. Aquí se
+ * congelan los DOS escenarios pedidos —con y sin exentos— y la degradación.
+ */
+describe("particionarPorIva = particionar_por_iva de pyservices", () => {
+  /** Etiqueta de la fila: aquí basta un string (en la hoja es un ReactNode). */
+  const ln = (fila: string, montoUsd: number, exento = false) => ({ montoUsd, exento, fila });
+  const etiquetas = (ls: Array<{ fila: string }>) => ls.map((l) => l.fila);
+
+  /** El caso del fixture `hoja-sin-iva`: 4,000 gravables + 640 IVA + 250 exentos. */
+  const CON_EXENTOS = [
+    ln("Servicio aéreo", 3700),
+    ln("TUA CUN", 100),
+    ln("Handler", 200),
+    ln("Transfers", 100, true),
+    ln("Viáticos por pernocta", 150, true),
+  ];
+
+  it("CON exentos: base gravable, exentos abajo y orden conservado dentro de cada grupo", () => {
+    const p = particionarPorIva(CON_EXENTOS, 4000, 640, 4890);
+    expect(p.activa).toBe(true);
+    expect(p.baseUsd).toBe(4000);
+    expect(etiquetas(p.gravables)).toEqual(["Servicio aéreo", "TUA CUN", "Handler"]);
+    expect(etiquetas(p.exentos)).toEqual(["Transfers", "Viáticos por pernocta"]);
+  });
+
+  it("SIN exentos: inactiva, todas las filas en su orden original y base 0", () => {
+    const lineas = [ln("Servicio aéreo", 4200), ln("TUA CUN", 150)];
+    const p = particionarPorIva(lineas, 4350, 696, 5046);
+    expect(p.activa).toBe(false);
+    expect(etiquetas(p.gravables)).toEqual(["Servicio aéreo", "TUA CUN"]);
+    expect(p.exentos).toEqual([]);
+    expect(p.baseUsd).toBe(0);
+  });
+
+  it("IVA 0 (efectivo): los exentos NO se mueven — «Subtotal (sin IVA)» sigue siendo verdad", () => {
+    const p = particionarPorIva(
+      [ln("Servicio aéreo", 8580), ln("TUA CUN", 75), ln("Viáticos por pernocta", 300, true)],
+      8655,
+      0,
+      8955,
+    );
+    expect(p.activa).toBe(false);
+    expect(etiquetas(p.gravables)).toEqual(["Servicio aéreo", "TUA CUN", "Viáticos por pernocta"]);
+  });
+
+  it("exento en $0 (o medio centavo): cuenta como gravable y se queda donde está", () => {
+    const p = particionarPorIva(
+      [ln("Servicio aéreo", 4000), ln("Cortesía", 0, true), ln("Transfers", 0.004, true)],
+      4000,
+      640,
+      4640.004,
+    );
+    expect(p.activa).toBe(false);
+    expect(etiquetas(p.gravables)).toEqual(["Servicio aéreo", "Cortesía", "Transfers"]);
+  });
+
+  it("base DERIVADA cuando no viaja (snapshot legado): total − IVA − Σ exentos", () => {
+    for (const sinBase of [null, undefined, Number.NaN]) {
+      // Derivada ⇒ hay que verificarla contra el PORCENTAJE: 16 % de 4,000 = 640.
+      const p = particionarPorIva(CON_EXENTOS, sinBase, 640, 4890, 16);
+      expect(p.activa).toBe(true);
+      expect(p.baseUsd).toBeCloseTo(4000, 6);
+    }
+  });
+
+  it("base DERIVADA que NO es la base del % del IVA: degrada (redondeo post-IVA)", () => {
+    // Espejo EXACTO de `test_base_derivada_se_verifica_contra_el_porcentaje_de_iva`
+    // de pyservices. Sin `iva.base_usd` las otras dos identidades se cumplen
+    // por construcción, así que sin este candado se rotularía «Subtotal
+    // gravable» un número cuyo 16 % no es el IVA impreso.
+    const conRedondeo = [ln("Servicio aéreo", 3725.33), ln("Transfers", 100, true)];
+    expect(particionarPorIva(conRedondeo, null, 594.67, 4420, 16).activa).toBe(false);
+    // La misma columna, cuadrada: 16 % de 3,716.67 = 594.67.
+    const cuadrada = [ln("Servicio aéreo", 3716.67), ln("Transfers", 100, true)];
+    expect(particionarPorIva(cuadrada, null, 594.67, 4411.34, 16).activa).toBe(true);
+    // Sin `ivaPct` (API viejo) no se rotula nada como base.
+    expect(particionarPorIva(cuadrada, null, 594.67, 4411.34).activa).toBe(false);
+    // Con la base EXPLÍCITA manda el campo: el porcentaje no se exige.
+    expect(particionarPorIva(cuadrada, 3716.67, 594.67, 4411.34).activa).toBe(true);
+  });
+
+  it("DEGRADA si Σ gravables ≠ base (el AJUSTE que mezcla base y redondeo post-IVA)", () => {
+    // 3,700 + 100 + 200 = 4,000 impresos arriba, pero la base del 16 % fue
+    // 3,990: los $10 del redondeo se suman DESPUÉS del IVA.
+    const p = particionarPorIva(CON_EXENTOS, 3990, 638.4, 4888.4);
+    expect(p.activa).toBe(false);
+    expect(etiquetas(p.gravables)).toEqual([
+      "Servicio aéreo",
+      "TUA CUN",
+      "Handler",
+      "Transfers",
+      "Viáticos por pernocta",
+    ]);
+  });
+
+  it("DEGRADA si base + IVA + Σ exentos ≠ total (columna que no suma)", () => {
+    expect(particionarPorIva(CON_EXENTOS, 4000, 640, 5000).activa).toBe(false);
+  });
+
+  it("tolerancia: medio centavo cuadra, un centavo no", () => {
+    expect(particionarPorIva(CON_EXENTOS, 4000.004, 640, 4890.004).activa).toBe(true);
+    expect(particionarPorIva(CON_EXENTOS, 4000.01, 640, 4890.01).activa).toBe(false);
+  });
+
+  it("las etiquetas son el MISMO texto literal que imprime pyservices", () => {
+    expect(ETIQUETA_BASE_GRAVABLE).toBe("Subtotal gravable");
+    expect(ETIQUETA_SUBTOTAL).toBe("Subtotal (sin IVA)");
+    expect(ETIQUETA_SIN_IVA).toBe("No causan IVA");
+    expect(TOLERANCIA_USD).toBe(0.005);
   });
 });
