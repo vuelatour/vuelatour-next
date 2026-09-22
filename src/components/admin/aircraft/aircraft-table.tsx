@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronRightIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import { tituloColorAvion } from "@/lib/admin/calendario-semaforo";
 import { CLASE_TONO_SERVICIO } from "@/lib/admin/proximo-servicio";
 import {
   CLASE_TONO_RESTANTE,
@@ -83,12 +84,14 @@ const columns: Array<DataTableColumn<Aircraft>> = [
         )}
         <span>
           <span className="flex items-center gap-2 font-mono font-semibold group-hover:text-brand-600 transition-colors">
-            {/* Color del avión en el calendario (pedido 21-ago): un punto
-                discreto, el mismo que pinta sus vuelos y el Libro Dinero. */}
+            {/* Color del avión (pedido 21-ago): un punto discreto que lo
+                identifica. Desde el 22-sep-2026 YA NO pinta el calendario
+                (ahí manda el semáforo de 5 colores): se conserva para los
+                Excel de balance individual y general. */}
             {a.color_calendario && (
               <span
                 aria-hidden
-                title={`Color en el calendario: ${a.color_calendario}`}
+                title={tituloColorAvion(a.color_calendario)}
                 className="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-border"
                 style={{ backgroundColor: a.color_calendario }}
               />

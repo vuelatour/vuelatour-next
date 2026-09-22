@@ -28,6 +28,11 @@ import {
 } from "@/app/admin/aircraft/schema";
 import type { Aircraft } from "@/types/aircraft";
 import { Field } from "@/components/admin/form-field";
+import {
+  AYUDA_COLOR_AVION,
+  ETIQUETA_COLOR_AVION,
+  HINT_COLOR_AVION,
+} from "@/lib/admin/calendario-semaforo";
 
 interface AircraftFormDialogProps {
   open: boolean;
@@ -36,9 +41,11 @@ interface AircraftFormDialogProps {
 }
 
 /**
- * Tonos sugeridos para el color de calendario de la aeronave. NO incluye los
- * colores reservados del sistema (sin asignar #8B5CF6, permiso #F59E0B, externo
- * #F0DCDB, respaldo #9CA3AF) para evitar que un vuelo se confunda con un estado.
+ * Tonos sugeridos para el color del avión. Desde el 22-sep-2026 este color YA
+ * NO se usa en ningún calendario (ahí manda el semáforo de 5 colores): sirve
+ * para identificar al avión en los reportes de Excel (balance individual y
+ * general), así que conviene que los aviones se distingan entre sí. Ya no hay
+ * tonos "reservados" por el sistema: ninguno se puede confundir con un estado.
  */
 const SUGGESTED_AIRCRAFT_COLORS = [
   "#3B82F6", // azul
@@ -242,7 +249,11 @@ export function AircraftFormDialog({
             <Field label="Base (IATA)" hint="default CUN" error={errors.ubicacion_base?.message}>
               <Input placeholder="CUN" maxLength={4} className="font-mono uppercase" {...register("ubicacion_base")} />
             </Field>
-            <Field label="Color calendario" hint="#RRGGBB" error={errors.color_calendario?.message}>
+            <Field
+              label={ETIQUETA_COLOR_AVION}
+              hint={HINT_COLOR_AVION}
+              error={errors.color_calendario?.message}
+            >
               <div className="flex items-center gap-2">
                 <span
                   className="h-[42px] w-9 shrink-0 rounded-lg border border-border"
@@ -267,6 +278,9 @@ export function AircraftFormDialog({
                   />
                 ))}
               </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                {AYUDA_COLOR_AVION}
+              </p>
             </Field>
             <div className="flex flex-col justify-end">
               <div className="flex items-center justify-between rounded-lg border border-border px-3 h-[42px]">

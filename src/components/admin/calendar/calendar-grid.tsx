@@ -166,7 +166,9 @@ function eventHref(ev: CalendarEvent): string {
 }
 
 function EventChip({ ev }: { ev: CalendarEvent }) {
-  // Mantenimiento con fecha (PROGRAMADO ámbar / EN_TALLER rojo): linkea al
+  // Mantenimiento con fecha: desde el 22-sep-2026 SIEMPRE ámbar (asunto
+  // pendiente hasta completarse, esté programado o en taller — el rojo quedó
+  // para lo cancelado). El color lo decide el API; aquí se pinta. Linkea al
   // expediente del avión, donde vive la card de Mantenimientos.
   if (ev.tipo_evento === "mantenimiento") {
     return (
@@ -220,7 +222,8 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
       href={eventHref(ev)}
       title={ev.title}
       className={`block rounded px-1.5 py-1 text-[11px] leading-tight truncate hover:opacity-90 transition-opacity ${esCancelado ? "line-through opacity-80" : ""}`}
-      // Texto oscuro sobre fondos claros (paleta pastel de los aviones).
+      // `ev.color` = semáforo del API (5 colores desde el 22-sep-2026); el
+      // texto se oscurece solo cuando el fondo es claro (verde y amarillo).
       style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
     >
       {esCancelado ? "✕ " : esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
@@ -334,8 +337,11 @@ function DayEvent({ ev, ctx }: { ev: CalendarEvent; ctx: EventosCtx }) {
         {ev.estado_permiso === "pendiente" && (
           <p className="text-amber-600 dark:text-amber-400">⚠ Permiso de pista pendiente</p>
         )}
+        {/* «Falta asignar» es un ASUNTO PENDIENTE (22-sep-2026): va en el
+            ámbar del semáforo, igual que el chip del día. El morado del
+            viejo «Sin asignar» ya no existe en ningún calendario. */}
         {ev.sin_asignar && (
-          <p className="text-violet-600 dark:text-violet-400">⚠ Falta asignar</p>
+          <p className="text-amber-600 dark:text-amber-400">⚠ Falta asignar</p>
         )}
       </div>
     </Link>

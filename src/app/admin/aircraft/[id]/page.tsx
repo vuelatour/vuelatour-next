@@ -58,6 +58,7 @@ import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { daysUntilCancun, fmtDate } from "@/lib/datetime";
 import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
 import { esUuid } from "@/lib/admin/url-params";
+import { ETIQUETA_COLOR_AVION } from "@/lib/admin/calendario-semaforo";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -267,9 +268,11 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                     : "No aplica"
                 }
               />
+              {/* El color del avión ya no pinta calendarios (22-sep-2026):
+                  identifica sus filas en los Excel de balance. */}
               {aircraft.color_calendario && (
                 <div>
-                  <dt className="text-muted-foreground text-xs">Color calendario</dt>
+                  <dt className="text-muted-foreground text-xs">{ETIQUETA_COLOR_AVION}</dt>
                   <dd className="flex items-center gap-2 font-medium mt-0.5">
                     <span
                       className="inline-block h-4 w-4 rounded border border-border"

@@ -11,6 +11,7 @@ import {
   type OpcionAeronave,
   type OpcionResponsable,
 } from "@/components/admin/calendar/eventos";
+import { LeyendaSemaforo } from "@/components/admin/calendar/leyenda-semaforo";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
 import { GoogleSyncChip } from "@/components/admin/calendar/google-sync-chip";
 import { syncEsAutomatica } from "@/lib/admin/calendar-sync";
@@ -228,57 +229,18 @@ export default async function CalendarPage({
   );
 }
 
+/**
+ * Leyenda del calendario = el semáforo de 5 colores (22-sep-2026). Los
+ * renglones y la nota viven en `lib/admin/calendario-semaforo.ts`; aquí solo
+ * se agrega el aviso de push, que no habla de colores.
+ */
 function Legend() {
-  const items = [
-    { label: "Vuelo propio", color: "#9CA3AF", title: "Vuelo con avión asignado; el color es el configurado para esa aeronave." },
-    {
-      label: "Evento (no vuelo)",
-      color: "#0EA5E9",
-      title:
-        "Cita, lavado, trámite… agendado desde la app o el panel (Nuevo evento). Con avión toma su color. Al agendar se avisa por push al responsable; ⚠ = no tiene la app registrada.",
-    },
-    {
-      label: "Tentativo",
-      color: "#64748B",
-      title: "Reserva tentativa: espacio apartado sin cotización (el cliente aún no confirma). Se cotiza desde el detalle del vuelo.",
-    },
-    {
-      label: "Sin asignar",
-      color: "#8B5CF6",
-      title: "Vuelo confirmado al que aún le falta asignar avión y/o piloto.",
-    },
-    { label: "Externo", color: "#F0DCDB", title: "Vuelo operado por un tercero." },
-    {
-      label: "Descanso",
-      color: "#14B8A6",
-      title: "Día de descanso de un piloto (botón “Marcar descanso”). Al asignar vuelos, el piloto aparece con aviso esos días.",
-    },
-    {
-      label: "Permiso pendiente",
-      color: "#F59E0B",
-      title: "Un aeropuerto de la ruta requiere permiso de pista/operación y aún no se ha emitido. Se quita al marcarlo como “Emitido” en el vuelo (Editar → Permiso de pista, o el botón “Permiso emitido”).",
-    },
-    {
-      label: "Cancelado",
-      color: "#EF4444",
-      title: "Vuelo cancelado: se queda en el calendario como historial de operaciones — existió la solicitud y luego se canceló.",
-    },
-  ];
   return (
-    <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-      {items.map((i) => (
-        <span key={i.label} className="inline-flex items-center gap-1.5 cursor-help" title={i.title}>
-          <span className="h-3 w-3 rounded" style={{ backgroundColor: i.color }} />
-          {i.label}
-        </span>
-      ))}
-      <span className="text-muted-foreground/70">
-        El color de la aeronave se configura por aeronave; aquí se muestra el real de cada vuelo.
-      </span>
+    <LeyendaSemaforo>
       <span className="text-muted-foreground/70">
         Al agendar un evento se avisa por push al responsable; ⚠ = no tiene la app registrada
         (avísale por otro medio).
       </span>
-    </div>
+    </LeyendaSemaforo>
   );
 }

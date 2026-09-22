@@ -3,16 +3,13 @@ import { z } from "zod";
 const PaisEnum = z.enum(["MX", "USA"]);
 
 /**
- * Colores reservados del calendario para estados de vuelo (sin asignar, permiso
- * pendiente, externo, fallback). Una aeronave NO puede usarlos como su color, o
- * sus vuelos se confundirían con esos estados en el calendario.
+ * Ya NO hay colores reservados (22-sep-2026). La lista existía porque el color
+ * del avión pintaba sus vuelos en el calendario y podía confundirse con un
+ * estado (sin asignar #8B5CF6, permiso #F59E0B, externo #F0DCDB, respaldo
+ * #9CA3AF). Desde el semáforo de 5 colores, el color del avión no entra a
+ * ningún calendario: solo identifica sus filas en los Excel de balance, así
+ * que cualquier tono es válido y rechazar uno sería un candado sin motivo.
  */
-export const RESERVED_CALENDAR_COLORS: Record<string, string> = {
-  "#8B5CF6": "Sin asignar",
-  "#F59E0B": "Permiso pendiente",
-  "#F0DCDB": "Externo",
-  "#9CA3AF": "color de respaldo del sistema",
-};
 
 /** Number opcional: "" o undefined → se omite; en otro caso coacciona a número ≥ 0. */
 const optionalNonNegative = z.preprocess(
@@ -82,13 +79,11 @@ export const AircraftFormSchema = z.object({
   // Aportación AFAC (USD/hr cobrada): provisión por matrícula extranjera.
   // Nullable: en edición, vaciar el campo manda null para borrar la config.
   permiso_afac_usd_hr: optionalNonNegativeNullable,
+  // Color del avión en los reportes de Excel (balance individual y general).
+  // El nombre de la columna en BD sigue siendo `color_calendario`.
   color_calendario: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, "Formato #RRGGBB")
-    .refine(
-      (v) => !RESERVED_CALENDAR_COLORS[v.toUpperCase()],
-      "Color reservado por el sistema (sin asignar / permiso / externo). Elige otro tono.",
-    )
     .optional()
     .or(z.literal("")),
   ubicacion_base: z

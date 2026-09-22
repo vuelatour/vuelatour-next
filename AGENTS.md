@@ -1182,6 +1182,52 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   del API; `datetime-local` vía `cancunInputToIso`/`isoToCancunInput`; toda
   acción destructiva confirma; dejar `npx tsc --noEmit` en 0 y eslint limpio.
 
+## Calendario: semáforo de 5 colores (22-sep-2026)
+
+- Pedido del cliente: «que en los calendarios no se vean tantos colores […]
+  los colores que tiene cada avión configurados los seguiremos respetando
+  principalmente en los reportes del balance individual y general en los excel
+  […] en realidad los colores son para el reporte de excel nada más: **Gris**:
+  Tentativo · **Verde**: Confirmado · **Amarillo**: Permiso o asunto pendiente
+  · **Rojo**: Cancelado · **Azul**: Descanso 💤». Antes convivían OCHO colores
+  (el del avión entre ellos) y el calendario se leía como un mosaico: el color
+  decía QUÉ avión, no CÓMO va el vuelo.
+- **Los colores los decide el API** (`colores-calendario.util.ts` → campo
+  `color` de `GET /v1/calendar` → colorId de Google). El panel **no calcula
+  colores de eventos**: `calendar-grid.tsx` pinta `ev.color` tal cual y
+  `textOnColor` decide si el texto va blanco u oscuro. La forma de
+  `/v1/calendar` NO cambió: solo cambian los VALORES de `color` (y
+  `sin_asignar`/`tentativo` siguen viajando para tachar/etiquetar).
+- **FUENTE ÚNICA de la leyenda**: `lib/admin/calendario-semaforo.ts` (PURO,
+  prueba `__tests__/calendario-semaforo.test.ts`) con los 5 hex —
+  `#64748B` tentativo, `#22C55E` confirmado, `#F59E0B` pendiente, `#EF4444`
+  cancelado, `#3B82F6` descanso—, `SEMAFORO_CALENDARIO` (orden y textos
+  exactos del cliente + tooltip de qué hacer) y `NOTA_COLOR_AVION`. Los hex
+  son COPIA de los del API: si allá cambian, aquí también o la leyenda miente.
+  La pinta `components/admin/calendar/leyenda-semaforo.tsx`
+  (`<LeyendaSemaforo>`, con `children` para notas que no hablan de color, como
+  el aviso push); toda leyenda de calendario nueva sale de ahí, nunca de hex
+  sueltos. Cableado congelado en `calendar/__tests__/leyenda-semaforo.test.tsx`.
+- **El color del avión** (`aeronave.color_calendario`) se sigue capturando y
+  se sigue usando — **solo en los Excel** de balance individual y general
+  (pyservices). En el panel su etiqueta es «**Color en los reportes de
+  Excel**» (`ETIQUETA_COLOR_AVION`/`HINT_COLOR_AVION`/`AYUDA_COLOR_AVION`/
+  `tituloColorAvion` del mismo archivo) en el formulario del avión, la ficha
+  del expediente y el tooltip del punto de la lista de aeronaves.
+- **Ya no hay colores reservados**: `RESERVED_CALENDAR_COLORS` se retiró de
+  `app/admin/aircraft/schema.ts`. Existía porque el color del avión pintaba
+  sus vuelos y podía confundirse con un estado; sin eso, rechazar un tono
+  sería un candado sin motivo (el API nunca validó esa lista).
+- «⚠ Falta asignar» del detalle del día pasó de morado a **ámbar**: es un
+  asunto pendiente, el mismo cubo del semáforo. El morado «Sin asignar», el
+  rosa «Externo», el verde azulado del descanso y el celeste del evento ya no
+  existen en ningún calendario. (Los badges violeta del DETALLE DEL VUELO no
+  son calendario y se quedaron como estaban.)
+- **Orden de deploy: API antes que panel.** Con el API viejo la leyenda ya
+  dice 5 colores mientras el calendario todavía pinta 8 — se ve raro pero no
+  rompe nada. Tras desplegar el API hay que **re-pintar Google** (resync o
+  encolar la ventana), o los eventos ya creados conservan su color viejo.
+
 ## Calendario: estado de la sync a Google Calendar (12-sep-2026)
 
 Pedido del cliente: «queremos que se sincronicen los vuelos, eventos,
