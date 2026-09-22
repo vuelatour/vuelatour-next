@@ -39,6 +39,7 @@ import { tramosCotizadosDeCotizacion } from "@/lib/admin/tramos-cotizados";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { combinadoFolio, type FlightCobro } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
+import type { CotizacionInterna } from "@/types/quotes-interno";
 import type {
   CotizacionVersion,
   PersistedEscala,
@@ -80,6 +81,7 @@ export function QuoteWorkspace({
   cobros,
   totalCobrado,
   rol,
+  interno = null,
   tcOficial = null,
   tcOficialFecha = null,
   paywiseComisionPct,
@@ -95,6 +97,12 @@ export function QuoteWorkspace({
   cobros: FlightCobro[];
   totalCobrado: number;
   rol: string | null;
+  /**
+   * HOJA INTERNA (`GET /v1/quotes/:id/interno`, Fase 2.2 del 22-sep-2026):
+   * el MISMO payload que imprime el PDF interno. null = API previo, rol sin
+   * permiso o lectura fallida ⇒ la pantalla cae a la hoja del CLIENTE.
+   */
+  interno?: CotizacionInterna | null;
   /** TC oficial de referencia del día de la cotización (respaldo al cobrar
       en MXN cuando la cotización no fijó TC) y su día. */
   tcOficial?: number | null;
@@ -460,6 +468,8 @@ export function QuoteWorkspace({
           (ensamble form-as-document, 8-sep-2026). */}
       <QuoteCalculator
         mode="revise"
+        rol={rol}
+        interno={interno}
         aircraft={aircraft}
         routes={routes}
         airports={airports}

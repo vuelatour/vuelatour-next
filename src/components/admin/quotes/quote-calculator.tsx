@@ -136,8 +136,11 @@ import type {
   QuoteBreakdown,
   TipoVuelo,
 } from "@/types/quote";
+import type { CotizacionInterna } from "@/types/quotes-interno";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import { QuoteSheet } from "@/components/admin/quotes/quote-sheet";
+import { QuoteSheetInterna } from "@/components/admin/quotes/quote-sheet-interna";
+import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
 import { QuoteInternalPanel } from "@/components/admin/quotes/quote-internal-panel";
 import type {
   DestinoInterno,
@@ -195,6 +198,21 @@ type QuoteCalculatorProps = {
   aircraft: AircraftOption[];
   routes: RouteOption[];
   airports: AirportOption[];
+  /**
+   * Rol de quien edita (`/v1/me`): decide si hay PESTAÑAS «Hoja interna» |
+   * «PDF del cliente» (roles de `ROLES_HOJA_INTERNA`) o si la pantalla sigue
+   * siendo, como hasta hoy, la hoja del CLIENTE editable (SOCIO). El panel
+   * solo esconde; el gate real es el API.
+   */
+  rol?: string | null;
+  /**
+   * Payload de `GET /v1/quotes/:id/interno` (Fase 2.2, 22-sep-2026): lo que
+   * la hoja interna pinta y NO viaja en el breakdown — quién cotizó,
+   * piloto/copiloto, avión utilizado, cobros con su comisión y su «Registró»,
+   * notas internas. null = alta, API previo o rol sin permiso: la hoja se
+   * pinta con el breakdown y los bloques sin dato quedan vacíos.
+   */
+  interno?: CotizacionInterna | null;
 } & (
   | {
       mode?: "create";
@@ -634,7 +652,7 @@ function uuid(): string {
 }
 
 export function QuoteCalculator(props: QuoteCalculatorProps) {
-  const { aircraft, routes, airports: airportsCatalogo } = props;
+  const { aircraft, routes, airports: airportsCatalogo, rol = null, interno = null } = props;
   const mode = props.mode ?? "create";
   const isRevise = mode === "revise";
   // Edición directa (F0): LECTURA solo cuando el candado lo exige.
@@ -2229,6 +2247,39 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       // Sin storage, vive solo en la sesión.
     }
   };
+  /**
+   * PESTAÑAS de la pantalla (Fase 2.2, 22-sep-2026): «Hoja interna»
+   * (editable, por defecto) | «PDF del cliente» (LECTURA). La interna solo
+   * existe para los roles de `ROLES_HOJA_INTERNA`; para SOCIO la pantalla
+   * sigue siendo la hoja del CLIENTE editable, como hasta hoy.
+   *
+   * Memoria por usuario en `vt-cotizador-hoja-v1`. El estado arranca SIEMPRE
+   * en el valor por defecto y la memoria se lee en un efecto: leer
+   * localStorage al render rompería la hidratación (el servidor no lo tiene).
+   */
+  const hayHojaInterna = puedeVerHojaInterna(rol);
+  const [hoja, setHoja] = useState<HojaCotizador>("interna");
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HOJA_LS_KEY);
+      if (!raw) return;
+      const g = JSON.parse(raw) as { hoja?: unknown };
+      if (g?.hoja === "interna" || g?.hoja === "cliente") setHoja(g.hoja);
+    } catch {
+      // Sin storage: la hoja interna por defecto.
+    }
+  }, []);
+  const setHojaPersistente = (v: HojaCotizador) => {
+    setHoja(v);
+    try {
+      localStorage.setItem(HOJA_LS_KEY, JSON.stringify({ hoja: v }));
+    } catch {
+      // Sin storage, vive solo en la sesión.
+    }
+  };
+  // Sin permiso para la interna, la única hoja es la del cliente.
+  const hojaActiva: HojaCotizador = hayHojaInterna ? hoja : "cliente";
+
   // Al prender «cubierto por externo» (switch o borrador ?d= restaurado) el
   // panel interno se abre: sus campos requeridos no deben quedar escondidos.
   useEffect(() => {
@@ -3098,13 +3149,92 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         onKeyDownCapture={interceptarPrimerCambio}
       >
         <div className="min-w-0 space-y-5">
+          {/* PESTAÑAS (Fase 2.2): «Hoja interna» editable | «PDF del cliente»
+              en LECTURA. Solo para los roles de `ROLES_HOJA_INTERNA`; SOCIO
+              sigue viendo la hoja del cliente editable, sin pestañas.
+              `data-guard-exempt`: cambiar de vista no edita nada, así que no
+              dispara la confirmación de CONFIRMADO/RESERVA. */}
+          {hayHojaInterna && (
+            <div
+              role="tablist"
+              aria-label="Vista del documento"
+              data-guard-exempt
+              className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1 text-sm"
+            >
+              {(
+                [
+                  ["interna", "Hoja interna", "La hoja completa de oficina: tramos costeados, comisiones y cobros. NO se manda al cliente."],
+                  ["cliente", "PDF del cliente", "Exactamente lo que verá el cliente. Solo lectura: se edita en la hoja interna."],
+                ] as const
+              ).map(([valor, etiqueta, ayuda]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  role="tab"
+                  aria-selected={hojaActiva === valor}
+                  title={ayuda}
+                  onClick={() => setHojaPersistente(valor)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 font-medium transition-colors",
+                    hojaActiva === valor
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* La hoja INTERNA no se desmonta al cambiar de pestaña: es la que
+              tiene los campos capturados y los ids ancla (`pasajeros-field`,
+              `tc-usd-mxn-field`). Un `{activa && …}` perdería el borrador a
+              medio teclear y dejaría las anclas sin destino. */}
+          {hayHojaInterna && (
+            <div hidden={hojaActiva !== "interna"}>
+              <QuoteSheetInterna
+                valores={values}
+                onCambio={onCambioHoja}
+                breakdown={breakdown}
+                calculando={loading || enEsperaDebounce}
+                errorMotor={error}
+                lectura={lectura}
+                documento={documentoHoja}
+                catalogos={catalogosHoja}
+                tramosPdf={tramosPdfHoja}
+                pasajerosPorTramo={paxPorTramo ? { max: maxPaxTramos } : null}
+                totalRespaldo={
+                  pintaSnapshot && initialQuote
+                    ? {
+                        total_usd: Number(initialQuote.monto_total_usd) || 0,
+                        total_mxn:
+                          initialQuote.monto_total_mxn != null
+                            ? Number(initialQuote.monto_total_mxn)
+                            : null,
+                      }
+                    : undefined
+                }
+                grupo={grupoDelHijo}
+                clienteExtra={clienteExtraNode}
+                onAbrirInterno={lectura ? undefined : abrirInterno}
+                interno={interno}
+              />
+            </div>
+          )}
+
+          {/* La hoja del CLIENTE: editable para SOCIO (como hasta hoy) y en
+              LECTURA como pestaña de comprobación para los demás. En lectura
+              no monta ni un input, así que no duplica los ids ancla de la
+              hoja interna, y puede desmontarse sin perder nada. */}
+          {hojaActiva === "cliente" && (
           <QuoteSheet
             valores={values}
             onCambio={onCambioHoja}
             breakdown={breakdown}
             calculando={loading || enEsperaDebounce}
             errorMotor={error}
-            lectura={lectura}
+            lectura={lectura || hayHojaInterna}
             documento={documentoHoja}
             catalogos={catalogosHoja}
             tramosPdf={tramosPdfHoja}
@@ -3125,6 +3255,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             clienteExtra={clienteExtraNode}
             onAbrirInterno={lectura ? undefined : abrirInterno}
           />
+          )}
 
         {/* Save bar (oculta en LECTURA bloqueada; en revisión solo con cambios). */}
         {!lectura && (!isRevise || sucio) && (
@@ -3671,6 +3802,12 @@ function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
 
 /** «Interno · no se imprime» abierto/cerrado, por usuario (alta y revisión). */
 const INTERNO_LS_KEY = "vt-cotizador-interno-v1";
+
+/** Pestaña de la pantalla: hoja INTERNA (editable) o PDF del CLIENTE (lectura). */
+type HojaCotizador = "interna" | "cliente";
+
+/** Qué pestaña vio por última vez este usuario (Fase 2.2, 22-sep-2026). */
+const HOJA_LS_KEY = "vt-cotizador-hoja-v1";
 
 
 /**

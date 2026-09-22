@@ -1791,6 +1791,184 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   `cotizacion_pdf.py` hay que **regenerar** con `npm run gen:hoja-fixture`,
   nunca a mano.
 
+## Hoja interna (Fase 2.2) — la pantalla de la cotización ES el documento de oficina (22-sep-2026)
+
+- **Pedido del cliente**: «en la página de la cotización cambiaremos el formato
+  de la pantalla para que NO se vea como el PDF de la cotización que se entrega
+  al cliente, más bien que se parezca a la cotización INTERNA, que es la más
+  completa, y podamos manejar gran parte de cómo va evolucionando la cotización
+  en la misma hoja, aprovechando que el formato es igual al que manejaban antes
+  en un Excel […] la idea es ir quitando el modal flotante lateral derecho “No
+  se imprime”». Se invierte la relación: **la hoja interna es el FORMULARIO y
+  el PDF del cliente es una SALIDA** (pestaña de solo lectura).
+- **PESTAÑAS** (`quote-calculator.tsx`): «**Hoja interna**» (editable, por
+  defecto) | «**PDF del cliente**» (LECTURA, con `mapaSvg`). Solo para los
+  roles de `ROLES_HOJA_INTERNA`; **SOCIO no ve pestañas**: su pantalla sigue
+  siendo la hoja del cliente editable, como hasta hoy. Memoria por usuario en
+  `localStorage vt-cotizador-hoja-v1`. Los botones llevan `data-guard-exempt`
+  (cambiar de vista no edita). **La hoja interna NO se desmonta** al cambiar de
+  pestaña (`hidden`): es la que tiene los campos capturados y los ids ancla
+  (`pasajeros-field`, `tc-usd-mxn-field`); un `{activa && …}` perdería el
+  borrador a medio teclear. La del cliente sí se desmonta: en lectura no monta
+  ni un input, así que no duplica ids y no hay nada que perder.
+- **Componentes**: `quotes/quote-sheet-interna.tsx` (el documento; raíz
+  `<div class="cot-interna cot-interna--pantalla">`) + `-tramos` (la tabla del
+  Excel) + `-cobros`. El DESGLOSE lo pinta el MISMO `QuoteSheetDesglose` de la
+  hoja del cliente con un **dialecto** (`DIALECTO_INTERNA`): dos editores del
+  mismo dinero es donde se cuela el número que no cuadra. `quote-sheet.tsx` NO
+  se reescribió.
+- **De dónde sale cada número, y aquí no se calcula ninguno**: lo que se mueve
+  al teclear (tramos costeados, TUAS, extras, IVA, totales) viene del
+  `breakdown` de `POST /v1/quotes/calculate`; lo que es identidad o historia
+  (quién cotizó, piloto/copiloto, avión utilizado, cobros con su comisión y su
+  «Registró», notas internas) de **`GET /v1/quotes/:id/interno`**
+  (`getQuoteInterno`, `types/quotes-interno.ts`), el MISMO payload que imprime
+  el PDF interno.
+- **La columna TOTAL POR TRAMO y el pie se LEEN** (campos ADITIVOS del API
+  0.0.27, fuente única `tramos-costeados.util.ts`): `breakdown.tramos[].
+  total_usd / tarifa_usd_hr / tiempo_hhmm` y en la raíz `tramos_total_usd`,
+  `tramos_tiempo_total_hr/_hhmm`, `tramos_ajuste_usd`, `tramos_ajuste_motivo`.
+  **El panel JAMÁS multiplica `tiempo × tarifa` ni suma el ajuste**: con dos
+  fuentes, pantalla y papel dirían cifras distintas del MISMO vuelo (riesgo 10
+  del diseño). Con un API previo esas celdas pintan «—», nunca un número
+  inventado. Congelado en `lib/admin/__tests__/quote-sheet-interna.test.ts` y
+  en el fixture.
+- **COSTO POR HORA por tramo es de SOLO LECTURA** (decisión 3 del diseño): el
+  motor v1.3 cotiza con UNA tarifa por vuelo. Un input por fila prometería un
+  precio por tramo que el motor no respeta; la tarifa por tramo es un cambio de
+  MOTOR, no de pantalla.
+- **Qué se EDITA en 2.2**: exactamente lo que ya editaba la hoja del cliente —
+  cliente, avión cotizado, pasajeros, fecha del vuelo, itinerario
+  (origen/destino con continuidad, fecha del PDF, **MILLAS por fin en la
+  tabla**, ⋯ con pax/ferry/pernocta/notas/ojito, 🗑 con confirmación y la ruta
+  rápida «CUN, HOL, CUN ⏎»), extras, descuento, IVA %, T.C. y las notas al
+  cliente. El popover «⋯» es el MISMO `DetalleTramo` de `quote-sheet-itinerario`
+  (exportado): dos copias serían dos sitios donde capturar lo mismo.
+- **Lo que sigue en el panel «Interno · no se imprime» hasta la Fase 2.3**:
+  tarifa, sobrevuelo, cobrable pactado, comisión del vendedor, método de cobro
+  y BillPocket, redondeo, switches (TUAS, abierta, pase), operador externo,
+  ruta operativa, notas internas y los toggles del PDF. Desde la hoja interna
+  solo se SEÑALAN (`onAbrirInterno` → «ajustar» / «pactar horas»). `TotalBar`,
+  save bar, `resumirCambios`, `armarCalcPayload`, `tramos_base`,
+  `preferirHorasPersistidas`, `tarifaOverrideRehidratada`, el ancla de ecos y
+  la idempotencia **no se tocaron**: ninguna regla de guardado cambió.
+- **CSS compartido con pyservices**: `src/styles/cotizacion-interna.css` es
+  COPIA byte a byte de `app/static/cotizacion-interna.css`
+  (`npm run sync:hoja-interna-css`); todo selector cuelga de `.cot-interna`. Lo
+  de pantalla (papel Carta 816 px, inputs invisibles, croma, marca de agua)
+  vive en `cotizacion-interna-pantalla.css`, que es del panel y no se
+  sincroniza. La FUENTE (Arimo) es la misma de la hoja del cliente y la trae
+  `sync:hoja-css`. Guardas: `styles/__tests__/hoja-interna-css-deriva.test.ts`
+  (deriva + todo bajo `.cot-interna` + el acento SOLO en edición + la marca de
+  agua es del papel).
+- **BANDA ROJA + MARCA DE AGUA «INTERNA»** (riesgo 8 del diseño): la pantalla
+  enseña comisiones, costo del operador externo, neto VuelaTour y cobros. Sin
+  una separación inequívoca alguien acabaría mandándosela al cliente. La banda
+  es la del papel; la marca de agua es croma de pantalla (`data-cot-ui`).
+- **Roles: UNA sola lista.** `ROLES_HOJA_INTERNA` +
+  `puedeVerHojaInterna(rol)` (`lib/admin/quote-sheet-interna.ts`) es el espejo
+  de `ROLES_PDF_INTERNO` del API — ADMIN/COORDINADOR/FACTURACION/ANALISTA, sin
+  SOCIO ni PILOTO — y la consume TAMBIÉN el botón «PDF interno» de
+  `quote-actions-bar.tsx`. Con dos listas escritas a mano, la pantalla y el PDF
+  podrían divergir y alguien vería en el panel lo que el papel le niega. El
+  panel solo ESCONDE; el gate real es el API (403 ⇒ `getQuoteInterno` → null).
+- **Tolerancia al API previo**: `getQuoteInterno` devuelve `null` ante 404
+  (ruta que no existe) y 403 (rol), en silencio; cualquier otro fallo lo
+  degrada `degradado.opcional("la hoja interna", …)` en
+  `app/admin/quotes/[id]/page.tsx` y la pantalla lo AVISA con
+  `<AvisoDegradado>`. Sin `interno` la hoja se pinta igual con el breakdown y
+  los bloques sin dato quedan vacíos — nunca se inventa un piloto ni un cobro.
+- **PARIDAD de DATOS, no de bytes** (decisión del diseño): el documento interno
+  es un formulario denso con controles en casi cada celda, así que exigir
+  igualdad de secuencia tag+clase en EDICIÓN obligaría a que cada input
+  invisible tuviera espejo en el PDF. Lo que se custodia en
+  `__tests__/quote-sheet-interna.test.tsx` es (1) la secuencia de tags+clases
+  en LECTURA, (2) el TEXTO en lectura y (3) el TEXTO en edición, contra los
+  fixtures `__fixtures__/interna-*.html` que genera
+  **`npm run gen:hoja-interna-fixture`** con la MISMA función que sirve
+  `POST /reportes/cotizacion-interna/preview-html`. Escenarios:
+  `interna-329` (3 tramos, horas pactadas con ajuste +$412.50, TUA cobrada, 1
+  cobro, avión utilizado distinto), `interna-311` (2 tramos, sin ajuste, sin
+  TUAS, sin cobros, IVA 0 por efectivo) e **`interna-070`** (el documento
+  COMPLETO: comisión del vendedor, ajuste «Redondeo», pernocta que activa la
+  partición de exentos, TUA en PESOS con su T.C., `mxn_nativos`, tramo ferry y
+  cobro en MXN con comisión de terminal). Los payloads viajan DOS veces a
+  propósito (`__fixtures__/escenarios-interna.ts`): como `interno` y convertidos
+  a `breakdown`, para que fixture y pantalla no puedan divergir por una copia
+  mal hecha. Tras tocar `cotizacion_interna_pdf.py` hay que **regenerar**,
+  nunca editar los HTML a mano.
+- **Textos del documento** (espejo de `cotizacion_interna_pdf.py`, en
+  `lib/admin/quote-sheet-interna.ts`, PURO + test): `hhmm` («01:18»),
+  `millasTxt` («157.3»), `horasTxt` («1.75 h»), `diaMes` («26-jun»),
+  `diaLargo`, `montoInterno` (negativos con «−» tipográfico), `pctBanco`
+  («8.8570 %»), `fechaCortaCobro`, `celdaRutaTramo` (**«CUN–PCE» con guion
+  LARGO** —decisión 5— y RESPALDO al nombre largo si falta un IATA o la fila es
+  consolidada), `pieTramos`, `notasTramos`, `metodoPrevistoTxt`,
+  `resumenCobros`, `avisoCobrosSinTc`, `subLineaCobro`, `claseSemaforo`,
+  `servicioAereoCanonicoUsd`, `comisionVendedorCanonicaUsd`,
+  `ajustePositivoUsd`, `opComisionVendedor`, `piezasConceptoTuaInterna`.
+  Ningún componente los redacta a mano.
+- **Los CONCEPTOS del desglose se LEEN del motor, no se redactan**
+  (`conceptoCanonico(breakdown, clave)` + `conceptoComisionVendedor`, revisión
+  adversaria del 22-sep-2026). El papel arranca de `ln.concepto`
+  (`_concepto_operacion`) y esos textos ya traen dentro lo que el panel estaba
+  reescribiendo: **«Comisión del vendedor (Saab) · $50.00/hr × 2.3 hr»** (el
+  panel decía «Comisión del vendedor · Saab» — 35 de 231 cotizaciones en
+  prod), **«Redondeo»/«Descuento»** del ajuste (decía «Ajuste» cuando había
+  precio pactado — 17 con ajuste, 4 pactadas) y **«Viáticos por pernocta (sin
+  IVA)»** (decía el texto corto del cliente). El nombre del vendedor solo se
+  cuelga con « · » si NO venía ya en el concepto, igual que pyservices. Sin
+  línea canónica (API previo) se usa el respaldo de siempre.
+- **«Total MXN» del documento interno dice cuánto NO pasó por el T.C.**:
+  `opTotalMxnInterna` → «Total MXN · T.C. 18.1 · **incluye $1,322.40 MXN
+  nativos**» desde `breakdown.totales.mxn_nativos` (TUAS y extras capturados
+  en pesos entran al total tal cual). Son 14 de 231 cotizaciones en prod y sin
+  esa frase el total en pesos no se puede cuadrar contra el tipo de cambio. La
+  hoja del CLIENTE nunca la lleva.
+- **Una TUA en PESOS cierra con su T.C.**: `piezasConceptoTuaInterna(fila,
+  fmtTc(tc))` → «4 pax × $330.60 MXN = $1,322.40 MXN **· T.C. 18.1**». El
+  texto del T.C. lo pasa quien llama (`fmtTc`, fuente única) porque este
+  módulo es PURO y no importa `lib/format`.
+- **La moneda de un cobro va en `.muted`**, como en `_cobro_fila`
+  («$40,000.00 <span class="muted">MXN</span>»): en texto plano decía lo mismo
+  pero la fila dejaba de tener la estructura del documento.
+- **El toggle «mostrar tarifa» es del PDF del CLIENTE**: el documento interno
+  imprime siempre «Servicio aéreo» a secas (la multiplicación vive en «Horas
+  cotizadas»), así que `conTarifa` queda apagado en el dialecto CANÓNICO.
+- **El dialecto del desglose** (`DialectoDesglose` en `quote-sheet-desglose.tsx`)
+  cambia SOLO etiquetas y qué renglones se publican:
+  - `servicioAereo: "IMPRESO"` (cliente) ABSORBE el redondeo y la comisión del
+    vendedor; `"CANONICO"` (interno) pinta la línea TIEMPO_VUELO tal cual y
+    publica la **comisión del vendedor** y el **ajuste positivo** en su propio
+    renglón — sin eso la columna del documento interno no sumaría su total.
+  - orden canónico v1.3 en el interno (…EXTRA · COMISION_VENDEDOR · AJUSTE ·
+    PERNOCTA); la hoja del cliente conserva el suyo, que congelan sus 6
+    fixtures.
+  - «Total USD» vs «Total (USD)», `mxn-row` vs `total-mxn`, «IVA 16 %» vs
+    «IVA (16%)» (con el gris «16 % de $X» solo cuando el renglón de arriba NO
+    es ya la base), «TUA CUN» + gris «4 pax × $25.00» vs «TUA CUN · $25.00 ×
+    4 pax», y la línea TUAS en 0 sin detalle no se imprime (queda fantasma en
+    edición).
+  - `pct`: el % del IVA se escribe con `porcentajeEntero` (`{:.0f}`) en el
+    cliente y con `pctG` (`{:g}`) en el interno, porque así lo imprime cada
+    PDF. Con el 16 % de siempre dan lo mismo; con un `iva_pct_override` de
+    8.5 el cliente dice «8» y el interno «8.5».
+- **Pendiente conocido (Fase 2.3)**: el CONCEPTO de un EXTRA se sigue
+  escribiendo con el formato del cliente (`etiquetaExtra`: «Handler ·
+  $1,500.00 MXN») en vez del canónico del interno, que con `cantidad > 1` trae
+  la cuenta dentro («Handler · 2 × $85.00 MXN = $170.00 MXN») y con
+  `aplica_iva:false` cierra con « (sin IVA)». El MONTO es el mismo y ningún
+  fixture lo cubre. NO se corrigió con los demás conceptos porque el renglón
+  del extra es EDITABLE (su concepto es un input): en lectura habría que leer
+  la línea canónica y en edición el valor tecleado, y las dos se cruzan por
+  índice con `breakdown.extras`, que va un debounce atrás. Se migra con ese
+  bloque en la 2.3, con un cuarto escenario de extras (con cantidad y exento).
+  En prod hoy: 0 extras exentos, y los de cantidad > 1 son los que divergen.
+- **Roles: el panel tampoco PIDE lo que no va a pintar.**
+  `app/admin/quotes/[id]/page.tsx` llama a `getQuoteInterno` solo si
+  `puedeVerHojaInterna(me.rol)`: a SOCIO/PILOTO el API respondía 403 en cada
+  carga de la pantalla. El gate real sigue siendo el API.
+
 ## Lista de flota = el pizarrón de Tacómetros (22-sep-2026)
 
 - Pedido del cliente con dos fotos: en `/admin/aircraft` tachó **Pax**,

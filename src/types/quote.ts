@@ -154,6 +154,19 @@ export interface TramoBreakdown {
    *  escala.pdf_oculto (toggle en el detalle); esto es solo fallback para
    *  snapshots sin escala viva de ese orden (misma regla que el PDF). */
   pdf_oculto?: boolean;
+  /**
+   * COSTEO DEL TRAMO — campos ADITIVOS del API 0.0.27 (22-sep-2026), fuente
+   * única `tramos-costeados.util.ts`, la MISMA que imprime el PDF interno.
+   * Alimentan las columnas TIEMPO / COSTO POR HORA / TOTAL POR TRAMO de la
+   * hoja interna. El panel JAMÁS multiplica `tiempo_hr × tarifa`: con un API
+   * previo llegan `undefined`/`null` y esas celdas pintan «—» (riesgo 10 del
+   * diseño: dos fuentes del mismo número = pantalla y PDF discrepando).
+   */
+  tarifa_usd_hr?: number | null;
+  /** El mismo `tiempo_hr` como «01:18» (lo formatea el API). */
+  tiempo_hhmm?: string | null;
+  /** Costo del tramo en USD, ya redondeado por el API. */
+  total_usd?: number | null;
 }
 
 export interface CalculateQuoteRequest {
@@ -354,4 +367,21 @@ export interface QuoteBreakdown {
       precio_desactualizado?: boolean;
     } | null;
   };
+  /**
+   * PIE DE LA TABLA DE TRAMOS — campos ADITIVOS del API 0.0.27 (22-sep-2026),
+   * de la fuente única `tramos-costeados.util.ts` (la del PDF interno). El
+   * panel los LEE para pintar «TOTAL», el ajuste con su motivo y el «Servicio
+   * aéreo» de la hoja interna; **nunca** los calcula (riesgo 10 del diseño).
+   *
+   * `null` = el API miró y no hay tabla por tramo (ruta de un solo tramo
+   * legada); AUSENTE = API previo ⇒ esas celdas pintan «—».
+   */
+  tramos_total_usd?: number | null;
+  tramos_tiempo_total_hr?: number | null;
+  /** Σ del tiempo de la tabla como «02:36». */
+  tramos_tiempo_total_hhmm?: string | null;
+  /** Línea TIEMPO_VUELO canónica − Σ tramos: `Σ tramos + ajuste == servicio aéreo`. */
+  tramos_ajuste_usd?: number | null;
+  /** «Hora mínima 1.0 h» · «Sobrevuelo 0.5 h» · «Horas pactadas 2 h» · «Redondeo». */
+  tramos_ajuste_motivo?: string | null;
 }

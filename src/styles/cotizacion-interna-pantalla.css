@@ -1,0 +1,349 @@
+/* CSS de PANTALLA de la HOJA INTERNA editable (Fase 2.2, 22-sep-2026).
+   Va DESPUÉS de cotizacion-fuente.css + cotizacion-interna.css (este último
+   lo sincroniza `npm run sync:hoja-interna-css` desde pyservices; aquí NO se
+   replica ni una regla del PDF). Hermano de `cotizacion-hoja-pantalla.css`,
+   que hace lo mismo para la hoja del CLIENTE. Cuatro cosas viven aquí:
+   1. La GEOMETRÍA de pantalla: papel CARTA (816 px a 96 dpi) con los
+      márgenes del `@page` interno (9 mm arriba / 12 mm a los lados / 10 mm
+      abajo) y el pie como bloque — en el PDF eso vive en `@page`.
+   2. La MARCA DE AGUA «INTERNA», exclusiva de la pantalla: el papel ya lleva
+      la banda roja, pero en un monitor compartido la diagonal es lo que
+      impide que alguien confunda esta vista con la del cliente.
+   3. Los INPUTS INVISIBLES en reposo y la CROMA de edición (márgenes de
+      fila, filas «+ Agregar», leyendas), copia de los de la hoja del cliente
+      pero acotados a `.cot-interna`: el CSS del PDF (`.cot-interna *`) fija
+      font/color/box-sizing a TODO descendiente, así que sin estas reglas los
+      controles del panel se verían como texto impreso muerto.
+   4. El ACENTO DE INTERACCIÓN (`--cot-acento`), SOLO en edición: igual que en
+      la hoja del cliente, todo bajo `:not(.cot-interna--lectura)`.
+   Todo selector cuelga de `.cot-interna` (lo exige
+   `__tests__/hoja-interna-css-deriva.test.ts`): fuera del papel no se pinta
+   nada. */
+
+/* ---------- 1. Geometría de pantalla ---------- */
+.cot-interna.cot-interna--pantalla {
+  width: 816px;
+  min-height: 1056px;
+  margin: 0;
+  padding: 34px 45px 38px;
+  box-sizing: border-box;
+  background: #fff;
+  position: relative;
+  isolation: isolate;
+  --cot-acento: #dc2626;
+  --cot-acento-hover: #b91c1c;
+}
+.cot-interna--pantalla.cot-interna--papel {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 14px 44px rgba(0, 0, 0, 0.38);
+  border-radius: 2px;
+}
+.cot-interna .pie-pantalla {
+  margin-top: 14px;
+  padding-top: 6px;
+  border-top: 1px solid #f3f4f6;
+  text-align: center;
+  font-size: 10px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+/* ---------- 2. Marca de agua «INTERNA» (solo pantalla) ---------- */
+.cot-interna--pantalla .cot-marca-agua {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+}
+.cot-interna--pantalla .cot-marca-agua span {
+  font-size: 150px;
+  font-weight: 800;
+  letter-spacing: 22px;
+  color: rgba(220, 38, 38, 0.05);
+  transform: rotate(-32deg);
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+/* ---------- 3. Inputs invisibles y croma de edición ---------- */
+.cot-interna .cot-in {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  box-shadow: none;
+  outline: none;
+  margin: 0 -2px;
+  padding: 0 2px;
+  min-width: 1ch;
+  box-sizing: content-box;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.cot-interna .cot-in::placeholder { color: #9ca3af; opacity: 1; }
+.cot-interna .cot-in::-webkit-outer-spin-button,
+.cot-interna .cot-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cot-interna .cot-in:hover:not(:disabled):not(:focus) { background: rgba(16, 42, 67, 0.07); }
+.cot-interna .cot-in:focus,
+.cot-interna .cot-in:focus-visible {
+  background: #fff;
+  outline: 2px solid var(--ring, #e63946);
+  outline-offset: 0;
+}
+.cot-interna .cot-in:disabled { cursor: default; }
+.cot-interna .cot-in--num { text-align: right; }
+.cot-interna .cot-in--der { text-align: right; }
+
+.cot-interna .cot-auto {
+  display: inline-grid;
+  vertical-align: baseline;
+  align-items: baseline;
+  max-width: 100%;
+}
+.cot-interna .cot-auto > * { grid-area: 1 / 1; }
+.cot-interna .cot-auto__espejo {
+  visibility: hidden;
+  white-space: pre;
+  padding: 0 2px;
+  margin: 0 -2px;
+  min-width: 1ch;
+  pointer-events: none;
+}
+.cot-interna .cot-auto > .cot-in { width: 100%; min-width: 0; }
+.cot-interna .cot-auto,
+.cot-interna .cot-auto__espejo,
+.cot-interna .cot-fecha,
+.cot-interna .cot-fecha__texto,
+.cot-interna .cot-sel { color: inherit; }
+
+.cot-interna .cot-in--flujo {
+  display: inline;
+  white-space: normal;
+  min-width: 1ch;
+  overflow-wrap: anywhere;
+}
+.cot-interna .cot-in--flujo:empty::before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.cot-interna .cot-fecha { position: relative; display: inline-block; vertical-align: baseline; }
+.cot-interna .cot-fecha__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: text;
+}
+.cot-interna .cot-fecha:hover .cot-fecha__texto { background: rgba(16, 42, 67, 0.07); border-radius: 3px; }
+.cot-interna .cot-fecha:focus-within .cot-fecha__input { position: static; opacity: 1; width: auto; height: auto; }
+.cot-interna .cot-fecha:focus-within .cot-fecha__texto { display: none; }
+.cot-interna input[type="datetime-local"].cot-in::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.55;
+}
+
+.cot-interna .cot-sel {
+  display: inline;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: inherit;
+}
+.cot-interna .cot-sel[data-popup-open] { background: #fff; outline: 2px solid var(--ring, #e63946); }
+.cot-interna .cot-sel--vacio { color: #9ca3af; }
+.cot-interna select.cot-in { cursor: pointer; padding-right: 2px; }
+.cot-interna .cot-fantasma { opacity: 0; transition: opacity 120ms ease; }
+.cot-interna .cot-fila:hover .cot-fantasma,
+.cot-interna .cot-fila:focus-within .cot-fantasma,
+.cot-interna .cot-fantasma:focus-visible { opacity: 1; }
+
+.cot-interna .cot-ancla { position: relative; }
+.cot-interna .cot-margen {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 6px;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1;
+  color: #9ca3af;
+  pointer-events: auto;
+}
+.cot-interna .cot-marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+.cot-interna .cot-marca--aviso { color: #d97706; }
+.cot-interna .cot-marca svg { width: 11px; height: 11px; }
+.cot-interna .cot-margen__accion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.cot-interna .cot-margen__accion svg { width: 13px; height: 13px; }
+.cot-interna .cot-margen__accion:hover { background: rgba(16, 42, 67, 0.08); color: #102a43; }
+.cot-interna .cot-margen__accion--peligro:hover { color: #dc2626; background: rgba(220, 38, 38, 0.1); }
+.cot-interna .cot-margen__accion:focus-visible { opacity: 1; outline: 2px solid var(--ring, #e63946); }
+.cot-interna .cot-fila:hover .cot-margen__accion,
+.cot-interna .cot-fila:focus-within .cot-margen__accion,
+.cot-interna .cot-margen__accion[aria-expanded="true"] { opacity: 1; }
+.cot-interna .cot-margen__accion:disabled { opacity: 0 !important; pointer-events: none; }
+
+.cot-interna .cot-fila--oculta > td { opacity: 0.42; }
+.cot-interna .cot-fila--oculta > td.cot-ancla { opacity: 1; }
+.cot-interna .cot-fila--oculta > td.cot-ancla > * { opacity: 0.42; }
+.cot-interna .cot-fila--oculta > td.cot-ancla > .cot-margen { opacity: 1; }
+.cot-interna .cot-fila--fantasma > td,
+.cot-interna .cot-fila--fantasma > td.lbl,
+.cot-interna .cot-fila--fantasma > td.val { color: #9ca3af; }
+.cot-interna .cot-fila--fantasma > td .cot-in { color: #1d1d1d; }
+.cot-interna .cot-fila--fantasma > td.val .cot-in { font-weight: inherit; }
+
+.cot-interna .cot-fila-agregar > td { color: #9ca3af; }
+.cot-interna .grid .cot-fila-agregar > td { border-style: dashed; }
+.cot-interna .cot-fila-agregar .cot-btn {
+  font: inherit;
+  color: #9ca3af;
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  margin: 0 -2px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.cot-interna .cot-fila-agregar .cot-btn:hover { color: #102a43; background: rgba(16, 42, 67, 0.07); }
+.cot-interna .cot-fila-agregar .cot-btn:focus-visible { outline: 2px solid var(--ring, #e63946); }
+.cot-interna .cot-fila-agregar .cot-sep { margin: 0 8px; color: #d1d5db; }
+.cot-interna .cot-fila-agregar .cot-in { color: #1d1d1d; }
+
+.cot-interna .cot-liga {
+  font: inherit;
+  font-size: 12px;
+  color: #9ca3af;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-left: 6px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cot-interna .cot-liga:hover { color: #102a43; }
+.cot-interna .cot-liga:focus-visible { color: #102a43; outline: 2px solid var(--ring, #e63946); outline-offset: 1px; border-radius: 2px; }
+.cot-interna .cot-acciones { display: inline; font-size: 12px; font-weight: 400; }
+.cot-interna .cot-acciones .cot-sep { margin: 0 6px 0 2px; color: #d1d5db; }
+.cot-interna .cot-acciones .cot-liga { margin-left: 0; white-space: nowrap; }
+.cot-interna .cot-tenue { color: #9ca3af; }
+
+/* Mientras el motor recalcula, los importes se atenúan (nunca se vacían). */
+.cot-interna--calculando .totales .val,
+.cot-interna--calculando .tramos tfoot td.num { opacity: 0.45; transition: opacity 160ms ease; }
+
+.cot-interna--lectura .cot-in { cursor: default; }
+
+/* ---------- 4. Acento de interacción (SOLO edición) ---------- */
+.cot-interna:not(.cot-interna--lectura) .cot-in::placeholder { color: var(--cot-acento); }
+.cot-interna:not(.cot-interna--lectura) .cot-in--flujo:empty::before { color: var(--cot-acento); }
+.cot-interna:not(.cot-interna--lectura) .cot-sel--vacio { color: var(--cot-acento); }
+.cot-interna:not(.cot-interna--lectura) .cot-in:disabled::placeholder,
+.cot-interna:not(.cot-interna--lectura) .cot-sel--vacio:disabled { color: #9ca3af; }
+.cot-interna:not(.cot-interna--lectura) .cot-fila-agregar > td,
+.cot-interna:not(.cot-interna--lectura) .cot-fila-agregar .cot-btn { color: var(--cot-acento); }
+.cot-interna:not(.cot-interna--lectura) .cot-fila-agregar .cot-btn:hover,
+.cot-interna:not(.cot-interna--lectura) .cot-fila-agregar .cot-btn:focus-visible {
+  color: var(--cot-acento-hover);
+  background: rgba(220, 38, 38, 0.07);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cot-interna:not(.cot-interna--lectura) .cot-liga { color: var(--cot-acento); font-size: 12px; }
+.cot-interna:not(.cot-interna--lectura) .cot-liga:hover,
+.cot-interna:not(.cot-interna--lectura) .cot-liga:focus-visible {
+  color: var(--cot-acento-hover);
+  text-decoration: underline;
+}
+.cot-interna:not(.cot-interna--lectura) .cot-fecha__texto--vacio {
+  text-decoration: underline dotted var(--cot-acento);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+/* Renglón que NO entra al total (21-sep-2026): mismo trato que en la hoja del
+   cliente — importe atenuado y tachado, leyenda ámbar-700 bajo el concepto. */
+.cot-interna:not(.cot-interna--lectura) .cot-fila--fuera > td.val {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-color: #d97706;
+  text-decoration-thickness: 1px;
+}
+.cot-interna:not(.cot-interna--lectura) .cot-fila--fuera > td.val .cot-in {
+  text-decoration: line-through;
+  text-decoration-color: #d97706;
+  text-decoration-thickness: 1px;
+}
+.cot-interna:not(.cot-interna--lectura) .cot-aviso {
+  display: block;
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  color: #b45309;
+}
+.cot-interna:not(.cot-interna--lectura) .cot-aviso__nota { color: #92400e; }
+.cot-interna:not(.cot-interna--lectura) button.cot-aviso__liga {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.cot-interna:not(.cot-interna--lectura) button.cot-aviso__liga:hover {
+  color: #92400e;
+  text-decoration: underline;
+}
+.cot-interna:not(.cot-interna--lectura) button.cot-aviso__liga:focus-visible {
+  outline: 2px solid var(--ring, #e63946);
+  outline-offset: 1px;
+  border-radius: 2px;
+}

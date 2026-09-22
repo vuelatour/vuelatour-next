@@ -289,6 +289,7 @@ export function CampoFecha({
   id,
   vacio = "Por confirmar",
   className,
+  texto: textoFijo,
 }: {
   /** String `datetime-local` ("YYYY-MM-DDTHH:mm") en PARED Cancún, o "". */
   value: string;
@@ -299,8 +300,16 @@ export function CampoFecha({
   /** Texto impreso sin fecha (el PDF: «Por confirmar»). */
   vacio?: string;
   className?: string;
+  /**
+   * Texto IMPRESO cuando hay valor, si el documento lo escribe de otra forma
+   * que `fechaLegibleDeInput`. Lo usa la HOJA INTERNA, donde la fecha del
+   * vuelo se imprime como DÍA largo («26 jun 2026») aunque el campo siga
+   * capturando el instante completo — la hora es dato operativo y no se
+   * puede perder. Sin la prop, el texto es el de siempre.
+   */
+  texto?: string;
 }) {
-  const texto = value ? fechaLegibleDeInput(value) : vacio;
+  const texto = value ? (textoFijo ?? fechaLegibleDeInput(value)) : vacio;
   if (lectura) return <>{texto}</>;
   return (
     <label className={cn("cot-fecha", className)} {...UI}>

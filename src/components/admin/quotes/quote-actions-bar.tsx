@@ -43,21 +43,18 @@ import {
   RAZON_REVISION,
   type CobrosInfoCandado,
 } from "@/lib/admin/quote-revision";
+import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
 /**
- * Roles que pueden generar el PDF INTERNO (espejo del `@Roles` de
- * `POST /v1/quotes/:id/pdf-interno` en el API: sin SOCIO, nunca
- * PILOTO/MECANICO/VISITANTE). El panel solo esconde el botón; el gate real
- * es el API (403 → toast).
+ * Roles que pueden generar el PDF INTERNO: FUENTE ÚNICA `ROLES_HOJA_INTERNA`
+ * (`lib/admin/quote-sheet-interna.ts`), espejo del `@Roles` del API — la
+ * MISMA lista que gobierna `POST /v1/quotes/:id/pdf-interno`,
+ * `GET /v1/quotes/:id/interno` y la HOJA INTERNA de la pantalla. Con dos
+ * listas escritas a mano, el botón y la pantalla podrían divergir y alguien
+ * vería en el panel lo que el PDF le niega. El panel solo esconde el botón;
+ * el gate real es el API (403 → toast).
  */
-const ROLES_PDF_INTERNO: ReadonlySet<string> = new Set([
-  "ADMIN",
-  "COORDINADOR",
-  "FACTURACION",
-  "ANALISTA",
-]);
-
 const TITULO_PDF_INTERNO =
   "Versión interna: comisiones, horas, cobros. No se manda al cliente";
 
@@ -107,7 +104,7 @@ export function QuoteActionsBar({
   const [openCancel, setOpenCancel] = useState(false);
   const [motivoCancel, setMotivoCancel] = useState("");
   const [openCobradoInfo, setOpenCobradoInfo] = useState(false);
-  const puedePdfInterno = rol != null && ROLES_PDF_INTERNO.has(rol);
+  const puedePdfInterno = puedeVerHojaInterna(rol);
 
   // PDF del cliente: fuente única `abrirPdfCotizacion` (también la usa
   // «Ver PDF real» de la hoja, F1). Abre la URL del proxy —nunca un blob—
@@ -208,7 +205,7 @@ export function QuoteActionsBar({
           <ArrowDownTrayIcon className="h-4 w-4" />
         </a>
       </div>
-      {/* «PDF interno»: solo roles de oficina (ROLES_PDF_INTERNO); icono
+      {/* «PDF interno»: solo roles de oficina (ROLES_HOJA_INTERNA); icono
           distinto para que no se confunda con el PDF que se manda al cliente. */}
       {puedePdfInterno && (
         <Button

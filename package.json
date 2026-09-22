@@ -11,7 +11,9 @@
     "gen:api-types": "openapi-typescript \"${API_URL:-http://localhost:3001}/v1/docs-json\" -o src/types/api.ts",
     "test": "vitest run",
     "sync:hoja-css": "node scripts/sync-hoja-css.mjs",
-    "gen:hoja-fixture": "../vuelatour-pyservices/.venv/bin/python scripts/gen-hoja1-fixture.py"
+    "sync:hoja-interna-css": "node scripts/sync-hoja-interna-css.mjs",
+    "gen:hoja-fixture": "../vuelatour-pyservices/.venv/bin/python scripts/gen-hoja1-fixture.py",
+    "gen:hoja-interna-fixture": "../vuelatour-pyservices/.venv/bin/python scripts/gen-hoja-interna-fixture.py"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

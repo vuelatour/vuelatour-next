@@ -19,6 +19,7 @@ import {
   ETIQUETA_BASE_GRAVABLE,
   ETIQUETA_SIN_IVA,
   ETIQUETA_SUBTOTAL,
+  TOLERANCIA_USD,
   descuentoImpresoUsd,
   esExtraSintetizado,
   etiquetaExtra,
@@ -34,6 +35,14 @@ import {
   tuasDetalleLegado,
   type LineaIva,
 } from "@/lib/admin/quote-sheet";
+import {
+  conceptoCanonico,
+  moneyInterno,
+  opTotalMxnInterna,
+  pctG,
+  piezasConceptoTuaInterna,
+  servicioAereoCanonicoUsd,
+} from "@/lib/admin/quote-sheet-interna";
 import { moneyTarifa } from "@/lib/admin/tarifa";
 import { upsertTuaLinea } from "@/lib/admin/tuas";
 import { fmtTc } from "@/lib/format";
@@ -54,6 +63,80 @@ import type { OnAbrirInterno, OnCambioHoja, QuoteSheetValores } from "./quote-sh
 
 /** Tooltip del atajo «ajustar» junto a «Servicio aéreo» (tarifa y horas NO se editan en la hoja). */
 const TITULO_AJUSTAR_TARIFA = "Tarifa por hora y horas cobrables se ajustan en Interno › Tarifa y horas";
+
+/**
+ * DIALECTO del documento (Fase 2.2, 22-sep-2026): el MISMO editor de
+ * desglose sirve a la hoja del CLIENTE y a la HOJA INTERNA. Solo cambian las
+ * ETIQUETAS y QUÉ RENGLONES se publican — los campos que se capturan (TUAS,
+ * extras, descuento, IVA %, T.C.) son exactamente los mismos, y tienen que
+ * serlo: dos editores del mismo dinero es donde se cuela el número que no
+ * cuadra.
+ *
+ * La diferencia de fondo está en `servicioAereo`:
+ *  - `IMPRESO` (cliente): «Servicio aéreo» ABSORBE el redondeo y la comisión
+ *    del vendedor — el cliente no los ve como conceptos aparte.
+ *  - `CANONICO` (interno): «Servicio aéreo» es la línea TIEMPO_VUELO del
+ *    desglose v1.3 tal cual, y la comisión del vendedor y el ajuste positivo
+ *    se publican en SU renglón. Sin eso, la columna del documento interno no
+ *    sumaría su propio total.
+ */
+export interface DialectoDesglose {
+  /** Texto del `<h2>`. */
+  titulo: string;
+  /** Etiqueta de la fila del total («Total (USD)» · «Total USD»). */
+  etiquetaTotal: (moneda: string) => string;
+  /** Clase de la fila del total en pesos (`total-mxn` · `mxn-row`). */
+  claseFilaMxn: string;
+  servicioAereo: "IMPRESO" | "CANONICO";
+  /**
+   * Texto alrededor del % de IVA, que es un input en su propia etiqueta:
+   * el cliente imprime «IVA (16%)» y el interno «IVA 16 %».
+   */
+  iva: { antes: string; despues: string };
+  /**
+   * Cómo se escribe el % del IVA: el PDF del CLIENTE usa `{iva_pct:.0f}`
+   * (entero, redondeo half-even de Python) y el INTERNO `{iva_pct:g}` (hasta
+   * 6 cifras significativas). Con el 16 % de siempre dan lo mismo; con un
+   * `iva_pct_override` de 8.5 el cliente imprime «8» y el interno «8.5», y
+   * usar el del cliente en la hoja interna la haría mentir.
+   */
+  pct: (pct: number) => string;
+  /**
+   * Cómo se escribe el T.C. en la fila del total en pesos: entre paréntesis
+   * («Total MXN (T.C. 18.1)», cliente) o como aclaración gris («Total MXN ·
+   * T.C. 18.1», interno).
+   */
+  mxnTc: "PARENTESIS" | "OP";
+  /**
+   * Concepto de una TUA: «TUA CUN · $25.00 × 4 pax» (cliente, el texto del
+   * desglose canónico) o «TUA CUN» + gris «4 pax × $25.00» (interno).
+   */
+  tua: "CLIENTE" | "INTERNA";
+  /** Fila(s) al final de la tabla (el «motor v1.3 · calculado …» del interno). */
+  pie?: ReactNode;
+}
+
+export const DIALECTO_CLIENTE: DialectoDesglose = {
+  titulo: "Desglose",
+  etiquetaTotal: (moneda) => `Total (${moneda})`,
+  claseFilaMxn: "total-mxn",
+  servicioAereo: "IMPRESO",
+  iva: { antes: "IVA (", despues: "%)" },
+  pct: porcentajeEntero,
+  mxnTc: "PARENTESIS",
+  tua: "CLIENTE",
+};
+
+export const DIALECTO_INTERNA: DialectoDesglose = {
+  titulo: "Desglose de la cotización",
+  etiquetaTotal: () => "Total USD",
+  claseFilaMxn: "mxn-row",
+  servicioAereo: "CANONICO",
+  iva: { antes: "IVA ", despues: " %" },
+  pct: pctG,
+  mxnTc: "OP",
+  tua: "INTERNA",
+};
 
 /**
  * DESGLOSE de la hoja editable (form-as-document, 8-sep-2026): la MISMA
@@ -105,6 +188,16 @@ export interface QuoteSheetDesgloseProps {
    * 9-sep-2026). Solo en edición; sin la prop no se pinta.
    */
   onAbrirInterno?: OnAbrirInterno;
+  /** Documento que se está pintando (cliente por default; ver `DialectoDesglose`). */
+  dialecto?: DialectoDesglose;
+  /**
+   * Comisión del vendedor ya resuelta por quien llama (solo dialecto
+   * `CANONICO`): `{ montoUsd, concepto, op }`. Null = no se pinta el renglón.
+   * El monto NUNCA se calcula aquí.
+   */
+  comisionVendedor?: { montoUsd: number; concepto: string; op: string } | null;
+  /** Ajuste canónico POSITIVO (redondeo/pactado), solo dialecto `CANONICO`. */
+  ajustePositivo?: { montoUsd: number; concepto: string; op: string } | null;
 }
 
 export function QuoteSheetDesglose({
@@ -117,13 +210,26 @@ export function QuoteSheetDesglose({
   grupo,
   idTc = "tc-usd-mxn-field",
   onAbrirInterno,
+  dialecto = DIALECTO_CLIENTE,
+  comisionVendedor = null,
+  ajustePositivo = null,
 }: QuoteSheetDesgloseProps) {
   const b = breakdown;
   const val = (n: number | null | undefined) => (n == null ? "—" : moneyPdf(n));
+  const canonico = dialecto.servicioAereo === "CANONICO";
 
   // ----- Servicio aéreo (derivado; etiqueta con horas × tarifa solo si el toggle lo pide) -----
-  const servicio = servicioAereoImpresoUsd(b);
+  // CLIENTE: la composición IMPRESA (absorbe redondeo y comisión).
+  // INTERNO: la línea TIEMPO_VUELO canónica tal cual — los dos números salen
+  // del motor, aquí no se suma nada.
+  const servicio = canonico ? servicioAereoCanonicoUsd(b) : servicioAereoImpresoUsd(b);
+  // El toggle «mostrar tarifa» es del PDF del CLIENTE: el documento INTERNO
+  // imprime siempre «Servicio aéreo» a secas (`_concepto_operacion`, clave
+  // TIEMPO_VUELO) porque «h × $/hr» ya vive en «Horas cotizadas» y el cliente
+  // marcó la repetición. Sin este candado, prender el toggle cambiaba una
+  // etiqueta que el papel interno nunca lleva.
   const conTarifa =
+    !canonico &&
     valores.pdf_mostrar_tarifa &&
     !!b &&
     Number(b.tiempos.cobrable_hr) > 0 &&
@@ -258,11 +364,16 @@ export function QuoteSheetDesglose({
   );
 
   // --- TUAS: sin filas → línea única; una → su concepto; varias → detalle + total ---
-  if (filas.length === 0 && detalleLegado.length === 0) {
+  // El documento INTERNO no imprime la línea TUAS cuando vale 0 y no hay
+  // detalle por aeropuerto (`_desglose_html`: «exentas o en $0 NO se
+  // muestran»). En EDICIÓN se conserva como fila FANTASMA para que el
+  // operador siga viendo dónde viven las TUAS: aporta 0 y no se imprime.
+  const tuasVacia = canonico && filas.length === 0 && Math.abs(tuasTotalUsd) < 0.005;
+  if (filas.length === 0 && detalleLegado.length === 0 && (!tuasVacia || !lectura)) {
     agregarFila(
-      tuasTotalUsd,
+      tuasVacia ? 0 : tuasTotalUsd,
       false,
-      <tr key="tuas" className="cot-fila">
+      <tr key="tuas" className={cn("cot-fila", tuasVacia && "cot-fila--fantasma")} {...(tuasVacia ? UI : {})}>
         <td className="lbl cot-ancla">
           TUAS
           {!lectura && !valores.cobrar_tuas && (
@@ -301,6 +412,7 @@ export function QuoteSheetDesglose({
         disabled={!valores.cobrar_tuas}
         onChange={setTua}
         valor={filas.length === 1 ? val(b!.tuas.total_usd) : ""}
+        interna={dialecto.tua === "INTERNA"}
       />,
     );
   });
@@ -539,23 +651,27 @@ export function QuoteSheetDesglose({
     );
   }
 
-  // --- Viáticos por pernocta (derivado del itinerario). SIEMPRE exento: es
-  //     el concepto que el motor publica como «Viáticos por pernocta (sin
-  //     IVA)» en el desglose canónico. ---
-  if (Number(b?.totales.viaticos_pernocta_usd) > 0) {
+  // --- COMISIÓN DEL VENDEDOR: renglón propio SOLO en el documento interno
+  //     (el cliente nunca la ve: allá va absorbida en «Servicio aéreo»). El
+  //     monto lo resuelve quien llama desde el desglose canónico; aquí solo
+  //     se pinta. Gravable: el motor la mete a la base del IVA. ---
+  if (canonico && comisionVendedor && Math.abs(comisionVendedor.montoUsd) >= 0.005) {
     agregarFila(
-      Number(b!.totales.viaticos_pernocta_usd),
-      true,
-      <tr key="pernocta" className="cot-fila">
-        <td className="lbl">Viáticos por pernocta</td>
-        <td className="val">{moneyPdf(b!.totales.viaticos_pernocta_usd)}</td>
+      comisionVendedor.montoUsd,
+      false,
+      <tr key="comision-vendedor" className="cot-fila">
+        <td className="lbl">
+          {comisionVendedor.concepto}
+          {comisionVendedor.op && <span className="op">{` ${comisionVendedor.op}`}</span>}
+        </td>
+        <td className="val">{moneyPdf(comisionVendedor.montoUsd)}</td>
       </tr>,
     );
   }
 
-  // --- Descuento: impreso si > 0; fantasma para capturar. Entra como
-  //     GRAVABLE con monto NEGATIVO (igual que en pyservices). ---
-  if (filaDescuentoImpresa || !lectura) {
+  /** Renglón del DESCUENTO (editable): gravable con monto NEGATIVO, igual que en pyservices. */
+  const filaDescuento = () => {
+    if (!filaDescuentoImpresa && lectura) return;
     agregarFila(
       -descuentoImpreso,
       false,
@@ -586,7 +702,52 @@ export function QuoteSheetDesglose({
         </td>
       </tr>,
     );
+  };
+
+  // --- AJUSTE canónico POSITIVO (redondeo automático / precio pactado): en
+  //     la hoja del CLIENTE va absorbido en «Servicio aéreo», así que solo
+  //     existe en el documento interno. Sin él, la columna interna no
+  //     sumaría su propio total. ---
+  if (canonico && ajustePositivo && ajustePositivo.montoUsd >= 0.005) {
+    agregarFila(
+      ajustePositivo.montoUsd,
+      false,
+      <tr key="ajuste" className="cot-fila">
+        <td className="lbl">
+          {ajustePositivo.concepto}
+          {ajustePositivo.op && <span className="op">{` ${ajustePositivo.op}`}</span>}
+        </td>
+        <td className="val">{moneyPdf(ajustePositivo.montoUsd)}</td>
+      </tr>,
+    );
   }
+
+  // ORDEN CANÓNICO v1.3: …EXTRA · COMISION_VENDEDOR · AJUSTE · PERNOCTA. La
+  // hoja del cliente lleva años imprimiendo la pernocta ANTES del descuento y
+  // sus 6 fixtures lo congelan, así que el orden solo se corrige en el
+  // documento interno, que es el que se lee contra el Excel de la oficina.
+  if (canonico) filaDescuento();
+
+  // --- Viáticos por pernocta (derivado del itinerario). SIEMPRE exento: es
+  //     el concepto que el motor publica como «Viáticos por pernocta (sin
+  //     IVA)» en el desglose canónico. ---
+  if (Number(b?.totales.viaticos_pernocta_usd) > 0) {
+    agregarFila(
+      Number(b!.totales.viaticos_pernocta_usd),
+      true,
+      <tr key="pernocta" className="cot-fila">
+        {/* El documento INTERNO imprime el concepto CANÓNICO, que trae su
+            «(sin IVA)» dentro; la hoja del cliente lleva años con el texto
+            corto y sus 6 fixtures lo congelan. */}
+        <td className="lbl">
+          {(canonico ? conceptoCanonico(b, "PERNOCTA") : null) ?? "Viáticos por pernocta"}
+        </td>
+        <td className="val">{moneyPdf(b!.totales.viaticos_pernocta_usd)}</td>
+      </tr>,
+    );
+  }
+
+  if (!canonico) filaDescuento();
 
   // Partición: con exentos (y IVA > 0) el renglón sobre el IVA pasa a ser la
   // BASE GRAVABLE y los exentos bajan debajo. Si las identidades no cuadran
@@ -603,9 +764,34 @@ export function QuoteSheetDesglose({
     ivaPctMotor ?? 0,
   );
 
+  // Gris del IVA del documento INTERNO: el renglón impreso sobre el IVA vs la
+  // BASE que mandó el motor. Se compara, no se recalcula.
+  const subtotalImpreso = particion.activa ? particion.baseUsd : subtotalSinIvaUsd(b);
+  const baseMotor = b?.iva?.base_usd;
+  const difiereDeLaBase =
+    baseMotor != null &&
+    Number.isFinite(baseMotor) &&
+    (subtotalImpreso == null || Math.abs(subtotalImpreso - Number(baseMotor)) >= TOLERANCIA_USD);
+  const ivaOpInterna =
+    canonico && difiereDeLaBase
+      ? `${pctG(ivaPctMotor ?? 0)} % de ${moneyInterno(Number(baseMotor))}`
+      : "";
+
+  // «Total MXN · T.C. 18.1 · incluye $4,022.40 MXN nativos» (documento
+  // INTERNO): los renglones capturados en PESOS entran al total SIN pasar por
+  // el T.C., así que sin esta frase el total en pesos no cuadra contra el
+  // tipo de cambio. Son 14 de 231 cotizaciones en prod. La hoja del CLIENTE
+  // nunca la lleva (sus 6 fixtures la congelan sin ella).
+  const mxnNativos = canonico ? (b?.totales.mxn_nativos ?? null) : null;
+  const opMxnInterna = canonico
+    ? opTotalMxnInterna(tc != null ? fmtTc(tc) : "", mxnNativos)
+    : "";
+  const sufijoMxnNativos =
+    canonico && Number(mxnNativos) ? ` · incluye $${numero2(Number(mxnNativos))} MXN nativos` : "";
+
   return (
     <>
-      <h2>Desglose</h2>
+      <h2>{dialecto.titulo}</h2>
       <table className="totales">
         <tbody>
           {particion.gravables.map((ln) => ln.fila)}
@@ -621,10 +807,10 @@ export function QuoteSheetDesglose({
           <tr className="cot-fila">
             <td className="lbl cot-ancla">
               {lectura ? (
-                `IVA (${porcentajeEntero(ivaPctMostrado ?? 0)}%)`
+                `${dialecto.iva.antes}${dialecto.pct(ivaPctMostrado ?? 0)}${dialecto.iva.despues}`
               ) : (
                 <>
-                  {"IVA ("}
+                  {dialecto.iva.antes}
                 <CampoNumero
                   value={ivaPctMostrado}
                   onChange={(n) =>
@@ -633,7 +819,7 @@ export function QuoteSheetDesglose({
                       n == null ? null : Math.round(Math.min(100, Math.max(0, n)) * 100) / 10000,
                     )
                   }
-                  formato={(n) => porcentajeEntero(n)}
+                  formato={(n) => dialecto.pct(n)}
                   placeholder="auto"
                   ariaLabel="IVA % (vacío = según método de pago)"
                   title="Vacío = según método de pago (Interno › Cobro)"
@@ -641,7 +827,7 @@ export function QuoteSheetDesglose({
                   max={100}
                   minCh={2}
                 />
-                  {"%)"}
+                  {dialecto.iva.despues}
                 </>
               )}
               {!lectura && ivaOverridePct != null && (
@@ -651,6 +837,11 @@ export function QuoteSheetDesglose({
                   </span>
                 </span>
               )}
+              {/* Documento INTERNO: «16 % de $2,987.50» SOLO cuando el
+                  renglón de arriba NO es ya la base gravable — si lo es,
+                  repetiría el número que está justo encima
+                  (`_desglose_html`). La hoja del cliente nunca lo pinta. */}
+              {ivaOpInterna && <span className="op">{` ${ivaOpInterna}`}</span>}
             </td>
             <td className="val">{val(b ? b.totales.iva_usd : null)}</td>
           </tr>
@@ -669,37 +860,57 @@ export function QuoteSheetDesglose({
           {particion.exentos.map((ln) => ln.fila)}
 
           <tr className="total-row cot-fila">
-            <td>{`Total (${moneda})`}</td>
+            <td>{dialecto.etiquetaTotal(moneda)}</td>
             <td className="val">{val(totalUsd)}</td>
           </tr>
 
           {/* Total MXN: impreso con T.C.; fantasma para capturarlo */}
           {(filaMxnImpresa || !lectura) && (
-            <tr className={cn("total-mxn cot-fila", !filaMxnImpresa && "cot-fila--fantasma")} {...(!filaMxnImpresa ? UI : {})}>
+            <tr
+              className={cn(dialecto.claseFilaMxn, "cot-fila", !filaMxnImpresa && "cot-fila--fantasma")}
+              {...(!filaMxnImpresa ? UI : {})}
+            >
               <td className="cot-ancla">
+                {/* El T.C. va entre paréntesis en la hoja del cliente y como
+                    aclaración gris en el documento interno: el MISMO input,
+                    dos envoltorios. */}
                 {lectura ? (
-                  `Total MXN${tc != null ? ` (T.C. ${fmtTc(tc)})` : ""}`
+                  dialecto.mxnTc === "OP" ? (
+                    <>
+                      {"Total MXN"}
+                      {opMxnInterna && <span className="op">{` ${opMxnInterna}`}</span>}
+                    </>
+                  ) : (
+                    `Total MXN${tc != null ? ` (T.C. ${fmtTc(tc)})` : ""}`
+                  )
                 ) : (
                   <>
-                    {"Total MXN (T.C. "}
-                    <CampoNumero
-                      id={idTc}
-                      value={tc}
-                      onChange={(n) => onCambio("tc_usd_mxn", n != null && n > 0 ? n : null)}
-                      formato={fmtTc}
-                      placeholder="18.50"
-                      ariaLabel="Tipo de cambio (MXN por USD)"
-                      title="Opcional · si el pago entrará en pesos. Requerido con TUAS/extras en MXN."
-                      min={0}
-                      minCh={5}
-                    />
-                    )
+                    {dialecto.mxnTc === "OP" ? "Total MXN " : "Total MXN (T.C. "}
+                    <TcEnvoltorio op={dialecto.mxnTc === "OP"}>
+                      {dialecto.mxnTc === "OP" && "T.C. "}
+                      <CampoNumero
+                        id={idTc}
+                        value={tc}
+                        onChange={(n) => onCambio("tc_usd_mxn", n != null && n > 0 ? n : null)}
+                        formato={fmtTc}
+                        placeholder="18.50"
+                        ariaLabel="Tipo de cambio (MXN por USD)"
+                        title="Opcional · si el pago entrará en pesos. Requerido con TUAS/extras en MXN."
+                        min={0}
+                        minCh={5}
+                      />
+                      {sufijoMxnNativos}
+                    </TcEnvoltorio>
+                    {dialecto.mxnTc === "OP" ? "" : ")"}
                   </>
                 )}
               </td>
               <td className="val">{totalMxn != null ? `${moneyPdf(totalMxn)} MXN` : "—"}</td>
             </tr>
           )}
+          {/* Pie del documento interno («motor v1.3 · calculado …»): lo arma
+              quien llama, aquí solo se coloca al final de la tabla. */}
+          {dialecto.pie}
         </tbody>
       </table>
 
@@ -797,6 +1008,7 @@ function FilaTua({
   disabled,
   onChange,
   valor,
+  interna = false,
 }: {
   fila: TuasFila;
   linea?: TuaLinea;
@@ -805,17 +1017,29 @@ function FilaTua({
   onChange: (iata: string, monto: number | null, moneda: "USD" | "MXN") => void;
   /** Texto de la celda `.val` ("" con varias filas: el total va aparte). */
   valor: string;
+  /** Documento INTERNO: «TUA CUN» + gris «4 pax × $25.00» (`_tua_fila`). */
+  interna?: boolean;
 }) {
-  const p = piezasConceptoTua(fila);
+  // Dos documentos, el MISMO unitario editable: solo cambia el envoltorio.
+  const pi = piezasConceptoTuaInterna(fila, fila.tc_aplicado ? fmtTc(fila.tc_aplicado) : "");
+  const pc = piezasConceptoTua(fila);
+  const p = interna
+    ? { antes: pi.antes, unitario: Number(fila.monto_pax).toFixed(2), despues: pi.despues }
+    : pc;
   const moneda = linea?.moneda ?? fila.moneda;
   const capturada = !!linea;
   return (
     <tr className="cot-fila">
       <td className="lbl cot-ancla">
+        {interna && pi.concepto}
         {lectura ? (
-          `${p.antes}${p.unitario}${p.despues}`
+          interna ? (
+            <span className="op">{` ${p.antes}${p.unitario}${p.despues}`}</span>
+          ) : (
+            `${p.antes}${p.unitario}${p.despues}`
+          )
         ) : (
-          <>
+          <TuaEnvoltorio op={interna}>
           {p.antes}
           <CampoNumero
             value={Number(fila.monto_pax)}
@@ -844,7 +1068,7 @@ function FilaTua({
               </button>
             </span>
           )}
-          </>
+          </TuaEnvoltorio>
         )}
         {!lectura && (
           <span className="cot-margen" {...UI}>
@@ -1031,4 +1255,23 @@ function DetalleExtra({
     </div>,
     document.body,
   );
+}
+
+/**
+ * Envoltorio del T.C. en la fila «Total MXN»: en el documento INTERNO va como
+ * aclaración gris (`.op`, igual que en el PDF interno) y en la hoja del
+ * cliente en el propio texto, entre paréntesis. El input es el MISMO — y
+ * conserva su id ancla (`tc-usd-mxn-field`) en los dos casos.
+ */
+function TcEnvoltorio({ op, children }: { op: boolean; children: ReactNode }) {
+  return op ? <span className="op">{children}</span> : <>{children}</>;
+}
+
+/**
+ * Envoltorio del detalle de una TUA: en el documento INTERNO cuelga del
+ * concepto como aclaración gris («TUA CUN · 4 pax × $25.00»), en la hoja del
+ * cliente va en el propio texto. El input del unitario es el MISMO.
+ */
+function TuaEnvoltorio({ op, children }: { op: boolean; children: ReactNode }) {
+  return op ? <span className="op"> {children}</span> : <>{children}</>;
 }

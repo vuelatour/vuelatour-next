@@ -5,6 +5,7 @@ import { listQuotes } from "@/lib/api/quotes-server";
 import { cargarCatalogosCotizador } from "@/lib/api/quote-catalogos-server";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,11 @@ export default async function NewQuotePage() {
   // pantalla: sin ellos no se puede cotizar y el error sube al boundary. La
   // lista de clientes sí degrada, con aviso.
   const degradado = new Degradaciones();
-  const [catalogos, clientsRes, quotesRes] = await Promise.all([
+  const [me, catalogos, clientsRes, quotesRes] = await Promise.all([
+    // El rol decide si el alta se captura en la HOJA INTERNA (Fase 2.2) o en
+    // la del cliente, como hasta hoy. Accesorio: sin `/me` se cae a la del
+    // cliente, que es el comportamiento de siempre.
+    degradado.opcional("tu usuario", getMe(), null),
     // Aeronaves, rutas y aeropuertos ya mapeados (fuente única con el
     // detalle de la cotización).
     cargarCatalogosCotizador(),
@@ -51,8 +56,9 @@ export default async function NewQuotePage() {
           Nueva cotización
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          La hoja que ves es la que verá el cliente: captúrala en su lugar y guarda como v1.
-          Lo interno (tarifa, cobro, externo) va en el panel «Interno · no se imprime».
+          Captura el documento en su lugar y guarda como v1. Lo que todavía no
+          se edita en la hoja (tarifa, cobro, externo) va en el panel «Interno ·
+          no se imprime».
         </p>
       </div>
       <AvisoDegradado faltantes={degradado.faltantes} />
@@ -62,6 +68,7 @@ export default async function NewQuotePage() {
         clients={clients}
         airports={catalogos.airports}
         frequentClientIds={frequentClientIds}
+        rol={me?.rol ?? null}
       />
     </div>
   );

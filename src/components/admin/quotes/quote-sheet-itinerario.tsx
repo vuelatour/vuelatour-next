@@ -565,8 +565,13 @@ export function QuoteSheetItinerario({
  * FUERA del papel (portal a body, anclado al «⋯» de la fila) para que los
  * controles del panel conserven su estilo (dentro de `.cot-hoja` el CSS del
  * PDF fija fuente/color/box-sizing a todo).
+ *
+ * EXPORTADO desde la Fase 2.2 (22-sep-2026): la tabla «Tramos cotizados» de
+ * la HOJA INTERNA (`quote-sheet-interna-tramos.tsx`) abre EXACTAMENTE este
+ * popover. Dos copias del detalle serían dos sitios donde capturar pax,
+ * ferry, pernocta o el ojito del PDF — y uno de los dos se quedaría atrás.
  */
-function DetalleTramo({
+export function DetalleTramo({
   idx,
   leg,
   ancla,

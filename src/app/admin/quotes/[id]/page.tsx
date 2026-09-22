@@ -1,13 +1,16 @@
 import { notFound } from "next/navigation";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { QuoteWorkspace } from "@/components/admin/quotes/quote-workspace";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
-import { getQuote, getQuoteVersions } from "@/lib/api/quotes-server";
+import { getQuote, getQuoteInterno, getQuoteVersions } from "@/lib/api/quotes-server";
 import { cargarCatalogosCotizador } from "@/lib/api/quote-catalogos-server";
 import { getClient } from "@/lib/api/clients-server";
 import { getMe } from "@/lib/api/me";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { ApiError } from "@/lib/api/errors";
+import { Degradaciones } from "@/lib/api/degradar";
+import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
 import { esUuid } from "@/lib/admin/url-params";
 import { CANCUN_TZ } from "@/lib/datetime";
 
@@ -55,16 +58,30 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
   // comisión Paywise, en paralelo. Cobros: best-effort y en TODO estado
   // (9-sep-2026: la card de cobros se pinta siempre y desde la cotización
   // se registran anticipos; antes se omitía en SOLICITUD/COTIZADO).
-  const [client, cobrosVuelo, catalogos, tcOficial, paywiseComisionPct] =
+  // La HOJA INTERNA es ACCESORIA (Fase 2.2, 22-sep-2026): si no carga, la
+  // pantalla sigue editándose con el breakdown y se AVISA — jamás tumba la
+  // cotización entera. Un 404 (API previo) o un 403 (rol sin permiso) ya
+  // vuelven null desde `getQuoteInterno`, en silencio y sin aviso.
+  const degradado = new Degradaciones();
+  const [client, cobrosVuelo, catalogos, tcOficial, paywiseComisionPct, interno] =
     await Promise.all([
       getClient(quote.cliente_id).catch(() => null),
       getFlightSnapshot(id).catch(() => null),
       cargarCatalogosCotizador(),
       diaCotizacion ? getTipoCambioOficial(diaCotizacion) : Promise.resolve(null),
       getPaywiseComisionPct(),
+      // Solo se PIDE a quien puede verla (`ROLES_HOJA_INTERNA`, espejo del
+      // `@Roles` del API): a SOCIO/PILOTO el API responde 403 en cada carga
+      // de la pantalla y ese dato nunca se iba a pintar. El gate real sigue
+      // siendo el API; esto solo evita la llamada que ya se sabe negada.
+      puedeVerHojaInterna(me?.rol)
+        ? degradado.opcional("la hoja interna", getQuoteInterno(id), null)
+        : Promise.resolve(null),
     ]);
 
   return (
+    <>
+      <AvisoDegradado faltantes={degradado.faltantes} />
     <QuoteWorkspace
       quote={quote}
       versions={versions}
@@ -79,6 +96,8 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
       tcOficial={tcOficial}
       tcOficialFecha={diaCotizacion}
       paywiseComisionPct={paywiseComisionPct}
+      interno={interno}
     />
+    </>
   );
 }
