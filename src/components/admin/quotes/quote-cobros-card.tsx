@@ -38,7 +38,11 @@ import {
   esParteDeSobre,
 } from "@/components/admin/flights/cobro-sobre-nota";
 import type { FlightCobro } from "@/types/flights";
-import { TOLERANCIA_COBRO_USD } from "@/lib/admin/cobros";
+import {
+  TITULO_REGISTRO_COBRO,
+  TOLERANCIA_COBRO_USD,
+  textoRegistroCobro,
+} from "@/lib/admin/cobros";
 
 /**
  * Cobros del vuelo VISIBLES desde la cotización: el desglose a cobrar no
@@ -171,6 +175,8 @@ export function QuoteCobrosCard({
           // Reembolso = cobro NEGATIVO (derivado del signo): en rojo, con
           // badge — RESTA del cobrado del vuelo.
           const esReembolso = Number(c.monto) < 0;
+          // «Registró: Itzi» — mismo texto que el detalle del vuelo.
+          const registro = textoRegistroCobro(c);
           return (
           <div
             key={c.id}
@@ -206,6 +212,13 @@ export function QuoteCobrosCard({
                     <> · comisión banco ${Number(c.comision_banco_monto).toLocaleString("en-US")}</>
                   )}
               </p>
+              {/* Quién capturó el cobro (22-sep-2026): solo si el API mandó
+                  el nombre; fuente única del texto. */}
+              {registro && (
+                <p className="text-[11px] text-muted-foreground" title={TITULO_REGISTRO_COBRO}>
+                  {registro}
+                </p>
+              )}
               {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
               <CobroSobreNota cobro={c} />
             </div>

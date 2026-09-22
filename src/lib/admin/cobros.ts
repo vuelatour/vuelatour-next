@@ -178,3 +178,47 @@ export function montoSugeridoMxn(v: {
   if (!(v.tc > 0) || !(v.pendienteUsd > 0)) return null;
   return Math.round(v.pendienteUsd * v.tc * 100) / 100;
 }
+
+// ===== ¿Quién registró el cobro? (22-sep-2026, pedido del cliente) =====
+/**
+ * «Sería buenísimo si se pudiera ver ahí en la lista de cobros de un vuelo
+ * quién registró el cobro».
+ *
+ * El dato SIEMPRE estuvo ahí (`cobro_vuelo.registrado_por` / el sobre de
+ * grupo `cobro_grupo.registrado_por`), pero es un uuid: quien lo resuelve a
+ * nombre es el API, EN LOTE, y lo manda como `registrado_por_nombre` — campo
+ * ADITIVO: un API previo simplemente no lo manda y las cards se comportan
+ * exactamente como antes (no se pinta nada, jamás un «—» ni un uuid).
+ *
+ * Esta es la FUENTE ÚNICA de la frase: ningún componente la redacta a mano
+ * (la pintan el detalle del vuelo, la card de cobros del cotizador y los
+ * sobres del grupo; que las tres digan lo mismo no puede depender de que
+ * alguien copie bien el texto).
+ */
+
+/** Tooltip único: registrar ≠ pagar (quién capturó, no quién pagó). */
+export const TITULO_REGISTRO_COBRO =
+  "Quién capturó este cobro en el sistema (no es quién lo pagó)";
+
+/** Cualquier cobro/sobre del API que pueda traer el nombre ya resuelto. */
+export interface CobroConRegistro {
+  /** Nombre resuelto por el API; `null` = usuario borrado o sin nombre. */
+  registrado_por_nombre?: string | null;
+}
+
+/** Un uuid crudo NO es un nombre: si el API no lo resolvió, no se pinta. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * «Registró: Itzi» para el renglón del cobro, o `null` cuando no hay a quién
+ * nombrar (API previo, usuario borrado, nombre vacío o un uuid sin resolver).
+ * Sirve igual para un cobro del vuelo y para un sobre de grupo: ambos traen
+ * la misma llave.
+ */
+export function textoRegistroCobro(
+  cobro: CobroConRegistro | null | undefined,
+): string | null {
+  const nombre = (cobro?.registrado_por_nombre ?? "").trim().replace(/\s+/g, " ");
+  if (!nombre || UUID_RE.test(nombre)) return null;
+  return `Registró: ${nombre}`;
+}

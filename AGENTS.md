@@ -714,6 +714,23 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   cancelado = sin sugerencia. La sugerencia NUNCA pisa un importe tecleado
   (misma regla que el T.C. prellenado) y volver a USD restaura el pendiente.
 
+## Quién registró el cobro (22-sep-2026)
+
+- Pedido del cliente sobre la card «Cobro»: «ver ahí en la lista de cobros de
+  un vuelo quién registró el cobro». El uuid `cobro_vuelo.registrado_por`
+  (y el del sobre `cobro_grupo.registrado_por`) lo resuelve a nombre **el
+  API, en lote**, y lo manda como `registrado_por_nombre` — campo **ADITIVO**
+  (`FlightCobro`, `SobreSalida`, ambos opcionales): con un API previo la card
+  queda EXACTAMENTE como estaba. El panel jamás pide nombres por su cuenta ni
+  deduce el nombre de un uuid.
+- **Fuente única del texto**: `textoRegistroCobro(cobro)` → `«Registró: Itzi»`
+  o `null`, y el tooltip `TITULO_REGISTRO_COBRO` (`lib/admin/cobros.ts`,
+  congelados en `__tests__/cobro-registrado-por.test.ts`). Sin nombre no hay
+  renglón — nunca un «—», un «Sistema» ni el uuid crudo. Lo pintan, en un
+  renglón propio (para que un `truncate` con referencia larga no se lo coma),
+  `flights/cobros-card.tsx`, `quotes/quote-cobros-card.tsx` y
+  `grupos/detalle/grupo-cobros-card.tsx`; ningún componente redacta la frase.
+
 ## Horas pactadas: 8 decimales y captura h:mm (22-sep-2026)
 
 - **El bug (cotizaciones #322 y #302, pedido del cliente)**: mismos datos

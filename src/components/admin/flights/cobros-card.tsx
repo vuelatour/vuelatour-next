@@ -39,7 +39,11 @@ import {
 import { fmtUsd } from "@/lib/format";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import type { FlightCobro } from "@/types/flights";
-import type { EstadoCobroSemaforo } from "@/lib/admin/cobros";
+import {
+  TITULO_REGISTRO_COBRO,
+  textoRegistroCobro,
+  type EstadoCobroSemaforo,
+} from "@/lib/admin/cobros";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
@@ -284,6 +288,8 @@ export function CobrosCard({
                 // Reembolso = cobro NEGATIVO (derivado del signo): en rojo y
                 // con badge — RESTA del cobrado del vuelo.
                 const esReembolso = Number(c.monto) < 0;
+                // «Registró: Itzi» (null si el API no mandó el nombre).
+                const registro = textoRegistroCobro(c);
                 return (
                 <div
                   key={c.id}
@@ -322,6 +328,18 @@ export function CobrosCard({
                       {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
+                    {/* Quién capturó el cobro (22-sep-2026): renglón propio
+                        para que una referencia larga no se lo coma con el
+                        `truncate` de arriba. Solo cuando el API manda el
+                        nombre — fuente única del texto. */}
+                    {registro && (
+                      <p
+                        className="text-[11px] text-muted-foreground truncate"
+                        title={TITULO_REGISTRO_COBRO}
+                      >
+                        {registro}
+                      </p>
+                    )}
                     {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
                     <CobroSobreNota cobro={c} />
                     {/* Motivo del reembolso (viaja en notas): a la vista. */}

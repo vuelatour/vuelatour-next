@@ -227,6 +227,13 @@ export interface FlightCobro {
   fecha_cobro: string;
   foto_voucher_url: string | null;
   registrado_por: string | null;
+  /**
+   * Nombre de quien capturó el cobro, resuelto EN LOTE por el API a partir de
+   * `registrado_por` (22-sep-2026, ADITIVO). Ausente = API previo; `null` =
+   * usuario borrado o sin nombre. Nunca se deduce aquí: se pinta con
+   * `textoRegistroCobro` (@/lib/admin/cobros) o no se pinta.
+   */
+  registrado_por_nombre?: string | null;
   notas: string | null;
   created_at: string;
   updated_at: string;

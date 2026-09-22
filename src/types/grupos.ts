@@ -906,6 +906,9 @@ export interface SobreSalida {
   fecha_cobro: string;
   modo_particion: ModoParticionCobro | (string & {});
   registrado_por: string | null;
+  /** Nombre resuelto por el API (22-sep-2026, ADITIVO): ausente = API previo;
+   *  `null` = usuario borrado. Se pinta con `textoRegistroCobro`. */
+  registrado_por_nombre?: string | null;
   notas: string | null;
   client_request_id: string | null;
   created_at: string;

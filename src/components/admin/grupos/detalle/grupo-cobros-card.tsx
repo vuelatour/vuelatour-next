@@ -48,7 +48,12 @@ import {
   repartirCobroGrupoAction,
 } from "@/app/admin/quotes/grupo/actions";
 import { toastAvisos } from "@/lib/admin/avisos";
-import { pendienteCobro, type EstadoCobroSemaforo } from "@/lib/admin/cobros";
+import {
+  TITULO_REGISTRO_COBRO,
+  pendienteCobro,
+  textoRegistroCobro,
+  type EstadoCobroSemaforo,
+} from "@/lib/admin/cobros";
 import { etiquetaModoParticion, mensajeErrorGrupo } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { rutaReciboSobreGrupo } from "@/lib/admin/pdf-urls";
@@ -234,6 +239,8 @@ export function GrupoCobrosCard({
               const descuadrado = !s.cuadra || s.partes_en_cancelados > 0;
               const n = s.partes.length;
               const puedeRepartir = puedeCobrar && !cancelado;
+              // Quién capturó el SOBRE (mismo texto que el cobro por vuelo).
+              const registro = textoRegistroCobro(s);
               return (
                 <div
                   key={s.id}
@@ -288,6 +295,17 @@ export function GrupoCobrosCard({
                         {s.cuenta_destino ? ` · → ${s.cuenta_destino}` : ""}
                         {s.referencia ? ` · ${s.referencia}` : ""}
                       </p>
+                      {/* Quién capturó el sobre (22-sep-2026): renglón propio
+                          para que no lo corte el `truncate` de arriba; solo
+                          si el API manda el nombre. */}
+                      {registro && (
+                        <p
+                          className="text-[11px] text-muted-foreground truncate"
+                          title={TITULO_REGISTRO_COBRO}
+                        >
+                          {registro}
+                        </p>
+                      )}
                       {s.es_reembolso && s.notas && (
                         <p className="text-[11px] text-muted-foreground truncate" title={s.notas}>
                           Motivo: {s.notas.split("\n")[0]}
