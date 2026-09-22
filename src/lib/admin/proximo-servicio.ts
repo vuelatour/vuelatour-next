@@ -47,6 +47,14 @@ export const UMBRAL_ORDEN_HR = 10;
 /** Ancla de la card «Mantenimientos» dentro del expediente del avión. */
 export const ANCLA_MANTENIMIENTOS = "#mantenimientos";
 
+/**
+ * «El avión está en el taller». UNA sola cadena: la usa la orden EN_TALLER de
+ * este helper y también el respaldo de la lista de flota, que lo dice cuando
+ * el avión está en taller por una orden que NO cubre el hito que se muestra
+ * (`servicio-flota.ts`). Dos literales serían dos redacciones del mismo hecho.
+ */
+export const TEXTO_EN_TALLER = "En taller";
+
 /** Tono de la línea: ámbar = falta una acción humana. */
 export type TonoServicio = "ambar" | "info" | "neutro";
 
@@ -205,7 +213,7 @@ export function estadoOrdenServicio(
 
   if (orden.estado === "EN_TALLER") {
     return {
-      texto: "En taller",
+      texto: TEXTO_EN_TALLER,
       tono: "info",
       detalle: `El servicio ya está en proceso. ${origenDeOrden(orden)}`,
       accion: { texto: "Ver mantenimiento", href },

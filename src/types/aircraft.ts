@@ -59,6 +59,13 @@ export interface Aircraft {
    * desplegar no lo manda y la marca simplemente no aparece.
    */
   en_taller?: boolean;
+  /**
+   * Programa de servicio resuelto (solo en el LISTADO, ADITIVO 22-sep-2026):
+   * lo que sustituyó a Pax / USD-hr público / USD-hr broker en la tabla de
+   * flota para igualar el pizarrón de la oficina. `null` = sin programa;
+   * ausente = API sin desplegar. Se pinta con `lib/admin/servicio-flota.ts`.
+   */
+  servicio?: ServicioFlota | null;
 }
 
 /**
@@ -78,6 +85,41 @@ export interface OrdenServicioProgramada {
   /** Día acordado con el taller (`date`); null = todavía sin confirmar. */
   fecha_programada: string | null;
   automatica: boolean;
+}
+
+/**
+ * Programa de servicio RESUELTO que el API manda en CADA fila de
+ * `GET /v1/aircraft` (campo ADITIVO `servicio`, 22-sep-2026): es lo que el
+ * pizarrón «Tacómetros» de la oficina apunta a mano — con qué taco se hizo el
+ * último servicio, a qué taco toca el siguiente, cuánto falta y de qué tipo
+ * es. `null` = el avión no tiene programa (p. ej. XB-IJP, inactivo);
+ * AUSENTE (`undefined`) = API sin desplegar ⇒ la lista pinta «—» y calla.
+ *
+ * Los numéricos llegan de PostgREST como número O como cadena: se leen SIEMPRE
+ * con `lib/admin/servicio-flota.ts`, nunca con `Number(x).toFixed()` suelto.
+ */
+export interface ServicioFlota {
+  /** Último servicio del AVIÓN (no de un componente). */
+  ultimo: {
+    /** Taco con el que se HIZO («Últ. Tact. Serv.» del pizarrón). */
+    hobbs_hr: number | string;
+    fecha: string | null;
+    /** Nombre de la etapa o la descripción del mantenimiento. */
+    etiqueta: string | null;
+    /** `BASE` = nunca se ha registrado uno: es el arranque del programa. */
+    origen: "MANTENIMIENTO" | "BASE";
+  } | null;
+  /** Próximo hito por horas (`proximoServicioDetallado` del API). */
+  siguiente: {
+    hobbs_hr: number | string;
+    intervalo_hr: number | string;
+    etiqueta: string;
+    /** NEGATIVO cuando el hito ya se pasó (el pizarrón lo escribe «−30»). */
+    faltan_hr: number | string;
+    orden: OrdenServicioProgramada | null;
+  } | null;
+  /** Ver `AvisoAutomaticoServicio` en `lib/admin/proximo-servicio.ts`. */
+  aviso_automatico?: { activo: boolean; umbral_hr: number } | null;
 }
 
 /** Etapa del programa de servicio: intervalo + nombre + checklist de tareas. */

@@ -1646,3 +1646,58 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   `components/admin/grupos/grupo-form/__tests__/cargos-grupo.test.ts`
   (`cargoGrupoCompleto` ≡ el filtro del payload en producto cartesiano, los
   tres motivos con su índice y el texto del aviso).
+
+## Lista de flota = el pizarrón de Tacómetros (22-sep-2026)
+
+- Pedido del cliente con dos fotos: en `/admin/aircraft` tachó **Pax**,
+  **USD/hr público** y **USD/hr broker** y pidió «sustituir estas columnas por
+  las columnas de tacómetro último servicio, tacómetro siguiente servicio,
+  tiempo restante para servicio y siguiente tipo de servicio (50, 100 hrs,
+  etc.) para tratar de igualar la tabla que usamos hoy en día» — la hoja
+  «Tacómetros» de la oficina (matrícula · Sig. Servicio · Últ. Tact. Serv. ·
+  Tact. Actual · Tiempo restante, con el «−30» en rojo).
+- Columnas hoy: Aeronave · País · Motores · **Último taco** (= «Tact. Actual»,
+  se queda) · **Último servicio** · **Siguiente servicio** · **Restante** ·
+  **Tipo** · Estado. Las tres quitadas siguen vivas en el expediente del avión
+  y el aviso «N sin tarifa configurada» de la cabecera NO se tocó.
+- El dato llega en el campo **ADITIVO** `servicio` de CADA fila de
+  `GET /v1/aircraft` (`ServicioFlota` en `types/aircraft.ts`):
+  `{ ultimo: {hobbs_hr, fecha, etiqueta, origen:'MANTENIMIENTO'|'BASE'} | null,
+  siguiente: {hobbs_hr, intervalo_hr, etiqueta, faltan_hr, orden} | null,
+  aviso_automatico } | null`. `null` = el avión no tiene programa (XB-IJP);
+  AUSENTE = API sin desplegar. El listado NO llama a `/metrics` por avión.
+- **FUENTE ÚNICA** de textos y tonos: `lib/admin/servicio-flota.ts` (PURO,
+  prueba `__tests__/servicio-flota.test.ts` con los casos REALES de prod) —
+  `textoUltimoServicio` (taco + «Servicio 50 hrs · 12 sep 2026», o «base del
+  programa» con `origen:'BASE'`), `textoSiguienteServicio`, `textoRestante`
+  («faltan 27.0 h» / **«vencido por 30.0 h»**), `tonoRestante`
+  ('ok'|'ambar'|'rojo') y `etiquetaTipoServicio` («100 hrs»; el nombre largo
+  de la etapa va en el `title`). Ningún número se recalcula en el panel.
+  `tituloSinServicio` decide el `title` del guion: «Sin programa de servicio»
+  solo si de verdad no hay programa, «Sin servicios registrados» si el hueco
+  es únicamente el último servicio, y NADA con el API sin desplegar.
+- El ámbar sale de `dentroDelUmbral`/`umbralServicio` (`proximo-servicio.ts`),
+  con `aviso_automatico.umbral_hr` y respaldo `UMBRAL_ORDEN_HR` — nada de un
+  `< 10` suelto — y la sublínea de la orden la redacta `estadoOrdenServicio`,
+  el MISMO helper del KPI del expediente. En la lista solo se habla de órdenes
+  que YA existen (la promesa «se genera sola» es del expediente) y no se
+  renderiza su enlace: un `<a>` dentro del link de fila sería marcado
+  inválido; la fila entera lleva al expediente, que es donde se actúa.
+- **Si el hito de la fila no tiene orden pero el avión SÍ está en el taller,
+  se dice** (revisión adversaria 22-sep-2026, caso REAL del N58BT: orden de
+  100 h abierta a las 1,600 h con el tacómetro en 1,627.2 ⇒ el programa ya
+  apunta al hito de 1,700 y la celda dice «faltan 72.8 h», que es correcto y
+  tranquilizador de más). `estadoOrdenDeServicio(servicio, {enTaller})` usa el
+  `en_taller` que viaja en la MISMA fila del API y pinta «En taller»
+  (`TEXTO_EN_TALLER`, la MISMA cadena que la orden EN_TALLER de
+  `proximo-servicio.ts`). No calcula nada ni inventa una orden: solo deja de
+  callar un dato que ya estaba en la fila.
+- `faltan_hr` NEGATIVO **no se recorta a 0** (el pizarrón escribe «−30»); el
+  vencido se decide con la décima que se PINTA, para no anunciar «vencido por
+  0.0 h». Las horas van con un decimal y SIN separador de miles, igual que
+  «Último taco» y que la hoja de la oficina.
+- Cableado probado en
+  `components/admin/aircraft/__tests__/aircraft-table.test.tsx`: las cuatro
+  columnas salen, las tres tachadas no, y con `servicio` ausente la fila pinta
+  «—» sin romper (deploy en dos tiempos: API nuevo con panel viejo y al revés
+  conviven).
