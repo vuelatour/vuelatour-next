@@ -121,6 +121,17 @@ export interface InventarioMovimiento {
   aeronave?: { matricula: string } | null;
   proveedor?: { nombre: string } | null;
   item?: { nombre: string; numero_parte: string | null; categoria: string } | null;
+  /**
+   * DEVOLUCION: parte del cargo que el API NO pudo revertir (null = revirtió
+   * todo). Una devolución contra una salida «para todas las matrículas» cae
+   * SIEMPRE aquí: esos gastos son N (uno por avión) y se corrigen desde
+   * Gastos. El dinero jamás desaparece en silencio, así que el panel lo dice.
+   */
+  reversion_pendiente?: {
+    sin_revertir: number;
+    moneda: "MXN" | "USD";
+    gastos_sin_tc: number;
+  } | null;
 }
 
 export interface InventarioListResponse {

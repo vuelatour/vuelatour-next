@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createMovimientoAction } from "@/app/admin/inventory/actions";
+import { montoTxt } from "@/lib/admin/inventario-eliminar";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
 import type { InventarioEmpaque } from "@/types/inventory";
@@ -143,6 +144,19 @@ export function MovimientoDialog({
               ? "Salida registrada · el costo se cargó como gasto del avión"
               : "Movimiento registrado",
         );
+        // El API avisa cuando NO pudo revertir todo el cargo de una
+        // devolución (caso típico: la salida era «para todas las
+        // matrículas» y generó un gasto por avión). Callarlo dejaría un
+        // costo cargado a los aviones sin que nadie se entere.
+        const pendiente = result.data?.reversion_pendiente;
+        if (pendiente && pendiente.sin_revertir > 0) {
+          toast.warning(
+            `Quedaron ${montoTxt(pendiente.sin_revertir, pendiente.moneda)} sin revertir` +
+              `${pendiente.gastos_sin_tc > 0 ? ` (${pendiente.gastos_sin_tc} gasto(s) sin tipo de cambio)` : ""}` +
+              ": ajústalo en Gastos.",
+            { duration: 10000 },
+          );
+        }
         onOpenChange(false);
       } else if (result.fieldErrors) {
         const firstField = Object.keys(result.fieldErrors)[0];
