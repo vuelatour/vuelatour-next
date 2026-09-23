@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import type {
+  FacturaClienteBloque,
   FlightCobro,
   FlightEscala,
   FlightListItem,
@@ -839,3 +840,91 @@ export async function createReservaAction(
   }
 }
 
+
+// ===================== FACTURA DEL SERVICIO (por vuelo) =====================
+//
+// Pedido del cliente (22-sep-2026): «agregar por cada vuelo las opciones para
+// identificar vuelos facturado, sin factura, factura elaborada y enviada, y
+// que pueda yo también subir la factura del servicio a un lado».
+//
+// El estatus es MANUAL (seguimiento de oficina) y vive en columnas aditivas
+// de `vuelo`; el CFDI del sistema sigue mandando: con `vuelo.facturado` el
+// API responde 409 VUELO_CON_CFDI a cualquier intento de bajarlo. El archivo
+// va a un bucket PRIVADO y se ve con URL firmada de 10 min — nunca pública,
+// como los documentos de flota.
+
+/** Estatus manual de la factura del servicio del vuelo. */
+export async function setFacturaClienteEstatusAction(
+  flightId: string,
+  estatus: "SIN_FACTURA" | "ELABORADA_ENVIADA" | "FACTURADO",
+): Promise<ActionResult<FacturaClienteBloque>> {
+  try {
+    const data = await apiServer<FacturaClienteBloque>(
+      `/v1/flights/${flightId}/factura-cliente`,
+      { method: "PATCH", body: { estatus } },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Sube el archivo (PDF o XML) de la factura del servicio. Llega como
+ * `FormData` desde el navegador —el límite de las server actions ya está en
+ * 12 MB (`next.config.ts`)— y se REENVÍA tal cual al API: `apiFetch` deja
+ * pasar un `FormData` sin serializarlo ni fijar el `Content-Type`.
+ */
+export async function subirFacturaClienteAction(
+  flightId: string,
+  formData: FormData,
+): Promise<ActionResult<FacturaClienteBloque>> {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Elige el archivo de la factura (PDF o XML)." };
+  }
+  try {
+    const envio = new FormData();
+    envio.append("file", file, file.name);
+    const data = await apiServer<FacturaClienteBloque>(
+      `/v1/flights/${flightId}/factura-cliente/archivo`,
+      { method: "POST", body: envio },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Quita el archivo (el estatus NO cambia solo: lo decide la oficina). */
+export async function quitarFacturaClienteAction(
+  flightId: string,
+): Promise<ActionResult<FacturaClienteBloque>> {
+  try {
+    const data = await apiServer<FacturaClienteBloque>(
+      `/v1/flights/${flightId}/factura-cliente/archivo`,
+      { method: "DELETE" },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** URL FIRMADA (10 min) para ver/descargar el archivo en otra pestaña. */
+export async function urlFacturaClienteAction(
+  flightId: string,
+): Promise<ActionResult<string>> {
+  try {
+    const { url } = await apiServer<{ url: string }>(
+      `/v1/flights/${flightId}/factura-cliente/archivo-url`,
+    );
+    if (!url) return { ok: false, error: "No se pudo abrir la factura." };
+    return { ok: true, data: url };
+  } catch (err) {
+    return fail(err);
+  }
+}

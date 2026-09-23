@@ -19,7 +19,7 @@
   "tarifa_preferencial": true,
   "metodo_cobro": "PAYWISE",
   "metodo_cobro_detalle": null,
-  "metodo_cobro_label": "Paywise",
+  "metodo_cobro_label": "Link de pago (Paywise)",
   "tc_usd_mxn": 18.1,
   "vendedor": "Alexander E. Saab",
   "cotizado_por": "Itzi",
@@ -179,7 +179,7 @@
     {
       "fecha": "2026-07-12T18:05:00Z",
       "metodo": "PAYWISE",
-      "metodo_label": "Paywise",
+      "metodo_label": "Link de pago (Paywise)",
       "monto": 40000,
       "moneda": "MXN",
       "tc": 18.1,

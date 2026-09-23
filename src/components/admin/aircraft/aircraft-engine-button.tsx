@@ -26,6 +26,12 @@ import {
 import { EngineFormSchema, type EngineFormValues } from "@/app/admin/aircraft/schema";
 import type { Motor } from "@/types/aircraft";
 import { Field } from "@/components/admin/form-field";
+import {
+  AYUDA_HORAS_COMPONENTE,
+  ETIQUETA_TURM,
+  HINT_TURM,
+  TITULO_TURM,
+} from "@/lib/admin/overhaul-turm";
 
 export function AircraftEngineButton({
   aircraftId,
@@ -256,22 +262,23 @@ function EngineDialog({
               <Input type="number" step="0.01" min={0} {...register("horas_totales")} />
             </Field>
             <Field
-              label="TURM"
-              hint="horas del componente en su último overhaul"
+              label={ETIQUETA_TURM}
+              hint={HINT_TURM}
               error={errors.turm_componente?.message}
             >
-              <Input type="number" step="0.01" min={0} {...register("turm_componente")} />
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                title={TITULO_TURM}
+                {...register("turm_componente")}
+              />
             </Field>
             <Field label="TBO" required hint="horas" error={errors.tbo_horas?.message}>
               <Input type="number" step="0.01" min={1} placeholder="1700" {...register("tbo_horas")} />
             </Field>
           </div>
-          <p className="text-xs text-muted-foreground -mt-2">
-            Estos campos son la FOTO de la bitácora al día del ajuste — no se quedan fijos: desde
-            ahí el sistema sigue sumando solo con el tacómetro de cada vuelo. T.T. = horas totales
-            y T.U.R.M. del componente, como en la bitácora física (sin overhaul, deja TURM vacío).
-            Toca las horas SOLO para corregir la base.
-          </p>
+          <p className="text-xs text-muted-foreground -mt-2">{AYUDA_HORAS_COMPONENTE}</p>
           <Field
             label="Vence overhaul (fecha)"
             hint="Opcional: límite calendario del TBO (ej. 12 años desde el overhaul). Manda lo que ocurra primero."
@@ -319,8 +326,9 @@ function defaults(m?: Motor): EngineFormValues {
     fabricante: m.fabricante ?? "",
     modelo: m.modelo ?? "",
     horas_totales: m.horas_totales ?? "",
-    // Prellena el TURM en marco del componente (derivado del snapshot). Solo
-    // se manda si el usuario lo cambia (defensa dirty-fields de arriba).
+    // Prellena el TURM = TSO VIVO del componente (lo deriva el API en el
+    // snapshot). Solo se manda si el usuario lo cambia (defensa dirty-fields
+    // de arriba), así que reabrir y guardar no re-ancla nada.
     turm_componente: m.turm_componente ?? "",
     tbo_horas: m.tbo_horas as unknown as number,
     tbo_fecha: m.tbo_fecha ?? "",

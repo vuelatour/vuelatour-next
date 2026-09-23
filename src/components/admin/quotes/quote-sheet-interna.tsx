@@ -288,14 +288,18 @@ export function QuoteSheetInterna({
     ro.observe(hoja);
     return () => ro.disconnect();
   }, []);
-  // Canal de croma + escala: UNA sola regla para las dos hojas
-  // (`geometriaHoja`). El canal se descuenta del ancho ANTES de escalar
-  // (`clientWidth` del escenario lo incluye) y se encoge con el papel.
+  // Escala con la MISMA regla de las dos hojas (`geometriaHoja`), pero SIN
+  // canal de croma: desde el 22-sep-2026 el documento interno pinta 🗑, ⋯ y
+  // las marcas del tramo DENTRO del papel (reporte del cliente: «no se
+  // alcanzan a ver los 3 puntitos para las demás opciones en la
+  // cotización»). Con la croma dentro, un canal reservado fuera solo le
+  // quitaría ancho al papel.
   const { canal, escalaEfectiva, anchoUtil } = geometriaHoja({
     anchoDisponible,
     anchoHoja: HOJA_INTERNA_ANCHO_PX,
     lectura,
     escala,
+    canalPx: 0,
   });
   const altoReservado = altoHoja > 0 ? Math.round(altoHoja * escalaEfectiva) : undefined;
 
@@ -473,7 +477,9 @@ export function QuoteSheetInterna({
       className={cn("cot-escenario", className)}
       ref={escenarioRef}
       data-guard-exempt={lectura ? "" : undefined}
-      // Canal para la croma del margen izquierdo: nunca se corta (22-sep).
+      // Sin canal: la croma del documento interno vive DENTRO del papel
+      // (`.cot-croma`) desde el 22-sep-2026. `canal` llega en 0 y esto queda
+      // como está por si algún día se vuelve a reservar algo a la izquierda.
       style={canal ? { paddingLeft: canal } : undefined}
     >
       {/* Bandas de estado: FUERA del papel, ancho completo, nunca plegables. */}

@@ -276,8 +276,16 @@ export function QuoteSheetInternaTramos({
         title={estaOculto ? "Oculto en el PDF del cliente (se sigue cobrando)" : undefined}
       >
         <td className="ruta cot-ancla">
+          {/* CROMA EN LÍNEA, DENTRO del papel (22-sep-2026, reporte del
+              cliente con captura: «no se alcanzan a ver los 3 puntitos para
+              las demás opciones en la cotización»). Vivía en `.cot-margen`
+              (`right: 100 %`), o sea FUERA del área impresa, y el borde del
+              contenedor lo cortaba por más canal que se reservara. Ahora abre
+              la celda RUTA: 🗑 · ⋯ · marcas · «CUN–PCE». Sigue siendo croma
+              (`data-cot-ui`: el PDF no la imprime) y en LECTURA no se monta,
+              así que los fixtures del documento no cambian. */}
           {!lectura && (
-            <span className="cot-margen" {...UI}>
+            <span className="cot-croma" {...UI}>
               <button
                 type="button"
                 className="cot-margen__accion cot-margen__accion--peligro cursor-pointer"

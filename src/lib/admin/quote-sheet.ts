@@ -68,6 +68,7 @@ export function geometriaHoja({
   anchoHoja,
   lectura = false,
   escala,
+  canalPx = CANAL_CROMA_PX,
 }: {
   anchoDisponible: number;
   anchoHoja: number;
@@ -75,8 +76,18 @@ export function geometriaHoja({
   lectura?: boolean;
   /** Escala impuesta por quien llama (tiene prioridad). */
   escala?: number;
+  /**
+   * Canal que reserva ESTA hoja. La hoja INTERNA pasa **0** desde el
+   * 22-sep-2026: su croma (🗑, ⋯ y las marcas del tramo) ya no vive en el
+   * margen sino DENTRO del papel, al inicio de la celda —el cliente seguía
+   * viendo los «3 puntitos» cortados por el borde— así que un canal vacío
+   * solo le robaría ancho al documento. La hoja del CLIENTE conserva el
+   * canal: su itinerario sigue pintando el margen (con el botón de HORAS,
+   * que no cabe en la línea).
+   */
+  canalPx?: number;
 }): { canal: number; escalaEfectiva: number; anchoUtil: number } {
-  const canalPleno = lectura ? 0 : CANAL_CROMA_PX;
+  const canalPleno = lectura ? 0 : Math.max(0, canalPx);
   // Todavía sin medir (SSR y primer render): hoja a tamaño real con el canal
   // completo, que es como se pintaba antes de este helper. Reservarlo desde
   // el principio evita que la croma salte de sitio al hidratar.

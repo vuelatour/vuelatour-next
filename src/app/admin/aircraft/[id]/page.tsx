@@ -31,6 +31,14 @@ import {
 } from "@/components/admin/aircraft/aircraft-propeller-button";
 import { AircraftInsuranceCard } from "@/components/admin/aircraft/aircraft-insurance-card";
 import {
+  ETIQUETA_TURM_FICHA,
+  TITULO_TURM_FICHA,
+  avisoTsoImposible,
+  estadoTbo,
+  renglonRestantes,
+  textoVidaTbo,
+} from "@/lib/admin/overhaul-turm";
+import {
   AircraftMetricsCard,
   razonesNoApto,
 } from "@/components/admin/aircraft/aircraft-metrics-card";
@@ -427,21 +435,41 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Barra de vida del ciclo TBO. El % lo calcula el API (`vida_usada_pct`). */
-function VidaTboBar({ pct, agotado }: { pct: number; agotado: boolean }) {
-  const color = agotado
-    ? "bg-destructive"
-    : pct >= 90
-      ? "bg-amber-500"
-      : "bg-emerald-500";
+/**
+ * Barra de vida del ciclo TBO. El % y las horas restantes los calcula el API
+ * (`vida_usada_pct`, `tbo_restante`); aquí solo se recorta la BARRA a 100 % y
+ * se redacta el texto con `overhaul-turm.ts` (fuente única).
+ *
+ * Con el ciclo vencido el texto dice «overhaul vencido por 344.00 h» en rojo
+ * — nunca un «100 %» tranquilizador junto a unos «Restantes −344.00 hrs»,
+ * que fue lo que la oficina reportó como «no está haciendo bien la resta».
+ */
+function VidaTboBar({
+  pct,
+  restanteHr,
+}: {
+  pct: number;
+  restanteHr: number | null | undefined;
+}) {
+  const estado = estadoTbo({ restanteHr, vidaUsadaPct: pct });
+  const color =
+    estado.tono === "rojo"
+      ? "bg-destructive"
+      : estado.tono === "ambar"
+        ? "bg-amber-500"
+        : "bg-emerald-500";
   return (
     <div className="space-y-1">
-      <div className="flex items-baseline justify-between text-xs">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="text-muted-foreground">Vida usada del TBO</span>
-        <span className="font-medium">{fmtDecimal(pct)} %</span>
+        <span
+          className={`font-medium ${estado.vencido ? "text-destructive" : ""}`}
+        >
+          {textoVidaTbo(estado)}
+        </span>
       </div>
       <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${estado.pctBarra}%` }} />
       </div>
     </div>
   );
@@ -499,10 +527,14 @@ function MotorCard({
   const restantes = motor.tbo_restante ?? null;
   const horasVida = motor.horas_actuales ?? Number(motor.horas_totales);
   const desdeOverhaul = motor.horas_desde_overhaul ?? null;
-  // Un motor no puede tener menos horas de vida que las que tenía en su
-  // último overhaul: si pasa, falta capturar "Horas totales" en el motor.
-  const horasIncoherentes =
-    motor.turm_componente != null && motor.turm_componente > horasVida;
+  // El TSO no puede superar al TSN: si pasa, falta capturar «Horas totales»
+  // (22-sep-2026: `turm_componente` es el TSO vivo, no las horas EN el
+  // overhaul — ver `overhaul-turm.ts`).
+  const avisoCaptura = avisoTsoImposible({ tsnHr: horasVida, tsoHr: motor.turm_componente });
+  const restanteFicha = renglonRestantes(
+    estadoTbo({ restanteHr: restantes, vidaUsadaPct: motor.vida_usada_pct }),
+    restantes,
+  );
   const marcaModelo = [motor.fabricante, motor.modelo].filter(Boolean).join(" ");
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2.5">
@@ -522,8 +554,8 @@ function MotorCard({
           <AircraftEngineDeleteButton aircraftId={aircraftId} engine={motor} />
         </div>
       </div>
-      {motor.vida_usada_pct != null && !horasIncoherentes && (
-        <VidaTboBar pct={motor.vida_usada_pct} agotado={(restantes ?? 1) <= 0} />
+      {motor.vida_usada_pct != null && !avisoCaptura && (
+        <VidaTboBar pct={motor.vida_usada_pct} restanteHr={restantes} />
       )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini label="Tiempo total (TSN)" value={`${fmtDecimal(horasVida)} hrs`} />
@@ -532,13 +564,14 @@ function MotorCard({
           value={desdeOverhaul != null ? `${fmtDecimal(desdeOverhaul)} hrs` : "—"}
         />
         <Mini
-          label="TURM (hrs del componente al últ. OVH)"
+          label={ETIQUETA_TURM_FICHA}
+          title={TITULO_TURM_FICHA}
           value={motor.turm_componente != null ? fmtDecimal(motor.turm_componente) : "—"}
         />
         <Mini label="TBO" value={`${fmtDecimal(motor.tbo_horas)} hrs`} />
         <Mini
-          label="Restantes a overhaul"
-          value={restantes != null ? `${fmtDecimal(restantes)} hrs` : "—"}
+          label={restanteFicha.label}
+          value={restanteFicha.value}
           className={
             restantes == null
               ? ""
@@ -557,12 +590,8 @@ function MotorCard({
           />
         )}
       </dl>
-      {horasIncoherentes && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          Revisar captura: el tiempo total (TSN) del motor ({fmtDecimal(horasVida)}) es menor al
-          TURM ({fmtDecimal(motor.turm_componente)}). Edita el motor y captura sus horas totales
-          reales.
-        </p>
+      {avisoCaptura && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">{avisoCaptura}</p>
       )}
       {motor.notas && (
         <div className="pt-2 border-t border-border">
@@ -607,6 +636,16 @@ function PropellerCard({
   modelo: string;
   aviones: AeronaveDestinoOption[];
 }) {
+  // Mismos derivados que el motor (el API los manda; aquí solo se redactan).
+  const horasVidaHelice = propeller.horas_actuales ?? Number(propeller.horas_totales);
+  const avisoCapturaHelice = avisoTsoImposible({
+    tsnHr: horasVidaHelice,
+    tsoHr: propeller.turm_componente,
+  });
+  const restanteFichaHelice = renglonRestantes(
+    estadoTbo({ restanteHr: propeller.tbo_restante, vidaUsadaPct: propeller.vida_usada_pct }),
+    propeller.tbo_restante,
+  );
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2.5">
       <div className="flex items-start justify-between gap-2">
@@ -626,11 +665,8 @@ function PropellerCard({
           <AircraftPropellerDeleteButton aircraftId={aircraftId} propeller={propeller} />
         </div>
       </div>
-      {propeller.vida_usada_pct != null && (
-        <VidaTboBar
-          pct={propeller.vida_usada_pct}
-          agotado={(propeller.tbo_restante ?? 1) <= 0}
-        />
+      {propeller.vida_usada_pct != null && !avisoCapturaHelice && (
+        <VidaTboBar pct={propeller.vida_usada_pct} restanteHr={propeller.tbo_restante} />
       )}
       <dl className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border">
         <Mini
@@ -644,7 +680,8 @@ function PropellerCard({
           />
         )}
         <Mini
-          label="TURM (hrs del componente al últ. OVH)"
+          label={ETIQUETA_TURM_FICHA}
+          title={TITULO_TURM_FICHA}
           value={
             propeller.turm_componente != null
               ? fmtDecimal(propeller.turm_componente)
@@ -654,13 +691,16 @@ function PropellerCard({
         <Mini label="TBO" value={propeller.tbo_horas ? `${fmtDecimal(propeller.tbo_horas)} hrs` : "—"} />
         {propeller.tbo_restante != null && (
           <Mini
-            label="Restantes a overhaul"
-            value={`${fmtDecimal(propeller.tbo_restante)} hrs`}
+            label={restanteFichaHelice.label}
+            value={restanteFichaHelice.value}
             className={propeller.tbo_restante <= 0 ? "text-destructive font-semibold" : propeller.tbo_restante <= 25 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
           />
         )}
         <VenceOverhaulMini fecha={propeller.tbo_fecha} />
       </dl>
+      {avisoCapturaHelice && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">{avisoCapturaHelice}</p>
+      )}
       {propeller.notas && (
         <div className="pt-2 border-t border-border">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Notas</p>
@@ -711,13 +751,15 @@ function Mini({
   label,
   value,
   className = "",
+  title,
 }: {
   label: string;
   value: string;
   className?: string;
+  title?: string;
 }) {
   return (
-    <div>
+    <div title={title}>
       <dt className="text-muted-foreground">{label}</dt>
       <dd className={`font-medium ${className}`}>{value}</dd>
     </div>

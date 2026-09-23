@@ -57,7 +57,17 @@ function DialogContent({
           // `truncate`/nowrap (min-width:auto del grid item) ensancha la
           // columna más allá del diálogo y recorta badges y botones del pie
           // (caso "Unir gastos en una compra", 5-sep-2026).
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none *:min-w-0 sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          //
+          // `max-h` + `overflow-y-auto` (22-sep-2026, reporte de la oficina):
+          // «en estas ventanas no se desplaza hacia abajo para el botón de
+          // guardado, lo que hago es moverme con la tecla tabulador y
+          // atinarle». En una laptop el diálogo de editar hélice/motor mide
+          // más que la pantalla y, sin desbordamiento, el pie con «Guardar»
+          // quedaba FUERA de la ventana y sin forma de llegar con la rueda.
+          // El popup entero es el contenedor que desplaza (es un grid: poner
+          // el scroll en un hijo rompería el layout de los diálogos que ya
+          // existen).
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none *:min-w-0 sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

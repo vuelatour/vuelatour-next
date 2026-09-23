@@ -12,6 +12,16 @@ import type { MetodoPago } from "@/types/quote";
  * IVA por defecto (como BillPocket), factura pre-cobro (FormaPago SAT 04) y
  * su comisión (≈8.857 %) es comisión bancaria del COBRO — NO se traslada al
  * cliente como extra.
+ *
+ * **ETIQUETAS Y ORDEN (22-sep-2026, pedido del cliente)**: «en vuelos,
+ * apartado COBRO, colocar las opciones link de pago, transferencia,
+ * efectivo». Los VALORES del enum NO cambian (ni el IVA, ni `facturable`, ni
+ * la whitelist del piloto): cambian el texto —HSBC_LINK «Link de pago
+ * (HSBC)», PAYWISE «Link de pago (Paywise)»— y el ORDEN, que ahora arranca
+ * por lo que la oficina usa a diario: los dos links de pago, transferencia y
+ * efectivo. Las etiquetas son ESPEJO de `metodo-cobro.util.ts` del API (las
+ * mismas que imprimen el recibo y el PDF interno) y de la app; la paridad la
+ * congela `__tests__/metodos-pago.test.ts`. Si cambian allá, cambian aquí.
  */
 export const METODOS_PAGO: {
   value: MetodoPago;
@@ -19,17 +29,22 @@ export const METODOS_PAGO: {
   hint: string;
   facturable: boolean;
 }[] = [
-  { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%", facturable: true },
-  { value: "HSBC_LINK", label: "HSBC link", hint: "Con factura · IVA 16%", facturable: true },
-  { value: "CHEQUE", label: "Cheque", hint: "Con factura · IVA 16%", facturable: true },
-  { value: "BILLPOCKET", label: "BillPocket", hint: "Sin factura", facturable: true },
   {
-    value: "PAYWISE",
-    label: "Paywise",
-    hint: "Link de pago · sin IVA por defecto · comisión ≈8.857 %",
+    value: "HSBC_LINK",
+    label: "Link de pago (HSBC)",
+    hint: "Con factura · IVA 16%",
     facturable: true,
   },
+  {
+    value: "PAYWISE",
+    label: "Link de pago (Paywise)",
+    hint: "Pasarela · sin IVA por defecto · comisión ≈8.857 %",
+    facturable: true,
+  },
+  { value: "TRANSFERENCIA", label: "Transferencia", hint: "Con factura · IVA 16%", facturable: true },
   { value: "EFECTIVO", label: "Efectivo", hint: "Sin IVA", facturable: false },
+  { value: "CHEQUE", label: "Cheque", hint: "Con factura · IVA 16%", facturable: true },
+  { value: "BILLPOCKET", label: "BillPocket", hint: "Sin factura", facturable: true },
   { value: "DOLARES", label: "Dólares directo", hint: "Sin IVA", facturable: false },
   { value: "OTRO", label: "Otro (escríbelo)", hint: "Manual · sin IVA por defecto", facturable: false },
 ];

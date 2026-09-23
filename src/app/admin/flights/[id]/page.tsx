@@ -724,6 +724,14 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               cancelado: vueloCancelado,
             })}
             facturado={snapshot.facturado}
+            // FACTURA DEL SERVICIO (22-sep-2026): bloque ADITIVO del snapshot.
+            // Se pasa TAL CUAL (incluido `undefined` con un API sin
+            // desplegar): la card decide si ofrece el control o se queda con
+            // el badge de siempre.
+            facturaCliente={snapshot.factura_cliente}
+            puedeFacturar={
+              me?.rol === "ADMIN" || me?.rol === "COORDINADOR" || me?.rol === "FACTURACION"
+            }
             participacionAviones={participacionAviones}
             participacionFuente={participacionFuente}
             // `vuelo.metodo_cobro`: la INTENCIÓN pactada mientras no se

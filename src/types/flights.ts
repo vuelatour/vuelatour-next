@@ -6,6 +6,24 @@ import type {
   ParticipacionFuente,
 } from "./quotes-persisted";
 
+/**
+ * Bloque ADITIVO `factura_cliente` del snapshot y de la lista de vuelos
+ * (22-sep-2026). Los textos, el default conservador y la tolerancia al API
+ * previo viven en `lib/admin/factura-cliente.ts` — aquí solo la FORMA.
+ */
+export interface FacturaClienteBloque {
+  /** 'SIN_FACTURA' | 'ELABORADA_ENVIADA' | 'FACTURADO' (string a propósito:
+      un valor nuevo del API no debe romper el tipado del panel). */
+  estatus: string;
+  archivo: {
+    /** PATH en el bucket privado `facturas` (no sirve como href). */
+    path: string;
+    nombre: string | null;
+    subida_at: string | null;
+    subida_por_nombre?: string | null;
+  } | null;
+}
+
 /** Tripulante resuelto por el API (apoyos, copiloto por tramo). `rol` es el
     del catálogo de usuarios (ADMIN, PILOTO, MECANICO…): el apoyo puede ser
     cualquier usuario activo, no solo pilotos. */
@@ -109,7 +127,18 @@ export interface FlightListItem {
   /** PATH en el bucket privado planes-vuelo (filas viejas: URL completa).
       NO sirve como href — firmar vía getFlightPlanUrl(). */
   foto_plan_vuelo_url: string | null;
+  /** CFDI timbrado POR EL SISTEMA (tabla `factura`). No es lo mismo que el
+      estatus manual de `factura_cliente`: ver `lib/admin/factura-cliente.ts`. */
   facturado: boolean;
+  /**
+   * FACTURA DEL SERVICIO (22-sep-2026, campo ADITIVO): estatus MANUAL de
+   * oficina —«Sin factura» · «Factura elaborada y enviada» · «Facturado»— y
+   * el archivo (PDF/XML) que se le mandó al cliente. AUSENTE = API sin
+   * desplegar: la pantalla se comporta EXACTAMENTE como antes (cae a
+   * `facturado`). Fuente única de textos y tolerancia:
+   * `lib/admin/factura-cliente.ts`.
+   */
+  factura_cliente?: FacturaClienteBloque | null;
   cobrado: boolean;
   notas: string | null;
   notas_internas: string | null;

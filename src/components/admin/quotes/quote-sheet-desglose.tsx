@@ -589,6 +589,57 @@ export function QuoteSheetDesglose({
       exento,
               <tr key={idx} className={cn("cot-fila", fuera && "cot-fila--fuera")}>
                 <td className="lbl cot-ancla">
+                  {/* CROMA AL INICIO DEL RENGLÓN, dentro del papel
+                      (22-sep-2026): 🗑 y ⋯ vivían en `.cot-margen`
+                      (`right: 100 %`) y el desglose es la columna IZQUIERDA
+                      de la hoja, así que el borde del contenedor los cortaba
+                      —el mismo defecto que el switch de TUAS de la noche
+                      anterior y los «3 puntitos» del itinerario. En LECTURA
+                      no se monta: los fixtures no cambian. */}
+                  {!lectura && (
+                    <span className="cot-croma" {...UI}>
+                      {bloqueado ? (
+                        <span className="cot-marca" title={`Se edita desde el grupo ${grupo ? folioTexto(grupo.folio) : ""}`}>
+                          <LockClosedIcon /> grupo
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="cot-margen__accion cot-margen__accion--peligro cursor-pointer"
+                            onClick={() => removeExtra(idx)}
+                            aria-label={`Quitar extra ${e.concepto || idx + 1}`}
+                            title="Quitar concepto"
+                          >
+                            <TrashIcon />
+                          </button>
+                          <button
+                            type="button"
+                            className="cot-margen__accion cursor-pointer"
+                            onClick={(ev) => {
+                              const ancla = ev.currentTarget;
+                              setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
+                            }}
+                            aria-expanded={detalleExtra === idx}
+                            aria-label={`Detalle del extra ${e.concepto || idx + 1} (cantidad × precio, moneda, IVA)`}
+                            title="Cantidad × precio · moneda · IVA"
+                          >
+                            <EllipsisHorizontalIcon />
+                          </button>
+                        </>
+                      )}
+                      {unitario && (
+                        <span className="cot-marca" style={{ textTransform: "none" }} title="Cantidad × precio unitario (el motor deriva el monto)">
+                          {e.por_persona ? `${cantidad ?? "?"}p` : (cantidad ?? "?")} × {numero2(e.unitario ?? 0)}
+                        </span>
+                      )}
+                      {e.aplica_iva === false && (
+                        <span className="cot-marca" title="Fuera de la base de IVA">
+                          sin IVA
+                        </span>
+                      )}
+                    </span>
+                  )}
                   <CampoHoja
                     value={e.concepto}
                     onChange={(v) => updateExtra(idx, { concepto: v })}
@@ -637,50 +688,6 @@ export function QuoteSheetDesglose({
                         {" MXN"}
                       </>
                     )
-                  )}
-                  {!lectura && (
-                    <span className="cot-margen" {...UI}>
-                      {bloqueado ? (
-                        <span className="cot-marca" title={`Se edita desde el grupo ${grupo ? folioTexto(grupo.folio) : ""}`}>
-                          <LockClosedIcon /> grupo
-                        </span>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="cot-margen__accion cot-margen__accion--peligro cursor-pointer"
-                            onClick={() => removeExtra(idx)}
-                            aria-label={`Quitar extra ${e.concepto || idx + 1}`}
-                            title="Quitar concepto"
-                          >
-                            <TrashIcon />
-                          </button>
-                          <button
-                            type="button"
-                            className="cot-margen__accion cursor-pointer"
-                            onClick={(ev) => {
-                              const ancla = ev.currentTarget;
-                              setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
-                            }}
-                            aria-expanded={detalleExtra === idx}
-                            aria-label={`Detalle del extra ${e.concepto || idx + 1} (cantidad × precio, moneda, IVA)`}
-                            title="Cantidad × precio · moneda · IVA"
-                          >
-                            <EllipsisHorizontalIcon />
-                          </button>
-                        </>
-                      )}
-                      {unitario && (
-                        <span className="cot-marca" style={{ textTransform: "none" }} title="Cantidad × precio unitario (el motor deriva el monto)">
-                          {e.por_persona ? `${cantidad ?? "?"}p` : (cantidad ?? "?")} × {numero2(e.unitario ?? 0)}
-                        </span>
-                      )}
-                      {e.aplica_iva === false && (
-                        <span className="cot-marca" title="Fuera de la base de IVA">
-                          sin IVA
-                        </span>
-                      )}
-                    </span>
                   )}
                   {fuera && (
                     <FueraDelTotal
@@ -1005,7 +1012,8 @@ export function QuoteSheetDesglose({
                 </>
               )}
               {!lectura && ivaOverridePct != null && (
-                <span className="cot-margen" {...UI}>
+                // EN LA LÍNEA: el margen izquierdo se sale del papel.
+                <span className="cot-croma cot-croma--der" {...UI}>
                   <span className="cot-marca" title="IVA forzado a mano (vacío = según método de pago)">
                     manual
                   </span>
@@ -1255,7 +1263,10 @@ function FilaTua({
             primer renglón (pedido del cliente, 22-sep-2026 noche). */}
         {!lectura && accionExtra}
         {!lectura && (
-          <span className="cot-margen" {...UI}>
+          // Moneda de la TUA + su T.C.: EN LA LÍNEA (22-sep-2026). En el
+          // margen izquierdo el borde del contenedor los cortaba, igual que
+          // el switch de «Se cobran TUAS» de la noche anterior.
+          <span className="cot-croma cot-croma--der" {...UI}>
             <select
               className="cot-in cot-fantasma cursor-pointer"
               value={moneda}

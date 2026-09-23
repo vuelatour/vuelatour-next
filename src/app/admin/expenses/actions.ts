@@ -744,3 +744,123 @@ export async function saveRepartoMasivoAction(
     return fail(err);
   }
 }
+
+// ===================== FACTURA DE ESTE GASTO (22-sep-2026) =====================
+//
+// Pedido del cliente: «en los registros de gastos, además de la opción
+// facturada (a un lado), agregar la opción para subir la factura
+// correspondiente de dicho gasto».
+//
+// No hace falta ningún mecanismo nuevo: el buzón de Facturas recibidas ya
+// existe. Lo que faltaba era poder hacerlo DESDE la fila del gasto, sin ir al
+// buzón, buscar la factura y amarrarla a mano. Es UNA sola llamada:
+//
+//   POST /v1/invoices/recibidas/de-gasto
+//     { gasto_id, xml_b64?, pdf_b64?, pdf_nombre? }  (al menos un archivo)
+//     ⇒ la factura recibida + `gastos` amarrados + `ya_existia`
+//
+// POR QUÉ ESA RUTA Y NO LAS DOS DE SIEMPRE (revisión adversaria 22-sep-2026):
+// `POST /recibidas` + `POST /recibidas/:id/amarrar-gastos` parecen suficientes
+// y no lo son. (a) `amarrar-gastos` REEMPLAZA la lista completa de gastos de
+// la factura: desde la fila de UN gasto desamarraría en silencio a los demás
+// que ampara la misma factura (el caso VIP SAESA: una factura, varios
+// aterrizajes). (b) El XML sería obligatorio, y hay proveedores que solo
+// mandan el PDF. (c) Un UUID ya registrado respondía 409 sin salida cuando es
+// justo el caso normal: la MISMA factura amparando otro gasto. (d) No había
+// dónde guardar el PDF — el paso `POST /recibidas/:id/pdf` que se intentó NO
+// existe en el API, así que cada PDF se perdía con un aviso de que «solo el
+// PDF no se guardó».
+//
+// El amarre dispara el trigger `gasto_sync_facturacion` del API: el gasto
+// pasa a 🟢 FACTURADA solo. El panel NO toca `estatus_facturacion` por su
+// cuenta — si lo hiciera, tendría dos fuentes para el mismo semáforo.
+
+export interface FacturaDeGastoInput {
+  /** XML del CFDI en base64 SIN el prefijo `data:`. De él salen `uuid_fiscal`,
+      emisor y total; puede faltar si se sube solo el PDF. */
+  xml_b64?: string;
+  /** PDF de la factura en base64 (el que manda impreso el proveedor). */
+  pdf_b64?: string;
+  /** Nombre original del PDF (queda en las notas de la factura). */
+  pdf_nombre?: string;
+}
+
+export interface FacturaDeGastoResultado {
+  factura_id: string;
+  /** true = ese CFDI ya estaba en el buzón y solo se le sumó este gasto. */
+  ya_existia: boolean;
+}
+
+interface RecibidaDeGastoResp {
+  id: string;
+  ya_existia?: boolean;
+}
+
+export async function subirFacturaGastoAction(
+  gastoId: string,
+  input: FacturaDeGastoInput,
+): Promise<ActionResult<FacturaDeGastoResultado>> {
+  const xml = input.xml_b64?.trim();
+  const pdf = input.pdf_b64?.trim();
+  if (!xml && !pdf) {
+    return {
+      ok: false,
+      error: "Elige al menos un archivo: el XML del CFDI o el PDF de la factura.",
+    };
+  }
+  try {
+    const factura = await apiServer<RecibidaDeGastoResp>(
+      "/v1/invoices/recibidas/de-gasto",
+      {
+        method: "POST",
+        body: {
+          gasto_id: gastoId,
+          ...(xml ? { xml_b64: xml } : {}),
+          ...(pdf ? { pdf_b64: pdf } : {}),
+          ...(pdf && input.pdf_nombre ? { pdf_nombre: input.pdf_nombre } : {}),
+        },
+      },
+    );
+    revalidatePath("/admin/expenses");
+    revalidatePath("/admin/facturas-recibidas");
+    revalidatePath("/admin/flights", "layout");
+    return {
+      ok: true,
+      data: { factura_id: factura.id, ya_existia: factura.ya_existia === true },
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Ver factura» desde la fila de un gasto ya amarrado: pide la factura
+ * recibida y FIRMA su archivo (el bucket `facturas` es privado). Se prefiere
+ * el PDF —es el papel que la oficina enseña— y se cae al XML.
+ */
+export async function verFacturaGastoAction(
+  facturaRecibidaId: string,
+): Promise<ActionResult<string>> {
+  try {
+    const factura = await apiServer<{
+      xml_url?: string | null;
+      pdf_url?: string | null;
+    }>(`/v1/invoices/recibidas/${facturaRecibidaId}`);
+    const path = factura.pdf_url ?? factura.xml_url ?? null;
+    if (!path) {
+      return {
+        ok: false,
+        error: "Esa factura no tiene archivo guardado (se registró sin XML ni PDF).",
+      };
+    }
+    const urls = await apiServer<Record<string, string>>(
+      "/v1/invoices/recibidas/file-urls",
+      { method: "POST", body: { paths: [path] } },
+    );
+    const url = urls[path];
+    if (!url) return { ok: false, error: "No se pudo abrir el archivo de la factura." };
+    return { ok: true, data: url };
+  } catch (err) {
+    return fail(err);
+  }
+}

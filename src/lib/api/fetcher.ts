@@ -33,9 +33,15 @@ export async function apiFetch<T = unknown>(
 ): Promise<T> {
   const { body, searchParams, accessToken, headers, ...rest } = options;
 
+  // MULTIPART (22-sep-2026): un `FormData` viaja TAL CUAL y SIN
+  // `Content-Type` — lo pone `fetch` con su `boundary`; fijarlo a mano deja
+  // al API sin poder separar las partes. Es el único cuerpo que no se
+  // serializa: todo lo demás sigue yendo como JSON (regla de `apiFetch`).
+  const esMultipart = typeof FormData !== "undefined" && body instanceof FormData;
+
   const finalHeaders: Record<string, string> = {
     Accept: "application/json",
-    ...(body !== undefined && { "Content-Type": "application/json" }),
+    ...(body !== undefined && !esMultipart && { "Content-Type": "application/json" }),
     ...((headers as Record<string, string>) ?? {}),
   };
   if (accessToken) {
@@ -46,7 +52,11 @@ export async function apiFetch<T = unknown>(
   const init: RequestInit = {
     ...rest,
     headers: finalHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: esMultipart
+      ? (body as FormData)
+      : body !== undefined
+        ? JSON.stringify(body)
+        : undefined,
   };
 
   // Reintento SOLO de lecturas y SOLO ante «el API no está ahí» (red, 502,

@@ -9,6 +9,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
+import { GastoFacturaButton } from "@/components/admin/expenses/gasto-factura-button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
@@ -465,9 +466,25 @@ export function ExpensesTable({
       {
         // Seguimiento de oficina "¿ya lo facturé?" (pedido del cliente,
         // ago 2026): semáforo de un clic, independiente del comprobante.
+        //
+        // AL LADO, «Subir factura» (22-sep-2026): el XML del CFDI se registra
+        // en Facturas recibidas y se amarra a ESTE gasto sin salir de la
+        // pantalla — al amarrar, el trigger del API pone el semáforo en
+        // 🟢 Facturada (el panel no lo toca por su cuenta).
         key: "facturacion",
         header: "Facturación",
-        cell: (f) => (f.kind === "compra" ? GUION : <FacturacionBadge gasto={f.gasto} />),
+        // La columna tiene botones y la fila no es un link (Gastos no usa
+        // `rowHref`), pero se marca igual por si algún día lo usa.
+        noLink: true,
+        cell: (f) =>
+          f.kind === "compra" ? (
+            GUION
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <FacturacionBadge gasto={f.gasto} />
+              <GastoFacturaButton gasto={f.gasto} />
+            </span>
+          ),
       },
       {
         key: "acciones",

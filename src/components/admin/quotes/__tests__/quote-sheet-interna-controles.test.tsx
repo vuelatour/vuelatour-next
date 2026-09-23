@@ -343,3 +343,36 @@ describe("ids ancla: existen y NO se duplican", () => {
     }
   });
 });
+
+/**
+ * CROMA DENTRO DEL PAPEL (22-sep-2026, segundo reporte con captura de TRAMOS
+ * COTIZADOS): «no se alcanzan a ver los 3 puntitos para las demás opciones en
+ * la cotización». 🗑, ⋯ y las marcas del tramo vivían en `.cot-margen`
+ * (`right: 100 %`), o sea FUERA del área impresa: por mucho canal que
+ * reservara el escenario, el borde del contenedor los cortaba. Ahora abren la
+ * celda RUTA, dentro del papel.
+ */
+describe("croma del tramo: dentro del papel, nunca en el margen", () => {
+  it("🗑 y ⋯ abren la celda RUTA y ya no hay `.cot-margen`", () => {
+    const html = renderToString(<QuoteSheetInterna {...base()} />);
+    expect(html).not.toContain('class="cot-margen"');
+    expect(html).toMatch(/<td class="ruta cot-ancla"><span class="cot-croma" data-cot-ui=""/);
+    // El ⋯ del tramo 1 sigue siendo el mismo control (mismo aria-label).
+    expect(html).toContain("Detalle del tramo 1 (pasajeros, ferry, pernocta, servicio, nota, PDF)");
+    expect(html).toContain('aria-label="Quitar tramo 1"');
+  });
+
+  it("la croma sigue siendo `data-cot-ui` y en LECTURA no se monta", () => {
+    const html = renderToString(<QuoteSheetInterna {...base()} lectura />);
+    expect(html).not.toContain("cot-croma");
+    expect(html).not.toContain("cot-margen");
+    expect(html).not.toContain("Detalle del tramo");
+  });
+
+  it("el desglose también pinta su croma al inicio del renglón", () => {
+    // #070 lleva extras y TUAS con su selector de moneda.
+    const html = renderToString(<QuoteSheetInterna {...base070()} />);
+    expect(html).not.toContain('class="cot-margen"');
+    expect(html).toContain("cot-croma");
+  });
+});

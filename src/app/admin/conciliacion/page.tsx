@@ -392,7 +392,7 @@ export default async function ConciliacionPage({
               Cobros que no aparecen en ningún estado de cuenta
             </CardTitle>
             <CardDescription>
-              Transferencia, HSBC link, cheque o Paywise (cobros de vuelo y sobres de grupo)
+              Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo)
               sin cruzar con ningún abono importado (últimos 90 días). Puede faltar el periodo
               por importar, no coincidir fecha/monto, o el dinero nunca llegó.
               {cobrosSinBanco && cobrosSinBanco.por_moneda.length > 0 && (

@@ -527,3 +527,35 @@
 .cot-hoja:not(.cot-hoja--lectura) [aria-disabled="true"] {
   cursor: default;
 }
+
+/* ---------- 7. CROMA EN LÍNEA, DENTRO del papel (22-sep-2026) ----------
+   Reporte del cliente con captura: «no se alcanzan a ver los 3 puntitos para
+   las demás opciones en la cotización». El margen de fila (`.cot-margen`,
+   `right: 100 %`) vive FUERA del área impresa y, por mucho canal que se
+   reserve, el borde del contenedor lo corta en cuanto la ventana se estrecha
+   o la barra lateral se abre — y el documento interno es ANCHO. La croma pasa
+   a pintarse DENTRO de la celda: al inicio de RUTA en «Tramos cotizados» y al
+   inicio del renglón en el desglose. Sigue siendo `data-cot-ui` (el PDF no la
+   imprime) y en LECTURA no se monta.
+
+   Se conservan las clases de los hijos (`.cot-margen__accion`, `.cot-marca`):
+   lo único que cambia es el CONTENEDOR, que ya no está posicionado. */
+.cot-hoja .cot-croma {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 5px;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1;
+  color: #9ca3af;
+}
+/* A la DERECHA de lo que acompaña (moneda de la TUA, «manual» del IVA). */
+.cot-hoja .cot-croma--der { margin-right: 0; margin-left: 5px; }
+/* Los iconos se VEN sin pasar el mouse: el reporte era justamente que no se
+   alcanzaban a ver. Al enfocar o pasar por la fila suben a opacidad plena
+   (esa regla ya existe y gana por especificidad). */
+.cot-hoja:not(.cot-hoja--lectura) .cot-croma .cot-margen__accion { opacity: 0.6; }
+/* La croma de un tramo OCULTO no se atenúa: es donde se vuelve a mostrar. */
+.cot-hoja .cot-fila--oculta > td.cot-ancla > .cot-croma { opacity: 1; }

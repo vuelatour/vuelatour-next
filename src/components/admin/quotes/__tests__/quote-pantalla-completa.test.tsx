@@ -902,26 +902,52 @@ describe("nada clicable queda fuera del papel", () => {
     expect(celda).toContain("cot-acciones");
   });
 
-  it("el escenario del papel reserva el canal de croma en EDICIÓN (y no en lectura)", () => {
+  /**
+   * 22-sep-2026 (segundo reporte, con captura de TRAMOS COTIZADOS): «no se
+   * alcanzan a ver los 3 puntitos para las demás opciones en la cotización».
+   * El canal reservado no bastaba —el margen vive FUERA del papel y el borde
+   * del contenedor lo corta—, así que en la hoja INTERNA la croma se mudó
+   * DENTRO de la celda (`.cot-croma`) y el canal pasó a 0. La hoja del
+   * CLIENTE (rol SOCIO) conserva el suyo: su itinerario sigue pintando el
+   * margen, con el botón de HORAS que no cabe en la línea.
+   */
+  it("la hoja INTERNA ya no reserva canal: su croma va dentro del papel", () => {
+    const html = htmlAdmin();
+    expect(html).not.toContain("padding-left:");
+    // 🗑 y ⋯ del tramo, dentro de la celda RUTA.
+    expect(html).toMatch(/<span class="cot-croma"[^>]*>/);
+    // NINGUNA variante del margen, no solo `class="cot-margen"` exacto: con
+    // `cn()` basta una clase extra (`cot-margen cot-margen--der`) para que un
+    // control vuelva a quedar FUERA del papel sin que el test se entere
+    // (revisión adversaria 22-sep-2026). `\b` deja pasar `cot-margen__accion`,
+    // que es la clase de los ICONOS y ahora vive dentro de `.cot-croma`.
+    expect(html).not.toMatch(/class="[^"]*\bcot-margen(?![_a-zA-Z0-9])/);
+    // Y la croma del tramo abre la celda RUTA, que es lo que se veía cortado.
+    expect(html).toMatch(/<td class="ruta cot-ancla">\s*<span class="cot-croma"/);
+  });
+
+  it("la hoja del CLIENTE conserva el canal en EDICIÓN (y no en lectura)", () => {
     // `CANAL_CROMA_PX`: el `padding-left` que deja sitio al margen de fila.
-    // Se lee de la constante (no un 72 a mano) para que el test siga siendo
-    // cierto cuando el canal se ajuste: lo que se custodia es que EXISTA en
-    // edición, ya desde el marcado del servidor, y que en lectura NO.
+    // Se lee de la constante (no un 88 a mano) para que el test siga siendo
+    // cierto cuando el canal se ajuste.
     const pad = `padding-left:${CANAL_CROMA_PX}px`;
-    expect(htmlAdmin()).toMatch(new RegExp(`class="cot-escenario"[^>]*style="${pad}"`));
-    const lectura = render(CASOS.find((c) => c.nombre.includes("lectura (cobrada)"))!);
+    const socio = render(CASOS.find((c) => c.nombre === "#329 · SOCIO")!);
+    expect(socio).toMatch(new RegExp(`class="cot-escenario"[^>]*style="${pad}"`));
+    const lectura = render(CASOS.find((c) => c.nombre.includes("SOCIO · lectura"))!);
     expect(lectura).not.toContain(pad);
     expect(lectura).not.toContain("padding-left:");
   });
 
-  it("en el margen solo queda croma ESTRECHA (iconos y marcas), nunca un control con texto", () => {
-    const html = htmlAdmin();
-    for (const m of html.matchAll(/<span class="cot-margen"[^>]*>/g)) {
-      const sub = subarbol(html, m.index);
-      expect(sub, "margen sin cerrar").toBeTruthy();
-      // Un `role="switch"` o un `.cot-liga` en el margen es lo que se salía.
-      expect(sub!.html, sub!.html.slice(0, 120)).not.toContain('role="switch"');
-      expect(sub!.html, sub!.html.slice(0, 120)).not.toContain("cot-liga");
+  it("en el margen que quede solo va croma ESTRECHA (iconos y marcas)", () => {
+    for (const caso of CASOS) {
+      const html = render(caso);
+      for (const m of html.matchAll(/<span class="cot-margen"[^>]*>/g)) {
+        const sub = subarbol(html, m.index);
+        expect(sub, "margen sin cerrar").toBeTruthy();
+        // Un `role="switch"` o un `.cot-liga` en el margen es lo que se salía.
+        expect(sub!.html, sub!.html.slice(0, 120)).not.toContain('role="switch"');
+        expect(sub!.html, sub!.html.slice(0, 120)).not.toContain("cot-liga");
+      }
     }
   });
 });

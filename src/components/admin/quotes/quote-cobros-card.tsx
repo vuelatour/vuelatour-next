@@ -166,7 +166,7 @@ export function QuoteCobrosCard({
             <p className="text-sm font-medium">Sin cobros registrados</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {onRegistrar
-                ? "Registra aquí el anticipo o la liquidación del cliente: transferencia, HSBC link, Paywise, cheque, BillPocket, efectivo o dólares."
+                ? "Registra aquí el anticipo o la liquidación del cliente: link de pago (HSBC o Paywise), transferencia, efectivo, cheque, BillPocket o dólares."
                 : "Los cobros los registra la oficina (administración, coordinación o facturación)."}
             </p>
           </div>

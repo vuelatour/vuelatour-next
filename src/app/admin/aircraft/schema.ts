@@ -172,8 +172,9 @@ export const EngineFormSchema = z.object({
   fabricante: z.string().max(50).nullable().optional().or(z.literal("")),
   modelo: z.string().max(50).nullable().optional().or(z.literal("")),
   horas_totales: optionalNonNegative,
-  // TURM en marco del COMPONENTE (horas de vida en su últ. overhaul). El
-  // `turm` legado (taco del avión) ya NO se captura desde los forms.
+  // T.U.R.M. = TSO: horas DESDE el último overhaul (lo que dice la bitácora
+  // física). El API lo guarda como `tso_base` tal cual; el `turm` legado
+  // (taco del avión) ya NO se captura desde los forms.
   turm_componente: optionalNonNegative,
   tbo_horas: z.coerce.number().min(1, "Debe ser mayor a 0"),
   // Límite CALENDARIO del overhaul (TBO por tiempo, ej. 12 años). Vaciar al

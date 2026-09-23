@@ -45,6 +45,12 @@ import {
   type EstadoCobroSemaforo,
 } from "@/lib/admin/cobros";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import { FacturaClienteBloque } from "@/components/admin/flights/factura-cliente-bloque";
+import {
+  estadoFacturaCliente,
+  estatusFacturaCliente,
+} from "@/lib/admin/factura-cliente";
+import type { FacturaClienteBloque as FacturaClienteData } from "@/types/flights";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import type {
@@ -74,8 +80,17 @@ interface CobrosCardProps {
   redondeoUsd?: number;
   /** Semáforo de cobro (fuente única `estadoCobroSemaforo`, en la página). */
   estadoCobro?: EstadoCobroSemaforo;
-  /** ¿El vuelo ya tiene CFDI? Pinta «Facturado» / «Sin factura». */
+  /** ¿El vuelo ya tiene CFDI timbrado por el sistema? */
   facturado?: boolean;
+  /**
+   * FACTURA DEL SERVICIO (22-sep-2026, ADITIVO): estatus manual de oficina +
+   * archivo. `undefined` = API sin desplegar ⇒ la card se comporta como
+   * antes (badge «Facturado» / «Sin factura» derivado de `facturado`) y no se
+   * ofrece un control que el backend rechazaría.
+   */
+  facturaCliente?: FacturaClienteData | null;
+  /** ADMIN / COORDINADOR / FACTURACION: puede tocar la factura del servicio. */
+  puedeFacturar?: boolean;
   /** Vuelo MULTI-AVIÓN: reparto de la venta del avión (lo calcula el API). */
   participacionAviones?: ParticipacionAvion[] | null;
   participacionFuente?: ParticipacionFuente | null;
@@ -124,6 +139,8 @@ export function CobrosCard({
   redondeoUsd = 0,
   estadoCobro,
   facturado = false,
+  facturaCliente,
+  puedeFacturar = false,
   participacionAviones = null,
   participacionFuente = null,
   metodoPrevisto = null,
@@ -229,15 +246,23 @@ export function CobrosCard({
                 {/* Misma fuente única que las listas: un cancelado con cobros
                     pinta "Con cobros" (gris), nunca "Por cobrar". */}
                 {estadoCobro && <CobroEstadoBadge estado={estadoCobro} />}
-                {facturado ? (
-                  <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30 text-[10px]">
-                    Facturado
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[10px]">
-                    Sin factura
-                  </Badge>
-                )}
+                {/* Factura del SERVICIO: los tres estados del cliente
+                    (22-sep-2026). Con un API previo `estatusFacturaCliente`
+                    cae a `facturado` y el badge dice lo de siempre. */}
+                {(() => {
+                  const f = estadoFacturaCliente(
+                    estatusFacturaCliente({ facturado, factura_cliente: facturaCliente }),
+                  );
+                  return (
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${f.pill}`}
+                      title={f.ayuda}
+                    >
+                      {f.label}
+                    </Badge>
+                  );
+                })()}
               </span>
             </Dato>
           </div>
@@ -245,6 +270,17 @@ export function CobrosCard({
             aviones={participacionAviones}
             fuente={participacionFuente}
           />
+          {/* Estatus manual + archivo de la factura del servicio. Solo con el
+              API que lo soporta: sin el bloque no se ofrece un control que
+              respondería 404. */}
+          {facturaCliente !== undefined && (
+            <FacturaClienteBloque
+              flightId={flightId}
+              facturaCliente={facturaCliente}
+              facturado={facturado}
+              puedeEditar={puedeFacturar}
+            />
+          )}
           {/* El método del VUELO no es el de ningún cobro: es la INTENCIÓN
               pactada al cotizar (decide el IVA) y el API nunca la reescribe.
               «Cómo se cobró al final» lo DERIVA el API de los cobros
@@ -277,9 +313,9 @@ export function CobrosCard({
                 {cancelado ? "Sin cobros retenidos" : "Sin cobros registrados"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Registra aquí el anticipo o la liquidación del cliente:
-                transferencia, HSBC link, Paywise, cheque, BillPocket, efectivo
-                o dólares.
+                Registra aquí el anticipo o la liquidación del cliente: link
+                de pago (HSBC o Paywise), transferencia, efectivo, cheque,
+                BillPocket o dólares.
               </p>
             </div>
           ) : (

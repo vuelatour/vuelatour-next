@@ -142,7 +142,9 @@ export interface TacoComponente {
   horas_actuales: number;
   tbo_restante: number | null;
   horas_desde_overhaul: number;
-  /** TURM en marco del COMPONENTE: horas de vida en su último overhaul (null = sin overhaul). */
+  /** T.U.R.M. = TSO VIVO del componente: horas DESDE su última reparación
+   *  mayor, como en la bitácora física (null = sin overhaul). 22-sep-2026: el
+   *  panel lo leía al revés («horas EN el overhaul») — ver `overhaul-turm.ts`. */
   turm_componente: number | null;
   vida_usada_pct: number | null;
   hobbs_avion: number;
@@ -238,12 +240,13 @@ export interface Motor {
   tbo_fecha?: string | null;
   /** Horas de vida vivas (acumulan con lo volado). Lo calcula el snapshot. */
   horas_actuales?: number;
-  /** TURM en marco del COMPONENTE: horas de vida en su último overhaul
-   *  (como la bitácora física AFAC). null = sin overhaul. Derivado del API. */
+  /** T.U.R.M. = TSO VIVO: horas DESDE la última reparación mayor, como en la
+   *  bitácora física AFAC. null = sin overhaul. Lo DERIVA el API (nunca se
+   *  calcula en el panel); al capturarlo, el API lo toma como `tso_base`. */
   turm_componente?: number | null;
   /** Horas restantes para el próximo overhaul (TBO). null si no hay TBO. */
   tbo_restante?: number | null;
-  /** Horas voladas desde el último overhaul (horas de vida − TURM). */
+  /** Horas voladas desde el último overhaul (TSO vivo; = `turm_componente`). */
   horas_desde_overhaul?: number;
   /** % del ciclo TBO consumido. null si el componente no tiene TBO. */
   vida_usada_pct?: number | null;
@@ -270,8 +273,9 @@ export interface Propeller {
   tbo_horas: Decimal | null;
   tbo_fecha?: string | null;
   horas_actuales?: number;
-  /** TURM en marco del COMPONENTE: horas de vida en su último overhaul
-   *  (como la bitácora física AFAC). null = sin overhaul. Derivado del API. */
+  /** T.U.R.M. = TSO VIVO: horas DESDE la última reparación mayor, como en la
+   *  bitácora física AFAC. null = sin overhaul. Lo DERIVA el API (nunca se
+   *  calcula en el panel); al capturarlo, el API lo toma como `tso_base`. */
   turm_componente?: number | null;
   tbo_restante?: number | null;
   horas_desde_overhaul?: number;

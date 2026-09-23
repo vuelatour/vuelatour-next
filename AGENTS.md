@@ -2268,6 +2268,11 @@ no es un dato fijo o que no se puede editar».
      la etiqueta «se cobran» / «no se cobran». Sigue siendo croma
      (`data-cot-ui`), sigue sin `data-guard-exempt` (cambiarlo ES editar) y
      el prop de `FilaTua` pasó de `margenExtra` a `accionExtra`.
+   - **[SUPERSEDIDO el 22-sep-2026 por «La croma vive DENTRO del papel»,
+     más abajo]** El canal siguió sin bastar: el cliente volvió a reportar
+     «no se alcanzan a ver los 3 puntitos» sobre TRAMOS COTIZADOS. En la hoja
+     INTERNA la croma se mudó a la celda y el canal pasó a 0; la hoja del
+     CLIENTE conserva lo que se describe aquí.
    - **El papel gana un CANAL a la izquierda** (`CANAL_CROMA_PX = 88`, fuente
      única en `lib/admin/quote-sheet.ts`): las DOS hojas lo reservan como
      `padding-left` de su `.cot-escenario` y lo DESCUENTAN del ancho antes de
@@ -2428,3 +2433,197 @@ no es un dato fijo o que no se puede editar».
   columnas salen, las tres tachadas no, y con `servicio` ausente la fila pinta
   «—» sin romper (deploy en dos tiempos: API nuevo con panel viejo y al revés
   conviven).
+
+
+## Reporte de la oficina del 22-sep-2026 (cuatro capturas)
+
+Cuatro cosas, en palabras del cliente: (1) «en la hélice del XB-ANU no está
+haciendo bien la resta y se sale de parámetros»; (2) «en estas ventanas no se
+desplaza hacia abajo para el botón de guardado, lo que hago es moverme con la
+tecla tabulador y atinarle»; (3) «en los registros de gastos, además de la
+opción facturada, agregar la opción para subir la factura correspondiente de
+dicho gasto»; (4) «en vuelos, apartado COBRO, colocar las opciones link de
+pago, transferencia, efectivo; y agregar por cada vuelo las opciones para
+identificar vuelos facturado, sin factura, factura elaborada y enviada, y que
+pueda yo también subir la factura del servicio»; (5) «no se alcanzan a ver los
+3 puntitos para las demás opciones en la cotización».
+
+### Los diálogos se DESPLAZAN (`ui/dialog.tsx`, `ui/sheet.tsx`)
+
+- `DialogContent` gana `max-h-[calc(100dvh-2rem)] overflow-y-auto
+  overscroll-contain`; `SheetContent`, `overflow-y-auto overscroll-contain`.
+  Sin eso, en una laptop el diálogo de editar hélice/motor crecía más que la
+  ventana y su pie —donde vive «Guardar cambios»— quedaba FUERA, sin forma de
+  llegar con la rueda: el operador tabulaba a ciegas.
+- El scroll va en el POPUP, no en un hijo: `DialogContent` es un `grid` y los
+  diálogos existentes cuelgan sus secciones de él; meter un contenedor nuevo
+  habría descolocado a todos. Un panel que ya desplaza su propio cuerpo
+  (`flex-1 overflow-y-auto`) no cambia.
+- `dvh` y no `vh`: en el navegador del celular la barra de direcciones se
+  come la diferencia justo donde está el botón.
+- Guarda: `components/ui/__tests__/dialog-scroll.test.ts` (lee el archivo, no
+  el DOM: son primitivos de Base UI que renderizan por portal, y quitar esas
+  clases devuelve el bug a TODOS los diálogos del panel a la vez).
+
+### TURM = TSO, como en la bitácora (`lib/admin/overhaul-turm.ts`)
+
+- **El bug**: en la bitácora física **T.U.R.M. = Tiempo desde la Última
+  Reparación Mayor = TSO**. El formulario decía «TURM · horas del componente
+  EN su último overhaul» y el API hacía `tso_base = horas_totales −
+  turm_componente`: la oficina capturó Horas totales 2708 y TURM 364 (que ya
+  era el TSO) y el sistema guardó 2,708 − 364 = **2,344** sobre un TBO de
+  2,000 ⇒ ficha con «Restantes **−344.00**» y «Vida usada 100 %». La resta la
+  corrige el API (el T.U.R.M. tecleado es el TSO de HOY y se guarda en el
+  marco del ancla: `tso_base = turm − lo volado desde el ancla`); el panel
+  corrige lo que el operador LEE al capturar, que es donde nació el error.
+- **El campo se prellena con el TSO VIVO** (`turm_componente` del API, que es
+  `tso_base + delta`) y eso solo cuadra porque el API descuenta ese mismo
+  delta al guardar. Si alguien «simplifica» el API a `tso_base = turm`, esta
+  pantalla empieza a inflar el TSO en cada edición de un componente cuyo
+  ancla esté vieja (el N4142R: 1,098 h). No tocar uno sin el otro.
+- FUENTE ÚNICA de textos y tonos (PURA, prueba
+  `__tests__/overhaul-turm.test.ts` con el caso REAL del XB-ANU):
+  `ETIQUETA_TURM` («TURM (TSO)»), `HINT_TURM` («horas **DESDE** el último
+  overhaul (TSO)»), `TITULO_TURM`, `AYUDA_HORAS_COMPONENTE`,
+  `ETIQUETA_TURM_FICHA`, `estadoTbo`, `renglonRestantes`, `textoVidaTbo` y
+  `avisoTsoImposible`. Ningún formulario ni card redacta estas frases.
+- **La barra «Vida usada del TBO» se recorta a 100 %** (el `style` ya lo
+  hacía; el número de al lado no) y el vencido se DICE: «overhaul vencido por
+  344.00 h» en rojo, y el renglón de la ficha pasa de «Restantes −344.00 hrs»
+  a «Overhaul · vencido por 344.00 h». Un negativo bajo la etiqueta
+  «Restantes» no se lee como «se pasó»: se lee como que el sistema está mal —
+  que es exactamente lo que reportó la oficina.
+- **Sin exceso que contar no se escribe «vencido por 0.00 h»**: con 0 h
+  restantes el texto es «overhaul cumplido» / «toca ahora (sin horas
+  restantes)».
+- El aviso de captura ya no dice «el TSN es menor al TURM» (con la lectura
+  correcta eso no describe nada): dice que **el TSO no puede superar al TSN**,
+  espejo del 400 del API.
+- **El renglón TURM de la ficha se conserva aunque repita al TSO**: con la
+  lectura correcta son el MISMO número, pero «T.U.R.M.» es el nombre que la
+  oficina busca (es el de la bitácora física y el del formulario). Se rotula
+  «T.U.R.M. (bitácora)» con un `title` que dice que es el mismo dato, para que
+  nadie lo lea como dos cuentas distintas.
+- Aquí NO se calcula ninguna hora: TSN, TSO, restantes y % los manda el API.
+- **Orden de deploy: API antes que panel.** Con el API viejo, un TURM
+  capturado con la etiqueta nueva se guardaría otra vez como `horas_totales −
+  turm` (el bug al revés). Los datos de prod los corrige el usuario tras el
+  deploy; el panel no toca ninguna fila.
+
+### La croma vive DENTRO del papel (cotización)
+
+- Reporte con captura de **TRAMOS COTIZADOS**: «no se alcanzan a ver los 3
+  puntitos para las demás opciones en la cotización». El canal de croma de la
+  noche anterior (`CANAL_CROMA_PX`) no bastaba: `.cot-margen` está
+  `position:absolute; right:100 %`, o sea FUERA del área impresa, y el borde
+  del contenedor lo corta en cuanto la ventana se estrecha o la barra lateral
+  se abre — y el documento interno es ANCHO (816 px).
+- **La croma pasa a la celda**: `.cot-croma` (inline-flex, sin posicionar) al
+  INICIO de la celda RUTA de cada tramo —🗑 · ⋯ · marcas (pax, ferry,
+  pernocta, servicio, nota, sobrevuelo, oculto, «NM?»)— y al INICIO del
+  renglón en el desglose (🗑/⋯ de cada extra). La moneda de una TUA y la marca
+  «manual» del IVA van con `.cot-croma--der`, al final de su línea. Se
+  conservan las clases de los hijos (`.cot-margen__accion`, `.cot-marca`): lo
+  único que cambia es el CONTENEDOR.
+- **Los iconos se VEN sin pasar el mouse** (`opacity: .6`, plena al pasar por
+  la fila o al enfocar): el reporte era justamente que no se alcanzaban a ver.
+- **La hoja INTERNA ya no reserva canal**: `geometriaHoja` acepta `canalPx` y
+  `QuoteSheetInterna` pasa **0** — con la croma dentro, un canal vacío solo le
+  quitaría ancho al papel. La hoja del **CLIENTE conserva el suyo**: su
+  itinerario sigue pintando `.cot-margen` porque ahí vive el botón de HORAS
+  («3.68 h»), que no cabe en la línea de la tabla.
+- En **LECTURA no se monta nada de esto** (sigue siendo `data-cot-ui`), así
+  que los fixtures del documento **no cambian**. El único fixture que se
+  regeneró fue `interna-070`, y por las etiquetas de método de cobro (abajo),
+  no por la croma.
+- Guardas: `quote-sheet-interna-controles.test.tsx` («croma del tramo: dentro
+  del papel, nunca en el margen») y `quote-pantalla-completa.test.tsx` (la
+  interna sin `padding-left`, la del cliente con el canal, y que en cualquier
+  `.cot-margen` que quede solo haya croma estrecha).
+
+### Métodos de cobro: «Link de pago» (etiquetas y orden)
+
+- `lib/admin/metodos-pago.ts`: HSBC_LINK pasa a **«Link de pago (HSBC)»**,
+  PAYWISE a **«Link de pago (Paywise)»**; TRANSFERENCIA y EFECTIVO se quedan
+  igual. Cambian TAMBIÉN el ORDEN del selector, que ahora arranca por lo que
+  la oficina usa a diario: Link de pago (HSBC) · Link de pago (Paywise) ·
+  Transferencia · Efectivo, y después Cheque, BillPocket, Dólares y Otro.
+- **Los VALORES del enum NO cambian**, ni el IVA, ni `facturable`, ni
+  `METODOS_CON_CUENTA`, ni la whitelist del piloto. `METODOS_FACTURABLES` se
+  deriva del arreglo, así que su test compara CONJUNTOS: esa regla no puede
+  depender del orden del selector.
+- Las etiquetas son ESPEJO de `common/metodo-cobro.util.ts` del API (las mismas
+  que imprimen el recibo de pago y el PDF interno) y de la app. La paridad la
+  congela `__tests__/metodos-pago.test.ts` con la tabla COPIADA del API: si
+  cambia un solo lado, el test falla. Si el recibo dijera «Link de pago
+  (HSBC)» y la pantalla «HSBC link», el operador creería que son dos cosas.
+- **DOLARES se alineó en los tres repos a «Dólares directo»** (revisión
+  adversaria 22-sep-2026): el panel ya lo pintaba así y el API imprimía
+  «Dólares» en el recibo. La ÚNICA divergencia que queda —y está probada
+  aparte— es OTRO: el SELECTOR dice «Otro (escríbelo)» porque ahí es una
+  instrucción, pero lo que se PINTA de un cobro lo arma `metodoPagoLabel`
+  («Otro» / «Otro (PayPal)»), idéntico al API. La tabla del test no puede
+  volver a decir que son iguales renglón por renglón cuando no lo son.
+- El fixture **`interna-070`** se regeneró (`npm run gen:hoja-interna-fixture`)
+  porque su payload lleva `metodo_cobro_label`/`metodo_label`, que los manda el
+  API: con la etiqueta vieja, pantalla y papel dejaban de cuadrar.
+
+### Factura del SERVICIO, por vuelo (`lib/admin/factura-cliente.ts`)
+
+- Tres estados MANUALES de oficina: **SIN_FACTURA · ELABORADA_ENVIADA ·
+  FACTURADO**, más el archivo (PDF o XML) que se le mandó al cliente. Hasta hoy
+  el vuelo solo tenía `facturado` (= CFDI timbrado por el sistema), y eso deja
+  fuera el caso real: la factura la elabora el contador y se manda por correo.
+- Campo **ADITIVO** del API: `factura_cliente { estatus, archivo{path, nombre,
+  subida_at, subida_por_nombre} | null }` en el snapshot del vuelo.
+  `estatusFacturaCliente(v)` es la fuente única de lectura y **con un API sin
+  desplegar cae a `facturado`**: la card queda EXACTAMENTE como estaba y no se
+  ofrece ningún control (`facturaCliente === undefined` ⇒ el bloque no se
+  monta), porque un selector que responde 404 es peor que no tenerlo.
+- **El CFDI manda**: con `vuelo.facturado` el estatus se queda en FACTURADO, el
+  selector no se monta y se explica por qué (el API responde 409
+  `VUELO_CON_CFDI`). Al revés no: marcar FACTURADO a mano NO timbra nada.
+- Dónde: `flights/cobros-card.tsx` — el badge del resumen usa el helper (tres
+  estados) y debajo va `flights/factura-cliente-bloque.tsx` con el selector,
+  «Subir factura» (PDF/XML, ≤10 MB), «Ver» (URL FIRMADA de 10 min, pestaña
+  nueva) y «Quitar» **con confirmación**. Roles: ADMIN/COORDINADOR/FACTURACION.
+- Server actions en `app/admin/flights/actions.ts`
+  (`setFacturaClienteEstatusAction`, `subirFacturaClienteAction`,
+  `quitarFacturaClienteAction`, `urlFacturaClienteAction`), todas con
+  `revalidateFlight`.
+- **`apiFetch` ya acepta `FormData`** (22-sep-2026): viaja TAL CUAL y SIN
+  `Content-Type` —lo pone `fetch` con su `boundary`; fijarlo a mano deja al API
+  sin poder separar las partes—. Es el ÚNICO cuerpo que no se serializa; todo
+  lo demás sigue yendo como JSON. El límite de las server actions ya estaba en
+  12 MB (`next.config.ts`), así que un archivo de 10 MB pasa.
+- Pruebas: `lib/admin/__tests__/factura-cliente.test.ts` (tolerancia, el CFDI
+  que manda, validación del archivo) y
+  `flights/__tests__/cobros-card-factura-cliente.test.tsx` (cableado, incluido
+  «API viejo ⇒ la card de hoy»).
+
+### Factura de UN gasto, desde su fila (`expenses/gasto-factura-button.tsx`)
+
+- No hace falta ningún mecanismo nuevo: el buzón de Facturas recibidas ya
+  existe. Lo que faltaba era hacerlo DESDE la fila. El botón vive junto al
+  `FacturacionBadge` y hace **UNA** llamada:
+  `POST /v1/invoices/recibidas/de-gasto { gasto_id, xml_b64?, pdf_b64?,
+  pdf_nombre? }` ⇒ la factura con sus `gastos` y `ya_existia`.
+- **Por qué esa ruta y no las dos de siempre** (revisión adversaria
+  22-sep-2026, que encontró el panel llamando a un endpoint inexistente):
+  (a) `POST /recibidas/:id/amarrar-gastos` **REEMPLAZA** la lista de gastos de
+  la factura — desde la fila de UN gasto desamarraría en silencio a los demás
+  que ampara la misma factura (VIP SAESA: una factura, varios aterrizajes);
+  (b) el XML quedaba obligatorio y hay proveedores que solo mandan PDF;
+  (c) un UUID ya registrado respondía 409 sin salida cuando es el caso normal
+  (la misma factura amparando otro gasto); (d) **`POST /recibidas/:id/pdf` NO
+  EXISTE**: cada PDF se perdía con un aviso de que «solo el PDF no se guardó».
+- **Basta con UNO de los dos archivos**. Con solo PDF la factura entra con
+  `uuid_fiscal` null y marca el gasto igual; el XML sigue siendo el que trae
+  UUID, emisor y total. El diálogo lo dice.
+- **El semáforo no se toca desde el panel**: al amarrar, el trigger
+  `gasto_sync_facturacion` del API pone el gasto en 🟢 FACTURADA. Escribir
+  `estatus_facturacion` aquí sería una segunda fuente para el mismo dato.
+- **«Ver la factura»** de un gasto ya amarrado abre el archivo con URL
+  FIRMADA (`GET /v1/invoices/recibidas/:id` → `POST /recibidas/file-urls`,
+  `verFacturaGastoAction`), prefiriendo el PDF; el bucket es privado y nunca
+  se guarda una URL en el HTML.
