@@ -225,12 +225,35 @@ const render = (props: QuoteSheetInternaProps) =>
   parsearHoja(renderToString(<QuoteSheetInterna {...props} />));
 
 describe("fixtures de la hoja interna", () => {
-  it("existen los 3 fixtures generados con pyservices (npm run gen:hoja-interna-fixture)", () => {
+  it("existen los 4 fixtures generados con pyservices (npm run gen:hoja-interna-fixture)", () => {
     expect(CASOS.map((c) => c.nombre).sort()).toEqual([
       "interna-070",
       "interna-311",
       "interna-329",
+      "interna-extras",
     ]);
+  });
+
+  /**
+   * EXTRAS (Fase 2.3 · BLOQUE B): el motor escribe la cuenta DENTRO del
+   * concepto y el papel la imprime tal cual. La hoja escribía el formato del
+   * CLIENTE («Tour · $170.00 MXN»), así que pantalla y PDF nombraban distinto
+   * el MISMO renglón — con el monto en pesos SIN separador de miles, que es
+   * como lo escribe el API (`monto_nativo.toFixed(2)`).
+   */
+  it("interna-extras congela el concepto canónico de cada extra", () => {
+    const html = CASOS.find((c) => c.nombre === "interna-extras")!.html;
+    for (const t of [
+      "Handler · $1500.00 MXN",
+      "Tour · 2 × $85.00 MXN = $170.00 MXN",
+      "Transfer al hotel (sin IVA)",
+      "Subtotal gravable",
+      "No causan IVA",
+    ]) {
+      expect(html, t).toContain(t);
+    }
+    // El formato del CLIENTE no aparece por ningún lado del documento interno.
+    expect(html).not.toContain("Tour · $170.00 MXN");
   });
 
   /**

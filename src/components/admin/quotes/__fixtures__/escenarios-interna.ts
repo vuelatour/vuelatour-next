@@ -1,9 +1,11 @@
 import type { QuoteSheetInternaProps } from "@/components/admin/quotes/quote-sheet-interna";
-import type { QuoteBreakdown } from "@/types/quote";
+import type { QuoteSheetValoresInterna } from "@/components/admin/quotes/quote-sheet-types";
+import type { ExtraConcepto, QuoteBreakdown, TipoTarifa } from "@/types/quote";
 import type { CotizacionInterna } from "@/types/quotes-interno";
 import payload070 from "./interna-070.payload.json";
 import payload311 from "./interna-311.payload.json";
 import payload329 from "./interna-329.payload.json";
+import payloadExtras from "./interna-extras.payload.json";
 
 /**
  * ESCENARIOS de la HOJA INTERNA (Fase 2.2, 22-sep-2026). Por cada
@@ -48,11 +50,31 @@ const CLIENTES = [
 const interno = (p: unknown): CotizacionInterna => p as unknown as CotizacionInterna;
 
 /**
+ * EXTRAS capturados de un escenario (lo que el operador tecleó). Viajan aparte
+ * porque el payload del PDF solo lleva la línea CANÓNICA del motor —«Tour · 2
+ * × $85.00 MXN = $170.00 MXN (sin IVA)»—, que ya incluye la cuenta. Que la
+ * pantalla reconstruya ese MISMO texto a partir del concepto tecleado es
+ * justo lo que custodia el test de TEXTO en edición.
+ */
+const EXTRAS_CAPTURADOS: Record<string, ExtraConcepto[]> = {
+  "interna-extras": [
+    // En pesos, monto directo: el motor escribe « · $1500.00 MXN» (sin
+    // separador de miles) DENTRO del concepto y el papel lo imprime así.
+    { concepto: "Handler", monto_usd: 1500, moneda: "MXN", aplica_iva: true },
+    // Cantidad × unitario en pesos: la cuenta va dentro del concepto.
+    { concepto: "Tour", monto_usd: 0, moneda: "MXN", aplica_iva: true, cantidad: 2, unitario: 85 },
+    // EXENTO en USD: el canónico cierra con « (sin IVA)» y la partición de
+    // conceptos sin IVA se activa.
+    { concepto: "Transfer al hotel", monto_usd: 200, moneda: "USD", aplica_iva: false },
+  ],
+};
+
+/**
  * `breakdown` EQUIVALENTE al payload: mismos números, la forma que devuelve
  * `POST /v1/quotes/calculate` (incluidos los ADITIVOS del API 0.0.27 que
  * alimentan las columnas TIEMPO/COSTO POR HORA/TOTAL y el pie de la tabla).
  */
-function breakdownDe(p: CotizacionInterna): QuoteBreakdown {
+function breakdownDe(p: CotizacionInterna, extras: ExtraConcepto[]): QuoteBreakdown {
   const av = AERONAVES.find((a) => a.matricula === p.aeronave_cotizada_matricula) ?? AERONAVES[0];
   return {
     aeronave: {
@@ -131,7 +153,19 @@ function breakdownDe(p: CotizacionInterna): QuoteBreakdown {
       tiempo_hhmm: t.tiempo_hhmm,
       total_usd: t.total_usd,
     })),
-    extras: null,
+    // ECO del motor: el i-ésimo extra CAPTURADO con el monto que resolvió el
+    // API (el mismo de su línea EXTRA canónica, en ese orden).
+    extras:
+      extras.length > 0
+        ? extras.map((e, i) => {
+            const l = p.lineas.filter((x) => x.clave === "EXTRA")[i];
+            return {
+              ...e,
+              monto_usd: l?.monto_usd ?? 0,
+              ...(l?.monto_nativo != null ? { monto_nativo: l.monto_nativo } : {}),
+            };
+          })
+        : null,
     desglose: p.lineas.map((l) => ({
       clave: l.clave,
       concepto: l.concepto,
@@ -175,8 +209,12 @@ function breakdownDe(p: CotizacionInterna): QuoteBreakdown {
 }
 
 /** Props con las que la hoja debe decir lo mismo que `interna-<nombre>.html`. */
-function escenario(p: CotizacionInterna, clienteId: string): QuoteSheetInternaProps {
-  const b = breakdownDe(p);
+function escenario(
+  p: CotizacionInterna,
+  clienteId: string,
+  extras: ExtraConcepto[] = [],
+): QuoteSheetInternaProps {
+  const b = breakdownDe(p, extras);
   const av = AERONAVES.find((a) => a.matricula === p.aeronave_cotizada_matricula) ?? AERONAVES[0];
   return {
     valores: {
@@ -202,7 +240,7 @@ function escenario(p: CotizacionInterna, clienteId: string): QuoteSheetInternaPr
       })),
       tuas_lineas: [],
       cobrar_tuas: true,
-      extras: [],
+      extras,
       descuento_usd: null,
       iva_pct_override: null,
       tc_usd_mxn: p.tc_usd_mxn,
@@ -212,6 +250,37 @@ function escenario(p: CotizacionInterna, clienteId: string): QuoteSheetInternaPr
       es_externo: false,
       avion_externo_modelo: "",
       avion_externo_matricula: "",
+      // Lo que bajó del panel al papel (Fase 2.3): sale del MISMO payload, así
+      // que la cabecera de COBROS («previsto: Transferencia · comisión
+      // terminal 8.857 %») y la fila «Marcas» dicen lo que imprime el papel
+      // aunque ahora sean controles. `pase_abordar` no existe en el payload
+      // porque el documento interno no lo imprime (`_ficha_html`): su switch
+      // es croma pura.
+      metodo_pago: (p.metodo_cobro ?? "TRANSFERENCIA") as QuoteSheetValoresInterna["metodo_pago"],
+      metodo_pago_detalle: p.metodo_cobro_detalle ?? "",
+      comision_billpocket_pct: p.comision_billpocket_pct,
+      // `redondeo_auto_usd` viene del payload: si el motor redondeó, el
+      // switch «auto» del renglón «Redondeo» está encendido.
+      redondeo_auto: (p.redondeo_auto_usd ?? 0) > 0,
+      redondeo_usd: null,
+      cotizacion_abierta: p.cotizacion_abierta,
+      pase_abordar: false,
+      notas_internas: p.notas_internas ?? "",
+      // BLOQUE B: tarifa, horas y comisión del vendedor, todas DEL MISMO
+      // payload. La tarifa manual y el cobrable pactado solo existen cuando
+      // el papel dice que los hay (`tarifa_override`, `cobrable_override`):
+      // así el segmento «Personalizada» y el campo «pactar» de la pantalla
+      // no pueden contradecir a las marcas que imprime el documento.
+      tipo_tarifa: (p.tarifa_tipo === "BROKER" ? "BROKER" : "PUBLICO") as TipoTarifa,
+      tarifa_personalizada: p.tarifa_override,
+      tarifa_hora_override_usd: p.tarifa_override ? p.tarifa_hora_usd : null,
+      sobrevuelo_hr: p.sobrevuelo_hr,
+      tiempo_cobrable_override_hr: p.cobrable_override ? p.tiempo_cobrable_hr : null,
+      comision_vendedor_modo: p.comision_vendedor_modo === "POR_HORA" ? "POR_HORA" : "FIJA",
+      comision_vendedor_usd:
+        p.comision_vendedor_modo === "POR_HORA" ? null : p.comision_vendedor_usd || null,
+      comision_vendedor_tarifa_hr: p.comision_vendedor_tarifa_hr,
+      comision_vendedor_nombre: p.comision_vendedor_nombre ?? "",
     },
     onCambio: () => undefined,
     breakdown: b,
@@ -247,4 +316,16 @@ export const ESCENARIOS_INTERNA: Record<string, () => QuoteSheetInternaProps> = 
    * un cobro en MXN con comisión de terminal (columna «Equiv. USD»).
    */
   "interna-070": () => escenario(interno(payload070), "c2"),
+  /**
+   * EXTRAS en el dialecto INTERNO (Fase 2.3 · BLOQUE B): el papel imprime el
+   * concepto CANÓNICO del motor, que trae la cuenta dentro —«Tour · 2 ×
+   * $85.00 MXN = $170.00 MXN»— y cierra con « (sin IVA)» cuando el renglón no
+   * causa IVA. La hoja escribía en su lugar el formato del CLIENTE, así que
+   * pantalla y PDF nombraban distinto el MISMO renglón. Trae además los tres
+   * casos que ningún otro escenario cubría: extra en PESOS con monto directo,
+   * extra con CANTIDAD × unitario y extra EXENTO (que activa la partición
+   * «No causan IVA» con un IVA > 0).
+   */
+  "interna-extras": () =>
+    escenario(interno(payloadExtras), "c1", EXTRAS_CAPTURADOS["interna-extras"]),
 };

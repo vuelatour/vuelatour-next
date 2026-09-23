@@ -314,3 +314,42 @@ export function textoCambioTarifa(
   }
   return [money(x, TARIFA_DECIMALES), money(y, TARIFA_DECIMALES)];
 }
+
+// ---------------------------------------------------------------------------
+// SEGMENTO Pública | Broker | Personalizada
+// ---------------------------------------------------------------------------
+
+/** Las tres opciones del selector de tarifa del cotizador. */
+export type SegmentoTarifa = "PUBLICO" | "BROKER" | "CUSTOM";
+
+/**
+ * ¿Hay una tarifa manual CAPTURADA en el campo «$/hr — SOLO esta cotización»?
+ * Es el `${v ?? ""}.trim() !== ""` de siempre: el campo puede venir como
+ * NÚMERO (la hoja escribe con `setValue`) o como CADENA (el panel lo
+ * `register`a sobre un `<input type="number">`), y el CERO cuenta — «$0/hr»
+ * es el cliente interno («Poner todo en $0»), no un campo vacío.
+ */
+export function overrideTarifaCapturado(v: unknown): boolean {
+  return `${v ?? ""}`.trim() !== "";
+}
+
+/**
+ * Qué opción del segmento está activa. Una sola regla para el PAPEL (la fila
+ * «Tarifa» de la ficha interna) y para el PANEL: con dos copias, el segmento
+ * de una pantalla podría decir «Pública» mientras la otra cobra la manual.
+ *
+ * `tarifa_personalizada` es el modo PEGAJOSO (estado de UI, el diff lo
+ * ignora): una vez activo se queda aunque el campo se vacíe a media edición —
+ * si no, borrar el input desmontaría el propio campo que se está editando.
+ * Solo el segmento lo apaga.
+ */
+export function segmentoTarifa(v: {
+  tipo_tarifa: "PUBLICO" | "BROKER";
+  tarifa_personalizada?: boolean;
+  tarifa_hora_override_usd?: number | string | null;
+}): SegmentoTarifa {
+  if (v.tarifa_personalizada === true || overrideTarifaCapturado(v.tarifa_hora_override_usd)) {
+    return "CUSTOM";
+  }
+  return v.tipo_tarifa;
+}

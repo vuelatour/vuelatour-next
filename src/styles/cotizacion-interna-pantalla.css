@@ -269,6 +269,108 @@
 .cot-interna .cot-acciones .cot-liga { margin-left: 0; white-space: nowrap; }
 .cot-interna .cot-tenue { color: #9ca3af; }
 
+/* SWITCH de la hoja (croma): «Se cobran TUAS», «Redondeo automático»,
+   «Cotización abierta», «Pase de abordar». Discreto en reposo (pista gris,
+   texto tenue) y con el acento cuando está encendido — nunca se imprime. */
+.cot-interna .cot-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #9ca3af;
+  background: transparent;
+  border: 0;
+  padding: 1px 2px;
+  margin: 0 -2px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+}
+.cot-interna .cot-switch:hover:not(:disabled) { background: rgba(16, 42, 67, 0.07); color: #102a43; }
+.cot-interna .cot-switch:focus-visible { outline: 2px solid var(--ring, #e63946); outline-offset: 1px; }
+.cot-interna .cot-switch:disabled { cursor: default; opacity: 0.55; }
+.cot-interna .cot-switch__pista {
+  display: inline-block;
+  position: relative;
+  width: 16px;
+  height: 9px;
+  border-radius: 999px;
+  background: #d1d5db;
+  transition: background-color 120ms ease;
+  flex: none;
+}
+.cot-interna .cot-switch__bolita {
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 120ms ease;
+}
+.cot-interna .cot-switch--on .cot-switch__bolita { transform: translateX(7px); }
+.cot-interna .cot-switch--on { color: #102a43; }
+.cot-interna .cot-switch--on .cot-switch__pista { background: #6b7280; }
+/* En la LÍNEA del papel (ficha, cabecera de Cobros) el switch acompaña a un
+   texto de 12 px: ahí no va en versalitas de 9 px. */
+.cot-interna .cot-acciones .cot-switch { font-size: 11px; text-transform: none; letter-spacing: 0; }
+
+/* Acento SOLO en edición (en lectura no se monta ningún switch). */
+.cot-interna:not(.cot-interna--lectura) .cot-switch--on .cot-switch__pista {
+  background: var(--cot-acento);
+}
+.cot-interna:not(.cot-interna--lectura) .cot-switch:hover:not(:disabled) { color: var(--cot-acento-hover); }
+
+/* SEGMENTO en la línea (croma): «Pública | Broker | Personalizada» de la fila
+   «Tarifa» y «Fija | Por hora» de la comisión del vendedor. Es el `Segmented`
+   del panel reducido a lo que cabe en un renglón de 12 px. */
+.cot-interna .cot-seg {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  vertical-align: baseline;
+}
+.cot-interna .cot-seg__op {
+  font: inherit;
+  font-size: 11px;
+  color: #9ca3af;
+  background: transparent;
+  border: 0;
+  padding: 0 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cot-interna .cot-seg__op:hover:not(:disabled) { background: rgba(16, 42, 67, 0.07); color: #102a43; }
+.cot-interna .cot-seg__op:focus-visible { outline: 2px solid var(--ring, #e63946); outline-offset: 1px; }
+.cot-interna .cot-seg__op--on { color: #102a43; font-weight: 700; background: rgba(16, 42, 67, 0.07); }
+.cot-interna:not(.cot-interna--lectura) .cot-seg__op--on { color: var(--cot-acento); }
+
+/* PLEGABLE en línea (croma): la comisión del vendedor bajo «Vendedor». El
+   contenido NUNCA se desmonta (es un `<details>`): solo se oculta. */
+.cot-interna .cot-plegable { display: inline; font-size: 12px; }
+.cot-interna .cot-plegable__resumen {
+  display: inline;
+  cursor: pointer;
+  color: #9ca3af;
+  list-style: none;
+  border-radius: 3px;
+}
+.cot-interna .cot-plegable__resumen::-webkit-details-marker { display: none; }
+.cot-interna .cot-plegable__resumen::before { content: "▸ "; color: #d1d5db; }
+.cot-interna .cot-plegable[open] > .cot-plegable__resumen::before { content: "▾ "; }
+.cot-interna .cot-plegable__resumen:hover { color: #102a43; background: rgba(16, 42, 67, 0.07); }
+.cot-interna .cot-plegable__resumen:focus-visible { outline: 2px solid var(--ring, #e63946); outline-offset: 1px; }
+.cot-interna .cot-plegable__cuerpo { display: inline; }
+.cot-interna .cot-plegable[open] > .cot-plegable__resumen { display: block; }
+.cot-interna:not(.cot-interna--lectura) .cot-plegable__resumen:hover { color: var(--cot-acento-hover); }
+
 /* Mientras el motor recalcula, los importes se atenúan (nunca se vacían). */
 .cot-interna--calculando .totales .val,
 .cot-interna--calculando .tramos tfoot td.num { opacity: 0.45; transition: opacity 160ms ease; }
@@ -347,3 +449,70 @@
   outline-offset: 1px;
   border-radius: 2px;
 }
+
+/* RUTA OPERATIVA del vuelo (Fase 2.3 · BLOQUE C): banda azul DENTRO del papel,
+   justo encima de la tabla de tramos. Es un aviso de DIVERGENCIA —la ruta que
+   vuela el piloto no es la que se cotiza— y por eso vive junto a la tabla que
+   lo dice, no en un plegable. CROMA: `data-cot-ui`, el documento de pyservices
+   no la imprime. Se pinta también en LECTURA (enterarse no depende de poder
+   editar), así que NO cuelga de `:not(--lectura)` y no usa el acento. */
+.cot-interna .cot-ops {
+  margin: 12px 0 6px;
+  padding: 7px 9px;
+  border: 1px solid rgba(2, 132, 199, 0.35);
+  border-left: 3px solid #0284c7;
+  border-radius: 4px;
+  background: rgba(2, 132, 199, 0.07);
+  color: #075985;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.cot-interna .cot-ops__cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cot-interna .cot-ops__ttl {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cot-interna .cot-ops__ruta {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.cot-interna .cot-ops__lista { margin: 3px 0 0; padding: 0; list-style: none; }
+.cot-interna .cot-ops__lista li { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.cot-interna .cot-ops__n { color: #7dd3fc; font-weight: 400; }
+.cot-interna .cot-ops__tag {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 4px;
+  border: 1px solid rgba(2, 132, 199, 0.4);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+.cot-interna .cot-ops__nota { margin-top: 3px; font-size: 10px; color: #0c4a6e; opacity: 0.85; }
+.cot-interna .cot-ops__btn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #075985;
+  background: #fff;
+  border: 1px solid rgba(2, 132, 199, 0.5);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cot-interna .cot-ops__btn:hover:not(:disabled) { background: rgba(2, 132, 199, 0.12); }
+.cot-interna .cot-ops__btn:focus-visible { outline: 2px solid var(--ring, #e63946); outline-offset: 1px; }
+.cot-interna .cot-ops__btn:disabled { opacity: 0.5; cursor: default; }

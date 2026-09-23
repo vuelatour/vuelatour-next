@@ -2,6 +2,7 @@
 
 import { fmtTc } from "@/lib/format";
 import { TITULO_REGISTRO_COBRO, textoRegistroCobro } from "@/lib/admin/cobros";
+import { METODOS_PAGO, metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import {
   SIN_DATO,
   avisoCobrosSinTc,
@@ -11,11 +12,14 @@ import {
   moneyInterno,
   montoInterno,
   pctBanco,
+  piezasMetodoPrevisto,
+  pctG,
   resumenCobros,
   subLineaCobro,
 } from "@/lib/admin/quote-sheet-interna";
+import type { MetodoPago } from "@/types/quote";
 import type { CotizacionInterna } from "@/types/quotes-interno";
-import { UI } from "./quote-sheet-fields";
+import { CampoHoja, CampoNumero, CampoSelect, UI } from "./quote-sheet-fields";
 
 /**
  * COBROS de la hoja interna — réplica de `_cobros_html` de
@@ -27,9 +31,14 @@ import { UI } from "./quote-sheet-fields";
  * El `<h2>` lleva el MÉTODO PREVISTO («Cobros · previsto: Transferencia ·
  * comisión terminal 8.857 %»), también cuando no hay ningún cobro: en el 19 %
  * de las cotizaciones no hay cobros registrados y ese campo es el que explica
- * por qué la cotización lleva IVA 16 % o 0 % (riesgo 5 del diseño). Es lo
- * único de este bloque que la Fase 2.2 NO edita todavía — el método sigue
- * capturándose en el panel interno hasta la Fase 2.3.
+ * por qué la cotización lleva IVA 16 % o 0 % (riesgo 5 del diseño).
+ *
+ * Desde la Fase 2.3 esa frase SE EDITA en su sitio: el método es un
+ * `CampoSelect` (`metodo-pago-field`, fuente única `METODOS_PAGO`), con
+ * «¿cuál?» al lado cuando es OTRO y el % de terminal (`billpocket-field`)
+ * dentro de la misma frase. El texto impreso es el MISMO —las piezas salen de
+ * `piezasMetodoPrevisto`—; lo que cambia es que ya no hay que abrir un panel
+ * lateral para decidir si la cotización lleva IVA.
  *
  * TODOS los números llegan del API (`GET /v1/quotes/:id/interno`): bruto,
  * comisión, neto, equivalente en USD, saldo y semáforo. Aquí no se suma nada.
@@ -42,15 +51,57 @@ import { UI } from "./quote-sheet-fields";
  * Ancla `#cobros-vuelo`: la conserva la card del workspace (la usa la banda
  * del 409 `COTIZACION_COBRADA`), así que aquí NO se repite.
  */
-export function QuoteSheetInternaCobros({ interno }: { interno: CotizacionInterna | null }) {
+export interface QuoteSheetInternaCobrosProps {
+  interno: CotizacionInterna | null;
+  /** Bloqueada: la frase del método se imprime como texto, sin controles. */
+  lectura?: boolean;
+  /**
+   * Método PREVISTO del formulario (lo que decide el IVA). Es el vivo: el de
+   * `interno` es el de la versión guardada y solo sirve de respaldo.
+   */
+  metodo?: MetodoPago | null;
+  metodoDetalle?: string;
+  comisionPct?: number | null;
+  onMetodo?: (v: MetodoPago) => void;
+  onMetodoDetalle?: (v: string) => void;
+  onComisionPct?: (v: number | null) => void;
+  /** id ancla del selector del método (`metodo-pago-field`). */
+  idMetodo?: string;
+  /** id ancla del % de terminal (`billpocket-field`). */
+  idComision?: string;
+}
+
+export function QuoteSheetInternaCobros({
+  interno,
+  lectura = false,
+  metodo = null,
+  metodoDetalle = "",
+  comisionPct = null,
+  onMetodo,
+  onMetodoDetalle,
+  onComisionPct,
+  idMetodo = "metodo-pago-field",
+  idComision = "billpocket-field",
+}: QuoteSheetInternaCobrosProps) {
   const cobros = interno?.cobros ?? [];
   const conUsd = cobros.some((c) => (c.moneda || "USD").toUpperCase() !== "USD");
   const ncols = conUsd ? 7 : 6;
+  // El método que MANDA es el del formulario (se edita aquí); `interno` es el
+  // respaldo para un API previo o para la hoja sin cotizador detrás.
+  const metodoLabel = metodo
+    ? metodoPagoLabel(metodo, metodoDetalle)
+    : (interno?.metodo_cobro_label ?? interno?.metodo_cobro ?? null);
+  const pctPrevisto = metodo ? comisionPct : (interno?.comision_billpocket_pct ?? null);
   const previsto = metodoPrevistoTxt({
-    metodoLabel: interno?.metodo_cobro_label ?? null,
-    metodo: interno?.metodo_cobro ?? null,
-    comisionBillpocketPct: interno?.comision_billpocket_pct ?? null,
+    metodoLabel,
+    comisionBillpocketPct: pctPrevisto,
   });
+  const piezas = piezasMetodoPrevisto({ metodoLabel, comisionBillpocketPct: pctPrevisto });
+  // El % de terminal solo se CAPTURA con BillPocket (mismo candado que tenía
+  // el panel): el de Paywise lo pone la configuración del sistema y aquí solo
+  // se lee.
+  const pctEditable = !lectura && metodo === "BILLPOCKET" && !!onComisionPct;
+  const editable = !lectura && !!onMetodo && !!piezas;
 
   const filas =
     cobros.length > 0 ? (
@@ -159,7 +210,92 @@ export function QuoteSheetInternaCobros({ interno }: { interno: CotizacionIntern
     <div>
       <h2>
         Cobros
-        {previsto && <span className="op">{` ${previsto}`}</span>}
+        {piezas &&
+          (editable ? (
+            <span className="op">
+              {" "}
+              {piezas.antes}
+              <CampoSelect
+                id={idMetodo}
+                options={METODOS_PAGO.map((m) => ({
+                  value: m.value,
+                  label: m.label,
+                  description: m.hint,
+                  // OTRO se IMPRIME con su nombre manual («Otro (PayPal)»),
+                  // que es lo que dice el papel.
+                  textoImpreso:
+                    m.value === "OTRO" ? metodoPagoLabel("OTRO", metodoDetalle) : m.label,
+                }))}
+                value={metodo}
+                onChange={(v) => onMetodo?.(v as MetodoPago)}
+                placeholder="Selecciona método"
+                searchPlaceholder="Buscar método…"
+                ariaLabel="Método de cobro previsto"
+                title="Decide el IVA (16 % con factura). Es lo PREVISTO: el método real es el de cada cobro registrado."
+              />
+              {metodo === "OTRO" && onMetodoDetalle && (
+                <span className="cot-acciones" {...UI}>
+                  {" "}
+                  <span className="cot-sep">·</span>
+                  <CampoHoja
+                    value={metodoDetalle}
+                    onChange={onMetodoDetalle}
+                    placeholder="¿cuál método?"
+                    ariaLabel="¿Cuál método de pago? (nombre manual)"
+                    title="Escríbelo tal como quieren verlo (ej. PayPal, depósito en ventanilla)"
+                    maxLength={80}
+                    minCh={10}
+                  />
+                </span>
+              )}
+              {piezas.pctAntes}
+              {piezas.pct &&
+                (pctEditable ? (
+                  <CampoNumero
+                    id={idComision}
+                    value={Number(pctPrevisto) || null}
+                    onChange={(n) =>
+                      onComisionPct?.(n == null ? null : Math.min(20, Math.max(0, n)))
+                    }
+                    formato={pctG}
+                    placeholder="9"
+                    ariaLabel="Comisión de terminal (%)"
+                    title="Custom por operación · tope 20 % · sin IVA · sale como línea «Comisión BillPocket»"
+                    min={0}
+                    max={20}
+                    minCh={3}
+                  />
+                ) : (
+                  piezas.pct
+                ))}
+              {piezas.pctDespues}
+              {/* BillPocket SIN % capturado: el hueco para teclearlo existe,
+                  pero no se imprime (el papel no dice «comisión terminal» sin
+                  porcentaje). */}
+              {pctEditable && !piezas.pct && (
+                <span className="cot-acciones" {...UI}>
+                  {" · comisión terminal "}
+                  <CampoNumero
+                    id={idComision}
+                    value={null}
+                    onChange={(n) =>
+                      onComisionPct?.(n == null ? null : Math.min(20, Math.max(0, n)))
+                    }
+                    formato={pctG}
+                    placeholder="9"
+                    ariaLabel="Comisión de terminal (%)"
+                    title="Custom por operación · tope 20 % · sin IVA · sale como línea «Comisión BillPocket»"
+                    min={0}
+                    max={20}
+                    minCh={3}
+                  />
+                  {" %"}
+                </span>
+              )}
+            </span>
+          ) : (
+            previsto && <span className="op">{` ${previsto}`}</span>
+          ))}
       </h2>
       <table className="grid">
         <thead>

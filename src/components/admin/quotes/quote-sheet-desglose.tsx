@@ -5,8 +5,8 @@ import { createPortal } from "react-dom";
 import { EllipsisHorizontalIcon, LockClosedIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { EXTRAS_SUGERIDOS } from "@/components/admin/quotes/extras-editor";
 import {
+  EXTRAS_SUGERIDOS,
   TEXTO_EXTRA_FUERA,
   cantidadEfectiva,
   esExtraDeGrupo,
@@ -37,9 +37,11 @@ import {
 } from "@/lib/admin/quote-sheet";
 import {
   conceptoCanonico,
+  conceptoExtraCanonico,
   moneyInterno,
   opTotalMxnInterna,
   pctG,
+  piezasConceptoExtraInterna,
   piezasConceptoTuaInterna,
   servicioAereoCanonicoUsd,
 } from "@/lib/admin/quote-sheet-interna";
@@ -52,6 +54,7 @@ import {
   CampoHoja,
   CampoNumero,
   DetalleFila,
+  SwitchHoja,
   UI,
   enfocarPorAriaLabel,
   enterCierra,
@@ -61,8 +64,17 @@ import {
 } from "./quote-sheet-fields";
 import type { OnAbrirInterno, OnCambioHoja, QuoteSheetValores } from "./quote-sheet-types";
 
-/** Tooltip del atajo «ajustar» junto a «Servicio aéreo» (tarifa y horas NO se editan en la hoja). */
-const TITULO_AJUSTAR_TARIFA = "Tarifa por hora y horas cobrables se ajustan en Interno › Tarifa y horas";
+/**
+ * Tooltip del atajo «ajustar» junto a «Servicio aéreo». En la hoja del CLIENTE
+ * lleva al `<details>` «Ajustes de la cotización» de abajo (es lo que tiene un
+ * rol sin hoja interna desde que se retiró el panel lateral); en la INTERNA,
+ * tarifa y horas viven en el propio papel desde la Fase 2.3 · BLOQUE B y el
+ * atajo solo hace scroll + foco.
+ */
+const TITULO_AJUSTAR_TARIFA =
+  "Tarifa por hora y horas cobrables se ajustan en «Ajustes de la cotización», debajo de la hoja";
+const TITULO_AJUSTAR_TARIFA_INTERNA =
+  "La tarifa por hora se ajusta en la ficha (fila «Tarifa») y las horas en «Horas cotizadas»";
 
 /**
  * DIALECTO del documento (Fase 2.2, 22-sep-2026): el MISMO editor de
@@ -184,8 +196,10 @@ export interface QuoteSheetDesgloseProps {
   /** id DOM del input de T.C. (ancla `tc-usd-mxn-field` del cotizador). */
   idTc?: string;
   /**
-   * Atajo a «Interno › Tarifa y horas» junto a «Servicio aéreo» (feedback
-   * 9-sep-2026). Solo en edición; sin la prop no se pinta.
+   * Atajo a donde SÍ se ajustan tarifa y horas, junto a «Servicio aéreo»
+   * (feedback 9-sep-2026): la ficha del papel en la hoja INTERNA, el
+   * `<details>` «Ajustes de la cotización» en la del cliente. Solo en
+   * edición; sin la prop no se pinta.
    */
   onAbrirInterno?: OnAbrirInterno;
   /** Documento que se está pintando (cliente por default; ver `DialectoDesglose`). */
@@ -198,6 +212,23 @@ export interface QuoteSheetDesgloseProps {
   comisionVendedor?: { montoUsd: number; concepto: string; op: string } | null;
   /** Ajuste canónico POSITIVO (redondeo/pactado), solo dialecto `CANONICO`. */
   ajustePositivo?: { montoUsd: number; concepto: string; op: string } | null;
+  /**
+   * REDONDEO en su propio renglón (Fase 2.3, 22-sep-2026; solo dialecto
+   * `CANONICO` y en edición): el switch «automático» y el monto manual
+   * (`redondeo-field`) viven en el MARGEN del renglón «Redondeo» del
+   * desglose, que es donde el ajuste se lee. Con el redondeo apagado el
+   * renglón no existe en el papel, así que en edición se pinta FANTASMA
+   * (`data-cot-ui`, aporta 0 al total) para que el control tenga dónde vivir.
+   * Sin la prop no se pinta nada: la hoja del cliente no lo lleva.
+   */
+  redondeo?: {
+    auto: boolean;
+    manualUsd: number | null;
+    onAuto: (v: boolean) => void;
+    onManual: (v: number | null) => void;
+    /** id ancla del input manual (`redondeo-field`). */
+    id?: string;
+  } | null;
 }
 
 export function QuoteSheetDesglose({
@@ -213,6 +244,7 @@ export function QuoteSheetDesglose({
   dialecto = DIALECTO_CLIENTE,
   comisionVendedor = null,
   ajustePositivo = null,
+  redondeo = null,
 }: QuoteSheetDesgloseProps) {
   const b = breakdown;
   const val = (n: number | null | undefined) => (n == null ? "—" : moneyPdf(n));
@@ -249,6 +281,7 @@ export function QuoteSheetDesglose({
     conTarifa || !b
       ? "ajustar"
       : `${numero2(b.tiempos.cobrable_hr)} h × ${moneyTarifa(b.tarifa.usd_por_hora)}/hr · ajustar`;
+  const tituloAjustar = canonico ? TITULO_AJUSTAR_TARIFA_INTERNA : TITULO_AJUSTAR_TARIFA;
 
   // ----- TUAS por aeropuerto -----
   const filas: TuasFila[] = b?.tuas.filas ?? [];
@@ -298,8 +331,13 @@ export function QuoteSheetDesglose({
     enfocarPorAriaLabel(concepto ? `Monto del extra ${extras.length + 1} (USD)` : `Concepto del extra ${extras.length + 1}`);
   };
   const removeExtra = (idx: number) => setExtras(extras.filter((_, i) => i !== idx));
-  // Extras sintetizados por el motor (comisión BillPocket) tras los capturados.
-  const sintetizados = (b?.extras ?? []).filter(esExtraSintetizado);
+  // Extras sintetizados por el motor (comisión BillPocket) tras los
+  // capturados. Se conserva su ÍNDICE en `breakdown.extras` porque es el que
+  // cruza con su línea EXTRA del desglose canónico (el concepto del documento
+  // interno sale de ahí, con su « (sin IVA)» dentro).
+  const sintetizados = (b?.extras ?? [])
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => esExtraSintetizado(e));
   // Popover de un extra: el ancla es el «⋯» que lo abrió (llega con el evento).
   const [detalle, setDetalle] = useState<{ idx: number; ancla: HTMLButtonElement } | null>(null);
   const detalleExtra = detalle?.idx ?? null;
@@ -333,8 +371,8 @@ export function QuoteSheetDesglose({
   // --- Servicio aéreo. La etiqueta impresa NO cambia; en edición, EN LA
   //     LÍNEA (`.cot-acciones`, como «+ nuevo cliente»: en el margen
   //     izquierdo —74 px— «1.60 h × $650.00/hr · ajustar» se saldría del
-  //     papel y en el derecho caería sobre el monto) va el atajo a Interno ›
-  //     Tarifa y horas, donde SÍ se ajustan tarifa y horas. ---
+  //     papel y en el derecho caería sobre el monto) va el atajo a donde SÍ
+  //     se ajustan tarifa y horas. ---
   agregarFila(
     Number(servicio) || 0,
     false,
@@ -351,8 +389,8 @@ export function QuoteSheetDesglose({
               className="cot-liga"
               data-guard-exempt
               onClick={() => onAbrirInterno("tarifa")}
-              title={TITULO_AJUSTAR_TARIFA}
-              aria-label={`${textoAjustar} — ${TITULO_AJUSTAR_TARIFA}`}
+              title={tituloAjustar}
+              aria-label={`${textoAjustar} — ${tituloAjustar}`}
             >
               {textoAjustar}
             </button>
@@ -369,18 +407,46 @@ export function QuoteSheetDesglose({
   // muestran»). En EDICIÓN se conserva como fila FANTASMA para que el
   // operador siga viendo dónde viven las TUAS: aporta 0 y no se imprime.
   const tuasVacia = canonico && filas.length === 0 && Math.abs(tuasTotalUsd) < 0.005;
+  // SWITCH «Se cobran TUAS» (Fase 2.3, 22-sep-2026): baja del panel lateral al
+  // MARGEN del PRIMER renglón del bloque TUAS — que es donde se lee el efecto
+  // (apagado, ninguna TUA entra al total). Es CROMA: el papel nunca escribe
+  // «se cobran», lo dice el desglose. Solo el documento interno lo lleva; en
+  // la hoja del cliente el control sigue en el panel (es el único que ve un
+  // rol sin hoja interna).
+  //
+  // Cuál es ese primer renglón se DECIDE aquí, no se va tachando mientras se
+  // pinta: en edición el bloque tiene una de tres formas —detalle por
+  // aeropuerto, conceptos de un snapshot legado o la línea única «TUAS»— y
+  // esas tres son exhaustivas, así que el switch sale UNA vez sin mutar nada
+  // durante el render.
+  const hostTuas: "fila" | "legado" | "linea" | null =
+    canonico && !lectura
+      ? filas.length > 0
+        ? "fila"
+        : detalleLegado.length > 0
+          ? "legado"
+          : "linea"
+      : null;
+  const switchTuas: ReactNode = hostTuas ? (
+    <SwitchHoja
+      checked={valores.cobrar_tuas}
+      onChange={(v) => onCambio("cobrar_tuas", v)}
+      label={valores.cobrar_tuas ? "se cobran" : "no se cobran"}
+      ariaLabel="Se cobran las TUAS"
+      title="Apagado: ninguna TUA entra al total (override $0/pax). El monto por aeropuerto se edita en su propio renglón."
+    />
+  ) : null;
   if (filas.length === 0 && detalleLegado.length === 0 && (!tuasVacia || !lectura)) {
+    const margen = hostTuas === "linea" ? switchTuas : null;
     agregarFila(
       tuasVacia ? 0 : tuasTotalUsd,
       false,
       <tr key="tuas" className={cn("cot-fila", tuasVacia && "cot-fila--fantasma")} {...(tuasVacia ? UI : {})}>
         <td className="lbl cot-ancla">
           TUAS
-          {!lectura && !valores.cobrar_tuas && (
+          {margen && (
             <span className="cot-margen" {...UI}>
-              <span className="cot-marca" title="Switch «Se cobran TUAS» apagado (Interno)">
-                no se cobran
-              </span>
+              {margen}
             </span>
           )}
         </td>
@@ -390,17 +456,25 @@ export function QuoteSheetDesglose({
   }
   if (filas.length === 0) {
     detalleLegado.forEach((concepto, i) => {
+      const margen = hostTuas === "legado" && i === 0 ? switchTuas : null;
       agregarFila(
         detalleLegado.length === 1 ? tuasTotalUsd : 0,
         false,
         <tr key={`leg-${i}`} className="cot-fila">
-          <td className="lbl">{concepto}</td>
+          <td className={cn("lbl", margen && "cot-ancla")}>
+            {concepto}
+            {margen && (
+              <span className="cot-margen" {...UI}>
+                {margen}
+              </span>
+            )}
+          </td>
           <td className="val">{detalleLegado.length === 1 ? val(b!.tuas.total_usd) : ""}</td>
         </tr>,
       );
     });
   }
-  filas.forEach((f) => {
+  filas.forEach((f, i) => {
     agregarFila(
       filas.length === 1 ? tuasTotalUsd : 0,
       false,
@@ -413,6 +487,7 @@ export function QuoteSheetDesglose({
         onChange={setTua}
         valor={filas.length === 1 ? val(b!.tuas.total_usd) : ""}
         interna={dialecto.tua === "INTERNA"}
+        margenExtra={hostTuas === "fila" && i === 0 ? switchTuas : null}
       />,
     );
   });
@@ -456,24 +531,41 @@ export function QuoteSheetDesglose({
     const fuera = estado !== "ok" && estado !== "vacio";
     const montoParticion = fuera ? 0 : Number(impreso.monto_usd) || 0;
     const exento = e.aplica_iva === false;
+    // CONCEPTO del documento INTERNO (Fase 2.3 · BLOQUE B): el que escribió el
+    // MOTOR —«Tour · 2 × $85.00 MXN = $170.00 MXN (sin IVA)»— y que el PDF
+    // interno imprime tal cual. El cliente lleva el suyo («Tour · $170.00
+    // MXN», `etiquetaExtra`) y sus 6 fixtures lo congelan.
+    const conceptoCanon = canonico ? conceptoExtraCanonico(b, idx, e.concepto) : null;
     if (lectura) {
-      // Texto EXACTO del PDF (`ExtraPdf`): "{concepto}[ · $X MXN]" + monto USD.
+      // Texto EXACTO del PDF: canónico en el interno, `ExtraPdf` en el cliente.
       agregarFila(
         montoParticion,
         exento,
         <tr key={idx} className="cot-fila">
           <td className="lbl">
-            {etiquetaExtra({
-              concepto: e.concepto,
-              moneda: e.moneda,
-              monto_nativo: impreso.monto_nativo ?? undefined,
-            })}
+            {conceptoCanon ??
+              etiquetaExtra({
+                concepto: e.concepto,
+                moneda: e.moneda,
+                monto_nativo: impreso.monto_nativo ?? undefined,
+              })}
           </td>
           <td className="val">{val(impreso.monto_usd)}</td>
         </tr>,
       );
       return;
     }
+    // EDICIÓN en el documento interno: el input sigue siendo el concepto
+    // TECLEADO y detrás va la cuenta del motor tal cual la imprime el papel,
+    // con el monto en pesos todavía editable en su sitio (piezas). El monto
+    // de un extra con cantidad × unitario NO se edita aquí (lo deriva el
+    // motor y se corrige en el detalle «⋯»): por eso solo se parte el
+    // concepto cuando el renglón es en pesos y SIN unitario.
+    const piezasExtra = piezasConceptoExtraInterna(
+      conceptoCanon,
+      e.concepto,
+      !unitario && e.moneda === "MXN" ? impreso.monto_nativo : null,
+    );
     // Si el renglón no cuenta, el importe se atenúa y la leyenda lo dice EN
     // LA FILA, en vez de pintar un monto que el total ignora y que al guardar
     // se descartaba en silencio (21-sep-2026).
@@ -500,24 +592,46 @@ export function QuoteSheetDesglose({
                     lectura={soloLectura}
                     minCh={8}
                   />
-                  {e.moneda === "MXN" && (
+                  {piezasExtra ? (
                     <>
-                      {" · $"}
-                      {unitario ? (
-                        numero2(impreso.monto_nativo ?? 0)
-                      ) : (
+                      {piezasExtra.antes}
+                      {piezasExtra.monto !== "" && (
                         <CampoNumero
                           value={Number(e.monto_usd) || 0}
                           onChange={(n) => updateExtra(idx, { monto_usd: n ?? 0 })}
-                          formato={numero2}
+                          // El motor escribe el monto nativo con `toFixed(2)`
+                          // (sin separador de miles) DENTRO del concepto: el
+                          // input imprime exactamente ese texto o la pantalla
+                          // dejaría de decir lo que dice el papel.
+                          formato={(n) => n.toFixed(2)}
                           ariaLabel={`Monto en pesos del extra ${idx + 1}`}
                           lectura={soloLectura}
                           min={0}
                           minCh={4}
                         />
                       )}
-                      {" MXN"}
+                      {piezasExtra.despues}
                     </>
+                  ) : (
+                    e.moneda === "MXN" && (
+                      <>
+                        {" · $"}
+                        {unitario ? (
+                          numero2(impreso.monto_nativo ?? 0)
+                        ) : (
+                          <CampoNumero
+                            value={Number(e.monto_usd) || 0}
+                            onChange={(n) => updateExtra(idx, { monto_usd: n ?? 0 })}
+                            formato={numero2}
+                            ariaLabel={`Monto en pesos del extra ${idx + 1}`}
+                            lectura={soloLectura}
+                            min={0}
+                            minCh={4}
+                          />
+                        )}
+                        {" MXN"}
+                      </>
+                    )
                   )}
                   {!lectura && (
                     <span className="cot-margen" {...UI}>
@@ -617,12 +731,17 @@ export function QuoteSheetDesglose({
   });
 
   // --- Comisión BillPocket y demás extras SINTETIZADOS por el motor ---
-  sintetizados.forEach((e, i) => {
+  sintetizados.forEach(({ e, i }) => {
     agregarFila(
       Number(e.monto_usd) || 0,
       e.aplica_iva === false,
       <tr key={`sint-${i}`} className="cot-fila">
-        <td className="lbl">{e.concepto}</td>
+        {/* El documento INTERNO imprime el concepto CANÓNICO, que cierra con
+            « (sin IVA)» cuando el renglón no causa IVA; la hoja del cliente
+            escribe el corto de siempre. */}
+        <td className="lbl">
+          {(canonico ? conceptoExtraCanonico(b, i, e.concepto) : null) ?? e.concepto}
+        </td>
         <td className="val">{moneyPdf(e.monto_usd)}</td>
       </tr>,
     );
@@ -707,17 +826,63 @@ export function QuoteSheetDesglose({
   // --- AJUSTE canónico POSITIVO (redondeo automático / precio pactado): en
   //     la hoja del CLIENTE va absorbido en «Servicio aéreo», así que solo
   //     existe en el documento interno. Sin él, la columna interna no
-  //     sumaría su propio total. ---
-  if (canonico && ajustePositivo && ajustePositivo.montoUsd >= 0.005) {
+  //     sumaría su propio total.
+  //     El CONTROL del redondeo (switch automático + monto manual,
+  //     `redondeo-field`) baja aquí desde el panel lateral (Fase 2.3): se
+  //     decide en el renglón donde se lee. Con el redondeo apagado el papel no
+  //     imprime este renglón, así que en edición queda FANTASMA (aporta 0). ---
+  const ajusteImpreso = canonico && ajustePositivo && ajustePositivo.montoUsd >= 0.005;
+  // EN LA LÍNEA, no en el margen izquierdo: el desglose es la columna de la
+  // IZQUIERDA del papel, así que su `.cot-margen` (right: 100 %) se sale de
+  // la hoja — el mismo motivo por el que «capturado · quitar» de una TUA vive
+  // en la línea.
+  const accionesRedondeo =
+    canonico && redondeo && !lectura ? (
+      <span className="cot-acciones" {...UI}>
+        {" "}
+        <span className="cot-sep">·</span>
+        <SwitchHoja
+          checked={redondeo.auto}
+          onChange={redondeo.onAuto}
+          label="auto"
+          ariaLabel="Redondeo automático"
+          title="Redondeo AUTOMÁTICO hacia arriba al siguiente múltiplo de $10 (976 → 980). Apagado: se captura a mano."
+        />
+        {!redondeo.auto && (
+          <>
+            {"$"}
+            <CampoNumero
+              id={redondeo.id ?? "redondeo-field"}
+              value={Number(redondeo.manualUsd) > 0 ? Number(redondeo.manualUsd) : null}
+              onChange={(n) => redondeo.onManual(n != null && n > 0 ? n : null)}
+              formato={numero2}
+              placeholder="0.00"
+              ariaLabel="Redondeo manual (USD)"
+              title="Solo con el automático apagado. Se suma al total como renglón «Redondeo»."
+              min={0}
+              minCh={4}
+            />
+          </>
+        )}
+      </span>
+    ) : null;
+  if (ajusteImpreso || accionesRedondeo) {
     agregarFila(
-      ajustePositivo.montoUsd,
+      ajusteImpreso ? ajustePositivo!.montoUsd : 0,
       false,
-      <tr key="ajuste" className="cot-fila">
+      <tr
+        key="ajuste"
+        className={cn("cot-fila", !ajusteImpreso && "cot-fila--fantasma")}
+        {...(!ajusteImpreso ? UI : {})}
+      >
         <td className="lbl">
-          {ajustePositivo.concepto}
-          {ajustePositivo.op && <span className="op">{` ${ajustePositivo.op}`}</span>}
+          {ajusteImpreso ? ajustePositivo!.concepto : "Redondeo"}
+          {ajusteImpreso && ajustePositivo!.op && (
+            <span className="op">{` ${ajustePositivo!.op}`}</span>
+          )}
+          {accionesRedondeo}
         </td>
-        <td className="val">{moneyPdf(ajustePositivo.montoUsd)}</td>
+        <td className="val">{ajusteImpreso ? moneyPdf(ajustePositivo!.montoUsd) : ""}</td>
       </tr>,
     );
   }
@@ -822,7 +987,11 @@ export function QuoteSheetDesglose({
                   formato={(n) => dialecto.pct(n)}
                   placeholder="auto"
                   ariaLabel="IVA % (vacío = según método de pago)"
-                  title="Vacío = según método de pago (Interno › Cobro)"
+                  title={
+                    canonico
+                      ? "Vacío = según el método de cobro PREVISTO (cabecera del bloque Cobros)"
+                      : "Vacío = según el método de cobro previsto («Ajustes de la cotización», debajo de la hoja)"
+                  }
                   min={0}
                   max={100}
                   minCh={2}
@@ -1009,6 +1178,7 @@ function FilaTua({
   onChange,
   valor,
   interna = false,
+  margenExtra = null,
 }: {
   fila: TuasFila;
   linea?: TuaLinea;
@@ -1019,6 +1189,8 @@ function FilaTua({
   valor: string;
   /** Documento INTERNO: «TUA CUN» + gris «4 pax × $25.00» (`_tua_fila`). */
   interna?: boolean;
+  /** Croma extra del margen (el switch «Se cobran TUAS» del primer renglón). */
+  margenExtra?: ReactNode;
 }) {
   // Dos documentos, el MISMO unitario editable: solo cambia el envoltorio.
   const pi = piezasConceptoTuaInterna(fila, fila.tc_aplicado ? fmtTc(fila.tc_aplicado) : "");
@@ -1072,6 +1244,7 @@ function FilaTua({
         )}
         {!lectura && (
           <span className="cot-margen" {...UI}>
+            {margenExtra}
             <select
               className="cot-in cot-fantasma"
               value={moneda}

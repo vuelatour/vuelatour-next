@@ -49,6 +49,58 @@ export function puedeVerHojaInterna(rol: string | null | undefined): boolean {
   return !!rol && ROLES_HOJA_INTERNA.has(rol.toUpperCase());
 }
 
+/**
+ * Roles que pueden CREAR o REVISAR una cotización — espejo EXACTO de los
+ * `@Roles` de `POST /v1/quotes` y `POST /v1/quotes/:id/revise`
+ * (`vuelatour-api/src/modules/quotes/quotes.controller.ts`, verificado el
+ * 22-sep-2026: ADMIN y COORDINADOR). `POST /calculate` admite además a
+ * FACTURACION, ANALISTA y SOCIO, pero calcular NO es guardar: simula.
+ *
+ * ESTA LISTA ES LA QUE AUTORIZA A RETIRAR EL PANEL LATERAL (Fase 2.3 ·
+ * BLOQUE C). Los controles de la cotización viven en la HOJA INTERNA, y eso
+ * es holgado porque `ROLES_EDITAN_COTIZACION ⊆ ROLES_HOJA_INTERNA`: quien
+ * puede guardar, ve el papel donde se captura. La inclusión sigue congelada
+ * en `__tests__/quote-sheet-interna.test.ts` para que nadie la rompa sin
+ * enterarse.
+ *
+ * PERO el rol que NO ve la hoja interna tampoco se queda sin controles
+ * (revisión del 22-sep-2026): el panel retirado se pintaba para TODOS los
+ * roles, así que SOCIO —que entra al cotizador y puede simular con
+ * `/calculate`— habría perdido tarifa, horas, comisión y cobro. Los tiene en
+ * `QuoteCapturaBasica`, el `<details>` «Ajustes de la cotización» que se
+ * monta EXACTAMENTE cuando la hoja interna no está montada (por eso los ids
+ * ancla nunca se duplican).
+ */
+export const ROLES_EDITAN_COTIZACION: ReadonlySet<string> = new Set([
+  "ADMIN",
+  "COORDINADOR",
+]);
+
+/**
+ * ¿Este rol puede guardar la cotización? Sin rol (`/me` falló, o un rol que
+ * el panel todavía no conoce) se responde que SÍ a propósito: el gate real es
+ * el API y un 403 se explica solo, mientras que apagar la pantalla por una
+ * lectura fallida de `/me` dejaría a un ADMIN mirando sin poder trabajar.
+ */
+export function puedeEditarCotizacion(rol: string | null | undefined): boolean {
+  if (!rol) return true;
+  return ROLES_EDITAN_COTIZACION.has(rol.toUpperCase());
+}
+
+/**
+ * Rol CONOCIDO que no puede guardar (SOCIO, FACTURACION, ANALISTA…): la
+ * pantalla se sigue pudiendo teclear —simular un precio es legítimo— pero se
+ * dice en voz alta que el guardado lo va a rechazar el API, y dónde están los
+ * controles para simular.
+ */
+export function soloConsultaCotizacion(rol: string | null | undefined): boolean {
+  return !!rol && !ROLES_EDITAN_COTIZACION.has(rol.toUpperCase());
+}
+
+/** Texto único de ese aviso (banda ámbar sobre el papel). */
+export const AVISO_SOLO_CONSULTA =
+  "Tu rol puede consultar y simular esta cotización —incluidas tarifa, horas, comisión y método de cobro, en «Ajustes de la cotización»—, pero no guardarla: al intentarlo el sistema la rechaza. Para dejar el cambio guardado, pídelo a Coordinación o Administración.";
+
 /** Banda roja del documento: lo único que impide mandárselo al cliente. */
 export const BANDA_INTERNA =
   "Cotización interna · uso exclusivo de oficina · no enviar al cliente";
@@ -235,12 +287,34 @@ export function metodoPrevistoTxt(v: {
   metodo?: string | null;
   comisionBillpocketPct?: number | null;
 }): string {
+  const p = piezasMetodoPrevisto(v);
+  if (!p) return "";
+  return `${p.antes}${p.metodo}${p.pctAntes}${p.pct}${p.pctDespues}`;
+}
+
+/**
+ * Las MISMAS piezas de `metodoPrevistoTxt`, separadas para que la hoja
+ * interna pueda meter el SELECTOR del método (`metodo-pago-field`) y el % de
+ * terminal (`billpocket-field`) dentro de la frase, en su lugar exacto —
+ * igual que `piezasConceptoTua` con el unitario de una TUA. Concatenadas dan
+ * carácter por carácter lo que imprime el papel; sin método ⇒ `null` (no hay
+ * frase que escribir).
+ */
+export function piezasMetodoPrevisto(v: {
+  metodoLabel?: string | null;
+  metodo?: string | null;
+  comisionBillpocketPct?: number | null;
+}): { antes: string; metodo: string; pctAntes: string; pct: string; pctDespues: string } | null {
   const metodo = (v.metodoLabel || v.metodo || "").trim();
-  if (!metodo) return "";
-  let txt = `previsto: ${metodo}`;
+  if (!metodo) return null;
   const pct = numOrNull(v.comisionBillpocketPct);
-  if (pct) txt += ` · comisión terminal ${pctG(pct)} %`;
-  return txt;
+  return {
+    antes: "previsto: ",
+    metodo,
+    pctAntes: pct ? " · comisión terminal " : "",
+    pct: pct ? pctG(pct) : "",
+    pctDespues: pct ? " %" : "",
+  };
 }
 
 /** `_hay_ajuste`: medio centavo de tolerancia, igual que pyservices. */
@@ -403,6 +477,139 @@ export function opTotalMxnInterna(
   const nativos = numOrNull(mxnNativos);
   if (nativos) partes.push(`incluye $${fmt2.format(nativos)} MXN nativos`);
   return partes.join(" · ");
+}
+
+/**
+ * CONCEPTO CANÓNICO del EXTRA número `idx` (Fase 2.3 · BLOQUE B). El motor lo
+ * escribe ENTERO —«Tour · 2 × $85.00 MXN = $170.00 MXN (sin IVA)»— y el PDF
+ * interno lo imprime tal cual (`_concepto_operacion` devuelve `(concepto, "")`
+ * en cuanto el concepto ya trae el «×», y el « (sin IVA)» viene dentro). La
+ * hoja escribía en su lugar el formato del CLIENTE («Tour · $170.00 MXN»):
+ * mismo monto, otro texto para el MISMO renglón.
+ *
+ * CRUCE, con el mismo cuidado que `montoExtraImpreso`: la n-ésima línea EXTRA
+ * del desglose corresponde al n-ésimo `breakdown.extras` (el API las construye
+ * del MISMO arreglo y en ese orden), y se exige que el canónico EMPIECE por el
+ * concepto capturado. Mientras se teclea, el breakdown va un debounce atrás:
+ * ahí el cruce falla a propósito y quien llama usa su respaldo de siempre.
+ */
+export function conceptoExtraCanonico(
+  b: QuoteBreakdown | null | undefined,
+  idx: number,
+  capturado: string | null | undefined,
+): string | null {
+  const lineas = (b?.desglose ?? []).filter((d) => (d.clave || "").toUpperCase() === "EXTRA");
+  const canonico = (lineas[idx]?.concepto || "").trim();
+  if (!canonico) return null;
+  return sufijoExtraCanonico(canonico, capturado) === null ? null : canonico;
+}
+
+/**
+ * Lo que el MOTOR le agregó al concepto tecleado, o `null` si ese canónico no
+ * corresponde a lo que se está escribiendo. El API solo cuelga « · …» (la
+ * cuenta, el monto en pesos) y/o « (sin IVA)»: exigirlo evita que a media
+ * palabra —el breakdown va un debounce atrás— la hoja pinte «Handle» + «r ·
+ * $1500.00 MXN». Ahí se cae al respaldo y el renglón se ve como siempre.
+ */
+function sufijoExtraCanonico(
+  canonico: string,
+  capturado: string | null | undefined,
+): string | null {
+  const cap = (capturado ?? "").trim();
+  if (!cap || !canonico.startsWith(cap)) return null;
+  const sufijo = canonico.slice(cap.length);
+  if (sufijo === "" || sufijo === SUFIJO_SIN_IVA || sufijo.startsWith(" · ")) return sufijo;
+  return null;
+}
+
+/** Cola que el motor cuelga de un concepto que no causa IVA. */
+const SUFIJO_SIN_IVA = " (sin IVA)";
+
+/** El concepto canónico partido para poder EDITAR lo que se capturó dentro. */
+export interface PiezasExtraInterna {
+  /** Texto entre el concepto tecleado y el monto editable (p. ej. « · $»). */
+  antes: string;
+  /** Monto NATIVO tal como lo escribió el motor («1500.00»); «» = no editable. */
+  monto: string;
+  /** Cola del concepto canónico (« MXN», « (sin IVA)»…). */
+  despues: string;
+}
+
+/**
+ * El concepto canónico de un EXTRA menos el concepto TECLEADO, partido en el
+ * punto donde vive el monto capturado en pesos — el mismo truco de
+ * `piezasConceptoTua` y `piezasMetodoPrevisto`: concatenadas, las piezas dan
+ * carácter por carácter lo que imprime el papel, y en medio cabe un input
+ * invisible.
+ *
+ * `montoNativo` SOLO se pasa cuando el monto es editable EN LA LÍNEA (extra en
+ * pesos SIN cantidad × unitario): con unitario el monto lo deriva el motor y
+ * se corrige en el detalle «⋯», y buscar su número aquí podría partir el
+ * concepto por el unitario («2 × $170.00 = $170.00»).
+ *
+ * `null` = no hay canónico utilizable ⇒ quien llama pinta el formato de
+ * siempre.
+ */
+export function piezasConceptoExtraInterna(
+  canonico: string | null,
+  capturado: string | null | undefined,
+  montoNativo?: number | null,
+): PiezasExtraInterna | null {
+  if (!canonico) return null;
+  const sufijo = sufijoExtraCanonico(canonico, capturado);
+  if (sufijo === null) return null;
+  const n = numOrNull(montoNativo);
+  // `toFixed(2)` y no `1,500.00`: es EXACTAMENTE lo que escribe el motor en
+  // el concepto (`$${monto_nativo.toFixed(2)} MXN`), y el papel lo imprime así.
+  const token = n === null ? "" : n.toFixed(2);
+  const i = token ? sufijo.indexOf(token) : -1;
+  if (i < 0) return { antes: sufijo, monto: "", despues: "" };
+  return { antes: sufijo.slice(0, i), monto: token, despues: sufijo.slice(i + token.length) };
+}
+
+/**
+ * Línea TENUE bajo el desglose (croma, el papel no la imprime): «Neto
+ * VuelaTour $2,787.50 · Pago al vendedor c/IVA $116.00». Los dos números
+ * llegan del motor (`meta.neto_vuelatour_usd`) y del payload de `/interno`
+ * (`pago_vendedor_usd`): aquí NO se resta nada. «» si no hay ninguno.
+ */
+export function lineaNetoVuelatour(v: {
+  netoUsd?: number | null;
+  pagoVendedorUsd?: number | null;
+  conIva?: boolean;
+}): string {
+  const partes: string[] = [];
+  const neto = numOrNull(v.netoUsd);
+  if (neto !== null) partes.push(`Neto VuelaTour ${moneyInterno(neto)}`);
+  const pago = numOrNull(v.pagoVendedorUsd);
+  if (pago !== null) {
+    partes.push(`Pago al vendedor${v.conIva ? " c/IVA" : ""} ${moneyInterno(pago)}`);
+  }
+  return partes.join(" · ");
+}
+
+/**
+ * Resumen de una línea de la comisión del vendedor para el `<summary>` del
+ * plegable de la ficha: «$50.00/hr × horas cobradas» · «$150.00 fija» ·
+ * «sin comisión». NO multiplica: el importe efectivo lo publica el motor en
+ * su propio renglón del desglose.
+ */
+export function resumenComisionVendedor(v: {
+  modo?: string | null;
+  montoUsd?: number | null;
+  tarifaHr?: number | null;
+  nombre?: string | null;
+}): string {
+  const nombre = (v.nombre || "").trim();
+  const sufijo = nombre ? ` · ${nombre}` : "";
+  if ((v.modo || "").toUpperCase() === "POR_HORA") {
+    const tarifa = numOrNull(v.tarifaHr);
+    if (tarifa === null || tarifa <= 0) return "sin comisión";
+    return `${moneyInterno(tarifa)}/hr × horas cobradas${sufijo}`;
+  }
+  const monto = numOrNull(v.montoUsd);
+  if (monto === null || monto <= 0) return "sin comisión";
+  return `${moneyInterno(monto)} fija${sufijo}`;
 }
 
 /** Σ de las líneas canónicas con esa clave; null si el breakdown no trae desglose. */

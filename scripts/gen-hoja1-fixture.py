@@ -41,7 +41,13 @@ def main() -> int:
     from app.schemas.reportes import CotizacionPdfRequest  # noqa: E402
     from app.services.cotizacion_pdf import _build_html  # noqa: E402
 
-    for payload_path in sorted(FIXTURES.glob("*.payload.json")):
+    # `interna-*.payload.json` son de OTRO esquema
+    # (`CotizacionInternaPdfRequest`) y los regenera
+    # `gen-hoja-interna-fixture.py`. Sin este filtro el script reventaba con un
+    # ValidationError DESPUÉS de escribir las hojas del cliente: quedaba bien
+    # hecho el trabajo y mal el código de salida, que es como se acaba creyendo
+    # que la regeneración «no funciona» y editando un fixture a mano.
+    for payload_path in sorted(FIXTURES.glob("hoja*.payload.json")):
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
         html = aligerar(_build_html(CotizacionPdfRequest(**payload), solo_hoja_1=True))
         destino = payload_path.with_name(payload_path.name.replace(".payload.json", ".html"))

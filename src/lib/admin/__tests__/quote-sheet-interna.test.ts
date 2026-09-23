@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   BANDA_INTERNA,
   GUION_RUTA,
+  AVISO_SOLO_CONSULTA,
+  ROLES_EDITAN_COTIZACION,
   ROLES_HOJA_INTERNA,
   SIN_DATO,
   ajustePositivoUsd,
@@ -13,6 +15,7 @@ import {
   comisionVendedorCanonicaUsd,
   conceptoCanonico,
   conceptoComisionVendedor,
+  conceptoExtraCanonico,
   diaLargo,
   diaMes,
   fechaCortaCobro,
@@ -20,8 +23,10 @@ import {
   hhmm,
   horasTxt,
   lineaCanonicaUsd,
+  lineaNetoVuelatour,
   metodoPrevistoTxt,
   millasTxt,
+  piezasMetodoPrevisto,
   moneyInterno,
   montoInterno,
   motivoAjuste,
@@ -30,9 +35,13 @@ import {
   opTotalMxnInterna,
   pctBanco,
   pieTramos,
+  piezasConceptoExtraInterna,
   piezasConceptoTuaInterna,
+  puedeEditarCotizacion,
   puedeVerHojaInterna,
+  soloConsultaCotizacion,
   resumenCobros,
+  resumenComisionVendedor,
   servicioAereoCanonicoUsd,
   subLineaCobro,
   tarifaFicha,
@@ -300,6 +309,28 @@ describe("ficha y cobros", () => {
     expect(metodoPrevistoTxt({})).toBe("");
   });
 
+  /**
+   * La hoja interna mete el SELECTOR del método y el % de terminal DENTRO de
+   * esa frase (Fase 2.3), así que las piezas tienen que concatenarse en el
+   * texto exacto que imprime el papel: si divergen, la pantalla y el PDF
+   * nombrarían distinto el campo que decide el IVA.
+   */
+  it("las piezas del método previsto concatenan el MISMO texto", () => {
+    for (const v of [
+      { metodoLabel: "Transferencia" },
+      { metodoLabel: "BillPocket", comisionBillpocketPct: 8.857 },
+      { metodoLabel: "Paywise", comisionBillpocketPct: 3 },
+      { metodo: "OTRO" },
+    ]) {
+      const p = piezasMetodoPrevisto(v)!;
+      expect(`${p.antes}${p.metodo}${p.pctAntes}${p.pct}${p.pctDespues}`).toBe(
+        metodoPrevistoTxt(v),
+      );
+    }
+    // Sin método no hay frase que escribir (ni piezas que colocar).
+    expect(piezasMetodoPrevisto({})).toBeNull();
+  });
+
   it("el pie de cobros ordena las palabras, no recalcula el dinero", () => {
     expect(
       resumenCobros({ totalCobradoUsd: 2000, comisionBancoUsd: 0, saldoUsd: 1465.5 }).join(" · "),
@@ -453,5 +484,139 @@ describe("TUA capturada en pesos", () => {
   it("en USD no inventa ni el « MXN» ni el T.C.", () => {
     const p = piezasConceptoTuaInterna({ iata: "CUN", pax: 4, moneda: "USD" });
     expect(`${p.antes}25.00${p.despues}`).toBe("4 pax × $25.00");
+  });
+});
+
+/**
+ * EXTRAS en el dialecto INTERNO (Fase 2.3 · BLOQUE B): el motor escribe la
+ * cuenta DENTRO del concepto («Tour · 2 × $85.00 MXN = $170.00 MXN (sin
+ * IVA)») y el PDF interno lo imprime tal cual. La hoja escribía el formato del
+ * CLIENTE, así que pantalla y papel nombraban distinto el MISMO renglón.
+ */
+describe("concepto canónico de un extra", () => {
+  const b = {
+    desglose: [
+      { clave: "TIEMPO_VUELO", concepto: "Tiempo de vuelo", monto_usd: 3465 },
+      { clave: "EXTRA", concepto: "Handler · $1500.00 MXN", monto_usd: 81.08 },
+      { clave: "EXTRA", concepto: "Tour · 2 × $85.00 MXN = $170.00 MXN", monto_usd: 9.19 },
+      { clave: "EXTRA", concepto: "Transfer al hotel (sin IVA)", monto_usd: 200 },
+    ],
+  } as unknown as Parameters<typeof conceptoExtraCanonico>[0];
+
+  it("cruza por POSICIÓN entre las líneas EXTRA y exige el concepto tecleado", () => {
+    expect(conceptoExtraCanonico(b, 0, "Handler")).toBe("Handler · $1500.00 MXN");
+    expect(conceptoExtraCanonico(b, 1, "Tour")).toBe("Tour · 2 × $85.00 MXN = $170.00 MXN");
+    expect(conceptoExtraCanonico(b, 2, "Transfer al hotel")).toBe("Transfer al hotel (sin IVA)");
+  });
+
+  it("mientras se teclea (el motor va un debounce atrás) devuelve null", () => {
+    // A media palabra el canónico ya no corresponde: pegarlo pintaría
+    // «Handle» + «r · $1500.00 MXN». El motor solo cuelga « · …» o « (sin
+    // IVA)», así que cualquier otra cola descarta el cruce.
+    expect(conceptoExtraCanonico(b, 0, "Handle")).toBeNull();
+    expect(conceptoExtraCanonico(b, 2, "Transfer al")).toBeNull();
+    expect(conceptoExtraCanonico(b, 0, "")).toBeNull();
+    expect(conceptoExtraCanonico(b, 9, "Handler")).toBeNull();
+    expect(conceptoExtraCanonico(null, 0, "Handler")).toBeNull();
+  });
+
+  it("parte el concepto para editar el monto en pesos SIN tocar el texto", () => {
+    const p = piezasConceptoExtraInterna("Handler · $1500.00 MXN", "Handler", 1500)!;
+    expect(p.antes).toBe(" · $");
+    expect(p.monto).toBe("1500.00");
+    expect(p.despues).toBe(" MXN");
+    // Concatenadas dan EXACTAMENTE lo que imprime el papel.
+    expect(`Handler${p.antes}${p.monto}${p.despues}`).toBe("Handler · $1500.00 MXN");
+  });
+
+  it("con cantidad × unitario NO se parte (el monto lo deriva el motor)", () => {
+    const p = piezasConceptoExtraInterna(
+      "Tour · 2 × $85.00 MXN = $170.00 MXN",
+      "Tour",
+      null,
+    )!;
+    expect(p.monto).toBe("");
+    expect(p.antes).toBe(" · 2 × $85.00 MXN = $170.00 MXN");
+  });
+
+  it("un exento en USD solo cuelga su « (sin IVA)»", () => {
+    const p = piezasConceptoExtraInterna("Transfer al hotel (sin IVA)", "Transfer al hotel")!;
+    expect(p.antes).toBe(" (sin IVA)");
+    expect(p.monto).toBe("");
+  });
+
+  it("sin canónico o sin coincidencia, quien llama usa su respaldo", () => {
+    expect(piezasConceptoExtraInterna(null, "Handler", 1500)).toBeNull();
+    expect(piezasConceptoExtraInterna("Otro concepto", "Handler", 1500)).toBeNull();
+  });
+});
+
+/** Línea tenue bajo el desglose: los dos números llegan del API. */
+describe("Neto VuelaTour y pago al vendedor", () => {
+  it("arma la línea con lo que haya, sin restar nada", () => {
+    expect(lineaNetoVuelatour({ netoUsd: 3695.19, pagoVendedorUsd: 116, conIva: true })).toBe(
+      "Neto VuelaTour $3,695.19 · Pago al vendedor c/IVA $116.00",
+    );
+    expect(lineaNetoVuelatour({ netoUsd: 3695.19 })).toBe("Neto VuelaTour $3,695.19");
+    expect(lineaNetoVuelatour({ pagoVendedorUsd: 100 })).toBe("Pago al vendedor $100.00");
+    expect(lineaNetoVuelatour({})).toBe("");
+  });
+});
+
+/** Resumen del plegable de la comisión (no multiplica: eso es del motor). */
+describe("resumen de la comisión del vendedor", () => {
+  it("dice la modalidad, el monto y quién vendió", () => {
+    expect(
+      resumenComisionVendedor({ modo: "POR_HORA", tarifaHr: 50, nombre: "Saab" }),
+    ).toBe("$50.00/hr × horas cobradas · Saab");
+    expect(resumenComisionVendedor({ modo: "FIJA", montoUsd: 150 })).toBe("$150.00 fija");
+    expect(resumenComisionVendedor({ modo: "FIJA", montoUsd: null })).toBe("sin comisión");
+    expect(resumenComisionVendedor({ modo: "POR_HORA", tarifaHr: 0 })).toBe("sin comisión");
+  });
+});
+
+/**
+ * EL INVARIANTE QUE AUTORIZA A RETIRAR EL PANEL LATERAL (Fase 2.3 · BLOQUE C,
+ * 22-sep-2026). Todo control de la cotización —tarifa, horas, comisión del
+ * vendedor, método de cobro, redondeo, notas internas— vive hoy en la HOJA
+ * INTERNA. Eso solo es honesto si QUIEN PUEDE GUARDAR VE ESE PAPEL.
+ *
+ * `ROLES_EDITAN_COTIZACION` es el espejo de los `@Roles` de `POST /v1/quotes`
+ * y `POST /v1/quotes/:id/revise` del API (ADMIN, COORDINADOR). Si algún día
+ * allá se le abre `revise` a un rol que NO está en `ROLES_HOJA_INTERNA`, ese
+ * rol se quedaría sin tarifa ni método de cobro y esta prueba falla ANTES de
+ * que nadie lo descubra en producción.
+ */
+describe("roles: quien puede guardar, ve la hoja interna", () => {
+  it("ROLES_EDITAN_COTIZACION ⊆ ROLES_HOJA_INTERNA", () => {
+    for (const rol of ROLES_EDITAN_COTIZACION) {
+      expect(ROLES_HOJA_INTERNA.has(rol), `${rol} edita pero no ve la hoja interna`).toBe(true);
+    }
+    expect([...ROLES_EDITAN_COTIZACION].sort()).toEqual(["ADMIN", "COORDINADOR"]);
+  });
+
+  it("SOCIO consulta y simula, pero no guarda (el API responde 403)", () => {
+    expect(puedeEditarCotizacion("SOCIO")).toBe(false);
+    expect(soloConsultaCotizacion("SOCIO")).toBe(true);
+    expect(puedeVerHojaInterna("SOCIO")).toBe(false);
+    // FACTURACION y ANALISTA ven la hoja interna pero tampoco guardan.
+    expect(puedeVerHojaInterna("FACTURACION")).toBe(true);
+    expect(puedeEditarCotizacion("FACTURACION")).toBe(false);
+    expect(soloConsultaCotizacion("ANALISTA")).toBe(true);
+  });
+
+  it("sin rol NO se apaga la pantalla: `/me` pudo fallar y el gate real es el API", () => {
+    expect(puedeEditarCotizacion(null)).toBe(true);
+    expect(puedeEditarCotizacion(undefined)).toBe(true);
+    expect(soloConsultaCotizacion(null)).toBe(false);
+    // Minúsculas: el rol llega como venga.
+    expect(puedeEditarCotizacion("coordinador")).toBe(true);
+    expect(soloConsultaCotizacion("socio")).toBe(true);
+  });
+
+  it("el aviso dice qué SÍ se puede y a quién pedirlo (nunca «no tienes permiso» a secas)", () => {
+    expect(AVISO_SOLO_CONSULTA).toContain("simular");
+    expect(AVISO_SOLO_CONSULTA).toContain("Coordinación");
+    expect(AVISO_SOLO_CONSULTA).not.toMatch(/error|prohibid/i);
   });
 });

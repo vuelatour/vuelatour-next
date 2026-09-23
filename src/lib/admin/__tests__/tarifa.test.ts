@@ -7,7 +7,9 @@ import {
   mismaTarifa,
   moneyTarifa,
   normalizarTarifa,
+  overrideTarifaCapturado,
   preferirTarifaPersistida,
+  segmentoTarifa,
   round6,
   tarifaOverrideRehidratada,
   tarifaConDecimalesFinos,
@@ -265,5 +267,52 @@ describe("diff de versiones (resumirCambios)", () => {
         tripulacion: false,
       },
     ]);
+  });
+});
+
+/**
+ * SEGMENTO Pública | Broker | Personalizada (Fase 2.3 · BLOQUE B): una sola
+ * regla para el PAPEL (fila «Tarifa» de la hoja interna) y para el PANEL. Con
+ * dos copias, una pantalla podría decir «Pública» mientras se cobra la manual.
+ */
+describe("segmento de tarifa", () => {
+  it("sin nada capturado manda el tipo del cliente/avión", () => {
+    expect(segmentoTarifa({ tipo_tarifa: "PUBLICO" })).toBe("PUBLICO");
+    expect(segmentoTarifa({ tipo_tarifa: "BROKER" })).toBe("BROKER");
+    expect(
+      segmentoTarifa({ tipo_tarifa: "BROKER", tarifa_personalizada: false, tarifa_hora_override_usd: null }),
+    ).toBe("BROKER");
+  });
+
+  it("una tarifa manual CAPTURADA manda sobre el tipo (aunque llegue como cadena)", () => {
+    expect(segmentoTarifa({ tipo_tarifa: "PUBLICO", tarifa_hora_override_usd: 989.583333 })).toBe(
+      "CUSTOM",
+    );
+    // El panel la `register`a sobre un <input type="number">: ahí es CADENA.
+    expect(
+      segmentoTarifa({ tipo_tarifa: "PUBLICO", tarifa_hora_override_usd: "1550" as unknown as number }),
+    ).toBe("CUSTOM");
+  });
+
+  it("el CERO cuenta como capturado («Poner todo en $0» del cliente interno)", () => {
+    expect(overrideTarifaCapturado(0)).toBe(true);
+    expect(segmentoTarifa({ tipo_tarifa: "PUBLICO", tarifa_hora_override_usd: 0 })).toBe("CUSTOM");
+  });
+
+  it("el modo es PEGAJOSO: vaciar el campo no apaga «Personalizada»", () => {
+    expect(
+      segmentoTarifa({
+        tipo_tarifa: "PUBLICO",
+        tarifa_personalizada: true,
+        tarifa_hora_override_usd: null,
+      }),
+    ).toBe("CUSTOM");
+  });
+
+  it("vacío, espacios y ausente NO son captura", () => {
+    expect(overrideTarifaCapturado(null)).toBe(false);
+    expect(overrideTarifaCapturado(undefined)).toBe(false);
+    expect(overrideTarifaCapturado("")).toBe(false);
+    expect(overrideTarifaCapturado("   ")).toBe(false);
   });
 });

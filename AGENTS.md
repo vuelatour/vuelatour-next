@@ -186,8 +186,10 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   detalle, lista, badge `GrupoBadge`). El panel SOLO pinta: consolidado,
   totales, por persona, partición de cobros y montos derivados de extras
   vienen del API (la Σ local de una partición manual es solo ayuda visual).
-  `ExtrasEditor` es el único editor de extras (desglose del cotizador);
-  extras `origen='GRUPO'` se bloquean ("se edita desde el grupo").
+  El desglose de la hoja del cotizador es el único editor de extras
+  (`extras-editor.tsx` se retiró el 22-sep-2026 con el panel lateral: ya solo
+  exportaba `EXTRAS_SUGERIDOS`, que vive en `lib/admin/extras.ts`); extras
+  `origen='GRUPO'` se bloquean ("se edita desde el grupo").
   Cobros que son parte de un sobre (`cobro.cobro_grupo`) no se editan ni
   borran por vuelo; conciliación se enlaza al SOBRE (`cobro_grupo_id`).
   **Página única del grupo (5-sep-2026)**: `/admin/quotes/grupo/[id]` =
@@ -216,8 +218,9 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   MISMO en el alta (`mode="create"`, `app/admin/quotes/new/page.tsx`) y en
   la página única (`mode="revise"`, `QuoteWorkspace` en
   `quote-workspace.tsx`, montada por `app/admin/quotes/[id]/page.tsx`:
-  cabecera + avisos + cotizador a lo ancho (hoja + panel interno) y, DEBAJO
-  de la hoja, cobros, historial y operación — sin aside ni portal).
+  cabecera + avisos + cotizador a lo ancho (hoja + sus `<details>`) y, DEBAJO,
+  cobros y operación — sin aside ni portal; el HISTORIAL bajó a la pila de
+  `<details>` del cotizador, ver BLOQUE C).
   Catálogos de ambos: `lib/api/quote-catalogos-server.ts`.
 - Flujo de alta: borrador `?d=` (base64url) → «Crear v1» → `createQuoteAction`
   (`client_request_id` uuid por intento) → `router.push('/admin/quotes/:id')`
@@ -234,7 +237,8 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
 - `QuoteCalculator` ya NO pinta tarjetas/secciones de formulario: renderiza
   `<QuoteSheet>` (la hoja 1 editable, `components/admin/quotes/quote-sheet.tsx`)
   al centro sobre el fondo del shell (papel claro 794 px, sombra, escala al
-  ancho del contenedor) y `<QuoteInternalPanel>` a la derecha. Arriba una
+  ancho del contenedor) y, DEBAJO, los sub-bloques `<details>` (el panel
+  lateral se retiró el 22-sep-2026). Arriba una
   barra de ESTADO fija (`TotalBar`, roja): total con IVA del breakdown,
   cliente · folio · vN, «Ver PDF real» / «Guardar y ver PDF», Descartar /
   Guardar → vN (o «Crear v1» en el alta) y chips de avisos (capacidad,
@@ -254,13 +258,17 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   `pasajerosPorTramo`, `mapaSvg` (con form limpio: `extraerMapaSvgDeHtml`
   de la hoja del PDF guardado), `totalRespaldo`, `grupo`, `clienteExtra`
   (alta: «+ nuevo cliente» · «corregir nombre» en la línea del cliente),
-  `onAbrirInterno(destino)` (`'tarifa' | 'cobrable' | 'sobrevuelo'`).
-- Tarifa y horas NO se editan en la hoja (feedback 9-sep-2026: «¿dónde se
-  ajusta la hora volada por tramo y la tarifa por hora?»): la hoja solo las
-  SEÑALA con croma de edición y `onAbrirInterno` (el cotizador abre el panel
-  interno si está cerrado —misma memoria— y, en un efecto cuando el panel ya
-  está pintado, hace scroll+focus al ancla; la marca «1.20 h» NO va exenta
-  del guard de CONFIRMADO/RESERVA porque su popover edita):
+  `onAbrirInterno(destino)` (`'tarifa' | 'cobrable' | 'sobrevuelo'`) — que
+  desde el BLOQUE C ya NADIE pasa: en la hoja interna esos campos están en el
+  papel y el atajo hace scroll + foco (`enfocarEnHoja`).
+- Tarifa y horas NO se editan en la hoja DEL CLIENTE (feedback 9-sep-2026:
+  «¿dónde se ajusta la hora volada por tramo y la tarifa por hora?»): ahí la
+  hoja solo las SEÑALA con croma de edición y `onAbrirInterno` (la marca
+  «1.20 h» NO va exenta del guard de CONFIRMADO/RESERVA porque su popover
+  edita). Con el panel retirado (BLOQUE C) nadie pasa ese callback y el
+  atajo del CLIENTE no se pinta: ese rol tampoco puede guardar. **En la HOJA
+  INTERNA sí se editan desde el BLOQUE B** (22-sep-2026) y el MISMO atajo solo
+  hace scroll + foco al renglón del papel (`enfocarEnHoja`). Los atajos:
   «· ajustar» en la línea de «Servicio aéreo» (con «h × $/hr» delante cuando
   el toggle de tarifa está apagado), «1.20 h» por tramo en el margen del
   itinerario (abre el ⋯: fila «Tiempo estimado» + «Pactar horas» →
@@ -272,30 +280,66 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
 - Lectura bloqueada (`bloqueadoRazon`): la hoja se pinta como texto (sin
   inputs), 🔒 + razón en la barra de estado y «Copiar como nueva cotización».
 
-### Panel «Interno · no se imprime» (`quote-internal-panel.tsx`)
+### Panel «Interno · no se imprime» — RETIRADO (22-sep-2026)
 
-`QuoteInternalPanel`: panel lateral DERECHO colapsable (botón «Interno» en
-el borde, vertical en ≥xl; cerrado por defecto con memoria por usuario
-`vt-cotizador-interno-v1`, estado en el cotizador — se abre solo al prender
-«cubierto por externo»), con banda «Interno · no se imprime». Contiene TODO
-lo que produce números sin imprimirse (código movido del cotizador):
-avisos ámbar (nunca se esconden; el botón cerrado muestra el conteo),
-cliente frecuente + «+ Nuevo cliente» (alta), «Poner todo en $0» (cliente
-interno), plantilla de ruta («Suele pedir», ruta guardada, crear/guardar
-como nueva ruta), card azul RUTA OPERATIVA del vuelo (revisión con
-itinerario operativo, «Cotizar con estos tramos» con confirmación), Tarifa y
-horas (Pública/Broker/Personalizada `#tarifa-tipo-field`, `$/hr — SOLO esta
-cotización` `#tarifa-override-field`, sobrevuelo, Cobrable pactado
-`#cobrable-field`), comisión del vendedor (Fija | Por hora, «→ impreso»),
-Cobro (método `#metodo-pago-field` + ¿cuál? con OTRO, BillPocket %
-`#billpocket-field`, redondeo `#redondeo-field`, switch «Se cobran TUAS»,
-cotización abierta, pase de abordar), sub-bloques `SubBloque` (operador
-externo con modelo/matrícula/costo+moneda y margen; ruta operativa —solo
-alta—; Detalle del cálculo = `Preview` solo lectura + `QuoteDesgloseCard`),
-notas internas, toggles del PDF (tarifa/hr, itinerario) + leyenda de los
-toggles por tramo. El panel NO calcula dinero: pinta `values` + `breakdown`
-y escribe con `setValue`/`register` del cotizador. Tipos del form en
-`quote-form-types.ts` (los re-exporta el cotizador).
+`quote-internal-panel.tsx` **ya no existe**. Era el panel lateral derecho
+colapsable (botón «Interno» en el borde, memoria `vt-cotizador-interno-v1`) y
+se vació bloque a bloque hasta desaparecer, que es lo que pidió el cliente:
+«la idea es ir quitando el modal flotante lateral derecho “No se imprime”,
+porque en la cotización interna sí va a aparecer todo».
+
+**Dónde vive ahora cada cosa** (el detalle, en «Fase 2.3 · BLOQUE A/B/C»):
+
+| Lo que había en el panel | Dónde está hoy |
+|---|---|
+| Cliente frecuente · «+ nuevo cliente» · «Poner todo en $0» | línea «Cliente» de la ficha del papel (BLOQUE A) |
+| Método de cobro previsto · «¿cuál?» · % de terminal | cabecera del bloque COBROS del papel (BLOQUE A) |
+| Redondeo (auto + manual) · switch «Se cobran TUAS» | sus renglones del desglose (BLOQUE A) |
+| «Cotización abierta» · «Pase de abordar» | fila «Marcas» de la ficha (BLOQUE A) |
+| Notas internas | su bloque del papel (BLOQUE A) |
+| Plantilla de ruta · toggles del PDF del cliente | `<details>` bajo el papel (BLOQUE A) |
+| Tarifa (segmento + $/hr) · sobrevuelo · cobrable pactado · comisión del vendedor | ficha «Tarifa» / «Horas cotizadas» / «Vendedor» del papel (BLOQUE B) |
+| Tabla «Horas por tramo» | la absorbió la columna TIEMPO de «Tramos cotizados» (BLOQUE B) |
+| Card azul RUTA OPERATIVA del vuelo | banda azul DENTRO del papel, encima de la tabla de tramos (BLOQUE C) |
+| Operador externo · ruta operativa del alta · detalle del cálculo | `<details>` bajo el papel (BLOQUE C) |
+| Avisos ámbar (chips del panel) | banda ámbar de ancho completo ARRIBA del papel (BLOQUE C) |
+| Botón vertical del borde + `vt-cotizador-interno-v1` | se retiraron |
+| **TODO lo anterior, para el rol que NO ve la hoja interna (SOCIO)** | `<details>` «**Ajustes de la cotización**» bajo la hoja del cliente (`quote-captura-basica.tsx`) |
+
+- **Ningún rol se queda sin un control** (revisión adversaria, 22-sep-2026).
+  El panel retirado **se pintaba para TODOS los roles**; la hoja interna solo
+  la ven `ROLES_HOJA_INTERNA` (ADMIN, COORDINADOR, FACTURACION, ANALISTA). Al
+  mudar los controles al papel, **SOCIO** —que entra al cotizador por el menú
+  («Cotizaciones» no filtra por rol) y puede SIMULAR con `/calculate`— se
+  quedaba sin tarifa, horas, comisión del vendedor, método de cobro, redondeo,
+  TUAS, cotización abierta, pase de abordar, notas internas ni la banda de
+  ruta operativa: **trece controles que ese rol tenía ayer**. Los tiene en
+  `QuoteCapturaBasica`, un `QuotePlegable` (abierto por defecto) que se monta
+  **exactamente cuando `puedeVerHojaInterna(rol)` es false**, con el MISMO
+  campo RHF y el MISMO id ancla — por eso los ids nunca se duplican con los
+  del papel. En LECTURA pinta la lista de solo lectura que daba el panel
+  (incluido «Pase de abordar»). La banda de RUTA OPERATIVA se le pinta con su
+  otra piel (`QuoteRutaOperativaBanda suelta`), porque `.cot-ops` cuelga de
+  `.cot-interna` por invariante del CSS.
+- **Qué autoriza el retiro del panel**: `POST /v1/quotes` y
+  `POST /v1/quotes/:id/revise` son **ADMIN/COORDINADOR** (`@Roles` del API), y
+  los dos están en `ROLES_HOJA_INTERNA` — quien puede GUARDAR ve el papel
+  donde se captura todo. La inclusión `ROLES_EDITAN_COTIZACION ⊆
+  ROLES_HOJA_INTERNA` la congela `lib/admin/__tests__/quote-sheet-interna.test.ts`.
+  SOCIO/FACTURACION/ANALISTA pueden consultar y SIMULAR pero no guardar, y la
+  pantalla lo dice con una banda ámbar (`AVISO_SOLO_CONSULTA`) en vez de
+  prometerles un guardado que el API rechaza con 403.
+- **La pantalla ENTERA está probada rol por rol** en
+  `components/admin/quotes/__tests__/quote-pantalla-completa.test.tsx`: monta
+  `QuoteCalculator` completo (alta y revisión, ADMIN/COORDINADOR/FACTURACION/
+  ANALISTA/SOCIO, editable y en lectura, con BillPocket y con OTRO) y exige
+  (1) que los 13 controles del panel estén para TODOS los roles, (2) que
+  ningún id se repita en la página, (3) que ningún `<details>` desmonte su
+  contenido, (4) que nada `data-guard-exempt` contenga un control que EDITE y
+  (5) que todo control tenga nombre accesible. Es la red que faltaba: los
+  tests de la hoja comparan el papel contra pyservices, pero nadie montaba la
+  pantalla completa — que es donde un control «migrado» desaparece para el rol
+  que no ve el papel.
 
 ### Hoja del PDF guardado (mapa) y PDF real
 
@@ -1167,12 +1211,22 @@ y escribe con `setValue`/`register` del cotizador. Tipos del form en
   `tarifa-override-field`, `motivo-revision-field` (en el diálogo),
   `tc-usd-mxn-field`, `pasajeros-field`, `metodo-pago-field`,
   `billpocket-field`, `redondeo-field`, `tarifa-tipo-field`, `sobrevuelo-field`,
-  `seccion-<id>` (sub-bloques del panel interno), `cobros-vuelo` (card de
-  cobros del workspace). En la hoja, `pasajeros-field` y `tc-usd-mxn-field`
-  son el PROPIO input invisible (no un contenedor).
-- localStorage: `vt-cotizador-interno-v1` (`{abierto}` del panel interno).
-  Las claves `vt-cotizador-plegado-v2` y `vt-cotizador-preview-v1` ya no se
-  usan (no hay secciones plegables ni preview anclada).
+  `seccion-<id>` (`externo` | `operativa` | `detalle`: viven DENTRO de su
+  `<details>` bajo el papel desde el BLOQUE C), `cobros-vuelo` (card de
+  cobros del workspace). En la hoja interna TODOS son el PROPIO control (no un
+  contenedor); en el `<details>` «Ajustes de la cotización» del rol sin hoja
+  interna son el `<div>` envoltorio, como en el panel retirado. Quien los
+  busca acepta las dos formas
+  (`el.matches("input, button") ? el : el.querySelector(…)`) porque nada
+  garantiza que el próximo ancla nazca igual. **Cada ancla existe UNA sola
+  vez**: la hoja interna y `QuoteCapturaBasica` son EXCLUYENTES (una u otra,
+  nunca las dos) y la hoja del CLIENTE en LECTURA —el respaldo de la pestaña
+  «PDF del cliente», que convive con la interna oculta— no monta ningún id.
+  Congelado en `__tests__/quote-pantalla-completa.test.tsx`.
+- localStorage: `vt-cotizador-hoja-v1` (pestaña) y
+  `vt-cotizador-plegado-<id>-v1` (los `<details>` bajo el papel). Las claves
+  `vt-cotizador-interno-v1` (panel lateral), `vt-cotizador-plegado-v2` y
+  `vt-cotizador-preview-v1` ya no se usan.
 - Teclado: Enter en la ruta rápida arma tramos; Ctrl/⌘+S guarda por el
   mismo camino que el botón primario (revisión: diálogo / presentación;
   alta: «Crear v1»); Esc cierra diálogos (Base UI: `DropdownMenuItem` usa
@@ -1701,9 +1755,11 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   guardar — `bloqueoGuardadoExtras` las descarta por `deGrupo`. Si un cargo del
   grupo viene en pesos sin T.C., el candado que corresponde sigue siendo
   `mxnSinTc`, que sí se corrige en esta pantalla.
-- **Editor clásico** (`extras-editor.tsx`, variantes `fila` y `card`): misma
-  leyenda con `AvisoFueraDelTotal`, que sustituyó a los dos textos sueltos de
-  «MXN sin TC» que tenía cada variante.
+- **El «editor clásico» `extras-editor.tsx` se RETIRÓ** (22-sep-2026, BLOQUE
+  C): no lo montaba nadie desde que el desglose de la hoja pasó a ser el
+  editor de extras, y su `AvisoFueraDelTotal` ya solo servía a sus propias
+  variantes. `EXTRAS_SUGERIDOS` (los chips de «+ Agregar concepto») vive ahora
+  en `lib/admin/extras.ts`, junto al resto de la regla.
 - **GRUPO**: sus cargos son otro tipo (`ExtraGrupoForm`) y otra función, y ahí
   la regla exige además la cantidad cuando no es por persona. **FUENTE ÚNICA en
   `grupo-form/payload.ts`**: `motivoCargoGrupo` (privada) y de ella cuelgan las
@@ -1844,14 +1900,122 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   rápida «CUN, HOL, CUN ⏎»), extras, descuento, IVA %, T.C. y las notas al
   cliente. El popover «⋯» es el MISMO `DetalleTramo` de `quote-sheet-itinerario`
   (exportado): dos copias serían dos sitios donde capturar lo mismo.
-- **Lo que sigue en el panel «Interno · no se imprime» hasta la Fase 2.3**:
-  tarifa, sobrevuelo, cobrable pactado, comisión del vendedor, método de cobro
-  y BillPocket, redondeo, switches (TUAS, abierta, pase), operador externo,
-  ruta operativa, notas internas y los toggles del PDF. Desde la hoja interna
-  solo se SEÑALAN (`onAbrirInterno` → «ajustar» / «pactar horas»). `TotalBar`,
-  save bar, `resumirCambios`, `armarCalcPayload`, `tramos_base`,
+- **El panel «Interno · no se imprime» se RETIRÓ en el BLOQUE C**
+  (22-sep-2026): la pantalla es el papel más una pila de `<details>` debajo.
+  `TotalBar`, save bar, `resumirCambios`, `armarCalcPayload`, `tramos_base`,
   `preferirHorasPersistidas`, `tarifaOverrideRehidratada`, el ancla de ecos y
-  la idempotencia **no se tocaron**: ninguna regla de guardado cambió.
+  la idempotencia **no se tocaron** en ninguno de los tres bloques: ninguna
+  regla de guardado cambió.
+
+### Fase 2.3 · BLOQUE A — dónde vive ahora cada control (22-sep-2026)
+
+Sigue el `mapa_de_controles` del diseño: lo que se lee EN un renglón del
+documento se decide EN ese renglón; lo que no tiene renglón baja a un
+`<details>` bajo el papel. **Nada de esto calcula dinero**: son `setValue`
+sobre los MISMOS campos RHF de siempre, y el total lo sigue diciendo el
+`breakdown`.
+
+| Control | Dónde vive ahora | id ancla |
+|---|---|---|
+| Método de cobro PREVISTO | cabecera del bloque COBROS del papel, dentro de la frase «previsto: …» (`piezasMetodoPrevisto`, fuente única `METODOS_PAGO`) | `metodo-pago-field` |
+| «¿Cuál método?» (OTRO) | junto al selector; el papel imprime «Otro (PayPal)» | — |
+| Comisión de terminal % | misma frase, tras el método; **solo se captura con BillPocket** (el % de Paywise lo pone la config) | `billpocket-field` |
+| Redondeo (switch auto + monto manual) | **en la línea** del renglón «Redondeo» del desglose (`.cot-acciones`: el margen izquierdo de esa columna se sale del papel); sin ajuste el renglón es FANTASMA (`data-cot-ui`, aporta 0) | `redondeo-field` |
+| Switch «Se cobran TUAS» | margen del PRIMER renglón del bloque TUAS del desglose | — |
+| «Cotización abierta» / «Pase de abordar» | fila **«Marcas»** de la ficha derecha; sin marcas encendidas la fila entera es croma | — |
+| Notas internas | su bloque del papel: **editables solo en el ALTA** (`revise` no las manda; al revisar se leen y se dice que se cambian en «Editar datos» del vuelo) | — |
+| Clientes frecuentes · «+ nuevo cliente» · «corregir nombre» · «Poner todo en $0» | croma en la línea «Cliente» de la ficha (`clienteExtra`); el $0 confirma con `AlertDialog` | — |
+| Plantilla de ruta («Suele pedir», ruta guardada, crear/guardar) | `<details>` «Plantilla de ruta» DEBAJO del papel (`quote-plantilla-ruta.tsx`) | — |
+| Toggles del PDF del cliente (tarifa/hr, itinerario) + leyenda por tramo | `<details>` «PDF del cliente: qué se imprime» DEBAJO del papel (`quote-pdf-toggles.tsx`); mismo `PATCH pdf-visibilidad` sin versión (D5) | — |
+
+- **`QuotePlegable`** (`quote-plegable.tsx`) es el `<details>` de esos
+  sub-bloques: su contenido **NUNCA se desmonta** (un `{abierto && …}`
+  tiraría los `register()` y dejaría los ids ancla sin destino, riesgo 9 del
+  diseño), solo el `<summary>` va `data-guard-exempt` (abrir no edita) y la
+  memoria por usuario es `localStorage vt-cotizador-plegado-<id>-v1`, leída
+  con `useSyncExternalStore` (el servidor no tiene storage; con `useState` +
+  efecto el linter marca el render en cascada). Los `<details>` se pintan para
+  **todos los roles**, también para quien no ve la hoja interna.
+- **`SwitchHoja`** (`quote-sheet-fields.tsx`) es el switch del papel: su
+  etiqueta va DENTRO del `<button>` (el comparador con el PDF descarta los
+  controles) y **no** lleva `data-guard-exempt` — cambiar un switch ES editar
+  y tiene que disparar la confirmación única de CONFIRMADO/RESERVA.
+- **Lo que el papel NO imprime va en croma** (`data-cot-ui`) y su CSS bajo
+  `.cot-interna:not(.cot-interna--lectura)`: el switch del pase de abordar no
+  pinta tag porque `_ficha_html` de pyservices no lo lleva, y el renglón
+  «Redondeo» sin ajuste es fantasma. Por eso los 3 fixtures de LECTURA
+  **no se regeneraron**: el marcado IMPRESO no cambió.
+### Fase 2.3 · BLOQUE B — tarifa, horas y comisión del vendedor (22-sep-2026)
+
+Lo que quedaba del bloque «Tarifa y horas» del panel baja al papel, **cada
+control en el renglón donde se LEE**. Regla de oro del bloque: **el número que
+se IMPRIME lo sigue resolviendo el motor** («Tarifa broker · $1,550.00/hr»,
+«1.75 h») y el control de al lado es CROMA (`data-cot-ui`, dentro de
+`.cot-acciones`) que solo captura lo que se PACTA. Se separan a propósito —
+sustituir el impreso por el input dejaría el papel sin tarifa cuando alguien
+enciende «Personalizada» con el campo vacío, y sin horas en las cotizaciones
+que no pactan (la mayoría). Por eso el marcado IMPRESO no cambió y los
+fixtures existentes **no** se regeneraron.
+
+| Control | Dónde vive ahora | id ancla |
+|---|---|---|
+| Segmento Pública / Broker / Personalizada | fila **«Tarifa»** de la ficha izquierda, en la línea (`SegmentoHoja`) | `tarifa-tipo-field` |
+| `$/hr` SOLO esta cotización + cuenta viva «2.4 hr × $989.583333 = $2,375.00» | misma línea, **solo con «Personalizada»**; en reposo se lee «1,550.00» y con decimales finos los enseña TODOS | `tarifa-override-field` |
+| Sobrevuelo (hr) | bloque **«Horas cotizadas»**, fila «Sobrevuelo»; sin horas el renglón es FANTASMA (`data-cot-ui`) para que el campo tenga dónde vivir | `sobrevuelo-field` |
+| Cobrable pactado (acepta «2:20») + línea viva + avisos | fila **«Cobrables»**, tras el «· pactar»; el impreso sigue siendo `<b>1.75 h</b>` del motor | `cobrable-field` |
+| Comisión del vendedor (Fija \| Por hora, monto o $/hr, quién vendió) | fila **«Comisión»** bajo «Vendedor» (croma entera), en un `PlegableHoja` que NUNCA desmonta | — |
+| «Neto VuelaTour $X · Pago al vendedor $Y» | renglón tenue de CROMA al final del desglose (`dialecto.pie`), con `meta.neto_vuelatour_usd` y `pago_vendedor_usd` — **aquí no se resta nada** | — |
+
+- **`segmentoTarifa`** (`lib/admin/tarifa.ts`, PURO + test) es la FUENTE ÚNICA
+  de qué opción está activa, y la usan el papel **y** el cotizador: con dos
+  copias, una pantalla diría «Pública» mientras se cobra la manual. El modo
+  `tarifa_personalizada` sigue siendo PEGAJOSO (vaciar el campo no lo apaga) y
+  el CERO cuenta como capturado («Poner todo en $0» del cliente interno).
+  Volver a Pública/Broker LIMPIA el override, igual que hacía el panel.
+- **`CampoHorasPactadas` gana la variante `hoja`**: el MISMO parser de
+  «2:20»/decimal, el mismo texto canónico al salir y la misma línea viva con
+  el importe del MOTOR, pintados como input invisible del papel. Dos copias de
+  ese parser es donde se cuela el «2:5» que vale 2.5.
+- **La tabla «Horas por tramo» del panel se RETIRA** con la hoja interna: la
+  absorbe la columna TIEMPO de «Tramos cotizados». Sigue viva para un rol sin
+  hoja interna. Lo que NO se migró a propósito es el `AporteChip` del
+  sobrevuelo («+$330.00 en el total»): multiplica horas × tarifa en el panel y
+  en el papel no se calcula dinero.
+- **Los atajos «· ajustar» / «pactar horas» ya no abren nada**: `enfocarEnHoja`
+  hace scroll + foco al renglón del propio papel y solo cae a
+  `onAbrirInterno` si el ancla no existe (rol sin hoja interna).
+- **El CONCEPTO de un EXTRA se LEE del motor** (`conceptoExtraCanonico`): el
+  desglose canónico ya trae la cuenta dentro —«Tour · 2 × $85.00 MXN =
+  $170.00 MXN»— y el « (sin IVA)» de los exentos, y el PDF interno lo imprime
+  tal cual. La hoja escribía el formato del CLIENTE («Tour · $170.00 MXN»),
+  así que pantalla y papel nombraban distinto el MISMO renglón. En EDICIÓN el
+  input sigue siendo el concepto TECLEADO y el resto del canónico se pinta
+  detrás, con el monto en pesos **todavía editable en su sitio**
+  (`piezasConceptoExtraInterna`, el mismo truco de `piezasConceptoTua`): ese
+  monto se imprime con `toFixed(2)` —sin separador de miles— porque es
+  EXACTAMENTE lo que escribe el API dentro del concepto. El cruce exige que el
+  canónico EMPIECE por lo tecleado **y** que lo que sobra sea « · …» o
+  « (sin IVA)»: a media palabra el breakdown va un debounce atrás y se cae al
+  respaldo de siempre en vez de pintar «Handle» + «r · $1500.00 MXN».
+- **Fixture nuevo `interna-extras`** (4.º escenario): extra en PESOS con monto
+  directo, extra con CANTIDAD × unitario y extra EXENTO que activa la
+  partición «No causan IVA» con IVA > 0. Regenerado con
+  `npm run gen:hoja-interna-fixture`, nunca a mano.
+- **Widgets nuevos del papel** (`quote-sheet-fields.tsx`): `SegmentoHoja`
+  (botones en línea con `aria-pressed`; **sin** `data-guard-exempt` — cambiar
+  de tarifa ES editar) y `PlegableHoja` (`<details>` en línea; solo el
+  `<summary>` va exento). Su CSS vive en `cotizacion-interna-pantalla.css`
+  (`.cot-seg`, `.cot-plegable`), con el acento bajo `:not(--lectura)`.
+
+- **Tipos**: `QuoteSheetValoresInterna` / `OnCambioHojaInterna`
+  (`quote-sheet-types.ts`) extienden los de la hoja del cliente con
+  `metodo_pago`, `metodo_pago_detalle`, `comision_billpocket_pct`,
+  `redondeo_auto`, `redondeo_usd`, `cotizacion_abierta`, `pase_abordar` y
+  `notas_internas`. `comoOnCambioHoja()` estrecha el handler para los
+  componentes compartidos (TS no lo deduce entre dos firmas genéricas).
+- **Pruebas**: `__tests__/quote-sheet-interna-controles.test.tsx` (ids ancla,
+  que en LECTURA no se monte ningún control, y que lo no impreso sea croma)
+  además de los 3 fixtures de paridad, que siguen pasando sin tocarse.
 - **CSS compartido con pyservices**: `src/styles/cotizacion-interna.css` es
   COPIA byte a byte de `app/static/cotizacion-interna.css`
   (`npm run sync:hoja-interna-css`); todo selector cuelga de `.cot-interna`. Lo
@@ -1892,11 +2056,17 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   TUAS, sin cobros, IVA 0 por efectivo) e **`interna-070`** (el documento
   COMPLETO: comisión del vendedor, ajuste «Redondeo», pernocta que activa la
   partición de exentos, TUA en PESOS con su T.C., `mxn_nativos`, tramo ferry y
-  cobro en MXN con comisión de terminal). Los payloads viajan DOS veces a
-  propósito (`__fixtures__/escenarios-interna.ts`): como `interno` y convertidos
-  a `breakdown`, para que fixture y pantalla no puedan divergir por una copia
-  mal hecha. Tras tocar `cotizacion_interna_pdf.py` hay que **regenerar**,
-  nunca editar los HTML a mano.
+  cobro en MXN con comisión de terminal) e **`interna-extras`** (BLOQUE B: los
+  tres sabores de EXTRA —en pesos con monto directo, con cantidad × unitario y
+  EXENTO— con su concepto CANÓNICO y la partición «No causan IVA» activa). Los
+  payloads viajan DOS veces a propósito
+  (`__fixtures__/escenarios-interna.ts`): como `interno` y convertidos a
+  `breakdown`, para que fixture y pantalla no puedan divergir por una copia mal
+  hecha; lo único que va aparte son los EXTRAS CAPTURADOS (el payload solo
+  lleva la línea canónica, que ya trae la cuenta dentro: que la pantalla
+  reconstruya ese MISMO texto es justo lo que mide el test de edición). Tras
+  tocar `cotizacion_interna_pdf.py` hay que **regenerar**, nunca editar los
+  HTML a mano.
 - **Textos del documento** (espejo de `cotizacion_interna_pdf.py`, en
   `lib/admin/quote-sheet-interna.ts`, PURO + test): `hhmm` («01:18»),
   `millasTxt` («157.3»), `horasTxt` («1.75 h»), `diaMes` («26-jun»),
@@ -1953,21 +2123,119 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
     cliente y con `pctG` (`{:g}`) en el interno, porque así lo imprime cada
     PDF. Con el 16 % de siempre dan lo mismo; con un `iva_pct_override` de
     8.5 el cliente dice «8» y el interno «8.5».
-- **Pendiente conocido (Fase 2.3)**: el CONCEPTO de un EXTRA se sigue
-  escribiendo con el formato del cliente (`etiquetaExtra`: «Handler ·
-  $1,500.00 MXN») en vez del canónico del interno, que con `cantidad > 1` trae
-  la cuenta dentro («Handler · 2 × $85.00 MXN = $170.00 MXN») y con
-  `aplica_iva:false` cierra con « (sin IVA)». El MONTO es el mismo y ningún
-  fixture lo cubre. NO se corrigió con los demás conceptos porque el renglón
-  del extra es EDITABLE (su concepto es un input): en lectura habría que leer
-  la línea canónica y en edición el valor tecleado, y las dos se cruzan por
-  índice con `breakdown.extras`, que va un debounce atrás. Se migra con ese
-  bloque en la 2.3, con un cuarto escenario de extras (con cantidad y exento).
-  En prod hoy: 0 extras exentos, y los de cantidad > 1 son los que divergen.
+- El CONCEPTO de un EXTRA también se LEE del motor desde el **BLOQUE B**
+  (22-sep-2026): ver esa sección más arriba (`conceptoExtraCanonico` +
+  `piezasConceptoExtraInterna` y el fixture `interna-extras`). Antes se
+  escribía con el formato del cliente (`etiquetaExtra`) y el papel decía otra
+  cosa del mismo renglón.
 - **Roles: el panel tampoco PIDE lo que no va a pintar.**
   `app/admin/quotes/[id]/page.tsx` llama a `getQuoteInterno` solo si
   `puedeVerHojaInterna(me.rol)`: a SOCIO/PILOTO el API respondía 403 en cada
   carga de la pantalla. El gate real sigue siendo el API.
+
+### Fase 2.3 · BLOQUE C — el panel se retira (22-sep-2026)
+
+Lo último que quedaba en el cajón lateral baja al papel o a un `<details>`, y
+`quote-internal-panel.tsx` **se borra**. La pantalla de la cotización pasa a
+ser: banda(s) de aviso → papel (hoja interna | PDF del cliente) → pila de
+`<details>` → save bar.
+
+| Control | Dónde vive ahora | id ancla |
+|---|---|---|
+| RUTA OPERATIVA del vuelo + «Cotizar con estos tramos» | **banda azul DENTRO del papel**, justo ENCIMA de «Tramos cotizados» (`QuoteRutaOperativaBanda`, prop `bandaTramos`) | — |
+| Operador externo (switch, operador, modelo, matrícula, costo + moneda, aviso T.C., margen) | `<details>` «Operador externo» bajo el papel (`quote-operador-externo.tsx`), que se **auto-abre** con `es_externo` | `seccion-externo` |
+| Eco de quién cubre el vuelo | tarjeta «Avión cotizado» del papel, croma con «editar abajo» (prop `avionExtra`) | — |
+| Ruta operativa del ALTA (`escalas_operacion[]`) | `<details>` «Ruta operativa del vuelo» (`quote-ruta-operativa.tsx`) | `seccion-operativa` |
+| Detalle del cálculo (`Preview` + `QuoteDesgloseCard`) | `<details>` «Detalle del cálculo (motor)» (`quote-detalle-motor.tsx`) | `seccion-detalle` |
+| Historial de versiones (`QuoteVersionsTimeline`) | `<details>` «Historial de versiones», que el **workspace** inyecta con la prop nueva `plegablesExtra` | — |
+| Avisos ámbar (`avisosCaptura`) | **banda de ancho completo ARRIBA del papel** (`quote-avisos-banda.tsx`), nunca plegable, + el chip de la `TotalBar` como siempre | — |
+
+- **La banda de ruta operativa va DENTRO del papel a propósito**: es el aviso
+  de DIVERGENCIA —la ruta que vuela el piloto no es la que se cotiza— y solo
+  se entiende junto a la tabla que lo dice. Es CROMA (`data-cot-ui`, CSS
+  `.cot-ops` en `cotizacion-interna-pantalla.css`), así que el documento de
+  pyservices no la imprime y **los cuatro fixtures no se regeneraron**. Se
+  pinta también en LECTURA (sin botón): enterarse no depende de poder editar.
+  «Cotizar con estos tramos» conserva su confirmación y sigue sin guardar
+  nada — deja el formulario sucio para que se vea el total antes de Guardar.
+- **`QuotePlegable` gana `forzarAbierto`**: el `<details>` del operador
+  externo se abre al prender «cubierto por externo» y al montar si la
+  cotización YA es externa, igual que hacía el `SubBloque`. Un campo
+  OBLIGATORIO no puede quedar escondido detrás de un triángulo. Abrir por
+  fuerza SÍ escribe la memoria (`vt-cotizador-plegado-externo-v1`): cerrarlo
+  después es decisión del operador y se respeta hasta el siguiente encendido.
+- **La pestaña «PDF del cliente» pide la vista previa REAL**
+  (`useQuotePreviewHtml` con `activo: previewLimpio || hojaActiva ===
+  "cliente"` → `POST /v1/quotes/preview-html` por el proxy que ya existía) y
+  la pinta en un **`<iframe srcDoc>`** (`quote-pdf-cliente-vista.tsx`):
+  `render_cotizacion_preview_html` devuelve un documento COMPLETO con su
+  `<style>` —el CSS de pantalla de pyservices, que NO es el del panel—, así
+  que inyectarlo con `dangerouslySetInnerHTML` metería esas reglas en el
+  shell. Va sin `allow-scripts` y con `allow-same-origin` solo para MEDIR su
+  alto. Mientras llega, o si el servidor no tiene el endpoint (404), se pinta
+  la réplica `QuoteSheet` en LECTURA como RESPALDO — nunca una pantalla en
+  blanco, y nunca sin decir cuál de las dos se está viendo.
+- **Atajos**: `abrirInterno` y `destinoInternoPendiente` desaparecieron del
+  cotizador; `enfocarEnHoja` de la hoja interna ya no tiene a dónde caer (sus
+  tres anclas están SIEMPRE montadas en el papel) y `QuoteSheetInterna` perdió
+  la prop `onAbrirInterno`. La hoja del CLIENTE sí la recibe (revisión
+  22-sep-2026) con `atajoEnCaptura`: abre el `<details>` «Ajustes de la
+  cotización» y lleva el foco al campo. Dejarla sin pasar habría quitado al
+  rol sin hoja interna los dos atajos que tenía —«· ajustar» de «Servicio
+  aéreo» y «Pactar horas» del detalle ⋯ de un tramo—; sus tooltips ya no
+  nombran el panel muerto («… se ajustan en «Ajustes de la cotización», debajo
+  de la hoja»).
+- **«Pase de abordar» en LECTURA** (pendiente que abrió el BLOQUE A): solo se
+  leía en el bloque «Cobro» del panel, y es el dato que explica por qué el
+  desglose no cobra TUAS. Se pinta como TAG de CROMA en la fila «Marcas»;
+  imprimirlo de verdad exige tocar `_ficha_html` de `cotizacion_interna_pdf.py`
+  (pyservices), que no se toca desde aquí.
+- **`extras-editor.tsx` se retiró**: no lo montaba nadie y solo exportaba
+  `EXTRAS_SUGERIDOS`, que ahora vive en `lib/admin/extras.ts` con el resto de
+  la regla de extras.
+- **Pruebas**: `__tests__/quote-bloque-c.test.tsx` (la banda ENCIMA de la
+  tabla y como croma; la lectura sin botón; que sin itinerario operativo no
+  haya banda; el eco del externo; que cada `<details>` monte su
+  `seccion-<id>`; que la banda de avisos NO sea un `<details>`),
+  `__tests__/quote-pantalla-completa.test.tsx` (la pantalla ENTERA, rol por
+  rol) y, en `lib/admin/__tests__/quote-sheet-interna.test.ts`, el invariante
+  de roles.
+
+### Fase 2.3 · lo que corrigió la revisión adversaria (22-sep-2026)
+
+1. **SOCIO se había quedado sin un solo control de dinero** → `<details>`
+   «Ajustes de la cotización» (`quote-captura-basica.tsx`), la banda de ruta
+   operativa con piel `suelta` y los atajos de la hoja del cliente enchufados
+   a `atajoEnCaptura`. Ver «Ningún rol se queda sin un control», arriba.
+2. **«Ajuste rápido» no hacía nada con la hoja interna**: `enfocarPasajeros`
+   buscaba `.cot-hoja table.grid` y con pax POR TRAMO el itinerario vive bajo
+   `.cot-interna` — el mismo defecto que el BLOQUE B ya había corregido en
+   `enfocarExtraFuera`. Ahora busca en LAS DOS hojas.
+3. **La vista previa del PDF se pedía para quien nunca la ve**: `activo:
+   previewLimpio || hojaActiva === "cliente"`, y para SOCIO `hojaActiva` vale
+   SIEMPRE «cliente» — un render completo de pyservices por cada tecleo, en el
+   alta incluida, para un HTML que su pantalla no monta. Ahora lleva
+   `hayHojaInterna &&`.
+4. **El ancla `cobrable-field` desaparecía sin breakdown** (alta recién
+   abierta o `/calculate` en error): el renglón «Cobrables» del papel se pinta
+   FANTASMA en edición, como «Sobrevuelo» y «Redondeo», así que el campo
+   siempre tiene dónde vivir. El marcado IMPRESO no cambió (es croma) y los
+   fixtures siguen intactos.
+5. **`npm run gen:hoja-fixture` reventaba siempre**: globeaba también los
+   `interna-*.payload.json`, que son de otro esquema, y salía con error
+   DESPUÉS de escribir bien las 7 hojas del cliente — el camino corto para que
+   alguien crea que la regeneración «no funciona» y edite un fixture a mano.
+6. **Textos que nombraban un panel que ya no existe** («Interno › Tarifa y
+   horas», «Interno › Cobro», «Pactar horas: abre Interno › Cobrable
+   pactado») y el `AVISO_SOLO_CONSULTA`, que decía que había que pedir a
+   Coordinación para «ajustar tarifa, horas, comisión o método de cobro»
+   cuando ahora ese rol SÍ puede ajustarlas para simular: lo que no puede es
+   guardarlas.
+- **Lo que NO cambió**: `armarCalcPayload`, `resumirCambios`, `tramos_base`,
+  `preferirHorasPersistidas`, `tarifaOverrideRehidratada`, `estadoExtra`, las
+  anclas de ecos, la idempotencia, el guard único de CONFIRMADO/RESERVA (los
+  `<details>` siguen DENTRO del contenedor que lo intercepta), `beforeunload`,
+  el 409 y `?d=`. Cero dinero calculado en pantalla.
 
 ## Lista de flota = el pizarrón de Tacómetros (22-sep-2026)
 

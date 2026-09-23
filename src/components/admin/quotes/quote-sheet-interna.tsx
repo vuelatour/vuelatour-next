@@ -19,36 +19,53 @@ import {
   diaLargo,
   hayAjuste,
   horasTxt,
+  lineaNetoVuelatour,
   moneyInterno,
   motivoAjuste,
   opComisionVendedor,
+  resumenComisionVendedor,
   tarifaFicha,
 } from "@/lib/admin/quote-sheet-interna";
-import { EMPRESA_DEFAULT, TZ_NOTA, fechaLegible } from "@/lib/admin/quote-sheet";
+import { EMPRESA_DEFAULT, TZ_NOTA, fechaLegible, numero2 } from "@/lib/admin/quote-sheet";
 import { tuasMxnSinTc } from "@/lib/admin/tuas";
 import { montoExtraActivo } from "@/lib/admin/extras";
+import { HORAS_EPSILON_4, mismasHoras } from "@/lib/admin/horas";
+import {
+  TARIFA_EPSILON_2,
+  mismaTarifa,
+  segmentoTarifa,
+  tarifaConDecimalesFinos,
+  textoCuentaTarifa,
+  textoTarifaInput,
+} from "@/lib/admin/tarifa";
 import { cn } from "@/lib/utils";
-import type { QuoteBreakdown } from "@/types/quote";
+import type { QuoteBreakdown, TipoTarifa } from "@/types/quote";
 import type { CotizacionInterna } from "@/types/quotes-interno";
+import { CampoHorasPactadas } from "./campo-horas-pactadas";
 import {
   CampoFecha,
+  CampoHoja,
   CampoNumero,
   CampoSelect,
   CampoTextoLargo,
+  PlegableHoja,
+  SegmentoHoja,
+  SwitchHoja,
   UI,
   type CampoSelectOption,
 } from "./quote-sheet-fields";
 import { DIALECTO_INTERNA, QuoteSheetDesglose } from "./quote-sheet-desglose";
 import { QuoteSheetInternaTramos } from "./quote-sheet-interna-tramos";
 import { QuoteSheetInternaCobros } from "./quote-sheet-interna-cobros";
+import { comoOnCambioHoja } from "./quote-sheet-types";
 import type {
   AeronaveHoja,
   AeropuertoHoja,
   ClienteHoja,
   DocumentoHoja,
   OnAbrirInterno,
-  OnCambioHoja,
-  QuoteSheetValores,
+  OnCambioHojaInterna,
+  QuoteSheetValoresInterna,
   RutaHoja,
   TramoPdfAccesores,
 } from "./quote-sheet-types";
@@ -79,12 +96,23 @@ import type {
  * Con un API previo, `interno` llega null y esos bloques se pintan vacíos o
  * con «—»: jamás un número inventado.
  *
- * QUÉ SE EDITA EN 2.2: exactamente lo que ya editaba la hoja del cliente —
- * cliente, avión cotizado, pasajeros, fecha del vuelo, itinerario (con las
- * MILLAS por fin en la tabla), extras, descuento, IVA %, T.C. y las notas al
- * cliente. Tarifa, horas, comisión del vendedor, método de cobro, toggles del
- * PDF y operador externo siguen capturándose en el panel «Interno · no se
- * imprime» hasta la Fase 2.3; desde aquí solo se SEÑALAN (`onAbrirInterno`).
+ * QUÉ SE EDITA: lo que ya editaba la hoja del cliente —cliente, avión
+ * cotizado, pasajeros, fecha del vuelo, itinerario (con las MILLAS por fin en
+ * la tabla), extras, descuento, IVA %, T.C. y las notas al cliente— y, desde
+ * la Fase 2.3 (BLOQUE A), lo que bajó del panel lateral a su renglón: el
+ * MÉTODO de cobro previsto con su comisión de terminal (cabecera de COBROS),
+ * el REDONDEO (su renglón del desglose), el switch de TUAS (margen del bloque
+ * TUAS), las marcas «Cotización abierta» y «Pase de abordar» (fila «Marcas» de
+ * la ficha), las NOTAS INTERNAS y, en la línea del cliente, la croma de
+ * captura (clientes frecuentes, «+ nuevo cliente», «Poner todo en $0»).
+ *
+ * BLOQUE B (22-sep-2026): también la TARIFA (segmento Pública/Broker/
+ * Personalizada + $/hr, fila «Tarifa» de la ficha), las HORAS (sobrevuelo y
+ * cobrable pactado, bloque «Horas cotizadas») y la COMISIÓN DEL VENDEDOR
+ * (plegable bajo «Vendedor»). Todos son CROMA en la línea: el número que se
+ * IMPRIME lo sigue resolviendo el motor —«Tarifa broker · $1,550.00/hr»,
+ * «1.75 h»— y el control solo captura lo que se pacta. Solo queda en el panel
+ * el operador externo y la ruta operativa (bloque C).
  *
  * POR QUÉ LA BANDA ROJA Y LA MARCA DE AGUA (riesgo 8 del diseño): esta
  * pantalla enseña comisiones, costo del operador externo, neto VuelaTour y
@@ -93,8 +121,8 @@ import type {
  * la misma del papel.
  */
 export interface QuoteSheetInternaProps {
-  valores: QuoteSheetValores;
-  onCambio: OnCambioHoja;
+  valores: QuoteSheetValoresInterna;
+  onCambio: OnCambioHojaInterna;
   breakdown: QuoteBreakdown | null;
   /** El motor está calculando: importes atenuados (nunca vacíos). */
   calculando?: boolean;
@@ -113,7 +141,26 @@ export interface QuoteSheetInternaProps {
   totalRespaldo?: { total_usd: number | null; total_mxn: number | null };
   grupo?: { id: string; folio: number | string | null } | null;
   clienteExtra?: ReactNode;
-  onAbrirInterno?: OnAbrirInterno;
+  /**
+   * CROMA justo ENCIMA de la tabla de tramos (Fase 2.3 · BLOQUE C): hoy, la
+   * banda azul de la RUTA OPERATIVA del vuelo. Va dentro del papel porque es
+   * un aviso de DIVERGENCIA —la ruta que vuela el piloto no es la que se
+   * cotiza— y solo se entiende junto a la tabla que lo dice. Quien la pasa la
+   * marca `data-cot-ui`: el documento de pyservices no la imprime.
+   */
+  bandaTramos?: ReactNode;
+  /**
+   * ECO en la tarjeta «Avión cotizado» (Fase 2.3 · BLOQUE C): hoy, quién
+   * cubre el vuelo cuando es EXTERNO, con el atajo al `<details>` donde se
+   * captura. Croma: no se imprime.
+   */
+  avionExtra?: ReactNode;
+  /**
+   * ALTA: las notas internas se capturan en el papel. En REVISIÓN no se
+   * editan desde aquí (el `revise` del API no las lleva: se cambian en el
+   * detalle del vuelo, «Editar datos»), así que se pintan como texto.
+   */
+  notasInternasEditables?: boolean;
   /** Payload de `GET /v1/quotes/:id/interno`; null en el alta o con API previo. */
   interno?: CotizacionInterna | null;
   escala?: number;
@@ -139,7 +186,9 @@ export function QuoteSheetInterna({
   totalRespaldo,
   grupo,
   clienteExtra,
-  onAbrirInterno,
+  bandaTramos,
+  avionExtra,
+  notasInternasEditables = false,
   interno = null,
   escala,
   papel = true,
@@ -190,6 +239,33 @@ export function QuoteSheetInterna({
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
     el?.focus();
   };
+
+  /**
+   * Atajos «· ajustar» / «pactar horas» (los que pintan el desglose y el
+   * detalle «⋯» de un tramo): desde el BLOQUE B esos campos viven EN ESTE
+   * PAPEL, así que el atajo solo hace scroll + foco a su renglón — no abre
+   * nada. Desde el BLOQUE C (22-sep-2026) tampoco hay a dónde caer: el panel
+   * lateral se retiró y estos tres campos SIEMPRE están montados en el papel
+   * (el sobrevuelo, aunque su renglón sea fantasma). Sin ancla no se hace
+   * nada, que es mejor que mover el foco a un sitio equivocado.
+   */
+  const enfocarEnHoja: OnAbrirInterno = (destino) => {
+    const anclas: Record<typeof destino, string[]> = {
+      tarifa: ["tarifa-override-field", "tarifa-tipo-field"],
+      cobrable: ["cobrable-field"],
+      sobrevuelo: ["sobrevuelo-field"],
+    };
+    const el = anclas[destino].map((id) => document.getElementById(id)).find((x) => !!x) ?? null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const ctl = el.matches("input, button")
+      ? el
+      : (el.querySelector<HTMLElement>("input:not([disabled])") ??
+        el.querySelector<HTMLElement>('button[aria-pressed="true"]:not([disabled])') ??
+        el.querySelector<HTMLElement>("button:not([disabled])"));
+    ctl?.focus({ preventScroll: true });
+  };
+  const atajoEnHoja = lectura ? undefined : enfocarEnHoja;
 
   // ----- Escala al ancho del contenedor -----
   const escenarioRef = useRef<HTMLDivElement>(null);
@@ -250,8 +326,36 @@ export function QuoteSheetInterna({
     preferencial: b?.tarifa.preferencial_cliente === true || interno?.tarifa_preferencial === true,
     override: b?.tarifa.proviene_de_override === true || interno?.tarifa_override === true,
   });
+  // SEGMENTO de tarifa (BLOQUE B): la MISMA regla del cotizador
+  // (`segmentoTarifa`, fuente única) — con dos copias, el papel podría decir
+  // «Pública» mientras se cobra la manual.
+  const segmento = segmentoTarifa(valores);
+  // CUENTA VIVA «2.4 hr × $989.583333 = $2,375.00» (#105): el importe es el
+  // del MOTOR; mientras va un debounce atrás se dice «calculando…».
+  const cuentaTarifaVigente =
+    !!b &&
+    b.tarifa.proviene_de_override === true &&
+    mismaTarifa(b.tarifa.usd_por_hora, valores.tarifa_hora_override_usd, TARIFA_EPSILON_2);
+  const cuentaTarifa = textoCuentaTarifa({
+    horas: b?.tiempos.cobrable_hr,
+    tarifa: valores.tarifa_hora_override_usd,
+    importeUsd: cuentaTarifaVigente ? b?.totales.subtotal_vuelo_usd : null,
+  });
+  // COMISIÓN DEL VENDEDOR: el resumen del plegable (no multiplica nada; el
+  // importe efectivo lo publica el motor en su renglón del desglose).
+  const comisionModo = valores.comision_vendedor_modo === "POR_HORA" ? "POR_HORA" : "FIJA";
+  const comisionResumen = resumenComisionVendedor({
+    modo: comisionModo,
+    montoUsd: valores.comision_vendedor_usd,
+    tarifaHr: valores.comision_vendedor_tarifa_hr,
+    nombre: valores.comision_vendedor_nombre,
+  });
+  const hayComisionCapturada = comisionResumen !== "sin comisión";
+  // MARCAS de la ficha: las que IMPRIME el papel (`_ficha_html`). «Cotización
+  // abierta» sale del formulario —su switch está en esta misma fila y el tag
+  // se enciende al prenderlo—; las demás son historia del API.
   const marcas: string[] = [];
-  if (interno?.cotizacion_abierta) marcas.push("Cotización abierta");
+  if (valores.cotizacion_abierta ?? interno?.cotizacion_abierta) marcas.push("Cotización abierta");
   if (interno?.itinerario_operativo) marcas.push("Itinerario operativo");
   if (interno?.grupo_folio) {
     marcas.push(
@@ -263,6 +367,11 @@ export function QuoteSheetInterna({
     marcas.push(`Grupo ${grupo.folio ?? ""}`.trim());
   }
   if (interno?.combinado_con_folio) marcas.push(`Combinado con #${interno.combinado_con_folio}`);
+  // «Pase de abordar» BLOQUEADA: el papel no lo imprime y su switch no se
+  // monta en lectura, así que sin este tag de croma el dato desaparecería de
+  // la pantalla al retirar el panel (BLOQUE C). Exenta TUAS: hay que poder
+  // leer por qué el desglose no las cobra.
+  const paseAbordarLectura = lectura && valores.pase_abordar === true;
 
   // ----- Desglose: renglones que SOLO existen en el documento interno -----
   const comisionUsd = comisionVendedorCanonicaUsd(b);
@@ -308,6 +417,38 @@ export function QuoteSheetInterna({
   ]
     .filter(Boolean)
     .join(" · ");
+  // Línea TENUE bajo el desglose (BLOQUE B): «Neto VuelaTour $X · Pago al
+  // vendedor $Y». Los dos números llegan del motor y de `/interno`: aquí no
+  // se resta nada. Es CROMA —el papel no la imprime— y va DENTRO de la tabla
+  // (es el único sitio que el desglose expone al final: `dialecto.pie`).
+  const netoTxt = lineaNetoVuelatour({
+    netoUsd: b?.meta.neto_vuelatour_usd ?? null,
+    pagoVendedorUsd: interno?.pago_vendedor_usd ?? null,
+    conIva: !!interno?.iva_comision_vendedor_usd,
+  });
+  const pieDesglose =
+    netoTxt || motorTxt ? (
+      <>
+        {netoTxt && (
+          <tr key="neto" className="cot-fila" {...UI}>
+            <td colSpan={2} className="muted">
+              {netoTxt}
+            </td>
+          </tr>
+        )}
+        {motorTxt && (
+          <tr key="motor" className="cot-fila">
+            <td colSpan={2} className="muted">
+              {motorTxt}
+            </td>
+          </tr>
+        )}
+      </>
+    ) : undefined;
+
+  // Notas internas: las del API (versión guardada) o, sin `interno` (alta o
+  // API previo), las del formulario — nunca se pierden por un 404.
+  const notasInternasTxt = (interno?.notas_internas ?? "") || valores.notas_internas || "";
 
   const pieInterno = [
     interno?.generado_cancun
@@ -452,6 +593,14 @@ export function QuoteSheetInterna({
                       {difiereAvion && <span className="tag ambar">Distinto al cotizado</span>}
                     </div>
                   )}
+                  {/* ECO del operador externo (BLOQUE C): se LEE aquí, se
+                      CAPTURA en el `<details>` de abajo. CROMA — el papel de
+                      pyservices lo imprime de otra forma (`_avion_html`). */}
+                  {avionExtra && (
+                    <div className="sub" {...UI}>
+                      {avionExtra}
+                    </div>
+                  )}
                 </td>
                 <td>
                   <div className="lbl">Ruta cotizada</div>
@@ -534,24 +683,85 @@ export function QuoteSheetInterna({
                           )}
                         </td>
                       </tr>
+                      {/* TARIFA (BLOQUE B): el papel IMPRIME lo que resolvió
+                          el motor —«Tarifa broker · $1,550.00/hr» + las
+                          marcas— y al lado, en croma, se DECIDE: el segmento
+                          Pública/Broker/Personalizada y, con la manual, el
+                          $/hr de SOLO esta cotización con su cuenta viva.
+                          El número impreso no se sustituye por el input a
+                          propósito: con «Personalizada» recién encendida y el
+                          campo vacío, el papel se quedaría sin tarifa. */}
                       <tr>
                         <td className="k">Tarifa</td>
                         <td className="v">
                           {tarifa.texto}
                           {tarifa.marcas && <span className="op">{` ${tarifa.marcas}`}</span>}
-                          {!lectura && onAbrirInterno && (
+                          {!lectura && (
                             <span className="cot-acciones" {...UI}>
                               {" "}
                               <span className="cot-sep">·</span>
-                              <button
-                                type="button"
-                                className="cot-liga"
-                                data-guard-exempt
-                                onClick={() => onAbrirInterno("tarifa")}
-                                title="La tarifa por hora se ajusta en Interno › Tarifa y horas"
-                              >
-                                ajustar
-                              </button>
+                              <SegmentoHoja
+                                id="tarifa-tipo-field"
+                                value={segmento}
+                                ariaLabel="Tipo de tarifa"
+                                onChange={(v) => {
+                                  if (v === "CUSTOM") {
+                                    onCambio("tarifa_personalizada", true);
+                                    return;
+                                  }
+                                  // Volver a la estándar LIMPIA la manual: si
+                                  // no, seguiría mandando en silencio.
+                                  onCambio("tarifa_personalizada", false);
+                                  onCambio("tarifa_hora_override_usd", null);
+                                  onCambio("tipo_tarifa", v as TipoTarifa);
+                                }}
+                                options={[
+                                  { value: "PUBLICO", label: "Pública", title: "Tarifa pública del avión" },
+                                  { value: "BROKER", label: "Broker", title: "Tarifa broker del avión" },
+                                  {
+                                    value: "CUSTOM",
+                                    label: "Personalizada",
+                                    title: "Tarifa SOLO para esta cotización (no cambia la del cliente)",
+                                  },
+                                ]}
+                              />
+                              {segmento === "CUSTOM" && (
+                                <>
+                                  {" $"}
+                                  <CampoNumero
+                                    id="tarifa-override-field"
+                                    value={
+                                      `${valores.tarifa_hora_override_usd ?? ""}`.trim() === ""
+                                        ? null
+                                        : Number(valores.tarifa_hora_override_usd)
+                                    }
+                                    onChange={(n) => onCambio("tarifa_hora_override_usd", n)}
+                                    // En reposo se lee como el papel
+                                    // («1,550.00») salvo que la tarifa traiga
+                                    // los decimales finos que hacen cuadrar el
+                                    // total (#105): ahí se enseñan TODOS
+                                    // («989.583333»), que es lo que se
+                                    // multiplica. Al enfocar siempre sale el
+                                    // número crudo.
+                                    formato={(n) =>
+                                      tarifaConDecimalesFinos(n) ? textoTarifaInput(n) : numero2(n)
+                                    }
+                                    placeholder="0.00"
+                                    ariaLabel="Tarifa por hora — SOLO esta cotización (USD)"
+                                    title="Vacío = la pactada del cliente o la del avión. Admite 6 decimales (989.583333)."
+                                    min={0}
+                                    minCh={6}
+                                  />
+                                  {"/hr"}
+                                </>
+                              )}
+                              {cuentaTarifa && (
+                                <span className="cot-tenue">
+                                  {" "}
+                                  {cuentaTarifa}
+                                  {!cuentaTarifaVigente && " · calculando…"}
+                                </span>
+                              )}
                             </span>
                           )}
                         </td>
@@ -571,6 +781,97 @@ export function QuoteSheetInterna({
                           )}
                         </td>
                       </tr>
+                      {/* COMISIÓN DEL VENDEDOR (BLOQUE B): se captura bajo
+                          «Vendedor», en un plegable EN LÍNEA que NUNCA
+                          desmonta su contenido (`<details>`). La fila entera
+                          es CROMA: el papel no imprime esta captura — lo que
+                          imprime es el RENGLÓN del desglose, con el concepto
+                          canónico del motor («Comisión del vendedor (Saab) ·
+                          $50.00/hr × 2 hr») y su importe. Aquí no se
+                          multiplica nada. */}
+                      {!lectura && (
+                        <tr {...UI}>
+                          <td className="k">Comisión</td>
+                          <td className="v">
+                            <PlegableHoja
+                              resumen={comisionResumen}
+                              abiertoPorDefecto={hayComisionCapturada}
+                            >
+                              <SegmentoHoja
+                                value={comisionModo}
+                                ariaLabel="Modalidad de la comisión del vendedor"
+                                onChange={(v) =>
+                                  onCambio(
+                                    "comision_vendedor_modo",
+                                    v === "POR_HORA" ? "POR_HORA" : "FIJA",
+                                  )
+                                }
+                                options={[
+                                  { value: "FIJA", label: "Fija", title: "Monto fijo en USD" },
+                                  {
+                                    value: "POR_HORA",
+                                    label: "Por hora",
+                                    title: "$/hr × horas cobradas (lo resuelve el motor)",
+                                  },
+                                ]}
+                              />
+                              {" $"}
+                              {comisionModo === "POR_HORA" ? (
+                                <>
+                                  <CampoNumero
+                                    value={
+                                      Number(valores.comision_vendedor_tarifa_hr) > 0
+                                        ? Number(valores.comision_vendedor_tarifa_hr)
+                                        : null
+                                    }
+                                    onChange={(n) =>
+                                      onCambio(
+                                        "comision_vendedor_tarifa_hr",
+                                        n != null && n > 0 ? n : null,
+                                      )
+                                    }
+                                    formato={numero2}
+                                    placeholder="0.00"
+                                    ariaLabel="Comisión del vendedor por hora (USD)"
+                                    title="El motor la multiplica por las horas cobradas."
+                                    min={0}
+                                    minCh={5}
+                                  />
+                                  {"/hr"}
+                                </>
+                              ) : (
+                                <CampoNumero
+                                  value={
+                                    Number(valores.comision_vendedor_usd) > 0
+                                      ? Number(valores.comision_vendedor_usd)
+                                      : null
+                                  }
+                                  onChange={(n) =>
+                                    onCambio("comision_vendedor_usd", n != null && n > 0 ? n : null)
+                                  }
+                                  formato={numero2}
+                                  placeholder="0.00"
+                                  ariaLabel="Comisión del vendedor (USD)"
+                                  title="Monto fijo; se SUMA al precio del cliente."
+                                  min={0}
+                                  minCh={5}
+                                />
+                              )}
+                              {" · "}
+                              <CampoHoja
+                                value={valores.comision_vendedor_nombre}
+                                onChange={(v) => onCambio("comision_vendedor_nombre", v)}
+                                placeholder="quién vendió"
+                                ariaLabel="Quién vendió (comisión del vendedor)"
+                                minCh={10}
+                              />
+                              <span className="cot-tenue">
+                                {" · se SUMA al precio del cliente"}
+                              </span>
+                            </PlegableHoja>
+                          </td>
+                        </tr>
+                      )}
                       {(interno?.piloto || interno?.copiloto) && (
                         <tr>
                           <td className="k">Piloto</td>
@@ -580,8 +881,22 @@ export function QuoteSheetInterna({
                           </td>
                         </tr>
                       )}
-                      {marcas.length > 0 && (
-                        <tr>
+                      {/* MARCAS. Los dos switches que decidían en el panel
+                          («Cotización abierta», «Pase de abordar») viven aquí
+                          (Fase 2.3). El papel solo imprime el TAG de
+                          «Cotización abierta» —`_ficha_html` no conoce el pase
+                          de abordar—, así que sin ninguna marca encendida la
+                          fila entera es croma: existe para alojar los
+                          controles y no se imprime.
+
+                          En LECTURA el pase de abordar se pinta como TAG DE
+                          CROMA (BLOQUE C): hasta hoy solo se leía en el bloque
+                          «Cobro» del panel lateral, que ya no existe, y una
+                          cotización bloqueada que exenta TUAS tiene que poder
+                          decir POR QUÉ. Imprimirlo de verdad es un cambio en
+                          `_ficha_html` de pyservices. */}
+                      {(marcas.length > 0 || !lectura || paseAbordarLectura) && (
+                        <tr {...(marcas.length === 0 ? UI : {})}>
                           <td className="k">Marcas</td>
                           <td className="v">
                             {marcas.map((m) => (
@@ -589,6 +904,28 @@ export function QuoteSheetInterna({
                                 {m}
                               </span>
                             ))}
+                            {paseAbordarLectura && (
+                              <span className="tag" {...UI}>
+                                Pase de abordar
+                              </span>
+                            )}
+                            {!lectura && (
+                              <span className="cot-acciones" {...UI}>
+                                {" "}
+                                <SwitchHoja
+                                  checked={valores.cotizacion_abierta}
+                                  onChange={(v) => onCambio("cotizacion_abierta", v)}
+                                  label="Cotización abierta"
+                                  title="El itinerario/precio se cierra al final: permite re-cotizar con los tramos reales hasta antes de cobrar o facturar."
+                                />{" "}
+                                <SwitchHoja
+                                  checked={valores.pase_abordar}
+                                  onChange={(v) => onCambio("pase_abordar", v)}
+                                  label="Pase de abordar"
+                                  title="Exenta TUAS (excepto CZM). No se imprime: su efecto se ve en el desglose."
+                                />
+                              </span>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -607,6 +944,10 @@ export function QuoteSheetInterna({
             </tbody>
           </table>
 
+          {/* Aviso de DIVERGENCIA con la operación, pegado a la tabla que lo
+              explica (BLOQUE C). Croma: no se imprime. */}
+          {bandaTramos}
+
           {/* 4 · Tramos cotizados (la tabla del Excel) */}
           <QuoteSheetInternaTramos
             legs={valores.escalas}
@@ -617,7 +958,7 @@ export function QuoteSheetInterna({
             pdf={pdf}
             breakdown={b}
             interno={interno}
-            onAbrirInterno={lectura ? undefined : onAbrirInterno}
+            onAbrirInterno={atajoEnHoja}
           />
 
           {/* 5 · Desglose (58 %) + Horas cotizadas (42 %) */}
@@ -628,24 +969,24 @@ export function QuoteSheetInterna({
                   <QuoteSheetDesglose
                     breakdown={b}
                     valores={valores}
-                    onCambio={onCambio}
+                    onCambio={comoOnCambioHoja(onCambio)}
                     lectura={lectura}
                     totalRespaldo={totalRespaldo}
                     grupo={grupo}
                     idTc={idTc}
-                    onAbrirInterno={lectura ? undefined : onAbrirInterno}
-                    dialecto={{
-                      ...DIALECTO_INTERNA,
-                      pie: motorTxt ? (
-                        <tr key="motor" className="cot-fila">
-                          <td colSpan={2} className="muted">
-                            {motorTxt}
-                          </td>
-                        </tr>
-                      ) : undefined,
-                    }}
+                    onAbrirInterno={atajoEnHoja}
+                    dialecto={{ ...DIALECTO_INTERNA, pie: pieDesglose }}
                     comisionVendedor={comisionVendedor}
                     ajustePositivo={ajustePositivo}
+                    // El REDONDEO se decide en el renglón donde se lee
+                    // (Fase 2.3): switch automático + monto manual
+                    // (`redondeo-field`) al margen de «Redondeo».
+                    redondeo={{
+                      auto: valores.redondeo_auto,
+                      manualUsd: valores.redondeo_usd,
+                      onAuto: (v) => onCambio("redondeo_auto", v),
+                      onManual: (v) => onCambio("redondeo_usd", v),
+                    }}
                   />
                 </td>
                 <td className="col">
@@ -653,26 +994,65 @@ export function QuoteSheetInterna({
                     breakdown={b}
                     interno={interno}
                     lectura={lectura}
-                    onAbrirInterno={onAbrirInterno}
+                    sobrevueloHr={valores.sobrevuelo_hr}
+                    cobrablePactadoHr={valores.tiempo_cobrable_override_hr}
+                    onSobrevuelo={(v) => onCambio("sobrevuelo_hr", v)}
+                    onCobrablePactado={(v) => onCambio("tiempo_cobrable_override_hr", v)}
                   />
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* 6 · Cobros */}
-          <QuoteSheetInternaCobros interno={interno} />
+          {/* 6 · Cobros. La cabecera lleva el método PREVISTO, que se edita
+              ahí mismo (`metodo-pago-field` + «¿cuál?» + el % de terminal). */}
+          <QuoteSheetInternaCobros
+            interno={interno}
+            lectura={lectura}
+            metodo={valores.metodo_pago}
+            metodoDetalle={valores.metodo_pago_detalle}
+            comisionPct={valores.comision_billpocket_pct}
+            onMetodo={(v) => onCambio("metodo_pago", v)}
+            onMetodoDetalle={(v) => onCambio("metodo_pago_detalle", v)}
+            onComisionPct={(v) => onCambio("comision_billpocket_pct", v)}
+          />
 
           {/* 7 · NOTAS. El documento interno solo imprime las INTERNAS (las
               del cliente son del otro documento), así que el papel lleva
               exactamente el bloque del PDF y las notas al cliente se capturan
               en un bloque de CROMA (`data-cot-ui`, solo en edición): se
               editan aquí porque aquí se edita todo, pero no se imprimen en
-              esta hoja. Las internas se editan en el panel hasta la Fase 2.3. */}
-          {interno?.notas_internas && (
+              esta hoja.
+
+              Las INTERNAS se capturan aquí en el ALTA (Fase 2.3). Al REVISAR
+              no: `POST /:id/revise` no las lleva —se cambian en el detalle
+              del vuelo, «Editar datos»— y un campo que se teclea y no se
+              guarda es peor que no tenerlo, así que ahí se pintan como texto
+              con la nota de dónde se editan. */}
+          {(notasInternasTxt || (!lectura && notasInternasEditables)) && (
             <div className="bloque">
               <h2>Notas internas</h2>
-              <div className="notas-txt">{interno.notas_internas}</div>
+              <div className="notas-txt">
+                {!lectura && notasInternasEditables ? (
+                  <CampoTextoLargo
+                    value={valores.notas_internas}
+                    onChange={(v) => onCambio("notas_internas", v)}
+                    placeholder="Solo para el equipo · nunca salen en el PDF del cliente"
+                    ariaLabel="Notas internas"
+                  />
+                ) : (
+                  notasInternasTxt
+                )}
+                {!lectura && !notasInternasEditables && (
+                  <span className="cot-acciones" {...UI}>
+                    {" "}
+                    <span className="cot-sep">·</span>
+                    <span className="cot-tenue">
+                      se editan en el detalle del vuelo («Editar datos»)
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
           )}
           {!lectura && (
@@ -711,20 +1091,35 @@ export function QuoteSheetInterna({
  * tramos» y el desglose en «Servicio aéreo» sin nada que los concilie
  * (riesgo 1 del diseño).
  *
- * Las horas NO se editan aquí en la Fase 2.2: el sobrevuelo y el cobrable
- * pactado siguen en «Interno › Tarifa y horas», y desde esta fila se llega
- * con un clic.
+ * BLOQUE B (22-sep-2026): las horas SE CAPTURAN aquí. El SOBREVUELO y el
+ * COBRABLE PACTADO bajaron del panel lateral a su renglón, como CROMA en la
+ * línea: el número que se IMPRIME es el que resolvió el motor («1.75 h») y el
+ * control de al lado es lo que se PACTA (vacío = la regla). Se separan a
+ * propósito — sustituir el impreso por el input dejaría la fila «Cobrables»
+ * vacía en las cotizaciones que no pactan horas, que son la mayoría.
+ *
+ * El renglón «Sobrevuelo» sin horas no existe en el papel: en edición se pinta
+ * FANTASMA (`data-cot-ui`, no se imprime) para que el campo tenga dónde vivir,
+ * igual que el renglón «Redondeo» del desglose.
  */
 function HorasCotizadas({
   breakdown: b,
   interno,
   lectura,
-  onAbrirInterno,
+  sobrevueloHr,
+  cobrablePactadoHr,
+  onSobrevuelo,
+  onCobrablePactado,
 }: {
   breakdown: QuoteBreakdown | null;
   interno: CotizacionInterna | null;
   lectura: boolean;
-  onAbrirInterno?: OnAbrirInterno;
+  /** Sobrevuelo CAPTURADO (el form); el impreso es el del motor. */
+  sobrevueloHr: number | null;
+  /** Cobrable PACTADO (el form); vacío = la regla del motor. */
+  cobrablePactadoHr: number | null;
+  onSobrevuelo: (v: number | null) => void;
+  onCobrablePactado: (v: number | null) => void;
 }) {
   const vuelo = b?.tiempos.vuelo_hr ?? interno?.vuelo_hr ?? null;
   const calzos = b?.tiempos.calzos_hr ?? interno?.calzos_hr ?? null;
@@ -747,67 +1142,121 @@ function HorasCotizadas({
       `${motivoAjuste(b?.tramos_ajuste_motivo)}: ${signo}${moneyInterno(Math.abs(ajuste as number))} sobre Σ tramos`,
     );
   }
+  // AVISOS de la captura (croma, ámbar): los mismos que daba el panel.
+  const avisosHoras: string[] = [];
+  if (
+    !lectura &&
+    b?.tiempos.cobrable_proviene_de_override &&
+    Number(b.tiempos.cobrable_hr) <
+      Number(b.tiempos.vuelo_hr) +
+        Number(b.tiempos.calzos_hr) +
+        Number(b.tiempos.sobrevuelo_hr ?? 0)
+  ) {
+    avisosHoras.push(
+      "Ojo: el cobrable pactado es MENOR al tiempo real (vuelo + calzos): se cobraría de menos.",
+    );
+  }
+  if (!lectura && b?.tiempos.minimo_hora_aplicado) {
+    avisosHoras.push(
+      "Vuelo corto: se cobra la hora completa (mínimo 1 hr). Escribe otro valor si quieres pactarlo distinto.",
+    );
+  }
 
   const filas: ReactNode[] = [];
-  const fila = (k: string, v: ReactNode, key: string) => (
-    <tr key={key}>
+  const fila = (k: string, v: ReactNode, key: string, fantasma = false) => (
+    <tr key={key} {...(fantasma ? UI : {})}>
       <td className="k">{k}</td>
       <td className="v">{v}</td>
     </tr>
   );
   if (vuelo) filas.push(fila("Vuelo", horasTxt(vuelo), "vuelo"));
   if (calzos) filas.push(fila("Calzos", horasTxt(calzos), "calzos"));
-  if (sobrevuelo) {
+  if (sobrevuelo || !lectura) {
     filas.push(
       fila(
         "Sobrevuelo",
         <>
-          {horasTxt(sobrevuelo)}
-          {!lectura && onAbrirInterno && (
+          {sobrevuelo ? horasTxt(sobrevuelo) : ""}
+          {!lectura && (
             <span className="cot-acciones" {...UI}>
-              {" "}
-              <span className="cot-sep">·</span>
-              <button
-                type="button"
-                className="cot-liga"
-                data-guard-exempt
-                onClick={() => onAbrirInterno("sobrevuelo")}
-                title="El sobrevuelo se captura en Interno › Tarifa y horas"
-              >
-                ajustar
-              </button>
+              {/* Ternario, NUNCA `{sobrevuelo && …}`: con 0 horas React
+                  imprimiría el propio «0» delante del campo. */}
+              {sobrevuelo ? (
+                <>
+                  {" "}
+                  <span className="cot-sep">·</span>
+                </>
+              ) : null}
+              <CampoNumero
+                id="sobrevuelo-field"
+                value={
+                  `${sobrevueloHr ?? ""}`.trim() === "" ? null : Number(sobrevueloHr)
+                }
+                onChange={(n) => onSobrevuelo(n != null && n > 0 ? n : null)}
+                formato={(n) => String(n)}
+                placeholder="0"
+                ariaLabel="Sobrevuelo (hr)"
+                title="Tiempo extra sobre la zona; se suma al cobrable."
+                min={0}
+                max={24}
+                minCh={3}
+              />
+              {" hr"}
             </span>
           )}
         </>,
         "sobrevuelo",
+        !sobrevuelo,
       ),
     );
   }
   if (cotizadas != null) filas.push(fila("Cotizadas", horasTxt(cotizadas), "cotizadas"));
-  if (cobrable != null) {
+  // En EDICIÓN el renglón existe aunque el motor todavía no haya contestado
+  // (alta recién abierta, o `/calculate` en error): se pinta FANTASMA
+  // —`data-cot-ui`, no se imprime— igual que «Sobrevuelo» y «Redondeo». Si
+  // no, el ancla `cobrable-field` desaparecería justo cuando más falta hace
+  // pactar horas, y «pactar horas» del detalle «⋯» no llevaría a ningún lado.
+  if (cobrable != null || !lectura) {
     filas.push(
       fila(
         "Cobrables",
         <>
-          <b>{horasTxt(cobrable)}</b>
+          {cobrable != null && <b>{horasTxt(cobrable)}</b>}
           {notas.length > 0 && <span className="op">{` ${notas.join(" · ")}`}</span>}
-          {!lectura && onAbrirInterno && (
+          {!lectura && (
             <span className="cot-acciones" {...UI}>
               {" "}
               <span className="cot-sep">·</span>
-              <button
-                type="button"
-                className="cot-liga"
-                data-guard-exempt
-                onClick={() => onAbrirInterno("cobrable")}
-                title="Las horas cobrables se pactan en Interno › Tarifa y horas"
-              >
-                pactar horas
-              </button>
+              {"pactar "}
+              <CampoHorasPactadas
+                variante="hoja"
+                id="cobrable-field"
+                valor={cobrablePactadoHr}
+                onChange={onCobrablePactado}
+                placeholder="2:20"
+                aria-label="Cobrable pactado (hr; acepta 2:20)"
+                title="Vacío = la regla del motor (vuelo + calzos + sobrevuelo, mínimo 1 hr). Acepta decimal o h:mm."
+                tarifaUsdHr={b?.tarifa.usd_por_hora ?? null}
+                importeUsd={b?.totales.subtotal_vuelo_usd ?? null}
+                // El breakdown va un debounce atrás: el importe solo se
+                // enseña cuando corresponde a las horas que se ven (4
+                // decimales, que es lo que devuelve un API sin desplegar).
+                importeVigente={
+                  !!b &&
+                  b.tiempos.cobrable_proviene_de_override === true &&
+                  mismasHoras(b.tiempos.cobrable_hr, cobrablePactadoHr, HORAS_EPSILON_4)
+                }
+              />
+              {avisosHoras.map((a) => (
+                <span key={a} className="cot-aviso">
+                  {a}
+                </span>
+              ))}
             </span>
           )}
         </>,
         "cobrables",
+        cobrable == null,
       ),
     );
   }

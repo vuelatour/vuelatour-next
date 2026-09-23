@@ -82,7 +82,7 @@ export interface QuoteSheetItinerarioProps {
    * se calculan aquí.
    */
   tramos?: TramoBreakdown[] | null;
-  /** «Pactar horas» del detalle ⋯ → Interno › Cobrable pactado (solo edición). */
+  /** «Pactar horas» del detalle ⋯ → el campo «Cobrable pactado» (solo edición). */
   onAbrirInterno?: OnAbrirInterno;
 }
 
@@ -643,21 +643,21 @@ export function DetalleTramo({
       </DetalleFila>
       {/* Horas del tramo: SOLO lectura (feedback 9-sep-2026). El motor no
           tiene override por tramo: salen de millas ÷ velocidad + calzos; el
-          total se pacta en Interno › Cobrable pactado. «vuelo + calzos» solo
+          total se pacta en «Cobrable pactado». «vuelo + calzos» solo
           si el breakdown trae `calzos_hr` por tramo (hoy no). */}
       <DetalleFila
         label="Tiempo estimado"
         hint={
           <>
-            Sale de las millas y la velocidad del avión. Para pactar las horas totales usa Interno ›
-            Cobrable pactado
+            Sale de las millas y la velocidad del avión. Para pactar las horas totales usa
+            «Cobrable pactado»
             {onAbrirInterno && (
               <>
                 {" · "}
                 <button
                   type="button"
                   className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400"
-                  aria-label="Pactar horas: abre Interno › Cobrable pactado"
+                  aria-label="Pactar horas: lleva al campo «Cobrable pactado»"
                   onClick={() => {
                     onCerrar();
                     onAbrirInterno("cobrable");

@@ -10,6 +10,15 @@ import type { ExtraConcepto } from "@/types/quote";
  * ni entra a un total.
  */
 
+/**
+ * Chips de «+ Agregar concepto» del desglose. Vivían en `extras-editor.tsx`,
+ * que se retiró con el panel lateral (Fase 2.3 · BLOQUE C): su editor ya no
+ * lo usaba nadie —el desglose de la hoja ES el editor de extras— y la
+ * constante es lo único que sobrevivía. La cotización de GRUPO tiene su
+ * propia lista a propósito (otros conceptos).
+ */
+export const EXTRAS_SUGERIDOS = ["Handler", "Comisariato", "Extensión de servicios"];
+
 /** Renglón materializado desde la cotización de GRUPO: se edita solo allá. */
 export function esExtraDeGrupo(e: Pick<ExtraConcepto, "origen">): boolean {
   return e.origen === "GRUPO";

@@ -13,6 +13,7 @@ import {
 import { moneyPdf } from "@/lib/admin/quote-sheet";
 import { moneyTarifa } from "@/lib/admin/tarifa";
 import { cn } from "@/lib/utils";
+import { UI } from "@/components/admin/quotes/quote-sheet-fields";
 
 /**
  * CAMPO DE HORAS PACTADAS (22-sep-2026) — «Cobrable pactado», grupo.
@@ -57,6 +58,17 @@ export interface CampoHorasPactadasProps {
    * línea viva dice «calculando…» en vez de enseñar un importe viejo.
    */
   importeVigente?: boolean;
+  /**
+   * Dónde se está pintando (Fase 2.3 · BLOQUE B). `"form"` es el campo de
+   * siempre (panel, wizard del grupo): `Input` con su caja. `"hoja"` es el
+   * MISMO campo dentro del papel —fila «Cobrables» de «Horas cotizadas»—:
+   * input invisible (`cot-in`) en un envoltorio de CROMA, porque ahí el
+   * número IMPRESO es el cobrable que resolvió el motor y este control solo
+   * PACTA. La lógica de captura (decimal / «2:20», el texto canónico al
+   * salir, el error en es-MX) es LA MISMA: dos copias de este parser es donde
+   * se cuela el «2:5» que vale 2.5.
+   */
+  variante?: "form" | "hoja";
 }
 
 export function CampoHorasPactadas({
@@ -72,6 +84,7 @@ export function CampoHorasPactadas({
   tarifaUsdHr,
   importeUsd,
   importeVigente = true,
+  variante = "form",
 }: CampoHorasPactadasProps) {
   const [texto, setTexto] = useState(() => horasATexto(valor));
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +129,71 @@ export function CampoHorasPactadas({
   const reloj = fmtHorasMinutos(valor);
   const conTarifa = Number(tarifaUsdHr) > 0;
 
+  // Línea viva (la MISMA en las dos variantes): «= 2 h 20 min · 2.3333 hr ×
+  // $600.00 = $1,400.00». El importe es el del MOTOR, jamás una
+  // multiplicación local.
+  const lineaViva =
+    valor === null ? null : (
+      <>
+        = {reloj} · {decimal} hr
+        {conTarifa && (
+          <>
+            {" × "}
+            {/* La tarifa va con TODOS sus decimales (22-sep-2026, #105):
+                con «$989.58» esta línea enseñaba una cuenta que no
+                cuadraba por un centavo. Con tarifas de 2 decimales el
+                texto es idéntico al de siempre. */}
+            {moneyTarifa(tarifaUsdHr)}
+            {importeVigente && importeUsd != null ? (
+              <> = {moneyPdf(importeUsd)}</>
+            ) : (
+              <span className="font-sans"> · calculando…</span>
+            )}
+          </>
+        )}
+      </>
+    );
+
+  // ----- Variante HOJA: el campo vive DENTRO del papel -----
+  if (variante === "hoja") {
+    const espejo = texto !== "" ? texto : (placeholder ?? " ");
+    return (
+      <>
+        <span className="cot-auto" {...UI}>
+          <span className="cot-auto__espejo" aria-hidden="true" style={{ minWidth: "4ch" }}>
+            {espejo}
+          </span>
+          <input
+            id={id}
+            type="text"
+            autoComplete="off"
+            className={cn("cot-in cot-in--num", className)}
+            placeholder={placeholder}
+            disabled={disabled}
+            aria-label={ariaLabel}
+            aria-invalid={error ? true : undefined}
+            title={title}
+            value={texto}
+            onChange={(e) => escribir(e.target.value)}
+            onBlur={salir}
+          />
+        </span>
+        {error ? (
+          <span role="alert" className="cot-aviso" {...UI}>
+            {error}
+          </span>
+        ) : (
+          lineaViva && (
+            <span className="cot-tenue" {...UI}>
+              {" "}
+              {lineaViva}
+            </span>
+          )
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="space-y-1">
       <Input
@@ -140,26 +218,7 @@ export function CampoHorasPactadas({
           {error}
         </p>
       ) : (
-        valor !== null && (
-          <p className="text-xs text-muted-foreground font-mono">
-            = {reloj} · {decimal} hr
-            {conTarifa && (
-              <>
-                {" × "}
-                {/* La tarifa va con TODOS sus decimales (22-sep-2026, #105):
-                    con «$989.58» esta línea enseñaba una cuenta que no
-                    cuadraba por un centavo. Con tarifas de 2 decimales el
-                    texto es idéntico al de siempre. */}
-                {moneyTarifa(tarifaUsdHr)}
-                {importeVigente && importeUsd != null ? (
-                  <> = {moneyPdf(importeUsd)}</>
-                ) : (
-                  <span className="font-sans"> · calculando…</span>
-                )}
-              </>
-            )}
-          </p>
-        )
+        lineaViva && <p className="text-xs text-muted-foreground font-mono">{lineaViva}</p>
       )}
     </div>
   );

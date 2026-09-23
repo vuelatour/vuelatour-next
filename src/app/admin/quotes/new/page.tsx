@@ -56,9 +56,10 @@ export default async function NewQuotePage() {
           Nueva cotización
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Captura el documento en su lugar y guarda como v1. Lo que todavía no
-          se edita en la hoja (tarifa, cobro, externo) va en el panel «Interno ·
-          no se imprime».
+          Captura el documento en su lugar y guarda como v1. La cotización
+          entera se edita en la hoja; lo que no cabe en el papel (plantilla de
+          ruta, operador externo, ruta operativa, detalle del cálculo) está en
+          los bloques plegables de abajo.
         </p>
       </div>
       <AvisoDegradado faltantes={degradado.faltantes} />

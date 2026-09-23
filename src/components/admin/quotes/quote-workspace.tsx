@@ -9,7 +9,6 @@ import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -27,6 +26,7 @@ import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
 import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-fecha";
 import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
+import { QuotePlegable } from "@/components/admin/quotes/quote-plegable";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -58,13 +58,16 @@ import type {
  * nueva cotización».
  *
  * Lo demás sigue aquí: barra de acciones (PDF, confirmar, cancelar, ver
- * vuelo), presencia, badges de grupo/combinado y, DEBAJO de la hoja,
- * cobros, historial y operación. Los toggles de PDF por tramo van al margen
- * de la fila del itinerario de la hoja (`tramoExtra`, también en edición).
- * Ensamble form-as-document (8-sep-2026): la hoja 1 editable ES la vista
- * previa; el panel «Interno · no se imprime» colapsable va a su derecha. La card «Ajuste rápido» se retiró (F3,
- * D2): pasajeros y extras se editan en el documento; el botón de la barra
- * solo lleva al campo de pasajeros.
+ * vuelo), presencia, badges de grupo/combinado y, DEBAJO de la hoja y de sus
+ * `<details>`, cobros y operación. El HISTORIAL de versiones baja a la pila
+ * de plegables del cotizador (`plegablesExtra`, Fase 2.3 · BLOQUE C): es lo
+ * único de esta página que el cotizador no conoce. Los toggles de PDF por
+ * tramo van al margen de la fila del itinerario de la hoja (`tramoExtra`,
+ * también en edición). Ensamble form-as-document (8-sep-2026): la hoja
+ * editable ES la vista previa; el panel «Interno · no se imprime» se retiró
+ * el 22-sep-2026. La card «Ajuste rápido» se retiró (F3, D2): pasajeros y
+ * extras se editan en el documento; el botón de la barra solo lleva al campo
+ * de pasajeros.
  *
  * `?revisar=1` (links viejos a /revise) ya no activa nada: se limpia de la
  * URL. El documento se abre editable si el candado lo permite, y si no, la
@@ -492,6 +495,21 @@ export function QuoteWorkspace({
           onRegistrar: abrirCobro,
           registrarTitle,
         }}
+        // HISTORIAL DE VERSIONES (Fase 2.3 · BLOQUE C): baja a la MISMA pila
+        // de `<details>` que el resto de lo que no cabe en el documento. Era
+        // una card suelta del grid de abajo, donde competía con los cobros.
+        plegablesExtra={
+          <QuotePlegable
+            id="historial"
+            titulo="Historial de versiones"
+            resumen={`${versions.length} ${versions.length === 1 ? "versión" : "versiones"} · cada guardado con cambios de precio deja un registro inmutable`}
+          >
+            <QuoteVersionsTimeline
+              versions={versions}
+              currentVersion={quote.cotizacion_version}
+            />
+          </QuotePlegable>
+        }
       />
 
       {/* El MISMO formulario de cobro del detalle del vuelo (cotización =
@@ -517,8 +535,9 @@ export function QuoteWorkspace({
         paywiseComisionPct={paywiseComisionPct}
       />
 
-      {/* Debajo de la hoja: cobros (SIEMPRE, también con 0), historial y
-          operación. Nada de cobros dentro del papel. */}
+      {/* Debajo de la hoja y de sus plegables: cobros (SIEMPRE, también con
+          0) y operación. El HISTORIAL bajó a la pila de `<details>` del
+          cotizador (Fase 2.3 · BLOQUE C). Nada de cobros dentro del papel. */}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         <div className="min-w-0 md:col-span-2 xl:col-span-1">
           <QuoteCobrosCard
@@ -533,22 +552,6 @@ export function QuoteWorkspace({
             registrarTitle={registrarTitle}
           />
         </div>
-
-        <Card className="min-w-0">
-          <CardHeader>
-            <CardTitle className="text-sm">Historial</CardTitle>
-            <CardDescription className="text-xs">
-              {versions.length} {versions.length === 1 ? "versión" : "versiones"}. Cada
-              guardado con cambios de precio genera un registro inmutable.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <QuoteVersionsTimeline
-              versions={versions}
-              currentVersion={quote.cotizacion_version}
-            />
-          </CardContent>
-        </Card>
 
         {/* Operación: lo que no vive en la hoja ni en el panel interno. */}
         <Card className="min-w-0">

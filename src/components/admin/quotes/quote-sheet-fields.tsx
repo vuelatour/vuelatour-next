@@ -464,6 +464,146 @@ export function CampoSelect({
   );
 }
 
+// ===== Switch de la hoja (croma: decide, pero no se imprime) =====
+
+/**
+ * SWITCH en el margen o en la línea del papel (Fase 2.3, 22-sep-2026): «Se
+ * cobran TUAS», «Redondeo automático», «Cotización abierta», «Pase de
+ * abordar». Son decisiones que MUEVEN el dinero o el documento pero que el
+ * papel no imprime como tales (el efecto sí: la TUA desaparece del desglose,
+ * el renglón «Redondeo» aparece, el tag «Cotización abierta» se enciende), así
+ * que el control es CROMA y su etiqueta vive dentro del `<button>` — que el
+ * comparador con el PDF descarta como cualquier otro control.
+ *
+ * NO lleva `data-guard-exempt`: cambiar un switch ES editar, así que en una
+ * cotización CONFIRMADA/RESERVA con tripulación tiene que disparar la
+ * confirmación única (misma regla que la marca «1.20 h» del itinerario).
+ */
+export function SwitchHoja({
+  checked,
+  onChange,
+  label,
+  ariaLabel,
+  title,
+  id,
+  disabled = false,
+  className,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  /** Texto junto al switch (no se imprime: va dentro del botón). */
+  label: string;
+  /** Nombre accesible cuando el texto visible es una abreviatura («auto»). */
+  ariaLabel?: string;
+  title?: string;
+  id?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      id={id}
+      aria-checked={checked}
+      aria-label={ariaLabel ?? label}
+      title={title}
+      disabled={disabled}
+      className={cn("cot-switch", checked && "cot-switch--on", className)}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="cot-switch__pista" aria-hidden="true">
+        <span className="cot-switch__bolita" />
+      </span>
+      <span className="cot-switch__txt">{label}</span>
+    </button>
+  );
+}
+
+// ===== Segmento de 2-3 opciones en la línea del papel (croma) =====
+
+/**
+ * SEGMENTO en la LÍNEA del papel (Fase 2.3 · BLOQUE B): «Pública | Broker |
+ * Personalizada» de la fila «Tarifa» y «Fija | Por hora» de la comisión del
+ * vendedor. Es el `Segmented` del panel reducido a lo que cabe en un renglón
+ * de 12 px: botones en línea, el activo en negrita con el acento.
+ *
+ * CROMA (`data-cot-ui`): el papel imprime el TEXTO que el motor resuelve
+ * («Tarifa broker · $1,550.00/hr»), no el control. Y NO lleva
+ * `data-guard-exempt`: cambiar de tarifa ES editar.
+ */
+export function SegmentoHoja({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  id,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; title?: string }[];
+  ariaLabel: string;
+  id?: string;
+  className?: string;
+}) {
+  return (
+    <span id={id} role="group" aria-label={ariaLabel} className={cn("cot-seg", className)} {...UI}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={o.value === value}
+          title={o.title}
+          className={cn("cot-seg__op", o.value === value && "cot-seg__op--on")}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+// ===== Plegable EN LÍNEA dentro del papel (croma) =====
+
+/**
+ * `<details>` de una fila del papel (Fase 2.3 · BLOQUE B): la comisión del
+ * vendedor cuelga de «Vendedor» sin ocupar un renglón permanente. Igual que
+ * `QuotePlegable` (el de los sub-bloques bajo la hoja), lo que importa es que
+ * **el contenido NUNCA se desmonta** —`<details>` conserva sus hijos en el
+ * DOM— y que solo el `<summary>` va `data-guard-exempt`: abrirlo no edita.
+ */
+export function PlegableHoja({
+  resumen,
+  children,
+  abiertoPorDefecto = false,
+  className,
+}: {
+  resumen: ReactNode;
+  children: ReactNode;
+  abiertoPorDefecto?: boolean;
+  className?: string;
+}) {
+  const [abierto, setAbierto] = useState(abiertoPorDefecto);
+  return (
+    <details
+      className={cn("cot-plegable", className)}
+      open={abierto}
+      onToggle={(e) => {
+        const v = (e.currentTarget as HTMLDetailsElement).open;
+        if (v !== abierto) setAbierto(v);
+      }}
+      {...UI}
+    >
+      <summary data-guard-exempt className="cot-plegable__resumen">
+        {resumen}
+      </summary>
+      <span className="cot-plegable__cuerpo">{children}</span>
+    </details>
+  );
+}
+
 // ===== Moneda: monto + select USD/MXN como texto =====
 
 export function CampoMoneda({
@@ -584,11 +724,17 @@ export function useFocoPopover(ref: React.RefObject<HTMLElement | null>, ancla: 
  * Enfoca el control de la hoja con ese `aria-label` en el siguiente tick
  * (tras pintar la fila nueva): «+ Agregar tramo» → destino del tramo nuevo,
  * «+ Agregar concepto» → concepto del extra nuevo.
+ *
+ * Busca en las DOS hojas (`.cot-hoja` la del cliente, `.cot-interna` la de
+ * oficina): el desglose es el MISMO componente en las dos y con el selector
+ * viejo, en la hoja interna, agregar un concepto no llevaba el foco a ningún
+ * lado.
  */
 export function enfocarPorAriaLabel(label: string) {
   if (typeof document === "undefined") return;
   window.setTimeout(() => {
-    const sel = `.cot-hoja [aria-label="${label.replace(/"/g, '\\"')}"]`;
+    const esc = label.replace(/"/g, '\\"');
+    const sel = `.cot-hoja [aria-label="${esc}"], .cot-interna [aria-label="${esc}"]`;
     document.querySelector<HTMLElement>(sel)?.focus();
   }, 0);
 }

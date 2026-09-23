@@ -1,16 +1,26 @@
 import type { ReactNode } from "react";
-import type { EscalaInput, ExtraConcepto, TuaLinea } from "@/types/quote";
+import type {
+  ComisionVendedorModo,
+  EscalaInput,
+  ExtraConcepto,
+  MetodoPago,
+  TipoTarifa,
+  TuaLinea,
+} from "@/types/quote";
 
 /**
  * Tipos del contrato de la HOJA editable (`QuoteSheet`, form-as-document
  * 8-sep-2026). La hoja NO conoce react-hook-form: recibe el subconjunto de
  * valores del cotizador que se IMPRIMEN y devuelve cada cambio por
- * `onCambio(campo, valor)` (el cotizador lo mapea a `setValue`). Todo lo
- * que produce números sin imprimirse (tarifa, sobrevuelo, cobrable, comisión
- * del vendedor, método de pago, BillPocket, redondeo, cotización abierta,
- * pase de abordar, externo/costo, ruta operativa, notas internas, toggles
- * del PDF) vive en el bloque «Interno · no se imprime» del cotizador y NO
- * entra aquí.
+ * `onCambio(campo, valor)` (el cotizador lo mapea a `setValue`).
+ *
+ * `QuoteSheetValores` es lo que imprime la hoja del CLIENTE. Lo que decide
+ * dinero sin imprimirse ahí (método de cobro, redondeo, marcas, notas
+ * internas, tarifa, horas y la comisión del vendedor) vive en
+ * `QuoteSheetValoresInterna` —el papel INTERNO sí tiene dónde ponerlo, cada
+ * cosa en el renglón donde se LEE— y lo que ni siquiera eso (operador
+ * externo, ruta operativa, detalle del motor) vive en un `<details>` DEBAJO
+ * del papel desde el BLOQUE C de la Fase 2.3.
  */
 
 /** Valores del form que la hoja edita o imprime (nombres RHF del cotizador). */
@@ -42,11 +52,81 @@ export type CampoHojaId = keyof QuoteSheetValores;
 export type OnCambioHoja = <K extends CampoHojaId>(campo: K, valor: QuoteSheetValores[K]) => void;
 
 /**
- * Destino en «Interno · no se imprime › Tarifa y horas» que la hoja pide
- * abrir (feedback 9-sep-2026: «¿dónde se ajusta la hora volada por tramo y
- * la tarifa por hora?»). La hoja NO edita tarifa ni horas: solo señala dónde
- * viven. Anclas: `tarifa-override-field` (o `tarifa-tipo-field` sin
+ * Lo que edita la HOJA INTERNA y la del CLIENTE ni imprime ni toca (Fase 2.3,
+ * 22-sep-2026): el método de cobro PREVISTO con su comisión de terminal, el
+ * redondeo, las marcas de la ficha, las notas internas (BLOQUE A) y —desde el
+ * BLOQUE B— la TARIFA, las HORAS y la COMISIÓN DEL VENDEDOR. Bajaron del
+ * panel lateral (ya retirado) al bloque del papel donde se LEEN: el
+ * método a la cabecera de COBROS, el redondeo a su renglón del desglose, las
+ * marcas a la fila «Marcas», la tarifa a la fila «Tarifa» de la ficha, el
+ * sobrevuelo y el cobrable a «Horas cotizadas» y la comisión del vendedor bajo
+ * «Vendedor».
+ *
+ * Es una interfaz APARTE (y no campos nuevos de `QuoteSheetValores`) porque la
+ * hoja del cliente no tiene dónde ponerlos: ahí siguen viviendo en el panel,
+ * que es lo único que ve un rol sin hoja interna (SOCIO).
+ *
+ * OJO con los dos campos que el PANEL `register`a sobre un `<input
+ * type="number">` (`tarifa_hora_override_usd`, `sobrevuelo_hr`): ahí react-hook-form
+ * guarda una CADENA. Se declaran como el form (`number | null`) y quien los
+ * lee los pasa por `Number(...)`, igual que `armarCalcPayload`.
+ */
+export interface QuoteSheetValoresInterna extends QuoteSheetValores {
+  metodo_pago: MetodoPago;
+  /** Nombre manual del método cuando `metodo_pago === 'OTRO'`. */
+  metodo_pago_detalle: string;
+  /** Comisión de terminal % (BillPocket / Paywise): tope 20. */
+  comision_billpocket_pct: number | null;
+  redondeo_auto: boolean;
+  redondeo_usd: number | null;
+  cotizacion_abierta: boolean;
+  pase_abordar: boolean;
+  /** Solo se EDITAN en el alta: al revisar se cambian desde el vuelo. */
+  notas_internas: string;
+  // ----- BLOQUE B: tarifa, horas y comisión del vendedor -----
+  tipo_tarifa: TipoTarifa;
+  /** Modo «Personalizada» del segmento (estado de UI pegajoso; el diff lo ignora). */
+  tarifa_personalizada: boolean;
+  /** $/hr SOLO de esta cotización (6 decimales). Vacío = la pactada o la del avión. */
+  tarifa_hora_override_usd: number | null;
+  /** Horas de sobrevuelo: se suman al cobrable. */
+  sobrevuelo_hr: number | null;
+  /** COBRABLE pactado (hr, 8 decimales). Vacío = la regla del motor. */
+  tiempo_cobrable_override_hr: number | null;
+  comision_vendedor_modo: ComisionVendedorModo;
+  comision_vendedor_usd: number | null;
+  comision_vendedor_tarifa_hr: number | null;
+  comision_vendedor_nombre: string;
+}
+
+export type CampoHojaInternaId = keyof QuoteSheetValoresInterna;
+
+export type OnCambioHojaInterna = <K extends CampoHojaInternaId>(
+  campo: K,
+  valor: QuoteSheetValoresInterna[K],
+) => void;
+
+/**
+ * Una `OnCambioHojaInterna` vale donde se pide una `OnCambioHoja`: los campos
+ * de la hoja del cliente son un SUBCONJUNTO de los de la interna y para esas
+ * claves el tipo del valor es el mismo. TypeScript no lo deduce entre dos
+ * firmas genéricas, así que el estrechamiento se hace aquí —una vez, con su
+ * motivo— en vez de con un `as` suelto en cada componente.
+ */
+export function comoOnCambioHoja(f: OnCambioHojaInterna): OnCambioHoja {
+  return f as OnCambioHoja;
+}
+
+/**
+ * Destino de «tarifa y horas» que un atajo de la hoja pide enfocar (feedback
+ * 9-sep-2026: «¿dónde se ajusta la hora volada por tramo y la tarifa por
+ * hora?»). Anclas: `tarifa-override-field` (o `tarifa-tipo-field` sin
  * override), `cobrable-field`, `sobrevuelo-field`.
+ *
+ * En la HOJA INTERNA esos campos viven en el papel desde el BLOQUE B, así que
+ * el atajo solo hace scroll + foco a su renglón. La hoja del CLIENTE conserva
+ * la prop, pero desde el BLOQUE C nadie se la pasa (el panel al que llevaba
+ * se retiró) y su «· ajustar» no se pinta.
  */
 export type DestinoInterno = "tarifa" | "cobrable" | "sobrevuelo";
 

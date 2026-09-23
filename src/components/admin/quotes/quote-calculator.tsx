@@ -75,7 +75,11 @@ import {
 } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { preferirHorasPersistidas } from "@/lib/admin/horas";
-import { tarifaOverrideRehidratada } from "@/lib/admin/tarifa";
+import {
+  overrideTarifaCapturado,
+  segmentoTarifa,
+  tarifaOverrideRehidratada,
+} from "@/lib/admin/tarifa";
 import { tuasLineasAPayload } from "@/lib/admin/tuas";
 import {
   aeronaveInicialDeCotizacion,
@@ -140,12 +144,27 @@ import type { CotizacionInterna } from "@/types/quotes-interno";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import { QuoteSheet } from "@/components/admin/quotes/quote-sheet";
 import { QuoteSheetInterna } from "@/components/admin/quotes/quote-sheet-interna";
-import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
-import { QuoteInternalPanel } from "@/components/admin/quotes/quote-internal-panel";
+import {
+  AVISO_SOLO_CONSULTA,
+  puedeVerHojaInterna,
+  soloConsultaCotizacion,
+} from "@/lib/admin/quote-sheet-interna";
+import { QuoteAvisosBanda } from "@/components/admin/quotes/quote-avisos-banda";
+import { QuoteCapturaBasica } from "@/components/admin/quotes/quote-captura-basica";
+import { QuoteDetalleMotor } from "@/components/admin/quotes/quote-detalle-motor";
+import { QuoteOperadorExterno } from "@/components/admin/quotes/quote-operador-externo";
+import { QuotePdfClienteVista } from "@/components/admin/quotes/quote-pdf-cliente-vista";
+import { QuotePdfToggles } from "@/components/admin/quotes/quote-pdf-toggles";
+import { QuotePlantillaRuta } from "@/components/admin/quotes/quote-plantilla-ruta";
+import {
+  QuoteRutaOperativa,
+  QuoteRutaOperativaBanda,
+} from "@/components/admin/quotes/quote-ruta-operativa";
+import { comoOnCambioHoja } from "@/components/admin/quotes/quote-sheet-types";
 import type {
-  DestinoInterno,
   DocumentoHoja,
-  OnCambioHoja,
+  OnAbrirInterno,
+  OnCambioHojaInterna,
   TramoPdfAccesores,
 } from "@/components/admin/quotes/quote-sheet-types";
 import type {
@@ -157,7 +176,7 @@ import type {
 } from "./quote-form-types";
 
 // Tipos del form y catálogos: `quote-form-types.ts` (compartidos con la hoja
-// y el panel interno). Se re-exportan para los consumidores existentes.
+// y los sub-bloques de abajo). Se re-exportan para los consumidores existentes.
 export type {
   AircraftOption,
   AirportOption,
@@ -213,6 +232,13 @@ type QuoteCalculatorProps = {
    * pinta con el breakdown y los bloques sin dato quedan vacíos.
    */
   interno?: CotizacionInterna | null;
+  /**
+   * Sub-bloques plegables EXTRA que el padre añade a la pila de `<details>`
+   * bajo el papel (Fase 2.3 · BLOQUE C): hoy, el «Historial de versiones» que
+   * el workspace conoce y el cotizador no. Van en la MISMA pila para que todo
+   * lo que no cabe en el documento se lea en un solo sitio.
+   */
+  plegablesExtra?: ReactNode;
 } & (
   | {
       mode?: "create";
@@ -652,7 +678,14 @@ function uuid(): string {
 }
 
 export function QuoteCalculator(props: QuoteCalculatorProps) {
-  const { aircraft, routes, airports: airportsCatalogo, rol = null, interno = null } = props;
+  const {
+    aircraft,
+    routes,
+    airports: airportsCatalogo,
+    rol = null,
+    interno = null,
+    plegablesExtra,
+  } = props;
   const mode = props.mode ?? "create";
   const isRevise = mode === "revise";
   // Edición directa (F0): LECTURA solo cuando el candado lo exige.
@@ -1117,7 +1150,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   }, [formDefaults, lectura, isRevise, initialQuote, reset, getValues]);
 
   const values = watch();
-  // Ruta operativa (solo alta): vive en RHF; el panel interno la edita.
+  // Ruta operativa (solo alta): vive en RHF; la edita el `<details>`
+  // «Ruta operativa del vuelo» bajo el papel.
   const opsLegs = values.escalas_operacion ?? [];
   const tarifaCustom = values.tarifa_personalizada === true;
   // IMPORTANTE: serializamos el form a JSON antes de pasarlo al debounce.
@@ -1503,10 +1537,62 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // lectura es su única fuente. Con cambios, la hoja pide el mapa en vivo a
   // `/api/quotes/mapa-svg` (la misma función de dibujo de pyservices). La
   // vista previa anclada/diálogo desapareció: la hoja ES la vista previa.
+  /**
+   * PESTAÑAS de la pantalla (Fase 2.2, 22-sep-2026): «Hoja interna»
+   * (editable, por defecto) | «PDF del cliente» (LECTURA). La interna solo
+   * existe para los roles de `ROLES_HOJA_INTERNA`; para SOCIO la pantalla
+   * sigue siendo la hoja del CLIENTE editable, como hasta hoy.
+   *
+   * Memoria por usuario en `vt-cotizador-hoja-v1`. El estado arranca SIEMPRE
+   * en el valor por defecto y la memoria se lee en un efecto: leer
+   * localStorage al render rompería la hidratación (el servidor no lo tiene).
+   */
+  const hayHojaInterna = puedeVerHojaInterna(rol);
+  const [hoja, setHoja] = useState<HojaCotizador>("interna");
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HOJA_LS_KEY);
+      if (!raw) return;
+      const g = JSON.parse(raw) as { hoja?: unknown };
+      if (g?.hoja === "interna" || g?.hoja === "cliente") setHoja(g.hoja);
+    } catch {
+      // Sin storage: la hoja interna por defecto.
+    }
+  }, []);
+  const setHojaPersistente = (v: HojaCotizador) => {
+    setHoja(v);
+    try {
+      localStorage.setItem(HOJA_LS_KEY, JSON.stringify({ hoja: v }));
+    } catch {
+      // Sin storage, vive solo en la sesión.
+    }
+  };
+  // Sin permiso para la interna, la única hoja es la del cliente.
+  const hojaActiva: HojaCotizador = hayHojaInterna ? hoja : "cliente";
+  /**
+   * ROL que NO puede guardar (SOCIO, FACTURACION, ANALISTA…): se dice en voz
+   * alta. `POST /v1/quotes` y `POST /:id/revise` son ADMIN/COORDINADOR —los
+   * MISMOS que ven la hoja interna—, así que quien no la ve tampoco puede
+   * guardar: el panel lateral que se retiró no le servía de nada. La pantalla
+   * se sigue pudiendo teclear (simular un precio es legítimo); lo que cambia
+   * es que ya no promete un guardado que el API rechaza.
+   */
+  const soloConsulta = soloConsultaCotizacion(rol);
+
+  // La vista previa se pide cuando SIRVE: con el form limpio (de ahí sale el
+  // MAPA de la hoja) y, desde la Fase 2.3 · BLOQUE C, mientras la pestaña
+  // «PDF del cliente» está a la vista — ahí la promesa «esto es exactamente
+  // lo que verá el cliente» la cumple el HTML del API, no una réplica. Con la
+  // pestaña cerrada NO se pide: cada llamada corre el armador de pyservices.
   const preview = useQuotePreviewHtml({
     payload: error ? null : previewPayload,
     listo: previewListo,
-    activo: previewLimpio,
+    // `hayHojaInterna` en la condición A PROPÓSITO: para el rol SIN pestañas
+    // (SOCIO) `hojaActiva` vale SIEMPRE "cliente", y su pantalla es la hoja
+    // editable —no `QuotePdfClienteVista`—, así que sin este candado se
+    // pediría un render completo de pyservices por cada tecleo para un HTML
+    // que nadie va a ver.
+    activo: previewLimpio || (hayHojaInterna && hojaActiva === "cliente"),
   });
   const mapaSvgGuardado =
     previewLimpio && preview.html ? extraerMapaSvgDeHtml(preview.html) : undefined;
@@ -1555,18 +1641,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026): se cotiza a
   // futuro con un avión en mantenimiento; solo se avisa. Nota ámbar + chip.
   const avionEnTaller = selectedAircraft?.en_taller ? selectedAircraft : null;
-  const tipoTarifa = values.tipo_tarifa;
   // Con override capturado (o modo elegido), el segmento muestra Personalizada.
-  const overrideTarifaActivo =
-    `${values.tarifa_hora_override_usd ?? ""}`.trim() !== "";
+  // Quién PINTA el segmento es la fila «Tarifa» del papel interno, con el
+  // mismo `segmentoTarifa` (`lib/admin/tarifa.ts`, fuente única): aquí solo
+  // queda el efecto que lo deja PEGADO.
+  const overrideTarifaActivo = overrideTarifaCapturado(values.tarifa_hora_override_usd);
   // El modo se queda PEGADO una vez activo (revise con override, "todo en
   // $0" o valor tecleado): si no, borrar el input a media edición
   // desmontaría el campo al caer el derivado. Solo el segmento lo apaga.
   useEffect(() => {
     if (overrideTarifaActivo && !tarifaCustom) setTarifaCustom(true);
   }, [overrideTarifaActivo, tarifaCustom, setTarifaCustom]);
-  const tarifaSegment =
-    tarifaCustom || overrideTarifaActivo ? "CUSTOM" : tipoTarifa;
 
   // ¿El itinerario de esta cotización difiere de la plantilla seleccionada?
   // (Las fechas por tramo no cuentan: son propias de cada cotización.)
@@ -2000,7 +2085,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       toast.error(
         "El costo del operador externo va en MXN: captura el tipo de cambio.",
       );
-      // focusTc (no focusTcField): abre primero la sección de Cobro plegada.
+      // `focusTc` (no `focusTcField`): un tick de espera por si el
+      // renglón del T.C. acaba de montarse.
       focusTc();
       return;
     }
@@ -2224,72 +2310,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   };
 
 
-  // Bloque «INTERNO · NO SE IMPRIME» (F2, D6): CERRADO por defecto para
-  // todos, con memoria por usuario (localStorage) en alta y revisión. Nunca
-  // se abre solo — salvo por un atajo explícito (tarifa, cobrable, TC…) o
-  // porque un campo requerido vive ahí (externo).
-  const [internoAbierto, setInternoAbierto] = useState(false);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(INTERNO_LS_KEY);
-      if (!raw) return;
-      const g = JSON.parse(raw) as { abierto?: unknown };
-      if (g && typeof g.abierto === "boolean") setInternoAbierto(g.abierto);
-    } catch {
-      // Sin storage: queda cerrado.
-    }
-  }, []);
-  const setInternoAbiertoPersistente = (v: boolean) => {
-    setInternoAbierto(v);
-    try {
-      localStorage.setItem(INTERNO_LS_KEY, JSON.stringify({ abierto: v }));
-    } catch {
-      // Sin storage, vive solo en la sesión.
-    }
-  };
-  /**
-   * PESTAÑAS de la pantalla (Fase 2.2, 22-sep-2026): «Hoja interna»
-   * (editable, por defecto) | «PDF del cliente» (LECTURA). La interna solo
-   * existe para los roles de `ROLES_HOJA_INTERNA`; para SOCIO la pantalla
-   * sigue siendo la hoja del CLIENTE editable, como hasta hoy.
-   *
-   * Memoria por usuario en `vt-cotizador-hoja-v1`. El estado arranca SIEMPRE
-   * en el valor por defecto y la memoria se lee en un efecto: leer
-   * localStorage al render rompería la hidratación (el servidor no lo tiene).
-   */
-  const hayHojaInterna = puedeVerHojaInterna(rol);
-  const [hoja, setHoja] = useState<HojaCotizador>("interna");
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(HOJA_LS_KEY);
-      if (!raw) return;
-      const g = JSON.parse(raw) as { hoja?: unknown };
-      if (g?.hoja === "interna" || g?.hoja === "cliente") setHoja(g.hoja);
-    } catch {
-      // Sin storage: la hoja interna por defecto.
-    }
-  }, []);
-  const setHojaPersistente = (v: HojaCotizador) => {
-    setHoja(v);
-    try {
-      localStorage.setItem(HOJA_LS_KEY, JSON.stringify({ hoja: v }));
-    } catch {
-      // Sin storage, vive solo en la sesión.
-    }
-  };
-  // Sin permiso para la interna, la única hoja es la del cliente.
-  const hojaActiva: HojaCotizador = hayHojaInterna ? hoja : "cliente";
 
-  // Al prender «cubierto por externo» (switch o borrador ?d= restaurado) el
-  // panel interno se abre: sus campos requeridos no deben quedar escondidos.
-  useEffect(() => {
-    if (!isRevise && values.es_externo) setInternoAbierto(true);
-  }, [isRevise, values.es_externo]);
-
-  // Atajos de scroll+focus (ensamble 8-sep): los ids ancla de la hoja viven
-  // en el propio input invisible (`pasajeros-field`, `tc-usd-mxn-field`);
-  // los del panel interno en su contenedor. Un tick de espera por si el
-  // panel/sub-bloque acaba de abrirse (mismo patrón setTimeout(60)).
+  // Atajos de scroll+focus (ensamble 8-sep): los ids ancla viven en el propio
+  // input invisible del papel (`pasajeros-field`, `tc-usd-mxn-field`,
+  // `cobrable-field`…). Un tick de espera por si el `<details>` que lo
+  // contiene acaba de abrirse (mismo patrón setTimeout(60)).
   const scrollFocus = (id: string, selector = "input") =>
     setTimeout(() => {
       const el = document.getElementById(id);
@@ -2299,6 +2324,37 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     }, 60);
   /** El TC vive en «Total MXN (T.C.)» del desglose de la hoja. */
   const focusTc = () => setTimeout(focusTcField, 60);
+  /**
+   * Lleva a un sub-bloque `<details>` de los de abajo (Fase 2.3 · BLOQUE C):
+   * lo ABRE si estaba plegado —el `<details>` nativo conserva su contenido,
+   * así que solo hay que enseñarlo— y hace scroll. Lo usan los ecos del papel
+   * («Cubierto por … · editar abajo»).
+   */
+  const irAlPlegable = (id: string) => {
+    const el = document.getElementById(`plegable-${id}`) as HTMLDetailsElement | null;
+    if (!el) return;
+    if (!el.open) el.open = true;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  /**
+   * Atajos «· ajustar» / «pactar horas» de la hoja del CLIENTE (el rol que no
+   * ve la hoja interna, hoy SOCIO): esos campos viven en el `<details>`
+   * «Ajustes de la cotización» de abajo, así que el atajo lo ABRE y lleva el
+   * foco al campo. Los roles con hoja interna no pasan por aquí: los suyos
+   * están en el propio papel (`enfocarEnHoja`).
+   */
+  const atajoEnCaptura: OnAbrirInterno = (destino) => {
+    irAlPlegable("captura");
+    const id =
+      destino === "tarifa"
+        ? overrideTarifaActivo || tarifaCustom
+          ? "tarifa-override-field"
+          : "tarifa-tipo-field"
+        : destino === "cobrable"
+          ? "cobrable-field"
+          : "sobrevuelo-field";
+    scrollFocus(id, 'input, button[aria-pressed="true"]');
+  };
   /** Lleva a la fila del concepto que hay que corregir (o al campo del T.C.). */
   const enfocarExtraFuera = (f: ExtraFueraDelTotal | null) => {
     if (!f) return;
@@ -2308,8 +2364,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       return;
     }
     setTimeout(() => {
+      // Las DOS hojas: el desglose (y sus extras) es el MISMO componente en la
+      // del cliente y en la INTERNA.
+      const esc = label.replace(/"/g, '\\"');
       const el = document.querySelector<HTMLElement>(
-        `.cot-hoja [aria-label="${label.replace(/"/g, '\\"')}"]`,
+        `.cot-hoja [aria-label="${esc}"], .cot-interna [aria-label="${esc}"]`,
       );
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
       el?.focus({ preventScroll: true });
@@ -2327,41 +2386,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     return true;
   };
   /**
-   * La hoja señala dónde se ajustan tarifa y horas (feedback 9-sep-2026:
-   * «¿dónde se ajusta la hora volada por tramo y la tarifa por hora?»): abre
-   * el panel interno si está cerrado (misma memoria `vt-cotizador-interno-v1`)
-   * y lleva al ancla de «Tarifa y horas». Esa sección no es sub-bloque
-   * plegable (nada que desplegar). Sin override activo `tarifa-override-field`
-   * no existe: cae al segmento `tarifa-tipo-field`. El panel cerrado NO monta
-   * sus campos: el destino queda PENDIENTE y el scroll+focus corre en un
-   * efecto cuando el panel ya está pintado (sin adivinar milisegundos).
+   * Los atajos «· ajustar» / «pactar horas» de la hoja YA NO abren nada
+   * (Fase 2.3 · BLOQUE C): tarifa, sobrevuelo y cobrable viven en el PAPEL y
+   * `enfocarEnHoja` (dentro de `QuoteSheetInterna`) hace scroll + foco a su
+   * renglón. `abrirInterno` y el estado `destinoInternoPendiente` murieron
+   * con el panel lateral.
    */
-  const [destinoInternoPendiente, setDestinoInternoPendiente] = useState<DestinoInterno | null>(null);
-  const abrirInterno = (destino: DestinoInterno) => {
-    if (!internoAbierto) setInternoAbiertoPersistente(true);
-    setDestinoInternoPendiente(destino);
-  };
-  useEffect(() => {
-    if (!destinoInternoPendiente || !internoAbierto) return;
-    const anclas: Record<DestinoInterno, string[]> = {
-      tarifa: ["tarifa-override-field", "tarifa-tipo-field"],
-      cobrable: ["cobrable-field"],
-      sobrevuelo: ["sobrevuelo-field"],
-    };
-    const el =
-      anclas[destinoInternoPendiente].map((id) => document.getElementById(id)).find((x) => !!x) ?? null;
-    setDestinoInternoPendiente(null);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    // Prioridad del foco: el input del campo (override / sobrevuelo /
-    // cobrable) → el segmento ACTIVO de Pública/Broker/Personalizada →
-    // cualquier control. `preventScroll`: no pisar el scroll suave.
-    const ctl =
-      el.querySelector<HTMLElement>("input:not([disabled])") ??
-      el.querySelector<HTMLElement>('button[aria-pressed="true"]:not([disabled])') ??
-      el.querySelector<HTMLElement>("button:not([disabled])");
-    ctl?.focus({ preventScroll: true });
-  }, [destinoInternoPendiente, internoAbierto]);
   /** Ancla `motivo-revision-field`: vive en el diálogo «Guardar vN». */
   const focusMotivo = () => {
     setGuardarOpen(true);
@@ -2381,8 +2411,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       toast.info(
         "Los pasajeros están definidos por tramo: edítalos en el detalle (⋯) de cada fila del itinerario.",
       );
+      // LAS DOS HOJAS: con la hoja INTERNA montada (ADMIN/COORDINADOR…) el
+      // itinerario vive bajo `.cot-interna`; buscar solo `.cot-hoja` dejaba
+      // el «Ajuste rápido» sin hacer nada (mismo defecto que se corrigió en
+      // `enfocarExtraFuera`).
       document
-        .querySelector(".cot-hoja table.grid")
+        .querySelector(".cot-interna table.grid, .cot-hoja table.grid")
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -2711,9 +2745,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       : undefined
     : undefined;
 
-  // Avisos de captura FUERA del papel (barra de estado + panel interno):
-  // nunca se esconden. TUAS/extras en MXN sin T.C. los avisa la propia hoja
-  // (banda con «Capturar T.C.»).
+  // Avisos de captura FUERA del papel (banda ámbar sobre el papel + chip de
+  // la barra de estado): nunca se esconden. TUAS/extras en MXN sin T.C. los
+  // avisa la propia hoja (banda con «Capturar T.C.»).
   const avisosCaptura = [
     capacidadExcedida && selectedAircraft
       ? `Capacidad excedida: ${maxPasajeros} pax vs máx. ${selectedAircraft.asientos} (${selectedAircraft.modelo})`
@@ -2724,8 +2758,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     // Informativo (no limita): el detalle va en la nota ámbar de arriba.
     avionEnTaller ? chipAeronaveEnTaller(avionEnTaller.matricula) : null,
     // La operación difiere de lo cotizado (22-sep-2026, #326): el detalle y
-    // el botón viven en la banda ámbar; aquí solo el chip, que nunca se
-    // esconde aunque el panel interno esté cerrado.
+    // el botón viven en la banda ámbar de arriba; aquí solo el chip.
     chipOperacionCambio,
   ].filter((a): a is string => !!a);
 
@@ -2733,7 +2766,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // `QuoteSheet` edita el subconjunto del form que se IMPRIME, en su lugar;
   // el dinero que pinta es SIEMPRE el breakdown de /calculate (o el snapshot).
   /** Cambios de la hoja → RHF (mismos nombres). Cliente broker fuerza tarifa BROKER. */
-  const onCambioHoja: OnCambioHoja = (campo, valor) => {
+  const onCambioHoja: OnCambioHojaInterna = (campo, valor) => {
     setValue(campo, valor as unknown as PathValue<QuoteFormValues, typeof campo>, {
       shouldDirty: true,
     });
@@ -2858,6 +2891,66 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       )}
     </>
   ) : undefined;
+  /**
+   * La MISMA croma para la hoja INTERNA, más lo que bajó del panel lateral
+   * (Fase 2.3): los clientes FRECUENTES del alta —un clic y queda elegido,
+   * con su tarifa de broker si lo es— y «Poner todo en $0» del cliente
+   * INTERNO, que confirma antes de tocar nada (regla permanente: toda acción
+   * destructiva pregunta). Todo va en la línea «Cliente» de la ficha, dentro
+   * de `.cot-acciones` (croma `data-cot-ui`): decide, pero no se imprime.
+   */
+  const frecuentesNodes = !isRevise
+    ? frequentClientIds
+        .map((id) => allClients.find((c) => c.id === id))
+        .filter((c): c is ClientOption => !!c)
+    : [];
+  const hayCromaCliente =
+    frecuentesNodes.length > 0 || !!clienteExtraNode || (clienteInterno && !lectura);
+  const clienteExtraInternaNode = !hayCromaCliente ? undefined : (
+    <>
+      {frecuentesNodes.length > 0 && (
+        <>
+          <span className="cot-tenue">frecuentes: </span>
+          {frecuentesNodes.map((c) => (
+            <span key={c.id}>
+              <button
+                type="button"
+                className="cot-liga"
+                aria-pressed={values.cliente_id === c.id}
+                title={`Cotizar para ${c.nombre}`}
+                onClick={() => {
+                  setValue("cliente_id", c.id, { shouldDirty: true });
+                  if (c.es_broker) setValue("tipo_tarifa", "BROKER");
+                }}
+              >
+                {c.nombre}
+              </button>{" "}
+              <span className="cot-sep">·</span>
+            </span>
+          ))}
+        </>
+      )}
+      {clienteExtraNode}
+      {clienteInterno && !lectura && (
+        <>
+          {clienteExtraNode && (
+            <>
+              {" "}
+              <span className="cot-sep">·</span>
+            </>
+          )}
+          <button
+            type="button"
+            className="cot-liga"
+            title="Cliente interno (operación propia): la cotización puede ir en $0."
+            onClick={() => setCeroOpen(true)}
+          >
+            poner todo en $0
+          </button>
+        </>
+      )}
+    </>
+  );
   /** Plantilla del catálogo → tramos editables de ESTA cotización (la ruta guardada no se modifica). */
   const seleccionarRutaPlantilla = (v: string) => {
     setValue("ruta_id", v);
@@ -2869,8 +2962,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 
   return (
     // La hoja ES el formulario (form-as-document, 8-sep-2026): barra de
-    // estado fija arriba, la hoja al centro sobre el fondo del shell y el
-    // panel «Interno · no se imprime» colapsable a la derecha.
+    // estado fija arriba, el papel al centro sobre el fondo del shell y, bajo
+    // él, la pila de `<details>` (Fase 2.3 · BLOQUE C: el panel lateral
+    // «Interno · no se imprime» se retiró).
     <div className="space-y-5">
       <TotalBar
         breakdown={breakdown}
@@ -3139,12 +3233,53 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </div>
       )}
 
-      {/* Centro: la hoja (papel claro con sombra sobre el fondo del shell) y
-          la save bar; derecha: panel «Interno · no se imprime» colapsable.
+      {/* ROL SIN PERMISO DE GUARDADO (Fase 2.3 · BLOQUE C): `POST /v1/quotes`
+          y `POST /:id/revise` son ADMIN/COORDINADOR. Quien no está en esa
+          lista puede consultar y SIMULAR —y eso sigue permitido— pero el
+          guardado lo rechaza el API: decirlo aquí evita capturar media hora
+          para nada, y explica por qué su pantalla (la hoja del cliente) no
+          trae los controles que el papel interno sí tiene. */}
+      {soloConsulta && !lectura && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="min-w-0 flex-1 text-amber-700 dark:text-amber-400">
+            {AVISO_SOLO_CONSULTA}
+          </p>
+        </div>
+      )}
+
+      {/* AVISOS DE CAPTURA, ancho completo y ARRIBA del papel (Fase 2.3 ·
+          BLOQUE C): antes eran chips dentro del panel lateral y solo se veían
+          con el panel abierto. Un warning JAMÁS se esconde. El chip de la
+          TotalBar sigue igual: este los pone a la vista sin depender de ella. */}
+      <QuoteAvisosBanda avisos={avisosCaptura} />
+
+      {/* RUTA OPERATIVA para el rol SIN hoja interna: la banda del papel
+          cuelga de `.cot-interna` (invariante del CSS de la hoja), así que
+          fuera de él se pinta con su otra piel. Sin esto, SOCIO perdía el
+          aviso de divergencia y el botón «Cotizar con estos tramos» que el
+          panel retirado le daba. */}
+      {!hayHojaInterna && (
+        <QuoteRutaOperativaBanda
+          suelta
+          lectura={lectura}
+          initialQuote={initialQuote}
+          escalasCotizadas={values.escalas}
+          operativa={
+            isRevise && !lectura && initialQuote?.itinerario_operativo
+              ? { opsComoEscalas, onAplicar: aplicarOpsComoEscalas, legsSignature }
+              : undefined
+          }
+        />
+      )}
+
+      {/* La hoja (papel claro con sombra sobre el fondo del shell), los
+          sub-bloques plegables y la save bar — a lo ancho: el panel lateral
+          «Interno · no se imprime» se retiró (Fase 2.3 · BLOQUE C).
           CONFIRMADO/RESERVA con tripulación: el primer cambio se confirma
           (captura); la barra y los diálogos están exentos (data-guard-exempt). */}
       <div
-        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_auto]"
+        className="grid items-start gap-5"
         onClickCapture={interceptarPrimerCambio}
         onKeyDownCapture={interceptarPrimerCambio}
       >
@@ -3216,25 +3351,112 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     : undefined
                 }
                 grupo={grupoDelHijo}
-                clienteExtra={clienteExtraNode}
-                onAbrirInterno={lectura ? undefined : abrirInterno}
+                clienteExtra={clienteExtraInternaNode}
+                // Las notas internas solo se GUARDAN al crear: `revise` no las
+                // lleva (se cambian en el detalle del vuelo).
+                notasInternasEditables={!isRevise}
                 interno={interno}
+                // RUTA OPERATIVA del vuelo: banda azul justo ENCIMA de la
+                // tabla de tramos — es un aviso de divergencia y se lee junto
+                // a lo que cambia (Fase 2.3 · BLOQUE C). Croma: no se imprime.
+                bandaTramos={
+                  <QuoteRutaOperativaBanda
+                    lectura={lectura}
+                    initialQuote={initialQuote}
+                    escalasCotizadas={values.escalas}
+                    operativa={
+                      isRevise && !lectura && initialQuote?.itinerario_operativo
+                        ? { opsComoEscalas, onAplicar: aplicarOpsComoEscalas, legsSignature }
+                        : undefined
+                    }
+                  />
+                }
+                // ECO del operador externo en la tarjeta «Avión cotizado»: se
+                // LEE aquí, se CAPTURA en el `<details>` de abajo.
+                avionExtra={
+                  values.es_externo ? (
+                    <>
+                      {`Cubierto por ${values.operador_externo.trim() || "(sin operador)"}`}
+                      {values.avion_externo_modelo.trim()
+                        ? ` · ${values.avion_externo_modelo.trim()}`
+                        : ""}
+                      {values.avion_externo_matricula.trim()
+                        ? ` ${values.avion_externo_matricula.trim()}`
+                        : ""}
+                      {!lectura && (
+                        <>
+                          {" · "}
+                          <button
+                            type="button"
+                            data-guard-exempt
+                            className="cot-liga"
+                            onClick={() => irAlPlegable("externo")}
+                          >
+                            editar abajo
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : undefined
+                }
               />
             </div>
           )}
 
-          {/* La hoja del CLIENTE: editable para SOCIO (como hasta hoy) y en
-              LECTURA como pestaña de comprobación para los demás. En lectura
-              no monta ni un input, así que no duplica los ids ancla de la
-              hoja interna, y puede desmontarse sin perder nada. */}
-          {hojaActiva === "cliente" && (
+          {/* PESTAÑA «PDF del cliente» (Fase 2.3 · BLOQUE C): la vista previa
+              REAL que arma el API con el MISMO payload del PDF. La hoja
+              `QuoteSheet` en LECTURA queda de respaldo mientras llega (o si el
+              servidor no la tiene): así la promesa «esto es exactamente lo que
+              verá el cliente» la respalda el papel, no una réplica. */}
+          {hojaActiva === "cliente" && hayHojaInterna && (
+            <QuotePdfClienteVista
+              html={preview.html}
+              estado={preview.estado}
+              error={preview.error}
+              noDisponible={preview.noDisponible}
+              onReintentar={preview.reintentar}
+              respaldo={
+                <QuoteSheet
+                  valores={values}
+                  onCambio={comoOnCambioHoja(onCambioHoja)}
+                  breakdown={breakdown}
+                  calculando={loading || enEsperaDebounce}
+                  errorMotor={error}
+                  lectura
+                  documento={documentoHoja}
+                  catalogos={catalogosHoja}
+                  tramosPdf={tramosPdfHoja}
+                  pasajerosPorTramo={paxPorTramo ? { max: maxPaxTramos } : null}
+                  mapaSvg={mapaSvgGuardado}
+                  totalRespaldo={
+                    pintaSnapshot && initialQuote
+                      ? {
+                          total_usd: Number(initialQuote.monto_total_usd) || 0,
+                          total_mxn:
+                            initialQuote.monto_total_mxn != null
+                              ? Number(initialQuote.monto_total_mxn)
+                              : null,
+                        }
+                      : undefined
+                  }
+                  grupo={grupoDelHijo}
+                />
+              }
+            />
+          )}
+
+          {/* La hoja del CLIENTE editable: la pantalla de quien NO ve la hoja
+              interna (SOCIO), como hasta hoy. Con hoja interna montada no se
+              pinta aquí: esa pestaña la sirve la vista previa real de arriba,
+              con este mismo componente de respaldo. */}
+          {hojaActiva === "cliente" && !hayHojaInterna && (
           <QuoteSheet
             valores={values}
-            onCambio={onCambioHoja}
+            onCambio={comoOnCambioHoja(onCambioHoja)}
             breakdown={breakdown}
             calculando={loading || enEsperaDebounce}
             errorMotor={error}
-            lectura={lectura || hayHojaInterna}
+            lectura={lectura}
             documento={documentoHoja}
             catalogos={catalogosHoja}
             tramosPdf={tramosPdfHoja}
@@ -3253,9 +3475,108 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             }
             grupo={grupoDelHijo}
             clienteExtra={clienteExtraNode}
-            onAbrirInterno={lectura ? undefined : abrirInterno}
+            // «· ajustar» / «pactar horas»: llevan al `<details>` «Ajustes de
+            // la cotización» de abajo, que es donde este rol los tiene.
+            onAbrirInterno={lectura ? undefined : atajoEnCaptura}
           />
           )}
+
+        {/* SUB-BLOQUES PLEGABLES, DEBAJO del papel (Fase 2.3, 22-sep-2026):
+            lo que salió del panel lateral y NO tiene un renglón donde vivir
+            dentro del documento. Se pintan para TODOS los roles —también para
+            quien no ve la hoja interna—, así que nadie pierde un control al
+            retirar el panel. El contenido nunca se desmonta (`<details>`),
+            solo el `<summary>` va exento del guard de CONFIRMADO/RESERVA. */}
+        <div className="space-y-2">
+          {/* CAPTURA para el rol SIN hoja interna (SOCIO): tarifa, horas,
+              comisión del vendedor, cobro y notas internas. Vivían en el
+              panel lateral, que se pintaba para TODOS los roles; al mudarlas
+              al papel interno este rol se quedaba sin ninguna. Se monta solo
+              aquí, así que los ids ancla nunca se duplican con los del papel. */}
+          {!hayHojaInterna && (
+            <QuoteCapturaBasica
+              lectura={lectura}
+              isRevise={isRevise}
+              initialQuote={initialQuote}
+              values={values}
+              setValue={setValue}
+              register={register}
+              breakdown={breakdown}
+              selectedAircraft={selectedAircraft}
+              clienteInterno={clienteInterno}
+              tarifaSegment={segmentoTarifa(values)}
+              setTarifaCustom={setTarifaCustom}
+            />
+          )}
+          <QuotePlantillaRuta
+            lectura={lectura}
+            rutas={allRoutes}
+            sugeridas={rutasSugeridas}
+            rutaSeleccionada={selectedRouteOpt}
+            rutaId={values.ruta_id}
+            escalasClave={values.escalas
+              .map((l) => `${l.origen_iata}-${l.destino_iata}`)
+              .join("|")}
+            hayEscalas={values.escalas.length > 0}
+            itinerarioAjustado={itinerarioAjustado}
+            onAplicarSugerencia={aplicarSugerencia}
+            onSeleccionarRuta={seleccionarRutaPlantilla}
+            onCrearRuta={() => setRouteSheetOpen(true)}
+            onGuardarComoRuta={handleSaveAsRoute}
+            savingRoute={savingRoute}
+          />
+          <QuotePdfToggles
+            lectura={lectura}
+            mostrarTarifa={values.pdf_mostrar_tarifa}
+            mostrarItinerario={values.pdf_mostrar_itinerario}
+            onMostrarTarifa={(v) => setValue("pdf_mostrar_tarifa", v)}
+            onMostrarItinerario={(v) => setValue("pdf_mostrar_itinerario", v)}
+            isRevise={isRevise}
+            avisoTramosCambiaron={isRevise && !!tramoExtra && !escalasCoincidenConBase && sucio}
+            notaTramos={isRevise && tramoExtra ? notaTramos : undefined}
+          />
+          {/* OPERADOR EXTERNO: se AUTO-ABRE al prender «cubierto por externo»
+              (el operador es obligatorio y no puede quedar escondido). En
+              revisión solo existe si el vuelo YA es externo — pasar a externo
+              se hace desde el vuelo, no desde la cotización. */}
+          {(!isRevise || initialQuote?.es_externo) && (
+            <QuoteOperadorExterno
+              lectura={lectura}
+              isRevise={isRevise}
+              initialQuote={initialQuote}
+              values={values}
+              setValue={setValue}
+              breakdown={breakdown}
+              costoExternoMxnSinTc={costoExternoMxnSinTc}
+              focusTc={focusTc}
+            />
+          )}
+          {/* RUTA OPERATIVA del ALTA (`escalas_operacion[]`): no se cotiza —
+              es la ruta REAL del avión. En revisión la ruta operativa vive en
+              el vuelo y aquí solo se AVISA (banda azul sobre los tramos). */}
+          {!isRevise && !lectura && (
+            <QuoteRutaOperativa
+              values={values}
+              setValue={setValue}
+              airports={airports}
+              onAeropuertoCreado={onAeropuertoCreado}
+            />
+          )}
+          {/* DETALLE DEL CÁLCULO (motor): depuración, plegado por defecto. */}
+          <QuoteDetalleMotor
+            lectura={lectura}
+            isRevise={isRevise}
+            initialQuote={initialQuote}
+            breakdown={breakdown}
+            loading={loading}
+            error={error}
+            hayPayload={pintaSnapshot || !!calcPayload}
+            avion={cotizadoEnTexto}
+            tcUsdMxn={Number(values.tc_usd_mxn) > 0 ? Number(values.tc_usd_mxn) : null}
+          />
+          {/* Lo que añade el padre (workspace): «Historial de versiones». */}
+          {plegablesExtra}
+        </div>
 
         {/* Save bar (oculta en LECTURA bloqueada; en revisión solo con cambios). */}
         {!lectura && (!isRevise || sucio) && (
@@ -3327,63 +3648,6 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         )}
         </div>
 
-        <QuoteInternalPanel
-          abierto={internoAbierto}
-          onAbiertoChange={setInternoAbiertoPersistente}
-          lectura={lectura}
-          isRevise={isRevise}
-          initialQuote={initialQuote}
-          values={values}
-          setValue={setValue}
-          register={register}
-          breakdown={breakdown}
-          loading={loading}
-          error={error}
-          hayPayload={pintaSnapshot || !!calcPayload}
-          selectedAircraft={selectedAircraft}
-          clienteInterno={clienteInterno}
-          tarifaSegment={tarifaSegment}
-          overrideTarifaActivo={overrideTarifaActivo}
-          setTarifaCustom={setTarifaCustom}
-          costoExternoMxnSinTc={costoExternoMxnSinTc}
-          focusTc={focusTc}
-          cotizadoEnTexto={cotizadoEnTexto}
-          onPonerTodoEnCero={() => setCeroOpen(true)}
-          airports={airports}
-          onAeropuertoCreado={onAeropuertoCreado}
-          avisos={avisosCaptura}
-          captura={
-            isRevise
-              ? undefined
-              : {
-                  clientes: allClients,
-                  frecuentes: frequentClientIds,
-                  onNuevoCliente: () => setClientDialogOpen(true),
-                }
-          }
-          plantilla={
-            lectura
-              ? undefined
-              : {
-                  rutas: allRoutes,
-                  sugeridas: rutasSugeridas,
-                  onAplicarSugerencia: aplicarSugerencia,
-                  onSeleccionarRuta: seleccionarRutaPlantilla,
-                  onCrearRuta: () => setRouteSheetOpen(true),
-                  onGuardarComoRuta: handleSaveAsRoute,
-                  savingRoute,
-                }
-          }
-          rutaSeleccionada={selectedRouteOpt}
-          itinerarioAjustado={itinerarioAjustado}
-          operativa={
-            isRevise && !lectura && initialQuote?.itinerario_operativo
-              ? { opsComoEscalas, onAplicar: aplicarOpsComoEscalas, legsSignature }
-              : undefined
-          }
-          notaTramos={isRevise && tramoExtra ? notaTramos : undefined}
-          avisoTramosCambiaron={isRevise && !!tramoExtra && !escalasCoincidenConBase && sucio}
-        />
       </div>
 
       {/* Descartar con cambios capturados: se confirma (lo escrito se
@@ -3800,8 +4064,10 @@ function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
   }
 }
 
-/** «Interno · no se imprime» abierto/cerrado, por usuario (alta y revisión). */
-const INTERNO_LS_KEY = "vt-cotizador-interno-v1";
+/* La clave `vt-cotizador-interno-v1` (panel lateral abierto/cerrado) se
+   RETIRÓ con el panel el 22-sep-2026 (Fase 2.3 · BLOQUE C). Lo que queda en
+   localStorage es `vt-cotizador-hoja-v1` (pestaña) y
+   `vt-cotizador-plegado-<id>-v1` (los `<details>` bajo el papel). */
 
 /** Pestaña de la pantalla: hoja INTERNA (editable) o PDF del CLIENTE (lectura). */
 type HojaCotizador = "interna" | "cliente";
@@ -3814,7 +4080,8 @@ const HOJA_LS_KEY = "vt-cotizador-hoja-v1";
  * Barra de ESTADO fija (ensamble 8-sep-2026): fuera del papel, siempre a la
  * vista al hacer scroll — total con IVA (del breakdown), cliente · folio ·
  * versión, «Ver PDF real», Descartar/Guardar y los avisos de captura. Sin
- * celdas del desglose: ese vive en la hoja (y el detalle en el panel interno).
+ * celdas del desglose: ese vive en la hoja (y el detalle del motor, en su
+ * `<details>` bajo el papel).
  */
 function TotalBar({
   breakdown,
