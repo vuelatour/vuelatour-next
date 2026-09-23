@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -71,6 +73,7 @@ vi.mock("@/lib/api/quotes-browser", () => ({
 import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
 import { QuoteSheet } from "@/components/admin/quotes/quote-sheet";
 import { ESCENARIOS_INTERNA } from "@/components/admin/quotes/__fixtures__/escenarios-interna";
+import { CANAL_CROMA_PX } from "@/lib/admin/quote-sheet";
 import type { MetodoPago } from "@/types/quote";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import type {
@@ -312,6 +315,18 @@ const CASOS: Caso[] = [
     ),
   },
   {
+    nombre: "#329 · ADMIN · ruta operativa distinta",
+    el: () => (
+      <QuoteCalculator
+        mode="revise"
+        {...comun}
+        rol="ADMIN"
+        initialQuote={quote329({ itinerario_operativo: true })}
+        clientName="Sam Meacham"
+      />
+    ),
+  },
+  {
     nombre: "alta · SOCIO",
     el: () => <QuoteCalculator mode="create" {...comun} clients={clients as ClientOption[]} rol="SOCIO" />,
   },
@@ -533,9 +548,10 @@ describe("ids ancla", () => {
     expect(dup, dup.join(", ")).toEqual([]);
   });
 
-  it("la hoja del CLIENTE en LECTURA (respaldo de la pestaña «PDF del cliente») no monta NINGÚN id", () => {
-    // Es lo que hace imposible un choque con la hoja interna, que queda
-    // montada y oculta al cambiar de pestaña.
+  it("la hoja del CLIENTE en LECTURA no monta NINGÚN id", () => {
+    // Con la pestaña del PDF retirada (22-sep-2026 noche) las dos hojas ya no
+    // conviven, pero la propiedad se conserva: en lectura no hay ni un input,
+    // así que ninguna pantalla puede chocar ids con el papel interno.
     const p = ESCENARIOS_INTERNA["interna-329"]();
     const html = renderToStaticMarkup(
       <QuoteSheet
@@ -642,5 +658,293 @@ describe("accesibilidad", () => {
       mudos.push(`${tag}#${id ?? "?"}`);
     }
     expect(mudos, mudos.join(", ")).toEqual([]);
+  });
+});
+
+// ---------- 6. Una sola hoja: la pestaña «PDF del cliente» se retiró ----------
+
+/**
+ * Pedido del cliente (22-sep-2026, noche): «el botón de la pestaña de PDF del
+ * cliente, ese lo vamos a quitar porque no hace falta verlo, ese solo mandarlo
+ * a imprimir cuando se requiera para descargar y enviar al cliente, pero es
+ * raro que lo pidan».
+ *
+ * Lo que NO se puede perder con la pestaña: el botón que ABRE el PDF real y el
+ * `<details>` que decide qué se imprime.
+ */
+describe("la pantalla tiene UNA sola hoja", () => {
+  it.each(CASOS.map((c) => [c.nombre, c] as const))("%s: sin pestañera", (_n, caso) => {
+    const html = render(caso);
+    expect(html).not.toMatch(/role="tab"/);
+    expect(html).not.toMatch(/role="tablist"/);
+    // La vista previa en iframe se fue con la pestaña.
+    expect(html).not.toContain("<iframe");
+    expect(html).not.toContain("Vista previa REAL del PDF");
+  });
+
+  it("el PDF del cliente se sigue pudiendo abrir y configurar", () => {
+    const html = renderToStaticMarkup(
+      <QuoteCalculator mode="revise" {...comun} rol="ADMIN" initialQuote={quote329()} clientName="Sam" />,
+    );
+    expect(html).toContain("Ver PDF real");
+    expect(html).toContain("PDF del cliente: qué se imprime");
+    expect(html).toContain('id="plegable-pdf"');
+  });
+
+  it("ADMIN ve SOLO la hoja interna (ni rastro de la del cliente)", () => {
+    const html = renderToStaticMarkup(
+      <QuoteCalculator mode="revise" {...comun} rol="ADMIN" initialQuote={quote329()} clientName="Sam" />,
+    );
+    expect(html).toContain("cot-interna");
+    expect(html).not.toContain("cot-hoja");
+  });
+
+  it("SOCIO conserva su hoja del cliente editable", () => {
+    const html = renderToStaticMarkup(
+      <QuoteCalculator mode="revise" {...comun} rol="SOCIO" initialQuote={quote329()} clientName="Sam" />,
+    );
+    expect(html).toContain("cot-hoja");
+  });
+});
+
+// ---------- 7. «Esto se puede tocar»: cursor-pointer ----------
+
+/**
+ * Pedido del cliente (22-sep-2026, noche): «todas las opciones que sean
+ * cliqueables deben tener la clase cursor-pointer para que el usuario sepa que
+ * puede interactuar con esa opción y no es un dato fijo o que no se puede
+ * editar». Tailwind v4 dejó los `<button>` con la flecha del sistema y en el
+ * papel los controles son INVISIBLES en reposo: la combinación es justo lo que
+ * el operador lee como «dato fijo».
+ *
+ * Se exige la CLASE (es lo que pidió el cliente) en todo lo que se pulsa, y
+ * además la regla CSS de respaldo dentro del papel.
+ */
+const CLICABLE = /<(button|summary)\b([^>]*)>/g;
+
+// ----- Inventario del DOM: cada etiqueta con la pila de sus ancestros -----
+
+type Etiqueta = {
+  tag: string;
+  attrs: Record<string, string>;
+  clases: string[];
+  ancestros: { tag: string; clases: string[] }[];
+};
+
+/** Mini-parser (el marcado de `renderToStaticMarkup` está bien formado). */
+function etiquetas(html: string): Etiqueta[] {
+  const VACIAS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+  const out: Etiqueta[] = [];
+  const pila: { tag: string; clases: string[] }[] = [];
+  const re = /<(\/)?([a-zA-Z][\w-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/)?>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const tag = m[2].toLowerCase();
+    if (m[1]) {
+      for (let i = pila.length - 1; i >= 0; i--) if (pila[i].tag === tag) { pila.length = i; break; }
+      continue;
+    }
+    const attrs: Record<string, string> = {};
+    const ra = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+    let a: RegExpExecArray | null;
+    while ((a = ra.exec(m[3] || ""))) attrs[a[1].toLowerCase()] = a[2] ?? a[3] ?? a[4] ?? "";
+    const clases = (attrs.class || "").split(/\s+/).filter(Boolean);
+    out.push({ tag, attrs, clases, ancestros: pila.slice() });
+    if (!VACIAS.has(tag) && !m[4]) pila.push({ tag, clases });
+  }
+  return out;
+}
+
+/** Lo que un operador PULSA (no lo que simplemente recibe el foco). */
+const esInteractivo = (n: Etiqueta) =>
+  n.tag === "button" ||
+  n.tag === "summary" ||
+  n.tag === "select" ||
+  (n.tag === "a" && n.attrs.href !== undefined) ||
+  (n.tag === "label" && n.attrs.for !== undefined) ||
+  ["button", "switch", "tab"].includes(n.attrs.role ?? "") ||
+  (n.tag === "input" &&
+    ["date", "datetime-local", "checkbox", "radio", "file"].includes((n.attrs.type ?? "text").toLowerCase()));
+
+/** Selectores con `cursor: pointer` REAL de los CSS de las dos hojas. */
+const SELECTORES_PUNTERO: Record<string, string[]> = Object.fromEntries(
+  (["cotizacion-interna-pantalla.css", "cotizacion-hoja-pantalla.css"] as const).map((archivo) => {
+    const css = readFileSync(
+      path.resolve(__dirname, "..", "..", "..", "..", "styles", archivo),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    const sels: string[] = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/cursor:\s*pointer/.test(m[2])) continue;
+      for (const s of m[1].split(",")) sels.push(s.trim());
+    }
+    return [archivo.startsWith("cotizacion-interna") ? "cot-interna" : "cot-hoja", sels];
+  }),
+);
+
+/** ¿Alguna de esas reglas alcanza a este nodo, en la hoja donde vive? */
+function cubiertoPorCssDeLaHoja(n: Etiqueta): boolean {
+  for (const raiz of ["cot-interna", "cot-hoja"] as const) {
+    const papel = n.ancestros.find((a) => a.clases.includes(raiz));
+    if (!papel) continue;
+    // En LECTURA el papel ES el PDF: no se monta croma ni aplica la regla.
+    if (papel.clases.includes(`${raiz}--lectura`)) continue;
+    for (const sel of SELECTORES_PUNTERO[raiz]) {
+      const ultimo = sel.split(/\s+/).pop()!;
+      const tag = ultimo.match(/^[a-z]+/)?.[0];
+      const clases = [...ultimo.matchAll(/\.([\w-]+)/g)].map((x) => x[1]);
+      const attr = ultimo.match(/\[([\w-]+)(?:="([^"]*)")?\]/);
+      if (tag && tag !== n.tag) continue;
+      if (clases.length && !clases.every((c) => n.clases.includes(c))) continue;
+      if (attr && (n.attrs[attr[1]] === undefined || (attr[2] !== undefined && n.attrs[attr[1]] !== attr[2]))) continue;
+      if (!tag && !clases.length && !attr) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+describe("todo lo clicable se ve clicable", () => {
+  it.each(CASOS.map((c) => [c.nombre, c] as const))("%s: cada botón lleva cursor-pointer", (_n, caso) => {
+    const html = render(caso);
+    const mudos: string[] = [];
+    for (const m of html.matchAll(CLICABLE)) {
+      const at = m[2];
+      if (/\sdisabled(\s|=|>)/.test(at) || /aria-disabled="true"/.test(at)) continue;
+      if (/\saria-hidden="true"/.test(at)) continue;
+      if (!/class="[^"]*\bcursor-pointer\b/.test(at)) mudos.push(m[0].slice(0, 160));
+    }
+    expect(mudos, mudos.join("\n")).toEqual([]);
+  });
+
+  it("los switches del papel y los `role=\"switch\"` también", () => {
+    const html = renderToStaticMarkup(
+      <QuoteCalculator mode="revise" {...comun} rol="ADMIN" initialQuote={quote329()} clientName="Sam" />,
+    );
+    const mudos = [...html.matchAll(/<[a-z]+\b([^>]*role="switch"[^>]*)>/g)]
+      .filter((m) => !/class="[^"]*\bcursor-pointer\b/.test(m[1]))
+      .map((m) => m[0].slice(0, 160));
+    expect(mudos, mudos.join("\n")).toEqual([]);
+  });
+
+  /**
+   * INVENTARIO COMPLETO (revisión adversaria, 22-sep-2026 noche). El test de
+   * arriba solo mira `<button>`, `<summary>` y `role="switch"`, y así se
+   * colaron tres familias que el operador SÍ pulsa: la etiqueta de un campo
+   * (`label[for]`, que enciende el switch o enfoca el control), los `select`
+   * y el input TRANSPARENTE que cubre una fecha del papel —cuyo cursor es el
+   * único que se ve, porque tapa la etiqueta entera—. Aquí se recorre TODO lo
+   * interactivo y se acepta la CLASE o una regla `cursor: pointer` REAL del
+   * CSS de la hoja donde vive (cada hoja tiene el suyo).
+   */
+  it.each(CASOS.map((c) => [c.nombre, c] as const))(
+    "%s: NADA interactivo se queda sin manita (inventario completo)",
+    (_n, caso) => {
+      const mudos: string[] = [];
+      for (const n of etiquetas(render(caso))) {
+        if (!esInteractivo(n)) continue;
+        if (n.attrs.disabled !== undefined || n.attrs["aria-disabled"] === "true") continue;
+        // Proxy oculto de Base UI: 1×1 px, aria-hidden, fuera del tabulador.
+        if (n.attrs["aria-hidden"] === "true" || n.attrs.tabindex === "-1") continue;
+        if (n.clases.includes("cursor-pointer")) continue;
+        if (cubiertoPorCssDeLaHoja(n)) continue;
+        mudos.push(
+          `<${n.tag}${n.attrs.type ? ` type=${n.attrs.type}` : ""}${
+            n.attrs.role ? ` role=${n.attrs.role}` : ""
+          } class="${n.clases.join(" ")}" aria-label="${n.attrs["aria-label"] ?? ""}">`,
+        );
+      }
+      expect([...new Set(mudos)], mudos.join("\n")).toEqual([]);
+    },
+  );
+
+  it("el CSS del papel es la red de respaldo (y NO pinta en lectura)", () => {
+    const css = readFileSync(
+      path.resolve(__dirname, "..", "..", "..", "..", "styles", "cotizacion-interna-pantalla.css"),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    const regla = /([^{}]*)\{\s*cursor: pointer;\s*\}/g;
+    const conCursor = [...css.matchAll(regla)].map((m) => m[1]);
+    const cubre = conCursor.find((sel) => /\bbutton\b/.test(sel) && /role="switch"/.test(sel));
+    expect(cubre, "falta la regla única de cursor en cotizacion-interna-pantalla.css").toBeTruthy();
+    for (const sel of cubre!.split(",").map((s) => s.trim()).filter(Boolean)) {
+      expect(sel.startsWith(".cot-interna:not(.cot-interna--lectura)"), sel).toBe(true);
+    }
+    for (const parte of ["summary", "select", '[role="button"]', '[role="switch"]', ".cot-liga", ".cot-sel"]) {
+      expect(cubre, parte).toContain(parte);
+    }
+  });
+});
+
+// ---------- 8. Nada clicable FUERA del papel ----------
+
+/**
+ * Pedido del cliente con captura (22-sep-2026, noche): «se pierde el botón o
+ * la opción que está del lado izquierdo que solo se alcanza a ver COBRAN».
+ * Era el switch «Se cobran TUAS», que vivía en el `.cot-margen` del desglose
+ * —la columna IZQUIERDA del papel—, así que el control quedaba fuera de la
+ * hoja y lo cortaba el borde del contenedor.
+ */
+describe("nada clicable queda fuera del papel", () => {
+  const htmlAdmin = () =>
+    renderToStaticMarkup(
+      <QuoteCalculator mode="revise" {...comun} rol="ADMIN" initialQuote={quote329()} clientName="Sam" />,
+    );
+
+  it("el switch de TUAS va en la LÍNEA del renglón, no en el margen", () => {
+    const html = htmlAdmin();
+    const i = html.indexOf('aria-label="Se cobran las TUAS"');
+    expect(i, "el switch de TUAS desapareció").toBeGreaterThan(0);
+    // Su renglón: desde el <tr> que lo contiene.
+    const tr = html.lastIndexOf("<tr", i);
+    const celda = html.slice(tr, i);
+    expect(celda, "el switch volvió al margen izquierdo del papel").not.toContain("cot-margen");
+    expect(celda).toContain("cot-acciones");
+  });
+
+  it("el escenario del papel reserva el canal de croma en EDICIÓN (y no en lectura)", () => {
+    // `CANAL_CROMA_PX`: el `padding-left` que deja sitio al margen de fila.
+    // Se lee de la constante (no un 72 a mano) para que el test siga siendo
+    // cierto cuando el canal se ajuste: lo que se custodia es que EXISTA en
+    // edición, ya desde el marcado del servidor, y que en lectura NO.
+    const pad = `padding-left:${CANAL_CROMA_PX}px`;
+    expect(htmlAdmin()).toMatch(new RegExp(`class="cot-escenario"[^>]*style="${pad}"`));
+    const lectura = render(CASOS.find((c) => c.nombre.includes("lectura (cobrada)"))!);
+    expect(lectura).not.toContain(pad);
+    expect(lectura).not.toContain("padding-left:");
+  });
+
+  it("en el margen solo queda croma ESTRECHA (iconos y marcas), nunca un control con texto", () => {
+    const html = htmlAdmin();
+    for (const m of html.matchAll(/<span class="cot-margen"[^>]*>/g)) {
+      const sub = subarbol(html, m.index);
+      expect(sub, "margen sin cerrar").toBeTruthy();
+      // Un `role="switch"` o un `.cot-liga` en el margen es lo que se salía.
+      expect(sub!.html, sub!.html.slice(0, 120)).not.toContain('role="switch"');
+      expect(sub!.html, sub!.html.slice(0, 120)).not.toContain("cot-liga");
+    }
+  });
+});
+
+// ---------- 9. El avión en taller se dice UNA vez (dos, con el chip) ----------
+
+describe("un aviso, una vez", () => {
+  it("«está en taller» no se repite tres veces en la misma pantalla", () => {
+    const enTaller = [{ ...aircraft[0], en_taller: true }] as unknown as AircraftOption[];
+    const html = renderToStaticMarkup(
+      <QuoteCalculator
+        mode="revise"
+        {...comun}
+        aircraft={enTaller}
+        rol="ADMIN"
+        initialQuote={quote329()}
+        clientName="Sam"
+      />,
+    );
+    const veces = html.split("está en taller").length - 1;
+    // La NOTA ámbar (con qué hacer) + el CHIP de la TotalBar (el resumen que
+    // sigue a la vista al hacer scroll). La banda de avisos ya no lo repite.
+    expect(veces, `«está en taller» aparece ${veces} veces`).toBeLessThanOrEqual(2);
+    expect(veces).toBeGreaterThan(0);
   });
 });

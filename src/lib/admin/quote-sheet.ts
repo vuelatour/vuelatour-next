@@ -14,6 +14,81 @@ import type { EscalaInput, ExtraConcepto, QuoteBreakdown, TramoBreakdown, TuasFi
 export const CLASE_RAIZ_HOJA = "cot-hoja";
 /** Ancho de la hoja en pantalla (= `PREVIEW_ANCHO_PX` de pyservices). */
 export const HOJA_ANCHO_PX = 794;
+/**
+ * CANAL de croma a la IZQUIERDA del papel, en píxeles (pedido del cliente,
+ * 22-sep-2026 noche): el margen de fila (`.cot-margen`, `right: 100 %`) vive
+ * FUERA del área impresa —🗑, ⋯ y las marcas de pax/ferry/pernocta/nota— y el
+ * papel solo tiene su padding donde apoyarse. Con la hoja pegada al borde del
+ * contenedor (laptop de 1280 px con la barra lateral abierta) esas acciones
+ * quedaban CORTADAS: «se pierde el botón o la opción que está del lado
+ * izquierdo que solo se alcanza a ver COBRAN».
+ *
+ * Lo reservan las DOS hojas como `padding-left` de su escenario y lo
+ * descuentan del ancho ANTES de escalar (`clientWidth` incluye el padding),
+ * así el papel nunca se sale por la derecha. En LECTURA no hay croma que
+ * alojar y el canal es 0.
+ *
+ * POR QUÉ 88. El margen más cargado que se ve de verdad —el tramo 4 de la
+ * #232: ferry + pernocta + servicio + nota + oculto en el PDF— mide
+ * 🗑 (18) + ⋯ (18) + 5 marcas de 11 px, con 6 huecos de 3 px y 6 px de aire
+ * ⇒ **~116 px**, y en la hoja del CLIENTE hay que sumarle el botón de HORAS
+ * del tramo («3.68 h», ~36 px con su hueco), que la interna no lleva ⇒
+ * **~152 px**. El papel presta su propio padding (45 px el interno, 74 px el
+ * del cliente) y el resto sale del canal: 88 + 45 = 133 y 88 + 74 = 162, con
+ * holgura en las dos. (Un tramo con TODAS las marcas a la vez no existe:
+ * `sobrevuelo` exige mismo origen y destino y «NM?» exige que falten las
+ * millas — y a los anchos de trabajo el centrado del papel regala de sobra.)
+ *
+ * Y el canal **ESCALA CON EL PAPEL** (`geometriaHoja`): el margen se encoge
+ * con la hoja, así que un canal FIJO sobra en pantallas angostas —le robaría
+ * un cuarto del ancho a un contenedor de 358 px— y se queda corto justo en el
+ * punto donde la hoja deja de escalar (ahí el papel presta su padding SIN
+ * escalar pero el canal tampoco crece; con los 72 px del primer intento, un
+ * contenedor de 866–888 px cortaba la croma). Escalándolo, la cuenta
+ * `canal + padding·s ≥ margen·s` se cumple en TODOS los anchos.
+ */
+export const CANAL_CROMA_PX = 88;
+
+/**
+ * GEOMETRÍA de una hoja en pantalla: cuánto canal de croma se reserva a la
+ * izquierda y con qué escala se pinta el papel. PURA, para que las dos hojas
+ * (cliente e interna) resuelvan lo mismo y se pueda probar sin DOM.
+ *
+ * `anchoDisponible` es el `clientWidth` del escenario, que **incluye** el
+ * padding del canal; por eso el papel se escala contra `anchoUtil`.
+ *
+ * Con `anchoDisponible ≥ anchoHoja + CANAL_CROMA_PX` la hoja va a tamaño
+ * real y el canal es el completo. Por debajo, los dos se encogen a la vez
+ * con el MISMO factor `s = anchoDisponible / (anchoHoja + CANAL)`, que es la
+ * solución de `s·anchoHoja + CANAL·s = anchoDisponible`: el papel nunca se
+ * sale por la derecha y el canal nunca sobra de más.
+ */
+export function geometriaHoja({
+  anchoDisponible,
+  anchoHoja,
+  lectura = false,
+  escala,
+}: {
+  anchoDisponible: number;
+  anchoHoja: number;
+  /** En lectura no se monta croma: canal 0. */
+  lectura?: boolean;
+  /** Escala impuesta por quien llama (tiene prioridad). */
+  escala?: number;
+}): { canal: number; escalaEfectiva: number; anchoUtil: number } {
+  const canalPleno = lectura ? 0 : CANAL_CROMA_PX;
+  // Todavía sin medir (SSR y primer render): hoja a tamaño real con el canal
+  // completo, que es como se pintaba antes de este helper. Reservarlo desde
+  // el principio evita que la croma salte de sitio al hidratar.
+  if (!(anchoDisponible > 0)) {
+    return { canal: canalPleno, escalaEfectiva: escala ?? 1, anchoUtil: 0 };
+  }
+  const s =
+    escala ?? Math.min(1, anchoDisponible / (anchoHoja + canalPleno));
+  const canal = Math.round(canalPleno * Math.min(1, s));
+  const anchoUtil = Math.max(0, anchoDisponible - canal);
+  return { canal, escalaEfectiva: s, anchoUtil };
+}
 /** Alto mínimo de la hoja (Carta 27.94 cm ≈ 1027 px). */
 export const HOJA_ALTO_MIN_PX = 1027;
 export const EMPRESA_DEFAULT = "VuelaTour — Aero Charter Cancún";

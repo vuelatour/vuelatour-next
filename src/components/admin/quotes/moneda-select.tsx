@@ -24,7 +24,10 @@ export function MonedaSelect({
       onChange={(ev) => onChange(ev.target.value === "MXN" ? "MXN" : "USD")}
       aria-label="Moneda"
       className={cn(
-        "h-8 rounded-lg border border-input bg-transparent px-2 text-xs font-medium outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30",
+        // `cursor-pointer`: pedido del cliente (22-sep-2026) — se pulsa, así
+        // que lo dice. Vive FUERA del papel (costo del operador externo), o
+        // sea fuera del alcance de la regla CSS de la hoja.
+        "h-8 cursor-pointer rounded-lg border border-input bg-transparent px-2 text-xs font-medium outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30",
         className,
       )}
     >

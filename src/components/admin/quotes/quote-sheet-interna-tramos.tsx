@@ -280,7 +280,7 @@ export function QuoteSheetInternaTramos({
             <span className="cot-margen" {...UI}>
               <button
                 type="button"
-                className="cot-margen__accion cot-margen__accion--peligro"
+                className="cot-margen__accion cot-margen__accion--peligro cursor-pointer"
                 onClick={() => pedirQuitar(idx)}
                 disabled={legs.length <= 1}
                 aria-label={`Quitar tramo ${idx + 1}`}
@@ -290,7 +290,7 @@ export function QuoteSheetInternaTramos({
               </button>
               <button
                 type="button"
-                className="cot-margen__accion"
+                className="cot-margen__accion cursor-pointer"
                 onClick={(e) => {
                   const ancla = e.currentTarget;
                   setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
@@ -415,7 +415,7 @@ export function QuoteSheetInternaTramos({
   const filaAgregar = !lectura ? (
     <tr className="cot-fila cot-fila-agregar" {...UI}>
       <td colSpan={6}>
-        <button type="button" className="cot-btn" onClick={addLeg}>
+        <button type="button" className="cot-btn cursor-pointer" onClick={addLeg}>
           + Agregar tramo
         </button>
         <span className="cot-sep">·</span>

@@ -386,7 +386,7 @@ export function QuoteSheetDesglose({
             <span className="cot-sep">·</span>
             <button
               type="button"
-              className="cot-liga"
+              className="cot-liga cursor-pointer"
               data-guard-exempt
               onClick={() => onAbrirInterno("tarifa")}
               title={tituloAjustar}
@@ -408,11 +408,19 @@ export function QuoteSheetDesglose({
   // operador siga viendo dónde viven las TUAS: aporta 0 y no se imprime.
   const tuasVacia = canonico && filas.length === 0 && Math.abs(tuasTotalUsd) < 0.005;
   // SWITCH «Se cobran TUAS» (Fase 2.3, 22-sep-2026): baja del panel lateral al
-  // MARGEN del PRIMER renglón del bloque TUAS — que es donde se lee el efecto
-  // (apagado, ninguna TUA entra al total). Es CROMA: el papel nunca escribe
-  // «se cobran», lo dice el desglose. Solo el documento interno lo lleva; en
-  // la hoja del cliente el control sigue en el panel (es el único que ve un
-  // rol sin hoja interna).
+  // PRIMER renglón del bloque TUAS — que es donde se lee el efecto (apagado,
+  // ninguna TUA entra al total). Es CROMA: el papel nunca escribe «se cobran»,
+  // lo dice el desglose. Solo el documento interno lo lleva; en la hoja del
+  // cliente el control sigue en «Ajustes de la cotización» (es el único que ve
+  // un rol sin hoja interna).
+  //
+  // EN LA LÍNEA, NO EN EL MARGEN (pedido del cliente, 22-sep-2026 noche: «se
+  // pierde el botón o la opción que está del lado izquierdo que solo se
+  // alcanza a ver COBRAN»). El desglose es la columna IZQUIERDA del papel, así
+  // que un `.cot-margen` (`right: 100 %`) de ~70 px se sale de la hoja y lo
+  // corta el borde del contenedor: la mitad del control quedaba fuera de la
+  // pantalla. Va donde ya viven «capturado · quitar» y el control del redondeo
+  // (`.cot-acciones`), dentro del papel y siempre alcanzable.
   //
   // Cuál es ese primer renglón se DECIDE aquí, no se va tachando mientras se
   // pinta: en edición el bloque tiene una de tres formas —detalle por
@@ -428,27 +436,28 @@ export function QuoteSheetDesglose({
           : "linea"
       : null;
   const switchTuas: ReactNode = hostTuas ? (
-    <SwitchHoja
-      checked={valores.cobrar_tuas}
-      onChange={(v) => onCambio("cobrar_tuas", v)}
-      label={valores.cobrar_tuas ? "se cobran" : "no se cobran"}
-      ariaLabel="Se cobran las TUAS"
-      title="Apagado: ninguna TUA entra al total (override $0/pax). El monto por aeropuerto se edita en su propio renglón."
-    />
+    <span className="cot-acciones" {...UI}>
+      {/* Espacio real = oportunidad de salto antes del «·». */}
+      {" "}
+      <span className="cot-sep">·</span>
+      <SwitchHoja
+        checked={valores.cobrar_tuas}
+        onChange={(v) => onCambio("cobrar_tuas", v)}
+        label={valores.cobrar_tuas ? "se cobran" : "no se cobran"}
+        ariaLabel="Se cobran las TUAS"
+        title="Apagado: ninguna TUA entra al total (override $0/pax). El monto por aeropuerto se edita en su propio renglón."
+      />
+    </span>
   ) : null;
   if (filas.length === 0 && detalleLegado.length === 0 && (!tuasVacia || !lectura)) {
-    const margen = hostTuas === "linea" ? switchTuas : null;
+    const enLinea = hostTuas === "linea" ? switchTuas : null;
     agregarFila(
       tuasVacia ? 0 : tuasTotalUsd,
       false,
       <tr key="tuas" className={cn("cot-fila", tuasVacia && "cot-fila--fantasma")} {...(tuasVacia ? UI : {})}>
-        <td className="lbl cot-ancla">
+        <td className="lbl">
           TUAS
-          {margen && (
-            <span className="cot-margen" {...UI}>
-              {margen}
-            </span>
-          )}
+          {enLinea}
         </td>
         <td className="val">{val(b ? b.tuas.total_usd : null)}</td>
       </tr>,
@@ -456,18 +465,14 @@ export function QuoteSheetDesglose({
   }
   if (filas.length === 0) {
     detalleLegado.forEach((concepto, i) => {
-      const margen = hostTuas === "legado" && i === 0 ? switchTuas : null;
+      const enLinea = hostTuas === "legado" && i === 0 ? switchTuas : null;
       agregarFila(
         detalleLegado.length === 1 ? tuasTotalUsd : 0,
         false,
         <tr key={`leg-${i}`} className="cot-fila">
-          <td className={cn("lbl", margen && "cot-ancla")}>
+          <td className="lbl">
             {concepto}
-            {margen && (
-              <span className="cot-margen" {...UI}>
-                {margen}
-              </span>
-            )}
+            {enLinea}
           </td>
           <td className="val">{detalleLegado.length === 1 ? val(b!.tuas.total_usd) : ""}</td>
         </tr>,
@@ -487,7 +492,7 @@ export function QuoteSheetDesglose({
         onChange={setTua}
         valor={filas.length === 1 ? val(b!.tuas.total_usd) : ""}
         interna={dialecto.tua === "INTERNA"}
-        margenExtra={hostTuas === "fila" && i === 0 ? switchTuas : null}
+        accionExtra={hostTuas === "fila" && i === 0 ? switchTuas : null}
       />,
     );
   });
@@ -643,7 +648,7 @@ export function QuoteSheetDesglose({
                         <>
                           <button
                             type="button"
-                            className="cot-margen__accion cot-margen__accion--peligro"
+                            className="cot-margen__accion cot-margen__accion--peligro cursor-pointer"
                             onClick={() => removeExtra(idx)}
                             aria-label={`Quitar extra ${e.concepto || idx + 1}`}
                             title="Quitar concepto"
@@ -652,7 +657,7 @@ export function QuoteSheetDesglose({
                           </button>
                           <button
                             type="button"
-                            className="cot-margen__accion"
+                            className="cot-margen__accion cursor-pointer"
                             onClick={(ev) => {
                               const ancla = ev.currentTarget;
                               setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
@@ -754,13 +759,13 @@ export function QuoteSheetDesglose({
       false,
       <tr key="agregar" className="cot-fila cot-fila-agregar" {...UI}>
         <td className="lbl" colSpan={2}>
-          <button type="button" className="cot-btn" onClick={() => addExtra("")}>
+          <button type="button" className="cot-btn cursor-pointer" onClick={() => addExtra("")}>
             + Agregar concepto
           </button>
           {EXTRAS_SUGERIDOS.map((s) => (
             <span key={s}>
               <span className="cot-sep">·</span>
-              <button type="button" className="cot-btn" onClick={() => addExtra(s)} title={`Agregar «${s}»`}>
+              <button type="button" className="cot-btn cursor-pointer" onClick={() => addExtra(s)} title={`Agregar «${s}»`}>
                 {s}
               </button>
             </span>
@@ -1149,7 +1154,7 @@ function FueraDelTotal({
       {onCorregir ? (
         <button
           type="button"
-          className="cot-aviso__liga"
+          className="cot-aviso__liga cursor-pointer"
           {...(exento ? { "data-guard-exempt": "" } : {})}
           onClick={(ev) => onCorregir(ev.currentTarget)}
           title={TITULO}
@@ -1178,7 +1183,7 @@ function FilaTua({
   onChange,
   valor,
   interna = false,
-  margenExtra = null,
+  accionExtra = null,
 }: {
   fila: TuasFila;
   linea?: TuaLinea;
@@ -1189,8 +1194,12 @@ function FilaTua({
   valor: string;
   /** Documento INTERNO: «TUA CUN» + gris «4 pax × $25.00» (`_tua_fila`). */
   interna?: boolean;
-  /** Croma extra del margen (el switch «Se cobran TUAS» del primer renglón). */
-  margenExtra?: ReactNode;
+  /**
+   * Croma extra EN LA LÍNEA (el switch «Se cobran TUAS» del primer renglón).
+   * En la línea y no en el margen: el desglose es la columna izquierda del
+   * papel y ahí el margen se sale de la hoja (pedido del cliente, 22-sep).
+   */
+  accionExtra?: ReactNode;
 }) {
   // Dos documentos, el MISMO unitario editable: solo cambia el envoltorio.
   const pi = piezasConceptoTuaInterna(fila, fila.tc_aplicado ? fmtTc(fila.tc_aplicado) : "");
@@ -1232,7 +1241,7 @@ function FilaTua({
               <span className="cot-sep">·</span>
               <button
                 type="button"
-                className="cot-liga"
+                className="cot-liga cursor-pointer"
                 onClick={() => onChange(fila.iata, null, moneda)}
                 title="Quitar la captura: vuelve al monto del catálogo"
               >
@@ -1242,11 +1251,13 @@ function FilaTua({
           )}
           </TuaEnvoltorio>
         )}
+        {/* Croma EN LA LÍNEA, fuera del gris de `.op`: el switch de TUAS del
+            primer renglón (pedido del cliente, 22-sep-2026 noche). */}
+        {!lectura && accionExtra}
         {!lectura && (
           <span className="cot-margen" {...UI}>
-            {margenExtra}
             <select
-              className="cot-in cot-fantasma"
+              className="cot-in cot-fantasma cursor-pointer"
               value={moneda}
               disabled={disabled}
               aria-label={`Moneda de la TUA en ${fila.iata}`}
@@ -1312,7 +1323,7 @@ function FilaTuaExenta({
               exento
             </span>
             {!disabled && (
-              <button type="button" className="cot-liga" onClick={() => setCapturar(true)} title={air.razon}>
+              <button type="button" className="cot-liga cursor-pointer" onClick={() => setCapturar(true)} title={air.razon}>
                 capturar
               </button>
             )}
@@ -1412,7 +1423,7 @@ function DetalleExtra({
         <select
           value={e.moneda ?? "USD"}
           aria-label="Moneda del extra"
-          className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs font-medium outline-none focus-visible:border-ring dark:bg-input/30"
+          className="h-8 cursor-pointer rounded-lg border border-input bg-transparent px-2 text-xs font-medium outline-none focus-visible:border-ring dark:bg-input/30"
           onChange={(ev) => onChange({ moneda: ev.target.value === "MXN" ? "MXN" : "USD" })}
         >
           <option value="USD">USD</option>

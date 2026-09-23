@@ -583,7 +583,7 @@ describe("acento de interacción (solo edición)", () => {
     const p = hoja1().props();
     p.valores = { ...p.valores, cliente_id: "", fecha_traslado_final: "" };
     const html = renderToString(<QuoteSheet {...p} />);
-    expect(html).toMatch(/cot-sel cot-sel--vacio[^>]*>Selecciona cliente</);
+    expect(html).toMatch(/cot-sel[^"]*cot-sel--vacio[^>]*>Selecciona cliente</);
     expect(html).toMatch(/cot-fecha__texto cot-fecha__texto--vacio">Por confirmar</);
   });
 
@@ -591,7 +591,7 @@ describe("acento de interacción (solo edición)", () => {
     const html = renderToString(<QuoteSheet {...hoja1().props()} clienteExtra={clienteExtra} />);
     const meta = html.slice(html.indexOf('class="meta"'), html.indexOf('class="route'));
     expect(meta).toMatch(
-      /<span class="cot-acciones" data-cot-ui=""> <span class="cot-sep">·<\/span><button[^>]*class="cot-liga"[^>]*>\+ nuevo cliente<\/button><\/span>/,
+      /<span class="cot-acciones" data-cot-ui=""> <span class="cot-sep">·<\/span><button[^>]*class="cot-liga[^"]*"[^>]*>\+ nuevo cliente<\/button><\/span>/,
     );
     // Nunca en el margen del papel (a 12 px se salía de la hoja).
     expect(meta).not.toContain("cot-margen");
@@ -611,7 +611,7 @@ describe("atajos a Interno › Tarifa y horas (solo edición, nada impreso)", ()
   it("«· ajustar» en la línea de Servicio aéreo (toggle de tarifa encendido: la etiqueta impresa ya trae h × $/hr)", () => {
     const html = renderToString(<QuoteSheet {...conAtajo()} />);
     expect(html).toMatch(
-      /Servicio aéreo \(2\.4 h × \$1,650\.00\/hr\)<span class="cot-acciones" data-cot-ui=""> <span class="cot-sep">·<\/span><button[^>]*class="cot-liga"[^>]*>ajustar<\/button><\/span>/,
+      /Servicio aéreo \(2\.4 h × \$1,650\.00\/hr\)<span class="cot-acciones" data-cot-ui=""> <span class="cot-sep">·<\/span><button[^>]*class="cot-liga[^"]*"[^>]*>ajustar<\/button><\/span>/,
     );
     // El texto impreso de la hoja sigue idéntico al del PDF.
     expect(sinEspacios(textoImpreso(parsearHoja(html), true))).toBe(

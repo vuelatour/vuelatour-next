@@ -44,7 +44,7 @@ describe("hoja · renglón de extras fuera del total (solo edición)", () => {
     // La leyenda es croma: subárbol `data-cot-ui` (el test de fidelidad la
     // descarta al comparar con el PDF) y un botón que lleva al campo.
     expect(html).toMatch(
-      /<span class="cot-aviso" data-cot-ui=""><button[^>]*class="cot-aviso__liga"[^>]*>Falta el nombre: no se suma ni se imprime<\/button><\/span>/,
+      /<span class="cot-aviso" data-cot-ui=""><button[^>]*class="cot-aviso__liga[^"]*"[^>]*>Falta el nombre: no se suma ni se imprime<\/button><\/span>/,
     );
     // El importe sigue capturado (no se borra nada): el CSS lo atenúa.
     expect(html).toContain('value="35.00"');
@@ -146,7 +146,7 @@ describe("hoja · el total es el del motor, y la leyenda explica la diferencia",
  * en el grupo.
  */
 describe("hoja · a dónde lleva (y a dónde NO) la leyenda", () => {
-  const ligaDe = (html: string) => html.match(/<button[^>]*class="cot-aviso__liga"[^>]*>/)?.[0] ?? "";
+  const ligaDe = (html: string) => html.match(/<button[^>]*class="cot-aviso__liga[^"]*"[^>]*>/)?.[0] ?? "";
 
   it("falta el nombre o el monto tecleado: el clic solo enfoca ⇒ exento del guard", () => {
     expect(ligaDe(renderToString(<QuoteSheet {...conExtras([EXTRA_SIN_NOMBRE])} />))).toContain("data-guard-exempt");

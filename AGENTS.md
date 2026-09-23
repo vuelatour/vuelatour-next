@@ -1220,13 +1220,13 @@ porque en la cotización interna sí va a aparecer todo».
   (`el.matches("input, button") ? el : el.querySelector(…)`) porque nada
   garantiza que el próximo ancla nazca igual. **Cada ancla existe UNA sola
   vez**: la hoja interna y `QuoteCapturaBasica` son EXCLUYENTES (una u otra,
-  nunca las dos) y la hoja del CLIENTE en LECTURA —el respaldo de la pestaña
-  «PDF del cliente», que convive con la interna oculta— no monta ningún id.
+  nunca las dos) y, desde que se retiró la pestaña del PDF, la hoja del CLIENTE
+  solo la monta el rol SIN hoja interna — nunca las dos a la vez.
   Congelado en `__tests__/quote-pantalla-completa.test.tsx`.
-- localStorage: `vt-cotizador-hoja-v1` (pestaña) y
-  `vt-cotizador-plegado-<id>-v1` (los `<details>` bajo el papel). Las claves
-  `vt-cotizador-interno-v1` (panel lateral), `vt-cotizador-plegado-v2` y
-  `vt-cotizador-preview-v1` ya no se usan.
+- localStorage: **solo** `vt-cotizador-plegado-<id>-v1` (los `<details>` bajo
+  el papel). Las claves `vt-cotizador-interno-v1` (panel lateral),
+  `vt-cotizador-hoja-v1` (la pestaña retirada la noche del 22-sep-2026),
+  `vt-cotizador-plegado-v2` y `vt-cotizador-preview-v1` ya no se usan.
 - Teclado: Enter en la ruta rápida arma tramos; Ctrl/⌘+S guarda por el
   mismo camino que el botón primario (revisión: diálogo / presentación;
   alta: «Crear v1»); Esc cierra diálogos (Base UI: `DropdownMenuItem` usa
@@ -1857,16 +1857,14 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   en un Excel […] la idea es ir quitando el modal flotante lateral derecho “No
   se imprime”». Se invierte la relación: **la hoja interna es el FORMULARIO y
   el PDF del cliente es una SALIDA** (pestaña de solo lectura).
-- **PESTAÑAS** (`quote-calculator.tsx`): «**Hoja interna**» (editable, por
-  defecto) | «**PDF del cliente**» (LECTURA, con `mapaSvg`). Solo para los
-  roles de `ROLES_HOJA_INTERNA`; **SOCIO no ve pestañas**: su pantalla sigue
-  siendo la hoja del cliente editable, como hasta hoy. Memoria por usuario en
-  `localStorage vt-cotizador-hoja-v1`. Los botones llevan `data-guard-exempt`
-  (cambiar de vista no edita). **La hoja interna NO se desmonta** al cambiar de
-  pestaña (`hidden`): es la que tiene los campos capturados y los ids ancla
-  (`pasajeros-field`, `tc-usd-mxn-field`); un `{activa && …}` perdería el
-  borrador a medio teclear. La del cliente sí se desmonta: en lectura no monta
-  ni un input, así que no duplica ids y no hay nada que perder.
+- **PESTAÑAS — RETIRADAS la noche del 22-sep-2026** (ver «Ajustes 22-sep
+  (noche)» más abajo). Durante unas horas la pantalla tuvo «Hoja interna»
+  (editable) | «PDF del cliente» (lectura, con la vista previa real en un
+  iframe) y memoria en `localStorage vt-cotizador-hoja-v1`. El cliente pidió
+  quitar esa pestaña: **quien ve la hoja interna ve SOLO la hoja interna** y el
+  PDF del cliente se abre o se descarga cuando alguien lo pide. **SOCIO** sigue
+  con su hoja del cliente editable, como siempre. Esa clave de localStorage y
+  `quote-pdf-cliente-vista.tsx` ya no existen.
 - **Componentes**: `quotes/quote-sheet-interna.tsx` (el documento; raíz
   `<div class="cot-interna cot-interna--pantalla">`) + `-tramos` (la tabla del
   Excel) + `-cobros`. El DESGLOSE lo pinta el MISMO `QuoteSheetDesglose` de la
@@ -1921,7 +1919,7 @@ sobre los MISMOS campos RHF de siempre, y el total lo sigue diciendo el
 | «¿Cuál método?» (OTRO) | junto al selector; el papel imprime «Otro (PayPal)» | — |
 | Comisión de terminal % | misma frase, tras el método; **solo se captura con BillPocket** (el % de Paywise lo pone la config) | `billpocket-field` |
 | Redondeo (switch auto + monto manual) | **en la línea** del renglón «Redondeo» del desglose (`.cot-acciones`: el margen izquierdo de esa columna se sale del papel); sin ajuste el renglón es FANTASMA (`data-cot-ui`, aporta 0) | `redondeo-field` |
-| Switch «Se cobran TUAS» | margen del PRIMER renglón del bloque TUAS del desglose | — |
+| Switch «Se cobran TUAS» | **en la LÍNEA** del PRIMER renglón del bloque TUAS del desglose (`.cot-acciones`; estuvo en el margen hasta la noche del 22-sep, donde se salía del papel) | — |
 | «Cotización abierta» / «Pase de abordar» | fila **«Marcas»** de la ficha derecha; sin marcas encendidas la fila entera es croma | — |
 | Notas internas | su bloque del papel: **editables solo en el ALTA** (`revise` no las manda; al revisar se leen y se dice que se cambian en «Editar datos» del vuelo) | — |
 | Clientes frecuentes · «+ nuevo cliente» · «corregir nombre» · «Poner todo en $0» | croma en la línea «Cliente» de la ficha (`clienteExtra`); el $0 confirma con `AlertDialog` | — |
@@ -2164,17 +2162,12 @@ ser: banda(s) de aviso → papel (hoja interna | PDF del cliente) → pila de
   OBLIGATORIO no puede quedar escondido detrás de un triángulo. Abrir por
   fuerza SÍ escribe la memoria (`vt-cotizador-plegado-externo-v1`): cerrarlo
   después es decisión del operador y se respeta hasta el siguiente encendido.
-- **La pestaña «PDF del cliente» pide la vista previa REAL**
-  (`useQuotePreviewHtml` con `activo: previewLimpio || hojaActiva ===
-  "cliente"` → `POST /v1/quotes/preview-html` por el proxy que ya existía) y
-  la pinta en un **`<iframe srcDoc>`** (`quote-pdf-cliente-vista.tsx`):
-  `render_cotizacion_preview_html` devuelve un documento COMPLETO con su
-  `<style>` —el CSS de pantalla de pyservices, que NO es el del panel—, así
-  que inyectarlo con `dangerouslySetInnerHTML` metería esas reglas en el
-  shell. Va sin `allow-scripts` y con `allow-same-origin` solo para MEDIR su
-  alto. Mientras llega, o si el servidor no tiene el endpoint (404), se pinta
-  la réplica `QuoteSheet` en LECTURA como RESPALDO — nunca una pantalla en
-  blanco, y nunca sin decir cuál de las dos se está viendo.
+- **La pestaña «PDF del cliente» con la vista previa REAL en iframe vivió
+  unas horas y se RETIRÓ** esa misma noche (pedido del cliente: «no hace falta
+  verlo»). `quote-pdf-cliente-vista.tsx` se borró; `useQuotePreviewHtml` quedó
+  SOLO para el mapa de la hoja del cliente con el form limpio y ya no se pide
+  para los roles que ven el papel interno (`activo: previewLimpio &&
+  !hayHojaInterna`). El proxy `/api/quotes/preview-html` sigue en pie.
 - **Atajos**: `abrirInterno` y `destinoInternoPendiente` desaparecieron del
   cotizador; `enfocarEnHoja` de la hoja interna ya no tiene a dónde caer (sus
   tres anclas están SIEMPRE montadas en el papel) y `QuoteSheetInterna` perdió
@@ -2236,6 +2229,150 @@ ser: banda(s) de aviso → papel (hoja interna | PDF del cliente) → pila de
   anclas de ecos, la idempotencia, el guard único de CONFIRMADO/RESERVA (los
   `<details>` siguen DENTRO del contenedor que lo intercepta), `beforeunload`,
   el 409 y `?d=`. Cero dinero calculado en pantalla.
+
+### Ajustes 22-sep (noche): sin pestaña de PDF, nada clicable fuera del papel, cursor-pointer
+
+Pedido del cliente sobre la hoja interna ya desplegada (captura de la #232):
+«(1) el botón de la pestaña de PDF del cliente, ese lo vamos a quitar porque no
+hace falta verlo, ese solo mandarlo a imprimir cuando se requiera para
+descargar y enviar al cliente, pero es raro que lo pidan. (2) … se pierde el
+botón o la opción que está del lado izquierdo que solo se alcanza a ver
+“COBRAN”. (3) Todas las opciones que sean cliqueables deben tener la clase
+cursor-pointer para que el usuario sepa que puede interactuar con esa opción y
+no es un dato fijo o que no se puede editar».
+
+1. **UNA sola hoja en pantalla.** La pestañera «Hoja interna | PDF del
+   cliente» se RETIRÓ con su estado (`hojaActiva`), su memoria
+   (`localStorage vt-cotizador-hoja-v1`, clave muerta) y la vista previa en
+   iframe (`quote-pdf-cliente-vista.tsx`, **borrado**). Quien ve la hoja
+   interna ve SOLO la hoja interna; el rol sin ella (SOCIO) sigue con su hoja
+   del cliente editable, exactamente como antes. El PDF del cliente se ABRE o
+   se DESCARGA: «PDF» + `<a download>` de la barra de acciones y «Ver PDF
+   real» / «Guardar y ver PDF» de la TotalBar (`abrirPdfCotizacion`, sin
+   cambios), y el `<details>` «PDF del cliente: qué se imprime» sigue bajo el
+   papel — ahora dice dónde se ve el resultado, para que nadie lo busque en
+   pantalla.
+   - **`useQuotePreviewHtml` sigue vivo pero se pide MENOS**: su único consumo
+     era (a) el MAPA de la hoja del cliente con el form limpio y (b) la
+     pestaña. Como esa hoja solo la monta el rol SIN hoja interna, el hook va
+     con `activo: previewLimpio && !hayHojaInterna`: para ADMIN/COORDINADOR/
+     FACTURACION/ANALISTA ya no se arma NI UN render de pyservices por
+     cotización (el papel interno no lleva mapa). El proxy
+     `/api/quotes/preview-html` NO se toca: lo sigue usando ese rol.
+2. **Nada clicable fuera del papel.** El `.cot-margen` (`right: 100 %`) vive
+   FUERA del área impresa y el desglose es la columna IZQUIERDA de la hoja: el
+   switch «Se cobran TUAS» quedaba medio fuera del contenedor — eso era el
+   «COBRAN» cortado de la captura. Dos correcciones:
+   - **El switch de TUAS pasa a la LÍNEA** del primer renglón del bloque TUAS
+     (`.cot-acciones`, el patrón de «capturado · quitar» y del redondeo), con
+     la etiqueta «se cobran» / «no se cobran». Sigue siendo croma
+     (`data-cot-ui`), sigue sin `data-guard-exempt` (cambiarlo ES editar) y
+     el prop de `FilaTua` pasó de `margenExtra` a `accionExtra`.
+   - **El papel gana un CANAL a la izquierda** (`CANAL_CROMA_PX = 88`, fuente
+     única en `lib/admin/quote-sheet.ts`): las DOS hojas lo reservan como
+     `padding-left` de su `.cot-escenario` y lo DESCUENTAN del ancho antes de
+     escalar (`clientWidth` incluye el padding), así el papel nunca se sale
+     por la derecha y lo que queda en el margen —🗑, ⋯ y las marcas de
+     pax/ferry/pernocta/nota— siempre está dentro del contenedor. En LECTURA
+     el canal es 0: ahí no se monta croma.
+   - **La geometría la decide `geometriaHoja`** (`lib/admin/quote-sheet.ts`,
+     PURA, prueba en `lib/admin/__tests__/quote-sheet.test.ts`), una sola
+     regla para las dos hojas: `s = min(1, ancho / (anchoHoja + CANAL))` y
+     `canal = CANAL · s`. **El canal ESCALA CON EL PAPEL**, y no es un
+     detalle: con un canal FIJO (los 72 px del primer intento) la cuenta
+     falla justo en el punto donde la hoja deja de escalar —contenedor de
+     866–888 px, un portátil de 13″— porque ahí el papel presta su padding SIN
+     escalar y el canal tampoco crece; y en una pantalla angosta un canal
+     fijo se come un cuarto del ancho. Escalado, `canal + padding·s ≥
+     margen·s` se cumple a TODOS los anchos. El tamaño (88) sale de medir el
+     margen más cargado REAL —el tramo 4 de la #232: ferry + pernocta +
+     servicio + nota + oculto ⇒ ~116 px, ~152 px en la hoja del cliente, que
+     además lleva el botón de HORAS— contra el padding que presta cada papel
+     (45 px el interno, 74 px el del cliente). Sin medir todavía (SSR y primer
+     render) el canal ya se reserva completo: si apareciera al hidratar, la
+     croma saltaría de sitio.
+   - Congelado en `quote-pantalla-completa.test.tsx`: el switch de TUAS está
+     DENTRO de la tabla del desglose y **ningún `.cot-margen` contiene un
+     `role="switch"` ni un `.cot-liga`** (lo ancho va en la línea; en el
+     margen solo iconos de 18 px y marcas de 9 px), y el `padding-left` del
+     escenario se compara contra la CONSTANTE, no contra un número a mano.
+3. **`cursor-pointer` en TODO lo que se pulsa** (el cliente pidió la CLASE, no
+   solo el efecto). Tailwind v4 dejó los `<button>` con la flecha del sistema
+   y en el papel los controles son invisibles en reposo: juntos se leen como
+   «dato fijo».
+   - La clase se agregó en los PRIMITIVOS compartidos —`ui/button.tsx`,
+     `ui/switch.tsx` y el disparador de `ui/searchable-select.tsx`— así que
+     alcanza a todo el panel, y en la croma del papel: `.cot-liga`,
+     `.cot-btn`, `.cot-margen__accion` (🗑 y ⋯), `.cot-marca--liga`, los
+     `select` de moneda, `SwitchHoja`, `SegmentoHoja`, `PlegableHoja`,
+     `CampoSelect`, `CampoFecha`/`CampoDia` y el `Segmentado` de
+     `QuoteCapturaBasica`. También los `<details>` de abajo: `.cot-ops__btn`
+     («Cotizar con estos tramos», en sus DOS pieles), «+ nombres de
+     pasajeros» de la ruta operativa, el aviso del costo externo en MXN, el
+     enlace de «Plantilla de ruta» y «+ nuevo aeropuerto»
+     (`airport-quick-create-button.tsx`, que también se usa fuera del
+     cotizador).
+   - **Regla ÚNICA de respaldo** en `cotizacion-interna-pantalla.css`, sección
+     5, bajo `.cot-interna:not(.cot-interna--lectura)`: `button, summary, a,
+     select, label[for], .cot-fecha, [role="button"], [role="switch"],
+     [role="tab"], [data-clic], input[type="date"|"datetime-local"|
+     "checkbox"], .cot-liga, .cot-chip, .cot-sel` ⇒ `cursor: pointer`, más
+     `:disabled ⇒ default`, hover tenue y foco visible. Los inputs de
+     texto/número **conservan `cursor: text`** pero ganan hover con fondo y
+     subrayado del acento: «invisible en reposo» era justo lo que el cliente
+     describía como dato fijo.
+   - **La hoja del CLIENTE tiene su PROPIO CSS** y hubo que tocarlo igual
+     (revisión adversaria): es la ÚNICA pantalla del rol SOCIO. Dos arreglos
+     en `cotizacion-hoja-pantalla.css`: (a) `.cot-fecha__input` estaba en
+     `cursor: text` —ese input TRANSPARENTE cubre la etiqueta entera, así que
+     su cursor es el ÚNICO que se ve y la clase `cursor-pointer` del `<label>`
+     no llegaba: la fecha del vuelo seguía leyéndose como dato fijo—; (b) la
+     MISMA regla única de respaldo, bajo `.cot-hoja:not(.cot-hoja--lectura)`.
+   - **`label[for]` también se pulsa**: `ui/label.tsx` agrega `cursor-pointer`
+     **solo cuando lleva `htmlFor`** (se lo pone `Field`), porque una etiqueta
+     ligada enciende el switch o enfoca el campo y una suelta no hace nada —
+     prometer la manita ahí sería mentir. Alcanza a todo el panel, igual que
+     Button/Switch/SearchableSelect. Y `MonedaSelect` (costo del operador
+     externo, FUERA del papel) la lleva explícita.
+   - Lo vigila `quote-pantalla-completa.test.tsx`: en CADA caso (rol × modo)
+     ningún `<button>`/`<summary>` habilitado se queda sin la clase, ningún
+     `role="switch"` tampoco, y el CSS contiene la regla con todos sus
+     selectores colgando de `:not(--lectura)`. Encima corre un **INVENTARIO
+     COMPLETO** del DOM renderizado —`button`, `summary`, `select`, `a[href]`,
+     `label[for]`, `[role=button|switch|tab]` e inputs de
+     fecha/checkbox/radio/file— que acepta la CLASE **o** una regla
+     `cursor: pointer` REAL del CSS de la hoja donde vive el nodo (parsea los
+     DOS archivos y respeta `--lectura`). Ese inventario es el que encontró
+     los tres huecos de arriba: el mirar solo `<button>`/`<summary>` los
+     dejaba pasar.
+4. **El avión EN TALLER se dice UNA vez** (dos con el chip). Se anunciaba
+   TRES: chip de la TotalBar + nota ámbar grande + banda de avisos.
+   `QuoteAvisosBanda` gana `yaDichos`: los textos que otro componente de la
+   MISMA pantalla ya pinta se descartan (la fuente de los dos es
+   `lib/admin/aviso-taller.ts`, así que se comparan sin redactar nada; mismo
+   patrón que `aviones-editor.tsx` en el grupo). **Se conserva el chip de la
+   TotalBar a propósito**: es el resumen que sigue a la vista al hacer scroll,
+   mientras la nota —la que dice qué hacer— se queda arriba. Probado con el
+   avión en taller (#232, N58BT): «está en taller» aparece 2 veces, nunca 3.
+   En LECTURA la nota ámbar no se monta, así que las dos apariciones son el
+   chip y la banda — ahí `yaDichos` va vacío a propósito.
+5. **Lo que NO cambió**: el marcado IMPRESO (los 4 fixtures `interna-*.html` y
+   los 7 de la hoja del cliente se regeneraron con
+   `npm run gen:hoja-interna-fixture` y salieron **byte a byte idénticos**),
+   ninguna regla de guardado, `armarCalcPayload`, `tramos_base`, la
+   idempotencia, el guard de CONFIRMADO/RESERVA ni el dinero: aquí no se
+   calcula nada. Los tests que miraban la clase EXACTA de la croma
+   (`class="cot-liga"`, `cot-sel cot-sel--vacio`, el `<summary>` del plegable)
+   ahora aceptan clases adicionales.
+6. **Lo que encontró la revisión adversaria** (misma noche, sobre el DOM
+   renderizado de la #232 y la #329 de producción, ADMIN y SOCIO, alta y
+   revisión, editable y en lectura): (a) la fecha del papel del CLIENTE
+   seguía con el cursor de texto —`.cot-fecha__input`, el arreglo se había
+   hecho solo en el CSS de la interna—; (b) las etiquetas de campo ligadas
+   (`label[for]` de `Field`) y (c) el `MonedaSelect` del costo externo no
+   llevaban la clase; (d) el canal de 72 px se quedaba corto justo en el
+   ancho donde la hoja deja de escalar. Los cuatro están corregidos arriba, y
+   el INVENTARIO COMPLETO del test es la red que los habría atrapado.
 
 ## Lista de flota = el pizarrón de Tacómetros (22-sep-2026)
 

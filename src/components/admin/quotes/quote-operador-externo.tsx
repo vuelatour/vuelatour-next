@@ -284,7 +284,7 @@ export function QuoteOperadorExterno({
                     <button
                       type="button"
                       onClick={focusTc}
-                      className="mt-1 text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
+                      className="mt-1 cursor-pointer text-left text-xs font-medium text-amber-600 dark:text-amber-400 underline underline-offset-2"
                     >
                       Costo en MXN: captura el T.C. en «Total MXN» del desglose — sin tipo de
                       cambio no se puede derivar el USD ni guardar.

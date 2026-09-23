@@ -292,7 +292,7 @@ export function QuoteSheetItinerario({
             <span className="cot-margen" {...UI}>
               <button
                 type="button"
-                className="cot-margen__accion cot-margen__accion--peligro"
+                className="cot-margen__accion cot-margen__accion--peligro cursor-pointer"
                 onClick={() => pedirQuitar(idx)}
                 disabled={legs.length <= 1}
                 aria-label={`Quitar tramo ${idx + 1}`}
@@ -302,7 +302,7 @@ export function QuoteSheetItinerario({
               </button>
               <button
                 type="button"
-                className="cot-margen__accion"
+                className="cot-margen__accion cursor-pointer"
                 onClick={(e) => {
                   const ancla = e.currentTarget;
                   setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
@@ -361,7 +361,7 @@ export function QuoteSheetItinerario({
                   que abre sí edita (millas, pasajeros…). */}
               <button
                 type="button"
-                className="cot-marca cot-marca--liga cot-marca--horas"
+                className="cot-marca cot-marca--liga cot-marca--horas cursor-pointer"
                 onClick={(e) => {
                   const ancla = e.currentTarget;
                   setDetalle((v) => (v?.idx === idx ? null : { idx, ancla }));
@@ -424,7 +424,7 @@ export function QuoteSheetItinerario({
   const filaAgregar = !lectura ? (
     <tr className="cot-fila cot-fila-agregar" {...UI}>
       <td colSpan={columnas} className="cot-ancla">
-        <button type="button" className="cot-btn" onClick={addLeg}>
+        <button type="button" className="cot-btn cursor-pointer" onClick={addLeg}>
           + Agregar tramo
         </button>
         <span className="cot-sep">·</span>
@@ -656,7 +656,7 @@ export function DetalleTramo({
                 {" · "}
                 <button
                   type="button"
-                  className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400"
+                  className="cursor-pointer font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400"
                   aria-label="Pactar horas: lleva al campo «Cobrable pactado»"
                   onClick={() => {
                     onCerrar();

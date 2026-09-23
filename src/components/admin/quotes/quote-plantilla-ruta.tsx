@@ -127,7 +127,7 @@ export function QuotePlantillaRuta({
             <button
               type="button"
               onClick={onCrearRuta}
-              className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 transition-colors hover:text-brand-600/80"
+              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-brand-600 transition-colors hover:text-brand-600/80"
             >
               <PlusIcon className="h-3.5 w-3.5" />
               Crear ruta

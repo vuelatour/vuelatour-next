@@ -26,7 +26,7 @@ import {
   resumenComisionVendedor,
   tarifaFicha,
 } from "@/lib/admin/quote-sheet-interna";
-import { EMPRESA_DEFAULT, TZ_NOTA, fechaLegible, numero2 } from "@/lib/admin/quote-sheet";
+import { EMPRESA_DEFAULT, TZ_NOTA, fechaLegible, geometriaHoja, numero2 } from "@/lib/admin/quote-sheet";
 import { tuasMxnSinTc } from "@/lib/admin/tuas";
 import { montoExtraActivo } from "@/lib/admin/extras";
 import { HORAS_EPSILON_4, mismasHoras } from "@/lib/admin/horas";
@@ -101,8 +101,9 @@ import type {
  * la tabla), extras, descuento, IVA %, T.C. y las notas al cliente— y, desde
  * la Fase 2.3 (BLOQUE A), lo que bajó del panel lateral a su renglón: el
  * MÉTODO de cobro previsto con su comisión de terminal (cabecera de COBROS),
- * el REDONDEO (su renglón del desglose), el switch de TUAS (margen del bloque
- * TUAS), las marcas «Cotización abierta» y «Pase de abordar» (fila «Marcas» de
+ * el REDONDEO (su renglón del desglose), el switch de TUAS (en la LÍNEA del
+ * primer renglón de TUAS desde el 22-sep-2026 noche: en el margen se salía del
+ * papel), las marcas «Cotización abierta» y «Pase de abordar» (fila «Marcas» de
  * la ficha), las NOTAS INTERNAS y, en la línea del cliente, la croma de
  * captura (clientes frecuentes, «+ nuevo cliente», «Poner todo en $0»).
  *
@@ -171,6 +172,7 @@ export interface QuoteSheetInternaProps {
 
 /** Ancho del papel CARTA a 96 dpi (el `@page` del PDF interno es Letter). */
 export const HOJA_INTERNA_ANCHO_PX = 816;
+
 
 export function QuoteSheetInterna({
   valores,
@@ -286,8 +288,15 @@ export function QuoteSheetInterna({
     ro.observe(hoja);
     return () => ro.disconnect();
   }, []);
-  const escalaEfectiva =
-    escala ?? (anchoDisponible > 0 ? Math.min(1, anchoDisponible / HOJA_INTERNA_ANCHO_PX) : 1);
+  // Canal de croma + escala: UNA sola regla para las dos hojas
+  // (`geometriaHoja`). El canal se descuenta del ancho ANTES de escalar
+  // (`clientWidth` del escenario lo incluye) y se encoge con el papel.
+  const { canal, escalaEfectiva, anchoUtil } = geometriaHoja({
+    anchoDisponible,
+    anchoHoja: HOJA_INTERNA_ANCHO_PX,
+    lectura,
+    escala,
+  });
   const altoReservado = altoHoja > 0 ? Math.round(altoHoja * escalaEfectiva) : undefined;
 
   // ----- Cabecera -----
@@ -460,7 +469,13 @@ export function QuoteSheetInterna({
     .join(" · ");
 
   return (
-    <div className={cn("cot-escenario", className)} ref={escenarioRef} data-guard-exempt={lectura ? "" : undefined}>
+    <div
+      className={cn("cot-escenario", className)}
+      ref={escenarioRef}
+      data-guard-exempt={lectura ? "" : undefined}
+      // Canal para la croma del margen izquierdo: nunca se corta (22-sep).
+      style={canal ? { paddingLeft: canal } : undefined}
+    >
       {/* Bandas de estado: FUERA del papel, ancho completo, nunca plegables. */}
       {(errorMotor || mxnSinTc) && (
         <div className="mx-auto mb-3 space-y-2" style={{ maxWidth: HOJA_INTERNA_ANCHO_PX }}>
@@ -486,7 +501,7 @@ export function QuoteSheetInterna({
                 Hay TUAS o extras en MXN sin tipo de cambio: el total aún NO los incluye y no se
                 puede guardar.
               </p>
-              <button type="button" onClick={enfocarTc} className="font-medium underline underline-offset-2">
+              <button type="button" onClick={enfocarTc} className="cursor-pointer font-medium underline underline-offset-2">
                 Capturar T.C.
               </button>
             </div>
@@ -501,7 +516,7 @@ export function QuoteSheetInterna({
           transform: escalaEfectiva !== 1 ? `scale(${escalaEfectiva})` : undefined,
           marginLeft:
             escalaEfectiva !== 1
-              ? Math.max(0, (anchoDisponible - HOJA_INTERNA_ANCHO_PX * escalaEfectiva) / 2)
+              ? Math.max(0, (anchoUtil - HOJA_INTERNA_ANCHO_PX * escalaEfectiva) / 2)
               : undefined,
           marginRight: escalaEfectiva !== 1 ? 0 : undefined,
           height: altoReservado,

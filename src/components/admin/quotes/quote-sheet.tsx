@@ -16,6 +16,7 @@ import {
   fechaLegible,
   fechaVueloImpresa,
   fechasTrasladoImpresas,
+  geometriaHoja,
   modelosCotizadosPdf,
   mostrarMatricula,
   puntosRutaVisibles,
@@ -242,8 +243,20 @@ export function QuoteSheet({
     ro.observe(hoja);
     return () => ro.disconnect();
   }, []);
-  const escalaEfectiva =
-    escala ?? (anchoDisponible > 0 ? Math.min(1, anchoDisponible / HOJA_ANCHO_PX) : 1);
+  // Canal de croma a la IZQUIERDA (22-sep-2026, noche): el margen de fila
+  // (`.cot-margen`, `right: 100 %`) vive FUERA del área impresa —🗑, ⋯, las
+  // marcas del tramo y el botón de HORAS, que esta hoja sí lleva— y el papel
+  // solo tiene su padding donde apoyarse. Con la hoja pegada al borde del
+  // contenedor esas acciones quedaban CORTADAS (el mismo defecto que el
+  // cliente reportó en la hoja interna). MISMA regla que la interna:
+  // `geometriaHoja` (el canal se descuenta antes de escalar y escala con el
+  // papel).
+  const { canal, escalaEfectiva, anchoUtil } = geometriaHoja({
+    anchoDisponible,
+    anchoHoja: HOJA_ANCHO_PX,
+    lectura,
+    escala,
+  });
   const altoReservado = altoHoja > 0 ? Math.round(altoHoja * escalaEfectiva) : undefined;
 
   // ----- Salida/regreso del vuelo (primer/último tramo oculto → salida del
@@ -259,7 +272,12 @@ export function QuoteSheet({
   const idPasajeros = ids?.pasajeros ?? "pasajeros-field";
 
   return (
-    <div className={cn("cot-escenario", className)} ref={escenarioRef} data-guard-exempt={lectura ? "" : undefined}>
+    <div
+      className={cn("cot-escenario", className)}
+      ref={escenarioRef}
+      data-guard-exempt={lectura ? "" : undefined}
+      style={canal ? { paddingLeft: canal } : undefined}
+    >
       {/* Bandas de estado: FUERA del papel. */}
       {(errorMotor || mxnSinTc) && (
         <div className="mx-auto mb-3 space-y-2" style={{ maxWidth: HOJA_ANCHO_PX }}>
@@ -284,7 +302,7 @@ export function QuoteSheet({
               <p className="min-w-0 flex-1">
                 Hay TUAS o extras en MXN sin tipo de cambio: el total aún NO los incluye y no se puede guardar.
               </p>
-              <button type="button" onClick={enfocarTc} className="font-medium underline underline-offset-2">
+              <button type="button" onClick={enfocarTc} className="cursor-pointer font-medium underline underline-offset-2">
                 Capturar T.C.
               </button>
             </div>
@@ -297,7 +315,7 @@ export function QuoteSheet({
         style={{
           width: HOJA_ANCHO_PX,
           transform: escalaEfectiva !== 1 ? `scale(${escalaEfectiva})` : undefined,
-          marginLeft: escalaEfectiva !== 1 ? Math.max(0, (anchoDisponible - HOJA_ANCHO_PX * escalaEfectiva) / 2) : undefined,
+          marginLeft: escalaEfectiva !== 1 ? Math.max(0, (anchoUtil - HOJA_ANCHO_PX * escalaEfectiva) / 2) : undefined,
           marginRight: escalaEfectiva !== 1 ? 0 : undefined,
           height: altoReservado,
         }}

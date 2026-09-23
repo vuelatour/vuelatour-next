@@ -50,7 +50,7 @@ const PIEL_PAPEL: PielOps = {
   n: "cot-ops__n",
   tag: "cot-ops__tag",
   nota: "cot-ops__nota",
-  btn: "cot-ops__btn",
+  btn: "cot-ops__btn cursor-pointer",
 };
 const PIEL_SUELTA: PielOps = {
   caja: "rounded-lg border border-sky-500/40 border-l-4 border-l-sky-600 bg-sky-500/10 px-4 py-3 text-sky-900 dark:text-sky-200",
@@ -62,7 +62,7 @@ const PIEL_SUELTA: PielOps = {
   n: "font-normal opacity-70",
   tag: "ml-1.5 rounded border border-sky-500/50 px-1 text-[9px] font-normal uppercase tracking-wider align-[1px]",
   nota: "mt-1 text-xs opacity-85",
-  btn: "rounded-md border border-sky-500/50 bg-background px-2 py-0.5 text-xs font-bold text-sky-900 hover:bg-sky-500/15 disabled:cursor-default disabled:opacity-50 dark:text-sky-200",
+  btn: "cursor-pointer rounded-md border border-sky-500/50 bg-background px-2 py-0.5 text-xs font-bold text-sky-900 hover:bg-sky-500/15 disabled:cursor-default disabled:opacity-50 dark:text-sky-200",
 };
 
 /**
@@ -445,7 +445,7 @@ export function QuoteRutaOperativa({
                       onClick={() =>
                         setOpsLegs((prev) => prev.map((x, j) => (j === i ? { ...x, showNombres: true } : x)))
                       }
-                      className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
+                      className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
                     >
                       + nombres de pasajeros
                     </button>

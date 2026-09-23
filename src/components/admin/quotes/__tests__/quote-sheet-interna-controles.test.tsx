@@ -102,11 +102,19 @@ describe("desglose: redondeo y TUAS se deciden en su renglón", () => {
     expect(html).toContain('aria-label="Redondeo automático"');
   });
 
-  it("el switch «Se cobran TUAS» va UNA vez, en el margen del bloque TUAS", () => {
+  it("el switch «Se cobran TUAS» va UNA vez, EN LA LÍNEA del bloque TUAS", () => {
     const html = renderToString(<QuoteSheetInterna {...base()} />);
     const veces = html.split('aria-label="Se cobran las TUAS"').length - 1;
     expect(veces).toBe(1);
     expect(html).toContain('aria-checked="true"');
+    // EN LA LÍNEA y no en el margen (pedido del cliente, 22-sep-2026 noche):
+    // el desglose es la columna IZQUIERDA del papel, así que un `.cot-margen`
+    // de 70 px se sale de la hoja y el contenedor lo corta —«solo se alcanza a
+    // ver COBRAN»—. Va donde ya vive «capturado · quitar».
+    const i = html.indexOf('aria-label="Se cobran las TUAS"');
+    const celda = html.slice(html.lastIndexOf("<tr", i), i);
+    expect(celda).not.toContain("cot-margen");
+    expect(celda).toContain("cot-acciones");
     // Apagado, el margen lo DICE (es el texto que ya tenía la hoja).
     expect(renderToString(<QuoteSheetInterna {...con({ cobrar_tuas: false })} />)).toContain(
       "no se cobran",
@@ -309,7 +317,7 @@ describe("guard de CONFIRMADO/RESERVA: lo que EDITA no va exento", () => {
 
   it("solo el `<summary>` del plegable de la comisión está exento (abrir no edita)", () => {
     const html = renderToString(<QuoteSheetInterna {...base070()} />);
-    expect(html).toContain('<summary data-guard-exempt="true" class="cot-plegable__resumen">');
+    expect(html).toMatch(/<summary data-guard-exempt="true" class="cot-plegable__resumen[^"]*">/);
   });
 });
 

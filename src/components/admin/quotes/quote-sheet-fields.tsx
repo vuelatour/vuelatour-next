@@ -312,7 +312,7 @@ export function CampoFecha({
   const texto = value ? (textoFijo ?? fechaLegibleDeInput(value)) : vacio;
   if (lectura) return <>{texto}</>;
   return (
-    <label className={cn("cot-fecha", className)} {...UI}>
+    <label className={cn("cot-fecha cursor-pointer", className)} {...UI}>
       <span className={cn("cot-fecha__texto", !value && "cot-fecha__texto--vacio")}>{texto}</span>
       <input
         id={id}
@@ -350,7 +350,7 @@ export function CampoDia({
 }) {
   if (lectura) return <>{texto}</>;
   return (
-    <label className={cn("cot-fecha", className)} {...UI}>
+    <label className={cn("cot-fecha cursor-pointer", className)} {...UI}>
       <span className={cn("cot-fecha__texto", !value && "cot-fecha__texto--vacio")}>{texto}</span>
       <input
         type="date"
@@ -426,7 +426,7 @@ export function CampoSelect({
         disabled={disabled}
         aria-label={ariaLabel}
         title={title}
-        className={cn("cot-in cot-sel", !texto && "cot-sel--vacio", className)}
+        className={cn("cot-in cot-sel cursor-pointer", !texto && "cot-sel--vacio", className)}
         {...UI}
       >
         {texto || placeholder}
@@ -509,7 +509,7 @@ export function SwitchHoja({
       aria-label={ariaLabel ?? label}
       title={title}
       disabled={disabled}
-      className={cn("cot-switch", checked && "cot-switch--on", className)}
+      className={cn("cot-switch cursor-pointer", checked && "cot-switch--on", className)}
       onClick={() => onChange(!checked)}
     >
       <span className="cot-switch__pista" aria-hidden="true">
@@ -555,7 +555,7 @@ export function SegmentoHoja({
           type="button"
           aria-pressed={o.value === value}
           title={o.title}
-          className={cn("cot-seg__op", o.value === value && "cot-seg__op--on")}
+          className={cn("cot-seg__op cursor-pointer", o.value === value && "cot-seg__op--on")}
           onClick={() => onChange(o.value)}
         >
           {o.label}
@@ -596,7 +596,7 @@ export function PlegableHoja({
       }}
       {...UI}
     >
-      <summary data-guard-exempt className="cot-plegable__resumen">
+      <summary data-guard-exempt className="cot-plegable__resumen cursor-pointer">
         {resumen}
       </summary>
       <span className="cot-plegable__cuerpo">{children}</span>
@@ -654,7 +654,7 @@ export function CampoMoneda({
         minCh={4}
       />
       <select
-        className={cn("cot-in", monedaFantasma && moneda === "USD" && "cot-fantasma")}
+        className={cn("cot-in cursor-pointer", monedaFantasma && moneda === "USD" && "cot-fantasma")}
         value={moneda}
         disabled={disabled}
         aria-label={`Moneda de ${ariaLabel}`}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CANAL_CROMA_PX,
   ETIQUETA_BASE_GRAVABLE,
   ETIQUETA_SIN_IVA,
   ETIQUETA_SUBTOTAL,
@@ -16,6 +17,8 @@ import {
   fechaLegibleFlexible,
   fechaVueloImpresa,
   fechasTrasladoImpresas,
+  geometriaHoja,
+  HOJA_ANCHO_PX,
   horasTramoTexto,
   modelosCotizadosPdf,
   moneyPdf,
@@ -445,5 +448,75 @@ describe("particionarPorIva = particionar_por_iva de pyservices", () => {
     expect(ETIQUETA_SUBTOTAL).toBe("Subtotal (sin IVA)");
     expect(ETIQUETA_SIN_IVA).toBe("No causan IVA");
     expect(TOLERANCIA_USD).toBe(0.005);
+  });
+});
+
+/**
+ * GEOMETRÍA del papel en pantalla (pedido del cliente, 22-sep-2026 noche:
+ * «se pierde el botón o la opción que está del lado izquierdo»). La croma que
+ * vive FUERA del área impresa (`.cot-margen`: 🗑, ⋯ y las marcas del tramo)
+ * tiene que caber SIEMPRE entre el borde del contenedor y el texto del papel,
+ * a cualquier ancho. Lo que la aloja son dos cosas que se suman: el CANAL
+ * (padding del escenario) y el padding propio del papel — y el papel escala,
+ * así que el canal también.
+ */
+describe("geometriaHoja: la croma del margen nunca se corta", () => {
+  // Padding izquierdo del papel en `cotizacion-*-pantalla.css`.
+  const PAD_INTERNA = 45;
+  const PAD_CLIENTE = 74;
+  // Margen MÁS CARGADO que se ve de verdad (tramo 4 de la #232: ferry +
+  // pernocta + servicio + nota + oculto), medido sobre el marcado — ver la
+  // cuenta completa en `CANAL_CROMA_PX`.
+  const MARGEN_INTERNA = 116;
+  const MARGEN_CLIENTE = 116 + 36; // + botón de HORAS del tramo (solo cliente)
+
+  const anchos = [320, 480, 640, 720, 816, 866, 888, 898, 920, 961, 1100, 1400];
+
+  it("el papel nunca se sale por la derecha", () => {
+    for (const anchoHoja of [HOJA_ANCHO_PX, 816]) {
+      for (const w of anchos) {
+        const { canal, escalaEfectiva } = geometriaHoja({ anchoDisponible: w, anchoHoja });
+        expect(canal + anchoHoja * escalaEfectiva, `${anchoHoja}@${w}`).toBeLessThanOrEqual(w + 0.5);
+      }
+    }
+  });
+
+  it("el margen más cargado cabe en las DOS hojas, a cualquier ancho", () => {
+    for (const [anchoHoja, pad, margen] of [
+      [816, PAD_INTERNA, MARGEN_INTERNA],
+      [HOJA_ANCHO_PX, PAD_CLIENTE, MARGEN_CLIENTE],
+    ] as const) {
+      for (const w of anchos) {
+        const { canal, escalaEfectiva: s, anchoUtil } = geometriaHoja({ anchoDisponible: w, anchoHoja });
+        // Con la hoja a tamaño real, `margin: 0 auto` regala la mitad del
+        // sobrante; sin escalar no hay sobrante que regalar.
+        const centrado = s === 1 ? Math.max(0, (anchoUtil - anchoHoja) / 2) : 0;
+        const disponible = canal + centrado + pad * s;
+        expect(disponible, `${anchoHoja}@${w}`).toBeGreaterThanOrEqual(margen * s);
+      }
+    }
+  });
+
+  it("en LECTURA no hay canal (ahí la hoja ES el PDF y no se monta croma)", () => {
+    const g = geometriaHoja({ anchoDisponible: 961, anchoHoja: 816, lectura: true });
+    expect(g.canal).toBe(0);
+    expect(g.escalaEfectiva).toBe(1);
+  });
+
+  it("una escala impuesta manda, y el canal la sigue", () => {
+    const g = geometriaHoja({ anchoDisponible: 961, anchoHoja: 816, escala: 0.5 });
+    expect(g.escalaEfectiva).toBe(0.5);
+    expect(g.canal).toBe(Math.round(CANAL_CROMA_PX * 0.5));
+  });
+
+  it("sin medida todavía (SSR / primer render) ya reserva el canal", () => {
+    // Si el canal apareciera DESPUÉS de medir, la croma saltaría de sitio al
+    // hidratar — justo lo que el cliente describe como «se pierde el botón».
+    expect(geometriaHoja({ anchoDisponible: 0, anchoHoja: 816 })).toEqual({
+      canal: CANAL_CROMA_PX,
+      escalaEfectiva: 1,
+      anchoUtil: 0,
+    });
+    expect(geometriaHoja({ anchoDisponible: 0, anchoHoja: 816, lectura: true }).canal).toBe(0);
   });
 });

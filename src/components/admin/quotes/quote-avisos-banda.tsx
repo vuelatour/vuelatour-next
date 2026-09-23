@@ -16,9 +16,30 @@ import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
  *
  * El chip de la `TotalBar` sigue igual (`avisos={avisosCaptura}`): son dos
  * portadores del MISMO texto, no dos fuentes.
+ *
+ * `yaDichos` — UN AVISO, UNA VEZ (pedido del cliente, 22-sep-2026 noche: «UX
+ * simple»). El avión EN TALLER se anunciaba TRES veces en la misma pantalla:
+ * el chip de la TotalBar (resumen), la nota ámbar grande con su explicación
+ * (`notaAeronaveEnTaller`, la que dice qué hacer) y otra vez esta banda. Quien
+ * llama pasa aquí los textos que OTRO componente ya está pintando —la fuente
+ * de los dos es `lib/admin/aviso-taller.ts`, así que se comparan sin
+ * redactar nada— y la banda los descarta. Mismo patrón que el armador del
+ * grupo (`aviones-editor.tsx`), que filtra el aviso del API cuando ya pinta
+ * `<NotaTaller>`.
+ *
+ * Se conserva el CHIP de la TotalBar a propósito: es el resumen que se ve
+ * SIEMPRE, con la barra pegada arriba y la nota fuera de la pantalla.
  */
-export function QuoteAvisosBanda({ avisos }: { avisos: string[] }) {
-  if (avisos.length === 0) return null;
+export function QuoteAvisosBanda({
+  avisos,
+  yaDichos = [],
+}: {
+  avisos: string[];
+  /** Textos que ya pinta otro componente de la MISMA pantalla. */
+  yaDichos?: string[];
+}) {
+  const visibles = avisos.filter((a) => !yaDichos.includes(a));
+  if (visibles.length === 0) return null;
   return (
     <div
       role="status"
@@ -26,7 +47,7 @@ export function QuoteAvisosBanda({ avisos }: { avisos: string[] }) {
     >
       <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
       <ul className="min-w-0 flex-1 space-y-0.5">
-        {avisos.map((a) => (
+        {visibles.map((a) => (
           <li key={a} className="text-amber-700 dark:text-amber-400">
             {a}
           </li>

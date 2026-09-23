@@ -156,7 +156,13 @@
   width: 100%;
   height: 100%;
   opacity: 0;
-  cursor: text;
+  /* Abre el selector nativo del navegador: es un BOTÓN, no un texto. Este
+     input TRANSPARENTE cubre la etiqueta entera, así que su cursor es el
+     ÚNICO que el operador ve — la clase `cursor-pointer` del `<label>` no
+     llega. Mismo arreglo que en `cotizacion-interna-pantalla.css`
+     (22-sep-2026 noche); sin él, la hoja del CLIENTE —la única pantalla de
+     SOCIO— seguía enseñando el cursor de texto sobre la fecha. */
+  cursor: pointer;
 }
 .cot-hoja .cot-fecha:hover .cot-fecha__texto { background: rgba(16, 42, 67, 0.07); border-radius: 3px; }
 .cot-hoja .cot-fecha:focus-within .cot-fecha__input { position: static; opacity: 1; width: auto; height: auto; }
@@ -487,4 +493,37 @@
   outline: 2px solid var(--ring, #e63946);
   outline-offset: 1px;
   border-radius: 2px;
+}
+
+/* ---------- «Esto se puede tocar»: red de seguridad (SOLO edición) ----------
+   Espejo de la sección 5 de `cotizacion-interna-pantalla.css` (pedido del
+   cliente, 22-sep-2026 noche). La hoja del CLIENTE ya trae `cursor: pointer`
+   clase por clase (`.cot-sel`, `select.cot-in`, `.cot-margen__accion`,
+   `.cot-btn`, `.cot-liga`, `.cot-marca--liga`, `.cot-aviso__liga`…), pero es
+   la ÚNICA pantalla del rol SOCIO: un control nuevo que nazca sin su regla se
+   leería como dato fijo, que es justo lo que el cliente reportó. Esto no
+   sustituye a la clase `cursor-pointer` de los componentes; la respalda.
+   En LECTURA no aplica NADA: ahí la hoja ES el PDF. */
+.cot-hoja:not(.cot-hoja--lectura) button,
+.cot-hoja:not(.cot-hoja--lectura) summary,
+.cot-hoja:not(.cot-hoja--lectura) a,
+.cot-hoja:not(.cot-hoja--lectura) select,
+.cot-hoja:not(.cot-hoja--lectura) label[for],
+.cot-hoja:not(.cot-hoja--lectura) .cot-fecha,
+.cot-hoja:not(.cot-hoja--lectura) [role="button"],
+.cot-hoja:not(.cot-hoja--lectura) [role="switch"],
+.cot-hoja:not(.cot-hoja--lectura) [data-clic],
+.cot-hoja:not(.cot-hoja--lectura) input[type="date"],
+.cot-hoja:not(.cot-hoja--lectura) input[type="datetime-local"],
+.cot-hoja:not(.cot-hoja--lectura) input[type="checkbox"],
+.cot-hoja:not(.cot-hoja--lectura) .cot-liga,
+.cot-hoja:not(.cot-hoja--lectura) .cot-chip,
+.cot-hoja:not(.cot-hoja--lectura) .cot-sel {
+  cursor: pointer;
+}
+/* Deshabilitado = no se puede tocar, y se dice (gana por especificidad). */
+.cot-hoja:not(.cot-hoja--lectura) button:disabled,
+.cot-hoja:not(.cot-hoja--lectura) select:disabled,
+.cot-hoja:not(.cot-hoja--lectura) [aria-disabled="true"] {
+  cursor: default;
 }

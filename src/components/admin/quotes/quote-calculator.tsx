@@ -153,7 +153,6 @@ import { QuoteAvisosBanda } from "@/components/admin/quotes/quote-avisos-banda";
 import { QuoteCapturaBasica } from "@/components/admin/quotes/quote-captura-basica";
 import { QuoteDetalleMotor } from "@/components/admin/quotes/quote-detalle-motor";
 import { QuoteOperadorExterno } from "@/components/admin/quotes/quote-operador-externo";
-import { QuotePdfClienteVista } from "@/components/admin/quotes/quote-pdf-cliente-vista";
 import { QuotePdfToggles } from "@/components/admin/quotes/quote-pdf-toggles";
 import { QuotePlantillaRuta } from "@/components/admin/quotes/quote-plantilla-ruta";
 import {
@@ -1538,37 +1537,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // `/api/quotes/mapa-svg` (la misma función de dibujo de pyservices). La
   // vista previa anclada/diálogo desapareció: la hoja ES la vista previa.
   /**
-   * PESTAÑAS de la pantalla (Fase 2.2, 22-sep-2026): «Hoja interna»
-   * (editable, por defecto) | «PDF del cliente» (LECTURA). La interna solo
-   * existe para los roles de `ROLES_HOJA_INTERNA`; para SOCIO la pantalla
-   * sigue siendo la hoja del CLIENTE editable, como hasta hoy.
+   * UNA SOLA HOJA en pantalla (pedido del cliente, 22-sep-2026 noche): «el
+   * botón de la pestaña de PDF del cliente, ese lo vamos a quitar porque no
+   * hace falta verlo, ese solo mandarlo a imprimir cuando se requiera para
+   * descargar y enviar al cliente, pero es raro que lo pidan». La pestañera
+   * «Hoja interna | PDF del cliente» y su memoria `vt-cotizador-hoja-v1`
+   * desaparecieron: quien ve la hoja interna ve SOLO la hoja interna, y el
+   * PDF del cliente se ABRE (botón «PDF» de la barra de acciones, «Ver PDF
+   * real» / «Guardar y ver PDF» de la TotalBar) o se descarga. El `<details>`
+   * «PDF del cliente: qué se imprime» sigue debajo del papel.
    *
-   * Memoria por usuario en `vt-cotizador-hoja-v1`. El estado arranca SIEMPRE
-   * en el valor por defecto y la memoria se lee en un efecto: leer
-   * localStorage al render rompería la hidratación (el servidor no lo tiene).
+   * Quien NO ve la hoja interna (SOCIO) conserva su pantalla de siempre: la
+   * hoja del CLIENTE editable.
    */
   const hayHojaInterna = puedeVerHojaInterna(rol);
-  const [hoja, setHoja] = useState<HojaCotizador>("interna");
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(HOJA_LS_KEY);
-      if (!raw) return;
-      const g = JSON.parse(raw) as { hoja?: unknown };
-      if (g?.hoja === "interna" || g?.hoja === "cliente") setHoja(g.hoja);
-    } catch {
-      // Sin storage: la hoja interna por defecto.
-    }
-  }, []);
-  const setHojaPersistente = (v: HojaCotizador) => {
-    setHoja(v);
-    try {
-      localStorage.setItem(HOJA_LS_KEY, JSON.stringify({ hoja: v }));
-    } catch {
-      // Sin storage, vive solo en la sesión.
-    }
-  };
-  // Sin permiso para la interna, la única hoja es la del cliente.
-  const hojaActiva: HojaCotizador = hayHojaInterna ? hoja : "cliente";
   /**
    * ROL que NO puede guardar (SOCIO, FACTURACION, ANALISTA…): se dice en voz
    * alta. `POST /v1/quotes` y `POST /:id/revise` son ADMIN/COORDINADOR —los
@@ -1579,20 +1561,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
    */
   const soloConsulta = soloConsultaCotizacion(rol);
 
-  // La vista previa se pide cuando SIRVE: con el form limpio (de ahí sale el
-  // MAPA de la hoja) y, desde la Fase 2.3 · BLOQUE C, mientras la pestaña
-  // «PDF del cliente» está a la vista — ahí la promesa «esto es exactamente
-  // lo que verá el cliente» la cumple el HTML del API, no una réplica. Con la
-  // pestaña cerrada NO se pide: cada llamada corre el armador de pyservices.
+  // La vista previa se pide para UNA sola cosa: el MAPA de la hoja del
+  // CLIENTE con el form limpio (`extraerMapaSvgDeHtml`). Al quitar la pestaña
+  // «PDF del cliente» (22-sep-2026 noche) esa hoja solo la monta el rol SIN
+  // hoja interna, así que para todos los demás NO se pide nada: cada llamada
+  // corre el armador completo de pyservices y el papel interno no lleva mapa.
   const preview = useQuotePreviewHtml({
     payload: error ? null : previewPayload,
     listo: previewListo,
-    // `hayHojaInterna` en la condición A PROPÓSITO: para el rol SIN pestañas
-    // (SOCIO) `hojaActiva` vale SIEMPRE "cliente", y su pantalla es la hoja
-    // editable —no `QuotePdfClienteVista`—, así que sin este candado se
-    // pediría un render completo de pyservices por cada tecleo para un HTML
-    // que nadie va a ver.
-    activo: previewLimpio || (hayHojaInterna && hojaActiva === "cliente"),
+    activo: previewLimpio && !hayHojaInterna,
   });
   const mapaSvgGuardado =
     previewLimpio && preview.html ? extraerMapaSvgDeHtml(preview.html) : undefined;
@@ -2867,7 +2844,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // «+ nuevo cliente» · «corregir nombre».
   const clienteExtraNode = !isRevise ? (
     <>
-      <button type="button" className="cot-liga" onClick={() => setClientDialogOpen(true)}>
+      <button type="button" className="cot-liga cursor-pointer" onClick={() => setClientDialogOpen(true)}>
         + nuevo cliente
       </button>
       {values.cliente_id && (
@@ -2876,7 +2853,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           <span className="cot-sep">·</span>
           <button
             type="button"
-            className="cot-liga"
+            className="cot-liga cursor-pointer"
             title="Corregir el nombre del cliente (aplica en todo el catálogo)"
             onClick={() => {
               const sel = allClients.find((c) => c.id === values.cliente_id);
@@ -2915,7 +2892,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             <span key={c.id}>
               <button
                 type="button"
-                className="cot-liga"
+                className="cot-liga cursor-pointer"
                 aria-pressed={values.cliente_id === c.id}
                 title={`Cotizar para ${c.nombre}`}
                 onClick={() => {
@@ -2941,7 +2918,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           )}
           <button
             type="button"
-            className="cot-liga"
+            className="cot-liga cursor-pointer"
             title="Cliente interno (operación propia): la cotización puede ir en $0."
             onClick={() => setCeroOpen(true)}
           >
@@ -3251,8 +3228,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       {/* AVISOS DE CAPTURA, ancho completo y ARRIBA del papel (Fase 2.3 ·
           BLOQUE C): antes eran chips dentro del panel lateral y solo se veían
           con el panel abierto. Un warning JAMÁS se esconde. El chip de la
-          TotalBar sigue igual: este los pone a la vista sin depender de ella. */}
-      <QuoteAvisosBanda avisos={avisosCaptura} />
+          TotalBar sigue igual: este los pone a la vista sin depender de ella.
+
+          `yaDichos`: el avión EN TALLER ya lo explica la nota ámbar de arriba
+          (con qué hacer), así que aquí NO se repite — se decía tres veces en
+          la misma pantalla (22-sep-2026 noche). El chip de la TotalBar se
+          queda: es el resumen que sigue a la vista al hacer scroll. */}
+      <QuoteAvisosBanda
+        avisos={avisosCaptura}
+        yaDichos={
+          avionEnTaller && !lectura ? [chipAeronaveEnTaller(avionEnTaller.matricula)] : []
+        }
+      />
 
       {/* RUTA OPERATIVA para el rol SIN hoja interna: la banda del papel
           cuelga de `.cot-interna` (invariante del CSS de la hoja), así que
@@ -3284,50 +3271,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         onKeyDownCapture={interceptarPrimerCambio}
       >
         <div className="min-w-0 space-y-5">
-          {/* PESTAÑAS (Fase 2.2): «Hoja interna» editable | «PDF del cliente»
-              en LECTURA. Solo para los roles de `ROLES_HOJA_INTERNA`; SOCIO
-              sigue viendo la hoja del cliente editable, sin pestañas.
-              `data-guard-exempt`: cambiar de vista no edita nada, así que no
-              dispara la confirmación de CONFIRMADO/RESERVA. */}
+          {/* LA HOJA INTERNA, sin pestañera (22-sep-2026 noche): el PDF del
+              cliente ya no se VE aquí, se abre o se descarga cuando alguien lo
+              pide. Con una sola hoja no hay estado de pestaña que recordar ni
+              vista previa que pedir en cada tecleo. */}
           {hayHojaInterna && (
-            <div
-              role="tablist"
-              aria-label="Vista del documento"
-              data-guard-exempt
-              className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1 text-sm"
-            >
-              {(
-                [
-                  ["interna", "Hoja interna", "La hoja completa de oficina: tramos costeados, comisiones y cobros. NO se manda al cliente."],
-                  ["cliente", "PDF del cliente", "Exactamente lo que verá el cliente. Solo lectura: se edita en la hoja interna."],
-                ] as const
-              ).map(([valor, etiqueta, ayuda]) => (
-                <button
-                  key={valor}
-                  type="button"
-                  role="tab"
-                  aria-selected={hojaActiva === valor}
-                  title={ayuda}
-                  onClick={() => setHojaPersistente(valor)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 font-medium transition-colors",
-                    hojaActiva === valor
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {etiqueta}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* La hoja INTERNA no se desmonta al cambiar de pestaña: es la que
-              tiene los campos capturados y los ids ancla (`pasajeros-field`,
-              `tc-usd-mxn-field`). Un `{activa && …}` perdería el borrador a
-              medio teclear y dejaría las anclas sin destino. */}
-          {hayHojaInterna && (
-            <div hidden={hojaActiva !== "interna"}>
+            <div>
               <QuoteSheetInterna
                 valores={values}
                 onCambio={onCambioHoja}
@@ -3389,7 +3338,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                           <button
                             type="button"
                             data-guard-exempt
-                            className="cot-liga"
+                            className="cot-liga cursor-pointer"
                             onClick={() => irAlPlegable("externo")}
                           >
                             editar abajo
@@ -3403,53 +3352,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             </div>
           )}
 
-          {/* PESTAÑA «PDF del cliente» (Fase 2.3 · BLOQUE C): la vista previa
-              REAL que arma el API con el MISMO payload del PDF. La hoja
-              `QuoteSheet` en LECTURA queda de respaldo mientras llega (o si el
-              servidor no la tiene): así la promesa «esto es exactamente lo que
-              verá el cliente» la respalda el papel, no una réplica. */}
-          {hojaActiva === "cliente" && hayHojaInterna && (
-            <QuotePdfClienteVista
-              html={preview.html}
-              estado={preview.estado}
-              error={preview.error}
-              noDisponible={preview.noDisponible}
-              onReintentar={preview.reintentar}
-              respaldo={
-                <QuoteSheet
-                  valores={values}
-                  onCambio={comoOnCambioHoja(onCambioHoja)}
-                  breakdown={breakdown}
-                  calculando={loading || enEsperaDebounce}
-                  errorMotor={error}
-                  lectura
-                  documento={documentoHoja}
-                  catalogos={catalogosHoja}
-                  tramosPdf={tramosPdfHoja}
-                  pasajerosPorTramo={paxPorTramo ? { max: maxPaxTramos } : null}
-                  mapaSvg={mapaSvgGuardado}
-                  totalRespaldo={
-                    pintaSnapshot && initialQuote
-                      ? {
-                          total_usd: Number(initialQuote.monto_total_usd) || 0,
-                          total_mxn:
-                            initialQuote.monto_total_mxn != null
-                              ? Number(initialQuote.monto_total_mxn)
-                              : null,
-                        }
-                      : undefined
-                  }
-                  grupo={grupoDelHijo}
-                />
-              }
-            />
-          )}
-
           {/* La hoja del CLIENTE editable: la pantalla de quien NO ve la hoja
-              interna (SOCIO), como hasta hoy. Con hoja interna montada no se
-              pinta aquí: esa pestaña la sirve la vista previa real de arriba,
-              con este mismo componente de respaldo. */}
-          {hojaActiva === "cliente" && !hayHojaInterna && (
+              interna (SOCIO), como hasta hoy. Es la ÚNICA hoja del cliente que
+              se monta: la vista previa en iframe de la pestaña retirada
+              (`quote-pdf-cliente-vista.tsx`) se borró con ella. */}
+          {!hayHojaInterna && (
           <QuoteSheet
             valores={values}
             onCambio={comoOnCambioHoja(onCambioHoja)}
@@ -4064,16 +3971,11 @@ function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
   }
 }
 
-/* La clave `vt-cotizador-interno-v1` (panel lateral abierto/cerrado) se
-   RETIRÓ con el panel el 22-sep-2026 (Fase 2.3 · BLOQUE C). Lo que queda en
-   localStorage es `vt-cotizador-hoja-v1` (pestaña) y
-   `vt-cotizador-plegado-<id>-v1` (los `<details>` bajo el papel). */
-
-/** Pestaña de la pantalla: hoja INTERNA (editable) o PDF del CLIENTE (lectura). */
-type HojaCotizador = "interna" | "cliente";
-
-/** Qué pestaña vio por última vez este usuario (Fase 2.2, 22-sep-2026). */
-const HOJA_LS_KEY = "vt-cotizador-hoja-v1";
+/* Claves RETIRADAS de localStorage: `vt-cotizador-interno-v1` (panel lateral,
+   22-sep-2026 Fase 2.3 · BLOQUE C) y `vt-cotizador-hoja-v1` (la pestaña «Hoja
+   interna | PDF del cliente», retirada la noche del 22-sep-2026 a pedido del
+   cliente). Lo único que queda es `vt-cotizador-plegado-<id>-v1`, los
+   `<details>` bajo el papel. */
 
 
 /**

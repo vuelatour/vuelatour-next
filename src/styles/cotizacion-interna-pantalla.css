@@ -147,7 +147,8 @@
   width: 100%;
   height: 100%;
   opacity: 0;
-  cursor: text;
+  /* Abre el selector nativo del navegador: es un BOTÓN, no un texto. */
+  cursor: pointer;
 }
 .cot-interna .cot-fecha:hover .cot-fecha__texto { background: rgba(16, 42, 67, 0.07); border-radius: 3px; }
 .cot-interna .cot-fecha:focus-within .cot-fecha__input { position: static; opacity: 1; width: auto; height: auto; }
@@ -516,3 +517,74 @@
 .cot-interna .cot-ops__btn:hover:not(:disabled) { background: rgba(2, 132, 199, 0.12); }
 .cot-interna .cot-ops__btn:focus-visible { outline: 2px solid var(--ring, #e63946); outline-offset: 1px; }
 .cot-interna .cot-ops__btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- 5. «Esto se puede tocar»: cursor y hover (SOLO edición) ----------
+   Pedido del cliente (22-sep-2026, noche): «todas las opciones que sean
+   cliqueables deben tener la clase cursor-pointer para que el usuario sepa
+   que puede interactuar con esa opción y no es un dato fijo o que no se puede
+   editar». En el papel el problema es doble: los controles son INVISIBLES en
+   reposo (esa es la gracia del form-as-document) y un `<button>` nativo trae
+   la flecha del sistema, no la manita. Los componentes llevan además la CLASE
+   `cursor-pointer` (lo que pidió el cliente, literal); esta regla es la red
+   que cubre lo que se agregue mañana sin acordarse de ponerla.
+
+   En LECTURA no aplica NADA de esto: ahí la hoja ES el PDF interno y no hay
+   nada que tocar. */
+.cot-interna:not(.cot-interna--lectura) button,
+.cot-interna:not(.cot-interna--lectura) summary,
+.cot-interna:not(.cot-interna--lectura) a,
+.cot-interna:not(.cot-interna--lectura) select,
+.cot-interna:not(.cot-interna--lectura) label[for],
+.cot-interna:not(.cot-interna--lectura) .cot-fecha,
+.cot-interna:not(.cot-interna--lectura) [role="button"],
+.cot-interna:not(.cot-interna--lectura) [role="switch"],
+.cot-interna:not(.cot-interna--lectura) [role="tab"],
+.cot-interna:not(.cot-interna--lectura) [data-clic],
+.cot-interna:not(.cot-interna--lectura) input[type="date"],
+.cot-interna:not(.cot-interna--lectura) input[type="datetime-local"],
+.cot-interna:not(.cot-interna--lectura) input[type="checkbox"],
+.cot-interna:not(.cot-interna--lectura) .cot-liga,
+.cot-interna:not(.cot-interna--lectura) .cot-chip,
+.cot-interna:not(.cot-interna--lectura) .cot-sel {
+  cursor: pointer;
+}
+/* Deshabilitado = no se puede tocar, y se dice (gana por especificidad). */
+.cot-interna:not(.cot-interna--lectura) button:disabled,
+.cot-interna:not(.cot-interna--lectura) select:disabled,
+.cot-interna:not(.cot-interna--lectura) [aria-disabled="true"] {
+  cursor: default;
+}
+/* Fondo tenue al pasar por encima de cualquier control del papel que no
+   tenga ya su propio hover (selectores, chips, ligas nuevas). */
+.cot-interna:not(.cot-interna--lectura) .cot-sel:hover:not(:disabled),
+.cot-interna:not(.cot-interna--lectura) select.cot-in:hover:not(:disabled) {
+  background: rgba(16, 42, 67, 0.07);
+}
+/* Foco visible SIEMPRE (teclado): el papel no puede tragarse el anillo. */
+.cot-interna:not(.cot-interna--lectura) button:focus-visible,
+.cot-interna:not(.cot-interna--lectura) summary:focus-visible,
+.cot-interna:not(.cot-interna--lectura) select:focus-visible,
+.cot-interna:not(.cot-interna--lectura) [role="switch"]:focus-visible {
+  outline: 2px solid var(--ring, #e63946);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+/* Un campo de TEXTO/NÚMERO conserva `cursor: text` —es lo correcto— pero al
+   pasar por encima se delata como editable: sin esto, «invisible en reposo»
+   es exactamente lo que el cliente describe como «dato fijo». El subrayado
+   usa el acento de edición (#dc2626 = `--cot-acento`). */
+.cot-interna:not(.cot-interna--lectura) .cot-in:hover:not(:disabled):not(:focus) {
+  background: rgba(220, 38, 38, 0.06);
+  box-shadow: inset 0 -1px 0 0 rgba(220, 38, 38, 0.45);
+}
+.cot-interna:not(.cot-interna--lectura) .cot-fecha:hover .cot-fecha__texto {
+  background: rgba(220, 38, 38, 0.06);
+  box-shadow: inset 0 -1px 0 0 rgba(220, 38, 38, 0.45);
+}
+/* ---------- 6. Canal de croma a la izquierda del papel ----------
+   El margen de fila (`.cot-margen`, `right: 100 %`) vive FUERA del área
+   impresa: con el papel pegado al borde del contenedor, sus acciones (🗑, ⋯,
+   marcas de pax/ferry/pernocta) quedaban cortadas. El ancho del canal lo
+   reserva `QuoteSheetInterna` (`CANAL_CROMA_PX`) y aquí solo se garantiza que
+   nada lo recorte. */
+.cot-interna .cot-margen { z-index: 1; }

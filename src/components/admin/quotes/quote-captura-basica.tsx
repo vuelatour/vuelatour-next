@@ -534,7 +534,7 @@ function Segmentado({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "flex min-h-8 min-w-0 flex-col items-center justify-center whitespace-normal break-words rounded-md px-1.5 py-1 text-center text-xs font-medium leading-tight transition-colors",
+              "flex min-h-8 min-w-0 cursor-pointer flex-col items-center justify-center whitespace-normal break-words rounded-md px-1.5 py-1 text-center text-xs font-medium leading-tight transition-colors",
               active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               opt.disabled && "cursor-not-allowed opacity-50",
             )}

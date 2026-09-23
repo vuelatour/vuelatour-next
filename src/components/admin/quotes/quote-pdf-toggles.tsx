@@ -86,10 +86,19 @@ export function QuotePdfToggles({
             <Switch checked={mostrarItinerario} onCheckedChange={onMostrarItinerario} />
           </div>
           {isRevise && (
-            <p className="text-[11px] text-muted-foreground">
-              Estos toggles y las notas del cliente se guardan sin versión nueva cuando son lo único
-              que cambia.
-            </p>
+            <>
+              <p className="text-[11px] text-muted-foreground">
+                Estos toggles y las notas del cliente se guardan sin versión nueva cuando son lo
+                único que cambia.
+              </p>
+              {/* La pestaña «PDF del cliente» se retiró (22-sep-2026): se dice
+                  dónde se ve el resultado, para que nadie lo busque en la
+                  pantalla. En el ALTA todavía no hay PDF que abrir. */}
+              <p className="text-[11px] text-muted-foreground">
+                Para verlo tal como lo recibirá el cliente, usa «Ver PDF real» (o el botón PDF de
+                arriba): el archivo lo arma el servidor.
+              </p>
+            </>
           )}
           {avisoTramosCambiaron && (
             <p className="text-[10px] text-amber-600 dark:text-amber-400">

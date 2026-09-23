@@ -33,7 +33,7 @@ export function AirportQuickCreateButton({
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600",
+          "inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand-500/60 hover:text-brand-600",
           className,
         )}
       >
