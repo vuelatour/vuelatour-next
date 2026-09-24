@@ -22,6 +22,8 @@ import {
 import type { MovimientoFormValues } from "@/app/admin/caja-chica/schema";
 import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
 import { Field } from "@/components/admin/form-field";
+import { reposicionRecienRegistrada } from "@/lib/admin/caja-chica-excel";
+import { avisarReposicionYDescargar } from "./excel-caja-buttons";
 
 const TIPOS = [
   { value: "REPOSICION", label: "Reposición (entra dinero al fondo)" },
@@ -77,9 +79,25 @@ export function MovimientoDialog({
         ? await updateCajaMovimientoAction(movimiento.id, fondoId, values)
         : await createCajaMovimientoAction(fondoId, values);
       if (result.ok) {
-        toast.success(
-          esCorreccion ? "Movimiento corregido" : "Movimiento registrado",
-        );
+        const nuevaReposicion = reposicionRecienRegistrada({
+          esCorreccion,
+          tipo: values.tipo,
+          creado: result.data,
+        });
+        if (nuevaReposicion) {
+          // Pedido del cliente (24-sep-2026): al REEMBOLSAR la caja sale solo
+          // el Excel de lo que se está reponiendo; el toast deja volver a
+          // bajarlo. El movimiento YA quedó: si el Excel falla se dice así.
+          avisarReposicionYDescargar(
+            nuevaReposicion.id,
+            persona,
+            nuevaReposicion.fecha || values.fecha || null,
+          );
+        } else {
+          toast.success(
+            esCorreccion ? "Movimiento corregido" : "Movimiento registrado",
+          );
+        }
         onOpenChange(false);
       } else if (result.fieldErrors) {
         const f = Object.keys(result.fieldErrors)[0];

@@ -22,6 +22,13 @@ export interface FacturaClienteBloque {
     subida_at: string | null;
     subida_por_nombre?: string | null;
   } | null;
+  /** Folio de la factura (24-sep-2026, API 0.0.29): tecleado o sacado del
+      XML del CFDI. Es lo que imprime la columna «FACTURA VUELATOUR» del
+      Excel. La llave AUSENTE = API previo (no ofrecer folio); `null` = el
+      API lo sabe manejar y no hay folio. */
+  folio?: string | null;
+  /** UUID fiscal (folio fiscal del SAT) si se subió el XML timbrado. */
+  uuid?: string | null;
 }
 
 /** Tripulante resuelto por el API (apoyos, copiloto por tramo). `rol` es el

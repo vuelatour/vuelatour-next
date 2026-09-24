@@ -150,6 +150,14 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   recibos de cobro se abren con un `<a target="_blank">` a su proxy.
 - PENDIENTE conocido: la vista previa del CFDI (`emitir-factura-button.tsx`)
   sigue con blob porque el API la genera con un POST con cuerpo.
+- **El núcleo es GENÉRICO desde el 24-sep-2026**: `proxyArchivoDelApi` con
+  `tipo: TIPO_PDF | TIPO_XLSX` (Content-Type, extensión, `Accept` y título de
+  la página de error); `proxyPdfDelApi` es un envoltorio que conserva sus
+  defaults (POST, `PDF_ERROR`) y `errorPdf` = `errorArchivo(…, «No se pudo
+  abrir el PDF»)`. `nombreArchivoSeguro`/`armarContentDisposition` aceptan
+  `extension` (default `.pdf`). Un 404 «Cannot GET …» del API (endpoint que
+  aún no existe) sale como `RUTA_NO_DISPONIBLE` en es-MX. Los PDF no cambian
+  (sus 10 pruebas siguen iguales).
 
 ## Fuentes únicas de UI (no duplicar)
 
@@ -517,6 +525,18 @@ porque en la cotización interna sí va a aparecer todo».
   la tabla «Aviones» ASIGNA el avión del hijo (recotiza al reemplazarlo) y el
   API avisa con `precio_desactualizado` cuando vuela en otro distinto al
   cotizado. No cambiar sin decidir antes el contrato del grupo con el API.
+
+## El vuelo YA VOLÓ: cambiar el avión de la cotización es SOLO COMERCIAL (24-sep-2026)
+
+- Caso #338 (CUN→PTU→CUN): se cotizó y voló en el Seneca N4142R; ya COMPLETADO, la oficina guardó la v2 «se cobra como cessna, pidieron cessna» (Cessna 206). El API leyó el avión como cambio de operación: la cabecera del vuelo quedó en XA-VGV con los tramos (con tacómetro) en N4142R, salían dos matrículas y el piloto recibió «Ahora vuela en XA-VGV» y «el REGRESO ahora sale…» de un vuelo que ya había aterrizado. La regla la APLICA el API (`resolverAeronaveDeRevision` / `estadoVueloVolado`); el panel la DICE antes de guardar.
+- **Fuente única `lib/admin/avion-cotizado.ts`**: `estadoVueloVolado(quote)` → `{yaVolo, termino}`, espejo EXACTO del API. `yaVolo` = EN_VUELO/COMPLETADO o algún tramo VIVO con tacómetro (un CONFIRMADO con el tramo 1 capturado cuenta). `termino` = COMPLETADO o el ÚLTIMO tramo vivo por `orden` con tacómetro. Si cambia en un repo, cambia en el otro.
+- **Texto único** `textoCambioAvionVueloVolado`: «Este vuelo ya voló en N4142R. Cambiar el avión aquí solo cambia con qué se cobra (Cessna 206); la operación no se mueve ni se avisa a la tripulación.» (matrícula de `aeronave_utilizada`, modelo del avión elegido). Sale cuando `yaVolo` y el diff trae la clave `aeronave` (no en externos) en: el diálogo «Guardar vN» (recuadro azul), junto al selector de la hoja interna (`.cot-aviso` bajo «Avión cotizado») y junto al de la hoja del cliente (sustituye a «Opera en …»), vía `DocumentoHoja.avisoCambioAvion`. Nunca se imprime ni aparece en lectura. El API manda su propio texto en `avisos[]` (`avisoAvionSoloComercial`): si cambia la redacción, cambian los dos.
+- **Confirmación al abrir la edición** (`textoConfirmarEdicionCotizacion({ yaVolo, termino })`, los dos de `estadoVueloVolado(initialQuote)`): terminado ⇒ «…ya voló… La operación no se mueve y la tripulación no recibe aviso.»; A MEDIO CAMINO (`termino === false`) ⇒ «…ya salió… Lo ya volado no se mueve; si cambias el regreso o la pernocta pendientes, la tripulación recibe aviso.» (el API sí reagenda y avisa el regreso pendiente).
+- **«Se notificará a la tripulación»** = `cambiosTocanTripulacion(cambios, volado)` (`quote-revision.ts`): con `yaVolo`, ni el avión ni la salida avisan; con `termino`, NADA avisa. Entran CONFIRMADO, RESERVA y EN_VUELO (a medio camino el regreso sí avisa). `avisoFechasVueloVolado` dice en el diálogo que el API conserva la salida (`yaVolo`) o el regreso (`termino`) del vuelo. La fecha de un TRAMO ya volado también la conserva el API (`tramoConservaFechaPlan`) y lo dice en `avisos[]` (toast).
+- **Squawk**: un 409 `SQUAWK_ALTA_SIN_RESOLVER` con el vuelo ya volado NO abre «Guardar de todas formas»: es un API sin desplegar que movería la cabecera. Sale el banner ámbar `MSG_AVION_VUELO_VOLADO_API_VIEJO` (mismo banner que `tramos_base`) y los cambios se quedan. La nota de TALLER tampoco sale (el avión es solo de cobro); la marca del selector sí.
+- **Card «Operación» y hoja interna**: cotizado (MODELO) vs utilizado (matrícula · modelo de `aeronave_utilizada`, que el API resuelve de los TRAMOS VIVOS, jamás de la cabecera a secas) con `ETIQUETA_DISTINTO_AL_COTIZADO` en ámbar; ayuda en pasado con `hintAeronaveUtilizada`; nota tenue «Voló en N4142R (Piper Seneca V)» (`fraseOperaEn(..., {yaVolo})`). El panel NO recalcula el utilizado de las escalas.
+- **Orden de deploy: API antes que panel.**
+- Pruebas: `lib/admin/__tests__/avion-cotizado.test.ts` (incluye la confirmación a medio camino), `quote-revision.test.ts` (caso #338 exacto), `quote-sheet.test.tsx` / `quote-sheet-interna-controles.test.tsx` (nota junto al selector, jamás impresa) y `components/admin/quotes/__tests__/quote-calculator-avion-volado.test.ts` (conexión del cotizador y de la card).
 
 ## La cotización es INDEPENDIENTE de la operación — TRAMOS (22-sep-2026)
 
@@ -1236,51 +1256,80 @@ porque en la cotización interna sí va a aparecer todo».
   del API; `datetime-local` vía `cancunInputToIso`/`isoToCancunInput`; toda
   acción destructiva confirma; dejar `npx tsc --noEmit` en 0 y eslint limpio.
 
-## Calendario: semáforo de 5 colores (22-sep-2026)
+## Calendario: semáforo de 6 colores (22-sep-2026 · 24-sep-2026)
 
-- Pedido del cliente: «que en los calendarios no se vean tantos colores […]
-  los colores que tiene cada avión configurados los seguiremos respetando
-  principalmente en los reportes del balance individual y general en los excel
-  […] en realidad los colores son para el reporte de excel nada más: **Gris**:
-  Tentativo · **Verde**: Confirmado · **Amarillo**: Permiso o asunto pendiente
-  · **Rojo**: Cancelado · **Azul**: Descanso 💤». Antes convivían OCHO colores
-  (el del avión entre ellos) y el calendario se leía como un mosaico: el color
-  decía QUÉ avión, no CÓMO va el vuelo.
+- Pedidos del cliente:
+  - 22-sep: «que en los calendarios no se vean tantos colores […] los
+    colores que tiene cada avión configurados los seguiremos respetando
+    principalmente en los reportes del balance individual y general en los
+    excel […] en realidad los colores son para el reporte de excel nada
+    más».
+  - 24-sep: «Ale quiere cambiar el color del descanso y agregar el de
+    cobrado (este me imagino se cambiaría en automático cuando ya esté
+    cobrado) […] Tentativo - Gris · Pendiente (permiso) - Amarillo ·
+    Confirmado - Verde · Pagado - Azul · Cancelado - Rojo · Descanso -
+    Morado».
 - **Los colores los decide el API** (`colores-calendario.util.ts` → campo
   `color` de `GET /v1/calendar` → colorId de Google). El panel **no calcula
   colores de eventos**: `calendar-grid.tsx` pinta `ev.color` tal cual y
-  `textOnColor` decide si el texto va blanco u oscuro. La forma de
-  `/v1/calendar` NO cambió: solo cambian los VALORES de `color` (y
-  `sin_asignar`/`tentativo` siguen viajando para tachar/etiquetar).
-- **FUENTE ÚNICA de la leyenda**: `lib/admin/calendario-semaforo.ts` (PURO,
-  prueba `__tests__/calendario-semaforo.test.ts`) con los 5 hex —
-  `#64748B` tentativo, `#22C55E` confirmado, `#F59E0B` pendiente, `#EF4444`
-  cancelado, `#3B82F6` descanso—, `SEMAFORO_CALENDARIO` (orden y textos
-  exactos del cliente + tooltip de qué hacer) y `NOTA_COLOR_AVION`. Los hex
-  son COPIA de los del API: si allá cambian, aquí también o la leyenda miente.
-  La pinta `components/admin/calendar/leyenda-semaforo.tsx`
-  (`<LeyendaSemaforo>`, con `children` para notas que no hablan de color, como
-  el aviso push); toda leyenda de calendario nueva sale de ahí, nunca de hex
-  sueltos. Cableado congelado en `calendar/__tests__/leyenda-semaforo.test.tsx`.
+  `textOnColor` decide si el texto va blanco u oscuro (el azul y el morado
+  llevan texto oscuro). La forma de `/v1/calendar` solo creció con ADITIVOS
+  (`tentativo` el 22-sep, `pagado` el 24-sep).
+- **Paleta** (copia EXACTA de `SEMAFORO` del API), en el orden del cliente:
+  `#64748B` Tentativo · `#F59E0B` Pendiente (permiso) · `#22C55E`
+  Confirmado · `#3B82F6` **Pagado** · `#EF4444` Cancelado · `#8B5CF6`
+  **Descanso 💤**.
+  - **El azul cambió de dueño el 24-sep**: era del descanso y hoy es del
+    PAGADO.
+  - El morado era del viejo «sin asignar» y hoy es SOLO del descanso.
+  - Mantenimiento = amarillo y evento de flota = verde.
+- **«Pagado» lo decide el API, nunca el panel**: sale de `vuelo.cobrado`,
+  que mantiene `refreshCobradoFlag` con `cobrosEnUsd`.
+  - Un vuelo en $0 o de cliente interno nunca es pagado.
+  - Precedencia: cancelado > tentativo > pendiente > **pagado** >
+    confirmado. Un pagado con permiso pendiente o sin avión/piloto se ve
+    AMARILLO.
+  - Se pinta solo al registrar el cobro que liquida el vuelo y vuelve a
+    verde si ese cobro se borra o se reembolsa.
+  - `CalendarEvent.pagado?: boolean` es ADITIVO (ausente = API viejo = no
+    pagado). Solo alimenta la línea «✓ Pagado (cobrado completo)» del
+    detalle del día; jamás decide un color.
+- **FUENTE ÚNICA de la leyenda**: `lib/admin/calendario-semaforo.ts` (PURO).
+  - Contiene los 6 `COLOR_*`, `COLOR_SEMAFORO`/`ClaveSemaforo` (con
+    `pagado`), `SEMAFORO_CALENDARIO` (6 renglones con el texto exacto del
+    cliente y un tooltip de qué hacer), `AYUDA_PENDIENTE` y
+    `NOTA_COLOR_AVION`.
+  - `AYUDA_PENDIENTE` es copia exacta del API; el tooltip de «Pendiente
+    (permiso)» arranca con ella y agrega el mantenimiento y «un vuelo ya
+    pagado se queda en amarillo…».
+  - La leyenda se pinta con `components/admin/calendar/leyenda-semaforo.tsx`
+    (`<LeyendaSemaforo>`, con `children` para notas que no hablan de color).
+    Nunca hex sueltos.
+  - Paridad con el API congelada (tabla COPIADA: `SEMAFORO_API`,
+    `LEYENDA_API`, `AYUDA_PENDIENTE_API`) en
+    `lib/admin/__tests__/calendario-semaforo.test.ts`. Orden y cableado en
+    `calendar/__tests__/leyenda-semaforo.test.tsx`.
+    `calendar/__tests__/sin-hex-sueltos.test.ts` truena si un componente del
+    calendario escribe un `#RRGGBB` a mano o decide un color por
+    `ev.pagado`.
+  - Si el API cambia un hex o un texto, se cambia aquí en el MISMO lote, o
+    la leyenda miente.
 - **El color del avión** (`aeronave.color_calendario`) se sigue capturando y
-  se sigue usando — **solo en los Excel** de balance individual y general
-  (pyservices). En el panel su etiqueta es «**Color en los reportes de
-  Excel**» (`ETIQUETA_COLOR_AVION`/`HINT_COLOR_AVION`/`AYUDA_COLOR_AVION`/
-  `tituloColorAvion` del mismo archivo) en el formulario del avión, la ficha
-  del expediente y el tooltip del punto de la lista de aeronaves.
-- **Ya no hay colores reservados**: `RESERVED_CALENDAR_COLORS` se retiró de
-  `app/admin/aircraft/schema.ts`. Existía porque el color del avión pintaba
-  sus vuelos y podía confundirse con un estado; sin eso, rechazar un tono
-  sería un candado sin motivo (el API nunca validó esa lista).
-- «⚠ Falta asignar» del detalle del día pasó de morado a **ámbar**: es un
-  asunto pendiente, el mismo cubo del semáforo. El morado «Sin asignar», el
-  rosa «Externo», el verde azulado del descanso y el celeste del evento ya no
-  existen en ningún calendario. (Los badges violeta del DETALLE DEL VUELO no
-  son calendario y se quedaron como estaban.)
-- **Orden de deploy: API antes que panel.** Con el API viejo la leyenda ya
-  dice 5 colores mientras el calendario todavía pinta 8 — se ve raro pero no
-  rompe nada. Tras desplegar el API hay que **re-pintar Google** (resync o
-  encolar la ventana), o los eventos ya creados conservan su color viejo.
+  usando **solo en los Excel** de balance individual y general
+  (pyservices). Su etiqueta es «**Color en los reportes de Excel**»
+  (`ETIQUETA_COLOR_AVION`/`HINT_COLOR_AVION`/`AYUDA_COLOR_AVION`/
+  `tituloColorAvion`). El `#3B82F6` del selector de tonos del formulario del
+  avión es un tono de AVIÓN, no el semáforo. Ya no hay colores reservados
+  (`RESERVED_CALENDAR_COLORS` se retiró el 22-sep).
+- «⚠ Falta asignar» del detalle del día va en **ámbar** (asunto
+  pendiente). El rosa «Externo», el verde azulado y el azul del descanso, y
+  el celeste del evento ya no existen en ningún calendario.
+- **Orden de deploy: API (y su migración
+  `20260924000002_calendar_sync_cobrado.sql`) antes que el panel.** Con el
+  API viejo la leyenda ya dice 6 colores mientras el grid todavía pinta el
+  descanso azul y no hay «Pagado». Se ve raro pero no rompe nada. Tras
+  desplegar el API hay que **re-pintar Google** (`POST /v1/calendar/resync`
+  o el reconcile de las 00:15).
 
 ## Calendario: estado de la sync a Google Calendar (12-sep-2026)
 
@@ -2588,14 +2637,106 @@ pueda yo también subir la factura del servicio»; (5) «no se alcanzan a ver lo
   «Subir factura» (PDF/XML, ≤10 MB), «Ver» (URL FIRMADA de 10 min, pestaña
   nueva) y «Quitar» **con confirmación**. Roles: ADMIN/COORDINADOR/FACTURACION.
 - Server actions en `app/admin/flights/actions.ts`
-  (`setFacturaClienteEstatusAction`, `subirFacturaClienteAction`,
-  `quitarFacturaClienteAction`, `urlFacturaClienteAction`), todas con
-  `revalidateFlight`.
+  (`setFacturaClienteEstatusAction`, `setFacturaClienteFolioAction`,
+  `quitarFacturaClienteAction`, `urlFacturaClienteAction`,
+  `refrescarFacturaClienteAction`), todas con `revalidateFlight`. **La SUBIDA
+  del archivo YA NO es una server action** (24-sep-2026): ver «Factura del
+  servicio: FOLIO y subida que no miente» justo abajo.
 - **`apiFetch` ya acepta `FormData`** (22-sep-2026): viaja TAL CUAL y SIN
   `Content-Type` —lo pone `fetch` con su `boundary`; fijarlo a mano deja al API
   sin poder separar las partes—. Es el ÚNICO cuerpo que no se serializa; todo
-  lo demás sigue yendo como JSON. El límite de las server actions ya estaba en
-  12 MB (`next.config.ts`), así que un archivo de 10 MB pasa.
+  lo demás sigue yendo como JSON. ~~El límite de las server actions ya estaba
+  en 12 MB, así que un archivo de 10 MB pasa~~ — **FALSO en producción**: el
+  `bodySizeLimit` de Next sí es 12 MB, pero Vercel corta ANTES (4.5 MB).
+
+### Factura del servicio: FOLIO y subida que no miente (24-sep-2026)
+
+- Palabras del cliente: «subí la factura de un vuelo, peroooo al momento de
+  descargar el reporte en Excel sí aparece la columna de factura (del vuelo)
+  pero no aparece el folio de la factura que subí en el registro». Dos
+  problemas: (a) el folio no se guardaba en ningún lado (el API 0.0.29 agrega
+  `vuelo.factura_folio` / `factura_uuid` y el Excel lo imprime en «FACTURA
+  VUELATOUR»); (b) en prod el vuelo **#297** quedó «Facturado» (Mary Cruz,
+  23-sep) SIN archivo y con `facturas/vuelos/` VACÍO.
+- **Qué pasó con el archivo del #297 — LOGS de Supabase (revisión adversaria
+  24-sep, edge_logs + storage_logs, hora Cancún del 23-sep)**: la subida **SÍ
+  funcionó**. 14:27:31 cambio de estatus; **14:28:29 `POST storage
+  facturas/vuelos/dc204a2f…/33c47a79….pdf` → 200, PDF de 51,220 bytes (50
+  KB)** subido por la server action de entonces + `PATCH vuelo` con el path;
+  14:32:43 y 14:37:22 se abrió dos veces con «Ver» (URL firmada, Chrome en
+  Windows); **14:37:46 «Quitar archivo» (confirmado): `PATCH vuelo` +
+  `DELETE storage` del MISMO objeto** (`ObjectRemoved:Delete`); 14:38:11 y
+  14:38:18 dos cambios de estatus (queda FACTURADO). No se perdió al subir:
+  **se quitó a mano** y el objeto ya no existe (el «Quitar» es borrado duro
+  del bucket). Por eso el diálogo de «Quitar» ahora dice que NO se puede
+  deshacer. El tope de Vercel de abajo es REAL pero NO fue la causa del #297
+  (50 KB); el cambio de camino es endurecimiento para archivos > 4.5 MB.
+- **Diagnóstico del camino de subida (medido)**:
+  - El tope de 1 MB de las server actions NO era: `next.config.ts` ya lo sube
+    a 12 MB y Next 16.2.6 lo lee de `nextConfig.experimental.serverActions`
+    (`build/templates/app-page.js` → `server/app-render/action-handler.js`).
+  - **Vercel corta el cuerpo de TODA función en 4.5 MB**, antes de Next.
+    Medido contra prod el 24-sep: POST de 1 MB a `/api/flights/cobros/<id>/
+    recibo` ⇒ 405 (llegó a Next); de 5 MB ⇒ **413 `FUNCTION_PAYLOAD_TOO_LARGE`**
+    (text/plain de Vercel). Aplica igual a server actions y a `app/api/**`:
+    un proxy tampoco llega a los 10 MB del contrato.
+  - Ese 413 no es respuesta RSC ⇒ la server action **LANZA** en el cliente
+    (`server-action-reducer.js`: «An unexpected response was received from
+    the server» o el text/plain), y `subir()` tenía `try/finally` SIN `catch`,
+    llamado con `void`: ningún toast, el botón volvía a «Subir factura» y el
+    operador creía que ya estaba. Defecto LATENTE real para archivos > 4.5
+    MB (los logs de Supabase descartan que fuera lo del #297: ver arriba).
+- **Camino elegido: del NAVEGADOR DIRECTO al API** —
+  `lib/api/factura-cliente-browser.ts` (`subirFacturaClienteDirecto`) con
+  `apiBrowser` (el JWT de la sesión de Supabase que el navegador YA tiene: el
+  mismo mecanismo de `descargarDelApi`, las notificaciones y
+  `lib/api/invoices.ts`). Preflight CORS verificado contra prod: `204`,
+  `access-control-allow-origin: https://vuelatour-next.vercel.app`,
+  `allow-headers: authorization`, `allow-methods …POST…`. El multipart lleva
+  SOLO `file` (+ `folio`): el API corre con `forbidNonWhitelisted`. Espera
+  máxima 150 s (`TIEMPO_MAX_SUBIDA_MS`) y se dice. Tras una subida
+  confirmada, `refrescarFacturaClienteAction` revalida (cuerpo diminuto) +
+  `router.refresh()`.
+- **Regla de la UI**: «Factura guardada» **SOLO** si el API respondió 200 y el
+  bloque trae `archivo` (`confirmarSubida`); cualquier otra cosa dice qué
+  pasó y **«La factura NO se guardó.»** (`mensajeFalloSubidaFactura`: 413 con
+  el peso del API «El archivo pesa 10.4 MB y el máximo son 10 MB», 400
+  `CAMPO_ARCHIVO_INVALIDO`/`SUBIDA_ILEGIBLE`, red, tiempo agotado, 401/403,
+  502 de Railway sin inglés, ruta inexistente de un API viejo). El diálogo se
+  queda ABIERTO con el motivo en rojo. Nunca lanza.
+- **Diálogo «Subir factura»** (`flights/factura-cliente-subir-dialog.tsx`):
+  archivo (PDF/XML ≤ 10 MB, peso visible) + **«Folio de la factura»**
+  opcional. Con el XML del CFDI el folio se PRELLENA con `datosDeCfdi`
+  (espejo EXACTO de `extraerDatosCfdi` del API: `SERIE-FOLIO`, solo Folio si
+  pasa de 40, UUID del `TimbreFiscalDigital`, BOM/UTF-16/3.2/entidades) y se
+  puede corregir; `folioAEnviar` NO manda el folio cuando es igual al que el
+  API sacaría solo del XML (así un XML sin tocar no dispara el 409 mientras la
+  migración no esté aplicada). El tecleado gana en el API.
+- **Folio en la card** (`flights/factura-cliente-bloque.tsx`): junto al
+  archivo, «Folio A-1234 · factura.pdf · subió Itzi · 23 sep»
+  (`textoArchivoFactura(archivo, fecha, folio)`), UUID en el tooltip; lápiz
+  para corregirlo (`PATCH {folio}` vía `setFacturaClienteFolioAction`) y
+  «Agregar folio» **sin archivo** cuando el estatus es Facturado / Elaborada y
+  enviada (`ofreceCapturarFolio` — el caso #297). Vaciar un folio que existía
+  = BORRAR ⇒ confirma. «Quitar» el archivo NO borra el folio (lo dice).
+- **Tolerancia**: `soportaFolio(bloque)` mira la LLAVE `folio` (el 0.0.29 la
+  manda siempre, aunque sea `null`). API previo ⇒ ni se ofrece ni se MANDA
+  folio (el 0.0.28 respondería 400 a un campo `folio`). API nuevo sin la
+  migración `20260924000001` ⇒ PATCH responde 409
+  `FACTURA_FOLIO_NO_DISPONIBLE` (su mensaje se pinta tal cual) y la subida
+  con folio tecleado se REINTENTA sin folio y avisa
+  (`AVISO_FOLIO_NO_DISPONIBLE`): el archivo nunca se pierde por el folio.
+- Pruebas: `lib/admin/__tests__/factura-cliente.test.ts` (folio, parser con
+  la estructura del XML real FECMID-90255, mensajes: TODO fallo dice «NO se
+  guardó»), `lib/api/__tests__/factura-cliente-browser.test.ts` (el CAMINO:
+  origen del API, JWT, multipart exacto, PDF de 2.5 y de 6 MB, 413/400/red/
+  tiempo/502, reintento sin folio, y que `actions.ts` ya no suba archivos) y
+  `flights/__tests__/cobros-card-factura-cliente.test.tsx` (folio junto al
+  archivo, «Agregar folio» del #297, API previo sin folio, sin permiso).
+- PENDIENTE (mismo tope de 4.5 MB, fuera de este cambio): la factura de UN
+  gasto (`expenses/gasto-factura-button.tsx`, base64 por server action con
+  tope local de 8 MB ⇒ muere arriba de ~3.3 MB con el mensaje engañoso «No se
+  pudo leer el archivo») y la lectura IA de fotos/PDF por server action.
 - Pruebas: `lib/admin/__tests__/factura-cliente.test.ts` (tolerancia, el CFDI
   que manda, validación del archivo) y
   `flights/__tests__/cobros-card-factura-cliente.test.tsx` (cableado, incluido
@@ -2627,3 +2768,71 @@ pueda yo también subir la factura del servicio»; (5) «no se alcanzan a ver lo
   FIRMADA (`GET /v1/invoices/recibidas/:id` → `POST /recibidas/file-urls`,
   `verFacturaGastoAction`), prefiriendo el PDF; el bucket es privado y nunca
   se guarda una URL en el HTML.
+
+## Caja chica: el Excel de lo que se REPONE (24-sep-2026)
+
+- Palabras del cliente: «en el apartado de caja chica, quiero ver si se puede
+  al momento de reembolsar la caja de cada uno, me puede arrojar un Excel
+  descargable con la información de lo que estoy reembolsando».
+- **El Excel lo arma el API 0.0.29 (con pyservices) y el panel SOLO lo
+  descarga.** Qué gastos repone cada reposición, en qué orden y con qué saldo
+  lo decide `tramoDeReposicion` sobre `historialConSaldo`
+  (`common/caja-chica-saldo.util.ts` del API, fuente única del saldo). El
+  panel no suma ni resta un peso.
+- Endpoints del API (roles **ADMIN / FACTURACION** = `GESTION`):
+  `GET /v1/caja-chica/movimientos/:id/reposicion.xlsx` (409
+  `MOVIMIENTO_NO_ES_REPOSICION` si es reintegro/ajuste) y
+  `GET /v1/caja-chica/fondos/:id/por-reponer.xlsx` (lo pendiente HOY, mismo
+  formato). El nombre lo manda el API en `Content-Disposition`: «Reposicion
+  caja <responsable> <YYYY-MM-DD>.xlsx» / «Por reponer caja <responsable>
+  <hoy Cancún>.xlsx».
+- **Proxies** (patrón de los PDF, cookie de sesión, nunca token en el
+  cliente): `app/api/caja-chica/movimientos/[id]/reposicion/route.ts` y
+  `app/api/caja-chica/fondos/[id]/por-reponer/route.ts`, con
+  `proxyArchivoDelApi({tipo: TIPO_XLSX, descargar: true})`, `esUuid` antes de
+  llamar al API y `maxDuration = 60` (el render vive en pyservices).
+- **Descarga en el navegador**: `lib/descargar-archivo.ts`
+  (`descargarArchivoDelPanel`): `fetch` a la MISMA origen, errores del API en
+  es-MX (`mensajeDescargaFallida`), el nombre del servidor gana y el blob solo
+  se GUARDA con `<a download>` (nunca se abre en pestaña). Nunca lanza.
+- **Fuente única** de rutas, nombres de respaldo, roles y textos:
+  `lib/admin/caja-chica-excel.ts` (PURO): `rutaExcelReposicion`,
+  `rutaExcelPorReponer`, `nombreExcelReposicion`, `nombreExcelPorReponer`,
+  `puedeDescargarExcelCaja` (espejo de `GESTION`), `esReposicionDescargable`,
+  `reposicionRecienRegistrada` y los textos (`TEXTO_BOTON_POR_REPONER`,
+  `TITULO_ICONO_REPOSICION`, `TEXTO_REPOSICION_REGISTRADA`,
+  `ETIQUETA_DESCARGAR_DE_NUEVO`, `textoExcelNoDescargado`).
+- **Dónde se ve** (`/admin/caja-chica/[id]`, la página lee el rol con
+  `getMe()`; sin `/me` o sin rol GESTION no se ofrece nada):
+  (a) botón **«Descargar lo pendiente por reponer (Excel)»** junto a
+  «Registrar movimiento», para bajarlo ANTES de reponer;
+  (b) al **registrar una REPOSICIÓN** (desde el detalle o desde el menú ⋯ de
+  la lista: los dos usan `MovimientoDialog`) sale el toast «Reposición
+  registrada» con **«Descargar de nuevo»** y el Excel se descarga SOLO
+  (`avisarReposicionYDescargar` en `caja-chica/excel-caja-buttons.tsx`); si el
+  Excel falla, el error dice que **la reposición SÍ quedó registrada** y
+  ofrece «Reintentar» — nunca parece que el dinero no se guardó. Corregir una
+  reposición vieja o registrar reintegro/ajuste NO descarga nada;
+  (c) en el historial, cada fila **REPOSICIÓN** lleva un ícono de descarga
+  (`DescargarReposicionIcon`, `cursor-pointer` + `title`) junto a su menú ⋯.
+- **La card «Por reponer» del detalle = la cifra del Excel** (revisión
+  adversaria 24-sep-2026, con los 10 fondos REALES de prod): la card
+  calculaba `fondo total − saldo actual` por su cuenta y NO coincidía con
+  `por-reponer.xlsx` ni con la app cuando el fondo no tiene entregas
+  registradas — Diego Ramírez decía **$9,944** en pantalla y **$4,944** en
+  el Excel; Gregorio $2,000 contra $0. Hoy la card lee
+  `porReponerDeFondo(fondo)` (`lib/admin/caja-chica-excel.ts`): el
+  `por_reponer` de la ÚLTIMA fila del historial que manda el API
+  (`porReponerCaja`, fuente única; libro vacío ⇒ 0); solo sin ese campo cae a
+  la fórmula vieja. Los otros 8 fondos ya coincidían al centavo.
+- **Tolerancia**: con el API sin estos endpoints el proxy convierte el 404
+  «Cannot GET» en «Esta descarga todavía no está disponible en el servidor…»
+  (`RUTA_NO_DISPONIBLE`); la pantalla no cambia de forma.
+- Pruebas: `lib/admin/__tests__/caja-chica-excel.test.ts`,
+  `lib/__tests__/descargar-archivo.test.ts`,
+  `lib/api/__tests__/xlsx-proxy.test.ts` (xlsx `attachment` con el nombre del
+  API, JWT solo hacia el API, 409/404 legibles, rutas contra el endpoint
+  correcto, uuid inválido sin llamar al API, `maxDuration`) y
+  `components/admin/caja-chica/__tests__/excel-caja.test.tsx` (ícono SOLO en
+  reposiciones y solo con permiso, botón, toast + descarga automática +
+  «Descargar de nuevo», error que dice que la reposición quedó).

@@ -29,9 +29,16 @@ vi.mock("../reembolso-dialog", () => ({ ReembolsoButton: () => null }));
 vi.mock("@/app/admin/flights/actions", () => ({
   deleteCobroAction: async () => ({ ok: true }),
   setFacturaClienteEstatusAction: async () => ({ ok: true }),
-  subirFacturaClienteAction: async () => ({ ok: true }),
+  setFacturaClienteFolioAction: async () => ({ ok: true }),
+  refrescarFacturaClienteAction: async () => ({ ok: true }),
   quitarFacturaClienteAction: async () => ({ ok: true }),
   urlFacturaClienteAction: async () => ({ ok: true, data: "https://x/y" }),
+}));
+// La subida va del navegador al API (24-sep-2026); ese módulo lee las
+// NEXT_PUBLIC_* al importarse y aquí no se sube nada.
+vi.mock("@/lib/api/factura-cliente-browser", () => ({
+  subirFacturaClienteDirecto: async () => ({ ok: false, error: "no aplica" }),
+  leerBytes: async () => null,
 }));
 
 const { CobrosCard } = await import("../cobros-card");
@@ -117,5 +124,99 @@ describe("CobrosCard · factura del servicio", () => {
     expect(html).toContain("Factura del servicio");
     expect(html).not.toContain("Subir factura");
     expect(html).not.toContain("Estatus de la factura");
+  });
+});
+
+/**
+ * FOLIO de la factura (24-sep-2026). Palabras del cliente: «subí la factura
+ * de un vuelo … al descargar el reporte en Excel … no aparece el folio de la
+ * factura que subí en el registro».
+ */
+describe("CobrosCard · folio de la factura", () => {
+  const ARCHIVO = {
+    path: "vuelos/v-1/abc.pdf",
+    nombre: "factura-297.pdf",
+    subida_at: "2026-09-23T14:38:00-05:00",
+    subida_por_nombre: "Mary Cruz",
+  };
+
+  it("el folio se ve JUNTO al archivo y se corrige con el lápiz", () => {
+    const html = render({
+      facturaCliente: { estatus: "FACTURADO", archivo: ARCHIVO, folio: "A-1234", uuid: null },
+      puedeFacturar: true,
+    });
+    expect(html).toContain("Folio A-1234 · factura-297.pdf · subió Mary Cruz");
+    expect(html).toContain("Corregir folio");
+    expect(html).toContain("Corregir el folio de la factura");
+  });
+
+  it("caso #297: «Facturado» SIN archivo ⇒ se ofrece «Agregar folio»", () => {
+    const html = render({
+      facturaCliente: { estatus: "FACTURADO", archivo: null, folio: null, uuid: null },
+      puedeFacturar: true,
+    });
+    expect(html).toContain("Agregar folio");
+    expect(html).toContain("Sin archivo de factura cargado.");
+  });
+
+  it("folio capturado sin archivo: se dice cuál y que no hay archivo", () => {
+    const html = render({
+      facturaCliente: { estatus: "ELABORADA_ENVIADA", archivo: null, folio: "B-77", uuid: null },
+      puedeFacturar: true,
+    });
+    expect(html).toContain("Folio B-77 · sin archivo cargado");
+  });
+
+  it("«Sin factura» y sin archivo: no se pide folio (no hay de qué)", () => {
+    const html = render({
+      facturaCliente: { estatus: "SIN_FACTURA", archivo: null, folio: null, uuid: null },
+      puedeFacturar: true,
+    });
+    expect(html).not.toContain("Agregar folio");
+    expect(html).toContain("Subir factura");
+  });
+
+  it("API PREVIO (sin la llave `folio`): ni lápiz ni folio — la card de ayer", () => {
+    const html = render({
+      facturaCliente: { estatus: "FACTURADO", archivo: ARCHIVO },
+      puedeFacturar: true,
+    });
+    expect(html).not.toContain("Agregar folio");
+    expect(html).not.toContain("Corregir folio");
+    expect(html).toContain("factura-297.pdf · subió Mary Cruz");
+    expect(html).not.toContain("Folio ");
+  });
+
+  it("sin permiso: el folio se LEE pero no hay lápiz", () => {
+    const html = render({
+      facturaCliente: { estatus: "FACTURADO", archivo: ARCHIVO, folio: "A-1234", uuid: null },
+      puedeFacturar: false,
+    });
+    expect(html).toContain("Folio A-1234");
+    expect(html).not.toContain("Corregir folio");
+    expect(html).not.toContain("Agregar folio");
+  });
+
+  it("el UUID fiscal va en el tooltip del renglón", () => {
+    const html = render({
+      facturaCliente: {
+        estatus: "FACTURADO",
+        archivo: { ...ARCHIVO, nombre: "cfdi.xml" },
+        folio: "FECMID-90255",
+        uuid: "DF1BFB5F-4D88-4F51-AC50-A7B72299128E",
+      },
+      puedeFacturar: true,
+    });
+    expect(html).toContain("Folio fiscal (UUID): DF1BFB5F-4D88-4F51-AC50-A7B72299128E");
+  });
+
+  it("«Subir factura» abre un DIÁLOGO (archivo + folio), no el selector de archivos suelto", () => {
+    const html = render({
+      facturaCliente: { estatus: "FACTURADO", archivo: null, folio: null, uuid: null },
+      puedeFacturar: true,
+    });
+    // El input de archivo vive dentro del diálogo, que no se monta cerrado.
+    expect(html).not.toContain('type="file"');
+    expect(html).toContain("Subir factura");
   });
 });

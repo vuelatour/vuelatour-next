@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { MovimientoActions } from "./movimiento-actions";
+import { DescargarReposicionIcon } from "./excel-caja-buttons";
+import { esReposicionDescargable } from "@/lib/admin/caja-chica-excel";
 import type { Gasto } from "@/types/expenses";
 import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
 
@@ -39,6 +41,7 @@ export function FondoHistorialTable({
   persona,
   moneda,
   usuarios,
+  puedeDescargarExcel = false,
 }: {
   movimientos: MovimientoFondoRow[];
   aircraft: { id: string; matricula: string }[];
@@ -47,7 +50,41 @@ export function FondoHistorialTable({
   persona: string;
   moneda: MonedaCaja;
   usuarios: { id: string; nombre: string }[];
+  /** ADMIN / FACTURACION (espejo de GESTION del API): ícono del Excel en
+   *  cada REPOSICIÓN (24-sep-2026). */
+  puedeDescargarExcel?: boolean;
 }) {
+  // Editar/eliminar el gasto sin salir de caja chica; al cambiar el medio de
+  // pago (p.ej. era tarjeta), el movimiento desaparece del fondo solo.
+  const accionesDeFila = (m: MovimientoFondoRow) =>
+    m.gasto ? (
+      <ExpenseActions
+        gasto={m.gasto}
+        aircraft={aircraft}
+        providers={providers}
+        fotoUrl={m.fotoUrl}
+      />
+    ) : m.movimiento ? (
+      m.movimiento.espejo_de_id ? (
+        // Espejo de un fondeo automático: sigue a la reposición de la caja
+        // vinculada (ahí se corrige o elimina).
+        <span
+          className="text-[11px] text-muted-foreground"
+          title="Espejo automático: corrígelo o elimínalo desde la reposición de la caja vinculada."
+        >
+          espejo
+        </span>
+      ) : (
+        <MovimientoActions
+          movimiento={m.movimiento}
+          fondoId={fondoId}
+          persona={persona}
+          moneda={moneda}
+          usuarios={usuarios}
+        />
+      )
+    ) : null;
+
   const columns: Array<DataTableColumn<MovimientoFondoRow>> = [
     {
       key: "fecha",
@@ -110,38 +147,27 @@ export function FondoHistorialTable({
     {
       key: "acciones",
       header: "",
-      headClassName: "w-10",
-      // Editar/eliminar el gasto sin salir de caja chica; al cambiar el medio
-      // de pago (p.ej. era tarjeta), el movimiento desaparece del fondo
-      // automáticamente.
-      cell: (m) =>
-        m.gasto ? (
-          <ExpenseActions
-            gasto={m.gasto}
-            aircraft={aircraft}
-            providers={providers}
-            fotoUrl={m.fotoUrl}
-          />
-        ) : m.movimiento ? (
-          m.movimiento.espejo_de_id ? (
-            // Espejo de un fondeo automático: sigue a la reposición de la
-            // caja vinculada (ahí se corrige o elimina).
-            <span
-              className="text-[11px] text-muted-foreground"
-              title="Espejo automático: corrígelo o elimínalo desde la reposición de la caja vinculada."
-            >
-              espejo
-            </span>
-          ) : (
-            <MovimientoActions
-              movimiento={m.movimiento}
-              fondoId={fondoId}
+      headClassName: "w-20",
+      // Las REPOSICIONES llevan además el ícono del Excel de lo que
+      // repusieron (24-sep-2026, pedido del cliente).
+      cell: (m) => {
+        const acciones = accionesDeFila(m);
+        const descarga =
+          puedeDescargarExcel && m.movimiento && esReposicionDescargable(m.movimiento) ? (
+            <DescargarReposicionIcon
+              movimientoId={m.movimiento.id}
               persona={persona}
-              moneda={moneda}
-              usuarios={usuarios}
+              fecha={m.movimiento.fecha}
             />
-          )
-        ) : null,
+          ) : null;
+        if (!descarga) return acciones;
+        return (
+          <div className="flex items-center justify-end gap-0.5">
+            {descarga}
+            {acciones}
+          </div>
+        );
+      },
     },
   ];
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
+import { esUuid } from "@/lib/admin/url-params";
 import type {
   FacturaClienteBloque,
   FlightCobro,
@@ -871,31 +872,45 @@ export async function setFacturaClienteEstatusAction(
 }
 
 /**
- * Sube el archivo (PDF o XML) de la factura del servicio. Llega como
- * `FormData` desde el navegador —el límite de las server actions ya está en
- * 12 MB (`next.config.ts`)— y se REENVÍA tal cual al API: `apiFetch` deja
- * pasar un `FormData` sin serializarlo ni fijar el `Content-Type`.
+ * Folio de la factura del servicio SIN subir archivo (24-sep-2026): captura o
+ * corrección con el lápiz, y para los vuelos que ya se marcaron «Facturado»
+ * sin papel (caso #297). `null` lo BORRA (la UI confirma antes). El API
+ * responde 409 `FACTURA_FOLIO_NO_DISPONIBLE` mientras su migración no esté
+ * aplicada: el mensaje se pinta tal cual.
  */
-export async function subirFacturaClienteAction(
+export async function setFacturaClienteFolioAction(
   flightId: string,
-  formData: FormData,
+  folio: string | null,
 ): Promise<ActionResult<FacturaClienteBloque>> {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: "Elige el archivo de la factura (PDF o XML)." };
-  }
   try {
-    const envio = new FormData();
-    envio.append("file", file, file.name);
     const data = await apiServer<FacturaClienteBloque>(
-      `/v1/flights/${flightId}/factura-cliente/archivo`,
-      { method: "POST", body: envio },
+      `/v1/flights/${flightId}/factura-cliente`,
+      { method: "PATCH", body: { folio } },
     );
     revalidateFlight(flightId);
     return { ok: true, data };
   } catch (err) {
     return fail(err);
   }
+}
+
+// La SUBIDA del archivo NO es una server action (24-sep-2026): el navegador
+// la manda DIRECTO al API (`lib/api/factura-cliente-browser.ts`). Toda
+// petición que entra a Vercel —server action o `app/api/**`— tiene un tope
+// DURO de 4.5 MB de cuerpo (413 FUNCTION_PAYLOAD_TOO_LARGE, antes de Next),
+// muy por debajo de los 10 MB del contrato; y una server action que recibe
+// ese 413 LANZA en el cliente («An unexpected response was received from the
+// server») sin ningún aviso. (El #297 NO fue esto: su PDF de 50 KB sí se
+// subió y después se quitó con «Quitar archivo» — logs de Supabase.)
+// Esta action solo revalida después de una subida confirmada.
+
+/** Revalida el vuelo después de que el navegador subió la factura al API. */
+export async function refrescarFacturaClienteAction(
+  flightId: string,
+): Promise<ActionResult> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  revalidateFlight(flightId);
+  return { ok: true };
 }
 
 /** Quita el archivo (el estatus NO cambia solo: lo decide la oficina). */

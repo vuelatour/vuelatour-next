@@ -19,6 +19,9 @@ import type { Gasto } from "@/types/expenses";
 import { esUuid } from "@/lib/admin/url-params";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getMe } from "@/lib/api/me";
+import { porReponerDeFondo, puedeDescargarExcelCaja } from "@/lib/admin/caja-chica-excel";
+import { DescargarPorReponerButton } from "@/components/admin/caja-chica/excel-caja-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +62,11 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
   // Los gastos en efectivo del historial son EDITABLES aquí mismo (pedido de
   // oficina): si el piloto capturó mal el medio de pago (era tarjeta), al
   // corregirlo el movimiento sale solo del fondo — el saldo es en vivo.
+  // Excel de caja chica (24-sep-2026): solo ADMIN/FACTURACION (GESTION del
+  // API). Sin `/me` no se ofrece: un botón que responde 403 es peor que nada.
+  const me = await getMe().catch(() => null);
+  const puedeExcel = puedeDescargarExcelCaja(me?.rol);
+
   const [gastosRes, aircraftRes, providersRes] = await Promise.all([
     listGastos({
       usuario_captura_id: fondo.usuario_id,
@@ -126,12 +134,22 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
             {fondo.usuario?.nombre ?? "Fondo"}
           </h1>
         </div>
-        <MovimientoButton
-          fondoId={fondo.id}
-          persona={fondo.usuario?.nombre ?? "Fondo"}
-          moneda={fondo.moneda}
-          usuarios={usuarios}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Pedido del cliente (24-sep-2026): el Excel de lo que se va a
+              reponer, para descargarlo ANTES de registrar la reposición. */}
+          {puedeExcel && (
+            <DescargarPorReponerButton
+              fondoId={fondo.id}
+              persona={fondo.usuario?.nombre ?? "Fondo"}
+            />
+          )}
+          <MovimientoButton
+            fondoId={fondo.id}
+            persona={fondo.usuario?.nombre ?? "Fondo"}
+            moneda={fondo.moneda}
+            usuarios={usuarios}
+          />
+        </div>
       </div>
 
       {/* Métricas del fondo (pedido oficina 14-ago): saldo + fondo total +
@@ -196,9 +214,9 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
                 Por reponer
               </p>
               {(() => {
-                const porReponer =
-                  Math.round((Number(fondo.monto_fondo) - fondo.saldo) * 100) /
-                  100;
+                // Fuente única del API (la MISMA cifra del Excel «Por
+                // reponer» y de la app): ver `porReponerDeFondo`.
+                const porReponer = porReponerDeFondo(fondo);
                 return (
                   <p
                     className={`text-3xl font-semibold tabular-nums mt-1 ${
@@ -212,7 +230,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
                 );
               })()}
               <p className="text-xs text-muted-foreground mt-1">
-                Fondo total − saldo actual.
+                Lo que falta entregar para volver al fondo total (la misma cifra del Excel).
               </p>
             </CardContent>
           </Card>
@@ -259,6 +277,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
               persona={fondo.usuario?.nombre ?? "Fondo"}
               moneda={fondo.moneda}
               usuarios={usuarios}
+              puedeDescargarExcel={puedeExcel}
             />
           )}
         </CardContent>

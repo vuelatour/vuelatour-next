@@ -30,8 +30,16 @@ export function nombreDeContentDisposition(
   return v ? v : null;
 }
 
-/** Sin rutas, comillas ni saltos de línea (cabecera segura) y con `.pdf`. */
-export function nombreArchivoSeguro(nombre: string, respaldo = "documento.pdf"): string {
+/**
+ * Sin rutas, comillas ni saltos de línea (cabecera segura) y con su
+ * extensión (`.pdf` por defecto; `.xlsx` para los Excel de caja chica,
+ * 24-sep-2026).
+ */
+export function nombreArchivoSeguro(
+  nombre: string,
+  respaldo = "documento.pdf",
+  extension = ".pdf",
+): string {
   const base = (nombre ?? "")
     .replace(/[\r\n]/g, " ")
     .split(/[\\/]/)
@@ -39,7 +47,9 @@ export function nombreArchivoSeguro(nombre: string, respaldo = "documento.pdf"):
     .replace(/["]/g, "")
     .trim();
   const limpio = base || respaldo;
-  return /\.pdf$/i.test(limpio) ? limpio : `${limpio}.pdf`;
+  return limpio.toLowerCase().endsWith(extension.toLowerCase())
+    ? limpio
+    : `${limpio}${extension}`;
 }
 
 /**
@@ -49,9 +59,9 @@ export function nombreArchivoSeguro(nombre: string, respaldo = "documento.pdf"):
  */
 export function armarContentDisposition(
   nombre: string,
-  opts: { descargar?: boolean; respaldo?: string } = {},
+  opts: { descargar?: boolean; respaldo?: string; extension?: string } = {},
 ): string {
-  const seguro = nombreArchivoSeguro(nombre, opts.respaldo);
+  const seguro = nombreArchivoSeguro(nombre, opts.respaldo, opts.extension);
   const ascii = seguro.replace(/[^\x20-\x7E]/g, "-").replace(/["]/g, "");
   const tipo = opts.descargar ? "attachment" : "inline";
   return `${tipo}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(seguro)}`;

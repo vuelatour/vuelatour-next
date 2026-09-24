@@ -87,3 +87,24 @@ describe("pideHtml / escaparHtml", () => {
     );
   });
 });
+
+describe("extensión distinta de .pdf (Excel de caja chica, 24-sep-2026)", () => {
+  it("nombreArchivoSeguro respeta la extensión pedida", () => {
+    expect(nombreArchivoSeguro("Reposicion caja Itzi", "r.xlsx", ".xlsx")).toBe(
+      "Reposicion caja Itzi.xlsx",
+    );
+    expect(nombreArchivoSeguro("Reposicion.XLSX", "r.xlsx", ".xlsx")).toBe("Reposicion.XLSX");
+    // El default sigue siendo PDF: los proxies de PDF no cambian.
+    expect(nombreArchivoSeguro("cotizacion-12")).toBe("cotizacion-12.pdf");
+  });
+
+  it("armarContentDisposition con .xlsx no le cuelga .pdf", () => {
+    const h = armarContentDisposition("Reposición caja Itzi 2026-09-21.xlsx", {
+      descargar: true,
+      extension: ".xlsx",
+    });
+    expect(h.startsWith("attachment;")).toBe(true);
+    expect(h).toContain('filename="Reposici-n caja Itzi 2026-09-21.xlsx"');
+    expect(h).not.toContain(".pdf");
+  });
+});

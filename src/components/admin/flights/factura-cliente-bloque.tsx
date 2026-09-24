@@ -1,15 +1,17 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowTopRightOnSquareIcon,
   ArrowUpTrayIcon,
   DocumentTextIcon,
+  PencilSquareIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,19 +26,25 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fmtDate } from "@/lib/datetime";
 import {
   FACTURA_CLIENTE_ESTADOS,
+  LIMITE_FOLIO_FACTURA,
   RAZON_BLOQUEO_CFDI,
   estadoFacturaCliente,
   estatusFacturaCliente,
-  motivoArchivoInvalido,
+  normalizarFolio,
+  ofreceCapturarFolio,
+  soportaFolio,
   textoArchivoFactura,
+  textoFacturaGuardada,
   type EstatusFacturaCliente,
 } from "@/lib/admin/factura-cliente";
 import {
   quitarFacturaClienteAction,
+  refrescarFacturaClienteAction,
   setFacturaClienteEstatusAction,
-  subirFacturaClienteAction,
+  setFacturaClienteFolioAction,
   urlFacturaClienteAction,
 } from "@/app/admin/flights/actions";
+import { SubirFacturaDialog } from "./factura-cliente-subir-dialog";
 import type { FacturaClienteBloque as Bloque } from "@/types/flights";
 
 /**
@@ -46,18 +54,29 @@ import type { FacturaClienteBloque as Bloque } from "@/types/flights";
  * vuelos facturado, sin factura, factura elaborada y enviada, y que pueda yo
  * también subir la factura del servicio a un lado».
  *
+ * 24-sep-2026 — FOLIO + subida confiable. «Subí la factura de un vuelo,
+ * peroooo al momento de descargar el reporte en Excel … no aparece el folio
+ * de la factura que subí en el registro.» Dos cosas:
+ *  - el FOLIO se captura al subir (prellenado del XML del CFDI), se corrige
+ *    con el lápiz y se puede capturar SIN archivo cuando el vuelo ya está
+ *    Facturado / Elaborada y enviada; se ve junto al archivo («Folio A-1234 ·
+ *    factura.pdf · subió Itzi · 23 sep»);
+ *  - la subida ya NO es una server action (Vercel la cortaría arriba de 4.5
+ *    MB y el error no se veía): va directo al API y solo se celebra si el
+ *    API confirmó el archivo. Ver `lib/api/factura-cliente-browser.ts`.
+ *  - El #297 (logs de Supabase del 23-sep): su PDF SÍ se subió y 9 minutos
+ *    después alguien lo QUITÓ con «Quitar» (borrado duro del bucket). Por eso
+ *    la confirmación de «Quitar» dice que no se puede deshacer.
+ *
  * Reglas:
  *  - El estatus es de OFICINA y se cambia con un clic (reversible con el
- *    mismo control, como el semáforo de facturación de los gastos: sin
- *    confirmación).
+ *    mismo control, sin confirmación).
  *  - Con CFDI timbrado (`facturado`) el selector va DESHABILITADO en
- *    «Facturado» y se explica por qué — el API responde 409 `VUELO_CON_CFDI`
- *    a cualquier intento de bajarlo, así que esconder el motivo sería dejar
- *    al operador peleándose con un error.
+ *    «Facturado» y se explica por qué (409 `VUELO_CON_CFDI`).
  *  - El archivo vive en un bucket PRIVADO: «Ver» pide una URL firmada al
- *    momento (10 min) y la abre en otra pestaña; nunca se guarda una URL
- *    pública en el HTML.
- *  - «Quitar» CONFIRMA (regla permanente del cliente).
+ *    momento (10 min); nunca se guarda una URL pública en el HTML.
+ *  - «Quitar» el archivo y BORRAR el folio CONFIRMAN (regla del cliente).
+ *  - Con un API sin folio (llave ausente) no se ofrece ni se manda folio.
  */
 export function FacturaClienteBloque({
   flightId,
@@ -73,16 +92,29 @@ export function FacturaClienteBloque({
   puedeEditar: boolean;
 }) {
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [pendiente, startTransition] = useTransition();
-  const [subiendo, setSubiendo] = useState(false);
+  const [subirAbierto, setSubirAbierto] = useState(false);
   const [confirmarQuitar, setConfirmarQuitar] = useState(false);
+  const [editandoFolio, setEditandoFolio] = useState(false);
+  const [folioBorrador, setFolioBorrador] = useState("");
+  const [confirmarBorrarFolio, setConfirmarBorrarFolio] = useState(false);
 
   const estatus = estatusFacturaCliente({ facturado, factura_cliente: facturaCliente });
   const info = estadoFacturaCliente(estatus);
   const archivo = facturaCliente?.archivo ?? null;
+  const conFolio = soportaFolio(facturaCliente);
+  const folio = conFolio ? normalizarFolio(facturaCliente?.folio) : null;
+  const uuid = conFolio ? (facturaCliente?.uuid ?? null) : null;
   const bloqueado = facturado;
-  const ocupado = pendiente || subiendo;
+  const ocupado = pendiente;
+  const puedeFolio =
+    puedeEditar && conFolio && ofreceCapturarFolio({ estatus, tieneArchivo: !!archivo });
+
+  const refrescar = () =>
+    startTransition(async () => {
+      await refrescarFacturaClienteAction(flightId);
+      router.refresh();
+    });
 
   const cambiar = (v: EstatusFacturaCliente) => {
     if (v === estatus) return;
@@ -97,27 +129,43 @@ export function FacturaClienteBloque({
     });
   };
 
-  const subir = async (file: File) => {
-    const motivo = motivoArchivoInvalido(file);
-    if (motivo) {
-      toast.error(motivo);
-      return;
-    }
-    setSubiendo(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file, file.name);
-      const res = await subirFacturaClienteAction(flightId, fd);
+  const guardada = (bloque: Bloque, avisoFolio?: string) => {
+    toast.success(textoFacturaGuardada(bloque.folio));
+    if (avisoFolio) toast.warning(avisoFolio);
+    refrescar();
+  };
+
+  const abrirFolio = () => {
+    setFolioBorrador(folio ?? "");
+    setEditandoFolio(true);
+  };
+
+  const guardarFolio = (valor: string | null) => {
+    startTransition(async () => {
+      const res = await setFacturaClienteFolioAction(flightId, valor);
+      setConfirmarBorrarFolio(false);
       if (res.ok) {
-        toast.success("Factura del servicio guardada.");
+        toast.success(valor ? `Folio guardado: ${valor}` : "Folio borrado");
+        setEditandoFolio(false);
         router.refresh();
       } else {
-        toast.error(res.error ?? "No se pudo subir la factura");
+        toast.error(res.error ?? "No se pudo guardar el folio");
       }
-    } finally {
-      setSubiendo(false);
-      if (inputRef.current) inputRef.current.value = "";
+    });
+  };
+
+  const enviarFolio = () => {
+    const nuevo = normalizarFolio(folioBorrador);
+    if (nuevo === folio) {
+      setEditandoFolio(false);
+      return;
     }
+    // Vaciar un folio que existía es BORRAR un dato: se confirma.
+    if (!nuevo && folio) {
+      setConfirmarBorrarFolio(true);
+      return;
+    }
+    guardarFolio(nuevo);
   };
 
   const ver = () => {
@@ -140,6 +188,15 @@ export function FacturaClienteBloque({
       }
     });
   };
+
+  const renglon = archivo
+    ? textoArchivoFactura(archivo, fmtDate(archivo.subida_at), folio)
+    : folio
+      ? `Folio ${folio} · sin archivo cargado`
+      : "Sin archivo de factura cargado.";
+  const tituloRenglon = [renglon, uuid ? `Folio fiscal (UUID): ${uuid}` : null]
+    .filter(Boolean)
+    .join("\n");
 
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
@@ -178,14 +235,31 @@ export function FacturaClienteBloque({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {archivo ? (
+        <span
+          className="min-w-0 max-w-[340px] truncate text-[11px] text-muted-foreground"
+          title={tituloRenglon}
+        >
+          {renglon}
+        </span>
+        {puedeFolio && !editandoFolio && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 text-muted-foreground"
+            onClick={abrirFolio}
+            disabled={ocupado}
+            title={
+              folio
+                ? "Corregir el folio de la factura (es el que sale en el Excel)"
+                : "Capturar el folio de la factura (es el que sale en el Excel)"
+            }
+          >
+            <PencilSquareIcon className="h-3.5 w-3.5" />
+            {folio ? <span className="sr-only">Corregir folio</span> : "Agregar folio"}
+          </Button>
+        )}
+        {archivo && (
           <>
-            <span
-              className="min-w-0 max-w-[280px] truncate text-[11px] text-muted-foreground"
-              title={textoArchivoFactura(archivo, fmtDate(archivo.subida_at)) ?? undefined}
-            >
-              {textoArchivoFactura(archivo, fmtDate(archivo.subida_at))}
-            </span>
             <Button
               size="sm"
               variant="outline"
@@ -211,37 +285,76 @@ export function FacturaClienteBloque({
               </Button>
             )}
           </>
-        ) : (
-          <span className="text-[11px] text-muted-foreground">
-            Sin archivo de factura cargado.
-          </span>
         )}
         {puedeEditar && (
-          <>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf,.xml,application/pdf,text/xml,application/xml"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void subir(f);
-              }}
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5"
-              onClick={() => inputRef.current?.click()}
-              disabled={ocupado}
-              title="Sube el PDF o el XML de la factura que se le mandó al cliente"
-            >
-              <ArrowUpTrayIcon className="h-3.5 w-3.5" />
-              {subiendo ? "Subiendo…" : archivo ? "Reemplazar factura" : "Subir factura"}
-            </Button>
-          </>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5"
+            onClick={() => setSubirAbierto(true)}
+            disabled={ocupado}
+            title="Sube el PDF o el XML de la factura que se le mandó al cliente"
+          >
+            <ArrowUpTrayIcon className="h-3.5 w-3.5" />
+            {archivo ? "Reemplazar factura" : "Subir factura"}
+          </Button>
         )}
       </div>
+
+      {editandoFolio && (
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            enviarFolio();
+          }}
+        >
+          <label
+            className="cursor-pointer text-[11px] text-muted-foreground"
+            htmlFor={`folio-${flightId}`}
+          >
+            Folio de la factura
+          </label>
+          <Input
+            id={`folio-${flightId}`}
+            value={folioBorrador}
+            maxLength={LIMITE_FOLIO_FACTURA}
+            placeholder="Ej. A-1234"
+            className="h-7 w-44 text-xs"
+            autoFocus
+            onChange={(e) => setFolioBorrador(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditandoFolio(false);
+            }}
+            disabled={ocupado}
+          />
+          <Button type="submit" size="sm" className="h-7" disabled={ocupado}>
+            {ocupado ? "Guardando…" : "Guardar"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7"
+            onClick={() => setEditandoFolio(false)}
+            disabled={ocupado}
+          >
+            Cancelar
+          </Button>
+        </form>
+      )}
+
+      {subirAbierto && (
+        <SubirFacturaDialog
+          flightId={flightId}
+          open={subirAbierto}
+          onOpenChange={setSubirAbierto}
+          reemplaza={!!archivo}
+          conFolio={conFolio}
+          folioActual={folio}
+          onGuardada={guardada}
+        />
+      )}
 
       <AlertDialog open={confirmarQuitar} onOpenChange={(o) => !o && setConfirmarQuitar(false)}>
         <AlertDialogContent>
@@ -249,8 +362,9 @@ export function FacturaClienteBloque({
             <AlertDialogTitle>¿Quitar el archivo de la factura?</AlertDialogTitle>
             <AlertDialogDescription>
               Se borra el archivo que está guardado en el vuelo
-              {archivo?.nombre ? ` (${archivo.nombre})` : ""}. El estatus de la factura no cambia:
-              si además hay que corregirlo, cámbialo en el selector.
+              {archivo?.nombre ? ` (${archivo.nombre})` : ""} y NO se puede recuperar: para
+              tenerlo otra vez habría que volver a subirlo. Si solo quieres cambiarlo por otro, usa
+              «Reemplazar factura». El estatus y el folio de la factura no cambian.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -261,6 +375,31 @@ export function FacturaClienteBloque({
               disabled={ocupado}
             >
               Quitar archivo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmarBorrarFolio}
+        onOpenChange={(o) => !o && setConfirmarBorrarFolio(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar el folio {folio}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El vuelo se queda sin folio de factura y el Excel dejará de mostrarlo (saldrá solo el
+              estatus). El archivo, si lo hay, no se toca.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ocupado}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => guardarFolio(null)}
+              disabled={ocupado}
+            >
+              Borrar folio
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

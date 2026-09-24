@@ -53,6 +53,11 @@ export interface HistorialEntry {
   monto: number;
   descripcion: string | null;
   saldo: number;
+  /**
+   * Lo POR REPONER tras esta entrada (≥ 0), fuente única del API
+   * (`porReponerCaja`); ADITIVO desde el 5-sep-2026.
+   */
+  por_reponer?: number | null;
   /** Vuelo del gasto en efectivo (null en movimientos de caja). */
   vuelo_id?: string | null;
   vuelo_folio?: number | null;

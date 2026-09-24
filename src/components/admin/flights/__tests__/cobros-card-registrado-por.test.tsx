@@ -27,6 +27,12 @@ vi.mock("../reembolso-dialog", () => ({ ReembolsoButton: () => null }));
 vi.mock("@/app/admin/flights/actions", () => ({
   deleteCobroAction: async () => ({ ok: true }),
 }));
+// La subida de la factura va del navegador al API (24-sep-2026) y ese módulo
+// lee las variables NEXT_PUBLIC_* al importarse: aquí no se sube nada.
+vi.mock("@/lib/api/factura-cliente-browser", () => ({
+  subirFacturaClienteDirecto: async () => ({ ok: false, error: "no aplica" }),
+  leerBytes: async () => null,
+}));
 
 const { CobrosCard } = await import("../cobros-card");
 
