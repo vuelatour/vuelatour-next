@@ -376,3 +376,46 @@ describe("croma del tramo: dentro del papel, nunca en el margen", () => {
     expect(html).toContain("cot-croma");
   });
 });
+
+/**
+ * EL VUELO YA VOLÓ y se cambió el avión de la cotización (24-sep-2026, #338):
+ * la nota va JUNTO al selector de la tarjeta «Avión cotizado», como croma
+ * ámbar; «Avión utilizado · Distinto al cotizado» (del payload interno) se
+ * sigue leyendo debajo.
+ */
+describe("tarjeta «Avión cotizado»: vuelo ya volado", () => {
+  const aviso =
+    "Este vuelo ya voló en N4142R. Cambiar el avión aquí solo cambia con qué se cobra " +
+    "(Cessna 206); la operación no se mueve ni se avisa a la tripulación.";
+  const conAviso = (): QuoteSheetInternaProps => {
+    const p = base();
+    return { ...p, documento: { ...p.documento, avisoCambioAvion: aviso } };
+  };
+
+  it("la nota sale bajo el selector, ámbar y como croma", () => {
+    const html = renderToString(<QuoteSheetInterna {...conAviso()} />);
+    expect(html).toContain(`<div class="cot-aviso" role="note" data-cot-ui="">${aviso}</div>`);
+    const iSelector = html.indexOf("Aeronave cotizada");
+    const iAviso = html.indexOf(aviso);
+    const iRuta = html.indexOf("Ruta cotizada");
+    expect(iSelector).toBeGreaterThan(-1);
+    expect(iAviso).toBeGreaterThan(iSelector);
+    expect(iAviso).toBeLessThan(iRuta);
+  });
+
+  it("cotizado vs utilizado se siguen leyendo con «Distinto al cotizado»", () => {
+    const html = renderToString(<QuoteSheetInterna {...conAviso()} />);
+    expect(html).toContain("Avión utilizado: ");
+    expect(html).toContain('<span class="tag ambar">Distinto al cotizado</span>');
+  });
+
+  it("LECTURA: la nota no se monta", () => {
+    const html = renderToString(<QuoteSheetInterna {...conAviso()} lectura />);
+    expect(html).not.toContain("ya voló");
+  });
+
+  it("sin cambio de avión no hay nota", () => {
+    const html = renderToString(<QuoteSheetInterna {...base()} />);
+    expect(html).not.toContain("ya voló");
+  });
+});

@@ -90,6 +90,9 @@ import {
   fraseOperaEn,
   modelosCotizadosTexto,
   modelosCotizadosVigentes,
+  estadoVueloVolado,
+  MSG_AVION_VUELO_VOLADO_API_VIEJO,
+  textoCambioAvionVueloVolado,
   textoConfirmarEdicionCotizacion,
 } from "@/lib/admin/avion-cotizado";
 import {
@@ -117,6 +120,7 @@ import {
 } from "@/hooks/use-quote-preview-html";
 import {
   armarMotivoRevision,
+  avisoFechasVueloVolado,
   cambiosTocanTripulacion,
   MOTIVOS_REVISION,
   resumirCambios,
@@ -1615,9 +1619,24 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     !!selectedAircraft &&
     !!selectedAircraft.asientos &&
     maxPasajeros > selectedAircraft.asientos;
+  // EL VUELO YA VOLÓ (24-sep-2026, #338): EN_VUELO/COMPLETADO o algún tramo
+  // vivo con tacómetro (misma regla que el API, `vueloYaVolo`). Ahí cambiar
+  // el avión de la cotización es SOLO COMERCIAL: el API no mueve el vuelo ni
+  // sus tramos, no valida squawk/taller como asignación y no avisa a la
+  // tripulación.
+  const volado = useMemo(
+    () =>
+      isRevise && initialQuote
+        ? estadoVueloVolado(initialQuote)
+        : { yaVolo: false, termino: false },
+    [isRevise, initialQuote],
+  );
+  const yaVolo = volado.yaVolo;
   // TALLER = ADVERTENCIA, NUNCA CANDADO (cliente, 11-sep-2026): se cotiza a
   // futuro con un avión en mantenimiento; solo se avisa. Nota ámbar + chip.
-  const avionEnTaller = selectedAircraft?.en_taller ? selectedAircraft : null;
+  // Con el vuelo YA VOLADO el avión elegido es solo con qué se cobra: pedir
+  // «confírmalo con el mecánico» sería ruido (la marca del selector se queda).
+  const avionEnTaller = selectedAircraft?.en_taller && !yaVolo ? selectedAircraft : null;
   // Con override capturado (o modo elegido), el segmento muestra Personalizada.
   // Quién PINTA el segmento es la fila «Tarifa» del papel interno, con el
   // mismo `segmentoTarifa` (`lib/admin/tarifa.ts`, fuente única): aquí solo
@@ -1873,7 +1892,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   } | null>(null);
   // API sin desplegar que todavía no conoce `tramos_base` (22-sep-2026,
   // #326) Y la operación difiere de lo cotizado: guardar pisaría lo que
-  // capturó el piloto, así que se FRENA y se explica en ámbar.
+  // capturó el piloto, así que se FRENA y se explica en ámbar. El MISMO
+  // banner («la versión quedó SIN guardar a propósito») frena el cambio de
+  // avión de un vuelo que YA VOLÓ contra un API que todavía lo trata como
+  // reasignación (24-sep-2026, #338: `MSG_AVION_VUELO_VOLADO_API_VIEJO`).
   const [errorTramosBase, setErrorTramosBase] = useState<string | null>(null);
   // 409 SQUAWK_ALTA_SIN_RESOLVER: MISMO diálogo que assign; al confirmar se
   // reintenta el revise con la bandera y el motivo de ESTE intento.
@@ -2004,6 +2026,20 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       // decisión es PURA (`decidirErrorRevise`, probada en vitest) porque
       // taller y squawk también son 409 y no deben caer en «otra versión».
       const decision = decidirErrorRevise(res, { yaAceptoSquawk: aceptarSquawk });
+      if (decision.tipo === "squawk" && yaVolo) {
+        // EL VUELO YA VOLÓ (24-sep-2026, #338): el API vigente no valida
+        // squawk en un cambio de avión SOLO COMERCIAL. Si llega el 409, es un
+        // backend sin desplegar que todavía lo trata como REASIGNACIÓN —
+        // confirmar movería la cabecera del vuelo al avión nuevo. No se
+        // ofrece el diálogo: se frena y se explica (los cambios se quedan).
+        setGuardarOpen(false);
+        setSquawkRevise(null);
+        saveRequestIdRef.current = null;
+        verPdfTrasGuardarRef.current = false;
+        setErrorTramosBase(MSG_AVION_VUELO_VOLADO_API_VIEJO);
+        toast.warning(MSG_AVION_VUELO_VOLADO_API_VIEJO);
+        return;
+      }
       if (decision.tipo === "squawk") {
         // Se confirma en el diálogo compartido con assign y se reintenta con
         // la bandera: el intento sigue vivo (misma llave, misma intención de
@@ -2578,13 +2614,26 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     versionSiguiente,
   ]);
 
-  // Avisos del diálogo «Guardar vN».
+  // Cambio de avión en la cotización (diff contra la base). Con `yaVolo`
+  // (arriba) es SOLO COMERCIAL.
+  const cambiaAvion = cambios.some((c) => c.clave === "aeronave");
+
+  // Avisos del diálogo «Guardar vN» — espejo de lo que el API notifica
+  // (24-sep-2026, #338): con el vuelo YA VOLADO ni el avión (solo comercial)
+  // ni la salida (ya no se escribe) avisan; con el viaje TERMINADO no avisa
+  // nada. EN_VUELO entra: un viaje de varios días a medio camino sí avisa
+  // del regreso, que todavía no vuela.
   const avisaTripulacion =
     isRevise &&
     !!initialQuote &&
-    (initialQuote.estado === "CONFIRMADO" || initialQuote.estado === "RESERVA") &&
+    (initialQuote.estado === "CONFIRMADO" ||
+      initialQuote.estado === "RESERVA" ||
+      initialQuote.estado === "EN_VUELO") &&
     !!initialQuote.piloto_id &&
-    cambiosTocanTripulacion(cambios);
+    cambiosTocanTripulacion(cambios, volado);
+  // Fechas de un vuelo que ya voló: el API conserva las del vuelo (movería
+  // calendario y mes del dinero); se dice ANTES de guardar.
+  const avisoFechasVolado = isRevise ? avisoFechasVueloVolado(cambios, volado) : null;
   const motivoPreview = armarMotivoRevision({
     chip: motivoChip,
     texto: values.motivo,
@@ -2642,18 +2691,21 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Texto del diálogo de confirmación (puro y probado): explica que la
   // cotización es independiente de la operación (R5). «Aeronave utilizada» =
   // matrícula · modelo, misma fuente única que la card «Operación».
-  const textoConfirmarEdicion = useMemo(
-    () =>
-      textoConfirmarEdicionCotizacion({
-        folio: initialQuote?.folio ?? null,
-        estado: initialQuote?.estado ?? null,
-        aeronaveUtilizada:
-          initialQuote && !initialQuote.es_externo
-            ? aeronavesDeCotizacion(initialQuote, aircraft).utilizada
-            : null,
-      }),
-    [initialQuote, aircraft],
-  );
+  const textoConfirmarEdicion = useMemo(() => {
+    // Misma fuente única que el API (`estadoVueloVolado`): un viaje a medio
+    // camino todavía avisa del regreso pendiente.
+    const v = estadoVueloVolado(initialQuote);
+    return textoConfirmarEdicionCotizacion({
+      folio: initialQuote?.folio ?? null,
+      estado: initialQuote?.estado ?? null,
+      aeronaveUtilizada:
+        initialQuote && !initialQuote.es_externo
+          ? aeronavesDeCotizacion(initialQuote, aircraft).utilizada
+          : null,
+      yaVolo: v.yaVolo,
+      termino: v.termino,
+    });
+  }, [initialQuote, aircraft]);
   // El avión COTIZADO ya no se puede elegir (dado de baja): el formulario
   // arrancó con OTRO avión y el desglose que se ve ya NO es el pactado. Se
   // dice en ámbar — nunca en silencio (la fiabilidad numérica es sagrada).
@@ -2670,7 +2722,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
             modelo: selectedAircraft.modelo,
           },
           fichaUtilizada,
+          { yaVolo },
         )
+      : null;
+  // EL VUELO YA VOLÓ y el operador cambió el avión (24-sep-2026, #338): el
+  // cambio es SOLO COMERCIAL. Mismo texto (fuente única) en la nota junto al
+  // selector de las dos hojas y en el diálogo «Guardar vN». En externos el
+  // selector es solo la referencia de tarifa: no hay avión propio que nombrar.
+  const avisoAvionVolado =
+    yaVolo && cambiaAvion && !values.es_externo
+      ? textoCambioAvionVueloVolado({
+          volo: fichaUtilizada,
+          modeloCobro: selectedAircraft?.modelo ?? breakdown?.aeronave.modelo ?? null,
+        })
       : null;
 
   // Tramo OCULTO del PDF (atenúa la fila y sale de la ruta grande). Alta:
@@ -2764,6 +2828,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     modelosCotizados: modelosCotizadosApi,
     // Nota TENUE junto al selector cuando el vuelo opera en otro avión (R5).
     operaEn: notaOperaEn,
+    // Vuelo YA VOLADO + avión cambiado (#338): nota ámbar que la sustituye.
+    avisoCambioAvion: avisoAvionVolado,
     matricula: breakdown?.aeronave.matricula ?? selectedAircraft?.matricula ?? null,
     quoteId: initialQuote?.id,
   };
@@ -3650,6 +3716,25 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 <p className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs text-violet-700 dark:text-violet-300">
                   Se notificará a la tripulación: el cambio toca fechas, avión o
                   pernocta de un vuelo con piloto asignado.
+                </p>
+              )}
+              {/* EL VUELO YA VOLÓ y cambió el avión (24-sep-2026, #338): se
+                  dice ANTES de guardar que el cambio es solo de cobro — el
+                  aviso de tripulación de arriba nunca sale en este caso. */}
+              {avisoAvionVolado && (
+                <p
+                  role="note"
+                  className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300"
+                >
+                  {avisoAvionVolado}
+                </p>
+              )}
+              {avisoFechasVolado && (
+                <p
+                  role="note"
+                  className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300"
+                >
+                  {avisoFechasVolado}
                 </p>
               )}
               {derivaMotor && (

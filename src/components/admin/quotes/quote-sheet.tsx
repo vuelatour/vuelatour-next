@@ -447,15 +447,26 @@ export function QuoteSheet({
                   si el vuelo vuela hoy en otro avión se dice aquí, TENUE y
                   fuera del PDF (`data-cot-ui`). Informativa: el selector del
                   avión cotizado no se cambia solo. */}
-              {!externo && !lectura && documento.operaEn && (
-                <span
-                  className="cot-tenue"
-                  title="Avión con el que opera hoy el vuelo. Lo cotizado (y su precio) no cambia."
-                  {...UI}
-                >
-                  <br />
-                  {documento.operaEn}
+              {!externo && !lectura && documento.avisoCambioAvion ? (
+                // EL VUELO YA VOLÓ (24-sep-2026, #338): el cambio de avión es
+                // SOLO COMERCIAL. Ámbar y en lugar de la nota tenue: el texto
+                // ya dice con qué avión se voló.
+                <span className="cot-aviso" role="note" {...UI}>
+                  {documento.avisoCambioAvion}
                 </span>
+              ) : (
+                !externo &&
+                !lectura &&
+                documento.operaEn && (
+                  <span
+                    className="cot-tenue"
+                    title="Avión con el que opera hoy el vuelo. Lo cotizado (y su precio) no cambia."
+                    {...UI}
+                  >
+                    <br />
+                    {documento.operaEn}
+                  </span>
+                )
               )}
               {/* SALIDA y REGRESO con hora: dato OPERATIVO que solo se captura
                   aquí (15-sep-2026). Nunca se imprime — subárbol `data-cot-ui`

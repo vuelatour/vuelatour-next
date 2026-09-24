@@ -227,11 +227,15 @@ function difierenAviones(
 
 /**
  * Avión UTILIZADO (operativo) de la cotización como ficha, para comparar con
- * el COTIZADO. Precedencia: `aeronave_utilizada` del RAÍZ (el API la resuelve
- * como `vuelo.aeronave_id` y, si el vuelo no lo trae en la cabecera, con el
- * del primer tramo vivo — ahí `aeronave_operativa` viene null) → el mismo
- * nombre dentro del snapshot → `aeronave_operativa` → el avión ajeno cuando
- * es externo → el catálogo por `aeronave_id`.
+ * el COTIZADO. Precedencia: `aeronave_utilizada` del RAÍZ → el mismo nombre
+ * dentro del snapshot → `aeronave_operativa` → el avión ajeno cuando es
+ * externo → el catálogo por `aeronave_id`.
+ *
+ * `aeronave_utilizada` la resuelve el API desde los TRAMOS VIVOS (herencia
+ * `escala.aeronave_id ?? vuelo.aeronave_id`, helper `avionesUtilizados`) y no
+ * de la cabecera a secas (24-sep-2026, #338: cabecera XA-VGV y tramos N4142R
+ * ⇒ utilizada N4142R, el avión con el que de verdad se voló). El panel NO la
+ * recalcula de las escalas: sería un cálculo paralelo del mismo dato.
  */
 export function fichaAeronaveUtilizada(
   quote: QuoteAeronaves,
@@ -367,13 +371,19 @@ export function esAeronaveCotizada(
  * «Opera en N990GG (Seneca V)»: nota TENUE junto al selector del avión de la
  * hoja/cotizador cuando el vuelo vuela en un avión distinto al que se está
  * cotizando. Es informativa — nunca cambia el selector (R5).
+ *
+ * Con `yaVolo` (24-sep-2026, #338) dice «Voló en N4142R (Piper Seneca V)»: de
+ * un vuelo que ya aterrizó no se dice en qué avión «opera».
  */
 export function fraseOperaEn(
   cotizada: AvionFichaComparable | null | undefined,
   operativa: AvionFichaComparable | null | undefined,
+  opts: { yaVolo?: boolean } = {},
 ): string | null {
   const t = textoOperaEn(cotizada, operativa);
-  return t ? `${t.charAt(0).toLocaleUpperCase("es-MX")}${t.slice(1)}` : null;
+  if (!t) return null;
+  if (opts.yaVolo) return `Voló en ${t.slice("opera en ".length)}`;
+  return `${t.charAt(0).toLocaleUpperCase("es-MX")}${t.slice(1)}`;
 }
 
 /**
@@ -389,12 +399,41 @@ export function textoConfirmarEdicionCotizacion(input: {
   estado?: string | null;
   /** «N990GG · Seneca V» (aeronavesDeCotizacion(...).utilizada). null = no se menciona. */
   aeronaveUtilizada?: string | null;
+  /**
+   * El vuelo YA VOLÓ (`vueloYaVolo`, 24-sep-2026, #338): un CONFIRMADO con
+   * algún tramo con tacómetro. Ahí la cotización ya no avisa a nadie ni mueve
+   * la operación, y prometer «la tripulación recibe aviso» sería mentir.
+   */
+  yaVolo?: boolean;
+  /**
+   * `estadoVueloVolado(...).termino`. Solo importa con `yaVolo`: un viaje de
+   * varios días A MEDIO CAMINO (`termino === false`) sí reagenda —y avisa— su
+   * regreso pendiente (el API lo escribe y manda el push), así que decir «la
+   * tripulación no recibe aviso» sería falso (revisión adversaria
+   * 24-sep-2026). Sin el dato se asume terminado (texto de siempre).
+   */
+  termino?: boolean;
 }): { titulo: string; cuerpo: string } {
   const vuelo = input.folio != null && `${input.folio}`.trim() !== ""
     ? `El vuelo #${input.folio}`
     : "El vuelo";
   const estado = input.estado === "RESERVA" ? "reservado" : "confirmado";
   const opera = limpio(input.aeronaveUtilizada ?? null);
+  if (input.yaVolo) {
+    const aMedioCamino = input.termino === false;
+    return {
+      titulo: "La cotización es independiente de la operación. ¿Editar?",
+      cuerpo:
+        `${vuelo} ya ${aMedioCamino ? "salió" : "voló"}` +
+        (opera ? ` en ${opera}` : "") +
+        ". La cotización es independiente: aquí editas lo pactado con el " +
+        "cliente (con qué avión y cuánto se cobra). " +
+        (aMedioCamino
+          ? "Lo ya volado no se mueve; si cambias el regreso o la pernocta " +
+            "pendientes, la tripulación recibe aviso."
+          : "La operación no se mueve y la tripulación no recibe aviso."),
+    };
+  }
   return {
     titulo: "La cotización es independiente de la operación. ¿Editar?",
     cuerpo:
@@ -428,4 +467,147 @@ export function modelosCotizadosVigentes(
   if (!esperado) return lista;
   const clave = esperado.toLocaleLowerCase("es-MX");
   return lista.some((m) => m.toLocaleLowerCase("es-MX") === clave) ? lista : null;
+}
+
+// ===== EL VUELO YA VOLÓ: cambiar el avión es SOLO COMERCIAL (24-sep-2026) =====
+//
+// Reporte del cliente (cotización #338, CUN→PTU→CUN): se cotizó y se voló en
+// el Seneca N4142R; con el vuelo YA COMPLETADO la oficina guardó la v2 con
+// «se cobra como cessna, pidieron cessna» (Cessna 206). El API leyó el avión
+// nuevo como un cambio DELIBERADO de operación: escribió XA-VGV en la cabecera
+// del vuelo (los tramos, con tacómetro, siguieron en N4142R) y le avisó al
+// piloto «Ahora vuela en XA-VGV» de un vuelo que ya había aterrizado. Salían
+// dos matrículas y nadie sabía con cuál se voló.
+//
+// REGLA (espejo de `resolverAeronaveDeRevision` del API): si el vuelo ya voló,
+// un avión distinto en la cotización es SOLO COMERCIAL — el precio y el
+// snapshot se calculan con el avión elegido (con eso se cobra), la operación
+// no se toca (ni la cabecera ni los tramos), no se valida squawk como
+// asignación y no se avisa a la tripulación. El panel solo lo DICE: la regla
+// la aplica el API.
+
+/** Estados en los que el vuelo ya salió (espejo del API). */
+export const ESTADOS_VUELO_YA_VOLO: readonly string[] = ["EN_VUELO", "COMPLETADO"];
+
+/** Forma mínima que lee `estadoVueloVolado` (tolera escalas parciales del API). */
+export interface VueloYaVoloInput {
+  estado?: string | null;
+  escalas?: ReadonlyArray<{
+    orden?: number | null;
+    taco_salida?: unknown;
+    taco_llegada?: unknown;
+    cancelada_at?: string | null;
+  }> | null;
+}
+
+/** El viaje ARRANCÓ (`yaVolo`) y/o TERMINÓ (`termino`). Espejo del API. */
+export interface EstadoVueloVolado {
+  /**
+   * El avión YA VOLÓ: estado EN_VUELO o COMPLETADO, o CUALQUIER tramo VIVO
+   * (no cancelado; ferries y tramos solo-operativos incluidos: también los
+   * voló un avión) con tacómetro de salida o de llegada. Con esto el avión del
+   * cotizador es SOLO COMERCIAL y la fecha de SALIDA ya no se mueve desde la
+   * cotización. Un CONFIRMADO con el tramo 1 capturado cuenta.
+   */
+  yaVolo: boolean;
+  /**
+   * El viaje YA TERMINÓ: COMPLETADO, o el ÚLTIMO tramo vivo (por `orden`) ya
+   * tiene tacómetro. Con esto tampoco se mueve la fecha de REGRESO ni se avisa
+   * a la tripulación de nada (reagenda, pernocta, itinerario). Un viaje de
+   * varios días a medio camino (EN_VUELO, regreso pendiente) SÍ sigue avisando
+   * del regreso, que todavía no vuela.
+   */
+  termino: boolean;
+}
+
+function tacoCapturado(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  return typeof v === "string" ? v.trim() !== "" : true;
+}
+
+/**
+ * ¿El vuelo ya voló / ya terminó? MISMA definición que el API
+ * (`estadoVueloVolado` de `quotes/aeronave-revision.util.ts`): si una de las
+ * dos cambia, la otra también, o el panel promete (o calla) un aviso que el
+ * API no manda.
+ */
+export function estadoVueloVolado(v: VueloYaVoloInput | null | undefined): EstadoVueloVolado {
+  if (!v) return { yaVolo: false, termino: false };
+  const e = (v.estado ?? "").toUpperCase();
+  const completado = e === "COMPLETADO";
+  const conTaco = (t: { taco_salida?: unknown; taco_llegada?: unknown }) =>
+    tacoCapturado(t.taco_salida) || tacoCapturado(t.taco_llegada);
+  // Mismo orden que el API: por `orden` y, sin él, por posición.
+  const clave = (t: { orden?: number | null }, i: number) =>
+    Number.isFinite(Number(t.orden)) ? Number(t.orden) : i;
+  const vivos = (v.escalas ?? [])
+    .filter((t) => !t.cancelada_at)
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => clave(a.t, a.i) - clave(b.t, b.i))
+    .map(({ t }) => t);
+  const ultimo = vivos.length > 0 ? vivos[vivos.length - 1] : null;
+  return {
+    yaVolo: ESTADOS_VUELO_YA_VOLO.includes(e) || vivos.some(conTaco),
+    termino: completado || (ultimo != null && conTaco(ultimo)),
+  };
+}
+
+/** Atajo de `estadoVueloVolado(v).yaVolo`. */
+export function vueloYaVolo(v: VueloYaVoloInput | null | undefined): boolean {
+  return estadoVueloVolado(v).yaVolo;
+}
+
+/**
+ * Texto ÚNICO (diálogo «Guardar vN» y nota junto al selector) cuando se
+ * cambia el avión de la cotización de un vuelo que YA VOLÓ:
+ *
+ * «Este vuelo ya voló en N4142R. Cambiar el avión aquí solo cambia con qué
+ * se cobra (Cessna 206); la operación no se mueve ni se avisa a la
+ * tripulación.»
+ *
+ * `volo` = el avión UTILIZADO (`fichaAeronaveUtilizada`: el API lo resuelve de
+ * los tramos vivos); se nombra por MATRÍCULA porque es vista interna (sin
+ * matrícula, por modelo; sin ninguno, no se inventa). `modeloCobro` = el
+ * MODELO elegido en el cotizador (con el que se cobra, lo que ve el cliente).
+ */
+export function textoCambioAvionVueloVolado(input: {
+  volo: AvionFichaComparable | null | undefined;
+  modeloCobro: string | null | undefined;
+}): string {
+  const donde = limpio(input.volo?.matricula ?? null) ?? limpio(input.volo?.modelo ?? null);
+  const cobro = limpio(input.modeloCobro ?? null);
+  return (
+    `Este vuelo ya voló${donde ? ` en ${donde}` : ""}. ` +
+    `Cambiar el avión aquí solo cambia con qué se cobra${cobro ? ` (${cobro})` : ""}; ` +
+    "la operación no se mueve ni se avisa a la tripulación."
+  );
+}
+
+/**
+ * COMPATIBILIDAD: el API vigente NO valida squawk al cambiar el avión de un
+ * vuelo que ya voló (no es una asignación). Si aun así llega el 409
+ * `SQUAWK_ALTA_SIN_RESOLVER`, es un backend sin desplegar que todavía trata
+ * el cambio como REASIGNACIÓN — confirmarlo movería la cabecera del vuelo al
+ * avión nuevo (el bug de la #338). No se ofrece el diálogo: se frena y se dice.
+ */
+export const MSG_AVION_VUELO_VOLADO_API_VIEJO =
+  "Falta actualizar el API: todavía trata el cambio de avión de un vuelo que " +
+  "ya voló como una reasignación de la operación (pidió confirmar un squawk " +
+  "del avión nuevo). La versión NO se guardó para no mover el vuelo; avisa a " +
+  "sistemas. Tus cambios siguen aquí.";
+
+/** Marca ámbar junto al avión utilizado cuando no es el cotizado (espejo del PDF interno). */
+export const ETIQUETA_DISTINTO_AL_COTIZADO = "Distinto al cotizado";
+
+/**
+ * Ayuda bajo «Aeronave utilizada» (card «Operación»). Con el vuelo ya volado
+ * habla en pasado: es el avión con el que SE VOLÓ, no «el que tiene hoy».
+ */
+export function hintAeronaveUtilizada(input: { difieren: boolean; yaVolo: boolean }): string {
+  if (input.difieren) {
+    return input.yaVolo
+      ? "Voló en un avión distinto al cotizado: el precio se cobra con el cotizado."
+      : "Opera en un avión distinto al cotizado: el precio NO cambia solo.";
+  }
+  return input.yaVolo ? "El avión con el que se voló." : "La que tiene asignada el vuelo hoy.";
 }

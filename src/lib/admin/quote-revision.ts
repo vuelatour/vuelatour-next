@@ -626,9 +626,68 @@ export function resumirCambios(
   return out;
 }
 
-/** ¿Algún cambio toca lo que el API avisa a la tripulación? */
-export function cambiosTocanTripulacion(cambios: CambioCotizacion[]): boolean {
-  return cambios.some((c) => c.tripulacion);
+/**
+ * El vuelo ya voló / ya terminó (`estadoVueloVolado` de
+ * `lib/admin/avion-cotizado.ts`, espejo del API). Se recibe como dato para
+ * que este módulo siga PURO y sin depender del de aviones.
+ */
+export interface VueloVoladoDiff {
+  yaVolo?: boolean;
+  termino?: boolean;
+}
+
+/**
+ * ¿Algún cambio toca lo que el API avisa a la tripulación? (24-sep-2026,
+ * #338: el piloto recibió «cambio de avión» y «el REGRESO ahora sale…» de un
+ * vuelo que ya había aterrizado.) Con el vuelo YA VOLADO, el avión es solo
+ * comercial y la fecha de SALIDA ya no se escribe: ninguno de los dos avisa.
+ * Con el viaje TERMINADO no avisa nada (ni regreso, ni pernocta, ni tramos).
+ */
+export function cambiosTocanTripulacion(
+  cambios: CambioCotizacion[],
+  volado: VueloVoladoDiff = {},
+): boolean {
+  if (volado.termino) return false;
+  return cambios.some(
+    (c) =>
+      c.tripulacion &&
+      !(volado.yaVolo && (c.clave === "aeronave" || c.clave === "fecha_vuelo")),
+  );
+}
+
+/**
+ * Nota del diálogo «Guardar vN» cuando se cambian las FECHAS de un vuelo que
+ * ya voló (24-sep-2026, #338). El API ya no las escribe en el vuelo —movería
+ * el calendario, Google y el mes del dinero de un vuelo cerrado— y conserva
+ * las del vuelo con un aviso; aquí se dice ANTES de guardar. Salida: con el
+ * vuelo ya volado. Regreso: con el viaje ya terminado (a medio camino el
+ * regreso todavía no vuela y sí se reagenda). null = nada que decir.
+ */
+export function avisoFechasVueloVolado(
+  cambios: CambioCotizacion[],
+  volado: VueloVoladoDiff,
+): string | null {
+  const salida = !!volado.yaVolo && cambios.some((c) => c.clave === "fecha_vuelo");
+  const regreso = !!volado.termino && cambios.some((c) => c.clave === "fecha_traslado_final");
+  if (salida && regreso) {
+    return (
+      "El vuelo ya voló: sus fechas de salida y regreso no se cambian desde la " +
+      "cotización; se conservan las del vuelo."
+    );
+  }
+  if (salida) {
+    return (
+      "El vuelo ya voló: la fecha de salida no se cambia desde la cotización; " +
+      "se conserva la del vuelo."
+    );
+  }
+  if (regreso) {
+    return (
+      "El viaje ya terminó: la fecha de regreso no se cambia desde la " +
+      "cotización; se conserva la del vuelo."
+    );
+  }
+  return null;
 }
 
 /**

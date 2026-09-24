@@ -27,6 +27,7 @@ import {
   tarifaFicha,
 } from "@/lib/admin/quote-sheet-interna";
 import { EMPRESA_DEFAULT, TZ_NOTA, fechaLegible, geometriaHoja, numero2 } from "@/lib/admin/quote-sheet";
+import { ETIQUETA_DISTINTO_AL_COTIZADO } from "@/lib/admin/avion-cotizado";
 import { tuasMxnSinTc } from "@/lib/admin/tuas";
 import { montoExtraActivo } from "@/lib/admin/extras";
 import { HORAS_EPSILON_4, mismasHoras } from "@/lib/admin/horas";
@@ -608,10 +609,18 @@ export function QuoteSheetInterna({
                       textoFallback={avionCotizado}
                     />
                   </div>
+                  {/* EL VUELO YA VOLÓ y se cambió el avión (24-sep-2026,
+                      #338): el cambio es SOLO COMERCIAL. Croma ámbar junto
+                      al selector; en lectura no existe (no hay cambio). */}
+                  {!lectura && documento.avisoCambioAvion && (
+                    <div className="cot-aviso" role="note" {...UI}>
+                      {documento.avisoCambioAvion}
+                    </div>
+                  )}
                   {avionUtilizado && (
                     <div className={cn("sub", difiereAvion && "ambar")}>
                       {`Avión utilizado: ${avionUtilizado}`}
-                      {difiereAvion && <span className="tag ambar">Distinto al cotizado</span>}
+                      {difiereAvion && <span className="tag ambar">{ETIQUETA_DISTINTO_AL_COTIZADO}</span>}
                     </div>
                   )}
                   {/* ECO del operador externo (BLOQUE C): se LEE aquí, se

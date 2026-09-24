@@ -3,15 +3,22 @@ import {
   aeronaveInicialDeCotizacion,
   avisoAvionCotizadoNoSeleccionable,
   aeronavesDeCotizacion,
+  ESTADOS_VUELO_YA_VOLO,
+  estadoVueloVolado,
+  ETIQUETA_DISTINTO_AL_COTIZADO,
   esAeronaveCotizada,
   fichaAeronaveUtilizada,
   fraseOperaEn,
+  hintAeronaveUtilizada,
   idAeronaveCotizada,
   modelosCotizadosTexto,
   modelosCotizadosVigentes,
+  MSG_AVION_VUELO_VOLADO_API_VIEJO,
+  textoCambioAvionVueloVolado,
   textoConfirmarEdicionCotizacion,
   textoCotizadoEn,
   textoOperaEn,
+  vueloYaVolo,
 } from "@/lib/admin/avion-cotizado";
 
 const SENECA = { id: "a1", matricula: "N4142R", modelo: "Piper Seneca V" };
@@ -354,5 +361,202 @@ describe("aeronaveInicialDeCotizacion con catálogo + avisoAvionCotizadoNoSelecc
 
   it("sin snapshot (nada pactado) no hay avión cotizado que reclamar", () => {
     expect(avisoAvionCotizadoNoSeleccionable({ aeronave_id: N990GG.id }, [])).toBeNull();
+  });
+});
+
+// ===================================================================
+// EL VUELO YA VOLÓ: cambiar el avión de la cotización es SOLO COMERCIAL
+// (24-sep-2026, caso #338 de producción, cliente Mike Nelson, CUN→PTU→CUN).
+// Se cotizó y se voló en el Seneca N4142R (tramo 1 ferry CUN–PTU, tacos
+// 4460.5→4461.7; tramo 2 PTU–CUN, 4461.7→4462.9). Ya COMPLETADO, la oficina
+// guardó la v2 «se cobra como cessna, pidieron cessna» (Cessna 206 XA-VGV) y
+// el API viejo movió la CABECERA del vuelo a XA-VGV y avisó al piloto «Ahora
+// vuela en XA-VGV». Salían dos matrículas.
+// ===================================================================
+describe("vuelo ya volado (#338)", () => {
+  const N4142R = { id: "a-n4142r", matricula: "N4142R", modelo: "Piper Seneca V" };
+  const XAVGV = { id: "a-xavgv", matricula: "XA-VGV", modelo: "Cessna 206" };
+  const tramos338 = [
+    { orden: 1, taco_salida: "4460.5", taco_llegada: "4461.7", cancelada_at: null },
+    { orden: 2, taco_salida: "4461.7", taco_llegada: "4462.9", cancelada_at: null },
+  ];
+
+  it("vueloYaVolo: EN_VUELO/COMPLETADO, o algún tramo VIVO con tacómetro (regla del API)", () => {
+    expect(ESTADOS_VUELO_YA_VOLO).toEqual(["EN_VUELO", "COMPLETADO"]);
+    expect(vueloYaVolo({ estado: "COMPLETADO", escalas: tramos338 })).toBe(true);
+    expect(vueloYaVolo({ estado: "EN_VUELO" })).toBe(true);
+    // CONFIRMADO con el tramo 1 ya capturado: su avión YA voló.
+    expect(
+      vueloYaVolo({
+        estado: "CONFIRMADO",
+        escalas: [
+          { taco_salida: 4460.5, taco_llegada: null },
+          { taco_salida: null, taco_llegada: null },
+        ],
+      }),
+    ).toBe(true);
+    // Solo la llegada también cuenta.
+    expect(vueloYaVolo({ estado: "CONFIRMADO", escalas: [{ taco_llegada: "10" }] })).toBe(true);
+  });
+
+  it("vueloYaVolo: sin tacos, con tacos solo en tramos CANCELADOS o sin datos ⇒ false", () => {
+    expect(vueloYaVolo({ estado: "CONFIRMADO", escalas: [{ taco_salida: null, taco_llegada: null }] })).toBe(false);
+    expect(
+      vueloYaVolo({
+        estado: "CONFIRMADO",
+        escalas: [{ taco_salida: "100", taco_llegada: "101", cancelada_at: "2026-09-20T12:00:00Z" }],
+      }),
+    ).toBe(false);
+    expect(vueloYaVolo({ estado: "RESERVA", escalas: [{ taco_salida: "  " }] })).toBe(false);
+    expect(vueloYaVolo({ estado: "CANCELADO" })).toBe(false);
+    expect(vueloYaVolo({ estado: "COTIZADO", escalas: null })).toBe(false);
+    expect(vueloYaVolo(null)).toBe(false);
+    expect(vueloYaVolo(undefined)).toBe(false);
+  });
+
+  it("texto EXACTO del cambio de avión (diálogo «Guardar vN» y nota junto al selector)", () => {
+    expect(textoCambioAvionVueloVolado({ volo: N4142R, modeloCobro: "Cessna 206" })).toBe(
+      "Este vuelo ya voló en N4142R. Cambiar el avión aquí solo cambia con qué se cobra " +
+        "(Cessna 206); la operación no se mueve ni se avisa a la tripulación.",
+    );
+  });
+
+  it("sin matrícula nombra el modelo; sin datos no inventa nada", () => {
+    expect(
+      textoCambioAvionVueloVolado({ volo: { modelo: "Piper Seneca V" }, modeloCobro: "Cessna 206" }),
+    ).toBe(
+      "Este vuelo ya voló en Piper Seneca V. Cambiar el avión aquí solo cambia con qué se cobra " +
+        "(Cessna 206); la operación no se mueve ni se avisa a la tripulación.",
+    );
+    expect(textoCambioAvionVueloVolado({ volo: null, modeloCobro: null })).toBe(
+      "Este vuelo ya voló. Cambiar el avión aquí solo cambia con qué se cobra; la operación " +
+        "no se mueve ni se avisa a la tripulación.",
+    );
+  });
+
+  it("#338 ANTES de la corrección (cabecera XA-VGV, tramos N4142R): la utilizada es N4142R", () => {
+    // El API resuelve `aeronave_utilizada` de los TRAMOS VIVOS; la cabecera
+    // (`aeronave_operativa`) todavía decía XA-VGV. El panel lee la raíz primero.
+    const q = {
+      estado: "COMPLETADO",
+      aeronave_id: XAVGV.id,
+      aeronave_cotizada: XAVGV,
+      aeronave_operativa: XAVGV,
+      aeronave_utilizada: N4142R,
+      calculo_snapshot: { aeronave: XAVGV },
+      modelos_cotizados: ["Cessna 206"],
+      escalas: tramos338,
+    };
+    const r = aeronavesDeCotizacion(q);
+    expect(r.cotizada).toBe("Cessna 206");
+    expect(r.utilizada).toBe("N4142R · Piper Seneca V");
+    expect(r.difieren).toBe(true);
+    expect(fichaAeronaveUtilizada(q)?.matricula).toBe("N4142R");
+    // El selector arranca con lo COTIZADO (con eso se cobra).
+    expect(aeronaveInicialDeCotizacion(q, "a-default")).toBe(XAVGV.id);
+  });
+
+  it("nota junto al selector en pasado: «Voló en N4142R (Piper Seneca V)»", () => {
+    expect(fraseOperaEn(XAVGV, N4142R, { yaVolo: true })).toBe("Voló en N4142R (Piper Seneca V)");
+    expect(fraseOperaEn(XAVGV, N4142R)).toBe("Opera en N4142R (Piper Seneca V)");
+    expect(fraseOperaEn(N4142R, N4142R, { yaVolo: true })).toBeNull();
+  });
+
+  it("card «Operación»: la ayuda habla del avión con el que SE VOLÓ", () => {
+    expect(ETIQUETA_DISTINTO_AL_COTIZADO).toBe("Distinto al cotizado");
+    expect(hintAeronaveUtilizada({ difieren: true, yaVolo: true })).toBe(
+      "Voló en un avión distinto al cotizado: el precio se cobra con el cotizado.",
+    );
+    expect(hintAeronaveUtilizada({ difieren: false, yaVolo: true })).toBe("El avión con el que se voló.");
+    expect(hintAeronaveUtilizada({ difieren: true, yaVolo: false })).toBe(
+      "Opera en un avión distinto al cotizado: el precio NO cambia solo.",
+    );
+    expect(hintAeronaveUtilizada({ difieren: false, yaVolo: false })).toBe(
+      "La que tiene asignada el vuelo hoy.",
+    );
+  });
+
+  it("confirmación de un CONFIRMADO ya volado: no promete aviso a la tripulación", () => {
+    const t = textoConfirmarEdicionCotizacion({
+      folio: 338,
+      estado: "CONFIRMADO",
+      aeronaveUtilizada: "N4142R · Piper Seneca V",
+      yaVolo: true,
+    });
+    expect(t.cuerpo).toContain("El vuelo #338 ya voló en N4142R · Piper Seneca V.");
+    expect(t.cuerpo).toContain("la tripulación no recibe aviso");
+    expect(t.cuerpo).not.toContain("la tripulación recibe aviso");
+    expect(t.cuerpo).not.toContain("confirmado con piloto");
+    // Con `termino: true` explícito dice lo mismo (COMPLETADO).
+    expect(
+      textoConfirmarEdicionCotizacion({
+        folio: 338,
+        estado: "COMPLETADO",
+        aeronaveUtilizada: "N4142R · Piper Seneca V",
+        yaVolo: true,
+        termino: true,
+      }).cuerpo,
+    ).toBe(t.cuerpo);
+  });
+
+  it("viaje A MEDIO CAMINO (EN_VUELO, regreso pendiente): no niega el aviso del regreso", () => {
+    const t = textoConfirmarEdicionCotizacion({
+      folio: 338,
+      estado: "EN_VUELO",
+      aeronaveUtilizada: "N4142R · Piper Seneca V",
+      yaVolo: true,
+      termino: false,
+    });
+    expect(t.cuerpo).toBe(
+      "El vuelo #338 ya salió en N4142R · Piper Seneca V. La cotización es independiente: " +
+        "aquí editas lo pactado con el cliente (con qué avión y cuánto se cobra). Lo ya " +
+        "volado no se mueve; si cambias el regreso o la pernocta pendientes, la tripulación " +
+        "recibe aviso.",
+    );
+    expect(t.cuerpo).not.toContain("no recibe aviso");
+  });
+
+  it("API sin desplegar (409 de squawk en un vuelo ya volado): se frena, nunca «guardar de todas formas»", () => {
+    expect(MSG_AVION_VUELO_VOLADO_API_VIEJO).toContain("Falta actualizar el API");
+    expect(MSG_AVION_VUELO_VOLADO_API_VIEJO).toContain("NO se guardó");
+    expect(MSG_AVION_VUELO_VOLADO_API_VIEJO).toContain("Tus cambios siguen aquí");
+  });
+});
+
+describe("estadoVueloVolado: arrancó vs terminó (espejo del API)", () => {
+  it("#338 COMPLETADO: ya voló y terminó", () => {
+    expect(estadoVueloVolado({ estado: "COMPLETADO" })).toEqual({ yaVolo: true, termino: true });
+  });
+
+  it("viaje de varios días a medio camino (EN_VUELO, regreso sin taco): voló, NO terminó", () => {
+    expect(
+      estadoVueloVolado({
+        estado: "EN_VUELO",
+        escalas: [
+          { orden: 1, taco_salida: "100.0", taco_llegada: "101.2" },
+          { orden: 2, taco_salida: null, taco_llegada: null },
+        ],
+      }),
+    ).toEqual({ yaVolo: true, termino: false });
+  });
+
+  it("el ÚLTIMO tramo vivo por `orden` decide «terminó» (no la posición en el arreglo)", () => {
+    const escalas = [
+      { orden: 2, taco_salida: "101.2", taco_llegada: "102.4" },
+      { orden: 1, taco_salida: "100.0", taco_llegada: "101.2" },
+      { orden: 3, taco_salida: null, taco_llegada: null, cancelada_at: "2026-09-24T12:00:00Z" },
+    ];
+    // El tramo 3 está CANCELADO: el último VIVO es el 2 y ya tiene taco.
+    expect(estadoVueloVolado({ estado: "CONFIRMADO", escalas })).toEqual({
+      yaVolo: true,
+      termino: true,
+    });
+  });
+
+  it("nada capturado: ni voló ni terminó", () => {
+    expect(
+      estadoVueloVolado({ estado: "CONFIRMADO", escalas: [{ orden: 1, taco_salida: null }] }),
+    ).toEqual({ yaVolo: false, termino: false });
+    expect(estadoVueloVolado(null)).toEqual({ yaVolo: false, termino: false });
   });
 });

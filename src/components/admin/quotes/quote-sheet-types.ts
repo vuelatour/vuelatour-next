@@ -192,6 +192,15 @@ export interface DocumentoHoja {
    * de la operación. null = no se pinta.
    */
   operaEn?: string | null;
+  /**
+   * El vuelo YA VOLÓ y el operador cambió el avión de la cotización
+   * (24-sep-2026, #338): «Este vuelo ya voló en N4142R. Cambiar el avión aquí
+   * solo cambia con qué se cobra (Cessna 206); la operación no se mueve ni se
+   * avisa a la tripulación.» (`textoCambioAvionVueloVolado`). Nota ÁMBAR junto
+   * al selector, en las DOS hojas; croma (`data-cot-ui`), solo en edición.
+   * Cuando viene, sustituye a `operaEn` (ya nombra el avión con que se voló).
+   */
+  avisoCambioAvion?: string | null;
   quoteId?: string;
 }
 

@@ -31,7 +31,12 @@ import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
-import { aeronavesDeCotizacion } from "@/lib/admin/avion-cotizado";
+import {
+  aeronavesDeCotizacion,
+  ETIQUETA_DISTINTO_AL_COTIZADO,
+  hintAeronaveUtilizada,
+  vueloYaVolo,
+} from "@/lib/admin/avion-cotizado";
 import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
@@ -191,6 +196,9 @@ export function QuoteWorkspace({
   // Aeronave COTIZADA (modelo del snapshot) vs UTILIZADA (la asignada hoy):
   // control interno, tolera que el API aún no mande los campos nuevos.
   const aeronaves = aeronavesDeCotizacion(quote, aircraft);
+  // El vuelo YA VOLÓ (24-sep-2026, #338): la «utilizada» es con la que se
+  // voló (el API la resuelve de los tramos vivos), no «la de hoy».
+  const yaVolo = vueloYaVolo(quote);
   const quoteConGrupo = quote as PersistedQuote & VueloConGrupo;
   const grupoHijo = grupoDeVuelo(quoteConGrupo);
 
@@ -572,16 +580,22 @@ export function QuoteWorkspace({
                 aeronaves.utilizada ? (
                   <span className={aeronaves.difieren ? "text-amber-600 dark:text-amber-400" : ""}>
                     {aeronaves.utilizada}
+                    {/* Misma marca que la tarjeta «Avión cotizado» de la hoja
+                        interna y el PDF interno. */}
+                    {aeronaves.difieren && (
+                      <Badge
+                        variant="outline"
+                        className="ml-1.5 border-amber-500/50 px-1 py-0 text-[10px] text-amber-600 dark:text-amber-400"
+                      >
+                        {ETIQUETA_DISTINTO_AL_COTIZADO}
+                      </Badge>
+                    )}
                   </span>
                 ) : (
                   <span className="text-muted-foreground">Sin asignar</span>
                 )
               }
-              hint={
-                aeronaves.difieren
-                  ? "Opera en un avión distinto al cotizado: el precio NO cambia solo."
-                  : "La que tiene asignada el vuelo hoy."
-              }
+              hint={hintAeronaveUtilizada({ difieren: aeronaves.difieren, yaVolo })}
             />
             <Cell label="Tipo de vuelo" value={quote.tipo} />
             <Cell label="Fecha solicitud" value={fmtDateTime(quote.fecha_solicitud)} />

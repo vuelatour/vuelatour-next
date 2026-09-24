@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   armarMotivoRevision,
+  avisoFechasVueloVolado,
   cambiosTocanTripulacion,
   MOTIVO_MAX,
   resumirCambios,
@@ -322,5 +323,74 @@ describe("candadoRevision · dinero cobrado (espejo D3)", () => {
     const c = candadoRevision({ ...base, estado: "CANCELADO" } as typeof base, { totalCobrado: 500 });
     expect(c.canRevise).toBe(true);
     expect(c.bloqueadaPorCobro).toBe(false);
+  });
+});
+
+/**
+ * VUELO YA VOLADO (24-sep-2026, caso #338): con el vuelo COMPLETADO la v2
+ * cambió el avión (Seneca → Cessna 206, «se cobra como cessna») y el regreso
+ * (—→ 10:00), y el piloto recibió «cambio de avión» y «el REGRESO ahora
+ * sale…» de un vuelo que ya había aterrizado. Espejo del API: con el vuelo
+ * VOLADO ni el avión ni la salida avisan; con el viaje TERMINADO nada avisa.
+ */
+describe("tripulación y fechas de un vuelo ya volado (#338)", () => {
+  const aviones = [
+    { id: "av-seneca", modelo: "PIPER SENECA V" },
+    { id: "av-cessna", modelo: "Cessna 206" },
+  ];
+  const v1 = (): QuoteFormDiff => ({ ...base(), aeronave_id: "av-seneca", fecha_traslado_final: null });
+  const v2338 = (): QuoteFormDiff => ({
+    ...v1(),
+    aeronave_id: "av-cessna",
+    fecha_traslado_final: "2026-09-24T10:00",
+  });
+
+  it("#338 COMPLETADO: ni el avión ni el regreso avisan a la tripulación", () => {
+    const cambios = resumirCambios(v1(), v2338(), { aviones });
+    expect(cambios.map((c) => c.texto)).toEqual([
+      "Fecha traslado final —→24 sep 10:00",
+      "Avión PIPER SENECA V→Cessna 206",
+    ]);
+    // Sin contexto (vuelo por volar) sí avisan, como siempre.
+    expect(cambiosTocanTripulacion(cambios)).toBe(true);
+    expect(cambiosTocanTripulacion(cambios, { yaVolo: true, termino: true })).toBe(false);
+  });
+
+  it("ya voló pero NO terminó: el avión y la salida callan; el regreso y la pernocta sí avisan", () => {
+    const volado = { yaVolo: true, termino: false };
+    const avion = resumirCambios(v1(), { ...v1(), aeronave_id: "av-cessna" }, { aviones });
+    expect(cambiosTocanTripulacion(avion, volado)).toBe(false);
+    const salida = resumirCambios(v1(), { ...v1(), fecha_vuelo: "2026-09-13T08:00" });
+    expect(cambiosTocanTripulacion(salida, volado)).toBe(false);
+    const regreso = resumirCambios(v1(), { ...v1(), fecha_traslado_final: "2026-09-14T18:00" });
+    expect(cambiosTocanTripulacion(regreso, volado)).toBe(true);
+    const pern = {
+      ...v1(),
+      escalas: [{ ...v1().escalas![0], requiere_pernocta: true, pernocta_costo_usd: 150 }, v1().escalas![1]],
+    };
+    expect(cambiosTocanTripulacion(resumirCambios(v1(), pern), volado)).toBe(true);
+  });
+
+  it("aviso de fechas ANTES de guardar: salida con el vuelo volado, regreso con el viaje terminado", () => {
+    const regreso = resumirCambios(v1(), v2338(), { aviones });
+    expect(avisoFechasVueloVolado(regreso, { yaVolo: true, termino: true })).toBe(
+      "El viaje ya terminó: la fecha de regreso no se cambia desde la cotización; se conserva la del vuelo.",
+    );
+    // A medio camino el regreso todavía se reagenda: nada que decir.
+    expect(avisoFechasVueloVolado(regreso, { yaVolo: true, termino: false })).toBeNull();
+    const salida = resumirCambios(v1(), { ...v1(), fecha_vuelo: "2026-09-13T08:00" });
+    expect(avisoFechasVueloVolado(salida, { yaVolo: true, termino: false })).toBe(
+      "El vuelo ya voló: la fecha de salida no se cambia desde la cotización; se conserva la del vuelo.",
+    );
+    const ambas = resumirCambios(v1(), {
+      ...v1(),
+      fecha_vuelo: "2026-09-13T08:00",
+      fecha_traslado_final: "2026-09-24T10:00",
+    });
+    expect(avisoFechasVueloVolado(ambas, { yaVolo: true, termino: true })).toBe(
+      "El vuelo ya voló: sus fechas de salida y regreso no se cambian desde la cotización; se conservan las del vuelo.",
+    );
+    // Vuelo por volar: las fechas se escriben como siempre.
+    expect(avisoFechasVueloVolado(ambas, {})).toBeNull();
   });
 });

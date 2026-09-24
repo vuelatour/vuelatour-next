@@ -492,6 +492,32 @@ describe("variantes de la hoja", () => {
     expect(lectura).not.toContain("Opera en N990GG");
   });
 
+  /**
+   * EL VUELO YA VOLÓ y se cambió el avión (24-sep-2026, #338): la nota ÁMBAR
+   * sustituye a «Opera en …» (ya dice con qué avión se voló), es croma y no
+   * existe en lectura.
+   */
+  it("vuelo ya volado + avión cambiado: nota ámbar en lugar de «Opera en …», jamás impresa", () => {
+    const aviso =
+      "Este vuelo ya voló en N4142R. Cambiar el avión aquí solo cambia con qué se cobra " +
+      "(Cessna 206); la operación no se mueve ni se avisa a la tripulación.";
+    const p = hoja1().props();
+    p.documento = {
+      ...p.documento,
+      operaEn: "Voló en N4142R (Piper Seneca V)",
+      avisoCambioAvion: aviso,
+    };
+    const html = renderToString(<QuoteSheet {...p} />);
+    expect(html).toContain(aviso);
+    expect(html).toMatch(/<span class="cot-aviso" role="note" data-cot-ui="">Este vuelo ya voló/);
+    // Una sola nota: la tenue no se repite debajo.
+    expect(html).not.toContain("Voló en N4142R (Piper Seneca V)");
+    expect(tokens(parsearHoja(html))).toEqual(tokens(parsearHoja(hoja1().html)));
+    expect(colapsar(textoImpreso(parsearHoja(html), true))).not.toContain("ya voló");
+    const lectura = renderToString(<QuoteSheet {...p} lectura />);
+    expect(lectura).not.toContain("ya voló");
+  });
+
   it("primer tramo oculto: la fecha del vuelo impresa es la del primer tramo VISIBLE (nunca delata el oculto)", () => {
     const p = hoja1().props();
     p.valores = {
