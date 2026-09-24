@@ -13,6 +13,7 @@ import {
   CreditCardIcon,
   BanknotesIcon,
   DocumentTextIcon,
+  DocumentCheckIcon,
   ReceiptPercentIcon,
   ShieldCheckIcon,
   UserCircleIcon,
@@ -37,6 +38,12 @@ export interface NavItem {
   comingSoon?: boolean;
   /** Si está restringido a ciertos roles. Sin valor = visible para todos. */
   roles?: Rol[];
+  /**
+   * Contador a la derecha del ítem (24-sep-2026). `por_facturar` = vuelos
+   * con «Necesito factura» sin factura registrada; lo pide el sidebar con
+   * `useConteoPorFacturar` (0 o error ⇒ no se pinta).
+   */
+  badge?: "por_facturar";
 }
 
 export interface NavGroup {
@@ -160,7 +167,19 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Tesorería",
     items: [
       {
-        label: "Facturas",
+        // Registro de las facturas que hace facturación A MANO (24-sep-2026,
+        // pedido de Ale) + «Por facturar» (solicitudes de «Necesito factura»,
+        // pedido de Itzi). El badge es el número por facturar.
+        label: "Facturas emitidas",
+        href: "/admin/facturas-emitidas",
+        icon: DocumentCheckIcon,
+        roles: ["ADMIN", "FACTURACION"],
+        badge: "por_facturar",
+      },
+      {
+        // Timbrado AUTOMÁTICO vía PAC: la página no cambia; solo se renombra
+        // para no confundirla con el registro manual de arriba.
+        label: "Facturación automática",
         href: "/admin/facturas",
         icon: DocumentTextIcon,
         roles: ["ADMIN", "FACTURACION"],

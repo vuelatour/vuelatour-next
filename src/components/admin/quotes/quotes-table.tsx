@@ -28,6 +28,14 @@ export interface GrupoDeFila {
 /** Fila-viewmodel serializable que arma la página (lookups ya resueltos). */
 export interface QuoteListRow {
   id: string;
+  /**
+   * Liga al detalle CON los filtros de la barra de la lista (`?estado=…&q=…`)
+   * para que las flechas «‹ Anterior» / «Siguiente ›» del detalle recorran lo
+   * mismo que se ve aquí (24-sep-2026). La arma el SERVER
+   * (`hrefCotizacion`): `columns` es una constante de módulo y no conoce
+   * los filtros.
+   */
+  href: string;
   folio: number;
   clienteNombre: string | null;
   esExterno: boolean;
@@ -59,6 +67,30 @@ export interface QuoteListRow {
   sinTcCount: number;
   /** Hijo de una cotización de GRUPO (4-sep); null = cotización normal. */
   grupo?: GrupoDeFila | null;
+  /** Pidieron factura y aún no está registrada (lo deriva el API; 24-sep). */
+  porFacturar?: boolean;
+  /** El cliente paga hasta recibir la factura. */
+  pagaContraFactura?: boolean;
+}
+
+/**
+ * Chip discreto «Por facturar» bajo el semáforo de cobro (24-sep-2026,
+ * pedido de Itzi): alguien marcó «Necesito factura» y facturación todavía no
+ * la registra. Lo usan las listas de cotizaciones y de vuelos.
+ */
+export function ChipPorFacturar({ pagaContraFactura = false }: { pagaContraFactura?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-1.5 text-[10px] font-medium whitespace-nowrap ${
+        pagaContraFactura
+          ? "border-amber-600/50 bg-amber-500/20 text-amber-800 dark:text-amber-200"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      }`}
+      title={`Pidieron factura y aún no está registrada${pagaContraFactura ? " · paga contra factura" : ""}`}
+    >
+      Por facturar
+    </span>
+  );
 }
 
 const columns: Array<DataTableColumn<QuoteListRow>> = [
@@ -72,7 +104,7 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
     noLink: true,
     cell: (q) => (
       <span className="inline-flex flex-col items-start gap-1">
-        <Link href={`/admin/quotes/${q.id}`} className="block hover:underline underline-offset-2">
+        <Link href={q.href} className="block hover:underline underline-offset-2">
           #{q.folio}
         </Link>
         {q.grupo && (
@@ -162,18 +194,21 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
     headClassName: "text-center",
     cellClassName: "text-center",
     cell: (q) => (
-      <CobroEstadoBadge
-        estado={estadoCobroSemaforo({
-          montoTotalUsd: Number(q.montoTotalUsd) || 0,
-          cobrado: q.cobrado,
-          esInterno: q.esInterno,
-          totalCobradoUsd: q.totalCobradoUsd,
-          sinTcCount: q.sinTcCount,
-          cotizacionAbierta: q.cotizacionAbierta,
-          enCotizacion: q.estado === "SOLICITUD" || q.estado === "COTIZADO",
-          cancelado: q.estado === "CANCELADO",
-        })}
-      />
+      <span className="inline-flex flex-col items-center gap-1">
+        <CobroEstadoBadge
+          estado={estadoCobroSemaforo({
+            montoTotalUsd: Number(q.montoTotalUsd) || 0,
+            cobrado: q.cobrado,
+            esInterno: q.esInterno,
+            totalCobradoUsd: q.totalCobradoUsd,
+            sinTcCount: q.sinTcCount,
+            cotizacionAbierta: q.cotizacionAbierta,
+            enCotizacion: q.estado === "SOLICITUD" || q.estado === "COTIZADO",
+            cancelado: q.estado === "CANCELADO",
+          })}
+        />
+        {q.porFacturar && <ChipPorFacturar pagaContraFactura={q.pagaContraFactura} />}
+      </span>
     ),
   },
   {
@@ -238,7 +273,7 @@ export function QuotesTable({
       rows={quotes}
       huboCorte={huboCorte}
       rowKey={(q) => q.id}
-      rowHref={(q) => `/admin/quotes/${q.id}`}
+      rowHref={(q) => q.href}
       searchText={(q) =>
         `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""} ${q.grupo ? `G-${q.grupo.folio ?? ""} ${q.grupo.nombre ?? ""}` : ""}`
       }

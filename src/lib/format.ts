@@ -1,7 +1,19 @@
-const usd = new Intl.NumberFormat("en-US", {
+// DINERO NUNCA CON 1 DECIMAL (24-sep-2026, captura de Itzi: la card de
+// cobros decía «Cobrado $8,050.4» y «$136,856.8 MXN»). Regla ÚNICA del panel
+// y del API (`common/dinero-texto.util.ts`): se redondea a centavos; si queda
+// entero va SIN decimales («$1,200»), si tiene centavos va con EXACTAMENTE 2
+// («$8,050.40»). Dos formateadores fijos en vez de `min 0 / max 2`, que era
+// justo lo que producía el «.4».
+const usdEntero = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+const usdCentavos = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
@@ -10,11 +22,37 @@ const dec = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 2,
 });
 
+/**
+ * Monto con signo de pesos/dólares: «$1,200» (entero) o «$8,050.40» (con
+ * centavos) — jamás «$8,050.4». Redondeo simétrico a centavos (−2.345 ⇒
+ * −$2.35, igual que 2.345 ⇒ $2.35) y `-0` (p. ej. −0.001) se pinta «$0».
+ * La moneda NO va aquí: úsalo con `fmtMonto(valor, moneda)` cuando el monto
+ * puede ser MXN o USD.
+ */
 export function fmtUsd(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const n = typeof value === "string" ? Number(value) : value;
   if (!Number.isFinite(n)) return "—";
-  return usd.format(n);
+  const centavos = Math.sign(n) * Math.round(Math.abs(n) * 100);
+  if (centavos === 0) return usdEntero.format(0);
+  const redondeado = centavos / 100;
+  return centavos % 100 === 0 ? usdEntero.format(redondeado) : usdCentavos.format(redondeado);
+}
+
+/**
+ * Monto CON su moneda: «$136,856.80 MXN», «$8,050.40 USD», «$1,200 USD».
+ * Misma regla de decimales que `fmtUsd`. Sin valor ⇒ «—»; sin moneda ⇒ solo
+ * el monto. Es lo que pintan las cards de cobros y el registro de facturas
+ * (antes cada card hacía su propio `toLocaleString("en-US")`).
+ */
+export function fmtMonto(
+  value: string | number | null | undefined,
+  moneda?: string | null,
+): string {
+  const txt = fmtUsd(value);
+  if (txt === "—") return txt;
+  const m = typeof moneda === "string" ? moneda.trim() : "";
+  return m ? `${txt} ${m}` : txt;
 }
 
 const mxn = new Intl.NumberFormat("es-MX", {

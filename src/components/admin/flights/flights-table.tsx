@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { GrupoDeFila } from "@/components/admin/quotes/quotes-table";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
+import { ChipPorFacturar } from "@/components/admin/quotes/quotes-table";
 import { estadoCobroSemaforo } from "@/lib/admin/cobros";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDate } from "@/lib/datetime";
@@ -42,6 +43,10 @@ export interface FlightRow {
   sin_tc_count: number;
   /** Hijo de una cotización de GRUPO (4-sep); null = vuelo normal. */
   grupo?: GrupoDeFila | null;
+  /** Pidieron factura y aún no está registrada (lo deriva el API; 24-sep). */
+  porFacturar?: boolean;
+  /** El cliente paga hasta recibir la factura. */
+  pagaContraFactura?: boolean;
 }
 
 /** Destino del clic de fila (COTIZADO ya abre su detalle de vuelo). */
@@ -149,18 +154,21 @@ const columns: Array<DataTableColumn<FlightRow>> = [
     headClassName: "text-center",
     cellClassName: "text-center",
     cell: (v) => (
-      <CobroEstadoBadge
-        estado={estadoCobroSemaforo({
-          montoTotalUsd: Number(v.monto_total_usd) || 0,
-          cobrado: v.cobrado,
-          esInterno: v.es_interno,
-          totalCobradoUsd: v.total_cobrado_usd,
-          sinTcCount: v.sin_tc_count,
-          cotizacionAbierta: v.cotizacion_abierta,
-          enCotizacion: v.en_cotizacion,
-          cancelado: v.estado === "CANCELADO",
-        })}
-      />
+      <span className="inline-flex flex-col items-center gap-1">
+        <CobroEstadoBadge
+          estado={estadoCobroSemaforo({
+            montoTotalUsd: Number(v.monto_total_usd) || 0,
+            cobrado: v.cobrado,
+            esInterno: v.es_interno,
+            totalCobradoUsd: v.total_cobrado_usd,
+            sinTcCount: v.sin_tc_count,
+            cotizacionAbierta: v.cotizacion_abierta,
+            enCotizacion: v.en_cotizacion,
+            cancelado: v.estado === "CANCELADO",
+          })}
+        />
+        {v.porFacturar && <ChipPorFacturar pagaContraFactura={v.pagaContraFactura} />}
+      </span>
     ),
   },
   {

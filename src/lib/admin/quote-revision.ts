@@ -291,8 +291,11 @@ function mismaTarifaDiff(a: unknown, b: unknown): boolean {
 
 function fmtMonto(n: number | null, moneda?: string | null): string {
   if (n === null) return "—";
+  // Dinero nunca con 1 decimal (24-sep-2026): entero ⇒ sin decimales; con
+  // centavos ⇒ exactamente 2 («$35.50», no «$35.5»).
+  const conCentavos = Math.round(n * 100) % 100 !== 0;
   const s = n.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
+    minimumFractionDigits: conCentavos ? 2 : 0,
     maximumFractionDigits: 2,
   });
   return moneda === "MXN" ? `MX$${s}` : `$${s}`;

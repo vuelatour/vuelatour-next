@@ -1,6 +1,12 @@
 import { LockClosedIcon } from "@heroicons/react/24/outline";
 import { ConfiguracionClient } from "@/components/admin/configuracion/configuracion-client";
 import { IaCreditosSection } from "@/components/admin/configuracion/ia-creditos-section";
+import { ResponsablesFacturacionSection } from "@/components/admin/configuracion/responsables-facturacion-section";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getResponsablesFacturacion } from "@/lib/api/facturas-emitidas-server";
+import { isApiError } from "@/lib/api/errors";
+import { esErrorDeNext } from "@/lib/api/degradar";
+import { esNoDisponible } from "@/lib/admin/facturas-emitidas";
 import { EmptyState } from "@/components/admin/empty-state";
 import { getConfiguracion } from "@/lib/api/configuracion-server";
 import { getIaUso, rangoDelMes } from "@/lib/api/ia-uso-server";
@@ -49,9 +55,20 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
 
   // getIaUso es best-effort (.catch → null): un fallo del registro de IA
   // JAMÁS tumba la página de banderas.
-  const [flags, iaUso] = await Promise.all([
+  // Responsables de facturación (24-sep-2026): ACCESORIO. Sin la migración
+  // (503) la sección lo dice en gris; otro fallo se AVISA arriba.
+  const faltantes: string[] = [];
+  const [flags, iaUso, responsables] = await Promise.all([
     getConfiguracion(),
     getIaUso(rango.desde, rango.hasta),
+    getResponsablesFacturacion().catch((e: unknown) => {
+      if (esErrorDeNext(e)) throw e;
+      if (!(isApiError(e) && esNoDisponible(e))) {
+        console.error("[admin] no se pudo cargar los responsables de facturación", e);
+        faltantes.push("los responsables de facturación");
+      }
+      return null;
+    }),
   ]);
 
   return (
@@ -67,7 +84,16 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
         </p>
       </div>
 
+      <AvisoDegradado faltantes={faltantes} />
+
       <ConfiguracionClient initial={flags} />
+
+      <ResponsablesFacturacionSection
+        datos={responsables}
+        // Falla de carga ≠ «falta la migración»: la sección no debe decir
+        // «Disponible cuando se habilite…» cuando solo no se pudo leer.
+        fallo={faltantes.includes("los responsables de facturación")}
+      />
 
       <IaCreditosSection resumen={iaUso} mes={mes} mesActual={mesActual} />
     </div>

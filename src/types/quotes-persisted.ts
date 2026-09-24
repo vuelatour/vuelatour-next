@@ -1,6 +1,7 @@
 import type { ListResponse } from "./aircraft";
 import type { ExtraConcepto } from "./quote";
 import type { MetodoPago, QuoteBreakdown, TipoTarifa } from "./quote";
+import type { FacturaServicioResumen } from "./facturas-emitidas";
 
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
 
@@ -180,6 +181,11 @@ export interface PersistedQuote {
 
   facturado: boolean;
   cobrado: boolean;
+  /**
+   * «Por facturar» en la LISTA de cotizaciones (24-sep-2026, ADITIVO, lo
+   * deriva el API). AUSENTE = API previo; `null` = sin la migración.
+   */
+  factura_servicio_resumen?: FacturaServicioResumen | null;
 
   notas: string | null;
   notas_internas: string | null;

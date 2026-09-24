@@ -1,5 +1,7 @@
 import { apiServer } from "./server";
 import type { CotizacionInterna } from "@/types/quotes-interno";
+import type { FiltrosListaCotizaciones } from "@/lib/admin/quote-navegacion";
+import type { QuoteVecinos } from "@/types/quote-vecinos";
 import type {
   CotizacionVersion,
   PersistedQuote,
@@ -73,6 +75,34 @@ export function getQuoteVersions(id: string) {
 export async function getQuoteInterno(id: string): Promise<CotizacionInterna | null> {
   try {
     return await apiServer<CotizacionInterna>(`/v1/quotes/${id}/interno`, {
+      cache: "no-store",
+    });
+  } catch (err) {
+    const status = (err as { status?: unknown } | null)?.status;
+    if (status === 404 || status === 403) return null;
+    throw err;
+  }
+}
+
+/**
+ * FLECHAS entre cotizaciones (`GET /v1/quotes/:id/vecinos`, 24-sep-2026): la
+ * anterior y la siguiente EN EL TIEMPO con los MISMOS filtros de la lista
+ * (`estado`, `cliente_id`, `q`, `grupo_id`, ya validados con
+ * `filtrosListaDeParams`).
+ *
+ * `null` en SILENCIO ante 404 (API anterior: la ruta no existe) y 403 (rol
+ * sin acceso): recargar no lo arregla y las flechas simplemente no se pintan.
+ * Cualquier otro fallo LANZA: quien la llama la envuelve en
+ * `degradado.opcional` para AVISAR — jamás se pinta «no hay siguiente» por una
+ * lectura que falló.
+ */
+export async function getQuoteVecinos(
+  id: string,
+  filtros: FiltrosListaCotizaciones,
+): Promise<QuoteVecinos | null> {
+  try {
+    return await apiServer<QuoteVecinos>(`/v1/quotes/${id}/vecinos`, {
+      searchParams: { ...filtros },
       cache: "no-store",
     });
   } catch (err) {

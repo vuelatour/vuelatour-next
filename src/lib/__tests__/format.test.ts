@@ -1,5 +1,67 @@
 import { describe, expect, it } from "vitest";
-import { fmtTc, TC_DECIMALES } from "@/lib/format";
+import { fmtMonto, fmtTc, fmtUsd, TC_DECIMALES } from "@/lib/format";
+
+/**
+ * DINERO NUNCA CON 1 DECIMAL (24-sep-2026). Captura de Itzi: la card
+ * «Cobros del vuelo» decía «Cobrado $8,050.4 de $8,050.4» y el cobro
+ * «$136,856.8 MXN». Regla (misma que `fmtDineroTexto` del API): redondear a
+ * centavos; entero ⇒ sin decimales; con centavos ⇒ EXACTAMENTE 2.
+ */
+describe("fmtUsd · nunca un decimal suelto", () => {
+  it("los montos de la captura", () => {
+    expect(fmtUsd(8050.4)).toBe("$8,050.40");
+    expect(fmtUsd(136856.8)).toBe("$136,856.80");
+    expect(fmtUsd("8050.4")).toBe("$8,050.40");
+  });
+
+  it("enteros sin decimales y 2 decimales tal cual (lo de siempre no cambia)", () => {
+    expect(fmtUsd(1200)).toBe("$1,200");
+    expect(fmtUsd(1200.0)).toBe("$1,200");
+    expect(fmtUsd(3596)).toBe("$3,596");
+    expect(fmtUsd(1623.98)).toBe("$1,623.98");
+    expect(fmtUsd("1400.00")).toBe("$1,400");
+  });
+
+  it("redondea a centavos (flotantes y más de 2 decimales)", () => {
+    expect(fmtUsd(0.1 + 0.2)).toBe("$0.30");
+    expect(fmtUsd(2.345)).toBe("$2.35");
+    expect(fmtUsd(-2.345)).toBe("-$2.35");
+    expect(fmtUsd(99.999)).toBe("$100");
+  });
+
+  it("-0 y casi cero se pintan $0 (nunca «-$0»)", () => {
+    expect(fmtUsd(-0.001)).toBe("$0");
+    expect(fmtUsd(-0)).toBe("$0");
+    expect(fmtUsd(0)).toBe("$0");
+  });
+
+  it("negativos (reembolsos) con la misma regla", () => {
+    expect(fmtUsd(-100)).toBe("-$100");
+    expect(fmtUsd(-100.5)).toBe("-$100.50");
+  });
+
+  it("sin dato ⇒ «—»", () => {
+    expect(fmtUsd(null)).toBe("—");
+    expect(fmtUsd(undefined)).toBe("—");
+    expect(fmtUsd("")).toBe("—");
+    expect(fmtUsd("abc")).toBe("—");
+  });
+});
+
+describe("fmtMonto · monto con su moneda", () => {
+  it("«$136,856.80 MXN» y «$8,050.40 USD»", () => {
+    expect(fmtMonto(136856.8, "MXN")).toBe("$136,856.80 MXN");
+    expect(fmtMonto("8050.4", "USD")).toBe("$8,050.40 USD");
+    expect(fmtMonto(1200, "USD")).toBe("$1,200 USD");
+  });
+
+  it("sin valor ⇒ «—» (sin moneda colgando); sin moneda ⇒ solo el monto", () => {
+    expect(fmtMonto(null, "MXN")).toBe("—");
+    expect(fmtMonto("", "USD")).toBe("—");
+    expect(fmtMonto(50, null)).toBe("$50");
+    expect(fmtMonto(50, "")).toBe("$50");
+  });
+});
 
 /**
  * PARIDAD DEL TEXTO DEL T.C. ENTRE REPOS (17-sep-2026).

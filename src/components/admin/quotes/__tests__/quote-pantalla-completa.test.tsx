@@ -54,6 +54,11 @@ vi.mock("@/app/admin/quotes/actions", () => ({
 vi.mock("@/app/admin/routes/actions", () => ({
   createRouteAction: async () => ({ ok: false, error: "mock" }),
 }));
+// «El cliente pide factura» del alta (24-sep-2026) llama a la solicitud del
+// vuelo tras crear la cotización; aquí no se crea nada.
+vi.mock("@/app/admin/flights/actions", () => ({
+  solicitarFacturaAction: async () => ({ ok: false, error: "mock" }),
+}));
 vi.mock("@/app/admin/clients/actions", () => ({
   updateClientAction: async () => ({ ok: false, error: "mock" }),
 }));

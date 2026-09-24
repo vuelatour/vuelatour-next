@@ -12,6 +12,10 @@ import type {
 } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
 import type { CuentaCobro } from "@/lib/admin/cobros";
+import type {
+  FacturaServicioBloque,
+  ResultadoSolicitudFactura,
+} from "@/types/facturas-emitidas";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -894,24 +898,18 @@ export async function setFacturaClienteFolioAction(
   }
 }
 
-// La SUBIDA del archivo NO es una server action (24-sep-2026): el navegador
-// la manda DIRECTO al API (`lib/api/factura-cliente-browser.ts`). Toda
+// La SUBIDA de archivos NO es una server action (24-sep-2026): el navegador
+// la manda DIRECTO al API (hoy: `lib/api/facturas-emitidas-browser.ts`, que
+// registra la factura en «Facturas emitidas»; la subida suelta al vuelo se
+// retiró la noche del 24-sep). Toda
 // petición que entra a Vercel —server action o `app/api/**`— tiene un tope
 // DURO de 4.5 MB de cuerpo (413 FUNCTION_PAYLOAD_TOO_LARGE, antes de Next),
 // muy por debajo de los 10 MB del contrato; y una server action que recibe
 // ese 413 LANZA en el cliente («An unexpected response was received from the
 // server») sin ningún aviso. (El #297 NO fue esto: su PDF de 50 KB sí se
 // subió y después se quitó con «Quitar archivo» — logs de Supabase.)
-// Esta action solo revalida después de una subida confirmada.
-
-/** Revalida el vuelo después de que el navegador subió la factura al API. */
-export async function refrescarFacturaClienteAction(
-  flightId: string,
-): Promise<ActionResult> {
-  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
-  revalidateFlight(flightId);
-  return { ok: true };
-}
+// Tras una subida confirmada, quien sube revalida con su propia action
+// (`refrescarFacturasEmitidasAction`, `refrescarComprobanteCobroAction`).
 
 /** Quita el archivo (el estatus NO cambia solo: lo decide la oficina). */
 export async function quitarFacturaClienteAction(
@@ -938,6 +936,108 @@ export async function urlFacturaClienteAction(
       `/v1/flights/${flightId}/factura-cliente/archivo-url`,
     );
     if (!url) return { ok: false, error: "No se pudo abrir la factura." };
+    return { ok: true, data: url };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ================= SOLICITUD DE FACTURA («Necesito factura») =================
+//
+// Pedido de Itzi (24-sep-2026): «que haya algo que yo marque así como de
+// necesito factura … y a Mari le salga una alertita … el pendiente de
+// factura». La solicitud vive en columnas ADITIVAS de `vuelo`
+// (`factura_solicitada_*`); «Por facturar» lo DERIVA el API (solicitada, no
+// cancelado, sin factura vigente registrada) y avisa a los responsables de
+// facturación. Sin la migración el API responde 503
+// FACTURAS_EMITIDAS_NO_DISPONIBLE: el mensaje se pinta tal cual.
+
+function revalidarSolicitud(flightId: string) {
+  revalidateFlight(flightId);
+  revalidatePath("/admin/quotes");
+  revalidatePath(`/admin/quotes/${flightId}`);
+  revalidatePath("/admin/facturas-emitidas");
+}
+
+/**
+ * «Necesito factura» (idempotente: si ya estaba pedida solo actualiza la nota
+ * y «paga contra factura», sin volver a avisar). `todo_el_grupo` aplica la
+ * misma solicitud a los aviones vivos del grupo con UN solo aviso.
+ */
+export async function solicitarFacturaAction(
+  flightId: string,
+  payload: { nota?: string | null; paga_contra_factura?: boolean; todo_el_grupo?: boolean } = {},
+): Promise<ActionResult<ResultadoSolicitudFactura>> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  const nota = (payload.nota ?? "").trim();
+  try {
+    const data = await apiServer<ResultadoSolicitudFactura>(
+      `/v1/flights/${flightId}/solicitud-factura`,
+      {
+        method: "POST",
+        body: {
+          ...(nota ? { nota: nota.slice(0, 500) } : {}),
+          ...(payload.paga_contra_factura !== undefined
+            ? { paga_contra_factura: payload.paga_contra_factura }
+            : {}),
+          ...(payload.todo_el_grupo ? { todo_el_grupo: true } : {}),
+        },
+      },
+    );
+    revalidarSolicitud(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Retirar la solicitud (la UI confirma antes). Solo ESTE vuelo. */
+export async function retirarSolicitudFacturaAction(
+  flightId: string,
+): Promise<ActionResult<{ factura_servicio: FacturaServicioBloque }>> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  try {
+    const data = await apiServer<{ factura_servicio: FacturaServicioBloque }>(
+      `/v1/flights/${flightId}/solicitud-factura`,
+      { method: "DELETE" },
+    );
+    revalidarSolicitud(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Revalida tras adjuntar el COMPROBANTE de un cobro (la subida va del
+ * navegador directo al API por el tope de 4.5 MB de Vercel).
+ */
+export async function refrescarComprobanteCobroAction(
+  flightId: string,
+): Promise<ActionResult> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  revalidateFlight(flightId);
+  revalidatePath(`/admin/quotes/${flightId}`);
+  return { ok: true };
+}
+
+/**
+ * URL FIRMADA de UN comprobante de cobro, al momento (cuando la página no
+ * alcanzó a firmarlo: SOCIO recibe 403, o el lote falló). El bucket es
+ * privado: nunca se guarda una URL en el HTML.
+ */
+export async function urlComprobanteCobroAction(
+  path: string,
+): Promise<ActionResult<string>> {
+  if (!path || typeof path !== "string") return { ok: false, error: "Comprobante inválido." };
+  try {
+    const urls = await apiServer<Record<string, string>>("/v1/flights/cobro-voucher-urls", {
+      method: "POST",
+      body: { paths: [path] },
+      cache: "no-store",
+    });
+    const url = urls?.[path];
+    if (!url) return { ok: false, error: "No se pudo abrir el comprobante." };
     return { ok: true, data: url };
   } catch (err) {
     return fail(err);

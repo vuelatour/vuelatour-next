@@ -2651,6 +2651,12 @@ pueda yo también subir la factura del servicio»; (5) «no se alcanzan a ver lo
 
 ### Factura del servicio: FOLIO y subida que no miente (24-sep-2026)
 
+> **SUPERSEDIDO en parte la noche del 24-sep-2026**: la subida suelta
+> («Subir factura», `factura-cliente-subir-dialog.tsx`,
+> `lib/api/factura-cliente-browser.ts`) se BORRÓ; la factura se registra en
+> «Facturas emitidas» (sección al final de este archivo). Lo de abajo sigue
+> valiendo para el estatus manual y el archivo/folio LEGADOS.
+
 - Palabras del cliente: «subí la factura de un vuelo, peroooo al momento de
   descargar el reporte en Excel sí aparece la columna de factura (del vuelo)
   pero no aparece el folio de la factura que subí en el registro». Dos
@@ -2836,3 +2842,222 @@ pueda yo también subir la factura del servicio»; (5) «no se alcanzan a ver lo
   `components/admin/caja-chica/__tests__/excel-caja.test.tsx` (ícono SOLO en
   reposiciones y solo con permiso, botón, toast + descarga automática +
   «Descargar de nuevo», error que dice que la reposición quedó).
+
+## Facturas emitidas, «Necesito factura» y comprobante del cobro (24-sep-2026)
+
+Dos pedidos del mismo día. **Ale**: «necesita las facturas emitidas … las
+que hace Mari manualmente … por orden del número de la factura … saber que
+ya están emitidas, que no hay unas duplicadas … Mari las estaría adjuntando
+en PDF». **Itzi** (audio): «que haya algo que yo marque así como de
+necesito factura … y a Mari le salga una alertita … el pendiente de
+factura» + «visualmente afuerita nada más diga el número de la factura y ya
+si le picas ves el PDF» + «si el cliente me manda su comprobante que se
+pueda adjuntar … ahí mismo en ese apartado de cobros». Contrato con el API
+0.0.32 (migración `20260924000003_factura_emitida.sql`) y pyservices
+(`/facturacion/leer-pdf-emitida`). Las flechas entre cotizaciones son OTRO
+cambio (agente NAV).
+
+- **Menú**: «Facturas emitidas» (`/admin/facturas-emitidas`) es el PRIMER
+  ítem de Tesorería (ADMIN/FACTURACION) con un **badge ámbar** = vuelos por
+  facturar (`hooks/use-conteo-por-facturar.ts`: una sola petición a nivel de
+  MÓDULO para las dos instancias de `SidebarNav`, caché 30 s, al cambiar de
+  pantalla / volver el foco / cada 120 s / al llegar una notificación / con
+  el evento `vt:conteo-por-facturar` que disparan pedir, retirar y
+  registrar). Error o 503 ⇒ sin badge (es una pista). La página del PAC
+  (`/admin/facturas`) NO cambia: solo su etiqueta pasa a **«Facturación
+  automática»** (su H1 sigue diciendo «Facturas»).
+- **Fuentes únicas**: tipos `types/facturas-emitidas.ts` (1:1 con el API);
+  lógica PURA `lib/admin/facturas-emitidas.ts` (filtros de la URL
+  validados, `queryDeFiltros`, `hrefFacturas`, `prellenarSinPisar`,
+  `claveCompacta` —ESPEJO del API: el aviso ámbar y el 409 no pueden
+  discrepar—, `diferenciasLecturaVsFormulario/VsFactura`, `textoHuecos`,
+  `textoSolicitud`, `semaforoDeCobro` (insumos del API + `estadoCobroSemaforo`
+  del panel; el `semaforo` del API es para el Excel), permisos,
+  `abrirArchivoFirmado`, `mensajeErrorFactura`). Prueba:
+  `lib/admin/__tests__/facturas-emitidas.test.ts`.
+- **Red**: lecturas del server en `lib/api/facturas-emitidas-server.ts`
+  (anti-cap con `limit=500`); **toda subida va del NAVEGADOR DIRECTO al
+  API** (`lib/api/facturas-emitidas-browser.ts`: tope de 4.5 MB de Vercel,
+  nunca lanza, multipart exacto: alta/edición = `datos` JSON + `pdf` +
+  `xml`; leer = `pdf`/`xml`; comprobante = `file`). Lo que no lleva archivo
+  son server actions (`app/admin/facturas-emitidas/actions.ts`,
+  `solicitarFacturaAction` / `retirarSolicitudFacturaAction` /
+  `urlComprobanteCobroAction` en `app/admin/flights/actions.ts`,
+  `setResponsablesFacturacionAction` en configuración). Prueba del camino:
+  `lib/api/__tests__/facturas-emitidas-browser.test.ts` (sustituye a la de
+  `factura-cliente-browser`, que se borró junto con la subida suelta).
+- **PDF sin ventana bloqueada**: TODO «Ver PDF» (registro, burbuja, menú,
+  archivo legado del vuelo, comprobante sin URL) usa `abrirArchivoFirmado`:
+  abre `about:blank` en el MISMO clic y luego le asigna la URL firmada; si el
+  navegador no abrió la ventana, toast con «Abrir PDF». Un `window.open`
+  después de un `await` lo bloquea Safari.
+- **Página** (`app/admin/facturas-emitidas/page.tsx`): arriba **«Por
+  facturar (N)»** (`PorFacturarTable`: vuelo con liga a la cotización,
+  fecha/ruta, chip de grupo; cliente con sus datos fiscales y «Faltan datos
+  fiscales»; total USD y MXN; semáforo; quién/cuándo pidió + nota; «Paga
+  contra factura»; «Marcado «Facturado» sin factura registrada»;
+  «Registrar factura» con el vuelo —y sus hermanos de grupo pendientes— ya
+  elegido; ⋯ «Retirar solicitud» que confirma). `?resaltar=<vuelo>` (link
+  de la notificación) pone esa fila primero con anillo ámbar. Luego el
+  resumen (chips que filtran; 0 en gris sin liga; totales por moneda;
+  HUECOS por razón social + serie, con el aviso de «salto grande» arriba de
+  200 faltantes), la barra de filtros en la URL, y la tabla
+  (`RegistroFacturasTable`: «Factura ↓/↑» invierte el orden por número,
+  Emisor solo con ≥2 razones sociales, semáforo por vuelo, «Sin PDF», chips
+  de alerta, menú ⋯ con Editar / Ver PDF / Reemplazar PDF (lee el PDF nuevo
+  y pregunta si parece de OTRA factura) / Ver XML / Cancelar (motivo) /
+  Reactivar / Quitar PDF / Eliminar registro (motivo)). Sin la migración
+  (503) la página pinta una tarjeta ámbar, nunca la pantalla rota; si
+  falla la carga, `TarjetaErrorCarga` (nunca «sin datos»).
+- **Diálogo «Registrar factura»** (`registrar-factura-dialog.tsx`, también
+  `RegistrarFacturaBoton`): soltar PDF (+ XML) ⇒ «Leyendo la factura…» ⇒
+  prellenado SIN pisar lo que Mari tocó (la fecha por defecto `todayCancun()`
+  sí la reemplaza la del archivo); banner ROJO «Ya está registrada…» con
+  «Guardar» deshabilitado; avisos ámbar de la lectura; «El PDF dice A-124 y
+  capturaste A-123.» (no bloquea); selector de razón social (con UNA sola
+  activa se elige sola; con dos se pide), casilla «Factura parcial»,
+  selector de vuelos (`selector-vuelos-factura.tsx`: #folio / día / cliente,
+  chips «Por facturar», «Ya tiene A-120», «Cancelado», grupo y «Agregar los
+  N del grupo»). Pie STICKY con «Guardar». 409 ⇒ banner rojo junto al botón
+  con «Verla en el registro». Edición = solo lo que cambió
+  (`cambiosDeEdicion`).
+- **«Necesito factura»** (`necesito-factura-dialog.tsx`): nota ≤500, «El
+  cliente paga hasta recibir la factura» y, en un grupo, «Pedir para los N
+  aviones del grupo» (encendido). El toast dice a quién se avisó. En el ALTA
+  de la cotización, `SolicitudFacturaAlta` bajo la TotalBar: al crear la
+  cotización se pide la factura ANTES de navegar; si falla, toast que no se
+  va solo diciendo que la cotización SÍ se creó.
+- **Cards de cobros** (`flights/cobros-card.tsx` y
+  `quotes/quote-cobros-card.tsx`): (1) encabezado en tres renglones
+  —título (+estado), descripción a todo lo ancho, botones que envuelven—; el
+  texto aplastado de la captura venía de `flex-row justify-between` +
+  `shrink-0`, y en la cotización además de vivir en UN tercio de la grilla
+  (`quote-workspace.tsx` ahora `xl:col-span-2`); (2) montos con
+  `fmtMonto`; (3) **burbuja de factura** (`factura-servicio-burbuja.tsx`):
+  chip verde «Factura A-123» ⇒ PDF; ámbar «Factura pedida por Itzi · 24 sep
+  — pendiente» + «Retirar»; «Sin factura» + «Necesito factura»; «Registrar
+  factura» solo ADMIN/FACTURACION; sin `factura_servicio` (API previo o sin
+  migración) NO se pinta; (4) en el vuelo, el bloque viejo
+  (`factura-cliente-bloque.tsx`) va DEBAJO rotulado «Seguimiento manual»,
+  ya no sube archivos ni ofrece «Agregar folio» con el registro; el
+  archivo/folio LEGADO se sigue viendo; (5) **comprobante por cobro**
+  (`flights/comprobante-cobro.tsx`): miniatura / «PDF» / enlace «HEIC»
+  (nunca un `<img>` roto) / «Comprobante» sin URL firmada; «Adjuntar
+  comprobante» o «Reemplazar» (confirma y abre el selector en el MISMO
+  clic) para oficina; en un sobre de grupo se dice que no se adjunta por
+  vuelo. No toca dinero ni lo bloquea el candado de la cotización. Prueba:
+  `flights/__tests__/cobros-card-facturas-emitidas.test.tsx`.
+- **Listas**: chip ámbar «Por facturar» bajo el semáforo de cobro en
+  `/admin/quotes` y `/admin/flights` (`ChipPorFacturar`, campo aditivo
+  `factura_servicio_resumen`; ausente/null ⇒ sin chip).
+- **Configuración**: «Responsables de facturación»
+  (`configuracion/responsables-facturacion-section.tsx`): switches por
+  usuario de oficina + «Hoy el aviso le llega a: …»; 503 ⇒ texto gris.
+  `ConfiguracionClient` filtra la clave `responsables_facturacion` (es una
+  lista, no un switch).
+- **DINERO NUNCA CON 1 DECIMAL** (`lib/format.ts`): `fmtUsd` redondea a
+  centavos; entero ⇒ «$1,200», con centavos ⇒ EXACTAMENTE 2 («$8,050.40»);
+  `-0` ⇒ «$0». `fmtMonto(valor, moneda)` ⇒ «$136,856.80 MXN». Los títulos de
+  `estadoCobroSemaforo` usan `fmtUsd`. Misma regla que `fmtDineroTexto` del
+  API. Quedan `toLocaleString("en-US")` de dinero fuera de este alcance
+  (expediente del piloto, pre-cierre, CFDI automático).
+- **Orden de deploy recomendado**: migración → API → pyservices → panel. Con
+  el panel nuevo y SIN migración, el detalle del vuelo ya no ofrece la
+  subida vieja y la burbuja está oculta (la ventana debe ser de minutos).
+- **Revisión adversaria (24-sep-2026, noche)** — lo que se corrigió:
+  - `claveCompacta` convertía la «Ñ» en «N» (NFD) y el API la CONSERVA: el
+    aviso ámbar y el 409 podían discrepar. Ahora es espejo exacto (misma
+    tabla que el spec del API).
+  - `esNoDisponible` decide por el CÓDIGO `FACTURAS_EMITIDAS_NO_DISPONIBLE`,
+    no por el 503 a secas: el 503 de Railway en un deploy (`PARSE_ERROR`) es
+    una carga que falló (tarjeta con «Reintentar»), no «falta la migración».
+    La sección de responsables tampoco dice «Disponible cuando se habilite…»
+    cuando solo no se pudo leer (`fallo`).
+  - «Responsables de facturación» solo manda CANDIDATOS: un responsable que
+    se dio de baja no tiene switch y reenviarlo daba 400
+    `USUARIOS_INVALIDOS` en CADA guardado, sin forma de quitarlo.
+  - `datosDeFormulario` recorta `emisor_nombre`/`receptor_nombre` a 300 (el
+    del emisor no tiene campo visible: un renglón largo leído del PDF era un
+    400 imposible de corregir).
+  - Diálogo «Registrar factura»: la lectura lleva TURNO (soltar PDF y luego
+    XML ya no deja que la lectura vieja pise a la nueva ni reactive
+    «Guardar» a media lectura) y quitar UNO de los dos archivos vuelve a leer
+    el que queda (el «ya está registrada» / «El XML dice…» de antes ya no
+    describía lo que se iba a subir). El selector de vuelos hidrata sobre lo
+    elegido AHORA (un vuelo agregado mientras llegaba la hidratación se
+    perdía).
+  - Alta de cotización con «El cliente pide factura»: si la llamada misma no
+    sale (red), ya no sube al boundary sin toast ni navegación: toast rojo
+    que no se va + navega a la cotización que SÍ se creó.
+  - «Reemplazar PDF» del menú avisa con un toast mientras revisa y sube (el
+    menú no tiene dónde pintar un «Subiendo…»).
+  - Comprobante del cobro para SOCIO: sin URL firmada (su lote da 403) se
+    pintaba «Comprobante» como botón que pedía la firma al momento… al MISMO
+    endpoint de oficina, que también le da 403: fallaba siempre. Ahora dice
+    «Con comprobante» sin botón («Solo oficina abre el comprobante»); el
+    botón queda para oficina cuando el lote falló.
+
+## Flechas «‹ Anterior» / «Siguiente ›» entre cotizaciones (24-sep-2026)
+
+Pedido de Itzi (audio): «ya le piqué al vuelo del 20 de septiembre. Y si hay
+una flechita arriba, pues me brinca el siguiente vuelito, ya sea de ese mismo
+día o … hasta el siguiente día … estando adentro de la cotización me pueda
+brincar a la siguiente». Contrato con el API: `GET /v1/quotes/:id/vecinos`
+(invariante 28 del API).
+
+- **Qué vuelo es el vecino lo decide el API**: orden CRONOLÓGICO por
+  `fecha_vuelo`, empate por folio, con los MISMOS filtros y roles de
+  `GET /quotes`. «Siguiente» = el vuelo que SIGUE en el tiempo (mismo día más
+  tarde o días después), no el folio siguiente. Como la lista pinta lo más
+  reciente ARRIBA, «Siguiente» es la fila de ARRIBA: por eso en `md+` el
+  destino se lee sin pasar el mouse («#338 · 19 sep»).
+- **Fuente única** `lib/admin/quote-navegacion.ts` (PURA, prueba
+  `__tests__/quote-navegacion.test.ts`): `FILTROS_LISTA` (`estado`,
+  `cliente_id`, `q`, `grupo_id`), `filtrosListaDeParams` (valida con
+  `estadoFiltro`/`uuidFiltro`; `q` recortada y topada a 100),
+  `qsFiltrosLista` (orden fijo), `hrefCotizacion`, `hrefListaCotizaciones`,
+  `textoVecino` («#341 · 27 sep · Maqar», fecha Cancún con
+  `fechaCortaCancun`), `tituloFlecha`, `MSG_SIN_FECHA` y `direccionDeTecla`.
+  La lista (`app/admin/quotes/page.tsx`) y el detalle leen los filtros con la
+  MISMA función —la lista también le pide al API con ellos—: si divergen, la
+  flecha recorre otra cosa que la lista de donde vino.
+- **La liga lleva los filtros**: `QuoteListRow.href` se arma en el SERVER
+  (`hrefCotizacion(q.id, qsFiltrosLista(filtros))`) porque las `columns` de
+  `quotes-table.tsx` son una constante de módulo; `rowHref` y el folio usan
+  `q.href`. `/admin/quotes/[id]/revise` redirige CONSERVANDO el query string.
+- **Detalle** (`app/admin/quotes/[id]/page.tsx`): `getQuoteVecinos`
+  (`lib/api/quotes-server.ts`, en paralelo con la cotización) envuelto en
+  `degradado.opcional("la navegación entre cotizaciones", …, null)`; 404
+  (API previo) y 403 ⇒ `null` en silencio; otro fallo ⇒ aviso y SIN flechas —
+  nunca «no hay siguiente» por una lectura que falló. `QuoteWorkspace` lleva
+  `key={quote.id}`: al brincar (misma ruta, otro id) el cotizador jamás
+  conserva el formulario de la cotización anterior.
+- **Componente** `components/admin/quotes/quote-navegacion.tsx`, en la
+  primera fila de la cabecera del workspace, a la derecha del `BackLink` (cuyo
+  href ahora es `/admin/quotes?<filtros>`). Estilo de los botones de día de
+  `/admin/taco-live`. Reglas:
+  - Las flechas son `<Link replace>` (un `<a href>`), **nunca**
+    `router.push`: `useCambiosSinGuardar` intercepta en captura todo clic en
+    un `<a>` interno y pide «Salir sin guardar». `replace` = brincar no apila
+    historial, así «← Cotizaciones» y el «atrás» del navegador regresan a la
+    LISTA (con sus filtros, búsqueda y página), no a la cotización anterior.
+  - Prefetch de las dos vecinas al montar (`router.prefetch`).
+  - Sin vecino ⇒ `<span aria-disabled>` apagada con «No hay un vuelo anterior
+    con estos filtros»; sin fecha ⇒ las dos apagadas con «Esta cotización no
+    tiene fecha de vuelo: ponle fecha para brincar entre vuelos.» (subtítulo
+    visible «Sin fecha» en `md+`).
+  - Atajo ←/→ sin modificadores: solo si el foco NO está en un
+    input/textarea/select/contenteditable ni en un control con flechas
+    propias (pestañas, radios, listas) y no hay diálogo/menú abiertos; dispara
+    el MISMO clic del enlace (pasa por el guard).
+- **Diferencias documentadas**: la búsqueda rápida LOCAL de la tabla (`tq`) y
+  su página (`tp`) NO viajan a las flechas (filtran en el navegador; el API no
+  las conoce) — solo los filtros de la barra. Con `?q=` de puros espacios la
+  lista ya no manda el filtro (antes el API lo volvía un filtro que dejaba
+  pasar casi todo).
+- Pruebas: `lib/admin/__tests__/quote-navegacion.test.ts` (filtros, URL de
+  ida y vuelta, textos, día Cancún, atajo) y
+  `components/admin/quotes/__tests__/quote-navegacion.test.tsx` (marcado de
+  las flechas y el CABLEADO lista → detalle → workspace → /revise).
+- **Orden de deploy**: API antes que panel (con un API previo el detalle
+  recibe 404 en `vecinos` y simplemente no pinta flechas).

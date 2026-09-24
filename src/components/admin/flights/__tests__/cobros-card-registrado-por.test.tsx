@@ -26,13 +26,25 @@ vi.mock("../cobro-form-sheet", () => ({ CobroFormSheet: () => null }));
 vi.mock("../reembolso-dialog", () => ({ ReembolsoButton: () => null }));
 vi.mock("@/app/admin/flights/actions", () => ({
   deleteCobroAction: async () => ({ ok: true }),
+  solicitarFacturaAction: async () => ({ ok: true }),
+  retirarSolicitudFacturaAction: async () => ({ ok: true }),
+  refrescarComprobanteCobroAction: async () => ({ ok: true }),
+  urlComprobanteCobroAction: async () => ({ ok: true, data: "https://x/y" }),
 }));
-// La subida de la factura va del navegador al API (24-sep-2026) y ese módulo
-// lee las variables NEXT_PUBLIC_* al importarse: aquí no se sube nada.
-vi.mock("@/lib/api/factura-cliente-browser", () => ({
-  subirFacturaClienteDirecto: async () => ({ ok: false, error: "no aplica" }),
-  leerBytes: async () => null,
+vi.mock("@/app/admin/facturas-emitidas/actions", () => ({
+  urlArchivoFacturaAction: async () => ({ ok: true, data: "https://x/y" }),
+  refrescarFacturasEmitidasAction: async () => ({ ok: true }),
 }));
+// Las subidas (factura registrada, comprobante del cobro) van del navegador
+// al API (24-sep-2026) y esos módulos leen las NEXT_PUBLIC_* al importarse:
+// aquí no se sube nada.
+vi.mock("@/lib/api/facturas-emitidas-browser", () => ({
+  adjuntarComprobanteCobro: async () => ({ ok: false, error: "no aplica" }),
+  leerArchivoFactura: async () => ({ ok: false, error: "no aplica" }),
+  guardarFacturaEmitida: async () => ({ ok: false, error: "no aplica" }),
+  buscarVuelosCandidatos: async () => ({ ok: true, data: [] }),
+}));
+vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }));
 
 const { CobrosCard } = await import("../cobros-card");
 

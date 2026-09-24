@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowTopRightOnSquareIcon,
-  ArrowUpTrayIcon,
   DocumentTextIcon,
   PencilSquareIcon,
   TrashIcon,
@@ -34,17 +33,15 @@ import {
   ofreceCapturarFolio,
   soportaFolio,
   textoArchivoFactura,
-  textoFacturaGuardada,
   type EstatusFacturaCliente,
 } from "@/lib/admin/factura-cliente";
 import {
   quitarFacturaClienteAction,
-  refrescarFacturaClienteAction,
   setFacturaClienteEstatusAction,
   setFacturaClienteFolioAction,
   urlFacturaClienteAction,
 } from "@/app/admin/flights/actions";
-import { SubirFacturaDialog } from "./factura-cliente-subir-dialog";
+import { abrirArchivoFirmado } from "@/lib/admin/facturas-emitidas";
 import type { FacturaClienteBloque as Bloque } from "@/types/flights";
 
 /**
@@ -63,7 +60,8 @@ import type { FacturaClienteBloque as Bloque } from "@/types/flights";
  *    factura.pdf · subió Itzi · 23 sep»);
  *  - la subida ya NO es una server action (Vercel la cortaría arriba de 4.5
  *    MB y el error no se veía): va directo al API y solo se celebra si el
- *    API confirmó el archivo. Ver `lib/api/factura-cliente-browser.ts`.
+ *    API confirmó el archivo (hoy lo hace el registro de facturas emitidas,
+ *    `lib/api/facturas-emitidas-browser.ts`).
  *  - El #297 (logs de Supabase del 23-sep): su PDF SÍ se subió y 9 minutos
  *    después alguien lo QUITÓ con «Quitar» (borrado duro del bucket). Por eso
  *    la confirmación de «Quitar» dice que no se puede deshacer.
@@ -77,12 +75,23 @@ import type { FacturaClienteBloque as Bloque } from "@/types/flights";
  *    momento (10 min); nunca se guarda una URL pública en el HTML.
  *  - «Quitar» el archivo y BORRAR el folio CONFIRMAN (regla del cliente).
  *  - Con un API sin folio (llave ausente) no se ofrece ni se manda folio.
+ *
+ * 24-sep-2026 (noche) — FACTURAS EMITIDAS. La factura del servicio ya se
+ * REGISTRA en «Facturas emitidas» (número, UUID, PDF, varios vuelos): la
+ * «burbuja» de la card (`FacturaServicioBurbuja`) pinta el número y abre el
+ * diálogo «Registrar factura». Por eso este bloque:
+ *  - ya NO sube archivos (el diálogo viejo «Subir factura» se borró);
+ *  - se rotula «Seguimiento manual» cuando existe el registro (`conRegistro`)
+ *    para no presentar dos «facturas» al mismo nivel, y deja de ofrecer
+ *    «Agregar folio» (el folio vive en el registro);
+ *  - conserva el selector de estatus y el archivo/folio LEGADOS (Ver/Quitar).
  */
 export function FacturaClienteBloque({
   flightId,
   facturaCliente,
   facturado,
   puedeEditar,
+  conRegistro = false,
 }: {
   flightId: string;
   /** Bloque del API; `undefined` = API sin desplegar (no se pinta nada). */
@@ -90,10 +99,14 @@ export function FacturaClienteBloque({
   facturado: boolean;
   /** ADMIN / COORDINADOR / FACTURACION. Sin permiso: solo lectura. */
   puedeEditar: boolean;
+  /**
+   * El API ya trae el registro de facturas emitidas (`factura_servicio`):
+   * el bloque se rotula «Seguimiento manual» y no ofrece «Agregar folio».
+   */
+  conRegistro?: boolean;
 }) {
   const router = useRouter();
   const [pendiente, startTransition] = useTransition();
-  const [subirAbierto, setSubirAbierto] = useState(false);
   const [confirmarQuitar, setConfirmarQuitar] = useState(false);
   const [editandoFolio, setEditandoFolio] = useState(false);
   const [folioBorrador, setFolioBorrador] = useState("");
@@ -107,14 +120,14 @@ export function FacturaClienteBloque({
   const uuid = conFolio ? (facturaCliente?.uuid ?? null) : null;
   const bloqueado = facturado;
   const ocupado = pendiente;
+  // Con el registro de facturas emitidas el folio vive allá; el lápiz queda
+  // solo para CORREGIR un folio legado que ya existe.
   const puedeFolio =
-    puedeEditar && conFolio && ofreceCapturarFolio({ estatus, tieneArchivo: !!archivo });
-
-  const refrescar = () =>
-    startTransition(async () => {
-      await refrescarFacturaClienteAction(flightId);
-      router.refresh();
-    });
+    puedeEditar &&
+    conFolio &&
+    (conRegistro
+      ? !!folio
+      : ofreceCapturarFolio({ estatus, tieneArchivo: !!archivo }));
 
   const cambiar = (v: EstatusFacturaCliente) => {
     if (v === estatus) return;
@@ -127,12 +140,6 @@ export function FacturaClienteBloque({
         toast.error(res.error ?? "No se pudo cambiar el estatus de la factura");
       }
     });
-  };
-
-  const guardada = (bloque: Bloque, avisoFolio?: string) => {
-    toast.success(textoFacturaGuardada(bloque.folio));
-    if (avisoFolio) toast.warning(avisoFolio);
-    refrescar();
   };
 
   const abrirFolio = () => {
@@ -168,11 +175,16 @@ export function FacturaClienteBloque({
     guardarFolio(nuevo);
   };
 
+  // La ventana se abre en el MISMO clic y luego recibe la URL firmada: un
+  // `window.open` después del `await` lo bloquea Safari (24-sep-2026).
   const ver = () => {
-    startTransition(async () => {
-      const res = await urlFacturaClienteAction(flightId);
-      if (res.ok && res.data) window.open(res.data, "_blank", "noopener");
-      else toast.error(res.error ?? "No se pudo abrir la factura");
+    void abrirArchivoFirmado(() => urlFacturaClienteAction(flightId)).then((r) => {
+      if (!r.ok) toast.error(r.error || "No se pudo abrir la factura");
+      else if (!r.abierta) {
+        toast.info("La factura está lista", {
+          action: { label: "Abrir", onClick: () => window.open(r.url, "_blank") },
+        });
+      }
     });
   };
 
@@ -197,13 +209,24 @@ export function FacturaClienteBloque({
   const tituloRenglon = [renglon, uuid ? `Folio fiscal (UUID): ${uuid}` : null]
     .filter(Boolean)
     .join("\n");
+  // Con el registro de facturas emitidas, el renglón del archivo LEGADO solo
+  // se pinta si de verdad hay algo legado (archivo o folio): «Sin archivo
+  // de factura cargado» junto a una factura registrada confundiría.
+  const conRenglonLegado = !conRegistro || !!archivo || !!folio;
 
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span
+          className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          title={
+            conRegistro
+              ? "Seguimiento manual de oficina (no timbra nada). La factura registrada se ve arriba."
+              : undefined
+          }
+        >
           <DocumentTextIcon className="h-3.5 w-3.5" />
-          Factura del servicio
+          {conRegistro ? "Seguimiento manual" : "Factura del servicio"}
         </span>
         {puedeEditar && !bloqueado ? (
           <div className="min-w-[230px]">
@@ -234,6 +257,7 @@ export function FacturaClienteBloque({
         )}
       </div>
 
+      {conRenglonLegado && (
       <div className="flex flex-wrap items-center gap-2">
         <span
           className="min-w-0 max-w-[340px] truncate text-[11px] text-muted-foreground"
@@ -286,20 +310,8 @@ export function FacturaClienteBloque({
             )}
           </>
         )}
-        {puedeEditar && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5"
-            onClick={() => setSubirAbierto(true)}
-            disabled={ocupado}
-            title="Sube el PDF o el XML de la factura que se le mandó al cliente"
-          >
-            <ArrowUpTrayIcon className="h-3.5 w-3.5" />
-            {archivo ? "Reemplazar factura" : "Subir factura"}
-          </Button>
-        )}
       </div>
+      )}
 
       {editandoFolio && (
         <form
@@ -342,18 +354,6 @@ export function FacturaClienteBloque({
             Cancelar
           </Button>
         </form>
-      )}
-
-      {subirAbierto && (
-        <SubirFacturaDialog
-          flightId={flightId}
-          open={subirAbierto}
-          onOpenChange={setSubirAbierto}
-          reemplaza={!!archivo}
-          conFolio={conFolio}
-          folioActual={folio}
-          onGuardada={guardada}
-        />
       )}
 
       <AlertDialog open={confirmarQuitar} onOpenChange={(o) => !o && setConfirmarQuitar(false)}>

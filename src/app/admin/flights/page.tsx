@@ -174,6 +174,10 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     sin_tc_count: cobroSinVerificar.has(v.id)
       ? 0
       : (cobroStatus?.[v.id]?.sin_tc_count ?? 0),
+    // «Por facturar» (24-sep-2026): campo ADITIVO de la fila; ausente o
+    // null (API previo / sin migración) ⇒ sin chip.
+    porFacturar: v.factura_servicio_resumen?.por_facturar === true,
+    pagaContraFactura: v.factura_servicio_resumen?.paga_contra_factura === true,
     // Hijo de una cotización de GRUPO (4-sep): el embed `grupo` ya viaja en
     // la fila de la lista; el total de aviones solo lo trae el snapshot, así
     // que aquí el badge omite "de N".

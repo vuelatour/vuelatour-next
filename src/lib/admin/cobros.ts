@@ -1,3 +1,5 @@
+import { fmtUsd } from "@/lib/format";
+
 /**
  * Regla ÚNICA de "¿está pagado?" en el panel — igual que el API
  * (refreshCobradoFlag): un vuelo cobrado en pesos convierte a USD con el TC y
@@ -105,7 +107,7 @@ export function estadoCobroSemaforo(v: {
       return {
         key: "NO_APLICA",
         label: "Con cobros",
-        title: `Vuelo cancelado con $${cobradoUsd.toLocaleString("en-US")} USD cobrados (cargo por cancelación; el pre-cierre lo vigila)`,
+        title: `Vuelo cancelado con ${fmtUsd(cobradoUsd)} USD cobrados (cargo por cancelación; el pre-cierre lo vigila)`,
       };
     }
     return { key: "NO_APLICA", label: "—", title: "Vuelo cancelado sin cobros" };
@@ -119,7 +121,7 @@ export function estadoCobroSemaforo(v: {
     return {
       key: "PARCIAL",
       label: "Parcial",
-      title: `Cobrado $${cobradoUsd.toLocaleString("en-US")} de $${v.montoTotalUsd.toLocaleString("en-US")} USD${avisoSinTc}`,
+      title: `Cobrado ${fmtUsd(cobradoUsd)} de ${fmtUsd(v.montoTotalUsd)} USD${avisoSinTc}`,
     };
   }
   // Hay cobros pero TODOS en MXN sin TC (no convierten): es dinero
@@ -141,7 +143,7 @@ export function estadoCobroSemaforo(v: {
   return {
     key: "SIN_COBROS",
     label: "Sin cobro",
-    title: `Total $${v.montoTotalUsd.toLocaleString("en-US")} USD sin ningún cobro${avisoSinTc}`,
+    title: `Total ${fmtUsd(v.montoTotalUsd)} USD sin ningún cobro${avisoSinTc}`,
   };
 }
 

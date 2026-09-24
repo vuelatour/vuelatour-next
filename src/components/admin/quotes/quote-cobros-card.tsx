@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { fmtDate } from "@/lib/datetime";
-import { fmtUsd } from "@/lib/format";
+import { fmtMonto, fmtUsd } from "@/lib/format";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
@@ -37,7 +37,11 @@ import {
   CobroSobreNota,
   esParteDeSobre,
 } from "@/components/admin/flights/cobro-sobre-nota";
+import { ComprobanteCobro } from "@/components/admin/flights/comprobante-cobro";
+import { FacturaServicioBurbuja } from "@/components/admin/facturas-emitidas/factura-servicio-burbuja";
+import { puedeAdjuntarComprobante } from "@/lib/admin/facturas-emitidas";
 import type { FlightCobro } from "@/types/flights";
+import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import {
   TITULO_REGISTRO_COBRO,
   TOLERANCIA_COBRO_USD,
@@ -54,6 +58,15 @@ import {
  * SIEMPRE visible (pedido del cliente 9-sep-2026): con 0 cobros pinta el
  * estado vacío «Sin cobros registrados» + «Registrar cobro» — antes con 0
  * cobros no había dónde registrar desde la cotización.
+ *
+ * 24-sep-2026 (captura de Itzi):
+ *  1. Encabezado en TRES renglones —título (+ estado), descripción a todo lo
+ *     ancho y botones que envuelven—. Con los botones `shrink-0` en la misma
+ *     fila `justify-between`, el texto quedaba aplastado en una columna.
+ *  2. Montos con `fmtMonto` («$136,856.80 MXN», jamás «$136,856.8»).
+ *  3. La «burbujita» de FACTURA: número ⇒ PDF, «pedida — pendiente» o
+ *     «Necesito factura»; facturación ve «Registrar factura».
+ *  4. El COMPROBANTE de cada cobro (ver o adjuntar DESPUÉS de registrado).
  */
 export function QuoteCobrosCard({
   quoteId,
@@ -64,6 +77,14 @@ export function QuoteCobrosCard({
   puedeReembolsar = false,
   onRegistrar,
   registrarTitle,
+  facturaServicio,
+  rol = null,
+  vueloEstado = "",
+  clienteId = null,
+  clienteNombre = null,
+  fechaVuelo = null,
+  grupo = null,
+  voucherUrls = {},
 }: {
   quoteId: string;
   /** Folio del vuelo (encabezado del diálogo de reembolso). */
@@ -77,6 +98,18 @@ export function QuoteCobrosCard({
       = sin permiso o vuelo aún no cobrable (no se pinta el botón). */
   onRegistrar?: () => void;
   registrarTitle?: string;
+  /** `snapshot.factura_servicio` (ADITIVO; ausente/null ⇒ sin burbuja). */
+  facturaServicio?: FacturaServicioBloque | null;
+  /** Rol del usuario (permisos de la burbuja y del comprobante). */
+  rol?: string | null;
+  vueloEstado?: string;
+  clienteId?: string | null;
+  clienteNombre?: string | null;
+  fechaVuelo?: string | null;
+  /** Grupo multi-avión (`quote.grupo_id` + aviones vivos del snapshot). */
+  grupo?: { id: string; total_aviones: number } | null;
+  /** URLs firmadas de los comprobantes (best-effort; SOCIO recibe 403). */
+  voucherUrls?: Record<string, string>;
 }) {
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -88,6 +121,7 @@ export function QuoteCobrosCard({
   const cubierto = !sinCobros && totalCobrado >= montoTotalUsd - TOLERANCIA_COBRO_USD;
   // ¿Hay partes de un sobre de grupo? Esas no se eliminan desde aquí.
   const haySobre = cobros.some(esParteDeSobre);
+  const puedeComprobante = puedeAdjuntarComprobante(rol);
 
   const botonRegistrar = onRegistrar ? (
     <Button
@@ -102,49 +136,21 @@ export function QuoteCobrosCard({
       Registrar cobro
     </Button>
   ) : null;
+  const conReembolso = puedeReembolsar && !sinCobros;
 
   return (
     <Card
       id="cobros-vuelo"
       className={`scroll-mt-24 ${sinCobros ? "border-border" : "border-emerald-500/40"}`}
     >
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-        <div>
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <BanknotesIcon
               className={`h-4 w-4 ${sinCobros ? "text-muted-foreground" : "text-emerald-500"}`}
             />
             Cobros del vuelo
           </CardTitle>
-          <CardDescription className="text-xs mt-1">
-            {sinCobros ? (
-              <>
-                Total a cobrar {fmtUsd(montoTotalUsd)}. Al registrar el primer
-                cobro la cotización queda bloqueada para edición (cambiaría un
-                total ya cobrado).
-              </>
-            ) : (
-              <>
-                Cobrado {fmtUsd(totalCobrado)} de {fmtUsd(montoTotalUsd)}. Mientras
-                exista un cobro, la cotización no puede editarse (cambiaría un
-                total ya cobrado): elimínalo aquí si necesitas ajustarla.
-              </>
-            )}
-            {haySobre && (
-              <>
-                {" "}
-                Los cobros que son parte de un sobre de grupo se eliminan o
-                re-parten desde el grupo (Cobros del grupo).
-              </>
-            )}
-          </CardDescription>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
-          {botonRegistrar}
-          {/* Reembolso: solo oficina y solo si hay algo cobrado. */}
-          {puedeReembolsar && !sinCobros && (
-            <ReembolsoButton flightId={quoteId} flightFolio={quoteFolio} />
-          )}
           {!sinCobros && (
             <Badge
               variant="outline"
@@ -159,8 +165,49 @@ export function QuoteCobrosCard({
             </Badge>
           )}
         </div>
+        <CardDescription className="text-xs">
+          {sinCobros ? (
+            <>
+              Total a cobrar {fmtUsd(montoTotalUsd)}. Al registrar el primer
+              cobro la cotización queda bloqueada para edición (cambiaría un
+              total ya cobrado).
+            </>
+          ) : (
+            <>
+              Cobrado {fmtUsd(totalCobrado)} de {fmtUsd(montoTotalUsd)}. Mientras
+              exista un cobro, la cotización no puede editarse (cambiaría un
+              total ya cobrado): elimínalo aquí si necesitas ajustarla.
+            </>
+          )}
+          {haySobre && (
+            <>
+              {" "}
+              Los cobros que son parte de un sobre de grupo se eliminan o
+              re-parten desde el grupo (Cobros del grupo).
+            </>
+          )}
+        </CardDescription>
+        {(botonRegistrar || conReembolso) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {botonRegistrar}
+            {/* Reembolso: solo oficina y solo si hay algo cobrado. */}
+            {conReembolso && <ReembolsoButton flightId={quoteId} flightFolio={quoteFolio} />}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-2">
+        {/* FACTURA del servicio: número ⇒ PDF, «pedida» o «Necesito factura». */}
+        <FacturaServicioBurbuja
+          vueloId={quoteId}
+          vueloFolio={quoteFolio ?? 0}
+          vueloEstado={vueloEstado}
+          clienteId={clienteId}
+          clienteNombre={clienteNombre}
+          fechaVuelo={fechaVuelo}
+          grupo={grupo}
+          bloque={quoteFolio != null ? facturaServicio : null}
+          rol={rol}
+        />
         {sinCobros && (
           <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center">
             <p className="text-sm font-medium">Sin cobros registrados</p>
@@ -190,7 +237,7 @@ export function QuoteCobrosCard({
                   esReembolso ? "text-red-600 dark:text-red-400" : ""
                 }`}
               >
-                ${Number(c.monto).toLocaleString("en-US")} {c.moneda}
+                {fmtMonto(c.monto, c.moneda)}
                 {esReembolso && (
                   <Badge
                     variant="outline"
@@ -209,7 +256,7 @@ export function QuoteCobrosCard({
                 {fmtDate(c.fecha_cobro)}
                 {c.comision_banco_monto != null &&
                   Number(c.comision_banco_monto) > 0 && (
-                    <> · comisión banco ${Number(c.comision_banco_monto).toLocaleString("en-US")}</>
+                    <> · comisión banco {fmtMonto(c.comision_banco_monto, c.moneda)}</>
                   )}
               </p>
               {/* Quién capturó el cobro (22-sep-2026): solo si el API mandó
@@ -221,6 +268,15 @@ export function QuoteCobrosCard({
               )}
               {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
               <CobroSobreNota cobro={c} />
+              {/* Comprobante del cobro (24-sep-2026): verlo o adjuntarlo
+                  después de registrado. No toca dinero: el candado de la
+                  cotización con cobros no lo bloquea. */}
+              <ComprobanteCobro
+                cobro={c}
+                url={c.foto_voucher_url ? (voucherUrls[c.foto_voucher_url] ?? null) : null}
+                flightId={quoteId}
+                puedeAdjuntar={puedeComprobante}
+              />
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {/* Recibo para el cliente: solo cobros reales (un reembolso no
@@ -259,7 +315,7 @@ export function QuoteCobrosCard({
           );
         })}
         <p className="text-[11px] text-muted-foreground">
-          El detalle completo (vouchers, comisiones) vive en{" "}
+          Más detalle (comisiones, conciliación) en{" "}
           <Link
             href={`/admin/flights/${quoteId}#cobros`}
             className="underline underline-offset-2 hover:text-foreground"
@@ -276,7 +332,7 @@ export function QuoteCobrosCard({
             <DialogTitle>¿Eliminar este cobro?</DialogTitle>
             <DialogDescription>
               {toDelete
-                ? `$${Number(toDelete.monto).toLocaleString("en-US")} ${toDelete.moneda} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
+                ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
                 : ""}
               El vuelo volverá a quedar pendiente de cobro y la cotización se
               podrá editar. Esta acción no se puede deshacer.

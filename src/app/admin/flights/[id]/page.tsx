@@ -758,6 +758,22 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             paywiseComisionPct={paywiseComisionPct}
             // Reembolsos: solo roles de oficina.
             puedeReembolsar={me?.rol === "ADMIN" || me?.rol === "COORDINADOR"}
+            // FACTURA DEL SERVICIO registrada + «Necesito factura» y el
+            // comprobante de cada cobro (24-sep-2026). `factura_servicio`
+            // ausente/null (API previo o sin migración) ⇒ sin burbuja.
+            facturaServicio={snapshot.factura_servicio}
+            rol={me?.rol ?? null}
+            clienteId={snapshot.cliente_id}
+            clienteNombre={client?.nombre ?? null}
+            fechaVuelo={snapshot.fecha_vuelo}
+            grupo={
+              snapshotConGrupo.grupo_id
+                ? {
+                    id: snapshotConGrupo.grupo_id,
+                    total_aviones: snapshot.grupo_total_aviones ?? 1,
+                  }
+                : null
+            }
           />
 
           {/* Gastos del vuelo: desglose completo (el piloto solo ve el total;

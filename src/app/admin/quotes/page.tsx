@@ -13,7 +13,11 @@ import { getCobroStatusPorLotes } from "@/lib/api/flights-server";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { textoSinVerificar } from "@/lib/admin/lotes";
-import { estadoFiltro, uuidFiltro } from "@/lib/admin/url-params";
+import {
+  filtrosListaDeParams,
+  hrefCotizacion,
+  qsFiltrosLista,
+} from "@/lib/admin/quote-navegacion";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
@@ -61,9 +65,14 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const sp = await searchParams;
   // Parámetros validados antes de llamar al API (21-sep-2026): un
   // `?estado=<inválido>` de un enlace viejo daba 400 y tumbaba la pantalla.
-  const grupoFiltro = uuidFiltro(sp.grupo_id);
-  const estadoFilter = estadoFiltro(sp.estado);
-  const clienteFiltro = uuidFiltro(sp.cliente_id);
+  // FLECHAS entre cotizaciones (24-sep-2026): la MISMA función valida los
+  // filtros aquí y en el detalle, y cada fila lleva esos filtros en su liga
+  // para que «‹ Anterior» / «Siguiente ›» recorran exactamente esta lista.
+  const filtros = filtrosListaDeParams(sp);
+  const grupoFiltro = filtros.grupo_id;
+  const estadoFilter = filtros.estado;
+  const clienteFiltro = filtros.cliente_id;
+  const qsFiltros = qsFiltrosLista(filtros);
 
   // Catálogos accesorios: degradan con aviso; la lista de cotizaciones no.
   const degradado = new Degradaciones();
@@ -74,7 +83,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       listQuotesAll({
         estado: estadoFilter,
         cliente_id: clienteFiltro,
-        q: sp.q || undefined,
+        q: filtros.q,
         grupo_id: grupoFiltro,
       }),
       degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
@@ -123,6 +132,9 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   // Filas planas y serializables para el componente cliente (lookups resueltos).
   const rows: QuoteListRow[] = quotes.map((q) => ({
     id: q.id,
+    // Liga al detalle CON los filtros de la barra (las `columns` de la
+    // tabla son una constante de módulo y no pueden cerrar sobre ellos).
+    href: hrefCotizacion(q.id, qsFiltros),
     folio: q.folio,
     clienteNombre: clientsById.get(q.cliente_id)?.nombre ?? null,
     esExterno: q.es_externo,
@@ -162,6 +174,10 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         ? null
         : (cobroStatus[q.id]?.total_cobrado ?? 0),
     sinTcCount: cobroSinVerificar.has(q.id) ? 0 : (cobroStatus?.[q.id]?.sin_tc_count ?? 0),
+    // «Por facturar» (24-sep-2026): campo ADITIVO de la fila; ausente o
+    // null (API previo / sin migración) ⇒ sin chip.
+    porFacturar: q.factura_servicio_resumen?.por_facturar === true,
+    pagaContraFactura: q.factura_servicio_resumen?.paga_contra_factura === true,
     // Hijo de una cotización de GRUPO (4-sep): el embed `grupo` ya viaja en
     // la fila; el total de aviones sale del snapshot (si el API lo selló).
     grupo: (() => {

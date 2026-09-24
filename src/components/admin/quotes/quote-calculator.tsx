@@ -137,6 +137,15 @@ import {
   type RutaSugerida,
 } from "@/app/admin/quotes/actions";
 import { createRouteAction } from "@/app/admin/routes/actions";
+import { solicitarFacturaAction } from "@/app/admin/flights/actions";
+import {
+  SolicitudFacturaAlta,
+  type SolicitudFacturaAltaValor,
+} from "@/components/admin/facturas-emitidas/solicitud-factura-alta";
+import {
+  textoFacturaPedidaAlta,
+  textoFalloSolicitudAlta,
+} from "@/lib/admin/facturas-emitidas";
 import type {
   CalculateQuoteRequest,
   EscalaInput,
@@ -751,6 +760,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Confirmación de "poner todo en $0" (borra extras y overrides capturados).
   const [ceroOpen, setCeroOpen] = useState(false);
   const [saving, startSaving] = useTransition();
+  // «El cliente pide factura» (24-sep-2026, SOLO en el alta): al crear la
+  // cotización se pide la factura del vuelo nuevo (§8.7 del contrato).
+  const [solicitudFacturaAlta, setSolicitudFacturaAlta] = useState<SolicitudFacturaAltaValor>({
+    pide: false,
+    pagaContraFactura: false,
+  });
 
   // Clientes creados inline desde el cotizador (sin ir a "Clientes").
   const [extraClients, setExtraClients] = useState<ClientOption[]>([]);
@@ -2218,6 +2233,29 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // `toastAvisos` que revise/assign/reserva (los toasts sobreviven al
         // push a la página única).
         toastAvisos(res.data.avisos);
+        // «El cliente pide factura»: segundo paso ANTES de navegar. Si falla,
+        // la cotización YA existe: se dice con un toast que no se va solo y
+        // se navega igual (nada silencioso).
+        if (solicitudFacturaAlta.pide) {
+          // La action nunca lanza por un error del API, pero SÍ si la
+          // llamada misma no sale (red caída, deploy): sin este catch el
+          // error subía al boundary, no había toast y no se navegaba a una
+          // cotización que YA existe.
+          const sol = await solicitarFacturaAction(res.data.id, {
+            paga_contra_factura: solicitudFacturaAlta.pagaContraFactura,
+          }).catch(() => ({
+            ok: false as const,
+            data: undefined,
+            error: "no hubo conexión con el servidor",
+          }));
+          if (sol.ok && sol.data) {
+            toast.success(textoFacturaPedidaAlta(sol.data.notificados));
+          } else {
+            toast.error(textoFalloSolicitudAlta(res.data.folio, sol.error), {
+              duration: Infinity,
+            });
+          }
+        }
         router.push(`/admin/quotes/${res.data.id}`);
       } else {
         toast.error(res.error ?? "Error al guardar");
@@ -3076,6 +3114,16 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         avisos={avisosCaptura}
         cobro={cobroBarra}
       />
+
+      {/* «El cliente pide factura» (24-sep-2026): SOLO en el alta. En la
+          revisión se pide desde la card de cobros («Necesito factura»). */}
+      {!isRevise && (
+        <SolicitudFacturaAlta
+          valor={solicitudFacturaAlta}
+          onCambio={setSolicitudFacturaAlta}
+          disabled={saving}
+        />
+      )}
 
       {/* Avisos de edición directa (F0). */}
       {conflictoVersion != null && (

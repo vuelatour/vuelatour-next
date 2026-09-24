@@ -1,6 +1,10 @@
 import type { ListResponse } from "./aircraft";
 import type { MetodoPago } from "./quote";
 import type {
+  FacturaServicioBloque,
+  FacturaServicioResumen,
+} from "./facturas-emitidas";
+import type {
   EstadoVuelo,
   ParticipacionAvion,
   ParticipacionFuente,
@@ -146,6 +150,13 @@ export interface FlightListItem {
    * `lib/admin/factura-cliente.ts`.
    */
   factura_cliente?: FacturaClienteBloque | null;
+  /**
+   * FACTURAS EMITIDAS por vuelo (24-sep-2026, ADITIVO, solo en la LISTA):
+   * ¿pidieron factura («Necesito factura») y aún no está registrada? Lo
+   * DERIVA el API (§3.8 del contrato). AUSENTE = API previo u omitido por
+   * rol; `null` = API sin la migración. Ambos se leen como «no».
+   */
+  factura_servicio_resumen?: FacturaServicioResumen | null;
   cobrado: boolean;
   notas: string | null;
   notas_internas: string | null;
@@ -321,6 +332,13 @@ export interface FlightSnapshot extends FlightListItem {
    * hijo de grupo o API previo (el badge omite "de N").
    */
   grupo_total_aviones?: number | null;
+  /**
+   * FACTURA DEL SERVICIO — registro manual (24-sep-2026, ADITIVO): solicitud
+   * («Necesito factura»), si está por facturar y las facturas VIGENTES
+   * ligadas. AUSENTE = API previo u omitido para PILOTO/MECANICO/VISITANTE;
+   * `null` = API sin la migración. En ambos casos la burbuja NO se pinta.
+   */
+  factura_servicio?: FacturaServicioBloque | null;
 }
 
 /** Foto de tacómetro con URL firmada: GET /v1/flights/:id/taco-photos. */

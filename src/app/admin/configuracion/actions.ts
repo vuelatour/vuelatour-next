@@ -5,6 +5,7 @@ import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 import type { IaSaldoCheckpoint } from "@/lib/api/ia-uso-server";
+import type { ResponsablesFacturacion } from "@/types/facturas-emitidas";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -52,6 +53,28 @@ export async function capturarIaSaldoAction(input: {
       method: "POST",
       body: input,
     });
+    revalidatePath("/admin/configuracion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * RESPONSABLES DE FACTURACIÓN (24-sep-2026): quién recibe el aviso «Factura
+ * pedida» cuando alguien marca «Necesito factura». Reemplaza la lista
+ * completa (`[]` = nadie elegido ⇒ el API cae al rol FACTURACION y luego a
+ * los ADMIN). Sin la migración de facturas emitidas el API responde 503 y
+ * el mensaje se pinta tal cual.
+ */
+export async function setResponsablesFacturacionAction(
+  usuarioIds: string[],
+): Promise<ActionResult<ResponsablesFacturacion>> {
+  try {
+    const data = await apiServer<ResponsablesFacturacion>(
+      "/v1/config/responsables-facturacion",
+      { method: "PUT", body: { usuario_ids: [...new Set(usuarioIds)].slice(0, 20) } },
+    );
     revalidatePath("/admin/configuracion");
     return { ok: true, data };
   } catch (err) {

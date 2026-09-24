@@ -11,7 +11,10 @@
  *     EXACTAMENTE como antes: badge «Sin factura» / «Facturado» y NINGÚN
  *     control —ofrecer un selector que el backend rechazaría con 404 sería
  *     prometer algo que no existe.
- *  2. Con el bloque aparece el estatus de tres opciones y «Subir factura».
+ *  2. Con el bloque aparece el estatus de tres opciones. La SUBIDA suelta
+ *     («Subir factura») se retiró el 24-sep-2026 (noche): la factura se
+ *     REGISTRA en «Facturas emitidas» desde la burbuja de la card
+ *     (`cobros-card-facturas-emitidas.test.tsx`).
  *  3. Con CFDI timbrado el selector NO se monta y se explica por qué (el API
  *     responde 409 VUELO_CON_CFDI: esconder el motivo dejaría al operador
  *     peleándose con un error).
@@ -30,16 +33,26 @@ vi.mock("@/app/admin/flights/actions", () => ({
   deleteCobroAction: async () => ({ ok: true }),
   setFacturaClienteEstatusAction: async () => ({ ok: true }),
   setFacturaClienteFolioAction: async () => ({ ok: true }),
-  refrescarFacturaClienteAction: async () => ({ ok: true }),
   quitarFacturaClienteAction: async () => ({ ok: true }),
   urlFacturaClienteAction: async () => ({ ok: true, data: "https://x/y" }),
+  solicitarFacturaAction: async () => ({ ok: true }),
+  retirarSolicitudFacturaAction: async () => ({ ok: true }),
+  refrescarComprobanteCobroAction: async () => ({ ok: true }),
+  urlComprobanteCobroAction: async () => ({ ok: true, data: "https://x/y" }),
 }));
-// La subida va del navegador al API (24-sep-2026); ese módulo lee las
+vi.mock("@/app/admin/facturas-emitidas/actions", () => ({
+  urlArchivoFacturaAction: async () => ({ ok: true, data: "https://x/y" }),
+  refrescarFacturasEmitidasAction: async () => ({ ok: true }),
+}));
+// Las subidas van del navegador al API (24-sep-2026); esos módulos leen las
 // NEXT_PUBLIC_* al importarse y aquí no se sube nada.
-vi.mock("@/lib/api/factura-cliente-browser", () => ({
-  subirFacturaClienteDirecto: async () => ({ ok: false, error: "no aplica" }),
-  leerBytes: async () => null,
+vi.mock("@/lib/api/facturas-emitidas-browser", () => ({
+  adjuntarComprobanteCobro: async () => ({ ok: false, error: "no aplica" }),
+  leerArchivoFactura: async () => ({ ok: false, error: "no aplica" }),
+  guardarFacturaEmitida: async () => ({ ok: false, error: "no aplica" }),
+  buscarVuelosCandidatos: async () => ({ ok: true, data: [] }),
 }));
+vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }));
 
 const { CobrosCard } = await import("../cobros-card");
 
@@ -73,14 +86,14 @@ describe("CobrosCard · factura del servicio", () => {
     expect(render({ facturado: true })).toContain("Facturado");
   });
 
-  it("con el bloque: estatus de tres opciones y «Subir factura»", () => {
+  it("con el bloque: estatus de tres opciones y SIN la subida suelta (se retiró)", () => {
     const html = render({
       facturado: false,
       facturaCliente: { estatus: "ELABORADA_ENVIADA", archivo: null },
       puedeFacturar: true,
     });
     expect(html).toContain("Factura elaborada y enviada");
-    expect(html).toContain("Subir factura");
+    expect(html).not.toContain("Subir factura");
     expect(html).toContain("Sin archivo de factura cargado.");
   });
 
@@ -102,7 +115,8 @@ describe("CobrosCard · factura del servicio", () => {
     expect(html).toContain("subió Itzi");
     expect(html).toContain(">Ver</button>");
     expect(html).toContain("Quitar");
-    expect(html).toContain("Reemplazar factura");
+    // El reemplazo se hace registrando la factura (burbuja), no aquí.
+    expect(html).not.toContain("Reemplazar factura");
   });
 
   it("con CFDI timbrado el estatus no se edita y se dice por qué", () => {
@@ -173,7 +187,7 @@ describe("CobrosCard · folio de la factura", () => {
       puedeFacturar: true,
     });
     expect(html).not.toContain("Agregar folio");
-    expect(html).toContain("Subir factura");
+    expect(html).not.toContain("Subir factura");
   });
 
   it("API PREVIO (sin la llave `folio`): ni lápiz ni folio — la card de ayer", () => {
@@ -210,13 +224,12 @@ describe("CobrosCard · folio de la factura", () => {
     expect(html).toContain("Folio fiscal (UUID): DF1BFB5F-4D88-4F51-AC50-A7B72299128E");
   });
 
-  it("«Subir factura» abre un DIÁLOGO (archivo + folio), no el selector de archivos suelto", () => {
+  it("el bloque ya no sube archivos: ni «Subir factura» ni un input de archivo", () => {
     const html = render({
       facturaCliente: { estatus: "FACTURADO", archivo: null, folio: null, uuid: null },
       puedeFacturar: true,
     });
-    // El input de archivo vive dentro del diálogo, que no se monta cerrado.
     expect(html).not.toContain('type="file"');
-    expect(html).toContain("Subir factura");
+    expect(html).not.toContain("Subir factura");
   });
 });

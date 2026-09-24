@@ -27,6 +27,7 @@ import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-
 import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
 import { QuotePlegable } from "@/components/admin/quotes/quote-plegable";
+import { QuoteNavegacion } from "@/components/admin/quotes/quote-navegacion";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -39,12 +40,15 @@ import {
 } from "@/lib/admin/avion-cotizado";
 import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
+import { hrefListaCotizaciones } from "@/lib/admin/quote-navegacion";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import { tramosCotizadosDeCotizacion } from "@/lib/admin/tramos-cotizados";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { combinadoFolio, type FlightCobro } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
 import type { CotizacionInterna } from "@/types/quotes-interno";
+import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
+import type { QuoteVecinos } from "@/types/quote-vecinos";
 import type {
   CotizacionVersion,
   PersistedEscala,
@@ -93,6 +97,10 @@ export function QuoteWorkspace({
   tcOficial = null,
   tcOficialFecha = null,
   paywiseComisionPct,
+  facturaServicio,
+  voucherUrls = {},
+  grupoTotalAviones = null,
+  navegacion = null,
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -117,6 +125,22 @@ export function QuoteWorkspace({
   tcOficialFecha?: string | null;
   /** Comisión % sugerida para cobros Paywise (config del sistema). */
   paywiseComisionPct?: number;
+  /**
+   * FACTURA DEL SERVICIO (24-sep-2026, ADITIVO): `snapshot.factura_servicio`
+   * del vuelo (solicitud «Necesito factura» + facturas registradas).
+   * `undefined`/`null` = API previo o sin la migración ⇒ sin burbuja.
+   */
+  facturaServicio?: FacturaServicioBloque | null;
+  /** URLs firmadas de los comprobantes de los cobros (best-effort). */
+  voucherUrls?: Record<string, string>;
+  /** Aviones vivos del grupo (`snapshot.grupo_total_aviones`). */
+  grupoTotalAviones?: number | null;
+  /**
+   * FLECHAS entre cotizaciones (24-sep-2026): vecinos del API y los filtros
+   * de la lista de donde vino (`qs`, sin «?»). `vecinos: null` (falló o API
+   * previo) ⇒ no se pintan las flechas; el regreso conserva los filtros.
+   */
+  navegacion?: { vecinos: QuoteVecinos | null; qs: string } | null;
 }) {
   // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
   // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
@@ -315,7 +339,16 @@ export function QuoteWorkspace({
     <div className="space-y-6">
       {/* Cabecera compacta: folio, versión, estado, cliente, grupo, acciones. */}
       <div>
-        <BackLink href="/admin/quotes">Cotizaciones</BackLink>
+        {/* Regreso a la lista (con sus filtros) y, a la derecha, las flechas
+            «‹ Anterior» / «Siguiente ›» en orden cronológico de vuelo. */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <BackLink href={hrefListaCotizaciones(navegacion?.qs ?? "")}>
+            Cotizaciones
+          </BackLink>
+          {navegacion?.vecinos && (
+            <QuoteNavegacion vecinos={navegacion.vecinos} qs={navegacion.qs} />
+          )}
+        </div>
         <div className="mt-2 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -547,7 +580,10 @@ export function QuoteWorkspace({
           0) y operación. El HISTORIAL bajó a la pila de `<details>` del
           cotizador (Fase 2.3 · BLOQUE C). Nada de cobros dentro del papel. */}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        <div className="min-w-0 md:col-span-2 xl:col-span-1">
+        {/* DOS tercios del ancho (24-sep-2026): en un tercio el encabezado,
+            la burbuja de factura y los comprobantes quedaban aplastados
+            (captura de Itzi). «Operación» ocupa la tercera columna. */}
+        <div className="min-w-0 md:col-span-2 xl:col-span-2">
           <QuoteCobrosCard
             quoteId={quote.id}
             quoteFolio={quote.folio}
@@ -558,6 +594,25 @@ export function QuoteWorkspace({
             puedeReembolsar={rol === "ADMIN" || rol === "COORDINADOR"}
             onRegistrar={abrirCobro}
             registrarTitle={registrarTitle}
+            // Factura del servicio + comprobantes (24-sep-2026).
+            facturaServicio={facturaServicio}
+            rol={rol}
+            vueloEstado={quote.estado}
+            clienteId={quote.cliente_id}
+            clienteNombre={clientName}
+            fechaVuelo={quote.fecha_vuelo}
+            grupo={
+              quoteConGrupo.grupo_id
+                ? {
+                    id: quoteConGrupo.grupo_id,
+                    total_aviones:
+                      grupoTotalAviones ??
+                      quote.calculo_snapshot?.meta?.grupo?.total_aviones ??
+                      1,
+                  }
+                : null
+            }
+            voucherUrls={voucherUrls}
           />
         </div>
 

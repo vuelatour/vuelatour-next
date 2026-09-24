@@ -116,6 +116,11 @@ describe("resumirCambios", () => {
     expect(textos(base(), mxn)).toEqual(["+Extra Tour MX$1,700"]);
   });
 
+  it("dinero con centavos sale con 2 decimales, nunca con 1 («$35.50», no «$35.5»)", () => {
+    const next = { ...base(), extras: [...base().extras!, { concepto: "Handler", monto_usd: 35.5 }] };
+    expect(textos(base(), next)).toEqual(["+Extra Handler $35.50"]);
+  });
+
   it("extra eliminado y extra con monto cambiado", () => {
     expect(textos(base(), { ...base(), extras: [] })).toEqual(["−Extra Catering"]);
     const cambiado = { ...base(), extras: [{ concepto: "Catering", monto_usd: 200, moneda: "USD", aplica_iva: true }] };

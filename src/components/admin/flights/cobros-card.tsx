@@ -9,7 +9,6 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { ImagePreview } from "@/components/admin/image-preview";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -36,8 +35,12 @@ import {
   CobroSobreNota,
   esParteDeSobre,
 } from "./cobro-sobre-nota";
-import { fmtUsd } from "@/lib/format";
+import { fmtMonto, fmtUsd } from "@/lib/format";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
+import { puedeAdjuntarComprobante } from "@/lib/admin/facturas-emitidas";
+import { FacturaServicioBurbuja } from "@/components/admin/facturas-emitidas/factura-servicio-burbuja";
+import { ComprobanteCobro } from "./comprobante-cobro";
+import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import type { FlightCobro } from "@/types/flights";
 import {
   TITULO_REGISTRO_COBRO,
@@ -91,6 +94,20 @@ interface CobrosCardProps {
   facturaCliente?: FacturaClienteData | null;
   /** ADMIN / COORDINADOR / FACTURACION: puede tocar la factura del servicio. */
   puedeFacturar?: boolean;
+  /**
+   * FACTURAS EMITIDAS (24-sep-2026, ADITIVO): solicitud («Necesito factura»)
+   * y facturas registradas del vuelo (`snapshot.factura_servicio`).
+   * `undefined`/`null` = API previo o sin la migración ⇒ sin burbuja.
+   */
+  facturaServicio?: FacturaServicioBloque | null;
+  /** Rol del usuario (permisos de la burbuja y del comprobante). */
+  rol?: string | null;
+  /** Cliente del vuelo (prellena «Registrar factura»). */
+  clienteId?: string | null;
+  clienteNombre?: string | null;
+  fechaVuelo?: string | null;
+  /** Grupo multi-avión (con >1 avión «Necesito factura» ofrece pedir para todos). */
+  grupo?: { id: string; total_aviones: number } | null;
   /** Vuelo MULTI-AVIÓN: reparto de la venta del avión (lo calcula el API). */
   participacionAviones?: ParticipacionAvion[] | null;
   participacionFuente?: ParticipacionFuente | null;
@@ -141,6 +158,12 @@ export function CobrosCard({
   facturado = false,
   facturaCliente,
   puedeFacturar = false,
+  facturaServicio,
+  rol = null,
+  clienteId = null,
+  clienteNombre = null,
+  fechaVuelo = null,
+  grupo = null,
   participacionAviones = null,
   participacionFuente = null,
   metodoPrevisto = null,
@@ -168,39 +191,43 @@ export function CobrosCard({
   return (
     <>
       <Card id="cobros" className="scroll-mt-24">
-        <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-          <div className="space-y-1">
+        {/* Encabezado en tres renglones (24-sep-2026): título, descripción a
+            TODO lo ancho y botones que envuelven. Con título y botones en la
+            misma fila `justify-between` + `shrink-0`, los botones se comían
+            el ancho y la descripción quedaba aplastada en una columna. */}
+        <CardHeader className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <BanknotesIcon className="h-4 w-4 text-muted-foreground" />
               Cobro
             </CardTitle>
-            <CardDescription className="text-xs">
-              {/* Sin repetir los montos del resumen (esa duplicación era lo
-                  que confundía con dos cards): solo el contexto. */}
-              {cancelado
-                ? cobros.length === 0
-                  ? "Vuelo cancelado · sin cobros retenidos."
-                  : "Vuelo cancelado: lo cobrado queda retenido (no hay saldo por cobrar)."
-                : cobros.length === 0
-                  ? "Sin cobros todavía."
-                  : `${cobros.length} ${cobros.length === 1 ? "cobro registrado" : "cobros registrados"}.`}
-            </CardDescription>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+          <CardDescription className="text-xs">
+            {/* Sin repetir los montos del resumen (esa duplicación era lo
+                que confundía con dos cards): solo el contexto. */}
+            {cancelado
+              ? cobros.length === 0
+                ? "Vuelo cancelado · sin cobros retenidos."
+                : "Vuelo cancelado: lo cobrado queda retenido (no hay saldo por cobrar)."
+              : cobros.length === 0
+                ? "Sin cobros todavía."
+                : `${cobros.length} ${cobros.length === 1 ? "cobro registrado" : "cobros registrados"}.`}
+          </CardDescription>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setOpen(true)}
+              className="gap-1.5"
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"}
+            </Button>
             {/* Reembolso: solo oficina y solo cuando ya hay cobros de los
                 cuales devolver. */}
             {puedeReembolsar && cobros.length > 0 && (
               <ReembolsoButton flightId={flightId} flightFolio={flightFolio} />
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setOpen(true)}
-              className="gap-1.5 shrink-0"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"}
-            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -270,15 +297,31 @@ export function CobrosCard({
             aviones={participacionAviones}
             fuente={participacionFuente}
           />
-          {/* Estatus manual + archivo de la factura del servicio. Solo con el
-              API que lo soporta: sin el bloque no se ofrece un control que
-              respondería 404. */}
+          {/* FACTURA (24-sep-2026): primero la burbuja —lo que el operador
+              busca: el número de factura, «pedida» o «Necesito factura»— y
+              DEBAJO el seguimiento manual. Sin el bloque (API previo o sin la
+              migración) la burbuja no se pinta. */}
+          <FacturaServicioBurbuja
+            vueloId={flightId}
+            vueloFolio={flightFolio}
+            vueloEstado={flightEstado}
+            clienteId={clienteId}
+            clienteNombre={clienteNombre}
+            fechaVuelo={fechaVuelo}
+            grupo={grupo}
+            bloque={facturaServicio}
+            rol={rol}
+          />
+          {/* Estatus manual + archivo LEGADO de la factura del servicio. Solo
+              con el API que lo soporta: sin el bloque no se ofrece un control
+              que respondería 404. */}
           {facturaCliente !== undefined && (
             <FacturaClienteBloque
               flightId={flightId}
               facturaCliente={facturaCliente}
               facturado={facturado}
               puedeEditar={puedeFacturar}
+              conRegistro={facturaServicio != null}
             />
           )}
           {/* El método del VUELO no es el de ningún cobro: es la INTENCIÓN
@@ -341,7 +384,7 @@ export function CobrosCard({
                         esReembolso ? "text-red-600 dark:text-red-400" : ""
                       }`}
                     >
-                      {fmtUsd(c.monto)} {c.moneda}
+                      {fmtMonto(c.monto, c.moneda)}
                       {esReembolso && (
                         <Badge
                           variant="outline"
@@ -355,7 +398,7 @@ export function CobrosCard({
                       <CobroConciliadoBadge cobro={c} />
                       {c.moneda === "MXN" && c.tc_usd_mxn && (
                         <span className="text-[10px] text-muted-foreground ml-2 font-normal">
-                          (≈ {fmtUsd(Number(c.monto) / Number(c.tc_usd_mxn))} USD)
+                          (≈ {fmtMonto(Number(c.monto) / Number(c.tc_usd_mxn), "USD")})
                         </span>
                       )}
                     </p>
@@ -390,20 +433,20 @@ export function CobrosCard({
                     {Number(c.comision_banco_monto) > 0 && (
                       <p className="text-[11px] text-amber-600 dark:text-amber-400">
                         Comisión banco {Number(c.comision_banco_pct ?? 0)}% −
-                        {fmtUsd(Number(c.comision_banco_monto))} {c.moneda} · neto al
-                        banco {fmtUsd(Number(c.monto) - Number(c.comision_banco_monto))}{" "}
-                        {c.moneda}
+                        {fmtMonto(Number(c.comision_banco_monto), c.moneda)} · neto al
+                        banco {fmtMonto(Number(c.monto) - Number(c.comision_banco_monto), c.moneda)}
                       </p>
                     )}
+                    {/* Comprobante del cobro (24-sep-2026): verlo o
+                        adjuntarlo DESPUÉS de registrado. */}
+                    <ComprobanteCobro
+                      cobro={c}
+                      url={c.foto_voucher_url ? (voucherUrls[c.foto_voucher_url] ?? null) : null}
+                      flightId={flightId}
+                      puedeAdjuntar={puedeAdjuntarComprobante(rol)}
+                    />
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    {c.foto_voucher_url && voucherUrls[c.foto_voucher_url] && (
-                      <ImagePreview
-                        src={voucherUrls[c.foto_voucher_url]}
-                        alt="Voucher de cobro"
-                        thumbClassName="h-9 w-9 rounded-md object-cover ring-1 ring-border hover:ring-brand-500"
-                      />
-                    )}
                     <p className="text-[11px] text-muted-foreground font-mono">
                       {fmtDate(c.fecha_cobro)}
                     </p>
@@ -458,7 +501,7 @@ export function CobrosCard({
             <DialogTitle>¿Eliminar este cobro?</DialogTitle>
             <DialogDescription>
               {toDelete
-                ? `${fmtUsd(toDelete.monto)} ${toDelete.moneda} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
+                ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
                 : ""}
               Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula
               al instante y esta acción no se puede deshacer.
