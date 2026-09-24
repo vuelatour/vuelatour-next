@@ -63,6 +63,16 @@ describe("parseHorasPactadas", () => {
     expect(parseHorasPactadas("2.333333333").valor).toBe(2.33333333);
   });
 
+  it("decimal sin el cero delante: «.8» y «,8» (pactar menos de la hora mínima)", () => {
+    expect(parseHorasPactadas(".8")).toMatchObject({ valido: true, valor: 0.8 });
+    expect(parseHorasPactadas(",8")).toMatchObject({ valido: true, valor: 0.8 });
+    expect(parseHorasPactadas("0.8")).toMatchObject({ valido: true, valor: 0.8 });
+    expect(parseHorasPactadas(".75")).toMatchObject({ valido: true, valor: 0.75 });
+    // Al empezar a teclear el punto no es error: está a medio escribir.
+    expect(parseHorasPactadas(".")).toMatchObject({ parcial: true, error: null });
+    expect(parseHorasPactadas(",")).toMatchObject({ parcial: true, error: null });
+  });
+
   it("horas:minutos", () => {
     expect(parseHorasPactadas("2:20").valor).toBe(2.33333333);
     expect(parseHorasPactadas("2:30").valor).toBe(2.5);

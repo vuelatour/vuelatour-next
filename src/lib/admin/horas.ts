@@ -174,8 +174,16 @@ const MAL = (error: string): HorasParse => ({
 });
 
 const RE_ENTERO = /^\d+$/;
-const RE_DECIMAL = /^\d+[.,]\d+$/;
-const RE_DECIMAL_PARCIAL = /^\d+[.,]$/;
+/**
+ * Decimal con o sin el cero delante: «0.8», «.8», «,8» y «2,5» (24-sep-2026:
+ * la oficina tecleó «.8» para pactar un vuelo corto en menos de la hora
+ * mínima y el campo lo rechazaba, así que parecía que no se podía pactar a
+ * menos). El motor SÍ acepta un pactado menor a 1 hr: el override manda
+ * sobre la hora mínima.
+ */
+const RE_DECIMAL = /^\d*[.,]\d+$/;
+/** A medio escribir: «2.», «0,» y también el «.» o «,» sueltos del inicio. */
+const RE_DECIMAL_PARCIAL = /^\d*[.,]$/;
 /**
  * `h:mm`. Los minutos se leen SIEMPRE literales, tengan uno o dos dígitos:
  * «2:5» son 2 h **5** min (2.08333333), no 2:50. Es la lectura de un reloj y
