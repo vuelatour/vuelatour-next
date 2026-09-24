@@ -230,7 +230,7 @@ export default async function CalendarPage({
 }
 
 /**
- * Leyenda del calendario = el semáforo de 5 colores (22-sep-2026). Los
+ * Leyenda del calendario = el semáforo de 6 colores (24-sep-2026). Los
  * renglones y la nota viven en `lib/admin/calendario-semaforo.ts`; aquí solo
  * se agrega el aviso de push, que no habla de colores.
  */

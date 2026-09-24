@@ -1,19 +1,29 @@
 /**
- * Semáforo del calendario: CINCO colores y nada más (22-sep-2026).
+ * Semáforo del calendario: SEIS colores y nada más (24-sep-2026).
  *
- * Pedido textual del cliente: «queremos hacer un cambio en el semáforo del
- * calendario, tanto en este calendario del sistema web y la app como en
- * google calendar con la sincronización, para que en los calendarios no se
- * vean tantos colores […] los colores que tiene cada avión configurados los
- * seguiremos respetando principalmente en los reportes del balance individual
- * y general en los excel que se generan, y es que en realidad los colores son
- * para el reporte de excel nada más: Gris: Tentativo · Verde: Confirmado ·
- * Amarillo: Permiso o asunto pendiente · Rojo: Cancelado · Azul: Descanso 💤».
+ * Pedido textual del cliente (24-sep-2026), sobre el semáforo de 5 del
+ * 22-sep: «Ale quiere cambiar el color del descanso y agregar el de cobrado
+ * (este me imagino se cambiaría en automático cuando ya esté cobrado). Para
+ * que no haya confusiones pongo la listita: Tentativo - Gris · Pendiente
+ * (permiso) - Amarillo · Confirmado - Verde · Pagado - Azul · Cancelado -
+ * Rojo · Descanso - Morado».
  *
- * Antes convivían OCHO colores (vuelo propio = color del avión, evento,
- * tentativo, sin asignar, externo, descanso, permiso pendiente, cancelado) y
- * el calendario se leía como un mosaico: el color del avión decía QUÉ avión,
- * no CÓMO va el vuelo, que es lo que la oficina mira de un vistazo.
+ * Qué cambió respecto al 22-sep:
+ * - **Pagado (azul `#3B82F6`)** es nuevo: el vuelo quedó COBRADO COMPLETO
+ *   (`vuelo.cobrado`, que el API mantiene solo al registrar/borrar cobros).
+ *   Se pinta sin que nadie haga nada y regresa a verde si se borra o reembolsa
+ *   un cobro. Un vuelo en $0 (cliente interno) nunca es «pagado».
+ * - **El descanso pasó de azul a MORADO (`#8B5CF6`)**: el azul ahora es del
+ *   pagado. OJO: `#8B5CF6` era el morado del viejo «sin asignar» (retirado el
+ *   22-sep); hoy SOLO significa descanso.
+ * - Precedencia de un vuelo o tramo (la decide el API, no el panel):
+ *   cancelado > tentativo > pendiente > PAGADO > confirmado. Un pagado con
+ *   permiso pendiente se ve AMARILLO hasta resolver el permiso.
+ *
+ * Antes del 22-sep convivían OCHO colores (el del avión entre ellos) y el
+ * calendario se leía como un mosaico: el color del avión decía QUÉ avión, no
+ * CÓMO va el vuelo, que es lo que la oficina mira de un vistazo. El color del
+ * avión sigue fuera de los calendarios: vive solo en los Excel de balance.
  *
  * QUIÉN DECIDE EL COLOR: el API (`colores-calendario.util.ts`), que lo manda
  * en `color` de cada evento de `GET /v1/calendar` y lo traduce al colorId de
@@ -25,30 +35,44 @@
 
 /** Gris: tentativo (todo estado anterior a CONFIRMADO: reserva, solicitud…). */
 export const COLOR_TENTATIVO = "#64748B";
-/** Verde: confirmado, en vuelo, completado — y los eventos de la flota. */
-export const COLOR_CONFIRMADO = "#22C55E";
-/** Amarillo: permiso de pista o asunto pendiente (incluye mantenimientos). */
+/** Amarillo: permiso de pista pendiente, falta avión/piloto, o mantenimiento. */
 export const COLOR_PENDIENTE = "#F59E0B";
+/** Verde: confirmado, en vuelo, completado sin cobrar completo — y los eventos de la flota. */
+export const COLOR_CONFIRMADO = "#22C55E";
+/** Azul: pagado — el vuelo quedó cobrado completo (automático, `vuelo.cobrado`). */
+export const COLOR_PAGADO = "#3B82F6";
 /** Rojo: cancelado (en Google el evento se borra, no se pinta). */
 export const COLOR_CANCELADO = "#EF4444";
-/** Azul: descanso de piloto. */
-export const COLOR_DESCANSO = "#3B82F6";
+/** Morado: descanso de piloto. */
+export const COLOR_DESCANSO = "#8B5CF6";
 
 export type ClaveSemaforo =
   | "tentativo"
-  | "confirmado"
   | "pendiente"
+  | "confirmado"
+  | "pagado"
   | "cancelado"
   | "descanso";
 
 /** Hex por clave del semáforo (mismo valor que los exports de arriba). */
 export const COLOR_SEMAFORO: Record<ClaveSemaforo, string> = {
   tentativo: COLOR_TENTATIVO,
-  confirmado: COLOR_CONFIRMADO,
   pendiente: COLOR_PENDIENTE,
+  confirmado: COLOR_CONFIRMADO,
+  pagado: COLOR_PAGADO,
   cancelado: COLOR_CANCELADO,
   descanso: COLOR_DESCANSO,
 };
+
+/**
+ * Tooltip base del renglón «Pendiente (permiso)»: COPIA EXACTA de
+ * `AYUDA_PENDIENTE` del API (`colores-calendario.util.ts`), que la app también
+ * usa tal cual (`kLeyendaCalendario`). El amarillo no es solo el permiso: también
+ * se prende cuando a un vuelo CONFIRMADO le falta avión o piloto. Si allá cambia
+ * la redacción, aquí también (lo vigila `calendario-semaforo.test.ts`).
+ */
+export const AYUDA_PENDIENTE =
+  "Permiso de pista pendiente. También se pinta así el vuelo confirmado que todavía no tiene avión o piloto asignado.";
 
 export interface ItemSemaforo {
   clave: ClaveSemaforo;
@@ -60,8 +84,9 @@ export interface ItemSemaforo {
 }
 
 /**
- * La leyenda: CINCO renglones, en este orden. Toda leyenda de calendario del
- * panel se pinta desde aquí (hoy: `components/admin/calendar/leyenda-semaforo.tsx`).
+ * La leyenda: SEIS renglones, en el orden de la «listita» del cliente. Toda
+ * leyenda de calendario del panel se pinta desde aquí (hoy:
+ * `components/admin/calendar/leyenda-semaforo.tsx`).
  */
 export const SEMAFORO_CALENDARIO: readonly ItemSemaforo[] = [
   {
@@ -69,21 +94,29 @@ export const SEMAFORO_CALENDARIO: readonly ItemSemaforo[] = [
     etiqueta: "Tentativo",
     color: COLOR_TENTATIVO,
     titulo:
-      "Espacio apartado que todavía no se confirma (reserva o solicitud sin confirmar). Se confirma desde el detalle del vuelo.",
+      "Espacio apartado que todavía no se confirma (reserva, solicitud o cotización sin confirmar). Se confirma desde el detalle del vuelo.",
+  },
+  {
+    clave: "pendiente",
+    etiqueta: "Pendiente (permiso)",
+    color: COLOR_PENDIENTE,
+    // Misma redacción que el API y la app (`AYUDA_PENDIENTE`) + lo que solo
+    // se ve en el panel: el mantenimiento y la precedencia sobre el pagado.
+    titulo: `${AYUDA_PENDIENTE} También los servicios de mantenimiento (🔧) por hacer. Un vuelo ya pagado se queda en amarillo hasta resolver el pendiente.`,
   },
   {
     clave: "confirmado",
     etiqueta: "Confirmado",
     color: COLOR_CONFIRMADO,
     titulo:
-      "Vuelo confirmado, en vuelo o completado. También las citas y eventos de la flota (📌), que son agenda firme.",
+      "Vuelo confirmado, en vuelo o completado que todavía no está cobrado completo. También las citas y eventos de la flota (📌), que son agenda firme.",
   },
   {
-    clave: "pendiente",
-    etiqueta: "Permiso o asunto pendiente",
-    color: COLOR_PENDIENTE,
+    clave: "pagado",
+    etiqueta: "Pagado",
+    color: COLOR_PAGADO,
     titulo:
-      "Falta algo antes de volar: permiso de pista sin emitir, avión o piloto sin asignar, o un servicio de mantenimiento (🔧) por hacer.",
+      "Vuelo cobrado completo. Cambia a azul solo, al registrar el cobro que lo liquida; si se borra o se reembolsa un cobro, regresa a verde. Un vuelo en $0 (cliente interno) nunca se pinta de pagado.",
   },
   {
     clave: "cancelado",

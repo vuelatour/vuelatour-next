@@ -222,8 +222,9 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
       href={eventHref(ev)}
       title={ev.title}
       className={`block rounded px-1.5 py-1 text-[11px] leading-tight truncate hover:opacity-90 transition-opacity ${esCancelado ? "line-through opacity-80" : ""}`}
-      // `ev.color` = semáforo del API (5 colores desde el 22-sep-2026); el
-      // texto se oscurece solo cuando el fondo es claro (verde y amarillo).
+      // `ev.color` = semáforo del API (6 colores desde el 24-sep-2026: el
+      // azul «Pagado» lo decide el API con `vuelo.cobrado`); el texto se
+      // oscurece solo cuando el fondo no alcanza contraste con blanco.
       style={{ backgroundColor: ev.color, color: textOnColor(ev.color) }}
     >
       {esCancelado ? "✕ " : esRegreso ? "↩ " : ev.estado_permiso === "pendiente" ? "⚠ " : ""}
@@ -342,6 +343,11 @@ function DayEvent({ ev, ctx }: { ev: CalendarEvent; ctx: EventosCtx }) {
             viejo «Sin asignar» ya no existe en ningún calendario. */}
         {ev.sin_asignar && (
           <p className="text-amber-600 dark:text-amber-400">⚠ Falta asignar</p>
+        )}
+        {/* Pagado (24-sep-2026): explica el azul — o, si un pendiente o el
+            cancelado le ganaron al color, deja claro que el dinero ya entró. */}
+        {ev.pagado && (
+          <p className="text-blue-600 dark:text-blue-400">✓ Pagado (cobrado completo)</p>
         )}
       </div>
     </Link>

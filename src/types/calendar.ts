@@ -1,7 +1,8 @@
 export interface CalendarEvent {
   id: string;
   /** "descanso" = descanso de piloto; "evento" = no-vuelo (lavado, trámite);
-   *  "mantenimiento" = servicio con fecha (PROGRAMADO ámbar / EN_TALLER rojo). */
+   *  "mantenimiento" = servicio con fecha (siempre ámbar desde el 22-sep-2026,
+   *  programado o en taller). */
   tipo_evento?: "vuelo" | "descanso" | "evento" | "mantenimiento";
   /** Id del registro piloto_descanso (para quitarlo desde el calendario). */
   descanso_id?: string;
@@ -25,6 +26,8 @@ export interface CalendarEvent {
   estado_permiso: "no_aplica" | "pendiente" | "emitido" | null;
   es_externo: boolean;
   title: string;
+  /** Hex del semáforo YA RESUELTO por el API (6 colores desde el 24-sep-2026,
+   *  ver `lib/admin/calendario-semaforo.ts`). El panel lo pinta tal cual. */
   color: string;
   cliente_id: string;
   cliente_nombre: string | null;
@@ -42,6 +45,14 @@ export interface CalendarEvent {
   tramo?: "ida" | "regreso";
   /** Vuelo confirmado al que aún le falta avión o piloto. */
   sin_asignar?: boolean;
+  /**
+   * Solo eventos de vuelo (24-sep-2026, aditivo): el vuelo quedó COBRADO
+   * COMPLETO (`vuelo.cobrado`, que el API mantiene solo con cada cobro). Es la
+   * razón del azul «Pagado» — pero el `color` ya viene resuelto y puede no ser
+   * azul (cancelado, tentativo o con permiso pendiente ganan). Ausente = API
+   * viejo; el panel lo trata como «no pagado».
+   */
+  pagado?: boolean;
   /**
    * Solo tipo_evento "evento" (3-sep-2026): dispositivos push registrados
    * del responsable. 0 = no tiene la app con avisos (oficina debe avisarle

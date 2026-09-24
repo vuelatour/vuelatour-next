@@ -5,8 +5,11 @@ import {
 } from "@/lib/admin/calendario-semaforo";
 
 /**
- * Leyenda ÚNICA del calendario (22-sep-2026): los CINCO colores del semáforo
- * y la nota de dónde quedó el color de cada avión. Los renglones salen de
+ * Leyenda ÚNICA del calendario: los SEIS colores del semáforo (24-sep-2026:
+ * Tentativo · Pendiente (permiso) · Confirmado · Pagado · Cancelado ·
+ * Descanso 💤) y la nota de dónde quedó el color de cada avión. El tooltip de
+ * cada renglón (`title`) dice qué significa; el de «Pendiente (permiso)»
+ * aclara que también cubre vuelos sin avión o sin piloto. Los renglones salen de
  * `lib/admin/calendario-semaforo.ts` — ninguna pantalla vuelve a escribir un
  * hex ni un texto de leyenda a mano.
  *
