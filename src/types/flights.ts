@@ -300,6 +300,15 @@ export interface FlightCobro {
       API previo (no se pinta badge; jamás se deduce en el panel). */
   conciliado?: boolean;
   movimiento_bancario_id?: string | null;
+  /**
+   * ANTICIPO (24-sep-2026, ADITIVOS): el cobro salió de un anticipo
+   * registrado en Ingresos (ING-n). Su dinero NO se edita aquí: se desaplica
+   * (el monto regresa al saldo del anticipo) y se vuelve a aplicar. Ausente =
+   * API previo o sin la migración.
+   */
+  anticipo?: { ingreso_id: string; etiqueta: string } | null;
+  /** Por qué está conciliado: liga directa, la del sobre, o la del anticipo. */
+  conciliado_via?: "DIRECTO" | "SOBRE" | "ANTICIPO" | null;
 }
 
 /** Resumen del sobre de grupo que viaja en cada parte (aditivo del API). */

@@ -15,6 +15,8 @@ import {
 import { textoFaltanteGasto } from "@/lib/admin/conciliacion-parcial";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import { etiquetaCategoriaIngreso, etiquetaIngreso } from "@/lib/admin/categorias-ingreso";
+import { fmtMonto } from "@/lib/format";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { MovimientoBancario } from "@/types/conciliacion";
 
@@ -209,6 +211,27 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
             ) : (
               <span className="text-sm text-emerald-600">Cobro de vuelo</span>
             )
+          ) : m.conciliado && m.ingreso_id ? (
+            // ABONO conciliado contra un INGRESO registrado (otro ingreso o
+            // anticipo, 24-sep-2026): se verifica en Ingresos.
+            <Link
+              href={`/admin/ingresos?ingreso=${m.ingreso_id}`}
+              className="block text-sm text-emerald-600 hover:underline"
+              title="Ver el ingreso con el que se concilió"
+            >
+              Ingreso {m.ingreso ? etiquetaIngreso(m.ingreso.folio) : ""}
+              {m.ingreso && (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {etiquetaCategoriaIngreso(m.ingreso.categoria)}
+                </span>
+              )}
+              {m.ingreso && (
+                <span className="block max-w-[220px] truncate text-[10px] text-muted-foreground">
+                  {m.ingreso.descripcion} · {fmtMonto(m.ingreso.monto, m.ingreso.moneda)}
+                </span>
+              )}
+            </Link>
           ) : m.conciliado && m.clasificacion_id ? (
             // Conciliado por CLASIFICACIÓN: no corresponde a ningún vuelo
             // (comisión del banco, impuestos, personal…).
@@ -296,7 +319,7 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
       searchText={(m) =>
         `${m.descripcion ?? ""} ${m.monto} ${m.referencia ?? ""} ${
           m.cobro_grupo ? folioTexto(m.cobro_grupo.grupo_folio) : ""
-        } ${cuentas?.[m.cuenta_bancaria_id] ?? ""} ${
+        } ${m.ingreso ? etiquetaIngreso(m.ingreso.folio) : ""} ${cuentas?.[m.cuenta_bancaria_id] ?? ""} ${
           motivoPendienteDe(m)?.etiqueta ?? ""
         }`
       }

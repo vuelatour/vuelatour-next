@@ -25,6 +25,7 @@ import {
   ArchiveBoxIcon,
   WalletIcon,
   ArrowsRightLeftIcon,
+  ArrowTrendingUpIcon,
   ClockIcon as GaugeIconAlias,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
@@ -68,6 +69,15 @@ export const NAV_GROUPS: NavGroup[] = [
       // Tablero del día: cada escala espera su tacómetro; lo vencido se
       // deduce solo y oficina confirma/ajusta — la operación no se detiene.
       { label: "Tacómetros en vivo", href: "/admin/taco-live", icon: GaugeIconAlias },
+      {
+        // TODO el dinero que entra (24-sep-2026): cobros de vuelos (solo
+        // lectura), anticipos, otros ingresos y la conciliación de ABONOS.
+        // Justo antes de «Gastos» y con sus mismos roles.
+        label: "Ingresos",
+        href: "/admin/ingresos",
+        icon: ArrowTrendingUpIcon,
+        roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
+      },
       {
         label: "Gastos",
         href: "/admin/expenses",

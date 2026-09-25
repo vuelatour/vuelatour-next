@@ -24,6 +24,13 @@ vi.mock("next/navigation", () => ({
 // actions dentro): aquí solo importa la LISTA.
 vi.mock("../cobro-form-sheet", () => ({ CobroFormSheet: () => null }));
 vi.mock("../reembolso-dialog", () => ({ ReembolsoButton: () => null }));
+// Ingresos (24-sep-2026): banner de anticipos y «Desaplicar» (server actions).
+vi.mock("@/app/admin/ingresos/actions", () => ({
+  anticiposDeClienteAction: async () => ({ ok: true, data: [] }),
+  desaplicarAnticipoAction: async () => ({ ok: true }),
+  aplicarAnticipoAction: async () => ({ ok: true }),
+  vuelosCandidatosAction: async () => ({ ok: true, data: [] }),
+}));
 vi.mock("@/app/admin/flights/actions", () => ({
   deleteCobroAction: async () => ({ ok: true }),
   solicitarFacturaAction: async () => ({ ok: true }),

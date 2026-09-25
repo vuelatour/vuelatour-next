@@ -1,3 +1,9 @@
+import type {
+  CandidatoIngresoAbono,
+  CategoriaIngreso,
+  MonedaIngreso,
+} from "@/types/ingresos";
+
 export type TipoMovimientoBancario = "CARGO" | "ABONO";
 
 export interface MovimientoGasto {
@@ -63,6 +69,18 @@ export interface MovimientoBancario {
   /** Sobre de grupo conciliado (ABONOS): detalle + navegación al grupo.
       Aditivo; null cuando la liga es por cobro de vuelo o gasto. */
   cobro_grupo?: SobreConciliacion | null;
+  /** INGRESOS (24-sep-2026, ADITIVOS): ABONO conciliado contra un ingreso
+      registrado (otro ingreso o anticipo), excluyente con gasto/cobro/sobre/
+      clasificación. Ausentes = API previo o sin la migración. */
+  ingreso_id?: string | null;
+  ingreso?: {
+    id: string;
+    folio: number;
+    categoria: CategoriaIngreso;
+    monto: number;
+    moneda: MonedaIngreso;
+    descripcion: string;
+  } | null;
   /** POR QUÉ sigue pendiente (ADITIVOS del 15-sep-2026, siempre opcionales):
       `motivo_pendiente` = código del API ('SIN_CANDIDATOS' | 'SE_PUEDE_CRUZAR' | 'AMBIGUO' |
       'SOLO_PARCIAL' | 'GASTO_YA_CUBIERTO' | 'FUERA_DE_VENTANA' |
@@ -278,6 +296,10 @@ export interface CandidatosCobroResponse {
   candidatos: CandidatoCobro[];
   /** Cuántos cuadran exacto (dif_monto = 0). */
   exactos: number;
+  /** INGRESOS registrados candidatos (24-sep-2026, ADITIVO): vivos, con
+      cuenta, sin movimiento, misma moneda; `otra_cuenta` = registrado en una
+      cuenta distinta a la del abono (no se liga hasta corregirlo). */
+  ingresos?: CandidatoIngresoAbono[];
 }
 
 export interface ConciliacionResumenCuenta {
@@ -439,6 +461,10 @@ export interface CobroSinBanco extends PaywiseCobro {
   metodo_label: string;
   /** monto − comisión registrada. */
   neto: number;
+  /** Cobro que salió de un ANTICIPO aún sin conciliar (24-sep-2026,
+      ADITIVO): se concilia el anticipo (Ingresos → Por conciliar), nunca el
+      cobro — el API rechaza ligarlo (409 COBRO_DE_ANTICIPO). */
+  anticipo?: { ingreso_id: string; etiqueta: string } | null;
 }
 
 export interface CobrosSinBancoResponse {

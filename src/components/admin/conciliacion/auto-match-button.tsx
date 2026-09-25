@@ -44,6 +44,11 @@ interface AutoMatchButtonProps {
   cuentaId?: string;
   desde?: string;
   hasta?: string;
+  /**
+   * Solo ABONOS (Ingresos → «Por conciliar», 24-sep-2026) o solo CARGOS.
+   * Sin él se cruza todo, como siempre. Viaja como `tipo` al API.
+   */
+  tipo?: "CARGO" | "ABONO";
 }
 
 /**
@@ -60,7 +65,8 @@ interface AutoMatchButtonProps {
  * candidato, con error). Nunca liga lo ambiguo: eso se vincula a mano o con
  * la sugerencia de la IA.
  */
-export function AutoMatchButton({ cuentas, cuentaId, desde, hasta }: AutoMatchButtonProps) {
+export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoMatchButtonProps) {
+  const soloAbonos = tipo === "ABONO";
   const router = useRouter();
   const hoy = todayCancun();
   const [open, setOpen] = useState(false);
@@ -134,6 +140,7 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta }: AutoMatchBu
         ...(cuenta ? { cuenta_bancaria_id: cuenta } : {}),
         ...(ini ? { desde: ini } : {}),
         ...(fin ? { hasta: fin } : {}),
+        ...(tipo ? { tipo } : {}),
       }).catch((err: unknown) => ({
         ok: false,
         error: err instanceof Error ? err.message : "No se pudo cruzar",
@@ -202,12 +209,13 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta }: AutoMatchBu
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Volver a cruzar los pendientes</DialogTitle>
+            <DialogTitle>
+              {soloAbonos ? "Volver a cruzar los abonos pendientes" : "Volver a cruzar los pendientes"}
+            </DialogTitle>
             <DialogDescription>
-              Vuelve a intentar el cruce automático de los movimientos que siguen
-              pendientes en el rango: por monto y fecha, terminación de tarjeta y
-              descripción del banco. Lo que tenga más de un candidato NO se liga
-              solo: se queda para vincular a mano.
+              {soloAbonos
+                ? "Vuelve a intentar el cruce automático de los abonos del banco que siguen sin identificar: contra los cobros de vuelos y los ingresos registrados (por monto exacto y, si hay varios, por el nombre del cliente en la descripción), y clasifica los traspasos entre cuentas. Lo que tenga más de un candidato NO se liga solo: se queda para vincular a mano."
+                : "Vuelve a intentar el cruce automático de los movimientos que siguen pendientes en el rango: por monto y fecha, terminación de tarjeta y descripción del banco. Lo que tenga más de un candidato NO se liga solo: se queda para vincular a mano."}
             </DialogDescription>
           </DialogHeader>
 
@@ -274,7 +282,7 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta }: AutoMatchBu
                 )}
                 <p className="text-[11px] text-muted-foreground">
                   Los que siguen pendientes dicen por qué en la columna
-                  «Conciliación» (sin candidato, ambiguo entre N…).
+                  {soloAbonos ? " «Motivo»" : " «Conciliación»"} (sin candidato, ambiguo entre N…).
                 </p>
               </div>
             )}

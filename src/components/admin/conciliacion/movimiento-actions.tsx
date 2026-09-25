@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
+  ArrowTrendingUpIcon,
   LinkIcon,
   EllipsisHorizontalIcon,
+  EyeIcon,
   SparklesIcon,
   TagIcon,
   XMarkIcon,
@@ -52,6 +55,7 @@ import {
   sugerirMovimientoAction,
   type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
+import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import {
   descripcionCandidatoGasto,
@@ -129,6 +133,10 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   const vinculadoACobro = movimiento.cobro_id != null || vinculadoASobre;
   const vinculadoAGastoOCobro = movimiento.gasto_id != null || vinculadoACobro;
   const clasificado = movimiento.clasificacion_id != null;
+  // ABONO conciliado contra un INGRESO registrado (24-sep-2026): se suelta
+  // con su propia ruta (`PATCH movimientos/:id/ingreso`), no con la del cobro.
+  const vinculadoAIngreso = movimiento.ingreso_id != null;
+  const router = useRouter();
 
   // Clasificación "sin vuelo": elegir del catálogo o crear una nueva en el
   // mismo diálogo, con notas. Concilia el movimiento sin gasto/cobro.
@@ -348,6 +356,14 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
 
   const desvincular = () => {
     startTransition(async () => {
+      if (vinculadoAIngreso) {
+        const ri = await ligarAbonoIngresoAction(movimiento.id, null);
+        if (ri.ok) {
+          toast.success("Ingreso desvinculado: el abono vuelve a quedar pendiente");
+          setConfirmarDesvincular(false);
+        } else toast.error(ri.error ?? "Error");
+        return;
+      }
       const r = vinculadoACobro
         ? await linkMovimientoCobroAction(movimiento.id, null)
         : await linkMovimientoAction(movimiento.id, null);
@@ -432,15 +448,32 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <DropdownMenuTrigger className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <EllipsisHorizontalIcon className="h-4 w-4" />
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {vinculadoAGastoOCobro ? (
+          {vinculadoAIngreso ? (
+            <>
+              <DropdownMenuItem
+                onClick={() => router.push(`/admin/ingresos?ingreso=${movimiento.ingreso_id}`)}
+                className="cursor-pointer gap-2"
+              >
+                <EyeIcon className="h-4 w-4" />
+                Ver el ingreso
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setConfirmarDesvincular(true)}
+                className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+              >
+                <XMarkIcon className="h-4 w-4" />
+                Desvincular ingreso
+              </DropdownMenuItem>
+            </>
+          ) : vinculadoAGastoOCobro ? (
             <DropdownMenuItem
               onClick={() => setConfirmarDesvincular(true)}
-              className="gap-2 text-destructive focus:text-destructive"
+              className="cursor-pointer gap-2 text-destructive focus:text-destructive"
             >
               <XMarkIcon className="h-4 w-4" />
               {vinculadoASobre
@@ -451,13 +484,13 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
             </DropdownMenuItem>
           ) : clasificado ? (
             <>
-              <DropdownMenuItem onClick={abrirClasificar} className="gap-2">
+              <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
                 <TagIcon className="h-4 w-4" />
                 Editar clasificación / notas
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setConfirmarQuitarClasif(true)}
-                className="gap-2 text-destructive focus:text-destructive"
+                className="cursor-pointer gap-2 text-destructive focus:text-destructive"
               >
                 <XMarkIcon className="h-4 w-4" />
                 Quitar clasificación
@@ -465,7 +498,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
             </>
           ) : (
             <>
-              <DropdownMenuItem onClick={() => abrirVincular()} className="gap-2">
+              <DropdownMenuItem onClick={() => abrirVincular()} className="cursor-pointer gap-2">
                 <LinkIcon className="h-4 w-4" />
                 {esAbono ? "Vincular cobro" : "Vincular gasto"}
               </DropdownMenuItem>
@@ -473,15 +506,39 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                   terminación de tarjeta, monto y fecha): abre el mismo
                   diálogo con el candidato preseleccionado. Nunca liga sola. */}
               {!esAbono && (
-                <DropdownMenuItem onClick={() => abrirVincular(true)} className="gap-2">
+                <DropdownMenuItem onClick={() => abrirVincular(true)} className="cursor-pointer gap-2">
                   <SparklesIcon className="h-4 w-4" />
                   Sugerir con IA
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={abrirClasificar} className="gap-2">
+              <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
                 <TagIcon className="h-4 w-4" />
                 Clasificar (no es de un vuelo)
               </DropdownMenuItem>
+              {/* Un ABONO sin identificar se resuelve mejor en Ingresos →
+                  «Por conciliar»: ahí están el anticipo, otro ingreso, «Es el
+                  pago de un vuelo» y la IA de abonos (24-sep-2026). */}
+              {esAbono && (
+                <DropdownMenuItem
+                  // Con el DÍA y la CUENTA del abono: «Por conciliar» abre por
+                  // default en el mes corriente y un abono de otro mes no
+                  // aparecía (el operador creía que ya no estaba pendiente).
+                  onClick={() =>
+                    router.push(
+                      `/admin/ingresos?${new URLSearchParams({
+                        tab: "por-conciliar",
+                        desde: movimiento.fecha.slice(0, 10),
+                        hasta: movimiento.fecha.slice(0, 10),
+                        cuenta: movimiento.cuenta_bancaria_id,
+                      }).toString()}`,
+                    )
+                  }
+                  className="cursor-pointer gap-2"
+                >
+                  <ArrowTrendingUpIcon className="h-4 w-4" />
+                  Conciliar en Ingresos
+                </DropdownMenuItem>
+              )}
             </>
           )}
         </DropdownMenuContent>
@@ -840,19 +897,27 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {vinculadoASobre
-                ? "¿Desvincular este cobro de grupo?"
-                : vinculadoACobro
-                  ? "¿Desvincular este cobro?"
-                  : "¿Desvincular este gasto?"}
+              {vinculadoAIngreso
+                ? "¿Desvincular este ingreso?"
+                : vinculadoASobre
+                  ? "¿Desvincular este cobro de grupo?"
+                  : vinculadoACobro
+                    ? "¿Desvincular este cobro?"
+                    : "¿Desvincular este gasto?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               El movimiento bancario volverá a quedar pendiente de conciliar y el{" "}
-              {vinculadoASobre ? "sobre del grupo" : vinculadoACobro ? "cobro" : "gasto"}{" "}
+              {vinculadoAIngreso
+                ? "ingreso"
+                : vinculadoASobre
+                  ? "sobre del grupo"
+                  : vinculadoACobro
+                    ? "cobro"
+                    : "gasto"}{" "}
               quedará libre para vincularse con otro movimiento.
               {vinculadoASobre &&
                 " Las partes por avión del sobre dejan de verse como conciliadas."}
-              {!vinculadoACobro &&
+              {!vinculadoACobro && !vinculadoAIngreso &&
                 " Si el gasto se pagó en varios cargos, los demás siguen ligados: el gasto queda como pago parcial hasta que lo cubran."}
             </AlertDialogDescription>
           </AlertDialogHeader>

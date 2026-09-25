@@ -62,6 +62,8 @@ const CATEGORIA_LABELS: Record<string, string> = {
   COMPRA_PDF: "PDF de compra",
   ESTADO_CUENTA_PDF: "Estado de cuenta PDF",
   CONCILIACION_SUGERIR: "Sugerencia de conciliación",
+  // «Sugerir con IA» de Ingresos → Por conciliar (24-sep-2026).
+  CONCILIACION_ABONOS_SUGERIR: "Sugerencia de ingresos (abonos)",
   GASTO_VUELO_SUGERIR: "Gasto→vuelo",
   VENCIMIENTO_DOC: "Documento de vencimiento",
 };

@@ -35,12 +35,33 @@ const COLUMNS: DataTableColumn<CobroSinBanco>[] = [
         c.tipo === "SOBRE_GRUPO"
           ? `Grupo ${folioTexto(c.grupo_folio ?? null)}`
           : `Vuelo #${c.folio ?? "—"}`;
-      return href ? (
+      const liga = href ? (
         <Link href={href} className="text-brand-600 hover:underline">
           {texto}
         </Link>
       ) : (
         texto
+      );
+      // Cobro que salió de un ANTICIPO sin conciliar (24-sep-2026): el API no
+      // deja ligarlo (409 COBRO_DE_ANTICIPO); se concilia el ANTICIPO en
+      // Ingresos → Por conciliar. Sale aquí para que el pre-cierre siga
+      // avisando del dinero que nadie ha visto en el banco.
+      return c.anticipo ? (
+        <span className="block">
+          {liga}
+          <Link
+            // Al DETALLE del anticipo (no a «Por conciliar» a secas, que abre
+            // en el mes corriente y escondía el abono de otro mes): ahí se ve
+            // el anticipo y su liga lleva a «Por conciliar» con SU ventana.
+            href={`/admin/ingresos?tab=anticipos&ingreso=${c.anticipo.ingreso_id}`}
+            className="mt-0.5 block w-fit cursor-pointer rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 text-[10px] font-medium text-sky-700 hover:bg-sky-500/20 dark:text-sky-300"
+            title="Este cobro salió de un anticipo: se concilia el anticipo con su abono del banco (Ingresos → Por conciliar), no el cobro."
+          >
+            Del anticipo {c.anticipo.etiqueta}
+          </Link>
+        </span>
+      ) : (
+        liga
       );
     },
   },
@@ -102,7 +123,7 @@ export function CobrosSinBancoTable({ rows }: { rows: CobroSinBanco[] }) {
       columns={COLUMNS}
       rowKey={(c) => `${c.tipo}:${c.id}`}
       searchText={(c) =>
-        `${c.folio ?? ""} ${c.grupo_folio ?? ""} ${c.cliente ?? ""} ${c.metodo_label ?? ""} ${c.referencia ?? ""} ${c.monto}`
+        `${c.folio ?? ""} ${c.grupo_folio ?? ""} ${c.cliente ?? ""} ${c.metodo_label ?? ""} ${c.referencia ?? ""} ${c.monto} ${c.anticipo?.etiqueta ?? ""}`
       }
       searchPlaceholder="Buscar cobro (folio, cliente, método, referencia, monto)…"
       syncId="csb"

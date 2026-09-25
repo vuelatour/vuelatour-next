@@ -3133,3 +3133,146 @@ brincar a la siguiente». Contrato con el API: `GET /v1/quotes/:id/vecinos`
   las flechas y el CABLEADO lista → detalle → workspace → /revise).
 - **Orden de deploy**: API antes que panel (con un API previo el detalle
   recibe 404 en `vecinos` y simplemente no pinta flechas).
+
+## Ingresos (24-sep-2026)
+
+Pedido del cliente: «faltarían las categorías de "ingresos" de igual manera
+de como están ya ahorita las de "gastos" … •Otros Ingresos •Anticipos y
+depósitos •Ingresos en cuentas de banco». Usuario: «que tengamos un espacio
+para ingresos como en Gastos y podamos conciliar como los gastos pero ahora
+los ingresos subiendo un estado de cuenta y con IA marcar los que sí empatan
+con los cobros de los vuelos … y la sección de ingresos para registrar otros
+ingresos». Contrato INGRESOS con el API 0.0.34 (migración
+`20260924000004_ingresos.sql`) y pyservices (`/conciliacion/sugerir-abonos`).
+
+- **Menú**: «Ingresos» (`/admin/ingresos`, ícono `ArrowTrendingUpIcon`) va
+  JUSTO ANTES de «Gastos» con sus MISMOS roles (ADMIN, COORDINADOR,
+  FACTURACION). Congelado en `lib/admin/__tests__/ingresos-ui.test.ts`.
+- **Reglas de dinero (las decide el API, el panel solo pinta)**:
+  - Tabla nueva `ingreso` para lo que NO es cobro de vuelo. Los cobros de
+    vuelo se siguen registrando en el vuelo; en Ingresos se LISTAN en solo
+    lectura.
+  - **Anticipo** = dinero de un cliente ANTES de que exista su vuelo
+    (`ANTICIPO_CLIENTE`, fuera de resultados). «Aplicar a vuelo» crea un
+    cobro NORMAL del vuelo ligado al anticipo (cuenta por `cobrosEnUsd`:
+    bandera cobrado, calendario «Pagado», reparto). Su saldo lo garantiza un
+    trigger; la liga cobro↔anticipo es INMUTABLE (para corregir: desaplicar y
+    volver a aplicar).
+  - **Un ingreso de resultado nunca es el pago de un vuelo**: vuelo solo en
+    «Reembolsos y devoluciones recibidos»; desde un abono la categoría llega
+    VACÍA si el API no sugiere una (jamás «Otros ingresos» por default) y el
+    409 `ABONO_TIENE_COBRO_CANDIDATO` ofrece «Vincular a este cobro» antes de
+    «No, es otro dinero: registrar de todos modos».
+  - El resumen suma montos NOMINALES por moneda (nunca convierte). El total se
+    rotula «Dinero que entró» (no es utilidad: incluye anticipos y
+    préstamos) y los cobros que salieron de un anticipo NO se suman otra vez.
+- **Fuentes únicas**: tipos `types/ingresos.ts` (COPIA EXACTA de
+  `ingresos.types.ts` del API, §4 del contrato); categorías
+  `lib/admin/categorias-ingreso.ts` (MISMOS nombres de export y textos que
+  `common/categoria-ingreso.util.ts` del API; el test congela la tabla
+  literal y los nombres); lógica PURA `lib/admin/ingresos-ui.ts` (pestañas y
+  roles, filtros de la URL validados, `hrefIngresos`, queries EXACTAS por
+  pestaña —el API corre con `forbidNonWhitelisted`—, badges
+  `etiquetaEstadoConciliacion`, motivos `etiquetaMotivoAbono`,
+  `mensajeErrorIngreso` con el fallback por code de la tabla §10, el
+  formulario (`formularioDesdeAbono`, `erroresFormularioIngreso`,
+  `datosAltaDeFormulario`, `cambiosDeEdicion`), `montoDefaultAplicacion`, los
+  textos de confirmación, `preseleccionada`, `aceptarEnLote` y la bitácora).
+  Ningún componente redacta estos textos a mano.
+- **Red**: lecturas del server en `lib/api/ingresos-server.ts` (anti-cap:
+  pagina de 200 en 200 hasta `total`, tope 5,000, `huboCorte` se AVISA); el
+  ALTA y la EDICIÓN con comprobante van del NAVEGADOR DIRECTO al API
+  (`lib/api/ingresos-browser.ts`: tope de 4.5 MB de Vercel, multipart
+  `datos` JSON + `archivo`, nunca lanza, espera 150 s, solo celebra si el API
+  devolvió el ingreso); lo demás son server actions
+  (`app/admin/ingresos/actions.ts`, nunca lanzan, revalidan Ingresos,
+  Conciliación y el vuelo). El Excel sale por el proxy
+  `app/api/ingresos/export` (`proxyArchivoDelApi` + `TIPO_XLSX`, solo reenvía
+  parámetros conocidos y válidos, `maxDuration = 60`).
+- **Página** (`app/admin/ingresos/page.tsx`, **`maxDuration = 300`**: «Sugerir
+  con IA» y «Subir estado de cuenta» son server actions invocadas desde aquí y
+  heredan el límite del segmento — test `ingresos-page.test.ts`): resumen por
+  moneda → pestañas (chips que conservan filtros) → filtros → lista.
+  «Todos» / «Cobros de vuelos» (entradas: vuelo con liga, cobro de anticipo en
+  gris con «Del anticipo ING-12», reembolsos en rojo), «Otros ingresos»
+  (categoría + destino en verde, comprobante, menú Ver · Editar · Ver
+  comprobante · Dar de baja), «Anticipos» (con saldo por default + «Depósitos
+  de vuelos que aún no vuelan», SOLO LECTURA, para que nadie los vuelva a
+  registrar como anticipo) y «Por conciliar» (ADMIN/FACTURACION: abonos del
+  banco sin identificar con motivo, «Cliente: …», «¿Duplicado?» y el menú en
+  orden: Vincular · Es el pago de un vuelo · Es un anticipo · Otro ingreso ·
+  Traspaso · Reverso · Sugerir con IA; barra con «Cruzar pendientes»
+  (`AutoMatchButton tipo="ABONO"`) y «Sugerir con IA (pendientes)»). Sin la
+  migración (503 `INGRESOS_NO_DISPONIBLE`) o con un API previo (404 «Cannot
+  GET») la página pinta una tarjeta ámbar, nunca la pantalla rota. El
+  detalle (`?ingreso=<uuid>`) es un Sheet con ficha, conciliación
+  («Desvincular del abono»), aplicaciones («Desaplicar»), comprobante y
+  bitácora; desvincular y desaplicar solo ADMIN/FACTURACION y confirman.
+- **Diálogos**: `registrar-ingreso-dialog` (DIVULGACIÓN PROGRESIVA: a la
+  vista categoría, fecha, concepto, monto, «¿Dónde entró el dinero?», cliente
+  o «Quién pagó», comprobante; el resto en «Más datos»; `client_request_id`
+  por apertura, el MISMO en los reintentos de confirmación);
+  `aplicar-anticipo-dialog` (monto sugerido = menor entre saldos, confirm con
+  el texto exacto, 409 `ANTICIPO_OTRO_CLIENTE` ⇒ segundo confirm con la misma
+  llave); `cobro-desde-abono-dialog` («Es el pago de un vuelo»: registra el
+  cobro y lo concilia en UNA operación del API); `vincular-abono-dialog`
+  (cobros, sobres e INGRESOS; ★ exactos; un ingreso de otra cuenta se ve pero
+  no se elige); `sugerencias-abonos-dialog` (la IA PROPONE, nada se liga
+  solo; solo van marcadas las ligas con `monto_exacto` y confianza ≥ 85 % y
+  las clasificaciones por regla; un posible duplicado nunca; «Aceptar las
+  marcadas» confirma y corre SECUENCIAL; `disponible=false` dice que el
+  asistente no estuvo, nunca «no encontró nada»); `baja-ingreso-dialog`
+  (motivo 5..500).
+- **Pantallas existentes**: Conciliación pinta «Ingreso ING-12 · categoría»
+  con liga, desvincula por `PATCH movimientos/:id/ingreso` y ofrece
+  «Conciliar en Ingresos» en los abonos pendientes; «Cobros sin banco» marca
+  «Del anticipo ING-12» (se concilia el anticipo, no el cobro); las cards de
+  cobros del vuelo y de la cotización pintan el chip y cambian «Eliminar» por
+  «Desaplicar» (ADMIN/FACTURACION, confirma «el monto regresa al saldo del
+  anticipo»); la card del vuelo muestra el **banner** «Este cliente tiene un
+  anticipo con saldo…» + «Aplicar anticipo» (pista: sin permiso, sin la
+  migración o con un API previo no se pinta nada); Configuración → Consumo de
+  IA nombra `CONCILIACION_ABONOS_SUGERIR`. `ImportButton` acepta `label`
+  («Subir estado de cuenta» en Ingresos). La importación y «Cruzar
+  pendientes» revalidan también `/admin/ingresos`.
+- **Tolerancia**: todos los campos nuevos en tipos existentes son OPCIONALES
+  (`MovimientoBancario.ingreso_id/ingreso`, `CandidatosCobroResponse.ingresos`,
+  `CobroSinBanco.anticipo`, `FlightCobro.anticipo/conciliado_via`): con un
+  API previo las pantallas quedan como estaban. `tipo` de «Cruzar
+  pendientes» solo viaja cuando se pide (con un API previo sería un 400).
+- **Pruebas**: `lib/admin/__tests__/categorias-ingreso.test.ts`,
+  `ingresos-ui.test.ts`, `ingresos-page.test.ts`,
+  `lib/api/__tests__/ingresos-browser.test.ts`,
+  `components/admin/ingresos/__tests__/ingresos-pantalla.test.tsx` (caso real
+  #235: «Sin candidato automático · 1 con el monto exacto» + «Cliente: Cristy
+  Chavez») y `components/admin/flights/__tests__/cobros-card-anticipo.test.tsx`.
+- **Orden de deploy**: migración → API 0.0.34 → pyservices → panel.
+- **Revisión adversaria (24-sep-2026, noche)** — lo que se corrigió:
+  - La IA puede sugerir «Otros ingresos» o «Anticipo» y «Aceptar» un
+    REGISTRAR_INGRESO abría el alta con esa categoría YA elegida: el default
+    que el contrato prohíbe. `formularioDesdeAbono` jamás prellena esas dos
+    (solo «Es un anticipo» del menú la FUERZA); el alta dice la sugerencia en
+    el hint para que el operador la elija a mano.
+  - Tres diálogos pintaban «sin datos» cuando la lectura FALLÓ: «Vincular»
+    («Sin cobros ni ingresos candidatos» ⇒ el operador lo registraba como
+    ingreso), «Aplicar anticipo» («Este cliente no tiene vuelos todavía») y
+    «Es el pago de un vuelo» («El cliente sugerido no tiene vuelos»). Ahora
+    dicen que no se pudo leer y ofrecen «Reintentar» o buscar por folio.
+  - «Ver vuelos de otros clientes» del anticipo buscaba SIN el cliente del
+    anticipo: el API no marcaba `es_otro_cliente` y todos salían como del
+    mismo cliente. `vuelosCandidatosAction` ya no pregunta con alcance «todos»
+    y `q` < 2 aunque haya cliente (400 `BUSQUEDA_CORTA`).
+  - `?hasta=` de un mes anterior sin `desde` ⇒ desde = día 1 del mes corriente
+    > hasta ⇒ 400 y la lista caía en «No se pudo cargar». Hoy desde = día 1 del
+    mes de `hasta`.
+  - «Conciliar en Ingresos» (Conciliación), el chip «Del anticipo ING-n»
+    (Cobros sin banco) y «concílialo en «Por conciliar»» (detalle) llevaban a
+    «Por conciliar» del MES CORRIENTE: el abono de otro mes no aparecía. Ahora
+    llevan el día/cuenta del abono, el detalle del anticipo y la ventana del
+    ingreso (−7/+30 días), respectivamente.
+  - Una comisión vigente de 0 contaba como «cambió» (`null` ≠ 0): editar las
+    notas de un ingreso CONCILIADO respondía 409 `INGRESO_CONCILIADO`.
+  - Errores del API cuyo campo vive en «Más datos» (`TC_REQUERIDO`,
+    `COMISION_INVALIDA`, vuelo/gasto…) despliegan el plegable; el resumen dice
+    por qué falta (también `PERIODO_MUY_GRANDE`); textos de la bitácora =
+    copia EXACTA del API; menú de fila de Conciliación con `cursor-pointer`.

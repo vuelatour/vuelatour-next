@@ -56,6 +56,10 @@ import {
 import type { FacturaClienteBloque as FacturaClienteData } from "@/types/flights";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
+import { BannerAnticiposCliente } from "@/components/admin/ingresos/banner-anticipos-cliente";
+import { ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
+import { desaplicarAnticipoAction } from "@/app/admin/ingresos/actions";
+import { puedeConciliarIngresos } from "@/lib/admin/ingresos-ui";
 import type {
   EstadoVuelo,
   ParticipacionAvion,
@@ -297,6 +301,24 @@ export function CobrosCard({
             aviones={participacionAviones}
             fuente={participacionFuente}
           />
+          {/* ANTICIPOS (24-sep-2026): si el cliente dejó dinero por
+              adelantado en Ingresos, se aplica aquí en vez de registrar el
+              cobro otra vez (el mismo dinero dos veces). Pista: sin permiso,
+              sin la migración o con un API previo no se pinta nada. */}
+          {clienteId && pendingUsd > 0 && (
+            <BannerAnticiposCliente
+              clienteId={clienteId}
+              rol={rol}
+              refrescar={cobros.map((c) => c.id).join(",")}
+              vuelo={{
+                vuelo_id: flightId,
+                folio: flightFolio,
+                saldo_usd: pendingUsd,
+                tc_usd_mxn: tcCotizacion,
+                cliente_nombre: clienteNombre,
+              }}
+            />
+          )}
           {/* FACTURA (24-sep-2026): primero la burbuja —lo que el operador
               busca: el número de factura, «pedida» o «Necesito factura»— y
               DEBAJO el seguimiento manual. Sin el bloque (API previo o sin la
@@ -421,6 +443,21 @@ export function CobrosCard({
                     )}
                     {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
                     <CobroSobreNota cobro={c} />
+                    {/* Cobro que salió de un ANTICIPO (24-sep-2026): su dinero
+                        se corrige desaplicando en Ingresos, no aquí. */}
+                    {c.anticipo && (
+                      <p className="text-[11px]">
+                        <ChipDelAnticipo
+                          etiqueta={c.anticipo.etiqueta}
+                          href={`/admin/ingresos?tab=anticipos&ingreso=${c.anticipo.ingreso_id}`}
+                          titulo={
+                            c.conciliado_via === "ANTICIPO"
+                              ? "Salió de un anticipo ya conciliado con su abono del banco (conciliado vía el anticipo). Para cambiar el monto, desaplícalo."
+                              : "Salió de un anticipo: para cambiar el monto, desaplícalo y vuelve a aplicarlo desde Ingresos → Anticipos."
+                          }
+                        />
+                      </p>
+                    )}
                     {/* Motivo del reembolso (viaja en notas): a la vista. */}
                     {esReembolso && c.notas && (
                       <p
@@ -471,20 +508,37 @@ export function CobrosCard({
                     {/* Parte de un sobre de grupo: NO se elimina por vuelo
                         (el API responde 409 COBRO_DE_GRUPO); se hace desde
                         Cobros del grupo, que re-parte el sobre completo. */}
-                    {!esParteDeSobre(c) && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        title={
-                          esReembolso
-                            ? "Eliminar reembolso (capturado por error)"
-                            : "Eliminar cobro (capturado por error)"
-                        }
-                        onClick={() => setToDelete(c)}
-                      >
-                        <TrashIcon className="h-3.5 w-3.5" />
-                      </Button>
+                    {/* Cobro de ANTICIPO: «Desaplicar» (el monto regresa al
+                        saldo del anticipo) con los MISMOS roles que borrar un
+                        cobro: ADMIN y FACTURACION. */}
+                    {c.anticipo ? (
+                      puedeConciliarIngresos(rol) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                          title={`Desaplicar: el monto regresa al saldo del anticipo ${c.anticipo.etiqueta}`}
+                          onClick={() => setToDelete(c)}
+                        >
+                          Desaplicar
+                        </Button>
+                      )
+                    ) : (
+                      !esParteDeSobre(c) && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          title={
+                            esReembolso
+                              ? "Eliminar reembolso (capturado por error)"
+                              : "Eliminar cobro (capturado por error)"
+                          }
+                          onClick={() => setToDelete(c)}
+                        >
+                          <TrashIcon className="h-3.5 w-3.5" />
+                        </Button>
+                      )
                     )}
                   </div>
                 </div>
@@ -498,13 +552,16 @@ export function CobrosCard({
       <Dialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>¿Eliminar este cobro?</DialogTitle>
+            <DialogTitle>
+              {toDelete?.anticipo ? "¿Desaplicar este cobro?" : "¿Eliminar este cobro?"}
+            </DialogTitle>
             <DialogDescription>
               {toDelete
                 ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
                 : ""}
-              Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula
-              al instante y esta acción no se puede deshacer.
+              {toDelete?.anticipo
+                ? `El monto regresa al saldo del anticipo ${toDelete.anticipo.etiqueta} y el saldo del vuelo se recalcula. Después puedes volver a aplicarlo.`
+                : "Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula al instante y esta acción no se puede deshacer."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -517,11 +574,19 @@ export function CobrosCard({
               onClick={async () => {
                 if (!toDelete) return;
                 setDeleting(true);
-                const res = await deleteCobroAction(flightId, toDelete.id);
+                const anticipo = toDelete.anticipo ?? null;
+                const res = anticipo
+                  ? await desaplicarAnticipoAction(anticipo.ingreso_id, toDelete.id, flightId)
+                  : await deleteCobroAction(flightId, toDelete.id);
                 setDeleting(false);
                 if (res.ok) {
-                  toast.success("Cobro eliminado; saldo recalculado.");
+                  toast.success(
+                    anticipo
+                      ? `Desaplicado: el monto regresó al saldo del anticipo ${anticipo.etiqueta}.`
+                      : "Cobro eliminado; saldo recalculado.",
+                  );
                   setToDelete(null);
+                  if (anticipo) router.refresh();
                 } else if (res.code === "COBRO_DE_GRUPO") {
                   // Candado del API: la parte de un sobre se elimina desde
                   // el grupo. Mensaje del API + atajo al grupo.
@@ -540,7 +605,13 @@ export function CobrosCard({
                 }
               }}
             >
-              {deleting ? "Eliminando…" : "Eliminar"}
+              {deleting
+                ? toDelete?.anticipo
+                  ? "Desaplicando…"
+                  : "Eliminando…"
+                : toDelete?.anticipo
+                  ? "Desaplicar"
+                  : "Eliminar"}
             </Button>
           </DialogFooter>
         </DialogContent>

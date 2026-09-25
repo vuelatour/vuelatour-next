@@ -92,6 +92,8 @@ export async function importarMovimientosAction(payload: {
       { method: "POST", body: payload },
     );
     revalidatePath("/admin/conciliacion");
+    // Los ABONOS nuevos caen en Ingresos → «Por conciliar» (24-sep-2026).
+    revalidatePath("/admin/ingresos");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -158,6 +160,8 @@ export async function importJobStatusAction(
     // a importar dos veces.
     if (data.estado === "LISTO" || data.estado === "ERROR") {
       revalidatePath("/admin/conciliacion");
+      // El estado de cuenta también se sube desde Ingresos (24-sep-2026).
+      revalidatePath("/admin/ingresos");
     }
     return { ok: true, data };
   } catch (err) {
@@ -175,6 +179,13 @@ export interface AutoMatchQuery {
   hasta?: string;
   /** Alternativa: solo estos movimientos. */
   movimiento_ids?: string[];
+  /**
+   * Solo CARGOS o solo ABONOS (24-sep-2026, `AutoMatchDto.tipo` ADITIVO del
+   * API): desde Ingresos → «Por conciliar» se cruzan solo los abonos. Sin él
+   * se cruza todo, como antes. OJO: con un API previo el campo es un 400
+   * (`forbidNonWhitelisted`), por eso solo se manda cuando se pide.
+   */
+  tipo?: "CARGO" | "ABONO";
 }
 
 /**
@@ -196,9 +207,11 @@ export async function autoMatchAction(
         ...(q.desde ? { desde: q.desde } : {}),
         ...(q.hasta ? { hasta: q.hasta } : {}),
         ...(q.movimiento_ids?.length ? { movimiento_ids: q.movimiento_ids } : {}),
+        ...(q.tipo ? { tipo: q.tipo } : {}),
       },
     });
     revalidatePath("/admin/conciliacion");
+    revalidatePath("/admin/ingresos");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -301,6 +314,7 @@ export async function clasificarMovimientoAction(
       body: payload,
     });
     revalidatePath("/admin/conciliacion");
+    revalidatePath("/admin/ingresos");
     return { ok: true };
   } catch (err) {
     return fail(err);
@@ -369,6 +383,7 @@ export async function linkMovimientoCobroAction(
       },
     );
     revalidatePath("/admin/conciliacion");
+    revalidatePath("/admin/ingresos");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
