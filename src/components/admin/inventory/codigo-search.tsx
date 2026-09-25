@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { buscarPorCodigoAction } from "@/app/admin/inventory/actions";
 import { normalizarCodigo } from "@/app/admin/inventory/schema";
 import { ItemFormDialog } from "./item-form-dialog";
+import type { InventarioUbicacion } from "@/types/inventory";
 
 /** Un código de barras real: solo dígitos y al menos 8 (EAN-8/UPC/EAN-13/ITF-14). */
 const pareceCodigoBarras = (s: string) => /^\d{8,}$/.test(s);
@@ -19,7 +20,16 @@ const pareceCodigoBarras = (s: string) => /^\d{8,}$/.test(s);
  * (caja) → abre la ficha con el movimiento listo para capturar por caja; no
  * existe → toast con «Dar de alta con este código».
  */
-export function CodigoSearch({ categorias }: { categorias: string[] }) {
+export function CodigoSearch({
+  categorias,
+  ubicaciones,
+  margenVentaPct,
+}: {
+  categorias: string[];
+  /** Catálogo de ubicaciones para el alta con código; null/ausente = texto. */
+  ubicaciones?: InventarioUbicacion[] | null;
+  margenVentaPct?: number | null;
+}) {
   const router = useRouter();
   const [valor, setValor] = useState("");
   const [buscando, setBuscando] = useState(false);
@@ -152,6 +162,8 @@ export function CodigoSearch({ categorias }: { categorias: string[] }) {
           }
         }}
         categorias={categorias}
+        ubicaciones={ubicaciones}
+        margenVentaPct={margenVentaPct}
         initialCodigo={altaCodigo ?? undefined}
       />
     </>

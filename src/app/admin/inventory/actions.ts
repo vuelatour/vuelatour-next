@@ -21,7 +21,15 @@ import type {
   InventarioEmpaque,
   InventarioItem,
   InventarioMovimiento,
+  InventarioUbicacion,
+  MoverUbicacionResultado,
 } from "@/types/inventory";
+import {
+  NOMBRE_UBICACION_MAX,
+  NOMBRE_UBICACION_MIN,
+  TOPE_MOVER_UBICACION,
+} from "@/lib/admin/inventario-ubicacion";
+import { esUuid } from "@/lib/admin/url-params";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -59,8 +67,10 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
  * stripEmpty (no borraría nada), así que se manda null explícito. Sin esto un
  * ítem con `unidad` mal capturada (caso real "1") era irreparable desde el
  * panel: vaciar el campo devolvía "Ítem actualizado" sin cambiar nada.
- * `ubicacion` NO va aquí: es NOT NULL en BD (default 'Bodega Cancún') y
+ * `ubicacion` (texto) NO va aquí: con un API previo es NOT NULL en BD y
  * mandar null era un 500 — vacío = se conserva la actual (el form lo avisa).
+ * Con el catálogo (25-sep-2026) «Sin ubicación» viaja como `ubicacion_id:
+ * null` explícito, que `stripEmpty` deja pasar (solo tira "" y undefined).
  */
 const BORRABLES = [
   "unidad",
@@ -381,6 +391,107 @@ export async function deleteEmpaqueAction(
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${itemId}`);
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ───────────────── Ubicaciones de bodega (25-sep-2026) ─────────────────
+
+/**
+ * Alta de una ubicación del catálogo (ADMIN/MECANICO). El API valida el
+ * nombre (2–50, recortado) y los duplicados sin acentos ni mayúsculas (409
+ * `UBICACION_DUPLICADA`, con su mensaje en es-MX que se pinta tal cual).
+ */
+export async function crearUbicacionAction(
+  nombre: string,
+): Promise<ActionResult<InventarioUbicacion>> {
+  const limpio = (nombre ?? "").trim().replace(/\s+/g, " ");
+  if (limpio.length < NOMBRE_UBICACION_MIN || limpio.length > NOMBRE_UBICACION_MAX) {
+    return {
+      ok: false,
+      error: `El nombre va de ${NOMBRE_UBICACION_MIN} a ${NOMBRE_UBICACION_MAX} caracteres.`,
+    };
+  }
+  try {
+    const data = await apiServer<InventarioUbicacion>("/v1/inventory/ubicaciones", {
+      method: "POST",
+      body: { nombre: limpio },
+    });
+    revalidatePath("/admin/inventory");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Renombrar / reordenar / activar-desactivar una ubicación. Renombrar
+ * propaga el texto a sus productos (trigger de la BD). Desactivar con
+ * productos activos responde 409 `UBICACION_EN_USO` (el diálogo ya lo
+ * impide; el API es el candado real).
+ */
+export async function actualizarUbicacionAction(
+  id: string,
+  cambios: { nombre?: string; orden?: number; activo?: boolean },
+): Promise<ActionResult<InventarioUbicacion>> {
+  if (!esUuid(id)) return { ok: false, error: "La ubicación ya no existe." };
+  const body: Record<string, unknown> = {};
+  if (cambios.nombre !== undefined) {
+    const limpio = cambios.nombre.trim().replace(/\s+/g, " ");
+    if (limpio.length < NOMBRE_UBICACION_MIN || limpio.length > NOMBRE_UBICACION_MAX) {
+      return {
+        ok: false,
+        error: `El nombre va de ${NOMBRE_UBICACION_MIN} a ${NOMBRE_UBICACION_MAX} caracteres.`,
+      };
+    }
+    body.nombre = limpio;
+  }
+  if (cambios.orden !== undefined) {
+    if (!Number.isInteger(cambios.orden) || cambios.orden < 0 || cambios.orden > 999) {
+      return { ok: false, error: "El orden va de 0 a 999." };
+    }
+    body.orden = cambios.orden;
+  }
+  if (cambios.activo !== undefined) body.activo = cambios.activo;
+  if (Object.keys(body).length === 0) return { ok: false, error: "No hay cambios que guardar." };
+  try {
+    const data = await apiServer<InventarioUbicacion>(`/v1/inventory/ubicaciones/${id}`, {
+      method: "PATCH",
+      body,
+    });
+    revalidatePath("/admin/inventory");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Mover productos en lote a una ubicación (ADMIN/MECANICO): UN solo update
+ * en el API. No mueve stock ni dinero. Ids que ya no aplican (dados de baja,
+ * inexistentes) NO son error: vienen en `no_encontrados`/`inactivos`.
+ */
+export async function moverUbicacionAction(
+  itemIds: string[],
+  ubicacionId: string,
+): Promise<ActionResult<MoverUbicacionResultado>> {
+  const ids = [...new Set((itemIds ?? []).filter((x) => esUuid(x)))];
+  if (!esUuid(ubicacionId)) return { ok: false, error: "Elige a qué ubicación moverlos." };
+  if (ids.length === 0) return { ok: false, error: "No hay productos que mover." };
+  if (ids.length > TOPE_MOVER_UBICACION) {
+    return {
+      ok: false,
+      error: `Se pueden mover hasta ${TOPE_MOVER_UBICACION} productos a la vez; acota la lista con el buscador o el filtro.`,
+    };
+  }
+  try {
+    const data = await apiServer<MoverUbicacionResultado>(
+      "/v1/inventory/items/mover-ubicacion",
+      { method: "POST", body: { item_ids: ids, ubicacion_id: ubicacionId } },
+    );
+    revalidatePath("/admin/inventory");
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

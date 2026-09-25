@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import { notaUtilidad, numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
 import type { InventarioItemResumen } from "@/types/inventory";
 
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
@@ -28,6 +29,27 @@ function utilidadClass(v: number | null | undefined): string {
 function fmtUtilidad(v: number | null | undefined): string {
   if (v == null) return "—";
   return `${v > 0 ? "+" : ""}${fmtMxn(v)}`;
+}
+
+/**
+ * Utilidad del día / total en sus DOS monedas (25-sep-2026): pesos y, aparte,
+ * dólares («+$63.75 USD»). Jamás sumadas. Sin ninguna ⇒ «—».
+ */
+function UtilidadDosMonedas({
+  mxn,
+  usd,
+}: {
+  mxn: number | null | undefined;
+  usd: number | null | undefined;
+}) {
+  const u = numeroONulo(usd);
+  if (mxn == null && u == null) return <>—</>;
+  return (
+    <>
+      {mxn != null && <span className={`block ${utilidadClass(mxn)}`}>{fmtUtilidad(mxn)}</span>}
+      {u != null && <span className={`block ${utilidadClass(u)}`}>{textoMonto(u, "USD")}</span>}
+    </>
+  );
 }
 
 /**
@@ -50,6 +72,11 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
   const { item, compras, ventas, resumen_diario, totales } = resumen;
   const unidad = item.unidad ? ` ${item.unidad}` : "";
   const salidasACosto = ventas.filter((v) => v.a_costo).length;
+  // API 0.0.35: la utilidad en dólares viaja aparte. Con él, «sin TC» ya no
+  // significa «utilidad no calculable» (esa venta sí tiene utilidad, en USD).
+  const conUsd = "utilidad_usd" in totales;
+  const utilidadUsdTotal = numeroONulo(totales.utilidad_usd);
+  const ventasUsdTotal = numeroONulo(totales.ventas_usd);
 
   return (
     <section className="space-y-3">
@@ -63,10 +90,21 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
       {totales.con_movimientos_sin_tc && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
           <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
-          Hay movimientos capturados en dólares sin tipo de cambio (marcados &ldquo;sin
-          TC&rdquo;): sus montos en pesos y la utilidad de lo que salió de ellos no se pueden
-          calcular y quedan fuera de los totales. Corrige el costo de esa entrada con su TC
-          (botón &ldquo;Editar costo&rdquo; en el cardex de abajo).
+          {conUsd ? (
+            <>
+              Hay movimientos capturados en dólares sin tipo de cambio (marcados &ldquo;sin
+              TC&rdquo;): no se pueden expresar en pesos. Su utilidad se muestra en dólares, aparte
+              (nunca se suma con los pesos). Para verlos en pesos, captura el TC de la compra
+              (botón &ldquo;Editar costo&rdquo; en el cardex de abajo).
+            </>
+          ) : (
+            <>
+              Hay movimientos capturados en dólares sin tipo de cambio (marcados &ldquo;sin
+              TC&rdquo;): sus montos en pesos y la utilidad de lo que salió de ellos no se pueden
+              calcular y quedan fuera de los totales. Corrige el costo de esa entrada con su TC
+              (botón &ldquo;Editar costo&rdquo; en el cardex de abajo).
+            </>
+          )}
         </div>
       )}
 
@@ -233,9 +271,14 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
                           <span className="text-muted-foreground">A costo FIFO</span>
                           <span className="block text-[11px] text-muted-foreground">
                             {v.sin_tc ? (
-                              <span className="font-medium text-amber-600 dark:text-amber-500">
-                                sin TC · costo no expresable en pesos
-                              </span>
+                              numeroONulo(v.costo_fifo_usd) != null ? (
+                                // API 0.0.35: el costo en dólares sí existe.
+                                `${fmtUsd(v.costo_fifo_usd)} USD · sin utilidad`
+                              ) : (
+                                <span className="font-medium text-amber-600 dark:text-amber-500">
+                                  sin TC · costo no expresable en pesos
+                                </span>
+                              )
                             ) : (
                               `${fmtMxn(v.total_mxn)} · sin utilidad`
                             )}
@@ -247,13 +290,26 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
                             ? fmtMxn(v.precio_unitario_mxn)
                             : `${fmtUsd(v.venta_unitaria_capturada)} USD`}
                           <span className="block text-[11px] text-muted-foreground">
-                            {v.total_mxn != null ? `total ${fmtMxn(v.total_mxn)}` : ""}
+                            {v.total_mxn != null
+                              ? `total ${fmtMxn(v.total_mxn)}`
+                              : v.venta_moneda === "USD" && numeroONulo(v.venta_total) != null
+                                ? `total ${fmtUsd(v.venta_total)} USD`
+                                : ""}
                             {v.venta_moneda === "USD" && v.precio_unitario_mxn != null
                               ? ` · ${fmtUsd(v.venta_unitaria_capturada)} USD`
                               : ""}
-                            {v.sin_tc ? (
+                            {numeroONulo(v.ganancia_usd) != null ? (
+                              // Venta y costo en dólares (sin T.C.): la utilidad
+                              // existe, en SU moneda (API 0.0.35).
+                              <>
+                                {" · "}
+                                <span className={utilidadClass(numeroONulo(v.ganancia_usd))}>
+                                  utilidad {textoMonto(numeroONulo(v.ganancia_usd) ?? 0, "USD")}
+                                </span>
+                              </>
+                            ) : v.sin_tc || v.utilidad_incompleta ? (
                               <span className="font-medium text-amber-600 dark:text-amber-500">
-                                {v.total_mxn != null ? " · " : ""}sin TC · utilidad no calculable
+                                {v.total_mxn != null || v.venta_total != null ? " · " : ""}sin TC · utilidad no calculable
                               </span>
                             ) : (
                               <>
@@ -286,7 +342,10 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
                   {totales.ventas_cant != null ? `${num(totales.ventas_cant)}${unidad}` : "—"}
                 </TableCell>
                 <TableCell className="text-right text-xs font-semibold tabular-nums align-top">
-                  {fmtMxn(totales.ventas_mxn)}
+                  {totales.ventas_mxn != null || ventasUsdTotal == null ? fmtMxn(totales.ventas_mxn) : null}
+                  {ventasUsdTotal != null && (
+                    <span className="block">{fmtUsd(ventasUsdTotal)} USD</span>
+                  )}
                 </TableCell>
               </TableRow>
             </TableFooter>
@@ -338,14 +397,15 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium tabular-nums ${
-                        d.utilidad_mxn != null && d.utilidad_mxn < 0
+                        (d.utilidad_mxn != null && d.utilidad_mxn < 0) ||
+                        (numeroONulo(d.utilidad_usd) ?? 0) < 0
                           ? "bg-red-500/10"
                           : "bg-emerald-500/10"
-                      } ${utilidadClass(d.utilidad_mxn)}`}
+                      } ${utilidadClass(d.utilidad_mxn ?? numeroONulo(d.utilidad_usd))}`}
                       title={d.sin_tc ? "Ese día hay movimientos en USD sin TC" : undefined}
                     >
-                      {fmtUtilidad(d.utilidad_mxn)}
-                      {d.sin_tc && (
+                      <UtilidadDosMonedas mxn={d.utilidad_mxn} usd={d.utilidad_usd} />
+                      {d.sin_tc && numeroONulo(d.utilidad_usd) == null && (
                         <ExclamationTriangleIcon className="ml-1 inline h-3.5 w-3.5 text-amber-500" />
                       )}
                     </TableCell>
@@ -362,12 +422,13 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
                 </TableCell>
                 <TableCell
                   className={`text-right text-xs font-semibold tabular-nums ${
-                    totales.utilidad_mxn != null && totales.utilidad_mxn < 0
+                    (totales.utilidad_mxn != null && totales.utilidad_mxn < 0) ||
+                    (utilidadUsdTotal ?? 0) < 0
                       ? "bg-red-500/10"
                       : "bg-emerald-500/10"
-                  } ${utilidadClass(totales.utilidad_mxn)}`}
+                  } ${utilidadClass(totales.utilidad_mxn ?? utilidadUsdTotal)}`}
                 >
-                  {fmtUtilidad(totales.utilidad_mxn)}
+                  <UtilidadDosMonedas mxn={totales.utilidad_mxn} usd={utilidadUsdTotal} />
                 </TableCell>
               </TableRow>
             </TableFooter>
@@ -376,9 +437,19 @@ export function ResumenProducto({ resumen }: { resumen: InventarioItemResumen | 
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Montos en pesos. Utilidad = precio de venta al avión − costo FIFO de lo que salió; las
-        salidas sin precio (a costo FIFO) no generan utilidad. Es el mismo cálculo de la hoja
-        Inventario del Balance general VuelaTour y del cardex en Excel.
+        {conUsd ? (
+          <>
+            Montos en pesos, salvo los marcados USD (compras en dólares sin tipo de cambio).{" "}
+            {notaUtilidad(resumen.margen_venta_pct)} Es el mismo cálculo de la hoja Inventario del
+            Balance general VuelaTour.
+          </>
+        ) : (
+          <>
+            Montos en pesos. Utilidad = precio de venta al avión − costo FIFO de lo que salió; las
+            salidas sin precio (a costo FIFO) no generan utilidad. Es el mismo cálculo de la hoja
+            Inventario del Balance general VuelaTour y del cardex en Excel.
+          </>
+        )}
       </p>
     </section>
   );

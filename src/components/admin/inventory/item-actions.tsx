@@ -27,16 +27,27 @@ import {
 import { deleteItemAction } from "@/app/admin/inventory/actions";
 import { ItemFormDialog } from "./item-form-dialog";
 import { MovimientoDialog } from "./movimiento-dialog";
-import type { InventarioItem } from "@/types/inventory";
+import type { InventarioItem, InventarioUbicacion } from "@/types/inventory";
 
 interface ItemActionsProps {
   item: InventarioItem;
   aircraft: { id: string; matricula: string }[];
   providers: { id: string; nombre: string }[];
   categorias?: string[];
+  /** Catálogo de ubicaciones (formulario); null/ausente = input de texto. */
+  ubicaciones?: InventarioUbicacion[] | null;
+  /** Margen de la tienda: textos de la salida («Vacío = costo FIFO + 25 %»). */
+  margenVentaPct?: number | null;
 }
 
-export function ItemActions({ item, aircraft, providers, categorias }: ItemActionsProps) {
+export function ItemActions({
+  item,
+  aircraft,
+  providers,
+  categorias,
+  ubicaciones,
+  margenVentaPct,
+}: ItemActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openSalida, setOpenSalida] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
@@ -57,25 +68,25 @@ export function ItemActions({ item, aircraft, providers, categorias }: ItemActio
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <DropdownMenuTrigger className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <EllipsisHorizontalIcon className="h-4 w-4" />
           <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {item.activo && (
-            <DropdownMenuItem onClick={() => setOpenSalida(true)} className="gap-2">
+            <DropdownMenuItem onClick={() => setOpenSalida(true)} className="cursor-pointer gap-2">
               <PaperAirplaneIcon className="h-4 w-4" />
               Registrar salida (cargar a avión)
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
+          <DropdownMenuItem onClick={() => setOpenEdit(true)} className="cursor-pointer gap-2">
             <PencilIcon className="h-4 w-4" />
             Editar
           </DropdownMenuItem>
           {item.activo && (
             <DropdownMenuItem
               onClick={() => setOpenDelete(true)}
-              className="gap-2 text-destructive focus:text-destructive"
+              className="cursor-pointer gap-2 text-destructive focus:text-destructive"
             >
               <TrashIcon className="h-4 w-4" />
               Desactivar
@@ -89,6 +100,8 @@ export function ItemActions({ item, aircraft, providers, categorias }: ItemActio
         onOpenChange={setOpenEdit}
         initialItem={item}
         categorias={categorias}
+        ubicaciones={ubicaciones}
+        margenVentaPct={margenVentaPct}
       />
 
       <MovimientoDialog
@@ -102,6 +115,7 @@ export function ItemActions({ item, aircraft, providers, categorias }: ItemActio
         empaques={item.empaques ?? []}
         aircraft={aircraft}
         providers={providers}
+        margenVentaPct={margenVentaPct}
         initialTipo="SALIDA"
       />
 

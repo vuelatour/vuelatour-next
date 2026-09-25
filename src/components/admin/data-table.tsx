@@ -112,6 +112,14 @@ interface DataTableProps<T> {
   huboCorte?: boolean;
   /** Orden por columnas y atajos (ver `DataTableOrden`). */
   orden?: DataTableOrden;
+  /**
+   * Aviso al padre con las filas que QUEDAN tras la búsqueda rápida (todas
+   * las páginas, no solo la visible). ADITIVO (25-sep-2026): lo usa «Mover
+   * a…» del inventario para actuar sobre lo que el operador está viendo. Se
+   * llama en un efecto cuando cambia el CONJUNTO (clave estable = ids unidos),
+   * nunca en render.
+   */
+  alCambiarFiltradas?: (filas: T[]) => void;
 }
 
 /** Búsqueda insensible a acentos y mayúsculas (nombres es-MX). */
@@ -162,6 +170,7 @@ export function DataTable<T>({
   subRows,
   huboCorte = false,
   orden,
+  alCambiarFiltradas,
 }: DataTableProps<T>) {
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -257,6 +266,20 @@ export function DataTable<T>({
     const q = normaliza(busqueda.trim());
     return rows.filter((r) => normaliza(searchText(r)).includes(q));
   }, [rows, busqueda, searchText]);
+
+  // Aviso al padre (opcional) SOLO cuando cambia el conjunto: la clave son los
+  // ids unidos, así un re-render con las mismas filas no dispara nada. El
+  // callback se lee de una ref para no depender de su identidad.
+  const clavesFiltradas = alCambiarFiltradas ? filtradas.map(rowKey).join("|") : "";
+  const avisarRef = useRef(alCambiarFiltradas);
+  const filtradasRef = useRef(filtradas);
+  useEffect(() => {
+    avisarRef.current = alCambiarFiltradas;
+    filtradasRef.current = filtradas;
+  });
+  useEffect(() => {
+    avisarRef.current?.(filtradasRef.current);
+  }, [clavesFiltradas]);
 
   // Página segura DERIVADA: si el filtro o un refetch encogen la lista, no
   // se queda apuntando a una página que ya no existe.

@@ -12,7 +12,7 @@ import {
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
-import { fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   NOTA_VALOR_SIN_TC,
   TITULO_VALOR_SIN_TC,
@@ -25,6 +25,13 @@ import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicio
 import { MovimientosEliminadosCard } from "@/components/admin/inventory/movimientos-eliminados-card";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
+import { UtilidadPorSalida } from "@/components/admin/inventory/utilidad-por-salida";
+import {
+  MARCA_ANTERIOR,
+  TITULO_ANTERIOR,
+  textoUbicacion,
+} from "@/lib/admin/inventario-ubicacion";
+import { textoPrecioVentaProducto } from "@/lib/admin/inventario-salida";
 import type {
   InventarioFoto,
   InventarioItemDetail,
@@ -105,6 +112,12 @@ export default async function InventoryItemPage({
     pesosExactos: item.pesos_exactos,
   };
 
+  // Margen vigente de la tienda (API 0.0.35; ausente = API previo, donde una
+  // salida sin precio va a costo). Solo textos: el número lo aplica el API.
+  const margenVentaPct = resumen?.margen_venta_pct ?? null;
+  // Ubicación: nombre del catálogo, texto anterior (ámbar) o «Sin ubicación».
+  const ubicacion = textoUbicacion(item);
+
   const empaques = item.empaques ?? [];
   const empaqueEscaneado =
     sp.empaque && empaques.some((e) => e.id === sp.empaque) ? sp.empaque : undefined;
@@ -149,7 +162,13 @@ export default async function InventoryItemPage({
               ) : (
                 ""
               )}
-              {item.ubicacion ?? "Bodega Cancún"}
+              {ubicacion.tipo === "LEGADO" ? (
+                <span className="text-amber-700 dark:text-amber-400" title={TITULO_ANTERIOR}>
+                  {ubicacion.texto} {MARCA_ANTERIOR}
+                </span>
+              ) : (
+                ubicacion.texto
+              )}
             </p>
             {item.descripcion && (
               <p className="text-sm mt-2 max-w-2xl whitespace-pre-line">{item.descripcion}</p>
@@ -169,6 +188,7 @@ export default async function InventoryItemPage({
             providers={providers}
             initialEmpaqueId={empaqueEscaneado}
             autoOpen={!!empaqueEscaneado}
+            margenVentaPct={margenVentaPct}
           />
         </div>
       </div>
@@ -176,6 +196,10 @@ export default async function InventoryItemPage({
       {/* Lo primero que ve el operador: compras, ventas y resumen por día
           (mismo FIFO/ganancia que el balance; solo se pinta). */}
       <ResumenProducto resumen={resumen} />
+
+      {/* Utilidad de la tienda salida por salida (25-sep-2026): fecha,
+          avión, cantidad, costo, venta y utilidad, cada monto en su moneda. */}
+      <UtilidadPorSalida resumen={resumen} unidad={item.unidad} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         <Stat
@@ -189,16 +213,14 @@ export default async function InventoryItemPage({
           value={item.costo_fifo_mxn_actual ? fmtMxn(item.costo_fifo_mxn_actual) : "—"}
         />
         {/* Precio de VENTA al avión (29-ago-2026): la salida se carga a este
-            precio; sin precio, se carga a costo FIFO. */}
+            precio; sin precio, a costo FIFO + margen de la tienda (25-sep). */}
         <Stat
           label="Precio de venta"
-          value={
-            item.precio_venta != null && Number(item.precio_venta) > 0
-              ? item.precio_venta_moneda === "USD"
-                ? `${fmtUsd(item.precio_venta)} USD`
-                : fmtMxn(item.precio_venta)
-              : "A costo FIFO"
-          }
+          value={textoPrecioVentaProducto({
+            precio: item.precio_venta,
+            moneda: item.precio_venta_moneda,
+            margenPct: margenVentaPct,
+          })}
         />
         {/* Valorizado: cada moneda en su sitio. `valor_mxn` ya solo trae
             pesos REALES (invariante 8 del API, 22-sep-2026); lo comprado en

@@ -187,6 +187,11 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   Ejemplar: inventario (`lib/admin/inventario-orden.ts` +
   `inventory/items-table.tsx`, «Se están acabando primero» = Bajo primero y
   luego stock ascendente, desconocidos al final).
+  **Filas que el operador está viendo** (opcional, 25-sep-2026): prop
+  `alCambiarFiltradas(filas)` — DataTable avisa, en un EFECTO y solo cuando
+  cambia el conjunto (clave = ids unidos), las filas que quedan tras la
+  búsqueda rápida (todas las páginas). Lo usa «Mover a…» del inventario;
+  nadie más cambia.
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
@@ -3276,3 +3281,143 @@ ingresos». Contrato INGRESOS con el API 0.0.34 (migración
     `COMISION_INVALIDA`, vuelo/gasto…) despliegan el plegable; el resumen dice
     por qué falta (también `PERIODO_MUY_GRANDE`); textos de la bitácora =
     copia EXACTA del API; menú de fila de Conciliación con `cursor-pointer`.
+
+## Inventario: UTILIDAD de la tienda y UBICACIÓN (25-sep-2026)
+
+Pedido del cliente (captura de `/admin/inventory`): «Producto | Categoría |
+Stock | Utilidad (de los productos que compramos, el precio que le ponemos en
+el costo se le saca el 25 % el cual va a ser nuestra utilidad por producto
+vendido o cargado a un avión). Ya echamos a andar la venta de VuelaTour, que
+viene siendo la "tienda"… necesitamos ver las ganancias de dichos productos. Y
+aprovechar poner una columna de ubicación: la Oficina vieja, la oficina nueva,
+el locker del aeropuerto, la bodega del taller de Mérida, nuestra bodega en el
+taller de Cozumel». Contrato con el API **0.0.35** (migraciones
+`20260925000001_inventario_ubicacion_margen.sql` y
+`20260925000002_repreciar_salidas_tienda.sql`) y pyservices (hoja
+«inventario» del Balance general).
+
+- **La regla es del API, el panel solo PINTA.** Toda SALIDA a un avión sin
+  precio se cobra a costo FIFO × (1 + margen) —25 % por defecto, clave
+  `inventario_margen_venta_pct` de Configuración—; el precio tecleado en la
+  salida o el `precio_venta` del producto siguen ganando; **0 explícito = a
+  costo**. Utilidad = venta − costo FIFO con la fuente única del API
+  (`inventario-cardex.util.ts#ventaDeSalida`, la MISMA del Balance general).
+  El panel **jamás** recalcula utilidad ni FIFO; solo suma la MISMA moneda
+  (como el valorizado). **Pesos y dólares NUNCA se suman** (invariante 8): la
+  bodega casi entera se compró en USD sin T.C. y por eso la utilidad de hoy es
+  toda en dólares (+535.35 USD tras el re-precio de las 10 salidas del 01-sep).
+- **Lista** (`inventory/items-table.tsx`): **Producto · Categoría · Stock ·
+  Utilidad · Ubicación · ⋯**, los atajos de siempre («A–Z · Se están acabando
+  primero · Más stock») y encabezados ordenables (Utilidad y Ubicación
+  incluidos). Celda Utilidad = una línea por moneda (`lineasUtilidad`: «+$191.25
+  USD», «+$1,200.00 MXN», o ambas), «—» sin ventas, tooltip `tituloUtilidad`
+  («66 unidades cargadas a aviones (30 a costo, sin utilidad) · margen vigente
+  25 % sobre el costo») y triángulo ámbar SOLO con `avisoUtilidad` (entradas a
+  $0, ventas no calculables). «sin TC» ya NO se avisa en esa celda cuando hay
+  utilidad en USD (con un API previo sí, como antes).
+- **Orden** (`lib/admin/inventario-orden.ts`): `utilidad(-desc)` y
+  `ubicacion(-desc)`. **Alias**: `?orden=ganancia` / `ganancia-desc` (enlaces
+  viejos) = `utilidad` / `utilidad-desc`. Utilidad: primero los que tienen
+  pesos (por monto), luego los que solo tienen dólares (por monto) — sin T.C.
+  no se comparan —, sin utilidad AL FINAL. Ubicación: catálogo por su `orden`
+  → texto anterior A–Z → sin ubicación AL FINAL (desc invierte catálogo/legado).
+- **Tarjeta «Utilidad de la tienda»** (`inventory/utilidad-tienda-card.tsx`,
+  cliente): `GET /v1/inventory/tienda/resumen?desde&hasta` (`getTiendaResumen`,
+  nunca lanza; null ⇒ respaldo con `utilidad_total_mxn/usd` de la lista y Σ
+  `ventas_cant`). Chips **Todo · Este mes · Mes pasado** (`?periodo=`, días
+  Cancún con `rangoPeriodoTienda(periodo, todayCancun())`) que son Links armados
+  desde la URL VIVA (conservan orden, filtro y búsqueda; sueltan `tp`). El
+  periodo acota también la columna Utilidad (`listInventarioTodo({desde,
+  hasta})`); stock y valorizado son siempre de todo el cardex. Botón «Excel» →
+  `/v1/inventory/items/export` con `desde/hasta` y, SOLO con catálogo, el
+  `ubicacion` vigente (un API previo respondería 400). La «ganancia acumulada»
+  de la cabecera se retiró.
+- **UBICACIÓN** (`lib/admin/inventario-ubicacion.ts`, PURO + test): catálogo
+  `inventario_ubicacion` (Oficina vieja · Oficina nueva · Locker del aeropuerto
+  · Bodega del taller de Mérida · Bodega del taller de Cozumel). El texto libre
+  de siempre (`ubicacion`: «Bodega Cancún» ×69, «Corner»…) es LEGADO y **no se
+  adivina su mapeo**: `textoUbicacion(it)` ⇒ `CATALOGO` (nombre) · `LEGADO`
+  («Bodega Cancún **(anterior)**» en ámbar, title «Elige la ubicación nueva») ·
+  `VACIA` («Sin ubicación» tenue) · `TEXTO` (la llave `ubicacion_id` NO vino =
+  API previo o migración pendiente ⇒ el texto tal cual, sin ámbar).
+- **Herramientas** (solo con el catálogo `disponible`; `listUbicaciones` nunca
+  lanza: 404 o 503 `MIGRACION_PENDIENTE` ⇒ `disponible:false`; otro fallo ⇒
+  `falla:true` + aviso «No se pudieron cargar las ubicaciones»): select
+  **«Ubicación: Todas · Sin ubicación nueva (N) · Oficina vieja (N) · …»**
+  (`?ubic=`, filtro PURO en el navegador sobre la bodega completa, con la misma
+  regla de URL viva que el orden: `resolverFiltroUbicacion`); vista vacía ⇒
+  «No hay productos en «X»» + «Ver todas las ubicaciones» (nunca «Sin
+  resultados para “”»). ADMIN/MECANICO (roles del API): **«Mover a…»**
+  (`mover-ubicacion-dialog.tsx`) sobre las filas VISIBLES tras filtro +
+  búsqueda (DataTable `alCambiarFiltradas`), el diálogo ES la confirmación
+  (`textoConfirmarMover`: «Se moverán 12 productos a «Oficina nueva»: … y 7
+  más. No mueve stock ni dinero.»), tope 500, toast `textoResultadoMover`.
+  El conteo y la muestra son SOLO los que cambian (`particionMover`): los que
+  ya están en el destino se dicen aparte («(3 ya están ahí)») y, si son todos,
+  `textoNadaQueMover` y el botón se apaga (revisión adversaria 25-sep: decía
+  «Se moverán 12» cuando solo cambiaban 9). Viajan TODOS los ids de la vista:
+  si el panel trae un dato viejo, el API decide con `sin_cambio`; y
+  **«Ubicaciones»** (`ubicaciones-dialog.tsx`): agregar, renombrar (propaga a
+  sus productos), ↑/↓ (dos PATCH, `intercambioOrden`), activar/desactivar con
+  confirmación inline; desactivar deshabilitado con productos («Mueve primero
+  sus N productos a otra ubicación»). Sin borrar: se desactiva. Duplicados sin
+  acentos ni mayúsculas se frenan antes (`errorNombreUbicacion`); el 409 del
+  API se pinta tal cual.
+- **Formulario del producto** (`item-form-dialog.tsx`): con catálogo, select
+  «Ubicación» (Sin ubicación + activas en su orden + la actual aunque esté
+  inactiva, «(inactiva)», deshabilitada). Legado ⇒ nota ámbar «Ubicación
+  anterior: «Bodega Cancún». Elige la ubicación nueva.» — va en el `hint` de
+  `Field`, NUNCA junto al select en un Fragment: `Field` clona a su único
+  hijo para ponerle el id del label, y con un Fragment React avisa «Invalid
+  prop `id` supplied to React.Fragment» y la etiqueta queda sin ligar. Viaja SOLO
+  `ubicacion_id` (jamás el texto): en el alta si se eligió; al editar SOLO si
+  cambió (uuid, o `null` = «Sin ubicación»). Sin catálogo, el input de texto de
+  siempre y ningún `ubicacion_id`. Props opcionales `ubicaciones` y
+  `margenVentaPct` (skew-safe) viajan por `ItemsTable → ItemActions`,
+  `ItemCreateButton` y `CodigoSearch`.
+- **SALIDA (CRÍTICO)** — `lib/admin/inventario-salida.ts#ventaDelFormulario`:
+  el diálogo de antes mandaba `venta_unitaria: "0"` con el precio vacío; con
+  el API nuevo eso dejaría TODA salida del panel a costo (sin utilidad). Ahora
+  vacío ⇒ se OMITEN `venta_unitaria` y `venta_moneda` (el API aplica el precio
+  del producto o costo + margen) y la casilla **«Cargar a costo, sin
+  utilidad»** manda `0` y deshabilita el precio. Placeholder «Vacío = costo FIFO
+  + 25 %» / «Vacío = precio del producto». Toast `textoSalidaRegistrada` con
+  `gasto_generado` + `venta_origen`: «Salida registrada: se cargó $318.75 USD a
+  XA-VGV (costo + 25 %).» (sin `venta_origen` = API previo ⇒ «precio de venta»
+  / «costo FIFO»). Cableado vigilado en
+  `inventory/__tests__/utilidad-por-salida.test.tsx`. **Orden de deploy: API
+  antes que panel** — con el panel VIEJO y el API nuevo, las salidas sin precio
+  quedan a costo; con el panel nuevo y el API VIEJO, vaciar el precio ya no
+  fuerza «a costo» (usa el del producto): para eso está la casilla.
+- **Detalle del producto**: ubicación con `textoUbicacion` (adiós al fallback
+  «Bodega Cancún»); «Precio de venta» = `textoPrecioVentaProducto` («Costo FIFO
+  + 25 %» sin precio con el API nuevo; «A costo FIFO» con uno previo); card
+  nueva **«Utilidad por salida»** (`utilidad-por-salida.tsx`: Fecha · Avión ·
+  Cantidad · Costo · Venta · Utilidad, cada monto con su moneda vía
+  `filaUtilidadSalida`; a costo ⇒ «A costo · sin utilidad»; incompleta ⇒ ámbar
+  «no calculable: venta en pesos sobre costo en dólares sin T.C.»; pie con la
+  utilidad por moneda). `resumen-producto.tsx` pinta «utilidad +$63.75 USD» en
+  VENTAS (ya no «sin TC · utilidad no calculable» cuando hay `ganancia_usd`) y
+  la línea USD en totales y por día; `cardex-table.tsx` («Utilidad») pinta
+  `ganancia_usd` cuando `ganancia_mxn` es null.
+- **Configuración**: `NUMERICAS_UI.inventario_margen_venta_pct` («Utilidad de
+  la tienda (margen sobre el costo)», `%`, `max: 100`, `step: 0.5`); la meta
+  numérica ganó `max`/`step` opcionales y el mensaje «Captura un número de 0 a
+  100.». El API responde 400 `VALOR_FUERA_DE_RANGO` si se cuela.
+- **Textos**: TODOS en `lib/admin/inventario-utilidad.ts`,
+  `inventario-ubicacion.ts` e `inventario-salida.ts` (puros + test). Ningún
+  componente redacta estas frases. `textoMonto` escribe SIEMPRE la moneda
+  («+$63.75 USD», «−$10.00 MXN», «$0 USD»; menos tipográfico).
+- **Pruebas**: `lib/admin/__tests__/inventario-utilidad.test.ts` (textos,
+  periodos Cancún con cruce de año y febrero, filas REALES del aceite),
+  `inventario-ubicacion.test.ts`, `inventario-orden.test.ts` (utilidad
+  pesos→dólares→nulos, ubicación catálogo→legado→sin, alias `ganancia`),
+  `inventario-salida.test.ts` (vacío ⇒ omitido; a costo ⇒ 0; precio ⇒ número +
+  moneda), `inventory/__tests__/items-table-orden.test.tsx` (columnas en su
+  orden, `?orden=ganancia`, filtro, «(anterior)», permisos),
+  `utilidad-tienda-card.test.tsx` y `utilidad-por-salida.test.tsx`.
+- **Pendientes conocidos**: la app Flutter no se tocó (sigue con ubicación de
+  texto libre ⇒ lo que no coincida con el catálogo queda «(anterior)»; su
+  salida ya omite el precio vacío, así que el margen le aplica solo). Los 72
+  productos arrancan «(anterior)» hasta que la oficina los mueva con «Sin
+  ubicación nueva» + «Mover a…».

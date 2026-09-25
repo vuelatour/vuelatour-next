@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { CalendarDaysIcon, CameraIcon } from "@heroicons/react/24/outline";
+import { BanknotesIcon, CalendarDaysIcon, CameraIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +65,16 @@ const FLAGS_UI: Record<
  */
 const NUMERICAS_UI: Record<
   string,
-  { titulo: string; unidad: string; ayuda: string; icon?: typeof CameraIcon }
+  {
+    titulo: string;
+    unidad: string;
+    ayuda: string;
+    icon?: typeof CameraIcon;
+    /** Tope (inclusive). Sin él, cualquier número ≥ 0. */
+    max?: number;
+    /** Paso del input (default 1). */
+    step?: number;
+  }
 > = {
   dias_gracia_gastos_semana: {
     titulo: "Día(s) de gracia de la semana de gastos",
@@ -73,6 +82,19 @@ const NUMERICAS_UI: Record<
     icon: CalendarDaysIcon,
     ayuda:
       "Los gastos de campo (piloto, mecánico o visitante) se capturan y corrigen dentro de su semana, de lunes a domingo (hora Cancún). Este número dice cuántos días más, tras el domingo, todavía pueden capturar o corregir lo de la semana pasada: 1 = hasta el lunes. La oficina siempre puede editar desde el panel, y todo cambio queda en el historial del vuelo.",
+  },
+  // Utilidad de la tienda VuelaTour (25-sep-2026): margen sobre el costo FIFO
+  // de lo que sale de bodega a un avión sin precio de venta. El API valida
+  // 0–100 (400 VALOR_FUERA_DE_RANGO); aquí se valida antes para no gastar
+  // el viaje.
+  inventario_margen_venta_pct: {
+    titulo: "Utilidad de la tienda (margen sobre el costo)",
+    unidad: "%",
+    icon: BanknotesIcon,
+    max: 100,
+    step: 0.5,
+    ayuda:
+      "Cuando una pieza sale de bodega a un avión sin precio de venta, el avión paga el costo FIFO más este porcentaje; esa diferencia es la utilidad de la tienda (25 = costo + 25 %). 0 = las salidas sin precio se cargan a costo, sin utilidad. Un precio de venta capturado en el producto o en la salida siempre gana. Aplica a las salidas NUEVAS: las ya registradas no cambian.",
   },
 };
 
@@ -93,7 +115,12 @@ function FlagNumerica({
   const [pending, startTransition] = useTransition();
 
   const numero = Number(valor);
-  const valido = valor.trim() !== "" && Number.isFinite(numero) && numero >= 0;
+  const max = meta?.max;
+  const valido =
+    valor.trim() !== "" &&
+    Number.isFinite(numero) &&
+    numero >= 0 &&
+    (max == null || numero <= max);
   const sinCambio = valido && numero === Number(flag.valor_numerico ?? 0);
 
   const guardar = () => {
@@ -131,8 +158,9 @@ function FlagNumerica({
           <Input
             type="number"
             min={0}
-            step={1}
-            inputMode="numeric"
+            max={max}
+            step={meta?.step ?? 1}
+            inputMode={meta?.step != null && meta.step < 1 ? "decimal" : "numeric"}
             value={valor}
             onChange={(e) => setValor(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && guardar()}
@@ -149,7 +177,9 @@ function FlagNumerica({
         {meta?.ayuda && <p className="text-xs text-muted-foreground">{meta.ayuda}</p>}
         {!valido && (
           <p className="text-xs text-destructive mt-1">
-            Captura un número igual o mayor a 0.
+            {max != null
+              ? `Captura un número de 0 a ${max}.`
+              : "Captura un número igual o mayor a 0."}
           </p>
         )}
         <p className="text-[11px] text-muted-foreground mt-2">

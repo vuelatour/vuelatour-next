@@ -11,7 +11,9 @@
  *  - `nombre` (DEFAULT, A–Z) / `nombre-desc`.
  *  - `categoria` / `categoria-desc`.
  *  - `stock` (menos primero) / `stock-desc` (más primero).
- *  - `ganancia` / `ganancia-desc`.
+ *  - `utilidad` / `utilidad-desc` (25-sep-2026; antes `ganancia`, que sigue
+ *    llegando por enlaces viejos y se lee como `utilidad` — ver alias).
+ *  - `ubicacion` / `ubicacion-desc` (25-sep-2026).
  *  - `se-acaban`: primero los que están por debajo del mínimo (chip «Bajo»),
  *    luego por stock ascendente.
  *
@@ -40,17 +42,28 @@ export const ORDENES_INVENTARIO = [
   "categoria-desc",
   "stock",
   "stock-desc",
-  "ganancia",
-  "ganancia-desc",
+  "utilidad",
+  "utilidad-desc",
+  "ubicacion",
+  "ubicacion-desc",
   "se-acaban",
 ] as const;
 export type OrdenInventario = (typeof ORDENES_INVENTARIO)[number];
+
+/**
+ * Valores VIEJOS de `?orden=` que siguen llegando por enlaces y marcadores:
+ * la columna «Ganancia / pérdida» pasó a llamarse «Utilidad» (25-sep-2026).
+ */
+const ALIAS_ORDEN: Readonly<Record<string, OrdenInventario>> = {
+  ganancia: "utilidad",
+  "ganancia-desc": "utilidad-desc",
+};
 
 /** El orden de siempre: alfabético por producto. No se escribe en la URL. */
 export const ORDEN_INVENTARIO_DEFAULT: OrdenInventario = "nombre";
 
 /** Columnas de la tabla que se pueden ordenar con clic en su encabezado. */
-export type ColumnaInventario = "nombre" | "categoria" | "stock" | "ganancia";
+export type ColumnaInventario = "nombre" | "categoria" | "stock" | "utilidad" | "ubicacion";
 export type DireccionOrden = "asc" | "desc";
 
 /** Atajos visibles arriba de la tabla (lo que el operador pidió, sin jerga). */
@@ -76,7 +89,9 @@ const PRIMERA_DIRECCION: Record<ColumnaInventario, DireccionOrden> = {
   // Menos stock arriba: es lo que el cliente quiere ver primero.
   stock: "asc",
   // Lo que más ganó arriba (dinero: lo grande primero).
-  ganancia: "desc",
+  utilidad: "desc",
+  // Ubicaciones en el orden del catálogo (el que eligió la oficina).
+  ubicacion: "asc",
 };
 
 function ordenDe(columna: ColumnaInventario, dir: DireccionOrden): OrdenInventario {
@@ -92,6 +107,7 @@ export function ordenInventarioDeUrl(
   valor: string | readonly string[] | null | undefined,
 ): OrdenInventario {
   const v = Array.isArray(valor) ? valor[0] : (valor as string | null | undefined);
+  if (v && Object.prototype.hasOwnProperty.call(ALIAS_ORDEN, v)) return ALIAS_ORDEN[v];
   return valorDeCatalogo(v, ORDENES_INVENTARIO) ?? ORDEN_INVENTARIO_DEFAULT;
 }
 
@@ -154,6 +170,21 @@ export interface ItemOrdenable {
   bajo_stock?: boolean | null;
   /** null = nunca vendió con precio (no es una ganancia de $0). */
   ganancia_mxn?: number | string | null;
+  /** Utilidad en pesos (API 0.0.35; con un API previo manda `ganancia_mxn`). */
+  utilidad_mxn?: number | string | null;
+  /** Utilidad en DÓLARES (venta y costo en USD sin T.C.). Nunca se suma con los pesos. */
+  utilidad_usd?: number | string | null;
+  /** Ubicación (ver `lib/admin/inventario-ubicacion.ts#textoUbicacion`). */
+  ubicacion?: string | null;
+  ubicacion_id?: string | null;
+  ubicacion_nombre?: string | null;
+  ubicacion_legado?: string | null;
+}
+
+/** Opciones del orden que dependen de datos fuera del ítem. */
+export interface OpcionesOrdenInventario {
+  /** id de ubicación → posición en el catálogo (orden elegido por la oficina). */
+  ordenUbicacion?: ReadonlyMap<string, number>;
 }
 
 const colador = new Intl.Collator("es-MX", { sensitivity: "base", numeric: true });
@@ -185,7 +216,43 @@ function desempate(a: ItemOrdenable, b: ItemOrdenable): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-function comparador(orden: OrdenInventario): (a: ItemOrdenable, b: ItemOrdenable) => number {
+/**
+ * Clave de UTILIDAD: primero los que tienen utilidad en pesos (por monto),
+ * luego los que solo tienen dólares (por monto). No hay tipo de cambio para
+ * comparar pesos contra dólares, así que no se mezclan en una sola escala.
+ * Sin utilidad en ninguna moneda ⇒ null (al final en las dos direcciones).
+ */
+function claveUtilidad(it: ItemOrdenable): { grupo: 0 | 1; monto: number } | null {
+  const mxn = numeroONulo(it.utilidad_mxn ?? it.ganancia_mxn);
+  if (mxn != null) return { grupo: 0, monto: mxn };
+  const usd = numeroONulo(it.utilidad_usd);
+  if (usd != null) return { grupo: 1, monto: usd };
+  return null;
+}
+
+/**
+ * Clave de UBICACIÓN: catálogo por su orden (0) → texto legado A–Z (1) → sin
+ * ubicación (null, al final siempre). Un ítem de un API previo (sin la llave
+ * `ubicacion_id`) cuenta como texto: se ordena A–Z por lo que dice.
+ */
+function claveUbicacion(
+  it: ItemOrdenable,
+  ordenUbicacion: ReadonlyMap<string, number> | undefined,
+): { grupo: 0 | 1; pos: number; texto: string } | null {
+  if (it.ubicacion_id) {
+    const texto = textoONulo(it.ubicacion_nombre) ?? textoONulo(it.ubicacion) ?? "";
+    const pos = ordenUbicacion?.get(it.ubicacion_id);
+    // Id que no está en el catálogo cargado: después de los conocidos, A–Z.
+    return { grupo: 0, pos: pos ?? Number.MAX_SAFE_INTEGER, texto };
+  }
+  const legado = textoONulo(it.ubicacion_legado) ?? textoONulo(it.ubicacion);
+  return legado ? { grupo: 1, pos: 0, texto: legado } : null;
+}
+
+function comparador(
+  orden: OrdenInventario,
+  opts: OpcionesOrdenInventario = {},
+): (a: ItemOrdenable, b: ItemOrdenable) => number {
   const signo = orden.endsWith("-desc") ? -1 : 1;
   switch (orden) {
     case "nombre":
@@ -205,13 +272,26 @@ function comparador(orden: OrdenInventario): (a: ItemOrdenable, b: ItemOrdenable
       return (a, b) =>
         nulosAlFinal(numeroONulo(a.stock), numeroONulo(b.stock), (x, y) => (x - y) * signo) ||
         desempate(a, b);
-    case "ganancia":
-    case "ganancia-desc":
+    case "utilidad":
+    case "utilidad-desc":
+      return (a, b) =>
+        nulosAlFinal(claveUtilidad(a), claveUtilidad(b), (x, y) => {
+          // Pesos antes que dólares en las DOS direcciones (no se comparan).
+          if (x.grupo !== y.grupo) return x.grupo - y.grupo;
+          return (x.monto - y.monto) * signo;
+        }) || desempate(a, b);
+    case "ubicacion":
+    case "ubicacion-desc":
       return (a, b) =>
         nulosAlFinal(
-          numeroONulo(a.ganancia_mxn),
-          numeroONulo(b.ganancia_mxn),
-          (x, y) => (x - y) * signo,
+          claveUbicacion(a, opts.ordenUbicacion),
+          claveUbicacion(b, opts.ordenUbicacion),
+          (x, y) => {
+            // catálogo → legado (asc) / legado → catálogo (desc).
+            if (x.grupo !== y.grupo) return (x.grupo - y.grupo) * signo;
+            if (x.pos !== y.pos) return (x.pos - y.pos) * signo;
+            return colador.compare(x.texto, y.texto) * signo;
+          },
         ) || desempate(a, b);
     case "se-acaban":
       return (a, b) =>
@@ -233,6 +313,7 @@ function comparador(orden: OrdenInventario): (a: ItemOrdenable, b: ItemOrdenable
 export function ordenarInventario<T extends ItemOrdenable>(
   items: readonly T[],
   orden: OrdenInventario,
+  opts: OpcionesOrdenInventario = {},
 ): T[] {
-  return [...items].sort(comparador(orden));
+  return [...items].sort(comparador(orden, opts));
 }

@@ -20,6 +20,8 @@ interface MovimientoButtonProps {
   initialEmpaqueId?: string;
   /** Abrir el diálogo al montar (navegación desde el escáner). */
   autoOpen?: boolean;
+  /** Margen de la tienda: textos de la salida («Vacío = costo FIFO + 25 %»). */
+  margenVentaPct?: number | null;
 }
 
 export function MovimientoButton({ initialEmpaqueId, autoOpen, ...props }: MovimientoButtonProps) {

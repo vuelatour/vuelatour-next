@@ -26,9 +26,17 @@ import {
 } from "@/app/admin/inventory/actions";
 import { normalizarCodigo } from "@/app/admin/inventory/schema";
 import type { EmpaqueFormRow, ItemFormValues } from "@/app/admin/inventory/schema";
-import type { InventarioFoto, InventarioItem } from "@/types/inventory";
+import type { InventarioFoto, InventarioItem, InventarioUbicacion } from "@/types/inventory";
 import { Field } from "@/components/admin/form-field";
 import { uploadInventarioFoto } from "@/lib/storage/inventario-fotos";
+import {
+  MARCA_INACTIVA,
+  TEXTO_SIN_UBICACION,
+  notaUbicacionAnterior,
+  ordenarCatalogo,
+  textoUbicacion,
+} from "@/lib/admin/inventario-ubicacion";
+import { hintPrecioVentaProducto } from "@/lib/admin/inventario-salida";
 
 const MAX_FOTOS_ADICIONALES = 6;
 
@@ -43,6 +51,14 @@ interface ItemFormDialogProps {
    * con este código" cuando el escáner leyó un código que no existe).
    */
   initialCodigo?: string;
+  /**
+   * Catálogo de ubicaciones (25-sep-2026, con inactivas). Con él la
+   * «Ubicación» es un selector del catálogo; null/ausente (API previo o
+   * migración pendiente) = el input de texto de siempre.
+   */
+  ubicaciones?: InventarioUbicacion[] | null;
+  /** Margen de la tienda: solo para el texto del precio de venta. */
+  margenVentaPct?: number | null;
 }
 
 export function ItemFormDialog({
@@ -51,9 +67,14 @@ export function ItemFormDialog({
   initialItem,
   categorias,
   initialCodigo,
+  ubicaciones,
+  margenVentaPct,
 }: ItemFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialItem;
+  // Con catálogo de ubicaciones (API 0.0.35 + migración) la ubicación es un
+  // selector; sin él, el input de texto de siempre.
+  const conCatalogo = ubicaciones != null;
   // Foto del producto: archivo nuevo elegido, o quitar la existente.
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
@@ -211,12 +232,25 @@ export function ItemFormDialog({
         fotosPayload = { fotos_adicionales: subidas };
       }
 
-      const { empaques: filasEmpaques, ...base } = values;
+      const { empaques: filasEmpaques, ubicacion_id: ubicacionIdForm, ...base } = values;
       const payload: Record<string, unknown> = {
         ...base,
         ...(fotoPayload ?? {}),
         ...(fotosPayload ?? {}),
       };
+      // UBICACIÓN (25-sep-2026). Con catálogo viaja SOLO `ubicacion_id` —
+      // nunca el texto—: en el alta si se eligió una; al editar solo si
+      // CAMBIÓ (uuid, o null = «Sin ubicación»). Sin catálogo, el texto de
+      // siempre y ningún `ubicacion_id` (un API previo respondería 400).
+      if (conCatalogo) {
+        delete payload.ubicacion;
+        const antes = initialItem?.ubicacion_id ?? "";
+        if (!isEdit) {
+          if (ubicacionIdForm) payload.ubicacion_id = ubicacionIdForm;
+        } else if (ubicacionIdForm !== antes) {
+          payload.ubicacion_id = ubicacionIdForm || null;
+        }
+      }
       if (!isEdit) {
         payload.empaques = filasEmpaques.map((e) => ({
           nombre: e.nombre.trim(),
@@ -287,6 +321,18 @@ export function ItemFormDialog({
   });
 
   const totalFotosExtra = fotosExistentes.length + fotosNuevas.length;
+
+  // Ubicación con catálogo: activas en su orden + la ACTUAL aunque esté
+  // inactiva (se ve «(inactiva)» y no se puede volver a elegir).
+  const actualId = initialItem?.ubicacion_id ?? null;
+  const opcionesUbicacion = ordenarCatalogo(ubicaciones ?? []).filter(
+    (u) => u.activo || u.id === actualId,
+  );
+  const ubicacionActual = initialItem ? textoUbicacion(initialItem) : null;
+  const legado =
+    conCatalogo && ubicacionActual?.tipo === "LEGADO" && !watch("ubicacion_id")
+      ? ubicacionActual.texto
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -507,14 +553,49 @@ export function ItemFormDialog({
             <Field label="Stock mínimo" hint="Alerta por email al bajar" error={errors.stock_minimo?.message}>
               <Input type="number" step="any" min="0" placeholder="0" {...register("stock_minimo")} />
             </Field>
-            <Field
-              label="Ubicación"
-              // NOT NULL en BD: al editar, vacío = se conserva la actual.
-              hint={isEdit ? "Vacío = se conserva la actual" : undefined}
-              error={errors.ubicacion?.message}
-            >
-              <Input placeholder="Bodega Cancún" {...register("ubicacion")} />
-            </Field>
+            {conCatalogo ? (
+              <Field
+                label="Ubicación"
+                // La nota del texto ANTERIOR va en el hint (acepta nodo): el
+                // control debe ser el ÚNICO hijo para que `Field` le ponga el
+                // id del label. Con un Fragment el id caía en el Fragment
+                // (React avisa «Invalid prop `id` supplied to React.Fragment»)
+                // y la etiqueta quedaba sin ligar al select.
+                hint={
+                  legado ? (
+                    <span className="text-amber-700 dark:text-amber-400">
+                      {notaUbicacionAnterior(legado)}
+                    </span>
+                  ) : (
+                    "Dónde está guardado"
+                  )
+                }
+                error={errors.ubicacion_id?.message}
+              >
+                <select
+                  value={watch("ubicacion_id")}
+                  onChange={(e) => setValue("ubicacion_id", e.target.value, { shouldDirty: true })}
+                  className="h-9 w-full cursor-pointer rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                >
+                  <option value="">{TEXTO_SIN_UBICACION}</option>
+                  {opcionesUbicacion.map((u) => (
+                    <option key={u.id} value={u.id} disabled={!u.activo}>
+                      {u.activo ? u.nombre : `${u.nombre} ${MARCA_INACTIVA}`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <Field
+                label="Ubicación"
+                // Sin catálogo (API previo): NOT NULL en BD, al editar vacío =
+                // se conserva la actual.
+                hint={isEdit ? "Vacío = se conserva la actual" : undefined}
+                error={errors.ubicacion?.message}
+              >
+                <Input placeholder="Bodega Cancún" {...register("ubicacion")} />
+              </Field>
+            )}
           </div>
 
           {/* Presentación del stock: en qué se cuenta (el cardex y las alertas
@@ -553,7 +634,7 @@ export function ItemFormDialog({
               carga a este precio; el costo FIFO queda para el inventario. */}
           <Field
             label="Precio de venta unitario"
-            hint="Lo que paga el avión al sacar la pieza de bodega; el costo FIFO queda para el inventario. Vacío = la salida se carga a costo."
+            hint={hintPrecioVentaProducto(margenVentaPct)}
             error={errors.precio_venta?.message}
           >
             <div className="flex gap-2">
@@ -565,7 +646,7 @@ export function ItemFormDialog({
                     e.target.value as ItemFormValues["precio_venta_moneda"],
                   )
                 }
-                className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                className="h-9 w-20 shrink-0 cursor-pointer rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
               >
                 <option value="MXN">MXN</option>
                 <option value="USD">USD</option>
@@ -714,7 +795,7 @@ export function ItemFormDialog({
                       onChange={(e) =>
                         setValue("moneda_inicial", e.target.value as ItemFormValues["moneda_inicial"])
                       }
-                      className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                      className="h-9 w-20 shrink-0 cursor-pointer rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
                     >
                       <option value="MXN">MXN</option>
                       <option value="USD">USD</option>
@@ -824,7 +905,7 @@ function Miniatura({
         type="button"
         onClick={onQuitar}
         aria-label="Quitar foto"
-        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border hover:text-destructive"
+        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border hover:text-destructive"
       >
         <XMarkIcon className="h-3 w-3" />
       </button>
@@ -901,6 +982,7 @@ function defaults(item?: InventarioItem, initialCodigo?: string): ItemFormValues
       categoria: "",
       stock_minimo: "",
       ubicacion: "",
+      ubicacion_id: "",
       unidad: "",
       precio_venta: "",
       precio_venta_moneda: "MXN",
@@ -921,6 +1003,7 @@ function defaults(item?: InventarioItem, initialCodigo?: string): ItemFormValues
     categoria: item.categoria,
     stock_minimo: item.stock_minimo != null ? String(item.stock_minimo) : "",
     ubicacion: item.ubicacion ?? "",
+    ubicacion_id: item.ubicacion_id ?? "",
     unidad: item.unidad ?? "",
     precio_venta: item.precio_venta != null ? String(item.precio_venta) : "",
     precio_venta_moneda: item.precio_venta_moneda ?? "MXN",

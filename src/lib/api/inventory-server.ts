@@ -4,8 +4,10 @@ import type {
   InventarioItemDetail,
   InventarioItemResumen,
   InventarioListResponse,
+  InventarioUbicacion,
   MovimientoEliminado,
   MovimientoListResponse,
+  TiendaResumen,
 } from "@/types/inventory";
 
 export interface ListInventarioQuery {
@@ -16,6 +18,13 @@ export interface ListInventarioQuery {
   /** Acotan SOLO las ventas/ganancia por ítem (YYYY-MM-DD, día Cancún); sin ellos = acumulado. */
   desde?: string;
   hasta?: string;
+  /**
+   * Ubicación del catálogo (uuid) o `sin` (sin ubicación nueva). SOLO con el
+   * API 0.0.35 y la migración 20260925000001 (un API previo responde 400 por
+   * `forbidNonWhitelisted`; sin migración, 503). La LISTA del panel filtra en
+   * el navegador sobre la bodega completa y no lo manda: lo usa el Excel.
+   */
+  ubicacion?: string;
   limit?: number;
   offset?: number;
 }
@@ -45,6 +54,15 @@ export async function listInventarioTodo(
     valor_total_usd_sin_tc: number;
     ventas_total_mxn: number;
     ganancia_total_mxn: number;
+    /**
+     * UTILIDAD DE LA TIENDA (25-sep-2026): DOS sumas, una por moneda, sobre
+     * lo que manda el API por ítem. null = ningún ítem trae utilidad en esa
+     * moneda (nunca se inventa un 0).
+     */
+    utilidad_total_mxn: number | null;
+    utilidad_total_usd: number | null;
+    /** Margen vigente (de la 1.ª página). Ausente = API previo. */
+    margen_venta_pct?: number;
   }
 > {
   const limit = 300;
@@ -73,7 +91,95 @@ export async function listInventarioTodo(
     // ítem; null = ese ítem nunca vendió con precio y no suma).
     ventas_total_mxn: round2(data.reduce((s, d) => s + (Number(d.ventas_mxn) || 0), 0)),
     ganancia_total_mxn: round2(data.reduce((s, d) => s + (Number(d.ganancia_mxn) || 0), 0)),
+    // Utilidad de la tienda: pesos y dólares en DOS sumas (la misma regla del
+    // valorizado de arriba). Con un API previo `utilidad_mxn` no existe y se
+    // lee `ganancia_mxn`, que es el mismo número.
+    utilidad_total_mxn: sumaONulo(data.map((d) => d.utilidad_mxn ?? d.ganancia_mxn)),
+    utilidad_total_usd: sumaONulo(data.map((d) => d.utilidad_usd)),
+    ...(typeof first.margen_venta_pct === "number"
+      ? { margen_venta_pct: first.margen_venta_pct }
+      : {}),
   };
+}
+
+/** Σ de los valores conocidos, a centavos; null si ninguno es número. */
+function sumaONulo(valores: Array<number | string | null | undefined>): number | null {
+  let hay = false;
+  let s = 0;
+  for (const v of valores) {
+    if (v == null || v === "") continue;
+    const n = Number(v);
+    if (!Number.isFinite(n)) continue;
+    hay = true;
+    s += n;
+  }
+  return hay ? Math.round(s * 100) / 100 : null;
+}
+
+// ───────────── Catálogo de ubicaciones y utilidad de la tienda (25-sep-2026) ─────────────
+
+/**
+ * Catálogo de ubicaciones de bodega. Tres desenlaces, como
+ * `listMovimientosEliminados`, y NUNCA lanza (es accesorio de la lista):
+ * - `disponible:false` → el API no conoce la RUTA (404, API previo) o falta
+ *   la migración (503 con `code` MIGRACION_PENDIENTE): la lista se pinta
+ *   como antes (texto de `ubicacion`) y no se ofrecen filtro ni «Mover a…».
+ * - `falla:true` → la lectura falló por otra cosa (502/503 de un deploy de
+ *   Railway, red): tampoco se ofrecen las herramientas, y la página lo AVISA.
+ *   Un 503 SIN ese código no es «falta la migración» (lección de Facturas
+ *   emitidas, 24-sep-2026).
+ * - normal → las filas (orden y nombre del API).
+ * 401/403 degrada en silencio (no es falla pasajera).
+ */
+export interface UbicacionesResultado {
+  disponible: boolean;
+  data: InventarioUbicacion[];
+  falla: boolean;
+}
+
+export async function listUbicaciones(
+  opts: { incluirInactivas?: boolean } = {},
+): Promise<UbicacionesResultado> {
+  try {
+    const data = await apiServer<InventarioUbicacion[]>("/v1/inventory/ubicaciones", {
+      searchParams: opts.incluirInactivas ? { incluir_inactivas: true } : undefined,
+      cache: "no-store",
+    });
+    return { disponible: true, data: Array.isArray(data) ? data : [], falla: false };
+  } catch (err) {
+    if (isApiError(err)) {
+      if (err.status === 404) return { disponible: false, data: [], falla: false };
+      if (err.status === 503 && err.code === "MIGRACION_PENDIENTE") {
+        return { disponible: false, data: [], falla: false };
+      }
+      if (err.status === 401 || err.status === 403) {
+        return { disponible: false, data: [], falla: false };
+      }
+    }
+    console.error("[admin] no se pudo cargar el catálogo de ubicaciones", err);
+    return { disponible: false, data: [], falla: true };
+  }
+}
+
+/**
+ * Utilidad de la tienda (`GET /v1/inventory/tienda/resumen`). Nunca lanza:
+ * `null` = no se pudo saber (API previo, falla o sin permiso) y la página cae
+ * al respaldo con las sumas de la lista (`utilidad_total_mxn/usd`).
+ */
+export async function getTiendaResumen(
+  query: { desde?: string; hasta?: string } = {},
+): Promise<TiendaResumen | null> {
+  try {
+    return await apiServer<TiendaResumen>("/v1/inventory/tienda/resumen", {
+      searchParams: query as Record<string, string | undefined>,
+      cache: "no-store",
+    });
+  } catch (err) {
+    if (!(isApiError(err) && [401, 403, 404].includes(err.status))) {
+      console.error("[admin] no se pudo cargar la utilidad de la tienda", err);
+    }
+    return null;
+  }
 }
 
 /**

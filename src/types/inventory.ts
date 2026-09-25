@@ -47,11 +47,78 @@ export interface InventarioItem {
   descripcion?: string | null;
   /** Empaques (cajas) del ítem. Opcional por skew de deploy. */
   empaques?: InventarioEmpaque[] | null;
+  /**
+   * Texto A MOSTRAR de la ubicación (25-sep-2026): el nombre del catálogo o,
+   * sin él, el texto LEGADO («Bodega Cancún», «Corner»…). null = sin
+   * ubicación. La app Flutter lo sigue leyendo tal cual.
+   */
   ubicacion: string | null;
+  /**
+   * ADITIVOS del catálogo de ubicaciones (API 0.0.35 + migración
+   * 20260925000001). AUSENTES = API previo o migración sin aplicar: la
+   * ubicación se pinta como siempre (texto) y nada se adivina.
+   */
+  ubicacion_id?: string | null;
+  /** = `ubicacion` cuando `ubicacion_id` ≠ null. */
+  ubicacion_nombre?: string | null;
+  /** = `ubicacion` cuando `ubicacion_id` = null (texto anterior al catálogo). */
+  ubicacion_legado?: string | null;
   notas: string | null;
   activo: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Catálogo de ubicaciones de bodega (25-sep-2026): Oficina vieja, Oficina
+ * nueva, Locker del aeropuerto, Bodega del taller de Mérida, Bodega del
+ * taller de Cozumel. `productos` = ítems ACTIVOS en esa ubicación.
+ */
+export interface InventarioUbicacion {
+  id: string;
+  nombre: string;
+  orden: number;
+  activo: boolean;
+  productos: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /v1/inventory/items/mover-ubicacion. */
+export interface MoverUbicacionResultado {
+  movidos: number;
+  /** Ya estaban en esa ubicación. */
+  sin_cambio: number;
+  /** Ids que ya no existen (no es error). */
+  no_encontrados: string[];
+  /** Ids de productos dados de baja (no es error). */
+  inactivos: string[];
+  ubicacion: { id: string; nombre: string };
+}
+
+/**
+ * GET /v1/inventory/tienda/resumen — utilidad de la tienda VuelaTour
+ * (25-sep-2026). Cada moneda por SEPARADO: jamás se suman. null = no hubo
+ * nada en esa moneda (0 es 0).
+ */
+export interface TiendaResumen {
+  /** null = todo el historial. */
+  periodo: { desde: string; hasta: string } | null;
+  margen_venta_pct: number;
+  utilidad_mxn: number | null;
+  utilidad_usd: number | null;
+  ventas_mxn: number | null;
+  ventas_usd: number | null;
+  costo_ventas_mxn: number | null;
+  costo_ventas_usd: number | null;
+  /** Σ salidas a aviones del periodo (con y sin venta). */
+  unidades_cargadas: number;
+  /** Σ salidas CON venta (las que generan utilidad). */
+  unidades_vendidas: number;
+  productos_con_ventas: number;
+  /** Salidas con venta cuya utilidad no se puede expresar (pesos sobre USD sin T.C.). */
+  ventas_sin_utilidad: number;
+  con_entradas_sin_costo: boolean;
 }
 
 /** Ítem enriquecido con stock y valuación calculados por el API. */
@@ -87,7 +154,22 @@ export interface InventarioItemWithStock extends InventarioItem {
   salidas_cant?: number | null;
   ventas_mxn?: number | null;
   costo_ventas_mxn?: number | null;
+  /** Se conserva por compatibilidad: = `utilidad_mxn`. */
   ganancia_mxn?: number | null;
+  /**
+   * UTILIDAD DE LA TIENDA (25-sep-2026, API 0.0.35) — ADITIVOS, cada moneda
+   * por su lado (jamás se suman). Ausentes = API previo.
+   *  - `ventas_cant`: unidades de las salidas CON venta (null = ninguna).
+   *  - `utilidad_mxn` / `utilidad_usd`: Σ venta − costo FIFO en su moneda.
+   *  - `ventas_sin_utilidad`: salidas con venta en pesos sobre costo en
+   *    dólares sin T.C. (su utilidad no se puede expresar).
+   */
+  ventas_cant?: number | null;
+  utilidad_mxn?: number | null;
+  ventas_usd?: number | null;
+  costo_ventas_usd?: number | null;
+  utilidad_usd?: number | null;
+  ventas_sin_utilidad?: number;
   /** Alguna ENTRADA quedó a $0: la ganancia está inflada hasta completar su costo. */
   con_entradas_sin_costo?: boolean;
   /**
@@ -113,6 +195,11 @@ export interface InventarioMovimiento {
   venta_moneda?: "MXN" | "USD" | null;
   /** Venta total MXN − costo FIFO MXN (la manda el API en el detalle del ítem). */
   ganancia_mxn?: number | null;
+  /**
+   * ADITIVO (25-sep-2026): utilidad de una salida cobrada en dólares sobre
+   * costo en dólares (sin T.C.). Nunca viene junto con `ganancia_mxn`.
+   */
+  ganancia_usd?: number | null;
   /** SALIDA prorrateada a TODA la flota (sin avión específico). */
   para_flota?: boolean | null;
   /**
@@ -147,7 +234,28 @@ export interface InventarioMovimiento {
     moneda: "MXN" | "USD";
     gastos_sin_tc: number;
   } | null;
+  /**
+   * Respuesta de `POST items/:id/movimientos` (SALIDA): el gasto BODEGA que
+   * se le cargó al avión (`{id, monto, moneda, categoria}`) o, para toda la
+   * flota, el resumen del prorrateo (`{prorrateado, aviones, monto_total,
+   * gastos}`). null = no hubo cargo (costo 0 o no es salida).
+   */
+  gasto_generado?: GastoGeneradoSalida | null;
+  /**
+   * ADITIVOS 25-sep-2026 (API 0.0.35): de dónde salió el precio que pagó el
+   * avión y, con MARGEN, el % aplicado. null fuera de SALIDA y en el replay
+   * idempotente. Ausentes = API previo.
+   */
+  venta_origen?: OrigenVenta | null;
+  margen_pct?: number | null;
 }
+
+/** Precedencia del precio de una SALIDA (API 0.0.35, `precioVentaDeSalida`). */
+export type OrigenVenta = "PRECIO_CAPTURADO" | "PRECIO_PRODUCTO" | "MARGEN" | "A_COSTO";
+
+export type GastoGeneradoSalida =
+  | { id: string; monto: number; moneda: "MXN" | "USD" | string; categoria?: string }
+  | { prorrateado: true; aviones: number; monto_total: number; gastos: number };
 
 export interface InventarioListResponse {
   data: InventarioItemWithStock[];
@@ -162,6 +270,11 @@ export interface InventarioListResponse {
   /** Por página, como valor_total_*; el cliente re-suma. Opcionales por skew. */
   ventas_total_mxn?: number;
   ganancia_total_mxn?: number;
+  /** ADITIVOS 25-sep-2026 (por página): cada moneda por su lado, jamás sumadas. */
+  utilidad_total_mxn?: number | null;
+  utilidad_total_usd?: number | null;
+  /** Margen vigente de la tienda (% sobre el costo FIFO). */
+  margen_venta_pct?: number;
 }
 
 export interface InventarioItemDetail extends InventarioItemWithStock {
@@ -210,6 +323,20 @@ export interface ResumenVenta {
   sin_tc: boolean;
   costo_fifo_mxn: number | null;
   ganancia_mxn: number | null;
+  /**
+   * ADITIVOS 25-sep-2026 (fuente única `ventaDeSalida` del API). Ausentes =
+   * API previo.
+   *  - `venta_total`: lo cobrado al avión en `venta_moneda` (= monto del gasto).
+   *  - `costo_fifo_usd`: costo FIFO de la salida en dólares (siempre existe).
+   *  - `ganancia_usd`: utilidad en dólares (venta y costo en USD sin T.C.).
+   *  - `moneda_utilidad`: en qué moneda cuenta ESTA salida (nunca en las dos).
+   *  - `utilidad_incompleta`: venta en pesos sobre costo en dólares sin T.C.
+   */
+  venta_total?: number | null;
+  costo_fifo_usd?: number | null;
+  ganancia_usd?: number | null;
+  moneda_utilidad?: "MXN" | "USD" | null;
+  utilidad_incompleta?: boolean;
   /** Matrícula, 'FLOTA' o '—'. */
   vendido_a: string;
   aeronave_id: string | null;
@@ -232,6 +359,10 @@ export interface ResumenDia {
   costo_ventas_mxn: number | null;
   /** Σ ganancia de las salidas con precio del día; null = ese día no vendió. */
   utilidad_mxn: number | null;
+  /** ADITIVOS 25-sep-2026: lo mismo en dólares (null = ese día no hubo venta USD). */
+  ventas_usd?: number | null;
+  costo_ventas_usd?: number | null;
+  utilidad_usd?: number | null;
   /** Algún movimiento del día está en USD sin TC. */
   sin_tc: boolean;
 }
@@ -250,8 +381,15 @@ export interface InventarioItemResumen {
     categoria: string | null;
     precio_venta: number | null;
     precio_venta_moneda: "MXN" | "USD" | null;
+    /** ADITIVOS 25-sep-2026 (misma regla que el listado). */
+    ubicacion?: string | null;
+    ubicacion_id?: string | null;
+    ubicacion_nombre?: string | null;
+    ubicacion_legado?: string | null;
   };
   moneda: "MXN";
+  /** ADITIVO 25-sep-2026: margen vigente de la tienda (% sobre el costo). */
+  margen_venta_pct?: number;
   periodo: { desde: string | null; hasta: string | null } | null;
   compras: ResumenCompra[];
   ventas: ResumenVenta[];
@@ -266,6 +404,11 @@ export interface InventarioItemResumen {
     ventas_a_costo_mxn: number | null;
     costo_ventas_mxn: number | null;
     utilidad_mxn: number | null;
+    /** ADITIVOS 25-sep-2026: dólares por su lado (jamás sumados con los pesos). */
+    ventas_usd?: number | null;
+    costo_ventas_usd?: number | null;
+    utilidad_usd?: number | null;
+    ventas_sin_utilidad?: number;
     con_entradas_sin_costo: boolean;
     /** Algún movimiento del cardex está en USD sin TC (filas con `sin_tc`). */
     con_movimientos_sin_tc: boolean;

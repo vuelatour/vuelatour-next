@@ -5,6 +5,10 @@
  * activo resaltado, y —lo que pidió el cliente— que lo que se acaba salga en
  * la PRIMERA página aunque alfabéticamente esté en la última (el orden se
  * aplica a la bodega completa, no a la página visible).
+ *
+ * 25-sep-2026: columnas Producto · Categoría · Stock · Utilidad · Ubicación
+ * · ⋯, `?orden=ganancia` (enlace viejo) ordena por Utilidad, y el filtro /
+ * «Mover a…» de ubicación.
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -22,6 +26,13 @@ vi.mock("@/components/admin/inventory/item-actions", () => ({
 let urlActual: URLSearchParams | null = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useSearchParams: () => urlActual,
+  useRouter: () => ({ refresh: () => {}, push: () => {} }),
+}));
+// Las server actions (red, sesión) no son parte de este test.
+vi.mock("@/app/admin/inventory/actions", () => ({
+  moverUbicacionAction: vi.fn(),
+  crearUbicacionAction: vi.fn(),
+  actualizarUbicacionAction: vi.fn(),
 }));
 
 const { ItemsTable } = await import("../items-table");
@@ -109,13 +120,39 @@ describe("ItemsTable · orden", () => {
   it("encabezados ordenables: aria-sort y botón con cursor-pointer", () => {
     const html = render("stock-desc");
     const ths = html.match(/<th[^>]*aria-sort="[a-z]+"[^>]*>/g) ?? [];
-    // Producto, Categoría, Stock, Ganancia (acciones no ordena).
-    expect(ths).toHaveLength(4);
+    // Producto, Categoría, Stock, Utilidad, Ubicación (acciones no ordena).
+    expect(ths).toHaveLength(5);
     expect(html.match(/aria-sort="descending"/g)).toHaveLength(1);
-    expect(html.match(/aria-sort="none"/g)).toHaveLength(3);
+    expect(html.match(/aria-sort="none"/g)).toHaveLength(4);
     const headBtns = html.match(/<th[^>]*aria-sort[^>]*><button[^>]*>/g) ?? [];
-    expect(headBtns).toHaveLength(4);
+    expect(headBtns).toHaveLength(5);
     for (const b of headBtns) expect(b).toContain("cursor-pointer");
+  });
+
+  it("columnas en el orden del cliente: Producto · Categoría · Stock · Utilidad · Ubicación", () => {
+    const html = render();
+    const heads = ["Producto", "Categoría", "Stock", "Utilidad", "Ubicación"].map((h) =>
+      html.indexOf(`>${h}<`),
+    );
+    for (const i of heads) expect(i).toBeGreaterThan(-1);
+    expect([...heads].sort((a, b) => a - b)).toEqual(heads);
+    expect(html).not.toContain("Ganancia / pérdida");
+    expect(html).not.toContain("Producto (item)");
+  });
+
+  it("`?orden=ganancia` (enlace viejo) ordena por Utilidad ↓", () => {
+    urlActual = new URLSearchParams({ orden: "ganancia-desc" });
+    const conUtilidad = [
+      ...BODEGA,
+      item("u1", "Aceite 15W-50", 84, { utilidad_mxn: null, utilidad_usd: 191.25 }),
+    ];
+    const html = renderToStaticMarkup(
+      <ItemsTable items={conUtilidad} aircraft={[]} providers={[]} categorias={["Aceites"]} />,
+    );
+    // La columna Utilidad es la que ordena (descendente) y el aceite, el único
+    // con utilidad, sale arriba de la primera página.
+    expect(html).toMatch(/aria-sort="descending"[^>]*><button[^>]*>Utilidad/);
+    expect(html.indexOf("Aceite 15W-50")).toBeLessThan(html.indexOf("Producto 01"));
   });
 
   it("al VOLVER del detalle manda la URL, no el `ordenInicial` viejo del payload reusado", () => {
@@ -145,5 +182,94 @@ describe("ItemsTable · orden", () => {
     const html = render("nombre");
     expect(html.match(/aria-sort="ascending"/g)).toHaveLength(1);
     expect(html).toMatch(/aria-pressed="true"[^>]*>A–Z</);
+  });
+});
+
+describe("ItemsTable · utilidad y ubicación", () => {
+  const CATALOGO = [
+    { id: "c1", nombre: "Oficina vieja", orden: 1, activo: true, productos: 0, created_at: "", updated_at: "" },
+    { id: "c2", nombre: "Oficina nueva", orden: 2, activo: true, productos: 1, created_at: "", updated_at: "" },
+  ];
+  const ITEMS: InventarioItemWithStock[] = [
+    item("a", "Aceite 15W-50", 84, {
+      utilidad_mxn: null,
+      utilidad_usd: 191.25,
+      salidas_cant: 66,
+      ventas_cant: 36,
+      ubicacion: "Bodega Cancún",
+      ubicacion_id: null,
+      ubicacion_legado: "Bodega Cancún",
+    }),
+    item("b", "Balata 66-105", 8, {
+      utilidad_mxn: 120,
+      utilidad_usd: 23.13,
+      ubicacion: "Oficina nueva",
+      ubicacion_id: "c2",
+      ubicacion_nombre: "Oficina nueva",
+    }),
+    item("c", "Cinta", 3, { ubicacion: null, ubicacion_id: null }),
+  ];
+  const pintarCon = (props: Partial<Parameters<typeof ItemsTable>[0]> = {}) =>
+    renderToStaticMarkup(
+      <ItemsTable items={ITEMS} aircraft={[]} providers={[]} categorias={[]} {...props} />,
+    );
+
+  it("Utilidad: una línea por moneda, jamás sumadas; «—» sin ventas; tooltip con unidades y margen", () => {
+    urlActual = new URLSearchParams();
+    const html = pintarCon({ margenVentaPct: 25 });
+    expect(html).toContain("+$191.25 USD");
+    expect(html).toContain("+$120.00 MXN");
+    expect(html).toContain("+$23.13 USD");
+    expect(html).toContain(
+      "66 unidades cargadas a aviones (30 a costo, sin utilidad) · margen vigente 25 % sobre el costo",
+    );
+  });
+
+  it("Ubicación: catálogo · «(anterior)» en ámbar con «Elige la ubicación nueva» · «Sin ubicación»", () => {
+    urlActual = new URLSearchParams();
+    const html = pintarCon({ ubicaciones: CATALOGO });
+    expect(html).toMatch(/title="Elige la ubicación nueva"[^>]*>Bodega Cancún <span[^>]*>\(anterior\)/);
+    expect(html).toContain(">Oficina nueva<");
+    expect(html).toContain("Sin ubicación");
+  });
+
+  it("sin catálogo (API previo): la ubicación se pinta tal cual y NO hay filtro ni «Mover a…»", () => {
+    urlActual = new URLSearchParams();
+    const viejo = [item("v", "Viejo", 1, { ubicacion: "Bodega Cancún" })];
+    const html = renderToStaticMarkup(
+      <ItemsTable items={viejo} aircraft={[]} providers={[]} categorias={[]} puedeAdministrarUbicaciones />,
+    );
+    expect(html).toContain("Bodega Cancún");
+    expect(html).not.toContain("(anterior)");
+    expect(html).not.toContain("Filtrar por ubicación");
+    expect(html).not.toContain("Mover a…");
+  });
+
+  it("filtro «Sin ubicación nueva» con conteos; `?ubic=sin` deja solo legados y vacíos", () => {
+    urlActual = new URLSearchParams({ ubic: "sin" });
+    const html = pintarCon({ ubicaciones: CATALOGO });
+    expect(html).toContain("Sin ubicación nueva (2)");
+    expect(html).toContain("Oficina nueva (1)");
+    expect(html).toMatch(/<option value="sin" selected="">/);
+    expect(html).toContain("Aceite 15W-50");
+    expect(html).toContain("Cinta");
+    expect(html).not.toContain("Balata 66-105");
+  });
+
+  it("una ubicación sin productos lo DICE (nunca «Sin resultados para “”»)", () => {
+    urlActual = new URLSearchParams({ ubic: "c1" });
+    const html = pintarCon({ ubicaciones: CATALOGO });
+    expect(html).toContain("No hay productos en «Oficina vieja»");
+    expect(html).toContain("Ver todas las ubicaciones");
+  });
+
+  it("«Mover a…» y «Ubicaciones» solo con permiso (ADMIN/MECANICO), con cursor-pointer", () => {
+    urlActual = new URLSearchParams();
+    expect(pintarCon({ ubicaciones: CATALOGO })).not.toContain("Mover a…");
+    const html = pintarCon({ ubicaciones: CATALOGO, puedeAdministrarUbicaciones: true });
+    expect(html).toContain("Mover a…");
+    expect(html).toContain("Ubicaciones");
+    const select = html.match(/<select[^>]*aria-label="Filtrar por ubicación"[^>]*>/)?.[0] ?? "";
+    expect(select).toContain("cursor-pointer");
   });
 });

@@ -17,6 +17,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createMovimientoAction } from "@/app/admin/inventory/actions";
 import { montoTxt } from "@/lib/admin/inventario-eliminar";
+import {
+  ETIQUETA_A_COSTO,
+  HINT_A_COSTO,
+  HINT_PARA_FLOTA,
+  hintAvionSalida,
+  hintVentaSalida,
+  placeholderVenta,
+  textoSalidaRegistrada,
+  ventaDelFormulario,
+} from "@/lib/admin/inventario-salida";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
 import type { InventarioEmpaque } from "@/types/inventory";
@@ -52,6 +62,12 @@ interface MovimientoDialogProps {
   initialTipo?: MovimientoFormValues["tipo"];
   /** Empaque preseleccionado (se escaneó el código de la caja). */
   initialEmpaqueId?: string;
+  /**
+   * Margen de la tienda (% sobre el costo FIFO) SOLO para los textos
+   * («Vacío = costo FIFO + 25 %»); ausente ⇒ 25. El número real lo aplica
+   * el API al registrar la salida.
+   */
+  margenVentaPct?: number | null;
 }
 
 export function MovimientoDialog({
@@ -67,6 +83,7 @@ export function MovimientoDialog({
   providers,
   initialTipo,
   initialEmpaqueId,
+  margenVentaPct,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
   // Solo empaques activos se pueden usar para capturar; si el preseleccionado
@@ -100,6 +117,7 @@ export function MovimientoDialog({
 
   const tipo = watch("tipo");
   const esSalida = tipo === "SALIDA";
+  const aCosto = watch("a_costo") === true;
   const empaqueId = watch("empaque_id");
   const empaque = empaquesUsables.find((e) => e.id === empaqueId) ?? null;
   const cantidadEmpaques = Number(watch("cantidad_empaques"));
@@ -121,28 +139,31 @@ export function MovimientoDialog({
     } else {
       payload = { ...values, empaque_id: "", cantidad_empaques: "" };
     }
-    // La venta solo aplica en SALIDA: en otros tipos el campo ni se ve y no
-    // debe viajar (jamás mezclarla con costo_unitario_*).
-    if (!esSalida) {
-      payload = { ...payload, venta_unitaria: "" };
-    } else if (String(payload.venta_unitaria ?? "").trim() === "") {
-      // El campo viene PRELLENADO con el precio del ítem: vaciarlo es una
-      // decisión ("esta salida va a costo FIFO") y viaja como 0 explícito —
-      // sin él, el API re-aplicaría el precio del ítem.
-      payload = { ...payload, venta_unitaria: "0" };
-    }
+    // VENTA (25-sep-2026, `ventaDelFormulario`): solo en SALIDA. Vacío ⇒ NO
+    // viaja (el API aplica el precio del producto o costo FIFO + margen de la
+    // tienda); «Cargar a costo» ⇒ 0 explícito. Antes el vacío viajaba como 0 y,
+    // con el margen, dejaría toda salida del panel a costo (sin utilidad).
+    const { venta_unitaria: _v, venta_moneda: _m, a_costo: _c, ...sinVenta } = payload;
+    void _v;
+    void _m;
+    void _c;
+    const cuerpo: Record<string, unknown> = {
+      ...sinVenta,
+      ...ventaDelFormulario({
+        tipo: values.tipo,
+        venta: values.venta_unitaria,
+        aCosto: values.a_costo,
+        moneda: values.venta_moneda,
+      }),
+    };
+    const matricula = aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null;
     startTransition(async () => {
-      const result = await createMovimientoAction(itemId, payload);
+      const result = await createMovimientoAction(itemId, cuerpo);
       if (result.ok) {
-        const conGasto = (result.data as { gasto_generado?: unknown } | undefined)
-          ?.gasto_generado;
-        const prorrateado = (conGasto as { prorrateado?: boolean } | null)?.prorrateado;
         toast.success(
-          prorrateado
-            ? "Salida registrada · el costo se prorrateó entre toda la flota"
-            : conGasto
-              ? "Salida registrada · el costo se cargó como gasto del avión"
-              : "Movimiento registrado",
+          esSalida && result.data
+            ? textoSalidaRegistrada(result.data, values.para_flota ? null : matricula)
+            : "Movimiento registrado",
         );
         // El API avisa cuando NO pudo revertir todo el cargo de una
         // devolución (caso típico: la salida era «para todas las
@@ -244,7 +265,7 @@ export function MovimientoDialog({
             {esSalida ? (
               <Field
                 label="Precio de venta unitario"
-                hint="El avión paga este precio; el costo FIFO queda para el inventario"
+                hint={aCosto ? HINT_A_COSTO : hintVentaSalida(margenVentaPct)}
                 error={errors.venta_unitaria?.message}
               >
                 <div className="flex gap-2">
@@ -253,7 +274,9 @@ export function MovimientoDialog({
                     onChange={(e) =>
                       setValue("venta_moneda", e.target.value as MovimientoFormValues["venta_moneda"])
                     }
-                    className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                    disabled={aCosto}
+                    aria-label="Moneda del precio de venta"
+                    className="h-9 w-20 shrink-0 cursor-pointer rounded-md border border-input bg-transparent px-2 text-sm disabled:cursor-default disabled:opacity-50 dark:bg-input/30"
                   >
                     <option value="MXN">MXN</option>
                     <option value="USD">USD</option>
@@ -262,7 +285,12 @@ export function MovimientoDialog({
                     type="number"
                     step="any"
                     min="0"
-                    placeholder="Vacío = a costo FIFO"
+                    disabled={aCosto}
+                    placeholder={
+                      aCosto
+                        ? "A costo FIFO"
+                        : placeholderVenta({ precioProducto: precioVenta, margenPct: margenVentaPct })
+                    }
                     {...register("venta_unitaria")}
                   />
                 </div>
@@ -284,7 +312,7 @@ export function MovimientoDialog({
                     onChange={(e) =>
                       setValue("moneda", e.target.value as MovimientoFormValues["moneda"])
                     }
-                    className="h-9 w-20 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+                    className="h-9 w-20 shrink-0 cursor-pointer rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
                   >
                     <option value="MXN">MXN</option>
                     <option value="USD">USD</option>
@@ -328,8 +356,20 @@ export function MovimientoDialog({
 
           {esSalida && (
             <>
-              {/* Aceites/consumibles de flota: el costo FIFO se prorratea en
-                  partes iguales entre los aviones activos (un gasto por avión). */}
+              {/* Salida SIN utilidad (25-sep-2026): el avión paga solo el costo
+                  FIFO. Viaja como `venta_unitaria: 0` explícito. */}
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aCosto}
+                  onChange={(e) => setValue("a_costo", e.target.checked)}
+                  className="h-4 w-4 cursor-pointer accent-brand-600"
+                />
+                <span>{ETIQUETA_A_COSTO}</span>
+              </label>
+              {/* Aceites/consumibles de flota: el cargo (precio o costo +
+                  margen) se prorratea en partes iguales entre los aviones
+                  activos (un gasto por avión). */}
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"
@@ -338,20 +378,18 @@ export function MovimientoDialog({
                     setValue("para_flota", e.target.checked);
                     if (e.target.checked) setValue("aeronave_id", "");
                   }}
-                  className="h-4 w-4 accent-brand-600"
+                  className="h-4 w-4 cursor-pointer accent-brand-600"
                 />
                 <span>
                   Para todas las matrículas{" "}
-                  <span className="text-xs text-muted-foreground">
-                    (el costo se reparte en partes iguales entre la flota activa)
-                  </span>
+                  <span className="text-xs text-muted-foreground">{HINT_PARA_FLOTA}</span>
                 </span>
               </label>
               {!watch("para_flota") && (
                 <Field
                   label="Avión (se le carga la pieza)"
                   required
-                  hint="El costo FIFO se registra automáticamente como gasto de refacción del avión y sale en su reporte mensual."
+                  hint={hintAvionSalida(margenVentaPct)}
                   error={errors.aeronave_id?.message}
                 >
                   <SearchableSelect
@@ -438,9 +476,11 @@ function defaults(
     costo_unitario_mxn: "",
     tc_usd_mxn: "",
     // Prellenado con el precio de venta del ítem: en SALIDA el avión paga
-    // este precio (editable); vacío = la salida se carga a costo FIFO.
+    // este precio (editable). Vacío = el API aplica el precio del producto o
+    // costo FIFO + margen de la tienda; «a costo» es la casilla de abajo.
     venta_unitaria: precioVenta != null && precioVenta > 0 ? String(precioVenta) : "",
     venta_moneda: precioVentaMoneda ?? "MXN",
+    a_costo: false,
     aeronave_id: "",
     proveedor_id: "",
     fecha_movimiento: "",

@@ -185,21 +185,103 @@ describe("ordenarInventario · columnas asc/desc", () => {
     expect(nombres(ordenarInventario(xs, "stock"))).toEqual(["Normal 1", "Bajo 5"]);
   });
 
-  it("ganancia asc/desc: pérdida < 0 < ganancia; nunca vendió (null) al final en ambas", () => {
-    expect(nombres(ordenarInventario(BODEGA, "ganancia-desc"))).toEqual([
+  it("utilidad asc/desc: pérdida < 0 < ganancia; nunca vendió (null) al final en ambas", () => {
+    expect(nombres(ordenarInventario(BODEGA, "utilidad-desc"))).toEqual([
       "Aceite 100 plus", // +1200
       "Filtro de aceite", // +50
       "Bujía", // 0 (vendió a costo)
       "Aceite 15W-50", // −300
       "Aceite W80", // null
     ]);
-    expect(nombres(ordenarInventario(BODEGA, "ganancia"))).toEqual([
+    expect(nombres(ordenarInventario(BODEGA, "utilidad"))).toEqual([
       "Aceite 15W-50",
       "Bujía",
       "Filtro de aceite",
       "Aceite 100 plus",
       "Aceite W80",
     ]);
+  });
+
+  it("utilidad: pesos primero, luego SOLO dólares (no hay T.C. para compararlos), nulos al final", () => {
+    // Caso real tras el re-precio del 25-sep: todo en USD (aceite 191.25,
+    // llanta 186.88, cubre pitot 12.50) + un producto con utilidad en pesos.
+    const xs = [
+      it_("u1", "Aceite 15W-50", { utilidad_usd: 191.25, utilidad_mxn: null }),
+      it_("u2", "Llanta 6.00-6", { utilidad_usd: 186.88, utilidad_mxn: null }),
+      it_("u3", "Cubre pitot", { utilidad_usd: 12.5, utilidad_mxn: null }),
+      it_("m1", "Bujía", { utilidad_mxn: 40, utilidad_usd: null }),
+      it_("m2", "Cinta", { utilidad_mxn: 900 }),
+      it_("n1", "Arandela", { utilidad_mxn: null, utilidad_usd: null }),
+    ];
+    expect(nombres(ordenarInventario(xs, "utilidad-desc"))).toEqual([
+      "Cinta", // 900 MXN
+      "Bujía", // 40 MXN
+      "Aceite 15W-50", // 191.25 USD
+      "Llanta 6.00-6",
+      "Cubre pitot",
+      "Arandela", // sin utilidad
+    ]);
+    expect(nombres(ordenarInventario(xs, "utilidad"))).toEqual([
+      "Bujía",
+      "Cinta",
+      "Cubre pitot",
+      "Llanta 6.00-6",
+      "Aceite 15W-50",
+      "Arandela",
+    ]);
+  });
+
+  it("utilidad: con un API previo (solo `ganancia_mxn`) ordena igual que antes", () => {
+    const xs = [
+      it_("a", "A", { ganancia_mxn: 10 }),
+      it_("b", "B", { ganancia_mxn: "30" }),
+      it_("c", "C", { ganancia_mxn: null }),
+    ];
+    expect(nombres(ordenarInventario(xs, "utilidad-desc"))).toEqual(["B", "A", "C"]);
+  });
+
+  it("ubicación: catálogo por SU orden → texto anterior A–Z → sin ubicación al final", () => {
+    const orden = new Map([
+      ["vieja", 0],
+      ["nueva", 1],
+      ["locker", 2],
+    ]);
+    const xs = [
+      it_("1", "Filtro", { ubicacion_id: "locker", ubicacion_nombre: "Locker del aeropuerto" }),
+      it_("2", "Aceite", { ubicacion_id: null, ubicacion_legado: "Corner", ubicacion: "Corner" }),
+      it_("3", "Balata", { ubicacion_id: "vieja", ubicacion_nombre: "Oficina vieja" }),
+      it_("4", "Cámara", { ubicacion_id: null, ubicacion: null }),
+      it_("5", "Llanta", { ubicacion_id: null, ubicacion_legado: "Bodega Cancún" }),
+      it_("6", "Arandela", { ubicacion_id: "nueva", ubicacion_nombre: "Oficina nueva" }),
+      it_("7", "Bujía", { ubicacion_id: "vieja", ubicacion_nombre: "Oficina vieja" }),
+    ];
+    expect(nombres(ordenarInventario(xs, "ubicacion", { ordenUbicacion: orden }))).toEqual([
+      "Balata", // Oficina vieja (empate A–Z por producto)
+      "Bujía",
+      "Arandela", // Oficina nueva
+      "Filtro", // Locker
+      "Llanta", // «Bodega Cancún» (anterior)
+      "Aceite", // «Corner» (anterior)
+      "Cámara", // sin ubicación
+    ]);
+    expect(nombres(ordenarInventario(xs, "ubicacion-desc", { ordenUbicacion: orden }))).toEqual([
+      "Aceite", // legados primero, Z–A
+      "Llanta",
+      "Filtro", // catálogo al revés
+      "Arandela",
+      "Balata", // empates SIEMPRE A–Z
+      "Bujía",
+      "Cámara", // sin ubicación al final también
+    ]);
+  });
+
+  it("ubicación sin catálogo cargado (API previo): el texto A–Z, vacíos al final", () => {
+    const xs = [
+      it_("1", "Uno", { ubicacion: "Corner" }),
+      it_("2", "Dos", { ubicacion: "Bodega Cancún" }),
+      it_("3", "Tres", { ubicacion: "" }),
+    ];
+    expect(nombres(ordenarInventario(xs, "ubicacion"))).toEqual(["Dos", "Uno", "Tres"]);
   });
 
   it("no muta la lista de entrada", () => {
@@ -230,6 +312,14 @@ describe("ordenInventarioDeUrl", () => {
     expect(ORDEN_INVENTARIO_DEFAULT).toBe("nombre");
   });
 
+  it("ALIAS: el `?orden=ganancia` de siempre sigue funcionando como Utilidad", () => {
+    expect(ordenInventarioDeUrl("ganancia")).toBe("utilidad");
+    expect(ordenInventarioDeUrl("ganancia-desc")).toBe("utilidad-desc");
+    expect(ordenInventarioDeUrl(["ganancia-desc"])).toBe("utilidad-desc");
+    // Ni «constructor» ni otras llaves del prototipo se cuelan como alias.
+    expect(ordenInventarioDeUrl("constructor")).toBe("nombre");
+  });
+
   it("parámetro repetido ⇒ toma el primero", () => {
     expect(ordenInventarioDeUrl(["se-acaban", "stock"])).toBe("se-acaban");
     expect(ordenInventarioDeUrl([])).toBe("nombre");
@@ -237,10 +327,11 @@ describe("ordenInventarioDeUrl", () => {
 });
 
 describe("clic en encabezados", () => {
-  it("primer clic: nombre/categoría/stock ascendente; ganancia descendente", () => {
+  it("primer clic: nombre/categoría/stock/ubicación ascendente; utilidad descendente", () => {
     expect(ordenAlPulsarColumna("categoria", "nombre")).toBe("categoria");
     expect(ordenAlPulsarColumna("stock", "nombre")).toBe("stock");
-    expect(ordenAlPulsarColumna("ganancia", "nombre")).toBe("ganancia-desc");
+    expect(ordenAlPulsarColumna("utilidad", "nombre")).toBe("utilidad-desc");
+    expect(ordenAlPulsarColumna("ubicacion", "nombre")).toBe("ubicacion");
     expect(ordenAlPulsarColumna("nombre", "stock")).toBe("nombre");
   });
 
@@ -249,8 +340,9 @@ describe("clic en encabezados", () => {
     expect(ordenAlPulsarColumna("nombre", "nombre-desc")).toBe("nombre");
     expect(ordenAlPulsarColumna("stock", "stock")).toBe("stock-desc");
     expect(ordenAlPulsarColumna("stock", "stock-desc")).toBe("stock");
-    expect(ordenAlPulsarColumna("ganancia", "ganancia-desc")).toBe("ganancia");
-    expect(ordenAlPulsarColumna("ganancia", "ganancia")).toBe("ganancia-desc");
+    expect(ordenAlPulsarColumna("utilidad", "utilidad-desc")).toBe("utilidad");
+    expect(ordenAlPulsarColumna("utilidad", "utilidad")).toBe("utilidad-desc");
+    expect(ordenAlPulsarColumna("ubicacion", "ubicacion")).toBe("ubicacion-desc");
   });
 
   it("desde el atajo «Se están acabando», Stock arranca ascendente", () => {
@@ -319,8 +411,8 @@ describe("resolverOrdenInventario · la URL viva manda", () => {
 
   it("URL cambiada por fuera mientras había elección pendiente ⇒ manda la URL", () => {
     const e: EleccionOrden = { base: "nombre", valor: "stock" };
-    expect(resolverOrdenInventario(e, "ganancia-desc")).toEqual({
-      orden: "ganancia-desc",
+    expect(resolverOrdenInventario(e, "utilidad-desc")).toEqual({
+      orden: "utilidad-desc",
       eleccion: null,
     });
   });

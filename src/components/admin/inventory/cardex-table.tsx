@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import { numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
 import type { InventarioMovimiento, TipoMovimiento } from "@/types/inventory";
 
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
@@ -115,20 +116,28 @@ const columnaVenta: DataTableColumn<InventarioMovimiento> = {
     ),
 };
 
-/** Ganancia (venta − costo FIFO, en MXN): la manda el API en el detalle. */
+/**
+ * Utilidad (venta − costo FIFO): la manda el API en el detalle, en pesos
+ * (`ganancia_mxn`) o —si la venta y el costo están en dólares sin T.C.— en
+ * dólares (`ganancia_usd`, 25-sep-2026). Nunca las dos; cada una con su moneda.
+ */
 const columnaGanancia: DataTableColumn<InventarioMovimiento> = {
   key: "ganancia",
-  header: "Ganancia",
+  header: "Utilidad",
   headClassName: "text-right",
   cellClassName: "text-right tabular-nums",
-  cell: (m) =>
-    conVentaDe(m) && m.ganancia_mxn != null ? (
-      <span className={Number(m.ganancia_mxn) < 0 ? "text-red-600" : "text-emerald-600"}>
-        {fmtMxn(m.ganancia_mxn)}
+  cell: (m) => {
+    if (!conVentaDe(m)) return "—";
+    const mxn = numeroONulo(m.ganancia_mxn);
+    const usd = numeroONulo(m.ganancia_usd);
+    const g = mxn ?? usd;
+    if (g == null) return "—";
+    return (
+      <span className={g < 0 ? "text-red-600" : "text-emerald-600"}>
+        {textoMonto(g, mxn != null ? "MXN" : "USD")}
       </span>
-    ) : (
-      "—"
-    ),
+    );
+  },
 };
 
 /** "2 × Caja de 6 = 12": cómo se capturó el movimiento (la cantidad sigue en unidades). */

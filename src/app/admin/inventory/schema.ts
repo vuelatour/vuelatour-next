@@ -66,6 +66,9 @@ export const ItemFormSchema = z.object({
   categoria: z.string().min(1, "Requerido").max(50),
   stock_minimo: optionalNumber,
   ubicacion: z.string().max(50).optional().or(z.literal("")),
+  // Ubicación del CATÁLOGO (25-sep-2026): uuid, o null explícito al editar =
+  // «Sin ubicación». Con catálogo el formulario ya NO manda el texto.
+  ubicacion_id: z.string().uuid().nullable().optional().or(z.literal("")),
   // Un número aquí NO es una unidad de medida: capturarlo así dejó un ítem
   // en stock 0 (6 ago 2026). La cantidad va en la entrada inicial/cardex.
   unidad: z
@@ -115,8 +118,9 @@ export const MovimientoFormSchema = z
     costo_unitario_mxn: optionalNumber,
     tc_usd_mxn: optionalNumber,
     // SALIDA: precio de venta unitario que paga el avión (prellenado con el
-    // del ítem; vacío = la salida se carga a costo FIFO). Nunca se mezcla con
-    // costo_unitario_*: son campos distintos del API.
+    // del ítem). AUSENTE = el API aplica el precio del producto o costo FIFO
+    // + margen de la tienda (25-sep-2026); 0 explícito = a costo. Nunca se
+    // mezcla con costo_unitario_*: son campos distintos del API.
     venta_unitaria: optionalNumber,
     venta_moneda: z.enum(["MXN", "USD"]).optional(),
     aeronave_id: z.string().uuid().optional().or(z.literal("")),
@@ -224,7 +228,10 @@ export type ItemFormValues = {
   codigo: string;
   categoria: string;
   stock_minimo: string;
+  /** Texto libre (solo sin catálogo: API previo / migración pendiente). */
   ubicacion: string;
+  /** Ubicación del catálogo ("" = sin ubicación). */
+  ubicacion_id: string;
   unidad: string;
   /** Precio de venta unitario al avión (vacío = las salidas van a costo FIFO). */
   precio_venta: string;
@@ -252,9 +259,11 @@ export type MovimientoFormValues = {
   costo_unitario_usd: string;
   costo_unitario_mxn: string;
   tc_usd_mxn: string;
-  /** SALIDA: precio de venta unitario (vacío = a costo FIFO). */
+  /** SALIDA: precio de venta unitario (vacío = precio del producto o costo FIFO + margen). */
   venta_unitaria: string;
   venta_moneda: "MXN" | "USD";
+  /** SALIDA: «Cargar a costo, sin utilidad» ⇒ venta_unitaria 0 explícito. */
+  a_costo: boolean;
   aeronave_id: string;
   proveedor_id: string;
   fecha_movimiento: string;
