@@ -225,6 +225,33 @@ describe("ItemsTable · utilidad y ubicación", () => {
     );
   });
 
+  it("API 0.0.36: la celda en PESOS y el dólar original SOLO en el tooltip (jamás sumado)", () => {
+    urlActual = new URLSearchParams();
+    const html = renderToStaticMarkup(
+      <ItemsTable
+        items={[
+          item("a", "Aceite 15W-50", 84, {
+            utilidad_mxn: 3252.72,
+            utilidad_usd: null,
+            utilidad_usd_original: 191.25,
+            salidas_cant: 66,
+            ventas_cant: 36,
+          }),
+        ]}
+        aircraft={[]}
+        providers={[]}
+        categorias={[]}
+        margenVentaPct={25}
+      />,
+    );
+    expect(html).toContain(">+$3,252.72 MXN<");
+    expect(html).not.toContain(">+$191.25 USD<");
+    expect(html).toContain(
+      'title="66 unidades cargadas a aviones (30 a costo, sin utilidad) · margen vigente 25 % sobre el costo. En dólares: +$191.25 USD (al T.C. de cada venta)"',
+    );
+    expect(html).not.toMatch(/FIFO/);
+  });
+
   it("Ubicación: catálogo · «(anterior)» en ámbar con «Elige la ubicación nueva» · «Sin ubicación»", () => {
     urlActual = new URLSearchParams();
     const html = pintarCon({ ubicaciones: CATALOGO });

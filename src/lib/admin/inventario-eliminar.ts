@@ -10,7 +10,7 @@
  * panel a partir de lo que respondió el API. La REGLA (si se puede o no) y
  * TODOS los números —existencia antes/después, montos de los gastos— los
  * decide el API (`evaluarEliminacion` + `previewEliminacionMovimiento`); aquí
- * jamás se recalcula un stock ni un costo FIFO: un segundo motor de cardex en
+ * jamás se recalcula un stock ni un costo: un segundo motor de cardex en
  * el panel es exactamente la clase de número paralelo que el proyecto prohíbe.
  *
  * Cuando el movimiento está BLOQUEADO se pinta el `mensaje` del API TAL CUAL:
@@ -20,7 +20,9 @@
 
 import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtPrecioUnitario } from "./inventario-utilidad";
 import type {
+  CostoVigente,
   CodigoBloqueoEliminacion,
   EliminacionMovimientoPreview,
   EliminarMovimientoResultado,
@@ -180,16 +182,61 @@ export function fraseGastos(gastos: GastoLigadoEliminacion[]): string {
   )} en total.`;
 }
 
-/** Las tres frases del diálogo, en orden, cuando la baja SÍ se permite. */
+/** «$30.00 USD (05 sep 2026)»: un precio de compra con su fecha. */
+export function precioConFecha(c: Pick<CostoVigente, "unitario" | "moneda" | "fecha">): string {
+  return `${fmtPrecioUnitario(c.unitario, c.moneda)} (${fmtDateOnly(c.fecha)})`;
+}
+
+/**
+ * API 0.0.36 (último precio de compra): quitar un movimiento ya NO cambia el
+ * costo de ninguna salida —cada una guarda el costo con que se cobró—. Se
+ * dice, para que nadie tema mover dinero ya cargado.
+ */
+export const NOTA_BAJA_SIN_RECOSTEO =
+  "Ninguna salida cambia de costo: cada una guarda el costo con que se cobró.";
+
+/**
+ * Lo que SÍ puede cambiar: el ÚLTIMO PRECIO DE COMPRA (con él se valúa la
+ * existencia y se cobra la siguiente salida). Con `cambia_precio_vigente`:
+ * «El último precio de compra pasa de $30.00 USD (05 sep 2026) a $21.00 USD
+ * (10 ago 2026): con él se valúa la existencia y se cobra la siguiente
+ * salida.». null = no cambia (o API previo).
+ */
+export function fraseCambioPrecioVigente(preview: EliminacionMovimientoPreview): string | null {
+  if (preview.cambia_precio_vigente !== true) return null;
+  const antes = preview.precio_vigente_antes ?? null;
+  const despues = preview.precio_vigente_despues ?? null;
+  const cola = ": con él se valúa la existencia y se cobra la siguiente salida.";
+  if (antes && despues) {
+    return `El último precio de compra pasa de ${precioConFecha(antes)} a ${precioConFecha(despues)}${cola}`;
+  }
+  if (despues) return `El último precio de compra pasa a ${precioConFecha(despues)}${cola}`;
+  return (
+    "Sin este movimiento el producto se queda sin ninguna compra con costo: la existencia no se " +
+    "valúa y las siguientes salidas saldrían sin cargo hasta registrar otra compra con costo."
+  );
+}
+
+/**
+ * Las frases del diálogo, en orden, cuando la baja SÍ se permite: qué se
+ * elimina, cómo queda la existencia, qué gastos se van y —con el API
+ * 0.0.36— que ninguna salida cambia de costo y, si aplica, el cambio del
+ * último precio de compra en su propio renglón.
+ */
 export function lineasVistaPrevia(
   preview: EliminacionMovimientoPreview,
   unidad?: string | null,
 ): string[] {
-  return [
+  const lineas = [
     fraseEliminacion(preview, unidad),
     fraseExistencia(preview, unidad),
     fraseGastos(preview.gastos),
   ];
+  // Marca del API nuevo: trae `cambia_precio_vigente` (aunque sea false).
+  if ("cambia_precio_vigente" in preview) lineas.push(NOTA_BAJA_SIN_RECOSTEO);
+  const precio = fraseCambioPrecioVigente(preview);
+  if (precio) lineas.push(precio);
+  return lineas;
 }
 
 /** Aviso permanente del diálogo: esto no se deshace, pero queda la huella. */
@@ -207,7 +254,9 @@ export const AVISO_IRREVERSIBLE =
 export const TITULO_BLOQUEO: Record<CodigoBloqueoEliminacion, string> = {
   MOVIMIENTO_DE_COMPRA: "Nació de una compra",
   STOCK_NEGATIVO: "Dejaría la existencia en negativo",
-  CAMBIA_COSTO_FIFO: "Cambiaría el costo que ya se cargó a un avión",
+  // Solo lo emite un API PREVIO (≤ 0.0.35, costo FIFO): con el último
+  // precio de compra ninguna salida cambia de costo al quitar otra fila.
+  CAMBIA_COSTO_FIFO: "El costo de otra salida cambiaría",
   GASTO_BLOQUEADO: "Su gasto ya no se puede tocar",
   TIPO_NO_SOPORTADO: "Este tipo de movimiento no se elimina",
 };

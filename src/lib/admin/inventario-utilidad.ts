@@ -8,22 +8,23 @@
  * "tienda"; ya se cargaron varios productos en los aviones y necesitamos ver
  * las ganancias de dichos productos».
  *
- * La regla y TODOS los números son del API (0.0.35): toda salida a un avión
- * sin precio se cobra a costo FIFO × (1 + margen) —25 % por defecto, en
- * Configuración— y la utilidad = venta − costo FIFO sale de la fuente única
+ * La regla y TODOS los números son del API: toda salida a un avión sin
+ * precio se cobra a su costo × (1 + margen) —25 % por defecto, en
+ * Configuración— y la utilidad = venta − costo sale de la fuente única
  * `inventario-cardex.util.ts#ventaDeSalida` (la MISMA que el Balance
- * general). El panel NO recalcula utilidad ni FIFO: solo PINTA lo que manda
- * y suma la MISMA moneda (como ya hace `listInventarioTodo` con el
- * valorizado). **Pesos y dólares jamás se suman** (invariante 8 del API):
- * sin tipo de cambio no hay cómo, y la bodega casi entera se compró en
- * dólares sin T.C.
+ * general). Desde el API 0.0.36 (25-sep-2026) el costo es el ÚLTIMO PRECIO
+ * DE COMPRA (congelado en la salida) y las ventas en dólares se convierten a
+ * pesos con el T.C. oficial del día de la venta: la utilidad cuenta en
+ * PESOS y el dólar original es dato secundario (`*_usd_original`). El panel
+ * NO recalcula utilidad, costo ni T.C.: solo PINTA lo que manda y suma la
+ * MISMA moneda. **Pesos y dólares jamás se suman** (invariante 8 del API):
+ * `utilidad_usd` solo trae ya las filas que siguen SIN T.C.
  *
  * Todo aquí es PURO (prueba `__tests__/inventario-utilidad.test.ts`):
  * ningún componente redacta estas frases.
  */
 
 import { fmtMxn, fmtUsd } from "@/lib/format";
-import type { ResumenVenta } from "@/types/inventory";
 
 export type Moneda = "MXN" | "USD";
 
@@ -47,13 +48,19 @@ export function pctTxt(pct: number): string {
 export const ETIQUETA_UTILIDAD = "Utilidad";
 export const TITULO_TARJETA_TIENDA = "Utilidad de la tienda";
 
-/** Nota bajo la tarjeta y en el detalle (con el margen vigente). */
-export function notaUtilidad(margenPct?: number | null): string {
-  return (
-    "Utilidad = lo que se cobra al avión − costo FIFO de lo que salió. " +
-    `Toda salida sin precio se cobra a costo + ${pctTxt(margenParaTexto(margenPct))} % (se cambia en Configuración). ` +
-    "Pesos y dólares nunca se suman."
-  );
+/**
+ * Nota bajo la tarjeta de la tienda (con el margen vigente). `enPesos` = el
+ * API ya convierte las ventas en dólares con el T.C. de su día (0.0.36,
+ * `regla_costo`); sin él (API previo) se dice lo de siempre: pesos y dólares
+ * van por separado.
+ */
+export function notaUtilidad(margenPct?: number | null, opts: { enPesos?: boolean } = {}): string {
+  const margen = `Toda salida sin precio se cobra a ese costo + ${pctTxt(margenParaTexto(margenPct))} % (se cambia en Configuración). `;
+  return opts.enPesos
+    ? "Utilidad = lo que se cobra al avión − el costo de la pieza (último precio de compra). " +
+        margen +
+        "Las ventas en dólares se convierten a pesos con el T.C. oficial de su día."
+    : "Utilidad = lo que se cobra al avión − el costo de la pieza. " + margen + "Pesos y dólares nunca se suman.";
 }
 
 /** La nota con el margen de siempre (25 %). */
@@ -95,6 +102,28 @@ export function textoMonto(v: number, moneda: Moneda, opts: { signo?: boolean } 
   const cuerpo = moneda === "USD" ? `${fmtUsd(abs)} USD` : fmtMxn(abs);
   if (!conSigno || centavos === 0) return cuerpo;
   return `${v > 0 ? "+" : "−"}${cuerpo}`;
+}
+
+const precioUnitarioFmt = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+});
+
+/**
+ * PRECIO UNITARIO con su moneda, de 2 a 4 decimales (así se captura y así lo
+ * guarda el cardex): «$26.5625 USD», «$21.25 USD», «$1,658.33 MXN», «$30.00
+ * USD». Un TOTAL no va aquí: los totales son dinero y van con `textoMonto`
+ * (nunca con 1 decimal, siempre con moneda).
+ */
+export function fmtPrecioUnitario(
+  v: number | string | null | undefined,
+  moneda: Moneda | string | null | undefined,
+): string {
+  const n = numeroONulo(v);
+  if (n == null) return "—";
+  const m = moneda === "USD" ? "USD" : "MXN";
+  const signo = n < 0 ? "−" : "";
+  return `${signo}$${precioUnitarioFmt.format(Math.abs(n))} ${m}`;
 }
 
 export type Tono = "positivo" | "negativo" | "neutro";
@@ -141,6 +170,8 @@ export interface ItemUtilidad {
   ventas_sin_utilidad?: number | null;
   con_entradas_sin_costo?: boolean;
   con_movimientos_sin_tc?: boolean;
+  /** API 0.0.36: utilidad de las ventas dólar-sobre-dólar, en dólares (solo informativo). */
+  utilidad_usd_original?: number | string | null;
   unidad?: string | null;
 }
 
@@ -160,12 +191,28 @@ function unidades(n: number): string {
 }
 
 /**
+ * «En dólares: +$191.25 USD (al T.C. de cada venta)» — lo que la utilidad en
+ * pesos vale en los dólares originales (dato secundario, jamás sumado).
+ */
+export function textoUtilidadUsdOriginal(v: number | string | null | undefined): string | null {
+  const n = numeroONulo(v);
+  return n == null ? null : `En dólares: ${textoMonto(n, "USD")} (al T.C. de cada venta)`;
+}
+
+/**
  * Tooltip de la celda: «66 unidades cargadas a aviones (30 a costo, sin
- * utilidad) · margen vigente 25 % sobre el costo». Sin salidas: «Sin
+ * utilidad) · margen vigente 25 % sobre el costo» y, con el API 0.0.36, «.
+ * En dólares: +$191.25 USD (al T.C. de cada venta)». Sin salidas: «Sin
  * salidas a aviones · margen …». Con un API previo (sin `ventas_cant`) no se
  * inventa cuántas fueron a costo.
  */
 export function tituloUtilidad(it: ItemUtilidad, margenPct?: number | null): string {
+  const base = tituloUtilidadBase(it, margenPct);
+  const usd = textoUtilidadUsdOriginal(it.utilidad_usd_original);
+  return usd ? `${base}. ${usd}` : base;
+}
+
+function tituloUtilidadBase(it: ItemUtilidad, margenPct?: number | null): string {
   const margen = `margen vigente ${pctTxt(margenParaTexto(margenPct))} % sobre el costo`;
   const salidas = numeroONulo(it.salidas_cant) ?? 0;
   if (salidas <= 0) return `Sin salidas a aviones · ${margen}`;
@@ -206,6 +253,15 @@ export interface ResumenTiendaParaTexto {
 export function textoUtilidadTienda(r: ResumenTiendaParaTexto): string {
   const lineas = lineasUtilidad({ mxn: numeroONulo(r.utilidad_mxn), usd: numeroONulo(r.utilidad_usd) });
   return lineas.length > 0 ? lineas.join(" · ") : "Sin ventas en el periodo";
+}
+
+/**
+ * Línea tenue bajo la cifra en pesos de la tarjeta: «≈ +$535.35 USD al T.C.
+ * de cada venta» (dato secundario; jamás sumado a los pesos).
+ */
+export function lineaUsdOriginalTienda(v: number | string | null | undefined): string | null {
+  const n = numeroONulo(v);
+  return n == null ? null : `≈ ${textoMonto(n, "USD")} al T.C. de cada venta`;
 }
 
 /** «48 unidades vendidas a aviones · margen 25 % sobre el costo». */
@@ -266,72 +322,6 @@ export function textoPeriodoTienda(periodo: PeriodoTienda): string {
       : "el mes pasado";
 }
 
-// ───────────────────────── Utilidad por salida (detalle) ─────────────────────────
-
-export interface MontoMoneda {
-  monto: number;
-  moneda: Moneda;
-}
-
-export interface FilaUtilidadSalida {
-  /** Costo FIFO de la salida, en la moneda de la utilidad. */
-  costo: MontoMoneda | null;
-  /** Lo que se cobró al avión (null = a costo o no se sabe). */
-  venta: MontoMoneda | null;
-  utilidad: MontoMoneda | null;
-  /**
-   * VENTA = utilidad conocida · A_COSTO = salió sin precio (sin utilidad) ·
-   * INCOMPLETA = venta en pesos sobre costo en dólares sin T.C. (no calculable).
-   */
-  estado: "VENTA" | "A_COSTO" | "INCOMPLETA";
-}
-
-const mm = (monto: unknown, moneda: Moneda): MontoMoneda | null => {
-  const n = numeroONulo(monto);
-  return n == null ? null : { monto: n, moneda };
-};
-
-/**
- * Fila de «Utilidad por salida» desde una fila `ventas[]` del resumen del
- * producto (el API ya decidió en qué moneda cuenta: `moneda_utilidad`). Aquí
- * no se multiplica ni se convierte nada.
- */
-export function filaUtilidadSalida(v: ResumenVenta): FilaUtilidadSalida {
-  if (v.a_costo) {
-    return {
-      costo: mm(v.costo_fifo_mxn, "MXN") ?? mm(v.costo_fifo_usd, "USD"),
-      venta: null,
-      utilidad: null,
-      estado: "A_COSTO",
-    };
-  }
-  const monedaVenta: Moneda = v.venta_moneda === "USD" ? "USD" : "MXN";
-  if (v.moneda_utilidad === "USD") {
-    return {
-      costo: mm(v.costo_fifo_usd, "USD"),
-      venta: mm(v.venta_total, "USD"),
-      utilidad: mm(v.ganancia_usd, "USD"),
-      estado: "VENTA",
-    };
-  }
-  if (v.moneda_utilidad === "MXN" || (v.moneda_utilidad === undefined && v.ganancia_mxn != null)) {
-    return {
-      costo: mm(v.costo_fifo_mxn, "MXN"),
-      venta: mm(v.total_mxn, "MXN"),
-      utilidad: mm(v.ganancia_mxn, "MXN"),
-      estado: "VENTA",
-    };
-  }
-  // Venta que no se puede expresar: pesos sobre costo en dólares sin T.C.
-  // (o, con un API previo, una venta en dólares sin T.C.).
-  return {
-    costo: mm(v.costo_fifo_usd, "USD"),
-    venta: mm(v.venta_total, monedaVenta) ?? mm(v.total_mxn, "MXN"),
-    utilidad: null,
-    estado: "INCOMPLETA",
-  };
-}
+// ───────────────────────── Ventas del detalle ─────────────────────────
 
 export const TEXTO_A_COSTO = "A costo · sin utilidad";
-export const TEXTO_INCOMPLETA =
-  "no calculable: venta en pesos sobre costo en dólares sin T.C.";

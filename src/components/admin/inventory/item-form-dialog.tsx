@@ -59,6 +59,11 @@ interface ItemFormDialogProps {
   ubicaciones?: InventarioUbicacion[] | null;
   /** Margen de la tienda: solo para el texto del precio de venta. */
   margenVentaPct?: number | null;
+  /**
+   * Tras guardar con éxito (la ficha del producto hace `router.refresh()`
+   * para repintar su cabecera). Opcional: la lista ya se revalida sola.
+   */
+  onGuardado?: () => void;
 }
 
 export function ItemFormDialog({
@@ -69,6 +74,7 @@ export function ItemFormDialog({
   initialCodigo,
   ubicaciones,
   margenVentaPct,
+  onGuardado,
 }: ItemFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialItem;
@@ -276,6 +282,7 @@ export function ItemFormDialog({
           if (aviso) {
             toast.warning(`Ítem actualizado, pero un empaque no se guardó: ${aviso}`);
             onOpenChange(false);
+            onGuardado?.();
             return;
           }
         }
@@ -310,6 +317,7 @@ export function ItemFormDialog({
         }
         toast.success(isEdit ? "Ítem actualizado" : "Ítem creado");
         onOpenChange(false);
+        onGuardado?.();
       } else if (result.fieldErrors) {
         const firstField = Object.keys(result.fieldErrors)[0];
         const firstError = result.fieldErrors[firstField]?.[0] ?? "Validación falló";
@@ -340,8 +348,8 @@ export function ItemFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar ítem" : "Nuevo ítem de inventario"}</DialogTitle>
           <DialogDescription>
-            Catálogo de bodega. El stock se calcula del cardex (entradas menos salidas, FIFO):
-            al crear, captúralo abajo en «Entrada inicial»; después se mueve con entradas y
+            Catálogo de bodega. El stock se calcula del cardex (entradas menos salidas): al
+            crear, captúralo abajo en «Entrada inicial»; después se mueve con entradas y
             salidas.
           </DialogDescription>
         </DialogHeader>
@@ -631,7 +639,8 @@ export function ItemFormDialog({
           </Field>
 
           {/* Precio de VENTA al avión (29-ago-2026): la salida de bodega se
-              carga a este precio; el costo FIFO queda para el inventario. */}
+              carga a este precio; el costo (último precio de compra) queda
+              para el inventario. */}
           <Field
             label="Precio de venta unitario"
             hint={hintPrecioVentaProducto(margenVentaPct)}

@@ -3284,6 +3284,13 @@ ingresos». Contrato INGRESOS con el API 0.0.34 (migración
 
 ## Inventario: UTILIDAD de la tienda y UBICACIÓN (25-sep-2026)
 
+> **SUPERSEDIDO en parte el mismo 25-sep (API 0.0.36)**: el costo ya NO es
+> FIFO sino el ÚLTIMO PRECIO DE COMPRA, la utilidad cuenta en PESOS (T.C.
+> oficial del día de la venta), la card «Utilidad por salida» se RETIRÓ y la
+> ficha del producto es la sencilla. Ver «Inventario: último precio de compra,
+> T.C. del día y ficha sencilla» al final de este archivo. Ubicaciones, orden
+> y «Mover a…» siguen como aquí se describen.
+
 Pedido del cliente (captura de `/admin/inventory`): «Producto | Categoría |
 Stock | Utilidad (de los productos que compramos, el precio que le ponemos en
 el costo se le saca el 25 % el cual va a ser nuestra utilidad por producto
@@ -3421,3 +3428,159 @@ taller de Cozumel». Contrato con el API **0.0.35** (migraciones
   salida ya omite el precio vacío, así que el margen le aplica solo). Los 72
   productos arrancan «(anterior)» hasta que la oficina los mueva con «Sin
   ubicación nueva» + «Mover a…».
+
+## Inventario: último precio de compra, T.C. del día y ficha sencilla (25-sep-2026)
+
+Pedido del cliente (capturas de `/admin/inventory/<id>`): «al entrar algún
+producto nos están llenando de información repetida 😅 … Solo necesitamos el
+apartado de: Compras | Ventas | Resumen de ventas» · «En el tipo de cambio, que
+sea los mismos que usan en las cotizaciones (Tipo de cambio del día de la
+venta)» · «la hoja de información del producto debe ser mucho más sencilla: la
+descripción detallada · a cuánto se ha comprado · en cuánto se ha estado
+vendiendo · dinero generado por ese producto» · «que los precios se ajusten en
+automático al último registrado … el remanente que teníamos de agosto ahora
+igual su costo de 30 DLS». Contrato con el API **0.0.36** (migración de DATOS
+`20260925000003_inventario_tc_oficial_movimientos.sql`) y pyservices.
+
+- **Las reglas son del API (fuente única `inventario-cardex.util.ts`); el
+  panel SOLO pinta.** (1) COSTO = ÚLTIMO PRECIO DE COMPRA: la ENTRADA con costo
+  > 0 más reciente; cada SALIDA **congela** en su fila el costo vigente de su
+  fecha (lo ya cobrado nunca se mueve). (2) T.C. = el OFICIAL del día (la misma
+  función del cotizador, `TipoCambioService.oficialDetallePara`): compras al de
+  su día, venta Y costo de una salida al del día de la VENTA, valorizado al de
+  HOY. (3) La utilidad cuenta en PESOS; el dólar original (`*_usd_original`) es
+  dato secundario y **jamás se suma**. `utilidad_usd`/`ventas_usd` quedan solo
+  para filas que sigan SIN T.C. El panel no calcula costo, T.C., utilidad ni
+  sumas entre monedas (lo único que suma es la MISMA moneda en
+  `listInventarioTodo`, como siempre).
+- **Ficha** (`app/admin/inventory/[id]/page.tsx`): cabecera (categoría ·
+  marca, nombre, parte · código · ubicación con «(anterior)» en ámbar,
+  DESCRIPCIÓN completa y «Aeronave / uso» en su renglón vía
+  `partirDescripcion`) con **Registrar movimiento · Cardex (Excel) · Editar**.
+  «Editar» = `inventory/item-edit-button.tsx` → el MISMO `ItemFormDialog` en
+  edición (NUNCA el menú de `ItemActions`, que trae «Salida» duplicada y
+  «Desactivar») + `router.refresh()` (prop nueva opcional `onGuardado`). La
+  página carga `listUbicaciones({incluirInactivas:true})` para ese diálogo.
+  Cuerpo: `<ResumenProducto>` = **COMPRAS | VENTAS | RESUMEN** +
+  **«Dinero generado por este producto»**. Al fondo, dos plegables CERRADOS
+  (`inventory/ficha-plegable.tsx`): **«Empaques y fotos»** y **«Cardex
+  completo»** (+ movimientos eliminados). **Se RETIRARON** la tira de KPIs
+  (stock actual/mínimo, costo, precio de venta, valorizado) y la card
+  «Utilidad por salida» (`utilidad-por-salida.tsx` y `filaUtilidadSalida` se
+  borraron). La única señal que sobrevive de los KPIs es «bajo el mínimo (mín.
+  N)» en ámbar en el pie del Resumen (`textoBajoMinimo`, con `bajo_stock`).
+- **`FichaPlegable`**: `<details id>` nativo, cerrado, SIN memoria, contenido
+  SIEMPRE montado (los diálogos de «Editar costo»/«Eliminar» viven adentro);
+  `<summary>` con `cursor-pointer`, chevron y foco visible. Se abre si
+  `location.hash` es su ancla (`#cardex`, `#empaques-fotos`) **al montar Y en
+  `hashchange`** (un `<a href="#cardex">` en la misma página no remonta nada),
+  y también al PULSAR un enlace a su ancla con el hash YA puesto (listener de
+  `click` en `document`: se abrió, el operador la cerró y vuelve a pulsar
+  «Abrir el cardex…» — ahí no hay `hashchange` y el enlace solo hacía scroll a
+  la sección cerrada).
+  El aviso de compras a $0 enlaza `#cardex` («Abrir el cardex para corregir el
+  costo»).
+- **Tablas** (`resumen-producto.tsx`, server-safe): COMPRAS = Fecha
+  (proveedor/ref/«Ver compra» debajo) · Cantidad · **Precio unitario** NATIVO
+  (`fmtPrecioUnitario`: 2–4 decimales + moneda; sub «T.C. 17.0115» o «T.C. 17.51
+  (captura en pesos)»; chip «Precio vigente» con `es_precio_vigente`;
+  Devolución/Ajuste «no cambia el precio») · **Total MXN** (sub el total USD
+  nativo). Debajo, `textoPrecioVigente`: «Precio vigente $21.25 USD · la
+  siguiente salida se cobra a $26.5625 USD (+25 %)». VENTAS = Fecha · Avión ·
+  Cantidad · Precio unitario nativo (sub «T.C. 17.0077» SOLO si hubo dólares) ·
+  Total MXN (sub total USD + «utilidad +$1,084.24 MXN» / «A costo · sin
+  utilidad»); pie «Total vendido» + «+ $X MXN cargados a costo (N)» — las
+  unidades del pie son `totales.unidades_vendidas` (las salidas CON precio,
+  las mismas que suman `ventas_mxn`): **`totales.ventas_cant` del bloque
+  cuenta TODAS las salidas** (también las a costo) y junto a `ventas_mxn`
+  decía «66 qt · $16,263.61» cuando se vendieron 36 (revisión adversaria
+  25-sep; con un API previo, sin el campo, `ventas_cant` como siempre). RESUMEN =
+  existencia por día + utilidad/pérdida en pesos; pie «Hoy» con
+  `totales.existencia_actual` (NO la última fila). «Dinero generado» lee
+  `dinero_generado` TAL CUAL; con un API previo, `dineroGeneradoDeTotales`
+  (los dólares sin T.C. en su propio renglón, nunca sumados).
+- **Banda naranja** SOLO si `totales.movimientos_sin_tc > 0`
+  (`textoBandaSinTc`, sin afirmar la causa: entre el deploy del API y la
+  migración, «no había T.C.» sería falso); con un API previo, la bandera de
+  siempre. Nota al pie `notaFicha` («…el mismo de las cotizaciones…último
+  precio de compra…»). **Con `regla_costo` la palabra «FIFO» no aparece en
+  ningún texto**; sin ella (API ≤ 0.0.35) se conservan SOLO donde el dato lo
+  exige: `NOTA_FICHA_API_PREVIO`, «valorizado $X (FIFO)» de la lista y el
+  título del código viejo `CAMBIA_COSTO_FIFO` («El costo de otra salida
+  cambiaría»).
+- **«Corregir el costo de la compra»** (`editar-costo-dialog.tsx`, D7 del
+  contrato): T.C. OPCIONAL en pesos (`HINT_TC_OPCIONAL`: vacío = oficial del
+  día); en dólares nota fija `NOTA_TC_USD`. `MovimientoCostoEditable` gana
+  `salidasConEstePrecio`/`salidasSinCargo` (del detalle,
+  `salidas_con_este_precio`/`salidas_sin_cargo`). Con alguna, el primer
+  «Guardar» **NO llama a la acción** (`decidirGuardarCosto`): pinta
+  `AvisoSalidasCosto` (ámbar; renglón ROJO si hay salidas a $0 SIN cargo —
+  completar el costo no las cobra) y «Guardar de todos modos» reenvía con
+  `confirmar_salidas: true`. Un 409 `ENTRADA_CON_SALIDAS` (dato viejo o la
+  lista de pendientes de la portada, que no trae conteos) abre el MISMO
+  recuadro con `details.salidas` (`confirmacionDeConflicto`). La server action
+  manda el flag SOLO confirmado (un API previo respondería 400) y
+  `ActionResult` ganó `details` (aditivo). Toast: «Costo actualizado · el
+  valorizado y las siguientes salidas ya usan este precio».
+- **Baja de un movimiento**: el API ya no emite `CAMBIA_COSTO_FIFO` (se
+  conserva el título para un API previo). `lineasVistaPrevia` agrega, con el
+  API nuevo, «Ninguna salida cambia de costo: cada una guarda el costo con que
+  se cobró.» y, si `cambia_precio_vigente`, el cambio del último precio en su
+  PROPIO renglón (`fraseCambioPrecioVigente`).
+- **Movimiento** (`movimiento-dialog.tsx` + `schema.ts`): ENTRADA en pesos con
+  T.C. OPCIONAL (el refine ya solo exige > 0 si viene); en dólares, nota «Se
+  convierte con el T.C. oficial del día de la compra»; se quitó el «≈ $X USD
+  c/u» (una conversión local). **El T.C. solo VIAJA si su campo estaba a la
+  vista** (`tcQueViaja`, en este diálogo y en «Corregir el costo»): en dólares
+  el campo se oculta, pero un valor tecleado antes en pesos seguía en el
+  formulario y el API le da prioridad sobre el oficial — la nota «oficial del
+  día» mentía. SALIDA: placeholder «Vacío = último precio de
+  compra + 25 %», «A costo» con la casilla, toast «(último precio + 25 %)» y
+  el `aviso` del API (`SIN_COSTO_VIGENTE` ⇒ `AVISO_SIN_COSTO_VIGENTE`) como
+  warning. El error `SALIDA_ANTES_DE_LA_COMPRA` se pinta tal cual (mensaje del
+  API).
+- **Lista** (`/admin/inventory`): «valorizado $1,385,535.56 MXN (último precio
+  de compra · T.C. de hoy 17.6729)» (`textoValorizadoConTc`, en el helper
+  EXISTENTE `inventario-valorizado.ts`); la celda Utilidad en PESOS y el dólar
+  original en el tooltip («En dólares: +$191.25 USD (al T.C. de cada
+  venta)»); la tarjeta «Utilidad de la tienda» con la cifra en pesos y, tenue,
+  «≈ +$535.35 USD al T.C. de cada venta» (`lineaUsdOriginalTienda`), nota con
+  `notaUtilidad(margen, {enPesos})`. `listInventarioTodo` pasa `tc_hoy` y
+  `regla_costo` (1.ª página) y suma `utilidad_total_usd_original` (misma
+  moneda). En el cardex, el T.C. se pinta con `fmtTc` («T.C. del día» en
+  salidas en dólares; en una salida en PESOS no se pinta T.C. ni USD: su
+  `usd × tc` ya no da los pesos).
+- **Textos**: TODOS en `lib/admin/inventario-ficha.ts` (nuevo, PURO) y en los
+  helpers de siempre (`inventario-utilidad.ts` —aquí vive `fmtPrecioUnitario`,
+  re-exportado por la ficha para no crear un ciclo con
+  `inventario-eliminar.ts`—, `inventario-salida.ts`, `inventario-valorizado.ts`,
+  `inventario-eliminar.ts`). Configuración: «Utilidad de la tienda (margen
+  sobre el último precio de compra)».
+- **Tipos** (`types/inventory.ts`): todo ADITIVO y opcional (skew-safe):
+  `ReglaCosto`, `CostoVigente`, `TcHoy`, `SalidaDependiente`,
+  `PrecioVigenteFicha`, `DineroGenerado` y los campos nuevos de
+  `ResumenCompra`/`ResumenVenta`/`ResumenDia`/totales, del ítem, del
+  movimiento (detalle, respuesta de la salida y del PATCH), de
+  `TiendaResumen`, de la lista y de la vista previa de la baja.
+- **Pruebas**: `lib/admin/__tests__/inventario-ficha.test.ts` (formatos,
+  `partirDescripcion` con la descripción REAL del SAE 50, precio vigente con el
+  ejemplo del cliente —30 USD ⇒ $37.50 USD—, dinero generado del 15W-50,
+  confirmación D7, hash), `components/admin/inventory/__tests__/
+  ficha-producto.test.tsx` (la PÁGINA completa con el API simulado: sin KPIs
+  ni «Utilidad por salida», los 3 bloques + «Dinero generado» con las cifras
+  del contrato §6.4, `<details>` cerrados con el contenido montado, sin
+  «FIFO», banda solo con `movimientos_sin_tc > 0`, «bajo el mínimo», el SAE 50
+  de la captura, API previo sin sumar monedas, el recuadro D7 y el cableado de
+  la salida que vivía en el test retirado), más los ajustes de
+  `inventario-utilidad`, `inventario-salida`, `inventario-eliminar`,
+  `inventario-valorizado`, `items-table-orden` y `utilidad-tienda-card`.
+- **Orden de deploy: API 0.0.36 → migración → pyservices → panel ENSEGUIDA.**
+  Con el API nuevo y el panel viejo, «Editar costo» de una compra ya usada
+  responde 409 `ENTRADA_CON_SALIDAS` sin forma de confirmar. Con el panel
+  nuevo y el API previo, la ficha se pinta con los datos de siempre (sin
+  «Dinero generado» del API: se arma con los totales) y los textos viejos
+  donde el dato lo exige.
+- **Pendientes conocidos**: el formulario del producto (`item-form-dialog`)
+  sigue exigiendo el T.C. de la «Entrada inicial» en pesos (el API ya no lo
+  exige; no estaba en el alcance). Sin QA visual en navegador todavía.
+

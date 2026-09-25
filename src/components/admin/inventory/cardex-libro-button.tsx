@@ -21,7 +21,7 @@ function slug(nombre: string): string {
 /**
  * Descarga el cardex del ítem en formato LIBRO (réplica del cuaderno del
  * cliente): bloque ENTRADAS | bloque SALIDAS con venta, remanente y ganancia
- * FIFO por salida. Mismo patrón de descarga con Bearer que el reporte de
+ * por salida. Mismo patrón de descarga con Bearer que el reporte de
  * conciliación (fuente única: descargarDelApi).
  */
 export function CardexLibroButton({

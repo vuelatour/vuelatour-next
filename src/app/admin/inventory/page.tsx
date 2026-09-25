@@ -35,7 +35,7 @@ import { todayCancun } from "@/lib/datetime";
 import {
   NOTA_VALOR_SIN_TC,
   TITULO_VALOR_SIN_TC,
-  textoValorizado,
+  textoValorizadoConTc,
   tieneUsdSinTc,
 } from "@/lib/admin/inventario-valorizado";
 import { Degradaciones, principal } from "@/lib/api/degradar";
@@ -103,7 +103,10 @@ export default async function InventoryPage({
     valor_total_usd_sin_tc,
     utilidad_total_mxn,
     utilidad_total_usd,
+    utilidad_total_usd_original,
     margen_venta_pct: margenLista,
+    tc_hoy,
+    regla_costo,
   } = bodega.datos ?? {
     data: [],
     count: 0,
@@ -111,12 +114,15 @@ export default async function InventoryPage({
     valor_total_usd_sin_tc: 0,
     utilidad_total_mxn: null,
     utilidad_total_usd: null,
+    utilidad_total_usd_original: null,
     margen_venta_pct: undefined,
+    tc_hoy: undefined,
+    regla_costo: undefined,
   };
-  // Valorizado: pesos reales y dólares sin T.C. van SEPARADOS y cada uno con
-  // su moneda escrita (invariante 8 del API, 22-sep-2026). Con casi toda la
-  // bodega comprada en dólares sin T.C., pintar solo los pesos diría
-  // «valorizado $0.00» de una bodega de ~78,000 USD.
+  // Valorizado: existencia × último precio de compra al T.C. oficial de HOY
+  // (API 0.0.36). Pesos y dólares sin T.C. siguen SEPARADOS, cada uno con su
+  // moneda escrita (invariante 8 del API): tras la migración de T.C. ya no
+  // queda nada en dólares y la cifra es la bodega entera en pesos.
   const valorizado = { mxn: valor_total_mxn, usdSinTc: valor_total_usd_sin_tc };
   // Alta masiva: el API la permite a ADMIN/MECANICO (y COORDINADOR); SOCIO
   // solo consulta, así que no se le muestra un botón que le daría 403.
@@ -138,6 +144,8 @@ export default async function InventoryPage({
   const respaldoTienda = {
     utilidad_mxn: utilidad_total_mxn,
     utilidad_usd: utilidad_total_usd,
+    utilidad_usd_original: utilidad_total_usd_original,
+    enPesos: !!regla_costo,
     unidades_vendidas: conVentasCant
       ? items.reduce((s, i) => s + (numeroONulo(i.ventas_cant) ?? 0), 0)
       : null,
@@ -177,15 +185,15 @@ export default async function InventoryPage({
             </p>
           ) : (
             <p className="text-sm text-muted-foreground mt-1">
-              {count} {count === 1 ? "ítem activo" : "ítems activos"} · valorizado{" "}
+              {count} {count === 1 ? "ítem activo" : "ítems activos"} ·{" "}
               <span title={tieneUsdSinTc(valorizado) ? TITULO_VALOR_SIN_TC : undefined}>
-                {textoValorizado(valorizado)}
-              </span>{" "}
-              (FIFO). El consumo se carga al avión al registrar la salida.
+                {textoValorizadoConTc(valorizado, { tcHoy: tc_hoy?.tc ?? null, reglaCosto: regla_costo })}
+              </span>
+              . El consumo se carga al avión al registrar la salida.
             </p>
           )}
           <p className="text-xs text-muted-foreground/80 mt-1">
-            Toca un producto para ver sus compras, su utilidad por salida y el resumen por día.
+            Toca un producto para ver sus compras, sus ventas y el resumen por día.
           </p>
           {/* Por qué el valorizado en pesos puede verse en cero: casi toda la
               bodega se capturó en dólares sin tipo de cambio. */}

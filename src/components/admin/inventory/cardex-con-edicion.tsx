@@ -29,7 +29,9 @@ interface CardexConEdicionProps {
 /**
  * Cardex del detalle del ítem + los diálogos de fila: corregir el costo de
  * una ENTRADA (la carga masiva dejó entradas a $0 que el cliente completa con
- * el precio real) y ELIMINAR un movimiento con justificación (21-sep-2026).
+ * el precio real; desde el API 0.0.36 corregirlo cambia el último precio de
+ * compra, no lo ya cobrado) y ELIMINAR un movimiento con justificación
+ * (21-sep-2026).
  * El wrapper cliente solo carga el estado de los diálogos; la tabla sigue
  * siendo la misma CardexTable.
  */
@@ -64,6 +66,10 @@ export function CardexConEdicion({
                     m.costo_unitario_mxn != null ? Number(m.costo_unitario_mxn) : null,
                   tc_usd_mxn: m.tc_usd_mxn != null ? Number(m.tc_usd_mxn) : null,
                   unidad,
+                  // API 0.0.36: salidas que ya se cobraron con este precio
+                  // (el diálogo avisa ANTES de guardar; ausentes = API previo).
+                  salidasConEstePrecio: m.salidas_con_este_precio,
+                  salidasSinCargo: m.salidas_sin_cargo,
                 })
             : undefined
         }

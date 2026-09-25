@@ -7,31 +7,36 @@ import {
   getInventarioItem,
   getInventarioItemResumen,
   listMovimientosEliminados,
+  listUbicaciones,
   type MovimientosEliminadosResultado,
+  type UbicacionesResultado,
 } from "@/lib/api/inventory-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
-import { fmtMxn } from "@/lib/format";
-import {
-  NOTA_VALOR_SIN_TC,
-  TITULO_VALOR_SIN_TC,
-  textoValorizado,
-  tieneUsdSinTc,
-} from "@/lib/admin/inventario-valorizado";
 import { MovimientoButton } from "@/components/admin/inventory/movimiento-button";
 import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
 import { MovimientosEliminadosCard } from "@/components/admin/inventory/movimientos-eliminados-card";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
-import { UtilidadPorSalida } from "@/components/admin/inventory/utilidad-por-salida";
+import { FichaPlegable } from "@/components/admin/inventory/ficha-plegable";
+import { ItemEditButton } from "@/components/admin/inventory/item-edit-button";
 import {
   MARCA_ANTERIOR,
   TITULO_ANTERIOR,
   textoUbicacion,
 } from "@/lib/admin/inventario-ubicacion";
-import { textoPrecioVentaProducto } from "@/lib/admin/inventario-salida";
+import {
+  ETIQUETA_AERONAVE_USO,
+  ID_PLEGABLE_CARDEX,
+  ID_PLEGABLE_EMPAQUES,
+  PLEGABLE_CARDEX,
+  PLEGABLE_EMPAQUES,
+  partirDescripcion,
+  resumenPlegableCardex,
+  resumenPlegableEmpaques,
+} from "@/lib/admin/inventario-ficha";
 import type {
   InventarioFoto,
   InventarioItemDetail,
@@ -40,12 +45,22 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
-
 /**
- * Detalle del producto (pedido del cliente 4-sep-2026): abre con los tres
- * bloques COMPRAS | VENTAS | RESUMEN (réplica de su Excel); debajo siguen
- * los indicadores, empaques, fotos y el cardex completo con sus acciones.
+ * FICHA del producto — sencilla (pedido del cliente 25-sep-2026: «al entrar
+ * algún producto nos están llenando de información repetida… Solo
+ * necesitamos el apartado de: Compras | Ventas | Resumen de ventas»):
+ *
+ *  1. Cabecera: nombre, categoría · marca, parte · código · ubicación, la
+ *     DESCRIPCIÓN completa y la aeronave/uso en su propio renglón; botones
+ *     «Registrar movimiento», «Cardex (Excel)» y «Editar».
+ *  2. COMPRAS | VENTAS | RESUMEN + «Dinero generado por este producto».
+ *  3. Plegables CERRADOS al fondo: «Empaques y fotos» y «Cardex completo»
+ *     (ahí se corrige un costo o se elimina un movimiento). Nada se pierde.
+ *
+ * Se QUITARON la tira de KPIs (stock actual/mínimo, costo, precio de venta,
+ * valorizado) y la card «Utilidad por salida»: repetían lo que ya dicen las
+ * tablas. La única señal que se conserva es «bajo el mínimo», en el pie del
+ * Resumen. Todo número viene del API; aquí solo se pinta.
  */
 export default async function InventoryItemPage({
   params,
@@ -73,8 +88,9 @@ export default async function InventoryItemPage({
     filas: [],
     falla: false,
   };
+  let ubicacionesRes: UbicacionesResultado = { disponible: false, data: [], falla: false };
   try {
-    const [itemRes, resumenRes, aircraftRes, providersRes, me, eliminadosRes] =
+    const [itemRes, resumenRes, aircraftRes, providersRes, me, eliminadosRes, ubicRes] =
       await Promise.all([
         getInventarioItem(id),
         // Bloques COMPRAS/VENTAS/RESUMEN. Tolerante: si el API aún no conoce la
@@ -86,12 +102,16 @@ export default async function InventoryItemPage({
         // Bitácora de bajas del cardex (21-sep-2026). Nunca lanza: distingue
         // «el API no conoce la ruta» de «no se pudo leer» (ver el helper).
         listMovimientosEliminados(id),
+        // Catálogo de ubicaciones para «Editar» (el MISMO que carga la lista).
+        // Nunca lanza: sin él el formulario usa el texto de siempre.
+        listUbicaciones({ incluirInactivas: true }),
       ]);
     item = itemRes;
     resumen = resumenRes;
     aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
     eliminados = eliminadosRes;
+    ubicacionesRes = ubicRes;
     // Mismos roles del PATCH del API: a los demás no se les muestra un botón
     // que les daría 403.
     puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
@@ -103,20 +123,15 @@ export default async function InventoryItemPage({
     throw err;
   }
 
-  // Valorizado en DOS monedas que jamás se suman: pesos reales
-  // (`valor_mxn`) y lo comprado en dólares sin T.C. (`valor_usd_sin_tc`,
-  // ADITIVO — ausente con un API previo ⇒ se pinta como siempre).
-  const valorizado = {
-    mxn: item.valor_mxn,
-    usdSinTc: item.valor_usd_sin_tc,
-    pesosExactos: item.pesos_exactos,
-  };
-
-  // Margen vigente de la tienda (API 0.0.35; ausente = API previo, donde una
+  // Margen vigente de la tienda (API 0.0.35+; ausente = API previo, donde una
   // salida sin precio va a costo). Solo textos: el número lo aplica el API.
   const margenVentaPct = resumen?.margen_venta_pct ?? null;
   // Ubicación: nombre del catálogo, texto anterior (ámbar) o «Sin ubicación».
   const ubicacion = textoUbicacion(item);
+  const ubicaciones = ubicacionesRes.disponible ? ubicacionesRes.data : null;
+  const { texto: descripcion, aeronaveUso } = partirDescripcion(item.descripcion);
+  // El formulario de «Editar» no necesita el cardex: no se serializa al cliente.
+  const { movimientos, ...itemSinCardex } = item;
 
   const empaques = item.empaques ?? [];
   const empaqueEscaneado =
@@ -137,8 +152,8 @@ export default async function InventoryItemPage({
         Inventario
       </BackLink>
 
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-4 min-w-0">
           {item.foto_url && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -147,7 +162,7 @@ export default async function InventoryItemPage({
               className="h-20 w-20 shrink-0 rounded-lg object-cover ring-1 ring-border"
             />
           )}
-          <div>
+          <div className="min-w-0">
             <p className="text-sm text-muted-foreground">
               {item.categoria}
               {item.marca ? ` · ${item.marca}` : ""}
@@ -170,13 +185,20 @@ export default async function InventoryItemPage({
                 ubicacion.texto
               )}
             </p>
-            {item.descripcion && (
-              <p className="text-sm mt-2 max-w-2xl whitespace-pre-line">{item.descripcion}</p>
+            {/* Descripción detallada COMPLETA (sin recorte) y, si la trae, la
+                aeronave/uso en su propio renglón. */}
+            {descripcion && (
+              <p className="text-sm mt-2 max-w-3xl whitespace-pre-line">{descripcion}</p>
+            )}
+            {aeronaveUso && (
+              <p className="text-sm mt-1 max-w-3xl">
+                <span className="text-muted-foreground">{ETIQUETA_AERONAVE_USO}: </span>
+                {aeronaveUso}
+              </p>
             )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
           <MovimientoButton
             itemId={item.id}
             itemNombre={item.nombre}
@@ -190,147 +212,108 @@ export default async function InventoryItemPage({
             autoOpen={!!empaqueEscaneado}
             margenVentaPct={margenVentaPct}
           />
+          <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
+          {/* «Editar» = PATCH items/:id (ADMIN/MECANICO): a los demás roles
+              no se les ofrece un formulario que terminaría en 403. */}
+          {puedeEditarCosto && (
+            <ItemEditButton
+              item={itemSinCardex}
+              categorias={item.categoria ? [item.categoria] : []}
+              ubicaciones={ubicaciones}
+              margenVentaPct={margenVentaPct}
+            />
+          )}
         </div>
       </div>
 
-      {/* Lo primero que ve el operador: compras, ventas y resumen por día
-          (mismo FIFO/ganancia que el balance; solo se pinta). */}
-      <ResumenProducto resumen={resumen} />
+      {/* Lo único que se necesita (pedido del cliente): Compras | Ventas |
+          Resumen + «Dinero generado». Mismo costo/utilidad del balance. */}
+      <ResumenProducto
+        resumen={resumen}
+        bajoStock={item.bajo_stock}
+        stockMinimo={item.stock_minimo}
+      />
 
-      {/* Utilidad de la tienda salida por salida (25-sep-2026): fecha,
-          avión, cantidad, costo, venta y utilidad, cada monto en su moneda. */}
-      <UtilidadPorSalida resumen={resumen} unidad={item.unidad} />
+      {/* Plegables CERRADOS: nada se pierde, solo deja de estorbar. */}
+      <FichaPlegable
+        id={ID_PLEGABLE_EMPAQUES}
+        titulo={PLEGABLE_EMPAQUES}
+        resumen={resumenPlegableEmpaques(empaques.length, fotos.length)}
+      >
+        <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,320px)]">
+          <EmpaquesCard
+            itemId={item.id}
+            itemNombre={item.nombre}
+            itemCodigo={item.codigo}
+            unidad={item.unidad}
+            empaques={empaques}
+          />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-        <Stat
-          label="Stock actual"
-          value={`${num(item.stock)}${item.unidad ? ` ${item.unidad}` : ""}`}
-          highlight={item.bajo_stock}
-        />
-        <Stat label="Stock mínimo" value={item.stock_minimo != null ? num(item.stock_minimo) : "—"} />
-        <Stat
-          label="Costo FIFO"
-          value={item.costo_fifo_mxn_actual ? fmtMxn(item.costo_fifo_mxn_actual) : "—"}
-        />
-        {/* Precio de VENTA al avión (29-ago-2026): la salida se carga a este
-            precio; sin precio, a costo FIFO + margen de la tienda (25-sep). */}
-        <Stat
-          label="Precio de venta"
-          value={textoPrecioVentaProducto({
-            precio: item.precio_venta,
-            moneda: item.precio_venta_moneda,
-            margenPct: margenVentaPct,
-          })}
-        />
-        {/* Valorizado: cada moneda en su sitio. `valor_mxn` ya solo trae
-            pesos REALES (invariante 8 del API, 22-sep-2026); lo comprado en
-            dólares sin T.C. se pinta en dólares en vez de desaparecer en un
-            «$0.00 MXN». Con un API previo (sin el aditivo) se ve como antes. */}
-        <Stat
-          label="Valorizado"
-          value={textoValorizado(valorizado)}
-          title={tieneUsdSinTc(valorizado) ? TITULO_VALOR_SIN_TC : undefined}
-        />
-      </div>
-      {tieneUsdSinTc(valorizado) && (
-        <p className="text-xs text-amber-700 dark:text-amber-400 -mt-3">{NOTA_VALOR_SIN_TC}</p>
-      )}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Fotos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {fotos.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Sin fotos. Se agregan al editar el ítem o desde la app (la IA llena la ficha
+                  con ellas).
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {fotos.map((f, i) => (
+                    <a
+                      key={f.path || f.url}
+                      href={f.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block cursor-pointer"
+                      title={i === 0 && item.foto_url ? "Foto principal" : "Foto adicional"}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={f.url}
+                        alt={`${item.nombre} ${i + 1}`}
+                        className="h-20 w-20 rounded-md object-cover ring-1 ring-border hover:ring-brand-600"
+                      />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </FichaPlegable>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,320px)]">
-        <EmpaquesCard
-          itemId={item.id}
-          itemNombre={item.nombre}
-          itemCodigo={item.codigo}
-          unidad={item.unidad}
-          empaques={empaques}
-        />
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Fotos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {fotos.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Sin fotos. Se agregan al editar el ítem o desde la app (la IA llena la ficha
-                con ellas).
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {fotos.map((f, i) => (
-                  <a
-                    key={f.path || f.url}
-                    href={f.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block"
-                    title={i === 0 && item.foto_url ? "Foto principal" : "Foto adicional"}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={f.url}
-                      alt={`${item.nombre} ${i + 1}`}
-                      className="h-20 w-20 rounded-md object-cover ring-1 ring-border hover:ring-brand-600"
-                    />
-                  </a>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Cardex completo</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {item.movimientos.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-              Sin movimientos todavía. Registra una entrada para dar de alta stock.
-            </p>
-          ) : (
+      <FichaPlegable
+        id={ID_PLEGABLE_CARDEX}
+        titulo={PLEGABLE_CARDEX}
+        resumen={resumenPlegableCardex(movimientos.length)}
+      >
+        {movimientos.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Sin movimientos todavía. Registra una entrada para dar de alta stock.
+          </p>
+        ) : (
+          <div className="-mx-4">
             <CardexConEdicion
               itemId={item.id}
               itemNombre={item.nombre}
               unidad={item.unidad}
-              movimientos={item.movimientos}
+              movimientos={movimientos}
               puedeEditarCosto={puedeEditarCosto}
               puedeEliminar={puedeEliminar}
             />
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
 
-      {/* Bajo el cardex: qué se eliminó de él, quién y por qué. */}
-      <MovimientosEliminadosCard
-        filas={eliminados.filas}
-        falla={eliminados.falla}
-        unidad={item.unidad}
-      />
+        {/* Bajo el cardex: qué se eliminó de él, quién y por qué. */}
+        <MovimientosEliminadosCard
+          filas={eliminados.filas}
+          falla={eliminados.falla}
+          unidad={item.unidad}
+        />
+      </FichaPlegable>
     </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  highlight,
-  title,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-  title?: string;
-}) {
-  return (
-    <Card title={title}>
-      <CardContent className="py-4">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className={`text-xl font-semibold tabular-nums mt-1 ${highlight ? "text-amber-600" : ""}`}>
-          {value}
-        </p>
-      </CardContent>
-    </Card>
   );
 }

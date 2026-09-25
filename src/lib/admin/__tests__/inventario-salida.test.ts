@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ETIQUETA_A_COSTO,
+  HINT_A_COSTO,
+  PLACEHOLDER_A_COSTO,
   etiquetaOrigenVenta,
+  hintAvionSalida,
   hintPrecioVentaProducto,
   hintVentaSalida,
   placeholderVenta,
@@ -60,30 +63,52 @@ describe("ventaDelFormulario · qué viaja al API", () => {
 });
 
 describe("textos del precio", () => {
-  it("placeholder: sin precio del producto «costo FIFO + margen», con precio «precio del producto»", () => {
-    expect(placeholderVenta({ precioProducto: null, margenPct: 25 })).toBe("Vacío = costo FIFO + 25 %");
-    expect(placeholderVenta({ precioProducto: 0, margenPct: undefined })).toBe("Vacío = costo FIFO + 25 %");
+  it("placeholder: sin precio del producto «último precio de compra + margen», con precio «precio del producto»", () => {
+    expect(placeholderVenta({ precioProducto: null, margenPct: 25 })).toBe("Vacío = último precio de compra + 25 %");
+    expect(placeholderVenta({ precioProducto: 0, margenPct: undefined })).toBe(
+      "Vacío = último precio de compra + 25 %",
+    );
     expect(placeholderVenta({ precioProducto: 350, margenPct: 25 })).toBe("Vacío = precio del producto");
-    expect(placeholderVenta({ precioProducto: null, margenPct: 30 })).toBe("Vacío = costo FIFO + 30 %");
+    expect(placeholderVenta({ precioProducto: null, margenPct: 30 })).toBe("Vacío = último precio de compra + 30 %");
+    expect(PLACEHOLDER_A_COSTO).toBe("A costo");
   });
 
   it("hints con el margen vigente", () => {
     expect(hintVentaSalida(25)).toBe(
-      "El avión paga este precio. Vacío: costo FIFO + 25 % (utilidad de la tienda).",
+      "El avión paga este precio. Vacío: último precio de compra + 25 % (utilidad de la tienda).",
     );
-    expect(hintPrecioVentaProducto(null)).toContain("Vacío = cada salida se cobra a costo FIFO + 25 %");
+    expect(hintPrecioVentaProducto(null)).toContain(
+      "Vacío = cada salida se cobra al último precio de compra + 25 %",
+    );
+  });
+
+  it("ningún texto de la salida dice «FIFO» (API 0.0.36: último precio de compra)", () => {
+    const textos = [
+      placeholderVenta({ precioProducto: null, margenPct: 25 }),
+      hintVentaSalida(25),
+      hintPrecioVentaProducto(25),
+      hintAvionSalida(25),
+      HINT_A_COSTO,
+      textoPrecioVentaProducto({ precio: null, moneda: null, margenPct: 25 }),
+      textoPrecioVentaProducto({ precio: null, moneda: null, margenPct: null }),
+      etiquetaOrigenVenta("MARGEN", 25) ?? "",
+      textoSalidaRegistrada({ gasto_generado: { id: "g", monto: 1, moneda: "USD" }, venta_unitaria: null }),
+    ];
+    for (const t of textos) expect(t).not.toMatch(/FIFO/);
   });
 
   it("precio del producto en la ficha: precio · costo + margen · a costo (API previo)", () => {
     expect(textoPrecioVentaProducto({ precio: 350, moneda: "MXN", margenPct: 25 })).toBe("$350.00 MXN");
     expect(textoPrecioVentaProducto({ precio: "62.5", moneda: "USD", margenPct: 25 })).toBe("$62.50 USD");
-    expect(textoPrecioVentaProducto({ precio: null, moneda: null, margenPct: 25 })).toBe("Costo FIFO + 25 %");
-    expect(textoPrecioVentaProducto({ precio: 0, moneda: "MXN", margenPct: 0 })).toBe("A costo FIFO");
-    expect(textoPrecioVentaProducto({ precio: null, moneda: null, margenPct: null })).toBe("A costo FIFO");
+    expect(textoPrecioVentaProducto({ precio: null, moneda: null, margenPct: 25 })).toBe(
+      "Último precio de compra + 25 %",
+    );
+    expect(textoPrecioVentaProducto({ precio: 0, moneda: "MXN", margenPct: 0 })).toBe("A costo");
+    expect(textoPrecioVentaProducto({ precio: null, moneda: null, margenPct: null })).toBe("A costo");
   });
 
   it("origen del precio", () => {
-    expect(etiquetaOrigenVenta("MARGEN", 25)).toBe("costo + 25 %");
+    expect(etiquetaOrigenVenta("MARGEN", 25)).toBe("último precio + 25 %");
     expect(etiquetaOrigenVenta("PRECIO_PRODUCTO")).toBe("precio del producto");
     expect(etiquetaOrigenVenta("PRECIO_CAPTURADO")).toBe("precio de venta");
     expect(etiquetaOrigenVenta("A_COSTO")).toBe("a costo, sin utilidad");
@@ -92,7 +117,7 @@ describe("textos del precio", () => {
 });
 
 describe("textoSalidaRegistrada · toast de éxito", () => {
-  it("caso del contrato: aceite a XA-VGV, costo + 25 %", () => {
+  it("caso del contrato: aceite a XA-VGV, último precio + 25 %", () => {
     expect(
       textoSalidaRegistrada(
         {
@@ -106,7 +131,24 @@ describe("textoSalidaRegistrada · toast de éxito", () => {
         },
         "XA-VGV",
       ),
-    ).toBe("Salida registrada: se cargó $318.75 USD a XA-VGV (costo + 25 %).");
+    ).toBe("Salida registrada: se cargó $318.75 USD a XA-VGV (último precio + 25 %).");
+  });
+
+  it("ejemplo del cliente: último precio 30 USD + 25 % ⇒ 1 pieza = $37.50 USD", () => {
+    expect(
+      textoSalidaRegistrada(
+        {
+          gasto_generado: { id: "g", monto: 37.5, moneda: "USD", categoria: "REFACCION" },
+          venta_origen: "MARGEN",
+          margen_pct: 25,
+          venta_unitaria: 37.5,
+          venta_moneda: "USD",
+          moneda: "USD",
+          costo_unitario_mxn: null,
+        },
+        "N4142R",
+      ),
+    ).toBe("Salida registrada: se cargó $37.50 USD a N4142R (último precio + 25 %).");
   });
 
   it("toda la flota: el total y cuántos aviones; moneda de la venta", () => {
@@ -142,7 +184,7 @@ describe("textoSalidaRegistrada · toast de éxito", () => {
   it("API PREVIO (sin `venta_origen`): se deduce del movimiento", () => {
     expect(
       textoSalidaRegistrada({ gasto_generado: { id: "g", monto: 50, moneda: "USD" }, venta_unitaria: null }, "N4142R"),
-    ).toBe("Salida registrada: se cargó $50 USD a N4142R (costo FIFO).");
+    ).toBe("Salida registrada: se cargó $50 USD a N4142R (a costo).");
     expect(
       textoSalidaRegistrada(
         { gasto_generado: { id: "g", monto: 62.5, moneda: "USD" }, venta_unitaria: 62.5, venta_moneda: "USD" },

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDateOnly } from "@/lib/datetime";
-import { fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
 import type { InventarioMovimiento, TipoMovimiento } from "@/types/inventory";
 
@@ -56,8 +56,8 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     cellClassName: "text-right tabular-nums text-muted-foreground",
     cell: (m) =>
       // ENTRADA en $0 = la carga masiva quedó sin precio real: se marca en
-      // ámbar para que se complete (el FIFO valoriza esa capa en $0 y la
-      // salida no generaría gasto del avión).
+      // ámbar para que se complete (no fija precio: si no hay otra compra con
+      // costo, la salida saldría sin cargo al avión).
       m.tipo === "ENTRADA" && !(Number(m.costo_unitario_usd) > 0) ? (
         <span className="font-medium text-amber-600 dark:text-amber-500">Sin costo</span>
       ) : (
@@ -71,10 +71,7 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
             : m.costo_unitario_mxn != null
               ? fmtMxn(m.costo_unitario_mxn)
               : `${fmtUsd(m.costo_unitario_usd)} USD`}
-          <p className="text-[11px]">
-            {fmtUsd(m.costo_unitario_usd)} USD
-            {m.tc_usd_mxn ? ` · TC ${Number(m.tc_usd_mxn)}` : ""}
-          </p>
+          <p className="text-[11px]">{subCosto(m)}</p>
         </>
       ),
   },
@@ -93,6 +90,23 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     cell: (m) => m.referencia ?? "—",
   },
 ];
+
+/**
+ * Sub-línea del costo unitario. En dólares: el USD capturado y su T.C. (en
+ * una SALIDA, «T.C. del día» = el oficial del día de la venta). En pesos NO
+ * se pinta el USD interno, y en una SALIDA en pesos tampoco el T.C.: desde
+ * el API 0.0.36 su `tc_usd_mxn` es el del día de la VENTA y su USD el de la
+ * compra, así que `usd × tc` ya no da los pesos — ponerlos juntos invitaría
+ * a multiplicarlos (y en las salidas viejas era el T.C. de la compra).
+ */
+function subCosto(m: InventarioMovimiento): string {
+  const tc = fmtTc(m.tc_usd_mxn);
+  if (m.moneda === "MXN" && m.costo_unitario_mxn != null) {
+    return tc && m.tipo !== "SALIDA" ? `en pesos · T.C. ${tc}` : "en pesos";
+  }
+  const tcTxt = tc ? `${m.tipo === "SALIDA" ? "T.C. del día" : "T.C."} ${tc}` : "";
+  return `${fmtUsd(m.costo_unitario_usd)} USD${tcTxt ? ` · ${tcTxt}` : ""}`;
+}
 
 /** SALIDA con venta: el ítem tiene precio de venta y el avión pagó ESO. */
 const conVentaDe = (m: InventarioMovimiento) =>
@@ -117,9 +131,10 @@ const columnaVenta: DataTableColumn<InventarioMovimiento> = {
 };
 
 /**
- * Utilidad (venta − costo FIFO): la manda el API en el detalle, en pesos
- * (`ganancia_mxn`) o —si la venta y el costo están en dólares sin T.C.— en
- * dólares (`ganancia_usd`, 25-sep-2026). Nunca las dos; cada una con su moneda.
+ * Utilidad (venta − costo): la manda el API en el detalle, en pesos
+ * (`ganancia_mxn`, desde el 0.0.36 también las ventas en dólares con el T.C.
+ * del día de la venta) o —solo si la fila sigue sin T.C.— en dólares
+ * (`ganancia_usd`). Nunca las dos; cada una con su moneda.
  */
 const columnaGanancia: DataTableColumn<InventarioMovimiento> = {
   key: "ganancia",
@@ -215,7 +230,7 @@ export function CardexTable({
   // (caja): a los ítems sin cajas no les estorba.
   const conEmpaques = movimientos.some((m) => !!m.empaque && m.cantidad_empaques != null);
   // Venta/ganancia solo si alguna SALIDA llevó precio de venta: a los ítems
-  // que se cargan a costo FIFO no les estorban dos columnas vacías.
+  // que se cargan a costo no les estorban dos columnas vacías.
   const conVenta = movimientos.some(conVentaDe);
   let columns = conEmpaques
     ? [

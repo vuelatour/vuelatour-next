@@ -20,7 +20,7 @@ interface MovimientoButtonProps {
   initialEmpaqueId?: string;
   /** Abrir el diálogo al montar (navegación desde el escáner). */
   autoOpen?: boolean;
-  /** Margen de la tienda: textos de la salida («Vacío = costo FIFO + 25 %»). */
+  /** Margen de la tienda: textos de la salida («Vacío = último precio de compra + 25 %»). */
   margenVentaPct?: number | null;
 }
 

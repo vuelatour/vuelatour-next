@@ -108,10 +108,12 @@ function escribirParamEnUrl(clave: string, valor: string | null) {
 /**
  * Tabla principal de Inventario — Producto · Categoría · Stock · Utilidad ·
  * Ubicación · ⋯ (pedido del cliente 25-sep-2026). La fila abre el detalle
- * del producto (compras, ventas, utilidad por salida y resumen por día).
+ * del producto (compras, ventas y resumen por día).
  *
  * UTILIDAD: la manda el API (fuente única `ventaDeSalida`, la misma del
- * Balance general) en pesos y en dólares POR SEPARADO; aquí solo se pinta,
+ * Balance general). Desde el 0.0.36 cuenta en PESOS (ventas en dólares al
+ * T.C. oficial de su día; el dólar original va en el tooltip); solo filas
+ * que sigan sin T.C. traen una línea aparte en dólares. Aquí solo se pinta,
  * una línea por moneda, jamás sumadas.
  *
  * UBICACIÓN: el nombre del catálogo o, si el producto aún no tiene la nueva,

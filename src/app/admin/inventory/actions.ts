@@ -44,11 +44,22 @@ export interface ActionResult<T = unknown> {
    * por el texto del mensaje. Aditivo.
    */
   code?: string;
+  /**
+   * `details` del error del API (aditivo, 25-sep-2026): p. ej. la lista de
+   * salidas del 409 `ENTRADA_CON_SALIDAS` de «Editar costo».
+   */
+  details?: unknown;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
   if (isApiError(err)) {
-    return { ok: false, error: err.message, status: err.status, code: err.code };
+    return {
+      ok: false,
+      error: err.message,
+      status: err.status,
+      code: err.code,
+      ...(err.details !== undefined ? { details: err.details } : {}),
+    };
   }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
@@ -80,7 +91,8 @@ const BORRABLES = [
   "marca",
   "descripcion",
   // Numérico-como-texto en el form: vaciar el precio de venta = quitarlo
-  // (el API limpia también su moneda; las salidas vuelven a costo FIFO).
+  // (el API limpia también su moneda; las salidas vuelven al último precio de
+  // compra + margen).
   "precio_venta",
 ] as const;
 
@@ -226,13 +238,18 @@ export async function createMovimientoAction(
 
 /**
  * Corrige el COSTO de una ENTRADA de cardex (carga masiva a $0). El API
- * valida los candados (nace de compra / capa FIFO ya consumida) y sus 409 ya
- * explican el porqué: el mensaje viaja tal cual al toast.
+ * valida los candados (nace de una compra ⇒ 409) y, desde el 0.0.36, exige
+ * RECONOCER las salidas que ya se cobraron con ese precio: sin
+ * `confirmar_salidas: true` responde 409 `ENTRADA_CON_SALIDAS` con la lista
+ * en `details.salidas` (viaja en `ActionResult.details` para que el diálogo
+ * abra su recuadro). El flag SOLO se manda cuando el operador confirmó: un
+ * API previo respondería 400 a un campo que no conoce.
  */
 export async function updateMovimientoCostoAction(
   itemId: string,
   movId: string,
   raw: unknown,
+  opts: { confirmarSalidas?: boolean } = {},
 ): Promise<ActionResult<InventarioMovimiento>> {
   const parsed = EditarCostoSchema.safeParse(raw);
   if (!parsed.success) {
@@ -241,7 +258,13 @@ export async function updateMovimientoCostoAction(
   try {
     const updated = await apiServer<InventarioMovimiento>(
       `/v1/inventory/items/${itemId}/movimientos/${movId}`,
-      { method: "PATCH", body: stripEmpty(parsed.data) },
+      {
+        method: "PATCH",
+        body: {
+          ...stripEmpty(parsed.data),
+          ...(opts.confirmarSalidas === true ? { confirmar_salidas: true } : {}),
+        },
+      },
     );
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${itemId}`);

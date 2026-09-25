@@ -13,6 +13,7 @@ import {
   TITULO_TARJETA_TIENDA,
   avisoVentasSinUtilidad,
   lineaUnidadesTienda,
+  lineaUsdOriginalTienda,
   notaUtilidad,
   numeroONulo,
   partesUtilidad,
@@ -29,6 +30,10 @@ interface UtilidadTiendaCardProps {
   respaldo: {
     utilidad_mxn: number | null;
     utilidad_usd: number | null;
+    /** API 0.0.36: Σ utilidad de las ventas en dólares, en dólares (dato secundario). */
+    utilidad_usd_original?: number | null;
+    /** API 0.0.36 (`regla_costo`): la utilidad ya cuenta en pesos. */
+    enPesos?: boolean;
     unidades_vendidas: number | null;
     ventas_sin_utilidad: number;
     con_entradas_sin_costo: boolean;
@@ -47,10 +52,13 @@ interface UtilidadTiendaCardProps {
 
 /**
  * «Utilidad de la tienda» (25-sep-2026): lo que la tienda VuelaTour le ha
- * ganado a lo que se carga a los aviones — pesos y dólares POR SEPARADO,
- * nunca sumados. Chips de periodo (enlaces que conservan orden, filtro y
- * búsqueda de la URL viva), unidades vendidas, margen vigente y avisos de
- * cifras no confiables. Todo número viene del API.
+ * ganado a lo que se carga a los aviones. Con el API 0.0.36 la cifra grande
+ * es en PESOS (cada venta en dólares convertida con el T.C. oficial de SU
+ * día) y debajo, tenue, «≈ +$535.35 USD al T.C. de cada venta» — el dólar
+ * original, jamás sumado. Si quedan filas SIN T.C., su utilidad en dólares
+ * sigue saliendo aparte, en su propia cifra. Chips de periodo (enlaces que
+ * conservan orden, filtro y búsqueda de la URL viva), unidades vendidas,
+ * margen vigente y avisos de cifras no confiables. Todo número viene del API.
  */
 export function UtilidadTiendaCard({
   resumen,
@@ -66,6 +74,12 @@ export function UtilidadTiendaCard({
     ? { mxn: numeroONulo(resumen.utilidad_mxn), usd: numeroONulo(resumen.utilidad_usd) }
     : { mxn: respaldo.utilidad_mxn, usd: respaldo.utilidad_usd };
   const partes = partesUtilidad(utilidad);
+  // El dólar ORIGINAL de lo vendido (solo informativo) y si la utilidad ya
+  // cuenta en pesos (API 0.0.36). Ausentes = API previo: como antes.
+  const usdOriginal = lineaUsdOriginalTienda(
+    resumen ? resumen.utilidad_usd_original : respaldo.utilidad_usd_original,
+  );
+  const enPesos = resumen ? !!resumen.regla_costo : !!respaldo.enPesos;
   const unidades = resumen ? resumen.unidades_vendidas : respaldo.unidades_vendidas;
   const sinUtilidad = resumen ? resumen.ventas_sin_utilidad : respaldo.ventas_sin_utilidad;
   const sinCosto = resumen ? resumen.con_entradas_sin_costo : respaldo.con_entradas_sin_costo;
@@ -120,6 +134,9 @@ export function UtilidadTiendaCard({
                 ))}
               </p>
             )}
+            {usdOriginal && (
+              <p className="text-xs text-muted-foreground tabular-nums">{usdOriginal}</p>
+            )}
             <p className="text-sm text-muted-foreground">
               {unidades != null ? lineaUnidadesTienda(unidades, margen) : null}
               {unidades != null ? " · " : null}
@@ -172,7 +189,7 @@ export function UtilidadTiendaCard({
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground/80">{notaUtilidad(margen)}</p>
+        <p className="text-xs text-muted-foreground/80">{notaUtilidad(margen, { enPesos })}</p>
       </CardContent>
     </Card>
   );

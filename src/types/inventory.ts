@@ -1,5 +1,57 @@
 export type TipoMovimiento = "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
 
+/** Moneda de un monto del inventario (jamás se suman entre sí). */
+export type MonedaInventario = "MXN" | "USD";
+
+/**
+ * Regla de COSTO del API (0.0.36, 25-sep-2026): el costo de un producto es
+ * su ÚLTIMO PRECIO DE COMPRA. AUSENTE = API previo (costo FIFO): el panel
+ * conserva los textos viejos solo donde el dato lo exija.
+ */
+export type ReglaCosto = "ULTIMO_PRECIO";
+
+/**
+ * Último precio de compra (API 0.0.36, `costoVigenteEn`): la ENTRADA con
+ * costo > 0 más reciente. Conserva la MONEDA de la compra.
+ */
+export interface CostoVigente {
+  movimiento_id: string | null;
+  /** YYYY-MM-DD de la compra. */
+  fecha: string;
+  moneda: MonedaInventario;
+  /** En `moneda`, tal cual se capturó (hasta 4 decimales). */
+  unitario: number;
+  unitario_usd: number;
+  /** Pesos nativos si la compra fue en MXN; null si fue en USD. */
+  unitario_mxn: number | null;
+  /** T.C. de la compra (capturado u oficial de su día). */
+  tc_compra: number | null;
+}
+
+/** T.C. oficial de hoy (la misma fuente que las cotizaciones). */
+export interface TcHoy {
+  tc: number;
+  fecha_dato: string | null;
+  fuente: string | null;
+}
+
+/**
+ * SALIDA que se cobró con el precio de una compra (409
+ * `ENTRADA_CON_SALIDAS` al «Editar costo» sin confirmar, API 0.0.36).
+ */
+export interface SalidaDependiente {
+  id: string;
+  fecha: string;
+  cantidad: number;
+  /** El costo GUARDADO en la salida (lo que se cobró), en `moneda`. */
+  costo_unitario: number;
+  moneda: MonedaInventario;
+  /** Costo guardado 0 ⇒ la salida no generó cargo al avión. */
+  sin_cargo: boolean;
+  /** Matrícula, 'FLOTA' o '—'. */
+  vendido_a: string;
+}
+
 /** Foto extra del producto en el bucket inventario-fotos. */
 export interface InventarioFoto {
   url: string;
@@ -31,8 +83,9 @@ export interface InventarioItem {
   unidad?: string | null;
   /**
    * Precio de VENTA unitario al avión (29-ago-2026): la SALIDA se carga a
-   * este precio como gasto BODEGA; el costo FIFO queda para el inventario.
-   * Sin precio, la salida se carga a costo FIFO. Opcional por skew de deploy.
+   * este precio como gasto BODEGA; el costo (último precio de compra) queda
+   * para el inventario. Sin precio, la salida se cobra a ese costo + el margen
+   * de la tienda. Opcional por skew de deploy.
    */
   precio_venta?: number | null;
   precio_venta_moneda?: "MXN" | "USD" | null;
@@ -119,6 +172,16 @@ export interface TiendaResumen {
   /** Salidas con venta cuya utilidad no se puede expresar (pesos sobre USD sin T.C.). */
   ventas_sin_utilidad: number;
   con_entradas_sin_costo: boolean;
+  /**
+   * ADITIVOS API 0.0.36: la utilidad ya cuenta en PESOS (cada venta en
+   * dólares convertida con el T.C. oficial de SU día). Lo que era dólar
+   * original se informa aparte, como dato secundario (jamás sumado).
+   * `utilidad_usd`/`ventas_usd` quedan SOLO para filas sin T.C.
+   */
+  ventas_usd_original?: number | null;
+  costo_ventas_usd_original?: number | null;
+  utilidad_usd_original?: number | null;
+  regla_costo?: ReglaCosto;
 }
 
 /** Ítem enriquecido con stock y valuación calculados por el API. */
@@ -139,7 +202,8 @@ export interface InventarioItemWithStock extends InventarioItem {
   /** ADITIVO: `valor_mxn` ya es TODO el valorizado. Ausente = API previo. */
   pesos_exactos?: boolean;
   /**
-   * Costo unitario FIFO de la capa más antigua VIVA. OJO: sigue trayendo el
+   * DEPRECADO (API 0.0.36: = `costo_vigente_mxn ?? 0`; nadie lo pinta). Con
+   * un API previo era el costo FIFO de la capa más antigua VIVA y traía el
    * número en dólares cuando esa capa se compró en USD sin T.C. (no es una
    * suma de dinero; el API lo cualifica con `pesos_exactos`).
    */
@@ -148,8 +212,8 @@ export interface InventarioItemWithStock extends InventarioItem {
   /**
    * Ganancia / pérdida del producto (4-sep-2026): la MISMA agregación que la
    * hoja "inventario" del Balance general — Σ ventas al avión CON precio −
-   * costo FIFO de esas salidas, en MXN. null = nunca vendió con precio (una
-   * salida a costo FIFO no es venta). Opcionales por skew de deploy.
+   * costo de esas salidas, en MXN. null = nunca vendió con precio (una
+   * salida a costo no es venta). Opcionales por skew de deploy.
    */
   salidas_cant?: number | null;
   ventas_mxn?: number | null;
@@ -160,7 +224,8 @@ export interface InventarioItemWithStock extends InventarioItem {
    * UTILIDAD DE LA TIENDA (25-sep-2026, API 0.0.35) — ADITIVOS, cada moneda
    * por su lado (jamás se suman). Ausentes = API previo.
    *  - `ventas_cant`: unidades de las salidas CON venta (null = ninguna).
-   *  - `utilidad_mxn` / `utilidad_usd`: Σ venta − costo FIFO en su moneda.
+   *  - `utilidad_mxn` / `utilidad_usd`: Σ venta − costo en su moneda (desde
+   *    el API 0.0.36 `utilidad_usd` solo trae filas SIN T.C.).
    *  - `ventas_sin_utilidad`: salidas con venta en pesos sobre costo en
    *    dólares sin T.C. (su utilidad no se puede expresar).
    */
@@ -178,6 +243,23 @@ export interface InventarioItemWithStock extends InventarioItem {
    * faltar por eso. Opcional por skew de deploy.
    */
   con_movimientos_sin_tc?: boolean;
+  /**
+   * ADITIVOS API 0.0.36 (último precio de compra + T.C. del día). Ausentes =
+   * API previo.
+   *  - `costo_vigente`: último precio de compra (con su moneda).
+   *  - `costo_vigente_mxn`: ese precio en pesos HOY (null sin T.C. de hoy).
+   *  - `*_usd_original`: lo que se vendió en dólares, en dólares (dato
+   *    secundario del tooltip; los pesos ya lo incluyen convertido).
+   *  - `movimientos_sin_tc`: filas que siguen sin T.C. (0 tras la migración).
+   */
+  costo_vigente?: CostoVigente | null;
+  costo_vigente_mxn?: number | null;
+  ventas_usd_original?: number | null;
+  costo_ventas_usd_original?: number | null;
+  utilidad_usd_original?: number | null;
+  ventas_a_costo_mxn?: number | null;
+  salidas_a_costo_cant?: number | null;
+  movimientos_sin_tc?: number;
 }
 
 export interface InventarioMovimiento {
@@ -190,10 +272,10 @@ export interface InventarioMovimiento {
   moneda?: "MXN" | "USD";
   costo_unitario_mxn?: number | null;
   tc_usd_mxn?: number | null;
-  /** SALIDA con venta: precio unitario que pagó el avión (null = a costo FIFO). */
+  /** SALIDA con venta: precio unitario que pagó el avión (null = a costo). */
   venta_unitaria?: number | null;
   venta_moneda?: "MXN" | "USD" | null;
-  /** Venta total MXN − costo FIFO MXN (la manda el API en el detalle del ítem). */
+  /** Venta total MXN − costo MXN (la manda el API en el detalle del ítem). */
   ganancia_mxn?: number | null;
   /**
    * ADITIVO (25-sep-2026): utilidad de una salida cobrada en dólares sobre
@@ -248,6 +330,39 @@ export interface InventarioMovimiento {
    */
   venta_origen?: OrigenVenta | null;
   margen_pct?: number | null;
+  /**
+   * ADITIVOS API 0.0.36 — detalle del ítem (cardex completo):
+   *  ENTRADA: `fija_precio` (costo > 0), `es_precio_vigente` (es el último
+   *  precio de compra), `salidas_con_este_precio` (cuántas salidas se
+   *  cobraron con él) y `salidas_sin_cargo` (cuántas de ellas salieron a $0,
+   *  sin cargo al avión). SALIDA: costo y venta ya en pesos con el T.C. del
+   *  día de la venta (`tc_venta`).
+   */
+  fija_precio?: boolean;
+  es_precio_vigente?: boolean;
+  salidas_con_este_precio?: number;
+  salidas_sin_cargo?: number;
+  tc_venta?: number | null;
+  costo_total?: number | null;
+  costo_moneda?: MonedaInventario | null;
+  costo_total_mxn?: number | null;
+  venta_total_mxn?: number | null;
+  ganancia_usd_original?: number | null;
+  /**
+   * ADITIVOS de la RESPUESTA de `POST items/:id/movimientos` (SALIDA):
+   * último precio con que se costeó, T.C. del día de la venta y un aviso
+   * (`SIN_COSTO_VIGENTE` = salió a $0 porque el producto no tiene ninguna
+   * compra con costo).
+   */
+  costo_vigente?: CostoVigente | null;
+  aviso?: string | null;
+  /** Texto es-MX del aviso, redactado por el API (preferido sobre el del panel). */
+  aviso_mensaje?: string | null;
+  /**
+   * ADITIVOS de la RESPUESTA de `PATCH items/:id/movimientos/:movId`
+   * («Editar costo»): las salidas que conservan el costo con que se cobraron.
+   */
+  salidas_conservan_costo?: SalidaDependiente[];
 }
 
 /** Precedencia del precio de una SALIDA (API 0.0.35, `precioVentaDeSalida`). */
@@ -273,8 +388,13 @@ export interface InventarioListResponse {
   /** ADITIVOS 25-sep-2026 (por página): cada moneda por su lado, jamás sumadas. */
   utilidad_total_mxn?: number | null;
   utilidad_total_usd?: number | null;
-  /** Margen vigente de la tienda (% sobre el costo FIFO). */
+  /** Margen vigente de la tienda (% sobre el costo del producto). */
   margen_venta_pct?: number;
+  /** ADITIVOS API 0.0.36 (ausentes = API previo). */
+  tc_hoy?: TcHoy | null;
+  utilidad_total_usd_original?: number | null;
+  ventas_total_usd_original?: number | null;
+  regla_costo?: ReglaCosto;
 }
 
 export interface InventarioItemDetail extends InventarioItemWithStock {
@@ -305,6 +425,18 @@ export interface ResumenCompra {
   stock_despues: number;
   /** Compra de la que nació la entrada (abre /admin/inventory/compras/:id). */
   compra_id: string | null;
+  /**
+   * ADITIVOS API 0.0.36: precio y total NATIVOS (en la moneda de la
+   * compra), total en dólares, si la fila fija precio y si es el último
+   * precio de compra (el vigente). `total_mxn` ya viene lleno para las
+   * compras en dólares (T.C. oficial del día de la compra).
+   */
+  precio_unitario?: number | null;
+  moneda?: MonedaInventario | null;
+  total?: number | null;
+  total_usd?: number | null;
+  fija_precio?: boolean;
+  es_precio_vigente?: boolean;
 }
 
 /** Fila del bloque VENTAS del resumen del producto (montos en MXN). */
@@ -312,12 +444,12 @@ export interface ResumenVenta {
   movimiento_id: string | null;
   fecha: string;
   cantidad: number;
-  /** Precio de venta unitario; en una salida A COSTO, el costo FIFO unitario. */
+  /** Precio de venta unitario; en una salida A COSTO, el costo unitario. */
   precio_unitario_mxn: number | null;
   total_mxn: number | null;
   venta_moneda: "MXN" | "USD" | null;
   venta_unitaria_capturada: number | null;
-  /** true = salió SIN precio: el avión pagó el costo FIFO (ganancia 0). */
+  /** true = salió SIN precio: el avión pagó el costo (ganancia 0). */
   a_costo: boolean;
   /** Venta USD sin TC o capas USD sin TC: montos en pesos afectados en null. */
   sin_tc: boolean;
@@ -327,7 +459,8 @@ export interface ResumenVenta {
    * ADITIVOS 25-sep-2026 (fuente única `ventaDeSalida` del API). Ausentes =
    * API previo.
    *  - `venta_total`: lo cobrado al avión en `venta_moneda` (= monto del gasto).
-   *  - `costo_fifo_usd`: costo FIFO de la salida en dólares (siempre existe).
+   *  - `costo_fifo_usd`: costo de la salida en dólares (alias que el API
+   *    conserva un release; nombre heredado del FIFO).
    *  - `ganancia_usd`: utilidad en dólares (venta y costo en USD sin T.C.).
    *  - `moneda_utilidad`: en qué moneda cuenta ESTA salida (nunca en las dos).
    *  - `utilidad_incompleta`: venta en pesos sobre costo en dólares sin T.C.
@@ -346,6 +479,27 @@ export interface ResumenVenta {
   remanente: number;
   /** Gasto del avión ligado (null en salidas a la flota: nacen N gastos). */
   gasto_id: string | null;
+  /**
+   * ADITIVOS API 0.0.36 (venta y costo convertidos con el MISMO T.C. oficial
+   * del día de la venta, `tc_venta`):
+   *  - `precio_unitario` / `moneda` / `total`: lo cobrado, NATIVO (a costo:
+   *    el costo unitario nativo).
+   *  - `costo_unitario` / `costo_moneda` / `costo_total` / `costo_mxn`: el
+   *    costo GUARDADO en la salida (último precio de compra de su fecha).
+   *  - `*_usd_original`: venta, costo y utilidad en dólares cuando las dos
+   *    partes son dólares (dato secundario, jamás sumado a los pesos).
+   */
+  precio_unitario?: number | null;
+  moneda?: MonedaInventario | null;
+  total?: number | null;
+  tc_venta?: number | null;
+  costo_unitario?: number | null;
+  costo_moneda?: MonedaInventario | null;
+  costo_total?: number | null;
+  costo_mxn?: number | null;
+  venta_total_usd_original?: number | null;
+  costo_usd_original?: number | null;
+  ganancia_usd_original?: number | null;
 }
 
 /** Fila del bloque RESUMEN: un día con movimiento. */
@@ -363,13 +517,56 @@ export interface ResumenDia {
   ventas_usd?: number | null;
   costo_ventas_usd?: number | null;
   utilidad_usd?: number | null;
+  /** ADITIVO API 0.0.36: utilidad del día en dólares originales (dato secundario). */
+  utilidad_usd_original?: number | null;
   /** Algún movimiento del día está en USD sin TC. */
   sin_tc: boolean;
 }
 
 /**
+ * Precio vigente del producto en la ficha (API 0.0.36): el último precio de
+ * compra, su valor en pesos HOY y a cuánto se cobraría la siguiente salida.
+ */
+export interface PrecioVigenteFicha extends CostoVigente {
+  /** Pesos HOY: MXN nativo, o USD × T.C. oficial de hoy; null sin T.C. */
+  unitario_mxn_hoy: number | null;
+  /**
+   * `precioVentaDeSalida` sin precio tecleado. El API manda SIEMPRE el
+   * objeto; `venta_unitaria` null = no se sabe a cuánto saldría (se pinta
+   * solo el precio vigente).
+   */
+  siguiente_salida: {
+    venta_unitaria: number | null;
+    moneda: MonedaInventario | null;
+    origen: OrigenVenta | null;
+  } | null;
+}
+
+/**
+ * «Dinero generado por este producto» (API 0.0.36): lo arma el API desde
+ * `agregadosDeItem`; el panel NO suma nada. Pesos = moneda canónica; el USD
+ * original es dato secundario.
+ */
+export interface DineroGenerado {
+  /** Σ ventas con precio, en pesos (null = nunca vendió). */
+  vendido_mxn: number | null;
+  costo_mxn: number | null;
+  utilidad_mxn: number | null;
+  /** Σ de las ventas dólar-sobre-dólar, en dólares (null = ninguna). */
+  vendido_usd_original: number | null;
+  utilidad_usd_original: number | null;
+  unidades_vendidas: number | null;
+  /** Salidas SIN precio (a costo), en pesos (null = ninguna). */
+  cargado_a_costo_mxn: number | null;
+  unidades_a_costo: number | null;
+  ventas_sin_utilidad: number;
+  /** Respaldo: utilidad que solo existe en dólares (filas sin T.C.). */
+  utilidad_usd_sin_tc: number | null;
+}
+
+/**
  * GET /v1/inventory/items/:id/resumen — bloques COMPRAS | VENTAS | RESUMEN
- * por día + totales. Los calcula el API con el MISMO FIFO/ganancia de la
+ * por día + totales. Los calcula el API con el MISMO costo/utilidad de la
  * hoja Inventario del Balance general y del cardex Excel; el panel solo pinta.
  */
 export interface InventarioItemResumen {
@@ -390,6 +587,12 @@ export interface InventarioItemResumen {
   moneda: "MXN";
   /** ADITIVO 25-sep-2026: margen vigente de la tienda (% sobre el costo). */
   margen_venta_pct?: number;
+  /** ADITIVOS API 0.0.36 (ausentes = API previo, costo FIFO). */
+  regla_costo?: ReglaCosto;
+  tc_hoy?: TcHoy | null;
+  /** null = el producto no tiene ninguna compra con costo. */
+  precio_vigente?: PrecioVigenteFicha | null;
+  dinero_generado?: DineroGenerado;
   periodo: { desde: string | null; hasta: string | null } | null;
   compras: ResumenCompra[];
   ventas: ResumenVenta[];
@@ -400,7 +603,7 @@ export interface InventarioItemResumen {
     ventas_cant: number | null;
     /** Σ salidas CON precio (mismo número que el listado y el balance). */
     ventas_mxn: number | null;
-    /** Σ (a costo FIFO) de las salidas SIN precio — informativo. */
+    /** Σ (a costo) de las salidas SIN precio — informativo. */
     ventas_a_costo_mxn: number | null;
     costo_ventas_mxn: number | null;
     utilidad_mxn: number | null;
@@ -419,6 +622,14 @@ export interface InventarioItemResumen {
     valor_costo_usd?: number | null;
     /** ADITIVO: alguna capa viva está en dólares sin T.C. */
     valor_sin_tc?: boolean;
+    /** ADITIVOS API 0.0.36 (ver `DineroGenerado`). */
+    ventas_usd_original?: number | null;
+    costo_ventas_usd_original?: number | null;
+    utilidad_usd_original?: number | null;
+    salidas_a_costo_cant?: number | null;
+    unidades_vendidas?: number | null;
+    /** Filas con monto ≠ 0 que siguen SIN T.C. (0 tras la migración). */
+    movimientos_sin_tc?: number;
   };
 }
 
@@ -469,6 +680,16 @@ export interface EliminacionMovimientoPreview {
   gastos: GastoLigadoEliminacion[];
   /** La ENTRADA nació de recibir una compra: se corrige desde Compras. */
   de_compra: { folio: number | null } | null;
+  /**
+   * ADITIVOS API 0.0.36: quitar el movimiento ya no cambia el costo de
+   * ninguna salida (cada una guarda el suyo), pero SÍ puede cambiar el
+   * último precio de compra (con él se valúa la existencia y se cobra la
+   * siguiente salida). `CAMBIA_COSTO_FIFO` deja de emitirse.
+   */
+  precio_vigente_antes?: CostoVigente | null;
+  precio_vigente_despues?: CostoVigente | null;
+  cambia_precio_vigente?: boolean;
+  regla_costo?: ReglaCosto;
 }
 
 /** DELETE /v1/inventory/items/:id/movimientos/:movId (SOLO ADMIN). */

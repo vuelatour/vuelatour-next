@@ -81,7 +81,8 @@ export const ItemFormSchema = z.object({
     .optional()
     .or(z.literal("")),
   // Precio de VENTA unitario al avión (29-ago-2026): la salida se carga a
-  // este precio; el costo FIFO queda para el inventario. Viaja con su moneda;
+  // este precio; el costo (último precio de compra) queda para el inventario.
+  // Viaja con su moneda;
   // vaciarlo al editar lo quita (BORRABLES en actions.ts).
   precio_venta: optionalNumberBorrable,
   precio_venta_moneda: z.enum(["MXN", "USD"]).optional(),
@@ -106,20 +107,22 @@ export const TipoMovimientoEnum = z.enum(["ENTRADA", "SALIDA", "DEVOLUCION", "AJ
 export const MovimientoFormSchema = z
   .object({
     tipo: TipoMovimientoEnum,
-    /** SIEMPRE en unidades (fuente única del cardex/FIFO). */
+    /** SIEMPRE en unidades (fuente única del cardex). */
     cantidad: requiredPositive,
     // Captura por empaque (caja): cantidad = cantidad_empaques × factor.
     empaque_id: z.string().uuid().optional().or(z.literal("")),
     cantidad_empaques: optionalPositive,
-    // Captura en MXN (default operativo) o USD; con MXN el TC es obligatorio
-    // (la contabilidad interna del inventario sigue en USD).
+    // Captura en MXN (default operativo) o USD. El T.C. es OPCIONAL (API
+    // 0.0.36, 25-sep-2026): vacío = el API usa el T.C. OFICIAL del día de la
+    // compra, el mismo de las cotizaciones.
     moneda: z.enum(["MXN", "USD"]).optional(),
     costo_unitario_usd: optionalNumber,
     costo_unitario_mxn: optionalNumber,
     tc_usd_mxn: optionalNumber,
     // SALIDA: precio de venta unitario que paga el avión (prellenado con el
-    // del ítem). AUSENTE = el API aplica el precio del producto o costo FIFO
-    // + margen de la tienda (25-sep-2026); 0 explícito = a costo. Nunca se
+    // del ítem). AUSENTE = el API aplica el precio del producto o el último
+    // precio de compra + margen de la tienda (25-sep-2026); 0 explícito = a
+    // costo. Nunca se
     // mezcla con costo_unitario_*: son campos distintos del API.
     venta_unitaria: optionalNumber,
     venta_moneda: z.enum(["MXN", "USD"]).optional(),
@@ -151,22 +154,20 @@ export const MovimientoFormSchema = z
       d.tipo === "SALIDA" || d.moneda === "MXN" || d.costo_unitario_usd != null,
     { message: "El costo unitario es requerido", path: ["costo_unitario_usd"] },
   )
-  .refine(
-    (d) =>
-      d.tipo === "SALIDA" ||
-      d.moneda !== "MXN" ||
-      (d.tc_usd_mxn != null && d.tc_usd_mxn > 0),
-    {
-      message: "Captura el tipo de cambio de la compra",
-      path: ["tc_usd_mxn"],
-    },
-  );
+  // T.C. capturado: si viene, > 0 (vacío = el oficial del día, lo pone el API).
+  .refine((d) => d.tc_usd_mxn == null || d.tc_usd_mxn > 0, {
+    message: "El tipo de cambio debe ser mayor a 0 (o déjalo vacío)",
+    path: ["tc_usd_mxn"],
+  });
 
 /**
  * Corrección del COSTO de una ENTRADA de cardex (carga masiva a $0): SOLO
  * moneda/costo/TC — cantidad, fecha y tipo jamás. Mismos refines de moneda
  * que MovimientoFormSchema (caso aceites 28-ago-2026: pesos capturados como
- * USD multiplicaron ×17 el costo del avión).
+ * USD multiplicaron ×17 el costo del avión). El T.C. es OPCIONAL (API 0.0.36):
+ * vacío = el que ya tiene la fila o el oficial del día de la compra.
+ * `confirmar_salidas` NO vive aquí: lo agrega la server action SOLO cuando el
+ * operador confirmó (un API previo respondería 400 a un campo desconocido).
  */
 export const EditarCostoSchema = z
   .object({
@@ -183,8 +184,8 @@ export const EditarCostoSchema = z
     message: "El costo unitario es requerido",
     path: ["costo_unitario_usd"],
   })
-  .refine((d) => d.moneda !== "MXN" || (d.tc_usd_mxn != null && d.tc_usd_mxn > 0), {
-    message: "Captura el tipo de cambio de la compra",
+  .refine((d) => d.tc_usd_mxn == null || d.tc_usd_mxn > 0, {
+    message: "El tipo de cambio debe ser mayor a 0 (o déjalo vacío)",
     path: ["tc_usd_mxn"],
   });
 
@@ -233,7 +234,7 @@ export type ItemFormValues = {
   /** Ubicación del catálogo ("" = sin ubicación). */
   ubicacion_id: string;
   unidad: string;
-  /** Precio de venta unitario al avión (vacío = las salidas van a costo FIFO). */
+  /** Precio de venta unitario al avión (vacío = último precio de compra + margen). */
   precio_venta: string;
   precio_venta_moneda: "MXN" | "USD";
   descripcion: string;
@@ -259,7 +260,7 @@ export type MovimientoFormValues = {
   costo_unitario_usd: string;
   costo_unitario_mxn: string;
   tc_usd_mxn: string;
-  /** SALIDA: precio de venta unitario (vacío = precio del producto o costo FIFO + margen). */
+  /** SALIDA: precio de venta unitario (vacío = precio del producto o último precio de compra + margen). */
   venta_unitaria: string;
   venta_moneda: "MXN" | "USD";
   /** SALIDA: «Cargar a costo, sin utilidad» ⇒ venta_unitaria 0 explícito. */

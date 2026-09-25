@@ -8,7 +8,8 @@ import {
   TEXTO_A_COSTO,
   avisoUtilidad,
   avisoVentasSinUtilidad,
-  filaUtilidadSalida,
+  fmtPrecioUnitario,
+  lineaUsdOriginalTienda,
   lineaUnidadesTienda,
   lineasUtilidad,
   margenParaTexto,
@@ -18,11 +19,11 @@ import {
   rangoPeriodoTienda,
   textoMonto,
   textoUtilidadTienda,
+  textoUtilidadUsdOriginal,
   tituloUtilidad,
   tonoDe,
   utilidadDeItem,
 } from "../inventario-utilidad";
-import type { ResumenVenta } from "@/types/inventory";
 
 /**
  * Utilidad de la tienda (25-sep-2026). Casos REALES de prod tras el re-precio
@@ -136,9 +137,16 @@ describe("tarjeta «Utilidad de la tienda»", () => {
 
   it("nota con el margen vigente (una sola redacción)", () => {
     expect(NOTA_UTILIDAD).toBe(
-      "Utilidad = lo que se cobra al avión − costo FIFO de lo que salió. Toda salida sin precio se cobra a costo + 25 % (se cambia en Configuración). Pesos y dólares nunca se suman.",
+      "Utilidad = lo que se cobra al avión − el costo de la pieza. Toda salida sin precio se cobra a ese costo + 25 % (se cambia en Configuración). Pesos y dólares nunca se suman.",
     );
     expect(notaUtilidad(30)).toContain("costo + 30 %");
+    // API 0.0.36: la utilidad ya cuenta en pesos (T.C. oficial de cada día).
+    expect(notaUtilidad(25, { enPesos: true })).toBe(
+      "Utilidad = lo que se cobra al avión − el costo de la pieza (último precio de compra). Toda salida sin precio se cobra a ese costo + 25 % (se cambia en Configuración). Las ventas en dólares se convierten a pesos con el T.C. oficial de su día.",
+    );
+    // Ninguna redacción dice «FIFO».
+    expect(NOTA_UTILIDAD).not.toMatch(/FIFO/);
+    expect(notaUtilidad(25, { enPesos: true })).not.toMatch(/FIFO/);
     expect(margenParaTexto(undefined)).toBe(MARGEN_VENTA_PCT_DEFAULT);
     expect(margenParaTexto(0)).toBe(0);
     expect(margenParaTexto(101)).toBe(25);
@@ -172,121 +180,40 @@ describe("periodos de la tarjeta · días Cancún", () => {
   });
 });
 
-describe("filaUtilidadSalida · filas REALES del aceite 15W-50", () => {
-  const base: ResumenVenta = {
-    movimiento_id: "40da8327-e60f-41aa-a061-8071ed1f9fc3",
-    fecha: "2026-09-01",
-    cantidad: 12,
-    precio_unitario_mxn: null,
-    total_mxn: null,
-    venta_moneda: "USD",
-    venta_unitaria_capturada: 26.5625,
-    a_costo: false,
-    sin_tc: true,
-    costo_fifo_mxn: null,
-    ganancia_mxn: null,
-    venta_total: 318.75,
-    costo_fifo_usd: 255,
-    ganancia_usd: 63.75,
-    moneda_utilidad: "USD",
-    utilidad_incompleta: false,
-    vendido_a: "XA-VGV",
-    aeronave_id: "3d0546c3-941f-45cc-b8a9-e3ee77545e68",
-    para_flota: false,
-    referencia: "0",
-    descripcion: "Aceite multigrado semisintético 15W-50 · sin TC · ref 0",
-    remanente: 108,
-    gasto_id: "127a997d-f7e4-4318-af41-e203f86fa12c",
-  };
-
-  it("venta en dólares sobre costo en dólares ⇒ utilidad USD (+63.75)", () => {
-    expect(filaUtilidadSalida(base)).toEqual({
-      costo: { monto: 255, moneda: "USD" },
-      venta: { monto: 318.75, moneda: "USD" },
-      utilidad: { monto: 63.75, moneda: "USD" },
-      estado: "VENTA",
-    });
+describe("API 0.0.36 · utilidad en pesos con el dólar original aparte", () => {
+  it("tooltip de la celda: + «En dólares: …» con `utilidad_usd_original` (aceite 15W-50)", () => {
+    const it15w50 = {
+      utilidad_mxn: 3252.72,
+      utilidad_usd: null,
+      utilidad_usd_original: 191.25,
+      salidas_cant: 66,
+      ventas_cant: 36,
+    };
+    expect(utilidadDeItem(it15w50)).toEqual({ mxn: 3252.72, usd: null });
+    expect(tituloUtilidad(it15w50, 25)).toBe(
+      "66 unidades cargadas a aviones (30 a costo, sin utilidad) · margen vigente 25 % sobre el costo. " +
+        "En dólares: +$191.25 USD (al T.C. de cada venta)",
+    );
+    // Sin el dato (API previo): el tooltip de siempre.
+    expect(tituloUtilidad({ ...it15w50, utilidad_usd_original: undefined }, 25)).not.toContain("En dólares");
+    expect(textoUtilidadUsdOriginal(null)).toBeNull();
   });
 
-  it("salida vieja de jul/ago A COSTO (N990GG × 24, MXN) ⇒ sin utilidad, costo en pesos", () => {
-    const aCosto: ResumenVenta = {
-      ...base,
-      movimiento_id: "533fce35-6088-432b-b41f-a242aa471b42",
-      fecha: "2026-08-06",
-      cantidad: 24,
-      a_costo: true,
-      sin_tc: false,
-      venta_moneda: null,
-      venta_unitaria_capturada: null,
-      precio_unitario_mxn: 1658.33,
-      total_mxn: 39799.92,
-      costo_fifo_mxn: 39799.92,
-      venta_total: null,
-      costo_fifo_usd: 2272.98,
-      ganancia_usd: null,
-      moneda_utilidad: null,
-      vendido_a: "N990GG",
-    };
-    expect(filaUtilidadSalida(aCosto)).toEqual({
-      costo: { monto: 39799.92, moneda: "MXN" },
-      venta: null,
-      utilidad: null,
-      estado: "A_COSTO",
-    });
+  it("tarjeta: línea tenue «≈ +$535.35 USD al T.C. de cada venta» (jamás sumada)", () => {
+    expect(lineaUsdOriginalTienda(535.35)).toBe("≈ +$535.35 USD al T.C. de cada venta");
+    expect(lineaUsdOriginalTienda(null)).toBeNull();
+    expect(lineaUsdOriginalTienda(undefined)).toBeNull();
+    // La cifra grande es SOLO pesos: 9,105.07 MXN (las 10 salidas del 01-sep a 17.0077).
+    expect(textoUtilidadTienda({ utilidad_mxn: 9105.07, utilidad_usd: null })).toBe("+$9,105.07 MXN");
+  });
+
+  it("precio unitario: 2 a 4 decimales y SIEMPRE con moneda", () => {
+    expect(fmtPrecioUnitario(26.5625, "USD")).toBe("$26.5625 USD");
+    expect(fmtPrecioUnitario(21.25, "USD")).toBe("$21.25 USD");
+    expect(fmtPrecioUnitario(30, "USD")).toBe("$30.00 USD");
+    expect(fmtPrecioUnitario("1658.3300", "MXN")).toBe("$1,658.33 MXN");
+    expect(fmtPrecioUnitario(37.5, "USD")).toBe("$37.50 USD");
+    expect(fmtPrecioUnitario(null, "USD")).toBe("—");
     expect(TEXTO_A_COSTO).toBe("A costo · sin utilidad");
-  });
-
-  it("venta en pesos (con T.C.) ⇒ utilidad MXN", () => {
-    const mxn: ResumenVenta = {
-      ...base,
-      venta_moneda: "MXN",
-      total_mxn: 500,
-      costo_fifo_mxn: 400,
-      ganancia_mxn: 100,
-      venta_total: 500,
-      ganancia_usd: null,
-      moneda_utilidad: "MXN",
-    };
-    expect(filaUtilidadSalida(mxn)).toEqual({
-      costo: { monto: 400, moneda: "MXN" },
-      venta: { monto: 500, moneda: "MXN" },
-      utilidad: { monto: 100, moneda: "MXN" },
-      estado: "VENTA",
-    });
-  });
-
-  it("venta en pesos sobre costo en dólares sin T.C. ⇒ INCOMPLETA (no calculable, nada se inventa)", () => {
-    const inc: ResumenVenta = {
-      ...base,
-      venta_moneda: "MXN",
-      total_mxn: 3000,
-      venta_total: 3000,
-      ganancia_usd: null,
-      moneda_utilidad: null,
-      utilidad_incompleta: true,
-    };
-    expect(filaUtilidadSalida(inc)).toEqual({
-      costo: { monto: 255, moneda: "USD" },
-      venta: { monto: 3000, moneda: "MXN" },
-      utilidad: null,
-      estado: "INCOMPLETA",
-    });
-  });
-
-  it("API PREVIO (sin llaves nuevas): pesos si hay `ganancia_mxn`; si no, no calculable", () => {
-    const { venta_total, costo_fifo_usd, ganancia_usd, moneda_utilidad, utilidad_incompleta, ...viejo } = base;
-    void venta_total;
-    void costo_fifo_usd;
-    void ganancia_usd;
-    void moneda_utilidad;
-    void utilidad_incompleta;
-    expect(filaUtilidadSalida(viejo as ResumenVenta).estado).toBe("INCOMPLETA");
-    const conPesos = { ...viejo, ganancia_mxn: 50, total_mxn: 450, costo_fifo_mxn: 400 } as ResumenVenta;
-    expect(filaUtilidadSalida(conPesos)).toEqual({
-      costo: { monto: 400, moneda: "MXN" },
-      venta: { monto: 450, moneda: "MXN" },
-      utilidad: { monto: 50, moneda: "MXN" },
-      estado: "VENTA",
-    });
   });
 });

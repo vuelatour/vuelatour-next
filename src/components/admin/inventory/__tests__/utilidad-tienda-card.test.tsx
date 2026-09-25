@@ -65,6 +65,59 @@ describe("UtilidadTiendaCard", () => {
     expect(html).toContain("se cambia en Configuración");
   });
 
+  it("API 0.0.36: cifra grande en PESOS (9,105.07) y, tenue, «≈ +$535.35 USD al T.C. de cada venta»", () => {
+    urlActual = new URLSearchParams();
+    const html = renderToStaticMarkup(
+      <UtilidadTiendaCard
+        resumen={{
+          ...TIENDA,
+          utilidad_mxn: 9105.07,
+          utilidad_usd: null,
+          ventas_mxn: 45524.17,
+          ventas_usd: null,
+          costo_ventas_mxn: 36419.1,
+          costo_ventas_usd: null,
+          ventas_usd_original: 2676.68,
+          costo_ventas_usd_original: 2141.33,
+          utilidad_usd_original: 535.35,
+          regla_costo: "ULTIMO_PRECIO",
+        }}
+        respaldo={RESPALDO}
+        periodo="todo"
+        rango={null}
+        ubicacionesIds={null}
+      />,
+    );
+    expect(html).toMatch(/text-2xl[^"]*">\+\$9,105\.07 MXN</);
+    expect(html).toContain("≈ +$535.35 USD al T.C. de cada venta");
+    // El dólar original es texto tenue, jamás otra cifra grande ni una suma.
+    expect(html).not.toMatch(/text-2xl[^"]*">\+\$535\.35 USD</);
+    expect(html).not.toContain("9,640.42");
+    expect(html).toContain("Las ventas en dólares se convierten a pesos con el T.C. oficial de su día.");
+    expect(html).not.toMatch(/FIFO/);
+  });
+
+  it("respaldo de la lista con el API 0.0.36: pesos + la línea del dólar original", () => {
+    urlActual = new URLSearchParams();
+    const html = renderToStaticMarkup(
+      <UtilidadTiendaCard
+        resumen={null}
+        respaldo={{
+          ...RESPALDO,
+          utilidad_mxn: 9105.07,
+          utilidad_usd: null,
+          utilidad_usd_original: 535.35,
+          enPesos: true,
+        }}
+        periodo="todo"
+        rango={null}
+        ubicacionesIds={null}
+      />,
+    );
+    expect(html).toContain("+$9,105.07 MXN");
+    expect(html).toContain("≈ +$535.35 USD al T.C. de cada venta");
+  });
+
   it("MXN y USD por separado (jamás sumados) y respaldo de la lista si no hubo resumen", () => {
     urlActual = new URLSearchParams();
     const html = renderToStaticMarkup(

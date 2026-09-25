@@ -36,7 +36,7 @@ interface ItemActionsProps {
   categorias?: string[];
   /** Catálogo de ubicaciones (formulario); null/ausente = input de texto. */
   ubicaciones?: InventarioUbicacion[] | null;
-  /** Margen de la tienda: textos de la salida («Vacío = costo FIFO + 25 %»). */
+  /** Margen de la tienda: textos de la salida («Vacío = último precio de compra + 25 %»). */
   margenVentaPct?: number | null;
 }
 

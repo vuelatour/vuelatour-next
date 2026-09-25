@@ -1,4 +1,4 @@
-import { fmtMxn, fmtUsd } from "@/lib/format";
+import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 
 /**
  * Valorizado de la bodega: JAMÁS un USD sumado como MXN (22-sep-2026).
@@ -71,4 +71,31 @@ export function textoValorizado(v: ValorizadoPartes): string {
   // lo que vale la bodega está del otro lado.
   if (mxn == null || mxn === 0) return usd;
   return `${fmtMxn(mxn)} + ${usd}`;
+}
+
+/**
+ * Valorizado de la bodega con su REGLA (25-sep-2026, API 0.0.36): existencia
+ * × último precio de compra, al T.C. oficial de HOY (el mismo de las
+ * cotizaciones). El remanente viejo se revalúa al precio nuevo, como pidió
+ * el cliente («el remanente que teníamos de agosto ahora igual su costo de
+ * 30 DLS»), y la cifra se mueve cada día con el T.C.
+ *
+ *   · API 0.0.36 con T.C. de hoy → «valorizado $1,385,535.56 MXN (último
+ *     precio de compra · T.C. de hoy 17.6729)»
+ *   · API 0.0.36 sin T.C. de hoy → «valorizado $X (último precio de compra)»
+ *   · API previo (sin `reglaCosto`) → «valorizado $X (FIFO)», como antes: ahí
+ *     el costo SÍ era FIFO y decir otra cosa sería mentir.
+ *
+ * La cifra sigue siendo `textoValorizado` (cada moneda en su sitio).
+ */
+export function textoValorizadoConTc(
+  v: ValorizadoPartes,
+  opts: { tcHoy?: number | null; reglaCosto?: string | null } = {},
+): string {
+  const cifra = textoValorizado(v);
+  if (!opts.reglaCosto) return `valorizado ${cifra} (FIFO)`;
+  const tc = fmtTc(opts.tcHoy);
+  return tc
+    ? `valorizado ${cifra} (último precio de compra · T.C. de hoy ${tc})`
+    : `valorizado ${cifra} (último precio de compra)`;
 }

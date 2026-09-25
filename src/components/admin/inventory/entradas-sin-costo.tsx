@@ -40,9 +40,12 @@ interface EntradasSinCostoProps {
 /**
  * Banner ámbar + sección colapsable con las ENTRADAS de bodega sin costo
  * (la carga masiva las dejó en $0 y el cliente las completa con el precio
- * real). Mientras estén en $0, esas capas valorizan en $0 y una salida no
+ * real). Una compra en $0 no fija el último precio de compra (API 0.0.36):
+ * si el producto no tiene otra con costo, se valúa en $0 y su salida no
  * genera el gasto del avión — por eso se persigue desde la portada de
- * Inventario, no solo en el cardex de cada ítem.
+ * Inventario, no solo en el cardex de cada ítem. Al completarla, el diálogo
+ * avisa (o el API responde 409 `ENTRADA_CON_SALIDAS`) si ya salieron piezas
+ * SIN cargo: completar el costo no las cobra.
  */
 export function EntradasSinCosto({ entradas, puedeEditarCosto }: EntradasSinCostoProps) {
   const [abierto, setAbierto] = useState(false);
@@ -122,7 +125,7 @@ export function EntradasSinCosto({ entradas, puedeEditarCosto }: EntradasSinCost
       <button
         type="button"
         onClick={() => setAbierto((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-amber-700 dark:text-amber-400"
+        className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left text-sm text-amber-700 dark:text-amber-400"
       >
         <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
         <span className="flex-1">
@@ -130,8 +133,8 @@ export function EntradasSinCosto({ entradas, puedeEditarCosto }: EntradasSinCost
           {entradas.length === 1
             ? "entrada de bodega sin costo por completar"
             : "entradas de bodega sin costo por completar"}
-          . Mientras estén en $0, esas piezas valorizan en cero y su salida no genera el
-          gasto del avión.
+          . Una compra en $0 no cuenta como precio de compra: si el producto no tiene otra
+          con costo, se valúa en cero y su salida sale sin cargo al avión.
         </span>
         <ChevronDownIcon
           className={`h-4 w-4 shrink-0 transition-transform ${abierto ? "rotate-180" : ""}`}

@@ -61,8 +61,17 @@ export async function listInventarioTodo(
      */
     utilidad_total_mxn: number | null;
     utilidad_total_usd: number | null;
+    /**
+     * API 0.0.36: Σ de la utilidad de las ventas dólar-sobre-dólar EN
+     * DÓLARES (dato secundario de la tarjeta; los pesos ya la incluyen
+     * convertida). null = ninguna.
+     */
+    utilidad_total_usd_original: number | null;
     /** Margen vigente (de la 1.ª página). Ausente = API previo. */
     margen_venta_pct?: number;
+    /** T.C. oficial de hoy y regla de costo (de la 1.ª página). Ausentes = API previo. */
+    tc_hoy?: InventarioListResponse["tc_hoy"];
+    regla_costo?: InventarioListResponse["regla_costo"];
   }
 > {
   const limit = 300;
@@ -96,9 +105,12 @@ export async function listInventarioTodo(
     // lee `ganancia_mxn`, que es el mismo número.
     utilidad_total_mxn: sumaONulo(data.map((d) => d.utilidad_mxn ?? d.ganancia_mxn)),
     utilidad_total_usd: sumaONulo(data.map((d) => d.utilidad_usd)),
+    utilidad_total_usd_original: sumaONulo(data.map((d) => d.utilidad_usd_original)),
     ...(typeof first.margen_venta_pct === "number"
       ? { margen_venta_pct: first.margen_venta_pct }
       : {}),
+    ...(first.tc_hoy !== undefined ? { tc_hoy: first.tc_hoy } : {}),
+    ...(first.regla_costo ? { regla_costo: first.regla_costo } : {}),
   };
 }
 
@@ -183,9 +195,11 @@ export async function getTiendaResumen(
 }
 
 /**
- * Resumen del producto para el detalle (4-sep-2026): bloques COMPRAS |
- * VENTAS | RESUMEN por día + totales, calculados por el API con el mismo
- * FIFO/ganancia del balance. `desde`/`hasta` (YYYY-MM-DD) opcionales.
+ * Resumen del producto para el detalle (4-sep-2026; ficha sencilla
+ * 25-sep-2026): bloques COMPRAS | VENTAS | RESUMEN por día + totales y
+ * «dinero generado», calculados por el API con el mismo costo (último precio
+ * de compra) y la misma utilidad del balance. `desde`/`hasta` (YYYY-MM-DD)
+ * opcionales.
  */
 export function getInventarioItemResumen(
   id: string,

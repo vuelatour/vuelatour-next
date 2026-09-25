@@ -6,6 +6,7 @@ import {
   descripcionMovimiento,
   esApiSinBaja,
   estadoMotivo,
+  fraseCambioPrecioVigente,
   fraseEliminacion,
   fraseExistencia,
   fraseGastos,
@@ -16,6 +17,7 @@ import {
   mensajeExito,
   montoTxt,
   MOTIVO_MIN,
+  NOTA_BAJA_SIN_RECOSTEO,
   resumenEliminado,
   tituloBloqueo,
   tituloHistorial,
@@ -191,12 +193,77 @@ describe("vista previa cuando SÍ se puede eliminar (caso de la captura)", () =>
   });
 });
 
+describe("API 0.0.36 · la baja ya no recostea salidas; puede cambiar el último precio", () => {
+  // Ejemplo del cliente: compra de agosto a 21 USD, compra de septiembre a 30
+  // USD. Quitar la de septiembre regresa el último precio a 21.
+  const compraSep: EliminacionMovimientoPreview = {
+    ...entrada1,
+    mensaje:
+      "Se puede eliminar la ENTRADA de 5 del 05 sep 2026: la existencia pasa de 10 a 5. Ninguna salida cambia de costo: cada una guarda el costo con que se cobró.",
+    stock_antes: 10,
+    stock_despues: 5,
+    movimiento: { tipo: "ENTRADA", cantidad: 5, fecha: "2026-09-05", aeronave: null },
+    regla_costo: "ULTIMO_PRECIO",
+    cambia_precio_vigente: true,
+    precio_vigente_antes: {
+      movimiento_id: "e2",
+      fecha: "2026-09-05",
+      moneda: "USD",
+      unitario: 30,
+      unitario_usd: 30,
+      unitario_mxn: null,
+      tc_compra: 17.2,
+    },
+    precio_vigente_despues: {
+      movimiento_id: "e1",
+      fecha: "2026-08-10",
+      moneda: "USD",
+      unitario: 21,
+      unitario_usd: 21,
+      unitario_mxn: null,
+      tc_compra: 17,
+    },
+  };
+
+  it("el cambio de precio va en su PROPIO renglón, después de «ninguna salida cambia de costo»", () => {
+    expect(fraseCambioPrecioVigente(compraSep)).toBe(
+      "El último precio de compra pasa de $30.00 USD (05 sep 2026) a $21.00 USD (10 ago 2026): con él se valúa la existencia y se cobra la siguiente salida.",
+    );
+    const lineas = lineasVistaPrevia(compraSep, "qt");
+    expect(lineas).toHaveLength(5);
+    expect(lineas[3]).toBe(NOTA_BAJA_SIN_RECOSTEO);
+    expect(lineas[4]).toContain("El último precio de compra pasa de $30.00 USD");
+  });
+
+  it("sin cambio de precio: solo la nota (API nuevo) · API previo: las 3 frases de siempre", () => {
+    const sinCambio = { ...compraSep, cambia_precio_vigente: false };
+    expect(fraseCambioPrecioVigente(sinCambio)).toBeNull();
+    expect(lineasVistaPrevia(sinCambio)).toEqual([
+      fraseEliminacion(sinCambio),
+      fraseExistencia(sinCambio),
+      fraseGastos(sinCambio.gastos),
+      NOTA_BAJA_SIN_RECOSTEO,
+    ]);
+    expect(lineasVistaPrevia(salida10, "pzas")).toHaveLength(3);
+  });
+
+  it("quitar la ÚNICA compra con costo: se dice que el producto se queda sin precio", () => {
+    const unica = { ...compraSep, precio_vigente_despues: null };
+    expect(fraseCambioPrecioVigente(unica)).toContain("se queda sin ninguna compra con costo");
+  });
+
+  it("ningún texto nuevo dice «FIFO»", () => {
+    for (const t of lineasVistaPrevia(compraSep)) expect(t).not.toMatch(/FIFO/);
+    expect(tituloBloqueo("CAMBIA_COSTO_FIFO")).not.toMatch(/FIFO/);
+  });
+});
+
 describe("vista previa BLOQUEADA: título corto, el mensaje lo pone el API", () => {
   it("traduce cada código a un título en es-MX", () => {
     expect(tituloBloqueo("STOCK_NEGATIVO")).toBe("Dejaría la existencia en negativo");
-    expect(tituloBloqueo("CAMBIA_COSTO_FIFO")).toBe(
-      "Cambiaría el costo que ya se cargó a un avión",
-    );
+    // Solo lo manda un API PREVIO (costo FIFO); con el último precio de
+    // compra ninguna salida cambia de costo al quitar otra fila.
+    expect(tituloBloqueo("CAMBIA_COSTO_FIFO")).toBe("El costo de otra salida cambiaría");
     expect(tituloBloqueo("MOVIMIENTO_DE_COMPRA")).toBe("Nació de una compra");
     expect(tituloBloqueo("GASTO_BLOQUEADO")).toBe("Su gasto ya no se puede tocar");
     expect(tituloBloqueo("TIPO_NO_SOPORTADO")).toBe(

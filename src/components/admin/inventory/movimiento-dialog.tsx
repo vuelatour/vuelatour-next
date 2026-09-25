@@ -21,12 +21,19 @@ import {
   ETIQUETA_A_COSTO,
   HINT_A_COSTO,
   HINT_PARA_FLOTA,
+  PLACEHOLDER_A_COSTO,
   hintAvionSalida,
   hintVentaSalida,
   placeholderVenta,
   textoSalidaRegistrada,
   ventaDelFormulario,
 } from "@/lib/admin/inventario-salida";
+import {
+  HINT_TC_OPCIONAL,
+  NOTA_TC_USD,
+  tcQueViaja,
+  textoAvisoSalida,
+} from "@/lib/admin/inventario-ficha";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
 import type { InventarioEmpaque } from "@/types/inventory";
@@ -63,9 +70,9 @@ interface MovimientoDialogProps {
   /** Empaque preseleccionado (se escaneó el código de la caja). */
   initialEmpaqueId?: string;
   /**
-   * Margen de la tienda (% sobre el costo FIFO) SOLO para los textos
-   * («Vacío = costo FIFO + 25 %»); ausente ⇒ 25. El número real lo aplica
-   * el API al registrar la salida.
+   * Margen de la tienda (% sobre el último precio de compra) SOLO para los
+   * textos («Vacío = último precio de compra + 25 %»); ausente ⇒ 25. El
+   * número real lo aplica el API al registrar la salida.
    */
   margenVentaPct?: number | null;
 }
@@ -140,15 +147,19 @@ export function MovimientoDialog({
       payload = { ...values, empaque_id: "", cantidad_empaques: "" };
     }
     // VENTA (25-sep-2026, `ventaDelFormulario`): solo en SALIDA. Vacío ⇒ NO
-    // viaja (el API aplica el precio del producto o costo FIFO + margen de la
-    // tienda); «Cargar a costo» ⇒ 0 explícito. Antes el vacío viajaba como 0 y,
-    // con el margen, dejaría toda salida del panel a costo (sin utilidad).
+    // viaja (el API aplica el precio del producto o el último precio de
+    // compra + margen de la tienda); «Cargar a costo» ⇒ 0 explícito. Antes el
+    // vacío viajaba como 0 y, con el margen, dejaría toda salida del panel a
+    // costo (sin utilidad).
     const { venta_unitaria: _v, venta_moneda: _m, a_costo: _c, ...sinVenta } = payload;
     void _v;
     void _m;
     void _c;
     const cuerpo: Record<string, unknown> = {
       ...sinVenta,
+      // El T.C. solo viaja si su campo estaba a la vista (pesos): en dólares
+      // lo pone el API con el oficial del día (`tcQueViaja`).
+      tc_usd_mxn: tcQueViaja({ tipo: values.tipo, moneda: values.moneda, tc: values.tc_usd_mxn }),
       ...ventaDelFormulario({
         tipo: values.tipo,
         venta: values.venta_unitaria,
@@ -165,6 +176,10 @@ export function MovimientoDialog({
             ? textoSalidaRegistrada(result.data, values.para_flota ? null : matricula)
             : "Movimiento registrado",
         );
+        // API 0.0.36: la salida salió a $0 porque el producto no tiene
+        // ninguna compra con costo — se dice, no se calla.
+        const aviso = textoAvisoSalida(result.data?.aviso, result.data?.aviso_mensaje);
+        if (aviso) toast.warning(aviso, { duration: 10000 });
         // El API avisa cuando NO pudo revertir todo el cargo de una
         // devolución (caso típico: la salida era «para todas las
         // matrículas» y generó un gasto por avión). Callarlo dejaría un
@@ -288,7 +303,7 @@ export function MovimientoDialog({
                     disabled={aCosto}
                     placeholder={
                       aCosto
-                        ? "A costo FIFO"
+                        ? PLACEHOLDER_A_COSTO
                         : placeholderVenta({ precioProducto: precioVenta, margenPct: margenVentaPct })
                     }
                     {...register("venta_unitaria")}
@@ -327,37 +342,34 @@ export function MovimientoDialog({
             )}
           </div>
 
-          {/* Con captura en pesos, el TC de la compra convierte a USD (la
-              contabilidad del inventario y el balance corren en dólares). */}
+          {/* T.C. OPCIONAL (API 0.0.36, 25-sep-2026): vacío = el T.C. oficial
+              del día de la compra, el mismo de las cotizaciones. En dólares
+              no se captura: se convierte solo con ese T.C. */}
           {!esSalida && watch("moneda") === "MXN" && (
             <Field
               label="Tipo de cambio (MXN por USD)"
-              required
-              hint="El de la compra (estado de cuenta / factura). El costo se convierte a USD para el balance."
+              hint={HINT_TC_OPCIONAL}
               error={errors.tc_usd_mxn?.message}
             >
-              <div className="flex items-center gap-3">
-                <Input
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  placeholder="Ej. 18.50"
-                  className="w-32"
-                  {...register("tc_usd_mxn")}
-                />
-                {Number(watch("costo_unitario_mxn")) > 0 && Number(watch("tc_usd_mxn")) > 0 && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    ≈ ${(Number(watch("costo_unitario_mxn")) / Number(watch("tc_usd_mxn"))).toFixed(2)} USD c/u
-                  </span>
-                )}
-              </div>
+              <Input
+                type="number"
+                step="0.0001"
+                min="0"
+                placeholder="Oficial del día"
+                className="w-40"
+                {...register("tc_usd_mxn")}
+              />
             </Field>
+          )}
+          {!esSalida && watch("moneda") === "USD" && (
+            <p className="-mt-2 text-xs text-muted-foreground">{NOTA_TC_USD}</p>
           )}
 
           {esSalida && (
             <>
               {/* Salida SIN utilidad (25-sep-2026): el avión paga solo el costo
-                  FIFO. Viaja como `venta_unitaria: 0` explícito. */}
+                  (último precio de compra). Viaja como `venta_unitaria: 0`
+                  explícito. */}
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"
@@ -477,7 +489,8 @@ function defaults(
     tc_usd_mxn: "",
     // Prellenado con el precio de venta del ítem: en SALIDA el avión paga
     // este precio (editable). Vacío = el API aplica el precio del producto o
-    // costo FIFO + margen de la tienda; «a costo» es la casilla de abajo.
+    // el último precio de compra + margen de la tienda; «a costo» es la
+    // casilla de abajo.
     venta_unitaria: precioVenta != null && precioVenta > 0 ? String(precioVenta) : "",
     venta_moneda: precioVentaMoneda ?? "MXN",
     a_costo: false,
