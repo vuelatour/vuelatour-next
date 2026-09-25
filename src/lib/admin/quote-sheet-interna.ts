@@ -9,7 +9,7 @@
  * cliente una SALIDA (pestaña de solo lectura).
  *
  * Este módulo es el espejo de los formatos de `cotizacion_interna_pdf.py`
- * (`_hhmm`, `_millas`, `_horas`, `_dia_mes`, `_dia_largo`, `_pct_banco`,
+ * (`_horas_decimal`, `_millas`, `_horas`, `_dia_mes`, `_dia_largo`, `_pct_banco`,
  * `_monto`, `_metodo_previsto_txt`, la celda RUTA de `_tramo_fila` y el pie
  * de `_tramos_html`). Si allá cambia un formato, aquí también o la pantalla
  * y el papel dirán dos cosas distintas del MISMO vuelo.
@@ -18,7 +18,9 @@
  * dinero. `tiempo × tarifa`, la Σ de la tabla y el ajuste con su motivo
  * vienen del API (`tramos-costeados.util.ts`, campos ADITIVOS del breakdown
  * y del payload de `/interno`) — la ÚNICA aritmética permitida es re-sumar la
- * columna INFORMATIVA de millas, exactamente como hace pyservices.
+ * columna INFORMATIVA de millas, exactamente como hace pyservices, y (solo
+ * para snapshots anteriores al API 0.0.33) repartir la columna TIEMPO en horas
+ * decimales con el espejo exacto `repartirHorasDecimales`: tiempo, no dinero.
  *
  * PURO: sin React, sin `lib/format`. Probado en
  * `__tests__/quote-sheet-interna.test.ts`.
@@ -108,8 +110,20 @@ export const BANDA_INTERNA =
 /** Marca de agua diagonal, EXCLUSIVA de la pantalla (el PDF no la lleva). */
 export const MARCA_AGUA_INTERNA = "INTERNA";
 
-/** Nota al pie de la tabla de tramos (`NOTA_TRAMOS` de pyservices). */
-export const NOTA_TRAMOS = "Tiempo de vuelo en hh:mm e incluye calzos";
+/**
+ * Nota al pie de la tabla de tramos (`NOTA_TRAMOS` de pyservices). Horas
+ * DECIMALES desde el 24-sep-2026 (API 0.0.33): pedido del cliente, «la parte
+ * de tiempo de vuelo, lo podemos manejar solo en decimales por favor? […] se
+ * nos hacen raros los tiempos» — en hh:mm, «01:12» + «01:12» no daba «02:23».
+ */
+export const NOTA_TRAMOS =
+  "Tiempo de vuelo en horas decimales (1.50 = 1 h 30 min) e incluye calzos";
+
+/**
+ * Encabezado de la columna (`ENCABEZADO_TIEMPO` de pyservices). El CSS de la
+ * hoja lo pinta en mayúsculas: «TIEMPO VUELO (HRS)».
+ */
+export const ENCABEZADO_TIEMPO = "Tiempo vuelo (hrs)";
 
 /** Celda vacía: el documento interno escribe «—», nunca un 0 inventado. */
 export const SIN_DATO = "—";
@@ -165,15 +179,113 @@ export function moneyInterno(v: number | string | null | undefined): string {
   return `${n < 0 ? "-" : ""}$${fmt2.format(Math.abs(n))}`;
 }
 
+// ===== TIEMPO VUELO (HRS): horas decimales con SUMA CUADRADA =====
+//
+// ESPEJO EXACTO de `horasADecimal` / `repartirHorasDecimales` del API
+// (`vuelatour-api/src/modules/quotes/tramos-costeados.util.ts`, 0.0.33) y de
+// `_horas_decimal` / `_repartir_horas_decimales` de pyservices. El API manda
+// ya `tiempo_horas` por tramo y `tramos_tiempo_total_horas`; este espejo SOLO
+// se usa cuando no viajan: una cotización guardada antes del 0.0.33 (la hoja
+// pinta su `calculo_snapshot` sin llamar al motor) o un API previo. Es
+// PRESENTACIÓN de un tiempo, no dinero: aquí no se multiplica nada. Paridad
+// congelada con la MISMA tabla de casos en los tres repos
+// (`__tests__/quote-sheet-interna.test.ts`, `CASOS_HORAS_DECIMALES`).
+
+/** Micro-horas por hora: se redondea en ENTEROS, nunca con flotantes. */
+const MICRO_POR_HORA = 1_000_000;
+const MICRO_POR_CENTESIMA = MICRO_POR_HORA / 100;
+
+const microHoras = (h: number): number => Math.max(0, Math.round(h * MICRO_POR_HORA));
+
+const centesimasATexto = (c: number): string =>
+  `${Math.floor(c / 100)}.${String(c % 100).padStart(2, "0")}`;
+
 /**
- * `_hhmm`: horas decimales → «01:18». El API ya manda `tiempo_hhmm` por
- * tramo; esto solo se usa cuando ese campo no viaja (API previo).
+ * `horasADecimal` del API: horas → «1.19» con 2 decimales FIJOS, medio hacia
+ * arriba en aritmética entera (1.005 → «1.01»; `toFixed(2)` daría «1.00»).
+ * Nunca negativo.
  */
-export function hhmm(h: number | null | undefined): string {
-  const n = numOrNull(h);
-  if (n === null) return SIN_DATO;
-  const m = Math.max(0, Math.round(n * 60));
-  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+export function horasADecimal(h: number): string {
+  return centesimasATexto(
+    Math.floor((microHoras(h) + MICRO_POR_CENTESIMA / 2) / MICRO_POR_CENTESIMA),
+  );
+}
+
+/** Columna TIEMPO de la tabla ya en texto, cuadrada. */
+export interface HorasDecimalesCuadradas {
+  /** Una celda por tramo, en el MISMO orden; `null` = el tramo no trae tiempo («—»). */
+  tramos: (string | null)[];
+  /** La fila TOTAL: `horasADecimal(Σ tiempos)`. */
+  total: string;
+}
+
+/**
+ * `repartirHorasDecimales` del API: total = `horasADecimal(Σ)` y cada tramo
+ * baja a su centésima de piso; las que faltan para llegar al total se
+ * reparten, de una en una, a los residuos MÁS GRANDES (empate ⇒ orden del
+ * tramo). Así Σ tramos mostrados == total mostrado y cada tramo queda a
+ * ≤ 0.01 de su propio redondeo. Un tiempo ausente es un tramo sin tiempo:
+ * celda `null` que no suma.
+ */
+export function repartirHorasDecimales(
+  tiempos: ReadonlyArray<number | null | undefined>,
+): HorasDecimalesCuadradas {
+  const micros = tiempos.map((h) =>
+    h === null || h === undefined || !Number.isFinite(h) ? null : microHoras(h),
+  );
+  const suma = micros.reduce<number>((acc, m) => acc + (m ?? 0), 0);
+  const totalCentesimas = Math.floor((suma + MICRO_POR_CENTESIMA / 2) / MICRO_POR_CENTESIMA);
+  const centesimas = micros.map((m) => (m === null ? null : Math.floor(m / MICRO_POR_CENTESIMA)));
+  let faltan = totalCentesimas - centesimas.reduce<number>((acc, c) => acc + (c ?? 0), 0);
+  const candidatos = micros
+    .map((m, i) => ({ i, residuo: m === null ? -1 : m % MICRO_POR_CENTESIMA }))
+    .filter((c) => c.residuo > 0)
+    .sort((a, b) => b.residuo - a.residuo || a.i - b.i);
+  for (const c of candidatos) {
+    if (faltan <= 0) break;
+    centesimas[c.i] = (centesimas[c.i] ?? 0) + 1;
+    faltan -= 1;
+  }
+  return {
+    tramos: centesimas.map((c) => (c === null ? null : centesimasATexto(c))),
+    total: centesimasATexto(totalCentesimas),
+  };
+}
+
+/**
+ * Columna «TIEMPO VUELO (HRS)» de la tabla a partir del breakdown: una celda
+ * por ÍNDICE de `breakdown.tramos` (la fila la cruza `tramoCalculado`, que
+ * exige el mismo índice) y la fila TOTAL.
+ *
+ * - Con `tramos_tiempo_total_horas` (API 0.0.33+): se LEE lo que mandó el API
+ *   —ya cuadrado—; un `tiempo_horas` vacío es un tramo sin tiempo («—»).
+ * - Sin él (snapshot guardado antes del 0.0.33 o API previo): el ESPEJO
+ *   reparte los `tiempo_hr` del mismo breakdown, llevados a 4 decimales ANTES
+ *   de repartir — exactamente la entrada que `costearTramos` del API le da a
+ *   `repartirHorasDecimales` (`round4(num(t.tiempo_hr))`), para que la
+ *   pantalla y el PDF interno digan lo mismo aun con un `tiempo_hr` sin
+ *   redondear.
+ * - Sin tramos: el total del API si viaja; si no, «—».
+ */
+export function tiemposDeTabla(b: QuoteBreakdown | null | undefined): HorasDecimalesCuadradas {
+  const tramos = b?.tramos ?? [];
+  const totalApi = (b?.tramos_tiempo_total_horas || "").trim();
+  if (totalApi) {
+    return {
+      tramos: tramos.map((t) => (t.tiempo_horas || "").trim() || null),
+      total: totalApi,
+    };
+  }
+  if (tramos.length > 0) {
+    return repartirHorasDecimales(
+      tramos.map((t) => {
+        const h = numOrNull(t.tiempo_hr);
+        return h === null ? null : Math.round(h * 10000) / 10000;
+      }),
+    );
+  }
+  const totalHr = numOrNull(b?.tramos_tiempo_total_hr);
+  return { tramos: [], total: totalHr !== null ? horasADecimal(totalHr) : SIN_DATO };
 }
 
 /** `_millas`: «157» · «157.3» · «—». Nunca ceros de cola. */
@@ -700,7 +812,11 @@ export interface PieTramos {
    * si TODOS los tramos la traen, igual que pyservices. «» cuando falta alguna.
    */
   millas: string;
-  /** Σ del tiempo como «02:36»; «—» con un API previo. */
+  /**
+   * Σ del tiempo en horas decimales («2.38», fila TOTAL de «TIEMPO VUELO
+   * (HRS)»): la de `tiemposDeTabla`, que es la que suman las celdas; «—» sin
+   * tramos ni total.
+   */
   tiempo: string;
   /** Σ de la columna TOTAL; null = el API no lo mandó ⇒ la celda pinta «—». */
   totalUsd: number | null;
@@ -715,8 +831,9 @@ export interface PieTramos {
 
 /**
  * Pie de la tabla desde los campos ADITIVOS del breakdown (API 0.0.27). Con
- * un API previo devuelve todo en «—»/null: la tabla se ve, el pie dice que no
- * sabe, y **nunca** se multiplica aquí para rellenarlo.
+ * un API previo el DINERO devuelve «—»/null: la tabla se ve, el pie dice que
+ * no sabe, y **nunca** se multiplica aquí para rellenarlo. El TIEMPO sale de
+ * `tiemposDeTabla` (el mismo total que suman las celdas de la columna).
  *
  * `servicioAereoImpreso` lo pasa quien llama (`servicioAereoImpresoUsd` del
  * breakdown): es el número con el que tiene que cuadrar `Σ tramos + ajuste`.
@@ -732,12 +849,10 @@ export function pieTramos(
     ? millasTxt(tramos.reduce((acc, t) => acc + (numOrNull(t.millas) ?? 0), 0))
     : "";
   const totalUsd = numOrNull(b?.tramos_total_usd);
-  const tiempoHhmm = (b?.tramos_tiempo_total_hhmm || "").trim();
-  const tiempoHr = numOrNull(b?.tramos_tiempo_total_hr);
   const ajusteUsd = numOrNull(b?.tramos_ajuste_usd);
   return {
     millas,
-    tiempo: tiempoHhmm || (tiempoHr !== null ? hhmm(tiempoHr) : SIN_DATO),
+    tiempo: tiemposDeTabla(b).total,
     totalUsd,
     ajusteUsd,
     ajusteMotivo: motivoAjuste(b?.tramos_ajuste_motivo),
@@ -747,8 +862,9 @@ export function pieTramos(
 }
 
 /**
- * Notas al pie de la tabla («Tiempo de vuelo en hh:mm e incluye calzos (0.45 h
- * en total) · distancia en millas náuticas.»), espejo de `_tramos_html`.
+ * Notas al pie de la tabla («Tiempo de vuelo en horas decimales (1.50 = 1 h
+ * 30 min) e incluye calzos (0.45 h en total) · distancia en millas
+ * náuticas.»), espejo de `_tramos_html`.
  */
 export function notasTramos(
   calzosHr: number | null | undefined,

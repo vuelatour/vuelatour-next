@@ -35,10 +35,20 @@ import {
 import { Degradaciones, principal } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
+import { ordenInventarioDeUrl } from "@/lib/admin/inventario-orden";
 
 export const dynamic = "force-dynamic";
 
-export default async function InventoryPage() {
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    /** Orden de la tabla (24-sep-2026): `se-acaban`, `stock-desc`, `categoria`…
+     *  Fuera de catálogo se ignora (A–Z). Se aplica sobre la bodega COMPLETA. */
+    orden?: string | string[];
+  }>;
+}) {
+  const ordenInicial = ordenInventarioDeUrl((await searchParams).orden);
   // Degradación POR TARJETA (21-sep-2026): tres de estas cinco llamadas no
   // tenían `.catch` y CUALQUIERA tumbaba la pantalla entera al error boundary
   // («Algo se rompió… digest») cada vez que el API se reiniciaba. Los
@@ -225,6 +235,7 @@ export default async function InventoryPage() {
               aircraft={aircraft}
               providers={providers}
               categorias={categorias}
+              ordenInicial={ordenInicial}
             />
           </CardContent>
         </Card>

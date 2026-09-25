@@ -11,12 +11,16 @@ import {
 } from "react";
 import Link from "next/link";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronUpDownIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -45,6 +49,28 @@ export interface DataTableColumn<T> {
   cell: (row: T) => React.ReactNode;
   /** true = esta celda NO se envuelve en el link de fila (acciones/botones). */
   noLink?: boolean;
+  /**
+   * true = encabezado ORDENABLE (requiere la prop `orden` de la tabla): se
+   * pinta como botón con flecha ↑/↓ y el clic avisa a `orden.alPulsarColumna`.
+   */
+  ordenable?: boolean;
+}
+
+/**
+ * Orden de una lista (opcional, 24-sep-2026). La tabla NO ordena: el padre le
+ * pasa `rows` YA ordenadas con su lógica pura (testeable) y aquí solo se
+ * pintan los encabezados clicables y los atajos. Al cambiar el orden la tabla
+ * vuelve a la página 1: lo que el operador pidió ver primero queda arriba.
+ */
+export interface DataTableOrden {
+  /** Dirección vigente de una columna ordenable (null = no ordena por ella). */
+  direccion: (columnaKey: string) => "asc" | "desc" | null;
+  alPulsarColumna: (columnaKey: string) => void;
+  /** Atajos visibles junto al buscador («A–Z», «Se están acabando primero»…). */
+  atajos?: ReadonlyArray<{ valor: string; etiqueta: string; titulo?: string }>;
+  /** Atajo resaltado; null = ninguno (se ordena por una columna). */
+  atajoActivo?: string | null;
+  alElegirAtajo?: (valor: string) => void;
 }
 
 export const PAGE_SIZES = [10, 20, 50, 100] as const;
@@ -84,6 +110,8 @@ interface DataTableProps<T> {
    * existe (auditoría 29-ago: 'ya lo había guardado y no está').
    */
   huboCorte?: boolean;
+  /** Orden por columnas y atajos (ver `DataTableOrden`). */
+  orden?: DataTableOrden;
 }
 
 /** Búsqueda insensible a acentos y mayúsculas (nombres es-MX). */
@@ -133,6 +161,7 @@ export function DataTable<T>({
   syncId = "t",
   subRows,
   huboCorte = false,
+  orden,
 }: DataTableProps<T>) {
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -209,6 +238,20 @@ export function DataTable<T>({
     pageSizeStore.set(n);
   };
 
+  // Nuevo orden = de vuelta a la página 1 (y a la URL) ANTES de avisar al
+  // padre: quedarse en la página 3 escondería justo lo que se pidió ver arriba.
+  const pulsarColumna = (key: string) => {
+    if (!orden) return;
+    cambiarPagina(1);
+    orden.alPulsarColumna(key);
+  };
+  const elegirAtajo = (valor: string) => {
+    if (!orden?.alElegirAtajo) return;
+    cambiarPagina(1);
+    orden.alElegirAtajo(valor);
+  };
+  const atajos = orden?.alElegirAtajo ? (orden.atajos ?? []) : [];
+
   const filtradas = useMemo(() => {
     if (!searchText || !busqueda.trim()) return rows;
     const q = normaliza(busqueda.trim());
@@ -223,6 +266,7 @@ export function DataTable<T>({
   const visibles = filtradas.slice(desde, desde + pageSize);
 
   const conBuscador = !!searchText && rows.length > 0;
+  const conAtajos = atajos.length > 0 && rows.length > 0;
   // Sin suficientes filas no hay nada que paginar: la barra solo estorba.
   const conBarra = filtradas.length > PAGE_SIZES[0] || rows.length > pageSize;
 
@@ -253,29 +297,93 @@ export function DataTable<T>({
 
   return (
     <div>
-      {conBuscador && (
-        <div className="border-b border-border p-3">
-          <div className="relative max-w-xs">
-            <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={busqueda}
-              onChange={(e) => cambiarBusqueda(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="h-8 pl-8 text-sm"
-              aria-label="Buscar en la tabla"
-            />
-          </div>
+      {(conBuscador || conAtajos) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+          {conBuscador && (
+            <div className="relative w-full max-w-xs">
+              <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={busqueda}
+                onChange={(e) => cambiarBusqueda(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="h-8 pl-8 text-sm"
+                aria-label="Buscar en la tabla"
+              />
+            </div>
+          )}
+          {conAtajos && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Ordenar:</span>
+              <div role="group" aria-label="Ordenar" className="flex flex-wrap gap-1.5">
+                {atajos.map((a) => {
+                  const activo = orden?.atajoActivo === a.valor;
+                  return (
+                    <button
+                      key={a.valor}
+                      type="button"
+                      aria-pressed={activo}
+                      title={a.titulo}
+                      onClick={() => elegirAtajo(a.valor)}
+                      className={cn(
+                        "inline-flex h-8 cursor-pointer items-center rounded-lg px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        activo
+                          ? "bg-brand-600 text-white"
+                          : "bg-muted text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {a.etiqueta}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       <Table>
         <TableHeader>
           <TableRow>
-            {columns.map((c) => (
-              <TableHead key={c.key} className={c.headClassName}>
-                {c.header}
-              </TableHead>
-            ))}
+            {columns.map((c) => {
+              if (!c.ordenable || !orden) {
+                return (
+                  <TableHead key={c.key} className={c.headClassName}>
+                    {c.header}
+                  </TableHead>
+                );
+              }
+              const dir = orden.direccion(c.key);
+              const Flecha =
+                dir === "asc" ? ArrowUpIcon : dir === "desc" ? ArrowDownIcon : ChevronUpDownIcon;
+              return (
+                <TableHead
+                  key={c.key}
+                  className={c.headClassName}
+                  aria-sort={
+                    dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => pulsarColumna(c.key)}
+                    title={dir ? "Clic para invertir el orden" : "Clic para ordenar por esta columna"}
+                    className={cn(
+                      "-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+                      dir ? "text-foreground" : "text-foreground/80 hover:text-foreground",
+                    )}
+                  >
+                    {c.header}
+                    <Flecha
+                      aria-hidden="true"
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        dir ? "text-brand-600" : "text-muted-foreground/60",
+                      )}
+                    />
+                  </button>
+                </TableHead>
+              );
+            })}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -296,7 +404,7 @@ export function DataTable<T>({
                 <button
                   type="button"
                   onClick={() => cambiarBusqueda("")}
-                  className="underline underline-offset-2 hover:text-foreground"
+                  className="cursor-pointer underline underline-offset-2 hover:text-foreground"
                 >
                   Limpiar búsqueda
                 </button>
@@ -336,7 +444,7 @@ export function DataTable<T>({
               <select
                 value={pageSize}
                 onChange={(e) => cambiarPageSize(Number(e.target.value) as PageSize)}
-                className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-8 cursor-pointer rounded-lg border border-border bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {PAGE_SIZES.map((n) => (
                   <option key={n} value={n}>

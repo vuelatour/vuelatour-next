@@ -24,16 +24,17 @@ import {
 import { useLookupNm } from "@/hooks/use-lookup-nm";
 import { parseCodigosRuta } from "@/components/admin/ruta-rapida-input";
 import {
+  ENCABEZADO_TIEMPO,
   SIN_DATO,
   celdaRutaTramo,
   diaMes,
-  hhmm,
   millasTxt,
   moneyInterno,
   montoInterno,
   notasTramos,
   pieTramos,
   servicioAereoCanonicoUsd,
+  tiemposDeTabla,
 } from "@/lib/admin/quote-sheet-interna";
 import { tramoCalculado } from "@/lib/admin/quote-sheet";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,10 @@ import type { AeropuertoHoja, OnAbrirInterno, RutaHoja, TramoPdfAccesores } from
  *
  * QUÉ NO SE EDITA, y por qué:
  *  - TIEMPO: lo calcula el motor (millas ÷ velocidad + calzos). Se cambia
- *    cambiando las millas o pactando el total.
+ *    cambiando las millas o pactando el total. Se PINTA en horas decimales
+ *    con 2 decimales fijos («1.19») y la suma cuadrada del API 0.0.33
+ *    (`tiemposDeTabla`): los tramos que se ven suman el TOTAL que se ve —en
+ *    hh:mm «01:12» + «01:12» daba «02:23» y la oficina lo reportó.
  *  - COSTO POR HORA: el motor v1.3 cotiza con UNA tarifa por vuelo (decisión
  *    3 del diseño). Un input por fila prometería un precio por tramo que el
  *    motor NO respeta; la tarifa se ajusta en «Tarifa y horas».
@@ -243,6 +247,12 @@ export function QuoteSheetInternaTramos({
     return m;
   }, [interno]);
 
+  // TIEMPO VUELO (HRS): horas decimales con la suma cuadrada, por ÍNDICE de
+  // `breakdown.tramos` (del API 0.0.33 o, para un snapshot anterior, del
+  // espejo `repartirHorasDecimales`). Se arma UNA vez para toda la tabla: la
+  // celda de un tramo depende de todas las demás.
+  const tiempos = useMemo(() => tiemposDeTabla(breakdown), [breakdown]);
+
   // ----- Filas -----
   const filas = legs.map((leg, idx) => {
     const estaOculto = oculto(idx, leg);
@@ -265,7 +275,7 @@ export function QuoteSheetInternaTramos({
       pernocta_usd: leg.pernocta_costo_usd ?? null,
     });
     // TIEMPO / COSTO/HR / TOTAL: del API, jamás multiplicados aquí.
-    const tiempo = calc?.tiempo_hhmm || (calc ? hhmm(calc.tiempo_hr) : SIN_DATO);
+    const tiempo = calc ? (tiempos.tramos[idx] ?? SIN_DATO) : SIN_DATO;
     const tarifa = calc?.tarifa_usd_hr != null ? moneyInterno(calc.tarifa_usd_hr) : SIN_DATO;
     const total = calc?.total_usd != null ? montoInterno(calc.total_usd) : SIN_DATO;
     return (
@@ -467,7 +477,7 @@ export function QuoteSheetInternaTramos({
             <th>Ruta</th>
             <th>Fecha</th>
             <th className="num">Distancia millas</th>
-            <th className="num">Tiempo vuelo</th>
+            <th className="num">{ENCABEZADO_TIEMPO}</th>
             <th className="num">Costo por hora vuelo</th>
             <th className="num">Total por tramo</th>
           </tr>

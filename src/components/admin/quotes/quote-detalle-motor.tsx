@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { QuoteDesgloseCard } from "@/components/admin/quotes/quote-desglose-card";
 import { QuotePlegable } from "@/components/admin/quotes/quote-plegable";
 import { textoCantidadUnitario } from "@/lib/admin/extras";
-import { fmtHorasDecimal, fmtHorasMinutos } from "@/lib/admin/horas";
+import { fmtHorasDecimal } from "@/lib/admin/horas";
 import { moneyTarifa } from "@/lib/admin/tarifa";
 import { fmtDecimal, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -394,7 +394,11 @@ function Preview({
                 <p className="font-semibold">Cobrable</p>
                 <p className="text-xs text-muted-foreground">
                   {breakdown.tiempos.cobrable_proviene_de_override
-                    ? `pactado a mano (${fmtHorasMinutos(breakdown.tiempos.cobrable_hr)}) · la regla daría ${fmtHorasDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
+                    ? // Solo horas DECIMALES (24-sep-2026, pedido del cliente): el
+                      // eco en reloj «(2 h 20 min)» se quitó; el pactado ya se
+                      // lee en decimal a la derecha. La captura en h:mm sigue
+                      // viva en `CampoHorasPactadas`.
+                      `pactado a mano · la regla daría ${fmtHorasDecimal(breakdown.tiempos.cobrable_hr_regla ?? 0, 4)} hr`
                     : "regla (suma, mínimo 1 hr)"}
                 </p>
               </div>

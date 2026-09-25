@@ -163,10 +163,18 @@ export interface TramoBreakdown {
    * diseño: dos fuentes del mismo número = pantalla y PDF discrepando).
    */
   tarifa_usd_hr?: number | null;
-  /** El mismo `tiempo_hr` como «01:18» (lo formatea el API). */
+  /** LEGADO: el mismo `tiempo_hr` como «01:18». Ya no se pinta (API 0.0.33). */
   tiempo_hhmm?: string | null;
   /** Costo del tramo en USD, ya redondeado por el API. */
   total_usd?: number | null;
+  /**
+   * Lo que PINTA la columna «TIEMPO VUELO (HRS)» — ADITIVO del API 0.0.33
+   * (24-sep-2026): «1.19», 2 decimales fijos, repartido por residuo mayor
+   * para que Σ tramos == `tramos_tiempo_total_horas`. Ausente (snapshot
+   * guardado antes del 0.0.33) ⇒ el panel usa el espejo
+   * `repartirHorasDecimales` de `lib/admin/quote-sheet-interna.ts`.
+   */
+  tiempo_horas?: string | null;
 }
 
 export interface CalculateQuoteRequest {
@@ -378,8 +386,10 @@ export interface QuoteBreakdown {
    */
   tramos_total_usd?: number | null;
   tramos_tiempo_total_hr?: number | null;
-  /** Σ del tiempo de la tabla como «02:36». */
+  /** LEGADO: Σ del tiempo de la tabla como «02:36». Ya no se pinta (API 0.0.33). */
   tramos_tiempo_total_hhmm?: string | null;
+  /** Fila TOTAL de «TIEMPO VUELO (HRS)» (API 0.0.33): «2.38» = Σ `tramos[].tiempo_horas`. */
+  tramos_tiempo_total_horas?: string | null;
   /** Línea TIEMPO_VUELO canónica − Σ tramos: `Σ tramos + ajuste == servicio aéreo`. */
   tramos_ajuste_usd?: number | null;
   /** «Hora mínima 1.0 h» · «Sobrevuelo 0.5 h» · «Horas pactadas 2 h» · «Redondeo». */

@@ -705,7 +705,16 @@ export function tramoCalculado(
 
 const iataNorm = (s: string | null | undefined): string => (s ?? "").trim().toUpperCase();
 
-/** «1.20 h» de un tramo calculado (2 decimales, como la marca del margen); sin cálculo → «—». */
-export function horasTramoTexto(t: Pick<TramoBreakdown, "tiempo_hr"> | null | undefined): string {
-  return t ? `${numero2(t.tiempo_hr)} h` : "—";
+/**
+ * «1.20 h» de un tramo calculado (2 decimales, como la marca del margen); sin
+ * cálculo → «—». Con `tiempo_horas` del API (0.0.33+) se usa ESE texto —el
+ * mismo de la celda «TIEMPO VUELO (HRS)», ya repartido para que Σ tramos =
+ * total—; sin él (vista previa en vivo, snapshot viejo) se redondea el tramo.
+ */
+export function horasTramoTexto(
+  t: Pick<TramoBreakdown, "tiempo_hr" | "tiempo_horas"> | null | undefined,
+): string {
+  if (!t) return "—";
+  const delApi = (t.tiempo_horas ?? "").trim();
+  return `${delApi || numero2(t.tiempo_hr)} h`;
 }

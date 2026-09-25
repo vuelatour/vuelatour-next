@@ -19,8 +19,10 @@ import {
   diaLargo,
   diaMes,
   fechaCortaCobro,
+  ENCABEZADO_TIEMPO,
+  NOTA_TRAMOS,
   hayAjuste,
-  hhmm,
+  horasADecimal,
   horasTxt,
   lineaCanonicaUsd,
   lineaNetoVuelatour,
@@ -39,12 +41,14 @@ import {
   piezasConceptoTuaInterna,
   puedeEditarCotizacion,
   puedeVerHojaInterna,
+  repartirHorasDecimales,
   soloConsultaCotizacion,
   resumenCobros,
   resumenComisionVendedor,
   servicioAereoCanonicoUsd,
   subLineaCobro,
   tarifaFicha,
+  tiemposDeTabla,
 } from "@/lib/admin/quote-sheet-interna";
 import type { QuoteBreakdown } from "@/types/quote";
 
@@ -56,19 +60,158 @@ import type { QuoteBreakdown } from "@/types/quote";
  * (`__tests__/quote-sheet-interna.test.tsx`).
  */
 
-describe("formatos del documento interno", () => {
-  it("`_hhmm`: horas decimales → hh:mm", () => {
-    expect(hhmm(1.3)).toBe("01:18");
-    expect(hhmm(0.4)).toBe("00:24");
-    expect(hhmm(0.45)).toBe("00:27");
-    expect(hhmm(2.1)).toBe("02:06");
-    expect(hhmm(0)).toBe("00:00");
-    // Nunca negativo: un tiempo así sería un bug del motor, no algo que
-    // inventar en la pantalla.
-    expect(hhmm(-1)).toBe("00:00");
-    expect(hhmm(null)).toBe(SIN_DATO);
+/**
+ * TIEMPO VUELO (HRS) — la MISMA tabla de casos que el API
+ * (`vuelatour-api/src/modules/quotes/tramos-costeados.util.spec.ts`,
+ * `CASOS_HORAS_DECIMALES`) y pyservices (`tests/test_cotizacion_interna_pdf.py`):
+ * `repartirHorasDecimales` de aquí es el ESPEJO EXACTO del API y tiene que
+ * decir lo mismo carácter por carácter. Si cambia una regla, cambian los tres.
+ */
+const CASOS_HORAS_DECIMALES: ReadonlyArray<{
+  caso: string;
+  tiempos: (number | null | undefined)[];
+  tramos: (string | null)[];
+  total: string;
+}> = [
+  {
+    caso: "CUN–PTU–CUN de la captura: 1.19166… × 2",
+    tiempos: [1.1916666667, 1.1916666667],
+    tramos: ["1.19", "1.19"],
+    total: "2.38",
+  },
+  {
+    caso: "el mismo caso ya en round4 (como lo guarda el snapshot)",
+    tiempos: [1.1917, 1.1917],
+    tramos: ["1.19", "1.19"],
+    total: "2.38",
+  },
+  {
+    caso: "residuo mayor hacia ARRIBA: tres tramos de 0.335",
+    tiempos: [0.335, 0.335, 0.335],
+    tramos: ["0.34", "0.34", "0.33"],
+    total: "1.01",
+  },
+  {
+    caso: "residuo mayor hacia ABAJO: gana el residuo más grande, no el orden",
+    tiempos: [0.333, 0.3349, 0.3349],
+    tramos: ["0.33", "0.34", "0.33"],
+    total: "1.00",
+  },
+  {
+    caso: "empate de residuos: decide el ORDEN del tramo (determinista)",
+    tiempos: [0.005, 0.005],
+    tramos: ["0.01", "0.00"],
+    total: "0.01",
+  },
+  { caso: "un solo tramo: su celda ES el total", tiempos: [1.1916666667], tramos: ["1.19"], total: "1.19" },
+  { caso: "dos decimales FIJOS: 1.2 → «1.20», 1 → «1.00»", tiempos: [1.2, 1], tramos: ["1.20", "1.00"], total: "2.20" },
+  {
+    caso: "ocho tramos que ya cuadran (#294)",
+    tiempos: [1.6433, 0.35, 1.2567, 0.35, 1.6433, 0.35, 1.2567, 0.35],
+    tramos: ["1.64", "0.35", "1.26", "0.35", "1.64", "0.35", "1.26", "0.35"],
+    total: "7.20",
+  },
+  {
+    caso: "tramo SIN tiempo: «—» y no suma (igual que hoy, que cuenta 0)",
+    tiempos: [1.1917, null, 0.5],
+    tramos: ["1.19", null, "0.50"],
+    total: "1.69",
+  },
+  { caso: "ningún tramo con tiempo", tiempos: [null, undefined], tramos: [null, null], total: "0.00" },
+  { caso: "sin tramos", tiempos: [], tramos: [], total: "0.00" },
+  {
+    caso: "nunca negativo (un tiempo negativo es un dato roto)",
+    tiempos: [-3, 0.5],
+    tramos: ["0.00", "0.50"],
+    total: "0.50",
+  },
+];
+
+describe("TIEMPO VUELO (HRS): espejo EXACTO del API (24-sep-2026)", () => {
+  it("`horasADecimal`: 2 decimales FIJOS, medio hacia arriba en aritmética entera", () => {
+    expect(horasADecimal(1.1916666667)).toBe("1.19");
+    expect(horasADecimal(2.3833333333)).toBe("2.38");
+    expect(horasADecimal(1.2)).toBe("1.20");
+    expect(horasADecimal(1)).toBe("1.00");
+    expect(horasADecimal(10.5)).toBe("10.50");
+    expect(horasADecimal(0)).toBe("0.00");
+    // Donde `toFixed(2)` falla por el binario del flotante.
+    expect((1.005).toFixed(2)).toBe("1.00");
+    expect(horasADecimal(1.005)).toBe("1.01");
+    expect(horasADecimal(2.675)).toBe("2.68");
+    expect(horasADecimal(-3)).toBe("0.00");
   });
 
+  it.each(CASOS_HORAS_DECIMALES)("`repartirHorasDecimales` · $caso", ({ tiempos, tramos, total }) => {
+    const r = repartirHorasDecimales(tiempos);
+    expect(r).toEqual({ tramos, total });
+    const suma = r.tramos.reduce((acc, t) => acc + (t === null ? 0 : Math.round(Number(t) * 100)), 0);
+    expect(suma).toBe(Math.round(Number(r.total) * 100));
+  });
+
+  it("encabezado y nota: «TIEMPO VUELO (HRS)» (el CSS pone las mayúsculas) y horas decimales", () => {
+    expect(ENCABEZADO_TIEMPO).toBe("Tiempo vuelo (hrs)");
+    expect(NOTA_TRAMOS).toBe("Tiempo de vuelo en horas decimales (1.50 = 1 h 30 min) e incluye calzos");
+    expect(NOTA_TRAMOS).not.toContain("hh:mm");
+  });
+
+  describe("`tiemposDeTabla`: del API si viaja; si no, el espejo sobre el MISMO breakdown", () => {
+    const b = (extra: Partial<QuoteBreakdown>) => extra as QuoteBreakdown;
+    const tramo = (tiempo_hr: number, tiempo_horas?: string | null) =>
+      ({ tiempo_hr, ...(tiempo_horas !== undefined ? { tiempo_horas } : {}) }) as NonNullable<
+        QuoteBreakdown["tramos"]
+      >[number];
+
+    it("API 0.0.33: se LEEN `tiempo_horas` y `tramos_tiempo_total_horas` tal cual (sin recalcular)", () => {
+      const r = tiemposDeTabla(
+        b({
+          // `tiempo_hr` a propósito en 0: el espejo diría «0.00»; con el campo
+          // del API presente se pinta lo que mandó el API, sin recalcular.
+          tramos: [tramo(0, "1.19"), tramo(0, "1.19")],
+          tramos_tiempo_total_horas: "2.38",
+        }),
+      );
+      expect(r).toEqual({ tramos: ["1.19", "1.19"], total: "2.38" });
+      // Un tramo sin tiempo en el snapshot llega con `tiempo_horas: null` ⇒ «—».
+      expect(
+        tiemposDeTabla(b({ tramos: [tramo(0.5, "0.50"), tramo(0, null)], tramos_tiempo_total_horas: "0.50" }))
+          .tramos,
+      ).toEqual(["0.50", null]);
+    });
+
+    it("snapshot guardado ANTES del 0.0.33 (sin los campos): el espejo reparte y cuadra", () => {
+      // Tres tramos de 0.4167 h (el caso «Redondeo» del spec del API): cada
+      // uno por su lado daría 0.42 × 3 = 1.26 contra un total de 1.25.
+      const r = tiemposDeTabla(
+        b({
+          tramos: [tramo(0.4167), tramo(0.4167), tramo(0.4167)],
+          tramos_tiempo_total_hr: 1.2501,
+          tramos_tiempo_total_hhmm: "01:15",
+        }),
+      );
+      expect(r).toEqual({ tramos: ["0.42", "0.42", "0.41"], total: "1.25" });
+      // La captura del cliente con un snapshot viejo: jamás «01:12»/«02:23».
+      expect(tiemposDeTabla(b({ tramos: [tramo(1.1917), tramo(1.1917)], tramos_tiempo_total_hhmm: "02:23" })))
+        .toEqual({ tramos: ["1.19", "1.19"], total: "2.38" });
+    });
+
+    it("el espejo recibe la MISMA entrada que `costearTramos` del API: `tiempo_hr` a 4 decimales antes de repartir", () => {
+      // El API reparte `round4(tiempo_hr)`: 0.00495 → 0.005 ⇒ «0.01». Sin ese
+      // paso el espejo repartiría 0.00495 ⇒ «0.00» y la pantalla diría otra
+      // cosa que el PDF interno del MISMO snapshot.
+      expect(repartirHorasDecimales([0.00495])).toEqual({ tramos: ["0.00"], total: "0.00" });
+      expect(tiemposDeTabla(b({ tramos: [tramo(0.00495)] }))).toEqual({ tramos: ["0.01"], total: "0.01" });
+    });
+
+    it("sin tramos: el total del API si viaja; si no, «—»", () => {
+      expect(tiemposDeTabla(b({ tramos: null, tramos_tiempo_total_hr: 1.6 }))).toEqual({ tramos: [], total: "1.60" });
+      expect(tiemposDeTabla(b({}))).toEqual({ tramos: [], total: SIN_DATO });
+      expect(tiemposDeTabla(null)).toEqual({ tramos: [], total: SIN_DATO });
+    });
+  });
+});
+
+describe("formatos del documento interno", () => {
   it("`_millas`: sin ceros de cola", () => {
     expect(millasTxt(157)).toBe("157");
     expect(millasTxt(157.3)).toBe("157.3");
@@ -163,6 +306,7 @@ describe("pie de la tabla: los números son del API, jamás de aquí", () => {
       b({
         tramos_total_usd: 2475,
         tramos_tiempo_total_hhmm: "01:30",
+        tramos_tiempo_total_horas: "1.50",
         tramos_ajuste_usd: 412.5,
         tramos_ajuste_motivo: "Horas pactadas 1.75 h",
       }),
@@ -170,7 +314,8 @@ describe("pie de la tabla: los números son del API, jamás de aquí", () => {
       2887.5,
     );
     expect(pie.totalUsd).toBe(2475);
-    expect(pie.tiempo).toBe("01:30");
+    // Horas decimales (API 0.0.33); el «01:30» legado ya no se pinta.
+    expect(pie.tiempo).toBe("1.50");
     expect(pie.millas).toBe("170");
     expect(pie.hayAjuste).toBe(true);
     expect(pie.ajusteMotivo).toBe("Horas pactadas 1.75 h");
@@ -205,7 +350,7 @@ describe("pie de la tabla: los números son del API, jamás de aquí", () => {
 
   it("la nota al pie lleva los calzos y avisa de la fila consolidada", () => {
     expect(notasTramos(0.45, false)).toBe(
-      "Tiempo de vuelo en hh:mm e incluye calzos (0.45 h en total) · distancia en millas náuticas.",
+      "Tiempo de vuelo en horas decimales (1.50 = 1 h 30 min) e incluye calzos (0.45 h en total) · distancia en millas náuticas.",
     );
     expect(notasTramos(null, true)).toContain("una sola fila con los totales");
   });

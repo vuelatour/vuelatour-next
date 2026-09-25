@@ -171,6 +171,22 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `airports/airports-table.tsx`). Tablas de RESUMEN (matrices con totales,
   reportes) siguen con los primitivos de `ui/table`. Columnas con
   botones/menús llevan `noLink: true` si la fila tiene `rowHref`.
+  **Orden** (opcional, 24-sep-2026): columnas con `ordenable: true` + prop
+  `orden` (`DataTableOrden`: dirección por columna, clic, atajos visibles
+  «Ordenar: …»). La tabla NO ordena: el padre pasa `rows` YA ordenadas con
+  una función PURA de `lib/admin` (con test) sobre el conjunto COMPLETO, y la
+  tabla vuelve a la página 1 al cambiar el orden. El valor vive en la URL
+  (`?orden=`, default fuera de la URL) y el componente lo LEE con
+  `useSearchParams` (la elección del clic solo gana mientras la URL no se
+  asiente y luego caduca: `resolverOrdenInventario`, puro + test), **nunca**
+  con `useState(propDelServer)`: al volver del detalle
+  (BackLink = `router.back()`) Next reusa el payload viejo de la página y esa
+  prop es la de la primera carga — la URL decía `?orden=se-acaban` y la tabla
+  salía A–Z (revisión 24-sep-2026, test de regresión en
+  `inventory/__tests__/items-table-orden.test.tsx`).
+  Ejemplar: inventario (`lib/admin/inventario-orden.ts` +
+  `inventory/items-table.tsx`, «Se están acabando primero» = Bajo primero y
+  luego stock ascendente, desconocidos al final).
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
@@ -1929,8 +1945,11 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   el PDF interno.
 - **La columna TOTAL POR TRAMO y el pie se LEEN** (campos ADITIVOS del API
   0.0.27, fuente única `tramos-costeados.util.ts`): `breakdown.tramos[].
-  total_usd / tarifa_usd_hr / tiempo_hhmm` y en la raíz `tramos_total_usd`,
-  `tramos_tiempo_total_hr/_hhmm`, `tramos_ajuste_usd`, `tramos_ajuste_motivo`.
+  total_usd / tarifa_usd_hr` (y desde el 0.0.33 `tiempo_horas`; el
+  `tiempo_hhmm` legado ya no se pinta) y en la raíz `tramos_total_usd`,
+  `tramos_tiempo_total_hr`, `tramos_tiempo_total_horas` (0.0.33),
+  `tramos_ajuste_usd`, `tramos_ajuste_motivo`. La columna TIEMPO va en horas
+  decimales: ver «TIEMPO VUELO (HRS) en horas decimales» más abajo.
   **El panel JAMÁS multiplica `tiempo × tarifa` ni suma el ajuste**: con dos
   fuentes, pantalla y papel dirían cifras distintas del MISMO vuelo (riesgo 10
   del diseño). Con un API previo esas celdas pintan «—», nunca un número
@@ -1953,6 +1972,55 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   `preferirHorasPersistidas`, `tarifaOverrideRehidratada`, el ancla de ecos y
   la idempotencia **no se tocaron** en ninguno de los tres bloques: ninguna
   regla de guardado cambió.
+
+### TIEMPO VUELO (HRS) en horas decimales (24-sep-2026, API 0.0.33)
+
+- Pedido del cliente con la captura de la hoja interna de una CUN→PTU→CUN:
+  «la parte de tiempo de vuelo, lo podemos manejar solo en decimales por
+  favor? Porque parece ser que el sistema tiene un poco de problema al
+  momento de convertirlo y luego como que se nos hacen raros los tiempos».
+  Cada tramo valía 1.19166… h (125 nm / 120 kt + 0.15 de calzo) ⇒ «01:12»; el
+  total 2.38333 h ⇒ «02:23»; y 01:12 + 01:12 ≠ 02:23.
+- La columna se llama **«TIEMPO VUELO (HRS)»** (`ENCABEZADO_TIEMPO` =
+  «Tiempo vuelo (hrs)»; el CSS de la hoja pone las mayúsculas) y va con **2
+  decimales FIJOS** («1.19», «2.38», «1.20») por tramo, en la fila TOTAL y en
+  la fila consolidada. Nota al pie `NOTA_TRAMOS`: «Tiempo de vuelo en horas
+  decimales (1.50 = 1 h 30 min) e incluye calzos» + lo de siempre. Pantalla y
+  PDF dicen lo mismo carácter por carácter (fixtures regenerados).
+- **SUMA CUADRADA**: los tramos que se ven suman el total que se ve. Lo
+  decide el API (`repartirHorasDecimales` de `tramos-costeados.util.ts`,
+  RESIDUO MAYOR: total = Σ exacto redondeado una vez; cada tramo a su piso y
+  las centésimas que faltan a los residuos más grandes, empate por orden) y
+  lo manda como `breakdown.tramos[].tiempo_horas` +
+  `breakdown.tramos_tiempo_total_horas` (y en el payload de `/interno`).
+- **Fuente del panel: `tiemposDeTabla(breakdown)`** (`lib/admin/
+  quote-sheet-interna.ts`): con `tramos_tiempo_total_horas` LEE lo del API
+  (`tiempo_horas` vacío ⇒ «—»); sin él —cotización guardada ANTES del 0.0.33,
+  que la hoja pinta desde su `calculo_snapshot` sin llamar al motor, o un API
+  previo— reparte con el ESPEJO EXACTO `repartirHorasDecimales` /
+  `horasADecimal` (medio hacia arriba en enteros; `toFixed(2)` daría «1.00»
+  para 1.005). Es tiempo, no dinero: ningún importe se toca. La celda por fila
+  sale del MISMO índice que `tramoCalculado` (una fila que el motor aún no
+  calculó sigue en «—»).
+- **Paridad**: la MISMA tabla `CASOS_HORAS_DECIMALES` vive en
+  `lib/admin/__tests__/quote-sheet-interna.test.ts`, en el spec del API y en
+  el pytest de pyservices; y `__tests__/quote-sheet-interna.test.tsx` exige que
+  el espejo, sobre un breakdown SIN los campos nuevos, pinte EXACTAMENTE el
+  texto de los 5 fixtures (incluido `interna-ptu`, la captura del cliente).
+- **Lo que NO cambió**: el campo de captura de horas pactadas
+  (`lib/admin/horas.ts`, acepta decimal o h:mm y devuelve h:mm solo cuando el
+  valor vino así) y «Horas pactadas 2.4 h». `tiempo_hhmm` /
+  `tramos_tiempo_total_hhmm` siguen en los tipos (compatibilidad), pero nadie
+  los pinta; `hhmm()` se retiró. Orden de deploy: API → pyservices → panel
+  (en cualquier otro orden la tabla también cuadra: panel y pyservices tienen
+  el espejo).
+- Barrido de otros relojes de TIEMPO DE VUELO (mismo día): el `<details>`
+  «Detalle del cálculo (motor)» (`quote-detalle-motor.tsx`) decía «pactado a
+  mano (2 h 20 min) · la regla daría …»; el eco en reloj se quitó (el pactado
+  ya se lee en decimal, 4 dec., en la misma fila). Quedan A PROPÓSITO: la
+  línea viva «= 2 h 20 min · 2.3333 hr × $600.00» de `CampoHorasPactadas` (es
+  la CAPTURA, que acepta h:mm) y el «~72 min» de taco-live (promedio
+  operativo del tramo en minutos, no un reloj).
 
 ### Fase 2.3 · BLOQUE A — dónde vive ahora cada control (22-sep-2026)
 
@@ -2105,7 +2173,10 @@ fixtures existentes **no** se regeneraron.
   partición de exentos, TUA en PESOS con su T.C., `mxn_nativos`, tramo ferry y
   cobro en MXN con comisión de terminal) e **`interna-extras`** (BLOQUE B: los
   tres sabores de EXTRA —en pesos con monto directo, con cantidad × unitario y
-  EXENTO— con su concepto CANÓNICO y la partición «No causan IVA» activa). Los
+  EXENTO— con su concepto CANÓNICO y la partición «No causan IVA» activa) e
+  **`interna-ptu`** (24-sep-2026: la captura del cliente reconstruida con folio
+  ficticio —CUN→PTU→CUN, 125 mi, $746/hr, horas pactadas 2.4— con TIEMPO VUELO
+  (HRS) «1.19» + «1.19» = «2.38»). Los
   payloads viajan DOS veces a propósito
   (`__fixtures__/escenarios-interna.ts`): como `interno` y convertidos a
   `breakdown`, para que fixture y pantalla no puedan divergir por una copia mal
@@ -2115,8 +2186,9 @@ fixtures existentes **no** se regeneraron.
   tocar `cotizacion_interna_pdf.py` hay que **regenerar**, nunca editar los
   HTML a mano.
 - **Textos del documento** (espejo de `cotizacion_interna_pdf.py`, en
-  `lib/admin/quote-sheet-interna.ts`, PURO + test): `hhmm` («01:18»),
-  `millasTxt` («157.3»), `horasTxt` («1.75 h»), `diaMes` («26-jun»),
+  `lib/admin/quote-sheet-interna.ts`, PURO + test): `horasADecimal` («1.19»;
+  `hhmm` se retiró el 24-sep-2026), `repartirHorasDecimales`,
+  `tiemposDeTabla`, `ENCABEZADO_TIEMPO`, `millasTxt` («157.3»), `horasTxt` («1.75 h»), `diaMes` («26-jun»),
   `diaLargo`, `montoInterno` (negativos con «−» tipográfico), `pctBanco`
   («8.8570 %»), `fechaCortaCobro`, `celdaRutaTramo` (**«CUN–PCE» con guion
   LARGO** —decisión 5— y RESPALDO al nombre largo si falta un IATA o la fila es

@@ -331,6 +331,9 @@ describe("horas por tramo (feedback 9-sep-2026: solo se pintan, nunca se calcula
     expect(horasTramoTexto({ tiempo_hr: 1.2 })).toBe("1.20 h");
     expect(horasTramoTexto({ tiempo_hr: 0.4833 })).toBe("0.48 h");
     expect(horasTramoTexto(null)).toBe("—");
+    // Con el texto repartido del API gana ese (igual a la celda de la tabla).
+    expect(horasTramoTexto({ tiempo_hr: 0.335, tiempo_horas: "0.34" })).toBe("0.34 h");
+    expect(horasTramoTexto({ tiempo_hr: 0.4833, tiempo_horas: "" })).toBe("0.48 h");
     expect(horasTramoTexto(undefined)).toBe("—");
   });
 });

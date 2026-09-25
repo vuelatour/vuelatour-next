@@ -38,7 +38,7 @@ import { ESCENARIOS_INTERNA } from "@/components/admin/quotes/__fixtures__/escen
  *
  * 1. ESTRUCTURA en LECTURA: misma secuencia de tags + clases que el papel.
  * 2. TEXTO en LECTURA: idéntico al del documento interno (formatos de dinero,
- *    «CUN–CZM» con guion largo, «26-jun», «00:27», «1.75 h», el ajuste con su
+ *    «CUN–CZM» con guion largo, «26-jun», «0.45» (horas decimales), «1.75 h», el ajuste con su
  *    motivo, el pie de cobros con su semáforo).
  * 3. TEXTO en EDICIÓN: el mismo, tomando de cada campo invisible lo que
  *    imprime (el `value` del input, el texto del selector, la fecha
@@ -225,13 +225,38 @@ const render = (props: QuoteSheetInternaProps) =>
   parsearHoja(renderToString(<QuoteSheetInterna {...props} />));
 
 describe("fixtures de la hoja interna", () => {
-  it("existen los 4 fixtures generados con pyservices (npm run gen:hoja-interna-fixture)", () => {
+  it("existen los 5 fixtures generados con pyservices (npm run gen:hoja-interna-fixture)", () => {
     expect(CASOS.map((c) => c.nombre).sort()).toEqual([
       "interna-070",
       "interna-311",
       "interna-329",
       "interna-extras",
+      "interna-ptu",
     ]);
+  });
+
+  /**
+   * TIEMPO VUELO (HRS) (24-sep-2026, API 0.0.33) — la captura del cliente:
+   * «la parte de tiempo de vuelo, lo podemos manejar solo en decimales por
+   * favor?». En hh:mm la tabla decía «01:12» + «01:12» y TOTAL «02:23»; en
+   * horas decimales los tramos SUMAN el total. El dinero no se movió.
+   */
+  it("interna-ptu congela el tiempo en horas decimales con la suma cuadrada", () => {
+    const html = CASOS.find((c) => c.nombre === "interna-ptu")!.html;
+    for (const t of [
+      "Tiempo vuelo (hrs)",
+      '<td class="num">125</td><td class="num">1.19</td><td class="num">$746.00</td><td class="num">$889.01</td>',
+      '<td class="num">250</td><td class="num">2.38</td><td></td><td class="num">$1,778.02 USD</td>',
+      "Horas pactadas 2.4 h",
+      "$12.38",
+      "$1,790.40 USD",
+      "Tiempo de vuelo en horas decimales (1.50 = 1 h 30 min) e incluye calzos (0.3 h en total)",
+    ]) {
+      expect(html, t).toContain(t);
+    }
+    expect(html).not.toContain("01:12");
+    expect(html).not.toContain("02:23");
+    expect(html).not.toContain("hh:mm");
   });
 
   /**
@@ -290,7 +315,7 @@ describe("fixtures de la hoja interna", () => {
     for (const t of [
       "CUN–CZM",
       "26-jun",
-      "00:27",
+      "0.45",
       "$1,650.00",
       "$742.50",
       "$2,475.00 USD",
@@ -377,22 +402,55 @@ describe("el dinero se LEE, nunca se multiplica en el panel", () => {
         tarifa_usd_hr: undefined,
         tiempo_hhmm: undefined,
         total_usd: undefined,
+        tiempo_horas: undefined,
       })),
       tramos_total_usd: undefined,
       tramos_tiempo_total_hhmm: undefined,
       tramos_tiempo_total_hr: undefined,
       tramos_ajuste_usd: undefined,
       tramos_ajuste_motivo: undefined,
+      tramos_tiempo_total_horas: undefined,
     };
     const html = renderToString(
       <QuoteSheetInterna {...base} breakdown={viejo} lectura />,
     );
     // El tiempo por tramo se sigue pudiendo formatear (viene del motor de
-    // siempre); lo que NO se inventa es el importe ni el pie.
+    // siempre, en horas decimales con el espejo); lo que NO se inventa es el
+    // importe ni el pie de dinero.
     expect(html).not.toContain("$742.50");
     expect(html).not.toContain("$2,475.00");
     expect(html).toContain("—");
+    expect(html).toContain('<td class="num">0.45</td>');
+    expect(html).not.toContain("00:27");
   });
+
+  /**
+   * Una cotización GUARDADA antes del API 0.0.33 se pinta desde su
+   * `calculo_snapshot` sin llamar al motor: no trae `tiempo_horas` ni
+   * `tramos_tiempo_total_horas`. El ESPEJO `repartirHorasDecimales` tiene que
+   * decir EXACTAMENTE lo que imprime el PDF (que sí los trae): mismo texto que
+   * el fixture, carácter por carácter, en los cinco escenarios.
+   */
+  it.each(CASOS)(
+    "snapshot anterior al 0.0.33: el espejo pinta lo mismo que el PDF · $nombre",
+    ({ html, props }) => {
+      const base = props();
+      const b = base.breakdown!;
+      const snapshotViejo = {
+        ...b,
+        tramos: (b.tramos ?? []).map((t) => {
+          const copia = { ...t };
+          delete copia.tiempo_horas;
+          return copia;
+        }),
+        tramos_tiempo_total_horas: undefined,
+      };
+      const esperado = colapsar(textoImpreso(parsearHoja(html), false));
+      expect(
+        colapsar(textoImpreso(render({ ...base, breakdown: snapshotViejo, lectura: true }), false)),
+      ).toBe(esperado);
+    },
+  );
 
   it("un tramo TECLEADO que el motor aún no calculó no inventa su total", () => {
     const base = caso329();

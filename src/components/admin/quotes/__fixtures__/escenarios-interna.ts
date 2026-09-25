@@ -6,6 +6,7 @@ import payload070 from "./interna-070.payload.json";
 import payload311 from "./interna-311.payload.json";
 import payload329 from "./interna-329.payload.json";
 import payloadExtras from "./interna-extras.payload.json";
+import payloadPtu from "./interna-ptu.payload.json";
 
 /**
  * ESCENARIOS de la HOJA INTERNA (Fase 2.2, 22-sep-2026). Por cada
@@ -34,6 +35,7 @@ const AEROPUERTOS = [
   { iata: "CZM", nombre: "Cozumel", latitud: 20.5224, longitud: -86.9256 },
   { iata: "HOL", nombre: "Holbox", latitud: 21.5216, longitud: -87.3796 },
   { iata: "MID", nombre: "Mérida", latitud: 20.937, longitud: -89.6577 },
+  { iata: "PTU", nombre: "Tulum", latitud: 20.0833, longitud: -87.5167 },
 ];
 
 const AERONAVES = [
@@ -152,6 +154,8 @@ function breakdownDe(p: CotizacionInterna, extras: ExtraConcepto[]): QuoteBreakd
       tarifa_usd_hr: t.tarifa_hora_usd,
       tiempo_hhmm: t.tiempo_hhmm,
       total_usd: t.total_usd,
+      // ADITIVO del API 0.0.33: TIEMPO VUELO (HRS) ya cuadrado.
+      tiempo_horas: t.tiempo_horas,
     })),
     // ECO del motor: el i-ésimo extra CAPTURADO con el monto que resolvió el
     // API (el mismo de su línea EXTRA canónica, en ese orden).
@@ -205,6 +209,7 @@ function breakdownDe(p: CotizacionInterna, extras: ExtraConcepto[]): QuoteBreakd
     tramos_tiempo_total_hhmm: p.tramos_tiempo_total_hhmm,
     tramos_ajuste_usd: p.tramos_ajuste_usd,
     tramos_ajuste_motivo: p.tramos_ajuste_motivo,
+    tramos_tiempo_total_horas: p.tramos_tiempo_total_horas,
   } as QuoteBreakdown;
 }
 
@@ -328,4 +333,13 @@ export const ESCENARIOS_INTERNA: Record<string, () => QuoteSheetInternaProps> = 
    */
   "interna-extras": () =>
     escenario(interno(payloadExtras), "c1", EXTRAS_CAPTURADOS["interna-extras"]),
+  /**
+   * TIEMPO VUELO (HRS) en horas decimales (24-sep-2026, API 0.0.33): la
+   * captura del cliente reconstruida —CUN→PTU→CUN, 125 mi por tramo a 120 kt
+   * (1.19166… h con calzo), $746/hr y horas pactadas 2.4 h— con un folio
+   * ficticio. En hh:mm la tabla decía «01:12» + «01:12» y TOTAL «02:23»; ahora
+   * «1.19» + «1.19» = «2.38», y el dinero ($889.01 × 2 + $12.38 = $1,790.40)
+   * es el MISMO de la captura.
+   */
+  "interna-ptu": () => escenario(interno(payloadPtu), "c2"),
 };

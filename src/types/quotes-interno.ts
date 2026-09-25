@@ -32,8 +32,10 @@ export interface CotizacionInternaTramo {
   millas: number | null;
   /** Horas COBRABLES del tramo, con calzos incluidos. */
   tiempo_hr: number;
-  /** El mismo tiempo como «01:18». */
+  /** LEGADO: el mismo tiempo como «01:18». Ya no se pinta (API 0.0.33). */
   tiempo_hhmm: string;
+  /** «TIEMPO VUELO (HRS)» (API 0.0.33): «1.19»; `null` = sin tiempo («—»). Ausente con un API previo. */
+  tiempo_horas?: string | null;
   tarifa_hora_usd: number | null;
   /** `snapshot.tramos[].total_usd` o `round2(tiempo_hr × tarifa)` — lo decide el API. */
   total_usd: number;
@@ -155,7 +157,10 @@ export interface CotizacionInterna {
   // ---- (2) Tramos cotizados y horas ----
   tramos_cotizados: CotizacionInternaTramo[];
   tramos_tiempo_total_hr: number;
+  /** LEGADO «02:36»: ya no se pinta (API 0.0.33). */
   tramos_tiempo_total_hhmm: string;
+  /** Fila TOTAL de «TIEMPO VUELO (HRS)» (API 0.0.33): «2.38». Ausente con un API previo. */
+  tramos_tiempo_total_horas?: string | null;
   tramos_total_usd: number;
   /** Línea TIEMPO_VUELO canónica − Σ tramos (0 si cuadra). */
   tramos_ajuste_usd: number;
