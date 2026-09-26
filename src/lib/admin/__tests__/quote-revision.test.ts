@@ -8,7 +8,12 @@ import {
   textoResumenCambios,
   type QuoteFormDiff,
 } from "@/lib/admin/quote-revision";
-import { candadoRevision } from "@/lib/admin/quote-revision";
+import {
+  candadoRevision,
+  RAZON_REVISION,
+  razonCobrada,
+  textoQuienesEditanCobrada,
+} from "@/lib/admin/quote-revision";
 
 /** Form base "limpio" (rehidratado de una v2 típica CUN→HOL→CUN, 4 pax). */
 function base(): QuoteFormDiff {
@@ -328,6 +333,163 @@ describe("candadoRevision · dinero cobrado (espejo D3)", () => {
     const c = candadoRevision({ ...base, estado: "CANCELADO" } as typeof base, { totalCobrado: 500 });
     expect(c.canRevise).toBe(true);
     expect(c.bloqueadaPorCobro).toBe(false);
+  });
+});
+
+/**
+ * PERMISO ESPECIAL POR PERSONA (26-sep-2026, API 0.0.37). Pedido de los
+ * dueños con las capturas de #305/#317: «que se desbloquee para mí, no para
+ * todos». Solo abre el candado del COBRO; factura, mes cerrado y servicio
+ * siguen mandando. Los demás ven quién puede editarla.
+ */
+describe("candadoRevision · permiso especial para editar cotizaciones cobradas", () => {
+  const base = {
+    estado: "CONFIRMADO",
+    cobrado: true,
+    facturado: false,
+    fecha_vuelo: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+    escalas: [],
+  } as unknown as Parameters<typeof candadoRevision>[0];
+  const cobros = { totalCobrado: 600, cobrosSinTc: 0 };
+
+  it("con cobros y permiso ⇒ editable, sin candado por cobro, marcada como edición con cobros", () => {
+    const c = candadoRevision(base, { ...cobros, puedeEditarCobrada: true });
+    expect(c.canRevise).toBe(true);
+    expect(c.bloqueadaPorCobro).toBe(false);
+    expect(c.edicionConCobros).toBe(true);
+    expect(c.razon).toBeNull();
+  });
+
+  it("la forma corta del contrato `candadoRevision(quote, { puedeEditarCobrada })` también abre", () => {
+    const c = candadoRevision(base, { puedeEditarCobrada: true });
+    expect(c.canRevise).toBe(true);
+    expect(c.edicionConCobros).toBe(true);
+  });
+
+  it("anticipo parcial o cobro MXN sin TC: el permiso abre igual", () => {
+    const parcial = { ...base, cobrado: false } as typeof base;
+    expect(
+      candadoRevision(parcial, { totalCobrado: 250, puedeEditarCobrada: true }).edicionConCobros,
+    ).toBe(true);
+    expect(
+      candadoRevision(parcial, { totalCobrado: 0, cobrosSinTc: 1, puedeEditarCobrada: true })
+        .canRevise,
+    ).toBe(true);
+  });
+
+  it("sin permiso ⇒ igual que hoy, pero la razón dice quién puede editarla", () => {
+    const c = candadoRevision(base, {
+      ...cobros,
+      puedeEditarCobrada: false,
+      editoresCobrada: ["Alejandro Canales", "Pablo Canales"],
+    });
+    expect(c.canRevise).toBe(false);
+    expect(c.bloqueadaPorCobro).toBe(true);
+    expect(c.edicionConCobros).toBe(false);
+    expect(c.razon).toBe(
+      "El vuelo ya tiene cobros registrados: la cotización no puede editarse. Solo pueden editarla: Alejandro Canales, Pablo Canales.",
+    );
+    expect(c.quienesEditanCobrada).toBe(
+      "Solo pueden editarla: Alejandro Canales, Pablo Canales.",
+    );
+  });
+
+  it("sin permiso y mes cerrado: NO se nombra a nadie (el permiso tampoco la abriría)", () => {
+    // Revisión adversaria 26-sep-2026: toda cotización cobrada de hace dos
+    // meses o más decía «Solo pueden editarla: Alejandro Canales, Pablo
+    // Canales» y ellos tampoco podían (el API rechaza por mes cerrado ANTES
+    // que por el cobro).
+    const viejo = {
+      ...base,
+      fecha_vuelo: new Date(Date.now() - 120 * 86_400_000).toISOString(),
+    } as typeof base;
+    const c = candadoRevision(viejo, {
+      ...cobros,
+      editoresCobrada: ["Alejandro Canales", "Pablo Canales"],
+    });
+    expect(c.canRevise).toBe(false);
+    expect(c.bloqueadaPorCobro).toBe(true);
+    expect(c.quienesEditanCobrada).toBeNull();
+    expect(c.razon).toBe(RAZON_REVISION.cobrado);
+  });
+
+  it("sin permiso y vuelo de servicio: la razón es la del servicio y no se nombra a nadie", () => {
+    const servicio = {
+      ...base,
+      escalas: [{ tipo_parada: "SERVICIO", pasajeros: 0, cancelada_at: null }],
+    } as unknown as typeof base;
+    const c = candadoRevision(servicio, {
+      ...cobros,
+      editoresCobrada: ["Alejandro Canales", "Pablo Canales"],
+    });
+    expect(c.quienesEditanCobrada).toBeNull();
+    expect(c.razon).toBe(RAZON_REVISION.servicio);
+  });
+
+  it("sin nombres (API previo o no cargaron) ⇒ la razón de siempre", () => {
+    expect(candadoRevision(base, cobros).razon).toBe(RAZON_REVISION.cobrado);
+    expect(candadoRevision(base, { ...cobros, editoresCobrada: [" ", ""] }).razon).toBe(
+      RAZON_REVISION.cobrado,
+    );
+    expect(razonCobrada(null)).toBe(RAZON_REVISION.cobrado);
+  });
+
+  it("la CFDI sigue bloqueando aunque tenga el permiso", () => {
+    const c = candadoRevision({ ...base, facturado: true } as typeof base, {
+      ...cobros,
+      puedeEditarCobrada: true,
+    });
+    expect(c.canRevise).toBe(false);
+    expect(c.edicionConCobros).toBe(false);
+    expect(c.bloqueadaPorFactura).toBe(true);
+    expect(c.razon).toBe(RAZON_REVISION.facturado);
+  });
+
+  it("el mes cerrado sigue bloqueando aunque tenga el permiso", () => {
+    const viejo = {
+      ...base,
+      fecha_vuelo: new Date(Date.now() - 120 * 86_400_000).toISOString(),
+    } as typeof base;
+    const c = candadoRevision(viejo, { ...cobros, puedeEditarCobrada: true });
+    expect(c.canRevise).toBe(false);
+    expect(c.bloqueadaPorMes).toBe(true);
+    expect(c.edicionConCobros).toBe(false);
+    expect(c.razon).toBe(RAZON_REVISION.mesCerrado);
+  });
+
+  it("el vuelo de servicio sigue bloqueando aunque tenga el permiso", () => {
+    const servicio = {
+      ...base,
+      escalas: [{ tipo_parada: "SERVICIO", pasajeros: 0, cancelada_at: null }],
+    } as unknown as typeof base;
+    const c = candadoRevision(servicio, { ...cobros, puedeEditarCobrada: true });
+    expect(c.canRevise).toBe(false);
+    expect(c.edicionConCobros).toBe(false);
+    expect(c.razon).toBe(RAZON_REVISION.servicio);
+  });
+
+  it("sin cobros el permiso no cambia nada (no es «edición con cobros»)", () => {
+    const limpia = { ...base, cobrado: false } as typeof base;
+    const c = candadoRevision(limpia, { totalCobrado: 0, puedeEditarCobrada: true });
+    expect(c.canRevise).toBe(true);
+    expect(c.edicionConCobros).toBe(false);
+  });
+
+  it("CANCELADA con cobros: editable para todos y nunca «edición con cobros»", () => {
+    const cancelada = { ...base, estado: "CANCELADO" } as typeof base;
+    expect(candadoRevision(cancelada, { ...cobros, puedeEditarCobrada: true }).edicionConCobros).toBe(
+      false,
+    );
+    expect(candadoRevision(cancelada, cobros).canRevise).toBe(true);
+  });
+
+  it("«Solo pueden editarla: …» con la misma redacción que el 409 del API", () => {
+    expect(textoQuienesEditanCobrada(["Alejandro Canales", "Pablo Canales"])).toBe(
+      "Solo pueden editarla: Alejandro Canales, Pablo Canales.",
+    );
+    expect(textoQuienesEditanCobrada(["Pablo Canales"])).toBe("Solo pueden editarla: Pablo Canales.");
+    expect(textoQuienesEditanCobrada([])).toBeNull();
+    expect(textoQuienesEditanCobrada(undefined)).toBeNull();
   });
 });
 

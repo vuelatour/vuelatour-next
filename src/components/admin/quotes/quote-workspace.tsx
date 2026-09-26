@@ -101,6 +101,8 @@ export function QuoteWorkspace({
   voucherUrls = {},
   grupoTotalAviones = null,
   navegacion = null,
+  permisoEditarCobrada = false,
+  editoresCobrada = null,
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -141,6 +143,18 @@ export function QuoteWorkspace({
    * previo) ⇒ no se pintan las flechas; el regreso conserva los filtros.
    */
   navegacion?: { vecinos: QuoteVecinos | null; qs: string } | null;
+  /**
+   * PERMISO ESPECIAL por persona (26-sep-2026, API 0.0.37):
+   * `/me.permisos.editar_cotizacion_cobrada`. Con cobros y permiso la
+   * cotización se EDITA (chip y banda ámbar, confirmación única, saldo nuevo
+   * en «Guardar vN»). false / API previo ⇒ todo como hoy.
+   */
+  permisoEditarCobrada?: boolean;
+  /**
+   * Quién puede editar una cotización cobrada (nombres del API) para la
+   * razón del candado de los DEMÁS. null = no se sabe (razón de siempre).
+   */
+  editoresCobrada?: string[] | null;
 }) {
   // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
   // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
@@ -150,7 +164,14 @@ export function QuoteWorkspace({
       (c) => c.moneda === "MXN" && !c.tc_usd_mxn && !quote.tc_usd_mxn,
     ).length,
   };
-  const candado = candadoRevision(quote, cobrosInfo);
+  // Permiso especial por persona (26-sep-2026): con cobros y permiso el
+  // candado del COBRO se abre; factura, mes cerrado y servicio siguen.
+  const candadoOpts = {
+    ...cobrosInfo,
+    puedeEditarCobrada: permisoEditarCobrada,
+    editoresCobrada,
+  };
+  const candado = candadoRevision(quote, candadoOpts);
   const puedeEditarPdf = rol === "ADMIN" || rol === "COORDINADOR";
 
   // ---- COBROS junto al total (pedido del cliente 9-sep-2026) ----
@@ -176,7 +197,9 @@ export function QuoteWorkspace({
   });
   const registrarTitle = vueloCancelado
     ? "Vuelo cancelado: registra el cargo por cancelación o el anticipo retenido"
-    : "Al registrar un cobro la cotización queda bloqueada para edición";
+    : permisoEditarCobrada && candado.canRevise
+      ? "Registra un cobro del vuelo. Con tu permiso especial la cotización sigue editable."
+      : "Al registrar un cobro la cotización queda bloqueada para edición";
   const abrirCobro = puedeRegistrarCobro ? () => setCobroOpen(true) : undefined;
   // Edición directa: editable desde el primer render si el candado lo permite.
   const editable = candado.canRevise;
@@ -432,7 +455,7 @@ export function QuoteWorkspace({
           <div className="flex items-center gap-2 flex-wrap">
             <QuoteActionsBar
               quote={quote}
-              cobrosInfo={cobrosInfo}
+              cobrosInfo={candadoOpts}
               edicion={
                 editable
                   ? {
@@ -522,6 +545,14 @@ export function QuoteWorkspace({
         clientEsInterno={clientEsInterno}
         bloqueadoRazon={editable ? null : candado.razon}
         requiereConfirmacionEdicion={requiereConfirmacionEdicion}
+        // COBRADA · editable con permiso (26-sep-2026): el cobrado es el del
+        // API (cobrosEnUsd del snapshot); el cotizador solo lo resta del
+        // total del motor para enseñar el saldo nuevo al guardar.
+        edicionConCobros={
+          candado.edicionConCobros
+            ? { cobradoUsd: totalCobrado, cobrosSinTc: cobrosInfo.cobrosSinTc }
+            : null
+        }
         onEstadoEdicion={setEdicion}
         // El cotizador ya hace router.refresh() tras guardar; aquí no hay
         // modo que cerrar (la edición es directa).

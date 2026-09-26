@@ -257,6 +257,13 @@ export interface ReviseQuotePayload extends CalculateQuoteRequest {
  */
 export interface RevisedQuote extends PersistedQuote {
   avisos?: string[] | null;
+  /**
+   * La versión se guardó CON cobros registrados gracias al permiso especial
+   * por persona (API 0.0.37, ADITIVO). El API ya recalculó la bandera
+   * `cobrado` (semáforo y «Pagado» del calendario) y mandó en `avisos[]` el
+   * saldo o el sobrecobro que quedó. Ausente = API previo o sin cobros.
+   */
+  edicion_con_cobros?: boolean;
 }
 
 export async function reviseQuoteAction(
@@ -271,6 +278,13 @@ export async function reviseQuoteAction(
     });
     revalidatePath("/admin/quotes");
     revalidatePath(`/admin/quotes/${id}`);
+    // Con cobros (permiso especial): la bandera `cobrado` pudo cambiar y con
+    // ella el semáforo de la lista de vuelos, su detalle y el calendario.
+    if (updated?.edicion_con_cobros === true) {
+      revalidatePath("/admin/flights");
+      revalidatePath(`/admin/flights/${id}`);
+      revalidatePath("/admin/calendar");
+    }
     return { ok: true, data: updated };
   } catch (err) {
     return fail(err);

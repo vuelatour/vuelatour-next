@@ -20,6 +20,12 @@ import type { PersistedEscala, PersistedQuote } from "@/types/quotes-persisted";
  *   ventana de mes. El backend valida lo mismo.
  * - Vuelo de SERVICIO (taller/parada técnica sin pasajeros) no se cotiza: el
  *   backend rechaza igual con 409.
+ * - PERMISO ESPECIAL (26-sep-2026, API 0.0.37): quien está en la lista
+ *   `editores_cotizacion_cobrada` (Configuración; `/me.permisos.
+ *   editar_cotizacion_cobrada`) SÍ edita una cotización con cobros —pedido de
+ *   los dueños: «que se desbloquee para mí, no para todos»—. Solo se abre el
+ *   candado del COBRO: factura, mes cerrado y servicio siguen mandando. Para
+ *   los demás la razón dice quién puede editarla (nombres del API).
  */
 
 export const RAZON_REVISION = {
@@ -40,10 +46,28 @@ export interface CandadoRevision {
   canRevise: boolean;
   esCancelada: boolean;
   bloqueadaPorMes: boolean;
-  /** Cobrado (sin factura): la revisión cambiaría un total YA cobrado. */
+  /**
+   * Cobrado (sin factura) y SIN el permiso especial: la revisión cambiaría un
+   * total YA cobrado.
+   */
   bloqueadaPorCobro: boolean;
+  /**
+   * Tiene dinero cobrado, el usuario TIENE el permiso especial y ningún otro
+   * candado aplica ⇒ se edita con banda ámbar, confirmación única y el
+   * saldo nuevo en «Guardar vN» (26-sep-2026). Nunca en una CANCELADA (ahí el
+   * cobro no bloquea a nadie).
+   */
+  edicionConCobros: boolean;
   bloqueadaPorFactura: boolean;
   esVueloServicio: boolean;
+  /**
+   * «Solo pueden editarla: …» cuando el candado es SOLO el del cobro y el
+   * permiso especial de esas personas de verdad lo abriría (26-sep-2026).
+   * null si no se conocen los nombres o si otro candado (mes cerrado,
+   * servicio, CFDI) los frenaría a ellos también: nombrarlos ahí sería
+   * mandar al operador a pedirle la corrección a quien tampoco puede.
+   */
+  quienesEditanCobrada: string | null;
   /** Razón legible cuando NO se puede editar; null cuando sí. */
   razon: string | null;
 }
@@ -74,32 +98,85 @@ export interface CobrosInfoCandado {
   cobrosSinTc?: number | null;
 }
 
+/**
+ * Opciones del candado: el dinero cobrado (espejo D3) y el PERMISO ESPECIAL
+ * por persona (26-sep-2026). Es un solo objeto para que
+ * `candadoRevision(quote, { puedeEditarCobrada })` y el uso de siempre
+ * (`candadoRevision(quote, cobrosInfo)`) convivan.
+ */
+export interface CandadoRevisionOpts extends CobrosInfoCandado {
+  /**
+   * `/me.permisos.editar_cotizacion_cobrada === true`. Ausente/false (API
+   * previo o sin permiso) ⇒ el cobro bloquea como siempre.
+   */
+  puedeEditarCobrada?: boolean;
+  /**
+   * Nombres de quienes pueden editar una cotización cobrada (GET
+   * /v1/config/editores-cotizacion-cobrada). Solo alimentan la RAZÓN de
+   * quien no tiene permiso; vacío/null ⇒ la razón de siempre.
+   */
+  editoresCobrada?: readonly string[] | null;
+}
+
+/**
+ * «Solo pueden editarla: Alejandro Canales, Pablo Canales.» — MISMA
+ * redacción que el 409 `COTIZACION_COBRADA` del API 0.0.37. null sin nombres.
+ */
+export function textoQuienesEditanCobrada(
+  nombres: readonly string[] | null | undefined,
+): string | null {
+  const lista = (nombres ?? []).map((n) => n.trim()).filter(Boolean);
+  if (lista.length === 0) return null;
+  return `Solo pueden editarla: ${lista.join(", ")}.`;
+}
+
+/** Razón del candado por cobro, con quién puede editarla si se sabe. */
+export function razonCobrada(nombres?: readonly string[] | null): string {
+  const quienes = textoQuienesEditanCobrada(nombres);
+  return quienes ? `${RAZON_REVISION.cobrado} ${quienes}` : RAZON_REVISION.cobrado;
+}
+
 export function candadoRevision(
   q: Pick<PersistedQuote, "estado" | "cobrado" | "facturado" | "fecha_vuelo"> & {
     escalas?: PersistedEscala[] | null;
   },
-  cobros?: CobrosInfoCandado,
+  opts?: CandadoRevisionOpts,
 ): CandadoRevision {
   const enVentana = cotizacionEditablePorFecha(q.fecha_vuelo);
   const esCancelada = q.estado === "CANCELADO";
   const tieneDineroCobrado =
     Boolean(q.cobrado) ||
-    Math.abs(Number(cobros?.totalCobrado ?? 0)) > 0.005 ||
-    Number(cobros?.cobrosSinTc ?? 0) > 0;
+    Math.abs(Number(opts?.totalCobrado ?? 0)) > 0.005 ||
+    Number(opts?.cobrosSinTc ?? 0) > 0;
+  const conPermiso = opts?.puedeEditarCobrada === true;
+  // El cobro FRENA solo a quien no tiene el permiso especial.
+  const cobroFrena = tieneDineroCobrado && !conPermiso;
   const revisableSinVentana = esCancelada
     ? !q.facturado
-    : !tieneDineroCobrado && !q.facturado;
+    : !cobroFrena && !q.facturado;
   const esVueloServicio = esVueloDeServicio(q.escalas);
   const bloqueadaPorMes = revisableSinVentana && !enVentana;
-  const bloqueadaPorCobro = !esCancelada && tieneDineroCobrado && !q.facturado;
+  const bloqueadaPorCobro = !esCancelada && cobroFrena && !q.facturado;
   const bloqueadaPorFactura = q.facturado;
   const canRevise = revisableSinVentana && enVentana && !esVueloServicio;
+  const edicionConCobros =
+    canRevise && !esCancelada && tieneDineroCobrado && conPermiso;
+  // A quién pedirle la corrección: SOLO si el cobro es lo único que frena.
+  // Con el mes cerrado o un vuelo de servicio el API rechaza también a los
+  // editores (esos 409 van ANTES que el del cobro), así que nombrarlos sería
+  // mandar al operador con alguien que tampoco puede.
+  const quienesEditanCobrada =
+    bloqueadaPorCobro && enVentana && !esVueloServicio
+      ? textoQuienesEditanCobrada(opts?.editoresCobrada)
+      : null;
   const razon = esVueloServicio
     ? RAZON_REVISION.servicio
     : bloqueadaPorFactura
       ? RAZON_REVISION.facturado
       : bloqueadaPorCobro
-        ? RAZON_REVISION.cobrado
+        ? quienesEditanCobrada
+          ? `${RAZON_REVISION.cobrado} ${quienesEditanCobrada}`
+          : RAZON_REVISION.cobrado
         : bloqueadaPorMes
           ? RAZON_REVISION.mesCerrado
           : null;
@@ -108,8 +185,10 @@ export function candadoRevision(
     esCancelada,
     bloqueadaPorMes,
     bloqueadaPorCobro,
+    edicionConCobros,
     bloqueadaPorFactura,
     esVueloServicio,
+    quienesEditanCobrada,
     razon,
   };
 }

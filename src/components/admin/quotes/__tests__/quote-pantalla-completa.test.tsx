@@ -320,6 +320,22 @@ const CASOS: Caso[] = [
     ),
   },
   {
+    // PERMISO ESPECIAL (26-sep-2026): cobrada y editable para quien está en
+    // `editores_cotizacion_cobrada` — la pantalla entera sigue las mismas
+    // reglas (ids, exentos, nombres accesibles) que la editable normal.
+    nombre: "#329 · ADMIN · cobrada con permiso",
+    el: () => (
+      <QuoteCalculator
+        mode="revise"
+        {...comun}
+        rol="ADMIN"
+        initialQuote={quote329({ cobrado: true })}
+        clientName="Sam Meacham"
+        edicionConCobros={{ cobradoUsd: 600, cobrosSinTc: 0 }}
+      />
+    ),
+  },
+  {
     nombre: "#329 · ADMIN · ruta operativa distinta",
     el: () => (
       <QuoteCalculator
@@ -977,5 +993,72 @@ describe("un aviso, una vez", () => {
     // sigue a la vista al hacer scroll). La banda de avisos ya no lo repite.
     expect(veces, `«está en taller» aparece ${veces} veces`).toBeLessThanOrEqual(2);
     expect(veces).toBeGreaterThan(0);
+  });
+});
+
+// ---------- 10. Cotización cobrada: editable con permiso por persona ----------
+
+/**
+ * Pedido de los dueños (26-sep-2026, capturas de #305 y #317): «necesito que
+ * eso se desbloquee para mí, no para todos». Con el permiso, la pantalla que
+ * antes era LECTURA con «Copiar como nueva cotización» se abre editable con el
+ * chip y la banda ámbar; sin él, sigue bloqueada y dice quién puede editarla.
+ */
+describe("cotización cobrada · permiso especial", () => {
+  const conPermiso = () =>
+    render(CASOS.find((c) => c.nombre === "#329 · ADMIN · cobrada con permiso")!);
+
+  it("con permiso: chip ámbar en la barra y banda ámbar sobre el papel", () => {
+    const html = conPermiso();
+    expect(html).toContain("Cobrada · editable con permiso");
+    expect(html).toContain(
+      "Esta cotización ya tiene cobros por $600 USD. Tienes permiso para corregirla: al guardar cambia el total y el saldo se recalcula con los cobros que ya existen (los cobros no se modifican).",
+    );
+  });
+
+  it("con permiso: NO es lectura (sin 🔒 razón ni «Copiar como nueva cotización»)", () => {
+    const html = conPermiso();
+    expect(html).not.toContain("Copiar como nueva cotización");
+    expect(html).not.toContain("la cotización no puede editarse");
+    // El método de cobro previsto (lo que decide el IVA) es un control, no
+    // texto — en LECTURA el ancla no existe (así se sabe que la sonda sirve).
+    expect(html).toMatch(/\sid="metodo-pago-field"/);
+    const lectura = render(CASOS.find((c) => c.nombre === "#329 · ADMIN · lectura (cobrada)")!);
+    expect(lectura).not.toMatch(/\sid="metodo-pago-field"/);
+  });
+
+  it("sin permiso: la razón nombra a quién puede editarla y se ofrece copiar", () => {
+    const razon =
+      "El vuelo ya tiene cobros registrados: la cotización no puede editarse. Solo pueden editarla: Alejandro Canales, Pablo Canales.";
+    const html = renderToStaticMarkup(
+      <QuoteCalculator
+        mode="revise"
+        {...comun}
+        rol="ADMIN"
+        initialQuote={quote329({ cobrado: true })}
+        clientName="Sam Meacham"
+        bloqueadoRazon={razon}
+        // Aunque llegara, en lectura no se pinta nada del permiso.
+        edicionConCobros={{ cobradoUsd: 600 }}
+      />,
+    );
+    expect(html).toContain(razon);
+    expect(html).toContain("Copiar como nueva cotización");
+    expect(html).not.toContain("Cobrada · editable con permiso");
+    expect(html).not.toContain("Tienes permiso para corregirla");
+  });
+
+  it("sin la prop (API previo) todo queda como hoy", () => {
+    const html = renderToStaticMarkup(
+      <QuoteCalculator
+        mode="revise"
+        {...comun}
+        rol="ADMIN"
+        initialQuote={quote329()}
+        clientName="Sam Meacham"
+      />,
+    );
+    expect(html).not.toContain("Cobrada · editable con permiso");
+    expect(html).not.toContain("Tienes permiso para corregirla");
   });
 });

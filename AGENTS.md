@@ -393,7 +393,9 @@ porque en la cotización interna sí va a aparecer todo».
   `lib/admin/quote-revision.ts`, `RAZON_REVISION`); si no, lectura con 🔒,
   la razón en la TotalBar y «Copiar como nueva cotización» (prellena
   `/new?d=`). Cobrado bloquea en cualquier estado (D3; el API responde 409
-  `COTIZACION_COBRADA` → banner rojo + liga a `#cobros-vuelo`).
+  `COTIZACION_COBRADA` → banner rojo + liga a `#cobros-vuelo`) **salvo para
+  quien tiene el permiso especial por persona** (26-sep-2026, ver «Cotización
+  cobrada: editable con permiso por persona» abajo).
 - «Hay cambios» = diff SEMÁNTICO `resumirCambios(base, values, ctx)` (nunca
   `isDirty`; normaliza número/string/booleano; ignora `motivo`,
   `tarifa_personalizada`, `tipo`, `ruta_id`, `escalas_operacion`; textos
@@ -466,6 +468,115 @@ porque en la cotización interna sí va a aparecer todo».
 - `QuoteCobrosCard` (#cobros-vuelo) se pinta SIEMPRE debajo de la hoja
   (0 cobros = «Sin cobros registrados» + botón); la página trae el snapshot
   en todo estado (best-effort). Nada de cobros dentro del papel.
+
+## Cotización cobrada: editable con permiso POR PERSONA (26-sep-2026, API 0.0.37)
+
+Pedido de los dueños por WhatsApp (capturas de #305 y #317 con el chip
+«Bloqueada · vuelo cobrado» y la banda roja): «un vuelo que se cobró en
+efectivo pero estaba cotizado como para transferencia, entonces tenía IVA:
+decía 754 dólares, pero entró el cobro en efectivo por 600… Yo necesito que
+eso se desbloquee para mí, no para todos… Pero yo o Pablo sí necesitamos
+poder entrar y hacer modificaciones.» Es por PERSONA, no por rol: todos los
+de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
+
+- **De dónde sale el permiso**: `GET /v1/me` → `permisos.editar_cotizacion_
+  cobrada` (ADITIVO; `MeResponse.permisos` opcional). Lo resuelve el API de
+  la lista `editores_cotizacion_cobrada` (configuración, `valor_json`,
+  sembrada con Alejandro y Pablo Canales). Helpers PUROS en
+  `lib/admin/cotizacion-cobrada.ts` (`puedeEditarCotizacionCobrada`,
+  `apiConPermisosPorPersona`). **API previo (sin `permisos`) ⇒ todo como
+  hoy** y no se pide la lista.
+- **Candado (fuente única)**: `candadoRevision(quote, { ...cobrosInfo,
+  puedeEditarCobrada, editoresCobrada })` (`lib/admin/quote-revision.ts`,
+  `CandadoRevisionOpts extends CobrosInfoCandado`). Con cobros y permiso ⇒
+  `canRevise` y `edicionConCobros: true`, `bloqueadaPorCobro: false`. Solo
+  abre el candado del COBRO: factura (CFDI), mes cerrado y servicio siguen
+  (y el grupo/vuelo ya volado los decide el API). CANCELADA nunca es
+  «edición con cobros» (ahí el cobro no bloquea a nadie). Sin permiso: igual
+  que hoy, pero la razón es `razonCobrada(nombres)` = `RAZON_REVISION.cobrado`
+  + «Solo pueden editarla: Alejandro Canales, Pablo Canales.» — MISMA
+  redacción que el 409 del API. Los nombres los pide la página de la
+  cotización a `GET /v1/config/editores-cotizacion-cobrada` SOLO para quien no
+  tiene el permiso y con `/me.permisos` presente; si no llegan, la razón de
+  siempre (sin aviso: es texto de apoyo).
+- **A quién se nombra** (revisión adversaria 26-sep-2026):
+  `candado.quienesEditanCobrada` (fuente única; la razón y el diálogo
+  «Bloqueada · vuelo cobrado» de la barra de acciones lo leen de ahí) es
+  «Solo pueden editarla: …» SOLO cuando el cobro es lo único que frena. Con
+  el MES CERRADO o un vuelo de SERVICIO el permiso tampoco la abriría (el API
+  rechaza esos 409 ANTES que el del cobro) y se deja `null`: si no, toda
+  cotización cobrada de hace dos meses mandaba al operador a pedirle la
+  corrección a Alejandro o Pablo, que tampoco pueden.
+- **Sin cobros cargados no hay permiso en pantalla**: la página pide el
+  snapshot con `degradado.opcional("los cobros del vuelo", …)` (si falla, se
+  AVISA — antes era un `.catch(() => null)` mudo que pintaba «sin cobros») y
+  pasa `permisoEditarCobrada = permiso && cobrosVuelo != null`. Sin los
+  cobros la banda diría «ya tiene cobros por $0 USD» y el diálogo «Guardar
+  vN» un saldo igual al total: falla CERRADO, se recarga y el API vuelve a
+  decidir al guardar.
+- **Pantalla con permiso** (`QuoteWorkspace` pasa `edicionConCobros =
+  { cobradoUsd: totalCobrado, cobrosSinTc }` al cotizador): chip ÁMBAR
+  «Cobrada · editable con permiso» en la TotalBar (en vez del botón
+  «Bloqueada · vuelo cobrado» de la barra de acciones, que ya no sale); banda
+  ámbar sobre el papel «Esta cotización ya tiene cobros por $X USD. Tienes
+  permiso para corregirla: al guardar cambia el total y el saldo se recalcula
+  con los cobros que ya existen (los cobros no se modifican).» (+ aviso de
+  cobros MXN sin T.C.); **confirmación ÚNICA** al primer cambio (misma
+  mecánica que CONFIRMADO/RESERVA; si aplican las dos, UN diálogo con el
+  texto del dinero y la explicación de tripulación al final:
+  `textoConfirmarEdicionConCobros`).
+- **«Guardar vN» con cobros**: `ResumenGuardadoConCobros`
+  (`quote-resumen-guardado-cobros.tsx`) sustituye la línea «Total con IVA»:
+  «Total $754 → $600 USD», «Cobrado $600 USD (no cambia)» y «Saldo nuevo $X
+  USD» / «Saldo nuevo $0 USD · liquidada» / «Sobrecobro $X USD» (rojo, con
+  «regístrala como reembolso en Cobros del vuelo» — NUNCA «otro ingreso»: el
+  ingreso del vuelo ya sale de los cobros y se contaría dos veces). Total =
+  el del MOTOR (`breakdown.totales.total_usd`), cobrado = el del API; la
+  única cuenta es la resta visible `saldoTrasEdicion` con la tolerancia de
+  `pendienteCobro` (1 USD, en los dos sentidos). La vista previa del motivo
+  muestra el prefijo `[Con cobros · permiso especial] ` que antepone el API
+  (el panel NO lo manda). Tras guardar: `toastAvisos` pinta el saldo/
+  sobrecobro que manda el API, el toast dice «(con cobros · permiso
+  especial)» si llega `edicion_con_cobros: true`, y `reviseQuoteAction`
+  revalida también `/admin/flights`, el detalle del vuelo y el calendario
+  (la bandera `cobrado` la recalcula el API con `refreshCobradoFlag`).
+  **Los cobros no se tocan.**
+- **Configuración · «Editan cotizaciones cobradas»**
+  (`configuracion/editores-cotizacion-cobrada-section.tsx`, action
+  `setEditoresCotizacionCobradaAction` → `PUT
+  /v1/config/editores-cotizacion-cobrada {usuario_ids}`): switches por
+  persona SOLO si `puede_modificar` (estar en la lista); el último
+  encendido no se apaga (la lista nunca queda vacía); «Guardar» confirma
+  quién gana y quién pierde el permiso y advierte si te quitas a ti
+  (`textoConfirmarEditores`). Los demás la ven de SOLO LECTURA («Hoy pueden
+  editarlas: …» + «Solo quien ya está en la lista puede cambiarla.»).
+  Candidatos: los `candidatos` del API (oficina activa: ADMIN/COORDINADOR/
+  FACTURACION) — o `/v1/users?estado=ACTIVO` con un API que no los mande —
+  filtrados a `ROLES_EDITAN_COTIZACION` (quien puede GUARDAR una cotización:
+  el API solo da `/me.permisos` a esos roles, así que a Facturación sería un
+  switch que no hace nada) + los ya elegidos que siguen activos. Errores del
+  PUT (`mensajeErrorEditores`: manda el texto del API, respaldo por código):
+  `SOLO_EDITORES_COTIZACION_COBRADA` (403), `LISTA_VACIA` y
+  `USUARIOS_INVALIDOS` (400) y el CAS `EDITORES_CAMBIARON` (409); todos
+  menos `LISTA_VACIA` repintan la sección (`errorEditoresPideRecargar`), y
+  la página le pone `key` = la lista GUARDADA: al repintar con la lista que
+  dejó otro editor, los switches arrancan de lo que hay hoy (con
+  `useState(datos)` se quedaban con la selección vieja del operador).
+  404 ⇒ «Disponible cuando se actualice el API» (gris, sin aviso); otro
+  fallo ⇒ `AvisoDegradado`. `ConfiguracionClient` filtra la clave
+  (`CLAVES_CON_SECCION_PROPIA`; el API ya la excluye de `GET /v1/config`).
+- Tests: `lib/admin/__tests__/quote-revision.test.ts` (candado por permiso:
+  CFDI/mes/servicio siguen, razón con nombres), `lib/admin/__tests__/
+  cotizacion-cobrada.test.ts` (textos, saldo/sobrecobro/tolerancia, diff y
+  errores de la lista), `quotes/__tests__/quote-pantalla-completa.test.tsx`
+  («cotización cobrada · permiso especial»: chip + banda + editable vs
+  lectura con nombres), `quotes/__tests__/quote-cobrada-permiso.test.tsx`
+  (barra de acciones y resumen del diálogo) y `configuracion/__tests__/
+  editores-cotizacion-cobrada-section.test.tsx`.
+- **Orden de deploy**: migración `20260926000001_editores_cotizacion_cobrada`
+  → API 0.0.37 → panel. Con el panel nuevo y el API previo nada cambia
+  (sin `permisos` en `/me`, la sección de configuración dice «Disponible
+  cuando se actualice el API»).
 
 ## Aeronave cotizada vs utilizada (11-sep-2026)
 

@@ -40,8 +40,7 @@ import {
 } from "@/app/admin/quotes/actions";
 import {
   candadoRevision,
-  RAZON_REVISION,
-  type CobrosInfoCandado,
+  type CandadoRevisionOpts,
 } from "@/lib/admin/quote-revision";
 import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
 import type { PersistedQuote } from "@/types/quotes-persisted";
@@ -81,9 +80,11 @@ export function QuoteActionsBar({
   /**
    * Dinero cobrado del vuelo (neto y cobros MXN sin TC): espejo del candado
    * D3 del API para que «Bloqueada · vuelo cobrado» aparezca también con un
-   * anticipo parcial, no solo con la bandera `cobrado`.
+   * anticipo parcial, no solo con la bandera `cobrado`. Lleva también el
+   * PERMISO ESPECIAL por persona (26-sep-2026): con él el botón no aparece
+   * (la cotización se edita) y, sin él, el diálogo dice quién puede editarla.
    */
-  cobrosInfo?: CobrosInfoCandado;
+  cobrosInfo?: CandadoRevisionOpts;
   /**
    * EDICIÓN DIRECTA (F0, 8-sep-2026): ya no existe «Revisar». Con cambios
    * (`sucio`) la barra muestra «Descartar» y «Guardar → vN» (mismas acciones
@@ -134,7 +135,16 @@ export function QuoteActionsBar({
   // se explica el porqué y se lleva al cobro para eliminarlo (la card de
   // cobros vive en esta misma página). El resto de razones (facturada, mes
   // cerrado, servicio) se leen en la barra del total del documento.
-  const { bloqueadaPorCobro } = candadoRevision(quote, cobrosInfo);
+  // Con el permiso especial (`edicionConCobros`) no hay candado que
+  // explicar: la barra del total pinta el chip ámbar «Cobrada · editable con
+  // permiso» y la banda sobre el papel dice qué pasa al guardar.
+  // «Solo pueden editarla: …» lo decide el candado (fuente única): solo
+  // cuando el permiso de esas personas de verdad abriría la cotización.
+  const {
+    bloqueadaPorCobro,
+    razon: razonCandado,
+    quienesEditanCobrada: quienesEditan,
+  } = candadoRevision(quote, cobrosInfo);
   const canCancel =
     quote.estado !== "CANCELADO" && quote.estado !== "COMPLETADO";
 
@@ -270,7 +280,7 @@ export function QuoteActionsBar({
           variant="outline"
           onClick={() => setOpenCobradoInfo(true)}
           className="gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400"
-          title={RAZON_REVISION.cobrado}
+          title={razonCandado ?? undefined}
         >
           <LockClosedIcon className="h-4 w-4" />
           Bloqueada · vuelo cobrado
@@ -369,6 +379,13 @@ export function QuoteActionsBar({
               &ldquo;Cobros registrados en el vuelo&rdquo;), edita el
               documento, guarda la versión y vuelve a registrar el cobro con el
               monto correcto.
+              {quienesEditan && (
+                <>
+                  {" "}
+                  <span className="font-medium text-foreground">{quienesEditan}</span>{" "}
+                  Pídeles la corrección si no quieres tocar el cobro.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

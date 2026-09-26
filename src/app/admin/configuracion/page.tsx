@@ -2,13 +2,22 @@ import { LockClosedIcon } from "@heroicons/react/24/outline";
 import { ConfiguracionClient } from "@/components/admin/configuracion/configuracion-client";
 import { IaCreditosSection } from "@/components/admin/configuracion/ia-creditos-section";
 import { ResponsablesFacturacionSection } from "@/components/admin/configuracion/responsables-facturacion-section";
+import {
+  EditoresCotizacionCobradaSection,
+  type CandidatoEditor,
+} from "@/components/admin/configuracion/editores-cotizacion-cobrada-section";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { getResponsablesFacturacion } from "@/lib/api/facturas-emitidas-server";
 import { isApiError } from "@/lib/api/errors";
 import { esErrorDeNext } from "@/lib/api/degradar";
 import { esNoDisponible } from "@/lib/admin/facturas-emitidas";
 import { EmptyState } from "@/components/admin/empty-state";
-import { getConfiguracion } from "@/lib/api/configuracion-server";
+import {
+  getConfiguracion,
+  getEditoresCotizacionCobrada,
+} from "@/lib/api/configuracion-server";
+import { listUsers } from "@/lib/api/users-server";
+import { ROLES_EDITAN_COTIZACION } from "@/lib/admin/quote-sheet-interna";
 import { getIaUso, rangoDelMes } from "@/lib/api/ia-uso-server";
 import { getMe } from "@/lib/api/me";
 import { todayCancun } from "@/lib/datetime";
@@ -58,7 +67,11 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
   // Responsables de facturación (24-sep-2026): ACCESORIO. Sin la migración
   // (503) la sección lo dice en gris; otro fallo se AVISA arriba.
   const faltantes: string[] = [];
-  const [flags, iaUso, responsables] = await Promise.all([
+  // EDITAN COTIZACIONES COBRADAS (26-sep-2026, API 0.0.37): ACCESORIO. Un
+  // 404 es un API previo (la sección lo dice en gris, sin avisar arriba);
+  // otro fallo se AVISA. Los candidatos salen de `/v1/users` (oficina activa
+  // que puede guardar cotizaciones) salvo que el API mande los suyos.
+  const [flags, iaUso, responsables, editoresCarga, usuariosActivos] = await Promise.all([
     getConfiguracion(),
     getIaUso(rango.desde, rango.hasta),
     getResponsablesFacturacion().catch((e: unknown) => {
@@ -69,7 +82,48 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
       }
       return null;
     }),
+    getEditoresCotizacionCobrada().then(
+      (datos) => ({ datos, noDisponible: false }),
+      (e: unknown) => {
+        if (esErrorDeNext(e)) throw e;
+        const noDisponible = isApiError(e) && e.status === 404;
+        if (!noDisponible) {
+          console.error("[admin] no se pudo cargar quién edita cotizaciones cobradas", e);
+          faltantes.push("quién edita cotizaciones cobradas");
+        }
+        return { datos: null, noDisponible };
+      },
+    ),
+    listUsers({ estado: "ACTIVO", limit: 200 }).catch((e: unknown) => {
+      if (esErrorDeNext(e)) throw e;
+      console.error("[admin] no se pudo cargar los usuarios de oficina", e);
+      return null;
+    }),
   ]);
+
+  const editores = editoresCarga.datos;
+  // Candidatos al permiso: la oficina activa que puede GUARDAR una cotización
+  // (`ROLES_EDITAN_COTIZACION`, espejo del `@Roles` de revise — el API solo
+  // da `/me.permisos` a esos roles, así que ofrecérselo a Facturación sería
+  // un switch que no hace nada) más quien YA está en la lista y sigue activo
+  // (no se anuncia como «dado de baja»). Fuente: los `candidatos` del API
+  // (oficina activa); con un API que no los mande, `/v1/users`. Sin ninguno
+  // de los dos, al menos los ya elegidos (para poder quitarlos) y se avisa.
+  const yaElegidos = new Set(editores?.usuario_ids ?? []);
+  const puedeSerEditor = (u: { id: string; rol?: string }) =>
+    (u.rol != null && ROLES_EDITAN_COTIZACION.has(u.rol)) || yaElegidos.has(u.id);
+  let candidatosEditores: CandidatoEditor[] = [];
+  if (editores?.candidatos) {
+    candidatosEditores = editores.candidatos.filter(puedeSerEditor);
+  } else if (usuariosActivos) {
+    candidatosEditores = usuariosActivos.data
+      .filter((u) => puedeSerEditor(u) && !u.es_piloto_externo)
+      .map((u) => ({ id: u.id, nombre: u.nombre, rol: u.rol }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es-MX"));
+  } else if (editores) {
+    candidatosEditores = editores.usuarios.map((u) => ({ id: u.id, nombre: u.nombre }));
+    if (editores.puede_modificar) faltantes.push("los usuarios de oficina");
+  }
 
   return (
     <div className="space-y-6">
@@ -93,6 +147,17 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
         // Falla de carga ≠ «falta la migración»: la sección no debe decir
         // «Disponible cuando se habilite…» cuando solo no se pudo leer.
         fallo={faltantes.includes("los responsables de facturación")}
+      />
+
+      <EditoresCotizacionCobradaSection
+        // Se remonta cuando la lista GUARDADA cambia (otro editor la cambió y
+        // el 409 EDITORES_CAMBIARON repintó la página): los switches arrancan
+        // de lo que hay hoy, no de la selección vieja de este operador.
+        key={(editores?.usuario_ids ?? []).join(",")}
+        datos={editores}
+        candidatos={candidatosEditores}
+        meId={me.id}
+        fallo={!editores && !editoresCarga.noDisponible}
       />
 
       <IaCreditosSection resumen={iaUso} mes={mes} mesActual={mesActual} />

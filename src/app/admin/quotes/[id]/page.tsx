@@ -13,8 +13,14 @@ import { getClient } from "@/lib/api/clients-server";
 import { getMe } from "@/lib/api/me";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
+import { getEditoresCotizacionCobrada } from "@/lib/api/configuracion-server";
 import { ApiError } from "@/lib/api/errors";
-import { Degradaciones } from "@/lib/api/degradar";
+import { Degradaciones, esErrorDeNext } from "@/lib/api/degradar";
+import {
+  apiConPermisosPorPersona,
+  nombresParaRazon,
+  puedeEditarCotizacionCobrada,
+} from "@/lib/admin/cotizacion-cobrada";
 import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
 import { esUuid } from "@/lib/admin/url-params";
 import { filtrosListaDeParams, qsFiltrosLista } from "@/lib/admin/quote-navegacion";
@@ -86,6 +92,22 @@ export default async function QuoteDetailPage({
       : new Intl.DateTimeFormat("en-CA", { timeZone: CANCUN_TZ }).format(d);
   })();
 
+  // PERMISO ESPECIAL por persona (26-sep-2026, API 0.0.37): quien está en
+  // `editores_cotizacion_cobrada` edita una cotización con cobros. A los
+  // DEMÁS la razón del candado les dice a quién pedírselo, así que solo para
+  // ellos se piden los nombres. Es texto de apoyo: si no llega (API previo,
+  // rol sin acceso, red) la razón de siempre basta — no se anuncia como falla.
+  const puedeEditarCobrada = puedeEditarCotizacionCobrada(me);
+  const editoresPromesa: Promise<string[] | null> =
+    apiConPermisosPorPersona(me) && !puedeEditarCobrada
+      ? getEditoresCotizacionCobrada()
+          .then((d) => nombresParaRazon(d))
+          .catch((e: unknown) => {
+            if (esErrorDeNext(e)) throw e;
+            return null;
+          })
+      : Promise.resolve(null);
+
   // Cliente (nombre + interno), cobros del vuelo, catálogos, TC oficial y
   // comisión Paywise, en paralelo. Cobros: best-effort y en TODO estado
   // (9-sep-2026: la card de cobros se pinta siempre y desde la cotización
@@ -94,10 +116,20 @@ export default async function QuoteDetailPage({
   // pantalla sigue editándose con el breakdown y se AVISA — jamás tumba la
   // cotización entera. Un 404 (API previo) o un 403 (rol sin permiso) ya
   // vuelven null desde `getQuoteInterno`, en silencio y sin aviso.
-  const [client, cobrosVuelo, catalogos, tcOficial, paywiseComisionPct, interno, vecinos] =
-    await Promise.all([
+  const [
+    client,
+    cobrosVuelo,
+    catalogos,
+    tcOficial,
+    paywiseComisionPct,
+    interno,
+    vecinos,
+    editoresCobrada,
+  ] = await Promise.all([
       getClient(quote.cliente_id).catch(() => null),
-      getFlightSnapshot(id).catch(() => null),
+      // Los cobros alimentan el candado y el saldo: si no cargan se AVISA
+      // (nunca «sin cobros» en silencio). 401/403 siguen en silencio.
+      degradado.opcional("los cobros del vuelo", getFlightSnapshot(id), null),
       cargarCatalogosCotizador(),
       diaCotizacion ? getTipoCambioOficial(diaCotizacion) : Promise.resolve(null),
       getPaywiseComisionPct(),
@@ -109,6 +141,7 @@ export default async function QuoteDetailPage({
         ? degradado.opcional("la hoja interna", getQuoteInterno(id), null)
         : Promise.resolve(null),
       vecinosPromesa,
+      editoresPromesa,
     ]);
 
   // Comprobantes de los cobros (24-sep-2026): URLs firmadas best-effort —
@@ -148,6 +181,11 @@ export default async function QuoteDetailPage({
       voucherUrls={voucherUrls}
       grupoTotalAviones={cobrosVuelo?.grupo_total_aviones ?? null}
       navegacion={{ vecinos, qs: qsLista }}
+      // Sin los cobros no hay con qué decir cuánto se cobró ni el saldo que
+      // queda: el permiso especial espera a que carguen (falla CERRADO; la
+      // página ya avisa que no cargaron y el API vuelve a decidir al guardar).
+      permisoEditarCobrada={puedeEditarCobrada && cobrosVuelo != null}
+      editoresCobrada={editoresCobrada}
     />
     </>
   );

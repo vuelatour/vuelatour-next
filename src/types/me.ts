@@ -34,4 +34,19 @@ export interface MeResponse {
   updated_at: string;
   /** Dispositivos push del propio usuario (3-sep-2026; ausente = API viejo). */
   push_dispositivos?: number;
+  /**
+   * Permisos POR PERSONA (26-sep-2026, API 0.0.37, ADITIVO): no dependen del
+   * rol — todos los de oficina son ADMIN. Ausente = API previo ⇒ el panel se
+   * comporta como hoy (nadie edita una cotización cobrada).
+   */
+  permisos?: PermisosMe;
+}
+
+export interface PermisosMe {
+  /**
+   * Está en la lista `editores_cotizacion_cobrada` (Configuración): puede
+   * editar una cotización que YA tiene cobros. Los demás candados (CFDI, mes
+   * cerrado, servicio, grupo) siguen vigentes.
+   */
+  editar_cotizacion_cobrada?: boolean;
 }

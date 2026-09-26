@@ -21,6 +21,7 @@ import {
   DocumentDuplicateIcon,
   ExclamationTriangleIcon,
   LockClosedIcon,
+  LockOpenIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import type { EstadoCobroSemaforo } from "@/lib/admin/cobros";
@@ -163,6 +164,14 @@ import {
   soloConsultaCotizacion,
 } from "@/lib/admin/quote-sheet-interna";
 import { QuoteAvisosBanda } from "@/components/admin/quotes/quote-avisos-banda";
+import {
+  CHIP_EDICION_CON_COBROS,
+  PREFIJO_MOTIVO_CON_COBROS,
+  textoBandaEdicionConCobros,
+  textoConfirmarEdicionConCobros,
+  TITULO_CHIP_EDICION_CON_COBROS,
+} from "@/lib/admin/cotizacion-cobrada";
+import { ResumenGuardadoConCobros } from "@/components/admin/quotes/quote-resumen-guardado-cobros";
 import { QuoteCapturaBasica } from "@/components/admin/quotes/quote-captura-basica";
 import { QuoteDetalleMotor } from "@/components/admin/quotes/quote-detalle-motor";
 import { QuoteOperadorExterno } from "@/components/admin/quotes/quote-operador-externo";
@@ -268,6 +277,7 @@ type QuoteCalculatorProps = {
       notaTramos?: undefined;
       escalasPdf?: undefined;
       cobro?: undefined;
+      edicionConCobros?: undefined;
     }
   | {
       mode: "revise";
@@ -325,8 +335,25 @@ type QuoteCalculatorProps = {
        * (snapshot del vuelo), nunca se calcula aquí.
        */
       cobro?: CobroTotalBar;
+      /**
+       * COBRADA · EDITABLE CON PERMISO (26-sep-2026, API 0.0.37): la
+       * cotización ya tiene cobros y quien edita está en la lista
+       * `editores_cotizacion_cobrada`. El documento se abre editable con el
+       * chip ámbar en la barra del total, la banda ámbar sobre el papel, la
+       * confirmación única al primer cambio y, en «Guardar vN», el total
+       * antes→después con el saldo (o sobrecobro) que queda. null = no aplica.
+       */
+      edicionConCobros?: EdicionConCobros | null;
     }
 );
+
+/** Cobros de una cotización que se edita con el permiso especial. */
+export interface EdicionConCobros {
+  /** Neto cobrado en USD del API (`cobrosEnUsd` del snapshot del vuelo). */
+  cobradoUsd: number;
+  /** Cobros MXN sin tipo de cambio (fuera de la suma): se avisan. */
+  cobrosSinTc?: number | null;
+}
 
 /** Estado de cobro que pinta la barra de estado (ver `cobro` en props). */
 export interface CobroTotalBar {
@@ -703,9 +730,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // Edición directa (F0): LECTURA solo cuando el candado lo exige.
   const bloqueadoRazon = isRevise ? (props.bloqueadoRazon ?? null) : null;
   const lectura = isRevise && !!bloqueadoRazon;
-  const requiereConfirmacionEdicion = isRevise
+  // COBRADA · editable con permiso (26-sep-2026). Solo en revisión editable.
+  const edicionConCobros =
+    isRevise && !lectura ? (props.edicionConCobros ?? null) : null;
+  // Confirmación ÚNICA al primer cambio: CONFIRMADO/RESERVA con tripulación
+  // y/o cotización con cobros editada con permiso — UN solo diálogo.
+  const requiereConfirmacionTripulacion = isRevise
     ? !!props.requiereConfirmacionEdicion
     : false;
+  const requiereConfirmacionEdicion =
+    requiereConfirmacionTripulacion || edicionConCobros != null;
+  /** Cobrado (USD del API) cuando se edita con permiso; null si no aplica. */
+  const cobradoConPermiso = edicionConCobros ? edicionConCobros.cobradoUsd : null;
   const onEstadoEdicion = isRevise ? props.onEstadoEdicion : undefined;
   const onGuardado = isRevise ? props.onGuardado : undefined;
   const tramoExtra = isRevise ? props.tramoExtra : undefined;
@@ -1994,7 +2030,8 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       }
       if (res.ok && res.data) {
         toast.success(
-          `Cotización #${res.data.folio} guardada como v${res.data.cotizacion_version}`,
+          `Cotización #${res.data.folio} guardada como v${res.data.cotizacion_version}` +
+            (res.data.edicion_con_cobros === true ? " (con cobros · permiso especial)" : ""),
         );
         // Avisos NO bloqueantes del API (0.0.6): la versión YA se guardó —
         // p. ej. «los tramos con tacómetro no se movieron al avión nuevo».
@@ -2733,7 +2770,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     // Misma fuente única que el API (`estadoVueloVolado`): un viaje a medio
     // camino todavía avisa del regreso pendiente.
     const v = estadoVueloVolado(initialQuote);
-    return textoConfirmarEdicionCotizacion({
+    const tripulacion = textoConfirmarEdicionCotizacion({
       folio: initialQuote?.folio ?? null,
       estado: initialQuote?.estado ?? null,
       aeronaveUtilizada:
@@ -2743,7 +2780,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       yaVolo: v.yaVolo,
       termino: v.termino,
     });
-  }, [initialQuote, aircraft]);
+    // Con cobros y permiso especial (26-sep-2026) manda el texto del dinero;
+    // si además hay tripulación, su explicación va al final (un diálogo).
+    if (cobradoConPermiso != null) {
+      return textoConfirmarEdicionConCobros({
+        folio: initialQuote?.folio ?? null,
+        cobradoUsd: cobradoConPermiso,
+        cuerpoTripulacion: requiereConfirmacionTripulacion ? tripulacion.cuerpo : null,
+      });
+    }
+    return tripulacion;
+  }, [initialQuote, aircraft, cobradoConPermiso, requiereConfirmacionTripulacion]);
   // El avión COTIZADO ya no se puede elegir (dado de baja): el formulario
   // arrancó con OTRO avión y el desglose que se ve ya NO es el pactado. Se
   // dice en ámbar — nunca en silencio (la fiabilidad numérica es sagrada).
@@ -3113,6 +3160,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         verPdf={previewVerPdf}
         avisos={avisosCaptura}
         cobro={cobroBarra}
+        // Cobrada · editable con permiso (26-sep-2026): chip ámbar en vez del
+        // candado «Bloqueada · vuelo cobrado».
+        chipPermiso={
+          edicionConCobros
+            ? { texto: CHIP_EDICION_CON_COBROS, title: TITULO_CHIP_EDICION_CON_COBROS }
+            : undefined
+        }
       />
 
       {/* «El cliente pide factura» (24-sep-2026): SOLO en el alta. En la
@@ -3338,6 +3392,30 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           </p>
         </div>
       )}
+
+      {/* COBRADA · EDITABLE CON PERMISO (26-sep-2026, API 0.0.37): pedido de
+          los dueños («que se desbloquee para mí, no para todos»). Quien está
+          en la lista `editores_cotizacion_cobrada` corrige la cotización; los
+          cobros NO se tocan y el saldo se recalcula con ellos al guardar. */}
+      {edicionConCobros &&
+        (() => {
+          const banda = textoBandaEdicionConCobros(edicionConCobros);
+          return (
+            <div
+              role="status"
+              data-testid="banda-edicion-con-cobros"
+              className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm"
+            >
+              <LockOpenIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-medium text-amber-700 dark:text-amber-400">{banda.titulo}</p>
+                {banda.detalle && (
+                  <p className="text-xs text-muted-foreground">{banda.detalle}</p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
       {/* AVISOS DE CAPTURA, ancho completo y ARRIBA del papel (Fase 2.3 ·
           BLOQUE C): antes eran chips dentro del panel lateral y solo se veían
@@ -3744,7 +3822,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                     </li>
                   )}
                 </ul>
-                {breakdown && (
+                {breakdown && !edicionConCobros && (
                   <p className="mt-1.5 text-xs text-muted-foreground">
                     Total con IVA:{" "}
                     <span className="font-mono text-foreground">
@@ -3760,6 +3838,18 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                   </p>
                 )}
               </div>
+              {/* CON COBROS (permiso especial, 26-sep-2026): el total
+                  antes→después y el saldo que queda con los cobros que YA
+                  existen. Total = el del MOTOR; cobrado = el del API; aquí
+                  solo se hace la resta visible (`resumenGuardadoConCobros`). */}
+              {edicionConCobros && breakdown && (
+                <ResumenGuardadoConCobros
+                  totalAntesUsd={Number(initialQuote.monto_total_usd) || 0}
+                  totalNuevoUsd={Number(breakdown.totales.total_usd) || 0}
+                  cobradoUsd={edicionConCobros.cobradoUsd}
+                  cobrosSinTc={edicionConCobros.cobrosSinTc}
+                />
+              )}
               {avisaTripulacion && (
                 <p className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs text-violet-700 dark:text-violet-300">
                   Se notificará a la tripulación: el cambio toca fechas, avión o
@@ -3828,7 +3918,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 {motivoPreview && (
                   <p className="text-[11px] text-muted-foreground">
                     Queda en el historial como:{" "}
-                    <span className="font-mono text-foreground">{motivoPreview}</span>
+                    <span className="font-mono text-foreground">
+                      {/* El prefijo lo antepone el API (no viaja desde aquí). */}
+                      {edicionConCobros ? PREFIJO_MOTIVO_CON_COBROS : ""}
+                      {motivoPreview}
+                    </span>
                   </p>
                 )}
               </div>
@@ -4138,6 +4232,7 @@ function TotalBar({
   verPdf,
   avisos = [],
   cobro,
+  chipPermiso,
 }: {
   breakdown: QuoteBreakdown | null;
   loading: boolean;
@@ -4173,6 +4268,11 @@ function TotalBar({
   avisos?: string[];
   /** «Cobrado · Saldo» + «Registrar cobro» a la derecha del total (revisión). */
   cobro?: CobroTotalBar;
+  /**
+   * Chip ÁMBAR «Cobrada · editable con permiso» (26-sep-2026): la cotización
+   * tiene cobros y quien edita tiene el permiso especial por persona.
+   */
+  chipPermiso?: { texto: string; title: string };
 }) {
   return (
     <div className="sticky top-0 z-30 -mx-1 px-1 pt-1" data-guard-exempt>
@@ -4229,6 +4329,15 @@ function TotalBar({
             </>
           )}
           {cobro && <CobroChipBarra cobro={cobro} />}
+          {chipPermiso && (
+            <span
+              title={chipPermiso.title}
+              className="inline-flex items-center gap-1 self-center rounded-full border border-amber-200 bg-amber-300 px-2 py-0.5 text-[11px] font-semibold text-amber-950"
+            >
+              <LockOpenIcon className="h-3.5 w-3.5" aria-hidden />
+              {chipPermiso.texto}
+            </span>
+          )}
           <div className="ml-auto flex min-w-0 items-center gap-3">
             {(titulo || subtitulo) && (
               <div className="min-w-0 text-right">

@@ -26,8 +26,15 @@ import { fmtDateTime } from "@/lib/datetime";
 import { updateConfiguracionAction } from "@/app/admin/configuracion/actions";
 import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 
-/** Clave de config con su propia sección (lista de usuarios, no switch). */
-const CLAVE_RESPONSABLES_FACTURACION = "responsables_facturacion";
+/**
+ * Claves de config con su propia sección (listas de usuarios, no switches):
+ * responsables de facturación (24-sep-2026) y quién edita cotizaciones
+ * cobradas (26-sep-2026).
+ */
+const CLAVES_CON_SECCION_PROPIA: ReadonlySet<string> = new Set([
+  "responsables_facturacion",
+  "editores_cotizacion_cobrada",
+]);
 
 /**
  * Copy amigable por bandera conocida (el fallback usa la descripción de la
@@ -199,7 +206,7 @@ export function ConfiguracionClient({
   // (`valor_json`), no un switch: tiene su propia sección. El API nuevo ya la
   // excluye del listado; esto es la defensa por si un API viejo la manda.
   const [flags, setFlags] = useState(() =>
-    initial.filter((f) => f.clave !== CLAVE_RESPONSABLES_FACTURACION),
+    initial.filter((f) => !CLAVES_CON_SECCION_PROPIA.has(f.clave)),
   );
   const [confirmando, setConfirmando] = useState<{
     flag: ConfiguracionFlag;
