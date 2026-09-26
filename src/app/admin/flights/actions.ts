@@ -12,6 +12,7 @@ import type {
 } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
 import type { CuentaCobro } from "@/lib/admin/cobros";
+import type { PatchCobro } from "@/lib/admin/cobro-edicion";
 import type {
   FacturaServicioBloque,
   ResultadoSolicitudFactura,
@@ -388,6 +389,43 @@ export async function deleteCobroAction(
     await apiServer(`/v1/flights/cobros/${cobroId}`, { method: "DELETE" });
     revalidateFlight(flightId);
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * CORRIGE un cobro ya registrado (26-sep-2026, pedido del cliente sobre la
+ * cotización #315): `PATCH /v1/flights/cobros/:cobroId` (ADMIN/FACTURACION).
+ * Manda SOLO lo que cambió (`cambiosDeCobro` de `lib/admin/cobro-edicion`);
+ * los candados (sobre de grupo, anticipo, conciliado, reembolso) y el
+ * recálculo de la bandera `cobrado` los aplica el API. Nunca lanza.
+ * Revalida el vuelo Y la cotización (misma fila): el candado de edición de la
+ * cotización y el semáforo de las listas dependen del cobrado.
+ */
+export async function updateCobroAction(
+  flightId: string,
+  cobroId: string,
+  patch: PatchCobro,
+): Promise<ActionResult<FlightCobro>> {
+  if (!esUuid(cobroId)) {
+    return { ok: false, error: "No se reconoce el cobro. Recarga la página." };
+  }
+  const cuerpo = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined),
+  ) as PatchCobro;
+  if (Object.keys(cuerpo).length === 0) {
+    return { ok: false, error: "No hay cambios que guardar." };
+  }
+  try {
+    const cobro = await apiServer<FlightCobro>(`/v1/flights/cobros/${cobroId}`, {
+      method: "PATCH",
+      body: cuerpo,
+    });
+    revalidateFlight(flightId);
+    revalidatePath("/admin/quotes");
+    revalidatePath(`/admin/quotes/${flightId}`);
+    return { ok: true, data: cobro };
   } catch (err) {
     return fail(err);
   }

@@ -19,6 +19,17 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { LockClosedIcon } from "@heroicons/react/24/outline";
 import { cancunInputToIso, fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
@@ -27,8 +38,31 @@ import {
   CUENTAS_COBRO_VALUES,
   monedaDeCuenta,
   montoSugeridoMxn,
+  textoRegistroCobro,
 } from "@/lib/admin/cobros";
-import { registerCobroAction } from "@/app/admin/flights/actions";
+import {
+  cambiosDeCobro,
+  datosSoloLecturaCobro,
+  descripcionConfirmarEdicion,
+  descripcionFichaEdicion,
+  edicionDeCobro,
+  erroresEdicionCobro,
+  formularioDesdeCobro,
+  hintCuentaLegada,
+  hintTcEdicion,
+  mensajeErrorEdicionCobro,
+  NOTA_RECALCULO_COBRO,
+  resumenCambiosCobro,
+  TEXTO_COBRO_CORREGIDO,
+  TEXTO_SIN_CAMBIOS_COBRO,
+  TITULO_CONFIRMAR_EDICION,
+  TITULO_SOLO_LECTURA_COBRO,
+  tituloFichaEdicion,
+  type CambiosCobro,
+  type InicialEdicionCobro,
+  type ValoresEdicionCobro,
+} from "@/lib/admin/cobro-edicion";
+import { registerCobroAction, updateCobroAction } from "@/app/admin/flights/actions";
 import {
   cuentaSugeridaPorMetodo,
   METODOS_CON_CUENTA,
@@ -36,6 +70,7 @@ import {
   PAYWISE_COMISION_PCT_DEFAULT,
 } from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
+import type { FlightCobro } from "@/types/flights";
 import { Field } from "@/components/admin/form-field";
 
 type Moneda = "USD" | "MXN";
@@ -78,8 +113,14 @@ const CobroFormSchema = z
     cuenta_destino: z.enum(CUENTAS_COBRO_VALUES).optional().or(z.literal("")),
     fecha_cobro: z.string().optional().or(z.literal("")),
     notas: z.string().max(1000).optional().or(z.literal("")),
+    // CORREGIR un cobro (26-sep-2026): en edición las reglas del T.C. y del
+    // dinero dependen del TIPO de cobro (reembolso, conciliado, anticipo) y
+    // las decide `erroresEdicionCobro` (lib/admin/cobro-edicion). Campo
+    // oculto: nunca viaja al API.
+    modo_edicion: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
+    if (val.modo_edicion) return;
     if (val.moneda === "MXN" && (!val.tc_usd_mxn || val.tc_usd_mxn <= 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -150,7 +191,16 @@ interface CobroFormSheetProps {
   paywiseComisionPct?: number;
   /** Prellenado de campos (ver `CobroPrefill`). Se aplica al abrir. */
   prefill?: CobroPrefill | null;
-  /** Tras registrar con éxito (además del router.refresh() propio). */
+  /**
+   * MODO EDICIÓN (26-sep-2026, «Corregir cobro»): el cobro YA registrado que
+   * se corrige. El MISMO formulario, prellenado con el cobro; al guardar
+   * confirma el antes → después y manda SOLO lo que cambió
+   * (`PATCH /v1/flights/cobros/:id`). Lo que el tipo de cobro no permite
+   * tocar (reembolso, conciliado, anticipo) va de solo lectura con la
+   * explicación. Reglas: `lib/admin/cobro-edicion.ts`.
+   */
+  cobroEditar?: FlightCobro | null;
+  /** Tras registrar (o corregir) con éxito (además del router.refresh() propio). */
   onRegistrado?: () => void;
 }
 
@@ -177,6 +227,7 @@ function defaults(pendingUsd: number, prefill?: CobroPrefill | null): CobroFormV
     cuenta_destino: "",
     fecha_cobro: todayLocal(),
     notas: "",
+    modo_edicion: false,
   };
   if (!prefill) return base;
   return {
@@ -202,6 +253,40 @@ function defaults(pendingUsd: number, prefill?: CobroPrefill | null): CobroFormV
   };
 }
 
+/** Valores del formulario en EDICIÓN: el cobro tal como está guardado. */
+function defaultsEdicion(inicial: InicialEdicionCobro): CobroFormValues {
+  const v = inicial.valores;
+  return {
+    monto: v.monto,
+    moneda: v.moneda,
+    metodo_cobro: v.metodo_cobro,
+    tc_usd_mxn: v.tc_usd_mxn,
+    comision_banco_pct: v.comision_banco_pct,
+    comision_banco_monto: v.comision_banco_monto,
+    referencia: v.referencia,
+    cuenta_destino: v.cuenta_destino,
+    fecha_cobro: v.fecha_cobro,
+    notas: v.notas,
+    modo_edicion: true,
+  };
+}
+
+/** Lo que el diff de la edición necesita del formulario (sin el modo). */
+function valoresParaEdicion(values: CobroFormValues): ValoresEdicionCobro {
+  return {
+    monto: values.monto,
+    moneda: values.moneda,
+    metodo_cobro: values.metodo_cobro,
+    tc_usd_mxn: values.tc_usd_mxn,
+    comision_banco_pct: values.comision_banco_pct,
+    comision_banco_monto: values.comision_banco_monto,
+    referencia: values.referencia,
+    cuenta_destino: values.cuenta_destino,
+    fecha_cobro: values.fecha_cobro,
+    notas: values.notas,
+  };
+}
+
 export function CobroFormSheet({
   open,
   onOpenChange,
@@ -217,11 +302,28 @@ export function CobroFormSheet({
   tcOficialFecha = null,
   paywiseComisionPct = PAYWISE_COMISION_PCT_DEFAULT,
   prefill = null,
+  cobroEditar = null,
   onRegistrado,
 }: CobroFormSheetProps) {
   const diaTcOficial = tcOficialFecha ? fmtDateOnly(tcOficialFecha) : null;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // ---- Modo EDICIÓN («Corregir cobro», 26-sep-2026) ----
+  const enEdicion = cobroEditar != null;
+  const edicion = useMemo(
+    () => (cobroEditar ? edicionDeCobro(cobroEditar) : null),
+    [cobroEditar],
+  );
+  const inicial = useMemo(
+    () => (cobroEditar ? formularioDesdeCobro(cobroEditar) : null),
+    [cobroEditar],
+  );
+  const dineroBloqueado = edicion?.dineroBloqueado === true;
+  const tcBloqueado = edicion?.tcBloqueado === true;
+  // Cambios a confirmar (antes → después); null = sin diálogo.
+  const [confirmacion, setConfirmacion] = useState<CambiosCobro | null>(null);
+  // Último rechazo del API: se queda a la vista hasta volver a intentar.
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
   // Qué TC se prellenó (para el hint); se apaga si el usuario lo edita.
   const [tcPrefill, setTcPrefill] = useState<TcSugerido | null>(null);
   // Último monto SUGERIDO por la hoja (USD al abrir, pesos al pasar a MXN):
@@ -243,14 +345,15 @@ export function CobroFormSheet({
     watch,
     setValue,
     getValues,
+    setError,
     formState: { errors },
   } = useForm<CobroFormValues>({
     resolver: zodResolver(CobroFormSchema),
-    defaultValues: defaults(montoPrefill, prefill),
+    defaultValues: inicial ? defaultsEdicion(inicial) : defaults(montoPrefill, prefill),
   });
 
   useEffect(() => {
-    if (open) {
+    if (open && !inicial) {
       const base = defaults(montoPrefill, prefill);
       reset(base);
       setTcPrefill(null);
@@ -261,7 +364,22 @@ export function CobroFormSheet({
         prefill?.monto != null && prefill.monto > 0 ? null : (base.monto as number),
       );
     }
-  }, [open, montoPrefill, prefill, reset]);
+  }, [open, montoPrefill, prefill, reset, inicial]);
+
+  // EDICIÓN: el cobro tal como está guardado; nada se sugiere encima. Efecto
+  // aparte a propósito: solo depende de abrir y de QUÉ cobro se corrige — un
+  // `router.refresh()` que cambie el pendiente de la página (p. ej. al volver
+  // a la pestaña) no puede borrar una corrección a medio capturar.
+  useEffect(() => {
+    if (open && inicial) {
+      reset(defaultsEdicion(inicial));
+      setTcPrefill(null);
+      setComisionSugerida(null);
+      setMontoSugerido(null);
+      setConfirmacion(null);
+      setErrorGuardado(null);
+    }
+  }, [open, inicial, reset]);
 
   const moneda = watch("moneda");
   const metodo = watch("metodo_cobro");
@@ -291,6 +409,9 @@ export function CobroFormSheet({
   };
 
   const aplicarSugerenciaMonto = (n: number | null) => {
+    // Al CORREGIR un cobro el importe es el que se capturó: jamás se sugiere
+    // otro (el pendiente ya descuenta a este mismo cobro).
+    if (enEdicion) return;
     if (n == null || !montoEsSugerido()) return;
     setValue("monto", n, { shouldValidate: true });
     setMontoSugerido(n);
@@ -374,7 +495,9 @@ export function CobroFormSheet({
       ? tcPrefill.fuente === "cotizacion"
         ? "Prellenado con el TC de la cotización — puedes editarlo."
         : `Prellenado con el TC oficial de referencia del día de la cotización${diaTcOficial ? ` (${diaTcOficial})` : ""} — puedes editarlo.`
-      : "Necesario para saber cuánto cubre del total en USD";
+      : inicial
+        ? hintTcEdicion(inicial, tc)
+        : "Necesario para saber cuánto cubre del total en USD";
 
   // Cuentas del catálogo: primero las de la moneda del cobro (sugerencia
   // suave — no se fuerza ninguna; "" = sin especificar).
@@ -395,7 +518,9 @@ export function CobroFormSheet({
   const cuentaHint =
     monedaCuenta && monedaCuenta !== moneda
       ? `Ojo: la cuenta es en ${monedaCuenta} y el cobro en ${moneda}. Verifica que sea la correcta.`
-      : "Opcional · primero aparecen las cuentas en la moneda del cobro";
+      : inicial?.cuentaLegada && !cuentaDestino
+        ? hintCuentaLegada(inicial.cuentaLegada)
+        : "Opcional · primero aparecen las cuentas en la moneda del cobro";
 
   // Total en pesos de la ficha. FUENTE ÚNICA: `monto_total_mxn`, el número
   // EXACTO que salió impreso en la cotización del cliente (lo compuso el
@@ -427,6 +552,26 @@ export function CobroFormSheet({
         : null;
 
   const onSubmit = handleSubmit((values) => {
+    // EDICIÓN: validar lo propio del tipo de cobro, calcular el diff y
+    // CONFIRMAR el antes → después (es dinero). Nada viaja todavía.
+    if (cobroEditar && inicial && edicion) {
+      const valoresEd = valoresParaEdicion(values);
+      const errores = Object.entries(erroresEdicionCobro(inicial, valoresEd, edicion));
+      if (errores.length > 0) {
+        for (const [campo, message] of errores) {
+          setError(campo as keyof CobroFormValues, { type: "manual", message });
+        }
+        return;
+      }
+      const cambios = cambiosDeCobro(cobroEditar, inicial, valoresEd, edicion);
+      if (!cambios.hayCambios) {
+        toast.info(TEXTO_SIN_CAMBIOS_COBRO);
+        return;
+      }
+      setErrorGuardado(null);
+      setConfirmacion(cambios);
+      return;
+    }
     startTransition(async () => {
       const res = await registerCobroAction(flightId, {
         monto: Number(values.monto),
@@ -471,7 +616,50 @@ export function CobroFormSheet({
     });
   });
 
+  /** Tras confirmar: PATCH con SOLO lo que cambió; el API recalcula el cobrado. */
+  const guardarCorreccion = () => {
+    if (!cobroEditar || !confirmacion) return;
+    const cambios = confirmacion;
+    startTransition(async () => {
+      const res = await updateCobroAction(flightId, cobroEditar.id, cambios.patch);
+      setConfirmacion(null);
+      if (res.ok) {
+        toast.success(TEXTO_COBRO_CORREGIDO, {
+          description: resumenCambiosCobro(cambios.lineas),
+        });
+        onOpenChange(false);
+        router.refresh();
+        onRegistrado?.();
+        return;
+      }
+      const mensaje = mensajeErrorEdicionCobro(res);
+      setErrorGuardado(mensaje);
+      // Parte de un sobre de grupo (candado del API): atajo al grupo.
+      const d = res.details as { grupo_id?: string } | undefined;
+      toast.error(mensaje, {
+        action:
+          res.code === "COBRO_DE_GRUPO" && d?.grupo_id
+            ? {
+                label: "Ir al grupo",
+                onClick: () => router.push(`/admin/quotes/grupo/${d.grupo_id}`),
+              }
+            : undefined,
+      });
+    });
+  };
+
+  const registroCobro = cobroEditar ? textoRegistroCobro(cobroEditar) : null;
+  const soloLectura = cobroEditar && edicion ? datosSoloLecturaCobro(cobroEditar, edicion) : [];
+  // El T.C. se captura: en el alta, siempre que sea en pesos; al corregir,
+  // además solo si el tipo de cobro lo permite (reembolso/conciliado no).
+  const mostrarTc = moneda === "MXN" && !tcBloqueado;
+  // «Equivale a … USD» solo cuando algo editable lo puede mover (con el
+  // dinero bloqueado, solo el T.C. de un cobro en pesos).
+  const mostrarEquivalencia =
+    usdEquivalente !== null && (!dineroBloqueado || mostrarTc);
+
   return (
+    <>
     <Sheet
       open={open}
       onOpenChange={(nextOpen, details) => {
@@ -492,11 +680,22 @@ export function CobroFormSheet({
       >
         <SheetHeader className="border-b border-border">
           <SheetTitle>
-            {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"} ·
-            vuelo #{flightFolio}
+            {cobroEditar ? (
+              <>
+                {tituloFichaEdicion(cobroEditar)}
+                {flightFolio > 0 ? ` · vuelo #${flightFolio}` : ""}
+              </>
+            ) : (
+              <>
+                {cancelado ? "Registrar cargo por cancelación" : "Registrar cobro"} ·
+                vuelo #{flightFolio}
+              </>
+            )}
           </SheetTitle>
           <SheetDescription>
-            {cancelado ? (
+            {cobroEditar ? (
+              descripcionFichaEdicion(cobroEditar, registroCobro)
+            ) : cancelado ? (
               <>
                 Cotizado:{" "}
                 <span className="font-mono">{fmtUsd(montoTotalUsd)}</span> · vuelo
@@ -523,7 +722,7 @@ export function CobroFormSheet({
         </SheetHeader>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {cancelado && (
+          {cancelado && !enEdicion && (
             <div
               role="note"
               className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
@@ -571,46 +770,76 @@ export function CobroFormSheet({
             )}
           </div>
 
-          <Field label="Método de cobro" required>
-            <SearchableSelect
-              options={METODOS_PAGO.map((m) => ({
-                value: m.value,
-                label: m.label,
-                description: m.hint,
-              }))}
-              value={metodo}
-              onChange={handleMetodoChange}
-              placeholder="Selecciona método"
-            />
-          </Field>
-
-          <div className="grid grid-cols-[1fr_120px] gap-3">
-            <Field label="Monto" required hint={montoHint} error={errors.monto?.message}>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="0.00"
-                {...register("monto")}
-              />
-            </Field>
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Moneda</Label>
-              <Segmented
-                value={moneda}
-                onChange={(v) => handleMonedaChange(v as Moneda)}
-                options={[
-                  { value: "USD", label: "USD" },
-                  { value: "MXN", label: "MXN" },
-                ]}
-              />
+          {/* CORREGIR: lo que el tipo de cobro no deja tocar (reembolso,
+              conciliado, anticipo) se LEE aquí, con la explicación de qué
+              hacer si está mal. Nunca un input deshabilitado sin razón. */}
+          {edicion && soloLectura.length > 0 && (
+            <div
+              role="note"
+              className="space-y-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs"
+            >
+              <p className="flex items-center gap-1.5 font-medium text-foreground">
+                <LockClosedIcon className="h-3.5 w-3.5" aria-hidden />
+                {TITULO_SOLO_LECTURA_COBRO}
+              </p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                {soloLectura.map((f) => (
+                  <div key={f.etiqueta} className="contents">
+                    <dt className="text-muted-foreground">{f.etiqueta}</dt>
+                    <dd className="font-mono">{f.valor}</dd>
+                  </div>
+                ))}
+              </dl>
+              {edicion.explicacion && (
+                <p className="text-muted-foreground">{edicion.explicacion}</p>
+              )}
             </div>
-          </div>
+          )}
 
-          {moneda === "MXN" && (
+          {!dineroBloqueado && (
+            <>
+              <Field label="Método de cobro" required>
+                <SearchableSelect
+                  options={METODOS_PAGO.map((m) => ({
+                    value: m.value,
+                    label: m.label,
+                    description: m.hint,
+                  }))}
+                  value={metodo}
+                  onChange={handleMetodoChange}
+                  placeholder="Selecciona método"
+                />
+              </Field>
+
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <Field label="Monto" required hint={montoHint} error={errors.monto?.message}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="0.00"
+                    {...register("monto")}
+                  />
+                </Field>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Moneda</Label>
+                  <Segmented
+                    value={moneda}
+                    onChange={(v) => handleMonedaChange(v as Moneda)}
+                    options={[
+                      { value: "USD", label: "USD" },
+                      { value: "MXN", label: "MXN" },
+                    ]}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {mostrarTc && (
             <Field
               label="Tipo de cambio USD/MXN"
-              required
+              required={!(inicial && inicial.valores.moneda === "MXN" && inicial.valores.tc_usd_mxn === "")}
               hint={tcHint}
               error={errors.tc_usd_mxn?.message}
             >
@@ -624,14 +853,21 @@ export function CobroFormSheet({
             </Field>
           )}
 
-          {usdEquivalente !== null && (
+          {mostrarEquivalencia && usdEquivalente !== null && (
             <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
               <span className="text-muted-foreground">Equivale a </span>
               <span className="font-mono font-semibold">
                 {fmtUsd(usdEquivalente)}
               </span>
               <span className="text-muted-foreground"> USD. </span>
-              {cancelado ? (
+              {enEdicion ? (
+                // Al corregir no se promete «cubre el pendiente»: el
+                // pendiente de la página YA descuenta este mismo cobro. El
+                // cobrado lo recalcula el API al guardar.
+                <span className="text-muted-foreground">
+                  El saldo del vuelo se recalcula al guardar.
+                </span>
+              ) : cancelado ? (
                 <span className="text-muted-foreground">
                   Queda como cobro retenido del vuelo cancelado.
                 </span>
@@ -647,107 +883,111 @@ export function CobroFormSheet({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-            <Field
-              label={metodo === "PAYWISE" ? "Comisión de Paywise (%)" : "Comisión del banco (%)"}
-              hint={comisionPctHint}
-              error={errors.comision_banco_pct?.message}
-            >
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                max={20}
-                placeholder="Ej. 2.9"
-                disabled={Number(comisionMontoDirecto) > 0}
-                {...register("comision_banco_pct")}
-              />
-            </Field>
-            <Field
-              label={`… o comisión en ${moneda}`}
-              hint="Lo que retuvo el banco, tal como viene en el estado de cuenta. Manda sobre el %."
-              error={errors.comision_banco_monto?.message}
-            >
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="Ej. 589.05"
-                {...register("comision_banco_monto")}
-              />
-            </Field>
-          </div>
-          <p className="-mt-2 text-xs text-muted-foreground">
-            El cliente pagó el monto completo; el banco deposita monto −
-            comisión. Ambos campos son opcionales.
-          </p>
+          {!dineroBloqueado && (
+            <>
+              <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+                <Field
+                  label={metodo === "PAYWISE" ? "Comisión de Paywise (%)" : "Comisión del banco (%)"}
+                  hint={comisionPctHint}
+                  error={errors.comision_banco_pct?.message}
+                >
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={20}
+                    placeholder="Ej. 2.9"
+                    disabled={Number(comisionMontoDirecto) > 0}
+                    {...register("comision_banco_pct")}
+                  />
+                </Field>
+                <Field
+                  label={`… o comisión en ${moneda}`}
+                  hint="Lo que retuvo el banco, tal como viene en el estado de cuenta. Manda sobre el %."
+                  error={errors.comision_banco_monto?.message}
+                >
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="Ej. 589.05"
+                    {...register("comision_banco_monto")}
+                  />
+                </Field>
+              </div>
+              <p className="-mt-2 text-xs text-muted-foreground">
+                El cliente pagó el monto completo; el banco deposita monto −
+                comisión. Ambos campos son opcionales.
+              </p>
 
-          {Number(monto) > 0 &&
-            (Number(comisionMontoDirecto) > 0 || Number(comisionPct) > 0) && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
-              {(() => {
-                // Mismo redondeo que el API: comisión a 2 decimales y el neto
-                // se deriva de ELLA (no del producto crudo) — sin ±1 centavo.
-                const comision =
-                  Number(comisionMontoDirecto) > 0
-                    ? Math.round(Number(comisionMontoDirecto) * 100) / 100
-                    : Math.round(
-                        Number(monto) * (Number(comisionPct) / 100) * 100,
-                      ) / 100;
-                const pctRef =
-                  Math.round((comision / Number(monto)) * 100 * 100) / 100;
-                if (comision >= Number(monto)) {
-                  return (
-                    <span className="text-destructive">
-                      La comisión no puede ser mayor o igual al monto del cobro.
-                    </span>
-                  );
-                }
-                return (
-                  <>
-                    <span className="text-muted-foreground">Comisión: </span>
-                    <span className="font-mono font-semibold">
-                      −{fmtUsd(comision)} {moneda}
-                    </span>
-                    {Number(comisionMontoDirecto) > 0 && (
-                      <span className="text-muted-foreground"> (≈{pctRef}%)</span>
-                    )}
-                    <span className="text-muted-foreground"> · El banco depositará </span>
-                    <span className="font-mono font-semibold">
-                      {fmtUsd(Number(monto) - comision)} {moneda}
-                    </span>
-                    <span className="text-muted-foreground">
-                      . El vuelo se acredita por el monto completo.
-                    </span>
-                  </>
-                );
-              })()}
-            </div>
-          )}
+              {Number(monto) > 0 &&
+                (Number(comisionMontoDirecto) > 0 || Number(comisionPct) > 0) && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+                  {(() => {
+                    // Mismo redondeo que el API: comisión a 2 decimales y el neto
+                    // se deriva de ELLA (no del producto crudo) — sin ±1 centavo.
+                    const comision =
+                      Number(comisionMontoDirecto) > 0
+                        ? Math.round(Number(comisionMontoDirecto) * 100) / 100
+                        : Math.round(
+                            Number(monto) * (Number(comisionPct) / 100) * 100,
+                          ) / 100;
+                    const pctRef =
+                      Math.round((comision / Number(monto)) * 100 * 100) / 100;
+                    if (comision >= Number(monto)) {
+                      return (
+                        <span className="text-destructive">
+                          La comisión no puede ser mayor o igual al monto del cobro.
+                        </span>
+                      );
+                    }
+                    return (
+                      <>
+                        <span className="text-muted-foreground">Comisión: </span>
+                        <span className="font-mono font-semibold">
+                          −{fmtUsd(comision)} {moneda}
+                        </span>
+                        {Number(comisionMontoDirecto) > 0 && (
+                          <span className="text-muted-foreground"> (≈{pctRef}%)</span>
+                        )}
+                        <span className="text-muted-foreground"> · El banco depositará </span>
+                        <span className="font-mono font-semibold">
+                          {fmtUsd(Number(monto) - comision)} {moneda}
+                        </span>
+                        <span className="text-muted-foreground">
+                          . El vuelo se acredita por el monto completo.
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
-          {/* A qué cuenta LLEGÓ el dinero (pedido del equipo, 18-ago; catálogo
-              fijo desde 28-ago): una de CUENTAS_COBRO. Solo métodos que tocan
-              banco. Opcional: "Sin especificar" lo deja vacío. */}
-          {METODOS_CON_CUENTA.includes(metodo) && (
-            <Field
-              label="¿A qué cuenta llegó?"
-              hint={cuentaHint}
-              error={errors.cuenta_destino?.message}
-            >
-              <SearchableSelect
-                options={cuentaOptions}
-                value={cuentaDestino ?? ""}
-                onChange={(v) =>
-                  setValue(
-                    "cuenta_destino",
-                    v as CobroFormValues["cuenta_destino"],
-                    { shouldValidate: true },
-                  )
-                }
-                placeholder="Sin especificar"
-                searchPlaceholder="Buscar cuenta…"
-              />
-            </Field>
+              {/* A qué cuenta LLEGÓ el dinero (pedido del equipo, 18-ago; catálogo
+                  fijo desde 28-ago): una de CUENTAS_COBRO. Solo métodos que tocan
+                  banco. Opcional: "Sin especificar" lo deja vacío. */}
+              {METODOS_CON_CUENTA.includes(metodo) && (
+                <Field
+                  label="¿A qué cuenta llegó?"
+                  hint={cuentaHint}
+                  error={errors.cuenta_destino?.message}
+                >
+                  <SearchableSelect
+                    options={cuentaOptions}
+                    value={cuentaDestino ?? ""}
+                    onChange={(v) =>
+                      setValue(
+                        "cuenta_destino",
+                        v as CobroFormValues["cuenta_destino"],
+                        { shouldValidate: true },
+                      )
+                    }
+                    placeholder="Sin especificar"
+                    searchPlaceholder="Buscar cuenta…"
+                  />
+                </Field>
+              )}
+            </>
           )}
 
           <Field
@@ -773,6 +1013,17 @@ export function CobroFormSheet({
               {...register("notas")}
             />
           </Field>
+
+          {/* Rechazo del API al corregir: se queda a la vista (el toast se
+              va solo) con el mensaje en es-MX. */}
+          {enEdicion && errorGuardado && (
+            <p
+              role="alert"
+              className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              {errorGuardado}
+            </p>
+          )}
         </form>
 
         <SheetFooter className="border-t border-border flex-row justify-end gap-2 mt-0">
@@ -785,15 +1036,68 @@ export function CobroFormSheet({
             Cancelar
           </Button>
           <Button type="button" onClick={onSubmit} disabled={pending}>
-            {pending
-              ? "Registrando…"
-              : cancelado
-                ? "Registrar cargo"
-                : "Registrar cobro"}
+            {enEdicion
+              ? pending
+                ? "Guardando…"
+                : "Revisar y guardar"
+              : pending
+                ? "Registrando…"
+                : cancelado
+                  ? "Registrar cargo"
+                  : "Registrar cobro"}
           </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
+
+    {/* Confirmación de la CORRECCIÓN: el antes → después de lo que cambia
+        (es dinero). Solo «Guardar corrección» llama al API. */}
+    <AlertDialog
+      open={confirmacion !== null}
+      onOpenChange={(o) => {
+        if (!o && !pending) setConfirmacion(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{TITULO_CONFIRMAR_EDICION}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {cobroEditar ? descripcionConfirmarEdicion(cobroEditar, flightFolio) : ""}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <ul className="space-y-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm">
+          {(confirmacion?.lineas ?? []).map((l) => (
+            <li key={l.campo} className="leading-snug">
+              <span className="text-muted-foreground">{l.etiqueta}: </span>
+              <span className="text-muted-foreground line-through decoration-muted-foreground/60">
+                {l.antes}
+              </span>
+              <span aria-hidden="true"> → </span>
+              <span className="sr-only"> cambia a </span>
+              <span className="font-semibold">{l.despues}</span>
+            </li>
+          ))}
+        </ul>
+        {confirmacion?.tocaDinero && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {NOTA_RECALCULO_COBRO}
+          </p>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Volver a editar</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={pending}
+            onClick={(e) => {
+              e.preventDefault();
+              guardarCorreccion();
+            }}
+          >
+            {pending ? "Guardando…" : "Guardar corrección"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 
@@ -826,7 +1130,7 @@ function Segmented({
             key={opt.value}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "flex-1 h-7 px-2 text-xs font-medium rounded-md transition-colors",
+              "flex-1 h-7 px-2 text-xs font-medium rounded-md transition-colors cursor-pointer",
               active
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",

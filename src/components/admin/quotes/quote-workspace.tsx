@@ -613,6 +613,15 @@ export function QuoteWorkspace({
                 : null
             }
             voucherUrls={voucherUrls}
+            // «Editar» un cobro (26-sep-2026): la ficha de corrección usa la
+            // MISMA vista rápida de la cotización que al registrar.
+            tcCotizacion={quote.tc_usd_mxn != null ? Number(quote.tc_usd_mxn) : null}
+            montoTotalMxn={
+              quote.monto_total_mxn != null ? Number(quote.monto_total_mxn) : null
+            }
+            tcOficial={tcOficial}
+            tcOficialFecha={tcOficialFecha}
+            paywiseComisionPct={paywiseComisionPct}
           />
         </div>
 

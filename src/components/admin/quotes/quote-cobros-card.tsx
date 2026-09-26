@@ -32,6 +32,9 @@ import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
+import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
+import { EditarCobroBoton } from "@/components/admin/flights/editar-cobro-boton";
+import { hayCobrosEditables, TEXTO_SOBRE_NO_SE_EDITA } from "@/lib/admin/cobro-edicion";
 import {
   CobroConciliadoBadge,
   CobroSobreNota,
@@ -48,6 +51,7 @@ import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import {
   TITULO_REGISTRO_COBRO,
   TOLERANCIA_COBRO_USD,
+  pendienteCobro,
   textoRegistroCobro,
 } from "@/lib/admin/cobros";
 
@@ -70,6 +74,11 @@ import {
  *  3. La «burbujita» de FACTURA: número ⇒ PDF, «pedida — pendiente» o
  *     «Necesito factura»; facturación ve «Registrar factura».
  *  4. El COMPROBANTE de cada cobro (ver o adjuntar DESPUÉS de registrado).
+ *
+ * 26-sep-2026 (captura de la #315 «Beh Kay»: «grabaron mal un cobro del 17
+ * de septiembre y no podemos editarlo de forma sencilla»): cada cobro lleva
+ * «Editar» (ADMIN/FACTURACION) que abre el MISMO formulario de cobro en modo
+ * corrección — antes la única salida era borrarlo y recapturarlo.
  */
 export function QuoteCobrosCard({
   quoteId,
@@ -88,6 +97,11 @@ export function QuoteCobrosCard({
   fechaVuelo = null,
   grupo = null,
   voucherUrls = {},
+  tcCotizacion = null,
+  montoTotalMxn = null,
+  tcOficial = null,
+  tcOficialFecha = null,
+  paywiseComisionPct,
 }: {
   quoteId: string;
   /** Folio del vuelo (encabezado del diálogo de reembolso). */
@@ -113,10 +127,26 @@ export function QuoteCobrosCard({
   grupo?: { id: string; total_aviones: number } | null;
   /** URLs firmadas de los comprobantes (best-effort; SOCIO recibe 403). */
   voucherUrls?: Record<string, string>;
+  /** Para la ficha «Corregir cobro» (la misma vista rápida de la
+      cotización que al registrar): T.C. pactado, pesos exactos, T.C.
+      oficial de respaldo y la comisión sugerida de Paywise. */
+  tcCotizacion?: number | null;
+  montoTotalMxn?: number | null;
+  tcOficial?: number | null;
+  tcOficialFecha?: string | null;
+  paywiseComisionPct?: number;
 }) {
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, startDelete] = useTransition();
+  // «Editar» un cobro (26-sep-2026): el cobro se conserva al cerrar para que
+  // la ficha no cambie de modo mientras se anima la salida.
+  const [editando, setEditando] = useState<FlightCobro | null>(null);
+  const [editarAbierto, setEditarAbierto] = useState(false);
+  const abrirEdicion = (c: FlightCobro) => {
+    setEditando(c);
+    setEditarAbierto(true);
+  };
 
   const sinCobros = cobros.length === 0;
   // Misma tolerancia que el API (1 USD): los centavos de la conversión
@@ -180,15 +210,12 @@ export function QuoteCobrosCard({
               Cobrado {fmtUsd(totalCobrado)} de {fmtUsd(montoTotalUsd)}. Mientras
               exista un cobro, la cotización no puede editarse (cambiaría un
               total ya cobrado): elimínalo aquí si necesitas ajustarla.
+              {hayCobrosEditables(cobros, rol) && (
+                <> Si un cobro se capturó mal (monto, fecha, método…), corrígelo con «Editar».</>
+              )}
             </>
           )}
-          {haySobre && (
-            <>
-              {" "}
-              Los cobros que son parte de un sobre de grupo se eliminan o
-              re-parten desde el grupo (Cobros del grupo).
-            </>
-          )}
+          {haySobre && <> {TEXTO_SOBRE_NO_SE_EDITA}</>}
         </CardDescription>
         {(botonRegistrar || conReembolso) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -314,6 +341,10 @@ export function QuoteCobrosCard({
                   <DocumentArrowDownIcon className="h-4 w-4" />
                 </a>
               )}
+              {/* CORREGIR el cobro (26-sep-2026): ADMIN/FACTURACION, nunca
+                  en una parte de sobre de grupo. No lo bloquea el candado de
+                  la cotización: corregir un cobro no cambia el precio. */}
+              <EditarCobroBoton cobro={c} rol={rol} onEditar={abrirEdicion} />
               {/* Parte de un sobre de grupo: NO se elimina por vuelo (el
                   API responde 409 COBRO_DE_GRUPO); se hace desde el grupo. */}
               {/* Cobro de ANTICIPO: «Desaplicar» (ADMIN/FACTURACION, los
@@ -434,6 +465,28 @@ export function QuoteCobrosCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* El MISMO formulario de cobro del vuelo, en modo «Corregir cobro»:
+          confirma el antes → después y manda solo lo que cambió. Al guardar
+          hace router.refresh() (cobros, cobrado y candado de la cotización). */}
+      <CobroFormSheet
+        open={editarAbierto}
+        onOpenChange={setEditarAbierto}
+        flightId={quoteId}
+        flightFolio={quoteFolio ?? 0}
+        montoTotalUsd={montoTotalUsd}
+        pendingUsd={
+          vueloEstado === "CANCELADO" ? 0 : pendienteCobro(montoTotalUsd, totalCobrado)
+        }
+        cancelado={vueloEstado === "CANCELADO"}
+        tcCotizacion={tcCotizacion}
+        montoTotalMxn={montoTotalMxn}
+        tieneCobros={!sinCobros}
+        tcOficial={tcOficial}
+        tcOficialFecha={tcOficialFecha}
+        paywiseComisionPct={paywiseComisionPct}
+        cobroEditar={editando}
+      />
     </Card>
   );
 }

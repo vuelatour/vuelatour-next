@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
 import { CobroFormSheet } from "./cobro-form-sheet";
+import { EditarCobroBoton } from "./editar-cobro-boton";
 import { ReembolsoButton } from "./reembolso-dialog";
 import {
   CobroConciliadoBadge,
@@ -47,6 +48,7 @@ import {
   textoRegistroCobro,
   type EstadoCobroSemaforo,
 } from "@/lib/admin/cobros";
+import { hayCobrosEditables, TEXTO_SOBRE_NO_SE_EDITA } from "@/lib/admin/cobro-edicion";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { FacturaClienteBloque } from "@/components/admin/flights/factura-cliente-bloque";
 import {
@@ -186,6 +188,16 @@ export function CobrosCard({
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // «Editar» un cobro (26-sep-2026): el MISMO formulario en modo corrección.
+  // El cobro se conserva al cerrar para que la ficha no cambie de modo
+  // mientras se anima la salida.
+  const [editando, setEditando] = useState<FlightCobro | null>(null);
+  const [editarAbierto, setEditarAbierto] = useState(false);
+  const abrirEdicion = (c: FlightCobro) => {
+    setEditando(c);
+    setEditarAbierto(true);
+  };
+  const haySobre = cobros.some(esParteDeSobre);
   // Regla del cliente (28-ago): un vuelo CANCELADO puede tener dinero real —
   // anticipo retenido o cargo por cancelación que NO se reembolsa — y entra
   // íntegro al balance del avión. La oficina sí registra cobros aquí (el API
@@ -216,6 +228,12 @@ export function CobrosCard({
               : cobros.length === 0
                 ? "Sin cobros todavía."
                 : `${cobros.length} ${cobros.length === 1 ? "cobro registrado" : "cobros registrados"}.`}
+            {/* Corregir: solo quien puede (mismos roles del API) y dicho una
+                vez, para que nadie borre y recapture un cobro mal grabado. */}
+            {hayCobrosEditables(cobros, rol) && (
+              <> Si uno se capturó mal, corrígelo con «Editar».</>
+            )}
+            {haySobre && <> {TEXTO_SOBRE_NO_SE_EDITA}</>}
           </CardDescription>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -505,6 +523,14 @@ export function CobrosCard({
                         <DocumentArrowDownIcon className="h-3.5 w-3.5" />
                       </a>
                     )}
+                    {/* CORREGIR el cobro (26-sep-2026): ADMIN/FACTURACION,
+                        nunca en una parte de sobre de grupo. */}
+                    <EditarCobroBoton
+                      cobro={c}
+                      rol={rol}
+                      onEditar={abrirEdicion}
+                      className="h-7"
+                    />
                     {/* Parte de un sobre de grupo: NO se elimina por vuelo
                         (el API responde 409 COBRO_DE_GRUPO); se hace desde
                         Cobros del grupo, que re-parte el sobre completo. */}
@@ -631,6 +657,24 @@ export function CobrosCard({
         tcOficial={tcOficial}
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
+      />
+
+      {/* El MISMO formulario, en modo «Corregir cobro». */}
+      <CobroFormSheet
+        open={editarAbierto}
+        onOpenChange={setEditarAbierto}
+        flightId={flightId}
+        flightFolio={flightFolio}
+        montoTotalUsd={montoTotalUsd}
+        pendingUsd={pendingUsd}
+        cancelado={cancelado}
+        tcCotizacion={tcCotizacion}
+        montoTotalMxn={montoTotalMxn}
+        tieneCobros={cobros.length > 0}
+        tcOficial={tcOficial}
+        tcOficialFecha={tcOficialFecha}
+        paywiseComisionPct={paywiseComisionPct}
+        cobroEditar={editando}
       />
     </>
   );

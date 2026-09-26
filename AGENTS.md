@@ -3584,3 +3584,129 @@ igual su costo de 30 DLS». Contrato con el API **0.0.36** (migración de DATOS
   sigue exigiendo el T.C. de la «Entrada inicial» en pesos (el API ya no lo
   exige; no estaba en el alcance). Sin QA visual en navegador todavía.
 
+
+## Corregir un cobro: «Editar» en las cards de cobros (26-sep-2026)
+
+Pedido del cliente con la captura de la cotización #315 «Beh Kay» (card
+«Cobros del vuelo» con «$3,400 MXN · Transferencia → Scotiabank Pesos · 15
+sep 2026 · Registró: Itzi» y «$68,205.55 MXN …», cada uno SOLO con recibo y
+bote de basura): «Necesito que me ayudes a habilitar una opción para poder
+editar los cobros en las cotizaciones, porque ahorita pasó que grabaron mal un
+cobro del 17 de septiembre y no podemos editarlo de forma sencilla para
+corregirlo». La única salida era borrar y recapturar.
+
+- **El API ya lo permitía** (`PATCH /v1/flights/cobros/:cobroId`, ADMIN y
+  FACTURACION, `UpdateCobroDto`, `FlightsService.updateCobro` recalcula la
+  bandera `cobrado` con `cobrosEnUsd`). **No se tocó el API**: los cuerpos que
+  manda el panel (incluidos los `null` para vaciar referencia/notas/cuenta y
+  `comision_banco_pct: 0` para quitar la comisión) se verificaron contra el
+  `ValidationPipe` real del API (whitelist + forbidNonWhitelisted + implicit
+  conversion).
+- **Dónde**: botón «Editar» (lápiz + texto visible, `title` que dice qué se
+  corrige, nombre accesible con el monto: «Editar cobro de $3,400 MXN»,
+  `cursor-pointer`) en cada cobro de `quotes/quote-cobros-card.tsx` y de
+  `flights/cobros-card.tsx`, vía el componente ÚNICO
+  `flights/editar-cobro-boton.tsx` (`EditarCobroBoton`). Solo ADMIN/FACTURACION
+  (`puedeEditarCobro`, espejo del `@Roles` del PATCH). Parte de un sobre de
+  grupo ⇒ sin botón y la card lo dice (`TEXTO_SOBRE_NO_SE_EDITA`: «…se
+  corrigen, re-parten o eliminan desde el grupo»). Las dos cards agregan «Si
+  un cobro se capturó mal…, corrígelo con «Editar»» para quien puede.
+- **El MISMO formulario** (`flights/cobro-form-sheet.tsx`, prop nueva
+  `cobroEditar`): título «Corregir cobro · vuelo #315» («Corregir reembolso»
+  si es negativo), subtítulo «Cobro del 17 sep 2026 · $68,205.55 MXN ·
+  Registró: Itzi…», prellenado con `formularioDesdeCobro` (fecha = día de
+  pared en Cancún vía `isoToCancunInput`; al cambiar el día se conserva la
+  HORA de pared original con `cancunInputToIso`). Cada card monta su propia
+  instancia en modo edición (la del vuelo conserva además la del alta); el
+  cobro se guarda en estado aparte del `open` para que la ficha no cambie de
+  modo mientras se anima la salida. En edición NO hay sugerencias de monto
+  (el pendiente ya descuenta ese cobro) ni «cubre el pendiente»: la ficha dice
+  «El saldo del vuelo se recalcula al guardar». El reset de la edición es un
+  efecto APARTE que solo depende de abrir y del cobro: un `router.refresh()`
+  (p. ej. `RefreshOnFocus`) no borra una corrección a medio capturar.
+- **Qué se corrige por TIPO** (`edicionDeCobro`, espejo EXACTO de los candados
+  de `updateCobro`; el panel es igual o MÁS estricto, nunca menos):
+
+  | Tipo | Dinero (monto, moneda, método, comisión, cuenta) | T.C. | Fecha, referencia, notas |
+  |---|---|---|---|
+  | Normal | editable | editable | editable |
+  | Reembolso (monto < 0) | solo lectura (API: 400) | solo lectura (API: 400) | editable |
+  | Conciliado directo (`conciliado` y `conciliado_via ≠ ANTICIPO`) | solo lectura (API: 409) | solo lectura (API: 409) | editable |
+  | De un anticipo | solo lectura (API: 409 `COBRO_DE_ANTICIPO`) | **editable** (no toca el saldo del anticipo) | editable |
+  | Parte de sobre de grupo | — sin botón (API: 409 `COBRO_DE_GRUPO`) | — | — |
+
+  Lo bloqueado se LEE en un recuadro «Lo que no se corrige aquí»
+  (`datosSoloLecturaCobro`, montos con su moneda) + la explicación de qué
+  hacer (desvincular en Conciliación, eliminar y recapturar el reembolso,
+  desaplicar el anticipo). El API deja cambiar método/cuenta de un conciliado
+  o de un reembolso y la cuenta de un anticipo; el panel NO lo ofrece (son el
+  «dinero» del movimiento y romperían el cuadre con el banco/anticipo).
+- **Solo viaja lo que cambió** (`cambiosDeCobro` → `PatchCobro`), nunca el
+  formulario entero; lo bloqueado jamás viaja aunque el formulario traiga otro
+  valor. Monto y moneda van en UNA línea con su moneda («$68,205.55 MXN →
+  $62,805.55 MXN»); vaciar referencia/notas/cuenta manda `null`; una cuenta
+  LEGADA (alias fuera del catálogo) se conserva si no se elige otra
+  (`hintCuentaLegada`).
+- **T.C. con la MISMA regla que el alta** (revisión adversaria 26-sep-2026):
+  un cobro en DÓLARES no guarda T.C. (el alta nunca lo manda en USD y en
+  producción ningún cobro USD lo tiene). Al pasar un cobro de pesos a dólares
+  el diff manda `tc_usd_mxn: null` con la línea «Tipo de cambio: 17.35 → no
+  aplica (cobro en USD)»: si el T.C. viejo se quedara, el balance por avión y
+  el Libro Dinero (`c.tc_usd_mxn ?? K`) convertirían ese cobro con él en vez
+  del T.C. de venta, distinto de un cobro idéntico registrado en dólares. El
+  `ValidationPipe` real del API acepta el `null` y `updateCobro` lo guarda
+  como null (`normalizarTc`). Al pasar de dólares a pesos el T.C. viaja
+  SIEMPRE (es el que convierte desde ahora).
+- **Motivo del reembolso**: vive en sus notas («Reembolso: …», obligatorio al
+  registrarlo); al corregir se reescribe pero no se deja vacío
+  (`MSG_MOTIVO_REEMBOLSO`).
+- La card solo dice «corrígelo con «Editar»» cuando hay al menos un cobro con
+  el botón (`hayCobrosEditables`): con puras partes de sobre no hay qué
+  señalar.
+- **Comisión WYSIWYG**: el cobro guarda % y monto; `formularioDesdeCobro`
+  prellena el % SOLO si reproduce EXACTO la comisión guardada con la expresión
+  del API (`Math.round(monto × (pct/100) × 100)/100`; Paywise 8.857 % de
+  68,205.55 = 6,040.97) y si no el MONTO (589.05 capturado directo tiene un %
+  derivado 0.8636 que daría 589.02). Al corregir el monto: con % el API
+  recalcula con el mismo % y la confirmación ya dice el resultado; con monto
+  directo el panel REENVÍA `comision_banco_monto` (el API la reescalaría con
+  el % derivado).
+- **Validación propia** (`erroresEdicionCobro`, el refine del alta se apaga
+  con el campo oculto `modo_edicion`): monto > 0 y comisión < monto solo si el
+  dinero es editable; T.C. obligatorio en pesos SALVO un cobro que ya estaba
+  en pesos sin T.C. propio (el API lo convierte con el de la cotización) — se
+  frena vaciar uno que existía; fecha obligatoria.
+- **Confirmación** (regla del cliente: es dinero): «Revisar y guardar» NO llama
+  al API; abre un `AlertDialog` «¿Guardar la corrección?» con «Cobro del 17 sep
+  2026 · vuelo #315. Esto es lo que cambia:» y las líneas antes (tachado) →
+  después, más «El cobrado y el saldo del vuelo se recalculan al guardar»
+  cuando cambia monto/moneda/T.C./comisión. Sin cambios ⇒ toast «No cambiaste
+  nada del cobro.». Solo «Guardar corrección» llama a `updateCobroAction`
+  (`app/admin/flights/actions.ts`: valida uuid, descarta `undefined`, nunca
+  lanza, revalida vuelo + `/admin/quotes` + `/admin/quotes/:id`) y luego
+  `router.refresh()` + toast «Cobro corregido · Cambió: monto, fecha del
+  cobro.». Error ⇒ toast + recuadro rojo que se queda en la ficha con
+  `mensajeErrorEdicionCobro`: las reglas del API (conciliado, reembolso,
+  anticipo, sobre, comisión ≥ monto) se pintan TAL CUAL; 404 ⇒ «ya no existe
+  (alguien lo eliminó)», 403 ⇒ «solo administración y facturación», validación
+  en inglés ⇒ texto genérico en es-MX, «should not exist» ⇒ falta actualizar
+  el API, 502/Railway ⇒ «la corrección NO se guardó»; `COBRO_DE_GRUPO` con
+  «Ir al grupo».
+- **No lo bloquea el candado de la cotización**: corregir un cobro no cambia el
+  precio pactado (el candado de edición depende del cobrado neto y se
+  rehidrata con el `router.refresh()`).
+- **Fuente única**: `lib/admin/cobro-edicion.ts` (PURA): roles, tipos,
+  prellenado, diff, validación, textos (títulos, `title`/`aria-label` del
+  botón, confirmación, toast) y errores. Ningún componente redacta estas
+  frases.
+- **Pruebas**: `lib/admin/__tests__/cobro-edicion.test.ts` (los cobros de
+  la #315, hora Cancún del cobro del 17-sep capturado a las 22:30, comisión % vs
+  monto, cada tipo, diff y validación, errores),
+  `components/admin/flights/__tests__/cobros-card-editar.test.tsx` (botón
+  por rol y por tipo en las DOS cards, sobre sin botón con su texto, cableado
+  de la ficha y guardas de código: el PATCH sale una sola vez y solo tras
+  confirmar) y `app/admin/flights/__tests__/update-cobro-action.test.ts`
+  (ruta, cuerpo sin `undefined` pero con los `null`, revalidación, guardas,
+  error con `code`).
+- **Pendiente conocido**: sin QA visual en navegador (el formulario vive en un
+  portal y el proyecto no tiene DOM de pruebas).
