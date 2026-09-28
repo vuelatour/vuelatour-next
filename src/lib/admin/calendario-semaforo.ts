@@ -1,5 +1,18 @@
 /**
- * Semáforo del calendario: SEIS colores y nada más (24-sep-2026).
+ * Semáforo del calendario: SIETE colores y nada más (28-sep-2026; seis desde
+ * el 24-sep-2026).
+ *
+ * Pedido textual del cliente (28-sep-2026): «los vuelos de Servicio, poner en
+ * color Café en el calendario web, app y google calendar». Séptimo renglón:
+ * **Servicio (taller / parada técnica)**, café `#8B5E3C` (texto blanco): el
+ * vuelo SIN pasajeros con alguna parada de servicio — no es del cliente y no
+ * se cotiza (la misma regla del candado del cotizador, `esVueloDeServicio`;
+ * aquí NO se evalúa: el API manda el color ya resuelto y el aditivo
+ * `servicio`). Precedencia (la decide el API): cancelado > SERVICIO >
+ * tentativo > pendiente > pagado > confirmado — un vuelo de servicio nunca se
+ * ve «pagado». El MANTENIMIENTO del avión (🔧) sigue amarillo: es una orden de
+ * taller, no un vuelo. En Google, que no tiene café, el servicio sale
+ * «Mandarina».
  *
  * Pedido textual del cliente (24-sep-2026), sobre el semáforo de 5 del
  * 22-sep: «Ale quiere cambiar el color del descanso y agregar el de cobrado
@@ -18,7 +31,8 @@
  *   22-sep); hoy SOLO significa descanso.
  * - Precedencia de un vuelo o tramo (la decide el API, no el panel):
  *   cancelado > tentativo > pendiente > PAGADO > confirmado. Un pagado con
- *   permiso pendiente se ve AMARILLO hasta resolver el permiso.
+ *   permiso pendiente se ve AMARILLO hasta resolver el permiso. (Desde el
+ *   28-sep el SERVICIO va entre el cancelado y el tentativo: ver arriba.)
  *
  * Antes del 22-sep convivían OCHO colores (el del avión entre ellos) y el
  * calendario se leía como un mosaico: el color del avión decía QUÉ avión, no
@@ -45,6 +59,11 @@ export const COLOR_PAGADO = "#3B82F6";
 export const COLOR_CANCELADO = "#EF4444";
 /** Morado: descanso de piloto. */
 export const COLOR_DESCANSO = "#8B5CF6";
+/**
+ * Café: vuelo de SERVICIO (taller / parada técnica, sin pasajeros;
+ * 28-sep-2026). Lleva texto BLANCO (`textOnColor`, contraste ≈ 5.6:1).
+ */
+export const COLOR_SERVICIO = "#8B5E3C";
 
 export type ClaveSemaforo =
   | "tentativo"
@@ -52,7 +71,8 @@ export type ClaveSemaforo =
   | "confirmado"
   | "pagado"
   | "cancelado"
-  | "descanso";
+  | "descanso"
+  | "servicio";
 
 /** Hex por clave del semáforo (mismo valor que los exports de arriba). */
 export const COLOR_SEMAFORO: Record<ClaveSemaforo, string> = {
@@ -62,6 +82,7 @@ export const COLOR_SEMAFORO: Record<ClaveSemaforo, string> = {
   pagado: COLOR_PAGADO,
   cancelado: COLOR_CANCELADO,
   descanso: COLOR_DESCANSO,
+  servicio: COLOR_SERVICIO,
 };
 
 /**
@@ -74,6 +95,15 @@ export const COLOR_SEMAFORO: Record<ClaveSemaforo, string> = {
 export const AYUDA_PENDIENTE =
   "Permiso de pista pendiente. También se pinta así el vuelo confirmado que todavía no tiene avión o piloto asignado.";
 
+/**
+ * Tooltip base del renglón «Servicio (taller / parada técnica)»: COPIA EXACTA
+ * de `AYUDA_SERVICIO` del API (28-sep-2026), que la app también usa tal cual.
+ * Si allá cambia la redacción, aquí también (lo vigila
+ * `calendario-semaforo.test.ts`).
+ */
+export const AYUDA_SERVICIO =
+  "Vuelo sin pasajeros con parada de servicio: no es del cliente y no se cotiza.";
+
 export interface ItemSemaforo {
   clave: ClaveSemaforo;
   /** Texto del renglón, palabra por palabra como lo pidió el cliente. */
@@ -84,7 +114,8 @@ export interface ItemSemaforo {
 }
 
 /**
- * La leyenda: SEIS renglones, en el orden de la «listita» del cliente. Toda
+ * La leyenda: SIETE renglones — los seis de la «listita» del cliente
+ * (24-sep-2026), en su orden, y al final el SERVICIO del 28-sep-2026. Toda
  * leyenda de calendario del panel se pinta desde aquí (hoy:
  * `components/admin/calendar/leyenda-semaforo.tsx`).
  */
@@ -131,6 +162,15 @@ export const SEMAFORO_CALENDARIO: readonly ItemSemaforo[] = [
     color: COLOR_DESCANSO,
     titulo:
       "Día de descanso de un piloto (botón «Marcar descanso»). Al asignar vuelos, el piloto aparece con aviso esos días.",
+  },
+  {
+    clave: "servicio",
+    etiqueta: "Servicio (taller / parada técnica)",
+    color: COLOR_SERVICIO,
+    // Misma redacción que el API y la app (`AYUDA_SERVICIO`) + lo que el
+    // operador necesita para no confundirlo: la marca vive en el tramo, gana
+    // al pagado y el mantenimiento (🔧) NO es café.
+    titulo: `${AYUDA_SERVICIO} Sale así cuando algún tramo está marcado como Servicio y ningún tramo lleva pasajeros; aunque tenga cobros, no se pinta de pagado. Los mantenimientos del avión (🔧) siguen en amarillo.`,
   },
 ];
 

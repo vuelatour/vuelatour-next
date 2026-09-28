@@ -64,7 +64,8 @@ import type {
  * del total y barra de acciones). Guardar pide el motivo (chip + texto) en
  * un diálogo y crea la versión. Bloqueada (cobrada, facturada, mes cerrado,
  * servicio): lectura con 🔒, la razón en la barra del total y «Copiar como
- * nueva cotización».
+ * nueva cotización». «Copiar como nueva» vive ADEMÁS en la barra de acciones
+ * en TODOS los estados (28-sep-2026, `lib/admin/quote-copia.ts`).
  *
  * Lo demás sigue aquí: barra de acciones (PDF, confirmar, cancelar, ver
  * vuelo), presencia, badges de grupo/combinado y, DEBAJO de la hoja y de sus
@@ -472,6 +473,11 @@ export function QuoteWorkspace({
               // «Ajuste rápido» (D2): atajo al campo de pasajeros del documento;
               // solo tiene sentido si el documento se puede editar.
               onAjusteRapido={editable ? irAjusteRapido : undefined}
+              // «Copiar como nueva» (28-sep-2026): en TODOS los estados. La
+              // copia la arma el cotizador con lo que hay en pantalla (y
+              // pregunta si hay cambios sin guardar); hasta que reporta su
+              // estado (primer efecto) el botón se pinta deshabilitado.
+              onCopiarComoNueva={edicion ? () => edicion.copiarComoNueva() : undefined}
               rol={rol}
             />
           </div>

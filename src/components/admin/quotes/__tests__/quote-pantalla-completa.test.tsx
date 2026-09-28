@@ -1062,3 +1062,31 @@ describe("cotización cobrada · permiso especial", () => {
     expect(html).not.toContain("Tienes permiso para corregirla");
   });
 });
+
+// ---------- 11. «Copiar como nueva cotización» del candado, por rol ----------
+
+/**
+ * 28-sep-2026: «Copiar como nueva» vive en la barra de acciones en TODOS los
+ * estados (`quote-copiar-como-nueva.test.tsx`) y el botón del candado 🔒 de
+ * la barra del total se queda, con la MISMA regla de rol: quien no puede
+ * CREAR una cotización (SOCIO, FACTURACION, ANALISTA) no ve la invitación a
+ * un alta que el API le rechaza al guardar.
+ */
+describe("«Copiar como nueva cotización» en el candado", () => {
+  it("lectura como ADMIN: se ofrece junto a la razón", () => {
+    const html = render(CASOS.find((c) => c.nombre === "#329 · ADMIN · lectura (cobrada)")!);
+    expect(html).toContain("La cotización está cobrada");
+    expect(html).toContain("Copiar como nueva cotización");
+  });
+
+  it("lectura como SOCIO: la razón sí, la copia no", () => {
+    const html = render(CASOS.find((c) => c.nombre === "#329 · SOCIO · lectura")!);
+    expect(html).toContain("La cotización está cobrada");
+    expect(html).not.toContain("Copiar como nueva cotización");
+  });
+
+  it("editable: el candado no se pinta (la copia vive en la barra de acciones)", () => {
+    const html = render(CASOS.find((c) => c.nombre === "#329 · ADMIN")!);
+    expect(html).not.toContain("Copiar como nueva cotización");
+  });
+});

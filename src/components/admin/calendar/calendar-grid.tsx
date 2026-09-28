@@ -349,6 +349,13 @@ function DayEvent({ ev, ctx }: { ev: CalendarEvent; ctx: EventosCtx }) {
         {ev.pagado && (
           <p className="text-blue-600 dark:text-blue-400">✓ Pagado (cobrado completo)</p>
         )}
+        {/* Servicio (28-sep-2026): explica el café — vuelo al taller o parada
+            técnica sin pasajeros. El color ya viene resuelto del API. */}
+        {ev.servicio && (
+          <p className="text-amber-800 dark:text-amber-300">
+            Vuelo de servicio (taller / parada técnica, sin pasajeros)
+          </p>
+        )}
       </div>
     </Link>
   );

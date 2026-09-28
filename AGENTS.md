@@ -307,7 +307,10 @@ SOLO pinta dinero que devuelve `POST /v1/quotes/calculate`).
   override de horas por tramo: se cambian las millas del tramo o se pacta
   el total (Cobrable pactado / Sobrevuelo).
 - Lectura bloqueada (`bloqueadoRazon`): la hoja se pinta como texto (sin
-  inputs), 🔒 + razón en la barra de estado y «Copiar como nueva cotización».
+  inputs), 🔒 + razón en la barra de estado y «Copiar como nueva cotización»
+  (este último solo para quien puede crear cotizaciones; «Copiar como nueva»
+  vive ADEMÁS en la barra de acciones en TODOS los estados — ver «Copiar
+  como nueva: siempre a la mano», abajo).
 
 ### Panel «Interno · no se imprime» — RETIRADO (22-sep-2026)
 
@@ -392,7 +395,8 @@ porque en la cotización interna sí va a aparecer todo».
   `candadoRevision(quote).canRevise` (fuente única
   `lib/admin/quote-revision.ts`, `RAZON_REVISION`); si no, lectura con 🔒,
   la razón en la TotalBar y «Copiar como nueva cotización» (prellena
-  `/new?d=`). Cobrado bloquea en cualquier estado (D3; el API responde 409
+  `/new?d=`; desde el 28-sep-2026 también en la barra de acciones, en todo
+  estado). Cobrado bloquea en cualquier estado (D3; el API responde 409
   `COTIZACION_COBRADA` → banner rojo + liga a `#cobros-vuelo`) **salvo para
   quien tiene el permiso especial por persona** (26-sep-2026, ver «Cotización
   cobrada: editable con permiso por persona» abajo).
@@ -468,6 +472,75 @@ porque en la cotización interna sí va a aparecer todo».
 - `QuoteCobrosCard` (#cobros-vuelo) se pinta SIEMPRE debajo de la hoja
   (0 cobros = «Sin cobros registrados» + botón); la página trae el snapshot
   en todo estado (best-effort). Nada de cobros dentro del papel.
+
+### «Copiar como nueva»: siempre a la mano (28-sep-2026)
+
+Pedido del cliente: «ya no está la opción de usar de copia la cotización para
+una nueva; esa función es muy útil, la necesitamos de nuevo» (captura de la
+#257, Completado, Cobrado $0: la barra tenía Ver vuelo · PDF · PDF interno ·
+Ajuste rápido y NO copiar). El botón existía, pero SOLO en la lectura
+bloqueada (🔒 de la TotalBar); desde que el 26-sep muchas cotizaciones abren
+editables, para ellas desapareció.
+
+- **Dónde**: botón **«Copiar como nueva»** (ícono duplicar + texto visible,
+  `title` = `TITULO_BOTON_COPIAR`) en la barra de acciones
+  (`quote-actions-bar.tsx`, prop `onCopiarComoNueva`) en TODOS los estados:
+  editable, con cambios, bloqueada, cancelada, completada. El botón del
+  candado 🔒 y el del banner rojo del 409 `COTIZACION_COBRADA` se QUEDAN y
+  llaman a la MISMA función.
+- **Roles**: `puedeCopiarCotizacion(rol)` = quien puede CREAR
+  (`ROLES_EDITAN_COTIZACION`: ADMIN/COORDINADOR, espejo del `@Roles` de
+  `POST /v1/quotes`). SOCIO/FACTURACION/ANALISTA no lo ven —tampoco el del
+  candado, que antes salía a todos—: los llevaría a un alta que el API les
+  rechaza al guardar. Sin rol (`/me` falló) se ofrece, como
+  `puedeEditarCotizacion`: el gate real es el API.
+- **Una sola copia**: `copiarComoNueva` del cotizador (con `getValues()`, lo
+  que hay en PANTALLA) → `urlCopiarComoNueva` de **`lib/admin/quote-copia.ts`**
+  (PURO, fuente única; también vive ahí el formato del borrador `?d=`:
+  `codificarBorrador` / `decodificarBorrador` / `PARAM_BORRADOR`, que el
+  cotizador ya no define). El cotizador la reporta a la barra con
+  `EstadoEdicionCotizador.copiarComoNueva` (mismo mecanismo que guardar /
+  descartar); hasta el primer efecto el botón va deshabilitado.
+- **Qué lleva la copia** (`valoresCopiaCotizacion`): lo de la COTIZACIÓN
+  viaja —cliente, avión, ruta y tramos (millas, pax por tramo, ferry,
+  pernocta, servicio, notas), extras, tarifa con sus 6 decimales y el
+  segmento, horas pactadas, sobrevuelo, TUAS, redondeo/descuento, método de
+  cobro y T.C., comisión del vendedor, notas, toggles del PDF—; lo del VIAJE
+  se vacía: `fecha_vuelo`, `fecha_traslado_final`, `fecha_salida_plan` y
+  `pdf_fecha` de cada tramo, el manifiesto (`pasajeros_nombres`), la ruta
+  operativa del alta, el motivo y el `total_pactado_usd` LEGADO (el API lo
+  descarta al crear: la vista previa mostraría un total que no se guarda).
+  Un extra de GRUPO pierde `origen`/`grupo_extra_id` (la copia es de un
+  avión y el renglón se vuelve propio). Nace SIN cobros, sin vuelo ligado y
+  como v1 nueva (nada de eso vive en el form). El OJITO del PDF por tramo
+  tampoco viaja desde una cotización guardada: en revisión la visibilidad
+  vive en la escala VIVA (toggles del workspace), no en el form, así que la
+  copia nace con todos los tramos visibles y se ocultan en el alta (D4). El formato del borrador SIN
+  copia es byte a byte el de siempre: las URLs viejas se siguen leyendo.
+- **Con cambios sin guardar SE PREGUNTA** (decisión: salir con cambios
+  siempre se confirma en este panel, y `router.push` no pasa por
+  `useCambiosSinGuardar`): «¿Copiar con tus cambios sin guardar?» + «La
+  cotización nueva llevará lo que ves en pantalla, incluidos tus cambios. La
+  #257 se queda como está: esos cambios NO se guardan en ella.» → «Copiar con
+  mis cambios» / «Volver». Sin cambios copia directo.
+- **Con un guardado EN VUELO no se copia** (revisión adversaria 28-sep): el
+  botón de la barra va deshabilitado mientras `edicion.saving` y
+  `copiarComoNueva` sale sin hacer nada si `saving`. Salir a la copia a medio
+  guardado dejaba la versión nueva escrita en la original mientras el diálogo
+  prometía «esos cambios NO se guardan en ella».
+- **El alta avisa de dónde viene**: el borrador de una copia trae `copia =
+  {folio, conCambios}` y al montar el alta el toast dice «Copia de la
+  cotización #257[, con los cambios que no guardaste en ella]. Pon la fecha
+  del vuelo y revisa cliente y pasajeros antes de crear la v1.» (en vez de
+  «Se restauró tu avance desde la URL.»). La marca se suelta al reescribir
+  la URL con el debounce: un F5 posterior es «tu avance».
+- Pruebas: `lib/admin/__tests__/quote-copia.test.ts` (la URL reproduce
+  tramos, extras y tarifa; qué se vacía; compatibilidad del `?d=`; roles;
+  textos), `quotes/__tests__/quote-copiar-como-nueva.test.tsx` (el botón en
+  cada estado, ausente para SOCIO/FACTURACION/ANALISTA, y el CABLEADO: una
+  sola copia para la barra, el candado y el banner del 409) y
+  `quote-pantalla-completa.test.tsx` («Copiar como nueva cotización» en el
+  candado: ADMIN sí, SOCIO no).
 
 ## Cotización cobrada: editable con permiso POR PERSONA (26-sep-2026, API 0.0.37)
 
@@ -768,7 +841,8 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
 - **Borrador `?d=` y «Copiar como nueva cotización»**: los dos serializan
   `getValues()`, así que ahora llevan los tramos **COTIZADOS** (o los que el
   operador editó a mano) — copiar una cotización copia lo que se pactó, no lo
-  que acabó volándose. Al restaurar un borrador en revisión, `tramos_base`
+  que acabó volándose (desde el 28-sep-2026 la copia además vacía fechas y
+  manifiesto: `valoresCopiaCotizacion`). Al restaurar un borrador en revisión, `tramos_base`
   vuelve a `COTIZADO` A PROPÓSITO: la decisión del API es POR TRAMO contra el
   snapshot, así que lo que el operador cambió sigue contando como cambio.
 - **Lo que NO cambia**: la app del piloto sigue editando sus tramos igual; la
@@ -1388,7 +1462,7 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
   del API; `datetime-local` vía `cancunInputToIso`/`isoToCancunInput`; toda
   acción destructiva confirma; dejar `npx tsc --noEmit` en 0 y eslint limpio.
 
-## Calendario: semáforo de 6 colores (22-sep-2026 · 24-sep-2026)
+## Calendario: semáforo de 7 colores (22-sep-2026 · 24-sep-2026 · 28-sep-2026)
 
 - Pedidos del cliente:
   - 22-sep: «que en los calendarios no se vean tantos colores […] los
@@ -1401,20 +1475,42 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
     cobrado) […] Tentativo - Gris · Pendiente (permiso) - Amarillo ·
     Confirmado - Verde · Pagado - Azul · Cancelado - Rojo · Descanso -
     Morado».
+  - 28-sep: «los vuelos de Servicio, poner en color Café en el calendario
+    web, app y google calendar».
 - **Los colores los decide el API** (`colores-calendario.util.ts` → campo
   `color` de `GET /v1/calendar` → colorId de Google). El panel **no calcula
   colores de eventos**: `calendar-grid.tsx` pinta `ev.color` tal cual y
   `textOnColor` decide si el texto va blanco u oscuro (el azul y el morado
-  llevan texto oscuro). La forma de `/v1/calendar` solo creció con ADITIVOS
-  (`tentativo` el 22-sep, `pagado` el 24-sep).
+  llevan texto oscuro; el café, BLANCO — lo congela
+  `calendario-semaforo.test.ts`). La forma de `/v1/calendar` solo creció con
+  ADITIVOS (`tentativo` el 22-sep, `pagado` el 24-sep, `servicio` el
+  28-sep).
 - **Paleta** (copia EXACTA de `SEMAFORO` del API), en el orden del cliente:
   `#64748B` Tentativo · `#F59E0B` Pendiente (permiso) · `#22C55E`
   Confirmado · `#3B82F6` **Pagado** · `#EF4444` Cancelado · `#8B5CF6`
-  **Descanso 💤**.
+  **Descanso 💤** · `#8B5E3C` **Servicio (taller / parada técnica)** (al
+  final, 28-sep).
   - **El azul cambió de dueño el 24-sep**: era del descanso y hoy es del
     PAGADO.
   - El morado era del viejo «sin asignar» y hoy es SOLO del descanso.
   - Mantenimiento = amarillo y evento de flota = verde.
+- **«Servicio» (café) lo decide el API, nunca el panel** (28-sep-2026): es
+  el vuelo con tramos activos, alguno con parada `SERVICIO` y ninguno con
+  pasajeros — la MISMA regla del candado del cotizador
+  (`quote-revision.ts#esVueloDeServicio`, espejo de
+  `common/vuelo-servicio.util.ts` del API). El calendario NO la evalúa:
+  pinta `ev.color` y usa el aditivo `CalendarEvent.servicio?: boolean` solo
+  para la línea «Vuelo de servicio (taller / parada técnica, sin pasajeros)»
+  del detalle del día (jamás decide un color; lo vigila
+  `sin-hex-sueltos.test.ts`).
+  - Precedencia del API: cancelado > **servicio** > tentativo > pendiente >
+    pagado > confirmado. Un servicio cobrado se ve café (nunca azul); un
+    servicio cancelado, rojo.
+  - Tooltip: arranca con `AYUDA_SERVICIO` (copia exacta del API: «Vuelo sin
+    pasajeros con parada de servicio: no es del cliente y no se cotiza.») y
+    agrega que el mantenimiento (🔧) sigue AMARILLO — no confundirlos.
+  - En Google el café no existe: el evento sale **Mandarina** (colorId 6,
+    fijo) con el renglón «Vuelo de SERVICIO …» en su descripción.
 - **«Pagado» lo decide el API, nunca el panel**: sale de `vuelo.cobrado`,
   que mantiene `refreshCobradoFlag` con `cobrosEnUsd`.
   - Un vuelo en $0 o de cliente interno nunca es pagado.
@@ -1427,10 +1523,10 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
     pagado). Solo alimenta la línea «✓ Pagado (cobrado completo)» del
     detalle del día; jamás decide un color.
 - **FUENTE ÚNICA de la leyenda**: `lib/admin/calendario-semaforo.ts` (PURO).
-  - Contiene los 6 `COLOR_*`, `COLOR_SEMAFORO`/`ClaveSemaforo` (con
-    `pagado`), `SEMAFORO_CALENDARIO` (6 renglones con el texto exacto del
-    cliente y un tooltip de qué hacer), `AYUDA_PENDIENTE` y
-    `NOTA_COLOR_AVION`.
+  - Contiene los 7 `COLOR_*`, `COLOR_SEMAFORO`/`ClaveSemaforo` (con
+    `pagado` y `servicio`), `SEMAFORO_CALENDARIO` (7 renglones con el texto
+    exacto del cliente y un tooltip de qué hacer), `AYUDA_PENDIENTE`,
+    `AYUDA_SERVICIO` y `NOTA_COLOR_AVION`.
   - `AYUDA_PENDIENTE` es copia exacta del API; el tooltip de «Pendiente
     (permiso)» arranca con ella y agrega el mantenimiento y «un vuelo ya
     pagado se queda en amarillo…».
@@ -1438,12 +1534,12 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
     (`<LeyendaSemaforo>`, con `children` para notas que no hablan de color).
     Nunca hex sueltos.
   - Paridad con el API congelada (tabla COPIADA: `SEMAFORO_API`,
-    `LEYENDA_API`, `AYUDA_PENDIENTE_API`) en
+    `LEYENDA_API`, `AYUDA_PENDIENTE_API`, `AYUDA_SERVICIO_API`) en
     `lib/admin/__tests__/calendario-semaforo.test.ts`. Orden y cableado en
     `calendar/__tests__/leyenda-semaforo.test.tsx`.
     `calendar/__tests__/sin-hex-sueltos.test.ts` truena si un componente del
     calendario escribe un `#RRGGBB` a mano o decide un color por
-    `ev.pagado`.
+    `ev.pagado` o `ev.servicio`.
   - Si el API cambia un hex o un texto, se cambia aquí en el MISMO lote, o
     la leyenda miente.
 - **El color del avión** (`aeronave.color_calendario`) se sigue capturando y
@@ -1456,6 +1552,12 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
 - «⚠ Falta asignar» del detalle del día va en **ámbar** (asunto
   pendiente). El rosa «Externo», el verde azulado y el azul del descanso, y
   el celeste del evento ya no existen en ningún calendario.
+- **Deploy del café (28-sep-2026): API 0.0.40 (y su migración
+  `20260928000003_calendar_sync_tipo_parada.sql`) antes que el panel.** Con
+  el API viejo la leyenda ya dice 7 colores pero nada sale café (no rompe
+  nada). Tras desplegar el API hay que re-pintar Google encolando SOLO los
+  vuelos de servicio (SQL en el encabezado de la migración) o esperar al
+  reconcile de las 00:15.
 - **Orden de deploy: API (y su migración
   `20260924000002_calendar_sync_cobrado.sql`) antes que el panel.** Con el
   API viejo la leyenda ya dice 6 colores mientras el grid todavía pinta el

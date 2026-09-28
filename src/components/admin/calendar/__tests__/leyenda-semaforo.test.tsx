@@ -1,8 +1,9 @@
 /**
- * CABLEADO de la leyenda del calendario (24-sep-2026): que la pantalla pinte
- * los SEIS renglones del semáforo con sus hex y su tooltip, en el orden del
- * cliente, la nota del color del avión y nada de la paleta vieja. Los textos
- * se prueban en `lib/admin/__tests__/calendario-semaforo.test.ts`.
+ * CABLEADO de la leyenda del calendario (24-sep-2026; 7 renglones desde el
+ * 28-sep-2026): que la pantalla pinte los SIETE renglones del semáforo con sus
+ * hex y su tooltip, en el orden del cliente (el SERVICIO café al final), la
+ * nota del color del avión y nada de la paleta vieja. Los textos se prueban
+ * en `lib/admin/__tests__/calendario-semaforo.test.ts`.
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,7 +11,7 @@ import { LeyendaSemaforo } from "../leyenda-semaforo";
 
 const html = renderToStaticMarkup(<LeyendaSemaforo />);
 
-/** Hex del API (contrato del 24-sep-2026), en el orden de la listita. */
+/** Hex del API (contrato del 28-sep-2026), en el orden de la listita. */
 const RENGLONES: ReadonlyArray<[string, string]> = [
   ["Tentativo", "#64748B"],
   ["Pendiente (permiso)", "#F59E0B"],
@@ -18,10 +19,11 @@ const RENGLONES: ReadonlyArray<[string, string]> = [
   ["Pagado", "#3B82F6"],
   ["Cancelado", "#EF4444"],
   ["Descanso 💤", "#8B5CF6"],
+  ["Servicio (taller / parada técnica)", "#8B5E3C"],
 ];
 
 describe("LeyendaSemaforo", () => {
-  it("pinta los seis renglones con su color", () => {
+  it("pinta los siete renglones con su color", () => {
     for (const [etiqueta, hex] of RENGLONES) {
       expect(html).toContain(etiqueta);
       // React serializa el `style` en minúsculas: se compara sin distinguir.
@@ -56,6 +58,14 @@ describe("LeyendaSemaforo", () => {
     // Redacción compartida con el API y la app (`AYUDA_PENDIENTE`).
     expect(renglon).toContain("Permiso de pista pendiente");
     expect(renglon).toContain("no tiene avión o piloto asignado");
+  });
+
+  it("el tooltip de «Servicio» explica que es el vuelo sin pasajeros con parada de servicio", () => {
+    const i = html.indexOf("Servicio (taller / parada técnica)</span>");
+    const renglon = html.slice(html.lastIndexOf("title=", i), i);
+    // Redacción compartida con el API y la app (`AYUDA_SERVICIO`).
+    expect(renglon).toContain("Vuelo sin pasajeros con parada de servicio");
+    expect(renglon).toContain("no se cotiza");
   });
 
   it("dice dónde quedó el color de cada avión", () => {

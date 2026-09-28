@@ -33,7 +33,9 @@ describe("componentes del calendario sin hex sueltos", () => {
   it("el grid pinta el color que manda el API", () => {
     const grid = readFileSync(path.join(DIR, "calendar-grid.tsx"), "utf8");
     expect(grid).toContain("backgroundColor: ev.color");
-    // Y no decide colores por su cuenta (p. ej. por `pagado`).
+    // Y no decide colores por su cuenta (p. ej. por `pagado` o, desde el
+    // 28-sep-2026, por `servicio`: el café lo resuelve el API).
     expect(grid).not.toMatch(/ev\.pagado\s*\?\s*["'#]/);
+    expect(grid).not.toMatch(/ev\.servicio\s*\?\s*["'#]/);
   });
 });

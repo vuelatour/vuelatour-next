@@ -105,6 +105,16 @@ import {
   tramosDeOperacion,
 } from "@/lib/admin/tramos-cotizados";
 import { extraerMapaSvgDeHtml } from "@/lib/admin/quote-sheet";
+import {
+  codificarBorrador,
+  decodificarBorrador,
+  PARAM_BORRADOR,
+  puedeCopiarCotizacion,
+  textoAvisoCopia,
+  textoConfirmarCopiaConCambios,
+  TITULO_BOTON_COPIAR,
+  urlCopiarComoNueva,
+} from "@/lib/admin/quote-copia";
 import type { VueloConGrupo } from "@/types/grupos";
 import type { Airport } from "@/types/airports";
 import { cn } from "@/lib/utils";
@@ -232,6 +242,11 @@ export interface EstadoEdicionCotizador {
   descartar: () => void;
   /** Scroll+focus al campo de pasajeros del documento. */
   enfocarPasajeros: () => void;
+  /**
+   * «Copiar como nueva» (28-sep-2026): prellena el alta con lo que hay en
+   * pantalla; con cambios sin guardar pregunta antes (diálogo del cotizador).
+   */
+  copiarComoNueva: () => void;
 }
 
 type QuoteCalculatorProps = {
@@ -1147,10 +1162,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     if (draftRestaurado.current) return;
     draftRestaurado.current = true;
     const url = new URL(window.location.href);
-    const raw = url.searchParams.get(DRAFT_PARAM);
+    const raw = url.searchParams.get(PARAM_BORRADOR);
     if (!raw) return;
-    const f = decodeDraft(raw);
-    if (!f) return;
+    const leido = decodificarBorrador(raw);
+    if (!leido) return;
+    const f = leido.f;
     if (isRevise) {
       if (lectura) return;
       const resto: Partial<QuoteFormValues> = { ...f };
@@ -1158,7 +1174,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       delete resto.motivo;
       delete resto.escalas_operacion;
       reset({ ...formDefaults, ...resto });
-      url.searchParams.delete(DRAFT_PARAM);
+      url.searchParams.delete(PARAM_BORRADOR);
       window.history.replaceState(null, "", url.toString());
       toast.info(
         `Se reaplicó tu borrador sobre la v${initialQuote?.cotizacion_version ?? ""}. Revísalo antes de guardar.`,
@@ -1166,7 +1182,12 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       return;
     }
     reset({ ...formDefaults, ...f });
-    toast.info("Se restauró tu avance desde la URL.");
+    // «Copiar como nueva» (28-sep-2026): el borrador trae de qué folio salió
+    // y el aviso lo dice (fecha vacía a propósito). Al reescribir la URL con
+    // el debounce la marca se suelta: un F5 posterior es «tu avance».
+    toast.info(
+      leido.copia ? textoAvisoCopia(leido.copia) : "Se restauró tu avance desde la URL.",
+    );
     // Solo al montar; formDefaults es estable en el alta nueva.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1287,10 +1308,10 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     // Misma serialización que valuesJson (sin `motivo`): pristino = igual a
     // los defaults.
     if (debouncedJson === JSON.stringify({ ...formDefaults, motivo: undefined })) {
-      if (!url.searchParams.has(DRAFT_PARAM)) return;
-      url.searchParams.delete(DRAFT_PARAM);
+      if (!url.searchParams.has(PARAM_BORRADOR)) return;
+      url.searchParams.delete(PARAM_BORRADOR);
     } else {
-      url.searchParams.set(DRAFT_PARAM, encodeDraft(debounced));
+      url.searchParams.set(PARAM_BORRADOR, codificarBorrador(debounced));
     }
     window.history.replaceState(null, "", url.toString());
     // formDefaults estable; debouncedJson representa a debounced.
@@ -2578,20 +2599,40 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
   // vivo viaja en ?d= y se reaplica sobre la versión nueva al montar.
   const recargarConservandoBorrador = () => {
     const url = new URL(window.location.href);
-    url.searchParams.set(DRAFT_PARAM, encodeDraft(getValues()));
+    url.searchParams.set(PARAM_BORRADOR, codificarBorrador(getValues()));
     guardCambios.saltar();
     window.location.assign(url.toString());
   };
 
-  // «Copiar como nueva cotización» (candado): prellena /new con el
-  // documento actual como borrador (?d=). Lo que no aplica al alta se vacía.
+  // «Copiar como nueva cotización» (28-sep-2026: barra de acciones en TODOS
+  // los estados + el botón del candado). Prellena /new con el documento TAL
+  // COMO SE VE (getValues); qué se copia y qué se vacía (fechas, manifiesto,
+  // ruta operativa, liga de grupo…) lo decide `urlCopiarComoNueva`
+  // (`lib/admin/quote-copia.ts`, fuente única). Con cambios sin guardar se
+  // PREGUNTA antes de salir: la copia los lleva, pero la original se queda
+  // como está (regla del cliente: salir con cambios se confirma).
+  const puedeCopiar = puedeCopiarCotizacion(rol);
+  const [confirmCopiarOpen, setConfirmCopiarOpen] = useState(false);
+  const irACopia = (conCambios: boolean) => {
+    setConfirmCopiarOpen(false);
+    router.push(
+      urlCopiarComoNueva(getValues(), {
+        folio: initialQuote?.folio ?? null,
+        conCambios,
+      }),
+    );
+  };
   const copiarComoNueva = () => {
-    const f: QuoteFormValues = {
-      ...getValues(),
-      motivo: "",
-      escalas_operacion: [],
-    };
-    router.push(`/admin/quotes/new?${DRAFT_PARAM}=${encodeDraft(f)}`);
+    if (!puedeCopiar) return;
+    // Con un guardado EN VUELO no se sale: la versión nueva se escribiría en
+    // la original mientras el diálogo promete «esos cambios NO se guardan en
+    // ella» (la barra de acciones además deshabilita el botón).
+    if (saving) return;
+    if (sucio) {
+      setConfirmCopiarOpen(true);
+      return;
+    }
+    irACopia(false);
   };
 
   // CONFIRMADO/RESERVA con tripulación (F0-d): confirmación ÚNICA al primer
@@ -2633,6 +2674,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     guardar: () => {},
     descartar: () => {},
     enfocarPasajeros: () => {},
+    copiarComoNueva: () => {},
     guardarAtajo: () => {},
   });
   accionesRef.current = {
@@ -2641,6 +2683,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     },
     descartar: pedirDescartar,
     enfocarPasajeros,
+    copiarComoNueva,
     // Ctrl/⌘+S (F2): mismo camino que el botón primario de cada modo.
     guardarAtajo: () => {
       if (lectura || saving) return;
@@ -2677,6 +2720,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
       guardar: () => accionesRef.current.guardar(),
       descartar: () => accionesRef.current.descartar(),
       enfocarPasajeros: () => accionesRef.current.enfocarPasajeros(),
+      copiarComoNueva: () => accionesRef.current.copiarComoNueva(),
     });
   }, [
     onEstadoEdicion,
@@ -3133,7 +3177,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // «Guardar → vN» (o «Guardar PDF» si solo cambió presentación, D5).
         // Alta: «Crear v1».
         bloqueoRazon={lectura ? (bloqueadoRazon ?? undefined) : undefined}
-        onCopiar={lectura ? copiarComoNueva : undefined}
+        onCopiar={lectura && puedeCopiar ? copiarComoNueva : undefined}
         saveLabel={
           saving
             ? "Guardando…"
@@ -3228,17 +3272,19 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                 Ir a los cobros
               </a>
               {/* Lo capturado no se pierde: puede seguir como cotización nueva. */}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={copiarComoNueva}
-                className="gap-1.5"
-                title="Crea una cotización nueva con estos mismos datos (esta no se toca)."
-              >
-                <DocumentDuplicateIcon className="h-4 w-4" />
-                Copiar como nueva cotización
-              </Button>
+              {puedeCopiar && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={copiarComoNueva}
+                  className="gap-1.5"
+                  title={TITULO_BOTON_COPIAR}
+                >
+                  <DocumentDuplicateIcon className="h-4 w-4" />
+                  Copiar como nueva cotización
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -3779,6 +3825,34 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         </AlertDialog>
       )}
 
+      {/* «Copiar como nueva» con cambios sin guardar (28-sep-2026): se
+          pregunta antes de salir. La copia LLEVA los cambios; la original se
+          queda como está guardada (salir con cambios siempre se confirma). */}
+      {isRevise && initialQuote && (
+        <AlertDialog open={confirmCopiarOpen} onOpenChange={setConfirmCopiarOpen}>
+          <AlertDialogContent data-guard-exempt>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Copiar con tus cambios sin guardar?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {textoConfirmarCopiaConCambios(initialQuote.folio ?? null)}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Volver</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  irACopia(true);
+                }}
+              >
+                <DocumentDuplicateIcon className="h-4 w-4" />
+                Copiar con mis cambios
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
       {/* Diálogo «Guardar vN» (F0/D1): chip de motivo obligatorio + texto
           opcional; el resumen automático del diff se muestra y viaja como
           prefijo del motivo. Avisos: tripulación (fechas/avión/pernocta en
@@ -4174,29 +4248,9 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
 // Recargar no pierde el avance: el form viaja comprimido en un query param
 // (?d=) que se actualiza con replaceState (sin ensuciar historial) y se
 // restaura al montar. De paso la URL es compartible con el avance a medias.
-const DRAFT_PARAM = "d";
-
-function encodeDraft(v: QuoteFormValues): string {
-  return btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, f: v }))))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-function decodeDraft(raw: string): Partial<QuoteFormValues> | null {
-  try {
-    const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
-    const parsed = JSON.parse(decodeURIComponent(escape(atob(b64)))) as {
-      v?: number;
-      f?: Partial<QuoteFormValues>;
-    };
-    return parsed?.v === 1 && parsed.f && typeof parsed.f === "object"
-      ? parsed.f
-      : null;
-  } catch {
-    return null; // parámetro corrupto/viejo: se ignora, jamás rompe el alta
-  }
-}
+// Codificar/decodificar vive en `lib/admin/quote-copia.ts` (28-sep-2026):
+// es el MISMO borrador que arma «Copiar como nueva», y dos copias del
+// formato divergirían en silencio.
 
 /* Claves RETIRADAS de localStorage: `vt-cotizador-interno-v1` (panel lateral,
    22-sep-2026 Fase 2.3 · BLOQUE C) y `vt-cotizador-hoja-v1` (la pestaña «Hoja
@@ -4390,7 +4444,7 @@ function TotalBar({
                 size="sm"
                 variant="outline"
                 onClick={onCopiar}
-                title="Crea una cotización nueva con estos mismos datos (esta no se toca)."
+                title={TITULO_BOTON_COPIAR}
                 className="shrink-0 gap-1.5 border-white/60 bg-transparent text-white hover:bg-white/15 hover:text-white"
               >
                 <DocumentDuplicateIcon className="h-4 w-4" />

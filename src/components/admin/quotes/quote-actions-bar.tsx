@@ -11,6 +11,7 @@ import {
   BookmarkSquareIcon,
   CheckCircleIcon,
   DocumentChartBarIcon,
+  DocumentDuplicateIcon,
   LockClosedIcon,
   PaperAirplaneIcon,
   XCircleIcon,
@@ -43,6 +44,11 @@ import {
   type CandadoRevisionOpts,
 } from "@/lib/admin/quote-revision";
 import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
+import {
+  puedeCopiarCotizacion,
+  TEXTO_BOTON_COPIAR,
+  TITULO_BOTON_COPIAR,
+} from "@/lib/admin/quote-copia";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 
 /**
@@ -73,6 +79,7 @@ export function QuoteActionsBar({
   quote,
   edicion,
   onAjusteRapido,
+  onCopiarComoNueva,
   rol = null,
   cobrosInfo,
 }: {
@@ -94,6 +101,14 @@ export function QuoteActionsBar({
   /** «Ajuste rápido»: scroll+focus a pasajeros del documento (D2). */
   onAjusteRapido?: () => void;
   /**
+   * «Copiar como nueva» (28-sep-2026): el botón sale en TODOS los estados
+   * (editable, bloqueada, cancelada, completada) para quien puede CREAR
+   * cotizaciones (`puedeCopiarCotizacion`). La copia la arma el cotizador
+   * (`EstadoEdicionCotizador.copiarComoNueva`, con lo que hay en pantalla);
+   * sin handler —el cotizador aún no reporta— el botón va deshabilitado.
+   */
+  onCopiarComoNueva?: () => void;
+  /**
    * Rol del usuario (de /v1/me). Decide si se pinta «PDF interno»
    * (8-sep-2026); sin rol el botón no aparece. El PDF de cliente no se gatea.
    */
@@ -106,6 +121,7 @@ export function QuoteActionsBar({
   const [motivoCancel, setMotivoCancel] = useState("");
   const [openCobradoInfo, setOpenCobradoInfo] = useState(false);
   const puedePdfInterno = puedeVerHojaInterna(rol);
+  const puedeCopiar = puedeCopiarCotizacion(rol);
 
   // PDF del cliente: fuente única `abrirPdfCotizacion` (también la usa
   // «Ver PDF real» de la hoja, F1). Abre la URL del proxy —nunca un blob—
@@ -227,6 +243,24 @@ export function QuoteActionsBar({
         >
           <DocumentChartBarIcon className="h-4 w-4" />
           PDF interno
+        </Button>
+      )}
+      {/* «Copiar como nueva» (28-sep-2026): SIEMPRE que el rol pueda crear
+          cotizaciones, en cualquier estado — antes solo salía en la lectura
+          bloqueada y, desde que muchas abren editables, desapareció. */}
+      {puedeCopiar && (
+        <Button
+          variant="outline"
+          onClick={onCopiarComoNueva}
+          // Deshabilitado hasta que el cotizador reporte su estado y
+          // mientras se GUARDA (salir a la copia a medio guardado dejaría la
+          // versión nueva en la original sin que el operador lo sepa).
+          disabled={!onCopiarComoNueva || edicion?.saving === true}
+          className="gap-2"
+          title={TITULO_BOTON_COPIAR}
+        >
+          <DocumentDuplicateIcon className="h-4 w-4" />
+          {TEXTO_BOTON_COPIAR}
         </Button>
       )}
       {/* «Ajuste rápido» (D2): lleva a los pasajeros del documento — la

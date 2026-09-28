@@ -1,21 +1,26 @@
 /**
- * Semáforo del calendario (24-sep-2026): SEIS colores, en el orden y con los
- * textos de la «listita» del cliente —«Tentativo - Gris · Pendiente (permiso)
- * - Amarillo · Confirmado - Verde · Pagado - Azul · Cancelado - Rojo ·
- * Descanso - Morado»— y los hex EXACTOS del API (`colores-calendario.util.ts`).
- * Este test congela la leyenda: si el API cambia un hex y aquí no, la leyenda
- * mentiría sobre lo que se ve en pantalla.
+ * Semáforo del calendario (28-sep-2026): SIETE colores —los seis de la
+ * «listita» del cliente del 24-sep, en su orden y con sus textos: «Tentativo -
+ * Gris · Pendiente (permiso) - Amarillo · Confirmado - Verde · Pagado - Azul ·
+ * Cancelado - Rojo · Descanso - Morado», y al final el café del SERVICIO del
+ * 28-sep («los vuelos de Servicio, poner en color Café»)— con los hex EXACTOS
+ * del API (`colores-calendario.util.ts`). Este test congela la leyenda: si el
+ * API cambia un hex y aquí no, la leyenda mentiría sobre lo que se ve en
+ * pantalla.
  */
 import { describe, expect, it } from "vitest";
+import { textOnColor } from "@/lib/color-contrast";
 import {
   AYUDA_COLOR_AVION,
   AYUDA_PENDIENTE,
+  AYUDA_SERVICIO,
   COLOR_CANCELADO,
   COLOR_CONFIRMADO,
   COLOR_DESCANSO,
   COLOR_PAGADO,
   COLOR_PENDIENTE,
   COLOR_SEMAFORO,
+  COLOR_SERVICIO,
   COLOR_TENTATIVO,
   ETIQUETA_COLOR_AVION,
   HINT_COLOR_AVION,
@@ -26,7 +31,7 @@ import {
 
 /**
  * COPIA de `SEMAFORO` del API (`vuelatour-api/src/modules/calendar/
- * colores-calendario.util.ts`, contrato del 24-sep-2026). Si el API mueve un
+ * colores-calendario.util.ts`, contrato del 28-sep-2026). Si el API mueve un
  * hex, se mueve aquí y en `calendario-semaforo.ts` en el mismo cambio.
  */
 const SEMAFORO_API = {
@@ -36,12 +41,13 @@ const SEMAFORO_API = {
   PAGADO: "#3B82F6",
   CANCELADO: "#EF4444",
   DESCANSO: "#8B5CF6",
+  SERVICIO: "#8B5E3C",
 } as const;
 
 /**
  * COPIA de `LEYENDA_SEMAFORO` del API (mismo contrato): los 6 renglones en el
- * orden del cliente. La leyenda del panel debe ser idéntica, renglón por
- * renglón (hex y texto).
+ * orden del cliente y el SERVICIO al final. La leyenda del panel debe ser
+ * idéntica, renglón por renglón (hex y texto).
  */
 const LEYENDA_API: ReadonlyArray<{ color: string; etiqueta: string }> = [
   { color: SEMAFORO_API.TENTATIVO, etiqueta: "Tentativo" },
@@ -50,6 +56,7 @@ const LEYENDA_API: ReadonlyArray<{ color: string; etiqueta: string }> = [
   { color: SEMAFORO_API.PAGADO, etiqueta: "Pagado" },
   { color: SEMAFORO_API.CANCELADO, etiqueta: "Cancelado" },
   { color: SEMAFORO_API.DESCANSO, etiqueta: "Descanso 💤" },
+  { color: SEMAFORO_API.SERVICIO, etiqueta: "Servicio (taller / parada técnica)" },
 ];
 
 /**
@@ -60,6 +67,13 @@ const AYUDA_PENDIENTE_API =
   "Permiso de pista pendiente. También se pinta así el vuelo confirmado que todavía no tiene avión o piloto asignado.";
 
 /**
+ * COPIA de `AYUDA_SERVICIO` del API (tooltip del renglón «Servicio (taller /
+ * parada técnica)», 28-sep-2026; la app lo usa tal cual).
+ */
+const AYUDA_SERVICIO_API =
+  "Vuelo sin pasajeros con parada de servicio: no es del cliente y no se cotiza.";
+
+/**
  * Paleta VIEJA (antes del 22-sep): ninguno de estos tonos vuelve a la
  * leyenda. `#8B5CF6` YA NO está aquí: era el morado «sin asignar» y desde el
  * 24-sep es el morado del DESCANSO.
@@ -67,7 +81,7 @@ const AYUDA_PENDIENTE_API =
 const HEX_RETIRADOS = ["#F0DCDB", "#14B8A6", "#0EA5E9", "#9CA3AF"];
 
 describe("semáforo del calendario", () => {
-  it("son seis renglones, en el orden de la listita y con los textos del cliente", () => {
+  it("son siete renglones: los de la listita en su orden y el servicio al final", () => {
     expect(SEMAFORO_CALENDARIO.map((i) => i.etiqueta)).toEqual([
       "Tentativo",
       "Pendiente (permiso)",
@@ -75,6 +89,7 @@ describe("semáforo del calendario", () => {
       "Pagado",
       "Cancelado",
       "Descanso 💤",
+      "Servicio (taller / parada técnica)",
     ]);
     expect(SEMAFORO_CALENDARIO.map((i) => i.clave)).toEqual([
       "tentativo",
@@ -83,6 +98,7 @@ describe("semáforo del calendario", () => {
       "pagado",
       "cancelado",
       "descanso",
+      "servicio",
     ]);
   });
 
@@ -99,6 +115,7 @@ describe("semáforo del calendario", () => {
     expect(COLOR_PAGADO).toBe(SEMAFORO_API.PAGADO);
     expect(COLOR_CANCELADO).toBe(SEMAFORO_API.CANCELADO);
     expect(COLOR_DESCANSO).toBe(SEMAFORO_API.DESCANSO);
+    expect(COLOR_SERVICIO).toBe(SEMAFORO_API.SERVICIO);
     expect(COLOR_SEMAFORO).toEqual({
       tentativo: SEMAFORO_API.TENTATIVO,
       pendiente: SEMAFORO_API.PENDIENTE,
@@ -106,6 +123,7 @@ describe("semáforo del calendario", () => {
       pagado: SEMAFORO_API.PAGADO,
       cancelado: SEMAFORO_API.CANCELADO,
       descanso: SEMAFORO_API.DESCANSO,
+      servicio: SEMAFORO_API.SERVICIO,
     });
   });
 
@@ -115,9 +133,25 @@ describe("semáforo del calendario", () => {
     expect(COLOR_DESCANSO).not.toBe(COLOR_PAGADO);
   });
 
-  it("los seis colores son distintos entre sí (un color = un significado)", () => {
+  it("los siete colores son distintos entre sí (un color = un significado)", () => {
     const hex = SEMAFORO_CALENDARIO.map((i) => i.color.toUpperCase());
-    expect(new Set(hex).size).toBe(6);
+    expect(new Set(hex).size).toBe(7);
+  });
+
+  it("el café del servicio lleva texto BLANCO en los chips del calendario", () => {
+    // `calendar-grid.tsx` decide el texto con `textOnColor(ev.color)`.
+    expect(textOnColor(COLOR_SERVICIO)).toBe("#ffffff");
+    expect(COLOR_SERVICIO).not.toBe(COLOR_DESCANSO);
+  });
+
+  it("el tooltip de «Servicio» dice qué vuelo es, que gana al pagado y que el mantenimiento no es café", () => {
+    const servicio = SEMAFORO_CALENDARIO.find((i) => i.clave === "servicio")!;
+    // Misma redacción que el API y la app: arranca con `AYUDA_SERVICIO`.
+    expect(AYUDA_SERVICIO).toBe(AYUDA_SERVICIO_API);
+    expect(servicio.titulo.startsWith(AYUDA_SERVICIO_API)).toBe(true);
+    expect(servicio.titulo).toContain("sin pasajeros");
+    expect(servicio.titulo).toContain("pagado");
+    expect(servicio.titulo).toContain("amarillo");
   });
 
   it("no queda rastro de la paleta vieja", () => {

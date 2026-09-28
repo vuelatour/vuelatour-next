@@ -26,7 +26,7 @@ export interface CalendarEvent {
   estado_permiso: "no_aplica" | "pendiente" | "emitido" | null;
   es_externo: boolean;
   title: string;
-  /** Hex del semáforo YA RESUELTO por el API (6 colores desde el 24-sep-2026,
+  /** Hex del semáforo YA RESUELTO por el API (7 colores desde el 28-sep-2026,
    *  ver `lib/admin/calendario-semaforo.ts`). El panel lo pinta tal cual. */
   color: string;
   cliente_id: string;
@@ -53,6 +53,14 @@ export interface CalendarEvent {
    * viejo; el panel lo trata como «no pagado».
    */
   pagado?: boolean;
+  /**
+   * Solo eventos de vuelo (28-sep-2026, aditivo): vuelo de SERVICIO (sin
+   * pasajeros, con alguna parada de taller / técnica; regla única del API
+   * `esVueloDeServicio`). Es la razón del CAFÉ — pero el `color` ya viene
+   * resuelto (un cancelado se ve rojo). Ausente = API viejo; el panel lo
+   * trata como «no es de servicio». Jamás decide un color en el panel.
+   */
+  servicio?: boolean;
   /**
    * Solo tipo_evento "evento" (3-sep-2026): dispositivos push registrados
    * del responsable. 0 = no tiene la app con avisos (oficina debe avisarle
