@@ -23,11 +23,14 @@ const pareceCodigoBarras = (s: string) => /^\d{8,}$/.test(s);
 export function CodigoSearch({
   categorias,
   ubicaciones,
+  puedeAdministrarUbicaciones = false,
   margenVentaPct,
 }: {
   categorias: string[];
   /** Catálogo de ubicaciones para el alta con código; null/ausente = texto. */
   ubicaciones?: InventarioUbicacion[] | null;
+  /** ADMIN/MECANICO: agregar/administrar ubicaciones desde el formulario. */
+  puedeAdministrarUbicaciones?: boolean;
   margenVentaPct?: number | null;
 }) {
   const router = useRouter();
@@ -163,6 +166,7 @@ export function CodigoSearch({
         }}
         categorias={categorias}
         ubicaciones={ubicaciones}
+        puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
         initialCodigo={altaCodigo ?? undefined}
       />

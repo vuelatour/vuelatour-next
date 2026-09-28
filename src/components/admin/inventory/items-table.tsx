@@ -43,7 +43,6 @@ import {
   opcionesFiltroUbicacion,
   resolverFiltroUbicacion,
   textoUbicacion,
-  ubicacionesActivas,
   type EleccionFiltroUbicacion,
   type FiltroUbicacion,
 } from "@/lib/admin/inventario-ubicacion";
@@ -168,7 +167,6 @@ export function ItemsTable({
     () => (conCatalogo ? opcionesFiltroUbicacion(items, catalogo) : []),
     [conCatalogo, items, catalogo],
   );
-  const destinos = useMemo(() => ubicacionesActivas(catalogo), [catalogo]);
 
   const ordenados = useMemo(
     () => ordenarInventario(filtrarPorUbicacion(items, filtroUbic), orden, { ordenUbicacion }),
@@ -306,6 +304,7 @@ export function ItemsTable({
           providers={providers}
           categorias={categorias}
           ubicaciones={ubicaciones}
+          puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
           margenVentaPct={margenVentaPct}
         />
       ),
@@ -345,13 +344,13 @@ export function ItemsTable({
                 size="sm"
                 variant="outline"
                 className="gap-1.5"
-                disabled={filasMover.length === 0 || destinos.length === 0}
+                // Sin ubicaciones activas también se abre: el destino se puede
+                // agregar ahí mismo («＋ Agregar ubicación…», 28-sep-2026).
+                disabled={filasMover.length === 0}
                 title={
-                  destinos.length === 0
-                    ? "Primero agrega una ubicación en «Ubicaciones»"
-                    : filasMover.length === 0
-                      ? "No hay productos en la vista"
-                      : `Mover los ${filasMover.length} productos que estás viendo`
+                  filasMover.length === 0
+                    ? "No hay productos en la vista"
+                    : `Mover los ${filasMover.length} productos que estás viendo`
                 }
                 onClick={() => setAbrirMover(true)}
               >
@@ -424,7 +423,8 @@ export function ItemsTable({
               nombre: x.nombre,
               ubicacion_id: x.ubicacion_id ?? null,
             }))}
-            destinos={destinos}
+            ubicaciones={catalogo}
+            puedeAdministrar={puedeAdministrarUbicaciones}
           />
           <UbicacionesDialog
             open={abrirUbicaciones}

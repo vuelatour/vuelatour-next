@@ -30,13 +30,16 @@ import type { InventarioFoto, InventarioItem, InventarioUbicacion } from "@/type
 import { Field } from "@/components/admin/form-field";
 import { uploadInventarioFoto } from "@/lib/storage/inventario-fotos";
 import {
-  MARCA_INACTIVA,
   TEXTO_SIN_UBICACION,
   notaUbicacionAnterior,
-  ordenarCatalogo,
+  textoAltaUbicacionPendiente,
   textoUbicacion,
 } from "@/lib/admin/inventario-ubicacion";
 import { hintPrecioVentaProducto } from "@/lib/admin/inventario-salida";
+import {
+  UbicacionSelector,
+  useCatalogoUbicaciones,
+} from "@/components/admin/inventory/ubicacion-selector";
 
 const MAX_FOTOS_ADICIONALES = 6;
 
@@ -57,6 +60,13 @@ interface ItemFormDialogProps {
    * migración pendiente) = el input de texto de siempre.
    */
   ubicaciones?: InventarioUbicacion[] | null;
+  /**
+   * ADMIN/MECANICO (28-sep-2026): junto al selector de ubicación, «＋ Agregar
+   * ubicación…» (alta en línea que queda seleccionada) y el engrane
+   * «Administrar ubicaciones» (renombrar, ordenar, eliminar) SIN salir del
+   * formulario. Sin él, el selector de siempre. Opcional (skew-safe).
+   */
+  puedeAdministrarUbicaciones?: boolean;
   /** Margen de la tienda: solo para el texto del precio de venta. */
   margenVentaPct?: number | null;
   /**
@@ -73,6 +83,7 @@ export function ItemFormDialog({
   categorias,
   initialCodigo,
   ubicaciones,
+  puedeAdministrarUbicaciones = false,
   margenVentaPct,
   onGuardado,
 }: ItemFormDialogProps) {
@@ -81,6 +92,17 @@ export function ItemFormDialog({
   // Con catálogo de ubicaciones (API 0.0.35 + migración) la ubicación es un
   // selector; sin él, el input de texto de siempre.
   const conCatalogo = ubicaciones != null;
+  // Copia local del catálogo: lo que se agrega/renombra/elimina desde el
+  // selector se ve al instante, sin recargar ni cerrar el formulario.
+  const [catalogo, setCatalogo] = useCatalogoUbicaciones(ubicaciones);
+  // Sesión del formulario ya inicializada (producto + código). Un
+  // `router.refresh()` —p. ej. tras agregar una ubicación desde aquí mismo—
+  // trae un `initialItem` NUEVO (misma fila, otro objeto): sin este candado el
+  // efecto de abajo volvía a hacer `reset` y BORRABA lo capturado.
+  const sesionRef = useRef<string | null>(null);
+  // Nombre tecleado en «＋ Agregar ubicación…» y aún SIN guardar: «Guardar»
+  // del producto no sale con la ubicación anterior mientras exista.
+  const [altaUbicacionPendiente, setAltaUbicacionPendiente] = useState<string | null>(null);
   // Foto del producto: archivo nuevo elegido, o quitar la existente.
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
@@ -110,20 +132,26 @@ export function ItemFormDialog({
   const empaquesArr = useFieldArray({ control, name: "empaques" });
 
   useEffect(() => {
-    if (open) {
-      reset(defaults(initialItem, initialCodigo));
-      setFotoFile(null);
-      setFotoPreview(null);
-      setQuitarFoto(false);
-      setFotosExistentes(initialItem?.fotos_adicionales ?? []);
-      setFotosNuevas((prev) => {
-        prev.forEach((f) => URL.revokeObjectURL(f.preview));
-        return [];
-      });
-      setFotosTocadas(false);
-      setConfirmarQuitar(null);
-      setConfirmarFoto(null);
+    if (!open) {
+      sesionRef.current = null;
+      return;
     }
+    const sesion = `${initialItem?.id ?? "nuevo"}|${initialCodigo ?? ""}`;
+    if (sesionRef.current === sesion) return;
+    sesionRef.current = sesion;
+    reset(defaults(initialItem, initialCodigo));
+    setAltaUbicacionPendiente(null);
+    setFotoFile(null);
+    setFotoPreview(null);
+    setQuitarFoto(false);
+    setFotosExistentes(initialItem?.fotos_adicionales ?? []);
+    setFotosNuevas((prev) => {
+      prev.forEach((f) => URL.revokeObjectURL(f.preview));
+      return [];
+    });
+    setFotosTocadas(false);
+    setConfirmarQuitar(null);
+    setConfirmarFoto(null);
   }, [open, initialItem, initialCodigo, reset]);
 
   const quitarPrincipal = () => {
@@ -150,6 +178,12 @@ export function ItemFormDialog({
   };
 
   const onSubmit = handleSubmit((values) => {
+    // Un nombre de ubicación a medias NO se descarta en silencio: el producto
+    // se guardaría con la ubicación anterior (revisión adversaria 28-sep).
+    if (conCatalogo && altaUbicacionPendiente) {
+      toast.error(textoAltaUbicacionPendiente(altaUbicacionPendiente));
+      return;
+    }
     // La entrada inicial se valida ANTES de crear el ítem: si algo falta, no
     // se crea nada y el operador corrige sin perder lo capturado (antes el
     // ítem quedaba creado en stock 0 con solo un aviso).
@@ -331,11 +365,9 @@ export function ItemFormDialog({
   const totalFotosExtra = fotosExistentes.length + fotosNuevas.length;
 
   // Ubicación con catálogo: activas en su orden + la ACTUAL aunque esté
-  // inactiva (se ve «(inactiva)» y no se puede volver a elegir).
+  // inactiva (se ve «(inactiva)» y no se puede volver a elegir) — fuente
+  // única `opcionesSelectorUbicacion`, dentro de `UbicacionSelector`.
   const actualId = initialItem?.ubicacion_id ?? null;
-  const opcionesUbicacion = ordenarCatalogo(ubicaciones ?? []).filter(
-    (u) => u.activo || u.id === actualId,
-  );
   const ubicacionActual = initialItem ? textoUbicacion(initialItem) : null;
   const legado =
     conCatalogo && ubicacionActual?.tipo === "LEGADO" && !watch("ubicacion_id")
@@ -580,18 +612,19 @@ export function ItemFormDialog({
                 }
                 error={errors.ubicacion_id?.message}
               >
-                <select
+                {/* ÚNICO hijo de `Field` (le pone el id al select / al campo
+                    del alta en línea). Con permiso trae «＋ Agregar
+                    ubicación…» y el engrane «Administrar ubicaciones». */}
+                <UbicacionSelector
                   value={watch("ubicacion_id")}
-                  onChange={(e) => setValue("ubicacion_id", e.target.value, { shouldDirty: true })}
-                  className="h-9 w-full cursor-pointer rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30"
-                >
-                  <option value="">{TEXTO_SIN_UBICACION}</option>
-                  {opcionesUbicacion.map((u) => (
-                    <option key={u.id} value={u.id} disabled={!u.activo}>
-                      {u.activo ? u.nombre : `${u.nombre} ${MARCA_INACTIVA}`}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setValue("ubicacion_id", v, { shouldDirty: true })}
+                  ubicaciones={catalogo}
+                  onCatalogoCambio={setCatalogo}
+                  actualId={actualId}
+                  etiquetaVacia={TEXTO_SIN_UBICACION}
+                  puedeAdministrar={puedeAdministrarUbicaciones}
+                  onAltaPendiente={setAltaUbicacionPendiente}
+                />
               </Field>
             ) : (
               <Field

@@ -20,6 +20,23 @@ import {
   tituloNoDesactivable,
   ubicacionesActivas,
   type EleccionFiltroUbicacion,
+  VALOR_AGREGAR_UBICACION,
+  destinosParaVaciar,
+  limpiarNombreUbicacion,
+  opcionesSelectorUbicacion,
+  ordenSinRutaNueva,
+  ordenTrasMover,
+  reemplazarUbicacion,
+  resolverAltaRapidaUbicacion,
+  textoConfirmarEliminar,
+  textoEliminarConProductos,
+  textoErrorUbicacion,
+  textoUbicacionAgregada,
+  textoUbicacionEliminada,
+  textoUbicacionYaExistia,
+  ubicacionSigueElegible,
+  textoAltaUbicacionPendiente,
+  ubicacionTrasVaciar,
 } from "../inventario-ubicacion";
 import type { InventarioUbicacion } from "@/types/inventory";
 
@@ -268,5 +285,167 @@ describe("diálogo «Ubicaciones»", () => {
   it("desactivar con productos: el tooltip dice qué hacer", () => {
     expect(tituloNoDesactivable(3)).toBe("Mueve primero sus 3 productos a otra ubicación");
     expect(tituloNoDesactivable(1)).toBe("Mueve primero su producto a otra ubicación");
+  });
+});
+
+describe("alta rápida, administrar y eliminar (28-sep-2026)", () => {
+  const INACTIVA = u("c9", "Hangar 3", 6, { activo: false });
+  const CON_INACTIVA = [...CATALOGO, INACTIVA];
+
+  it("limpiarNombreUbicacion: espejo del DTO (sin espacios de sobra, respeta acentos)", () => {
+    expect(limpiarNombreUbicacion("  Locker   del  aeropuerto ")).toBe("Locker del aeropuerto");
+    expect(limpiarNombreUbicacion("Mérida")).toBe("Mérida");
+  });
+
+  it("opcionesSelectorUbicacion: activas en su orden + la ACTUAL aunque esté inactiva", () => {
+    expect(opcionesSelectorUbicacion(CON_INACTIVA).map((x) => x.id)).toEqual([
+      "c1",
+      "c2",
+      "c3",
+      "c4",
+      "c5",
+    ]);
+    expect(opcionesSelectorUbicacion(CON_INACTIVA, "c9").map((x) => x.id)).toEqual([
+      "c1",
+      "c2",
+      "c3",
+      "c4",
+      "c5",
+      "c9",
+    ]);
+  });
+
+  it("la opción centinela nunca choca con un id real", () => {
+    expect(CON_INACTIVA.some((x) => x.id === VALOR_AGREGAR_UBICACION)).toBe(false);
+    expect(VALOR_AGREGAR_UBICACION).not.toBe("");
+  });
+
+  it("ubicacionSigueElegible: si la eliminaron o desactivaron, el selector vuelve a vacío", () => {
+    expect(ubicacionSigueElegible(CON_INACTIVA, "")).toBe(true);
+    expect(ubicacionSigueElegible(CON_INACTIVA, "c2")).toBe(true);
+    expect(ubicacionSigueElegible(CON_INACTIVA, "c9")).toBe(false);
+    // …salvo que sea la que el producto YA tiene.
+    expect(ubicacionSigueElegible(CON_INACTIVA, "c9", "c9")).toBe(true);
+    // Eliminada del catálogo.
+    expect(ubicacionSigueElegible(CATALOGO.filter((x) => x.id !== "c2"), "c2")).toBe(false);
+  });
+
+  it("resolverAltaRapidaUbicacion: lo tecleado que ya existe se ELIGE (sin acentos ni mayúsculas)", () => {
+    const r = resolverAltaRapidaUbicacion("  bodega del taller de MERIDA ", CATALOGO);
+    expect(r.tipo).toBe("EXISTE");
+    expect(r.tipo === "EXISTE" && r.ubicacion.id).toBe("c4");
+  });
+
+  it("resolverAltaRapidaUbicacion: desactivada ⇒ dice cómo reactivarla; nueva ⇒ nombre limpio", () => {
+    const inactiva = resolverAltaRapidaUbicacion("hangar 3", CON_INACTIVA);
+    expect(inactiva.tipo).toBe("INACTIVA");
+    expect(inactiva.tipo === "INACTIVA" && inactiva.error).toBe(
+      "«Hangar 3» ya existe pero está desactivada: actívala en «Administrar ubicaciones» (engrane).",
+    );
+    expect(resolverAltaRapidaUbicacion("  Hangar   Cancún ", CATALOGO)).toEqual({
+      tipo: "NUEVA",
+      nombre: "Hangar Cancún",
+    });
+    expect(resolverAltaRapidaUbicacion("X", CATALOGO)).toEqual({
+      tipo: "INVALIDO",
+      error: "Escribe al menos 2 letras.",
+    });
+    expect(resolverAltaRapidaUbicacion("a".repeat(51), CATALOGO).tipo).toBe("INVALIDO");
+  });
+
+  it("ordenTrasMover: la lista COMPLETA con la fila intercambiada (una sola llamada al API)", () => {
+    expect(ordenTrasMover(CON_INACTIVA, "c3", "arriba")).toEqual(["c1", "c3", "c2", "c4", "c5", "c9"]);
+    expect(ordenTrasMover(CON_INACTIVA, "c5", "abajo")).toEqual(["c1", "c2", "c3", "c4", "c9", "c5"]);
+    expect(ordenTrasMover(CON_INACTIVA, "c1", "arriba")).toBeNull();
+    expect(ordenTrasMover(CON_INACTIVA, "c9", "abajo")).toBeNull();
+    expect(ordenTrasMover(CON_INACTIVA, "nada", "abajo")).toBeNull();
+    // Órdenes empatados (datos viejos): el orden de la vista manda.
+    expect(ordenTrasMover([u("b", "B", 0), u("a", "A", 0)], "b", "arriba")).toEqual(["b", "a"]);
+  });
+
+  it("reemplazarUbicacion: reemplaza la fila o la agrega; no muta", () => {
+    const antes = [...CATALOGO];
+    const renombrada = reemplazarUbicacion(CATALOGO, { ...CATALOGO[0], nombre: "Bodega Cozumel" });
+    expect(renombrada.find((x) => x.id === "c5")?.nombre).toBe("Bodega Cozumel");
+    expect(CATALOGO).toEqual(antes);
+    expect(reemplazarUbicacion(CATALOGO, u("n", "Nueva", 9))).toHaveLength(6);
+  });
+
+  it("destinosParaVaciar: las OTRAS activas, en su orden", () => {
+    expect(destinosParaVaciar(CON_INACTIVA, "c2").map((x) => x.id)).toEqual(["c1", "c3", "c4", "c5"]);
+  });
+
+  it("textos de eliminar: se borra de verdad / muévelos primero", () => {
+    expect(textoConfirmarEliminar("Oficina vieja")).toBe(
+      "Se eliminará «Oficina vieja» de la lista para siempre. Ningún producto la usa, así que nada más cambia.",
+    );
+    expect(textoEliminarConProductos("Oficina nueva", 1)).toBe(
+      "«Oficina nueva» tiene 1 producto. Para eliminarla, primero muévelo a otra ubicación:",
+    );
+    expect(textoEliminarConProductos("Oficina nueva", 12)).toBe(
+      "«Oficina nueva» tiene 12 productos. Para eliminarla, primero muévelos a otra ubicación:",
+    );
+    expect(textoUbicacionEliminada("Oficina vieja")).toBe("Ubicación «Oficina vieja» eliminada.");
+    expect(textoUbicacionAgregada("Hangar Cancún")).toBe(
+      "Ubicación «Hangar Cancún» agregada y seleccionada.",
+    );
+    expect(textoUbicacionYaExistia("Oficina nueva")).toBe("«Oficina nueva» ya existía: quedó seleccionada.");
+  });
+
+  it("textoErrorUbicacion: los códigos del API se pintan tal cual (es-MX); sin código, respaldo claro", () => {
+    expect(
+      textoErrorUbicacion("agregar", {
+        status: 409,
+        code: "UBICACION_DUPLICADA",
+        error: "Ya existe la ubicación «Oficina nueva».",
+      }),
+    ).toBe("Ya existe la ubicación «Oficina nueva».");
+    expect(
+      textoErrorUbicacion("eliminar", {
+        status: 409,
+        code: "UBICACION_EN_USO",
+        error: "«Oficina nueva» tiene 1 producto: muévelo con «Mover a…» y vuelve a intentar.",
+      }),
+    ).toBe("«Oficina nueva» tiene 1 producto: muévelo con «Mover a…» y vuelve a intentar.");
+    // Ruta que no existe (API previo al 0.0.38).
+    expect(textoErrorUbicacion("eliminar", { status: 404, error: "Cannot DELETE /v1/…" })).toBe(
+      "El sistema todavía no permite eliminar ubicaciones; desactívala mientras tanto.",
+    );
+    // La forma REAL del 404 de ruta con el filtro global del API previo:
+    // `code: "NOT_FOUND"` y el mensaje en inglés, que nunca se pinta.
+    expect(
+      textoErrorUbicacion("eliminar", {
+        status: 404,
+        code: "NOT_FOUND",
+        error: "Cannot DELETE /v1/inventory/ubicaciones/f44cf63f-1698-413f-bdb0-6fdea076df5c",
+      }),
+    ).toBe("El sistema todavía no permite eliminar ubicaciones; desactívala mientras tanto.");
+    expect(textoErrorUbicacion("renombrar", { status: 403, error: "Forbidden resource" })).toBe(
+      "Tu usuario no puede cambiar las ubicaciones.",
+    );
+    expect(textoErrorUbicacion("ordenar", {})).toBe("No se pudo cambiar el orden");
+  });
+
+  it("ubicacionTrasVaciar: el selector sigue a su producto cuando se vacía SU ubicación (revisión 28-sep)", () => {
+    // Formulario del producto en «Oficina vieja» (c1): se vacían sus productos
+    // hacia «Oficina nueva» (c2) para eliminarla ⇒ el selector pasa a c2.
+    expect(ubicacionTrasVaciar("c1", "c1", "c2")).toBe("c2");
+    // Otra ubicación elegida: se respeta.
+    expect(ubicacionTrasVaciar("c3", "c1", "c2")).toBe("c3");
+    // «Sin ubicación» se queda así.
+    expect(ubicacionTrasVaciar("", "c1", "c2")).toBe("");
+  });
+
+  it("textoAltaUbicacionPendiente: un nombre a medias no se pierde en silencio al guardar", () => {
+    expect(textoAltaUbicacionPendiente("  Hangar   Cancún ")).toBe(
+      "Falta guardar la ubicación nueva «Hangar Cancún»: pulsa Enter o «Guardar» junto al nombre (o cancélala con Esc).",
+    );
+  });
+
+  it("ordenSinRutaNueva: 404 sin código de negocio = API previo (cae a los dos PATCH)", () => {
+    expect(ordenSinRutaNueva({ status: 404 })).toBe(true);
+    expect(ordenSinRutaNueva({ status: 404, code: "NOT_FOUND" })).toBe(true);
+    expect(ordenSinRutaNueva({ status: 404, code: "UBICACION_NO_EXISTE" })).toBe(false);
+    expect(ordenSinRutaNueva({ status: 409, code: "UBICACIONES_CAMBIARON" })).toBe(false);
   });
 });

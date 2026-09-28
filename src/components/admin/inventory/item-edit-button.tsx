@@ -18,12 +18,15 @@ export function ItemEditButton({
   item,
   categorias,
   ubicaciones,
+  puedeAdministrarUbicaciones = false,
   margenVentaPct,
 }: {
   /** El producto SIN su cardex (no hace falta serializarlo al cliente). */
   item: InventarioItem;
   categorias?: string[];
   ubicaciones?: InventarioUbicacion[] | null;
+  /** ADMIN/MECANICO: agregar/administrar ubicaciones desde el formulario. */
+  puedeAdministrarUbicaciones?: boolean;
   margenVentaPct?: number | null;
 }) {
   const router = useRouter();
@@ -40,6 +43,7 @@ export function ItemEditButton({
         initialItem={item}
         categorias={categorias}
         ubicaciones={ubicaciones}
+        puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
         onGuardado={() => router.refresh()}
       />

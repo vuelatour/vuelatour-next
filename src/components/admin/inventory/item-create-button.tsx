@@ -9,11 +9,14 @@ import type { InventarioUbicacion } from "@/types/inventory";
 export function ItemCreateButton({
   categorias,
   ubicaciones,
+  puedeAdministrarUbicaciones = false,
   margenVentaPct,
 }: {
   categorias?: string[];
   /** Catálogo de ubicaciones; null/ausente = input de texto de siempre. */
   ubicaciones?: InventarioUbicacion[] | null;
+  /** ADMIN/MECANICO: agregar/administrar ubicaciones desde el formulario. */
+  puedeAdministrarUbicaciones?: boolean;
   /** Margen de la tienda (solo textos del formulario). */
   margenVentaPct?: number | null;
 }) {
@@ -29,6 +32,7 @@ export function ItemCreateButton({
         onOpenChange={setOpen}
         categorias={categorias}
         ubicaciones={ubicaciones}
+        puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
       />
     </>

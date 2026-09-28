@@ -220,6 +220,9 @@ export default async function InventoryItemPage({
               item={itemSinCardex}
               categorias={item.categoria ? [item.categoria] : []}
               ubicaciones={ubicaciones}
+              // «Editar» ya solo se ofrece a ADMIN/MECANICO: los mismos roles
+              // que agregan/administran ubicaciones en el API.
+              puedeAdministrarUbicaciones={puedeEditarCosto}
               margenVentaPct={margenVentaPct}
             />
           )}

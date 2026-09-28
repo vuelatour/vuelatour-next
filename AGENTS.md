@@ -3478,9 +3478,11 @@ taller de Cozumel». Contrato con el API **0.0.35** (migraciones
   **«Ubicaciones»** (`ubicaciones-dialog.tsx`): agregar, renombrar (propaga a
   sus productos), ↑/↓ (dos PATCH, `intercambioOrden`), activar/desactivar con
   confirmación inline; desactivar deshabilitado con productos («Mueve primero
-  sus N productos a otra ubicación»). Sin borrar: se desactiva. Duplicados sin
-  acentos ni mayúsculas se frenan antes (`errorNombreUbicacion`); el 409 del
-  API se pinta tal cual.
+  sus N productos a otra ubicación»). ~~Sin borrar: se desactiva.~~ **Desde el
+  28-sep-2026 (API 0.0.38) SÍ se elimina** —solo sin productos— y ▲▼ es UNA
+  llamada: ver «Inventario: ubicaciones rápidas desde el formulario» al final.
+  Duplicados sin acentos ni mayúsculas se frenan antes
+  (`errorNombreUbicacion`); el 409 del API se pinta tal cual.
 - **Formulario del producto** (`item-form-dialog.tsx`): con catálogo, select
   «Ubicación» (Sin ubicación + activas en su orden + la actual aunque esté
   inactiva, «(inactiva)», deshabilitada). Legado ⇒ nota ámbar «Ubicación
@@ -3821,3 +3823,134 @@ corregirlo». La única salida era borrar y recapturar.
   error con `code`).
 - **Pendiente conocido**: sin QA visual en navegador (el formulario vive en un
   portal y el proyecto no tiene DOM de pruebas).
+
+## Inventario: ubicaciones rápidas desde el formulario (28-sep-2026)
+
+Pedido del cliente con la captura del selector «Ubicación» DENTRO del formulario
+del producto (Sin ubicación · Oficina vieja · Oficina nueva ✓ · Locker del
+aeropuerto · Bodega del taller de Mérida · Bodega del taller de Cozumel):
+«Necesitamos una forma rápida y ágil para poder editar, borrar o agregar
+opciones a este listado de lugares para el inventario». Contrato con el API
+**0.0.38** (sin migración): `DELETE /v1/inventory/ubicaciones/:id` y
+`PUT /v1/inventory/ubicaciones/orden { ids }`.
+
+- **`components/admin/inventory/ubicacion-selector.tsx`** — `UbicacionSelector`
+  (el select de ubicación, fuente ÚNICA del formulario del producto y del
+  destino de «Mover a…») + `useCatalogoUbicaciones` (copia LOCAL del catálogo,
+  patrón base/lista: lo agregado/renombrado/eliminado se ve al instante y,
+  cuando el server manda otro catálogo, manda el del server). Con
+  `puedeAdministrar` (ADMIN/MECANICO, los roles de POST/PATCH/DELETE/PUT del
+  API):
+  - **«＋ Agregar ubicación…»** es la ÚLTIMA opción del select (valor
+    centinela `VALOR_AGREGAR_UBICACION`, jamás viaja al API): cambia el select
+    por un campo de nombre + «Guardar» + ✕ (Enter guarda, Esc cancela; los dos
+    con `preventDefault` + `stopPropagation`: sin eso Enter ENVIABA el
+    formulario del producto y Esc CERRABA su diálogo). La crea, relee el
+    catálogo y la deja SELECCIONADA (primero el catálogo, luego el valor: el
+    select nunca apunta a un valor sin opción). Lo tecleado que ya existe sin
+    acentos ni mayúsculas se ELIGE en vez de duplicarse
+    (`resolverAltaRapidaUbicacion` ⇒ `EXISTE`); una desactivada se explica
+    («actívala en «Administrar ubicaciones» (engrane)»); el 409
+    `UBICACION_DUPLICADA` de una carrera con `details.id` activo también se
+    elige.
+  - **Engrane «Administrar ubicaciones»** (`aria-label` + `title`,
+    `cursor-pointer`): abre el diálogo «Ubicaciones» EXISTENTE (no se duplicó)
+    **ENCIMA del formulario**. **Decisión**: Base UI 1.4.1 anida diálogos de
+    forma nativa (un `Dialog.Root` montado dentro del popup del padre se
+    registra como hijo en su árbol — `useDialogRoot`/`onNestedDialogOpen`,
+    `useDismiss`: Esc y el clic fuera cierran SOLO el de arriba) y el
+    formulario queda montado con todo lo capturado; no hizo falta hoja,
+    popover ni cerrar/reabrir. El diálogo hijo es `UbicacionesDialog` con
+    `onCatalogoCambio`: cada cambio se publica al selector sin recargar.
+  - Si la ubicación elegida se ELIMINA o se DESACTIVA desde el engrane, el
+    select vuelve a la opción vacía (`ubicacionSigueElegible`; la ACTUAL del
+    producto se respeta aunque esté inactiva).
+  - Sin `puedeAdministrar`: el select de siempre (sin opción de agregar ni
+    engrane ni diálogo montado). Sin catálogo (API previo): el input de texto
+    de siempre, con o sin permiso.
+- **`ItemFormDialog`**: prop OPCIONAL `puedeAdministrarUbicaciones` (default
+  `false`, skew-safe) que viaja por `ItemCreateButton`, `CodigoSearch`,
+  `ItemsTable → ItemActions` (`app/admin/inventory/page.tsx`: ADMIN/MECANICO)
+  e `ItemEditButton` (ficha: `puedeEditarCosto`, el mismo par de roles). El
+  select sigue siendo el ÚNICO hijo de `Field` (el selector recibe el `id` y lo
+  pone en el select o en el campo del alta: la etiqueta sigue ligada).
+  **CANDADO NUEVO del `reset`**: el efecto de apertura solo reinicia el
+  formulario UNA vez por sesión (`sesionRef` = `id del producto|código`).
+  Antes dependía de la IDENTIDAD de `initialItem` y un `router.refresh()` /
+  `revalidatePath` —que ahora ocurre CON el formulario abierto, al agregar o
+  administrar ubicaciones— traía un objeto nuevo de la misma fila y BORRABA lo
+  capturado.
+- **Diálogo «Ubicaciones»** (`ubicaciones-dialog.tsx`, se abre desde la lista
+  y desde el engrane): renombrar EN LÍNEA con **clic en el nombre** o el lápiz
+  (Enter guarda; Esc cancela SIN cerrar el diálogo); **▲▼ en UNA llamada**
+  (`reordenarUbicacionesAction` ⇒ `PUT ubicaciones/orden` con la lista
+  COMPLETA de `ordenTrasMover`, optimista; con un API previo el PUT da 404 sin
+  código ⇒ `ordenSinRutaNueva` ⇒ los dos PATCH de `intercambioOrden`; 409
+  `UBICACIONES_CAMBIARON` ⇒ toast + relectura); **«Eliminar»** (bote +
+  texto, en TODAS las filas) CONFIRMA siempre: sin productos
+  `textoConfirmarEliminar` («Se eliminará «X» de la lista para siempre…») +
+  «Sí, eliminar»; con productos activos NO ofrece borrar:
+  `textoEliminarConProductos` + select de destino (`destinosParaVaciar`) +
+  «Mover N productos» (`productosDeUbicacionAction` = `GET items?ubicacion=`
+  paginado de 300 en 300 ⇒ `moverUbicacionAction`) y, ya vacía, el panel pasa
+  solo a la confirmación. Si el API aún responde 409 `UBICACION_EN_USO` (la
+  usan productos DADOS DE BAJA, que «Mover a…» no mueve) se pinta su mensaje
+  y se ofrece «Desactivarla». «Desactivar/Activar» siguen. Tras cada cambio:
+  `listarUbicacionesAction` (catálogo completo) ⇒ `onCatalogoCambio` +
+  `router.refresh()`. Todo `<button>` con `cursor-pointer`.
+- **«Mover a…»** (`mover-ubicacion-dialog.tsx`): prop `destinos` ⇒
+  `ubicaciones` (catálogo COMPLETO) + `puedeAdministrar`; el destino es el
+  MISMO `UbicacionSelector` («Elige la ubicación…»): si el lugar no existe se
+  agrega ahí y queda elegido. En la tabla, «Mover a…» ya no se apaga por no
+  haber ubicaciones activas (solo sin productos en la vista).
+- **Server actions nuevas** (`app/admin/inventory/actions.ts`, nunca lanzan):
+  `listarUbicacionesAction`, `eliminarUbicacionAction`,
+  `reordenarUbicacionesAction`, `productosDeUbicacionAction`.
+- **Textos y lógica PUROS** (`lib/admin/inventario-ubicacion.ts`, sección
+  «Alta rápida, administrar y eliminar»): `limpiarNombreUbicacion`,
+  `opcionesSelectorUbicacion`, `ubicacionSigueElegible`,
+  `resolverAltaRapidaUbicacion`, `ordenTrasMover`, `reemplazarUbicacion`,
+  `destinosParaVaciar`, `textoConfirmarEliminar`, `textoEliminarConProductos`,
+  `textoUbicacionAgregada/YaExistia/Eliminada`, `textoErrorUbicacion` (los
+  códigos del API —`UBICACION_DUPLICADA`, `UBICACION_EN_USO`,
+  `UBICACIONES_CAMBIARON`, `UBICACION_NO_EXISTE`, `MIGRACION_PENDIENTE`— se
+  pintan tal cual en es-MX; DELETE 404 sin código ⇒ «El sistema todavía no
+  permite eliminar ubicaciones; desactívala mientras tanto.»; 403 ⇒ «Tu usuario
+  no puede cambiar las ubicaciones.») y `ordenSinRutaNueva`.
+- **Pruebas**: `lib/admin/__tests__/inventario-ubicacion.test.ts` (bloque
+  «alta rápida, administrar y eliminar») y
+  `components/admin/inventory/__tests__/ubicacion-selector.test.tsx`
+  (formulario SIN permiso / sin la prop / CON permiso —opciones en su orden
+  con «＋ Agregar ubicación…» al final, engrane con texto accesible y
+  `cursor-pointer`—, etiqueta ligada al select, actual inactiva, sin catálogo;
+  selector suelto; diálogo con «Eliminar» y renombrar por fila, todo botón con
+  `cursor-pointer`, ninguna confirmación sin pedirla; «Mover a…» con el mismo
+  selector). El diálogo de Base UI se sustituye por un pase en línea (el
+  portal no existe en `react-dom/server`).
+- **Revisión adversaria (28-sep-2026)**: dos huecos que el render estático
+  no veía, corregidos y congelados en el bloque «cableado en el código» del
+  mismo test:
+  - **Un nombre a medias no se pierde en silencio.** Con «＋ Agregar
+    ubicación…» abierto y un nombre tecleado SIN guardar, el «Guardar» del
+    producto salía con la ubicación ANTERIOR (y «Mover» movía al destino
+    anterior) y el nombre desaparecía. El selector avisa con
+    `onAltaPendiente(nombre | null)` (pasar un setter de `useState`: es
+    estable) y el formulario / «Mover a…» frenan con
+    `textoAltaUbicacionPendiente` («Falta guardar la ubicación nueva «X»:
+    pulsa Enter o «Guardar» junto al nombre (o cancélala con Esc).»). El
+    botón NO se apaga: el clic explica. Cada sesión nueva del formulario
+    arranca sin pendiente.
+  - **Vaciar desde «Administrar» la ubicación del propio producto.** «Mover N
+    productos» mueve TAMBIÉN al producto que se está editando; el selector
+    seguía en la ubicación vieja y (a) sin eliminarla, «Guardar» lo REGRESABA
+    ahí (el `initialItem` refrescado ya decía la nueva, así que el valor viejo
+    contaba como cambio); (b) al eliminarla, el selector caía a «Sin
+    ubicación» y «Guardar» le QUITABA la ubicación. `UbicacionesDialog` avisa
+    `onProductosMovidos(desde, hacia)` ANTES de publicar el catálogo y el
+    selector sigue a su producto con `ubicacionTrasVaciar` (puro + test).
+- **Orden de deploy**: API 0.0.38 antes que el panel. Con el panel nuevo y un
+  API previo: agregar/renombrar/activar funcionan igual; ▲▼ cae a los dos
+  PATCH; «Eliminar» responde el texto de «desactívala mientras tanto».
+- **Pendientes conocidos**: sin QA visual en navegador (el anidado de diálogos
+  se verificó leyendo Base UI 1.4.1, no con clics reales); la app Flutter no se
+  tocó (sigue con su texto libre).

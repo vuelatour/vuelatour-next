@@ -380,3 +380,228 @@ export function textoConfirmarActivo(nombre: string, activar: boolean): string {
     ? `«${nombre}» vuelve a aparecer para elegirla en los productos y en «Mover a…».`
     : `«${nombre}» deja de aparecer para elegirla. Los productos no cambian; se puede volver a activar.`;
 }
+
+// ─────────────── Alta rápida, administrar y eliminar (28-sep-2026) ───────────────
+//
+// Pedido del cliente (captura del selector «Ubicación» del formulario del
+// producto): «Necesitamos una forma rápida y ágil para poder editar, borrar o
+// agregar opciones a este listado de lugares para el inventario». API 0.0.38:
+// `DELETE ubicaciones/:id` (solo sin productos; 409 `UBICACION_EN_USO`) y
+// `PUT ubicaciones/orden` (409 `UBICACIONES_CAMBIARON`).
+
+/** Valor CENTINELA de la opción «＋ Agregar ubicación…» del selector (nunca viaja al API). */
+export const VALOR_AGREGAR_UBICACION = "__agregar_ubicacion__";
+export const ETIQUETA_OPCION_AGREGAR = "＋ Agregar ubicación…";
+/** Texto accesible (aria-label/title) del botón con engrane junto al selector. */
+export const ETIQUETA_ADMINISTRAR_UBICACIONES = "Administrar ubicaciones";
+export const PLACEHOLDER_NUEVA_UBICACION = "Nombre de la ubicación nueva";
+export const ETIQUETA_ELIMINAR = "Eliminar";
+
+/** Nombre como se guarda: sin espacios en los extremos ni dobles (espejo del DTO). */
+export function limpiarNombreUbicacion(s: string): string {
+  return (s ?? "").trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Opciones del selector de ubicación del producto: las ACTIVAS en su orden +
+ * la ACTUAL del ítem aunque esté inactiva (se ve «(inactiva)» y no se vuelve
+ * a elegir). Fuente única del formulario y de «Mover a…».
+ */
+export function opcionesSelectorUbicacion<T extends InventarioUbicacion>(
+  catalogo: readonly T[],
+  actualId?: string | null,
+): T[] {
+  return ordenarCatalogo(catalogo).filter((u) => u.activo || (actualId != null && u.id === actualId));
+}
+
+/**
+ * ¿El valor elegido sigue siendo válido con el catálogo nuevo? "" (sin
+ * ubicación / sin elegir) siempre; un id solo si existe y está activo, o es
+ * la ubicación que el ítem YA tiene. Si la eliminaron o la desactivaron desde
+ * «Administrar», el selector vuelve a "" en vez de quedarse apuntando a nada.
+ */
+export function ubicacionSigueElegible(
+  catalogo: ReadonlyArray<Pick<InventarioUbicacion, "id" | "activo">>,
+  valor: string,
+  actualId?: string | null,
+): boolean {
+  if (!valor) return true;
+  return catalogo.some((u) => u.id === valor && (u.activo || u.id === actualId));
+}
+
+/** Qué hacer con el nombre tecleado en «＋ Agregar ubicación…». */
+export type AltaRapidaUbicacion =
+  | { tipo: "INVALIDO"; error: string }
+  /** Ya existe ACTIVA (sin acentos ni mayúsculas): se ELIGE, no se duplica. */
+  | { tipo: "EXISTE"; ubicacion: InventarioUbicacion }
+  /** Existe pero desactivada: no se puede elegir hasta reactivarla. */
+  | { tipo: "INACTIVA"; ubicacion: InventarioUbicacion; error: string }
+  | { tipo: "NUEVA"; nombre: string };
+
+/**
+ * Alta rápida desde el selector: el operador escribe «oficina NUEVA» y ya
+ * existe «Oficina nueva» ⇒ se elige esa (sin error ni duplicado); escribe una
+ * desactivada ⇒ se le dice cómo reactivarla; si no, se crea. El 409 del API
+ * (`UBICACION_DUPLICADA`) sigue siendo el candado real.
+ */
+export function resolverAltaRapidaUbicacion(
+  nombre: string,
+  catalogo: readonly InventarioUbicacion[],
+): AltaRapidaUbicacion {
+  const limpio = limpiarNombreUbicacion(nombre);
+  const clave = normalizarNombreUbicacion(limpio);
+  const existente = clave ? catalogo.find((u) => normalizarNombreUbicacion(u.nombre) === clave) : undefined;
+  if (existente?.activo) return { tipo: "EXISTE", ubicacion: existente };
+  if (existente) {
+    return {
+      tipo: "INACTIVA",
+      ubicacion: existente,
+      error: `«${existente.nombre}» ya existe pero está desactivada: actívala en «${ETIQUETA_ADMINISTRAR_UBICACIONES}» (engrane).`,
+    };
+  }
+  const error = errorNombreUbicacion(limpio, catalogo);
+  if (error) return { tipo: "INVALIDO", error };
+  return { tipo: "NUEVA", nombre: limpio };
+}
+
+/** Toast del alta rápida. */
+export function textoUbicacionAgregada(nombre: string): string {
+  return `Ubicación «${nombre}» agregada y seleccionada.`;
+}
+
+/** Toast cuando lo tecleado ya existía: se eligió esa. */
+export function textoUbicacionYaExistia(nombre: string): string {
+  return `«${nombre}» ya existía: quedó seleccionada.`;
+}
+
+/**
+ * Subir/bajar con ▲▼: el catálogo COMPLETO (activas e inactivas, como lo
+ * pinta el diálogo) con esa fila intercambiada con su vecina, listo para
+ * `PUT ubicaciones/orden` (una sola llamada: el API numera 1..n). null = ya
+ * está en el extremo o no existe.
+ */
+export function ordenTrasMover(
+  catalogo: readonly InventarioUbicacion[],
+  id: string,
+  direccion: "arriba" | "abajo",
+): string[] | null {
+  const ids = ordenarCatalogo(catalogo).map((u) => u.id);
+  const i = ids.indexOf(id);
+  const j = direccion === "arriba" ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= ids.length) return null;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  return ids;
+}
+
+/** Reemplaza (o agrega) una fila del catálogo con la respuesta del API. No muta. */
+export function reemplazarUbicacion(
+  catalogo: readonly InventarioUbicacion[],
+  fila: InventarioUbicacion,
+): InventarioUbicacion[] {
+  return catalogo.some((u) => u.id === fila.id)
+    ? catalogo.map((u) => (u.id === fila.id ? { ...u, ...fila } : u))
+    : [...catalogo, fila];
+}
+
+/** A dónde se pueden mover los productos de una ubicación antes de eliminarla. */
+export function destinosParaVaciar(
+  catalogo: readonly InventarioUbicacion[],
+  id: string,
+): InventarioUbicacion[] {
+  return ubicacionesActivas(catalogo).filter((u) => u.id !== id);
+}
+
+/** Confirmación de «Eliminar» cuando nadie la usa: se borra DE VERDAD. */
+export function textoConfirmarEliminar(nombre: string): string {
+  return `Se eliminará «${nombre}» de la lista para siempre. Ningún producto la usa, así que nada más cambia.`;
+}
+
+/**
+ * «Eliminar» con productos activos: no se borra; se explica y se ofrece
+ * moverlos primero (el API respondería 409 `UBICACION_EN_USO`).
+ */
+export function textoEliminarConProductos(nombre: string, productos: number): string {
+  const pron = productos === 1 ? "muévelo" : "muévelos";
+  return `«${nombre}» tiene ${textoProductos(productos)}. Para eliminarla, primero ${pron} a otra ubicación:`;
+}
+
+/** Toast al eliminar. */
+export function textoUbicacionEliminada(nombre: string): string {
+  return `Ubicación «${nombre}» eliminada.`;
+}
+
+/**
+ * Valor del selector después de «Mover N productos» (vaciar `desdeId` hacia
+ * `haciaId`) desde «Administrar» (revisión adversaria 28-sep-2026). El
+ * formulario del producto que abrió el engrane apunta a la ubicación que se
+ * acaba de vaciar ⇒ su producto (activo) YA vive en el destino: el selector
+ * lo sigue. Si no, al eliminar la vacía el selector caía a «Sin ubicación» y
+ * «Guardar» le quitaba al producto la ubicación a la que el operador lo
+ * acababa de mover. Cualquier otro valor se respeta.
+ */
+export function ubicacionTrasVaciar(valor: string, desdeId: string, haciaId: string): string {
+  return valor !== "" && valor === desdeId ? haciaId : valor;
+}
+
+/**
+ * «＋ Agregar ubicación…» con un nombre tecleado y SIN guardar cuando se
+ * pulsa el botón principal del formulario (o «Mover» en «Mover a…»): no se
+ * guarda nada y se dice qué falta (revisión adversaria 28-sep-2026). Sin esto
+ * el producto se guardaba con la ubicación ANTERIOR y el nombre se perdía en
+ * silencio — dos «Guardar» a la vista y el operador cree que ya quedó.
+ */
+export function textoAltaUbicacionPendiente(nombre: string): string {
+  return `Falta guardar la ubicación nueva «${limpiarNombreUbicacion(nombre)}»: pulsa Enter o «Guardar» junto al nombre (o cancélala con Esc).`;
+}
+
+/** Lo mínimo de un `ActionResult` fallido para redactar el error. */
+export interface ErrorAccionUbicacion {
+  error?: string;
+  code?: string;
+  status?: number;
+}
+
+/**
+ * Error es-MX de una acción del catálogo. Los códigos del API
+ * (`UBICACION_DUPLICADA`, `UBICACION_EN_USO`, `UBICACIONES_CAMBIARON`,
+ * `UBICACION_NO_EXISTE`, `MIGRACION_PENDIENTE`) ya traen su mensaje en
+ * es-MX y se pintan tal cual. Un 404 SIN código en «eliminar»/«ordenar» es
+ * la RUTA que no existe (API previo al 0.0.38): se dice qué hacer mientras.
+ */
+export function textoErrorUbicacion(
+  accion: "agregar" | "renombrar" | "ordenar" | "eliminar" | "activar" | "mover",
+  res: ErrorAccionUbicacion,
+): string {
+  const conCodigo =
+    res.code != null &&
+    [
+      "UBICACION_DUPLICADA",
+      "UBICACION_EN_USO",
+      "UBICACIONES_CAMBIARON",
+      "UBICACION_NO_EXISTE",
+      "UBICACION_INACTIVA",
+      "MIGRACION_PENDIENTE",
+    ].includes(res.code);
+  if (conCodigo && res.error) return res.error;
+  if (res.status === 404 && accion === "eliminar") {
+    return "El sistema todavía no permite eliminar ubicaciones; desactívala mientras tanto.";
+  }
+  if (res.status === 403) return "Tu usuario no puede cambiar las ubicaciones.";
+  const respaldo: Record<typeof accion, string> = {
+    agregar: "No se pudo agregar la ubicación",
+    renombrar: "No se pudo renombrar",
+    ordenar: "No se pudo cambiar el orden",
+    eliminar: "No se pudo eliminar la ubicación",
+    activar: "No se pudo guardar el cambio",
+    mover: "No se pudieron mover los productos",
+  };
+  return res.error || respaldo[accion];
+}
+
+/**
+ * ¿El PUT de orden no existe en este API (previo al 0.0.38)? 404 sin código
+ * de negocio ⇒ el panel cae a los dos PATCH de siempre (`intercambioOrden`).
+ */
+export function ordenSinRutaNueva(res: ErrorAccionUbicacion): boolean {
+  return res.status === 404 && res.code !== "UBICACION_NO_EXISTE";
+}

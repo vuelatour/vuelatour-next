@@ -129,7 +129,9 @@ export default async function InventoryPage({
   const puedeAltaMasiva = !!me && me.rol !== "SOCIO";
   // Mismos roles del PATCH de costo del API (ADMIN/MECANICO).
   const puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
-  // Mismos roles de POST/PATCH ubicaciones y «mover-ubicacion» del API.
+  // Mismos roles de POST/PATCH/DELETE/PUT orden de ubicaciones y
+  // «mover-ubicacion» del API: con él, el formulario del producto trae
+  // «＋ Agregar ubicación…» y el engrane «Administrar ubicaciones».
   const puedeAdministrarUbicaciones = puedeEditarCosto;
   // Catálogo de ubicaciones: null = no disponible (la columna pinta el texto
   // de siempre y no hay filtro/«Mover a…»/«Ubicaciones»).
@@ -219,6 +221,7 @@ export default async function InventoryPage({
           <ItemCreateButton
             categorias={categorias}
             ubicaciones={ubicaciones}
+            puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
             margenVentaPct={margenVentaPct}
           />
         </div>
@@ -253,6 +256,7 @@ export default async function InventoryPage({
       <CodigoSearch
         categorias={categorias}
         ubicaciones={ubicaciones}
+        puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
       />
 

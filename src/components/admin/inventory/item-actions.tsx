@@ -36,6 +36,8 @@ interface ItemActionsProps {
   categorias?: string[];
   /** Catálogo de ubicaciones (formulario); null/ausente = input de texto. */
   ubicaciones?: InventarioUbicacion[] | null;
+  /** ADMIN/MECANICO: agregar/administrar ubicaciones desde el formulario. */
+  puedeAdministrarUbicaciones?: boolean;
   /** Margen de la tienda: textos de la salida («Vacío = último precio de compra + 25 %»). */
   margenVentaPct?: number | null;
 }
@@ -46,6 +48,7 @@ export function ItemActions({
   providers,
   categorias,
   ubicaciones,
+  puedeAdministrarUbicaciones = false,
   margenVentaPct,
 }: ItemActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
@@ -101,6 +104,7 @@ export function ItemActions({
         initialItem={item}
         categorias={categorias}
         ubicaciones={ubicaciones}
+        puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
       />
 

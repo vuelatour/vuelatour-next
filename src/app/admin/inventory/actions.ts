@@ -491,6 +491,97 @@ export async function actualizarUbicacionAction(
 }
 
 /**
+ * Catálogo COMPLETO (con inactivas y sus productos activos) para refrescar el
+ * selector y el diálogo «Ubicaciones» SIN recargar la página (28-sep-2026):
+ * el formulario del producto sigue abierto y no pierde lo capturado.
+ */
+export async function listarUbicacionesAction(): Promise<ActionResult<InventarioUbicacion[]>> {
+  try {
+    const data = await apiServer<InventarioUbicacion[]>("/v1/inventory/ubicaciones", {
+      searchParams: { incluir_inactivas: true },
+      cache: "no-store",
+    });
+    return { ok: true, data: Array.isArray(data) ? data : [] };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Eliminar DE VERDAD una ubicación (ADMIN/MECANICO, API 0.0.38). El API solo
+ * la borra si ningún producto la usa (activo o dado de baja); si no, 409
+ * `UBICACION_EN_USO` con su mensaje en es-MX y `details { productos,
+ * productos_activos }`. El diálogo confirma antes de llamar.
+ */
+export async function eliminarUbicacionAction(
+  id: string,
+): Promise<ActionResult<{ deleted: boolean; id: string; nombre: string }>> {
+  if (!esUuid(id)) return { ok: false, error: "La ubicación ya no existe." };
+  try {
+    const data = await apiServer<{ deleted: boolean; id: string; nombre: string }>(
+      `/v1/inventory/ubicaciones/${id}`,
+      { method: "DELETE" },
+    );
+    revalidatePath("/admin/inventory");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Reordenar el catálogo en UNA llamada (`PUT ubicaciones/orden`, API 0.0.38):
+ * todas las ubicaciones en su nuevo orden. Devuelve el catálogo completo. Un
+ * 404 sin código = API previo (el diálogo cae a los dos PATCH de siempre);
+ * 409 `UBICACIONES_CAMBIARON` = la lista del panel estaba vieja.
+ */
+export async function reordenarUbicacionesAction(
+  ids: string[],
+): Promise<ActionResult<InventarioUbicacion[]>> {
+  const limpios = [...new Set((ids ?? []).filter((x) => esUuid(x)))];
+  if (limpios.length === 0) return { ok: false, error: "No hay ubicaciones que ordenar." };
+  try {
+    const data = await apiServer<InventarioUbicacion[]>("/v1/inventory/ubicaciones/orden", {
+      method: "PUT",
+      body: { ids: limpios },
+    });
+    revalidatePath("/admin/inventory");
+    return { ok: true, data: Array.isArray(data) ? data : [] };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Productos ACTIVOS de una ubicación (id + nombre), para «muévelos primero»
+ * al eliminarla desde el diálogo — también cuando el diálogo se abrió desde
+ * el formulario del producto, donde la tabla no está a la mano. Pagina de
+ * 300 en 300 (tope del DTO de la lista) hasta cubrir `count`.
+ */
+export async function productosDeUbicacionAction(
+  ubicacionId: string,
+): Promise<ActionResult<Array<{ id: string; nombre: string }>>> {
+  if (!esUuid(ubicacionId)) return { ok: false, error: "La ubicación ya no existe." };
+  const PAGINA = 300;
+  const out: Array<{ id: string; nombre: string }> = [];
+  try {
+    for (let offset = 0; ; offset += PAGINA) {
+      const res = await apiServer<{ data: InventarioItem[]; count?: number }>("/v1/inventory/items", {
+        searchParams: { ubicacion: ubicacionId, limit: PAGINA, offset },
+        cache: "no-store",
+      });
+      const filas = Array.isArray(res?.data) ? res.data : [];
+      out.push(...filas.map((f) => ({ id: f.id, nombre: f.nombre })));
+      const total = typeof res?.count === "number" ? res.count : out.length;
+      if (filas.length === 0 || out.length >= total) break;
+    }
+    return { ok: true, data: out };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
  * Mover productos en lote a una ubicación (ADMIN/MECANICO): UN solo update
  * en el API. No mueve stock ni dinero. Ids que ya no aplican (dados de baja,
  * inexistentes) NO son error: vienen en `no_encontrados`/`inactivos`.
