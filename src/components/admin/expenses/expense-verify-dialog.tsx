@@ -55,8 +55,14 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  AYUDA_COMISION_VENDEDOR,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
+  HINT_VUELO_COMISION,
+  VENTANA_VUELOS_COMISION,
+  categoriaExigeVueloSiempre,
+  errorVueloObligatorio,
+  iaPuedeCambiarCategoria,
   opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
@@ -217,18 +223,33 @@ export function ExpenseVerifyDialog({
       });
   };
 
+  // Vuelo elegido = el del gasto al abrir (o al cambiar de gasto).
+  useEffect(() => {
+    if (!open) return;
+    setVueloSel(gasto.vuelo_id ?? "");
+  }, [open, gasto.id, gasto.vuelo_id]);
+
+  // «Comisión del vendedor» (28-sep-2026): SIEMPRE con vuelo (400
+  // GASTO_REQUIERE_VUELO del API para todos los roles) y se paga días o
+  // semanas DESPUÉS del vuelo ⇒ la lista trae 90 días hacia atrás. El
+  // effect de arriba NO se re-dispara al cambiar la categoría (reiniciaría
+  // el vuelo elegido): solo la lista se recarga con la ventana ancha.
+  const esComision = categoriaExigeVueloSiempre(watch("categoria"));
+
   // Vuelos alrededor de la fecha del gasto, para asignar/corregir a mano.
   useEffect(() => {
     if (!open) return;
     let cancel = false;
-    setVueloSel(gasto.vuelo_id ?? "");
-    buscarVuelosCercanosAction(gasto.fecha_gasto).then((res) => {
+    buscarVuelosCercanosAction(
+      gasto.fecha_gasto,
+      esComision ? VENTANA_VUELOS_COMISION : undefined,
+    ).then((res) => {
       if (!cancel && res.ok && res.data) setVuelos(res.data);
     });
     return () => {
       cancel = true;
     };
-  }, [open, gasto.id, gasto.vuelo_id, gasto.fecha_gasto]);
+  }, [open, gasto.id, gasto.vuelo_id, gasto.fecha_gasto, esComision]);
 
   // Al abrir un gasto SIN avión: PRIMERO la matrícula que la IA leyó en el
   // comprobante (capturas de oficina: piloto+fecha da cero candidatos) y
@@ -330,9 +351,11 @@ export function ExpenseVerifyDialog({
       setValue("fecha_gasto", ai.fecha);
       llenado.push(ai.fecha);
     }
+    // La IA no pisa una «Comisión del vendedor» (no sabe sugerirla).
     if (
       ai.categoria_sugerida &&
-      CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)
+      CATEGORIAS.some((c) => c.value === ai.categoria_sugerida) &&
+      iaPuedeCambiarCategoria(watch("categoria"), ai.categoria_sugerida)
     ) {
       setValue("categoria", ai.categoria_sugerida);
       llenado.push(ai.categoria_sugerida);
@@ -451,6 +474,17 @@ export function ExpenseVerifyDialog({
 
   /** Guardado real (fecha ya validada o confirmada por el usuario). */
   const guardarVerificacion = (values: GastoVerifyValues) => {
+    // «Comisión del vendedor» sin vuelo: mismo texto que el 400 del API.
+    const sinVuelo = errorVueloObligatorio(values.categoria, vueloSel);
+    if (sinVuelo) {
+      toast.error(sinVuelo);
+      return;
+    }
+    // La categoría exige vuelo ⇒ el vuelo viaja en el MISMO PATCH que la
+    // categoría (sin la 2.ª llamada de abajo). Si no, reclasificar un gasto
+    // SIN vuelo a «Comisión del vendedor» rebotaba: el API valida el estado
+    // efectivo tras el merge y el PATCH de categoría llegaba sin vuelo.
+    const vueloEnPatch = categoriaExigeVueloSiempre(values.categoria);
     startTransition(async () => {
       // monto guardado = TOTAL PAGADO (ticket + propina): lo que llega al
       // banco. En el formulario se edita el ticket y la propina por separado
@@ -549,6 +583,14 @@ export function ExpenseVerifyDialog({
       if (values.medio_pago !== "TARJETA_CORP") {
         payload.tarjeta_terminacion = null;
       }
+      // Comisión del vendedor: vuelo en el MISMO PATCH (ver arriba). El API
+      // limpia solo un tramo del vuelo anterior. El avión NO se re-hereda
+      // cuando el PATCH ya trae `aeronave_id` (lo trae siempre que el gasto
+      // tenga avión): lo pone el selector de vuelo de arriba al elegirlo
+      // (solo referencia; la comisión no es costo del avión).
+      if (vueloEnPatch) {
+        payload.vuelo_id = vueloSel;
+      }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
         // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
@@ -564,6 +606,8 @@ export function ExpenseVerifyDialog({
           values.categoria !== "INDIRECTO" &&
           values.categoria !== "NOMINA" &&
           values.categoria !== "SERVICIOS" &&
+          // Comisión del vendedor: el vuelo ya viajó en el PATCH.
+          !vueloEnPatch &&
           vueloSel !== (gasto.vuelo_id ?? "")
         ) {
           const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
@@ -1025,13 +1069,19 @@ export function ExpenseVerifyDialog({
             );
           })()}
 
-          {/* Asignación MANUAL del vuelo (±15 días de la fecha del gasto):
-              cubre cuando la sugerencia automática no encuentra match o el
-              gasto quedó ligado al vuelo equivocado. */}
-          <Field label="Vuelo (asignar o corregir a mano)">
+          {/* Asignación MANUAL del vuelo (±15 días de la fecha del gasto;
+              90 días atrás con «Comisión del vendedor»): cubre cuando la
+              sugerencia automática no encuentra match o el gasto quedó
+              ligado al vuelo equivocado. */}
+          <Field
+            label="Vuelo (asignar o corregir a mano)"
+            required={esComision}
+            hint={esComision ? HINT_VUELO_COMISION : undefined}
+          >
             <SearchableSelect
               options={[
-                { value: "", label: "Sin vuelo" },
+                // Sin «Sin vuelo» cuando la categoría lo exige.
+                ...(esComision ? [] : [{ value: "", label: "Sin vuelo" }]),
                 ...vuelos.map((v) => ({
                   value: v.id,
                   label: vueloCercanoLabel(v),
@@ -1102,6 +1152,17 @@ export function ExpenseVerifyDialog({
               />
             </Field>
           </div>
+
+          {/* Comisión del vendedor (28-sep-2026): reclasificar aquí un
+              «Otros gastos VuelaTour» CON vuelo es EL camino para corregir
+              capturas previas (sale de «otros gastos» y reemplaza la
+              provisión). */}
+          {esComision && (
+            <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-medium">Comisión del vendedor.</span>{" "}
+              {AYUDA_COMISION_VENDEDOR}
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Facturación (oficina)">

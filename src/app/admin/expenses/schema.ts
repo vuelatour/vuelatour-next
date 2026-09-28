@@ -13,6 +13,13 @@ export const CategoriaEnum = z.enum([
   "REFACCION",
   "PERMISO",
   "PILOTO_EXTERNO",
+  // Pago al VENDEDOR (28-sep-2026, API 0.0.39): SIEMPRE con vuelo (400
+  // GASTO_REQUIERE_VUELO para todos los roles); el avión se hereda del vuelo
+  // solo como referencia. No es costo del avión ni va a «otros gastos»: en
+  // «otros movimientos» del Balance general se aparea con la comisión
+  // cobrada y reemplaza a la PROVISIÓN. Monto libre, varios por vuelo. El
+  // API 0.0.38 la rechaza (IsEnum): el panel sale DESPUÉS del API.
+  "COMISION_VENDEDOR",
   "FIJO",
   // Gasto de la operación SIN vuelo (avión opcional). Por ahora fuera del
   // reparto y de la bandeja de pendientes (tratamiento por decidir).

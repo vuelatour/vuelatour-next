@@ -3954,3 +3954,105 @@ opciones a este listado de lugares para el inventario». Contrato con el API
 - **Pendientes conocidos**: sin QA visual en navegador (el anidado de diálogos
   se verificó leyendo Base UI 1.4.1, no con clics reales); la app Flutter no se
   tocó (sigue con su texto libre).
+
+## Comisión del vendedor como gasto (28-sep-2026)
+
+Pedido del cliente con capturas del Excel del Balance general (hojas «otros
+movimientos» y «otros gastos») y del formulario de gasto: «¿cómo registro un
+gasto para que aparezca en la hoja de otros movimientos? Como pagarle una
+comisión a Saab… Si lo agrego en Gastos como "Otros gastos VuelaTour" me lo
+manda a la hoja de Otros gastos como un gasto aparte del que ya está en otros
+movimientos: queda duplicado». Hasta hoy el pago al vendedor solo existía como
+PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
+20260928000001 enum y 20260928000002 CHECK; invariante 31 del API).
+
+- **Categoría nueva `COMISION_VENDEDOR`** = «Comisión del vendedor», destino
+  «Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)»
+  (tabla canónica IDÉNTICA en API, panel y app — `lib/admin/categorias-gasto.ts`).
+  Va en `CATEGORIAS_CAPTURA` justo después de `PILOTO_EXTERNO` (alta, alta
+  desde «Gastos del vuelo» y verificación) y en `CategoriaEnum` del schema.
+  **No es repartible** (`CATEGORIAS_REPARTIBLES` sin cambio), no es de compra.
+  El API la aparea con la comisión cobrada en «otros movimientos» (Balance
+  general) y «Otros ingresos» (Libro Dinero) y **reemplaza la PROVISIÓN**; con
+  pago parcial/excedido pinta «faltan $…»/«excede $…». No resta al avión, no va
+  a «otros gastos», no entra al reparto.
+- **Exige vuelo para TODOS los roles** (espejo del 400 `GASTO_REQUIERE_VUELO`
+  del API; respaldo en BD). `categoriaExigeVueloSiempre`,
+  `errorVueloObligatorio(categoria, vueloId)` y
+  `MSG_GASTO_REQUIERE_VUELO_COMISION` (texto IDÉNTICO al del API): los dos
+  diálogos bloquean el guardado con ese toast ANTES de subir la factura o
+  llamar al API. El campo «Vuelo» sale con asterisco, SIN la opción «Sin
+  vuelo» y con el hint `HINT_VUELO_COMISION` («Obligatorio: la comisión se
+  aparea con lo cobrado en ese vuelo. La lista trae los vuelos de los últimos
+  90 días.»).
+- **Ventana de vuelos**: la comisión se paga días o semanas DESPUÉS del vuelo
+  ⇒ `buscarVuelosCercanosAction(fecha, VENTANA_VUELOS_COMISION)` = 90 días
+  atrás, 15 adelante, 500 vuelos (tope `@Max(500)` del API). Sin `opts`, la
+  ventana de SIEMPRE (±15, 100: Paywise y demás sin cambio). El argumento
+  viene del cliente ⇒ la action lo acota (días 0–366, limit 1–500, enteros).
+- **Ayuda en pantalla** (`AYUDA_COMISION_VENDEDOR`, cuadro del mismo estilo
+  que INDIRECTO/NÓMINA, en el alta —con o sin vuelo prefijado— y en la
+  verificación): se aparea con la comisión cobrada en «otros movimientos» y
+  reemplaza la PROVISIÓN; «faltan»/«excede»; **«Registra un gasto por
+  vuelo»** (única defensa operativa contra el doble conteo de una
+  transferencia que paga varios vuelos o los aviones de un grupo — riesgos
+  R1/R14 del contrato); no es costo del avión; no capturarla como «Otros
+  gastos VuelaTour».
+- **Verificación: el vuelo viaja en el MISMO PATCH** que la categoría
+  (`payload.vuelo_id = vueloSel`) y se SALTA la 2.ª llamada
+  `assignVueloGastoAction`: el API valida el estado EFECTIVO tras el merge y
+  reclasificar un gasto SIN vuelo rebotaba (el PATCH de categoría llegaba sin
+  vuelo). Reclasificar un «Otros gastos VuelaTour» CON vuelo a «Comisión del
+  vendedor» es EL camino para corregir capturas previas (sale de «otros
+  gastos» y reemplaza la provisión). El efecto que fija `vueloSel` quedó
+  separado del que carga la lista: cambiar la categoría recarga la lista con
+  la ventana ancha SIN reiniciar el vuelo elegido.
+- **La IA no la pisa** (`iaPuedeCambiarCategoria(actual, sugerida)`): si el
+  humano eligió la comisión, la lectura del ticket (alta) o «Reanalizar con
+  IA» (verificación) no cambian la categoría; y la IA tampoco la PROPONE
+  (pyservices no la sugiere; si llegara, se ignora — un pago al vendedor lo
+  decide la oficina).
+- **«Simular operación como piloto»**: oculto y forzado a `false` con esta
+  categoría (la paga la oficina). Con vuelo prefijado, la descripción del
+  diálogo ya no promete «resta en el reparto».
+- **Gastos del vuelo** (`flight-gastos-table.tsx`): bajo «Comisión del
+  vendedor» se pinta su destino en verde (solo en esa categoría). El total de
+  la card no cambia (un gasto es un gasto). La card de cobros/cotización NO se
+  tocó. `createGastoAction` ahora revalida también `/admin/flights` (layout),
+  igual que verificar/ligar/borrar: el alta desde «Gastos del vuelo» se ve al
+  instante.
+- **Hint «Con lo elegido cae en:» corregido** (`hojaDestinoGasto`; CLAUDE.md:
+  los flujos confusos se corrigen — justo esa pista engañó al cliente). Orden:
+  PERSONAL_DUENO → **COMISION_VENDEDOR** («Balance general VuelaTour · Otros
+  movimientos (reemplaza la provisión del pago al vendedor)») → **empresa**
+  (`CATEGORIAS_EMPRESA` = OTRO/NOMINA/GASOLINA/FIJO/VISITA, sincronizada con
+  `CATEGORIAS_GASTO_EMPRESA` del API y congelada en el test contra
+  `DESTINO_POR_DEFECTO`: con vuelo «… · Otros gastos (el vuelo queda solo como
+  referencia)», con avión «… · Otros gastos (el avión queda solo como
+  referencia; para cargarlo a aviones usa el reparto)», sin nada el texto de
+  siempre) → con vuelo: **TUAS** «Balance general VuelaTour · Otros
+  movimientos (apareado con las TUAS cobradas; en la hoja del vuelo solo es
+  nota)», **GAS** «Balance del avión · Combustible (por avión y mes; el vuelo
+  es referencia)», **PERMISO** «Balance del avión · Permisos», lo demás «hoja
+  del vuelo» → sin avión → GAS/PERMISO con avión → Gastos Indirectos. Antes
+  todo gasto con vuelo decía «hoja del vuelo» aunque desde el 11-sep las de
+  empresa van SIEMPRE a «otros gastos». (El cuadro de NÓMINA del alta conserva
+  su texto viejo: otra pasada.)
+- **Pruebas**: `lib/admin/__tests__/categorias-gasto.test.ts` (tabla
+  canónica == API, orden en el selector, no repartible, vuelo obligatorio y su
+  mensaje, ventanas, `iaPuedeCambiarCategoria`, ayuda, `hojaDestinoGasto` por
+  rama, schema zod de alta y verificación),
+  `app/admin/expenses/__tests__/comision-vendedor-actions.test.ts` (ventana
+  default/comisión/acotada, POST y revalidación, 400 del API tal cual, PATCH
+  único) y `components/admin/expenses/__tests__/comision-vendedor-ui.test.tsx`
+  (hint, «Gastos del vuelo», cableado de los dos diálogos). Verificar con
+  `npx tsc --noEmit`, `npx eslint <archivos>` y `npx vitest run`.
+- **Orden de deploy**: el panel sale DESPUÉS del API 0.0.39 (el 0.0.38 rechaza
+  la categoría con 400 de `IsEnum`), y el API después de la migración
+  20260928000001 (dependencia dura del API).
+- **Pendientes conocidos**: sin QA visual en navegador; pagos periódicos que
+  cubren varios vuelos (1 transferencia ↔ N comisiones) siguen sin solución
+  en esta ronda (riesgo R1: el cargo no se puede ligar a ninguno de los N
+  gastos); las dos PRUEBAS del cliente en el vuelo #317 (`OTRO`, 250,000.00 y
+  870,000.00 MXN) siguen duplicando en «otros gastos» hasta que la oficina las
+  borre (nadie las tocó).

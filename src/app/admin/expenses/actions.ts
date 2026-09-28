@@ -6,6 +6,10 @@ import { isApiError } from "@/lib/api/errors";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
+import {
+  VENTANA_VUELOS_DEFAULT,
+  type VentanaVuelosCercanos,
+} from "@/lib/admin/categorias-gasto";
 import type {
   Gasto,
   PistaPendiente,
@@ -73,6 +77,10 @@ export async function createGastoAction(
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");
+    // Alta desde «Gastos del vuelo» (p. ej. la «Comisión del vendedor»,
+    // 28-sep-2026): el detalle del vuelo también se refresca, igual que al
+    // verificar, ligar o borrar un gasto.
+    revalidatePath("/admin/flights", "layout");
     return repartoError !== undefined
       ? { ok: true, data: created, repartoError }
       : { ok: true, data: created };
@@ -601,11 +609,33 @@ export interface VueloCercano {
  * tener gastos reales (se voló a recoger, cancelaron, regresó ferry) y van
  * al balance igual. Se listan AL FINAL para no estorbar en el caso común; la
  * etiqueta "· CANCELADO" la pinta el selector (`vueloCercanoLabel`).
+ *
+ * `opts` (28-sep-2026): la «Comisión del vendedor» se paga días o semanas
+ * DESPUÉS del vuelo — sus diálogos piden `VENTANA_VUELOS_COMISION` (90 días
+ * atrás, 15 adelante, 500 vuelos). Sin `opts`, la ventana de siempre
+ * (Paywise y demás llamadas no cambian).
  */
 export async function buscarVuelosCercanosAction(
   fechaGasto: string | null,
+  opts?: Partial<VentanaVuelosCercanos>,
 ): Promise<ActionResult<VueloCercano[]>> {
   try {
+    // Argumento de server action = dato del cliente: se acota (el API
+    // rechaza `limit > 500` con 400 y un rango absurdo no sirve a nadie).
+    const entero = (v: unknown, def: number, min: number, max: number) =>
+      typeof v === "number" && Number.isFinite(v)
+        ? Math.min(max, Math.max(min, Math.trunc(v)))
+        : def;
+    const ventana = {
+      diasAtras: entero(opts?.diasAtras, VENTANA_VUELOS_DEFAULT.diasAtras, 0, 366),
+      diasAdelante: entero(
+        opts?.diasAdelante,
+        VENTANA_VUELOS_DEFAULT.diasAdelante,
+        0,
+        366,
+      ),
+      limit: entero(opts?.limit, VENTANA_VUELOS_DEFAULT.limit, 1, 500),
+    };
     const base = fechaGasto
       ? new Date(`${fechaGasto.slice(0, 10)}T12:00:00-05:00`)
       : new Date();
@@ -624,7 +654,11 @@ export async function buscarVuelosCercanosAction(
         fecha_vuelo: string | null;
       }>;
     }>("/v1/flights", {
-      searchParams: { desde: dia(-15), hasta: dia(15), limit: 100 },
+      searchParams: {
+        desde: dia(-ventana.diasAtras),
+        hasta: dia(ventana.diasAdelante),
+        limit: ventana.limit,
+      },
       cache: "no-store",
     });
     const data = res.data

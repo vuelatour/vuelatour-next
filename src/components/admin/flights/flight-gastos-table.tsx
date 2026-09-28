@@ -8,7 +8,11 @@ import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
-import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import {
+  CATEGORIA_PAGO_VENDEDOR,
+  categoriaGastoLabel,
+  destinoPorDefecto,
+} from "@/lib/admin/categorias-gasto";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { cn } from "@/lib/utils";
@@ -62,6 +66,14 @@ export function FlightGastosTable({
       cell: (g) => (
         <>
           {categoriaGastoLabel(g.categoria)}
+          {/* Comisión del vendedor (28-sep-2026): se dice a dónde va — el
+              pago NO resta al avión; se aparea con la comisión cobrada en
+              «otros movimientos» del Balance general. */}
+          {g.categoria === CATEGORIA_PAGO_VENDEDOR && (
+            <p className="text-[11px] text-green-600 dark:text-green-400">
+              {destinoPorDefecto(g.categoria)}
+            </p>
+          )}
           {g.lugar ? (
             <p className="text-[11px] text-muted-foreground font-mono">{g.lugar}</p>
           ) : null}

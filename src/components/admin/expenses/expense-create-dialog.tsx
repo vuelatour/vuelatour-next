@@ -62,8 +62,14 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  AYUDA_COMISION_VENDEDOR,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
+  HINT_VUELO_COMISION,
+  VENTANA_VUELOS_COMISION,
+  categoriaExigeVueloSiempre,
+  errorVueloObligatorio,
+  iaPuedeCambiarCategoria,
   opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
@@ -243,17 +249,24 @@ export function ExpenseCreateDialog({
   register("medio_pago", { required: MSG_MEDIO_REQUERIDO });
 
   const fechaGasto = watch("fecha_gasto");
+  // «Comisión del vendedor» (28-sep-2026): SIEMPRE con vuelo (400
+  // GASTO_REQUIERE_VUELO del API para todos los roles) y se paga días o
+  // semanas DESPUÉS del vuelo ⇒ la lista trae 90 días hacia atrás.
+  const esComision = categoriaExigeVueloSiempre(watch("categoria"));
   useEffect(() => {
     // Con vuelo prefijado (alta desde el detalle del vuelo) no hace falta lista.
     if (!open || defaultVueloId) return;
     let cancel = false;
-    buscarVuelosCercanosAction(fechaGasto).then((res) => {
+    buscarVuelosCercanosAction(
+      fechaGasto,
+      esComision ? VENTANA_VUELOS_COMISION : undefined,
+    ).then((res) => {
       if (!cancel && res.ok && res.data) setVuelos(res.data);
     });
     return () => {
       cancel = true;
     };
-  }, [open, defaultVueloId, fechaGasto]);
+  }, [open, defaultVueloId, fechaGasto, esComision]);
 
   // ===== Reparto en la captura: solo un gasto general SIN vuelo NI avión de
   // categoría repartible (fuente única CATEGORIAS_REPARTIBLES, sincronizada
@@ -364,11 +377,13 @@ export function ExpenseCreateDialog({
     }
     // La categoría prefijada por la pantalla (Gastos personales, pistas)
     // MANDA sobre la sugerencia de la IA: pisarla convertiría un gasto
-    // personal del dueño en gasto de empresa en silencio.
+    // personal del dueño en gasto de empresa en silencio. Tampoco pisa una
+    // «Comisión del vendedor» elegida a mano (la IA no sabe sugerirla).
     if (
       !defaultCategoria &&
       ai.categoria_sugerida &&
-      CATEGORIAS.some((c) => c.value === ai.categoria_sugerida)
+      CATEGORIAS.some((c) => c.value === ai.categoria_sugerida) &&
+      iaPuedeCambiarCategoria(watch("categoria"), ai.categoria_sugerida)
     ) {
       setValue("categoria", ai.categoria_sugerida);
       llenado.push(ai.categoria_sugerida);
@@ -525,6 +540,13 @@ export function ExpenseCreateDialog({
         toast.error(`${MSG_MEDIO_REQUERIDO}.`);
         return;
       }
+      // «Comisión del vendedor» sin vuelo: mismo texto que el 400
+      // GASTO_REQUIERE_VUELO del API, ANTES de subir la factura.
+      const sinVuelo = errorVueloObligatorio(values.categoria, values.vuelo_id);
+      if (sinVuelo) {
+        toast.error(sinVuelo);
+        return;
+      }
       const totalPagado = Math.round((ticket + propina) * 100) / 100;
       // Cinturón: un PERSONAL del dueño jamás manda vuelo/avión aunque algún
       // valor viejo (elegido antes de cambiar la categoría) siga en el form.
@@ -601,8 +623,13 @@ export function ExpenseCreateDialog({
           return;
         }
       }
-      // "Como piloto" solo aplica con un vuelo ligado y con piloto.
-      const aplicarComoPiloto = comoPiloto && !!values.vuelo_id && !vueloSinPiloto;
+      // "Como piloto" solo aplica con un vuelo ligado y con piloto. Jamás
+      // en una comisión del vendedor: la paga la oficina, no la tripulación.
+      const aplicarComoPiloto =
+        comoPiloto &&
+        !!values.vuelo_id &&
+        !vueloSinPiloto &&
+        !categoriaExigeVueloSiempre(values.categoria);
       const litros =
         values.categoria === "GAS" && values.litros !== ""
           ? Number(values.litros)
@@ -739,8 +766,12 @@ export function ExpenseCreateDialog({
             <DialogDescription>
               {defaultVueloId ? (
                 <>
-                  Se liga al vuelo{defaultVueloFolio != null ? ` #${defaultVueloFolio}` : ""}:
-                  entra a su reporte y resta en el reparto (ej. honorario del piloto externo).
+                  Se liga al vuelo{defaultVueloFolio != null ? ` #${defaultVueloFolio}` : ""}
+                  {esComision
+                    ? // La comisión NO resta al avión ni al reparto: lo
+                      // explica el cuadro de la categoría.
+                      "."
+                    : ": las categorías del vuelo entran a su reporte y restan en el reparto; las de empresa (p. ej. «Otros gastos VuelaTour») van a «otros gastos» del balance general."}
                   {defaultVueloCancelado && <VueloCanceladoHint className="mt-1" />}
                 </>
               ) : (
@@ -1033,6 +1064,9 @@ export function ExpenseCreateDialog({
                       if (watch("aeronave_id")) setValue("aeronave_id", "");
                       setComoPiloto(false);
                     }
+                    // Comisión del vendedor: la paga la oficina — "simular
+                    // como piloto" no aplica (el switch se oculta).
+                    if (categoriaExigeVueloSiempre(v)) setComoPiloto(false);
                   }}
                   placeholder="Categoría"
                 />
@@ -1055,6 +1089,16 @@ export function ExpenseCreateDialog({
               </Field>
             </div>
 
+            {/* Comisión del vendedor (28-sep-2026): con o sin vuelo
+                prefijado — explica el apareo y la regla «un gasto por
+                vuelo» (la única defensa contra el doble conteo de un pago
+                agregado). */}
+            {esComision && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium">Comisión del vendedor.</span>{" "}
+                {AYUDA_COMISION_VENDEDOR}
+              </p>
+            )}
             {!defaultVueloId && watch("categoria") === "INDIRECTO" && (
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 Gasto <span className="font-medium">indirecto</span>: no se liga a
@@ -1103,11 +1147,17 @@ export function ExpenseCreateDialog({
               watch("categoria") !== "VISITA" && (
               <Field
                 label="Vuelo"
-                hint="Ligado al vuelo entra a su reporte y resta en el reparto; elige por folio, matrícula o ruta (±15 días de la fecha)."
+                required={esComision}
+                hint={
+                  esComision
+                    ? HINT_VUELO_COMISION
+                    : "Las categorías del vuelo entran a su reporte y restan en el reparto; las de empresa van a «otros gastos». Elige por folio, matrícula o ruta (±15 días de la fecha)."
+                }
               >
                 <SearchableSelect
                   options={[
-                    { value: "", label: "Sin vuelo" },
+                    // Sin «Sin vuelo» cuando la categoría lo exige.
+                    ...(esComision ? [] : [{ value: "", label: "Sin vuelo" }]),
                     ...vuelos.map((v) => ({
                       value: v.id,
                       label: vueloCercanoLabel(v),
@@ -1138,7 +1188,8 @@ export function ExpenseCreateDialog({
                 vuelo LIGADO. Igual que el switch de la app. */}
             {(() => {
               const hayVuelo = !!watch("vuelo_id");
-              if (!hayVuelo) return null;
+              // Comisión del vendedor: la paga la oficina, nunca el piloto.
+              if (!hayVuelo || esComision) return null;
               const sinPiloto = vueloSinPiloto;
               return (
                 <div className="rounded-lg border border-border p-3 space-y-1.5">
