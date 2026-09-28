@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -34,6 +44,15 @@ import {
   tcQueViaja,
   textoAvisoSalida,
 } from "@/lib/admin/inventario-ficha";
+import {
+  BOTON_CAPTURAR_COSTO,
+  BOTON_REGISTRAR_SIN_COSTO,
+  HINT_COSTO_ENTRADA_PENDIENTE,
+  TITULO_CONFIRMAR_SIN_COSTO,
+  clasificarCostoEntrada,
+  textoConfirmarEntradaSinCosto,
+  textoEntradaRegistradaSinCosto,
+} from "@/lib/admin/inventario-entrada-inicial";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
 import type { InventarioEmpaque } from "@/types/inventory";
@@ -75,6 +94,18 @@ interface MovimientoDialogProps {
    * número real lo aplica el API al registrar la salida.
    */
   margenVentaPct?: number | null;
+  /**
+   * ¿El producto ya tiene una compra con costo (último precio vigente)? Solo
+   * para el texto de la confirmación de una ENTRADA sin costo (28-sep-2026):
+   * `undefined` = no se sabe (API previo) ⇒ el texto cubre los dos casos.
+   */
+  tieneCostoVigente?: boolean;
+}
+
+/** Entrada sin costo esperando confirmación: el cuerpo YA armado (USD 0). */
+interface EntradaSinCostoPendiente {
+  cuerpo: Record<string, unknown>;
+  cantidad: number;
 }
 
 export function MovimientoDialog({
@@ -91,8 +122,18 @@ export function MovimientoDialog({
   initialTipo,
   initialEmpaqueId,
   margenVentaPct,
+  tieneCostoVigente,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
+  // ENTRADA con el costo vacío o en 0 (28-sep-2026, revisión adversaria):
+  // antes un «0» tecleado registraba la entrada SIN costo en silencio. Ahora
+  // se pregunta, igual que en el alta del producto. Abierta/cerrada va aparte
+  // del cuerpo (el texto se queda durante la animación de salida y un doble
+  // clic no registra dos veces).
+  const [sinCosto, setSinCosto] = useState<EntradaSinCostoPendiente | null>(null);
+  const [sinCostoAbierto, setSinCostoAbierto] = useState(false);
+  const irAlCostoRef = useRef(false);
+  const costoInputRef = useRef<HTMLInputElement | null>(null);
   // Solo empaques activos se pueden usar para capturar; si el preseleccionado
   // (escaneado) está inactivo, se ofrece igual para no perder la lectura.
   const empaquesUsables = useMemo(
@@ -119,7 +160,10 @@ export function MovimientoDialog({
   });
 
   useEffect(() => {
-    if (open) reset(defaults(initialTipo, preseleccionado, precioVenta, precioVentaMoneda));
+    if (!open) return;
+    reset(defaults(initialTipo, preseleccionado, precioVenta, precioVentaMoneda));
+    setSinCosto(null);
+    setSinCostoAbierto(false);
   }, [open, reset, initialTipo, preseleccionado, precioVenta, precioVentaMoneda]);
 
   const tipo = watch("tipo");
@@ -168,13 +212,53 @@ export function MovimientoDialog({
       }),
     };
     const matricula = aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null;
+
+    // ENTRADA sin costo = decisión EXPLÍCITA (misma regla que el alta,
+    // `clasificarCostoEntrada`): vacío o 0 ⇒ se PREGUNTA y viaja como USD 0
+    // (sin pesos ni T.C.); un costo tan chico que se guardaría en $0 es error.
+    if (values.tipo === "ENTRADA") {
+      const moneda = values.moneda === "USD" ? "USD" : "MXN";
+      const costo = clasificarCostoEntrada({
+        costo: moneda === "MXN" ? values.costo_unitario_mxn : values.costo_unitario_usd,
+        moneda,
+        tc: values.tc_usd_mxn,
+      });
+      if (costo.tipo === "ERROR") {
+        toast.error(costo.mensaje);
+        return;
+      }
+      const cantidad = Number(cuerpo.cantidad);
+      if (costo.tipo === "PENDIENTE" && cantidad > 0) {
+        setSinCosto({
+          cuerpo: {
+            ...cuerpo,
+            moneda: "USD",
+            costo_unitario_usd: 0,
+            costo_unitario_mxn: "",
+            tc_usd_mxn: undefined,
+          },
+          cantidad,
+        });
+        setSinCostoAbierto(true);
+        return;
+      }
+    }
+    registrar(cuerpo, { matricula, paraFlota: values.para_flota === true });
+  });
+
+  const registrar = (
+    cuerpo: Record<string, unknown>,
+    ctx: { matricula: string | null; paraFlota: boolean; cantidadSinCosto?: number },
+  ) => {
     startTransition(async () => {
       const result = await createMovimientoAction(itemId, cuerpo);
       if (result.ok) {
         toast.success(
-          esSalida && result.data
-            ? textoSalidaRegistrada(result.data, values.para_flota ? null : matricula)
-            : "Movimiento registrado",
+          ctx.cantidadSinCosto != null
+            ? textoEntradaRegistradaSinCosto(ctx.cantidadSinCosto)
+            : esSalida && result.data
+              ? textoSalidaRegistrada(result.data, ctx.paraFlota ? null : ctx.matricula)
+              : "Movimiento registrado",
         );
         // API 0.0.36: la salida salió a $0 porque el producto no tiene
         // ninguna compra con costo — se dice, no se calla.
@@ -202,7 +286,11 @@ export function MovimientoDialog({
         toast.error(result.error ?? "Error desconocido");
       }
     });
-  });
+  };
+
+  const esEntrada = tipo === "ENTRADA";
+  const costoMxnReg = register("costo_unitario_mxn");
+  const costoUsdReg = register("costo_unitario_usd");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -313,8 +401,17 @@ export function MovimientoDialog({
             ) : (
               <Field
                 label="Costo unitario"
-                required
-                hint={empaque ? `Por ${etiquetaUnidad.replace(/s$/, "")} suelta, NO por caja` : undefined}
+                // ENTRADA: vacío = costo PENDIENTE (se confirma); devolución y
+                // ajuste lo siguen exigiendo.
+                required={!esEntrada}
+                hint={
+                  [
+                    empaque ? `Por ${etiquetaUnidad.replace(/s$/, "")} suelta, NO por caja.` : null,
+                    esEntrada ? HINT_COSTO_ENTRADA_PENDIENTE : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
                 error={
                   watch("moneda") === "MXN"
                     ? errors.costo_unitario_mxn?.message
@@ -333,9 +430,29 @@ export function MovimientoDialog({
                     <option value="USD">USD</option>
                   </select>
                   {watch("moneda") === "MXN" ? (
-                    <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_unitario_mxn")} />
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="0.00"
+                      {...costoMxnReg}
+                      ref={(el) => {
+                        costoMxnReg.ref(el);
+                        costoInputRef.current = el;
+                      }}
+                    />
                   ) : (
-                    <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_unitario_usd")} />
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="0.00"
+                      {...costoUsdReg}
+                      ref={(el) => {
+                        costoUsdReg.ref(el);
+                        costoInputRef.current = el;
+                      }}
+                    />
                   )}
                 </div>
               </Field>
@@ -463,6 +580,62 @@ export function MovimientoDialog({
             </Button>
           </DialogFooter>
         </form>
+
+        {/* ENTRADA sin costo: nada se registra hasta elegir (anidado en el
+            diálogo del movimiento: Esc cierra solo esta confirmación). */}
+        <AlertDialog
+          open={sinCostoAbierto && sinCosto !== null}
+          onOpenChange={(o) => {
+            if (!o) setSinCostoAbierto(false);
+          }}
+        >
+          <AlertDialogContent
+            finalFocus={() => {
+              const irAlCosto = irAlCostoRef.current;
+              irAlCostoRef.current = false;
+              return irAlCosto ? costoInputRef.current : true;
+            }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_CONFIRMAR_SIN_COSTO}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {sinCosto
+                  ? textoConfirmarEntradaSinCosto(sinCosto.cantidad, {
+                      conPrecioVenta: Number(precioVenta) > 0,
+                      tieneCostoVigente,
+                    })
+                  : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                className="cursor-pointer"
+                onClick={() => {
+                  irAlCostoRef.current = true;
+                }}
+              >
+                {BOTON_CAPTURAR_COSTO}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="cursor-pointer"
+                disabled={pending}
+                onClick={() => {
+                  const pendiente = sinCostoAbierto ? sinCosto : null;
+                  setSinCostoAbierto(false);
+                  if (pendiente) {
+                    registrar(pendiente.cuerpo, {
+                      matricula: null,
+                      paraFlota: false,
+                      cantidadSinCosto: pendiente.cantidad,
+                    });
+                  }
+                }}
+              >
+                {BOTON_REGISTRAR_SIN_COSTO}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

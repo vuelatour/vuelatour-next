@@ -22,6 +22,7 @@ import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
 import { FichaPlegable } from "@/components/admin/inventory/ficha-plegable";
 import { ItemEditButton } from "@/components/admin/inventory/item-edit-button";
+import { tieneCostoVigenteDe } from "@/lib/admin/inventario-entrada-inicial";
 import {
   MARCA_ANTERIOR,
   TITULO_ANTERIOR,
@@ -211,6 +212,7 @@ export default async function InventoryItemPage({
             initialEmpaqueId={empaqueEscaneado}
             autoOpen={!!empaqueEscaneado}
             margenVentaPct={margenVentaPct}
+            tieneCostoVigente={tieneCostoVigenteDe(item)}
           />
           <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
           {/* «Editar» = PATCH items/:id (ADMIN/MECANICO): a los demás roles

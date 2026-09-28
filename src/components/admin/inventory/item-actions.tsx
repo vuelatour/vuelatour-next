@@ -27,6 +27,7 @@ import {
 import { deleteItemAction } from "@/app/admin/inventory/actions";
 import { ItemFormDialog } from "./item-form-dialog";
 import { MovimientoDialog } from "./movimiento-dialog";
+import { tieneCostoVigenteDe } from "@/lib/admin/inventario-entrada-inicial";
 import type { InventarioItem, InventarioUbicacion } from "@/types/inventory";
 
 interface ItemActionsProps {
@@ -121,6 +122,7 @@ export function ItemActions({
         providers={providers}
         margenVentaPct={margenVentaPct}
         initialTipo="SALIDA"
+        tieneCostoVigente={tieneCostoVigenteDe(item)}
       />
 
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>

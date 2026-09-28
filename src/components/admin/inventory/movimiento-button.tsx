@@ -22,6 +22,8 @@ interface MovimientoButtonProps {
   autoOpen?: boolean;
   /** Margen de la tienda: textos de la salida («Vacío = último precio de compra + 25 %»). */
   margenVentaPct?: number | null;
+  /** ¿Ya tiene una compra con costo? Texto de la ENTRADA sin costo (undefined = no se sabe). */
+  tieneCostoVigente?: boolean;
 }
 
 export function MovimientoButton({ initialEmpaqueId, autoOpen, ...props }: MovimientoButtonProps) {

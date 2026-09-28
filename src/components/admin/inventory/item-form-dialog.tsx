@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -14,6 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -36,6 +47,21 @@ import {
   textoUbicacion,
 } from "@/lib/admin/inventario-ubicacion";
 import { hintPrecioVentaProducto } from "@/lib/admin/inventario-salida";
+import {
+  AVISO_COSTO_PENDIENTE,
+  AYUDA_COSTO_PENDIENTE,
+  BOTON_CAPTURAR_COSTO,
+  BOTON_REGISTRAR_SIN_COSTO,
+  HINT_TC_COSTO_PENDIENTE,
+  NOTA_ENTRADA_INICIAL,
+  TITULO_CONFIRMAR_SIN_COSTO,
+  costoQuedaPendiente,
+  decidirEntradaInicial,
+  textoConfirmarSinCosto,
+  textoProductoCreadoSinCosto,
+  type DecisionEntradaInicial,
+  type EntradaInicialCaptura,
+} from "@/lib/admin/inventario-entrada-inicial";
 import {
   UbicacionSelector,
   useCatalogoUbicaciones,
@@ -88,6 +114,7 @@ export function ItemFormDialog({
   onGuardado,
 }: ItemFormDialogProps) {
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const isEdit = !!initialItem;
   // Con catálogo de ubicaciones (API 0.0.35 + migración) la ubicación es un
   // selector; sin él, el input de texto de siempre.
@@ -119,6 +146,21 @@ export function ItemFormDialog({
   // path de una adicional. Al guardar, el API borra el archivo del bucket
   // (regla del cliente: toda acción destructiva confirma, como en la app).
   const [confirmarFoto, setConfirmarFoto] = useState<string | null>(null);
+  // Alta con la entrada inicial SIN costo esperando confirmación (28-sep-2026:
+  // sin costo = decisión explícita, nunca accidente). Guarda lo capturado al
+  // pulsar «Crear ítem»: «Registrar sin costo» crea con eso.
+  const [confirmarSinCosto, setConfirmarSinCosto] = useState<{
+    values: ItemFormValues;
+    entrada: Extract<DecisionEntradaInicial, { tipo: "COSTO_PENDIENTE" }>;
+  } | null>(null);
+  // Abierta/cerrada va APARTE de lo capturado: al cerrar, el texto se queda
+  // durante la animación de salida (con `null` el cuadro se vaciaba) y un
+  // segundo clic en «Registrar sin costo» ya ve `false` y no crea otro.
+  const [sinCostoAbierto, setSinCostoAbierto] = useState(false);
+  // «Capturar el costo»: al cerrar la confirmación el foco va al campo del
+  // costo (Base UI `finalFocus`), no de vuelta al botón «Crear ítem».
+  const irAlCostoRef = useRef(false);
+  const costoInputRef = useRef<HTMLInputElement | null>(null);
 
   const {
     register,
@@ -152,6 +194,8 @@ export function ItemFormDialog({
     setFotosTocadas(false);
     setConfirmarQuitar(null);
     setConfirmarFoto(null);
+    setConfirmarSinCosto(null);
+    setSinCostoAbierto(false);
   }, [open, initialItem, initialCodigo, reset]);
 
   const quitarPrincipal = () => {
@@ -186,28 +230,16 @@ export function ItemFormDialog({
     }
     // La entrada inicial se valida ANTES de crear el ítem: si algo falta, no
     // se crea nada y el operador corrige sin perder lo capturado (antes el
-    // ítem quedaba creado en stock 0 con solo un aviso).
-    if (!isEdit) {
-      const cantN = Number(values.cantidad_inicial?.trim() || "0");
-      const costoTxt = values.costo_inicial_usd?.trim() ?? "";
-      const tcN = Number(values.tc_inicial?.trim() || "0");
-      const hayCosto = costoTxt !== "" && Number(costoTxt) > 0;
-      if (cantN > 0 && !hayCosto) {
-        toast.error(
-          "Captura el costo unitario de compra de la entrada inicial (mayor a 0) o borra la cantidad.",
-        );
-        return;
-      }
-      if (cantN > 0 && values.moneda_inicial === "MXN" && !(tcN > 0)) {
-        toast.error("Captura el tipo de cambio (MXN por USD) de la compra inicial.");
-        return;
-      }
-      if (cantN <= 0 && hayCosto) {
-        toast.error(
-          "Captura cuántas piezas entran (cantidad inicial) o borra el costo.",
-        );
-        return;
-      }
+    // ítem quedaba creado en stock 0 con solo un aviso). Fuente única
+    // `decidirEntradaInicial`: con costo > 0 lo de siempre; con cantidad y el
+    // costo vacío/0 la pieza entra con el costo PENDIENTE — previa
+    // confirmación, abajo (28-sep-2026).
+    const entrada: DecisionEntradaInicial = isEdit
+      ? { tipo: "NINGUNA" }
+      : decidirEntradaInicial(entradaDe(values));
+    if (entrada.tipo === "ERROR") {
+      toast.error(entrada.mensaje);
+      return;
     }
 
     // Empaques: un código identifica UNA sola cosa. Se valida aquí para que
@@ -241,6 +273,16 @@ export function ItemFormDialog({
       }
     }
 
+    // Todo lo demás ya es válido: sin costo, se pregunta ANTES de crear nada.
+    if (entrada.tipo === "COSTO_PENDIENTE") {
+      setConfirmarSinCosto({ values, entrada });
+      setSinCostoAbierto(true);
+      return;
+    }
+    guardar(values, entrada);
+  });
+
+  const guardar = (values: ItemFormValues, entrada: DecisionEntradaInicial) => {
     startTransition(async () => {
       // La foto primero: si la subida falla, no se guarda el ítem a medias.
       let fotoPayload: { foto_url: string | null; foto_storage_path: string | null } | undefined;
@@ -321,25 +363,19 @@ export function ItemFormDialog({
           }
         }
         // Entrada inicial opcional al crear: registra la compra (cantidad +
-        // costo) como ENTRADA de cardex para que el ítem no quede en 0 sin
-        // precio. Best-effort: si falla, el ítem ya existe y se avisa.
-        const cant = values.cantidad_inicial?.trim();
-        const costo = values.costo_inicial_usd?.trim();
-        if (!isEdit && result.data && Number(cant || "0") > 0 && costo) {
-          const esMxn = values.moneda_inicial === "MXN";
+        // costo, o costo PENDIENTE = USD 0) como ENTRADA de cardex para que
+        // el ítem no quede en 0. Best-effort: si falla, el ítem ya existe y
+        // se avisa.
+        const conEntrada = entrada.tipo === "CON_COSTO" || entrada.tipo === "COSTO_PENDIENTE";
+        if (!isEdit && result.data && conEntrada) {
           const mov = await createMovimientoAction(result.data.id, {
-            tipo: "ENTRADA",
-            cantidad: cant,
-            moneda: values.moneda_inicial,
-            ...(esMxn
-              ? { costo_unitario_mxn: costo, tc_usd_mxn: values.tc_inicial }
-              : { costo_unitario_usd: costo }),
+            ...entrada.movimiento,
             // Día CANCÚN: sin esto el API usa current_date (UTC) y una alta de
             // las 19:00+ se fecha al día siguiente.
             fecha_movimiento: new Intl.DateTimeFormat("en-CA", {
               timeZone: "America/Cancun",
             }).format(new Date()),
-            notas: "Stock inicial (alta del ítem)",
+            notas: NOTA_ENTRADA_INICIAL,
           });
           if (!mov.ok) {
             toast.warning(
@@ -349,7 +385,17 @@ export function ItemFormDialog({
             return;
           }
         }
-        toast.success(isEdit ? "Ítem actualizado" : "Ítem creado");
+        if (!isEdit && result.data && entrada.tipo === "COSTO_PENDIENTE") {
+          // El costo queda por completar: el aviso lleva a la ficha, donde
+          // está «Compras → Editar costo».
+          const id = result.data.id;
+          toast.success(textoProductoCreadoSinCosto(entrada.cantidad), {
+            action: { label: "Ver ficha", onClick: () => router.push(`/admin/inventory/${id}`) },
+            duration: 10000,
+          });
+        } else {
+          toast.success(isEdit ? "Ítem actualizado" : "Ítem creado");
+        }
         onOpenChange(false);
         onGuardado?.();
       } else if (result.fieldErrors) {
@@ -360,9 +406,22 @@ export function ItemFormDialog({
         toast.error(result.error ?? "Error desconocido");
       }
     });
-  });
+  };
 
   const totalFotosExtra = fotosExistentes.length + fotosNuevas.length;
+
+  // Entrada inicial con cantidad y SIN costo: se avisa en línea (y al crear
+  // se pide confirmación). El T.C. no hace falta mientras el costo no exista.
+  const [cantidadW, costoW, monedaW, tcW] = watch([
+    "cantidad_inicial",
+    "costo_inicial_usd",
+    "moneda_inicial",
+    "tc_inicial",
+  ]);
+  const costoPendiente =
+    !isEdit &&
+    costoQuedaPendiente({ cantidad: cantidadW, costo: costoW, moneda: monedaW, tc: tcW });
+  const costoInicialReg = register("costo_inicial_usd");
 
   // Ubicación con catálogo: activas en su orden + la ACTUAL aunque esté
   // inactiva (se ve «(inactiva)» y no se puede volver a elegir) — fuente
@@ -823,7 +882,8 @@ export function ItemFormDialog({
               <p className="text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">Entrada inicial (opcional):</span>{" "}
                 si ya tienes la pieza comprada, captura cuántas UNIDADES y su costo unitario para
-                que el ítem no quede en stock 0. Queda registrada como compra en el cardex.
+                que el ítem no quede en stock 0. Queda registrada como compra en el cardex.{" "}
+                {AYUDA_COSTO_PENDIENTE}
                 {empaquesArr.fields.length > 0 && " Si son cajas, multiplica (1 caja de 6 = 6)."}
               </p>
               <div className="grid grid-cols-2 gap-3">
@@ -842,14 +902,33 @@ export function ItemFormDialog({
                       <option value="MXN">MXN</option>
                       <option value="USD">USD</option>
                     </select>
-                    <Input type="number" step="any" min="0" placeholder="0.00" {...register("costo_inicial_usd")} />
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="0.00"
+                      {...costoInicialReg}
+                      ref={(el) => {
+                        costoInicialReg.ref(el);
+                        costoInputRef.current = el;
+                      }}
+                    />
                   </div>
                 </Field>
               </div>
+              {costoPendiente && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+                  {AVISO_COSTO_PENDIENTE}
+                </p>
+              )}
               {watch("moneda_inicial") === "MXN" && (
                 <Field
                   label="Tipo de cambio (MXN por USD)"
-                  hint="El de la compra. El costo se convierte a USD para el balance."
+                  hint={
+                    costoPendiente
+                      ? HINT_TC_COSTO_PENDIENTE
+                      : "El de la compra. El costo se convierte a USD para el balance."
+                  }
                 >
                   <div className="flex items-center gap-3">
                     <Input
@@ -880,6 +959,60 @@ export function ItemFormDialog({
             </Button>
           </DialogFooter>
         </form>
+
+        {/* Sin costo = decisión EXPLÍCITA (28-sep-2026): nada se crea hasta
+            elegir. Montado DENTRO del diálogo del formulario para que Base UI
+            lo anide (Esc y el clic fuera cierran solo esta confirmación). */}
+        <AlertDialog
+          open={sinCostoAbierto && confirmarSinCosto !== null}
+          onOpenChange={(o) => {
+            if (!o) setSinCostoAbierto(false);
+          }}
+        >
+          <AlertDialogContent
+            finalFocus={() => {
+              const irAlCosto = irAlCostoRef.current;
+              irAlCostoRef.current = false;
+              return irAlCosto ? costoInputRef.current : true;
+            }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_CONFIRMAR_SIN_COSTO}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmarSinCosto
+                  ? textoConfirmarSinCosto(
+                      confirmarSinCosto.entrada.cantidad,
+                      Number(confirmarSinCosto.values.precio_venta) > 0,
+                    )
+                  : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                className="cursor-pointer"
+                onClick={() => {
+                  irAlCostoRef.current = true;
+                }}
+              >
+                {BOTON_CAPTURAR_COSTO}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="cursor-pointer"
+                disabled={pending}
+                onClick={() => {
+                  // Una sola vez: tras el primer clic el cuadro ya está
+                  // cerrándose (`sinCostoAbierto` = false) y un doble clic no
+                  // crea un segundo producto.
+                  const pendienteDeCrear = sinCostoAbierto ? confirmarSinCosto : null;
+                  setSinCostoAbierto(false);
+                  if (pendienteDeCrear) guardar(pendienteDeCrear.values, pendienteDeCrear.entrada);
+                }}
+              >
+                {BOTON_REGISTRAR_SIN_COSTO}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
@@ -1006,6 +1139,16 @@ async function sincronizarEmpaques(
     }
   }
   return null;
+}
+
+/** Lo capturado en «Entrada inicial» con la forma de `decidirEntradaInicial`. */
+function entradaDe(values: ItemFormValues): EntradaInicialCaptura {
+  return {
+    cantidad: values.cantidad_inicial,
+    costo: values.costo_inicial_usd,
+    moneda: values.moneda_inicial,
+    tc: values.tc_inicial,
+  };
 }
 
 function primerFieldError(fe?: Record<string, string[]>): string | null {

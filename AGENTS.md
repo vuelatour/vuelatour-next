@@ -4158,3 +4158,145 @@ PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
   gastos); las dos PRUEBAS del cliente en el vuelo #317 (`OTRO`, 250,000.00 y
   870,000.00 MXN) siguen duplicando en «otros gastos» hasta que la oficina las
   borre (nadie las tocó).
+
+## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
+
+Pedido del cliente con la captura del alta de producto: «me ayudas a poder
+agregar productos sin costo ya que lo tenemos como pendiente, pero necesitamos
+ingresarlo a la bodega». Hasta hoy la «Entrada inicial» del formulario exigía
+costo > 0 (toast «Captura el costo unitario de compra de la entrada inicial
+(mayor a 0) o borra la cantidad.») y la pieza no podía entrar a bodega. **Sin
+cambios en el API ni migración**: `POST /v1/inventory/items/:id/movimientos`
+ya aceptaba ENTRADA con `costo_unitario_usd: 0` (`@Min(0)` del DTO, CHECK
+`costo_unitario_usd >= 0` en prod, verificado con SELECT el 28-sep), `fijaPrecio`
+exige > 0 (no fija el último precio de compra) y el filtro `sin_costo=true`
+(banner «entradas de bodega sin costo» de `/admin/inventory`) la lista.
+
+- **Sin costo = decisión EXPLÍCITA, nunca accidente.** Con cantidad > 0 y el
+  costo vacío o en 0, «Crear ítem» valida TODO lo demás (ubicación a medias,
+  empaques) y en vez de crear abre un `AlertDialog` **«¿Registrar la entrada
+  sin costo?»** — «La pieza entra a bodega con N unidades y el costo queda
+  PENDIENTE. Mientras no lo captures, las salidas de esta pieza se cobran a $0
+  (sin cargo al avión) y así se quedan aunque después captures el costo; la
+  pieza tampoco cuenta en el valorizado. Lo completas después desde la ficha del
+  producto («Cardex completo» → «Editar costo») o con «Completar costo» en el
+  aviso de entradas sin costo de Inventario.» (texto corregido en la revisión
+  adversaria, ver abajo) — con **«Capturar el costo»** (cancela y lleva el
+  foco al campo del costo vía `finalFocus` de Base UI) y **«Registrar sin
+  costo»** (crea con lo capturado al pulsar «Crear ítem»). Montado DENTRO del
+  `DialogContent` del formulario: Base UI lo anida (Esc cierra solo la
+  confirmación). Si el producto trae **precio de venta propio**, el texto NO
+  dice «sin cargo al avión» (el API sí carga ese precio: `precioVentaDeSalida`
+  origen PRECIO_PRODUCTO) sino «salen con costo $0 (al avión se le carga solo
+  el precio de venta del producto)».
+- **Payload con costo pendiente**: `{ tipo: "ENTRADA", cantidad, moneda: "USD",
+  costo_unitario_usd: 0 }` + fecha Cancún + notas «Stock inicial (alta del
+  ítem)» — SIN `costo_unitario_mxn` ni `tc_usd_mxn`, igual que la carga masiva.
+  El T.C. NO se exige (no hay nada que convertir) aunque la moneda elegida sea
+  MXN; «Editar costo» fija después la moneda real (con $0 arranca en MXN). El
+  API sella el T.C. oficial del día en la fila (inofensivo con costo 0). La nota
+  NO dice «pendiente» a propósito: sobreviviría a «Editar costo» y mentiría.
+- **Con costo > 0 NADA cambia**: MXN exige T.C. («Captura el tipo de cambio
+  (MXN por USD) de la compra inicial.»), costo sin cantidad avisa como hoy y el
+  payload es byte a byte el de antes. Nuevo: cantidad o costo NEGATIVOS o
+  ilegibles son error (antes una cantidad inválida se ignoraba en silencio y un
+  costo negativo habría caído a «pendiente»).
+- **Aviso en línea** (ámbar, bajo los campos) mientras hay cantidad y el costo
+  va vacío/0 (`AVISO_COSTO_PENDIENTE`), y el hint del T.C. cambia a «No hace
+  falta mientras el costo quede pendiente…». La ayuda del bloque «Entrada
+  inicial (opcional)» agrega `AYUDA_COSTO_PENDIENTE` («Si aún no tienes el
+  costo, déjalo vacío: la pieza entra a bodega y el costo queda pendiente para
+  completarlo después.»).
+- **Al terminar**: toast «Producto creado con N unidades. Costo pendiente:
+  complétalo en la ficha del producto.» con la acción **«Ver ficha»**
+  (`router.push('/admin/inventory/<id>')`, 10 s). Si la ENTRADA falla, el
+  aviso de siempre («Ítem creado, pero la entrada inicial falló…»).
+- **FUENTE ÚNICA** `lib/admin/inventario-entrada-inicial.ts` (PURA):
+  `decidirEntradaInicial` (NINGUNA · ERROR · CON_COSTO · COSTO_PENDIENTE, con el
+  movimiento listo), `costoQuedaPendiente`, `textoUnidades` («1 unidad» /
+  «2.5 unidades» / «1,200 unidades»), `textoConfirmarSinCosto(cantidad,
+  conPrecioVenta)`, `textoProductoCreadoSinCosto`, títulos/botones/avisos y los
+  mensajes de error. El formulario (`item-form-dialog.tsx`) ya no redacta ni
+  arma nada de esto: el `onSubmit` decide y `guardar(values, entrada)` crea.
+- **Carga masiva (Excel)**: NO se tocó. Hoy su validador del API
+  (`inventario-masivo.util.ts`) RECHAZA la existencia inicial con el costo
+  VACÍO («La existencia inicial necesita su costo unitario…»); acepta el costo
+  `0` explícito con aviso («Costo unitario 0: las salidas de este ítem no
+  generarán gasto de bodega»), pero con la moneda MXN (default de la plantilla)
+  sigue exigiendo el T.C. aunque el costo sea 0. Para dar de alta sin costo
+  desde Excel: costo `0` y moneda `USD`.
+- **Pruebas**: `lib/admin/__tests__/inventario-entrada-inicial.test.ts` (sin
+  costo ⇒ COSTO_PENDIENTE con USD 0; T.C. no exigido ni enviado; costo > 0 sin
+  cambios; errores; textos exactos), `app/admin/inventory/__tests__/
+  entrada-sin-costo-action.test.ts` (el 0 sobrevive a zod + `stripEmpty` y llega
+  al API sin pesos ni T.C.) y `components/admin/inventory/__tests__/
+  entrada-sin-costo.test.tsx` (ayuda en el alta, sin bloque en edición y el
+  CABLEADO: la rama COSTO_PENDIENTE abre la confirmación DESPUÉS de validar
+  empaques y sale; solo «Registrar sin costo» llama a `guardar`; una sola
+  `createMovimientoAction`; toast con «Ver ficha»; `cursor-pointer`).
+- **Deploy**: solo panel (el API ya lo soportaba). **Pendientes conocidos**:
+  sin QA visual en navegador (la confirmación vive en un portal); la app
+  Flutter la hace su propio agente con el mismo diseño.
+
+### Revisión adversaria (28-sep-2026)
+
+Lo que encontró y corrigió la revisión (todo en el panel; API sin cambios):
+
+1. **El texto de la confirmación prometía de más.** (a) El API CONGELA el
+   costo de cada salida en su fila: completar el costo después NO cobra las
+   salidas que ya se hicieron (`TEXTOS_INVENTARIO.sinCostoVigente`: «esta se
+   queda sin cargo»). El texto decía «Mientras no lo captures, … se cobran a
+   $0» y dejaba creer que al completarlo se cobrarían: ahora dice «y así se
+   quedan aunque después captures el costo» (con precio de venta: «y conservan
+   ese costo $0 aunque después lo captures»). (b) «(Compras → Editar costo)»
+   no existe en el panel: el bloque COMPRAS de la ficha solo tiene la banda
+   «Abrir el cardex para corregir el costo»; «Editar costo» vive en «Cardex
+   completo» y el botón de la portada dice «Completar costo». Fuente única del
+   «dónde»: `DONDE_COMPLETAR_COSTO`. **La app Flutter debe decir lo mismo**
+   (si usa el texto del diseño, quedan distintas).
+2. **Un costo > 0 que la BD guarda como $0 entraba SIN confirmación.**
+   `costo_unitario_usd` es numeric(14,4) y el API convierte pesos con
+   `round(mxn / tc, 4)`: «0.00001 USD» o «0.0005 MXN» a T.C. 17.5 pasaban como
+   CON_COSTO y la pieza quedaba sin costo en silencio (y con el toast normal).
+   Ahora es error `MSG_COSTO_EN_CERO` («…se guardaría como $0: captura el costo
+   real, o déjalo vacío…»), vía `costoSeGuardariaEnCero`. Sin T.C. en pesos el
+   API usa el oficial (desconocido aquí): solo se frena lo que ya es 0 en pesos.
+3. **Cantidad que la BD redondea a 0.00** (numeric(12,2), CHECK > 0): «0.004»
+   creaba el producto y LUEGO rebotaba la entrada. Ahora `MSG_CANTIDAD_INVALIDA`
+   («…mayor a 0 (mínimo 0.01)…») antes de crear nada.
+4. **«Registrar movimiento» → ENTRADA con «0» registraba la entrada sin costo
+   EN SILENCIO** (y con el costo vacío respondía el crudo
+   «costo_unitario_mxn: El costo unitario es requerido»). Es el camino natural
+   para meter a bodega sin costo un producto que YA existe. Ahora usa la MISMA
+   regla (`clasificarCostoEntrada`): vacío o 0 ⇒ la MISMA confirmación
+   «¿Registrar la entrada sin costo?» (y el cuerpo viaja como USD 0 sin pesos
+   ni T.C.); un costo en $0.0000 ⇒ error; devolución y ajuste siguen exigiendo
+   costo. Ojo con el TEXTO: una entrada a $0 no fija precio, así que en un
+   producto que YA tiene una compra con costo las salidas siguen con ese
+   precio — `textoConfirmarEntradaSinCosto` decide con `tieneCostoVigente`
+   (`tieneCostoVigenteDe(item)` sobre `costo_vigente` de la lista/detalle,
+   API 0.0.36): `false` ⇒ el texto del alta; `true` ⇒ «las salidas siguen
+   usando el último precio de compra…»; ausente (API previo) ⇒ los dos casos.
+   Toast `textoEntradaRegistradaSinCosto`; ayuda del campo
+   `HINT_COSTO_ENTRADA_PENDIENTE` (el asterisco de «Costo unitario» ya no sale
+   en ENTRADA).
+5. **Abierta/cerrada va aparte del cuerpo** (en los dos diálogos:
+   `sinCostoAbierto` + el cuerpo capturado). Con `open={cuerpo !== null}` el
+   texto se vaciaba durante la animación de salida; y el clic en «Registrar
+   sin costo» toma el cuerpo SOLO si el cuadro sigue abierto ⇒ un doble clic
+   no crea dos productos/entradas.
+
+- **Lo que se comprobó y NO rompe**: sin confirmación no hay manera de crear
+  la entrada pendiente en el alta; «0» explícito pide confirmación; costo > 0
+  en MXN sigue exigiendo T.C. en el alta (el movimiento, como antes, lo deja
+  opcional); la entrada pendiente llega como `{moneda:"USD",
+  costo_unitario_usd:0}` y sale en el banner (`sin_costo=true` ⇒
+  `costo_unitario_usd = 0`) y con «Sin costo» en Compras (`sin_costo` del API
+  = ENTRADA con costo ≤ 0). El panel no manda `client_request_id` en el alta
+  ni en el movimiento (tampoco antes); lo nuevo no agrega reintentos, así que
+  no hay caminos de duplicado más allá del doble clic ya cerrado.
+- Pruebas nuevas: bloque «un costo > 0 que se guardaría en $0» y
+  «clasificarCostoEntrada» en `lib/admin/__tests__/inventario-entrada-inicial.test.ts`,
+  «revisión adversaria» en `inventory/__tests__/entrada-sin-costo.test.tsx`
+  (render del movimiento en ENTRADA/SALIDA/DEVOLUCIÓN + cableado) y el cuerpo
+  del movimiento en `app/admin/inventory/__tests__/entrada-sin-costo-action.test.ts`.
