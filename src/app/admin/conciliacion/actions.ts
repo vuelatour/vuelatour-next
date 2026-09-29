@@ -46,13 +46,23 @@ function fail<T>(err: unknown): ActionResult<T> {
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
-export async function parseEstadoCuentaAction(
-  filename: string,
-  fileBase64: string,
+/**
+ * Lee el estado de cuenta (sin persistir). El archivo viaja en base64 DENTRO
+ * de un objeto, nunca como argumento suelto: React (decodeReply) limita a
+ * 1,000,000 caracteres la suma de los textos que van directos en la lista de
+ * argumentos de una server action y revienta con «Maximum array nesting
+ * exceeded» (29-sep-2026: un PDF de Scotiabank de 1.18 MB = 1.6 M caracteres
+ * en base64 tiraba la importación con el error genérico del servidor; los
+ * archivos menores a ~750 KB pasaban). Dentro de un objeto el texto no cuenta.
+ */
+export async function parseEstadoCuentaAction(input: {
+  filename: string;
+  fileBase64: string;
   /** Mapeo manual de columnas Paywise (solo cuando la detección automática
       no reconoció el archivo): fuerza el parser Paywise con esas columnas. */
-  mapeo?: MapeoColumnasPaywise,
-): Promise<ActionResult<ParsedStatement>> {
+  mapeo?: MapeoColumnasPaywise;
+}): Promise<ActionResult<ParsedStatement>> {
+  const { filename, fileBase64, mapeo } = input;
   try {
     const data = await apiServer<ParsedStatement>("/v1/conciliacion/parse", {
       method: "POST",

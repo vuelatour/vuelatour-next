@@ -113,7 +113,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
     setParsing(true);
     try {
       const b64 = await readBase64(file);
-      const res = await parseEstadoCuentaAction(file.name, b64);
+      const res = await parseEstadoCuentaAction({ filename: file.name, fileBase64: b64 });
       if (!res.ok || !res.data) {
         toast.error(res.error ?? "No se pudo leer el estado de cuenta");
         return;
@@ -158,7 +158,11 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
     }
     setParsing(true);
     try {
-      const res = await parseEstadoCuentaAction(archivo.filename, archivo.base64, limpio);
+      const res = await parseEstadoCuentaAction({
+        filename: archivo.filename,
+        fileBase64: archivo.base64,
+        mapeo: limpio,
+      });
       if (!res.ok || !res.data) {
         toast.error(res.error ?? "No se pudo leer el archivo con ese mapeo");
         return;

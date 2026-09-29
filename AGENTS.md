@@ -1177,6 +1177,29 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
   etiqueta impresa se recorta a 2 decimales por paridad con pyservices. El
   monto es el correcto; la etiqueta la decide el armador, no el panel.
 
+## Server actions: un archivo en base64 NUNCA va como argumento suelto (29-sep-2026)
+
+- React (`decodeReply`, el que deserializa los argumentos de una server
+  action en el servidor) suma la longitud de los TEXTOS que van directos en la
+  lista de argumentos y, con dos o más argumentos, revienta al pasar de
+  1,000,000 caracteres con «Maximum array nesting exceeded». El usuario solo
+  ve «An error occurred in the Server Components render…» y la action NUNCA
+  corre. Así falló la importación del estado de cuenta con un PDF de
+  Scotiabank de 1.18 MB (1.6 M caracteres en base64); los archivos menores a
+  ~750 KB pasaban, por eso nadie lo había visto.
+- Regla: el archivo viaja DENTRO de un objeto (`{ filename, fileBase64 }`, así
+  ya lo hacían gastos/vencimientos/clientes) o como `File`/`Blob`; ahí el
+  texto no cuenta para ese límite. `parseEstadoCuentaAction` recibe un objeto.
+  Candado estático: `app/admin/__tests__/server-actions-base64-en-objeto.test.ts`.
+- Siguen vigentes los otros dos topes del camino panel → API: Vercel rechaza
+  cuerpos mayores a 4.5 MB (413 `FUNCTION_PAYLOAD_TOO_LARGE`, el archivo en
+  base64 pesa 1.37× ⇒ archivos de hasta ~3.3 MB) y `bodySizeLimit` 12 MB de
+  Next. Para archivos mayores el camino correcto es mandarlos desde el
+  navegador al API directo (`apiBrowser`), no por una server action.
+- Diagnóstico: `npx vercel logs --scope vuelatours-projects --project
+  vuelatour-next --environment production --since 1h --level error` (en el
+  plan Hobby los registros duran 1 hora).
+
 ## Conciliación Paywise (9-sep-2026)
 
 - Cuenta bancaria con `tipo` BANCO | PASARELA (Paywise = PASARELA): el
