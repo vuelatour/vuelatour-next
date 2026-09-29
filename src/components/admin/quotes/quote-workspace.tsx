@@ -29,6 +29,7 @@ import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence
 import { QuotePlegable } from "@/components/admin/quotes/quote-plegable";
 import { QuoteNavegacion } from "@/components/admin/quotes/quote-navegacion";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
+import { QuoteSeguimientoBanda } from "@/components/admin/quotes/quote-seguimiento-banda";
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
@@ -42,6 +43,7 @@ import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
 import { hrefListaCotizaciones } from "@/lib/admin/quote-navegacion";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
+import { bannerSeguimiento } from "@/lib/admin/seguimiento";
 import { tramosCotizadosDeCotizacion } from "@/lib/admin/tramos-cotizados";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { combinadoFolio, type FlightCobro } from "@/types/flights";
@@ -49,6 +51,7 @@ import type { VueloConGrupo } from "@/types/grupos";
 import type { CotizacionInterna } from "@/types/quotes-interno";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import type { QuoteVecinos } from "@/types/quote-vecinos";
+import type { SeguimientoContadores } from "@/types/seguimiento";
 import type {
   CotizacionVersion,
   PersistedEscala,
@@ -104,6 +107,7 @@ export function QuoteWorkspace({
   navegacion = null,
   permisoEditarCobrada = false,
   editoresCobrada = null,
+  seguimientoRespaldo = null,
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -156,6 +160,13 @@ export function QuoteWorkspace({
    * razón del candado de los DEMÁS. null = no se sabe (razón de siempre).
    */
   editoresCobrada?: string[] | null;
+  /**
+   * SEGUIMIENTO DE LA COTIZACIÓN (29-sep-2026, API 0.0.43): contadores del
+   * SNAPSHOT del vuelo, solo como respaldo si la vista de la cotización no
+   * los trajera. El banner lo decide `bannerSeguimiento` (la cotización
+   * manda); sin contadores en ninguno de los dos, no hay banner.
+   */
+  seguimientoRespaldo?: SeguimientoContadores | null;
 }) {
   // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
   // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
@@ -174,6 +185,9 @@ export function QuoteWorkspace({
   };
   const candado = candadoRevision(quote, candadoOpts);
   const puedeEditarPdf = rol === "ADMIN" || rol === "COORDINADOR";
+  // Ajustes anotados en el detalle del vuelo que aún no se reflejan aquí
+  // (banda ámbar NO ocultable sobre el papel; se va sola al resolverlos).
+  const bannerSeg = bannerSeguimiento(quote, seguimientoRespaldo);
 
   // ---- COBROS junto al total (pedido del cliente 9-sep-2026) ----
   // Registrar: mismos roles que POST /v1/flights/:id/payments en oficina.
@@ -534,6 +548,11 @@ export function QuoteWorkspace({
           </div>
         </div>
       )}
+
+      {/* SEGUIMIENTO DE LA COTIZACIÓN (29-sep-2026): lo que la oficina anotó
+          en el detalle del vuelo para cobrar o agregar aquí («los pax pidieron
+          transporte»). Nunca plegable; desaparece al no haber pendientes. */}
+      <QuoteSeguimientoBanda banner={bannerSeg} vueloId={quote.id} />
 
       {/* La hoja 1 (papel claro sobre el fondo del shell) con el panel
           «Interno · no se imprime» colapsable a su derecha: los pinta el

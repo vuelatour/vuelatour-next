@@ -20,6 +20,15 @@ import {
   MAX_TRAMOS_TACOS,
   type PreCierreTacoTramo,
 } from "@/lib/admin/pre-cierre-tacos";
+import {
+  CLAVE_PRECIERRE_SEGUIMIENTO,
+  hrefSeguimientoVuelo,
+  textoAjustesPrecierre,
+} from "@/lib/admin/seguimiento";
+import {
+  itemPreCierreVisible,
+  textoConteoPreCierre,
+} from "@/lib/admin/pre-cierre-items";
 
 interface PreCierreVuelo {
   id: string;
@@ -29,6 +38,9 @@ interface PreCierreVuelo {
   /** ADITIVO (grupos, 4-sep-2026): folio del grupo si el vuelo es hijo de
       una cotización de grupo (cobros_pendientes). */
   grupo_folio?: number | null;
+  /** ADITIVO (seguimiento_cotizacion_pendiente, 29-sep-2026): notas
+      PENDIENTES que afectan la cotización en ese vuelo. */
+  notas?: number;
 }
 
 /** Grupo con saldo por cobrar (clave grupo_con_saldo). Montos del API. */
@@ -74,6 +86,10 @@ interface PreCierreItem {
   /** ADITIVO: aviso informativo (el dinero YA cuenta; nada que resolver
       salvo confirmar). Se pinta en azul, sin "Resolver". */
   informativo?: boolean;
+  /** ADITIVO (29-sep-2026, hoy en seguimiento_cotizacion_pendiente): el API
+      NO pudo leer el dato y manda count 0. El renglón se pinta igual con
+      «sin verificar» — un 0 por lectura fallida no es «no hay». */
+  lectura_fallida?: boolean;
 }
 
 interface PreCierre {
@@ -182,7 +198,9 @@ export async function PreCierreCard({
     );
   }
 
-  const pendientes = data.items.filter((i) => i.count > 0);
+  // Con pendientes o con la lectura FALLIDA (`itemPreCierreVisible`): un
+  // renglón que no se pudo verificar jamás desaparece en silencio.
+  const pendientes = data.items.filter(itemPreCierreVisible);
 
   return (
     <Card
@@ -243,7 +261,7 @@ export async function PreCierreCard({
                         info ? "text-sky-700 dark:text-sky-300" : "text-amber-600"
                       }`}
                     >
-                      · {item.count}
+                      · {textoConteoPreCierre(item)}
                     </span>
                     {monto && (
                       <span className="text-muted-foreground"> · {monto}</span>
@@ -257,15 +275,23 @@ export async function PreCierreCard({
                       {item.vuelos.slice(0, 8).map((v) => (
                         <Link
                           key={v.id}
-                          href={`/admin/flights/${v.id}`}
+                          // Ajustes pendientes de cotizar (29-sep-2026): el
+                          // chip lleva DIRECTO a la card del seguimiento.
+                          href={
+                            item.clave === CLAVE_PRECIERRE_SEGUIMIENTO
+                              ? hrefSeguimientoVuelo(v.id)
+                              : `/admin/flights/${v.id}`
+                          }
                           className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
                         >
-                          #{v.folio}
+                          {v.folio > 0 ? `#${v.folio}` : "vuelo"}
                           {v.saldo_usd != null
                             ? ` ($${v.saldo_usd.toLocaleString("en-US")})`
-                            : v.estado
-                              ? ` (${v.estado})`
-                              : ""}
+                            : v.notas != null && v.notas > 0
+                              ? ` (${textoAjustesPrecierre(v.notas)})`
+                              : v.estado
+                                ? ` (${v.estado})`
+                                : ""}
                           {/* Hijo de un grupo: "G-12" junto al folio. */}
                           {v.grupo_folio != null && (
                             <span

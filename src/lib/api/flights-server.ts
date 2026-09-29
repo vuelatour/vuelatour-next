@@ -8,6 +8,9 @@ import type {
 } from "@/types/flights";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import type { MovimientoGastoHistorial } from "@/lib/admin/gasto-historial";
+import type { SeguimientoNota } from "@/types/seguimiento";
+import { normalizarNotas } from "@/lib/admin/seguimiento";
+import { esErrorDeNext } from "./degradar";
 
 export type { MovimientoGastoHistorial };
 
@@ -133,6 +136,38 @@ export function getFlightGastosHistorial(id: string) {
   return apiServer<GastoHistorialEvento[]>(`/v1/flights/${id}/gastos-historial`, {
     cache: "no-store",
   }).catch(() => [] as GastoHistorialEvento[]);
+}
+
+/**
+ * Carga de las NOTAS DE SEGUIMIENTO de la cotización (29-sep-2026, API
+ * 0.0.43). Tres resultados distintos a propósito — jamás «sin notas» cuando
+ * la carga falló:
+ *  - `ok`: la lista (puede ir vacía).
+ *  - `no-disponible`: 404 (API previo: la ruta no existe; el vuelo ya se
+ *    leyó) o 401/403 (rol sin acceso) ⇒ la card NO se pinta, en silencio.
+ *  - `error`: cualquier otra falla (502 del deploy, red, 500) ⇒ la card se
+ *    pinta con «No se pudieron cargar» + Reintentar.
+ */
+export type SeguimientoCarga =
+  | { estado: "ok"; notas: SeguimientoNota[] }
+  | { estado: "no-disponible" }
+  | { estado: "error" };
+
+export async function getFlightSeguimiento(id: string): Promise<SeguimientoCarga> {
+  try {
+    const raw = await apiServer<unknown>(`/v1/flights/${id}/seguimiento`, {
+      cache: "no-store",
+    });
+    return { estado: "ok", notas: normalizarNotas(raw) };
+  } catch (err) {
+    if (esErrorDeNext(err)) throw err;
+    const status = (err as { status?: unknown } | null)?.status;
+    if (status === 404 || status === 401 || status === 403) {
+      return { estado: "no-disponible" };
+    }
+    console.error("[admin] no se pudieron cargar las notas de seguimiento", err);
+    return { estado: "error" };
+  }
 }
 
 /**

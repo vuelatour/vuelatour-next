@@ -23,6 +23,7 @@ import { EscalasCard } from "@/components/admin/flights/escalas-card";
 import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card";
 import { FlightBitacoraCard } from "@/components/admin/flights/flight-bitacora-card";
 import { FlightGastosHistorialCard } from "@/components/admin/flights/flight-gastos-historial-card";
+import { FlightSeguimientoCard } from "@/components/admin/flights/flight-seguimiento-card";
 import {
   getFlightSnapshot,
   getFlightTacoPhotos,
@@ -30,6 +31,7 @@ import {
   getFlightBitacora,
   getFlightGastosHistorial,
   getFlightPlanUrl,
+  getFlightSeguimiento,
   getVueloAnterior,
 } from "@/lib/api/flights-server";
 import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
@@ -56,6 +58,11 @@ import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { VueloConGrupo } from "@/types/grupos";
 import { esUuid } from "@/lib/admin/url-params";
+import {
+  ANCLA_SEGUIMIENTO,
+  conteoSeguimientoVuelo,
+  textoBadgeCabecera,
+} from "@/lib/admin/seguimiento";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
@@ -113,7 +120,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   }
 
   const degradado = new Degradaciones();
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, gastosHistorial, planVuelo, quote, gastosRes, vueloAnteriorRes] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, gastosHistorial, planVuelo, quote, gastosRes, vueloAnteriorRes, seguimientoCarga] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       // Catálogos de los diálogos (asignar avión/piloto, editar ruta): si uno
@@ -146,6 +153,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ),
       // Vuelo anterior del mismo avión (auditar la cadena de tacómetros).
       getVueloAnterior(id).catch(() => ({ anterior: null })),
+      // Notas de SEGUIMIENTO de la cotización (29-sep-2026): nunca lanza; un
+      // API previo o un rol sin acceso ⇒ la card no se pinta; una falla ⇒
+      // la card lo DICE (jamás «sin notas»).
+      getFlightSeguimiento(id),
     ]);
   // TC oficial de referencia del DÍA DE LA COTIZACIÓN (pedido 29-ago: no el
   // de hoy) para prellenar el TC al cobrar en MXN cuando la cotización no lo
@@ -164,6 +175,12 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
     getPaywiseComisionPct(),
   ]);
   const vueloAnterior = vueloAnteriorRes.anterior;
+  // SEGUIMIENTO: la lista manda; si no cargó, los contadores del snapshot.
+  const seguimientoDisponible = seguimientoCarga.estado !== "no-disponible";
+  const seguimientoNotas = seguimientoCarga.estado === "ok" ? seguimientoCarga.notas : null;
+  const conteoSeguimiento = seguimientoDisponible
+    ? conteoSeguimientoVuelo(seguimientoNotas, snapshot)
+    : null;
   const gastos = gastosRes.data;
   // Resumen para el aviso al cancelar el vuelo (los gastos se conservan).
   const gastosPorMoneda = new Map<string, number>();
@@ -460,6 +477,19 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 >
                   Vuelo de servicio
                 </Badge>
+              )}
+              {/* Ajustes anotados que aún no se reflejan en la cotización
+                  (29-sep-2026): lleva a la card «Seguimiento de la cotización». */}
+              {conteoSeguimiento && conteoSeguimiento.cotizacion > 0 && (
+                <a href={`#${ANCLA_SEGUIMIENTO}`} className="cursor-pointer">
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/25 transition-colors"
+                    title="Hay ajustes anotados (transporte, extras, cambios) que todavía no se reflejan en la cotización. Clic para verlos."
+                  >
+                    {textoBadgeCabecera(conteoSeguimiento.cotizacion)}
+                  </Badge>
+                </a>
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
@@ -921,6 +951,18 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 )}
             </CardContent>
           </Card>
+
+          {/* SEGUIMIENTO DE LA COTIZACIÓN (29-sep-2026, pedido del cliente
+              con la captura del #358): ajustes por cobrar o agregar a la
+              cotización, con estado PENDIENTE → RESUELTA. */}
+          {seguimientoDisponible && (
+            <FlightSeguimientoCard
+              flightId={snapshot.id}
+              flightFolio={snapshot.folio}
+              notas={seguimientoNotas}
+              rol={me?.rol ?? null}
+            />
+          )}
 
           {(snapshot.notas || snapshot.notas_internas) && (
             <Card>

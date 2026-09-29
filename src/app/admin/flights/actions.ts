@@ -17,6 +17,16 @@ import type {
   FacturaServicioBloque,
   ResultadoSolicitudFactura,
 } from "@/types/facturas-emitidas";
+import type {
+  CrearSeguimientoPayload,
+  PatchSeguimientoPayload,
+  SeguimientoNota,
+} from "@/types/seguimiento";
+import {
+  RESOLUCION_MAX,
+  validarResolucion,
+  validarTextoNota,
+} from "@/lib/admin/seguimiento";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -1077,6 +1087,99 @@ export async function urlComprobanteCobroAction(
     const url = urls?.[path];
     if (!url) return { ok: false, error: "No se pudo abrir el comprobante." };
     return { ok: true, data: url };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ═══════════════ SEGUIMIENTO DE LA COTIZACIÓN (29-sep-2026, API 0.0.43) ═══════════════
+//
+// Notas de la oficina sobre lo que hay que cobrar o agregar a la cotización
+// («los pax pidieron transporte, no está cotizado») con estado PENDIENTE →
+// RESUELTA. Roles de escritura: ADMIN/COORDINADOR/FACTURACION (el API decide).
+// Cada escritura revalida el detalle del vuelo Y la cotización: el banner
+// ámbar del cotizador depende de los pendientes.
+
+function revalidarSeguimiento(flightId: string) {
+  revalidatePath(`/admin/flights/${flightId}`);
+  revalidatePath(`/admin/quotes/${flightId}`);
+}
+
+/** Agregar una nota de seguimiento al vuelo. */
+export async function crearSeguimientoAction(
+  flightId: string,
+  payload: CrearSeguimientoPayload,
+): Promise<ActionResult<SeguimientoNota>> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  const texto = (payload.texto ?? "").trim();
+  const invalido = validarTextoNota(texto);
+  if (invalido) return { ok: false, error: invalido };
+  try {
+    const data = await apiServer<SeguimientoNota>(`/v1/flights/${flightId}/seguimiento`, {
+      method: "POST",
+      body: {
+        texto,
+        afecta_cotizacion: payload.afecta_cotizacion !== false,
+      },
+    });
+    revalidarSeguimiento(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Marcar resuelta (con «¿Cómo se resolvió?» opcional) o reabrir una nota.
+ * RESUELTA sella quién/cuándo en el API; PENDIENTE los limpia.
+ */
+export async function actualizarSeguimientoAction(
+  flightId: string,
+  notaId: string,
+  patch: PatchSeguimientoPayload,
+): Promise<ActionResult<SeguimientoNota>> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  if (!esUuid(notaId)) return { ok: false, error: "No se reconoce la nota. Recarga la página." };
+  const cuerpo: PatchSeguimientoPayload = {};
+  if (patch.estado !== undefined) cuerpo.estado = patch.estado;
+  if (patch.afecta_cotizacion !== undefined) cuerpo.afecta_cotizacion = patch.afecta_cotizacion;
+  if (patch.texto !== undefined) {
+    const texto = patch.texto.trim();
+    const invalido = validarTextoNota(texto);
+    if (invalido) return { ok: false, error: invalido };
+    cuerpo.texto = texto;
+  }
+  if (patch.resolucion !== undefined) {
+    const resolucion = (patch.resolucion ?? "").trim();
+    const invalida = validarResolucion(resolucion);
+    if (invalida) return { ok: false, error: invalida };
+    // Vacía = sin resolución (null), nunca la cadena "".
+    cuerpo.resolucion = resolucion ? resolucion.slice(0, RESOLUCION_MAX) : null;
+  }
+  if (Object.keys(cuerpo).length === 0) return { ok: false, error: "No hay cambios que guardar." };
+  try {
+    const data = await apiServer<SeguimientoNota>(`/v1/flights/seguimiento/${notaId}`, {
+      method: "PATCH",
+      body: cuerpo,
+    });
+    revalidarSeguimiento(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Eliminar una nota (soft delete en el API). La UI confirma ANTES. */
+export async function eliminarSeguimientoAction(
+  flightId: string,
+  notaId: string,
+): Promise<ActionResult> {
+  if (!esUuid(flightId)) return { ok: false, error: "Vuelo inválido." };
+  if (!esUuid(notaId)) return { ok: false, error: "No se reconoce la nota. Recarga la página." };
+  try {
+    await apiServer(`/v1/flights/seguimiento/${notaId}`, { method: "DELETE" });
+    revalidarSeguimiento(flightId);
+    return { ok: true };
   } catch (err) {
     return fail(err);
   }

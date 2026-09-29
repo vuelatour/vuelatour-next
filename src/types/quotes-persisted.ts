@@ -2,6 +2,10 @@ import type { ListResponse } from "./aircraft";
 import type { ExtraConcepto } from "./quote";
 import type { MetodoPago, QuoteBreakdown, TipoTarifa } from "./quote";
 import type { FacturaServicioResumen } from "./facturas-emitidas";
+import type {
+  SeguimientoContadores,
+  SeguimientoPendienteDetalle,
+} from "./seguimiento";
 
 export type TipoVuelo = "REDONDO" | "MULTIESCALA";
 
@@ -91,7 +95,7 @@ export interface AvionFichaMin {
   modelo: string | null;
 }
 
-export interface PersistedQuote {
+export interface PersistedQuote extends SeguimientoContadores {
   id: string;
   folio: number;
   cliente_id: string;
@@ -260,6 +264,15 @@ export interface PersistedQuote {
 
   /** Solo presente cuando se consulta por id (GET /v1/quotes/:id). */
   escalas?: PersistedEscala[];
+
+  /**
+   * SEGUIMIENTO DE LA COTIZACIÓN (29-sep-2026, API 0.0.43, ADITIVO y solo
+   * en GET /v1/quotes/:id): las notas PENDIENTES que afectan la cotización
+   * (máx. 20, las más recientes). Con `seguimiento_cotizacion_pendientes`
+   * alimentan el banner ámbar del cotizador. Ausente = API previo ⇒ sin
+   * banner. Los contadores vienen en `SeguimientoContadores`.
+   */
+  seguimiento_pendientes_detalle?: SeguimientoPendienteDetalle[] | null;
 
   created_at: string;
   updated_at: string;

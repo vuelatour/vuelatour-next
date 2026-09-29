@@ -4323,3 +4323,113 @@ Lo que encontró y corrigió la revisión (todo en el panel; API sin cambios):
   «revisión adversaria» en `inventory/__tests__/entrada-sin-costo.test.tsx`
   (render del movimiento en ENTRADA/SALIDA/DEVOLUCIÓN + cableado) y el cuerpo
   del movimiento en `app/admin/inventory/__tests__/entrada-sin-costo-action.test.ts`.
+
+## Seguimiento de la cotización: ajustes por cobrar o agregar (29-sep-2026, API 0.0.43)
+
+Pedido del cliente con la captura del detalle del vuelo #358, señalando la
+columna derecha bajo «Pasajeros»: «me ayudan agregando un apartado aquí como
+para poner unas notas que se deben agregar a la cotización. Ejemplo: Pablo ya
+terminó el vuelito de hoy y los pax pidieron un transporte el cual no está
+incluido en la cotización pero se necesita cobrar». Objetivo: que la oficina
+anote el ajuste en el vuelo y le dé SEGUIMIENTO hasta reflejarlo en la
+cotización — nada de esto se puede olvidar en el cierre mensual. Contrato con
+el API 0.0.43 (tabla `vuelo_seguimiento`, migración `20260929000002`).
+
+- **No duplica lo que ya existía**: `vuelo.notas` (PDF), `vuelo.notas_internas`
+  (texto libre de «Editar datos») y `escala.notas` (piloto) siguen igual;
+  ninguno tiene estado. Esto es OTRA cosa: notas con estado **PENDIENTE →
+  RESUELTA** (quién, cuándo y «¿cómo se resolvió?»), reabrir y baja
+  (soft delete en el API).
+- **Card «Seguimiento de la cotización»**
+  (`components/admin/flights/flight-seguimiento-card.tsx`, ancla
+  `#seguimiento-cotizacion` = `ANCLA_SEGUIMIENTO`): columna derecha del detalle
+  del vuelo, DEBAJO de «Pasajeros» y antes de «Notas». Descripción «Ajustes
+  que se deben cobrar o agregar a la cotización (transporte, extras, cambios)
+  y su seguimiento.». Lista con PENDIENTES arriba (ámbar) y RESUELTAS abajo
+  (verde, «Resuelta por Mari · 29 sep 2026, 17:30» + «↳ resolución»), cada una
+  con «Itzi · <fecha Cancún>» y «· Solo seguimiento» cuando no afecta la
+  cotización; contador «N pendientes» en el título. Formulario: textarea
+  (placeholder «Ej. Los pax pidieron transporte terrestre; no está en la
+  cotización, hay que cobrarlo.», ≤1000, Ctrl/⌘+Enter agrega) + switch
+  **«Debe reflejarse en la cotización» ENCENDIDO por defecto** + «Agregar
+  nota». Acciones: «Marcar resuelta» (diálogo con «¿Cómo se resolvió?
+  (opcional)», ≤500), «Reabrir» (directo: no es destructivo) y bote de basura
+  que **solo abre** la confirmación «¿Eliminar esta nota de seguimiento?» —
+  si la nota sigue pendiente y afecta la cotización, el texto dice que dejará
+  de avisarse en la cotización y en el pre-cierre y que lo correcto es
+  «Marcar resuelta» (`confirmacionEliminarSeguimiento`).
+- **Cabecera del vuelo**: badge ámbar «⚠ N ajustes pendientes de cotizar»
+  (`textoBadgeCabecera`, solo las que afectan la cotización) que es un enlace
+  al ancla de la card — en el celular la columna derecha queda muy abajo.
+- **Cotizador** (`components/admin/quotes/quote-seguimiento-banda.tsx`,
+  montada en `quote-workspace.tsx` ARRIBA del papel, junto a las demás
+  bandas): banda ÁMBAR **no plegable ni ocultable** «N ajuste(s) pendiente(s)
+  por reflejar en esta cotización» con los textos (recortados a 240, completos
+  en el `title`), quién/cuándo, «y N más en el detalle del vuelo» y
+  «Ver el seguimiento en el vuelo →» (`<Link>` interno: con cambios sin
+  guardar, `useCambiosSinGuardar` pregunta). **Desaparece SOLA** cuando ya no
+  hay pendientes que afecten la cotización. Vive FUERA del `QuoteCalculator`:
+  no toca el guard de CONFIRMADO/RESERVA ni los ids ancla.
+- **Pre-cierre** (`reportes/pre-cierre-card.tsx`): el aviso NO bloqueante lo
+  arma el API (clave `seguimiento_cotizacion_pendiente` =
+  `CLAVE_PRECIERRE_SEGUIMIENTO`, `vuelos[].notas` ADITIVO); el panel solo
+  cambia sus chips: «#358 (2 ajustes)» y el enlace va DIRECTO a la card
+  (`hrefSeguimientoVuelo`). Un folio 0 se pinta «vuelo», nunca «#0».
+- **FUENTE ÚNICA** `lib/admin/seguimiento.ts` (PURA): roles
+  (`puedeEditarSeguimiento`: ADMIN/COORDINADOR/FACTURACION escriben; SOCIO y
+  ANALISTA leen sin formulario ni acciones; sin rol —`/me` falló— se ofrece,
+  el gate real es el API), límites (`TEXTO_NOTA_MAX`, `RESOLUCION_MAX`,
+  espejo de los CHECK), `ordenarSeguimiento` (PENDIENTE primero, luego
+  `created_at` desc; un estado desconocido cuenta como abierto),
+  `contarSeguimiento`, `conteoSeguimientoVuelo` (la LISTA manda; si no cargó,
+  los contadores del snapshot; sin ninguno, null — nunca un 0 inventado),
+  `bannerSeguimiento` (contador de la COTIZACIÓN manda; el del snapshot solo
+  respalda; detalle topado en 20 con «y N más»), `estadoSeguimientoUi`,
+  `textoAutoria` (hora Cancún; usuario borrado ⇒ «Alguien») y todos los
+  textos. Tipos 1:1 con el API en `types/seguimiento.ts`; aditivos en
+  `FlightSnapshot` y `PersistedQuote` (`SeguimientoContadores` +
+  `seguimiento_pendientes_detalle`).
+- **Red**: `getFlightSeguimiento` (`lib/api/flights-server.ts`) NUNCA lanza y
+  distingue tres desenlaces: `ok` (lista, acepta también `{data: []}`),
+  `no-disponible` (404 = API previo; 401/403 = rol sin acceso ⇒ la card NO se
+  pinta, en silencio) y `error` (502/red/500 ⇒ la card dice «No se pudieron
+  cargar las notas de seguimiento.» + Reintentar — **jamás «Sin notas»**).
+  Server actions en `app/admin/flights/actions.ts`
+  (`crearSeguimientoAction`, `actualizarSeguimientoAction`,
+  `eliminarSeguimientoAction`): validan uuid y texto antes del API, mandan
+  solo lo que cambió (resolución vacía = `null`), nunca lanzan y revalidan el
+  detalle del vuelo **y** `/admin/quotes/:id` (el banner depende de los
+  pendientes).
+- **Tolerancia (skew de deploy)**: sin contadores en la cotización ni en el
+  snapshot ⇒ sin banner ni badge. Con el API nuevo sin la migración, la lista
+  llega `[]` y escribir responde 503 `SEGUIMIENTO_NO_DISPONIBLE` (su mensaje
+  en es-MX sale en el toast).
+- **Pruebas**: `lib/admin/__tests__/seguimiento.test.ts` (roles, orden,
+  conteos, respaldo del snapshot, textos, banner que aparece/desaparece/no sale
+  con API previo, confirmación de borrado),
+  `components/admin/flights/__tests__/flight-seguimiento-card.test.tsx` (orden y
+  badges en el marcado, contador, formulario por rol con el switch encendido,
+  vacío vs fallo, `cursor-pointer`, y el CABLEADO: el DELETE sale una sola vez
+  y solo desde «Eliminar» del diálogo; la card bajo «Pasajeros»; cabecera y
+  pre-cierre al ancla) y
+  `components/admin/quotes/__tests__/quote-seguimiento-banda.test.tsx` (banner
+  con y sin detalle, «y N más», recorte, que no es plegable, que desaparece, y
+  que el workspace lo monta antes del cotizador sin condicionarlo a editar).
+- **Orden de deploy**: migración → API 0.0.43 → panel (en otro orden no se
+  rompe nada: sin contadores no hay banner y sin la ruta no hay card).
+- **Revisión adversaria (29-sep-2026)**:
+  - El API marca el renglón del pre-cierre con `lectura_fallida: true` y
+    `count: 0` cuando no pudo leer las notas. La card filtraba `count > 0` y
+    lo escondía, así que el periodo parecía en orden sin haberse verificado.
+    Ahora se filtra con `itemPreCierreVisible` y el conteo se pinta con
+    `textoConteoPreCierre` («· sin verificar»). Ambos viven en
+    `lib/admin/pre-cierre-items.ts` y sirven para cualquier renglón con esa
+    bandera.
+  - Nota que otra persona ya eliminó (404 `SEGUIMIENTO_NO_EXISTE`): borrar,
+    marcar resuelta y reabrir ya no dejan el diálogo abierto repitiendo el
+    error. Avisan con `AVISO_NOTA_INEXISTENTE`, cierran y hacen
+    `router.refresh()` (`esNotaInexistente`).
+- **Pendiente**: que el PILOTO deje la nota desde la app (Flutter, fuera de
+  este alcance); editar el texto de una nota ya guardada (el API lo acepta en
+  el PATCH; hoy se elimina y se vuelve a anotar); sin QA visual en navegador
+  (los diálogos viven en un portal).

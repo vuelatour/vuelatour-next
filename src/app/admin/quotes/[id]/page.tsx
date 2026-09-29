@@ -186,6 +186,17 @@ export default async function QuoteDetailPage({
       // página ya avisa que no cargaron y el API vuelve a decidir al guardar).
       permisoEditarCobrada={puedeEditarCobrada && cobrosVuelo != null}
       editoresCobrada={editoresCobrada}
+      // SEGUIMIENTO (29-sep-2026, ADITIVO): los contadores del snapshot solo
+      // RESPALDAN a los de la cotización para el banner ámbar del cotizador.
+      seguimientoRespaldo={
+        cobrosVuelo
+          ? {
+              seguimiento_pendientes: cobrosVuelo.seguimiento_pendientes,
+              seguimiento_cotizacion_pendientes:
+                cobrosVuelo.seguimiento_cotizacion_pendientes,
+            }
+          : null
+      }
     />
     </>
   );

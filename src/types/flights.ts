@@ -9,6 +9,7 @@ import type {
   ParticipacionAvion,
   ParticipacionFuente,
 } from "./quotes-persisted";
+import type { SeguimientoContadores } from "./seguimiento";
 
 /**
  * Bloque ADITIVO `factura_cliente` del snapshot y de la lista de vuelos
@@ -321,8 +322,14 @@ export interface CobroGrupoResumen {
   moneda: string;
 }
 
-/** Snapshot completo: GET /v1/flights/:id/snapshot. */
-export interface FlightSnapshot extends FlightListItem {
+/**
+ * Snapshot completo: GET /v1/flights/:id/snapshot.
+ *
+ * `SeguimientoContadores` (29-sep-2026, API 0.0.43, ADITIVOS): notas de
+ * seguimiento PENDIENTES del vuelo y cuántas hay que reflejar en la
+ * cotización. Ausentes = API previo (sin badge en la cabecera).
+ */
+export interface FlightSnapshot extends FlightListItem, SeguimientoContadores {
   escalas: FlightEscala[];
   cobros: FlightCobro[];
   total_cobrado: number;
