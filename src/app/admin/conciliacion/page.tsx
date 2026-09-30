@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { EstadosCuentaTable } from "@/components/admin/conciliacion/estados-cuenta-table";
 import { AutoMatchButton } from "@/components/admin/conciliacion/auto-match-button";
+import { EmparejarDevolucionesButton } from "@/components/admin/conciliacion/emparejar-devoluciones-button";
 import { SugerenciasLoteDialog } from "@/components/admin/conciliacion/sugerencias-lote-dialog";
 import { ImportButton } from "@/components/admin/conciliacion/import-button";
 import { ReporteConciliacionButton } from "@/components/admin/conciliacion/reporte-conciliacion-button";
@@ -259,6 +260,8 @@ export default async function ConciliacionPage({
           <p className="text-sm text-muted-foreground mt-1">
             Sube el estado de cuenta: los cargos se cruzan automáticamente con los gastos y los
             abonos con los cobros de vuelos, por monto y fecha. Los ambiguos se vinculan a mano.
+            Un cargo que el banco devolvió se concilia junto con su devolución («Emparejar
+            devoluciones» o el menú ⋯ de la línea).
             El de Paywise se sube en su cuenta (pasarela) y se audita en «Auditoría Paywise».
           </p>
         </div>
@@ -272,6 +275,15 @@ export default async function ConciliacionPage({
               <AutoMatchButton
                 cuentas={cuentas.map((c) => ({ id: c.id, label: c.label }))}
                 cuentaId={pwCuenta || undefined}
+                desde={desdeVista}
+                hasta={hastaVista}
+              />
+              {/* «Emparejar devoluciones» (30-sep-2026): el cargo que el banco
+                  devolvió y su devolución («CARGO INDEBIDO 21 SEP…») se
+                  concilian JUNTOS; confirma antes y canta el resultado. */}
+              <EmparejarDevolucionesButton
+                cuentaId={pwCuenta || undefined}
+                cuentaLabel={cuentas.find((c) => c.id === pwCuenta)?.label ?? null}
                 desde={desdeVista}
                 hasta={hastaVista}
               />

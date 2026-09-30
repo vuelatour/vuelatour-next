@@ -95,6 +95,66 @@ export interface MovimientoBancario {
       banco…): el API deja `notas = 'Regla: <patrón>'`; este flag es el
       camino explícito si el API lo manda. */
   clasificacion_auto?: boolean | null;
+  /** CARGO DEVUELTO ↔ SU DEVOLUCIÓN (30-sep-2026, ADITIVOS del API 0.0.44):
+      en el ABONO, `reverso_de_id` apunta al CARGO que devuelve y
+      `reverso_de` trae su ficha; en el CARGO, `revertido_por` trae la ficha
+      del abono. Los dos quedan conciliados con la clasificación «Reverso de
+      un cargo». Ausentes = API previo (la fila se pinta como antes). Se leen
+      SIEMPRE por `lib/admin/conciliacion-reverso.ts`. */
+  reverso_de_id?: string | null;
+  reverso_de?: MovimientoReversoRef | null;
+  revertido_por?: MovimientoReversoRef | null;
+}
+
+// ===== Cargo devuelto ↔ devolución (30-sep-2026, API 0.0.44) =====
+
+/** La otra mitad de una pareja cargo ↔ devolución. */
+export interface MovimientoReversoRef {
+  id: string;
+  /** DATE `YYYY-MM-DD` (día de pared del banco). */
+  fecha: string;
+  descripcion: string | null;
+}
+
+/**
+ * Candidato para emparejar: un CARGO (visto desde el abono,
+ * `GET movimientos/:id/reverso-candidatos`) o un ABONO (visto desde el
+ * cargo; lo arma el panel con la lista de pendientes de la cuenta).
+ */
+export interface CandidatoReverso {
+  id: string;
+  fecha: string;
+  descripcion: string | null;
+  referencia: string | null;
+  monto: string | number;
+  /** ADITIVO del API: el que elegiría «Emparejar devoluciones» (a lo más
+      uno). El diálogo lo preselecciona; ausente = el primero de la lista. */
+  sugerido?: boolean;
+}
+
+/** Respuesta de `POST movimientos/:abonoId/reverso` (los dos actualizados). */
+export interface ParejaReverso {
+  abono: MovimientoBancario;
+  cargo: MovimientoBancario;
+}
+
+/** Qué pasó con UN abono en «Emparejar devoluciones». */
+export interface ReversoAutoDetalle {
+  abono_id: string;
+  cargo_id: string | null;
+  /** EMPAREJADO | SIN_CANDIDATO | AMBIGUO | ERROR (tolerante). */
+  resultado: string;
+  motivo?: string | null;
+}
+
+/** Respuesta de `POST /v1/conciliacion/reversos/auto`. */
+export interface ReversosAutoResultado {
+  emparejados: number;
+  sin_candidato: number;
+  ambiguos: number;
+  /** Tolerado por si el API lo agrega. */
+  errores?: number | null;
+  detalle?: ReversoAutoDetalle[] | null;
 }
 
 // ===== Cruce automático y sugerencias IA (15-sep-2026) =====
@@ -128,6 +188,9 @@ export interface AutoMatchResultado {
   sin_candidato: number;
   /** Clasificados por regla (traspasos internos, comisiones…). Aditivo. */
   traspasos?: number | null;
+  /** Devoluciones del banco emparejadas con su cargo (criterio REVERSO,
+      30-sep-2026). Aditivo: también puede venir solo en `por_criterio`. */
+  reversos?: number | null;
   /** El gasto candidato ya no admitía el cargo (409 legítimo). Aditivo. */
   rechazados?: number | null;
   errores: number;

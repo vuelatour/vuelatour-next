@@ -9,13 +9,25 @@ import {
   type PaywiseAuditoriaQuery,
 } from "@/lib/api/conciliacion-server";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
+import { esUuid } from "@/lib/admin/url-params";
+import {
+  VENTANA_REVERSO_DIAS,
+  abonosCandidatosParaCargo,
+  candidatosDeRespuesta,
+  diaMasReverso,
+  ordenarCargosParaAbono,
+} from "@/lib/admin/conciliacion-reverso";
 import type {
   AutoMatchResultado,
+  CandidatoReverso,
   CandidatosCobroResponse,
   MapeoColumnasPaywise,
   MovimientoBancario,
+  MovimientoListResponse,
+  ParejaReverso,
   ParsedStatement,
   PaywiseAuditoria,
+  ReversosAutoResultado,
   SugerenciaConciliacion,
   SugerirLoteResponse,
 } from "@/types/conciliacion";
@@ -148,6 +160,8 @@ export interface ImportJobStatus {
   ambiguos?: number | null;
   sin_candidato?: number | null;
   traspasos?: number | null;
+  /** Devoluciones emparejadas con su cargo (criterio REVERSO, 30-sep-2026). */
+  reversos?: number | null;
   rechazados?: number | null;
   errores?: number | null;
   errores_detalle?: Array<{ error?: string | null; movimiento_id?: string }> | null;
@@ -326,6 +340,144 @@ export async function clasificarMovimientoAction(
     revalidatePath("/admin/conciliacion");
     revalidatePath("/admin/ingresos");
     return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Cargo devuelto ↔ su devolución (30-sep-2026, API 0.0.44) =====
+
+const MOV_INVALIDO = { ok: false as const, error: "Movimiento inválido." };
+
+/** Lo mínimo del movimiento de partida para buscar su pareja. */
+export interface MovimientoParaReverso {
+  id: string;
+  tipo: "CARGO" | "ABONO";
+  cuenta_bancaria_id: string;
+  /** DATE `YYYY-MM-DD`. */
+  fecha: string;
+  monto: string | number;
+  descripcion?: string | null;
+}
+
+/**
+ * Candidatos para emparejar un cargo con su devolución.
+ *
+ * - Desde un ABONO: `GET movimientos/:id/reverso-candidatos` (cargos
+ *   pendientes de la misma cuenta y monto, de abono.fecha − 60 días a
+ *   abono.fecha; el API excluye los ligados a un gasto). Primero los del día
+ *   que dice la descripción («CARGO INDEBIDO 21 SEP» ⇒ los del 21).
+ * - Desde un CARGO: los abonos PENDIENTES de la cuenta del día del cargo a
+ *   +60 días (`GET movimientos?tipo=ABONO&conciliado=false&desde&hasta`,
+ *   parámetros que el DTO acepta desde el 24-sep) filtrados por monto, con
+ *   las devoluciones primero (`abonosCandidatosParaCargo`, PURO + test).
+ *
+ * Nunca lanza: un fallo de lectura vuelve como error (el diálogo dice que no
+ * se pudo buscar; jamás «no hay candidatos»).
+ */
+export async function candidatosReversoAction(
+  mov: MovimientoParaReverso,
+): Promise<ActionResult<CandidatoReverso[]>> {
+  if (!esUuid(mov?.id) || !esUuid(mov?.cuenta_bancaria_id)) return MOV_INVALIDO;
+  const fecha = String(mov.fecha ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, error: "Fecha del movimiento inválida." };
+  try {
+    if (mov.tipo === "ABONO") {
+      const data = await apiServer<unknown>(
+        `/v1/conciliacion/movimientos/${mov.id}/reverso-candidatos`,
+        { cache: "no-store" },
+      );
+      return { ok: true, data: ordenarCargosParaAbono(mov, candidatosDeRespuesta(data)) };
+    }
+    const lista = await apiServer<MovimientoListResponse>("/v1/conciliacion/movimientos", {
+      searchParams: {
+        cuenta_bancaria_id: mov.cuenta_bancaria_id,
+        conciliado: false,
+        tipo: "ABONO",
+        desde: fecha,
+        hasta: diaMasReverso(fecha, VENTANA_REVERSO_DIAS),
+        limit: 500,
+      },
+      cache: "no-store",
+    });
+    return {
+      ok: true,
+      data: abonosCandidatosParaCargo(
+        { ...mov, fecha, tipo: "CARGO" },
+        (lista?.data ?? []) as MovimientoBancario[],
+      ),
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Empareja el ABONO (devolución) con el CARGO que devuelve: el API hace los
+ * dos updates con verificación previa y deja los dos conciliados como
+ * «Reverso de un cargo». 409 `REVERSO_INVALIDO` trae el motivo del trigger.
+ */
+export async function emparejarReversoAction(
+  abonoId: string,
+  cargoId: string,
+): Promise<ActionResult<ParejaReverso>> {
+  if (!esUuid(abonoId) || !esUuid(cargoId) || abonoId === cargoId) return MOV_INVALIDO;
+  try {
+    const data = await apiServer<ParejaReverso>(
+      `/v1/conciliacion/movimientos/${abonoId}/reverso`,
+      { method: "POST", body: { cargo_id: cargoId } },
+    );
+    revalidatePath("/admin/conciliacion");
+    revalidatePath("/admin/ingresos");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Deshace la pareja desde CUALQUIERA de los dos (abono o cargo): los dos
+ * vuelven a pendiente. El panel confirma antes de llamar.
+ */
+export async function quitarReversoAction(movId: string): Promise<ActionResult> {
+  if (!esUuid(movId)) return MOV_INVALIDO;
+  try {
+    await apiServer(`/v1/conciliacion/movimientos/${movId}/reverso`, { method: "DELETE" });
+    revalidatePath("/admin/conciliacion");
+    revalidatePath("/admin/ingresos");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Emparejar devoluciones»: el API busca los abonos pendientes cuya
+ * descripción dice devolución (CARGO INDEBIDO, DEVOLUCION, REVERSO…) y los
+ * empareja con su cargo; lo ambiguo lo deja pendiente. Solo viajan los
+ * filtros que vienen (el DTO rechaza propiedades desconocidas).
+ */
+export async function emparejarReversosAutoAction(q: {
+  cuenta_bancaria_id?: string;
+  desde?: string;
+  hasta?: string;
+}): Promise<ActionResult<ReversosAutoResultado>> {
+  const dia = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+  const cuenta = q.cuenta_bancaria_id && esUuid(q.cuenta_bancaria_id) ? q.cuenta_bancaria_id : undefined;
+  const desde = dia(q.desde);
+  const hasta = dia(q.hasta);
+  try {
+    const data = await apiServer<ReversosAutoResultado>("/v1/conciliacion/reversos/auto", {
+      method: "POST",
+      body: {
+        ...(cuenta ? { cuenta_bancaria_id: cuenta } : {}),
+        ...(desde ? { desde } : {}),
+        ...(hasta ? { hasta } : {}),
+      },
+    });
+    revalidatePath("/admin/conciliacion");
+    revalidatePath("/admin/ingresos");
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

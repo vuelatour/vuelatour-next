@@ -24,6 +24,12 @@ import type {
   PropuestaAbono,
   SugerirAbonosRespuesta,
 } from "@/types/ingresos";
+import {
+  candidatosDeRespuesta,
+  cargoParaEmparejarSolo,
+  esApiSinReverso,
+  textoVariosCargosPosibles,
+} from "@/lib/admin/conciliacion-reverso";
 import type { CandidatosCobroResponse, MovimientoBancario } from "@/types/conciliacion";
 
 /**
@@ -406,10 +412,51 @@ export async function gastosParaReembolsoAction(): Promise<
   }
 }
 
+/**
+ * Propuesta «es la devolución de un cargo» (regla o IA, revisión adversaria
+ * 30-sep-2026): se EMPAREJA con su cargo (`POST movimientos/:id/reverso`) en
+ * vez de clasificar solo el abono — clasificarlo solo dejaba el cargo
+ * pendiente para siempre, que es justo lo que preguntó el cliente («¿Cómo
+ * puedo conciliar los cargos reembolsados?»), y además lo sacaba del alcance
+ * de «Emparejar devoluciones». Qué cargo: el `sugerido` del API o el ÚNICO
+ * candidato; con varios y sin sugerencia NO se adivina (se pide hacerlo a
+ * mano). Sin ningún cargo pendiente (está ligado a un gasto o no se importó)
+ * o con un API que aún no empareja, queda el camino de antes: clasificar el
+ * abono.
+ */
+async function aceptarReversoPropuesto(movId: string): Promise<ActionResult> {
+  if (!esUuid(movId)) return ID_INVALIDO;
+  let data: unknown;
+  try {
+    data = await apiServer<unknown>(`/v1/conciliacion/movimientos/${movId}/reverso-candidatos`, {
+      cache: "no-store",
+    });
+  } catch (err) {
+    if (isApiError(err) && esApiSinReverso({ status: err.status, code: err.code, error: err.message })) {
+      return clasificarAbonoAction(movId, "REVERSO");
+    }
+    return fail(err);
+  }
+  const candidatos = candidatosDeRespuesta(data);
+  if (candidatos.length === 0) return clasificarAbonoAction(movId, "REVERSO");
+  const cargoId = cargoParaEmparejarSolo(candidatos);
+  if (!cargoId) return { ok: false, error: textoVariosCargosPosibles(candidatos.length) };
+  try {
+    await apiServer(`/v1/conciliacion/movimientos/${movId}/reverso`, {
+      method: "POST",
+      body: { cargo_id: cargoId },
+    });
+    revalidar();
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 /** Acepta UNA propuesta de la IA que liga o clasifica (lote o fila). */
 export async function aceptarPropuestaAbonoAction(p: PropuestaAbono): Promise<ActionResult> {
   if (p.accion === "CLASIFICAR_TRASPASO") return clasificarAbonoAction(p.movimiento_id, "TRASPASO");
-  if (p.accion === "CLASIFICAR_REVERSO") return clasificarAbonoAction(p.movimiento_id, "REVERSO");
+  if (p.accion === "CLASIFICAR_REVERSO") return aceptarReversoPropuesto(p.movimiento_id);
   if (p.accion === "LIGAR" && p.candidato) {
     const c = p.candidato;
     if (c.tipo === "INGRESO") return ligarAbonoIngresoAction(p.movimiento_id, c.id);

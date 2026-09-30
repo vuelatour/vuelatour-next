@@ -599,7 +599,7 @@ describe("sugerencias con IA de abonos", () => {
       textoAccionPropuesta(propuesta({ accion: "REGISTRAR_INGRESO", candidato: null, categoria_sugerida: "REEMBOLSO_DEVOLUCION" })),
     ).toBe("Registrar como «Reembolsos y devoluciones recibidos»");
     expect(textoAccionPropuesta(propuesta({ accion: "CLASIFICAR_REVERSO", candidato: null }))).toBe(
-      "Clasificar como reverso de un cargo",
+      "Es la devolución de un cargo: emparejar con su cargo",
     );
   });
 

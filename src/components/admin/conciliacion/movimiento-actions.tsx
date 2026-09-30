@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowTrendingUpIcon,
+  ArrowUturnLeftIcon,
   LinkIcon,
   EllipsisHorizontalIcon,
   EyeIcon,
@@ -52,9 +53,11 @@ import {
   linkMovimientoAction,
   linkMovimientoCobroAction,
   listClasificacionesAction,
+  quitarReversoAction,
   sugerirMovimientoAction,
   type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
+import { ReversoDialog } from "@/components/admin/conciliacion/reverso-dialog";
 import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import {
@@ -67,6 +70,17 @@ import {
   textoGastoYaCubierto,
   toastVinculoGasto,
 } from "@/lib/admin/conciliacion-parcial";
+import {
+  BOTON_QUITAR_REVERSO,
+  MENU_ABONO_DEVOLUCION,
+  MENU_CARGO_DEVUELTO,
+  MENU_QUITAR_REVERSO,
+  TITULO_QUITAR_REVERSO,
+  TOAST_REVERSO_QUITADO,
+  esConciliadoPorReverso,
+  mensajeErrorReverso,
+  textoConfirmarQuitarReverso,
+} from "@/lib/admin/conciliacion-reverso";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type {
@@ -136,6 +150,11 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   // ABONO conciliado contra un INGRESO registrado (24-sep-2026): se suelta
   // con su propia ruta (`PATCH movimientos/:id/ingreso`), no con la del cobro.
   const vinculadoAIngreso = movimiento.ingreso_id != null;
+  // Cargo devuelto ↔ su devolución (30-sep-2026): conciliados JUNTOS. Se
+  // deshacen juntos (los dos vuelven a pendiente), nunca uno solo.
+  const emparejadoPorReverso = esConciliadoPorReverso(movimiento);
+  const [openReverso, setOpenReverso] = useState(false);
+  const [confirmarQuitarReverso, setConfirmarQuitarReverso] = useState(false);
   const router = useRouter();
 
   // Clasificación "sin vuelo": elegir del catálogo o crear una nueva en el
@@ -202,6 +221,24 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         setConfirmarQuitarClasif(false);
       } else {
         toast.error(r.error ?? "Error");
+      }
+    });
+  };
+
+  const quitarReverso = () => {
+    startTransition(async () => {
+      const r = await quitarReversoAction(movimiento.id);
+      if (r.ok) {
+        toast.success(TOAST_REVERSO_QUITADO);
+        setConfirmarQuitarReverso(false);
+        router.refresh();
+      } else {
+        const e = mensajeErrorReverso(r);
+        toast.error(e.titulo, e.descripcion ? { description: e.descripcion } : undefined);
+        if (e.recargar) {
+          setConfirmarQuitarReverso(false);
+          router.refresh();
+        }
       }
     });
   };
@@ -482,6 +519,16 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                   ? "Desvincular cobro"
                   : "Desvincular gasto"}
             </DropdownMenuItem>
+          ) : emparejadoPorReverso ? (
+            // Pareja cargo ↔ devolución: editar la clasificación de UNO la
+            // rompería; lo único que se ofrece es deshacer la pareja.
+            <DropdownMenuItem
+              onClick={() => setConfirmarQuitarReverso(true)}
+              className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+            >
+              <XMarkIcon className="h-4 w-4" />
+              {MENU_QUITAR_REVERSO}
+            </DropdownMenuItem>
           ) : clasificado ? (
             <>
               <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
@@ -509,6 +556,17 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                 <DropdownMenuItem onClick={() => abrirVincular(true)} className="cursor-pointer gap-2">
                   <SparklesIcon className="h-4 w-4" />
                   Sugerir con IA
+                </DropdownMenuItem>
+              )}
+              {/* Cargo devuelto ↔ su devolución (30-sep-2026): se concilian
+                  JUNTOS como «Reverso de un cargo» (no son gasto ni ingreso).
+                  Solo a un movimiento PENDIENTE de verdad: uno marcado
+                  conciliado sin liga visible (dato viejo) respondería 409
+                  MOVIMIENTO_YA_LIGADO al buscar candidatos. */}
+              {movimiento.conciliado !== true && (
+                <DropdownMenuItem onClick={() => setOpenReverso(true)} className="cursor-pointer gap-2">
+                  <ArrowUturnLeftIcon className="h-4 w-4" />
+                  {esAbono ? MENU_ABONO_DEVOLUCION : MENU_CARGO_DEVUELTO}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
@@ -778,6 +836,45 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Emparejar con su pareja: se monta solo al abrir (busca candidatos). */}
+      {openReverso && (
+        <ReversoDialog
+          movimiento={{
+            id: movimiento.id,
+            tipo: movimiento.tipo,
+            cuenta_bancaria_id: movimiento.cuenta_bancaria_id,
+            fecha: movimiento.fecha,
+            monto: movimiento.monto,
+            descripcion: movimiento.descripcion,
+          }}
+          open
+          onOpenChange={setOpenReverso}
+        />
+      )}
+
+      {/* Deshacer la pareja: confirma y avisa que LOS DOS vuelven a pendiente. */}
+      <AlertDialog open={confirmarQuitarReverso} onOpenChange={setConfirmarQuitarReverso}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{TITULO_QUITAR_REVERSO}</AlertDialogTitle>
+            <AlertDialogDescription>{textoConfirmarQuitarReverso(movimiento)}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                quitarReverso();
+              }}
+              disabled={pending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {pending ? "Quitando…" : BOTON_QUITAR_REVERSO}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Clasificar "sin vuelo": catálogo + creación en el mismo espacio. */}
       <Dialog open={openClasificar} onOpenChange={setOpenClasificar}>

@@ -137,8 +137,8 @@ export function ReporteConciliacionButton({
             <DialogTitle>Reporte de conciliación</DialogTitle>
             <DialogDescription>
               El estado de cuenta tal cual, con la matrícula de cada línea, su
-              estatus (Conciliado o PENDIENTE), con qué gasto o cobro se cruzó
-              y los montos sin conciliar en naranja.
+              estatus (Conciliado o PENDIENTE), con qué gasto, cobro o
+              devolución se cruzó y los montos sin conciliar en naranja.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

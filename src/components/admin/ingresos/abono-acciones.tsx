@@ -38,6 +38,8 @@ import {
 import { CobroDesdeAbonoDialog } from "@/components/admin/ingresos/cobro-desde-abono-dialog";
 import { VincularAbonoDialog } from "@/components/admin/ingresos/vincular-abono-dialog";
 import { SugerenciasAbonosDialog } from "@/components/admin/ingresos/sugerencias-abonos-dialog";
+import { ReversoDialog } from "@/components/admin/conciliacion/reverso-dialog";
+import { MENU_ABONO_DEVOLUCION } from "@/lib/admin/conciliacion-reverso";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
 import type { AbonoPendiente } from "@/types/ingresos";
@@ -56,7 +58,8 @@ type Accion =
  * Menú de un ABONO sin identificar («Por conciliar»), en el orden de lo más
  * frecuente y seguro primero: ligarlo a lo que ya existe, registrar el cobro
  * del vuelo que falta, anticipo, otro ingreso, y las dos cosas que NO son
- * ingreso (traspaso, reverso). Los diálogos se montan solo al abrirlos.
+ * ingreso (traspaso, devolución de un cargo —que se EMPAREJA con su cargo,
+ * 30-sep-2026—). Los diálogos se montan solo al abrirlos.
  */
 export function AbonoAcciones({
   abono,
@@ -74,15 +77,14 @@ export function AbonoAcciones({
     if (!o) setAccion(null);
   };
 
-  const clasificar = (tipo: "TRASPASO" | "REVERSO") => {
+  // La DEVOLUCIÓN de un cargo ya no se clasifica sola (30-sep-2026): se
+  // empareja con su cargo en `ReversoDialog` y los dos quedan conciliados.
+  // Sin cargo candidato, el diálogo ofrece clasificar solo el abono.
+  const clasificarTraspaso = () => {
     start(async () => {
-      const r = await clasificarAbonoAction(abono.id, tipo);
+      const r = await clasificarAbonoAction(abono.id, "TRASPASO");
       if (r.ok) {
-        toast.success(
-          tipo === "TRASPASO"
-            ? "Clasificado como traspaso entre cuentas"
-            : "Clasificado como reverso de un cargo",
-        );
+        toast.success("Clasificado como traspaso entre cuentas");
         setAccion(null);
         router.refresh();
       } else {
@@ -124,7 +126,7 @@ export function AbonoAcciones({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setAccion("reverso")} className="cursor-pointer gap-2">
             <ArrowUturnLeftIcon className="h-4 w-4" />
-            Es el reverso de un cargo
+            {MENU_ABONO_DEVOLUCION}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setAccion("ia")} className="cursor-pointer gap-2">
@@ -156,18 +158,30 @@ export function AbonoAcciones({
         />
       )}
 
-      <AlertDialog open={accion === "traspaso" || accion === "reverso"} onOpenChange={cerrar}>
+      {accion === "reverso" && (
+        <ReversoDialog
+          movimiento={{
+            id: abono.id,
+            tipo: "ABONO",
+            cuenta_bancaria_id: abono.cuenta_bancaria_id,
+            fecha: abono.fecha,
+            monto: abono.monto,
+            descripcion: abono.descripcion,
+          }}
+          moneda={abono.cuenta_moneda}
+          open
+          onOpenChange={cerrar}
+        />
+      )}
+
+      <AlertDialog open={accion === "traspaso"} onOpenChange={cerrar}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {accion === "traspaso" ? "¿Es un traspaso entre cuentas?" : "¿Es el reverso de un cargo?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>¿Es un traspaso entre cuentas?</AlertDialogTitle>
             <AlertDialogDescription>
               {`Abono de ${monto} del ${fmtDateOnly(abono.fecha)}. `}
-              {accion === "traspaso"
-                ? "Dinero que pasó de una cuenta propia a otra: NO es un ingreso. Queda conciliado como «Traspaso entre cuentas»."
-                : "El banco devolvió un cargo anterior: NO es un ingreso. Queda conciliado como «Reverso de un cargo»."}
-              {" "}Se puede quitar desde Conciliación si fue un error.
+              Dinero que pasó de una cuenta propia a otra: NO es un ingreso. Queda conciliado como
+              «Traspaso entre cuentas». Se puede quitar desde Conciliación si fue un error.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -175,7 +189,7 @@ export function AbonoAcciones({
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
-                clasificar(accion === "traspaso" ? "TRASPASO" : "REVERSO");
+                clasificarTraspaso();
               }}
               disabled={pending}
             >

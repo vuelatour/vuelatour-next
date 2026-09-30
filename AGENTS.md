@@ -4433,3 +4433,138 @@ el API 0.0.43 (tabla `vuelo_seguimiento`, migración `20260929000002`).
   este alcance); editar el texto de una nota ya guardada (el API lo acepta en
   el PATCH; hoy se elimina y se vuelve a anotar); sin QA visual en navegador
   (los diálogos viven en un portal).
+
+## Conciliación: cargo devuelto ↔ su devolución (30-sep-2026, API 0.0.44)
+
+Pregunta del cliente (captura de Conciliación · GASTOS GNRAL): «¿Cómo puedo
+conciliar los cargos reembolsados?». Caso real en prod: el 21-sep hay 8 cargos
+«ASUR CANCUN» de $825.13 (1 con su gasto, 7 «sin candidato») y el 23-sep 7
+abonos «CARGO INDEBIDO 21 SEP 355xx» por el mismo monto (misma referencia). Un
+cargo devuelto y su devolución se anulan: NO son gasto ni ingreso. La única
+salida era clasificar a mano cada uno de los 14.
+
+- **La regla es del API** (migración `20260930000001_movimiento_bancario_reverso`:
+  `movimiento_bancario.reverso_de_id` en el ABONO → el CARGO que devuelve,
+  único por cargo, trigger que valida tipo/cuenta/monto ±0.005 y que ninguno
+  de los dos tenga gasto/cobro/ingreso; los dos quedan con la clasificación
+  canónica «Reverso de un cargo»). El panel NO decide quién empareja con quién:
+  pinta candidatos, llama y dice el resultado.
+- **Contrato** (todo aditivo; sin él la pantalla queda como antes):
+  `GET movimientos/:id/reverso-candidatos` (id = ABONO; cargos pendientes de
+  abono.fecha − 60 a abono.fecha), `POST movimientos/:abonoId/reverso
+  {cargo_id}` → `{abono, cargo}` (409 `REVERSO_INVALIDO` con `details.motivo`),
+  `DELETE movimientos/:id/reverso` (id = cualquiera de los dos ⇒ los dos a
+  pendiente), `POST reversos/auto {cuenta_bancaria_id?, desde?, hasta?}` →
+  `{emparejados, sin_candidato, ambiguos, detalle[]}`; en `GET movimientos`,
+  `reverso_de_id` + `reverso_de {id, fecha, descripcion}` (abono) y
+  `revertido_por` (cargo). «Cruzar pendientes» gana el criterio `REVERSO`
+  (`por_criterio.REVERSO`, y el conteo `reversos` si el API lo manda aparte).
+- **Candidatos desde un CARGO** («Lo devolvió el banco»): el contrato solo
+  define el GET para el abono, así que el panel los arma con la lista de ABONOS
+  pendientes de la cuenta (`GET movimientos?tipo=ABONO&conciliado=false&desde=
+  cargo.fecha&hasta=+60&limit=500`, parámetros que el DTO acepta desde el
+  24-sep) filtrada por monto (±0.005) y sin liga/clasificación/pareja; orden:
+  devolución cuya pista de fecha es la del cargo → devolución → los demás.
+  Desde un ABONO, los cargos del día que dice la descripción («21 SEP») van
+  primero (el API ordena fecha desc).
+- **FUENTE ÚNICA** `lib/admin/conciliacion-reverso.ts` (PURA): `PATRONES_DEVOLUCION`
+  (ESPEJO de la lista del API: CARGO INDEBIDO · DEVOLUCION · REVERSO ·
+  CONTRACARGO · ABONO POR ACLARACION · RECLAMACION — si cambia allá, cambia
+  aquí), `esDescripcionDevolucion`, `pistaFechaDevolucion`,
+  `ordenarCargosParaAbono`, `abonosCandidatosParaCargo`,
+  `esConciliadoPorReverso` (sin aditivos ⇒ false), `textoParejaReverso`
+  («devuelve el cargo del 21 sep · ASUR CANCUN» / «devuelto el 23 sep · …»),
+  `tituloParejaReverso` («Conciliado con: Reverso de un cargo · …»), textos del
+  menú, del diálogo, de la confirmación y del toast («Cargo del 21 sep y su
+  devolución conciliados»), `mensajeErrorReverso` (404 «Cannot …» = API previo
+  ⇒ `apiSinRuta`), `resumenReversosAuto`, `CONFIRMAR_EMPAREJAR_AUTO` (texto
+  EXACTO del contrato) y `pistaPendienteDevolucion`. El nombre de la
+  clasificación sale de `CLASIFICACION_REVERSO` (`ingresos-ui.ts`).
+- **Dónde se ve**:
+  - Menú ⋯ de la fila (`movimiento-actions.tsx`): ABONO pendiente ⇒ «Es la
+    devolución de un cargo»; CARGO pendiente ⇒ «Lo devolvió el banco». Los dos
+    abren `reverso-dialog.tsx` (se monta solo al abrir): lista tipo radio con
+    fecha · descripción · ref. · monto, el primero preseleccionado, chip
+    «Coincide con la fecha de la descripción» / «Devolución», aviso cuando los
+    candidatos son idénticos (los 7 «ASUR CANCUN»: da lo mismo cuál), sin
+    candidatos «No hay cargos pendientes por $825.13 en los últimos 60 días» y,
+    solo entonces (o con el API previo), «Clasificar solo este abono/cargo como
+    «Reverso de un cargo»» (el camino de siempre, un solo lado). Una lectura
+    fallida dice «no se pudo» + Reintentar — JAMÁS «no hay candidatos».
+  - Fila emparejada (`movimientos-table.tsx`): «Reverso de un cargo» + la otra
+    fecha y descripción; tooltip «Conciliado con: …» + las notas del API. Su
+    menú ofrece SOLO «Quitar emparejamiento» (editar la clasificación de uno
+    rompería la pareja) con confirmación «El cargo del 21 sep y su devolución
+    del 23 sep vuelven a quedar Pendientes de conciliar (los dos…)».
+  - ABONO pendiente que dice devolución: bajo «Pendiente», la pista «Parece
+    devolución» (el API no calcula motivo para abonos).
+  - «**Emparejar devoluciones**» (`emparejar-devoluciones-button.tsx`) junto a
+    «Cruzar pendientes» en Conciliación y en Ingresos → «Por conciliar»:
+    confirma ANTES con el texto del contrato + el alcance (cuenta/rango de la
+    vista) y canta el resultado (emparejadas · sin cargo · ambiguas).
+  - Ingresos → «Por conciliar»: «Es el reverso de un cargo» pasó a «Es la
+    devolución de un cargo» y abre el MISMO diálogo (antes clasificaba solo el
+    abono y el cargo se quedaba pendiente para siempre).
+  - «Cruzar pendientes» y la importación nombran las devoluciones emparejadas
+    (`resumenAutoMatch` / `resumenImportJob`; criterio «devolución de un
+    cargo»). El Excel de conciliación lo arma el API (columna «Conciliado
+    con»): el panel solo ajustó la descripción del diálogo.
+- **Dinero**: nada cambia — los movimientos bancarios no entran al Libro
+  Dinero ni al pre-cierre; un abono emparejado queda clasificado y por eso ya
+  no aparece en «Por conciliar» ni cuenta como ingreso (lo filtra el API).
+- **Pruebas**: `lib/admin/__tests__/conciliacion-reverso.test.ts` (detección
+  con las descripciones REALES, pista de fecha, orden de candidatos con los
+  movimientos de prod, textos, errores, lote, criterio en «Cruzar pendientes»),
+  `app/admin/conciliacion/__tests__/reverso-actions.test.ts` (rutas, cuerpos,
+  filtros de la lista para el CARGO, ids inválidos sin llamar al API, error con
+  code/status/details) y `components/admin/conciliacion/__tests__/reverso.test.tsx`
+  (la tabla pinta la pareja y la pista; API previo intacto; CABLEADO: quitar y
+  el lote solo tras confirmar, el botón junto a «Cruzar pendientes», el menú
+  de Ingresos ya empareja, `cursor-pointer`).
+- **Orden de deploy**: migración → API 0.0.44 → panel. Con el panel nuevo y el
+  API previo: el diálogo desde un abono dice «falta actualizar el API» y ofrece
+  clasificar solo ese movimiento; desde un cargo lista candidatos pero
+  «Emparejar» responde lo mismo; «Emparejar devoluciones» lo dice en el toast.
+- **Revisión adversaria (30-sep-2026)** — lo que se corrigió:
+  - **La IA de Ingresos clasificaba SOLO el abono.** La propuesta
+    `CLASIFICAR_REVERSO` (las de REGLA van marcadas en el lote) dejaba el cargo
+    pendiente para siempre —justo la pregunta del cliente— y sacaba el abono
+    del alcance de «Emparejar devoluciones». `aceptarPropuestaAbonoAction`
+    ahora EMPAREJA: lee `reverso-candidatos` y usa el `sugerido` del API o el
+    ÚNICO candidato (`cargoParaEmparejarSolo`); con varios y sin sugerencia NO
+    adivina (`textoVariosCargosPosibles`: «emparéjala a mano»). Sin cargo
+    pendiente, con el API previo (404 «Cannot GET») o sin la migración (503)
+    queda el camino de antes (clasificar el abono). La etiqueta pasó a «Es la
+    devolución de un cargo: emparejar con su cargo». Prueba:
+    `app/admin/ingresos/__tests__/aceptar-reverso-propuesto.test.ts`.
+  - **«Cruzar pendientes» decía el DOBLE.** `reversos` del API cuenta
+    MOVIMIENTOS (`ConteoCruce`: el cargo y su devolución suman 2) y el panel lo
+    leía como parejas («14 devoluciones emparejadas» por 7). Ahora
+    `lineaReversos`: «14 movimientos conciliados como cargo devuelto o su
+    devolución».
+  - **Migración pendiente = API previo.** El API nuevo sin
+    `20260930000001` responde 503 `REVERSOS_NO_DISPONIBLE`; el diálogo lo
+    trataba como un fallo cualquiera (sin salida). `esApiSinReverso` lo junta
+    con el 404 «Cannot …» y los dos ofrecen «Clasificar solo este…». Y desde un
+    CARGO (cuya lista sale de la lectura de siempre) el choque llega al pulsar
+    «Emparejar»: el diálogo pasa al estado de error con esa salida, no se queda
+    en un toast.
+  - **Errores técnicos en inglés**: «Bad Gateway», «fetch failed», «Failed to
+    fetch» o un `PARSE_ERROR` de Railway se pintaban tal cual; ahora «El
+    servidor no respondió…». `MOVIMIENTO_YA_LIGADO` / `MOVIMIENTO_EN_REVERSO`
+    dicen «Este movimiento ya está conciliado» y refrescan la lista.
+  - **Detección = espejo EXACTO del API**: frase como INICIO de palabra (el
+    panel la buscaba en cualquier parte) + el prefijo del banco «REV …»
+    (`patronReverso`: «REV ASUR MERIDA»), que el panel no conocía: la pista
+    «Parece devolución» callaba abonos que el lote sí empareja. La pista de
+    fecha acepta los meses largos del API («5 SEPTIEMBRE»).
+  - Preselección = el `sugerido` del API (el que elegiría el lote; entre
+    cargos idénticos, el más antiguo), no el primero de la lista
+    (`candidatoPreseleccionado`).
+  - El menú ofrece «Es la devolución…/Lo devolvió el banco» solo con
+    `conciliado !== true` (un dato viejo conciliado sin liga respondería 409).
+  - Textos: los candidatos idénticos desde un CARGO ya no hablan de
+    «devoluciones»; clasificar solo un CARGO recomienda ESPERAR la devolución
+    del siguiente estado de cuenta (`ayudaClasificarSoloUno`); la
+    confirmación del lote sin rango dice «abonos de los últimos 90 días»
+    (default del API).

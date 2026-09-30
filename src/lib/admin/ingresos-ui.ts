@@ -495,7 +495,7 @@ export function etiquetaMotivoAbono(
       texto: "Parece reverso",
       tono: "gris",
       titulo:
-        "El banco devolvió un cargo anterior: no es un ingreso. Clasifícalo con «Es el reverso de un cargo».",
+        "El banco devolvió un cargo anterior: no es un ingreso. Emparéjalo con su cargo desde el menú → «Es la devolución de un cargo» (o con «Emparejar devoluciones»).",
     };
   }
   if (!motivosCalculados || !a.motivo_pendiente) {
@@ -1345,7 +1345,9 @@ export const ETIQUETA_ACCION_PROPUESTA: Record<AccionPropuestaAbono, string> = {
   LIGAR: "Vincular",
   REGISTRAR_INGRESO: "Registrar como ingreso",
   CLASIFICAR_TRASPASO: "Clasificar como traspaso entre cuentas",
-  CLASIFICAR_REVERSO: "Clasificar como reverso de un cargo",
+  // Desde el 30-sep-2026 se EMPAREJA con su cargo (si hay uno pendiente):
+  // mismo nombre que el menú («Es la devolución de un cargo»).
+  CLASIFICAR_REVERSO: "Es la devolución de un cargo: emparejar con su cargo",
   REVISAR: "Revisar a mano",
 };
 

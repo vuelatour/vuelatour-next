@@ -5,6 +5,7 @@ import { ExclamationTriangleIcon, InformationCircleIcon } from "@heroicons/react
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { AutoMatchButton } from "@/components/admin/conciliacion/auto-match-button";
+import { EmparejarDevolucionesButton } from "@/components/admin/conciliacion/emparejar-devoluciones-button";
 import { AbonoAcciones } from "@/components/admin/ingresos/abono-acciones";
 import { SugerenciasAbonosBoton } from "@/components/admin/ingresos/sugerencias-abonos-dialog";
 import type { CatalogosIngreso } from "@/components/admin/ingresos/registrar-ingreso-dialog";
@@ -146,10 +147,16 @@ export function AbonosPendientesTable({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-3xl text-sm text-muted-foreground">
           Abonos del banco que el sistema no ha identificado. Elige qué es cada uno: el cobro de un
-          vuelo, un anticipo, otro ingreso, un traspaso entre cuentas o el reverso de un cargo.
+          vuelo, un anticipo, otro ingreso, un traspaso entre cuentas o la devolución de un cargo.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <AutoMatchButton cuentas={cuentasIa} cuentaId={cuentaId} desde={desde} hasta={hasta} tipo="ABONO" />
+          <EmparejarDevolucionesButton
+            cuentaId={cuentaId}
+            cuentaLabel={cuentasIa.find((c) => c.id === cuentaId)?.label ?? null}
+            desde={desde}
+            hasta={hasta}
+          />
           <SugerenciasAbonosBoton
             cuentas={cuentasIa}
             abonos={respuesta.data}

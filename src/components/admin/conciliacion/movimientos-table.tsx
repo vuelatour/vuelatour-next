@@ -13,6 +13,14 @@ import {
   tonoMotivo,
 } from "@/lib/admin/conciliacion-auto";
 import { textoFaltanteGasto } from "@/lib/admin/conciliacion-parcial";
+import {
+  ETIQUETA_REVERSO,
+  contraparteReverso,
+  esConciliadoPorReverso,
+  pistaPendienteDevolucion,
+  textoParejaReverso,
+  tituloParejaReverso,
+} from "@/lib/admin/conciliacion-reverso";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { etiquetaCategoriaIngreso, etiquetaIngreso } from "@/lib/admin/categorias-ingreso";
@@ -232,6 +240,19 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
                 </span>
               )}
             </Link>
+          ) : m.conciliado && esConciliadoPorReverso(m) ? (
+            // Cargo devuelto ↔ su devolución (30-sep-2026): conciliados JUNTOS.
+            // Se dice CON QUÉ se emparejó (la otra fecha y descripción); las
+            // notas del API quedan en el tooltip.
+            <span
+              className="block text-sm text-sky-600 dark:text-sky-400"
+              title={tituloParejaReverso(m, m.clasificacion?.nombre)}
+            >
+              {m.clasificacion?.nombre ?? ETIQUETA_REVERSO}
+              <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
+                {textoParejaReverso(m)}
+              </span>
+            </span>
           ) : m.conciliado && m.clasificacion_id ? (
             // Conciliado por CLASIFICACIÓN: no corresponde a ningún vuelo
             // (comisión del banco, impuestos, personal…).
@@ -265,6 +286,21 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
             (() => {
               const motivo = motivoPendienteDe(m);
               if (!motivo) {
+                // ABONO que el banco rotula como devolución (el API no calcula
+                // motivo para abonos): se dice qué es y qué hacer.
+                const pista = pistaPendienteDevolucion(m);
+                if (pista) {
+                  return (
+                    <span className="block" title={pista.detalle}>
+                      <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+                        Pendiente
+                      </Badge>
+                      <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                        {pista.etiqueta}
+                      </span>
+                    </span>
+                  );
+                }
                 return (
                   <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                     Pendiente
@@ -321,7 +357,7 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
           m.cobro_grupo ? folioTexto(m.cobro_grupo.grupo_folio) : ""
         } ${m.ingreso ? etiquetaIngreso(m.ingreso.folio) : ""} ${cuentas?.[m.cuenta_bancaria_id] ?? ""} ${
           motivoPendienteDe(m)?.etiqueta ?? ""
-        }`
+        } ${esConciliadoPorReverso(m) ? `${ETIQUETA_REVERSO} ${contraparteReverso(m)?.descripcion ?? ""}` : ""}`
       }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"
     />

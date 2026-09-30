@@ -233,6 +233,9 @@ const CRITERIOS: Record<string, string> = {
   TEXTO: "descripción del banco",
   REGLA: "regla automática",
   TRASPASO: "traspaso interno",
+  // Cargo devuelto ↔ su devolución (30-sep-2026): no es gasto ni ingreso.
+  REVERSO: "devolución de un cargo",
+  REVERSOS: "devolución de un cargo",
   PARCIAL: "pago parcial",
   FALTANTE: "pago parcial",
   TC: "tipo de cambio USD↔MXN",
@@ -256,6 +259,11 @@ export interface AutoMatchResultadoLike {
   /** Sinónimo tolerado. */
   sin_candidatos?: number | null;
   traspasos?: number | null;
+  /** MOVIMIENTOS conciliados como cargo devuelto o su devolución (criterio
+      REVERSO, 30-sep-2026). Aditivo. Cuenta por MOVIMIENTO, como todos los
+      conteos del cruce (`ConteoCruce` del API): un par emparejado dentro de
+      la corrida suma 2. */
+  reversos?: number | null;
   /** El gasto candidato ya no admitía el cargo (409 legítimo). Aditivo. */
   rechazados?: number | null;
   errores?: number | null;
@@ -298,6 +306,15 @@ export interface ResumenAutoMatch {
 }
 
 /**
+ * `reversos` cuenta MOVIMIENTOS (el cargo y su devolución suman 2), no
+ * parejas: decir «14 devoluciones emparejadas» por 7 parejas sería el doble
+ * (revisión adversaria 30-sep-2026). Se nombra lo que de verdad cuenta.
+ */
+export function lineaReversos(reversos: number): string {
+  return `${plural(reversos, "movimiento conciliado", "movimientos conciliados")} como cargo devuelto o su devolución (no son gasto ni ingreso)`;
+}
+
+/**
  * Resumen del cruce: SIEMPRE dice cuántos se revisaron y qué pasó con los que
  * no se cruzaron (un fallo de un movimiento no tumba el lote: se cuenta).
  */
@@ -307,6 +324,7 @@ export function resumenAutoMatch(r: AutoMatchResultadoLike | null | undefined): 
   const ambiguos = n(r?.ambiguos);
   const sinCandidato = n(r?.sin_candidato ?? r?.sin_candidatos);
   const traspasos = n(r?.traspasos);
+  const reversos = n(r?.reversos);
   const rechazados = n(r?.rechazados);
   const errores = n(r?.errores);
 
@@ -320,6 +338,7 @@ export function resumenAutoMatch(r: AutoMatchResultadoLike | null | undefined): 
   const lineas: string[] = [];
   if (traspasos > 0)
     lineas.push(`${plural(traspasos, "traspaso clasificado", "traspasos clasificados")} por regla`);
+  if (reversos > 0) lineas.push(lineaReversos(reversos));
   if (ambiguos > 0)
     lineas.push(`${plural(ambiguos, "ambiguo", "ambiguos")} (más de un gasto cuadra: se vinculan a mano)`);
   if (sinCandidato > 0) lineas.push(`${sinCandidato} sin candidato`);
@@ -341,7 +360,9 @@ export function resumenAutoMatch(r: AutoMatchResultadoLike | null | undefined): 
     lineas,
     descripcion: lineas.join(" · "),
     conciliados,
-    pendientes: Math.max(0, revisados - conciliados - traspasos),
+    // `reversos` se descuenta solo si el API lo manda APARTE de `conciliados`
+    // (si viniera dentro, el máximo con 0 evita un negativo; nunca suma).
+    pendientes: Math.max(0, revisados - conciliados - traspasos - reversos),
     hayErrores: errores > 0,
   };
 }
@@ -406,6 +427,7 @@ export function resumenImportJob(job: ImportJobResumenLike | null | undefined): 
   const ambiguos = n(job?.ambiguos);
   const sinCandidato = n(job?.sin_candidato ?? job?.sin_candidatos);
   const traspasos = n(job?.traspasos);
+  const reversos = n(job?.reversos);
   const rechazados = n(job?.rechazados);
   const criterios = lineaCriterios(job?.por_criterio);
   const comun = motivoMasComun(job?.errores_detalle);
@@ -413,6 +435,7 @@ export function resumenImportJob(job: ImportJobResumenLike | null | undefined): 
   const detalle: string[] = [];
   if (traspasos > 0)
     detalle.push(`${plural(traspasos, "traspaso clasificado", "traspasos clasificados")} por regla`);
+  if (reversos > 0) detalle.push(lineaReversos(reversos));
   if (ambiguos > 0) detalle.push(`${plural(ambiguos, "ambiguo", "ambiguos")}`);
   if (sinCandidato > 0) detalle.push(`${sinCandidato} sin candidato`);
   if (rechazados > 0)
@@ -450,7 +473,7 @@ export function resumenImportJob(job: ImportJobResumenLike | null | undefined): 
     };
   }
 
-  const pendientes = Math.max(0, importados - conciliados - traspasos);
+  const pendientes = Math.max(0, importados - conciliados - traspasos - reversos);
   return {
     titulo: `Importados ${importados} · conciliados automáticamente ${conciliados}`,
     descripcion:

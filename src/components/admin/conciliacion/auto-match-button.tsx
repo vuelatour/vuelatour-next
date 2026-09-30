@@ -108,6 +108,7 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoM
             ambiguos: (r as ImportJobStatus).ambiguos ?? 0,
             sin_candidato: (r as ImportJobStatus).sin_candidato ?? 0,
             traspasos: (r as ImportJobStatus).traspasos ?? 0,
+            reversos: (r as ImportJobStatus).reversos ?? 0,
             rechazados: (r as ImportJobStatus).rechazados ?? 0,
             errores: (r as ImportJobStatus).errores ?? 0,
             por_criterio: (r as ImportJobStatus).por_criterio ?? null,
@@ -214,8 +215,8 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoM
             </DialogTitle>
             <DialogDescription>
               {soloAbonos
-                ? "Vuelve a intentar el cruce automático de los abonos del banco que siguen sin identificar: contra los cobros de vuelos y los ingresos registrados (por monto exacto y, si hay varios, por el nombre del cliente en la descripción), y clasifica los traspasos entre cuentas. Lo que tenga más de un candidato NO se liga solo: se queda para vincular a mano."
-                : "Vuelve a intentar el cruce automático de los movimientos que siguen pendientes en el rango: por monto y fecha, terminación de tarjeta y descripción del banco. Lo que tenga más de un candidato NO se liga solo: se queda para vincular a mano."}
+                ? "Vuelve a intentar el cruce automático de los abonos del banco que siguen sin identificar: contra los cobros de vuelos y los ingresos registrados (por monto exacto y, si hay varios, por el nombre del cliente en la descripción), y clasifica los traspasos entre cuentas; las devoluciones del banco se emparejan con su cargo. Lo que tenga más de un candidato NO se liga solo: se queda para vincular a mano."
+                : "Vuelve a intentar el cruce automático de los movimientos que siguen pendientes en el rango: por monto y fecha, terminación de tarjeta y descripción del banco; las devoluciones del banco se emparejan con su cargo. Lo que tenga más de un candidato NO se liga solo: se queda para vincular a mano."}
             </DialogDescription>
           </DialogHeader>
 
