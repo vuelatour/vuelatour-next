@@ -23,6 +23,7 @@ import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { listPilots } from "@/lib/api/pilots-server";
 import { listUsers } from "@/lib/api/users-server";
+import { getMe } from "@/lib/api/me";
 import { ExpensesFilterBar } from "@/components/admin/expenses/expenses-filter-bar";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
@@ -160,6 +161,7 @@ export default async function ExpensesPage({
     aircraftRes,
     providersRes,
     pilotsRes,
+    me,
   ] =
     await Promise.all([
       // SIN cap (anti-cap-200): prod ya rebasó los 500 gastos y el corte
@@ -202,6 +204,9 @@ export default async function ExpensesPage({
           ),
         [] as { id: string; nombre: string }[],
       ),
+      // Rol (de `/me`, ya cacheado por el layout): el menú ⋯ esconde lo que
+      // el API le rechazaría. Si no llega, el menú no esconde nada.
+      getMe().catch(() => null),
     ]);
   const personas = [...pilotsRes].sort((a, b) =>
     a.nombre.localeCompare(b.nombre, "es"),
@@ -409,6 +414,7 @@ export default async function ExpensesPage({
               providers={providers}
               fotoUrls={fotoUrls}
               huboCorte={huboCorte}
+              rol={me?.rol ?? null}
             />
             <GastosCard
               titulo="Gastos operativos"
@@ -418,6 +424,7 @@ export default async function ExpensesPage({
               providers={providers}
               fotoUrls={fotoUrls}
               huboCorte={huboCorte}
+              rol={me?.rol ?? null}
             />
           </div>
         </ExpensesSeleccionProvider>
@@ -434,6 +441,7 @@ function GastosCard({
   providers,
   fotoUrls,
   huboCorte = false,
+  rol,
 }: {
   titulo: string;
   descripcion: string;
@@ -443,6 +451,8 @@ function GastosCard({
   fotoUrls: Record<string, string>;
   /** true = no se cargaron TODOS los gastos (corte defensivo del anti-cap). */
   huboCorte?: boolean;
+  /** Rol de quien mira (menú ⋯: `lib/admin/gasto-acciones.ts`). */
+  rol: string | null;
 }) {
   return (
     <Card>
@@ -463,6 +473,7 @@ function GastosCard({
             providers={providers}
             fotoUrls={fotoUrls}
             huboCorte={huboCorte}
+            rol={rol}
           />
         )}
       </CardContent>

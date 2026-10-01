@@ -20,8 +20,16 @@ import {
   type AeronaveOption,
 } from "@/components/admin/expenses/fuel-assign-aircraft";
 import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
+import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
 import type { CapturaLinea } from "@/lib/admin/gastos-captura";
+import {
+  claveOrdenCarga,
+  etiquetaTipoCombustible,
+  fechaVisibleCarga,
+  momentoParaSugerirVuelo,
+} from "@/lib/admin/combustibles";
+import type { Gasto } from "@/types/expenses";
 
 /** Fila-viewmodel serializable que arma la página (lookups ya resueltos). */
 export interface FuelLoadRow {
@@ -49,15 +57,39 @@ export interface FuelLoadRow {
   vuelo_id: string | null;
   /** Folio del vuelo ligado (informativo). */
   vuelo_folio: string | null;
+  /**
+   * El gasto GAS completo, tal cual lo manda `/v1/expenses` (JSON,
+   * serializable): alimenta el menú ⋯ (`ExpenseActions`), el MISMO de Gastos
+   * — «Verificar / editar» (litros, monto, fecha, medio de pago…) y
+   * «Eliminar» con confirmación (pedido del cliente, 1-oct-2026).
+   */
+  gasto: Gasto;
 }
 
 export function FuelLoadsTable({
   loads,
   aircraft,
+  aircraftMenu,
+  providers,
+  rol,
 }: {
   loads: FuelLoadRow[];
   /** Aeronaves ACTIVAS para el diálogo "Asignar avión". */
   aircraft: AeronaveOption[];
+  /**
+   * TODAS las aeronaves (activas e inactivas) para el menú ⋯ — el mismo
+   * catálogo que le pasa la página de Gastos: en «Verificar / editar» una
+   * carga de un avión ya dado de baja conserva su matrícula en el selector
+   * en vez de aparentar «Sin asignar».
+   */
+  aircraftMenu: { id: string; matricula: string }[];
+  /** Proveedores para «Verificar / editar» (mismo catálogo que Gastos). */
+  providers: { id: string; nombre: string }[];
+  /**
+   * Rol de quien mira: el menú ⋯ esconde lo que su rol no puede hacer
+   * («Eliminar», «Dar visto bueno»). Sin dato, el menú no esconde nada.
+   */
+  rol?: string | null;
 }) {
   const columns = useMemo<Array<DataTableColumn<FuelLoadRow>>>(
     () => [
@@ -91,17 +123,18 @@ export function FuelLoadsTable({
         key: "fecha",
         header: "Fecha",
         cellClassName: "text-xs whitespace-nowrap",
-        // Fecha/hora de la carga y, debajo, cuándo/quién la capturó.
-        cell: (l) => (
-          <span>
-            {l.fecha_hora_carga
-              ? fmtDateTimeShort(l.fecha_hora_carga)
-              : l.fecha_gasto
-                ? fmtDateOnly(l.fecha_gasto)
-                : "—"}
-            <CapturadoLinea linea={l.captura} />
-          </span>
-        ),
+        // Fecha/hora de la carga y, debajo, cuándo/quién la capturó. La hora
+        // solo si cae el MISMO día que fecha_gasto (la que manda en el mes):
+        // regla de `fechaVisibleCarga`.
+        cell: (l) => {
+          const f = fechaVisibleCarga(l);
+          return (
+            <span>
+              {f.conHora ? fmtDateTimeShort(f.iso) : f.fecha ? fmtDateOnly(f.fecha) : "—"}
+              <CapturadoLinea linea={l.captura} />
+            </span>
+          );
+        },
       },
       {
         key: "tipo",
@@ -116,7 +149,7 @@ export function FuelLoadsTable({
                   : "bg-amber-500/15 text-amber-600 dark:text-amber-300"
               }`}
             >
-              {l.tipo_combustible === "TURBOSINA" ? "Turbosina" : "Gasavión"}
+              {etiquetaTipoCombustible(l.tipo_combustible) ?? l.tipo_combustible}
             </span>
           ) : (
             <span className="text-muted-foreground">—</span>
@@ -212,17 +245,32 @@ export function FuelLoadsTable({
             <FuelAssignFlight
               gastoId={l.id}
               aeronaveId={l.aeronave_id}
-              fechaHora={
-                l.fecha_hora_carga ??
-                (l.fecha_gasto ? `${l.fecha_gasto}T12:00:00Z` : null)
-              }
+              fechaHora={momentoParaSugerirVuelo(l)}
               vueloActual={l.vuelo_id}
             />
           </div>
         ),
       },
+      {
+        // Menú ⋯ de la carga = el MISMO de Gastos (1-oct-2026): «Verificar /
+        // editar» y «Eliminar» con confirmación; tras guardar, las server
+        // actions revalidan también /admin/combustibles.
+        key: "acciones",
+        header: "",
+        headClassName: "w-10",
+        noLink: true,
+        cell: (l) => (
+          <ExpenseActions
+            gasto={l.gasto}
+            aircraft={aircraftMenu}
+            providers={providers}
+            fotoUrl={l.fotoUrl ?? undefined}
+            rol={rol}
+          />
+        ),
+      },
     ],
-    [aircraft],
+    [aircraft, aircraftMenu, providers, rol],
   );
 
   // Búsqueda rápida (misma que tenía la lista) sobre las filas planas.
@@ -234,11 +282,7 @@ export function FuelLoadsTable({
       [
         l.matricula ?? "",
         l.lugar ?? "",
-        l.tipo_combustible === "TURBOSINA"
-          ? "Turbosina"
-          : l.tipo_combustible === "AVGAS"
-            ? "Gasavión"
-            : "",
+        etiquetaTipoCombustible(l.tipo_combustible) ?? "",
         l.tarjeta_terminacion ?? "",
         l.titular ?? "",
       ]
@@ -265,9 +309,8 @@ export function FuelLoadsTable({
       if (!a.matricula !== !b.matricula) return a.matricula ? 1 : -1;
       return (a.matricula ?? "").localeCompare(b.matricula ?? "");
     });
-    const fecha = (l: FuelLoadRow) =>
-      String(l.fecha_hora_carga ?? l.fecha_gasto ?? "");
-    for (const g of lista) g.filas.sort((a, b) => fecha(a).localeCompare(fecha(b)));
+    for (const g of lista)
+      g.filas.sort((a, b) => claveOrdenCarga(a).localeCompare(claveOrdenCarga(b)));
     return lista;
   }, [visibles]);
 

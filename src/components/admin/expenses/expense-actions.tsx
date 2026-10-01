@@ -40,6 +40,11 @@ import { esCategoriaCompra } from "@/types/compras";
 // Fuente única sincronizada con el API: antes un Set local sin
 // GASOLINA/VISITA escondía el menú "Repartir" para esas categorías.
 import { CATEGORIAS_REPARTIBLES } from "@/lib/admin/categorias-gasto";
+import {
+  etiquetaAccionesGasto,
+  puedeDarVistoBuenoGasto,
+  puedeEliminarGasto,
+} from "@/lib/admin/gasto-acciones";
 import type { Gasto } from "@/types/expenses";
 
 interface ExpenseActionsProps {
@@ -48,9 +53,15 @@ interface ExpenseActionsProps {
   providers: { id: string; nombre: string }[];
   /** URL firmada de la foto del comprobante (bucket privado), si tiene. */
   fotoUrl?: string;
+  /**
+   * Rol de quien mira (1-oct-2026): esconde «Eliminar» y «Dar visto bueno»
+   * a quien el API se los rechazaría (`lib/admin/gasto-acciones.ts`). Sin
+   * dato no se esconde nada: el API sigue siendo el candado.
+   */
+  rol?: string | null;
 }
 
-export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseActionsProps) {
+export function ExpenseActions({ gasto, aircraft, providers, fotoUrl, rol }: ExpenseActionsProps) {
   const router = useRouter();
   const [openEdit, setOpenEdit] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
@@ -64,6 +75,8 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
   const enCompra = !!gasto.compra_id;
   // Misma regla que la casilla "Unir en compra" (fuente única en types/compras).
   const compraPosible = !enCompra && esCategoriaCompra(gasto.categoria);
+  const puedeEliminar = puedeEliminarGasto(rol);
+  const puedeVistoBueno = puedeDarVistoBuenoGasto(rol);
 
   const dismiss = () => {
     startTransition(async () => {
@@ -110,25 +123,28 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <DropdownMenuTrigger
+          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={etiquetaAccionesGasto(gasto)}
+          title="Más acciones"
+        >
           <EllipsisHorizontalIcon className="h-4 w-4" />
-          <span className="sr-only">Acciones</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {gasto.requiere_visto_bueno === true && (
-            <DropdownMenuItem onClick={darVistoBueno} className="gap-2">
+          {gasto.requiere_visto_bueno === true && puedeVistoBueno && (
+            <DropdownMenuItem onClick={darVistoBueno} className="cursor-pointer gap-2">
               <CheckBadgeIcon className="h-4 w-4" />
               Dar visto bueno (prellenado IA)
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onClick={() => setOpenEdit(true)} className="gap-2">
+          <DropdownMenuItem onClick={() => setOpenEdit(true)} className="cursor-pointer gap-2">
             <PencilIcon className="h-4 w-4" />
             Verificar / editar
           </DropdownMenuItem>
           {enCompra && gasto.compra && (
             <DropdownMenuItem
               onClick={() => router.push(`/admin/inventory/compras/${gasto.compra!.id}`)}
-              className="gap-2"
+              className="cursor-pointer gap-2"
             >
               <ShoppingCartIcon className="h-4 w-4" />
               Ver compra #{gasto.compra.folio}
@@ -136,35 +152,37 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl }: ExpenseA
           )}
           {compraPosible && (
             <>
-              <DropdownMenuItem onClick={() => setOpenCrearCompra(true)} className="gap-2">
+              <DropdownMenuItem onClick={() => setOpenCrearCompra(true)} className="cursor-pointer gap-2">
                 <ShoppingCartIcon className="h-4 w-4" />
                 Crear compra con esta factura
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setOpenLigarCompra(true)} className="gap-2">
+              <DropdownMenuItem onClick={() => setOpenLigarCompra(true)} className="cursor-pointer gap-2">
                 <ShoppingCartIcon className="h-4 w-4" />
                 Agregar a una compra abierta
               </DropdownMenuItem>
             </>
           )}
           {repartible && (
-            <DropdownMenuItem onClick={() => setOpenReparto(true)} className="gap-2">
+            <DropdownMenuItem onClick={() => setOpenReparto(true)} className="cursor-pointer gap-2">
               <ArrowsRightLeftIcon className="h-4 w-4" />
               Repartir entre aviones
             </DropdownMenuItem>
           )}
           {gasto.duplicado_sospechado && (
-            <DropdownMenuItem onClick={dismiss} className="gap-2">
+            <DropdownMenuItem onClick={dismiss} className="cursor-pointer gap-2">
               <CheckBadgeIcon className="h-4 w-4" />
               No es duplicado
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            onClick={() => setOpenDelete(true)}
-            className="gap-2 text-destructive focus:text-destructive"
-          >
-            <TrashIcon className="h-4 w-4" />
-            Eliminar
-          </DropdownMenuItem>
+          {puedeEliminar && (
+            <DropdownMenuItem
+              onClick={() => setOpenDelete(true)}
+              className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+            >
+              <TrashIcon className="h-4 w-4" />
+              Eliminar
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

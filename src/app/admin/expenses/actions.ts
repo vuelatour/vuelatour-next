@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
+import { mensajeErrorAccionGasto } from "@/lib/admin/gasto-acciones";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -25,7 +26,9 @@ export interface ActionResult<T = unknown> {
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  // 403 del RolesGuard («Required role: …», en inglés) → español (1-oct-2026).
+  if (isApiError(err))
+    return { ok: false, error: mensajeErrorAccionGasto(err.status, err.message) };
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -335,6 +338,8 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
       body: stripEmpty(parsed.data),
     });
     revalidatePath("/admin/expenses");
+    // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).
+    revalidatePath("/admin/combustibles");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");
     revalidatePath("/admin/flights", "layout");
@@ -380,6 +385,7 @@ export async function vistoBuenoGastoAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/expenses/${id}/visto-bueno`, { method: "POST" });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/combustibles");
     return { ok: true };
   } catch (err) {
     return fail(err);
@@ -393,6 +399,7 @@ export async function dismissDuplicadoAction(id: string): Promise<ActionResult<G
       body: { duplicado_sospechado: false },
     });
     revalidatePath("/admin/expenses");
+    revalidatePath("/admin/combustibles");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");
     return { ok: true, data: updated };
@@ -582,6 +589,8 @@ export async function deleteGastoAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/expenses/${id}`, { method: "DELETE" });
     revalidatePath("/admin/expenses");
+    // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).
+    revalidatePath("/admin/combustibles");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");
     revalidatePath("/admin/flights", "layout");

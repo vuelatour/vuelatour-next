@@ -88,6 +88,7 @@ export function ExpensesTable({
   providers,
   fotoUrls,
   huboCorte = false,
+  rol,
 }: {
   gastos: Gasto[];
   aircraft: { id: string; matricula: string }[];
@@ -95,6 +96,8 @@ export function ExpensesTable({
   fotoUrls: Record<string, string>;
   /** true = la página no logró cargar TODOS los gastos (corte defensivo). */
   huboCorte?: boolean;
+  /** Rol de quien mira: el menú ⋯ esconde lo que su rol no puede hacer. */
+  rol?: string | null;
 }) {
   const seleccion = useSeleccionGastos();
   const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
@@ -507,12 +510,13 @@ export function ExpensesTable({
               aircraft={aircraft}
               providers={providers}
               fotoUrl={f.gasto.foto_url ? fotoUrls[f.gasto.foto_url] : undefined}
+              rol={rol}
             />
           ),
       },
     );
     return cols;
-  }, [aircraft, providers, fotoUrls, seleccion]);
+  }, [aircraft, providers, fotoUrls, seleccion, rol]);
 
   return (
     <DataTable

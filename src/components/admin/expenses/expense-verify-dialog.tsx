@@ -54,6 +54,7 @@ import {
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
+import { TIPOS_COMBUSTIBLE, camposCargaParaPatch } from "@/lib/admin/combustibles";
 import {
   AYUDA_COMISION_VENDEDOR,
   CATEGORIAS_CAPTURA,
@@ -527,6 +528,13 @@ export function ExpenseVerifyDialog({
       if (values.categoria !== "GAS" || values.litros === "") {
         delete (payload as { litros?: unknown }).litros;
       }
+      // Tipo, lugar y la hora de la carga: viaja SOLO lo que cambió, con la
+      // regla de `lib/admin/combustibles.ts` (tipo/lugar solo en GAS; si se
+      // corrige la fecha, la hora de la carga se muda al día nuevo para que
+      // el renglón de Combustibles no siga diciendo la fecha vieja).
+      delete (payload as { tipo_combustible?: unknown }).tipo_combustible;
+      delete (payload as { lugar?: unknown }).lugar;
+      Object.assign(payload, camposCargaParaPatch(gasto, values));
       // Facturación: viaja SOLO si se cambió en ESTE diálogo. El badge de la
       // tabla y el trigger del amarre de factura recibida también escriben
       // este campo — mandar el valor con que se abrió el form (posiblemente
@@ -870,22 +878,41 @@ export function ExpenseVerifyDialog({
             </Field>
           </div>
 
-          {/* Litros: solo combustible — corrige aquí un GAS capturado sin
-              litros (el balance no calcula $/litro sin ellos). */}
+          {/* Solo combustible: litros (el balance no calcula $/litro sin
+              ellos), tipo y lugar — las columnas de Combustibles se corrigen
+              aquí (1-oct-2026). */}
           {watch("categoria") === "GAS" && (
-            <Field
-              label="Litros cargados"
-              hint="Del ticket de combustible; el balance calcula $/litro con esto."
-            >
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                inputMode="decimal"
-                placeholder="Ej. 164"
-                {...register("litros")}
-              />
-            </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field
+                label="Litros cargados"
+                hint="Del ticket; el balance calcula $/litro con esto."
+              >
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  inputMode="decimal"
+                  placeholder="Ej. 164"
+                  {...register("litros")}
+                />
+              </Field>
+              <Field label="Tipo de combustible">
+                <SearchableSelect
+                  options={TIPOS_COMBUSTIBLE.map((t) => ({ value: t.value, label: t.label }))}
+                  value={watch("tipo_combustible")}
+                  onChange={(v) => setValue("tipo_combustible", v)}
+                  placeholder="Elige el tipo"
+                />
+              </Field>
+              <Field label="Lugar" hint="Aeropuerto o FBO de la carga.">
+                <Input
+                  className="font-mono uppercase"
+                  placeholder="Ej. CUN"
+                  maxLength={60}
+                  {...register("lugar")}
+                />
+              </Field>
+            </div>
           )}
 
           {/* Total pagado EN VIVO (ticket + propina): es el monto que se
@@ -1302,6 +1329,8 @@ function defaults(g: Gasto): GastoVerifyValues {
     monto: ticket != null ? String(ticket) : "",
     propina: propina > 0 ? String(propina) : "",
     litros: g.litros != null ? String(g.litros) : "",
+    tipo_combustible: g.tipo_combustible ?? "",
+    lugar: g.lugar ?? "",
     moneda: g.moneda ?? "MXN",
     // fecha_gasto es columna date (YYYY-MM-DD, sin zona) — el corte por 10
     // chars aquí no es el slice prohibido de timestamps.

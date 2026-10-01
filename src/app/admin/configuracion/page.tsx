@@ -19,6 +19,11 @@ import {
 import { listUsers } from "@/lib/api/users-server";
 import { ROLES_EDITAN_COTIZACION } from "@/lib/admin/quote-sheet-interna";
 import { getIaUso, rangoDelMes } from "@/lib/api/ia-uso-server";
+import {
+  consumoEnRangoIa,
+  rangoCubre,
+  rangoUltimosDiasIa,
+} from "@/lib/admin/ia-saldo";
 import { getMe } from "@/lib/api/me";
 import { todayCancun } from "@/lib/datetime";
 
@@ -61,6 +66,13 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
       ? sp.mes
       : mesActual;
   const rango = rangoDelMes(mes);
+  // Ritmo de consumo de IA (aviso de saldo bajo, 1-oct-2026): los últimos 7
+  // días Cancún. El API no lo manda; sale del `por_dia` del mes que ya se
+  // pide cuando lo contiene, y si no (otro mes en pantalla, o los días 1–6
+  // del mes) de una lectura aparte de esos 7 días. Best-effort como el
+  // resto de la sección: sin dato, el aviso no dice «N días».
+  const ultimos7 = rangoUltimosDiasIa(todayCancun());
+  const mesCubre7Dias = rangoCubre(rango, ultimos7);
 
   // getIaUso es best-effort (.catch → null): un fallo del registro de IA
   // JAMÁS tumba la página de banderas.
@@ -71,9 +83,10 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
   // 404 es un API previo (la sección lo dice en gris, sin avisar arriba);
   // otro fallo se AVISA. Los candidatos salen de `/v1/users` (oficina activa
   // que puede guardar cotizaciones) salvo que el API mande los suyos.
-  const [flags, iaUso, responsables, editoresCarga, usuariosActivos] = await Promise.all([
+  const [flags, iaUso, iaUso7Dias, responsables, editoresCarga, usuariosActivos] = await Promise.all([
     getConfiguracion(),
     getIaUso(rango.desde, rango.hasta),
+    mesCubre7Dias ? Promise.resolve(null) : getIaUso(ultimos7.desde, ultimos7.hasta),
     getResponsablesFacturacion().catch((e: unknown) => {
       if (esErrorDeNext(e)) throw e;
       if (!(isApiError(e) && esNoDisponible(e))) {
@@ -100,6 +113,11 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
       return null;
     }),
   ]);
+
+  const consumo7dUsd = consumoEnRangoIa(
+    (mesCubre7Dias ? iaUso : iaUso7Dias)?.por_dia,
+    ultimos7,
+  );
 
   const editores = editoresCarga.datos;
   // Candidatos al permiso: la oficina activa que puede GUARDAR una cotización
@@ -160,7 +178,12 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
         fallo={!editores && !editoresCarga.noDisponible}
       />
 
-      <IaCreditosSection resumen={iaUso} mes={mes} mesActual={mesActual} />
+      <IaCreditosSection
+        resumen={iaUso}
+        mes={mes}
+        mesActual={mesActual}
+        consumo7dUsd={consumo7dUsd}
+      />
     </div>
   );
 }

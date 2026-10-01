@@ -4782,3 +4782,136 @@ después: página 2 de la tabla, la búsqueda, el visor, el diálogo «Verificar
 - **Orden de deploy**: API 0.0.48 antes que el panel (con el API previo el
   panel funciona igual que hoy: al fallar la foto, placeholder con
   «Reintentar» en vez del `<img>` roto).
+
+## Combustibles: editar o eliminar una carga + aviso de saldo de IA (1-oct-2026)
+
+Dos pedidos del mismo día. (1) Captura de `/admin/combustibles`: «no puedo
+editar un ticket ya subido??? Me apoyan porfa para poder editar» — la tabla
+solo ofrecía «Asignar avión» y «Ligar a vuelo». (2) «Me dice que Claude no
+está disponible»: el saldo ESTIMADO de créditos de IA estaba en ≈ $0.87 USD
+(checkpoint $21.39 del 5-sep − $20.52; $7.44 en la semana) y Anthropic ya
+respondía 400 «credit balance is too low»; Configuración pintaba el número sin
+ninguna alerta. Solo panel (sin API ni migración).
+
+### Combustibles: el MISMO menú ⋯ de Gastos
+
+- Cada carga lleva `ExpenseActions` en la ÚLTIMA columna (noLink) con el gasto
+  COMPLETO (`FuelLoadRow.gasto`, el JSON de `/v1/expenses?categoria=GAS` tal
+  cual): «Verificar / editar» y «Eliminar» con su confirmación «¿Eliminar este
+  gasto?». No hay un editor propio de combustibles: dos editores del mismo
+  gasto es donde se cuela el dato que no cuadra. La cabecera dice
+  `AYUDA_EDITAR_CARGA` («Edita o elimina una carga desde el menú ⋯ de su
+  renglón.»).
+- **Las CUATRO acciones del menú revalidan también `/admin/combustibles`**
+  (`verifyGastoAction`, `deleteGastoAction`, `dismissDuplicadoAction`,
+  `vistoBuenoGastoAction`): una acción nueva del menú nace con esa línea o la
+  tabla de Combustibles se queda vieja tras guardar.
+- **Dos catálogos de aviones a propósito**: el menú recibe TODAS las aeronaves
+  (`aircraftMenu`, igual que Gastos: una carga de un avión dado de baja
+  conserva su matrícula en el selector en vez de aparentar «Sin asignar») y
+  «Asignar avión» solo las ACTIVAS. Los proveedores se cargan con
+  `degradado.opcional("los proveedores", …)` como en Gastos.
+- **Fecha de la carga = UNA regla** (`lib/admin/combustibles.ts`, PURA): una
+  carga trae `fecha_gasto` (manda en el mes, el filtro y el Balance) y, si la
+  app o la carga masiva la sellaron, `fecha_hora_carga` (la hora; regla del
+  API: su día Cancún ES `fecha_gasto`, `combustible-masivo.service.ts`). El
+  diálogo «Verificar / editar» solo cambiaba `fecha_gasto` y la carga se mudaba
+  de mes con el renglón diciendo la fecha vieja. Ahora:
+  - `camposCargaParaPatch(gasto, values)` agrega al PATCH, si cambió
+    `fecha_gasto` y la carga tiene hora, `fecha_hora_carga` = la MISMA hora
+    Cancún en el día nuevo (`fechaHoraCargaEnDia`, vía
+    `isoToCancunInput`/`cancunInputToIso`), en cualquier categoría;
+  - el renglón, el orden y «Ligar a vuelo» leen `fechaVisibleCarga` /
+    `claveOrdenCarga` / `momentoParaSugerirVuelo`: la hora solo si cae el MISMO
+    día que `fecha_gasto`; si no (una carga desfasada vieja), `fecha_gasto`.
+- **Tipo y lugar se corrigen en el MISMO diálogo** (bloque GAS, junto a
+  Litros): «Tipo de combustible» (`TIPOS_COMBUSTIBLE`, mismas etiquetas que la
+  tabla vía `etiquetaTipoCombustible`) y «Lugar» (`normalizarLugarCarga`: sin
+  espacios sobrantes y en MAYÚSCULAS; en prod hay IATA y texto como «ASA
+  MERIDA»). Viaja SOLO lo que cambió y solo en GAS; vaciar el lugar manda
+  `null` (quitarlo). `GastoVerifySchema` ganó `tipo_combustible`, `lugar` y
+  `fecha_hora_carga` (zod tira las llaves que no declara: sin ellas el PATCH
+  llegaba sin esos campos). El API ya los aceptaba (`UpdateGastoDto` hereda del
+  create y `update()` los pasa tal cual).
+- **Roles del menú** (`lib/admin/gasto-acciones.ts`, PURA): «Eliminar» solo a
+  `ROLES_ELIMINAN_GASTO` (espejo del `@Roles` de `DELETE /v1/expenses/:id`) y
+  «Dar visto bueno» solo a `ROLES_VISTO_BUENO_GASTO` (espejo de `POST
+  :id/visto-bueno`). Combustibles la ven ADMIN/COORDINADOR/FACTURACION: a
+  FACTURACION le salía el toast en inglés «Required role: … Current:
+  FACTURACION». Prop OPCIONAL `rol` en `ExpenseActions`; **sin rol no se
+  esconde nada** (el API sigue siendo el candado). Gastos y Combustibles la
+  pasan desde `getMe().catch(() => null)`; el detalle del vuelo y caja chica
+  todavía no (ahí queda la red de abajo). Y `fail()` de
+  `app/admin/expenses/actions.ts` traduce el 403 del RolesGuard con
+  `mensajeErrorAccionGasto` («Tu rol no tiene permiso para esta acción. Pide a
+  un administrador que la haga.»); los demás mensajes del API pasan tal cual.
+- **El botón ⋯** lleva `cursor-pointer` (Tailwind 4 deja los `<button>` con la
+  flecha), `title` «Más acciones» y un nombre accesible que dice DE QUÉ gasto
+  son las acciones (`etiquetaAccionesGasto`: «Acciones del gasto de $4,250.50
+  MXN del 01 oct 2026»); los renglones del menú también llevan la manita.
+- **Pruebas**: `lib/admin/__tests__/combustibles.test.ts` (fechas Cancún con
+  cruce de medianoche UTC, desfasadas, orden, payload y schema),
+  `lib/admin/__tests__/gasto-acciones.test.ts`,
+  `components/admin/expenses/__tests__/combustibles-editar-carga.test.tsx`
+  (cableado tabla/página: un menú por carga, catálogos, rol de `/me`, columna
+  Fecha, revalidaciones) y
+  `components/admin/expenses/__tests__/expense-actions-menu.test.tsx` (el
+  `ExpenseActions` REAL: trigger de Base UI con manita y nombre accesible;
+  ítems por rol; «Eliminar» solo ABRE la confirmación).
+
+### Aviso de saldo de créditos de IA (Configuración → Créditos de IA)
+
+- **FUENTE ÚNICA `lib/admin/ia-saldo.ts`** (PURA): nivel, texto, COLOR y
+  etiquetas. La sección solo pinta. Niveles (`estadoSaldoIa(saldo, consumo7d)`):
+  - `agotado` — ≤ $0 AL CENTAVO ⇒ banda ROJA `role="alert"`;
+  - `critico` — menos de `UMBRAL_SALDO_IA_CRITICO_USD` ($1) o no alcanza ni un
+    día al ritmo de la semana ⇒ banda ROJA: «…La estimación no cuenta las
+    lecturas que fallan, así que la lectura de tickets puede estar fallando
+    ya…». Es el caso REAL del 1-oct ($0.87 con $7.44/semana). Con menos de $1
+    manda el monto aunque el ritmo diga «días»: cuando la IA ya rechaza por
+    saldo, el consumo registrado CAE y el ritmo deja de servir;
+  - `bajo` — menos de `UMBRAL_SALDO_IA_BAJO_USD` ($5) ⇒ banda ÁMBAR
+    `role="status"` con «unos N días al ritmo de la última semana»;
+  - `atencion` — menos de `UMBRAL_SALDO_IA_ATENCION_USD` ($50, el aviso previo
+    «acordado» que antes vivía suelto en el componente) ⇒ número ámbar SIN
+    banda + «Al ritmo de la última semana alcanza para unos N días.»;
+  - `ok` / `desconocido` (sin saldo capturado: `TEXTO_SALDO_IA_DESCONOCIDO`,
+    con el vocabulario del panel, nunca «checkpoint»).
+- **UN solo color**: `tonoSaldoIa(nivel)` (rojo · ámbar · neutro · apagado)
+  pinta el número de la tarjeta Y la banda. Antes el número tenía sus propios
+  umbrales ($20 rojo / $50 ámbar) y con $0.87 salía rojo bajo una banda ámbar.
+  El rojo a $20 se retiró: rojo = la IA falla o está por fallar.
+  `muestraBandaSaldoIa(nivel)` decide la banda.
+- **Regla de días congelada** (`textoDiasRestantesIa`): menos de un día ⇒
+  «menos de 1 día» (nunca «0 días»), uno ⇒ «alrededor de 1 día», más ⇒ «unos N
+  días» (`floor(saldo / (consumo7d / 7))`); sin consumo medible no se inventa
+  duración.
+- **UN nombre para la captura**: `ETIQUETA_ACTUALIZAR_SALDO_IA` = «Actualizar
+  saldo» en la banda, la tarjeta y el estado vacío (era «Registrar el nuevo
+  saldo» en la banda: dos verbos para el mismo diálogo). La banda lleva
+  además «Recargar en Anthropic» (consola de billing).
+- **Consumo de 7 días**: el API no lo manda. `app/admin/configuracion/page.tsx`
+  lo saca del `por_dia` del mes en pantalla si ese mes contiene los últimos 7
+  días Cancún (`rangoUltimosDiasIa(todayCancun())` + `rangoCubre`); si no (otro
+  mes, o días 1–6), una lectura aparte en el MISMO `Promise.all`. Lectura
+  fallida ⇒ `null` ⇒ el aviso sale sin «N días» (nunca 0). `diaMas` se
+  reutiliza de `conciliacion-auto.ts`.
+- **El saldo es una ESTIMACIÓN que se queda alta** (checkpoint capturado a mano
+  − consumo registrado; las llamadas que fallan no se registran): por eso el
+  nivel crítico existe. El aviso NO recarga créditos: alguien recarga en la
+  consola de Anthropic y captura el saldo nuevo con «Actualizar saldo».
+  pyservices traduce el 400 de Anthropic a «Sin saldo de créditos de IA en
+  Anthropic…» (`app/services/ia_errores.py`).
+- **Pruebas**: `lib/admin/__tests__/ia-saldo.test.ts` (caso real, umbrales,
+  crítico con y sin ritmo, tonos, banda, etiqueta) y
+  `components/admin/configuracion/__tests__/ia-creditos-saldo.test.tsx` (banda
+  por nivel, posición, «el número y la banda dicen el MISMO color» para 0.87,
+  −0.42, 3.5, 15 y 60, una sola etiqueta, cableado de la página).
+
+### Pendientes conocidos
+
+- Sin QA visual en navegador (menú y banda solo probados como HTML).
+- El menú del detalle del vuelo y de caja chica aún no recibe `rol` (muestran
+  todo; un 403 ya sale en español).
+- Al guardar desde «Verificar / editar» la carga queda sellada como verificada
+  por oficina, igual que en Gastos.

@@ -8,6 +8,7 @@ import { FuelFilterBar } from "@/components/admin/expenses/fuel-filter-bar";
 import { listFuelLoads, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listCards } from "@/lib/api/cards-server";
+import { listProviders } from "@/lib/api/providers-server";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { FuelBulkUploadDialog } from "@/components/admin/expenses/fuel-bulk-upload-dialog";
@@ -16,6 +17,8 @@ import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { uuidFiltro } from "@/lib/admin/url-params";
+import { AYUDA_EDITAR_CARGA, claveOrdenCarga } from "@/lib/admin/combustibles";
+import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
 
@@ -69,14 +72,22 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
   const mesLabel = labelDeMes(mes);
 
   // Las CARGAS son el dato principal; la flota resuelve matrículas y llena
-  // el filtro: degrada con aviso (21-sep-2026).
+  // el filtro: degrada con aviso (21-sep-2026). Los proveedores alimentan
+  // «Verificar / editar» del menú ⋯ (1-oct-2026): mismo catálogo y misma
+  // degradación que la página de Gastos.
   const degradado = new Degradaciones();
-  const [{ data: loads }, aircraftRes, cardsRes] = await Promise.all([
+  // El rol (de `/me`, ya cacheado por el layout) esconde en el menú ⋯ lo
+  // que el API le rechazaría; si no llega, el menú no esconde nada.
+  const [{ data: loads }, aircraftRes, cardsRes, providersRes, me] = await Promise.all([
     listFuelLoads({ desde, hasta, aeronave_id: aeronaveId || undefined }),
     degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
       data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
     }),
     listCards({ limit: 50 }).catch(() => ({ data: [] })),
+    degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
+      data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
+    }),
+    getMe().catch(() => null),
   ]);
 
   const matriculaById = new Map(aircraftRes.data.map((a) => [a.id, a.matricula]));
@@ -93,6 +104,10 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
   const aircraftActivas = aircraftRes.data
     .filter((a) => a.activa)
     .map((a) => ({ id: a.id, matricula: a.matricula, modelo: a.modelo }));
+  // Menú ⋯ de cada carga (= el de Gastos): TODAS las aeronaves y los
+  // proveedores, con la misma forma que les pasa la página de Gastos.
+  const aircraftMenu = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
   // Si la firma falla, la tabla queda sin recibos: avisar en vez de pintar
   // guiones en silencio (bug histórico de recibos "rotos").
@@ -128,6 +143,8 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
     fotoUrl: l.foto_url ? (fotos[l.foto_url] ?? null) : null,
     vuelo_id: l.vuelo_id,
     vuelo_folio: l.vuelo?.folio ?? null,
+    // El gasto tal cual (JSON del API): lo edita/elimina el menú ⋯.
+    gasto: l,
   }));
 
   // Orden de la tabla (pedido del cliente 28-ago): por MATRÍCULA y luego
@@ -137,9 +154,7 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
     if (!a.matricula !== !b.matricula) return a.matricula ? 1 : -1;
     const m = (a.matricula ?? "").localeCompare(b.matricula ?? "");
     if (m !== 0) return m;
-    return String(a.fecha_hora_carga ?? a.fecha_gasto ?? "").localeCompare(
-      String(b.fecha_hora_carga ?? b.fecha_gasto ?? ""),
-    );
+    return claveOrdenCarga(a).localeCompare(claveOrdenCarga(b));
   });
 
   // ===== Resumen del mes por avión (el control real del combustible) =====
@@ -202,7 +217,7 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
           <p className="text-sm text-muted-foreground mt-1">
             El combustible se controla por avión y por mes: se reparte como
             gasto de combustible del mes en el Balance (pestaña Combustible).
-            La liga a vuelo es opcional.
+            La liga a vuelo es opcional. {AYUDA_EDITAR_CARGA}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -299,7 +314,13 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
 
           <Card>
             <CardContent className="p-0">
-              <FuelLoadsTable loads={rows} aircraft={aircraftActivas} />
+              <FuelLoadsTable
+                loads={rows}
+                aircraft={aircraftActivas}
+                aircraftMenu={aircraftMenu}
+                providers={providers}
+                rol={me?.rol ?? null}
+              />
             </CardContent>
           </Card>
         </>

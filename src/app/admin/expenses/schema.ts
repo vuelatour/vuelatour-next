@@ -94,6 +94,15 @@ export const GastoVerifySchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().positive("Litros inválidos").optional(),
   ),
+  /** Combustible (GAS, 1-oct-2026): corregir el tipo y el lugar de una carga
+   *  desde Combustibles/Gastos. `lugar` null = QUITARLO (sobrevive a
+   *  stripEmpty). Reglas en `lib/admin/combustibles.ts` (camposCargaParaPatch). */
+  tipo_combustible: z.enum(["TURBOSINA", "AVGAS"]).optional(),
+  lugar: z.string().max(60).nullable().optional(),
+  /** Momento de la carga recolocado en el día nuevo cuando se corrige
+   *  `fecha_gasto` (misma hora Cancún): el día Cancún de `fecha_hora_carga`
+   *  debe ser `fecha_gasto`, como exige la carga masiva del API. */
+  fecha_hora_carga: z.iso.datetime({ offset: true }).optional(),
   moneda: z.enum(["MXN", "USD"]).optional(),
   fecha_gasto: z
     .string()
@@ -232,6 +241,10 @@ export type GastoVerifyValues = {
   monto: string;
   propina: string;
   litros: string;
+  /** Solo GAS: «TURBOSINA» | «AVGAS» | «» (sin dato). */
+  tipo_combustible: string;
+  /** Solo GAS: aeropuerto/FBO de la carga («CUN»). */
+  lugar: string;
   moneda: string;
   fecha_gasto: string;
   categoria: string;

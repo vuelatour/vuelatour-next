@@ -7,6 +7,7 @@ import {
   ArrowTopRightOnSquareIcon,
   BanknotesIcon,
   ChartBarIcon,
+  ExclamationTriangleIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,31 @@ import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import { capturarIaSaldoAction } from "@/app/admin/configuracion/actions";
 import type { IaUsoResumen } from "@/lib/api/ia-uso-server";
+import {
+  ETIQUETA_ACTUALIZAR_SALDO_IA,
+  ETIQUETA_RECARGAR_IA,
+  TEXTO_SALDO_IA_DESCONOCIDO,
+  estadoSaldoIa,
+  muestraBandaSaldoIa,
+  tonoSaldoIa,
+  type TonoSaldoIa,
+} from "@/lib/admin/ia-saldo";
+
+/**
+ * Clases por TONO del saldo (el tono lo decide `tonoSaldoIa`, fuente única):
+ * el número de la tarjeta y la banda nunca se contradicen.
+ */
+const CLASE_NUMERO_SALDO: Record<TonoSaldoIa, string> = {
+  rojo: "text-red-600 dark:text-red-400",
+  ambar: "text-amber-600 dark:text-amber-400",
+  neutro: "",
+  apagado: "text-muted-foreground",
+};
+const CLASE_BANDA_SALDO: Record<"rojo" | "ambar", string> = {
+  rojo: "flex flex-wrap items-start gap-3 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300",
+  ambar:
+    "flex flex-wrap items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-amber-800 dark:text-amber-200",
+};
 
 /** Primer mes con registro en `ia_uso` (antes no hay nada que consultar). */
 const MES_INICIO_REGISTRO = "2026-09";
@@ -209,10 +235,16 @@ export function IaCreditosSection({
   resumen,
   mes,
   mesActual,
+  consumo7dUsd = null,
 }: {
   resumen: IaUsoResumen | null;
   mes: string;
   mesActual: string;
+  /**
+   * Costo de IA de los últimos 7 días Cancún (USD), calculado por la página;
+   * `null` = no se pudo medir (el aviso de saldo bajo no dice «N días»).
+   */
+  consumo7dUsd?: number | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -273,15 +305,39 @@ export function IaCreditosSection({
   );
 
   const saldo = resumen?.saldo_estimado != null ? num(resumen.saldo_estimado) : null;
-  // Umbral visual acordado: < $50 ámbar, < $20 rojo.
-  const saldoClase =
-    saldo == null
-      ? "text-muted-foreground"
-      : saldo < 20
-        ? "text-red-600 dark:text-red-400"
-        : saldo < 50
-          ? "text-amber-600 dark:text-amber-400"
-          : "";
+
+  // Aviso de saldo (1-oct-2026): nivel, texto y COLOR salen de
+  // `lib/admin/ia-saldo.ts` — el número de la tarjeta y la banda usan el
+  // MISMO tono (antes el número tenía sus propios umbrales $20/$50 y con
+  // $0.87 salía rojo bajo una banda ámbar). Aquí solo se pinta.
+  const estadoSaldo = estadoSaldoIa(saldo, consumo7dUsd);
+  const tonoSaldo = tonoSaldoIa(estadoSaldo.nivel);
+  const saldoClase = CLASE_NUMERO_SALDO[tonoSaldo];
+  const bandaSaldo =
+    muestraBandaSaldoIa(estadoSaldo.nivel) && (tonoSaldo === "rojo" || tonoSaldo === "ambar") ? (
+      <div
+        role={tonoSaldo === "rojo" ? "alert" : "status"}
+        data-saldo-ia={estadoSaldo.nivel}
+        className={CLASE_BANDA_SALDO[tonoSaldo]}
+      >
+        <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0" />
+        <p className="min-w-0 flex-1 basis-64 text-sm font-medium">{estadoSaldo.texto}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={CONSOLE_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium underline underline-offset-2"
+          >
+            {ETIQUETA_RECARGAR_IA}
+            <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+          </a>
+          <Button size="sm" variant="outline" onClick={() => setCapturando(true)}>
+            {ETIQUETA_ACTUALIZAR_SALDO_IA}
+          </Button>
+        </div>
+      </div>
+    ) : null;
 
   const encabezado = (
     <div className="pt-2">
@@ -319,7 +375,7 @@ export function IaCreditosSection({
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Button size="sm" onClick={() => setCapturando(true)}>
               <BanknotesIcon className="h-4 w-4 mr-1.5" />
-              Actualizar saldo
+              {ETIQUETA_ACTUALIZAR_SALDO_IA}
             </Button>
             <a
               href={CONSOLE_URL}
@@ -343,6 +399,8 @@ export function IaCreditosSection({
     <section className="space-y-4">
       {encabezado}
 
+      {bandaSaldo}
+
       <div className="grid gap-4 lg:grid-cols-3 items-start">
         {/* ── Card de SALDO ─────────────────────────────────────────── */}
         <Card className="lg:col-span-1">
@@ -354,13 +412,21 @@ export function IaCreditosSection({
             <CardDescription>
               {resumen.checkpoint
                 ? `Según el saldo capturado el ${fmtDateTime(resumen.checkpoint.created_at)}.`
-                : "Todavía no se captura un saldo de referencia."}
+                : TEXTO_SALDO_IA_DESCONOCIDO}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className={`text-4xl font-semibold tracking-tight ${saldoClase}`}>
+            <p
+              className={`text-4xl font-semibold tracking-tight ${saldoClase}`}
+              data-tono-saldo={tonoSaldo}
+            >
               {saldo != null ? fmtUsd(saldo) : "—"}
             </p>
+            {/* Aviso previo (< $50): solo el número en ámbar y, si se puede
+                medir, para cuántos días alcanza — sin banda. */}
+            {estadoSaldo.nivel === "atencion" && estadoSaldo.texto && (
+              <p className="text-xs text-amber-700 dark:text-amber-300">{estadoSaldo.texto}</p>
+            )}
             {resumen.checkpoint?.notas && (
               <p className="text-xs text-muted-foreground">
                 Nota de la captura: {resumen.checkpoint.notas}
@@ -368,7 +434,7 @@ export function IaCreditosSection({
             )}
             <div className="flex flex-wrap items-center gap-3">
               <Button size="sm" onClick={() => setCapturando(true)}>
-                Actualizar saldo
+                {ETIQUETA_ACTUALIZAR_SALDO_IA}
               </Button>
               <a
                 href={CONSOLE_URL}
