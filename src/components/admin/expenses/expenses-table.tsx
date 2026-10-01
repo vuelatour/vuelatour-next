@@ -438,6 +438,7 @@ export function ExpensesTable({
             <div className="flex items-center gap-2">
               {g.foto_url && fotoUrls[g.foto_url] && (
                 <ComprobantePreview
+                  bucket="gasto-fotos"
                   path={g.foto_url}
                   url={fotoUrls[g.foto_url]}
                   alt={`Comprobante · ${g.categoria}`}

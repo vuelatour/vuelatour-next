@@ -15,7 +15,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import {
+  ComprobantePreview,
+  EnlaceArchivoFirmado,
+} from "@/components/admin/comprobante-preview";
 import { esParteDeSobre } from "@/components/admin/flights/cobro-sobre-nota";
 import {
   refrescarComprobanteCobroAction,
@@ -136,20 +139,18 @@ export function ComprobanteCobro({
     }
     if (tipoComprobante(path) === "heic") {
       return (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
+        <EnlaceArchivoFirmado
+          bucket="cobro-vouchers"
+          path={path}
+          url={url}
           title="Comprobante del cobro (HEIC: se abre en otra pestaña o se descarga)"
-          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground ring-1 ring-border hover:text-foreground hover:ring-brand-500"
-        >
-          <DocumentTextIcon className="h-4 w-4" />
-          HEIC
-        </a>
+          etiqueta="HEIC"
+        />
       );
     }
     return (
       <ComprobantePreview
+        bucket="cobro-vouchers"
         path={path}
         url={url}
         alt="Comprobante del cobro"

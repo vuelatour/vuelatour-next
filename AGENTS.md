@@ -4670,3 +4670,115 @@ y de «Actualizar la cotización con la operación».
   API previo, el pie promete «del cliente» pero el tramo entra operativo: el
   toast lo dice tal cual («Tramo operativo agregado (no se cotiza)») porque lee
   la respuesta.
+
+## Fotos de bucket privado: la URL firmada VENCE (1-oct-2026, API 0.0.48)
+
+Reporte de la oficina (capturas de Gastos): «las fotos de las facturas no
+están cargando» — la miniatura de la columna «Comp.» salía como una rayita
+blanca y el visor como una franja delgada. Los archivos de `gasto-fotos`
+estaban sanos y la firma funcionaba: la página firma las URLs al renderizar
+(`POST /v1/expenses/photo-urls`, 1 h) y la oficina deja la pestaña abierta más
+de una hora. Al vencer, Supabase responde **HTTP 400 JSON `InvalidJWT ·
+"exp" claim timestamp check failed`** y el navegador pinta la imagen rota
+(una miniatura que ya cargó no se ve afectada; fallan las que se MONTAN
+después: página 2 de la tabla, la búsqueda, el visor, el diálogo «Verificar»).
+
+- **API 0.0.48**: las firmas que alimentan miniaturas pasan a **8 h** y nace
+  `POST /v1/storage/firmar {bucket, paths[≤100]}` → `{urls: {path: url},
+  expira_en_s}` con LISTA BLANCA de buckets (gasto-fotos, taco-fotos,
+  cobro-vouchers, planes-vuelo, facturas, estados-cuenta, documentos-flota,
+  ingresos, inventario-fotos) y roles de oficina (PILOTO/MECANICO solo
+  gasto-fotos y taco-fotos). La vigencia larga evita el parpadeo; lo que
+  sigue es la red para cuando aun así vence.
+- **`ImagePreview` renueva su URL** (`components/admin/image-preview.tsx`,
+  props nuevas `bucket`, `path`, `firmadaEn?`):
+  - **al fallar** (`onError` de la miniatura o del visor) pide otra firma y
+    reintenta **UNA** vez; si la nueva también falla, la miniatura es un
+    **placeholder gris** (ícono de foto, `title` «No se pudo cargar la foto ·
+    clic para reintentar», clic = reintentar) y el visor dice «No se pudo
+    cargar la foto» + **«Reintentar»**. Nunca se vuelve a pintar una URL que
+    ya falló. Un `onLoad` exitoso devuelve el reintento automático, pero
+    **nunca antes de 5 min** (`ESPERA_ENTRE_RENOVACIONES_MS`) desde la
+    renovación automática anterior. Revisión adversarial: sin ese freno, una
+    miniatura que CARGA y un visor que FALLA con la MISMA URL (archivo que el
+    navegador no decodifica, etc.) hacían ping-pong de firmas sin fin — cada
+    «cargó» devolvía el reintento. Una firma de 8 h que falla a los minutos no
+    venció: volver a firmar no lo arregla. «Reintentar» (el clic) sí pide
+    siempre;
+  - **antes de usarla**: al ABRIR el visor y al DESCARGAR, si la URL es vieja
+    se renueva primero (el visor dice «Cargando la foto…»). «Vieja» la decide
+    el `exp` que trae el propio token de Supabase (menos de 10 min ⇒ renueva);
+    sin token legible, la edad: más de 50 min desde `firmadaEn` o, sin ella,
+    desde el montaje. Por eso las páginas NO necesitan pasar `firmadaEn`: el
+    token dice la hora exacta del servidor que firmó (y con 8 h no se renueva
+    a la hora en balde);
+  - **sin `bucket`/`path`** no hay a quién pedir otra firma: al fallar,
+    placeholder SIN llamadas (y «Reintentar» vuelve a probar la MISMA URL);
+  - props nuevas (el `router.refresh()` de `RefreshOnFocus` vuelve a firmar
+    todo al recuperar el foco) reinician la foto sin cerrar el visor.
+- **TODO caller pasa `bucket` + `path`**. `ComprobantePreview` exige `bucket`
+  (tipo `BucketFirmable`): Gastos, gastos personales, combustibles, gastos del
+  vuelo, verificar gasto, caja chica y pagos de compras = `gasto-fotos`;
+  comprobante del cobro = `cobro-vouchers`. Tacómetros: el detalle del vuelo
+  usa el path de la escala (`foto_taco_*_url`); taco-live y el histórico del
+  avión solo reciben la URL y el path se DERIVA con `pathDeUrlFirmada(url)`
+  (`/object/sign/<bucket>/<path>?token=`; si el token trae la llave exacta,
+  gana). Un caller nuevo con foto de bucket privado nace con bucket + path.
+- **Enlaces a archivos firmados** (`EnlaceArchivoFirmado`, en
+  `comprobante-preview.tsx`): el PDF/XLSX/CSV de `ComprobantePreview`, el
+  «HEIC» del comprobante de cobro y «Ver foto del plan de vuelo»
+  (`flight-meta-sheet.tsx`, bucket `planes-vuelo`, path derivado de la URL;
+  una URL legada que no es firmada se abre tal cual). Si su URL ya es vieja,
+  pide otra en el MISMO clic (`abrirArchivoFirmado`: abre la pestaña y luego
+  le pone la URL); con URL fresca es el `<a target="_blank">` de siempre.
+  Regla (la misma del API): toda URL que la página firma al RENDERIZAR y el
+  operador usa DESPUÉS (miniatura, visor o href) pasa por `ImagePreview` o
+  por `EnlaceArchivoFirmado`.
+- **Un path inválido no tumba el lote**: el API rechaza la solicitud ENTERA
+  (400 `PATH_INVALIDO`) si UN path trae URL completa, `/` inicial, `\`,
+  `.`/`..` o caracteres de control. `esPathFirmable` (espejo de
+  `motivoPathInvalido` del API) filtra en la server action (ese path no
+  viaja ni recibe URL; los demás del lote sí) y en `ImagePreview` /
+  `EnlaceArchivoFirmado` (path inválido = sin path: placeholder sin llamadas
+  / enlace tal cual). Hoy (1-oct, SELECT en prod) los 617 `gasto.foto_url`,
+  400 `foto_taco_*_url` y el voucher son llaves limpias; el filtro es para el
+  primer valor legado que aparezca.
+- **Lote, no N llamadas**: la firma nueva va por la server action
+  `refrescarUrlsFirmadasAction` (`app/actions/storage.ts`, nunca lanza; un API
+  previo con 404 ⇒ `{ok:false}` ⇒ placeholder con gracia) a través de
+  `pedirUrlFirmada` (`lib/storage/url-firmada.ts` = `crearPedidorDeUrls`): las
+  peticiones de un mismo instante se juntan en UNA llamada por bucket (tope
+  100, el del API). Las server actions de Next se despachan UNA POR UNA
+  (`docs/01-app/01-getting-started/07-mutating-data.md`): 50 miniaturas
+  vencidas en la página 2 de Gastos eran 50 viajes en fila con un «Guardar»
+  de la oficina esperando detrás.
+- **Las imágenes NO pasan por Vercel** (decisión: Active CPU limitado en el
+  plan Hobby): solo la FIRMA va por la server action; el navegador sigue
+  bajando la foto directo de Supabase.
+- **FUENTE ÚNICA** `lib/admin/foto-firmada.ts` (PURA, sin React ni red):
+  `BUCKETS_FIRMABLES`/`esBucketFirmable` (espejo de la lista blanca),
+  `pathDeUrlFirmada`, `vencimientoDeUrlFirmada`, `debeRenovarUrl`,
+  `crearFotoFirmada` (la máquina de estados que `ImagePreview` conecta con
+  `useSyncExternalStore`: una sola firma en vuelo aunque fallen miniatura y
+  visor a la vez; la respuesta de una configuración vieja se descarta) y
+  `crearPedidorDeUrls`.
+- **Pruebas**: `lib/admin/__tests__/foto-firmada.test.ts` (onError ⇒ refresca
+  y reintenta una vez; segundo fallo ⇒ placeholder; apertura con URL vieja ⇒
+  renueva; `exp` del token vs `firmadaEn`; sin bucket/path ⇒ sin llamadas;
+  API viejo; lote por bucket, dedupe y tope; `pathDeUrlFirmada`; freno
+  anti ping-pong; `esPathFirmable`), `app/actions/__tests__/storage-action.test.ts`
+  (contrato de `POST /v1/storage/firmar`, paths inválidos fuera del lote,
+  bucket fuera de la lista blanca sin llamada, 404/403/red ⇒ `{ok:false}` sin
+  lanzar) y
+  `components/admin/__tests__/image-preview.test.tsx` (marcado de cada estado:
+  nunca `<img>` en fallo, placeholder con su tooltip y `cursor-pointer`,
+  «Reintentar» del visor, enlace del PDF y del plan de vuelo, y el CABLEADO:
+  todo `<ImagePreview>` del panel lleva `bucket`). Un test que renderice algo
+  con foto hace `vi.mock("@/app/actions/storage", …)` (la server action
+  importa la sesión).
+- **Fuera de alcance (no vencen)**: fotos de inventario y de aviones (buckets
+  públicos, `getPublicUrl`). Facturas, pólizas y estados de cuenta ya se
+  firman al CLIC (`abrirArchivoFirmado`), no al renderizar.
+- **Orden de deploy**: API 0.0.48 antes que el panel (con el API previo el
+  panel funciona igual que hoy: al fallar la foto, placeholder con
+  «Reintentar» en vez del `<img>` roto).

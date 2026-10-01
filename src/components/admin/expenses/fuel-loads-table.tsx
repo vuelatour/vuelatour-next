@@ -182,6 +182,7 @@ export function FuelLoadsTable({
         cell: (l) =>
           l.fotoPath && l.fotoUrl ? (
             <ComprobantePreview
+              bucket="gasto-fotos"
               path={l.fotoPath}
               url={l.fotoUrl}
               alt="Recibo de combustible"

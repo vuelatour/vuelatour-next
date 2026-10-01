@@ -35,6 +35,7 @@ import {
 import type { ServicioEtapa, TacometroHistorial } from "@/types/aircraft";
 import { DataTable } from "@/components/admin/data-table";
 import { ImagePreview } from "@/components/admin/image-preview";
+import { pathDeUrlFirmada } from "@/lib/admin/foto-firmada";
 import { BitacoraPdfButton } from "./bitacora-pdf-button";
 
 const inputCls =
@@ -844,7 +845,16 @@ function TacoLink({
 /// en grande en otra pestaña. Si no hay foto, no renderiza nada.
 function TacoFoto({ url, label }: { url?: string | null; label: string }) {
   if (!url) return null;
-  return <ImagePreview src={url} alt={`Tacómetro ${label}`} />;
+  // El API solo manda la URL firmada (bucket `taco-fotos`): el path se lee
+  // de ella para poder renovarla cuando venza.
+  return (
+    <ImagePreview
+      src={url}
+      bucket="taco-fotos"
+      path={pathDeUrlFirmada(url)?.path}
+      alt={`Tacómetro ${label}`}
+    />
+  );
 }
 
 function Metric({

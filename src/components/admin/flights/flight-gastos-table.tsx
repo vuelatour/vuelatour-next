@@ -154,6 +154,7 @@ export function FlightGastosTable({
         <div className="flex flex-wrap items-center gap-1.5">
           {g.foto_url && fotoUrls[g.foto_url] && (
             <ComprobantePreview
+              bucket="gasto-fotos"
               path={g.foto_url}
               url={fotoUrls[g.foto_url]}
               alt={`Comprobante · ${g.categoria}`}

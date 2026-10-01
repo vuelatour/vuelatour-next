@@ -12,6 +12,12 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { FlightCobro } from "@/types/flights";
 
+// La renovación de URLs firmadas de las fotos (server action: sesión y red)
+// no es parte de este test.
+vi.mock("@/app/actions/storage", () => ({
+  refrescarUrlsFirmadasAction: async () => ({ ok: false }),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
 }));

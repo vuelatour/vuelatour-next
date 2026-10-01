@@ -157,6 +157,7 @@ export function GastosPersonalesTable({ gastos }: { gastos: GastoPersonalRow[] }
         cell: (g) =>
           g.foto_path && g.foto_url ? (
             <ComprobantePreview
+              bucket="gasto-fotos"
               path={g.foto_path}
               url={g.foto_url}
               alt="Comprobante · Gasto personal"

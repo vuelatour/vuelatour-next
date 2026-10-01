@@ -26,6 +26,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { FlightEscala } from "@/types/flights";
 import type { PersistedEscala, PersistedQuote } from "@/types/quotes-persisted";
 
+// La renovación de URLs firmadas de las fotos (server action: sesión y red)
+// no es parte de este test.
+vi.mock("@/app/actions/storage", () => ({
+  refrescarUrlsFirmadasAction: async () => ({ ok: false }),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
 }));

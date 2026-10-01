@@ -1,19 +1,172 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   XMarkIcon,
   MagnifyingGlassPlusIcon,
   MagnifyingGlassMinusIcon,
   ArrowsPointingOutIcon,
   ArrowDownTrayIcon,
+  PhotoIcon,
 } from "@heroicons/react/24/outline";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import {
+  crearFotoFirmada,
+  esBucketFirmable,
+  esPathFirmable,
+  type ConfigFoto,
+  type EstadoFoto,
+  type FotoFirmada,
+} from "@/lib/admin/foto-firmada";
+import { pedirUrlFirmada } from "@/lib/storage/url-firmada";
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 /** Arrastres de menos de esto son un clic (no deben cerrar por accidente). */
 const UMBRAL_ARRASTRE_PX = 4;
+
+/** Tooltip de la miniatura cuando la foto no cargó (ni con una firma nueva). */
+export const TITULO_FOTO_NO_CARGO = "No se pudo cargar la foto · clic para reintentar";
+/** Mensaje del visor cuando la foto no cargó. */
+export const TEXTO_FOTO_NO_CARGO = "No se pudo cargar la foto";
+/** Mientras se pide otra firma. */
+export const TEXTO_FOTO_CARGANDO = "Cargando la foto…";
+
+const THUMB_DEFAULT =
+  "h-8 w-8 rounded-md object-cover ring-1 ring-border hover:ring-brand-500";
+
+/**
+ * Una foto (miniatura + visor) con su URL firmada: la renueva al fallar y
+ * antes de abrir/descargar una URL vieja. La lógica vive PURA en
+ * `crearFotoFirmada` (`lib/admin/foto-firmada.ts`, con pruebas); aquí solo se
+ * conecta a React. Props nuevas (p. ej. `router.refresh()` al volver a la
+ * pestaña firma otra vez) reinician la máquina sin cerrar el visor.
+ */
+function useFotoFirmada(config: ConfigFoto): [FotoFirmada, EstadoFoto] {
+  const [foto] = useState(() =>
+    crearFotoFirmada(config, { pedirUrl: pedirUrlFirmada }),
+  );
+  const { src, bucket, path, firmadaEn } = config;
+  useEffect(() => {
+    foto.configurar({ src, bucket, path, firmadaEn });
+  }, [foto, src, bucket, path, firmadaEn]);
+  const estado = useSyncExternalStore(foto.suscribir, foto.estado, foto.estado);
+  return [foto, estado];
+}
+
+/** ¿La URL actual se puede pintar? (nunca una que ya falló). */
+function urlPintable(estado: EstadoFoto): string | null {
+  return estado.url && estado.fase === "lista" && !estado.rota ? estado.url : null;
+}
+
+/**
+ * Miniatura: la foto (clic = abrir el visor) o, si no cargó, un placeholder
+ * gris (clic = reintentar). Mientras se pide otra firma tras un fallo, el
+ * placeholder late. Exportada para probar el marcado de cada estado.
+ */
+export function MiniaturaFoto({
+  estado,
+  alt,
+  thumbClassName = THUMB_DEFAULT,
+  onAbrir,
+  onReintentar,
+  onFallo,
+  onCarga,
+}: {
+  estado: EstadoFoto;
+  alt: string;
+  thumbClassName?: string;
+  onAbrir: () => void;
+  onReintentar: () => void;
+  onFallo: (url: string) => void;
+  onCarga: (url: string) => void;
+}) {
+  // Durante una renovación PROACTIVA (al abrir el visor) la miniatura que ya
+  // cargó se queda: solo se esconde una URL que falló.
+  const url =
+    estado.url && estado.fase !== "fallo" && !estado.rota ? estado.url : null;
+  if (url) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        title="Ver imagen"
+        className="inline-flex shrink-0 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+      >
+        <Image
+          key={estado.intento}
+          src={url}
+          alt={alt}
+          width={40}
+          height={40}
+          unoptimized
+          className={thumbClassName}
+          onError={() => onFallo(url)}
+          onLoad={() => onCarga(url)}
+        />
+      </button>
+    );
+  }
+  const cargando = estado.fase === "renovando";
+  const titulo = cargando ? TEXTO_FOTO_CARGANDO : TITULO_FOTO_NO_CARGO;
+  return (
+    <button
+      type="button"
+      onClick={onReintentar}
+      disabled={cargando}
+      title={titulo}
+      aria-label={`${alt}: ${titulo}`}
+      data-foto-placeholder={cargando ? "cargando" : "fallo"}
+      className={cn(
+        thumbClassName,
+        "inline-flex shrink-0 cursor-pointer items-center justify-center bg-muted text-muted-foreground/60 min-h-8 min-w-8 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait",
+      )}
+    >
+      <PhotoIcon className={cn("h-4 w-4", cargando && "animate-pulse")} aria-hidden />
+    </button>
+  );
+}
+
+/**
+ * Contenido del visor cuando NO hay foto que pintar: «Cargando la foto…»
+ * mientras se pide otra firma, o «No se pudo cargar la foto» + «Reintentar».
+ */
+export function VisorSinFoto({
+  estado,
+  onReintentar,
+}: {
+  estado: EstadoFoto;
+  onReintentar: () => void;
+}) {
+  if (estado.fase !== "fallo") {
+    return <p className="text-sm text-white/80">{TEXTO_FOTO_CARGANDO}</p>;
+  }
+  return (
+    <div className="pointer-events-auto flex flex-col items-center gap-3 text-center text-white">
+      <PhotoIcon className="h-10 w-10 text-white/50" aria-hidden />
+      <p className="text-sm font-medium">{TEXTO_FOTO_NO_CARGO}</p>
+      <button
+        type="button"
+        onClick={(e) => {
+          // El clic en el fondo cierra el visor: este no.
+          e.stopPropagation();
+          onReintentar();
+        }}
+        className="cursor-pointer rounded-md bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25"
+      >
+        Reintentar
+      </button>
+    </div>
+  );
+}
 
 /**
  * Miniatura que, al hacer clic, abre la imagen en un MODAL con zoom y
@@ -22,17 +175,40 @@ const UMBRAL_ARRASTRE_PX = 4;
  * forma de alcanzarla — leer un ticket o un tacómetro de cerca era imposible.
  *
  * Reutilizable para comprobantes, tacómetros, vouchers, etc. Usa URLs firmadas
- * (bucket privado).
+ * (bucket privado) que VENCEN (1-oct-2026, «las fotos de las facturas no
+ * están cargando»): con `bucket` + `path` la foto pide otra firma al fallar
+ * (reintenta UNA vez) y antes de abrir el visor o descargar con una URL vieja;
+ * si aun así no carga, placeholder con «Reintentar» — nunca un `<img>` roto.
+ * Sin `bucket`/`path` no hay a quién pedir otra firma: al fallar, placeholder
+ * sin llamadas. TODOS los callers pasan bucket + path (los que solo tienen la
+ * URL lo derivan con `pathDeUrlFirmada`).
  */
 export function ImagePreview({
   src,
   alt,
-  thumbClassName = "h-8 w-8 rounded-md object-cover ring-1 ring-border hover:ring-brand-500",
+  thumbClassName = THUMB_DEFAULT,
+  bucket,
+  path,
+  firmadaEn,
 }: {
   src: string;
   alt: string;
   thumbClassName?: string;
+  /** Bucket privado del objeto (lista blanca de `POST /v1/storage/firmar`). */
+  bucket?: string | null;
+  /** Path del objeto dentro del bucket. */
+  path?: string | null;
+  /** Hora (epoch ms) en que se firmó `src`; sin ella, el montaje. */
+  firmadaEn?: number | null;
 }) {
+  const [foto, estado] = useFotoFirmada({
+    src,
+    bucket: esBucketFirmable(bucket) ? bucket : null,
+    // Un path que el API rechazaría = sin path: placeholder sin llamadas.
+    path: esPathFirmable(path) ? path : null,
+    firmadaEn: firmadaEn ?? null,
+  });
+  const visorUrl = urlPintable(estado);
   const [open, setOpen] = useState(false);
   // Escala y desplazamiento viven JUNTOS: el zoom al cursor necesita los dos a
   // la vez, y separarlos obligaba a anidar actualizaciones de estado (que
@@ -55,13 +231,23 @@ export function ImagePreview({
    * Descarga la imagen con nombre legible. La URL es firmada (bucket
    * privado) y cruza de dominio, así que `<a download>` directo la abriría en
    * vez de bajarla: se trae como blob y se dispara la descarga local. Si la
-   * red falla, plan B: abrirla en otra pestaña.
+   * red falla (o CORS), plan B: abrirla en otra pestaña. Si Storage RESPONDE
+   * con error (firma vencida que no se pudo renovar), NO se abre: la pestaña
+   * mostraría el JSON `InvalidJWT` — se avisa y ya.
    */
   const descargar = useCallback(async () => {
     setDescargando(true);
+    let url: string | null = null;
+    let respondioError = false;
     try {
-      const res = await fetch(src);
-      if (!res.ok) throw new Error(String(res.status));
+      // URL VIGENTE: si la de la página ya es vieja, se renueva antes.
+      url = await foto.vigente();
+      if (!url) return;
+      const res = await fetch(url);
+      if (!res.ok) {
+        respondioError = true;
+        throw new Error(String(res.status));
+      }
       const blob = await res.blob();
       const ext = blob.type.includes("png")
         ? "png"
@@ -76,20 +262,21 @@ export function ImagePreview({
           .trim()
           .replace(/\s+/g, "-")
           .toLowerCase() || "imagen";
-      const url = URL.createObjectURL(blob);
+      const local = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = local;
       a.download = `${base}.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(local);
     } catch {
-      window.open(src, "_blank", "noopener");
+      if (url && !respondioError) window.open(url, "_blank", "noopener");
+      else toast.error("No se pudo descargar la foto. Inténtalo de nuevo.");
     } finally {
       setDescargando(false);
     }
-  }, [src, alt]);
+  }, [foto, alt]);
 
   const reset = useCallback(() => setVista({ scale: 1, x: 0, y: 0 }), []);
 
@@ -176,24 +363,20 @@ export function ImagePreview({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
+      <MiniaturaFoto
+        estado={estado}
+        alt={alt}
+        thumbClassName={thumbClassName}
+        onAbrir={() => {
           reset();
           setOpen(true);
+          // Una URL vieja se renueva ANTES de pintarla en grande.
+          void foto.vigente();
         }}
-        title="Ver imagen"
-        className="inline-flex shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
-      >
-        <Image
-          src={src}
-          alt={alt}
-          width={40}
-          height={40}
-          unoptimized
-          className={thumbClassName}
-        />
-      </button>
+        onReintentar={() => void foto.reintentar()}
+        onFallo={(u) => void foto.alFallar(u)}
+        onCarga={(u) => foto.alCargar(u)}
+      />
 
       {open && (
         <div
@@ -208,7 +391,7 @@ export function ImagePreview({
               <button
                 type="button"
                 onClick={() => zoomEn(scale - 0.5)}
-                className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40"
+                className="cursor-pointer rounded-md p-2 hover:bg-white/15 disabled:cursor-default disabled:opacity-40"
                 disabled={scale <= MIN_ZOOM}
                 title="Alejar (−)"
               >
@@ -220,7 +403,7 @@ export function ImagePreview({
               <button
                 type="button"
                 onClick={() => zoomEn(scale + 0.5)}
-                className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40"
+                className="cursor-pointer rounded-md p-2 hover:bg-white/15 disabled:cursor-default disabled:opacity-40"
                 disabled={scale >= MAX_ZOOM}
                 title="Acercar (+)"
               >
@@ -229,7 +412,7 @@ export function ImagePreview({
               <button
                 type="button"
                 onClick={reset}
-                className="rounded-md p-2 hover:bg-white/15"
+                className="cursor-pointer rounded-md p-2 hover:bg-white/15"
                 title="Ajustar a la pantalla (0)"
               >
                 <ArrowsPointingOutIcon className="h-5 w-5" />
@@ -237,8 +420,8 @@ export function ImagePreview({
               <button
                 type="button"
                 onClick={() => void descargar()}
-                disabled={descargando}
-                className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40"
+                disabled={descargando || !visorUrl}
+                className="cursor-pointer rounded-md p-2 hover:bg-white/15 disabled:cursor-default disabled:opacity-40"
                 title="Descargar imagen"
               >
                 <ArrowDownTrayIcon className="h-5 w-5" />
@@ -246,7 +429,7 @@ export function ImagePreview({
               <button
                 type="button"
                 onClick={close}
-                className="ml-1 rounded-md p-2 hover:bg-white/15"
+                className="ml-1 cursor-pointer rounded-md p-2 hover:bg-white/15"
                 title="Cerrar (Esc)"
               >
                 <XMarkIcon className="h-5 w-5" />
@@ -325,18 +508,28 @@ export function ImagePreview({
             }}
           >
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                ref={imgRef}
-                src={src}
-                alt={alt}
-                draggable={false}
-                style={{
-                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                  transition: arrastrando ? "none" : "transform 120ms ease-out",
-                }}
-                className="max-h-full max-w-full origin-center object-contain"
-              />
+              {visorUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={estado.intento}
+                  ref={imgRef}
+                  src={visorUrl}
+                  alt={alt}
+                  draggable={false}
+                  onError={() => void foto.alFallar(visorUrl)}
+                  onLoad={() => foto.alCargar(visorUrl)}
+                  style={{
+                    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                    transition: arrastrando ? "none" : "transform 120ms ease-out",
+                  }}
+                  className="max-h-full max-w-full origin-center object-contain"
+                />
+              ) : (
+                <VisorSinFoto
+                  estado={estado}
+                  onReintentar={() => void foto.reintentar()}
+                />
+              )}
             </div>
             {puedeArrastrar && (
               <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[11px] text-white/80">

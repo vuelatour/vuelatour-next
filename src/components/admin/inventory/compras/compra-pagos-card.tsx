@@ -172,6 +172,7 @@ export function CompraPagosCard({
                   <TableCell>
                     {p.foto_url && fotoUrls[p.foto_url] ? (
                       <ComprobantePreview
+                        bucket="gasto-fotos"
                         path={p.foto_url}
                         url={fotoUrls[p.foto_url]}
                         alt={`Factura · ${p.categoria}`}

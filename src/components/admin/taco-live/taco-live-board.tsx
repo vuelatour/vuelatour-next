@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ImagePreview } from "@/components/admin/image-preview";
+import { pathDeUrlFirmada } from "@/lib/admin/foto-firmada";
 import { EmptyState } from "@/components/admin/empty-state";
 import { confirmTacoAction, tacoObsAction } from "@/app/admin/flights/actions";
 import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
@@ -194,6 +195,8 @@ function Lectura({
       {foto && (
         <ImagePreview
           src={foto}
+          bucket="taco-fotos"
+          path={pathDeUrlFirmada(foto)?.path}
           alt={`Tacómetro ${lado} · escala ${escala.orden}`}
           thumbClassName="h-10 w-10 rounded object-cover shrink-0"
         />
@@ -529,6 +532,8 @@ function RevisionActions({
             {escala.foto_salida_url && (
               <ImagePreview
                 src={escala.foto_salida_url}
+                bucket="taco-fotos"
+                path={pathDeUrlFirmada(escala.foto_salida_url)?.path}
                 alt="Foto salida"
                 thumbClassName="h-24 w-24 rounded object-cover"
               />
@@ -536,6 +541,8 @@ function RevisionActions({
             {escala.foto_llegada_url && (
               <ImagePreview
                 src={escala.foto_llegada_url}
+                bucket="taco-fotos"
+                path={pathDeUrlFirmada(escala.foto_llegada_url)?.path}
                 alt="Foto llegada"
                 thumbClassName="h-24 w-24 rounded object-cover"
               />

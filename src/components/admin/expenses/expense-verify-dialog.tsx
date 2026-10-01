@@ -713,10 +713,11 @@ export function ExpenseVerifyDialog({
           <div className="space-y-2">
             <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
               <ComprobantePreview
+                bucket="gasto-fotos"
                 path={gasto.foto_url ?? ""}
                 url={fotoUrl}
                 alt="Comprobante del gasto"
-                thumbClassName="w-full h-auto max-h-[45vh] object-contain"
+                thumbClassName="w-full h-auto min-h-32 max-h-[45vh] object-contain"
               />
             </div>
             {/* Reanálisis: para gastos capturados antes de una mejora del

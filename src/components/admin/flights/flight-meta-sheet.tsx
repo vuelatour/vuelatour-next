@@ -23,6 +23,8 @@ import { updateFlightAction } from "@/app/admin/flights/actions";
 import type { FlightListItem } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
 import { METODOS_PAGO } from "@/lib/admin/metodos-pago";
+import { EnlaceArchivoFirmado } from "@/components/admin/comprobante-preview";
+import { esBucketFirmable, pathDeUrlFirmada } from "@/lib/admin/foto-firmada";
 
 interface PilotOption {
   id: string;
@@ -295,14 +297,7 @@ export function FlightMetaSheet({
           {planVueloUrl && (
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Plan de vuelo</Label>
-              <a
-                href={planVueloUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-brand-600 hover:underline break-all"
-              >
-                Ver foto del plan de vuelo
-              </a>
+              <EnlacePlanVuelo url={planVueloUrl} />
             </div>
           )}
 
@@ -372,5 +367,28 @@ export function FlightMetaSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * «Ver foto del plan de vuelo»: la URL la firma la página al renderizar
+ * (bucket privado `planes-vuelo`). Si ya es vieja al hacer clic, se pide otra
+ * en el mismo clic (1-oct-2026); una URL que no es firmada de Supabase (legado)
+ * se abre tal cual.
+ */
+function EnlacePlanVuelo({ url }: { url: string }) {
+  const clase = "cursor-pointer text-sm text-brand-600 hover:underline break-all";
+  const objeto = pathDeUrlFirmada(url);
+  if (!objeto || !esBucketFirmable(objeto.bucket)) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className={clase}>
+        Ver foto del plan de vuelo
+      </a>
+    );
+  }
+  return (
+    <EnlaceArchivoFirmado bucket={objeto.bucket} path={objeto.path} url={url} className={clase}>
+      Ver foto del plan de vuelo
+    </EnlaceArchivoFirmado>
   );
 }

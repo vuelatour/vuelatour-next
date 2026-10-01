@@ -31,6 +31,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ImagePreview } from "@/components/admin/image-preview";
+import { pathDeUrlFirmada } from "@/lib/admin/foto-firmada";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -329,6 +330,7 @@ export function EscalasCard({
                         {fotoSalida && (
                           <TacoThumb
                             url={fotoSalida}
+                            path={esc.foto_taco_salida_url}
                             label={`Escala ${idx + 1} · tacómetro salida`}
                             caption="Salida"
                           />
@@ -336,6 +338,7 @@ export function EscalasCard({
                         {fotoLlegada && (
                           <TacoThumb
                             url={fotoLlegada}
+                            path={esc.foto_taco_llegada_url}
                             label={`Escala ${idx + 1} · tacómetro llegada`}
                             caption="Llegada"
                           />
@@ -748,10 +751,13 @@ function TacoConfirmDialog({
 
 function TacoThumb({
   url,
+  path,
   label,
   caption,
 }: {
   url: string;
+  /** Path en el bucket `taco-fotos` (para renovar la URL firmada). */
+  path: string | null;
   label: string;
   caption: string;
 }) {
@@ -759,6 +765,8 @@ function TacoThumb({
     <div className="relative overflow-hidden rounded-md border border-border">
       <ImagePreview
         src={url}
+        bucket="taco-fotos"
+        path={path ?? pathDeUrlFirmada(url)?.path}
         alt={label}
         thumbClassName="h-14 w-14 object-cover transition-transform hover:scale-105"
       />
