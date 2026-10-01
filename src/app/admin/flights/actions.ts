@@ -584,13 +584,36 @@ export interface OperationalLegPayload {
   motivo?: string;
 }
 
-/** Agrega un tramo operativo interno (ruta real) sin tocar la cotización. */
+/**
+ * Lo que responde `POST /v1/flights/:id/operational-legs`: la escala creada
+ * + aditivos del API 0.0.46 (ausentes en un API previo).
+ */
+export type TramoAgregado = FlightEscala & {
+  /** true = tramo DEL CLIENTE (no ferry ni parada de servicio): la
+      cotización avisará que la operación difiere y ofrecerá adoptarlo. */
+  comercial?: boolean;
+  /** Texto del API para la oficina: tramo del cliente, o tramo del cliente
+      que el freno de cronología dejó operativo. null = nada que avisar. */
+  aviso?: string | null;
+  /** Replay por `client_request_id` (no se creó nada nuevo). */
+  idempotente?: boolean;
+};
+
+/**
+ * Agrega un tramo a la ruta real del vuelo SIN recalcular la cotización.
+ * Desde el API 0.0.46 el API decide (`tramo-agregado.util.ts`): ferry o
+ * parada de servicio SIN pasajeros ⇒ OPERATIVO (`solo_operativa`, orden ≥
+ * 100, no se cotiza); lo demás ⇒ del CLIENTE (siguiente orden comercial) y la
+ * cotización muestra que la operación difiere — salvo el freno de cronología
+ * (va después de un operativo que ya voló o sale antes ⇒ operativo + `aviso`).
+ * Ver `lib/admin/tramo-operativo.ts`.
+ */
 export async function createOperationalLegAction(
   flightId: string,
   payload: OperationalLegPayload,
-): Promise<ActionResult<FlightEscala>> {
+): Promise<ActionResult<TramoAgregado>> {
   try {
-    const escala = await apiServer<FlightEscala>(
+    const escala = await apiServer<TramoAgregado>(
       `/v1/flights/${flightId}/operational-legs`,
       { method: "POST", body: payload },
     );

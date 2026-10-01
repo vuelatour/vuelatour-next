@@ -217,7 +217,10 @@ export interface FlightEscala {
   pernocta_costo_usd: string | null;
   tipo_parada: "NORMAL" | "SERVICIO";
   servicio_notas: string | null;
-  /** true = tramo operativo interno (no cotizado/cobrado, no visible al cliente). */
+  /** true = tramo OPERATIVO (ferry, posicionamiento o parada técnica; orden
+      ≥ 100): no se cotiza, no se cobra ni sale en el PDF del cliente. Se
+      pinta con `TramoOperativoBadge` («Operativo · no cotizado»); textos en
+      `lib/admin/tramo-operativo.ts`. */
   solo_operativa: boolean;
   taco_salida: string | null;
   taco_llegada: string | null;
@@ -331,6 +334,12 @@ export interface CobroGrupoResumen {
  */
 export interface FlightSnapshot extends FlightListItem, SeguimientoContadores {
   escalas: FlightEscala[];
+  /**
+   * true = las escalas son la ruta REAL del piloto y la cotización es otra
+   * ruta (CUN→…→CUN) que no se cruza por tramo. Viene de `vuelo` (el
+   * snapshot lo esparce); opcional por si un API previo no lo manda.
+   */
+  itinerario_operativo?: boolean | null;
   cobros: FlightCobro[];
   total_cobrado: number;
   /** Nombre del apoyo en tierra, resuelto por el backend en snapshot(). */

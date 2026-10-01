@@ -23,6 +23,10 @@ import { QuotePlegable } from "@/components/admin/quotes/quote-plegable";
 import type { Airport } from "@/types/airports";
 import type { EscalaInput } from "@/types/quote";
 import type { PersistedQuote } from "@/types/quotes-persisted";
+import {
+  AYUDA_TRAMO_OPERATIVO,
+  ETIQUETA_TRAMO_OPERATIVO,
+} from "@/lib/admin/tramo-operativo";
 import type { AirportOption, OpsLegForm, QuoteFormValues } from "./quote-form-types";
 
 /** La croma de la hoja NO se imprime: el comparador con pyservices la descarta. */
@@ -126,12 +130,18 @@ export function QuoteRutaOperativaBanda({
         <ol className={c.lista}>
           {[...escalas]
             .sort((a, b) => a.orden - b.orden)
-            .map((esc) => (
+            .map((esc, idx) => (
               <li key={esc.id} className={c.item || undefined}>
-                <span className={c.n}>{esc.orden}.</span> {esc.origen_iata} →{" "}
+                {/* Número de LISTA, nunca el `orden` crudo: un operativo vive
+                    en orden ≥ 100 y salía «100.» (#364, 30-sep-2026). */}
+                <span className={c.n}>{idx + 1}.</span> {esc.origen_iata} →{" "}
                 {esc.destino_iata}
                 {esc.es_ferry && <span className={c.tag}>ferry</span>}
-                {esc.solo_operativa && <span className={c.tag}>operativo</span>}
+                {esc.solo_operativa && (
+                  <span className={c.tag} title={AYUDA_TRAMO_OPERATIVO}>
+                    {ETIQUETA_TRAMO_OPERATIVO.toLowerCase()}
+                  </span>
+                )}
                 {esc.cancelada_at && <span className={c.tag}>cancelado</span>}
               </li>
             ))}
@@ -151,7 +161,15 @@ export function QuoteRutaOperativaBanda({
       : [escalas[0].origen_iata, ...escalas.map((e) => e.destino_iata)].join(" → ");
   const ferries =
     escalas
-      .map((e, i) => (e.es_ferry || e.solo_operativa ? `T${i + 1} ferry` : null))
+      // Un operativo NO es sinónimo de ferry: puede llevar pasajeros (dato
+      // legado, #364) — se nombra por lo que es.
+      .map((e, i) =>
+        e.es_ferry
+          ? `T${i + 1} ferry`
+          : e.solo_operativa
+            ? `T${i + 1} operativo`
+            : null,
+      )
       .filter(Boolean)
       .join(" · ") || "Todos los tramos con pasajeros";
 

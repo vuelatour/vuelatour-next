@@ -4568,3 +4568,105 @@ salida era clasificar a mano cada uno de los 14.
     del siguiente estado de cuenta (`ayudaClasificarSoloUno`); la
     confirmación del lote sin rango dice «abonos de los últimos 90 días»
     (default del API).
+
+## Tramo operativo vs tramo del cliente (30-sep-2026, API 0.0.46)
+
+Pregunta del cliente sobre el vuelo #364 (captura de la app): «subí un vuelito
+para mañana Cancún, Toledo, que aparece como Toledo a Pulticub, y luego
+Pulticub a Cancún, pero en el último tramo aparece "interno (no del cliente)".
+¿Por qué aparece ese aviso? ¿A qué se refiere? … aparece como tramo 100».
+Itzi dio de alta `CUN→CET` y `CET→PTU` (ferry, 0 pax) y Pablo agregó desde la
+app `PTU→CUN` con 4 pax. `POST /v1/flights/:id/operational-legs` guardaba
+SIEMPRE `solo_operativa = true` y `orden ≥ 100`, aunque el tramo llevara a los
+pasajeros del cliente: quedaba fuera de la cotización, del precio, del reparto
+y de «Actualizar la cotización con la operación».
+
+- **Modelo** (contrato API ⇄ panel ⇄ app): tramo DEL CLIENTE = `solo_operativa
+  false`, `orden` 1..n (se cotiza, se cobra, reparte, sale en el PDF); tramo
+  OPERATIVO = `solo_operativa true`, `orden ≥ 100` (ferry, posicionamiento o
+  parada técnica: no se cobra ni entra a la cotización). Desde el API 0.0.46
+  «Agregar tramo» decide con `ubicarTramoAgregado`
+  (`vuelatour-api/src/modules/flights/tramo-agregado.util.ts`, fuente única):
+  **operativo si es FERRY o parada de SERVICIO SIN pasajeros**; una parada de
+  servicio CON pasajeros es del cliente (en prod #150, #84 y #57 dejan el avión
+  en el taller con el cliente a bordo y están cotizados). Lo demás entra como
+  tramo del cliente con el siguiente orden comercial y la cotización lo avisa
+  sola (`divergenciasDeOperacion`: «hay un tramo 3 PTU → CUN que no se
+  cotizó») y «Actualizar la cotización con la operación» lo incluye.
+  **Freno de cronología** (horas sagradas: la cadena de tacómetros camina por
+  `orden`): si ya hay un operativo VIVO en `orden ≥ 100` que voló, está volando
+  (salida no DEDUCIDA) o sale ANTES que el nuevo, el tramo del cliente queda
+  OPERATIVO y la respuesta lo dice en `aviso`. La respuesta trae los aditivos
+  `comercial: boolean` y `aviso: string | null`.
+- **FUENTE ÚNICA** `lib/admin/tramo-operativo.ts` (PURA, prueba
+  `__tests__/tramo-operativo.test.ts`), textos IGUALES a los de la app:
+  `ETIQUETA_TRAMO_OPERATIVO` «Operativo · no cotizado» (antes «Interno»),
+  `AYUDA_TRAMO_OPERATIVO` «Posicionamiento, ferry o parada técnica: no se cobra
+  ni entra a la cotización», `CHIP_OPERATIVO_CON_PAX` «Lleva pasajeros y no
+  está cotizado: revisa la cotización» (su `title`, `AYUDA_OPERATIVO_CON_PAX`,
+  dice qué revisar SIN afirmar que el precio no lo incluye: en el #364 lo
+  cotizado sí lleva un PTU→CUN de 4 pax, pero «Actualizar la cotización con la
+  operación» NO lo trae), `AVISO_TRAMO_NUEVO_COMERCIAL` / `_OPERATIVO` /
+  `_CLIENTE_OPERATIVO`, `tramoNuevoEsOperativo` + `tipoTramoNuevo` (ESPEJO
+  EXACTO de `ubicarTramoAgregado`, freno incluido; si allá cambia, aquí
+  también), `avisoTramoNuevo`, `operativoConPasajeros` y `mensajeTramoAgregado`
+  (lee la RESPUESTA: `comercial` del API y, con un API previo, `solo_operativa`
+  de la escala creada — nunca lo que se pidió).
+- **Chip ámbar** (`operativoConPasajeros`): operativo, vivo, no ferry (la card
+  ya dice «Ferry · vacío») y pax > 0 — **y NUNCA en un vuelo con
+  `itinerario_operativo = true`** (revisión adversaria): ahí las escalas son la
+  ruta REAL a propósito y la cotización es otra ruta que no se cruza por tramo
+  (`divergenciasDeOperacion` devuelve `[]`). En prod los 7 operativos con
+  pasajeros de esos vuelos (#129, #147, #213, #251, #282, #283, #290) SÍ están
+  en lo cotizado: el chip habría dicho «no está cotizado» en falso. El dato
+  viaja en `FlightSnapshot.itinerario_operativo` (el snapshot del API esparce
+  la fila del vuelo; opcional = API previo ⇒ se evalúa como siempre) y la
+  página lo pasa a las dos cards como `itinerarioOperativo`. Hoy el único caso
+  vivo en prod es el #364.
+- **Marcas** (`flights/tramo-operativo-badges.tsx`: `TramoOperativoBadge` +
+  `TramoOperativoConPaxBadge`, ninguna redacta texto): «Tacómetros por tramo»
+  (`escalas-card.tsx`) y «Asignación por tramo» (`flight-tramos-card.tsx`:
+  antes no distinguía el operativo, justo donde se agrega). **Las dos numeran
+  por POSICIÓN** (lista ordenada por `orden`, canceladas incluidas — la misma
+  regla de la app): «Tramo 3» / «3.», nunca el `orden` crudo. La card de
+  tacómetros ponía «·» en vez de número al operativo; desde la revisión
+  adversaria también lo numera («3.»): con la etiqueta ya no hace falta
+  esconder el número y así las dos cards y la app nombran igual el tramo.
+  Avisa, nunca bloquea.
+- **«Agregar tramo»** (`flights/operational-leg-sheet.tsx`): ya no se titula
+  «Agregar tramo operativo» ni promete que «NO se cobra al cliente». Pie
+  INFORMATIVO siempre a la vista (`data-aviso-tramo`) con los MISMOS insumos
+  que viajan en el POST (ferry, parada de servicio, pasajeros, fecha) + las
+  escalas del vuelo (prop `escalas`, para el freno): ferry o servicio sin pax ⇒
+  «Tramo operativo: no se cotiza.» (gris); del cliente ⇒ «Este tramo es del
+  cliente: la cotización mostrará que la operación difiere para adoptarlo.»
+  (azul); del cliente frenado ⇒ `AVISO_TRAMO_NUEVO_CLIENTE_OPERATIVO`
+  («…quedará como operativo y no entrará a la cotización. Si hay que cobrarlo,
+  agrégalo como ajuste o extra…», ámbar). Arranca en ferry. Toast:
+  «Tramo del cliente agregado» + el `aviso` del API, o «Tramo operativo
+  agregado (no se cotiza)»; **si un operativo trae `aviso` (freno) el aviso
+  SIEMPRE se dice, con `toast.warning` de 12 s** (antes se tragaba y la
+  oficina no se enteraba de que había que cobrarlo). En vuelo COMPLETADO
+  conserva «Tramo agregado; el vuelo vuelve a EN VUELO» y aclara cuál quedó.
+  `createOperationalLegAction` devuelve `TramoAgregado` (`FlightEscala` +
+  `comercial?`, `aviso?`, `idempotente?`).
+- **Banda «Ruta operativa» del cotizador** (`quotes/quote-ruta-operativa.tsx`):
+  en lectura numera por posición («3.», nunca «100.») y el tag del operativo
+  es «operativo · no cotizado» con la ayuda en el `title`; en edición
+  (itinerario operativo) un operativo con pasajeros se nombra «T4 operativo»,
+  ya no «T4 ferry». Es croma: los fixtures no cambian.
+- **Pruebas**: `lib/admin/__tests__/tramo-operativo.test.ts` (textos, regla
+  con servicio con/sin pax, freno de cronología caso por caso, chip con
+  itinerario operativo, toast con API nuevo y previo y con el aviso del
+  freno), `lib/admin/__tests__/tramos-cotizados.test.ts` (bloque «#364» con
+  los datos de prod: con orden 3 la cotización avisa y «adoptar» trae los 3
+  tramos; con el legado orden 100 el cotizador no lo ve) y
+  `components/admin/flights/__tests__/tramo-operativo-ui.test.tsx` (las dos
+  cards con el #364 numeradas 1-2-3, sin «Interno» ni «100», ámbar solo con
+  pax y nunca con itinerario operativo; el sheet con su título, el aviso por
+  defecto y el CABLEADO a los helpers, a la página y al toast ámbar; la banda
+  del cotizador en lectura y en edición).
+- **Orden de deploy: API 0.0.46 antes que el panel.** Con el panel nuevo y el
+  API previo, el pie promete «del cliente» pero el tramo entra operativo: el
+  toast lo dice tal cual («Tramo operativo agregado (no se cotiza)») porque lee
+  la respuesta.

@@ -19,7 +19,13 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cancunInputToIso, TZ_LABEL } from "@/lib/datetime";
 import { createOperationalLegAction } from "@/app/admin/flights/actions";
+import {
+  AYUDA_TRAMO_OPERATIVO,
+  avisoTramoNuevo,
+  mensajeTramoAgregado,
+} from "@/lib/admin/tramo-operativo";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import type { FlightEscala } from "@/types/flights";
 
 interface AirportOption {
   iata: string;
@@ -29,10 +35,18 @@ interface AirportOption {
 const MOTIVO_MAX = 300;
 
 /**
- * Alta de un tramo OPERATIVO interno (ruta real): ferry, parada técnica,
- * movimiento interno, pernocta operativa. No se cotiza ni se cobra ni se
- * muestra al cliente; no cambia el precio. Lo ve operaciones, el piloto y el
- * calendario.
+ * Alta de un tramo en la ruta REAL del vuelo («Agregar tramo» de Asignación
+ * por tramo). No recalcula la cotización. Desde el API 0.0.46 (#364,
+ * 30-sep-2026) el API decide (`tramo-agregado.util.ts`):
+ * - ferry o parada técnica SIN pasajeros ⇒ tramo OPERATIVO: no se cotiza;
+ * - con pasajeros (o sin ferry) ⇒ tramo DEL CLIENTE: la cotización muestra
+ *   que la operación difiere y ofrece adoptarlo; salvo que vaya después de un
+ *   operativo que ya voló o sale antes (freno de cronología del API): queda
+ *   operativo y el API lo avisa.
+ * El aviso informativo al pie dice cuál será ANTES de guardar
+ * (`avisoTramoNuevo`, espejo de `ubicarTramoAgregado` con las escalas del
+ * vuelo) y el toast dice cuál quedó, leído de la RESPUESTA
+ * (`mensajeTramoAgregado`). Lo ve operaciones, el piloto y el calendario.
  *
  * Vuelo COMPLETADO (regla del cliente): el cliente pidió ir a otro lado al
  * terminar la ruta y se considera parte del MISMO vuelo. El API exige motivo
@@ -44,12 +58,15 @@ export function OperationalLegSheet({
   flightId,
   estado,
   airports,
+  escalas,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   flightId: string;
   estado: EstadoVuelo;
   airports: AirportOption[];
+  /** Escalas del vuelo (todas): el pie anticipa el freno de cronología. */
+  escalas?: ReadonlyArray<FlightEscala>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -68,6 +85,20 @@ export function OperationalLegSheet({
   const [servicioNotas, setServicioNotas] = useState("");
   const [fecha, setFecha] = useState("");
   const [notas, setNotas] = useState("");
+
+  // Lo que se MANDA como pasajeros (un ferry vuela vacío).
+  const paxAEnviar = esFerry ? 0 : Number(pasajeros) || 0;
+  const fechaIso = fecha ? cancunInputToIso(fecha) : "";
+  // Espejo de la regla del API: ¿este tramo será del cliente u operativo?
+  // Mismos insumos que viajan en el POST (pax, servicio, fecha) + las
+  // escalas del vuelo para el freno de cronología.
+  const aviso = avisoTramoNuevo({
+    esFerry,
+    esServicio,
+    pasajeros: paxAEnviar,
+    fechaSalidaPlan: fechaIso || null,
+    existentes: escalas,
+  });
 
   const airportOptions = airports.map((a) => ({
     value: a.iata,
@@ -107,21 +138,25 @@ export function OperationalLegSheet({
         destino_iata: destino.toUpperCase(),
         es_ferry: esFerry,
         es_sobrevuelo: esSobrevuelo,
-        pasajeros: esFerry ? 0 : Number(pasajeros) || 0,
+        pasajeros: paxAEnviar,
         pasajeros_nombres: nombresLista.length > 0 ? nombresLista : undefined,
         requiere_pernocta: requierePernocta,
         tipo_parada: esServicio ? "SERVICIO" : "NORMAL",
         servicio_notas: esServicio ? servicioNotas.trim() || undefined : undefined,
-        fecha_salida_plan: fecha ? cancunInputToIso(fecha) : undefined,
+        fecha_salida_plan: fechaIso || undefined,
         notas: notas.trim() || undefined,
         motivo: vueloCompletado ? motivoLimpio : undefined,
       });
       if (res.ok) {
-        toast.success(
-          vueloCompletado
-            ? "Tramo agregado; el vuelo vuelve a EN VUELO"
-            : "Tramo operativo agregado a la ruta real",
-        );
+        const m = mensajeTramoAgregado(res.data ?? {}, vueloCompletado);
+        const opts = m.descripcion ? { description: m.descripcion } : undefined;
+        // Un tramo del cliente que quedó OPERATIVO (freno de cronología) se
+        // avisa en ámbar y con más tiempo: la oficina tiene que cobrarlo.
+        if (m.advertencia) {
+          toast.warning(m.titulo, { ...opts, duration: 12_000 });
+        } else {
+          toast.success(m.titulo, opts);
+        }
         setMotivo("");
         onOpenChange(false);
         router.refresh();
@@ -148,11 +183,12 @@ export function OperationalLegSheet({
     >
       <SheetContent side="right" className="w-full sm:max-w-md sm:w-[480px] flex flex-col p-0">
         <SheetHeader className="border-b border-border">
-          <SheetTitle>Agregar tramo operativo</SheetTitle>
+          <SheetTitle>Agregar tramo</SheetTitle>
           <SheetDescription>
-            Movimiento real de la aeronave que NO se cobra al cliente (ferry,
-            parada técnica, pernocta operativa). No cambia la cotización; lo ven
-            operaciones, el piloto y el calendario.
+            Tramo de la ruta real del vuelo. Si es ferry o parada técnica sin
+            pasajeros, es operativo y no se cobra; si no, es un tramo del
+            cliente. Lo ven operaciones, el piloto y el calendario; la
+            cotización no se recalcula sola.
           </SheetDescription>
         </SheetHeader>
 
@@ -300,6 +336,29 @@ export function OperationalLegSheet({
               placeholder="Ej. Regreso ferry; cargar turbosina aprovechando la escala."
             />
           </div>
+        </div>
+
+        {/* Aviso INFORMATIVO, siempre a la vista: cambia en vivo con ferry,
+            parada técnica, pasajeros y fecha (misma regla que el API). */}
+        <div
+          className={
+            aviso.tipo === "COMERCIAL"
+              ? "border-t border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-700 dark:text-sky-300"
+              : aviso.tipo === "CLIENTE_OPERATIVO"
+                ? "border-t border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-300"
+                : "border-t border-slate-500/30 bg-slate-500/10 px-4 py-2.5 text-xs text-slate-700 dark:text-slate-300"
+          }
+          role="status"
+          data-aviso-tramo={
+            aviso.tipo === "COMERCIAL"
+              ? "comercial"
+              : aviso.tipo === "CLIENTE_OPERATIVO"
+                ? "cliente-operativo"
+                : "operativo"
+          }
+          title={aviso.tipo === "OPERATIVO" ? AYUDA_TRAMO_OPERATIVO : undefined}
+        >
+          {aviso.texto}.
         </div>
 
         <SheetFooter className="border-t border-border flex-row justify-end gap-2 mt-0">

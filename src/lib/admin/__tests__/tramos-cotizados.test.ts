@@ -489,3 +489,60 @@ describe("mismaRuta / paxDeTramo", () => {
     expect(paxDeTramo({ pasajeros: 4, es_ferry: false })).toBe(4);
   });
 });
+
+// ---------- #364: tramo agregado con pasajeros (API 0.0.46) ----------
+
+/**
+ * Caso real #364 (30-sep-2026, datos de prod): se COTIZÓ `T1 CUN→PTU ferry` +
+ * `T2 PTU→CUN 4 pax`; la operación quedó `CUN→CET ferry`, `CET→PTU ferry` y
+ * Pablo agregó desde la app `PTU→CUN` con 4 pax. El API previo lo guardaba
+ * como OPERATIVO (`solo_operativa`, orden 100) y el cotizador no lo veía; desde
+ * el 0.0.46 entra como tramo DEL CLIENTE con el siguiente orden comercial (3).
+ */
+describe("#364 — tramo del cliente agregado en la operación", () => {
+  const COTIZADO_364: EscalaInput[] = [
+    escalaSnapshot({ origen_iata: "CUN", destino_iata: "PTU", es_ferry: true, pasajeros: 0 }),
+    escalaSnapshot({ origen_iata: "PTU", destino_iata: "CUN", pasajeros: 4 }),
+  ];
+  const BASE_364: EscalaViva[] = [
+    viva({ orden: 1, origen_iata: "CUN", destino_iata: "CET", es_ferry: true, pasajeros: 0 }),
+    viva({ orden: 2, origen_iata: "CET", destino_iata: "PTU", es_ferry: true, pasajeros: 0 }),
+  ];
+  const quote364 = (tramo3: EscalaViva): QuoteTramos => ({
+    itinerario_operativo: false,
+    calculo_snapshot: snapshot({ escalas: COTIZADO_364, tuasUsdPaxDefault: 25 }),
+    escalas: [...BASE_364, tramo3],
+  });
+
+  it("API 0.0.46 (orden 3, del cliente): la cotización AVISA y «adoptar» lo incluye", () => {
+    const q = quote364(
+      viva({ orden: 3, origen_iata: "PTU", destino_iata: "CUN", pasajeros: 4 }),
+    );
+    const ds = divergenciasDeOperacion(q);
+    expect(ds.map((d) => d.orden)).toEqual([1, 2, 3]);
+    expect(ds[2].motivos).toEqual(["nuevo"]);
+    expect(ds[2].texto).toBe("hay un tramo 3 PTU → CUN que no se cotizó");
+    expect(chipDivergencia(ds)).toBe("La operación cambió (3 tramos)");
+    // «Actualizar la cotización con la operación» trae los TRES, con el pax.
+    const ops = tramosDeOperacion(q);
+    expect(ops.map((t) => `${t.origen_iata}-${t.destino_iata}`)).toEqual([
+      "CUN-CET",
+      "CET-PTU",
+      "PTU-CUN",
+    ]);
+    expect(ops[2].pasajeros).toBe(4);
+    // El formulario sigue arrancando con lo PACTADO (nada se mueve solo).
+    expect(tramosDeCotizacion(q)).toHaveLength(2);
+  });
+
+  it("dato LEGADO (orden 100, operativo): el tramo es invisible para el cotizador", () => {
+    // Por esto el panel pinta el chip ámbar «Lleva pasajeros y no está
+    // cotizado» en el detalle del vuelo: aquí no hay aviso del tramo 100 y
+    // «adoptar» lo dejaría fuera.
+    const q = quote364(
+      viva({ orden: 100, origen_iata: "PTU", destino_iata: "CUN", pasajeros: 4, solo_operativa: true }),
+    );
+    expect(divergenciasDeOperacion(q).some((d) => d.orden === 100)).toBe(false);
+    expect(tramosDeOperacion(q).map((t) => t.destino_iata)).toEqual(["CET", "PTU"]);
+  });
+});

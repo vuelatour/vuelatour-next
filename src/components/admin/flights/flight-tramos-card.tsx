@@ -48,6 +48,10 @@ import {
 import { EscalaAssignSheet } from "./escala-assign-sheet";
 import { EscalaFormSheet } from "./escala-form-sheet";
 import { OperationalLegSheet } from "./operational-leg-sheet";
+import {
+  TramoOperativoBadge,
+  TramoOperativoConPaxBadge,
+} from "./tramo-operativo-badges";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import {
   apoyosEfectivosDeTramo,
@@ -82,6 +86,12 @@ interface FlightTramosCardProps {
   esExterno: boolean;
   estado: EstadoVuelo;
   escalas: FlightEscala[];
+  /**
+   * `vuelo.itinerario_operativo`: las escalas son la ruta REAL y la
+   * cotización es otra ruta ⇒ un operativo con pasajeros no lleva el chip
+   * ámbar «no cotizado». Ausente = API previo.
+   */
+  itinerarioOperativo?: boolean | null;
   aircraft: AircraftOption[];
   pilots: PilotOption[];
   airports?: AirportOption[];
@@ -124,6 +134,7 @@ export function FlightTramosCard({
   vueloCopilotoNombre,
   apoyosVuelo = [],
   apoyoCandidatos,
+  itinerarioOperativo,
 }: FlightTramosCardProps) {
   const router = useRouter();
   const [assignEscala, setAssignEscala] = useState<FlightEscala | null>(null);
@@ -218,7 +229,7 @@ export function FlightTramosCard({
             variant="outline"
             onClick={() => setOpSheetOpen(true)}
             className="h-7 gap-1 text-xs shrink-0"
-            title="Movimiento real que NO se cobra al cliente (ferry, parada técnica, pernocta operativa)."
+            title="Agrega un tramo a la ruta real: del cliente (con pasajeros) u operativo (ferry o parada técnica sin pasajeros, no se cotiza)."
           >
             <PlusIcon className="h-3.5 w-3.5" />
             Agregar tramo
@@ -273,7 +284,7 @@ export function FlightTramosCard({
               }
             >
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className="text-[10px]">
                     {label}
                   </Badge>
@@ -286,6 +297,9 @@ export function FlightTramosCard({
                   >
                     {escala.origen_iata} → {escala.destino_iata}
                   </span>
+                  {/* Tramo OPERATIVO: no se cotiza ni se cobra (antes no se
+                      distinguía aquí, donde justo se agrega — #364). */}
+                  <TramoOperativoBadge escala={escala} />
                   {cancelada && (
                     <Badge
                       variant="outline"
@@ -316,6 +330,10 @@ export function FlightTramosCard({
                       </Badge>
                     )
                   )}
+                  <TramoOperativoConPaxBadge
+                    escala={escala}
+                    itinerarioOperativo={itinerarioOperativo}
+                  />
                   {escala.requiere_pernocta && (
                     <Badge
                       variant="outline"
@@ -624,6 +642,7 @@ export function FlightTramosCard({
         flightId={flightId}
         estado={estado}
         airports={airports}
+        escalas={escalas}
       />
 
       <Dialog

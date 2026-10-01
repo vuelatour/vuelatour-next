@@ -596,6 +596,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     esExterno={snapshot.es_externo}
                     estado={snapshot.estado}
                     escalas={snapshot.escalas}
+                    itinerarioOperativo={snapshot.itinerario_operativo}
                     aircraft={aircraftOptions}
                     pilots={pilotOptions}
                     vueloAeronaveId={snapshot.aeronave_id}
@@ -727,6 +728,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
           <EscalasCard
             flightId={snapshot.id}
             escalas={snapshot.escalas}
+            itinerarioOperativo={snapshot.itinerario_operativo}
             tacoPhotos={tacoPhotos}
             pilotoExterno={piloto?.es_piloto_externo === true}
             vueloAnterior={vueloAnterior}

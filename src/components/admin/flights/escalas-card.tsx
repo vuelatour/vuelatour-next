@@ -43,6 +43,10 @@ import { fmtDecimal } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import type { VueloAnterior } from "@/lib/api/flights-server";
 import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
+import {
+  TramoOperativoBadge,
+  TramoOperativoConPaxBadge,
+} from "@/components/admin/flights/tramo-operativo-badges";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
 
@@ -54,6 +58,12 @@ interface EscalasCardProps {
   pilotoExterno?: boolean;
   /** Vuelo previo del mismo avión: de ahí viene la salida del tramo 1. */
   vueloAnterior?: VueloAnterior | null;
+  /**
+   * `vuelo.itinerario_operativo`: las escalas son la ruta REAL y la
+   * cotización es otra ruta, así que un operativo con pasajeros NO es
+   * «no cotizado» (sin chip ámbar). Ausente = API previo.
+   */
+  itinerarioOperativo?: boolean | null;
 }
 
 /**
@@ -78,6 +88,7 @@ export function EscalasCard({
   tacoPhotos = [],
   pilotoExterno = false,
   vueloAnterior = null,
+  itinerarioOperativo,
 }: EscalasCardProps) {
   const photosByEscala = new Map(tacoPhotos.map((p) => [p.escala_id, p]));
 
@@ -153,19 +164,22 @@ export function EscalasCard({
                             : "font-mono font-semibold text-sm"
                         }
                       >
+                        {/* Número de LISTA (posición por `orden`), el MISMO
+                            que «Tramo N» de «Asignación por tramo» y que la
+                            app — también para el operativo: antes salía «·»
+                            y no había cómo nombrarlo («tramo 3», #364). */}
                         <span className="text-muted-foreground mr-2">
-                          {esc.solo_operativa ? "·" : `${idx + 1}.`}
+                          {`${idx + 1}.`}
                         </span>
                         {esc.origen_iata} → {esc.destino_iata}
-                        {esc.solo_operativa && (
-                          <Badge
-                            variant="outline"
-                            className="ml-2 text-[10px] bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30 align-middle"
-                            title="Tramo operativo interno: no se cotiza ni se cobra; no aparece en la cotización del cliente."
-                          >
-                            Interno
-                          </Badge>
-                        )}
+                        {/* Tramo OPERATIVO (ferry/posicionamiento/parada
+                            técnica): «Operativo · no cotizado» con su ayuda.
+                            Antes decía «Interno» y el cliente preguntó «¿a
+                            qué se refiere?» (#364, 30-sep-2026). */}
+                        <TramoOperativoBadge
+                          escala={esc}
+                          className="ml-2 align-middle"
+                        />
                       </span>
                       <div className="flex items-center gap-2">
                         {cancelada ? (
@@ -247,6 +261,12 @@ export function EscalasCard({
                           </Badge>
                         )
                       )}
+                      {/* Operativo CON pasajeros (dato legado como el #364):
+                          el precio no lo incluye — ámbar, nunca candado. */}
+                      <TramoOperativoConPaxBadge
+                        escala={esc}
+                        itinerarioOperativo={itinerarioOperativo}
+                      />
                       {esc.es_sobrevuelo && (
                         <Badge
                           variant="outline"
