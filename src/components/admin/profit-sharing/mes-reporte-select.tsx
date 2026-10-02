@@ -81,9 +81,12 @@ export function MesReporteSelect({
   hasta,
   onElegir,
   className,
+  etiqueta = "Mes del reporte",
 }: Periodo & {
   onElegir?: (p: Periodo) => void;
   className?: string;
+  /** Texto del label (1-oct-2026: el reparto lo llama «Mes»). */
+  etiqueta?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -161,14 +164,14 @@ export function MesReporteSelect({
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="text-xs font-medium" htmlFor="mes-reporte">
-        Mes del reporte
+        {etiqueta}
       </Label>
       <div className="flex items-center gap-3 flex-wrap">
         <select
           id="mes-reporte"
           value={seleccionado}
           onChange={(ev) => elegirMes(ev.target.value)}
-          className="h-9 min-w-44 rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+          className="h-9 min-w-44 cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         >
           <option value="" disabled>
             Periodo personalizado (usa las fechas de arriba)

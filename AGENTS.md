@@ -4915,3 +4915,108 @@ ninguna alerta. Solo panel (sin API ni migración).
   todo; un 403 ya sale en español).
 - Al guardar desde «Verificar / editar» la carga queda sellada como verificada
   por oficina, igual que en Gastos.
+
+## Pagos a socios del reparto de utilidades (1-oct-2026, API 0.0.49)
+
+Pedido del cliente (captura de `/admin/profit-sharing`): «cada socio debe
+recibir los pagos de lo que generó el avión en el mes, por ejemplo septiembre
+que acaba de cerrar … un apartado donde siga algo como: Mauricio Roque, %,
+Monto de utilidad, estatus de si ya se pagó o aún no, con cuánto se le pagó,
+cuándo y quién se lo entregó». Contrato con el API 0.0.49 (tabla
+`reparto_pago`, migración `20261001000001`, bucket privado
+`reparto-comprobantes`).
+
+- **El dinero es del API**: utilidad (el `compute()` del mes), pagado,
+  pendiente, exceso, estatus y el equivalente en USD de un pago en pesos. El
+  panel solo pinta; `estadoPagoSocio` es un ESPEJO que solo se usa si llega un
+  estado desconocido. La utilidad de la tabla es la del renglón de pagos
+  (misma fuente que pagado/pendiente) y, sin renglón, la del reparto.
+- **Solo con un MES completo** (`mesDePeriodo`: desde = día 1, hasta = último
+  día; el mes en curso cortado en hoy NO cuenta). Si no, la tabla de socios es
+  la de siempre, una línea tenue dice `TEXTO_SOLO_MES_COMPLETO` y, debajo de
+  los KPIs, UNA tarjeta compacta «Pagos a socios» con **«Ver Septiembre
+  2026»** (el mes recién cerrado). `PeriodSelector` (prop opcional
+  `atajoMesPasado`, solo en esta página) trae el **selector de MES**
+  (`MesReporteSelect`, etiqueta «Mes»: empuja `desde`/`hasta` en UNA
+  navegación) y el atajo **«Mes pasado · Septiembre 2026»**.
+- **Tarjeta de cada avión** (`SociosSection` con el contexto opcional
+  `pagos`): «Socio · % · Utilidad · Pagado · Pendiente · Estatus» (5
+  columnas: el % va BAJO el nombre y el nombre hace salto de línea; con pagos
+  las tarjetas pasan a `2xl:grid-cols-2`, si no el estatus quedaba fuera de
+  vista en una laptop) y, por socio, la relación (`PagosSocioDetalle`: fecha · monto con moneda y T.C. ·
+  método · entregó · recibió/factura · referencia · comprobante · «Registró …»)
+  con «Editar», «Eliminar» (diálogo con MOTIVO 5–300; el DELETE sale solo de
+  ahí) y «Registrar pago». Sin utilidad o socio no vigente no se ofrece el
+  alta y se DICE por qué. Socio que ya no es vigente con pagos del mes: al
+  final, «ya no vigente» + el `aviso` del API.
+- **Sección «Pagos a socios · <Mes>»** (`PagosSociosSection`, debajo de los
+  KPIs): consolidado por socio con totales y «N socios con pago pendiente»;
+  SOCIO ve solo su renglón y sin totales.
+- **Diálogo** (`pago-socio-dialog.tsx`): prellenado con el PENDIENTE del API,
+  USD, hoy Cancún y «Entregó» = yo; el **método NO se prellena** (regla del
+  3-sep: un medio de pago por defecto se cuela sin revisar). Un
+  `client_request_id` por apertura; el 409 `PAGO_EXCEDE_UTILIDAD` se vuelve la
+  confirmación «¿Registrar de todas formas?» que reintenta con
+  `aceptar_exceso` y el MISMO id. Comprobante opcional: se sube DESPUÉS del
+  alta, del navegador directo al API (`lib/api/reparto-pagos-browser.ts`,
+  tope de 4.5 MB de Vercel); si falla, el toast dice que el pago SÍ quedó.
+  «Entregó» = usuarios activos (`/v1/users` es solo ADMIN: a otro rol se le
+  ofrece «yo» y el API pone el default).
+- **Carga** (`getRepartoPagos`, nunca lanza): `disponible:false` / 404 / 503
+  con `PAGOS_SOCIOS_NO_DISPONIBLE` ⇒ «Disponible cuando se actualice el
+  servidor»; 401/403 ⇒ nada; red / 500 / el 503 de un deploy ⇒ «No se
+  pudieron cargar los pagos a socios» (jamás «sin pagos»).
+- **Errores** (`mensajeErrorPagoSocio`): el texto del API en español gana; el
+  panel solo redacta lo técnico, lo que viene en inglés y los casos en que él
+  mismo refresca la lista (`errorPideRefrescar`: PAGO_NO_EXISTE,
+  PAGO_CAMBIO_CONCURRENTE, COMPROBANTE_CAMBIO).
+- **Pre-cierre**: el renglón `pagos_socios_pendientes` lista los socios
+  (`lineasPreCierrePagosSocios`) y «Resolver →» lleva al reparto del MISMO
+  periodo.
+- **Fuente única** `lib/admin/reparto-pagos.ts` (PURA); tipos 1:1 en
+  `types/reparto-pagos.ts`; actions en `app/admin/profit-sharing/actions.ts`.
+  Pruebas: `lib/admin/__tests__/reparto-pagos.test.ts`,
+  `app/admin/profit-sharing/__tests__/pagos-actions.test.ts`,
+  `lib/api/__tests__/reparto-pagos-browser.test.ts` y
+  `components/admin/profit-sharing/__tests__/pagos-socios.test.tsx`.
+- **Orden de deploy**: API 0.0.49 → panel (con el API previo: nota gris, nada
+  más). Migración cuando la aplique el orquestador.
+- **Revisión adversaria (1-oct-2026)** — lo que se corrigió:
+  - **Socio con dos vigencias en el mes** (cambio de % a medio mes): el
+    `compute()` lo manda DOS veces en el reparto y la tabla pintaba dos
+    renglones con la utilidad sumada en cada uno y dos «Registrar pago».
+    `agruparRepartoPorSocio` (espejo de `armarFilasPagos` del API) deja UN
+    renglón por socio (% y monto sumados en centavos, orden de la primera
+    aparición).
+  - **Pagos de aviones sin tarjeta** (dados de baja: el cálculo solo trae
+    activos) solo sumaban en «Pagado»: bloque «Pagos de aviones fuera del
+    reparto del mes» (`filasFueraDelReparto` + `PagosFueraDelRepartoSection`)
+    con su relación, «Editar» y «Eliminar».
+  - **«Hoy» del diálogo**: se calcula al ABRIR, en el navegador
+    (`todayCancun()`); el del servidor es respaldo. Con la pestaña abierta de
+    un día a otro prellenaba ayer y rechazaba la fecha de hoy.
+  - **No se cierra mientras guarda** (X, Esc, clic fuera): reabrir generaba
+    otro `client_request_id` y un pago parcial podía duplicarse.
+  - **Moneda**: en el alta, pasar a MXN sin tocar el monto lo VACÍA (el
+    prellenado es el pendiente en DÓLARES) y vuelve a USD restaurándolo
+    (`formAlCambiarMoneda`); la etiqueta dice «Monto entregado (USD|MXN)» y
+    la descripción «… pendiente $1,395.94 USD». Un monto tecleado y la
+    EDICIÓN no se tocan.
+  - Badge del consolidado: verde SOLO si hubo utilidad («Todos los socios con
+    utilidad están pagados»); mes con pérdida o sin renglones ⇒ gris «Sin
+    utilidad que repartir en el mes» (`badgeSociosPendientes`).
+  - `CLIENT_REQUEST_ID_EN_USO`: el panel gana (el API decía «La llave
+    client_request_id…»). Contador del motivo «3/300 · mínimo 5».
+  - Pre-cierre: el `count` son PAGOS (avión × socio) ⇒ «8 pagos pendientes (2
+    socios)» (`conteoPreCierrePagosSocios`) y, con la lista del panel, el
+    `detalle` del API no se repite.
+  - Nombres accesibles: «Registrar pago a Aero Charter… · N4142R · Septiembre
+    2026» y el comprobante «Adjuntar comprobante del pago del … por …».
+  - Tipos 1:1: `fila` de alta/edición/baja es `FilaPagoSocio | null`.
+    `estadoPagoSocio` mide el exceso contra `max(utilidad, 0)`, como el API.
+  - El diálogo se RENDERIZA en `__tests__/pago-socio-dialog.test.tsx`
+    (prellenado con el pendiente, USD, hoy, «Entregó» = yo, método sin
+    elegir, edición, bloque del exceso).
+- **Pendiente conocido**: FACTURACION puede registrar pagos según el API, pero
+  no abre esta página (`GET /v1/profit-sharing` es ADMIN/ANALISTA/SOCIO y el
+  menú tampoco la ofrece). Sin QA visual en navegador.

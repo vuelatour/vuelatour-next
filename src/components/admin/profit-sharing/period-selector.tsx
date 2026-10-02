@@ -1,16 +1,27 @@
 "use client";
 
-import { useCallback, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { CalendarDaysIcon } from "@heroicons/react/24/outline";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { todayCancun } from "@/lib/datetime";
+import { etiquetaMes, mesAnterior, rangoMesPasado } from "@/lib/admin/reparto-pagos";
+import { MesReporteSelect } from "./mes-reporte-select";
 
 interface Props {
   initial: { desde: string; hasta: string };
+  /** Selector de MES + atajo «Mes pasado» (1-oct-2026: el cliente cierra
+   *  septiembre en octubre y los pagos a socios se registran por MES
+   *  COMPLETO; elegir un mes empuja `desde`/`hasta` en UNA sola navegación). */
+  atajoMesPasado?: boolean;
+  /** Hoy en Cancún desde el servidor (evita que el atajo difiera al hidratar). */
+  hoy?: string;
 }
 
-export function PeriodSelector({ initial }: Props) {
+export function PeriodSelector({ initial, atajoMesPasado = false, hoy: hoyServidor }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -30,6 +41,13 @@ export function PeriodSelector({ initial }: Props) {
     },
     [params, pathname, router],
   );
+
+  // «Hoy» se fija UNA vez: el del servidor o, sin él, el del navegador.
+  const [hoy] = useState(() => hoyServidor ?? todayCancun());
+  const mesPasado = atajoMesPasado ? rangoMesPasado(hoy) : null;
+  const mesPasadoNombre = atajoMesPasado ? mesAnterior(hoy) : null;
+  const enMesPasado =
+    mesPasado !== null && initial.desde === mesPasado.desde && initial.hasta === mesPasado.hasta;
 
   return (
     <Card>
@@ -69,6 +87,34 @@ export function PeriodSelector({ initial }: Props) {
             }}
           />
         </div>
+        {atajoMesPasado && (
+          <MesReporteSelect
+            className="sm:col-span-2"
+            desde={initial.desde}
+            hasta={initial.hasta}
+            etiqueta="Mes"
+          />
+        )}
+        {mesPasado && mesPasadoNombre && (
+          <div className="sm:col-span-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={enMesPasado ? "secondary" : "outline"}
+              className="cursor-pointer gap-1.5"
+              aria-pressed={enMesPasado}
+              data-atajo="mes-pasado"
+              title={`Del ${mesPasado.desde.split("-").reverse().join("/")} al ${mesPasado.hasta
+                .split("-")
+                .reverse()
+                .join("/")}`}
+              onClick={() => pushQuery({ desde: mesPasado.desde, hasta: mesPasado.hasta })}
+            >
+              <CalendarDaysIcon className="h-4 w-4" aria-hidden />
+              Mes pasado · {etiquetaMes(mesPasadoNombre)}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -7,10 +7,25 @@ import { PeriodSelector } from "@/components/admin/profit-sharing/period-selecto
 import { ReportDownloads } from "@/components/admin/profit-sharing/report-downloads";
 import { KpiStrip } from "@/components/admin/profit-sharing/kpi-strip";
 import { AvionRepartoCard } from "@/components/admin/profit-sharing/avion-reparto-card";
-import { getProfitSharing } from "@/lib/api/profit-sharing-server";
+import {
+  PagosFueraDelRepartoSection,
+  PagosSociosSection,
+} from "@/components/admin/profit-sharing/pagos-socios-section";
+import type { ContextoPagosAvion } from "@/components/admin/profit-sharing/socios-section";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getProfitSharing, getRepartoPagos } from "@/lib/api/profit-sharing-server";
+import { listUsers } from "@/lib/api/users-server";
+import { Degradaciones } from "@/lib/api/degradar";
 import { getMe } from "@/lib/api/me";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { rangoFiltro } from "@/lib/admin/url-params";
+import {
+  filasFueraDelReparto,
+  mesDePeriodo,
+  modoPagosReparto,
+  puedeRegistrarPagosSocio,
+  type UsuarioEntrega,
+} from "@/lib/admin/reparto-pagos";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { EmptyState } from "@/components/admin/empty-state";
 import {
@@ -48,10 +63,60 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   // (p. ej. `?hasta=` de un mes pasado): se endereza aquí también.
   if (desde > hasta) [desde, hasta] = [hasta, desde];
 
-  const [result, me] = await Promise.all([
+  // PAGOS A SOCIOS (1-oct-2026): solo con un MES completo. La lectura nunca
+  // lanza (API previo / sin migración / fallo se pintan distinto) y la lista
+  // de «Entregó» es ACCESORIA: solo para quien registra y `/v1/users` es de
+  // ADMIN (a otro rol se le ofrece «yo» y el API pone el default).
+  const mes = mesDePeriodo(desde, hasta);
+  const degradado = new Degradaciones();
+  const mePromesa = getMe();
+  const [result, me, cargaPagos, usuariosRes] = await Promise.all([
     getProfitSharing({ desde, hasta }),
-    getMe(),
+    mePromesa,
+    mes ? getRepartoPagos(mes) : Promise.resolve(null),
+    mes
+      ? mePromesa.then((m) =>
+          puedeRegistrarPagosSocio(m.rol) && m.rol === "ADMIN"
+            ? degradado.opcional(
+                "la lista de personas que entregan los pagos",
+                listUsers({ estado: "ACTIVO", limit: 200 }),
+                null,
+              )
+            : null,
+        )
+      : Promise.resolve(null),
   ]);
+  const hoy = todayCancun();
+  const modoPagos = modoPagosReparto(mes, cargaPagos);
+  const usuarios: UsuarioEntrega[] = (usuariosRes?.data ?? [])
+    .filter((u) => u.estado === "ACTIVO" && !u.es_piloto_externo)
+    .map((u) => ({ id: u.id, nombre: u.nombre }));
+  const contextoPagos: ContextoPagosAvion = {
+    modo: modoPagos,
+    puedeRegistrar: puedeRegistrarPagosSocio(me.rol),
+    usuarios,
+    me: { id: me.id, nombre: me.nombre },
+    hoy,
+    rol: me.rol,
+  };
+  // Pagos del mes de aviones SIN tarjeta (dados de baja): el cálculo solo
+  // trae aviones activos, pero esos pagos existen y se tienen que poder ver,
+  // corregir o eliminar.
+  const pagosFuera =
+    modoPagos.modo === "ok"
+      ? filasFueraDelReparto(
+          modoPagos.datos.filas,
+          result.aviones.map((a) => a.aeronave.id),
+        )
+      : [];
+  const seccionFuera =
+    modoPagos.modo === "ok" ? (
+      <PagosFueraDelRepartoSection
+        filas={pagosFuera}
+        mes={modoPagos.mes}
+        contexto={contextoPagos}
+      />
+    ) : null;
   // Resumen del TC oficial de respaldo (aditivo: el API previo no lo manda).
   const tcOficial = result.tc_oficial ?? null;
 
@@ -70,7 +135,9 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
         <ReportDownloads desde={desde} hasta={hasta} rol={me.rol} />
       </div>
 
-      <PeriodSelector initial={{ desde, hasta }} />
+      <PeriodSelector initial={{ desde, hasta }} atajoMesPasado hoy={hoy} />
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
         <InformationCircleIcon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
@@ -121,18 +188,29 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
       </div>
 
       {result.aviones.length === 0 ? (
-        <EmptyState
-          icon={ChartPieIcon}
-          title="Sin aeronaves activas"
-          description="No hay datos para repartir en el periodo."
-        />
+        <>
+          <EmptyState
+            icon={ChartPieIcon}
+            title="Sin aeronaves activas"
+            description="No hay datos para repartir en el periodo."
+          />
+          {seccionFuera}
+        </>
       ) : (
         <>
           <KpiStrip
             aviones={result.aviones}
             otrosIngresos={result.otros_ingresos_vuelatour}
           />
-          <div className="grid gap-4 lg:grid-cols-2">
+          <PagosSociosSection modo={modoPagos} rol={me.rol} meId={me.id} hoy={hoy} />
+          {/* Con pagos la tabla de socios tiene 5 columnas: en dos columnas
+              de tarjetas no cabe antes de 2xl (en una laptop de 1366–1535 px
+              el ESTATUS quedaba fuera de vista). */}
+          <div
+            className={
+              modoPagos.modo === "ok" ? "grid gap-4 2xl:grid-cols-2" : "grid gap-4 lg:grid-cols-2"
+            }
+          >
             {result.aviones.map((a) => (
               <AvionRepartoCard
                 key={a.aeronave.id}
@@ -140,9 +218,11 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 desde={desde}
                 hasta={hasta}
                 puedeDescargarBalance={me.rol === "ADMIN" || me.rol === "ANALISTA"}
+                pagos={contextoPagos}
               />
             ))}
           </div>
+          {seccionFuera}
         </>
       )}
 

@@ -38,6 +38,8 @@ export const BUCKETS_FIRMABLES = [
   "documentos-flota",
   "ingresos",
   "inventario-fotos",
+  // Comprobantes de los pagos a socios del reparto (1-oct-2026, API 0.0.49).
+  "reparto-comprobantes",
 ] as const;
 
 export type BucketFirmable = (typeof BUCKETS_FIRMABLES)[number];

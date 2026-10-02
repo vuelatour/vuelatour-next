@@ -29,6 +29,13 @@ import {
   itemPreCierreVisible,
   textoConteoPreCierre,
 } from "@/lib/admin/pre-cierre-items";
+import {
+  CLAVE_PRECIERRE_PAGOS_SOCIOS,
+  conteoPreCierrePagosSocios,
+  hrefPagosSocios,
+  lineasPreCierrePagosSocios,
+} from "@/lib/admin/reparto-pagos";
+import type { PreCierreSocioPendiente } from "@/types/reparto-pagos";
 
 interface PreCierreVuelo {
   id: string;
@@ -90,6 +97,9 @@ interface PreCierreItem {
       NO pudo leer el dato y manda count 0. El renglón se pinta igual con
       «sin verificar» — un 0 por lectura fallida no es «no hay». */
   lectura_fallida?: boolean;
+  /** ADITIVO (pagos_socios_pendientes, 1-oct-2026, API 0.0.49): socios con
+      utilidad del mes sin pagar o con pago parcial (máx. 50). */
+  socios?: PreCierreSocioPendiente[];
 }
 
 interface PreCierre {
@@ -144,6 +154,9 @@ const LINK_POR_CLAVE: Record<
   grupo_con_saldo: (p) => `/admin/quotes/grupo?desde=${p.desde}&hasta=${p.hasta}`,
   // Sobre descuadrado: se re-parte desde Cobros del grupo.
   sobres_descuadrados: (p) => `/admin/quotes/grupo?desde=${p.desde}&hasta=${p.hasta}`,
+  // Pagos a socios del mes (1-oct-2026): el reparto del MISMO periodo, donde
+  // se registra cada pago.
+  [CLAVE_PRECIERRE_PAGOS_SOCIOS]: hrefPagosSocios,
 };
 
 function fmtMonto(item: PreCierreItem): string | null {
@@ -240,6 +253,23 @@ export async function PreCierreCard({
               MAX_TRAMOS_TACOS,
               item.count,
             );
+            // Socios con pago pendiente: líneas del helper PURO (montos del API).
+            const esPagosSocios = item.clave === CLAVE_PRECIERRE_PAGOS_SOCIOS;
+            const sociosPendientes = lineasPreCierrePagosSocios(
+              item.socios,
+              undefined,
+              esPagosSocios ? item.count : null,
+            );
+            // Su `count` son PAGOS (avión × socio), no socios: se rotula
+            // «8 pagos pendientes (2 socios)» para no chocar con «N socios
+            // con pago pendiente» del reparto. Con la lectura fallida manda
+            // «sin verificar», como en todo renglón.
+            const conteo =
+              esPagosSocios && item.lectura_fallida !== true
+                ? conteoPreCierrePagosSocios(item.count, item.socios)
+                : textoConteoPreCierre(item);
+            // Con la lista del panel, el `detalle` del API la repetiría.
+            const ocultarDetalle = esPagosSocios && sociosPendientes.lineas.length > 0;
             return (
               <div
                 key={item.clave}
@@ -261,15 +291,17 @@ export async function PreCierreCard({
                         info ? "text-sky-700 dark:text-sky-300" : "text-amber-600"
                       }`}
                     >
-                      · {textoConteoPreCierre(item)}
+                      · {conteo}
                     </span>
                     {monto && (
                       <span className="text-muted-foreground"> · {monto}</span>
                     )}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {item.detalle}
-                  </p>
+                  {!ocultarDetalle && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {item.detalle}
+                    </p>
+                  )}
                   {item.vuelos && item.vuelos.length > 0 && (
                     <p className="text-xs mt-1 flex flex-wrap gap-1.5">
                       {item.vuelos.slice(0, 8).map((v) => (
@@ -331,6 +363,20 @@ export async function PreCierreCard({
                       {tacos.restantes > 0 && (
                         <li className="text-muted-foreground">
                           y {tacos.restantes} más…
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                  {sociosPendientes.lineas.length > 0 && (
+                    <ul className="text-xs mt-1 space-y-0.5" data-precierre-socios>
+                      {sociosPendientes.lineas.map((l) => (
+                        <li key={l.key} className="text-muted-foreground">
+                          {l.texto}
+                        </li>
+                      ))}
+                      {sociosPendientes.restantes > 0 && (
+                        <li className="text-muted-foreground">
+                          y {sociosPendientes.restantes} más…
                         </li>
                       )}
                     </ul>
