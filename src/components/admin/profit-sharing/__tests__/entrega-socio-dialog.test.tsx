@@ -131,9 +131,16 @@ const radio = (html: string, texto: string) =>
 const botones = (html: string) => html.match(/<button[^>]*>/g) ?? [];
 
 describe("«Registrar entrega»", () => {
-  const html = renderToStaticMarkup(
-    <FormularioEntrega dialogo={{ tipo: "alta", contexto: CONTEXTO }} onCerrar={() => {}} registro={REGISTRO} />,
-  );
+  // El marcado se arma DENTRO de beforeAll (no en el cuerpo del describe):
+  // el cuerpo corre al recolectar, ANTES del `vi.setSystemTime` de arriba, y
+  // el «hoy» del formulario salía con la fecha real (2-oct-2026 rompió la
+  // prueba de la fecha).
+  let html = "";
+  beforeAll(() => {
+    html = renderToStaticMarkup(
+      <FormularioEntrega dialogo={{ tipo: "alta", contexto: CONTEXTO }} onCerrar={() => {}} registro={REGISTRO} />,
+    );
+  });
 
   it("socio fijo en el título y «Por entregar hoy» a la vista", () => {
     expect(html).toContain("Registrar entrega a Mauricio Roque");
