@@ -174,6 +174,8 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 desde={desde}
                 hasta={hasta}
                 puedeDescargarBalance={me.rol === "ADMIN" || me.rol === "ANALISTA"}
+                rol={me.rol}
+                usuarioId={me.id}
               />
             ))}
           </div>

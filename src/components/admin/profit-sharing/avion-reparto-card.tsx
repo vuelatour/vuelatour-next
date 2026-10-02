@@ -35,6 +35,8 @@ export function AvionRepartoCard({
   desde,
   hasta,
   puedeDescargarBalance = true,
+  rol = null,
+  usuarioId = null,
 }: {
   avion: AvionReparto;
   desde: string;
@@ -42,6 +44,10 @@ export function AvionRepartoCard({
   /** El endpoint del balance es ADMIN/ANALISTA: al SOCIO no se le pinta un
    *  botón que siempre respondería 403. */
   puedeDescargarBalance?: boolean;
+  /** Quién mira (rol + usuario): decide el atajo a la cuenta de cada socio
+   *  en la tabla de reparto (`hrefCuentaSocioDesdeReparto`). */
+  rol?: string | null;
+  usuarioId?: string | null;
 }) {
   const positivo = avion.saldo_disponible_usd >= 0;
   const totalVuelos =
@@ -260,6 +266,8 @@ export function AvionRepartoCard({
           socios={avion.reparto}
           porcentajeTotal={avion.reparto_porcentaje_total}
           aeronaveId={avion.aeronave.id}
+          rol={rol}
+          usuarioId={usuarioId}
         />
 
         {detalle && <DesgloseSection detalle={detalle} />}

@@ -1160,6 +1160,28 @@ export function hrefCuentaSocio(
   return `${RUTA_PAGOS_SOCIOS}/${socioId}${q ? `?${q}` : ""}`;
 }
 
+/** `title`/`aria-label` del atajo a la cuenta desde la tabla de socios de un
+ *  avión (Reparto de utilidades), 2-oct-2026: «al lado del nombre del socio
+ *  puede mandar al detalle para pagar al socio». */
+export const TITULO_ATAJO_CUENTA_SOCIO = "Ver la cuenta del socio y registrar una entrega";
+export const ETIQUETA_ATAJO_CUENTA_SOCIO = "Ver cuenta";
+
+/**
+ * Href del atajo a la cuenta de un socio desde el reparto por avión, o `null`
+ * cuando no se pinta: el rol no lee cuentas, o es SOCIO y la cuenta es de
+ * OTRO socio (el API responde 403 `SOCIO_SOLO_SU_CUENTA`; un enlace a esa
+ * pantalla no le sirve). Sin rol conocido (`/me` falló) no se ofrece nada:
+ * aquí el enlace es un atajo, no la única puerta.
+ */
+export function hrefCuentaSocioDesdeReparto(
+  quien: { rol: string | null | undefined; usuarioId: string | null | undefined },
+  socioId: string,
+): string | null {
+  if (!puedeVerCuentasSocios(quien.rol)) return null;
+  if (quien.rol === "SOCIO" && quien.usuarioId !== socioId) return null;
+  return hrefCuentaSocio(socioId);
+}
+
 /** Usuario elegible como «Entregó». */
 export interface UsuarioEntrega {
   id: string;

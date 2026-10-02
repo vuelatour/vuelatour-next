@@ -421,6 +421,48 @@ describe("Reparto de utilidades: «Socios · por entregar»", () => {
     expect(html).toContain("$1,395.94");
     expect(html).not.toMatch(/Pagado|Pendiente|Estatus|Registrar/);
   });
+
+  it("tabla por avión: el NOMBRE del socio es un atajo a su cuenta («Ver cuenta ›») para quien lee cuentas; un SOCIO solo ve el suyo; sin permiso, texto plano", () => {
+    const hrefMauricio = `/admin/profit-sharing/socios/${MAURICIO}`;
+    const admin = renderToStaticMarkup(
+      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} rol="ADMIN" usuarioId={ALE.id} />,
+    );
+    expect(admin).toContain(`href="${hrefMauricio}"`);
+    expect(admin).toContain(`aria-label="Ver cuenta de Mauricio Roque"`);
+    expect(admin).toContain("Ver la cuenta del socio y registrar una entrega");
+    expect(admin).toContain("Ver cuenta ›");
+    // cursor-pointer en el enlace (regla del cliente: lo clicable se nota).
+    expect(admin).toMatch(/<a[^>]*cursor-pointer[^>]*href="[^"]*socios\/[^"]*"/);
+    // Cada socio de la tabla lleva su propio atajo.
+    for (const s of AVIONES[0].reparto) {
+      expect(admin).toContain(`href="/admin/profit-sharing/socios/${s.socio_id}"`);
+    }
+
+    const socio = renderToStaticMarkup(
+      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} rol="SOCIO" usuarioId={MAURICIO} />,
+    );
+    expect(socio).toContain(`href="${hrefMauricio}"`);
+    expect(socio).not.toContain(`href="/admin/profit-sharing/socios/${ACC}"`);
+    expect(socio).not.toContain(`href="/admin/profit-sharing/socios/${SAAB}"`);
+
+    const coordinador = renderToStaticMarkup(
+      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} rol="COORDINADOR" usuarioId={ALE.id} />,
+    );
+    expect(coordinador).not.toContain("/admin/profit-sharing/socios/");
+    expect(coordinador).toContain("Mauricio Roque");
+
+    // Sin rol (como lo montaba la tarjeta antes de este cambio): sin atajo.
+    const sinRol = renderToStaticMarkup(
+      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} />,
+    );
+    expect(sinRol).not.toContain("/admin/profit-sharing/socios/");
+
+    // CABLEADO: la tarjeta pasa rol y usuario, y la página se los da.
+    const card = readFileSync(path.join(process.cwd(), "src/components/admin/profit-sharing/avion-reparto-card.tsx"), "utf8");
+    expect(card).toMatch(/<SociosSection[\s\S]*rol=\{rol\}[\s\S]*usuarioId=\{usuarioId\}/);
+    const pagina = readFileSync(path.join(process.cwd(), "src/app/admin/profit-sharing/page.tsx"), "utf8");
+    expect(pagina).toMatch(/<AvionRepartoCard[\s\S]*rol=\{me\.rol\}[\s\S]*usuarioId=\{me\.id\}/);
+  });
 });
 
 describe("piezas de las páginas (renderizadas de verdad)", () => {

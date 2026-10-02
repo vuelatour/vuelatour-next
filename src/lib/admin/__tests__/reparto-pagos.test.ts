@@ -73,6 +73,9 @@ import {
   hintMontoPago,
   hintTcPago,
   hrefCuentaSocio,
+  hrefCuentaSocioDesdeReparto,
+  ETIQUETA_ATAJO_CUENTA_SOCIO,
+  TITULO_ATAJO_CUENTA_SOCIO,
   hrefPrecierreSocios,
   importesMovimiento,
   kpiSaldoCuenta,
@@ -1093,5 +1096,37 @@ describe("entregas fechadas ANTES del arranque de la cuenta", () => {
     );
     expect(avisoFechaAntesDelArranque("2026-09-01", "2026-09")).toBeNull();
     expect(avisoFechaAntesDelArranque("", "2026-09")).toBeNull();
+  });
+});
+
+// =============================================================================
+// Atajo a la cuenta del socio desde la tabla de reparto por avión (2-oct-2026)
+// =============================================================================
+describe("hrefCuentaSocioDesdeReparto (atajo «Ver cuenta ›» en la tabla por avión)", () => {
+  const SOCIO_A = "50c10000-0000-4000-8000-0000000000a1";
+  const SOCIO_B = "50c10000-0000-4000-8000-0000000000b2";
+  const OFICINA = "0f1c0000-0000-4000-8000-0000000000c3";
+
+  it("ADMIN, ANALISTA y FACTURACION ven el atajo de cualquier socio (el mismo href de la cuenta)", () => {
+    for (const rol of ["ADMIN", "ANALISTA", "FACTURACION"]) {
+      expect(hrefCuentaSocioDesdeReparto({ rol, usuarioId: OFICINA }, SOCIO_A)).toBe(hrefCuentaSocio(SOCIO_A));
+    }
+  });
+
+  it("un SOCIO solo ve el atajo de SU cuenta (la de otro socio respondería 403)", () => {
+    expect(hrefCuentaSocioDesdeReparto({ rol: "SOCIO", usuarioId: SOCIO_A }, SOCIO_A)).toBe(hrefCuentaSocio(SOCIO_A));
+    expect(hrefCuentaSocioDesdeReparto({ rol: "SOCIO", usuarioId: SOCIO_A }, SOCIO_B)).toBeNull();
+    expect(hrefCuentaSocioDesdeReparto({ rol: "SOCIO", usuarioId: null }, SOCIO_A)).toBeNull();
+  });
+
+  it("COORDINADOR, PILOTO, sin rol o rol vacío: sin atajo (no leen cuentas)", () => {
+    for (const rol of ["COORDINADOR", "PILOTO", "MECANICO", "VISITANTE", "", null, undefined]) {
+      expect(hrefCuentaSocioDesdeReparto({ rol, usuarioId: OFICINA }, SOCIO_A)).toBeNull();
+    }
+  });
+
+  it("textos congelados", () => {
+    expect(ETIQUETA_ATAJO_CUENTA_SOCIO).toBe("Ver cuenta");
+    expect(TITULO_ATAJO_CUENTA_SOCIO).toBe("Ver la cuenta del socio y registrar una entrega");
   });
 });

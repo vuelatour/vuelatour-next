@@ -9,6 +9,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import {
+  ETIQUETA_ATAJO_CUENTA_SOCIO,
+  TITULO_ATAJO_CUENTA_SOCIO,
+  hrefCuentaSocioDesdeReparto,
+} from "@/lib/admin/reparto-pagos";
 import type { RepartoSocio } from "@/types/profit-sharing";
 
 /** Paleta fija del design system para distinguir socios (máx. 4 y cicla). */
@@ -27,16 +32,25 @@ function iniciales(nombre: string): string {
  * Reparto a socios de un avión: barra apilada de porcentajes + tabla «Socio ·
  * % · Utilidad del periodo». Los montos vienen del API (mismo saldo). Lo
  * entregado y lo por entregar NO van aquí: viven en la cuenta corriente de
- * cada socio («Socios · por entregar» arriba y «Pagos a socios»).
+ * cada socio («Socios · por entregar» arriba y «Pagos a socios»). Desde el
+ * 2-oct-2026 el NOMBRE del socio es un atajo a esa cuenta (donde está
+ * «Registrar entrega»): pedido del cliente «al lado del nombre del socio
+ * puede mandar al detalle para pagar al socio». Quién ve el atajo lo decide
+ * `hrefCuentaSocioDesdeReparto` (rol + usuario: un SOCIO solo la suya).
  */
 export function SociosSection({
   socios,
   porcentajeTotal,
   aeronaveId,
+  rol = null,
+  usuarioId = null,
 }: {
   socios: RepartoSocio[];
   porcentajeTotal: number;
   aeronaveId: string;
+  /** Rol y usuario de quien mira (para el atajo a la cuenta del socio). */
+  rol?: string | null;
+  usuarioId?: string | null;
 }) {
   if (socios.length === 0) {
     return (
@@ -113,9 +127,37 @@ export function SociosSection({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {socios.map((s, i) => (
+          {socios.map((s, i) => {
+            const hrefCuenta = hrefCuentaSocioDesdeReparto({ rol, usuarioId }, s.socio_id);
+            return (
             <TableRow key={`${s.socio_id}-${i}`}>
-              <TableCell className="text-sm">{s.socio_nombre}</TableCell>
+              <TableCell className="text-sm">
+                {hrefCuenta ? (
+                  // Atajo a la cuenta del socio (ahí vive «Registrar
+                  // entrega»): el nombre es el enlace y el «Ver cuenta ›» a
+                  // su lado lo hace evidente sin leer el tooltip.
+                  <span className="inline-flex flex-wrap items-baseline gap-x-2">
+                    <Link
+                      href={hrefCuenta}
+                      title={TITULO_ATAJO_CUENTA_SOCIO}
+                      aria-label={`${ETIQUETA_ATAJO_CUENTA_SOCIO} de ${s.socio_nombre}`}
+                      className="cursor-pointer font-medium hover:underline underline-offset-2"
+                    >
+                      {s.socio_nombre}
+                    </Link>
+                    <Link
+                      href={hrefCuenta}
+                      tabIndex={-1}
+                      aria-hidden
+                      className="cursor-pointer text-[11px] text-brand-600 hover:underline dark:text-brand-400"
+                    >
+                      {ETIQUETA_ATAJO_CUENTA_SOCIO} ›
+                    </Link>
+                  </span>
+                ) : (
+                  s.socio_nombre
+                )}
+              </TableCell>
               <TableCell className="text-right font-mono text-xs">
                 {fmtDecimal(s.porcentaje)}%
               </TableCell>
@@ -123,7 +165,8 @@ export function SociosSection({
                 {fmtUsd(s.monto_usd)}
               </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </div>
