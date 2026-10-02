@@ -4916,107 +4916,180 @@ ninguna alerta. Solo panel (sin API ni migración).
 - Al guardar desde «Verificar / editar» la carga queda sellada como verificada
   por oficina, igual que en Gastos.
 
-## Pagos a socios del reparto de utilidades (1-oct-2026, API 0.0.49)
+## Pagos a socios: CUENTA CORRIENTE de cada socio (v2, 1-oct-2026, API 0.0.50)
 
-Pedido del cliente (captura de `/admin/profit-sharing`): «cada socio debe
-recibir los pagos de lo que generó el avión en el mes, por ejemplo septiembre
-que acaba de cerrar … un apartado donde siga algo como: Mauricio Roque, %,
-Monto de utilidad, estatus de si ya se pagó o aún no, con cuánto se le pagó,
-cuándo y quién se lo entregó». Contrato con el API 0.0.49 (tabla
-`reparto_pago`, migración `20261001000001`, bucket privado
-`reparto-comprobantes`).
+Aclaración del cliente (audio del 1-oct-2026, sobre la v1 de esa misma
+tarde): «cuando el socio dice: necesito que me adelanten 70,000 pesos de mis
+utilidades, necesitamos poder grabarlo en algún lado y que se lleve el
+HISTÓRICO de cuánto se le ha ido repartiendo a los socios, cuánto falta por
+repartir, cómo se le repartió (transferencia o efectivo), la fecha de la
+entrega y algún comprobante escaneado». No es un estatus por mes y avión (la
+v1, retirada): es una CUENTA CORRIENTE por socio. Contrato con el API 0.0.50
+(tablas `reparto_pago` + `reparto_cuenta_socio`, migraciones
+`20261001000001` y `20261002000001`, bucket privado `reparto-comprobantes`).
 
-- **El dinero es del API**: utilidad (el `compute()` del mes), pagado,
-  pendiente, exceso, estatus y el equivalente en USD de un pago en pesos. El
-  panel solo pinta; `estadoPagoSocio` es un ESPEJO que solo se usa si llega un
-  estado desconocido. La utilidad de la tabla es la del renglón de pagos
-  (misma fuente que pagado/pendiente) y, sin renglón, la del reparto.
-- **Solo con un MES completo** (`mesDePeriodo`: desde = día 1, hasta = último
-  día; el mes en curso cortado en hoy NO cuenta). Si no, la tabla de socios es
-  la de siempre, una línea tenue dice `TEXTO_SOLO_MES_COMPLETO` y, debajo de
-  los KPIs, UNA tarjeta compacta «Pagos a socios» con **«Ver Septiembre
-  2026»** (el mes recién cerrado). `PeriodSelector` (prop opcional
-  `atajoMesPasado`, solo en esta página) trae el **selector de MES**
-  (`MesReporteSelect`, etiqueta «Mes»: empuja `desde`/`hasta` en UNA
-  navegación) y el atajo **«Mes pasado · Septiembre 2026»**.
-- **Tarjeta de cada avión** (`SociosSection` con el contexto opcional
-  `pagos`): «Socio · % · Utilidad · Pagado · Pendiente · Estatus» (5
-  columnas: el % va BAJO el nombre y el nombre hace salto de línea; con pagos
-  las tarjetas pasan a `2xl:grid-cols-2`, si no el estatus quedaba fuera de
-  vista en una laptop) y, por socio, la relación (`PagosSocioDetalle`: fecha · monto con moneda y T.C. ·
-  método · entregó · recibió/factura · referencia · comprobante · «Registró …»)
-  con «Editar», «Eliminar» (diálogo con MOTIVO 5–300; el DELETE sale solo de
-  ahí) y «Registrar pago». Sin utilidad o socio no vigente no se ofrece el
-  alta y se DICE por qué. Socio que ya no es vigente con pagos del mes: al
-  final, «ya no vigente» + el `aviso` del API.
-- **Sección «Pagos a socios · <Mes>»** (`PagosSociosSection`, debajo de los
-  KPIs): consolidado por socio con totales y «N socios con pago pendiente»;
-  SOCIO ve solo su renglón y sin totales.
-- **Diálogo** (`pago-socio-dialog.tsx`): prellenado con el PENDIENTE del API,
-  USD, hoy Cancún y «Entregó» = yo; el **método NO se prellena** (regla del
-  3-sep: un medio de pago por defecto se cuela sin revisar). Un
-  `client_request_id` por apertura; el 409 `PAGO_EXCEDE_UTILIDAD` se vuelve la
-  confirmación «¿Registrar de todas formas?» que reintenta con
-  `aceptar_exceso` y el MISMO id. Comprobante opcional: se sube DESPUÉS del
-  alta, del navegador directo al API (`lib/api/reparto-pagos-browser.ts`,
-  tope de 4.5 MB de Vercel); si falla, el toast dice que el pago SÍ quedó.
-  «Entregó» = usuarios activos (`/v1/users` es solo ADMIN: a otro rol se le
-  ofrece «yo» y el API pone el default).
-- **Carga** (`getRepartoPagos`, nunca lanza): `disponible:false` / 404 / 503
-  con `PAGOS_SOCIOS_NO_DISPONIBLE` ⇒ «Disponible cuando se actualice el
-  servidor»; 401/403 ⇒ nada; red / 500 / el 503 de un deploy ⇒ «No se
-  pudieron cargar los pagos a socios» (jamás «sin pagos»).
-- **Errores** (`mensajeErrorPagoSocio`): el texto del API en español gana; el
-  panel solo redacta lo técnico, lo que viene en inglés y los casos en que él
-  mismo refresca la lista (`errorPideRefrescar`: PAGO_NO_EXISTE,
-  PAGO_CAMBIO_CONCURRENTE, COMPROBANTE_CAMBIO).
-- **Pre-cierre**: el renglón `pagos_socios_pendientes` lista los socios
-  (`lineasPreCierrePagosSocios`) y «Resolver →» lleva al reparto del MISMO
-  periodo.
+- **El dinero es del API**: saldo = saldo inicial + Σ utilidades (por MES y
+  avión, `compute()` mes a mes desde el arranque de la cuenta hasta el mes en
+  curso) − Σ entregas. Generado, entregado, por entregar, saldo corrido,
+  estado (`AL_CORRIENTE` |saldo| ≤ $1 · `POR_ENTREGAR` · `ADELANTADO` saldo <
+  −$1) y el equivalente en USD de una entrega en pesos llegan calculados. El
+  panel solo pinta; `estadoCuentaSocio` es un ESPEJO para un estado que no
+  reconoce y `generadoPorSocioEnPeriodo` solo SUMA (en centavos) lo que ya
+  está en las tarjetas del reparto.
+- **Un adelanto NO es un error**: es una entrega que deja el saldo en
+  negativo (azul «Adelantado», a favor de VuelaTour; se descuenta de las
+  siguientes utilidades). El 409 `PAGO_EXCEDE_SALDO` se vuelve la
+  confirmación «Esta entrega de $X USD supera lo que hay por entregar ($Y
+  USD). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour
+  por $Z USD. ¿Registrar?» (X, Y, Z del `details` del API;
+  `confirmacionAdelanto`), que reintenta con `aceptar_exceso` y la MISMA
+  `client_request_id`. La decisión tras guardar es PURA
+  (`pasoTrasGuardarEntrega`).
+- **Convención de columnas (la del API, `reparto-cuenta.util.ts`)**:
+  `cargo_usd` SUMA a lo por entregar (utilidad —negativa en un mes con
+  pérdida— o saldo inicial a su favor) y `abono_usd` RESTA (entregas o saldo
+  inicial ya adelantado). El panel las rotula «Generó (+)» y «Entregado (−)»
+  (`importesMovimiento` → `{suma, resta}`), nunca «cargo/abono».
+- **Pantallas**:
+  1. Menú «Pagos a socios» en Tesorería (`/admin/profit-sharing/socios`,
+     ADMIN · FACTURACION · ANALISTA · SOCIO). FACTURACION entra aunque no vea
+     el reparto. El sidebar marca el href MÁS LARGO (`itemNavActivo`): sin
+     eso «Reparto de utilidades» y «Pagos a socios» salían activos a la vez.
+  2. `/admin/profit-sharing/socios` (`SociosCuentaTable`, tabla de RESUMEN
+     con totales): Socio (aviones y %, avisos del API, «Cuenta sin
+     configurar») · Generado («incluye $X de <mes> (en curso…)») · Entregado ·
+     Saldo por entregar (con signo; «adelantado» en azul debajo cuando lo
+     está) · Estatus · Última entrega · «Registrar entrega» / «Ver cuenta» /
+     «Configurar cuenta». KPIs: por entregar (solo saldos a favor
+     de los socios: un adelanto no compensa a otro), adelantado, socios por
+     entregar y adelantados. Banner de cuentas sin configurar.
+  3. `/admin/profit-sharing/socios/[id]` (estado de cuenta): encabezado con
+     generado / entregado / **por entregar HOY** (o «Adelantado (a favor de
+     VuelaTour)» sin signo, `kpiSaldoCuenta`) / estatus (los `totales` del
+     API son de TODA la cuenta hoy aunque el filtro sea otro), avisos,
+     banner de cuenta sin configurar POR ROL, filtro Desde/Hasta en meses en
+     la URL (`?desde=YYYY-MM&hasta=YYYY-MM`), movimientos con saldo corrido (`MovimientosCuenta`:
+     saldo inicial/anterior, una utilidad por mes y avión, el mes en curso
+     marcado, cada entrega con monto/T.C./≈USD · método · entregó ·
+     recibió/factura · referencia · «corresponde a» · notas · comprobante,
+     «Editar» y «Eliminar») y «Por mes» (`ResumenMesesCuenta`). Un id que no
+     es uuid o un socio inexistente ⇒ `notFound()`; un SOCIO viendo otra
+     cuenta ⇒ «Solo puedes ver tu propia cuenta».
+  4. Reparto de utilidades: «Socios · por entregar»
+     (`SociosPorEntregarSection`) con CUALQUIER periodo: Socio · «Generó en
+     <Mes>» (o «Generó del … al …») · Saldo por entregar (acumulado) ·
+     Estatus · «Registrar entrega» (con un mes completo, prellena ese mes en
+     «Corresponde a») · «Ver cuenta». La tabla de cada avión volvió a
+     «Socio · % · Utilidad del periodo» (`SociosSection`, sin contexto de
+     pagos); el atajo «Mes pasado» y el selector de mes se quedan.
+- **Diálogo «Registrar entrega»** (`entrega-socio-dialog.tsx`, UNO solo para
+  las tres pantallas, `BotonRegistrarEntrega`): socio fijo, «Por entregar
+  hoy: $X USD» (o «Adelantado: $X USD a favor de VuelaTour»), monto
+  prellenado con lo por entregar si es positivo, USD; al pasar a MXN el monto
+  prellenado se vacía y el T.C. se prellena con el oficial de HOY
+  (`getContextoRegistro` → `getTipoCambioOficial`; sin dato, vacío); fecha =
+  hoy Cancún calculado AL ABRIR (no futura); método SIN prellenar; «Entregó»
+  = yo; recibió, folio de factura, referencia, notas; «Corresponde a» mes y
+  avión OPCIONALES (informativos: «Sin mes (a cuenta)» / «Sin avión»;
+  desde el Reparto con un MES completo llega prellenado con ese mes; en la
+  edición también se corrigen — el PATCH del API acepta
+  `aeronave_id`/`mes`, `null` los quita). Un `client_request_id` por
+  apertura; no se cierra mientras guarda o sube. Tras registrar, PASO 2
+  «Entrega registrada» con el saldo que quedó y «Adjuntar comprobante»
+  (del navegador directo al API, `lib/api/reparto-pagos-browser.ts`); si la
+  subida falla, la entrega SÍ quedó y se reintenta ahí o desde su renglón.
+- **«Configurar cuenta»** (`cuenta-socio-dialog.tsx`, ADMIN/FACTURACION,
+  `PUT /socios/:id/cuenta`): mes de arranque (últimos 36 meses, espejo de
+  `MESES_CUENTA_MAX`) + saldo inicial USD (negativo = ya se le había
+  adelantado; máximo 2 decimales, se RECHAZA en vez de redondear) + notas.
+  Sin configurar, el API arranca en septiembre 2026 con saldo 0
+  (`configurada:false`). Cambiar una cuenta YA configurada pide confirmación
+  (el saldo se recalcula; las entregas no cambian).
+- **Eliminar una entrega**: diálogo con MOTIVO 5–300 (`EliminarEntregaDialog`,
+  el DELETE sale solo de ahí; soft delete en el API).
+- **Carga** (`getSociosCuenta`, `getEstadoCuentaSocio`, nunca lanzan):
+  `disponible:false` / 404 «Cannot GET» / 503 `CUENTA_SOCIO_NO_DISPONIBLE` ⇒
+  «Disponible cuando se actualice el servidor»; 401/403 ⇒ sin permiso; 404
+  `SOCIO_NO_EXISTE` ⇒ no existe; red / 500 / el 503 de un deploy ⇒
+  `TarjetaErrorCarga` (jamás «sin socios»). `getContextoRegistro` (lista de
+  «Entregó» = `/v1/users`, solo ADMIN, y T.C. oficial) es ACCESORIO y solo
+  se pide para quien registra.
+- **Errores** (`mensajeErrorCuentaSocio`): el texto del API en español gana;
+  el panel redacta lo técnico/inglés y los casos en que refresca solo
+  (`errorPideRefrescar`: PAGO_NO_EXISTE, PAGO_CAMBIO_CONCURRENTE,
+  COMPROBANTE_CAMBIO).
+- **Pre-cierre**: `socios_por_entregar` y `socios_adelantados` (no
+  bloqueantes) listan los socios con su saldo (`lineasPreCierreSocios`) y
+  «Resolver →» lleva a «Pagos a socios». El conteo es de SOCIOS
+  (`textoConteoPreCierre`, «sin verificar» con la lectura fallida).
 - **Fuente única** `lib/admin/reparto-pagos.ts` (PURA); tipos 1:1 en
-  `types/reparto-pagos.ts`; actions en `app/admin/profit-sharing/actions.ts`.
-  Pruebas: `lib/admin/__tests__/reparto-pagos.test.ts`,
-  `app/admin/profit-sharing/__tests__/pagos-actions.test.ts`,
-  `lib/api/__tests__/reparto-pagos-browser.test.ts` y
-  `components/admin/profit-sharing/__tests__/pagos-socios.test.tsx`.
-- **Orden de deploy**: API 0.0.49 → panel (con el API previo: nota gris, nada
-  más). Migración cuando la aplique el orquestador.
+  `types/reparto-pagos.ts`; actions en `app/admin/profit-sharing/actions.ts`
+  (revalidan reparto, lista y estado de cuenta). Pruebas:
+  `lib/admin/__tests__/reparto-pagos.test.ts`,
+  `app/admin/profit-sharing/__tests__/cuenta-socios-actions.test.ts`,
+  `components/admin/profit-sharing/__tests__/cuentas-socios.test.tsx`,
+  `components/admin/profit-sharing/__tests__/entrega-socio-dialog.test.tsx`
+  y `lib/api/__tests__/reparto-pagos-browser.test.ts`.
+- **Retirado de la v1**: `PagosSociosSection`, `PagosFueraDelRepartoSection`,
+  `PagosSocioDetalle`, `PagoSocioDialog`, `EstadoPagoBadge`, la regla de
+  «mes completo», los estados PENDIENTE/PARCIAL/PAGADO/SIN_UTILIDAD y el
+  pre-cierre `pagos_socios_pendientes` / `pagos_socios_sobrepagados` (el API
+  0.0.50 responde 410 `PAGOS_POR_MES_RETIRADO` al `?mes=` de la v1).
+- **Orden de deploy**: API 0.0.50 → panel. Con el API 0.0.49 o sin la
+  migración 2 el panel dice «Disponible cuando se actualice el servidor».
 - **Revisión adversaria (1-oct-2026)** — lo que se corrigió:
-  - **Socio con dos vigencias en el mes** (cambio de % a medio mes): el
-    `compute()` lo manda DOS veces en el reparto y la tabla pintaba dos
-    renglones con la utilidad sumada en cada uno y dos «Registrar pago».
-    `agruparRepartoPorSocio` (espejo de `armarFilasPagos` del API) deja UN
-    renglón por socio (% y monto sumados en centavos, orden de la primera
-    aparición).
-  - **Pagos de aviones sin tarjeta** (dados de baja: el cálculo solo trae
-    activos) solo sumaban en «Pagado»: bloque «Pagos de aviones fuera del
-    reparto del mes» (`filasFueraDelReparto` + `PagosFueraDelRepartoSection`)
-    con su relación, «Editar» y «Eliminar».
-  - **«Hoy» del diálogo**: se calcula al ABRIR, en el navegador
-    (`todayCancun()`); el del servidor es respaldo. Con la pestaña abierta de
-    un día a otro prellenaba ayer y rechazaba la fecha de hoy.
-  - **No se cierra mientras guarda** (X, Esc, clic fuera): reabrir generaba
-    otro `client_request_id` y un pago parcial podía duplicarse.
-  - **Moneda**: en el alta, pasar a MXN sin tocar el monto lo VACÍA (el
-    prellenado es el pendiente en DÓLARES) y vuelve a USD restaurándolo
-    (`formAlCambiarMoneda`); la etiqueta dice «Monto entregado (USD|MXN)» y
-    la descripción «… pendiente $1,395.94 USD». Un monto tecleado y la
-    EDICIÓN no se tocan.
-  - Badge del consolidado: verde SOLO si hubo utilidad («Todos los socios con
-    utilidad están pagados»); mes con pérdida o sin renglones ⇒ gris «Sin
-    utilidad que repartir en el mes» (`badgeSociosPendientes`).
-  - `CLIENT_REQUEST_ID_EN_USO`: el panel gana (el API decía «La llave
-    client_request_id…»). Contador del motivo «3/300 · mínimo 5».
-  - Pre-cierre: el `count` son PAGOS (avión × socio) ⇒ «8 pagos pendientes (2
-    socios)» (`conteoPreCierrePagosSocios`) y, con la lista del panel, el
-    `detalle` del API no se repite.
-  - Nombres accesibles: «Registrar pago a Aero Charter… · N4142R · Septiembre
-    2026» y el comprobante «Adjuntar comprobante del pago del … por …».
-  - Tipos 1:1: `fila` de alta/edición/baja es `FilaPagoSocio | null`.
-    `estadoPagoSocio` mide el exceso contra `max(utilidad, 0)`, como el API.
-  - El diálogo se RENDERIZA en `__tests__/pago-socio-dialog.test.tsx`
-    (prellenado con el pendiente, USD, hoy, «Entregó» = yo, método sin
-    elegir, edición, bloque del exceso).
-- **Pendiente conocido**: FACTURACION puede registrar pagos según el API, pero
-  no abre esta página (`GET /v1/profit-sharing` es ADMIN/ANALISTA/SOCIO y el
-  menú tampoco la ofrece). Sin QA visual en navegador.
+  - **Entregas fechadas ANTES del arranque** (un dedazo de año, o «Configurar
+    cuenta» que mueve el arranque después de entregas que ya existen): el
+    API las suma en el renglón SALDO_ANTERIOR del `desde` por defecto y no
+    tenían renglón (ni Editar, ni Eliminar, ni comprobante).
+    `escondeEntregasAntesDelArranque` lo detecta (con `desde ≤ arranque`, un
+    SALDO_ANTERIOR solo puede ser eso), la página pide
+    `getEntregasAntesDelArranque` (`GET /pagos?socio_id&hasta=<día previo
+    al arranque>`, nunca lanza; null ⇒ ventana de 36 meses) y pinta
+    `AvisoEntregasPrevias` con «Ver entregas anteriores al arranque» →
+    `?desde=<mes de la más antigua>`. El selector arranca en el mes MÁS VIEJO
+    entre el arranque, el `desde` que se ve y esa entrega
+    (`opcionesFiltroMeses`). El diálogo avisa bajo la fecha
+    (`avisoFechaAntesDelArranque`, no bloquea).
+  - **Un `?desde=`/`?hasta=` que el API rechaza no deja la pantalla en un
+    error eterno**: `filtroMesesCuenta(desde, hasta, mesHoy)` recorta lo
+    futuro a hoy, descarta un `hasta` SUELTO y sube el `desde` al tope de
+    120 meses; y si aun así llega 400 `RANGO_INVALIDO`,
+    `getEstadoCuentaSocio` vuelve a pedir UNA vez sin filtro (`filtroIgnorado`
+    ⇒ `TEXTO_FILTRO_MESES_IGNORADO`). El selector manda SIEMPRE los dos meses
+    (`destinoFiltroMeses`).
+  - **Banner de cuenta sin configurar por ROL** (`textoCuentaNoConfigurada`,
+    `BannerCuentaNoConfigurada`): la instrucción «configura…» solo a
+    ADMIN/FACTURACION; ANALISTA/SOCIO leen un texto informativo («la oficina
+    la ajusta»; «Tu cuenta…» si es la propia). Igual el `title` de la
+    etiqueta «Cuenta sin configurar» de la tabla.
+  - **Adelantado sin signo raro**: el KPI dice «Adelantado (a favor de
+    VuelaTour)» con el monto en positivo; las tablas conservan el signo bajo
+    «Saldo por entregar» con la marca azul «adelantado»; el saldo corrido de
+    los movimientos se colorea (`claseTextoSaldoCorrido`).
+  - **«A cuenta», no «adelanto»**: una entrega sin mes es «A cuenta (sin
+    mes)» (`TEXTO_A_CUENTA`, opción «Sin mes (a cuenta)») y su renglón dice
+    «Entrega a cuenta (sin mes)» / «Entrega · corresponde a Septiembre 2026 ·
+    N4142R» (`conceptoEntregaCuenta`, sustituye en pantalla al `concepto` del
+    API, que repetía monto/T.C. y decía «Adelanto a cuenta»). «Adelanto»
+    queda solo para el saldo < −$1 y el 409. PENDIENTE del API: que su
+    `conceptoEntrega` diga «Entrega a cuenta» (lo usa el Excel/PDF).
+  - **«Por entregar hoy» dice cuánto es del mes EN CURSO** (diálogo y KPI;
+    `ContextoEntrega.mesEnCursoUsd/mesEnCurso`, números del API).
+  - **Pre-cierre**: «Mauricio Roque · por entregar hasta Septiembre 2026:
+    $1,395.94 USD» (`item.mes` del API o el mes del periodo) / «adelantado
+    hoy: $X USD» y `notaPreCierreSocios` explica que «Pagos a socios» enseña
+    el saldo de HOY (suma el mes en curso).
+  - **Selectores con nombre accesible**: `SearchableSelect` acepta `id`,
+    `aria-label` y `aria-labelledby` (los pasa al disparador), así `Field` y
+    `<Label htmlFor>` ya nombran al combo; el filtro Desde/Hasta liga sus
+    etiquetas. Las pruebas exigen que toda `<label for>` tenga su `id`.
+  - **«Por mes»**: la columna es «Entregado (por fecha de entrega)» y la
+    descripción lo explica (`AYUDA_POR_MES_CUENTA`).
+  - **Piezas renderizadas en prueba**: `estado-cuenta-partes.tsx`
+    (`KpisCuenta`, `KpisCuentasSocios`, `BannerCuentaNoConfigurada`,
+    `SinPermisoCuenta`, `TarjetaCuentasNoDisponibles`,
+    `AvisoEntregasPrevias`) se renderizan en `cuentas-socios.test.tsx`.
+- **Pendientes conocidos**: el PDF/Excel del reparto no imprimen las
+  entregas; sin QA visual en navegador (marcado probado con
+  `react-dom/server`).

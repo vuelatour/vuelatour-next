@@ -30,12 +30,15 @@ import {
   textoConteoPreCierre,
 } from "@/lib/admin/pre-cierre-items";
 import {
-  CLAVE_PRECIERRE_PAGOS_SOCIOS,
-  conteoPreCierrePagosSocios,
-  hrefPagosSocios,
-  lineasPreCierrePagosSocios,
+  CLAVE_PRECIERRE_SOCIOS_ADELANTADOS,
+  CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR,
+  esClavePrecierreSocios,
+  hrefPrecierreSocios,
+  lineasPreCierreSocios,
+  mesDePeriodo,
+  notaPreCierreSocios,
 } from "@/lib/admin/reparto-pagos";
-import type { PreCierreSocioPendiente } from "@/types/reparto-pagos";
+import type { PreCierreSocioCuenta } from "@/types/reparto-pagos";
 
 interface PreCierreVuelo {
   id: string;
@@ -97,9 +100,13 @@ interface PreCierreItem {
       NO pudo leer el dato y manda count 0. El renglón se pinta igual con
       «sin verificar» — un 0 por lectura fallida no es «no hay». */
   lectura_fallida?: boolean;
-  /** ADITIVO (pagos_socios_pendientes, 1-oct-2026, API 0.0.49): socios con
-      utilidad del mes sin pagar o con pago parcial (máx. 50). */
-  socios?: PreCierreSocioPendiente[];
+  /** ADITIVO (socios_por_entregar / socios_adelantados, cuenta corriente de
+      los socios, 1-oct-2026, API 0.0.50): socios con saldo por entregar o
+      adelantados (máx. 50). */
+  socios?: PreCierreSocioCuenta[];
+  /** ADITIVO (mismos items, API 0.0.50): el MES del cierre (`YYYY-MM`) con
+      el que el API contó las utilidades «hasta». */
+  mes?: string;
 }
 
 interface PreCierre {
@@ -154,9 +161,10 @@ const LINK_POR_CLAVE: Record<
   grupo_con_saldo: (p) => `/admin/quotes/grupo?desde=${p.desde}&hasta=${p.hasta}`,
   // Sobre descuadrado: se re-parte desde Cobros del grupo.
   sobres_descuadrados: (p) => `/admin/quotes/grupo?desde=${p.desde}&hasta=${p.hasta}`,
-  // Pagos a socios del mes (1-oct-2026): el reparto del MISMO periodo, donde
-  // se registra cada pago.
-  [CLAVE_PRECIERRE_PAGOS_SOCIOS]: hrefPagosSocios,
+  // Cuenta corriente de los socios (1-oct-2026): «Pagos a socios», donde se
+  // registra cada entrega (el saldo es de toda la cuenta, no del periodo).
+  [CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR]: hrefPrecierreSocios,
+  [CLAVE_PRECIERRE_SOCIOS_ADELANTADOS]: hrefPrecierreSocios,
 };
 
 function fmtMonto(item: PreCierreItem): string | null {
@@ -253,23 +261,22 @@ export async function PreCierreCard({
               MAX_TRAMOS_TACOS,
               item.count,
             );
-            // Socios con pago pendiente: líneas del helper PURO (montos del API).
-            const esPagosSocios = item.clave === CLAVE_PRECIERRE_PAGOS_SOCIOS;
-            const sociosPendientes = lineasPreCierrePagosSocios(
-              item.socios,
-              undefined,
-              esPagosSocios ? item.count : null,
-            );
-            // Su `count` son PAGOS (avión × socio), no socios: se rotula
-            // «8 pagos pendientes (2 socios)» para no chocar con «N socios
-            // con pago pendiente» del reparto. Con la lectura fallida manda
-            // «sin verificar», como en todo renglón.
-            const conteo =
-              esPagosSocios && item.lectura_fallida !== true
-                ? conteoPreCierrePagosSocios(item.count, item.socios)
-                : textoConteoPreCierre(item);
+            // Socios por entregar / adelantados: líneas del helper PURO
+            // (saldos del API; el «y N más» sale del `count`).
+            // Cada línea dice «por entregar hasta Septiembre 2026: $X USD»
+            // (el mes del API o, si no lo manda, el del periodo) y la nota
+            // explica que «Pagos a socios» enseña el saldo de HOY.
+            const esSocios = esClavePrecierreSocios(item.clave);
+            const mesSocios = esSocios ? (item.mes ?? mesDePeriodo(desde, hasta)) : null;
+            const sociosLineas = esSocios
+              ? lineasPreCierreSocios(item.socios, item.clave, undefined, item.count, mesSocios)
+              : { lineas: [], restantes: 0 };
+            const notaSocios =
+              esSocios && sociosLineas.lineas.length > 0
+                ? notaPreCierreSocios(item.clave, mesSocios)
+                : null;
             // Con la lista del panel, el `detalle` del API la repetiría.
-            const ocultarDetalle = esPagosSocios && sociosPendientes.lineas.length > 0;
+            const ocultarDetalle = esSocios && sociosLineas.lineas.length > 0;
             return (
               <div
                 key={item.clave}
@@ -291,7 +298,7 @@ export async function PreCierreCard({
                         info ? "text-sky-700 dark:text-sky-300" : "text-amber-600"
                       }`}
                     >
-                      · {conteo}
+                      · {textoConteoPreCierre(item)}
                     </span>
                     {monto && (
                       <span className="text-muted-foreground"> · {monto}</span>
@@ -367,19 +374,24 @@ export async function PreCierreCard({
                       )}
                     </ul>
                   )}
-                  {sociosPendientes.lineas.length > 0 && (
+                  {sociosLineas.lineas.length > 0 && (
                     <ul className="text-xs mt-1 space-y-0.5" data-precierre-socios>
-                      {sociosPendientes.lineas.map((l) => (
+                      {sociosLineas.lineas.map((l) => (
                         <li key={l.key} className="text-muted-foreground">
                           {l.texto}
                         </li>
                       ))}
-                      {sociosPendientes.restantes > 0 && (
+                      {sociosLineas.restantes > 0 && (
                         <li className="text-muted-foreground">
-                          y {sociosPendientes.restantes} más…
+                          y {sociosLineas.restantes} más…
                         </li>
                       )}
                     </ul>
+                  )}
+                  {notaSocios && (
+                    <p className="text-[11px] text-muted-foreground mt-1" data-nota-precierre-socios>
+                      {notaSocios}
+                    </p>
                   )}
                   {/* Grupos con saldo: total / cobrado / saldo por grupo
                       (montos del API) con link al detalle del grupo. */}

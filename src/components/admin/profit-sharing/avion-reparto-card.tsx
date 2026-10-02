@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { DesgloseSection } from "./desglose-section";
-import { SociosSection, type ContextoPagosAvion } from "./socios-section";
+import { SociosSection } from "./socios-section";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import type { AvionReparto } from "@/types/profit-sharing";
 
@@ -35,7 +35,6 @@ export function AvionRepartoCard({
   desde,
   hasta,
   puedeDescargarBalance = true,
-  pagos,
 }: {
   avion: AvionReparto;
   desde: string;
@@ -43,9 +42,6 @@ export function AvionRepartoCard({
   /** El endpoint del balance es ADMIN/ANALISTA: al SOCIO no se le pinta un
    *  botón que siempre respondería 403. */
   puedeDescargarBalance?: boolean;
-  /** PAGOS A SOCIOS del mes (1-oct-2026). Opcional: sin él, la tabla de
-   *  socios es la de siempre. */
-  pagos?: ContextoPagosAvion;
 }) {
   const positivo = avion.saldo_disponible_usd >= 0;
   const totalVuelos =
@@ -264,7 +260,6 @@ export function AvionRepartoCard({
           socios={avion.reparto}
           porcentajeTotal={avion.reparto_porcentaje_total}
           aeronaveId={avion.aeronave.id}
-          pagos={pagos}
         />
 
         {detalle && <DesgloseSection detalle={detalle} />}

@@ -17,6 +17,7 @@ import {
   ReceiptPercentIcon,
   ShieldCheckIcon,
   UserCircleIcon,
+  UserGroupIcon,
   RocketLaunchIcon,
   BellAlertIcon,
   Cog6ToothIcon,
@@ -219,6 +220,15 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "ANALISTA", "SOCIO"],
       },
       {
+        // Cuenta corriente de cada socio (1-oct-2026, API 0.0.50): generado,
+        // entregado, por entregar y la relación de entregas con comprobante.
+        // FACTURACION entra aquí aunque no vea el reparto (registra entregas).
+        label: "Pagos a socios",
+        href: "/admin/profit-sharing/socios",
+        icon: UserGroupIcon,
+        roles: ["ADMIN", "FACTURACION", "ANALISTA", "SOCIO"],
+      },
+      {
         label: "Reportes",
         href: "/admin/reportes",
         icon: ArchiveBoxIcon,
@@ -268,6 +278,23 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+/**
+ * ¿El ítem del menú está activo en `pathname`? Gana el href MÁS LARGO que
+ * coincide (1-oct-2026): «Pagos a socios» (`/admin/profit-sharing/socios`)
+ * vive DENTRO de «Reparto de utilidades» (`/admin/profit-sharing`) y, con un
+ * simple «empieza con», los dos salían marcados a la vez.
+ */
+export function itemNavActivo(
+  pathname: string,
+  href: string,
+  hrefs: readonly string[] = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href)),
+): boolean {
+  const coincide = (h: string) =>
+    h === "/admin" ? pathname === "/admin" : pathname === h || pathname.startsWith(`${h}/`);
+  if (!coincide(href)) return false;
+  return !hrefs.some((h) => h !== href && h.length > href.length && coincide(h));
+}
 
 export function filterNavGroupsForRole(rol: Rol | undefined): NavGroup[] {
   return NAV_GROUPS.map((g) => ({

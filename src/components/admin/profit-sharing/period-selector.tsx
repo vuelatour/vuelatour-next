@@ -14,8 +14,8 @@ import { MesReporteSelect } from "./mes-reporte-select";
 interface Props {
   initial: { desde: string; hasta: string };
   /** Selector de MES + atajo «Mes pasado» (1-oct-2026: el cliente cierra
-   *  septiembre en octubre y los pagos a socios se registran por MES
-   *  COMPLETO; elegir un mes empuja `desde`/`hasta` en UNA sola navegación). */
+   *  septiembre en octubre; elegir un mes empuja `desde`/`hasta` en UNA sola
+   *  navegación). */
   atajoMesPasado?: boolean;
   /** Hoy en Cancún desde el servidor (evita que el atajo difiera al hidratar). */
   hoy?: string;

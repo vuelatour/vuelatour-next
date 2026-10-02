@@ -38,11 +38,9 @@ describe("cableado de la card del pre-cierre", () => {
   it("filtra con itemPreCierreVisible (no con count > 0 a secas) y pinta el conteo del helper", () => {
     expect(src).toContain("data.items.filter(itemPreCierreVisible)");
     expect(src).not.toMatch(/data\.items\.filter\(\(i\) => i\.count > 0\)/);
-    // El conteo sale del helper (con la lectura fallida dice «sin verificar»).
-    // Pagos a socios (1-oct-2026) lo rotula en PAGOS, pero solo cuando la
-    // lectura NO falló: el respaldo sigue siendo `textoConteoPreCierre`.
-    expect(src).toContain(": textoConteoPreCierre(item);");
-    expect(src).toMatch(/esPagosSocios && item\.lectura_fallida !== true/);
-    expect(src).toContain("· {conteo}");
+    // El conteo sale del helper (con la lectura fallida dice «sin verificar»)
+    // en TODOS los renglones: el de los socios (cuenta corriente, 1-oct-2026)
+    // ya cuenta SOCIOS, no necesita rótulo propio.
+    expect(src).toContain("· {textoConteoPreCierre(item)}");
   });
 });

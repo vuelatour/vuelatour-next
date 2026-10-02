@@ -31,6 +31,11 @@ interface SearchableSelectProps {
   emptyText?: string;
   className?: string;
   disabled?: boolean;
+  /** Va al disparador: así `<Field>` (que clona a su hijo con un `id`) o un
+   *  `<Label htmlFor>` nombran al selector para el lector de pantalla. */
+  id?: string;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
 }
 
 /**
@@ -53,6 +58,9 @@ export function SearchableSelect({
   emptyText = "Sin resultados",
   className,
   disabled,
+  id,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledby,
 }: SearchableSelectProps) {
   const selected = useMemo(
     () => options.find((o) => o.value === value) ?? null,
@@ -68,6 +76,9 @@ export function SearchableSelect({
       }}
     >
       <ComboboxPrimitive.Trigger
+        id={id}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledby}
         disabled={disabled}
         className={cn(
           "group/searchable-trigger flex h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 py-1 text-sm shadow-sm outline-none transition-colors",

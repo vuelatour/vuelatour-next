@@ -3,18 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
+import { filterNavGroupsForRole, itemNavActivo } from "@/lib/admin/nav-items";
 import { useConteoPorFacturar } from "@/hooks/use-conteo-por-facturar";
 import type { Rol } from "@/types/me";
 
 interface SidebarNavProps {
   rol: Rol;
   onNavigate?: () => void;
-}
-
-function isActive(pathname: string, href: string): boolean {
-  if (href === "/admin") return pathname === "/admin";
-  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /**
@@ -38,7 +33,7 @@ export function SidebarNav({ rol, onNavigate }: SidebarNavProps) {
             {group.label}
           </p>
           {group.items.map((item) => {
-            const active = isActive(pathname, item.href);
+            const active = itemNavActivo(pathname, item.href);
             const Icon = item.icon;
             const badge =
               item.badge === "por_facturar" && porFacturar != null && porFacturar > 0
