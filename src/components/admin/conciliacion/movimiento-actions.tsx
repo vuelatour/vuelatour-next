@@ -62,6 +62,7 @@ import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import {
   esCargoConLote,
+  mensajeErrorBusquedaGastos,
   menuDesvincularGastos,
   numeroGastosDe,
   textoConfirmarDesvincularGastos,
@@ -331,6 +332,9 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                 : "Gasto desvinculado",
         );
         setConfirmarDesvincular(false);
+      } else if (conLote) {
+        // Un lote: el error en palabras del operador (un 502 no pinta «Bad Gateway»).
+        toast.error(mensajeErrorBusquedaGastos(r));
       } else toast.error(r.error ?? "Error");
     });
   };

@@ -42,7 +42,6 @@ import {
   ETIQUETA_SUGERIDO,
   LARGO_MAX_BUSQUEDA,
   MSG_ELIGE_UN_GASTO,
-  MSG_LOTE_API_VIEJO,
   MSG_SIN_CONEXION,
   MSG_TOPE_GASTOS_LOTE,
   MAX_GASTOS_LOTE,
@@ -67,6 +66,8 @@ import {
   fichaSugerida,
   idsParaVincular,
   listaConMarcadosPrimero,
+  marcadosTrasSugerencia,
+  mensajeApiSinLote,
   mensajeErrorBusquedaGastos,
   mensajeErrorVincularGastos,
   opcionesRespaldoVincular,
@@ -74,7 +75,9 @@ import {
   textoErrorSugerencia,
   textoIaSinPropuesta,
   textoMotivoPendienteDialogo,
+  textoSugeridoSinMarcar,
   textoSumaLote,
+  textoVetadosAlVincular,
   toastVinculoGastos,
   type TonoSumaLote,
 } from "@/lib/admin/conciliacion-lote";
@@ -175,11 +178,15 @@ function SelectorGastos({
   // Moneda de la CUENTA del cargo: no cambia entre búsquedas, así que se
   // conserva mientras llega la siguiente (las casillas vetadas no parpadean).
   const [monedaCuenta, setMonedaCuenta] = useState<string | null>(null);
+  // La misma moneda para los callbacks asíncronos (la IA contesta cuando
+  // quiera): sin ella la preselección no conocía la cuenta (revisión 2-oct).
+  const monedaRef = useRef<string | null>(null);
   // Turno del pedido: una respuesta vieja (búsqueda anterior) jamás pisa a
   // la nueva.
   const pedidoRef = useRef(0);
-  // El API no sabe de lotes (respaldo: lista precargada, un solo gasto).
-  const [forzarSinLote, setForzarSinLote] = useState(false);
+  // El API no sabe de lotes (respaldo: lista precargada, un solo gasto): el
+  // aviso dice POR QUÉ (falta el API o falta la migración de la BD).
+  const [avisoSinLote, setAvisoSinLote] = useState<string | null>(null);
   // Fichas MARCADAS, en el orden en que se marcaron (suben al principio
   // aunque no coincidan con la búsqueda).
   const [marcados, setMarcados] = useState<GastoCandidato[]>([]);
@@ -199,7 +206,10 @@ function SelectorGastos({
       .catch(sinConexion)
       .then((r) => {
         if (turno !== pedidoRef.current) return;
-        if (r.ok && r.data) setMonedaCuenta(r.data.movimiento.moneda ?? null);
+        if (r.ok && r.data) {
+          monedaRef.current = r.data.movimiento.moneda ?? null;
+          setMonedaCuenta(monedaRef.current);
+        }
         setCarga({ clave, r });
       });
     return () => {
@@ -209,7 +219,9 @@ function SelectorGastos({
 
   const cargando = carga === null || carga.clave !== clave;
   const respuesta = !cargando && carga ? carga.r : null;
-  const modoRespaldo = forzarSinLote || (respuesta !== null && !respuesta.ok && esApiSinLote(respuesta));
+  const respaldoPorBusqueda = respuesta !== null && !respuesta.ok && esApiSinLote(respuesta);
+  const modoRespaldo = avisoSinLote != null || respaldoPorBusqueda;
+  const avisoRespaldo = avisoSinLote ?? mensajeApiSinLote(respaldoPorBusqueda ? respuesta : null);
   const data = respuesta?.ok ? (respuesta.data ?? null) : null;
   const errorBusqueda =
     respuesta && !respuesta.ok && !modoRespaldo ? mensajeErrorBusquedaGastos(respuesta) : null;
@@ -233,8 +245,15 @@ function SelectorGastos({
     estadoLoteCargo({ montoCargo: movimiento.monto, monedaCuenta, gastos: marcados }),
   );
   const motivo = motivoPendienteDe(movimiento);
+  const notaSugerido =
+    sugerido && !modoRespaldo
+      ? textoSugeridoSinMarcar(
+          marcados.some((m) => m.id === sugerido.id),
+          marcados.length > 0,
+        )
+      : null;
 
-  /** La IA PROPONE: marca ★ su gasto y lo preselecciona; nunca liga sola. */
+  /** La IA PROPONE: marca ★ su gasto (y lo preselecciona si no había nada marcado); nunca liga sola. */
   const consultarIa = useCallback(() => {
     void sugerirMovimientoAction(movimiento.id)
       .catch(sinConexion)
@@ -249,12 +268,9 @@ function SelectorGastos({
         setSug({ tipo: "listo", data: s });
         const ficha = fichaSugerida(s);
         if (!ficha) return;
-        setSeleccionUnica(ficha.id);
-        setMarcados((prev) =>
-          prev.some((m) => m.id === ficha.id) || bloqueoDeFila(ficha, null, prev) != null
-            ? prev
-            : [...prev, ficha],
-        );
+        // Se preselecciona SOLO si no había nada marcado; si no, solo lleva ★.
+        setSeleccionUnica((prev) => prev || ficha.id);
+        setMarcados((prev) => marcadosTrasSugerencia(prev, ficha, monedaRef.current));
       });
   }, [movimiento.id]);
 
@@ -298,7 +314,7 @@ function SelectorGastos({
     toast.error(e.titulo, e.descripcion ? { description: e.descripcion } : undefined);
     if (e.apiSinLote) {
       // El API no sabe de lotes: queda el camino de siempre (un gasto).
-      setForzarSinLote(true);
+      setAvisoSinLote(e.titulo);
       return;
     }
     if (e.recargar) {
@@ -314,6 +330,13 @@ function SelectorGastos({
   const vincular = () => {
     // Las vetadas (otra moneda, cruzado) NUNCA viajan dentro de un lote.
     const ids = idsParaVincular(marcados, monedaCuenta);
+    // …y tampoco se quitan en silencio: el botón dice «Vincular 3 gastos» y
+    // se ligan 3 o nada (lo que ve el operador es lo que se liga).
+    const vetados = textoVetadosAlVincular(marcados, monedaCuenta);
+    if (vetados) {
+      toast.error(vetados);
+      return;
+    }
     if (ids.length === 0) {
       toast.error(MSG_ELIGE_UN_GASTO);
       return;
@@ -355,7 +378,7 @@ function SelectorGastos({
         {modoRespaldo ? (
           <div className="space-y-1.5">
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-300">
-              {MSG_LOTE_API_VIEJO}
+              {avisoRespaldo}
             </p>
             <SearchableSelect
               options={opcionesRespaldo}
@@ -484,6 +507,7 @@ function SelectorGastos({
                 ))}
               </ul>
             )}
+            {notaSugerido && <p className="text-[11px] text-amber-700 dark:text-amber-300">{notaSugerido}</p>}
             <p className="text-[11px] text-muted-foreground">{NOTA_IA_PROPONE}</p>
           </div>
         )}

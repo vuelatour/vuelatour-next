@@ -12,6 +12,8 @@ import {
   BOTON_CANCELAR,
   LARGO_MAX_BUSQUEDA,
   MSG_LOTE_API_VIEJO,
+  MSG_LOTE_SIN_MIGRACION,
+  MSG_MOVIMIENTO_NO_EXISTE,
   MSG_TOPE_GASTOS_LOTE,
   NOTA_VENTANA_CARGO,
   PLACEHOLDER_BUSCAR_GASTO,
@@ -26,7 +28,9 @@ import {
   descripcionVincularGasto,
   esApiSinLote,
   esCargoConLote,
+  esCandidatoCruzado,
   esDtoSinLote,
+  esMovimientoInexistente,
   esRutaInexistente,
   estadoBuscadorGastos,
   estadoLoteCargo,
@@ -38,6 +42,8 @@ import {
   idsParaVincular,
   lineaGastoLote,
   listaConMarcadosPrimero,
+  marcadosTrasSugerencia,
+  mensajeApiSinLote,
   menuDesvincularGastos,
   mensajeErrorBusquedaGastos,
   mensajeErrorVincularGastos,
@@ -57,8 +63,10 @@ import {
   textoLoteSinDetalle,
   textoMotivoPendienteDialogo,
   textoMovimientoConLote,
+  textoSugeridoSinMarcar,
   textoSumaLote,
   textoTruncado,
+  textoVetadosAlVincular,
   tieneGastoLigado,
   tituloDesvincularGastos,
   toastDesvinculoGastos,
@@ -355,6 +363,91 @@ describe("candidatos del diálogo", () => {
     expect(idsParaVincular([], "MXN")).toEqual([]);
   });
 
+  describe("la ficha de «Sugerir con IA» en USD (sin `cruzado`, con `tc_implicito`)", () => {
+    // `sugerir` arma sus fichas en `candidatosCercanos` SIN la bandera
+    // `cruzado`: solo trae `tc_implicito` (null en los de la moneda de la cuenta).
+    const usdIa = candidato("usd-ia", 150, { moneda: "USD", tc_implicito: 18.668, nota: "Hotel" });
+    const mxnA = candidato("a", 2801.4);
+    const mxnB = candidato("b", 2801.4);
+
+    it("esCandidatoCruzado: la bandera o un T.C. implícito > 0", () => {
+      expect(esCandidatoCruzado(usdIa)).toBe(true);
+      expect(esCandidatoCruzado({ cruzado: true })).toBe(true);
+      expect(esCandidatoCruzado({ tc_implicito: "18.5" })).toBe(true);
+      expect(esCandidatoCruzado(mxnA)).toBe(false);
+      expect(esCandidatoCruzado({ tc_implicito: null })).toBe(false);
+      expect(esCandidatoCruzado({ tc_implicito: 0 })).toBe(false);
+    });
+
+    it("se veta aunque todavía no se sepa la moneda de la cuenta", () => {
+      expect(motivoVetoLote(usdIa, null)).toContain("se vincula solo (1 a 1)");
+      expect(bloqueoDeFila(usdIa, null, [mxnA, mxnB])).toContain("se vincula solo");
+      expect(bloqueoDeFila(usdIa, "MXN", [mxnA, mxnB])).toContain("se vincula solo");
+      expect(bloqueoDeFila(mxnA, null, [usdIa])).toBe(
+        "Ya marcaste un gasto en otra moneda: ese se vincula solo. Desmárcalo para elegir varios.",
+      );
+    });
+
+    it("la IA NO lo suma a lo ya marcado (solo ★); sin marcados, se preselecciona solo (1↔1)", () => {
+      const prev = [mxnA, mxnB];
+      expect(marcadosTrasSugerencia(prev, usdIa, null)).toBe(prev);
+      expect(marcadosTrasSugerencia(prev, usdIa, "MXN")).toBe(prev);
+      expect(marcadosTrasSugerencia([], usdIa, null)).toEqual([usdIa]);
+    });
+
+    it("si aun así quedara marcado con otros, NO viaja nada: el botón dice 3 y se ligan 3 o nada", () => {
+      const marcados = [mxnA, mxnB, usdIa];
+      expect(botonVincularGastos(marcados.length)).toBe("Vincular 3 gastos");
+      expect(idsParaVincular(marcados, "MXN")).toEqual(["a", "b"]);
+      expect(textoVetadosAlVincular(marcados, "MXN")).toBe(
+        "Quita el gasto en otra moneda: se vincula solo (1 a 1), nunca junto con otros gastos.",
+      );
+      expect(textoVetadosAlVincular(marcados, null)).not.toBeNull();
+    });
+
+    it("la suma tampoco lo cuenta como si fuera de la cuenta", () => {
+      const e = estadoLoteCargo({ montoCargo: "-8404.20", monedaCuenta: null, gastos: [mxnA, mxnB, usdIa] });
+      expect(e.monedasMezcladas).toBe(true);
+      expect(e.cuadra).toBe(false);
+    });
+  });
+
+  it("textoVetadosAlVincular: null cuando viajan exactamente los marcados", () => {
+    const usd = candidato("usd", 150, { moneda: "USD", cruzado: true });
+    const usd2 = candidato("usd2", 90, { moneda: "USD", cruzado: true });
+    const a = candidato("a", 2801.4);
+    const b = candidato("b", 2801.4);
+    expect(textoVetadosAlVincular([a, b], "MXN")).toBeNull();
+    expect(textoVetadosAlVincular([a, a, b], "MXN")).toBeNull(); // repetidos no cuentan
+    expect(textoVetadosAlVincular([usd], "MXN")).toBeNull(); // el 1↔1 cruzado de siempre
+    expect(textoVetadosAlVincular([], "MXN")).toBeNull();
+    expect(textoVetadosAlVincular([a, usd, usd2], "MXN")).toBe(
+      "Quita los 2 gastos en otra moneda: cada uno se vincula solo (1 a 1), nunca junto con otros gastos.",
+    );
+  });
+
+  it("marcadosTrasSugerencia: preselecciona SOLO si no había nada marcado", () => {
+    const a = candidato("a", 2801.4);
+    const b = candidato("b", 2801.4);
+    const prev = [a];
+    // Ya había uno marcado: el sugerido solo lleva ★ (antes se armaba [A, B]).
+    expect(marcadosTrasSugerencia(prev, b, "MXN")).toBe(prev);
+    // Ya marcado: nada cambia.
+    expect(marcadosTrasSugerencia(prev, a, "MXN")).toBe(prev);
+    // Sin propuesta: nada cambia.
+    expect(marcadosTrasSugerencia(prev, null, "MXN")).toBe(prev);
+    // Sin marcados: se preselecciona.
+    expect(marcadosTrasSugerencia([], b, "MXN")).toEqual([b]);
+  });
+
+  it("textoSugeridoSinMarcar: dice dónde está el sugerido cuando no se marcó solo", () => {
+    expect(textoSugeridoSinMarcar(false, true)).toBe(
+      "No se marcó solo porque ya tenías gastos marcados: búscalo con ★ en la lista y márcalo si este cargo también lo pagó.",
+    );
+    expect(textoSugeridoSinMarcar(true, true)).toBeNull();
+    expect(textoSugeridoSinMarcar(false, false)).toBeNull();
+  });
+
   it("los marcados suben al principio aunque no coincidan con la búsqueda", () => {
     const a = candidato("a", 1);
     const b = candidato("b", 2);
@@ -387,6 +480,36 @@ describe("candidatos del diálogo", () => {
     expect(normalizarBusquedaMonto("  Pago   VIP SAESA ")).toBe("Pago VIP SAESA");
     expect(normalizarBusquedaMonto(null)).toBe("");
     expect(busquedaParaApi("x".repeat(120))).toHaveLength(LARGO_MAX_BUSQUEDA);
+  });
+
+  it("normalizarBusquedaMonto: lo que el API entiende como monto (0, 1 o 2 decimales)", () => {
+    // Coma decimal al estilo europeo (revisión 2-oct): antes salía «2.80140».
+    expect(normalizarBusquedaMonto("2.801,40")).toBe("2801.40");
+    expect(normalizarBusquedaMonto("$ 2.801,40")).toBe("2801.40");
+    expect(normalizarBusquedaMonto("2801,40")).toBe("2801.40"); // antes «280140»
+    expect(normalizarBusquedaMonto("1.118,1")).toBe("1118.1");
+    // Coma de miles (3 dígitos tras la coma) sigue siendo miles.
+    expect(normalizarBusquedaMonto("1,118")).toBe("1118");
+    expect(normalizarBusquedaMonto("59,569.87")).toBe("59569.87");
+    // Más de 2 decimales ⇒ a centavos (sin el 0.4999… de los flotantes).
+    expect(normalizarBusquedaMonto("2801.405")).toBe("2801.41");
+    expect(normalizarBusquedaMonto("2801.404")).toBe("2801.40");
+    expect(normalizarBusquedaMonto("2231.375")).toBe("2231.38"); // la factura SAESA de medio centavo
+    expect(normalizarBusquedaMonto("1118.125")).toBe("1118.13");
+    expect(normalizarBusquedaMonto("2801.995")).toBe("2802.00");
+    expect(normalizarBusquedaMonto("2801.")).toBe("2801");
+    expect(normalizarBusquedaMonto("2801.4")).toBe("2801.4");
+    // Todo lo numérico sale con la forma que acepta el API.
+    for (const q of ["2.801,40", "2801,40", "2801.405", "$ 2,801.40", "1,118", "2801.4", "2801"]) {
+      expect(normalizarBusquedaMonto(q)).toMatch(/^\d+(\.\d{1,2})?$/);
+    }
+    // Idempotente: el diálogo y la action la aplican los dos.
+    for (const q of ["2.801,40", "2801.405", "2,801.40", "Pago VIP SAESA", "SAESA 2,801"]) {
+      expect(normalizarBusquedaMonto(normalizarBusquedaMonto(q))).toBe(normalizarBusquedaMonto(q));
+    }
+    // Un texto con números no se toca.
+    expect(normalizarBusquedaMonto("SAESA 2,801")).toBe("SAESA 2,801");
+    expect(busquedaParaApi("2.801,40")).toBe("2801.40");
   });
 });
 
@@ -563,8 +686,9 @@ describe("errores del API", () => {
       expect(mensajeErrorBusquedaGastos(r)).toBe(MSG_SERVIDOR_NO_RESPONDIO);
     }
     expect(mensajeErrorBusquedaGastos({ code: "RUTA_NO_DISPONIBLE", status: 404 })).toBe(MSG_LOTE_API_VIEJO);
+    // API nuevo SIN la migración: lo que falta es la BD, no el API.
     expect(mensajeErrorBusquedaGastos({ code: "CONCILIACION_PARTES_NO_DISPONIBLE", status: 503 })).toBe(
-      MSG_LOTE_API_VIEJO,
+      MSG_LOTE_SIN_MIGRACION,
     );
     expect(mensajeErrorBusquedaGastos({ status: 401 })).toContain("sesión");
     expect(mensajeErrorBusquedaGastos({ status: 403 })).toBe("Tu usuario no puede conciliar movimientos del banco.");
@@ -585,6 +709,49 @@ describe("errores del API", () => {
     expect(esApiSinLote({ code: "API_SIN_LOTE" })).toBe(true);
     expect(esApiSinLote({ code: "CARGO_NO_CUADRA", status: 409 })).toBe(false);
     expect(esApiSinLote(null)).toBe(false);
+  });
+
+  it("mensajeApiSinLote: el aviso del respaldo dice POR QUÉ (API o migración de la BD)", () => {
+    expect(mensajeApiSinLote({ code: "CONCILIACION_PARTES_NO_DISPONIBLE", status: 503 })).toBe(MSG_LOTE_SIN_MIGRACION);
+    expect(MSG_LOTE_SIN_MIGRACION).toContain("base de datos");
+    expect(MSG_LOTE_SIN_MIGRACION).not.toContain("API");
+    expect(mensajeApiSinLote({ code: "RUTA_NO_DISPONIBLE", status: 404 })).toBe(MSG_LOTE_API_VIEJO);
+    expect(mensajeApiSinLote({ code: "API_SIN_LOTE", status: 400 })).toBe(MSG_LOTE_API_VIEJO);
+    expect(mensajeApiSinLote(null)).toBe(MSG_LOTE_API_VIEJO);
+    expect(mensajeErrorVincularGastos({ code: "CONCILIACION_PARTES_NO_DISPONIBLE", status: 503 })).toEqual({
+      titulo: MSG_LOTE_SIN_MIGRACION,
+      recargar: false,
+      apiSinLote: true,
+    });
+  });
+
+  it("404 «not found» = el movimiento ya no existe (no es el API previo)", () => {
+    const borrado = { status: 404, code: "NOT_FOUND", error: "Movimiento c58 not found" };
+    expect(esMovimientoInexistente(borrado)).toBe(true);
+    expect(esMovimientoInexistente({ status: 404, code: "MOVIMIENTO_NO_EXISTE", error: "Ese movimiento del banco ya no existe." })).toBe(true);
+    expect(esMovimientoInexistente({ status: 404, error: "Cannot GET /v1/conciliacion/movimientos/x/gastos-candidatos" })).toBe(false);
+    expect(esMovimientoInexistente({ status: 409, error: "Movimiento not found" })).toBe(false);
+    expect(mensajeErrorBusquedaGastos(borrado)).toBe(MSG_MOVIMIENTO_NO_EXISTE);
+    expect(MSG_MOVIMIENTO_NO_EXISTE).toBe("Ese movimiento ya no existe: recarga la página.");
+    // Al vincular: cierra y refresca la bandeja.
+    expect(mensajeErrorVincularGastos(borrado)).toEqual({
+      titulo: MSG_MOVIMIENTO_NO_EXISTE,
+      recargar: true,
+      apiSinLote: false,
+    });
+    expect(textoErrorSugerencia(borrado).titulo).toBe(MSG_MOVIMIENTO_NO_EXISTE);
+    // El API previo sigue siendo el API previo.
+    expect(mensajeErrorBusquedaGastos({ status: 404, error: "Cannot GET /v1/x" })).toBe(MSG_LOTE_API_VIEJO);
+  });
+
+  it("«Failed to find Server Action» (deploy de Vercel con la pestaña abierta) es técnico", () => {
+    const err = {
+      error: 'Failed to find Server Action "abc". This request might be from an older or newer deployment.',
+    };
+    expect(mensajeErrorBusquedaGastos(err)).toBe(MSG_SERVIDOR_NO_RESPONDIO);
+    expect(mensajeErrorVincularGastos(err).titulo).toBe(MSG_SERVIDOR_NO_RESPONDIO);
+    expect(mensajeErrorReverso(err).titulo).toBe(MSG_SERVIDOR_NO_RESPONDIO);
+    expect(esTextoTecnico("This request might be from an older or newer deployment.")).toBe(true);
   });
 
   it("textoErrorSugerencia: 404 API previo, 403 solo ADMIN, técnico", () => {

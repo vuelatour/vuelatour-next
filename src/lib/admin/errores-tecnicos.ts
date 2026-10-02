@@ -12,9 +12,16 @@
  * puede pintar tal cual?» importa de aquí, no copia el regex.
  */
 
-/** Textos técnicos (en inglés o de red) del API, de `fetch` o de Next. */
+/**
+ * Textos técnicos (en inglés o de red) del API, de `fetch` o de Next.
+ *
+ * «Failed to find Server Action "abc". This request might be from an older or
+ * newer deployment.» (revisión 2-oct-2026) es lo que lanza Next cuando la
+ * pestaña quedó abierta durante un deploy de Vercel: justo la ventana que
+ * cuida el contrato del lote. Es técnico: la salida es recargar, no leerlo.
+ */
 export const RE_TEXTO_TECNICO =
-  /^(Internal server error|Request failed|Bad Request|Not Found|Unauthorized|Forbidden|Conflict|Service Unavailable|Bad Gateway|Gateway Timeout|fetch failed|Error desconocido)$|fetch failed|failed to fetch|unexpected response|ECONN|socket hang up|network/i;
+  /^(Internal server error|Request failed|Bad Request|Not Found|Unauthorized|Forbidden|Conflict|Service Unavailable|Bad Gateway|Gateway Timeout|fetch failed|Error desconocido)$|fetch failed|failed to fetch|unexpected response|ECONN|socket hang up|network|Failed to find Server Action|older or newer deployment/i;
 
 /** Lo que ve el operador cuando el servidor no contestó con un mensaje útil. */
 export const MSG_SERVIDOR_NO_RESPONDIO =

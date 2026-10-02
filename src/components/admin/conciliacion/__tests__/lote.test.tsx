@@ -233,6 +233,8 @@ describe("cableado del menú y del diálogo", () => {
     expect(acciones.match(/desvincular\(\);/g)?.length).toBe(1);
     expect(acciones).toMatch(/<AlertDialogAction[\s\S]{0,200}desvincular\(\);/);
     expect(acciones).toContain("await linkMovimientoAction(movimiento.id, null)");
+    // Si falla, el lote se explica en palabras del operador (un 502 no pinta «Bad Gateway»).
+    expect(acciones).toMatch(/\} else if \(conLote\) \{[\s\S]{0,160}toast\.error\(mensajeErrorBusquedaGastos\(r\)\);/);
   });
 
   it("el diálogo nuevo se monta como ReversoDialog (solo al abrir) y el de ABONO sigue", () => {
@@ -261,6 +263,22 @@ describe("cableado del menú y del diálogo", () => {
     expect(dialogo).toContain("bloqueoDeFila(c, monedaCuenta, marcados)");
     expect(dialogo).toContain("disabled={bloqueo != null}");
     expect(dialogo).toContain('"cursor-not-allowed opacity-60"');
+  });
+
+  it("lo que dice el botón es lo que se liga: un vetado entre varios ⇒ no viaja nada", () => {
+    const iVetados = dialogo.indexOf("const vetados = textoVetadosAlVincular(marcados, monedaCuenta);");
+    const iLlamada = dialogo.indexOf("await linkMovimientoGastosAction(");
+    expect(iVetados).toBeGreaterThan(-1);
+    expect(iLlamada).toBeGreaterThan(iVetados);
+    expect(dialogo).toMatch(/if \(vetados\) \{\s*toast\.error\(vetados\);\s*return;\s*\}/);
+  });
+
+  it("la IA preselecciona solo sin marcados y conoce la moneda de la cuenta (monedaRef)", () => {
+    expect(dialogo).toContain("monedaRef.current = r.data.movimiento.moneda ?? null;");
+    expect(dialogo).toContain("setMarcados((prev) => marcadosTrasSugerencia(prev, ficha, monedaRef.current));");
+    expect(dialogo).not.toContain("bloqueoDeFila(ficha, null");
+    expect(dialogo).not.toMatch(/\[\.\.\.prev, ficha\]/);
+    expect(dialogo).toContain("textoSugeridoSinMarcar(");
   });
 
   it("el botón NUNCA se apaga por la suma local", () => {
@@ -293,7 +311,10 @@ describe("cableado del menú y del diálogo", () => {
 
   it("con el API previo: la lista precargada de siempre (un solo gasto) y el aviso", () => {
     expect(dialogo).toContain("esApiSinLote(respuesta)");
-    expect(dialogo).toContain("{MSG_LOTE_API_VIEJO}");
+    // El aviso dice POR QUÉ: falta el API o falta la migración (503).
+    expect(dialogo).toContain("mensajeApiSinLote(");
+    expect(dialogo).toContain("{avisoRespaldo}");
+    expect(dialogo).toContain("setAvisoSinLote(e.titulo);");
     expect(dialogo).toMatch(/<SearchableSelect[\s\S]{0,120}options=\{opcionesRespaldo\}/);
     expect(dialogo).toContain("linkMovimientoAction(movimiento.id, seleccionUnica)");
   });

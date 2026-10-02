@@ -167,6 +167,8 @@ export interface GastoParaLote {
   moneda?: string | null;
   /** Gasto USD contra cuenta MXN (solo 1 a 1). */
   cruzado?: boolean | null;
+  /** T.C. implícito (cargo ÷ gasto): solo lo traen los cruzados. */
+  tc_implicito?: number | string | null;
 }
 
 export interface EstadoLoteCargo {
@@ -212,7 +214,7 @@ export function estadoLoteCargo(input: {
   const moneda = input.monedaCuenta ?? null;
   const cargo = centavos(Math.abs(numeroDe(input.montoCargo)));
   const monedasMezcladas = gastos.some(
-    (g) => g.cruzado === true || (moneda != null && g.moneda != null && g.moneda !== moneda),
+    (g) => esCandidatoCruzado(g) || (moneda != null && g.moneda != null && g.moneda !== moneda),
   );
   const suma = centavos(gastos.reduce((acc, g) => acc + aporteDeGasto(g), 0));
   const diferencia = centavos(cargo - suma);
@@ -290,14 +292,28 @@ export function fichaCandidatoGasto(c: GastoCandidato): GastoCandidatoConciliaci
 }
 
 /**
+ * ¿El candidato es CRUZADO (gasto USD contra cuenta MXN, solo 1 a 1)? La
+ * bandera `cruzado` la manda `gastos-candidatos`; las fichas de `sugerir` (la
+ * IA) NO la traen, pero sí su `tc_implicito` (> 0 solo en los cruzados: los
+ * de la moneda de la cuenta llegan con null). Revisión 2-oct-2026: sin esto,
+ * un gasto USD sugerido por la IA entraba a un lote que el API jamás acepta.
+ */
+export function esCandidatoCruzado(c: {
+  cruzado?: boolean | null;
+  tc_implicito?: number | string | null;
+}): boolean {
+  return c.cruzado === true || numeroDe(c.tc_implicito) > 0;
+}
+
+/**
  * Por qué un candidato NO puede entrar en un cargo con VARIOS gastos: gasto
  * cruzado (USD contra cuenta MXN, solo 1 a 1) o en otra moneda. null = puede.
  */
 export function motivoVetoLote(
-  c: Pick<GastoCandidato, "cruzado" | "moneda">,
+  c: Pick<GastoCandidato, "cruzado" | "moneda" | "tc_implicito">,
   monedaCuenta: string | null | undefined,
 ): string | null {
-  if (c.cruzado === true) {
+  if (esCandidatoCruzado(c)) {
     return `Gasto en ${c.moneda ?? "otra moneda"} contra una cuenta en ${monedaCuenta ?? "otra moneda"}: se vincula solo (1 a 1), nunca junto con otros gastos.`;
   }
   if (monedaCuenta && c.moneda && c.moneda !== monedaCuenta) {
@@ -346,6 +362,52 @@ export function idsParaVincular(
 }
 
 /**
+ * Candado del botón «Vincular N gastos» (revisión 2-oct-2026): si entre los
+ * marcados hay un gasto vetado para el lote, `idsParaVincular` lo quitaría y
+ * viajarían MENOS gastos de los que dice el botón (y el toast diría «2 gastos
+ * vinculados» con 3 marcados). Lo que ve el operador es lo que se liga: no se
+ * manda nada y se le dice cuál quitar. null = viajan exactamente los marcados.
+ */
+export function textoVetadosAlVincular(
+  marcados: readonly GastoCandidato[],
+  monedaCuenta: string | null | undefined,
+): string | null {
+  const unicos = new Set(marcados.filter((m) => m?.id).map((m) => m.id)).size;
+  const viajan = idsParaVincular(marcados, monedaCuenta).length;
+  const fuera = unicos - viajan;
+  if (fuera <= 0) return null;
+  return fuera === 1
+    ? "Quita el gasto en otra moneda: se vincula solo (1 a 1), nunca junto con otros gastos."
+    : `Quita los ${fuera} gastos en otra moneda: cada uno se vincula solo (1 a 1), nunca junto con otros gastos.`;
+}
+
+/**
+ * Lo marcado después de que la IA contestó (revisión 2-oct-2026). La IA
+ * PROPONE: su gasto se preselecciona SOLO si no había nada marcado; si la
+ * persona ya marcó gastos, el sugerido solo lleva ★ (sumarlo armaba un lote
+ * que nadie pidió). Devuelve el MISMO arreglo cuando no cambia nada.
+ */
+export function marcadosTrasSugerencia(
+  prev: GastoCandidato[],
+  sugerido: GastoCandidato | null | undefined,
+  monedaCuenta: string | null | undefined,
+): GastoCandidato[] {
+  if (!sugerido?.id) return prev;
+  if (prev.length > 0) return prev;
+  if (bloqueoDeFila(sugerido, monedaCuenta, prev) != null) return prev;
+  return [sugerido];
+}
+
+/**
+ * Nota bajo la sugerencia cuando NO se preseleccionó (ya había gastos
+ * marcados): dónde está y qué hacer. null si el sugerido ya está marcado.
+ */
+export function textoSugeridoSinMarcar(sugeridoMarcado: boolean, hayMarcados: boolean): string | null {
+  if (sugeridoMarcado || !hayMarcados) return null;
+  return "No se marcó solo porque ya tenías gastos marcados: búscalo con ★ en la lista y márcalo si este cargo también lo pagó.";
+}
+
+/**
  * El gasto que sugirió la IA va AL FRENTE de la lista aunque la búsqueda o la
  * ventana no lo trajeran (su ficha sale de `sugerencia.candidatos`). La IA no
  * trae su propia lista: aporta un ★ dentro de la de siempre.
@@ -374,16 +436,33 @@ export function listaConMarcadosPrimero(
   return [...marcados, ...resultados.filter((r) => !ids.has(r.id))];
 }
 
+/** «2801.405» ⇒ «2801.41»: redondeo a centavos sobre el TEXTO (sin el 0.4999… de los flotantes). */
+function aDosDecimales(entero: string, decimales: string): string {
+  if (decimales.length <= 2) return decimales ? `${entero}.${decimales}` : entero;
+  const centavosTotales = Math.round(Number(`${entero}${decimales.slice(0, 2)}.${decimales.slice(2)}`));
+  return `${Math.trunc(centavosTotales / 100)}.${String(centavosTotales % 100).padStart(2, "0")}`;
+}
+
 /**
  * Texto del buscador tal como viaja al API: un MONTO se manda limpio
  * («2,801.40» / «$ 2801.40» ⇒ «2801.40»; «2801» ⇒ «2801», que el API busca en
  * [2801, 2802)); un texto (proveedor, nota) se manda tal cual, sin espacios de
- * más.
+ * más. El API solo entiende un monto con 0, 1 o 2 decimales
+ * (`interpretarBusquedaGasto`: `^\d+\.\d{1,2}$`), así que (revisión 2-oct-2026)
+ * la coma decimal al estilo europeo se convierte («2.801,40» / «2801,40» ⇒
+ * «2801.40») y más de 2 decimales se redondean («2801.405» ⇒ «2801.41»): si
+ * no, se buscaba como TEXTO y salía «Ningún gasto pendiente coincide…».
+ * Idempotente (el diálogo y la action la aplican los dos).
  */
 export function normalizarBusquedaMonto(q: string | null | undefined): string {
   const t = (q ?? "").trim();
-  const limpio = t.replace(/[$\s,]/g, "");
-  if (/^\d+(\.\d+)?$/.test(limpio)) return limpio;
+  const sinSigno = t.replace(/[$\s]/g, "");
+  // Coma DECIMAL (1 o 2 dígitos tras la coma), con puntos de miles opcionales.
+  const europeo = /^(\d{1,3}(?:\.\d{3})+|\d+),(\d{1,2})$/.exec(sinSigno);
+  if (europeo) return aDosDecimales(europeo[1].replace(/\./g, ""), europeo[2]);
+  const limpio = sinSigno.replace(/,/g, "");
+  const numero = /^(\d+)(?:\.(\d*))?$/.exec(limpio);
+  if (numero) return aDosDecimales(numero[1], numero[2] ?? "");
   return t.replace(/\s+/g, " ");
 }
 
@@ -487,9 +566,20 @@ export function opcionesRespaldoVincular(
   return [...deIa, ...precargados.filter((o) => !vistos.has(o.value))];
 }
 
-/** API previo (sin ruta de candidatos o sin `gasto_ids`) o sin la migración. */
+/** API previo (sin ruta de candidatos o sin `gasto_ids`). */
 export const MSG_LOTE_API_VIEJO =
   "El servidor todavía no permite vincular varios gastos a un cargo (falta actualizar el API). Por ahora elige un solo gasto de la lista.";
+
+/**
+ * API nuevo SIN la migración (503 `CONCILIACION_PARTES_NO_DISPONIBLE`): lo que
+ * falta es la base de datos, no el API (revisión 2-oct-2026: decir «falta
+ * actualizar el API» mandaba a sistemas a buscar donde no era).
+ */
+export const MSG_LOTE_SIN_MIGRACION =
+  "La base de datos todavía no tiene esta mejora (vincular varios gastos a un cargo). Por ahora elige un solo gasto de la lista.";
+
+/** El 404 de un movimiento que ya no existe (lo borraron con el diálogo abierto). */
+export const MSG_MOVIMIENTO_NO_EXISTE = "Ese movimiento ya no existe: recarga la página.";
 
 // ───────────────────────── Estado del buscador ─────────────────────────
 
@@ -568,6 +658,25 @@ export function esApiSinLote(r: ResultadoAccionLote | null | undefined): boolean
   return CODIGOS_SIN_LOTE.has(r.code ?? "") || esRutaInexistente(r) || esDtoSinLote(r);
 }
 
+/**
+ * El aviso del respaldo (un solo gasto) según la causa: sin la migración
+ * (503 `CONCILIACION_PARTES_NO_DISPONIBLE`) falta la BD; en lo demás (ruta
+ * inexistente, DTO previo) falta el API.
+ */
+export function mensajeApiSinLote(r: ResultadoAccionLote | null | undefined): string {
+  return r?.code === "CONCILIACION_PARTES_NO_DISPONIBLE" ? MSG_LOTE_SIN_MIGRACION : MSG_LOTE_API_VIEJO;
+}
+
+/**
+ * 404 de un movimiento que ya no existe («Movimiento <id> not found» del API,
+ * o `MOVIMIENTO_NO_EXISTE`): lo borraron con el diálogo abierto. Un 404
+ * «Cannot GET …» NO es esto: es el API previo (`esRutaInexistente`).
+ */
+export function esMovimientoInexistente(r: ResultadoAccionLote | null | undefined): boolean {
+  if (!r || r.status !== 404 || esRutaInexistente(r)) return false;
+  return r.code === "MOVIMIENTO_NO_EXISTE" || /not found/i.test(r.error ?? "");
+}
+
 /** «CARGO_NO_CUADRA: los 2 gastos…» ⇒ «Los 2 gastos…» (el código no se pinta). */
 function sinPrefijoCodigo(mensaje: string | null | undefined): string {
   const t = (mensaje ?? "").trim().replace(/^[A-Z][A-Z_]{2,}:\s*/, "");
@@ -576,7 +685,8 @@ function sinPrefijoCodigo(mensaje: string | null | undefined): string {
 
 /** Error de la búsqueda (o de cualquier llamada del diálogo) en palabras del operador. */
 export function mensajeErrorBusquedaGastos(r: ResultadoAccionLote): string {
-  if (esApiSinLote(r)) return MSG_LOTE_API_VIEJO;
+  if (esApiSinLote(r)) return mensajeApiSinLote(r);
+  if (esMovimientoInexistente(r)) return MSG_MOVIMIENTO_NO_EXISTE;
   if (r.status === 401) return "Tu sesión expiró. Recarga la página e inicia sesión.";
   if (r.status === 403) return "Tu usuario no puede conciliar movimientos del banco.";
   if (esErrorTecnico({ error: r.error, code: r.code })) return MSG_SERVIDOR_NO_RESPONDIO;
@@ -702,7 +812,9 @@ export function mensajeErrorVincularGastos(
   r: ResultadoAccionLote,
   etiquetaDe?: (gastoId: string) => string | null | undefined,
 ): MensajeErrorVincular {
-  if (esApiSinLote(r)) return { titulo: MSG_LOTE_API_VIEJO, recargar: false, apiSinLote: true };
+  if (esApiSinLote(r)) return { titulo: mensajeApiSinLote(r), recargar: false, apiSinLote: true };
+  // El cargo ya no existe: cerrar y refrescar la bandeja.
+  if (esMovimientoInexistente(r)) return { titulo: MSG_MOVIMIENTO_NO_EXISTE, recargar: true, apiSinLote: false };
   switch (r.code) {
     case "CARGO_NO_CUADRA":
       return { ...textoCargoNoCuadra(r.error, r.details), recargar: false, apiSinLote: false };
@@ -907,6 +1019,7 @@ export function textoIaSinPropuesta(motivo: string): string {
 
 /** Fallo al pedir la sugerencia (404 API previo, 403 no ADMIN, red…). */
 export function textoErrorSugerencia(r: ResultadoAccionLote): { titulo: string; descripcion?: string } {
+  if (esMovimientoInexistente(r)) return { titulo: MSG_MOVIMIENTO_NO_EXISTE };
   if (r.status === 404) {
     return {
       titulo: "No se pudo pedir la sugerencia",

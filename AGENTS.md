@@ -1243,7 +1243,10 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
   `monto_vinculado` + `faltante` (`MovimientoBancario`).
 - Dónde se ve: diálogo «Vincular gasto» (`movimiento-actions.tsx`; las
   opciones las precarga `app/admin/conciliacion/page.tsx` con `listGastos`)
-  — descripción ámbar «Pago parcial: faltan $X de $Y»; el toast tras vincular
+  — **desde el 2-oct-2026 el diálogo del CARGO vive en
+  `vincular-gasto-dialog.tsx` y la precarga es solo el respaldo con un API
+  previo (ver «Conciliación: 1 cargo ↔ N gastos»)** —
+  descripción ámbar «Pago parcial: faltan $X de $Y»; el toast tras vincular
   distingue cubierto de parcial; la pestaña «Gastos sin banco» gana la columna
   **Parcial** (`gastos-sin-banco-table.tsx`, fila `parcial`) porque un gasto
   parcial SIGUE ahí hasta que lo cubran; la columna «Conciliación» de
@@ -1320,6 +1323,11 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
     de fechas, monto o faltante) con ★ y verde en el sugerido, cada uno con
     terminación de tarjeta, nota/lugar, matrícula y pago parcial; «Ver todos
     los gastos recientes» regresa a la lista precargada de la página.
+    **Desde el 2-oct-2026 el diálogo del CARGO vive en
+    `vincular-gasto-dialog.tsx`** (UNA lista con casillas de los candidatos
+    del servidor; la IA solo pone ★ dentro de ella; ya no existen «Buscar el
+    gasto que corresponde (IA)» ni «Ver todos los gastos recientes»): ver la
+    sección «Conciliación: 1 cargo ↔ N gastos».
   - `import-dialog.tsx`: al terminar canta los conteos por resultado; si el
     job termina en ERROR **refresca la bandeja** y dice cuántos movimientos
     SÍ entraron, cuántos fallaron y el motivo más común, e insiste en NO
@@ -4615,8 +4623,8 @@ siempre. Contrato con el API 0.0.52 (migración
   `mensajeErrorBusquedaGastos`, `mensajeErrorVincularGastos` (despacha
   `CARGO_NO_CUADRA` ⇒ `textoCargoNoCuadra`, `LOTE_MONEDA_DISTINTA`,
   `MOVIMIENTO_CON_LOTE`, `GASTO_YA_CUBIERTO` + `details.gasto_id`,
-  `API_SIN_LOTE`/`RUTA_NO_DISPONIBLE`/`CONCILIACION_PARTES_NO_DISPONIBLE` ⇒
-  `MSG_LOTE_API_VIEJO`), `toastVinculoGastos` («3 gastos vinculados ·
+  `API_SIN_LOTE`/`RUTA_NO_DISPONIBLE` ⇒ `MSG_LOTE_API_VIEJO`;
+  `CONCILIACION_PARTES_NO_DISPONIBLE` ⇒ `MSG_LOTE_SIN_MIGRACION`), `toastVinculoGastos` («3 gastos vinculados ·
   $8,404.20» + «Todos cubiertos» / «2 cubiertos · 1 parcial (faltan $X)»; con
   uno, `toastVinculoGasto` de siempre), los textos del menú/confirmación,
   `resumenLoteFila` y `textoBusquedaGastos` (columna y búsqueda de la tabla).
@@ -4693,6 +4701,33 @@ siempre. Contrato con el API 0.0.52 (migración
   viejo pinta un lote como «Pendiente» y ofrece «Vincular gasto»; el API
   responde 409 `MOVIMIENTO_CON_LOTE`, no destruye nada). Al revés también
   aguanta: 404/400/503 ⇒ `MSG_LOTE_API_VIEJO` y la lista de siempre.
+- **Revisión del 2-oct-2026 (correcciones)**:
+  - **Lo que dice el botón es lo que se liga.** Las fichas de «Sugerir con
+    IA» (`sugerir` del API) NO traen `cruzado`, solo `tc_implicito` (> 0 solo
+    en los USD contra cuenta MXN): `esCandidatoCruzado` cuenta las dos cosas
+    y lo usan `motivoVetoLote` y `estadoLoteCargo`. El diálogo guarda la
+    moneda de la cuenta en `monedaRef` para los callbacks de la IA. Y si aun
+    así hay un vetado entre varios marcados, `vincular()` NO manda nada y
+    avisa con `textoVetadosAlVincular` («Quita el gasto en otra moneda: se
+    vincula solo…»): antes `idsParaVincular` lo quitaba en silencio y el
+    botón decía «Vincular 3 gastos» para ligar 2.
+  - **La IA preselecciona SOLO si no había nada marcado**
+    (`marcadosTrasSugerencia`); si ya había, el sugerido solo lleva ★ y la
+    caja de la IA lo dice (`textoSugeridoSinMarcar`). Sumarlo armaba un lote
+    [A, B] que nadie pidió.
+  - **Búsqueda por monto**: `normalizarBusquedaMonto` convierte la coma
+    decimal («2.801,40» / «2801,40» ⇒ «2801.40») y redondea a centavos sobre
+    el texto («2801.405» ⇒ «2801.41»): el API solo entiende 0–2 decimales y
+    lo demás lo buscaba como TEXTO («Ningún gasto pendiente coincide…»).
+  - **Errores**: `RE_TEXTO_TECNICO` reconoce «Failed to find Server Action…
+    older or newer deployment» (Next con la pestaña abierta durante un
+    deploy) ⇒ «El servidor no respondió…» (también en reversos); un 404
+    «Movimiento … not found» ⇒ `MSG_MOVIMIENTO_NO_EXISTE` («Ese movimiento
+    ya no existe: recarga la página», al vincular cierra y refresca); el 503
+    `CONCILIACION_PARTES_NO_DISPONIBLE` dice que falta la BASE DE DATOS
+    (`MSG_LOTE_SIN_MIGRACION`, vía `mensajeApiSinLote`), no el API, también
+    en el aviso del respaldo; «Desvincular los N gastos» fallido pasa por
+    `mensajeErrorBusquedaGastos` (un 502 ya no pinta «Bad Gateway»).
 - **Pendientes conocidos**: sin QA visual en navegador (el diálogo vive en un
   portal); el Excel de conciliación y `diferencia_lotes` los arma el API (el
   panel solo declara el tipo).
