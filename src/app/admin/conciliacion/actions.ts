@@ -6,10 +6,21 @@ import { isApiError } from "@/lib/api/errors";
 import {
   auditoriaPaywise,
   candidatosCobroMovimiento,
+  gastosCandidatosMovimiento,
   type PaywiseAuditoriaQuery,
 } from "@/lib/api/conciliacion-server";
 import { getFlightSnapshot } from "@/lib/api/flights-server";
 import { esUuid } from "@/lib/admin/url-params";
+import {
+  MAX_GASTOS_LOTE,
+  MSG_ELIGE_UN_GASTO,
+  MSG_GASTO_INVALIDO,
+  MSG_LOTE_API_VIEJO,
+  MSG_TOPE_GASTOS_LOTE,
+  busquedaParaApi,
+  esDtoSinLote,
+  esRutaInexistente,
+} from "@/lib/admin/conciliacion-lote";
 import {
   VENTANA_REVERSO_DIAS,
   abonosCandidatosParaCargo,
@@ -21,6 +32,7 @@ import type {
   AutoMatchResultado,
   CandidatoReverso,
   CandidatosCobroResponse,
+  GastosCandidatosResponse,
   MapeoColumnasPaywise,
   MovimientoBancario,
   MovimientoListResponse,
@@ -511,6 +523,83 @@ export async function linkMovimientoAction(
     return { ok: true, data };
   } catch (err) {
     return fail(err);
+  }
+}
+
+// ===== 1 cargo ↔ N gastos («lote», 2-oct-2026, API 0.0.52) =====
+
+/** Entero dentro de [min, max] o undefined (no viaja: default del API). */
+const enteroEn = (v: unknown, min: number, max: number): number | undefined => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= min && n <= max ? n : undefined;
+};
+
+/**
+ * Gastos candidatos para vincular un CARGO (`GET movimientos/:id/
+ * gastos-candidatos`). `q` se normaliza (un monto viaja limpio: «2,801.40» ⇒
+ * «2801.40») y se recorta a 80 (`@MaxLength(80)` del DTO). Nunca lanza y
+ * JAMÁS devuelve `data: []` ante un fallo: el diálogo dice «no se pudo» (y
+ * «Reintentar»), nunca «no hay gastos». 404 «Cannot GET» (API previo) ⇒
+ * `code: 'RUTA_NO_DISPONIBLE'`: el diálogo pasa a la lista precargada de
+ * siempre (un solo gasto).
+ */
+export async function gastosCandidatosAction(
+  movId: string,
+  query: { q?: string | null; dias?: number | null; limite?: number | null } = {},
+): Promise<ActionResult<GastosCandidatosResponse>> {
+  if (!esUuid(movId)) return MOV_INVALIDO;
+  const q = busquedaParaApi(query.q);
+  const dias = enteroEn(query.dias, 1, 180);
+  const limite = enteroEn(query.limite, 1, 300);
+  try {
+    const data = await gastosCandidatosMovimiento(movId, {
+      ...(q ? { q } : {}),
+      ...(dias != null ? { dias } : {}),
+      ...(limite != null ? { limite } : {}),
+    });
+    return { ok: true, data };
+  } catch (err) {
+    const r = fail<GastosCandidatosResponse>(err);
+    if (esRutaInexistente(r)) {
+      return { ok: false, code: "RUTA_NO_DISPONIBLE", status: 404, error: MSG_LOTE_API_VIEJO };
+    }
+    return r;
+  }
+}
+
+/**
+ * Liga un CARGO con VARIOS gastos (`PATCH movimientos/:id {gasto_ids}`): el
+ * API valida en UNA transacción (misma moneda, cuadre con la tolerancia del
+ * lote, cada gasto por lo que le falta) y responde la fila + `gastos_estado`.
+ * El cuerpo lleva SOLO `gasto_ids` (con `gasto_id` el API responde 400
+ * `LOTE_INVALIDO`). Un API previo responde 400 «property gasto_ids should not
+ * exist» ⇒ `code: 'API_SIN_LOTE'`. Los 409 (`CARGO_NO_CUADRA`,
+ * `LOTE_MONEDA_DISTINTA`, `GASTO_YA_CUBIERTO`…) conservan code/status/details.
+ * Desligar todo sigue siendo `linkMovimientoAction(id, null)`.
+ */
+export async function linkMovimientoGastosAction(
+  movId: string,
+  gastoIds: readonly string[],
+): Promise<ActionResult<MovimientoBancario>> {
+  if (!esUuid(movId)) return MOV_INVALIDO;
+  const lista = Array.isArray(gastoIds) ? gastoIds : [];
+  if (lista.some((g) => !esUuid(g))) return { ok: false, error: MSG_GASTO_INVALIDO };
+  const ids = [...new Set(lista)];
+  if (ids.length === 0) return { ok: false, error: MSG_ELIGE_UN_GASTO };
+  if (ids.length > MAX_GASTOS_LOTE) return { ok: false, error: MSG_TOPE_GASTOS_LOTE };
+  try {
+    const data = await apiServer<MovimientoBancario>(`/v1/conciliacion/movimientos/${movId}`, {
+      method: "PATCH",
+      body: { gasto_ids: ids },
+    });
+    revalidatePath("/admin/conciliacion");
+    return { ok: true, data };
+  } catch (err) {
+    const r = fail<MovimientoBancario>(err);
+    if (esDtoSinLote(r)) {
+      return { ok: false, code: "API_SIN_LOTE", status: 400, error: MSG_LOTE_API_VIEJO };
+    }
+    return r;
   }
 }
 

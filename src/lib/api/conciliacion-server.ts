@@ -4,6 +4,7 @@ import type {
   CobrosSinBancoResponse,
   ConciliacionResumenCuenta,
   EstadoCuentaArchivo,
+  GastosCandidatosResponse,
   MovimientoListResponse,
   PaywiseAuditoria,
 } from "@/types/conciliacion";
@@ -113,4 +114,37 @@ export function conciliacionCobrosSinBanco(desde?: string, hasta?: string) {
     searchParams: { desde, hasta },
     cache: "no-store",
   });
+}
+
+// ===== 1 cargo ↔ N gastos (2-oct-2026, API 0.0.52) =====
+
+export interface GastosCandidatosQuery {
+  /** Ya normalizado (`busquedaParaApi`): un monto limpio o un texto ≤ 80. */
+  q?: string;
+  /** Ventana ± días de la fecha del cargo (1..180; default del API 30). */
+  dias?: number;
+  /** Tope de candidatos (1..300; default del API 100). */
+  limite?: number;
+}
+
+/**
+ * Gastos candidatos para vincular un CARGO (uno o varios): bancarios, SIN
+ * conciliar, en la moneda de la cuenta, con fecha ±`dias` del cargo; sin `q`
+ * primero los que cuadran con el cargo. 400 `SOLO_CARGOS` con un abono; 503
+ * `CONCILIACION_PARTES_NO_DISPONIBLE` sin la migración; 404 «Cannot GET» con
+ * un API previo. Solo viajan los parámetros presentes (el DTO rechaza los
+ * desconocidos).
+ */
+export function gastosCandidatosMovimiento(movId: string, q: GastosCandidatosQuery = {}) {
+  return apiServer<GastosCandidatosResponse>(
+    `/v1/conciliacion/movimientos/${movId}/gastos-candidatos`,
+    {
+      searchParams: {
+        ...(q.q ? { q: q.q } : {}),
+        ...(q.dias != null ? { dias: q.dias } : {}),
+        ...(q.limite != null ? { limite: q.limite } : {}),
+      },
+      cache: "no-store",
+    },
+  );
 }

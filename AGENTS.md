@@ -4569,6 +4569,134 @@ salida era clasificar a mano cada uno de los 14.
     confirmación del lote sin rango dice «abonos de los últimos 90 días»
     (default del API).
 
+## Conciliación: 1 cargo ↔ N gastos (2-oct-2026)
+
+Caso real (prod, 2-oct): 29 gastos «Pago VIP SAESA» (OPERACIONES,
+TRANSFERENCIA, MXN, sin proveedor ni lugar: el nombre vive en las notas;
+59,569.87) y 7 SPEI del 24-sep en GASTOS GNRAL que pagan VARIAS facturas a la
+vez: 8,404.20 = 3 × 2,801.40; 4,462.75 = 2,231.37 + 2,231.38 (o 2 × 2,231.37 +
+0.01: SAESA factura 2,231.375); 2,236.25 = 2 × 1,118.12 + 0.01. Hasta hoy un
+cargo solo se ligaba a UN gasto y esos cargos quedaban «Pendientes» para
+siempre. Contrato con el API 0.0.52 (migración
+`20261002000002_conciliacion_partes.sql`, tabla puente
+`movimiento_bancario_gasto`).
+
+- **La regla es del API y de la BD** (`conciliacion_ligar_cargo_gastos`,
+  `recalcular_gasto_conciliado`, `tolerancia_lote`): cada gasto entra por lo
+  que le FALTA, todos en la moneda de la cuenta, y la suma cuadra con el cargo
+  con `tolerancia_lote(N) = min(1.00, max(0.02, 0.01 × N))` (N=2 ⇒ 0.02, N=29
+  ⇒ 0.29). Con UN gasto se conserva la regla de hoy (tolerancia 1.00, pago
+  parcial, 1↔1 cruzado USD↔MXN). El panel NUNCA decide si un lote cuadra: la
+  suma en pantalla es GUÍA visual.
+- **Ligado a gasto = `gasto_id != null || gastos_n > 0`**: con 2+ partes
+  `gasto_id` y el embed `gasto` vienen NULL (son ESPEJO solo con una parte).
+  Nadie vuelve a preguntar `gasto_id` a solas: se usa `tieneGastoLigado` /
+  `numeroGastosDe` / `esCargoConLote` / `gastoUnicoDe`. `estaPendiente` de
+  `conciliacion-reverso.ts` ya lo hace (el gate principal sigue siendo
+  `conciliado`).
+- **Campos ADITIVOS** (`types/conciliacion.ts`, todos opcionales; ausentes =
+  API previo ⇒ la pantalla de siempre): en `MovimientoBancario` `gastos_n`,
+  `gastos[]` (cada uno con `monto_parte`, `lugar`, `notas_primera_linea`;
+  `moneda` es la del GASTO), `gastos_suma`, `gastos_diferencia` (el centavo
+  del lote: |monto| − Σ partes; jamás se ajusta el gasto) y, solo en la
+  respuesta del PATCH, `gastos_estado[]`; en `GastoCandidato` `cruzado`,
+  `nota`, `capturado_por`; `GastosCandidatosResponse`;
+  `ConciliacionResumenCuenta.diferencia_lotes`.
+- **FUENTE ÚNICA** `lib/admin/conciliacion-lote.ts` (PURA, sin engordar
+  `conciliacion-parcial.ts`): `toleranciaLote`, la lectura de la liga,
+  `estadoLoteCargo` + `textoSumaLote` (verde cuadra / ámbar faltan / rojo se
+  pasa; con UN gasto mayor que el cargo es «pago parcial», ámbar),
+  `fichaCandidatoGasto` (la `nota` del API → `notas_primera_linea`: sin eso
+  los 29 SAESA eran indistinguibles en `descripcionCandidatoGasto`),
+  `motivoVetoLote` / `bloqueoDeFila` / `idsParaVincular` (un gasto cruzado o
+  de otra moneda se liga SOLO; marcado él se apagan los demás; con 2+ los
+  vetados nunca viajan), `normalizarBusquedaMonto` («2,801.40» / «$ 2801.40»
+  ⇒ «2801.40»), `estadoBuscadorGastos` (el ERROR va ANTES que el vacío),
+  `mensajeErrorBusquedaGastos`, `mensajeErrorVincularGastos` (despacha
+  `CARGO_NO_CUADRA` ⇒ `textoCargoNoCuadra`, `LOTE_MONEDA_DISTINTA`,
+  `MOVIMIENTO_CON_LOTE`, `GASTO_YA_CUBIERTO` + `details.gasto_id`,
+  `API_SIN_LOTE`/`RUTA_NO_DISPONIBLE`/`CONCILIACION_PARTES_NO_DISPONIBLE` ⇒
+  `MSG_LOTE_API_VIEJO`), `toastVinculoGastos` («3 gastos vinculados ·
+  $8,404.20» + «Todos cubiertos» / «2 cubiertos · 1 parcial (faltan $X)»; con
+  uno, `toastVinculoGasto` de siempre), los textos del menú/confirmación,
+  `resumenLoteFila` y `textoBusquedaGastos` (columna y búsqueda de la tabla).
+  Ningún componente redacta estas frases.
+- **Errores técnicos = UNA regla**: `lib/admin/errores-tecnicos.ts`
+  (`RE_TEXTO_TECNICO`, `esErrorTecnico`, `MSG_SERVIDOR_NO_RESPONDIO`), movida
+  desde `conciliacion-reverso.ts` (que la reutiliza sin cambiar sus textos).
+  Quien necesite decidir «¿esto se puede pintar tal cual?» importa de ahí.
+- **Red**: `gastosCandidatosMovimiento(movId, {q?, dias?, limite?})`
+  (`lib/api/conciliacion-server.ts`, `cache: 'no-store'`, solo viajan los
+  parámetros presentes). Actions (`app/admin/conciliacion/actions.ts`, nunca
+  lanzan): `gastosCandidatosAction` (uuid; `q` normalizado y recortado a 80;
+  `dias` 1..180 y `limite` 1..300 o no viajan; 404 «Cannot GET» ⇒
+  `RUTA_NO_DISPONIBLE`; cualquier otro fallo ⇒ `{ok:false, status, code,
+  error}` y JAMÁS `data: []`) y `linkMovimientoGastosAction(movId, ids)`
+  (uuid y dedupe antes de la red, tope 50; cuerpo `{gasto_ids}` SIN
+  `gasto_id`; 400 «property gasto_ids should not exist» ⇒ `API_SIN_LOTE`;
+  copia code/status/details; revalida Conciliación).
+  `linkMovimientoAction(id, null)` sigue igual = desligar TODO (también un
+  lote).
+- **Diálogo «Vincular gasto» del CARGO**
+  (`components/admin/conciliacion/vincular-gasto-dialog.tsx`, `sm:max-w-xl`):
+  `movimiento-actions.tsx` lo monta solo al abrir, como `ReversoDialog`
+  (`{openVincularGasto && <VincularGastoDialog …/>}`); el diálogo de ABONO
+  (cobros y sobres) se quedó como estaba y ya solo atiende abonos. UNA lista
+  con CASILLAS (`max-h-72`): los candidatos del servidor («Gastos candidatos
+  · ±30 días», botón «Ampliar a 120 días»), buscador con debounce de 300 ms y
+  turno (`pedidoRef`: una respuesta vieja no pisa a la nueva), placeholder
+  «Busca por monto (2801.40), proveedor o nota». Cada fila =
+  `etiquetaCandidatoGasto` + `descripcionCandidatoGasto` (fecha · monto ·
+  vuelo #folio · nota); los marcados suben al principio aunque no coincidan
+  con la búsqueda; una fila vetada lleva `input disabled`, `cursor-not-allowed
+  opacity-60` y `title`. Debajo, la línea de suma (guía). «Sugerir con IA» NO
+  trae su propia lista: marca ★ el sugerido y lo preselecciona (si no venía en
+  la lista, entra al frente con su ficha de `sugerencia.candidatos`). Pie
+  «Vincular 1 gasto» / «Vincular 3 gastos» con `disabled={pending ||
+  marcados.length === 0}` (NUNCA por la suma local); con 1 marcado viaja
+  `linkMovimientoAction(id, gasto_id)` y con 2+ `linkMovimientoGastosAction`.
+  Un rechazo legítimo (no cuadra, ya cubierto) vuelve a pedir la lista sin
+  perder lo marcado; `MOVIMIENTO_CON_LOTE`/`MOVIMIENTO_YA_LIGADO` cierran y
+  refrescan. **API previo** (404 de la ruta, 400 del DTO o 503 sin la
+  migración): la lista precargada de siempre (`SearchableSelect`, un solo
+  gasto, con los candidatos de la IA arriba si ya contestó) + `MSG_LOTE_API_VIEJO`.
+- **Columna «Conciliación»** (`movimientos-table.tsx`): rama NUEVA, ANTES de
+  las demás, con `conciliado && tieneGastoLigado && numeroGastosDe >= 2`:
+  «3 gastos · $8,404.20» + hasta 3 líneas «Operaciones · $2,801.40 · vuelo
+  #315» (segunda línea proveedor ?? lugar ?? nota · fecha), cada una con su
+  `<Link>` + «y N más» + «diferencia $0.01» cuando `gastos_diferencia ≠ 0`.
+  Sin `gastos[]` (skew) ⇒ «3 gastos conciliados» sin ligas y tooltip «detalle
+  no disponible: recarga» — JAMÁS «Pendiente». Con UNA parte el marcado es
+  IDÉNTICO al de antes (lo congela el test). La búsqueda rápida encuentra el
+  cargo por categoría, proveedor, lugar, nota, folio o monto de sus gastos.
+- **Menú ⋯**: `vinculadoAGastoOCobro = tieneGastoLigado(m) || vinculadoACobro`;
+  con lote, «Desvincular los 3 gastos» → confirmación «¿Desvincular los 3
+  gastos?» + «El cargo vuelve a quedar pendiente… (vuelven a «Gastos sin
+  banco»; si alguno tiene otros cargos ligados, se queda como pago parcial)»
+  → `linkMovimientoAction(id, null)`. «Lo devolvió el banco» sigue oculto con
+  `conciliado === true`.
+- **Deuda documentada**: `page.tsx` conserva la precarga de 200 gastos SOLO
+  como respaldo del diálogo con un API previo (retirarla cuando todo prod
+  tenga el 0.0.52). `sugerencias-lote-dialog.tsx` sin cambio (la IA de lotes,
+  el motivo `SUMA_DE_VARIOS` y 1 abono ↔ N cobros siguen pendientes en el API).
+- **Pruebas**: `lib/admin/__tests__/conciliacion-lote.test.ts` (todo helper
+  con los montos SAESA reales, errores técnicos y `estaPendiente` con dato
+  inconsistente), `app/admin/conciliacion/__tests__/lote-actions.test.ts`
+  (rutas, searchParams, `no-store`, 404 ⇒ `RUTA_NO_DISPONIBLE`, 502 ⇒
+  `ok:false` sin data, `q` > 80, dedupe/uuid, cuerpo `{gasto_ids}` sin
+  `gasto_id`, 400 ⇒ `API_SIN_LOTE`, 409 copia details, revalidate,
+  `linkMovimientoAction(id, null)` intacto) y
+  `components/admin/conciliacion/__tests__/lote.test.tsx` (la fila con 3 y 5
+  partes, el centavo, el skew sin «Pendiente», 1 parte idéntica, el diálogo
+  en render estático y el CABLEADO por regex sobre el fuente).
+- **Orden de deploy**: migración → API 0.0.52 → panel ENSEGUIDA (un panel
+  viejo pinta un lote como «Pendiente» y ofrece «Vincular gasto»; el API
+  responde 409 `MOVIMIENTO_CON_LOTE`, no destruye nada). Al revés también
+  aguanta: 404/400/503 ⇒ `MSG_LOTE_API_VIEJO` y la lista de siempre.
+- **Pendientes conocidos**: sin QA visual en navegador (el diálogo vive en un
+  portal); el Excel de conciliación y `diferencia_lotes` los arma el API (el
+  panel solo declara el tipo).
+
 ## Tramo operativo vs tramo del cliente (30-sep-2026, API 0.0.46)
 
 Pregunta del cliente sobre el vuelo #364 (captura de la app): «subí un vuelito

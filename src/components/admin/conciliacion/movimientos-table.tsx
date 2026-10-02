@@ -14,6 +14,16 @@ import {
 } from "@/lib/admin/conciliacion-auto";
 import { textoFaltanteGasto } from "@/lib/admin/conciliacion-parcial";
 import {
+  TITULO_VER_GASTO_CONCILIADO,
+  TOOLTIP_LOTE_SIN_DETALLE,
+  gastoUnicoDe,
+  numeroGastosDe,
+  resumenLoteFila,
+  textoBusquedaGastos,
+  textoLoteSinDetalle,
+  tieneGastoLigado,
+} from "@/lib/admin/conciliacion-lote";
+import {
   ETIQUETA_REVERSO,
   contraparteReverso,
   esConciliadoPorReverso,
@@ -120,36 +130,87 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
       {
         key: "conciliacion",
         header: "Conciliación",
-        cell: (m) =>
-          m.conciliado && m.gasto ? (
+        cell: (m) => {
+          // 1 CARGO ↔ N GASTOS (2-oct-2026): un cargo que paga VARIOS gastos
+          // trae `gasto_id`/`gasto` NULL (son espejo solo con UNA parte); la
+          // liga se lee con `tieneGastoLigado` y el detalle en `gastos[]`.
+          // Esta rama va ANTES que todas: sin ella el lote se pintaba
+          // «Pendiente».
+          if (m.conciliado && tieneGastoLigado(m) && numeroGastosDe(m) >= 2) {
+            const lote = resumenLoteFila(m);
+            if (!lote) {
+              // El API no mandó el detalle (skew de deploy): se dice cuántos
+              // sin inventar ligas.
+              return (
+                <span className="block text-sm text-emerald-600" title={TOOLTIP_LOTE_SIN_DETALLE}>
+                  {textoLoteSinDetalle(numeroGastosDe(m))}
+                </span>
+              );
+            }
+            return (
+              <span className="block text-sm">
+                <span className="block text-emerald-600">{lote.titulo}</span>
+                {lote.lineas.map((l) => (
+                  <Link
+                    key={l.key}
+                    href={l.href}
+                    className="block text-xs text-emerald-600 hover:underline"
+                    title={TITULO_VER_GASTO_CONCILIADO}
+                  >
+                    {l.principal}
+                    <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
+                      {l.secundaria}
+                    </span>
+                  </Link>
+                ))}
+                {lote.mas && (
+                  <span className="block text-[10px] text-muted-foreground">{lote.mas}</span>
+                )}
+                {lote.diferencia && (
+                  <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                    {lote.diferencia}
+                  </span>
+                )}
+              </span>
+            );
+          }
+          const gasto = m.conciliado ? gastoUnicoDe(m) : null;
+          if (m.conciliado && tieneGastoLigado(m) && !gasto) {
+            return (
+              <span className="block text-sm text-emerald-600" title={TOOLTIP_LOTE_SIN_DETALLE}>
+                {textoLoteSinDetalle(numeroGastosDe(m) || 1)}
+              </span>
+            );
+          }
+          return gasto ? (
             // Verificable de un clic: al vuelo del gasto (donde se
             // ve su desglose) o, sin vuelo, a la lista de gastos.
             <Link
               href={
-                m.gasto.vuelo_id
-                  ? `/admin/flights/${m.gasto.vuelo_id}`
+                gasto.vuelo_id
+                  ? `/admin/flights/${gasto.vuelo_id}`
                   : "/admin/expenses"
               }
               className="block text-sm text-emerald-600 hover:underline"
               title="Ver el gasto con el que se concilió"
             >
-              {categoriaGastoLabel(m.gasto.categoria)} · ${fmtMoney(m.gasto.monto)}
-              {m.gasto.vuelo?.folio != null && (
-                <span className="text-muted-foreground"> · vuelo #{m.gasto.vuelo.folio}</span>
+              {categoriaGastoLabel(gasto.categoria)} · ${fmtMoney(gasto.monto)}
+              {gasto.vuelo?.folio != null && (
+                <span className="text-muted-foreground"> · vuelo #{gasto.vuelo.folio}</span>
               )}
               <span className="block text-[10px] text-muted-foreground">
                 {[
-                  m.gasto.proveedor?.nombre,
-                  m.gasto.fecha_gasto ? fmtDate(m.gasto.fecha_gasto) : null,
+                  gasto.proveedor?.nombre,
+                  gasto.fecha_gasto ? fmtDate(gasto.fecha_gasto) : null,
                 ]
                   .filter(Boolean)
                   .join(" · ") || "Gasto conciliado"}
               </span>
               {/* Pago parcial (14-sep-2026): este cargo es solo una parte del
                   gasto (1 factura pagada en 2 cargos). */}
-              {textoFaltanteGasto(m.gasto) && (
+              {textoFaltanteGasto(gasto) && (
                 <span className="block text-[10px] text-amber-600 dark:text-amber-400">
-                  Pago parcial: {textoFaltanteGasto(m.gasto)}
+                  Pago parcial: {textoFaltanteGasto(gasto)}
                 </span>
               )}
             </Link>
@@ -328,7 +389,8 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
                 </span>
               );
             })()
-          ),
+          );
+        },
       },
       {
         key: "acciones",
@@ -357,7 +419,12 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
           m.cobro_grupo ? folioTexto(m.cobro_grupo.grupo_folio) : ""
         } ${m.ingreso ? etiquetaIngreso(m.ingreso.folio) : ""} ${cuentas?.[m.cuenta_bancaria_id] ?? ""} ${
           motivoPendienteDe(m)?.etiqueta ?? ""
-        } ${esConciliadoPorReverso(m) ? `${ETIQUETA_REVERSO} ${contraparteReverso(m)?.descripcion ?? ""}` : ""}`
+        } ${esConciliadoPorReverso(m) ? `${ETIQUETA_REVERSO} ${contraparteReverso(m)?.descripcion ?? ""}` : ""} ${
+          // Categorías, proveedores, lugar, notas, folios y montos de los
+          // gastos que paga el cargo (uno o varios): «SAESA» o «#315» lo
+          // encuentran.
+          textoBusquedaGastos(m)
+        }`
       }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"
     />

@@ -116,6 +116,10 @@ export default async function ConciliacionPage({
     listMovimientosBancarios(query),
     // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
     // con aviso; los MOVIMIENTOS (el dato del dinero) nunca (21-sep-2026).
+    // DEUDA (2-oct-2026): desde 1 cargo ↔ N gastos el diálogo del CARGO
+    // busca sus candidatos en el servidor (`gastos-candidatos`, ±30/120
+    // días, buscador); esta precarga de 200 queda SOLO como respaldo con un
+    // API previo. Retirarla cuando todo prod tenga el API 0.0.52.
     degradado.opcional("las cuentas bancarias", listBankAccounts({ limit: 100 }), {
       data: [] as Awaited<ReturnType<typeof listBankAccounts>>["data"],
     }),

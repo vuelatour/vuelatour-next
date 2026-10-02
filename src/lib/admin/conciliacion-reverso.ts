@@ -17,6 +17,8 @@
  * frases a mano.
  */
 
+import { tieneGastoLigado } from "@/lib/admin/conciliacion-lote";
+import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
 import { CLASIFICACION_REVERSO } from "@/lib/admin/ingresos-ui";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
@@ -190,6 +192,11 @@ export interface MovimientoReversoInfo {
   ingreso_id?: string | null;
   clasificacion_id?: string | null;
   notas?: string | null;
+  /** 1 cargo ↔ N gastos (2-oct-2026, ADITIVOS del API 0.0.52): con un lote
+      `gasto_id` viene NULL (es espejo solo con 1 parte) y la liga se ve en
+      `gastos_n` / `gastos`. */
+  gastos_n?: number | null;
+  gastos?: readonly unknown[] | null;
   /** ADITIVOS del API 0.0.44 (sin ellos, el movimiento no está emparejado). */
   reverso_de_id?: string | null;
   reverso_de?: MovimientoReversoRef | null;
@@ -421,11 +428,16 @@ export function ordenarCargosParaAbono(
   return [...si, ...no];
 }
 
-/** Movimiento pendiente de verdad (sin liga, sin clasificación, sin pareja). */
+/**
+ * Movimiento pendiente de verdad (sin liga, sin clasificación, sin pareja).
+ * El gate principal es `conciliado`; la liga a gastos se lee con
+ * `tieneGastoLigado` (2-oct-2026): un cargo que paga VARIOS gastos trae
+ * `gasto_id` NULL y solo `gastos_n`/`gastos` lo delatan.
+ */
 function estaPendiente(m: MovimientoReversoInfo): boolean {
   return (
     m.conciliado !== true &&
-    !m.gasto_id &&
+    !tieneGastoLigado(m) &&
     !m.cobro_id &&
     !m.cobro_grupo_id &&
     !m.ingreso_id &&
@@ -502,10 +514,6 @@ export const MSG_API_SIN_REVERSO =
 export const MSG_REVERSOS_NO_DISPONIBLE =
   "El emparejado de cargos devueltos todavía no está habilitado en la base de datos (falta aplicar una actualización).";
 
-/** Texto técnico (en inglés o de red) que jamás se le pinta al operador. */
-const TECNICO_REVERSO =
-  /^(Internal server error|Request failed|Bad Request|Not Found|Unauthorized|Forbidden|Conflict|Service Unavailable|Bad Gateway|Gateway Timeout|fetch failed|Error desconocido)$|fetch failed|failed to fetch|unexpected response|ECONN|socket hang up|network/i;
-
 /**
  * ¿El API todavía no sabe emparejar? Ruta inexistente (404 «Cannot …» = API
  * previo) o 503 `REVERSOS_NO_DISPONIBLE` (API nuevo sin la migración
@@ -565,9 +573,10 @@ export function mensajeErrorReverso(r: ResultadoAccionReverso): MensajeErrorReve
   // Railway reiniciando (HTML ⇒ PARSE_ERROR), la red o un texto técnico en
   // inglés: nunca se pinta tal cual (revisión adversaria 30-sep-2026: salía
   // «Bad Gateway» o «fetch failed» en el toast).
-  if (r.code === "PARSE_ERROR" || !msg || TECNICO_REVERSO.test(msg)) {
+  // El regex vive en `errores-tecnicos.ts` (fuente única, 2-oct-2026).
+  if (esErrorTecnico({ error: msg, code: r.code })) {
     return {
-      titulo: "El servidor no respondió. Vuelve a intentarlo en un minuto; si sigue igual, avisa a sistemas.",
+      titulo: MSG_SERVIDOR_NO_RESPONDIO,
       recargar: false,
       apiSinRuta: false,
     };

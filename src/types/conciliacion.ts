@@ -21,6 +21,29 @@ export interface MovimientoGasto {
       se comporta como hoy — leerlos SIEMPRE por `estadoParcialDeGasto`. */
   monto_vinculado?: string | number | null;
   faltante?: string | number | null;
+  /** 1 CARGO ↔ N GASTOS (2-oct-2026, ADITIVOS del API 0.0.52) — solo en
+      `MovimientoBancario.gastos[]`: lo que ESTE cargo aporta a ESE gasto
+      (en la moneda de la CUENTA; en el 1↔1 cruzado USD↔MXN son los pesos),
+      el lugar y la primera línea de las notas (los 29 «Pago VIP SAESA» no
+      tienen proveedor: el nombre vive en las notas). `moneda` (arriba) es
+      la del GASTO. Se leen SIEMPRE por `lib/admin/conciliacion-lote.ts`. */
+  monto_parte?: string | number | null;
+  lugar?: string | null;
+  notas?: string | null;
+  notas_primera_linea?: string | null;
+}
+
+/** Cómo quedó cada gasto tras ligar un cargo (respuesta del PATCH, 0.0.52). */
+export interface GastoEstadoParte {
+  gasto_id: string;
+  /** Lo que el cargo aporta a ese gasto (moneda de la cuenta). */
+  monto_parte: string | number;
+  /** Moneda de la parte (= la de la cuenta del cargo). */
+  moneda?: string | null;
+  /** Los cargos ligados CUBREN el gasto (regla del API, tolerancia 1.00). */
+  gasto_conciliado?: boolean | null;
+  monto_vinculado?: string | number | null;
+  faltante?: string | number | null;
 }
 
 export interface MovimientoBancario {
@@ -57,6 +80,23 @@ export interface MovimientoBancario {
   gasto_conciliado?: boolean | null;
   monto_vinculado?: string | number | null;
   faltante?: string | number | null;
+  /** 1 CARGO ↔ N GASTOS (2-oct-2026, ADITIVOS del API 0.0.52; ausentes =
+      API previo y la fila se pinta como antes). Fuente única de la liga:
+      la tabla puente del API; `gasto_id`/`gasto` quedan como ESPEJO solo
+      cuando hay EXACTAMENTE una parte (con 2+ vienen NULL).
+      - `gastos_n`: cuántos gastos paga este cargo.
+      - `gastos`: el detalle de cada parte (`monto_parte`, lugar, nota…).
+      - `gastos_suma`: Σ monto_parte; `gastos_diferencia` = |monto| − Σ (el
+        centavo del lote: SAESA factura 2,231.375 y el banco cobra 4,462.75
+        por dos); null si hay una parte cruzada de moneda.
+      - `gastos_estado`: SOLO en la respuesta del PATCH — cómo quedó cada
+        gasto (cubierto o parcial).
+      Se leen SIEMPRE por `lib/admin/conciliacion-lote.ts`. */
+  gastos_n?: number | null;
+  gastos?: MovimientoGasto[] | null;
+  gastos_suma?: number | string | null;
+  gastos_diferencia?: number | string | null;
+  gastos_estado?: GastoEstadoParte[] | null;
   /** Cobro de vuelo conciliado (ABONOS): detalle + navegación al vuelo. */
   cobro?: {
     monto?: string | null;
@@ -223,6 +263,33 @@ export interface GastoCandidato {
   tc_implicito?: number | string | null;
   monto_vinculado?: string | number | null;
   faltante?: string | number | null;
+  /** ADITIVOS (2-oct-2026, `gastos-candidatos` del API 0.0.52; `nota` y
+      `capturado_por` ya los mandaba `sugerir`): `cruzado` = gasto en USD
+      contra una cuenta en MXN (T.C. implícito 15–25): solo se liga 1 a 1,
+      nunca dentro de un lote; `nota` = primera línea de las notas. */
+  cruzado?: boolean | null;
+  nota?: string | null;
+  capturado_por?: string | null;
+}
+
+/**
+ * Respuesta de `GET /v1/conciliacion/movimientos/:id/gastos-candidatos`
+ * (2-oct-2026, API 0.0.52): gastos bancarios SIN conciliar en la moneda de
+ * la cuenta (y, en una cuenta MXN sin búsqueda, los USD con T.C. implícito
+ * 15–25 marcados `cruzado`), con fecha ±`dias` del cargo. Sin `q`, primero
+ * los que cuadran con el cargo. `truncado` = hubo más que el `limite`.
+ */
+export interface GastosCandidatosResponse {
+  movimiento: {
+    id: string;
+    fecha: string;
+    monto: number | string;
+    /** Moneda de la CUENTA del cargo. */
+    moneda: string | null;
+  };
+  ventana: { desde: string; hasta: string };
+  candidatos: GastoCandidato[];
+  truncado: boolean;
 }
 
 /** Respuesta de `POST /v1/conciliacion/movimientos/:id/sugerir`. */
@@ -374,6 +441,9 @@ export interface ConciliacionResumenCuenta {
   conciliados: number;
   pendientes: number;
   monto_pendiente: number;
+  /** ADITIVO (2-oct-2026, API 0.0.52): Σ `gastos_diferencia` de los cargos
+      que pagan 2+ gastos (los centavos del lote; jamás se ajusta el gasto). */
+  diferencia_lotes?: number | null;
 }
 
 export interface MovimientoListResponse {
