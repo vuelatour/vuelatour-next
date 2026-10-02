@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { fmtDateTime } from "@/lib/datetime";
 import { updateConfiguracionAction } from "@/app/admin/configuracion/actions";
 import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
+import { CLAVE_CONFIG_MODELO_IA } from "@/lib/admin/ia-modelo";
 
 /**
  * Claves de config con su propia sección (listas de usuarios, no switches):
@@ -34,6 +35,10 @@ import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 const CLAVES_CON_SECCION_PROPIA: ReadonlySet<string> = new Set([
   "responsables_facturacion",
   "editores_cotizacion_cobrada",
+  // Modelo de IA (2-oct-2026): id en `valor_json`, tarjeta propia dentro de
+  // «Créditos de IA». El API 0.0.51 la excluye; esto cubre un API anterior
+  // que encontrara la fila ya creada (p. ej. tras un rollback).
+  CLAVE_CONFIG_MODELO_IA,
 ]);
 
 /**

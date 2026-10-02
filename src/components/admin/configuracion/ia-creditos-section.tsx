@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -236,6 +236,7 @@ export function IaCreditosSection({
   mes,
   mesActual,
   consumo7dUsd = null,
+  tarjetaModelo = null,
 }: {
   resumen: IaUsoResumen | null;
   mes: string;
@@ -245,6 +246,12 @@ export function IaCreditosSection({
    * `null` = no se pudo medir (el aviso de saldo bajo no dice «N días»).
    */
   consumo7dUsd?: number | null;
+  /**
+   * «Modelo de IA» (2-oct-2026, API 0.0.51): la página la manda YA envuelta
+   * en `<Suspense>` (su lectura espera hasta 5 s a pyservices y la sección
+   * no debe esperar con ella). Sin la prop no se pinta nada.
+   */
+  tarjetaModelo?: ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -367,6 +374,9 @@ export function IaCreditosSection({
     return (
       <section className="space-y-4">
         {encabezado}
+        {/* «Modelo de IA» va ARRIBA del consumo (y del estado vacío): elegir
+            el modelo no depende de que haya consumo registrado. */}
+        {tarjetaModelo}
         <EmptyState
           icon={SparklesIcon}
           title="Aún sin datos"
@@ -400,6 +410,8 @@ export function IaCreditosSection({
       {encabezado}
 
       {bandaSaldo}
+
+      {tarjetaModelo}
 
       <div className="grid gap-4 lg:grid-cols-3 items-start">
         {/* ── Card de SALDO ─────────────────────────────────────────── */}

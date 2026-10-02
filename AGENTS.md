@@ -4928,6 +4928,17 @@ v1, retirada): es una CUENTA CORRIENTE por socio. Contrato con el API 0.0.50
 (tablas `reparto_pago` + `reparto_cuenta_socio`, migraciones
 `20261001000001` y `20261002000001`, bucket privado `reparto-comprobantes`).
 
+- **Atajo desde el reparto por avión (2-oct-2026)**: en la tabla «Socio · %
+  · Utilidad del periodo» de cada tarjeta, el NOMBRE del socio y el «Ver
+  cuenta ›» a su lado llevan a `/admin/profit-sharing/socios/<id>` (donde
+  está «Registrar entrega»). Pedido del cliente: «al lado del nombre del
+  socio puede mandar al detalle para pagar al socio». Quién lo ve lo decide
+  `hrefCuentaSocioDesdeReparto({rol, usuarioId}, socioId)`
+  (`lib/admin/reparto-pagos.ts`): ADMIN/ANALISTA/FACTURACION todos; un SOCIO
+  solo el suyo (la de otro socio responde 403); COORDINADOR, campo y «sin
+  rol», texto plano. La tarjeta (`avion-reparto-card.tsx`) recibe `rol` y
+  `usuarioId` de la página. Pruebas: `reparto-pagos.test.ts` y
+  `cuentas-socios.test.tsx` (render + cableado).
 - **El dinero es del API**: saldo = saldo inicial + Σ utilidades (por MES y
   avión, `compute()` mes a mes desde el arranque de la cuenta hasta el mes en
   curso) − Σ entregas. Generado, entregado, por entregar, saldo corrido,
@@ -5093,3 +5104,78 @@ v1, retirada): es una CUENTA CORRIENTE por socio. Contrato con el API 0.0.50
 - **Pendientes conocidos**: el PDF/Excel del reparto no imprimen las
   entregas; sin QA visual en navegador (marcado probado con
   `react-dom/server`).
+
+## Modelo de IA configurable (2-oct-2026, API 0.0.51)
+
+Pedido del cliente (captura de Configuración → Créditos de IA): «dejar una
+opción en la configuración para adaptar el modelo que quieran utilizar,
+aunque ahorita dejaremos por default el que estamos usando actualmente». Sin
+migración: el API guarda la elección en `configuracion_sistema.ia_modelo`
+(upsert) y la manda a pyservices en la cabecera `X-IA-Modelo` SOLO cuando hay
+modelo elegido; sin elección, pyservices usa su `ANTHROPIC_MODEL`
+(`claude-opus-4-8`). En prod arranca SIN elegir: nada cambia hasta que un
+ADMIN guarde.
+
+- **Dónde**: tarjeta «Modelo de IA» (`configuracion/modelo-ia-card.tsx`)
+  DENTRO de «Créditos de IA (Anthropic)», arriba del saldo y del consumo
+  (también en el estado vacío). La página es solo ADMIN. «Modelo en uso:
+  Claude Opus 4.8 (claude-opus-4-8)» + «default del servidor» / «elegido en
+  Configuración», quién y cuándo lo cambió, su tarifa (o el aviso ámbar si
+  está fuera del catálogo). Selector (`SearchableSelect`) con el catálogo
+  —nombre, descripción y «$5 / $25 por millón de tokens»— y «Otro (escribir
+  id)» que abre un campo; la nota del ELEGIDO (tarifa o aviso ámbar) solo sale
+  cuando es un cambio. El error del campo «Otro» sale hasta que el operador
+  SALE del campo (`errorCampoOtroModeloIa`): mientras escribe solo se apaga
+  «Guardar». «Guardar» (apagado si no cambia nada) y «Volver al del
+  servidor» (solo con elección, manda `null`) **confirman** con los textos de
+  `textosConfirmacionModeloIa` (título, cuerpo del contrato, botón y, con un
+  id FUERA del catálogo, el aviso ÁMBAR de que si no existe TODAS las
+  lecturas con IA fallarán, dentro de la descripción); el `PUT` sale
+  únicamente de la confirmación. `abierto` va aparte de la última
+  confirmación: al cerrar, el diálogo conserva sus textos durante la
+  animación de salida. Tras guardar, toast + el `aviso` del API como warning
+  + `router.refresh()`; la tarjeta lleva `key` = el configurado.
+- **FUENTE ÚNICA** `lib/admin/ia-modelo.ts` (PURA): `CATALOGO_MODELOS_IA`
+  (COPIA literal del de `vuelatour-api/src/common/ia-modelo.util.ts`;
+  pyservices NO lleva catálogo, solo comparte la regex: hoy Opus 4.8 · Sonnet
+  4.6 · Haiku 4.5 — Sonnet 5 y Opus 5.5 salieron en la revisión del API
+  porque corren thinking adaptativo y truncaban las lecturas con los
+  `max_tokens` de pyservices; se eligen por «Otro», con su aviso y tarifa),
+  `TARIFAS_IA_POR_PREFIJO` (copia de `TARIFAS` de `ia-uso.service.ts`;
+  `tarifaModeloIa` con la MISMA regla de prefijo —gana la PRIMERA
+  coincidencia, por eso `claude-opus-5-5` (4/20) va antes que
+  `claude-opus-5` (5/25)—: desconocido ⇒ sin tarifa = costo 0),
+  `REGEX_ID_MODELO_IA` (`^claude-[a-z0-9.-]{3,80}$`, la misma del API y
+  pyservices), `normalizarIdModeloIa` (trim + minúsculas),
+  `avisoModeloIa` (ESPEJO del API) y todos los textos (los del 400
+  `MODELO_INVALIDO`, «fuera del catálogo» y «sin tarifa» son COPIA de los del
+  API). Tipos 1:1 en `types/ia-modelo.ts`.
+- **Red**: `getModeloIa()` (`lib/api/configuracion-server.ts`) NUNCA lanza:
+  `ok` · `no-disponible` (404 = API previo, 401/403 ⇒ la tarjeta no se
+  monta) · `fallo` (red/5xx/forma rara ⇒ la tarjeta dice «No se pudo
+  cargar…», jamás se esconde). **Va por STREAMING**: el API espera hasta 5 s
+  a pyservices (`GET /ia/modelo`), así que la página arranca la lectura junto
+  con las demás pero FUERA del `Promise.all` y solo la tarjeta la espera
+  (`TarjetaModeloIa` en `<Suspense key={mes}>` con `ModeloIaCardCargando`;
+  `IaCreditosSection` la recibe ya armada en `tarjetaModelo`). El `key` hace
+  que un cambio de mes enseñe el esqueleto en vez de frenar la navegación.
+  `setModeloIaAction(modelo | null)` (`app/admin/configuracion/actions.ts`)
+  normaliza y valida ANTES de la red, responde los errores ya en es-MX
+  (`mensajeErrorModeloIa`: el 401 de sesión vencida dice «Tu sesión
+  venció…», nunca el inglés del API) y revalida Configuración.
+  `ConfiguracionClient` filtra la clave `ia_modelo` (no es un switch).
+- **Aviso honesto**: con modelo elegido y `default_servidor: null`
+  (pyservices viejo o caído) la tarjeta dice que el servidor de IA podría
+  seguir usando el suyo (`TEXTO_SERVIDOR_SIN_CONFIRMAR`).
+- **Pruebas**: `lib/admin/__tests__/ia-modelo.test.ts` (paridad con la tabla
+  del contrato y, si el repo del API está al lado, contra su código: PARSEA
+  `CATALOGO_BASE` y `TARIFAS` renglón por renglón y los compara completos
+  —orden, cruces y altas—, más la regex y los textos; selección, textos y
+  errores),
+  `app/admin/configuracion/__tests__/modelo-ia-action.test.ts` (PUT, `null`,
+  id inválido sin red, errores; lectura ok/no-disponible/fallo) y
+  `components/admin/configuracion/__tests__/modelo-ia-card.test.tsx`
+  (estados con esqueleto, posición en la sección y CABLEADO: el PUT solo
+  tras confirmar, la tarjeta por streaming fuera del `Promise.all`).
+- **Orden de deploy**: pyservices → API → panel; tolerante en cualquier
+  orden (API previo ⇒ 404 ⇒ sin tarjeta).

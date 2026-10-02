@@ -7,6 +7,13 @@ import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 import type { IaSaldoCheckpoint } from "@/lib/api/ia-uso-server";
 import type { ResponsablesFacturacion } from "@/types/facturas-emitidas";
 import type { EditoresCotizacionCobrada } from "@/lib/admin/cotizacion-cobrada";
+import type { ModeloIa } from "@/types/ia-modelo";
+import {
+  TEXTO_ID_MODELO_INVALIDO,
+  esIdModeloValido,
+  mensajeErrorModeloIa,
+  normalizarIdModeloIa,
+} from "@/lib/admin/ia-modelo";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -110,5 +117,43 @@ export async function setEditoresCotizacionCobradaAction(
     return { ok: true, data };
   } catch (err) {
     return fail(err);
+  }
+}
+
+/**
+ * MODELO DE IA (2-oct-2026, API 0.0.51): `PUT /v1/config/ia-modelo
+ * { modelo }`. `null` = «Volver al del servidor» (pyservices usa su
+ * `ANTHROPIC_MODEL`). El id se normaliza (sin espacios, minúsculas) y se
+ * valida ANTES de llamar al API con la MISMA regla (`esIdModeloValido`): un
+ * id inválido no sale a la red. El error llega ya en es-MX
+ * (`mensajeErrorModeloIa`); el API responde 400 `MODELO_INVALIDO` si aun así
+ * no le gusta. La respuesta trae `aviso` cuando el id no está en el catálogo.
+ */
+export async function setModeloIaAction(
+  modelo: string | null,
+): Promise<ActionResult<ModeloIa>> {
+  let id: string | null = null;
+  if (modelo !== null) {
+    id = normalizarIdModeloIa(modelo);
+    if (!esIdModeloValido(id)) {
+      return { ok: false, code: "MODELO_INVALIDO", error: TEXTO_ID_MODELO_INVALIDO };
+    }
+  }
+  try {
+    const data = await apiServer<ModeloIa>("/v1/config/ia-modelo", {
+      method: "PUT",
+      body: { modelo: id },
+    });
+    revalidatePath("/admin/configuracion");
+    return { ok: true, data };
+  } catch (err) {
+    if (isApiError(err)) {
+      return {
+        ok: false,
+        code: err.code,
+        error: mensajeErrorModeloIa({ code: err.code, status: err.status, error: err.message }),
+      };
+    }
+    return { ok: false, error: mensajeErrorModeloIa({ error: null }) };
   }
 }

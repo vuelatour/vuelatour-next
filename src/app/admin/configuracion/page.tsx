@@ -1,6 +1,11 @@
+import { Suspense } from "react";
 import { LockClosedIcon } from "@heroicons/react/24/outline";
 import { ConfiguracionClient } from "@/components/admin/configuracion/configuracion-client";
 import { IaCreditosSection } from "@/components/admin/configuracion/ia-creditos-section";
+import {
+  ModeloIaCard,
+  ModeloIaCardCargando,
+} from "@/components/admin/configuracion/modelo-ia-card";
 import { ResponsablesFacturacionSection } from "@/components/admin/configuracion/responsables-facturacion-section";
 import {
   EditoresCotizacionCobradaSection,
@@ -15,6 +20,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import {
   getConfiguracion,
   getEditoresCotizacionCobrada,
+  getModeloIa,
 } from "@/lib/api/configuracion-server";
 import { listUsers } from "@/lib/api/users-server";
 import { ROLES_EDITAN_COTIZACION } from "@/lib/admin/quote-sheet-interna";
@@ -26,8 +32,21 @@ import {
 } from "@/lib/admin/ia-saldo";
 import { getMe } from "@/lib/api/me";
 import { todayCancun } from "@/lib/datetime";
+import type { LecturaModeloIa } from "@/types/ia-modelo";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * «Modelo de IA» por STREAMING (2-oct-2026, API 0.0.51): `GET
+ * /v1/config/ia-modelo` espera hasta 5 s a pyservices (`GET /ia/modelo`), así
+ * que NO va en el `Promise.all` de la página — un pyservices lento o en
+ * arranque en frío retrasaba TODA Configuración, banderas incluidas. La
+ * lectura arranca junto con las demás y solo esta tarjeta la espera, dentro
+ * de su `<Suspense>`.
+ */
+async function TarjetaModeloIa({ lectura }: { lectura: Promise<LecturaModeloIa> }) {
+  return <ModeloIaCard lectura={await lectura} />;
+}
 
 interface PageProps {
   searchParams: Promise<{ mes?: string }>;
@@ -79,6 +98,12 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
   // Responsables de facturación (24-sep-2026): ACCESORIO. Sin la migración
   // (503) la sección lo dice en gris; otro fallo se AVISA arriba.
   const faltantes: string[] = [];
+  // MODELO DE IA: arranca YA (en paralelo con el resto) pero NO se espera
+  // aquí. `getModeloIa` nunca lanza salvo el control de flujo de Next; el
+  // `.catch` vacío solo marca la promesa como atendida mientras llega su
+  // `await` (el error, si lo hubiera, sube igual desde `TarjetaModeloIa`).
+  const lecturaModeloIa = getModeloIa();
+  lecturaModeloIa.catch(() => {});
   // EDITAN COTIZACIONES COBRADAS (26-sep-2026, API 0.0.37): ACCESORIO. Un
   // 404 es un API previo (la sección lo dice en gris, sin avisar arriba);
   // otro fallo se AVISA. Los candidatos salen de `/v1/users` (oficina activa
@@ -183,6 +208,15 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
         mes={mes}
         mesActual={mesActual}
         consumo7dUsd={consumo7dUsd}
+        tarjetaModelo={
+          // key = mes: al cambiar de mes (`router.replace`, una transición) el
+          // límite es NUEVO y enseña su esqueleto en vez de frenar la
+          // navegación hasta que conteste pyservices. Tras guardar
+          // (`router.refresh()`, mismo mes) la tarjeta se queda y se actualiza.
+          <Suspense key={mes} fallback={<ModeloIaCardCargando />}>
+            <TarjetaModeloIa lectura={lecturaModeloIa} />
+          </Suspense>
+        }
       />
     </div>
   );
