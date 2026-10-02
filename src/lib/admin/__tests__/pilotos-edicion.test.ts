@@ -11,7 +11,9 @@ import {
   CAMPOS_MODO_PILOTO,
   DESCRIPCION_DIALOGO_PILOTO,
   HINT_TARJETA_PILOTO,
+  MSG_DATOS_FORMATO_INVALIDO,
   MSG_EDITAR_PILOTO_API_VIEJO,
+  MSG_PILOTO_NO_EXISTE,
   MSG_SOLO_ADMIN_EDITA_USUARIOS,
   MSG_TARJETA_DE_OTRO_USUARIO,
   TOAST_PILOTO_ACTUALIZADO,
@@ -20,7 +22,9 @@ import {
   opcionesTarjetaPiloto,
   payloadModoPiloto,
   payloadModoUsuario,
+  puedeCambiarAccesoPiloto,
   puedeEditarPiloto,
+  soloCamposEnviados,
   tarjetaParaPayload,
   tituloDialogoPiloto,
   usuarioParaEdicion,
@@ -53,6 +57,64 @@ describe("puedeEditarPiloto", () => {
     for (const rol of ["FACTURACION", "ANALISTA", "SOCIO", "PILOTO", "MECANICO", "VISITANTE"] as const) {
       expect(puedeEditarPiloto(rol)).toBe(false);
     }
+  });
+
+  // Revisión 2-oct-2026: Pablo y Alejandro Canales (ADMIN + es_piloto) salen
+  // en Pilotos; al COORDINADOR el API le responde SIEMPRE 403 con ellos.
+  const PABLO = { rol: "ADMIN", es_piloto_externo: false } as const;
+  const BASE = { rol: "PILOTO", es_piloto_externo: false } as const;
+  const EXTERNO = { rol: "PILOTO", es_piloto_externo: true } as const;
+  const SOCIO_EXTERNO = { rol: "SOCIO", es_piloto_externo: true } as const;
+
+  it("COORDINADOR: solo piloto de base o externo (espejo del API); oficina que vuela ⇒ no", () => {
+    expect(puedeEditarPiloto("COORDINADOR", BASE)).toBe(true);
+    expect(puedeEditarPiloto("COORDINADOR", EXTERNO)).toBe(true);
+    expect(puedeEditarPiloto("COORDINADOR", SOCIO_EXTERNO)).toBe(true);
+    expect(puedeEditarPiloto("COORDINADOR", PABLO)).toBe(false);
+    for (const rol of ["ADMIN", "COORDINADOR", "FACTURACION", "ANALISTA", "SOCIO"] as const) {
+      expect(puedeEditarPiloto("COORDINADOR", { rol, es_piloto_externo: false })).toBe(false);
+    }
+  });
+
+  it("ADMIN y sin /me: se ofrece con cualquier destino; los demás roles: nunca", () => {
+    expect(puedeEditarPiloto("ADMIN", PABLO)).toBe(true);
+    expect(puedeEditarPiloto(null, PABLO)).toBe(true);
+    expect(puedeEditarPiloto(undefined, PABLO)).toBe(true);
+    expect(puedeEditarPiloto("FACTURACION", BASE)).toBe(false);
+    expect(puedeEditarPiloto("COORDINADOR", null)).toBe(true);
+  });
+});
+
+describe("puedeCambiarAccesoPiloto", () => {
+  it("solo ADMIN (y sin /me se ofrece: el API decide); COORDINADOR y demás ⇒ no", () => {
+    expect(puedeCambiarAccesoPiloto("ADMIN")).toBe(true);
+    expect(puedeCambiarAccesoPiloto(null)).toBe(true);
+    expect(puedeCambiarAccesoPiloto(undefined)).toBe(true);
+    for (const rol of ["COORDINADOR", "FACTURACION", "ANALISTA", "SOCIO", "PILOTO", "MECANICO", "VISITANTE"] as const) {
+      expect(puedeCambiarAccesoPiloto(rol)).toBe(false);
+    }
+  });
+});
+
+describe("soloCamposEnviados", () => {
+  it("solo las llaves enviadas: un default de zod no se reinyecta; el null enviado se conserva", () => {
+    expect(
+      soloCamposEnviados(
+        { nombre: "Pablo Canales", tarjeta_terminacion: null },
+        { nombre: "Pablo Canales", tarjeta_terminacion: null, es_piloto: false, es_piloto_externo: false },
+      ),
+    ).toEqual({ nombre: "Pablo Canales", tarjeta_terminacion: null });
+  });
+
+  it("toma el valor VALIDADO (no el crudo) y descarta lo que zod quitó", () => {
+    expect(
+      soloCamposEnviados({ nombre: "X", es_piloto: false, rol: "ADMIN", basura: 1 }, { nombre: "X", es_piloto: false, rol: "ADMIN" }),
+    ).toEqual({ nombre: "X", es_piloto: false, rol: "ADMIN" });
+  });
+
+  it("entrada que no es objeto ⇒ cuerpo vacío", () => {
+    expect(soloCamposEnviados(null, { es_piloto: false })).toEqual({});
+    expect(soloCamposEnviados("x", { es_piloto: false })).toEqual({});
   });
 });
 
@@ -252,5 +314,35 @@ describe("mensajeErrorEditarPiloto", () => {
     const tarjeta =
       "La tarjeta **** 9999 no está registrada (o está inactiva) en Tarjetas corp.: regístrala primero o deja el campo vacío.";
     expect(mensajeErrorEditarPiloto({ status: 400, code: "BAD_REQUEST", error: tarjeta })).toBe(tarjeta);
+  });
+
+  it("404 del API («Usuario <uuid> not found») ⇒ «Ese piloto ya no existe…»; 404 en HTML ⇒ técnico", () => {
+    expect(
+      mensajeErrorEditarPiloto({
+        status: 404,
+        code: "NOT_FOUND",
+        error: "Usuario a0a0a0a0-0000-4000-8000-000000000002 not found",
+      }),
+    ).toBe(MSG_PILOTO_NO_EXISTE);
+    expect(mensajeErrorEditarPiloto({ status: 404, code: "NOT_FOUND", error: "Not Found" })).toBe(MSG_PILOTO_NO_EXISTE);
+    expect(MSG_PILOTO_NO_EXISTE).toBe("Ese piloto ya no existe: recarga la página.");
+    expect(mensajeErrorEditarPiloto({ status: 404, code: "PARSE_ERROR", error: "Not Found" })).toBe(
+      MSG_SERVIDOR_NO_RESPONDIO,
+    );
+  });
+
+  it("400 de class-validator en inglés ⇒ «Revisa los datos…» (el del apodo conserva su rama)", () => {
+    for (const error of [
+      "nombre must be shorter than or equal to 100 characters",
+      "telefono must match /^\\+\\d{1,3} \\d{10}$/ regular expression",
+      "property foo should not exist",
+      "nombre must be a string,nombre should not be empty",
+    ]) {
+      expect(mensajeErrorEditarPiloto({ status: 400, code: "BAD_REQUEST", error })).toBe(MSG_DATOS_FORMATO_INVALIDO);
+    }
+    expect(MSG_DATOS_FORMATO_INVALIDO).toBe("Revisa los datos: alguno no tiene el formato esperado.");
+    expect(mensajeErrorEditarPiloto({ status: 400, code: "BAD_REQUEST", error: "property apodo should not exist" })).toBe(
+      APODO_API_VIEJO,
+    );
   });
 });

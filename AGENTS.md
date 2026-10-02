@@ -5360,8 +5360,10 @@ mismo 403; una tarjeta de OTRA persona ⇒ 403 `TARJETA_DE_OTRO_USUARIO`
   tarjeta nueva en Tesorería → Tarjetas corp. (ADMIN) → vincularla al piloto
   aquí → INACTIVAR la vieja (nunca editar su terminación).
 - **FUENTE ÚNICA** `lib/admin/pilotos-edicion.ts` (PURA, prueba
-  `__tests__/pilotos-edicion.test.ts`): `puedeEditarPiloto(rol)` (ADMIN,
-  COORDINADOR y SIN rol —`/me` falló— se ofrece), textos
+  `__tests__/pilotos-edicion.test.ts`): `puedeEditarPiloto(rol, destino?)`
+  (ADMIN y SIN rol —`/me` falló— se ofrece; COORDINADOR solo si el destino
+  es `rol = PILOTO` o externo, espejo de `esDestinoEditablePorCoordinador`
+  del API), `puedeCambiarAccesoPiloto(rol)` (solo ADMIN o sin rol), textos
   (`BOTON_EDITAR_PILOTO`, `tituloDialogoPiloto`, `DESCRIPCION_DIALOGO_PILOTO`,
   `HINT_TARJETA_PILOTO`, `TOAST_PILOTO_ACTUALIZADO`,
   `HINT_ES_PILOTO_NO_DISPONIBLE`), el cuerpo del PATCH en los DOS modos del
@@ -5404,6 +5406,25 @@ mismo 403; una tarjeta de OTRA persona ⇒ 403 `TARJETA_DE_OTRO_USUARIO`
 - **Orden de deploy: API antes que panel.** Con el panel nuevo y el API
   previo, el COORDINADOR ve el botón y al guardar recibe «falta actualizar el
   servidor» (403 del RolesGuard); el ADMIN guarda como siempre.
-- **Pendientes conocidos**: «Acceso» (`AccessToggle`) sigue visible para la
-  coordinación en Pilotos y el API le responde 403 `SOLO_ADMIN_EDITA_USUARIOS`
-  (cambiar el estado es de ADMIN); sin QA visual en navegador.
+- **Correcciones de la revisión (2-oct-2026)**:
+  - **BLOQUEANTE corregido**: con zod 4 el `.default(false)` de `es_piloto` /
+    `es_piloto_externo` se aplicaba también en `UserFormSchema.partial()` y
+    `updateUserAction` mandaba `false` en CADA guardado de Usuarios (Pablo y
+    Alejandro Canales perdían el doble rol; los 4 externos quedaban
+    `es_piloto_externo = false` ⇒ INVITADO). Ahora las dos banderas son
+    `.optional()` SIN default y la action solo reenvía las llaves que el
+    diálogo mandó (`soloCamposEnviados`). **Nunca un `.default()` en un
+    schema que re-valida un PATCH parcial.** Prueba del body real:
+    `app/admin/users/__tests__/update-user-action.test.ts` (schema del
+    resolver → `payloadModoUsuario` → action → `apiServer`).
+  - «Editar datos» se decide POR PILOTO: la coordinación ya no lo ve con
+    Pablo/Alejandro Canales (ADMIN que vuelan; el API respondía siempre 403).
+  - «Acceso» (`AccessToggle`, prop aditiva `puedeCambiar`) solo con
+    `puedeCambiarAccesoPiloto`: la coordinación ve el estado SIN botón.
+  - `mensajeErrorEditarPiloto`: 404 ⇒ «Ese piloto ya no existe: recarga la
+    página.»; 400 de class-validator en inglés (must be / should not exist /
+    must match; el del apodo conserva su rama) ⇒ «Revisa los datos: alguno no
+    tiene el formato esperado.».
+- **Pendientes conocidos**: «Invitar piloto» de BASE sigue visible para la
+  coordinación y `POST /v1/users` es solo ADMIN (el externo sí funciona); sin
+  QA visual en navegador.

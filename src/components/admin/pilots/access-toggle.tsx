@@ -25,6 +25,12 @@ interface Props {
   id: string;
   estado: EstadoUsuario;
   size?: "sm" | "default";
+  /**
+   * `false` ⇒ solo el estado, SIN botón (2-oct-2026): cambiar el acceso es de
+   * ADMIN (`puedeCambiarAccesoPiloto`) y a la coordinación el API le responde
+   * 403. Default `true` (como antes).
+   */
+  puedeCambiar?: boolean;
 }
 
 const LABELS: Record<EstadoUsuario, { text: string; icon: typeof CheckCircleIcon; cls: string }> = {
@@ -45,7 +51,7 @@ const LABELS: Record<EstadoUsuario, { text: string; icon: typeof CheckCircleIcon
   },
 };
 
-export function AccessToggle({ id, estado, size = "default" }: Props) {
+export function AccessToggle({ id, estado, size = "default", puedeCambiar = true }: Props) {
   const [pending, startTransition] = useTransition();
   const [confirmando, setConfirmando] = useState(false);
   const current = LABELS[estado];
@@ -73,7 +79,7 @@ export function AccessToggle({ id, estado, size = "default" }: Props) {
         <Icon className="h-3.5 w-3.5" />
         {current.text}
       </span>
-      {isActive ? (
+      {!puedeCambiar ? null : isActive ? (
         <>
           {/* Confirmación SIEMPRE antes de revocar (regla permanente del
               cliente): bloquear al piloto lo deja sin app a media operación. */}

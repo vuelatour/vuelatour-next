@@ -38,8 +38,14 @@ export const UserFormSchema = z.object({
     .max(APODO_MAX, `Máximo ${APODO_MAX} caracteres`)
     .nullable()
     .optional(),
-  es_piloto: z.boolean().default(false),
-  es_piloto_externo: z.boolean().default(false),
+  // SIN `.default(false)` (revisión 2-oct-2026): con zod 4 el default se
+  // aplica aunque el campo sea opcional, también en `.partial()`, y
+  // `updateUserAction` volvía a meter `es_piloto: false` /
+  // `es_piloto_externo: false` en CADA guardado de Usuarios — Pablo y
+  // Alejandro Canales perdían el doble rol y los externos quedaban INVITADO.
+  // El formulario ya los recibe de `defaults(user)`; ausente = no viaja.
+  es_piloto: z.boolean().optional(),
+  es_piloto_externo: z.boolean().optional(),
   telefono: z
     .string()
     .regex(/^\+\d{1,3} \d{10}$/, "Lada + 10 dígitos")

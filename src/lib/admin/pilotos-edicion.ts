@@ -12,11 +12,15 @@
  * decide.
  *
  * Fuente ÚNICA (PURA, sin React ni red) de:
- *  - quién ve el botón y los textos del diálogo en modo piloto;
+ *  - quién ve el botón (por el rol de quien edita Y por el piloto destino)
+ *    y quién ve el control de «Acceso», y los textos del diálogo en modo
+ *    piloto;
  *  - el cuerpo del PATCH en los DOS modos del diálogo de usuario: la tarjeta
  *    y el apodo viajan solo si cambiaron (`null` = quitar), `tiene_fondo_caja`
  *    NUNCA viaja (lo mantiene Caja chica) y `es_piloto`/`es_piloto_externo`
- *    solo si cambiaron (y `es_piloto` jamás si el servidor no lo mandó);
+ *    solo si cambiaron (y `es_piloto` jamás si el servidor no lo mandó), y
+ *    la action solo reenvía las llaves que el diálogo mandó
+ *    (`soloCamposEnviados`);
  *  - la traducción de los errores del guardado.
  *
  * La tarjeta del gasto se SELLA al capturarlo: cambiar la del piloto NO toca
@@ -29,13 +33,44 @@ import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-t
 
 // ===== Quién ve el botón =====
 
+/** Lo que el botón necesita saber del piloto DESTINO. */
+export type DestinoEdicionPiloto = Pick<User, "rol" | "es_piloto_externo">;
+
 /**
- * ¿Se ofrece «Editar datos»? ADMIN y COORDINADOR; sin rol conocido (`/me`
- * no cargó) también — el gate real es el API, y esconder el botón por una
- * lectura fallida dejaría a la coordinación sin salida.
+ * ¿El COORDINADOR puede editar a ESTE destino? Espejo de
+ * `esDestinoEditablePorCoordinador` del API: piloto de base (`rol = PILOTO`)
+ * o externo. Un usuario de oficina que también vuela (Pablo y Alejandro
+ * Canales: ADMIN + `es_piloto`) sale en Pilotos pero solo lo edita un ADMIN.
  */
-export function puedeEditarPiloto(rol: Rol | null | undefined): boolean {
-  return rol == null || rol === "ADMIN" || rol === "COORDINADOR";
+export function esDestinoEditablePorCoordinador(destino: DestinoEdicionPiloto): boolean {
+  return destino.rol === "PILOTO" || destino.es_piloto_externo === true;
+}
+
+/**
+ * ¿Se ofrece «Editar datos»? ADMIN siempre; COORDINADOR solo si el destino
+ * es piloto de base o externo (revisión 2-oct-2026: con Pablo Canales el
+ * botón salía y el API respondía SIEMPRE 403 — un botón que nunca funciona).
+ * Sin rol conocido (`/me` no cargó) se ofrece — el gate real es el API, y
+ * esconder el botón por una lectura fallida dejaría a la coordinación sin
+ * salida. Sin `destino` (llamada sin piloto concreto) decide solo el rol.
+ */
+export function puedeEditarPiloto(
+  rol: Rol | null | undefined,
+  destino?: DestinoEdicionPiloto | null,
+): boolean {
+  if (rol == null || rol === "ADMIN") return true;
+  if (rol !== "COORDINADOR") return false;
+  return destino == null || esDestinoEditablePorCoordinador(destino);
+}
+
+/**
+ * ¿Se ofrece el control de «Acceso» (activar / revocar)? Solo ADMIN: cambiar
+ * el `estado` es de ADMIN y el API le responde 403 `SOLO_ADMIN_EDITA_USUARIOS`
+ * a la coordinación (antes, el 403 del RolesGuard). Sin `/me` se ofrece (el
+ * API decide). Quien no puede, ve el estado SIN botón.
+ */
+export function puedeCambiarAccesoPiloto(rol: Rol | null | undefined): boolean {
+  return rol == null || rol === "ADMIN";
 }
 
 // ===== Textos =====
@@ -70,6 +105,18 @@ export const MSG_TARJETA_DE_OTRO_USUARIO =
 
 /** Id que no es uuid: no se llama al API. */
 export const MSG_PILOTO_ID_INVALIDO = "No se encontró el piloto. Recarga la página.";
+
+/** 404 del API («Usuario <uuid> not found»): lo borraron o cambió de id. */
+export const MSG_PILOTO_NO_EXISTE = "Ese piloto ya no existe: recarga la página.";
+
+/**
+ * 400 de class-validator en inglés («nombre must be shorter than or equal to
+ * 100 characters», «property x should not exist», «must match …»).
+ */
+export const MSG_DATOS_FORMATO_INVALIDO = "Revisa los datos: alguno no tiene el formato esperado.";
+
+/** Textos de class-validator (inglés) que jamás se pintan tal cual. */
+const RE_VALIDACION_EN_INGLES = /must be|should not exist|must match/i;
 
 // ===== Cuerpo del PATCH =====
 
@@ -175,6 +222,25 @@ export function cuerpoActualizarPiloto(data: Record<string, unknown>): Record<st
   return cuerpo;
 }
 
+/**
+ * Lo que `updateUserAction` reenvía al API: SOLO las llaves que el llamador
+ * mandó. Defensa en profundidad (revisión 2-oct-2026): la action re-valida
+ * con el schema y cualquier `.default()` de zod volvería a inyectar un campo
+ * que el diálogo quitó a propósito (así viajaba `es_piloto: false` en cada
+ * guardado). Un `null` explícito enviado sí se conserva.
+ */
+export function soloCamposEnviados(
+  enviado: unknown,
+  validado: Record<string, unknown>,
+): Record<string, unknown> {
+  if (enviado === null || typeof enviado !== "object") return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(validado)) {
+    if (Object.prototype.hasOwnProperty.call(enviado, k)) out[k] = v;
+  }
+  return out;
+}
+
 // ===== Selector de tarjeta =====
 
 export interface OpcionTarjeta {
@@ -235,9 +301,14 @@ export interface FalloEditarPiloto {
  *    mensaje del API (es-MX), o su respaldo si llegó técnico;
  *  - 403 SIN código de negocio (el RolesGuard de un API viejo) ⇒ falta
  *    actualizar el servidor;
+ *  - 404 del API («Usuario <uuid> not found») ⇒ «Ese piloto ya no existe…»
+ *    (un 404 que llegó como HTML —`PARSE_ERROR`— es técnico);
  *  - 400 «property apodo should not exist» ⇒ el aviso del apodo;
+ *  - otro 400 de class-validator en inglés (must be / should not exist /
+ *    must match) ⇒ «Revisa los datos…»;
  *  - técnico (red, inglés, HTML) ⇒ «El servidor no respondió…»;
- *  - lo demás (400 de la tarjeta no registrada, 404…) ⇒ el mensaje del API.
+ *  - lo demás (400 de la tarjeta no registrada, en es-MX) ⇒ el mensaje del
+ *    API.
  */
 export function mensajeErrorEditarPiloto(r: FalloEditarPiloto): string {
   if (r.status === 403) {
@@ -249,7 +320,9 @@ export function mensajeErrorEditarPiloto(r: FalloEditarPiloto): string {
     }
     return MSG_EDITAR_PILOTO_API_VIEJO;
   }
+  if (r.status === 404 && r.code !== "PARSE_ERROR") return MSG_PILOTO_NO_EXISTE;
   if (r.status === 400 && esRechazoPorApodo(r.error)) return APODO_API_VIEJO;
+  if (r.status === 400 && RE_VALIDACION_EN_INGLES.test(r.error ?? "")) return MSG_DATOS_FORMATO_INVALIDO;
   if (esErrorTecnico(r)) return MSG_SERVIDOR_NO_RESPONDIO;
   return r.error as string;
 }

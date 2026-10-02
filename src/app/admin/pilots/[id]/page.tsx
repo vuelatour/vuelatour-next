@@ -32,7 +32,11 @@ import { EditarDatosPilotoButton } from "@/components/admin/pilots/editar-datos-
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { getMe } from "@/lib/api/me";
 import { Degradaciones } from "@/lib/api/degradar";
-import { puedeEditarPiloto, usuarioParaEdicion } from "@/lib/admin/pilotos-edicion";
+import {
+  puedeCambiarAccesoPiloto,
+  puedeEditarPiloto,
+  usuarioParaEdicion,
+} from "@/lib/admin/pilotos-edicion";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -122,11 +126,14 @@ export default async function PilotDetailPage({
     .then((r) => r.data)
     .catch(() => []);
 
-  // `/me` es ACCESORIO (solo decide si se ofrece «Editar datos»): si falla,
-  // la ficha carga, se avisa y el botón se ofrece igual (el API es el gate).
+  // `/me` es ACCESORIO (solo decide si se ofrecen «Editar datos» y el botón
+  // de «Acceso»): si falla, la ficha carga, se avisa y se ofrecen igual (el
+  // API es el gate). La coordinación NO edita a quien es de oficina aunque
+  // vuele (Pablo/Alejandro Canales): el API le respondería siempre 403.
   const degradado = new Degradaciones();
   const me = await degradado.opcional("tu usuario", getMe(), null);
-  const editable = puedeEditarPiloto(me?.rol);
+  const editable = puedeEditarPiloto(me?.rol, pilot);
+  const cambiaAcceso = puedeCambiarAccesoPiloto(me?.rol);
 
   return (
     <div className="space-y-6">
@@ -175,7 +182,7 @@ export default async function PilotDetailPage({
               Piloto externo: sin acceso al sistema.
             </p>
           ) : (
-            <AccessToggle id={pilot.id} estado={pilot.estado} />
+            <AccessToggle id={pilot.id} estado={pilot.estado} puedeCambiar={cambiaAcceso} />
           )}
         </div>
       </div>

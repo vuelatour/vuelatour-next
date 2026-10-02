@@ -16,7 +16,12 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { InvitePilotDialog } from "@/components/admin/pilots/invite-pilot-dialog";
 import { AccessToggle } from "@/components/admin/pilots/access-toggle";
 import { EditarDatosPilotoButton } from "@/components/admin/pilots/editar-datos-piloto";
-import { puedeEditarPiloto, usuarioParaEdicion } from "@/lib/admin/pilotos-edicion";
+import {
+  puedeCambiarAccesoPiloto,
+  puedeEditarPiloto,
+  usuarioParaEdicion,
+} from "@/lib/admin/pilotos-edicion";
+import type { Rol } from "@/types/me";
 import type { PilotListItem } from "@/types/pilots";
 
 export const dynamic = "force-dynamic";
@@ -48,8 +53,9 @@ export default async function PilotsPage({
   searchParams: Promise<{ q?: string; estado?: string; externo?: string }>;
 }) {
   const params = await searchParams;
-  // `/me` es ACCESORIO (solo decide si se ofrece «Editar datos»): si falla,
-  // la lista carga, se avisa y el botón se ofrece igual (el API es el gate).
+  // `/me` es ACCESORIO (solo decide si se ofrecen «Editar datos» y el botón
+  // de «Acceso»): si falla, la lista carga, se avisa y se ofrecen igual (el
+  // API es el gate).
   const degradado = new Degradaciones();
   const [{ data: pilots, count }, me] = await Promise.all([
     listPilots({
@@ -60,7 +66,10 @@ export default async function PilotsPage({
     }),
     degradado.opcional("tu usuario", getMe(), null),
   ]);
-  const editable = puedeEditarPiloto(me?.rol);
+  // Por card: la coordinación NO edita a quien es de oficina aunque vuele
+  // (Pablo/Alejandro Canales) — el API le respondería siempre 403.
+  const rolActual: Rol | null = me?.rol ?? null;
+  const cambiaAcceso = puedeCambiarAccesoPiloto(rolActual);
 
   const activos = pilots.filter((p) => p.estado === "ACTIVO").length;
   const invitados = pilots.filter((p) => p.estado === "INVITADO").length;
@@ -132,7 +141,12 @@ export default async function PilotsPage({
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {pilots.map((p) => (
-            <PilotCard key={p.id} pilot={p} editable={editable} />
+            <PilotCard
+              key={p.id}
+              pilot={p}
+              editable={puedeEditarPiloto(rolActual, p)}
+              cambiaAcceso={cambiaAcceso}
+            />
           ))}
         </div>
       )}
@@ -166,7 +180,15 @@ function StatCard({
   );
 }
 
-function PilotCard({ pilot, editable }: { pilot: PilotListItem; editable: boolean }) {
+function PilotCard({
+  pilot,
+  editable,
+  cambiaAcceso,
+}: {
+  pilot: PilotListItem;
+  editable: boolean;
+  cambiaAcceso: boolean;
+}) {
   return (
     <Card className="hover:border-brand-500/40 transition-colors">
       <CardContent className="p-5 space-y-4">
@@ -196,7 +218,7 @@ function PilotCard({ pilot, editable }: { pilot: PilotListItem; editable: boolea
             Sin acceso al sistema: la oficina captura sus tacómetros y gastos.
           </p>
         ) : (
-          <AccessToggle id={pilot.id} estado={pilot.estado} size="sm" />
+          <AccessToggle id={pilot.id} estado={pilot.estado} size="sm" puedeCambiar={cambiaAcceso} />
         )}
 
         <div className="grid grid-cols-5 gap-2 pt-2 border-t border-border">

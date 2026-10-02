@@ -9,6 +9,7 @@ import {
   esRechazoPorApodo,
   normalizarApodo,
 } from "@/lib/admin/usuario-apodo";
+import { soloCamposEnviados } from "@/lib/admin/pilotos-edicion";
 import { UserFormSchema, UserInviteSchema } from "./schema";
 import type { User } from "@/types/users";
 
@@ -83,9 +84,12 @@ export async function createUserAction(raw: unknown): Promise<ActionResult<User>
 export async function updateUserAction(id: string, raw: unknown): Promise<ActionResult<User>> {
   const parsed = UserFormSchema.partial().safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
-  // El diálogo manda `apodo` SOLO si cambió (null = borrarlo); aquí solo se
-  // normaliza lo que haya llegado.
-  const body = stripEmpty(normalizarApodoPayload(parsed.data));
+  // El diálogo manda `apodo`, la tarjeta y las banderas de piloto SOLO si
+  // cambiaron (null = borrar). La validación NO puede reinyectar lo que el
+  // diálogo quitó (revisión 2-oct-2026: un `.default(false)` de zod mandaba
+  // `es_piloto: false` en cada guardado): solo viajan las llaves enviadas.
+  const enviado = soloCamposEnviados(raw, parsed.data) as typeof parsed.data;
+  const body = stripEmpty(normalizarApodoPayload(enviado));
   try {
     const updated = await apiServer<User>(`/v1/users/${id}`, {
       method: "PATCH",
