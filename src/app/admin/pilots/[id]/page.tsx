@@ -28,6 +28,11 @@ import { getPilot } from "@/lib/api/pilots-server";
 import { listExpirations } from "@/lib/api/expirations-server";
 import { AccessToggle } from "@/components/admin/pilots/access-toggle";
 import { MesStatsSelector } from "@/components/admin/pilots/mes-stats-selector";
+import { EditarDatosPilotoButton } from "@/components/admin/pilots/editar-datos-piloto";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getMe } from "@/lib/api/me";
+import { Degradaciones } from "@/lib/api/degradar";
+import { puedeEditarPiloto, usuarioParaEdicion } from "@/lib/admin/pilotos-edicion";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type { Expiration, EstadoVencimiento } from "@/types/expirations";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -117,6 +122,12 @@ export default async function PilotDetailPage({
     .then((r) => r.data)
     .catch(() => []);
 
+  // `/me` es ACCESORIO (solo decide si se ofrece «Editar datos»): si falla,
+  // la ficha carga, se avisa y el botón se ofrece igual (el API es el gate).
+  const degradado = new Degradaciones();
+  const me = await degradado.opcional("tu usuario", getMe(), null);
+  const editable = puedeEditarPiloto(me?.rol);
+
   return (
     <div className="space-y-6">
       <BackLink
@@ -157,14 +168,19 @@ export default async function PilotDetailPage({
             </div>
           </div>
         </div>
-        {pilot.es_piloto_externo ? (
-          <p className="text-xs text-muted-foreground rounded-lg border border-border px-3 py-2">
-            Piloto externo: sin acceso al sistema.
-          </p>
-        ) : (
-          <AccessToggle id={pilot.id} estado={pilot.estado} />
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {editable && <EditarDatosPilotoButton pilot={usuarioParaEdicion(pilot)} />}
+          {pilot.es_piloto_externo ? (
+            <p className="text-xs text-muted-foreground rounded-lg border border-border px-3 py-2">
+              Piloto externo: sin acceso al sistema.
+            </p>
+          ) : (
+            <AccessToggle id={pilot.id} estado={pilot.estado} />
+          )}
+        </div>
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       {/* Franja de alertas (21-ago): lo que oficina debe ver ANTES de asignarle
           un vuelo — documentos vencidos/por vencer, descanso activo hoy y horas

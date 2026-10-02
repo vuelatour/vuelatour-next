@@ -10,8 +10,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { listPilots } from "@/lib/api/pilots-server";
+import { getMe } from "@/lib/api/me";
+import { Degradaciones } from "@/lib/api/degradar";
+import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { InvitePilotDialog } from "@/components/admin/pilots/invite-pilot-dialog";
 import { AccessToggle } from "@/components/admin/pilots/access-toggle";
+import { EditarDatosPilotoButton } from "@/components/admin/pilots/editar-datos-piloto";
+import { puedeEditarPiloto, usuarioParaEdicion } from "@/lib/admin/pilotos-edicion";
 import type { PilotListItem } from "@/types/pilots";
 
 export const dynamic = "force-dynamic";
@@ -43,12 +48,19 @@ export default async function PilotsPage({
   searchParams: Promise<{ q?: string; estado?: string; externo?: string }>;
 }) {
   const params = await searchParams;
-  const { data: pilots, count } = await listPilots({
-    q: params.q,
-    estado: params.estado,
-    externo: params.externo === "true" ? true : params.externo === "false" ? false : undefined,
-    limit: 200,
-  });
+  // `/me` es ACCESORIO (solo decide si se ofrece «Editar datos»): si falla,
+  // la lista carga, se avisa y el botón se ofrece igual (el API es el gate).
+  const degradado = new Degradaciones();
+  const [{ data: pilots, count }, me] = await Promise.all([
+    listPilots({
+      q: params.q,
+      estado: params.estado,
+      externo: params.externo === "true" ? true : params.externo === "false" ? false : undefined,
+      limit: 200,
+    }),
+    degradado.opcional("tu usuario", getMe(), null),
+  ]);
+  const editable = puedeEditarPiloto(me?.rol);
 
   const activos = pilots.filter((p) => p.estado === "ACTIVO").length;
   const invitados = pilots.filter((p) => p.estado === "INVITADO").length;
@@ -67,6 +79,8 @@ export default async function PilotsPage({
         </div>
         <InvitePilotDialog />
       </div>
+
+      <AvisoDegradado faltantes={degradado.faltantes} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Activos" value={activos} tone="success" />
@@ -118,7 +132,7 @@ export default async function PilotsPage({
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {pilots.map((p) => (
-            <PilotCard key={p.id} pilot={p} />
+            <PilotCard key={p.id} pilot={p} editable={editable} />
           ))}
         </div>
       )}
@@ -152,7 +166,7 @@ function StatCard({
   );
 }
 
-function PilotCard({ pilot }: { pilot: PilotListItem }) {
+function PilotCard({ pilot, editable }: { pilot: PilotListItem; editable: boolean }) {
   return (
     <Card className="hover:border-brand-500/40 transition-colors">
       <CardContent className="p-5 space-y-4">
@@ -197,14 +211,17 @@ function PilotCard({ pilot }: { pilot: PilotListItem }) {
           <Metric icon={ReceiptPercentIcon} value={pilot.stats.gastos_mes} label="gastos" />
         </div>
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
           <span>Último vuelo: {timeAgo(pilot.stats.ultimo_vuelo)}</span>
-          <Link
-            href={`/admin/pilots/${pilot.id}`}
-            className="inline-flex items-center gap-1 text-brand-500 hover:underline font-medium"
-          >
-            Ver detalle <ArrowRightIcon className="h-3 w-3" />
-          </Link>
+          <div className="flex items-center gap-3">
+            {editable && <EditarDatosPilotoButton pilot={usuarioParaEdicion(pilot)} size="sm" />}
+            <Link
+              href={`/admin/pilots/${pilot.id}`}
+              className="inline-flex items-center gap-1 text-brand-500 hover:underline font-medium"
+            >
+              Ver detalle <ArrowRightIcon className="h-3 w-3" />
+            </Link>
+          </div>
         </div>
       </CardContent>
     </Card>

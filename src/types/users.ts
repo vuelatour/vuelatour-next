@@ -11,8 +11,13 @@ export interface User {
   estado: EstadoUsuario;
   tiene_fondo_caja: boolean;
   tarjeta_terminacion: string | null;
-  /** También vuela (doble rol): entra a selectores de piloto y horas. */
-  es_piloto: boolean;
+  /**
+   * También vuela (doble rol): entra a selectores de piloto y horas.
+   * Ausente con un API previo al 2-oct-2026 en la lista de PILOTOS (no lo
+   * mandaba): el switch «También es piloto» se pinta deshabilitado y el
+   * campo nunca viaja — un `false` por omisión le quitaría el doble rol.
+   */
+  es_piloto?: boolean;
   es_piloto_externo: boolean;
   telefono: string | null;
   /**

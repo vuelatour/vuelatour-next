@@ -18,7 +18,9 @@ export const UserFormSchema = z.object({
   nombre: z.string().min(1, "Requerido").max(100),
   rol: RolEnum,
   estado: EstadoEnum,
-  tiene_fondo_caja: z.boolean().default(false),
+  // `tiene_fondo_caja` NO está aquí (2-oct-2026): lo mantiene Caja chica
+  // («Abrir fondo») y marcarlo a mano dejaba a la persona fuera de ese
+  // selector. Al no estar en el schema, zod lo descarta si llegara.
   // null explícito = DESVINCULAR la tarjeta (sobrevive al stripEmpty del
   // action; "" se descartaría y quitarla sería un no-op silencioso).
   tarjeta_terminacion: z
@@ -47,6 +49,20 @@ export const UserFormSchema = z.object({
 });
 
 export type UserFormValues = z.input<typeof UserFormSchema>;
+
+/**
+ * «Editar datos» del piloto (2-oct-2026): SOLO lo que la coordinación puede
+ * cambiar (el API rechaza lo demás con 403 `SOLO_ADMIN_EDITA_USUARIOS`). Lo
+ * usan el diálogo en modo piloto y `updatePilotAction`.
+ */
+export const PilotoDatosSchema = UserFormSchema.pick({
+  nombre: true,
+  apodo: true,
+  telefono: true,
+  tarjeta_terminacion: true,
+});
+
+export type PilotoDatosValues = z.input<typeof PilotoDatosSchema>;
 
 /** Alta/invitación de usuario: requiere el email real con el que usará Google. */
 export const UserInviteSchema = z.object({

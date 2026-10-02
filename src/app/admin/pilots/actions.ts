@@ -5,6 +5,13 @@ import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import type { EstadoUsuario } from "@/types/me";
 import type { User } from "@/types/users";
+import { esUuid } from "@/lib/admin/url-params";
+import {
+  MSG_PILOTO_ID_INVALIDO,
+  cuerpoActualizarPiloto,
+  mensajeErrorEditarPiloto,
+} from "@/lib/admin/pilotos-edicion";
+import { PilotoDatosSchema } from "@/app/admin/users/schema";
 import { InvitePilotSchema } from "./schema";
 
 export interface ActionResult<T = unknown> {
@@ -12,6 +19,10 @@ export interface ActionResult<T = unknown> {
   data?: T;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** Estado HTTP del fallo (aditivo; lo llena `updatePilotAction`). */
+  status?: number;
+  /** Código del API del fallo (aditivo; lo llena `updatePilotAction`). */
+  code?: string;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
@@ -98,5 +109,42 @@ export async function deactivatePilotAction(id: string): Promise<ActionResult> {
     return { ok: true };
   } catch (err) {
     return fail(err);
+  }
+}
+
+/**
+ * «Editar datos» del piloto (2-oct-2026): ADMIN y COORDINADOR por
+ * `PATCH /v1/users/:id`, SOLO con nombre, teléfono, nombre corto y tarjeta
+ * (`PilotoDatosSchema`, el `pick` del formulario de usuario; zod descarta lo
+ * demás). El candado es el API (403 `SOLO_ADMIN_EDITA_USUARIOS` /
+ * `TARJETA_DE_OTRO_USUARIO`); aquí se traduce cualquier fallo con
+ * `mensajeErrorEditarPiloto` y se devuelven `status`/`code`. Nunca lanza.
+ */
+export async function updatePilotAction(id: string, raw: unknown): Promise<ActionResult<User>> {
+  if (!esUuid(id)) return { ok: false, error: MSG_PILOTO_ID_INVALIDO };
+  const parsed = PilotoDatosSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  const body = cuerpoActualizarPiloto(parsed.data);
+  try {
+    const updated = await apiServer<User>(`/v1/users/${id}`, {
+      method: "PATCH",
+      body,
+    });
+    revalidatePath("/admin/pilots");
+    revalidatePath(`/admin/pilots/${id}`);
+    revalidatePath("/admin/users");
+    return { ok: true, data: updated };
+  } catch (err) {
+    const fallo = isApiError(err)
+      ? { status: err.status, code: err.code, error: err.message }
+      : { error: err instanceof Error ? err.message : "" };
+    return {
+      ok: false,
+      status: fallo.status,
+      code: fallo.code,
+      error: mensajeErrorEditarPiloto(fallo),
+    };
   }
 }

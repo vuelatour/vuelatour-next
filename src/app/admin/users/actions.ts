@@ -243,6 +243,11 @@ export async function setCajaOrigenAction(
 export interface CardOption {
   terminacion: string;
   nombre_titular: string;
+  /**
+   * Dueño en el catálogo (2-oct-2026, aditivo): «Editar datos» del piloto
+   * solo ofrece tarjetas libres o ya suyas (`opcionesTarjetaPiloto`).
+   */
+  usuario_id?: string | null;
 }
 
 /**
@@ -258,6 +263,7 @@ export async function listCardsOptionsAction(): Promise<ActionResult<CardOption[
       data: res.data.map((c) => ({
         terminacion: c.terminacion,
         nombre_titular: c.nombre_titular,
+        usuario_id: c.usuario_id ?? null,
       })),
     };
   } catch (err) {

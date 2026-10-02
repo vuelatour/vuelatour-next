@@ -5307,3 +5307,68 @@ ADMIN guarde.
   tras confirmar, la tarjeta por streaming fuera del `Promise.all`).
 - **Orden de deploy**: pyservices → API → panel; tolerante en cualquier
   orden (API previo ⇒ 404 ⇒ sin tarjeta).
+
+## Pilotos: «Editar datos» del piloto + tarjetas (2-oct-2026, API 0.0.52)
+
+Pedido de la oficina: la coordinación cambia la tarjeta corp. y los datos de
+contacto de los PILOTOS sin esperar a un ADMIN. El API abrió
+`PATCH /v1/users/:id` a COORDINADOR, ACOTADO (invariante 41 del API): solo
+nombre, teléfono, nombre corto y tarjeta de un piloto de base o externo; un
+usuario de oficina que también vuela (Pablo Canales, ADMIN + `es_piloto`)
+sigue siendo solo de ADMIN ⇒ 403 `SOLO_ADMIN_EDITA_USUARIOS`; otro campo ⇒ el
+mismo 403; una tarjeta de OTRA persona ⇒ 403 `TARJETA_DE_OTRO_USUARIO`
+(«Esa tarjeta es de <nombre>: un ADMIN la reasigna desde Tarjetas corp.»).
+**El candado es el API**; el panel solo OFRECE el botón.
+
+- **La tarjeta del gasto se SELLA al capturarlo**: cambiar la del piloto NO
+  toca los gastos anteriores (el diálogo lo dice). Procedimiento: alta de la
+  tarjeta nueva en Tesorería → Tarjetas corp. (ADMIN) → vincularla al piloto
+  aquí → INACTIVAR la vieja (nunca editar su terminación).
+- **FUENTE ÚNICA** `lib/admin/pilotos-edicion.ts` (PURA, prueba
+  `__tests__/pilotos-edicion.test.ts`): `puedeEditarPiloto(rol)` (ADMIN,
+  COORDINADOR y SIN rol —`/me` falló— se ofrece), textos
+  (`BOTON_EDITAR_PILOTO`, `tituloDialogoPiloto`, `DESCRIPCION_DIALOGO_PILOTO`,
+  `HINT_TARJETA_PILOTO`, `TOAST_PILOTO_ACTUALIZADO`,
+  `HINT_ES_PILOTO_NO_DISPONIBLE`), el cuerpo del PATCH en los DOS modos del
+  diálogo (`tarjetaParaPayload`, `payloadModoPiloto`, `payloadModoUsuario`,
+  `cuerpoActualizarPiloto`), `opcionesTarjetaPiloto` (en modo piloto solo
+  tarjetas libres o ya suyas; `CardOption.usuario_id` es aditivo),
+  `usuarioParaEdicion` (solo campos de `User` cruzan al cliente) y
+  `mensajeErrorEditarPiloto` (403 de negocio ⇒ texto del API; 403 sin código
+  de negocio —RolesGuard de un API viejo— ⇒ «Tu usuario todavía no puede
+  editar datos de pilotos (falta actualizar el servidor)…»; técnico ⇒ «El
+  servidor no respondió…»).
+- **`UserFormDialog` gana `modo?: 'usuario' | 'piloto'`** (default
+  `usuario`, idéntico a antes salvo lo de abajo). En `piloto`: resolver
+  `PilotoDatosSchema` (= `UserFormSchema.pick({nombre, apodo, telefono,
+  tarjeta_terminacion})`, en `app/admin/users/schema.ts`), solo esos campos
+  en pantalla (sin Rol/Estado/switches), textos del helper y guardado por
+  `updatePilotAction`. **En AMBOS modos**: `tiene_fondo_caja` NUNCA viaja
+  (salió del schema y de los defaults: lo mantiene Caja chica); `es_piloto` /
+  `es_piloto_externo` viajan SOLO si cambiaron; y si `user.es_piloto` es
+  `undefined` (API previo en la lista de pilotos) el switch «También es
+  piloto» se pinta DESHABILITADO con su hint y el campo jamás viaja.
+  `types/users.ts`: `es_piloto?: boolean`.
+- **`updatePilotAction(id, raw)`** (`app/admin/pilots/actions.ts`, nunca
+  lanza): uuid antes de la red, valida con el `pick` (zod descarta lo demás),
+  `cuerpoActualizarPiloto` (sin `""`, conserva el `null` de quitar), revalida
+  `/admin/pilots`, `/admin/pilots/<id>` y `/admin/users`, y devuelve
+  `status`/`code` (aditivos en su `ActionResult`) con el error traducido.
+- **Botón «Editar datos»** (`components/admin/pilots/editar-datos-piloto.tsx`,
+  `cursor-pointer`, monta el diálogo solo al abrir): en la card de la lista y
+  en la cabecera del detalle, SOLO con `puedeEditarPiloto(me?.rol)`. Las dos
+  páginas leen `/me` con `degradado.opcional("tu usuario", getMe(), null)` +
+  `<AvisoDegradado>` y pasan el piloto recortado con `usuarioParaEdicion`.
+- Pruebas: `lib/admin/__tests__/pilotos-edicion.test.ts`,
+  `app/admin/pilots/__tests__/pilot-actions.test.ts`,
+  `components/admin/users/__tests__/user-form-dialog-modo.test.tsx` (modo
+  piloto sin Rol/Estado/switches, modo usuario idéntico salvo
+  `tiene_fondo_caja`, switch deshabilitado con control negativo, cableado) y
+  `components/admin/pilots/__tests__/editar-datos.test.tsx` (botón por rol y
+  cableado de las dos páginas).
+- **Orden de deploy: API antes que panel.** Con el panel nuevo y el API
+  previo, el COORDINADOR ve el botón y al guardar recibe «falta actualizar el
+  servidor» (403 del RolesGuard); el ADMIN guarda como siempre.
+- **Pendientes conocidos**: «Acceso» (`AccessToggle`) sigue visible para la
+  coordinación en Pilotos y el API le responde 403 `SOLO_ADMIN_EDITA_USUARIOS`
+  (cambiar el estado es de ADMIN); sin QA visual en navegador.
