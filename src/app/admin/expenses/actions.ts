@@ -112,6 +112,9 @@ export interface GastoTicketIA {
   tarjeta_terminacion?: string | null;
   /** Litros cargados si el ticket es de combustible (galones ya convertidos). */
   litros?: number | null;
+  /** Tipo de combustible del ticket (ADITIVO, opcional: hoy solo lo lee la
+   *  lectura de tickets de combustible). Nunca pisa el del avión. */
+  tipo_combustible?: "TURBOSINA" | "AVGAS" | null;
   conceptos?: { concepto: string; monto: number }[];
   /** Desglose compuesto por el API (regla FBO/TUA) tal como irá en notas. */
   desglose_lineas?: string[];

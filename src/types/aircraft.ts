@@ -7,6 +7,8 @@ export type PaisAeronave = "MX" | "USA";
 export type TipoMotor = "PISTON" | "TURBINA";
 export type PosicionMotor = "UNICO" | "IZQUIERDO" | "DERECHO";
 export type PosicionHelice = "UNICA" | "IZQUIERDA" | "DERECHA";
+/** Combustible que carga el avión (AVGAS = pistón, TURBOSINA = turbina). */
+export type CombustibleAeronave = "AVGAS" | "TURBOSINA";
 
 /** Decimales y bigints de Postgres llegan como string vía supabase-js. */
 type Decimal = string;
@@ -32,6 +34,13 @@ export interface Aircraft {
   permiso_afac_usd_hr?: Decimal | null;
   color_calendario: string | null;
   ubicacion_base: string;
+  /**
+   * Combustible que carga (ADITIVO, 5-oct-2026, API 0.0.56 + migración
+   * 20261005000001): el API ajusta a este valor TODA carga GAS del avión.
+   * Ausente = API previo ⇒ la ficha pinta «—», el formulario no lo manda y
+   * los diálogos de gasto no prellenan ni avisan (`lib/admin/combustibles.ts`).
+   */
+  combustible?: CombustibleAeronave;
   activa: boolean;
   notas: string | null;
   /** Programa de servicio: secuencia cíclica de intervalos en horas (ej. [50,100,200]).

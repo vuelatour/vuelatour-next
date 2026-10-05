@@ -46,10 +46,11 @@ import {
   puedeEliminarGasto,
 } from "@/lib/admin/gasto-acciones";
 import type { Gasto } from "@/types/expenses";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 interface ExpenseActionsProps {
   gasto: Gasto;
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   /** URL firmada de la foto del comprobante (bucket privado), si tiene. */
   fotoUrl?: string;

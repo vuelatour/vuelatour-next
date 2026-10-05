@@ -110,7 +110,9 @@ export function momentoParaSugerirVuelo(c: {
  *   y le cambian la fecha, las dos fechas siguen coincidiendo).
  * - `tipo_combustible` y `lugar`: solo si la categoría que se guarda es GAS.
  *   Vaciar el lugar lo QUITA (`null` explícito: «» se tiraría en stripEmpty y
- *   el lugar viejo seguiría vivo).
+ *   el lugar viejo seguiría vivo). Única excepción a «solo lo que cambió»: un
+ *   tipo distinto al del avión (`delAvion`) viaja siempre, para que el API lo
+ *   ajuste (5-oct-2026).
  */
 export function camposCargaParaPatch(
   original: {
@@ -125,6 +127,10 @@ export function camposCargaParaPatch(
     tipo_combustible: string;
     lugar: string;
   },
+  /** Combustible del avión elegido (5-oct-2026): si el tipo NO coincide, viaja
+   *  aunque no haya cambiado — el API solo reaplica su ajuste cuando el PATCH
+   *  trae el tipo, y el aviso ámbar promete que al guardar se corrige. */
+  delAvion?: TipoCombustible | null,
 ): { fecha_hora_carga?: string; tipo_combustible?: TipoCombustible; lugar?: string | null } {
   const out: {
     fecha_hora_carga?: string;
@@ -140,10 +146,156 @@ export function camposCargaParaPatch(
 
   if (form.categoria === "GAS") {
     const tipo = TIPOS_COMBUSTIBLE.find((t) => t.value === form.tipo_combustible)?.value;
-    if (tipo && tipo !== original.tipo_combustible) out.tipo_combustible = tipo;
+    if (tipo && (tipo !== original.tipo_combustible || (delAvion && tipo !== delAvion))) {
+      out.tipo_combustible = tipo;
+    }
     const lugar = normalizarLugarCarga(form.lugar);
     const lugarOriginal = normalizarLugarCarga(original.lugar);
     if (lugar !== lugarOriginal) out.lugar = lugar === "" ? null : lugar;
   }
   return out;
+}
+
+// ─────────────── Combustible de la AERONAVE (5-oct-2026, API 0.0.56) ───────────────
+//
+// Caso real: Luis capturó desde la app 74 L para el XB-PEV (vuelo #280,
+// Chetumal) y eligió «Turbosina»; el PEV (Cessna 205, pistón) solo carga
+// gasavión y el Balance del PEV salió con «Combustible TURBOSINA». Desde hoy
+// cada avión dice qué combustible carga (`aeronave.combustible`, migración
+// 20261005000001, default AVGAS) y el API AJUSTA toda carga GAS a ese valor:
+// si alguien eligió el otro, la corrige, le pone la nota «⚠ … — revisar» y la
+// marca para visto bueno (`resolverTipoCombustible` del API). El panel:
+//
+//  - la ficha del avión captura el campo (alta: gasavión por default);
+//  - al capturar o verificar una carga con avión, PRELLENA el tipo con el del
+//    avión si está vacío (la IA no pisa al avión) y AVISA en ámbar si el
+//    operador eligió el otro — no bloquea: el API corrige al guardar.
+//
+// Las etiquetas son las MISMAS del selector «Tipo de combustible»
+// (`TIPOS_COMBUSTIBLE`): el aviso no puede decir «Avgas» bajo un selector que
+// ofrece «Gasavión». API previo (sin la columna) ⇒ `combustible` no llega y
+// todo esto calla: ni prellenado ni aviso, y la ficha pinta «—».
+
+/** Combustible con el que nace un avión dado de alta desde el panel (pistón). */
+export const COMBUSTIBLE_AERONAVE_DEFAULT: TipoCombustible = "AVGAS";
+
+/** Opciones del selector «Combustible» de la ficha del avión (gasavión primero: es el default). */
+export const COMBUSTIBLE_AERONAVE_OPCIONES: ReadonlyArray<{ value: TipoCombustible; label: string }> = [
+  ...TIPOS_COMBUSTIBLE.filter((t) => t.value === COMBUSTIBLE_AERONAVE_DEFAULT),
+  ...TIPOS_COMBUSTIBLE.filter((t) => t.value !== COMBUSTIBLE_AERONAVE_DEFAULT),
+];
+
+/** Etiqueta del campo en la ficha, el formulario y el detalle del avión. */
+export const ETIQUETA_COMBUSTIBLE_AERONAVE = "Combustible";
+
+/** Error del formulario del avión con un valor fuera del catálogo (espejo del CHECK de la BD). */
+export const ERROR_COMBUSTIBLE_AERONAVE = `Elige ${COMBUSTIBLE_AERONAVE_OPCIONES.map((o) => o.label).join(" o ")}.`;
+
+/** Ayuda bajo el selector de la ficha del avión. */
+export const AYUDA_COMBUSTIBLE_AERONAVE =
+  "Las cargas de este avión se guardan con este combustible.";
+
+/** `true` si el valor es un tipo de combustible válido. */
+export function esTipoCombustible(v: unknown): v is TipoCombustible {
+  return TIPOS_COMBUSTIBLE.some((t) => t.value === v);
+}
+
+/** Etiqueta del combustible de un avión; «—» si el API todavía no lo manda. */
+export function etiquetaCombustibleAeronave(combustible: string | null | undefined): string {
+  return etiquetaTipoCombustible(combustible) ?? "—";
+}
+
+/**
+ * ¿El API ya manda `combustible` en la flota? Decide si el ALTA de avión
+ * muestra y manda el campo: un API previo lo rechazaría (400 por
+ * `forbidNonWhitelisted`). Sin aviones no hay cómo saberlo ⇒ `true` (el API
+ * sale antes que el panel).
+ */
+export function apiConCombustible(
+  aircraft: ReadonlyArray<{ id: string; combustible?: string | null }>,
+): boolean {
+  if (aircraft.length === 0) return true;
+  return aircraft.some((a) => a.combustible !== undefined);
+}
+
+/** Avión de los catálogos que reciben los diálogos de gasto (alta y verificación). */
+export interface AvionCatalogoGasto {
+  id: string;
+  matricula: string;
+  /** Ausente = API previo: ni prellenado ni aviso. */
+  combustible?: TipoCombustible | null;
+}
+
+/**
+ * Forma ÚNICA del catálogo de aviones de los diálogos de gasto. Las páginas
+ * lo armaban con `{ id, matricula }` y así el combustible se perdía antes de
+ * llegar al diálogo: toda página que alimente `ExpenseCreateDialog` o el menú
+ * ⋯ (`ExpenseActions`) pasa por aquí.
+ */
+export function avionCatalogoGasto(a: {
+  id: string;
+  matricula: string;
+  combustible?: string | null;
+}): AvionCatalogoGasto {
+  return esTipoCombustible(a.combustible)
+    ? { id: a.id, matricula: a.matricula, combustible: a.combustible }
+    : { id: a.id, matricula: a.matricula };
+}
+
+/** Combustible del avión `id` en el catálogo; `null` = sin avión, desconocido o API previo. */
+export function combustibleDeAeronave(
+  aircraft: ReadonlyArray<{ id: string; combustible?: string | null }>,
+  id: string | null | undefined,
+): TipoCombustible | null {
+  if (!id) return null;
+  const c = aircraft.find((a) => a.id === id)?.combustible;
+  return esTipoCombustible(c) ? c : null;
+}
+
+/**
+ * Aviso ÁMBAR bajo el tipo de combustible cuando el operador eligió uno
+ * distinto al del avión. No bloquea: el API corrige al guardar y marca la
+ * carga para revisión. `null` = nada que avisar (coincide, sin tipo, o el
+ * avión no dice su combustible).
+ */
+export function avisoCombustibleDistinto(
+  matricula: string | null | undefined,
+  delAvion: TipoCombustible | null | undefined,
+  elegido: string | null | undefined,
+): string | null {
+  if (!delAvion || !esTipoCombustible(elegido) || elegido === delAvion) return null;
+  const etiqueta = etiquetaCombustibleAeronave(delAvion);
+  const m = (matricula ?? "").trim();
+  const sujeto = m ? `El ${m}` : "Este avión";
+  return `${sujeto} carga ${etiqueta}: al guardar se corregirá a ${etiqueta} y quedará marcado para revisión.`;
+}
+
+/**
+ * Qué tipo de combustible debe quedar en el formulario de una carga (alta o
+ * verificación) cada vez que cambian la categoría, el avión o llega la IA:
+ *
+ *  - no es GAS ⇒ no se toca;
+ *  - el operador ya eligió uno (o venía guardado) ⇒ ese manda; si no
+ *    coincide con el avión lo dice `avisoCombustibleDistinto`;
+ *  - vacío, o lo había puesto el sistema (`actualEsSugerido`) ⇒ el del avión;
+ *    la IA solo llena cuando el avión no dice nada (si la IA lee otro, manda
+ *    el avión: es el mismo ajuste que hará el API);
+ *  - sin avión ni IA ⇒ se queda como está.
+ */
+export function tipoCombustibleSugerido(p: {
+  categoria: string;
+  delAvion: TipoCombustible | null | undefined;
+  /** Valor del formulario («» = vacío). */
+  actual: string | null | undefined;
+  /** `true` = el valor actual lo puso el sistema (prellenado), no el operador. */
+  actualEsSugerido?: boolean;
+  /** Tipo leído por la IA del ticket, si lo leyó. */
+  ia?: string | null;
+}): string {
+  const actual = p.actual ?? "";
+  if (p.categoria !== "GAS") return actual;
+  if (esTipoCombustible(actual) && !p.actualEsSugerido) return actual;
+  if (p.delAvion) return p.delAvion;
+  if (esTipoCombustible(p.ia)) return p.ia;
+  return actual;
 }

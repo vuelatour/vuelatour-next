@@ -9,6 +9,7 @@ import { DescargarReposicionIcon } from "./excel-caja-buttons";
 import { esReposicionDescargable } from "@/lib/admin/caja-chica-excel";
 import type { Gasto } from "@/types/expenses";
 import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 /** Fila-viewmodel SERIALIZABLE que arma la página (server) del fondo. */
 export interface MovimientoFondoRow {
@@ -44,7 +45,7 @@ export function FondoHistorialTable({
   puedeDescargarExcel = false,
 }: {
   movimientos: MovimientoFondoRow[];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   fondoId: string;
   persona: string;

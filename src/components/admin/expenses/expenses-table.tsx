@@ -29,6 +29,7 @@ import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 const fmtMoney = (monto: string | number, moneda: string) =>
   Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
@@ -91,7 +92,7 @@ export function ExpensesTable({
   rol,
 }: {
   gastos: Gasto[];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   fotoUrls: Record<string, string>;
   /** true = la página no logró cargar TODOS los gastos (corte defensivo). */

@@ -67,6 +67,10 @@ import { daysUntilCancun, fmtDate } from "@/lib/datetime";
 import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
 import { esUuid } from "@/lib/admin/url-params";
 import { ETIQUETA_COLOR_AVION } from "@/lib/admin/calendario-semaforo";
+import {
+  ETIQUETA_COMBUSTIBLE_AERONAVE,
+  etiquetaCombustibleAeronave,
+} from "@/lib/admin/combustibles";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -259,6 +263,12 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                 value={aircraft.motor_hp != null ? `${aircraft.motor_hp} HP` : "—"}
               />
               <Field label="Asientos" value={String(aircraft.asientos)} />
+              {/* Combustible (5-oct-2026): toda carga GAS se ajusta a este
+                  valor; «—» = API previo que todavía no lo manda. */}
+              <Field
+                label={ETIQUETA_COMBUSTIBLE_AERONAVE}
+                value={etiquetaCombustibleAeronave(aircraft.combustible)}
+              />
               <Field label="Base" value={aircraft.ubicacion_base} />
               <Field label="Tarifa público" value={`${fmtUsd(aircraft.tarifa_hora_pub_usd)} / hr`} />
               <Field label="Tarifa broker" value={`${fmtUsd(aircraft.tarifa_hora_broker_usd)} / hr`} />

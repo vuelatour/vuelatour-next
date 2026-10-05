@@ -5558,3 +5558,66 @@ el API 0.0.55 (`POST /v1/flights/:id/tramos/alinear-fecha`, ADMIN/COORDINADOR).
   Otras tablas de meses (`quote-sheet*.ts`, `reparto-pagos.ts`, calendario)
   siguen con la suya: migrarlas a `MESES_LARGOS_ES` queda fuera (tocan la hoja
   o formatos distintos).
+
+## Combustible por aeronave: la carga se ajusta al combustible del avión (5-oct-2026, API 0.0.56)
+
+Caso real: Luis capturó desde la app 74 L para el XB-PEV (vuelo #280,
+Chetumal, tarjeta ****0585) y eligió «Turbosina»; el PEV (Cessna 205, pistón)
+solo carga gasavión y el Balance del PEV salió con «Combustible TURBOSINA».
+Decisión del cliente: cada avión dice qué combustible usa y, al capturar una
+carga, el sistema la ajusta al del avión y la marca para revisión si se eligió
+otro. Contrato con el API 0.0.56 (migración `20261005000001_aeronave_combustible`:
+`aeronave.combustible` AVGAS|TURBOSINA, default AVGAS; N58BT y N621TX en
+TURBOSINA). **El ajuste lo hace el API** (`resolverTipoCombustible`: corrige,
+nota «⚠ … — revisar», `requiere_visto_bueno`, aviso a oficina); el panel
+captura el dato del avión, PRELLENA y AVISA.
+
+- **FUENTE ÚNICA** `lib/admin/combustibles.ts` (sección «Combustible de la
+  AERONAVE», PURA, prueba `__tests__/combustible-aeronave.test.ts`):
+  `COMBUSTIBLE_AERONAVE_OPCIONES` (gasavión primero: es el default),
+  `COMBUSTIBLE_AERONAVE_DEFAULT`, `etiquetaCombustibleAeronave` («—» sin el
+  campo), `apiConCombustible`, `AvionCatalogoGasto` + `avionCatalogoGasto`,
+  `combustibleDeAeronave`, `avisoCombustibleDistinto` y
+  `tipoCombustibleSugerido`, más los textos (`ETIQUETA_/AYUDA_/ERROR_COMBUSTIBLE_AERONAVE`).
+- **Etiquetas = las del selector «Tipo de combustible»** (`TIPOS_COMBUSTIBLE`):
+  el panel dice «Gasavión» / «Turbosina» en la ficha, en el aviso y en el
+  selector. El contrato decía «Avgas», pero un aviso «carga Avgas» bajo un
+  selector que ofrece «Gasavión» confunde al operador; si se decide «Avgas» en
+  todo el sistema, se cambia en UN solo renglón (`TIPOS_COMBUSTIBLE`).
+- **Ficha del avión** (`aircraft-form-dialog.tsx`, `schema.ts`): campo
+  «Combustible» junto a «Modelo» (select, alta con gasavión). **El campo solo
+  viaja si el API lo conoce**: en edición lo decide el propio avión
+  (`combustible` ausente = API previo ⇒ «—» y no se manda; el API corre con
+  `forbidNonWhitelisted`); en el alta lo decide la flota
+  (`apiConCombustible(aircraft)` ⇒ prop `combustibleDisponible` de
+  `AircraftCreateButton`). El schema omite «» (preprocess). El detalle
+  (`aircraft/[id]/page.tsx`) pinta «Combustible: Gasavión» en Especificaciones.
+  La tabla de flota NO gana columna (no engordar el pizarrón).
+- **Catálogo de aviones de los diálogos de gasto**: las páginas lo armaban con
+  `{ id, matricula }` y el combustible se perdía antes de llegar al diálogo.
+  Ahora TODA página que alimenta `ExpenseCreateDialog` o el menú ⋯
+  (`ExpenseActions`) mapea con `.map(avionCatalogoGasto)` (Gastos, gastos
+  personales, Combustibles `aircraftMenu`, caja chica, detalle del vuelo ×2) y
+  las props intermedias se tipan `AvionCatalogoGasto[]`.
+- **Prellenado** (los dos diálogos, efecto con `getValues()` — fresco tras el
+  `reset` y el prellenado por matrícula): con GAS y avión, un tipo VACÍO (o que
+  puso el sistema, ref `tipoAuto`) toma el del avión; la IA solo llena si el
+  avión no dice nada (y si lee otro, manda el avión); lo elegido a mano o
+  GUARDADO manda. Cambiar de avión re-prellena solo lo que puso el sistema.
+  El alta gana el selector «Tipo de combustible» junto a Litros y el tipo
+  viaja solo en GAS. `GastoTicketIA.tipo_combustible` es ADITIVO (hoy la
+  lectura de gastos no lo manda).
+- **Aviso ámbar** (mismo patrón que el de matrícula): «El XB-PEV carga
+  Gasavión: al guardar se corregirá a Gasavión y quedará marcado para
+  revisión.» — no bloquea. En «Verificar / editar», `camposCargaParaPatch(…,
+  delAvion)` manda el tipo aunque no haya cambiado cuando no coincide con el
+  avión: el API solo reaplica su ajuste si el PATCH trae el tipo, y sin eso el
+  aviso mentiría.
+- **Carga masiva**: el preview pinta las `advertencias` del API tal cual (ahí
+  llega «La fila dice … se guardará como …»); el resultado del confirm no cambió.
+- **Pruebas**: `lib/admin/__tests__/combustible-aeronave.test.ts` y
+  `components/admin/expenses/__tests__/combustible-aeronave-ui.test.tsx`
+  («Verificar / editar» y la ficha REALES renderizados, cableado de los dos
+  diálogos y de las páginas).
+- **Orden de deploy**: migración → API 0.0.56 → panel. Con el API previo no
+  hay `combustible` en la flota: ni prellenado, ni aviso, ni campo que viaje.

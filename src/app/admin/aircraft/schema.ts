@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ERROR_COMBUSTIBLE_AERONAVE } from "@/lib/admin/combustibles";
 
 const PaisEnum = z.enum(["MX", "USA"]);
 
@@ -58,6 +59,16 @@ const caracteristicasLineas = z.preprocess(
     .optional(),
 );
 
+/**
+ * Combustible del avión (5-oct-2026): «» o null ⇒ se omite (un API previo
+ * lo rechazaría por `forbidNonWhitelisted`; el diálogo además lo quita cuando
+ * el API no lo manda en la flota). Espejo del CHECK de la BD.
+ */
+const combustibleAeronave = z.preprocess(
+  (v) => (v === "" || v === null || v === undefined ? undefined : v),
+  z.enum(["AVGAS", "TURBOSINA"], { error: ERROR_COMBUSTIBLE_AERONAVE }).optional(),
+);
+
 export const AircraftFormSchema = z.object({
   matricula: z
     .string()
@@ -93,6 +104,7 @@ export const AircraftFormSchema = z.object({
     .transform((v) => v.trim().toUpperCase())
     .optional()
     .or(z.literal("")),
+  combustible: combustibleAeronave,
   activa: z.boolean().default(true),
   notas: z.string().max(2000).optional().or(z.literal("")),
   servicio_horas_base: optionalNonNegative,

@@ -173,6 +173,12 @@ export const GastoCreateSchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
     z.number().positive("Litros inválidos").optional(),
   ),
+  /** Solo GAS (5-oct-2026): tipo de la carga, prellenado con el combustible
+   *  del avión; el API lo ajusta al del avión si no coincide. «» = sin dato. */
+  tipo_combustible: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : v),
+    z.enum(["TURBOSINA", "AVGAS"]).optional(),
+  ),
   moneda: z.enum(["MXN", "USD"]),
   fecha_gasto: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
   // SIN valor por defecto (regla del cliente): el formulario abre con "" y
@@ -220,6 +226,8 @@ export type GastoCreateValues = {
   propina: string;
   /** Litros cargados (solo categoría GAS): alimenta precio/litro del balance. */
   litros: string;
+  /** Solo GAS: «TURBOSINA» | «AVGAS» | «» (sin dato). */
+  tipo_combustible: string;
   moneda: string;
   fecha_gasto: string;
   medio_pago: string;

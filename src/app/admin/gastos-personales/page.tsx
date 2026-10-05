@@ -19,6 +19,7 @@ import {
   listGastosPersonales,
   signFuelPhotos,
 } from "@/lib/api/expenses-server";
+import { avionCatalogoGasto } from "@/lib/admin/combustibles";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { todayCancun } from "@/lib/datetime";
@@ -88,7 +89,7 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
     }),
   ]);
 
-  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  const aircraft = aircraftRes.data.map(avionCatalogoGasto);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
   // Firma las fotos de los comprobantes (bucket privado) para verlas aquí.

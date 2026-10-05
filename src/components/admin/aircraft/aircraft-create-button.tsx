@@ -5,7 +5,12 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { AircraftFormDialog } from "./aircraft-form-dialog";
 
-export function AircraftCreateButton() {
+export function AircraftCreateButton({
+  combustibleDisponible = true,
+}: {
+  /** El API ya maneja el combustible del avión (`apiConCombustible`). */
+  combustibleDisponible?: boolean;
+} = {}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -13,7 +18,11 @@ export function AircraftCreateButton() {
         <PlusIcon className="h-4 w-4" />
         Nueva aeronave
       </Button>
-      <AircraftFormDialog open={open} onOpenChange={setOpen} />
+      <AircraftFormDialog
+        open={open}
+        onOpenChange={setOpen}
+        combustibleDisponible={combustibleDisponible}
+      />
     </>
   );
 }

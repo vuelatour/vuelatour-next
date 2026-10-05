@@ -17,7 +17,11 @@ import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { uuidFiltro } from "@/lib/admin/url-params";
-import { AYUDA_EDITAR_CARGA, claveOrdenCarga } from "@/lib/admin/combustibles";
+import {
+  AYUDA_EDITAR_CARGA,
+  avionCatalogoGasto,
+  claveOrdenCarga,
+} from "@/lib/admin/combustibles";
 import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
@@ -106,7 +110,8 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
     .map((a) => ({ id: a.id, matricula: a.matricula, modelo: a.modelo }));
   // Menú ⋯ de cada carga (= el de Gastos): TODAS las aeronaves y los
   // proveedores, con la misma forma que les pasa la página de Gastos.
-  const aircraftMenu = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  // Con su combustible: «Verificar / editar» avisa si el tipo no es el del avión.
+  const aircraftMenu = aircraftRes.data.map(avionCatalogoGasto);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
   // Si la firma falla, la tabla queda sin recibos: avisar en vez de pintar

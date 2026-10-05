@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PencilIcon } from "@heroicons/react/24/outline";
 import { ExpenseVerifyDialog } from "@/components/admin/expenses/expense-verify-dialog";
 import type { Gasto } from "@/types/expenses";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 /**
  * Botón «Editar» de una línea del historial de gastos del vuelo (pedido del
@@ -19,7 +20,7 @@ export function HistorialGastoEditar({
   fotoUrl,
 }: {
   gasto: Gasto;
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   fotoUrl?: string;
 }) {

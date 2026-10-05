@@ -4,6 +4,7 @@ import { AircraftCreateButton } from "@/components/admin/aircraft/aircraft-creat
 import { AircraftTable } from "@/components/admin/aircraft/aircraft-table";
 import { listAircraft } from "@/lib/api/aircraft";
 import { EmptyState } from "@/components/admin/empty-state";
+import { apiConCombustible } from "@/lib/admin/combustibles";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function AircraftListPage() {
             )}
           </p>
         </div>
-        <AircraftCreateButton />
+        <AircraftCreateButton combustibleDisponible={apiConCombustible(aircraft)} />
       </div>
 
       {aircraft.length === 0 ? (

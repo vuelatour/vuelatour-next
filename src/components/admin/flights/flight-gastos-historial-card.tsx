@@ -29,6 +29,7 @@ import {
 import type { GastoHistorialEvento } from "@/lib/api/flights-server";
 import type { Gasto } from "@/types/expenses";
 import { HistorialGastoEditar } from "@/components/admin/flights/historial-gasto-editar";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 /**
  * Datos para poder EDITAR desde el historial (10-sep-2026): el gasto vivo
@@ -37,7 +38,7 @@ import { HistorialGastoEditar } from "@/components/admin/flights/historial-gasto
  */
 export interface HistorialEdicion {
   gastos: Gasto[];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   /** foto_url (path) → URL firmada, como en la tabla de gastos. */
   fotoUrls: Record<string, string>;

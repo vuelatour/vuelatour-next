@@ -6,6 +6,7 @@ import { isApiError } from "@/lib/api/errors";
 import { getFondo } from "@/lib/api/caja-chica-server";
 import { listUsers } from "@/lib/api/users-server";
 import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
+import { avionCatalogoGasto } from "@/lib/admin/combustibles";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { MovimientoButton } from "@/components/admin/caja-chica/movimiento-button";
@@ -80,7 +81,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
   const fotoUrls = await signFuelPhotos(
     gastosRes.data.map((g) => g.foto_url).filter((p): p is string => !!p),
   ).catch(() => ({}) as Record<string, string>);
-  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  const aircraft = aircraftRes.data.map(avionCatalogoGasto);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
   const money = (n: number) =>

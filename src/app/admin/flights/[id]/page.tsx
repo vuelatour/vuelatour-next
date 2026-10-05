@@ -44,6 +44,7 @@ import { listProviders } from "@/lib/api/providers-server";
 import { FlightGastosCard } from "@/components/admin/flights/flight-gastos-card";
 import { getClient } from "@/lib/api/clients-server";
 import { getQuote } from "@/lib/api/quotes-server";
+import { avionCatalogoGasto } from "@/lib/admin/combustibles";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
 import { listAirports } from "@/lib/api/airports-server";
@@ -881,7 +882,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
           <FlightGastosCard
             gastos={gastos}
             fotoUrls={gastoFotoUrls}
-            aircraft={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }))}
+            aircraft={aircraftRes.data.map(avionCatalogoGasto)}
             providers={providerOptions}
             vueloId={snapshot.id}
             vueloFolio={snapshot.folio}
@@ -896,7 +897,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             eventos={gastosHistorial}
             edicion={{
               gastos,
-              aircraft: aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula })),
+              aircraft: aircraftRes.data.map(avionCatalogoGasto),
               providers: providerOptions,
               fotoUrls: gastoFotoUrls,
             }}

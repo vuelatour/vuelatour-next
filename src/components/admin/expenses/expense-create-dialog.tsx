@@ -82,6 +82,13 @@ import {
 } from "@/lib/admin/comprobante-badge";
 import { opcionesFacturacionForm } from "@/lib/admin/facturacion-estatus";
 import { cn } from "@/lib/utils";
+import {
+  TIPOS_COMBUSTIBLE,
+  avisoCombustibleDistinto,
+  combustibleDeAeronave,
+  tipoCombustibleSugerido,
+  type AvionCatalogoGasto,
+} from "@/lib/admin/combustibles";
 
 const TIPOS_FACTURA = [
   "image/jpeg",
@@ -130,6 +137,8 @@ function emptyValues(defaults?: {
     monto: "",
     propina: "",
     litros: "",
+    // Solo GAS: se prellena con el combustible del avión (efecto abajo).
+    tipo_combustible: "",
     moneda: "MXN",
     fecha_gasto: hoyCancun(),
     // SIN default (regla del cliente 3-sep-2026): antes abría en
@@ -158,7 +167,7 @@ export function ExpenseCreateDialog({
   defaultCategoria,
   defaultPilotoNombre,
 }: {
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   /** Con vuelo: el gasto queda LIGADO (reporte por vuelo, reparto, pre-cierre). */
   defaultVueloId?: string;
@@ -195,6 +204,10 @@ export function ExpenseCreateDialog({
   // heredar el veto a un alta posterior (se resetea al abrir/guardar/cerrar —
   // reset(emptyValues) no limpia refs ni useState).
   const avionLimpiado = useRef(false);
+  // Tipo de combustible PRELLENADO por el sistema (del avión o de la IA), no
+  // elegido por el operador: si cambia el avión, se vuelve a prellenar con el
+  // del avión nuevo; lo que el operador elige a mano manda (5-oct-2026).
+  const tipoAuto = useRef(false);
   // ===== Reparto entre aviones desde la captura (gasto general sin vuelo ni
   // avión de categoría repartible): mismo patrón del RepartoDialog de Otros
   // gastos — al guardar se encadena el PUT de reparto existente.
@@ -238,11 +251,37 @@ export function ExpenseCreateDialog({
     reset,
     watch,
     setValue,
+    getValues,
     register,
     formState: { errors },
   } = useForm<GastoCreateValues>({
     defaultValues: emptyValues(formDefaults),
   });
+
+  // ===== Combustible del avión (5-oct-2026, caso XB-PEV con «Turbosina»):
+  // con GAS y avión elegido, el tipo vacío (o prellenado por el sistema) se
+  // llena con el del avión; la IA solo llena si el avión no dice nada. Corre
+  // con cualquier camino que cambie categoría/avión (selector, vuelo, IA,
+  // «Usar este avión», avión prefijado). Lee getValues(): fresco tras reset.
+  const categoriaSel = watch("categoria");
+  const avionSel = watch("aeronave_id");
+  const tipoSel = watch("tipo_combustible");
+  const tipoIa = aiRaw?.tipo_combustible ?? null;
+  useEffect(() => {
+    if (!open) return;
+    const actual = getValues("tipo_combustible");
+    const sugerido = tipoCombustibleSugerido({
+      categoria: getValues("categoria"),
+      delAvion: combustibleDeAeronave(aircraft, getValues("aeronave_id")),
+      actual,
+      actualEsSugerido: tipoAuto.current,
+      ia: tipoIa,
+    });
+    if (sugerido !== actual) {
+      setValue("tipo_combustible", sugerido);
+      tipoAuto.current = true;
+    }
+  }, [open, categoriaSel, avionSel, tipoSel, tipoIa, aircraft, getValues, setValue]);
   // Registro manual (el control es un SearchableSelect, no un input nativo):
   // handleSubmit bloquea el envío con el medio en blanco y pinta el error
   // bajo el campo; setValue(..., { shouldValidate: true }) lo limpia.
@@ -644,6 +683,10 @@ export function ExpenseCreateDialog({
           monto: totalPagado,
           propina,
           litros,
+          // Tipo de combustible: solo en GAS (un valor que quedó de antes de
+          // cambiar la categoría no viaja). «» = sin dato: el API lo rellena
+          // con el del avión.
+          tipo_combustible: values.categoria === "GAS" ? values.tipo_combustible : "",
           foto_url: fotoPath,
           valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
           capturar_como_piloto: aplicarComoPiloto,
@@ -685,6 +728,7 @@ export function ExpenseCreateDialog({
         // reset(emptyValues) NO limpia estos: a mano, o el siguiente alta
         // hereda el veto a la IA y un reparto armado.
         avionLimpiado.current = false;
+        tipoAuto.current = false;
         setRepartirActivo(false);
         setRepartoSel({});
         if (facturaRef.current) facturaRef.current.value = "";
@@ -727,6 +771,17 @@ export function ExpenseCreateDialog({
     !!aiRaw?.fecha &&
     aiRaw.fecha === fechaGasto &&
     fechaGasto.slice(0, 4) !== hoyCancun().slice(0, 4);
+
+  // Tipo de combustible distinto al del avión elegido (5-oct-2026): aviso
+  // ámbar, NO candado — el API corrige al guardar y lo marca para revisión.
+  const avisoCombustible =
+    categoriaSel === "GAS"
+      ? avisoCombustibleDistinto(
+          aircraft.find((a) => a.id === avionSel)?.matricula,
+          combustibleDeAeronave(aircraft, avionSel),
+          tipoSel,
+        )
+      : null;
 
   return (
     <>
@@ -923,22 +978,44 @@ export function ExpenseCreateDialog({
               </Field>
             </div>
 
-            {/* Litros: solo combustible. Sin ellos el balance por avión no
-                calcula el precio por litro (queda en pendientes de captura). */}
+            {/* Litros y tipo: solo combustible. Sin litros el balance por
+                avión no calcula el precio por litro (queda en pendientes de
+                captura). El tipo se prellena con el combustible del avión
+                (5-oct-2026); si el operador elige el otro, aviso ámbar: el
+                API lo corrige al guardar y lo marca para revisión. */}
             {watch("categoria") === "GAS" && (
-              <Field
-                label="Litros cargados"
-                hint="Del ticket de combustible; el balance calcula $/litro con esto."
-              >
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  inputMode="decimal"
-                  placeholder="Ej. 164"
-                  {...register("litros")}
-                />
-              </Field>
+              <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+                <Field
+                  label="Litros cargados"
+                  hint="Del ticket de combustible; el balance calcula $/litro con esto."
+                >
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    inputMode="decimal"
+                    placeholder="Ej. 164"
+                    {...register("litros")}
+                  />
+                </Field>
+                <Field label="Tipo de combustible">
+                  <SearchableSelect
+                    options={TIPOS_COMBUSTIBLE.map((t) => ({ value: t.value, label: t.label }))}
+                    value={watch("tipo_combustible")}
+                    onChange={(v) => {
+                      setValue("tipo_combustible", v);
+                      // Elección del operador: manda sobre el prellenado.
+                      tipoAuto.current = false;
+                    }}
+                    placeholder="Elige el tipo"
+                  />
+                </Field>
+              </div>
+            )}
+            {avisoCombustible && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                ⚠ {avisoCombustible}
+              </p>
             )}
 
             {/* Total pagado EN VIVO (ticket + propina): es el monto que se

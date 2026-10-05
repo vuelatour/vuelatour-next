@@ -9,6 +9,7 @@ import {
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { FlightGastosTable } from "@/components/admin/flights/flight-gastos-table";
 import type { Gasto } from "@/types/expenses";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 const fmtMoney = (monto: string, moneda: string) =>
   Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
@@ -31,7 +32,7 @@ export function FlightGastosCard({
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   /** Para capturar un gasto YA ligado a este vuelo (ej. honorario del piloto externo). */
   vueloId?: string;

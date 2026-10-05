@@ -37,6 +37,7 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "@/lib/admin/url-params";
 import { MEDIOS_CAPTURA_VALUES } from "@/lib/admin/medios-pago";
 import { FILTRO_NO_FACTURADA, FACTURACION_ESTADOS } from "@/lib/admin/facturacion-estatus";
+import { avionCatalogoGasto, type AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 export const dynamic = "force-dynamic";
 
@@ -212,7 +213,8 @@ export default async function ExpensesPage({
     a.nombre.localeCompare(b.nombre, "es"),
   );
 
-  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  // Con el combustible de cada avión: los diálogos prellenan y avisan (5-oct-2026).
+  const aircraft = aircraftRes.data.map(avionCatalogoGasto);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const aeronaveFiltro = aeronaveId
     ? (aircraft.find((a) => a.id === aeronaveId)?.matricula ?? "desconocido")
@@ -446,7 +448,7 @@ function GastosCard({
   titulo: string;
   descripcion: string;
   gastos: Awaited<ReturnType<typeof listGastos>>["data"];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   fotoUrls: Record<string, string>;
   /** true = no se cargaron TODOS los gastos (corte defensivo del anti-cap). */

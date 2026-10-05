@@ -33,11 +33,24 @@ import {
   ETIQUETA_COLOR_AVION,
   HINT_COLOR_AVION,
 } from "@/lib/admin/calendario-semaforo";
+import {
+  AYUDA_COMBUSTIBLE_AERONAVE,
+  COMBUSTIBLE_AERONAVE_DEFAULT,
+  COMBUSTIBLE_AERONAVE_OPCIONES,
+  ETIQUETA_COMBUSTIBLE_AERONAVE,
+  etiquetaCombustibleAeronave,
+} from "@/lib/admin/combustibles";
 
 interface AircraftFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialAircraft?: Aircraft;
+  /**
+   * Solo ALTA: el API ya maneja `combustible` (lo manda en la flota,
+   * `apiConCombustible`). En edición lo decide el propio avión. Con `false`
+   * el campo pinta «—» y no viaja (un API previo lo rechazaría con 400).
+   */
+  combustibleDisponible?: boolean;
 }
 
 /**
@@ -66,9 +79,14 @@ export function AircraftFormDialog({
   open,
   onOpenChange,
   initialAircraft,
+  combustibleDisponible = true,
 }: AircraftFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialAircraft;
+  // Combustible (5-oct-2026): en edición, un avión sin el campo = API previo.
+  const conCombustible = isEdit
+    ? initialAircraft?.combustible !== undefined
+    : combustibleDisponible;
 
   const {
     register,
@@ -91,6 +109,8 @@ export function AircraftFormDialog({
 
   const onSubmit = handleSubmit((values) => {
     const payload: AircraftFormValues = { ...values };
+    // API previo (sin `combustible`): no viaja — lo rechazaría con 400.
+    if (!conCombustible) delete payload.combustible;
     // Aportación AFAC: el update descarta los campos vacíos (""), así que si
     // el avión TENÍA valor y el usuario vació el campo, mandamos null
     // explícito para borrar la provisión. Nunca viaja "" al API.
@@ -161,9 +181,35 @@ export function AircraftFormDialog({
             </Field>
           </div>
 
-          <Field label="Modelo" required error={errors.modelo?.message}>
-            <Input placeholder="Cessna 206" {...register("modelo")} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Modelo" required error={errors.modelo?.message}>
+              <Input placeholder="Cessna 206" {...register("modelo")} />
+            </Field>
+            {/* Combustible (5-oct-2026): toda carga GAS del avión se ajusta a
+                este valor al capturarla (caso XB-PEV con «Turbosina»). */}
+            <Field
+              label={ETIQUETA_COMBUSTIBLE_AERONAVE}
+              required={conCombustible}
+              hint={conCombustible ? AYUDA_COMBUSTIBLE_AERONAVE : undefined}
+              error={errors.combustible?.message}
+            >
+              {conCombustible ? (
+                <SearchableSelect
+                  options={COMBUSTIBLE_AERONAVE_OPCIONES.map((o) => ({
+                    value: o.value,
+                    label: o.label,
+                  }))}
+                  value={(watch("combustible") as string | undefined) ?? ""}
+                  onChange={(v) => setValue("combustible", v, { shouldValidate: true })}
+                  placeholder="Selecciona"
+                />
+              ) : (
+                <p className="flex h-[42px] items-center rounded-lg border border-border px-3 text-sm text-muted-foreground">
+                  {etiquetaCombustibleAeronave(undefined)}
+                </p>
+              )}
+            </Field>
+          </div>
 
           <div className="grid grid-cols-3 gap-3">
             {/* Tipo de avión: además del dato técnico, decide el formato de
@@ -329,6 +375,8 @@ function defaults(a?: Aircraft): AircraftFormValues {
       permiso_afac_usd_hr: "",
       color_calendario: "",
       ubicacion_base: "CUN",
+      // Alta: gasavión (pistón), igual que el default de la columna en BD.
+      combustible: COMBUSTIBLE_AERONAVE_DEFAULT,
       activa: true,
       notas: "",
     };
@@ -348,6 +396,7 @@ function defaults(a?: Aircraft): AircraftFormValues {
     permiso_afac_usd_hr: a.permiso_afac_usd_hr ?? "",
     color_calendario: a.color_calendario ?? "",
     ubicacion_base: a.ubicacion_base ?? "",
+    combustible: a.combustible ?? "",
     activa: a.activa,
     notas: a.notas ?? "",
   };

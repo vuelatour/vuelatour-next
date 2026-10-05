@@ -17,6 +17,7 @@ import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { cn } from "@/lib/utils";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
+import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 // Solo se pinta badge cuando NO hay comprobante (14-sep-2026: la columna
 // responde «¿hay papel?» y con papel la miniatura ya lo dice). Las etiquetas
@@ -42,7 +43,7 @@ export function FlightGastosTable({
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
 }) {
   const columns: Array<DataTableColumn<Gasto>> = [

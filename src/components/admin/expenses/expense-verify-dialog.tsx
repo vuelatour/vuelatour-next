@@ -54,7 +54,14 @@ import {
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
-import { TIPOS_COMBUSTIBLE, camposCargaParaPatch } from "@/lib/admin/combustibles";
+import {
+  TIPOS_COMBUSTIBLE,
+  avisoCombustibleDistinto,
+  camposCargaParaPatch,
+  combustibleDeAeronave,
+  tipoCombustibleSugerido,
+  type AvionCatalogoGasto,
+} from "@/lib/admin/combustibles";
 import {
   AYUDA_COMISION_VENDEDOR,
   CATEGORIAS_CAPTURA,
@@ -110,7 +117,7 @@ interface ExpenseVerifyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gasto: Gasto;
-  aircraft: { id: string; matricula: string }[];
+  aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
   /** URL firmada de la foto del comprobante para validar contra el dato. */
   fotoUrl?: string;
@@ -155,6 +162,10 @@ export function ExpenseVerifyDialog({
   // closures y el effect del prefill siempre al día, sin re-render ni
   // dependencias extra.
   const avionLimpiado = useRef(false);
+  // Tipo de combustible PRELLENADO por el sistema (venía vacío y se llenó con
+  // el del avión o la IA): si cambia el avión se vuelve a prellenar. El tipo
+  // GUARDADO o elegido a mano manda y, si no es el del avión, se avisa.
+  const tipoAuto = useRef(false);
   // Sello de confirmación del panel: retirarlo pide confirmación breve
   // (regla de la casa para acciones que quitan algo) y se oculta optimista
   // mientras la revalidación refresca la fila.
@@ -174,9 +185,10 @@ export function ExpenseVerifyDialog({
     };
   }, [open]);
 
-  const { handleSubmit, reset, watch, setValue, register } = useForm<GastoVerifyValues>({
-    defaultValues: defaults(gasto),
-  });
+  const { handleSubmit, reset, watch, setValue, getValues, register } =
+    useForm<GastoVerifyValues>({
+      defaultValues: defaults(gasto),
+    });
 
   // Categorías LEGADO (FIJO/VISITA): ya no se ofrecen para capturas nuevas,
   // pero un gasto histórico que las traiga debe pintarse con su etiqueta y
@@ -200,6 +212,7 @@ export function ExpenseVerifyDialog({
       // reset() no limpia refs: sin esto, el veto a la IA se heredaría a
       // la siguiente apertura del diálogo (u otro gasto).
       avionLimpiado.current = false;
+      tipoAuto.current = false;
     }
   }, [open, gasto, reset]);
 
@@ -301,6 +314,42 @@ export function ExpenseVerifyDialog({
     aircraft,
     setValue,
   ]);
+
+  // ===== Combustible del avión (5-oct-2026, caso XB-PEV con «Turbosina»):
+  // GAS con avión y tipo VACÍO ⇒ el del avión (la IA de Reanalizar solo llena
+  // si el avión no dice nada). Declarado DESPUÉS del reset y del prellenado
+  // por matrícula: lee getValues(), fresco tras ambos.
+  const categoriaSel = watch("categoria");
+  const avionSel = watch("aeronave_id");
+  const tipoSel = watch("tipo_combustible");
+  const tipoIa = aiRaw?.tipo_combustible ?? null;
+  useEffect(() => {
+    if (!open) return;
+    const actual = getValues("tipo_combustible");
+    const sugerido = tipoCombustibleSugerido({
+      categoria: getValues("categoria"),
+      delAvion: combustibleDeAeronave(aircraft, getValues("aeronave_id")),
+      actual,
+      actualEsSugerido: tipoAuto.current,
+      ia: tipoIa,
+    });
+    if (sugerido !== actual) {
+      setValue("tipo_combustible", sugerido);
+      tipoAuto.current = true;
+    }
+  }, [open, categoriaSel, avionSel, tipoSel, tipoIa, aircraft, getValues, setValue]);
+
+  // Tipo distinto al del avión: aviso ámbar (no candado; el API corrige al
+  // guardar y lo marca para revisión — `camposCargaParaPatch` lo manda).
+  const delAvionSel = combustibleDeAeronave(aircraft, avionSel);
+  const avisoCombustible =
+    categoriaSel === "GAS"
+      ? avisoCombustibleDistinto(
+          aircraft.find((a) => a.id === avionSel)?.matricula,
+          delAvionSel,
+          tipoSel,
+        )
+      : null;
 
   /**
    * Quita el desglose VIEJO de las notas conservando todo lo demás
@@ -534,7 +583,14 @@ export function ExpenseVerifyDialog({
       // el renglón de Combustibles no siga diciendo la fecha vieja).
       delete (payload as { tipo_combustible?: unknown }).tipo_combustible;
       delete (payload as { lugar?: unknown }).lugar;
-      Object.assign(payload, camposCargaParaPatch(gasto, values));
+      Object.assign(
+        payload,
+        camposCargaParaPatch(
+          gasto,
+          values,
+          combustibleDeAeronave(aircraft, values.aeronave_id),
+        ),
+      );
       // Facturación: viaja SOLO si se cambió en ESTE diálogo. El badge de la
       // tabla y el trigger del amarre de factura recibida también escriben
       // este campo — mandar el valor con que se abrió el form (posiblemente
@@ -900,7 +956,11 @@ export function ExpenseVerifyDialog({
                 <SearchableSelect
                   options={TIPOS_COMBUSTIBLE.map((t) => ({ value: t.value, label: t.label }))}
                   value={watch("tipo_combustible")}
-                  onChange={(v) => setValue("tipo_combustible", v)}
+                  onChange={(v) => {
+                    setValue("tipo_combustible", v);
+                    // Elección de la oficina: manda sobre el prellenado.
+                    tipoAuto.current = false;
+                  }}
                   placeholder="Elige el tipo"
                 />
               </Field>
@@ -913,6 +973,11 @@ export function ExpenseVerifyDialog({
                 />
               </Field>
             </div>
+          )}
+          {avisoCombustible && (
+            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              ⚠ {avisoCombustible}
+            </p>
           )}
 
           {/* Total pagado EN VIVO (ticket + propina): es el monto que se

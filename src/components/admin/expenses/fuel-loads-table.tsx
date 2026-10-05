@@ -28,6 +28,7 @@ import {
   etiquetaTipoCombustible,
   fechaVisibleCarga,
   momentoParaSugerirVuelo,
+  type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
 import type { Gasto } from "@/types/expenses";
 
@@ -82,7 +83,7 @@ export function FuelLoadsTable({
    * carga de un avión ya dado de baja conserva su matrícula en el selector
    * en vez de aparentar «Sin asignar».
    */
-  aircraftMenu: { id: string; matricula: string }[];
+  aircraftMenu: AvionCatalogoGasto[];
   /** Proveedores para «Verificar / editar» (mismo catálogo que Gastos). */
   providers: { id: string; nombre: string }[];
   /**
