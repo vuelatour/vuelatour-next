@@ -6,11 +6,27 @@
  * está cancelado y la operación sigue en otro día), las dos fechas del modal,
  * los textos, el toast tras mover y los errores en es-MX.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  BOTON_AHORA_NO,
+  BOTON_BANDA_MOVER,
   BOTON_MOVER,
+  BOTON_MOVIENDO,
   BOTON_SOLO_COTIZACION,
+  CODE_TRAMOS_NO_MOVIDOS,
+  decidirBandaFechaOperativa,
   decidirPreguntaReagendar,
+  errorPuedeHaberMovido,
+  moverVueloOperativo,
+  NOTA_BANDA_SIN_PERMISO,
+  NOTA_SOLO_FECHA_VUELO,
+  puedeMoverVueloOperativo,
+  textoBandaFechaOperativa,
+  textoMoverDesdeVuelo,
+  textosDialogoReagendar,
+  TITULO_MOVER_DESDE_VUELO,
+  toastAlCerrarSinMover,
+  TOAST_REVISA_TRAMOS,
   diaCancunDe,
   fechaLargaCancun,
   fechaOperativaDe,
@@ -329,11 +345,18 @@ describe("toastReagendado — lo que movió el API", () => {
 
 describe("mensajeErrorReagendar — errores del «Sí» en es-MX", () => {
   it("VUELO_YA_VOLO / VUELO_CANCELADO ⇒ el texto del API", () => {
-    const yaVolo = "La operación ya empezó: la fecha de cada tramo se edita desde el vuelo";
+    const yaVolo = "La operación ya empezó: la fecha de cada tramo se edita desde el vuelo.";
     expect(mensajeErrorReagendar({ status: 409, code: "VUELO_YA_VOLO", error: yaVolo })).toBe(yaVolo);
     expect(
       mensajeErrorReagendar({ status: 409, code: "VUELO_CANCELADO", error: "El vuelo #364 está cancelado." }),
     ).toBe("El vuelo #364 está cancelado.");
+  });
+
+  it("los respaldos son el texto EXACTO del API (alinear-fecha.util.ts)", () => {
+    expect(MSG_REAGENDAR_YA_VOLO).toBe(
+      "La operación ya empezó: la fecha de cada tramo se edita desde el vuelo.",
+    );
+    expect(MSG_REAGENDAR_CANCELADO).toBe("El vuelo está cancelado: no hay operación que mover.");
   });
 
   it("…y su respaldo si el texto llegara técnico o en inglés", () => {
@@ -389,5 +412,206 @@ describe("mensajeErrorReagendar — errores del «Sí» en es-MX", () => {
     expect(
       mensajeErrorReagendar({ status: 400, code: "SIN_FECHA", error: "El vuelo no tiene fecha." }),
     ).toBe("El vuelo no tiene fecha.");
+  });
+});
+
+// ───────────────── Revisión 5-oct-2026: «Sí» que nunca lanza ─────────────────
+
+const RES_OK: AlineacionFechaTramos = {
+  vuelo_id: "v",
+  folio: 364,
+  delta_dias: 2,
+  fecha_objetivo: OCT7_10H,
+  tramos: [
+    {
+      id: "e1",
+      orden: 1,
+      origen_iata: "CUN",
+      destino_iata: "CET",
+      fecha_salida_plan_antes: OCT5_10H,
+      fecha_salida_plan: OCT7_10H,
+    },
+  ],
+  fecha_traslado_final: null,
+  tramos_movidos: 1,
+};
+
+const MSG_503_PARCIAL =
+  "No se pudo mover todo el vuelo operativo: algunos tramos quedaron con la fecha nueva y otros no. Revisa las fechas de los tramos en el detalle del vuelo.";
+
+describe("moverVueloOperativo — el «Sí» con la action mockeada", () => {
+  it("éxito ⇒ el toast de lo que movió el API (la action se llama UNA vez)", async () => {
+    const action = vi.fn(async () => ({ ok: true, data: RES_OK }));
+    await expect(moverVueloOperativo(action)).resolves.toEqual({
+      ok: true,
+      toast: "Vuelo operativo movido: 1 tramo ahora sale el 7 de octubre de 2026",
+    });
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it("la action LANZA («Failed to find Server Action» tras un deploy) ⇒ no escapa: error técnico y refresca", async () => {
+    const action = vi.fn(async () => {
+      throw new Error(
+        'Failed to find Server Action "7f3a". This request might be from an older or newer deployment.',
+      );
+    });
+    await expect(moverVueloOperativo(action)).resolves.toEqual({
+      ok: false,
+      error: MSG_SERVIDOR_NO_RESPONDIO,
+      refrescar: true,
+    });
+  });
+
+  it("rechazo sin Error (red caída, valor raro) ⇒ igual de seguro", async () => {
+    const r = await moverVueloOperativo(() => Promise.reject("x"));
+    expect(r).toEqual({ ok: false, error: MSG_SERVIDOR_NO_RESPONDIO, refrescar: true });
+  });
+
+  it("503 TRAMOS_NO_MOVIDOS ⇒ el texto del API y refresca (pudo mover algunos)", async () => {
+    const r = await moverVueloOperativo(async () => ({
+      ok: false,
+      status: 503,
+      code: CODE_TRAMOS_NO_MOVIDOS,
+      error: MSG_503_PARCIAL,
+    }));
+    expect(r).toEqual({ ok: false, error: MSG_503_PARCIAL, refrescar: true });
+  });
+
+  it("respuesta perdida (fetch failed) ⇒ refresca: el API pudo escribir", async () => {
+    const r = await moverVueloOperativo(async () => ({ ok: false, error: "fetch failed" }));
+    expect(r).toEqual({ ok: false, error: MSG_SERVIDOR_NO_RESPONDIO, refrescar: true });
+  });
+
+  it("409 de negocio / 404 API previo / 403 ⇒ no refresca (no se escribió nada)", async () => {
+    const yaVolo = await moverVueloOperativo(async () => ({
+      ok: false,
+      status: 409,
+      code: "VUELO_YA_VOLO",
+      error: MSG_REAGENDAR_YA_VOLO,
+    }));
+    expect(yaVolo).toEqual({ ok: false, error: MSG_REAGENDAR_YA_VOLO, refrescar: false });
+    const viejo = await moverVueloOperativo(async () => ({
+      ok: false,
+      status: 404,
+      code: "NOT_FOUND",
+      error: "Cannot POST /v1/flights/abc/tramos/alinear-fecha",
+    }));
+    expect(viejo).toEqual({ ok: false, error: MSG_REAGENDAR_API_VIEJO, refrescar: false });
+    const sinPermiso = await moverVueloOperativo(async () => ({
+      ok: false,
+      status: 403,
+      error: "Required role: ADMIN",
+    }));
+    expect(sinPermiso).toEqual({ ok: false, error: MSG_REAGENDAR_SIN_PERMISO, refrescar: false });
+  });
+});
+
+describe("errorPuedeHaberMovido", () => {
+  it("TRAMOS_NO_MOVIDOS, 5xx y técnico ⇒ sí; 4xx y validación local ⇒ no", () => {
+    expect(errorPuedeHaberMovido({ code: CODE_TRAMOS_NO_MOVIDOS, status: 503, error: MSG_503_PARCIAL })).toBe(true);
+    expect(errorPuedeHaberMovido({ status: 500, error: "Internal server error" })).toBe(true);
+    expect(errorPuedeHaberMovido({ status: 502, code: "PARSE_ERROR", error: "Bad Gateway" })).toBe(true);
+    expect(errorPuedeHaberMovido({ error: "fetch failed" })).toBe(true);
+    expect(errorPuedeHaberMovido({})).toBe(true);
+    expect(errorPuedeHaberMovido({ status: 409, code: "VUELO_YA_VOLO", error: "x" })).toBe(false);
+    expect(errorPuedeHaberMovido({ status: 404, error: "Cannot POST /v1/x" })).toBe(false);
+    expect(errorPuedeHaberMovido({ status: 401, error: "Unauthorized" })).toBe(false);
+    // uuid inválido: la action ni siquiera salió a la red.
+    expect(errorPuedeHaberMovido({ error: "No se reconoce el vuelo. Recarga la página." })).toBe(false);
+  });
+});
+
+describe("toastAlCerrarSinMover — «No» después de un error", () => {
+  it("cotización sin error ⇒ «la operación no cambió»; vuelo sin error ⇒ nada", () => {
+    expect(toastAlCerrarSinMover({ contexto: "cotizacion", quizaMovio: false })).toBe(TOAST_NO_MOVIDO);
+    expect(toastAlCerrarSinMover({ contexto: "vuelo", quizaMovio: false })).toBeNull();
+  });
+
+  it("tras un error que pudo mover ⇒ texto neutro (nunca afirma que no cambió)", () => {
+    expect(TOAST_REVISA_TRAMOS).toBe(
+      "Revisa las fechas de los tramos del vuelo: puede que algunos ya se hayan movido",
+    );
+    expect(toastAlCerrarSinMover({ contexto: "cotizacion", quizaMovio: true })).toBe(TOAST_REVISA_TRAMOS);
+    expect(toastAlCerrarSinMover({ contexto: "vuelo", quizaMovio: true })).toBe(TOAST_REVISA_TRAMOS);
+  });
+});
+
+describe("decidirBandaFechaOperativa — banda del detalle del vuelo", () => {
+  it("la cotización dice el 7 y la operación sigue el 5 ⇒ banda con las dos fechas", () => {
+    const d = decidirBandaFechaOperativa(cot({ fecha_vuelo: OCT7_2230 }));
+    expect(d).toEqual({ mostrar: true, fechaCotizacion: OCT7_2230, fechaOperativa: OCT5_10H });
+  });
+
+  it("misma regla que el modal: mismo día, ya voló, cancelado, sin tramos, sin fecha ⇒ no", () => {
+    const motivo = (c: CotizacionConFechas) => {
+      const d = decidirBandaFechaOperativa(c);
+      return d.mostrar ? "mostrar" : d.motivo;
+    };
+    expect(motivo(cot({}))).toBe("mismo_dia");
+    expect(motivo(cot({ fecha_vuelo: OCT7_10H, estado: "EN_VUELO" }))).toBe("ya_volo");
+    expect(
+      motivo(
+        cot({
+          fecha_vuelo: OCT7_10H,
+          escalas: [tramo({ orden: 1, fecha_salida_plan: OCT5_10H, taco_salida: "1234.5" })],
+        }),
+      ),
+    ).toBe("ya_volo");
+    expect(motivo(cot({ fecha_vuelo: OCT7_10H, estado: "CANCELADO" }))).toBe("cancelado");
+    expect(motivo(cot({ fecha_vuelo: OCT7_10H, escalas: [tramo({ orden: 1 })] }))).toBe("sin_tramos");
+    expect(motivo(cot({ fecha_vuelo: null }))).toBe("sin_fecha");
+    expect(motivo(cot({ fecha_vuelo: OCT8_08H }))).toBe("mostrar");
+    expect(decidirBandaFechaOperativa(null)).toMatchObject({ mostrar: false, motivo: "sin_fecha" });
+  });
+});
+
+describe("textos de la variante «vuelo» y de la banda", () => {
+  it("banda, título, cuerpo, nota y botones", () => {
+    expect(BOTON_BANDA_MOVER).toBe("Mover el vuelo operativo a la fecha de la cotización");
+    expect(TITULO_MOVER_DESDE_VUELO).toBe(BOTON_BANDA_MOVER);
+    expect(textoBandaFechaOperativa(OCT7_2230, OCT5_10H)).toBe(
+      "La cotización dice el 7 de octubre de 2026, pero el vuelo operativo (sus tramos) " +
+        "sigue programado para el 5 de octubre de 2026.",
+    );
+    expect(textoMoverDesdeVuelo(OCT7_10H, OCT5_10H)).toBe(
+      "La cotización dice el 7 de octubre de 2026. El vuelo operativo (sus tramos) sigue " +
+        "programado para el 5 de octubre de 2026. ¿Quieres mover el vuelo operativo a la " +
+        "fecha de la cotización?",
+    );
+    expect(NOTA_SOLO_FECHA_VUELO).toBe(
+      "Solo cambia la fecha: cada tramo conserva su hora. Las horas se editan tramo por " +
+        "tramo en este mismo vuelo.",
+    );
+    expect(BOTON_AHORA_NO).toBe("Ahora no");
+    expect(NOTA_BANDA_SIN_PERMISO).toBe(
+      "Pide a administración o a coordinación que mueva el vuelo operativo.",
+    );
+  });
+
+  it("textosDialogoReagendar: cotización = textos del contrato; vuelo = su variante", () => {
+    expect(textosDialogoReagendar("cotizacion", OCT7_10H, OCT5_10H)).toEqual({
+      titulo: TITULO_REAGENDAR,
+      descripcion: textoReagendar(OCT7_10H, OCT5_10H),
+      nota: NOTA_SOLO_FECHA,
+      botonMover: BOTON_MOVER,
+      botonMoviendo: BOTON_MOVIENDO,
+      botonNo: BOTON_SOLO_COTIZACION,
+    });
+    expect(textosDialogoReagendar("vuelo", OCT7_10H, OCT5_10H)).toEqual({
+      titulo: TITULO_MOVER_DESDE_VUELO,
+      descripcion: textoMoverDesdeVuelo(OCT7_10H, OCT5_10H),
+      nota: NOTA_SOLO_FECHA_VUELO,
+      botonMover: BOTON_MOVER,
+      botonMoviendo: BOTON_MOVIENDO,
+      botonNo: BOTON_AHORA_NO,
+    });
+  });
+
+  it("botón de la banda solo para ADMIN y COORDINADOR (los roles del endpoint)", () => {
+    expect(puedeMoverVueloOperativo("ADMIN")).toBe(true);
+    expect(puedeMoverVueloOperativo("COORDINADOR")).toBe(true);
+    for (const rol of ["FACTURACION", "ANALISTA", "SOCIO", "PILOTO", "", null, undefined]) {
+      expect(puedeMoverVueloOperativo(rol)).toBe(false);
+    }
   });
 });

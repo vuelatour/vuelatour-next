@@ -772,8 +772,14 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
   `es_ferry`, pernocta y su costo, tipo de parada y sus notas) y **qué NO
   precia sale de la escala VIVA** del MISMO `orden` y solo si su ruta sigue
   siendo la del tramo cotizado (`fecha_salida_plan`, `notas` del tramo,
-  `pasajeros_nombres`). Con `itinerario_operativo = true` no se hereda nada: las
-  escalas del vuelo son OTRA ruta a propósito.
+  `pasajeros_nombres`). **Excepción 5-oct-2026**: la `fecha_salida_plan` se
+  hereda del mismo `orden` AUNQUE la ruta difiera — `replaceEscalas` la escribe
+  en esa misma escala, y con la del snapshot guardar la cotización regresaba al
+  día viejo un tramo que la operación (o el «Sí» del modal de fecha) ya había
+  movido; con la viva el guardado es un no-op (escala viva sin fecha ⇒ el
+  tramo va sin fecha: no se escribe una fecha ajena). Con
+  `itinerario_operativo = true` no se hereda nada: las escalas del vuelo son
+  OTRA ruta a propósito.
 - **La RUTA precia Y es de la operación**: el formulario arranca con la
   COTIZADA (es la que imprime el PDF y la que compone el precio), pero
   guardar **no** la escribe sobre el vuelo mientras la oficina no la haya
@@ -5457,12 +5463,14 @@ el API 0.0.55 (`POST /v1/flights/:id/tramos/alinear-fecha`, ADMIN/COORDINADOR).
   `escalas` en la respuesta (API previo) se usan las de `antes`.
 - **FUENTE ÚNICA** `lib/admin/quote-fecha-operativa.ts` (PURA): `diaCancunDe`
   (día de pared vía `isoToCancunInput`; un «YYYY-MM-DD» ya es pared),
-  `fechaLargaCancun` («7 de octubre de 2026», tabla de meses fija, sin `Date`
-  ni `toLocaleDateString`), `fechaOperativaDe`, la decisión, los textos
+  `fechaLargaCancun` («7 de octubre de 2026» vía `fechaLargaDia` +
+  `MESES_LARGOS_ES` de `lib/datetime.ts` — tabla ÚNICA para textos nuevos; sin
+  `Date` ni `toLocaleDateString`), `fechaOperativaDe`, la decisión, los textos
   (`TITULO_REAGENDAR`, `textoReagendar`, `NOTA_SOLO_FECHA`, `BOTON_MOVER`,
   `BOTON_MOVIENDO`, `BOTON_SOLO_COTIZACION`, `TOAST_NO_MOVIDO`,
   `TOAST_YA_ESTABA`, `toastReagendado`) y `mensajeErrorReagendar`
-  (`VUELO_YA_VOLO`/`VUELO_CANCELADO` ⇒ texto del API con respaldo; 404 «Cannot
+  (`VUELO_YA_VOLO`/`VUELO_CANCELADO` ⇒ texto del API con respaldo IDÉNTICO al
+  del API, `alinear-fecha.util.ts`, con su prueba; 404 «Cannot
   POST» ⇒ «Falta actualizar el servidor: mueve la fecha desde el detalle del
   vuelo»; 401/403 ⇒ sesión/permiso; técnico ⇒ `MSG_SERVIDOR_NO_RESPONDIO` de
   `errores-tecnicos.ts`; inglés de validación ⇒ genérico; otro español del API
@@ -5478,14 +5486,44 @@ el API 0.0.55 (`POST /v1/flights/:id/tramos/alinear-fecha`, ADMIN/COORDINADOR).
   `/admin/flights/:id`, `/admin/flights`, `/admin/quotes/:id` y
   `/admin/calendar`.
 - **Diálogo** `components/admin/quotes/reagendar-tramos-dialog.tsx`
-  (`AlertDialog`, `{ abierto, nuevaFecha, fechaOperativa, vueloId, onCerrar }`):
-  «Sí, mover el vuelo operativo» ⇒ action ⇒ `toast.success(toastReagendado)` ⇒
-  cerrar ⇒ `router.refresh()` (el cotizador, con el form limpio, se resetea
-  con los tramos movidos: un guardado posterior ya no manda las fechas
-  viejas); mientras guarda, los dos botones apagados; si falla, se QUEDA
-  abierto con el motivo en rojo (`role="alert"`). «No, solo la cotización» o
-  Esc ⇒ `toast.info(TOAST_NO_MOVIDO)` y se cierra. Botones con
-  `cursor-pointer`.
+  (`AlertDialog`, `{ abierto, nuevaFecha, fechaOperativa, vueloId, onCerrar,
+  contexto? }`; `contexto` ADITIVO: `"cotizacion"` por omisión, `"vuelo"` desde
+  la banda; todos los textos de `textosDialogoReagendar`). «Sí, mover el vuelo
+  operativo» ⇒ `moverVueloOperativo(() => alinearFechaTramosAction(id))`, que
+  **NUNCA lanza** (revisión 5-oct-2026: un `await` directo a la action dentro de
+  `startTransition` mandaba la cotización entera al error boundary si la
+  server action reventaba — «Failed to find Server Action» tras un deploy de
+  Vercel, red caída) ⇒ `toast.success` ⇒ cerrar ⇒ `router.refresh()`. Mientras
+  guarda, los dos botones apagados; si falla, se QUEDA abierto con el motivo en
+  rojo (`role="alert"`, token `text-destructive`). Si el error PUDO dejar
+  tramos movidos (`errorPuedeHaberMovido`: 503 `TRAMOS_NO_MOVIDOS`, cualquier
+  5xx, técnico/red — la respuesta se perdió después de escribir) también hace
+  `router.refresh()` y el cierre sin mover dice `TOAST_REVISA_TRAMOS` («Revisa
+  las fechas de los tramos del vuelo: puede que algunos ya se hayan movido»)
+  en lugar de afirmar que no cambió (`toastAlCerrarSinMover`). Sin ese tipo de
+  error, «No, solo la cotización» o Esc ⇒ `TOAST_NO_MOVIDO`; desde el vuelo,
+  «Ahora no» cierra sin toast. Botones con `cursor-pointer`.
+- **Después del refresh**: el cotizador, con el form limpio, se resetea con las
+  escalas vivas. Un guardado posterior NO revierte las fechas movidas porque
+  `tramosCotizadosDeCotizacion` hereda la `fecha_salida_plan` de la escala viva
+  del mismo `orden` — también cuando la ruta del tramo ya no es la cotizada
+  (excepción del 5-oct-2026 arriba; antes esos tramos mandaban la fecha del
+  snapshot y `replaceEscalas` la reescribía). Con un formulario SUCIO el
+  refresh no lo pisa: si la oficina guarda encima, manda lo que tiene en
+  pantalla.
+- **Banda del detalle del vuelo** (`components/admin/flights/fecha-operativa-banda.tsx`,
+  revisión 5-oct-2026): si contestaron «No», el modal no vuelve a salir (la
+  cotización ya tiene la fecha nueva y la decisión da `sin_cambio`), así que
+  `/admin/flights/[id]` pinta una banda ÁMBAR —«La cotización dice el 7 de
+  octubre de 2026, pero el vuelo operativo (sus tramos) sigue programado para
+  el 5 de octubre de 2026.»— con el botón «Mover el vuelo operativo a la fecha
+  de la cotización» que abre el MISMO diálogo (`contexto="vuelo"`) con la MISMA
+  action. Regla: `decidirBandaFechaOperativa(snapshot)`, que comparte
+  `motivoSinDesfase` con el modal (cancelado ⇒ ya voló ⇒ sin tramos con fecha ⇒
+  mismo día; sin `fecha_vuelo` ⇒ `sin_fecha`). Botón solo para ADMIN y
+  COORDINADOR (`puedeMoverVueloOperativo`, los roles del endpoint); los demás
+  ven la banda con `NOTA_BANDA_SIN_PERMISO`. En prod (5-oct-2026) ningún vuelo
+  vivo sin volar tenía hoy ese desfase: la banda no sale por datos viejos.
 - **Montaje**: `quote-workspace.tsx`, FUERA del cotizador y de la hoja (después
   del `CobroFormSheet`). `onGuardado={alGuardarCotizacion}` (antes
   `() => undefined`) es el ÚNICO que lo abre; el cotizador ya llamaba
@@ -5496,7 +5534,12 @@ el API 0.0.55 (`POST /v1/flights/:id/tramos/alinear-fecha`, ADMIN/COORDINADOR).
   interna), sus fixtures ni su CSS.
 - **Pruebas**: `lib/admin/__tests__/quote-fecha-operativa.test.ts` (día
   Cancún con cruce de medianoche UTC, decisión por caso, textos, toasts,
-  errores), `app/admin/flights/__tests__/alinear-fecha-action.test.ts` (ruta,
+  errores, banda, variante «vuelo» y `moverVueloOperativo` con la action
+  mockeada: éxito, throw de la server action, 503 parcial, red, 409/404/403),
+  `lib/__tests__/datetime-fecha-larga.test.ts`,
+  `components/admin/flights/__tests__/fecha-operativa-banda.test.tsx` (render y
+  cableado de la banda), `lib/admin/__tests__/tramos-cotizados.test.ts` (fecha
+  heredada con ruta distinta), `app/admin/flights/__tests__/alinear-fecha-action.test.ts` (ruta,
   body `{}`, revalidación, uuid, 409/404 con `status`) y
   `components/admin/quotes/__tests__/reagendar-tramos-dialog.test.tsx` (render
   estático con las dos fechas, la nota y los dos botones; cableado por regex:
@@ -5508,5 +5551,10 @@ el API 0.0.55 (`POST /v1/flights/:id/tramos/alinear-fecha`, ADMIN/COORDINADOR).
   desde el detalle del vuelo» y el diálogo se queda abierto para salir con
   «No».
 - **Pendientes conocidos**: sin QA visual en navegador (el diálogo vive en un
-  portal); el detalle del vuelo no tiene todavía un botón propio para alinear
-  la fecha (fuera del contrato: ahí se edita tramo por tramo).
+  portal); solo el cambio de día de la SALIDA (`fecha_vuelo`) dispara el modal
+  — cambiar únicamente el «Regreso» (`fecha_traslado_final`) no pregunta, y el
+  API solo mueve el regreso si estaba alineado con el último tramo: falta que
+  el cliente diga si el «Regreso» también debe preguntar (contrato aparte).
+  Otras tablas de meses (`quote-sheet*.ts`, `reparto-pagos.ts`, calendario)
+  siguen con la suya: migrarlas a `MESES_LARGOS_ES` queda fuera (tocan la hoja
+  o formatos distintos).

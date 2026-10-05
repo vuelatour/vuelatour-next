@@ -133,7 +133,7 @@ describe("tramosCotizadosDeCotizacion — de dónde salen los tramos del formula
     expect(t1.es_ferry).toBe(true);
   });
 
-  it("NO hereda nada de la operación cuando la ruta del tramo ya no coincide", () => {
+  it("con la ruta distinta NO hereda nota ni nombres de la operación", () => {
     const q: QuoteTramos = {
       calculo_snapshot: snapshot({
         escalas: [escalaSnapshot({ origen_iata: "CUN", destino_iata: "CZM", pasajeros: 2, notas: "nota cotizada" })],
@@ -144,6 +144,82 @@ describe("tramosCotizadosDeCotizacion — de dónde salen los tramos del formula
     expect(t1.origen_iata).toBe("CUN");
     expect(t1.destino_iata).toBe("CZM");
     expect(t1.notas).toBe("nota cotizada");
+  });
+
+  it("…pero la FECHA sí sale de la escala viva del mismo orden (guardar no revierte lo movido, 5-oct-2026)", () => {
+    // Cotizado el 5; la operación cambió la ruta del tramo 1 y la oficina
+    // movió el vuelo al 7 desde el detalle. Con la fecha del snapshot, el
+    // siguiente guardado de la cotización regresaba ese tramo al 5.
+    const q: QuoteTramos = {
+      calculo_snapshot: snapshot({
+        escalas: [
+          escalaSnapshot({
+            origen_iata: "CUN",
+            destino_iata: "CZM",
+            pasajeros: 2,
+            notas: "nota cotizada",
+            fecha_salida_plan: "2026-10-05T15:00:00.000Z",
+          }),
+          escalaSnapshot({
+            origen_iata: "CZM",
+            destino_iata: "CUN",
+            pasajeros: 2,
+            fecha_salida_plan: "2026-10-05T22:00:00.000Z",
+          }),
+        ],
+      }),
+      escalas: [
+        viva({
+          orden: 1,
+          origen_iata: "CUN",
+          destino_iata: "CET",
+          notas: "nota del piloto",
+          fecha_salida_plan: "2026-10-07T15:00:00.000Z",
+        }),
+      ],
+    };
+    const [t1, t2] = tramosCotizadosDeCotizacion(q).tramos.map((t) => t.escala);
+    // 15:00Z = 10:00 en Cancún, como `datetime-local`.
+    expect(t1.fecha_salida_plan).toBe("2026-10-07T10:00");
+    expect(t1.destino_iata).toBe("CZM");
+    expect(t1.notas).toBe("nota cotizada");
+    // Sin escala viva de ese orden: respaldo del snapshot.
+    expect(t2.fecha_salida_plan).toBe("2026-10-05T17:00");
+  });
+
+  it("la escala viva SIN fecha deja el tramo sin fecha aunque la ruta difiera (no se escribe una fecha ajena)", () => {
+    const q: QuoteTramos = {
+      calculo_snapshot: snapshot({
+        escalas: [
+          escalaSnapshot({
+            origen_iata: "CUN",
+            destino_iata: "CZM",
+            fecha_salida_plan: "2026-10-05T15:00:00.000Z",
+          }),
+        ],
+      }),
+      escalas: [viva({ orden: 1, origen_iata: "CUN", destino_iata: "CET" })],
+    };
+    expect(tramosCotizadosDeCotizacion(q).tramos[0].escala.fecha_salida_plan).toBeNull();
+  });
+
+  it("con itinerario OPERATIVO no hereda ni la fecha (sus escalas son otra ruta a propósito)", () => {
+    const q: QuoteTramos = {
+      itinerario_operativo: true,
+      calculo_snapshot: snapshot({
+        escalas: [
+          escalaSnapshot({
+            origen_iata: "CUN",
+            destino_iata: "CZM",
+            fecha_salida_plan: "2026-10-05T15:00:00.000Z",
+          }),
+        ],
+      }),
+      escalas: [
+        viva({ orden: 1, origen_iata: "MID", destino_iata: "CUN", fecha_salida_plan: "2026-10-07T15:00:00.000Z" }),
+      ],
+    };
+    expect(tramosCotizadosDeCotizacion(q).tramos[0].escala.fecha_salida_plan).toBe("2026-10-05T10:00");
   });
 
   it("snapshot LEGADO sin `ruta.escalas`: cae a `calculo_snapshot.tramos` y respeta su `orden`", () => {

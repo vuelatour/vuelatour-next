@@ -15,15 +15,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  BOTON_MOVER,
-  BOTON_MOVIENDO,
-  BOTON_SOLO_COTIZACION,
-  mensajeErrorReagendar,
-  NOTA_SOLO_FECHA,
-  textoReagendar,
-  TITULO_REAGENDAR,
-  TOAST_NO_MOVIDO,
-  toastReagendado,
+  moverVueloOperativo,
+  textosDialogoReagendar,
+  toastAlCerrarSinMover,
+  type ContextoReagendar,
 } from "@/lib/admin/quote-fecha-operativa";
 
 /**
@@ -31,14 +26,21 @@ import {
  * cotización cuya fecha cambió y cuyo vuelo operativo sigue en otro día (la
  * decisión es `decidirPreguntaReagendar`, en el workspace). Vive FUERA de la
  * hoja y del cotizador: el cliente pidió explícitamente que esto no agregue
- * nada a la estructura de la hoja de cotización.
+ * nada a la estructura de la hoja de cotización. El MISMO diálogo lo abre la
+ * banda ámbar del detalle del vuelo (`contexto="vuelo"`, revisión 5-oct-2026)
+ * cuando contestaron «No» y quieren moverlo después en un clic.
  *
- * - «Sí, mover el vuelo operativo» ⇒ `alinearFechaTramosAction` ⇒ toast con
- *   lo que movió el API ⇒ `router.refresh()`. Mientras guarda, los dos
- *   botones se apagan; si falla, el diálogo se QUEDA abierto con el motivo en
- *   rojo (se puede reintentar o salir con «No»).
- * - «No, solo la cotización» (o Esc) ⇒ toast informativo y se cierra: la
- *   operación queda como estaba y se mueve después desde el vuelo.
+ * - «Sí, mover el vuelo operativo» ⇒ `moverVueloOperativo` (llama a
+ *   `alinearFechaTramosAction`; NUNCA lanza: un throw de la server action ya
+ *   no tumba la pantalla al error boundary) ⇒ toast con lo que movió el API ⇒
+ *   `router.refresh()`. Mientras guarda, los dos botones se apagan; si falla,
+ *   el diálogo se QUEDA abierto con el motivo en rojo (se puede reintentar o
+ *   salir). Si el error pudo dejar tramos movidos (503 `TRAMOS_NO_MOVIDOS`,
+ *   5xx, red) también se refresca: el cotizador limpio se resetea con lo que
+ *   quedó en la BD y un guardado posterior no revierte lo movido.
+ * - «No» (o Esc) ⇒ `toastAlCerrarSinMover`: «la operación no cambió…» solo
+ *   si de verdad no pudo cambiar; tras un error de ese tipo, el neutro «Revisa
+ *   las fechas de los tramos…».
  *
  * Todos los textos vienen de `lib/admin/quote-fecha-operativa.ts`.
  */
@@ -48,24 +50,32 @@ export function ReagendarTramosDialog({
   fechaOperativa,
   vueloId,
   onCerrar,
+  contexto = "cotizacion",
 }: {
   abierto: boolean;
-  /** `fecha_vuelo` de la cotización recién guardada (ISO). */
+  /** `fecha_vuelo` de la cotización (ISO). */
   nuevaFecha: string;
   /** `fecha_salida_plan` del primer tramo vivo del vuelo (ISO). */
   fechaOperativa: string;
   vueloId: string;
   onCerrar: () => void;
+  /** Dónde se abre (ADITIVO): al guardar la cotización (default) o desde el vuelo. */
+  contexto?: ContextoReagendar;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  /** Hubo un error que pudo dejar tramos movidos (pegajoso hasta cerrar). */
+  const [quizaMovio, setQuizaMovio] = useState(false);
+  const textos = textosDialogoReagendar(contexto, nuevaFecha, fechaOperativa);
 
   /** «No» / Esc: la operación no se toca; se dice dónde moverla después. */
   const cerrarSinMover = () => {
     if (pending) return;
+    const aviso = toastAlCerrarSinMover({ contexto, quizaMovio });
     setError(null);
-    toast.info(TOAST_NO_MOVIDO);
+    setQuizaMovio(false);
+    if (aviso) toast.info(aviso);
     onCerrar();
   };
 
@@ -73,12 +83,17 @@ export function ReagendarTramosDialog({
     if (pending) return;
     setError(null);
     startTransition(async () => {
-      const res = await alinearFechaTramosAction(vueloId);
-      if (!res.ok) {
-        setError(mensajeErrorReagendar(res));
+      const r = await moverVueloOperativo(() => alinearFechaTramosAction(vueloId));
+      if (!r.ok) {
+        setError(r.error);
+        if (r.refrescar) {
+          setQuizaMovio(true);
+          router.refresh();
+        }
         return;
       }
-      toast.success(toastReagendado(res.data));
+      setQuizaMovio(false);
+      toast.success(r.toast);
       onCerrar();
       router.refresh();
     });
@@ -96,22 +111,20 @@ export function ReagendarTramosDialog({
         data-reagendar-tramos=""
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>{TITULO_REAGENDAR}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {textoReagendar(nuevaFecha, fechaOperativa)}
-          </AlertDialogDescription>
+          <AlertDialogTitle>{textos.titulo}</AlertDialogTitle>
+          <AlertDialogDescription>{textos.descripcion}</AlertDialogDescription>
         </AlertDialogHeader>
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          {NOTA_SOLO_FECHA}
+          {textos.nota}
         </p>
         {error && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
         <AlertDialogFooter>
           <AlertDialogCancel className="cursor-pointer" disabled={pending}>
-            {BOTON_SOLO_COTIZACION}
+            {textos.botonNo}
           </AlertDialogCancel>
           <AlertDialogAction
             className="cursor-pointer"
@@ -121,7 +134,7 @@ export function ReagendarTramosDialog({
               mover();
             }}
           >
-            {pending ? BOTON_MOVIENDO : BOTON_MOVER}
+            {pending ? textos.botonMoviendo : textos.botonMover}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

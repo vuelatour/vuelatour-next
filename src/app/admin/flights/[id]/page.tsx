@@ -24,6 +24,11 @@ import { FlightTramosCard } from "@/components/admin/flights/flight-tramos-card"
 import { FlightBitacoraCard } from "@/components/admin/flights/flight-bitacora-card";
 import { FlightGastosHistorialCard } from "@/components/admin/flights/flight-gastos-historial-card";
 import { FlightSeguimientoCard } from "@/components/admin/flights/flight-seguimiento-card";
+import { FechaOperativaBanda } from "@/components/admin/flights/fecha-operativa-banda";
+import {
+  decidirBandaFechaOperativa,
+  puedeMoverVueloOperativo,
+} from "@/lib/admin/quote-fecha-operativa";
 import {
   getFlightSnapshot,
   getFlightTacoPhotos,
@@ -346,10 +351,20 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const participacionFuente =
     snapshot.participacion_fuente ?? quote?.participacion_fuente ?? null;
 
+  // La cotización dice un día y los tramos otro (contestaron «No» en el modal
+  // de la cotización, 5-oct-2026): banda ámbar para moverlo en un clic. Misma
+  // regla que el modal (`decidirBandaFechaOperativa`).
+  const bandaFechaOperativa = decidirBandaFechaOperativa(snapshot);
+
   return (
     <div className="space-y-6">
       {/* Catálogos de los diálogos que no cargaron: se dice, no se finge. */}
       <AvisoDegradado faltantes={degradado.faltantes} />
+      <FechaOperativaBanda
+        decision={bandaFechaOperativa}
+        vueloId={snapshot.id}
+        puedeMover={puedeMoverVueloOperativo(me?.rol)}
+      />
       {snapshot.estado === "COTIZADO" && (
         <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm flex items-center justify-between gap-3 flex-wrap">
           <p className="text-sky-700 dark:text-sky-300">

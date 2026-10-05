@@ -19,10 +19,13 @@
  * tramo vivo los mismos días conservando su hora de pared en Cancún.
  *
  * PURO (sin React ni red): la decisión, los textos y los errores viven aquí;
- * el diálogo (`components/admin/quotes/reagendar-tramos-dialog.tsx`) y el
- * workspace solo los pintan. Ningún componente redacta estas frases.
+ * el diálogo (`components/admin/quotes/reagendar-tramos-dialog.tsx`), el
+ * workspace y la banda del detalle del vuelo
+ * (`components/admin/flights/fecha-operativa-banda.tsx`, revisión 5-oct-2026:
+ * si contestaron «No», ahí se mueve en un clic) solo los pintan. Ningún
+ * componente redacta estas frases.
  */
-import { isoToCancunInput } from "@/lib/datetime";
+import { fechaLargaDia, isoToCancunInput } from "@/lib/datetime";
 import { estadoVueloVolado } from "@/lib/admin/avion-cotizado";
 import { esErrorTecnico, MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
 
@@ -50,6 +53,8 @@ export interface CotizacionConFechas {
 /** Por qué NO se pregunta (para pruebas y diagnóstico; la UI no lo pinta). */
 export type MotivoSinPregunta =
   | "sin_cambio"
+  /** Solo la banda del detalle del vuelo: el vuelo no tiene `fecha_vuelo`. */
+  | "sin_fecha"
   | "cancelado"
   | "ya_volo"
   | "sin_tramos"
@@ -95,21 +100,6 @@ export interface AlineacionFechaTramos {
 
 // ───────────────────────────── Fechas ─────────────────────────────
 
-const MESES_LARGOS = [
-  "enero",
-  "febrero",
-  "marzo",
-  "abril",
-  "mayo",
-  "junio",
-  "julio",
-  "agosto",
-  "septiembre",
-  "octubre",
-  "noviembre",
-  "diciembre",
-];
-
 /**
  * Día de PARED en Cancún («YYYY-MM-DD») de un instante ISO. Un día suelto
  * «YYYY-MM-DD» ya ES pared y no pasa por la zona; vacío o ilegible ⇒ `null`.
@@ -126,16 +116,11 @@ export function diaCancunDe(iso: string | null | undefined): string | null {
 
 /**
  * «7 de octubre de 2026» (día Cancún). Sin `Date` ni `toLocaleDateString`:
- * el día sale de `diaCancunDe` y el mes de una tabla fija. Ilegible ⇒ «—».
+ * el día sale de `diaCancunDe` y el texto de `fechaLargaDia` (`lib/datetime`,
+ * tabla única de meses). Ilegible ⇒ «—».
  */
 export function fechaLargaCancun(iso: string | null | undefined): string {
-  const dia = diaCancunDe(iso);
-  if (!dia) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dia);
-  if (!m) return "—";
-  const mes = Number(m[2]);
-  if (mes < 1 || mes > 12) return "—";
-  return `${Number(m[3])} de ${MESES_LARGOS[mes - 1]} de ${m[1]}`;
+  return fechaLargaDia(diaCancunDe(iso));
 }
 
 /**
@@ -159,6 +144,27 @@ export function fechaOperativaDe(
 }
 
 // ───────────────────────────── Decisión ─────────────────────────────
+
+/**
+ * Regla COMPARTIDA del modal (al guardar la cotización) y de la banda del
+ * detalle del vuelo: dado el día nuevo, ¿hay una operación que mover? `null`
+ * = sí; si no, el motivo. Orden: cancelado ⇒ ya voló ⇒ sin tramos con fecha
+ * ⇒ la operación ya está en ese día.
+ */
+function motivoSinDesfase(
+  vuelos: ReadonlyArray<CotizacionConFechas | null | undefined>,
+  diaNuevo: string,
+  fechaOperativa: string | null,
+): MotivoSinPregunta | null {
+  const cancelado = (q: CotizacionConFechas | null | undefined) =>
+    (q?.estado ?? "").toUpperCase() === "CANCELADO";
+  if (vuelos.some(cancelado)) return "cancelado";
+  if (vuelos.some((q) => estadoVueloVolado(q).yaVolo)) return "ya_volo";
+  const diaOperativo = diaCancunDe(fechaOperativa);
+  if (!fechaOperativa || !diaOperativo) return "sin_tramos";
+  if (diaOperativo === diaNuevo) return "mismo_dia";
+  return null;
+}
 
 /**
  * ¿Se pregunta si mover el vuelo operativo? SOLO cuando:
@@ -191,19 +197,50 @@ export function decidirPreguntaReagendar(input: {
   const diaNuevo = diaCancunDe(nuevaFecha);
   if (!diaNuevo || diaNuevo === diaCancunDe(antes?.fecha_vuelo)) return no("sin_cambio");
 
-  const cancelado = (q: CotizacionConFechas | null | undefined) =>
-    (q?.estado ?? "").toUpperCase() === "CANCELADO";
-  if (cancelado(antes) || cancelado(despues)) return no("cancelado");
+  const motivo = motivoSinDesfase([antes, despues], diaNuevo, fechaOperativa);
+  if (motivo) return no(motivo);
+  return { preguntar: true, nuevaFecha: nuevaFecha as string, fechaOperativa: fechaOperativa as string };
+}
 
-  if (estadoVueloVolado(antes).yaVolo || estadoVueloVolado(despues).yaVolo) {
-    return no("ya_volo");
-  }
+export type DecisionBandaFechaOperativa =
+  | {
+      mostrar: true;
+      /** `fecha_vuelo` del vuelo (la «Fecha del vuelo» de la cotización). */
+      fechaCotizacion: string;
+      /** `fecha_salida_plan` del primer tramo vivo con fecha. */
+      fechaOperativa: string;
+    }
+  | {
+      mostrar: false;
+      motivo: MotivoSinPregunta;
+      fechaCotizacion: string | null;
+      fechaOperativa: string | null;
+    };
 
-  const diaOperativo = diaCancunDe(fechaOperativa);
-  if (!fechaOperativa || !diaOperativo) return no("sin_tramos");
-  if (diaOperativo === diaNuevo) return no("mismo_dia");
-
-  return { preguntar: true, nuevaFecha: nuevaFecha as string, fechaOperativa };
+/**
+ * BANDA del detalle del vuelo (revisión 5-oct-2026): si en el modal la
+ * oficina contestó «No», el modal no vuelve a salir (la cotización ya tiene
+ * la fecha nueva), así que el detalle del vuelo ofrece mover la operación en
+ * UN clic en lugar de editar tramo por tramo. MISMA regla que el modal
+ * (`motivoSinDesfase`), pero sin «antes/después»: se muestra cuando el día
+ * Cancún de `fecha_vuelo` ≠ el de la fecha operativa y el vuelo no está
+ * cancelado ni ha volado. Sin `fecha_vuelo` ⇒ `sin_fecha`.
+ */
+export function decidirBandaFechaOperativa(
+  vuelo: CotizacionConFechas | null | undefined,
+): DecisionBandaFechaOperativa {
+  const fechaCotizacion = (vuelo?.fecha_vuelo ?? "").trim() || null;
+  const fechaOperativa = fechaOperativaDe(vuelo);
+  const diaCotizacion = diaCancunDe(fechaCotizacion);
+  const motivo: MotivoSinPregunta | null = !diaCotizacion
+    ? "sin_fecha"
+    : motivoSinDesfase([vuelo], diaCotizacion, fechaOperativa);
+  if (motivo) return { mostrar: false, motivo, fechaCotizacion, fechaOperativa };
+  return {
+    mostrar: true,
+    fechaCotizacion: fechaCotizacion as string,
+    fechaOperativa: fechaOperativa as string,
+  };
 }
 
 // ───────────────────────────── Textos ─────────────────────────────
@@ -237,6 +274,113 @@ export const TOAST_NO_MOVIDO =
 export const TOAST_YA_ESTABA = "El vuelo operativo ya estaba en esa fecha";
 
 /**
+ * Cierre SIN mover después de un error que pudo dejar tramos movidos (503
+ * `TRAMOS_NO_MOVIDOS`, respuesta perdida, servidor caído): no se afirma que
+ * «la operación no cambió» porque puede que sí (revisión 5-oct-2026).
+ */
+export const TOAST_REVISA_TRAMOS =
+  "Revisa las fechas de los tramos del vuelo: puede que algunos ya se hayan movido";
+
+// ── Variante del DETALLE DEL VUELO (banda ámbar + el mismo diálogo) ──
+
+/** Dónde se abre el diálogo: al guardar la cotización o desde el vuelo. */
+export type ContextoReagendar = "cotizacion" | "vuelo";
+
+export const BOTON_BANDA_MOVER = "Mover el vuelo operativo a la fecha de la cotización";
+
+/** Texto de la banda ámbar del detalle del vuelo (las DOS fechas). */
+export function textoBandaFechaOperativa(
+  fechaCotizacion: string | null | undefined,
+  fechaOperativa: string | null | undefined,
+): string {
+  return (
+    `La cotización dice el ${fechaLargaCancun(fechaCotizacion)}, pero el vuelo ` +
+    `operativo (sus tramos) sigue programado para el ${fechaLargaCancun(fechaOperativa)}.`
+  );
+}
+
+/** Roles que pueden mover el vuelo operativo (los del endpoint del API). */
+const ROLES_MUEVEN_OPERATIVO = new Set(["ADMIN", "COORDINADOR"]);
+
+/** ¿Este rol ve el botón de la banda? (el API igual responde 403 a otros). */
+export function puedeMoverVueloOperativo(rol: string | null | undefined): boolean {
+  return ROLES_MUEVEN_OPERATIVO.has((rol ?? "").toUpperCase());
+}
+
+/** La banda sin botón (otro rol): a quién pedírselo. */
+export const NOTA_BANDA_SIN_PERMISO =
+  "Pide a administración o a coordinación que mueva el vuelo operativo.";
+
+export const TITULO_MOVER_DESDE_VUELO = BOTON_BANDA_MOVER;
+
+/** Cuerpo del diálogo abierto desde el detalle del vuelo. */
+export function textoMoverDesdeVuelo(
+  fechaCotizacion: string | null | undefined,
+  fechaOperativa: string | null | undefined,
+): string {
+  return (
+    `La cotización dice el ${fechaLargaCancun(fechaCotizacion)}. ` +
+    `El vuelo operativo (sus tramos) sigue programado para el ${fechaLargaCancun(fechaOperativa)}. ` +
+    "¿Quieres mover el vuelo operativo a la fecha de la cotización?"
+  );
+}
+
+export const NOTA_SOLO_FECHA_VUELO =
+  "Solo cambia la fecha: cada tramo conserva su hora. Las horas se editan " +
+  "tramo por tramo en este mismo vuelo.";
+
+export const BOTON_AHORA_NO = "Ahora no";
+
+export interface TextosDialogoReagendar {
+  titulo: string;
+  descripcion: string;
+  nota: string;
+  botonMover: string;
+  botonMoviendo: string;
+  botonNo: string;
+}
+
+/** Todos los textos del diálogo según dónde se abre (fuente única). */
+export function textosDialogoReagendar(
+  contexto: ContextoReagendar,
+  nuevaFecha: string | null | undefined,
+  fechaOperativa: string | null | undefined,
+): TextosDialogoReagendar {
+  if (contexto === "vuelo") {
+    return {
+      titulo: TITULO_MOVER_DESDE_VUELO,
+      descripcion: textoMoverDesdeVuelo(nuevaFecha, fechaOperativa),
+      nota: NOTA_SOLO_FECHA_VUELO,
+      botonMover: BOTON_MOVER,
+      botonMoviendo: BOTON_MOVIENDO,
+      botonNo: BOTON_AHORA_NO,
+    };
+  }
+  return {
+    titulo: TITULO_REAGENDAR,
+    descripcion: textoReagendar(nuevaFecha, fechaOperativa),
+    nota: NOTA_SOLO_FECHA,
+    botonMover: BOTON_MOVER,
+    botonMoviendo: BOTON_MOVIENDO,
+    botonNo: BOTON_SOLO_COTIZACION,
+  };
+}
+
+/**
+ * Toast al cerrar SIN mover («No» / «Ahora no» / Esc). `quizaMovio` = en este
+ * diálogo hubo un error que pudo dejar tramos movidos ⇒ texto neutro. Desde
+ * la cotización, sin error: `TOAST_NO_MOVIDO`. Desde el vuelo, sin error: nada
+ * (la banda sigue a la vista; cerrar no necesita aviso).
+ */
+export function toastAlCerrarSinMover(p: {
+  contexto: ContextoReagendar;
+  quizaMovio: boolean;
+}): string | null {
+  if (p.quizaMovio) return TOAST_REVISA_TRAMOS;
+  return p.contexto === "vuelo" ? null : TOAST_NO_MOVIDO;
+}
+
+/**
  * Toast tras mover: «Vuelo operativo movido: 3 tramos ahora salen el 7 de
  * octubre de 2026». Un viaje de varios días (los tramos quedan en días
  * distintos) dice «a partir del …» para no afirmar que todos salen ese día.
@@ -266,11 +410,16 @@ export function toastReagendado(res: AlineacionFechaTramos | null | undefined): 
 export const MSG_REAGENDAR_API_VIEJO =
   "Falta actualizar el servidor: mueve la fecha desde el detalle del vuelo";
 
+/** Respaldo = texto EXACTO del API (`MENSAJE_VUELO_YA_VOLO`, alinear-fecha.util.ts). */
 export const MSG_REAGENDAR_YA_VOLO =
-  "La operación ya empezó: la fecha de cada tramo se edita desde el vuelo";
+  "La operación ya empezó: la fecha de cada tramo se edita desde el vuelo.";
 
+/** Respaldo = texto EXACTO del API (`MENSAJE_VUELO_CANCELADO`). */
 export const MSG_REAGENDAR_CANCELADO =
-  "El vuelo está cancelado: su operación ya no se mueve.";
+  "El vuelo está cancelado: no hay operación que mover.";
+
+/** Código del 503 del API cuando la escritura falló a medio camino. */
+export const CODE_TRAMOS_NO_MOVIDOS = "TRAMOS_NO_MOVIDOS";
 
 export const MSG_REAGENDAR_SIN_PERMISO =
   "Tu usuario no puede mover el vuelo operativo: pide a un administrador o a " +
@@ -319,4 +468,59 @@ export function mensajeErrorReagendar(r: {
   if (esErrorTecnico(r)) return MSG_SERVIDOR_NO_RESPONDIO;
   if (RE_INGLES_API.test(msg)) return MSG_REAGENDAR_GENERICO;
   return msg;
+}
+
+/**
+ * ¿El error pudo dejar el vuelo operativo (parcial o totalmente) movido? Sí
+ * con el 503 `TRAMOS_NO_MOVIDOS` (el API dice si revirtió, pero «algunos
+ * quedaron» es posible), cualquier 5xx y los fallos técnicos o de red (la
+ * respuesta se perdió DESPUÉS de que el API escribió, o la server action
+ * reventó). Entonces el panel refresca (el cotizador limpio se resetea con lo
+ * que REALMENTE quedó en la BD: un guardado posterior no revierte tramos) y
+ * el cierre sin mover usa `TOAST_REVISA_TRAMOS`. Un 4xx de negocio no.
+ */
+export function errorPuedeHaberMovido(r: {
+  error?: string | null;
+  code?: string | null;
+  status?: number | null;
+}): boolean {
+  if ((r.code ?? "").trim() === CODE_TRAMOS_NO_MOVIDOS) return true;
+  if (r.status != null && r.status >= 500) return true;
+  if (r.status != null && r.status >= 400) return false;
+  return esErrorTecnico(r);
+}
+
+/** Lo que devuelve `alinearFechaTramosAction` (`ActionResult` cumple esta forma). */
+export interface ResultadoAlinearAction {
+  ok: boolean;
+  data?: AlineacionFechaTramos;
+  error?: string;
+  code?: string;
+  status?: number;
+}
+
+export type ResultadoMoverOperativo =
+  | { ok: true; toast: string }
+  | { ok: false; error: string; refrescar: boolean };
+
+/**
+ * El «Sí» del diálogo, sin React: llama a la action (inyectada) y traduce el
+ * resultado. NUNCA lanza: si la llamada a la server action revienta en el
+ * cliente («Failed to find Server Action» tras un deploy de Vercel, red
+ * caída) se trata como error técnico — antes el throw escapaba de la
+ * transición y React mandaba la cotización entera al error boundary
+ * (revisión 5-oct-2026).
+ */
+export async function moverVueloOperativo(
+  llamar: () => Promise<ResultadoAlinearAction>,
+): Promise<ResultadoMoverOperativo> {
+  let res: ResultadoAlinearAction;
+  try {
+    res = await llamar();
+  } catch (err) {
+    res = { ok: false, error: err instanceof Error ? err.message : "" };
+  }
+  if (res?.ok) return { ok: true, toast: toastReagendado(res.data) };
+  const r = res ?? { ok: false };
+  return { ok: false, error: mensajeErrorReagendar(r), refrescar: errorPuedeHaberMovido(r) };
 }

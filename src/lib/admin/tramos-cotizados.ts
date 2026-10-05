@@ -19,7 +19,11 @@
  * `es_ferry`, pernocta y su costo, tipo de parada y sus notas.
  * Qué NO precia y vive en la operación (sale de la escala VIVA del MISMO
  * `orden`, y solo si su ruta sigue siendo la del tramo cotizado):
- * `fecha_salida_plan`, `notas` del tramo y `pasajeros_nombres`.
+ * `fecha_salida_plan`, `notas` del tramo y `pasajeros_nombres`. EXCEPCIÓN
+ * (5-oct-2026): `fecha_salida_plan` se hereda del mismo `orden` AUNQUE la ruta
+ * difiera — la fecha es operativa y `replaceEscalas` la escribe en esa misma
+ * escala; con la del snapshot, guardar la cotización revertía la fecha que la
+ * operación (o el «Sí» del modal de fecha) ya había movido.
  *
  * PURO: sin React, sin `fetch`, sin `lib/format`. Congelado en
  * `__tests__/tramos-cotizados.test.ts`.
@@ -170,7 +174,8 @@ function deEscalaDelSnapshot(e: EscalaInput): EscalaInput {
     tipo_parada: e.tipo_parada === "SERVICIO" ? "SERVICIO" : "NORMAL",
     servicio_notas: txt(e.servicio_notas) || null,
     // Nota y fecha del tramo: respaldo del snapshot. Manda la escala VIVA
-    // cuando existe una con el mismo orden y la misma ruta.
+    // cuando existe una con el mismo orden y la misma ruta (la fecha, con el
+    // mismo orden aunque la ruta difiera: 5-oct-2026).
     notas: txt(e.notas) || null,
     fecha_salida_plan: fechaInput(e.fecha_salida_plan),
   };
@@ -288,8 +293,9 @@ function tramosLegados(q: QuoteTramos): EscalaInput[] {
  *  5. Los 2 tramos del REDONDO legado.
  *
  * Los campos que NO precian se heredan de la escala VIVA del MISMO `orden`
- * y SOLO si la ruta coincide — y nunca con `itinerario_operativo`, donde las
- * escalas del vuelo son otra ruta a propósito.
+ * y SOLO si la ruta coincide (la FECHA, aunque no coincida: 5-oct-2026) — y
+ * nunca con `itinerario_operativo`, donde las escalas del vuelo son otra ruta
+ * a propósito (y `replaceEscalas` no las toca).
  */
 export function tramosCotizadosDeCotizacion(q: QuoteTramos): TramosCotizados {
   const snap = q.calculo_snapshot ?? null;
@@ -313,7 +319,20 @@ export function tramosCotizadosDeCotizacion(q: QuoteTramos): TramosCotizados {
   ): TramoCotizado => {
     if (operativo) return { escala, orden };
     const viva = vivasPorOrden.get(orden);
-    if (!viva || !mismaRuta(escala, viva)) return { escala, orden };
+    if (!viva) return { escala, orden };
+    if (!mismaRuta(escala, viva)) {
+      // La FECHA es de la operación aunque su ruta ya no sea la cotizada
+      // (revisión 5-oct-2026, modal de fecha de la cotización): con la del
+      // SNAPSHOT, el siguiente guardado la mandaba explícita y `replaceEscalas`
+      // la escribía en ESA escala viva (mismo `orden`), regresando al día
+      // viejo un tramo que la oficina ya movió desde el vuelo. Con la de la
+      // escala viva ese guardado es un no-op. Nota y nombres siguen siendo
+      // los cotizados: pertenecen a otra ruta.
+      return {
+        orden,
+        escala: { ...escala, fecha_salida_plan: fechaInput(viva.fecha_salida_plan) },
+      };
+    }
     return {
       orden,
       escala: {

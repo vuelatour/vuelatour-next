@@ -10,7 +10,12 @@
  *     el `router.refresh()` del cotizador; se monta FUERA del cotizador.
  *  3. La HOJA no se toca: ningún `quote-sheet*.tsx` (cliente ni interna) ni el
  *     cotizador importan el diálogo ni la fuente única de la decisión.
- *  4. El diálogo llama a la action UNA sola vez, solo desde «Sí».
+ *  4. El diálogo llama a la action UNA sola vez, solo desde «Sí», y SIEMPRE
+ *     a través de `moverVueloOperativo` (nunca lanza: un throw de la server
+ *     action ya no escapa al error boundary — revisión 5-oct-2026; su
+ *     comportamiento se prueba con la action mockeada en
+ *     `lib/admin/__tests__/quote-fecha-operativa.test.ts`).
+ *  5. Variante `contexto="vuelo"` (banda del detalle del vuelo).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,9 +23,12 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+  BOTON_AHORA_NO,
   BOTON_MOVER,
   BOTON_SOLO_COTIZACION,
   NOTA_SOLO_FECHA,
+  NOTA_SOLO_FECHA_VUELO,
+  TITULO_MOVER_DESDE_VUELO,
   TITULO_REAGENDAR,
 } from "@/lib/admin/quote-fecha-operativa";
 
@@ -110,6 +118,28 @@ describe("render del modal", () => {
     expect(pintar(true)).not.toContain('role="alert"');
     expect(pintar(false)).toBe("");
   });
+
+  it("desde el DETALLE DEL VUELO: su título, su nota y «Ahora no»", () => {
+    const html = renderToStaticMarkup(
+      <ReagendarTramosDialog
+        contexto="vuelo"
+        abierto
+        nuevaFecha="2026-10-08T03:30:00.000Z"
+        fechaOperativa="2026-10-05T15:00:00.000Z"
+        vueloId={VUELO}
+        onCerrar={() => {}}
+      />,
+    );
+    const t = texto(html);
+    expect(t).toContain(TITULO_MOVER_DESDE_VUELO);
+    expect(t).not.toContain(TITULO_REAGENDAR);
+    expect(t).toContain("La cotización dice el 7 de octubre de 2026.");
+    expect(t).toContain("sigue programado para el 5 de octubre de 2026.");
+    expect(t).toContain(NOTA_SOLO_FECHA_VUELO);
+    const botones = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)];
+    expect(botones.map((b) => b[2])).toEqual([BOTON_AHORA_NO, BOTON_MOVER]);
+    for (const [, attrs] of botones) expect(attrs).toMatch(/class="[^"]*\bcursor-pointer\b/);
+  });
 });
 
 // ───────────────────────────── Cableado ─────────────────────────────
@@ -188,21 +218,49 @@ describe("la HOJA de cotización no se toca", () => {
 });
 
 describe("el diálogo mueve la operación UNA vez, solo desde «Sí»", () => {
-  it("una sola llamada a la action, dentro de `mover`", () => {
+  it("una sola llamada a la action, dentro de `mover` y envuelta en `moverVueloOperativo`", () => {
     expect(dialogo.match(/alinearFechaTramosAction\(/g)).toHaveLength(1);
     const mover = dialogo.slice(dialogo.indexOf("const mover = () => {"));
-    expect(mover.indexOf("await alinearFechaTramosAction(vueloId)")).toBeGreaterThan(0);
+    expect(
+      mover.indexOf("await moverVueloOperativo(() => alinearFechaTramosAction(vueloId))"),
+    ).toBeGreaterThan(0);
+    // Ningún `await` directo a la action: si lanzara, escaparía de la
+    // transición al error boundary (revisión 5-oct-2026).
+    expect(dialogo).not.toMatch(/await\s+alinearFechaTramosAction/);
     // El «Sí» previene el cierre automático: si falla, el diálogo se queda.
     expect(dialogo).toMatch(/e\.preventDefault\(\);\s*mover\(\);/);
   });
 
-  it("error ⇒ se queda abierto con el mensaje; éxito ⇒ toast, cerrar y refresh", () => {
-    expect(dialogo).toContain("setError(mensajeErrorReagendar(res));");
+  it("error ⇒ se queda abierto con el mensaje (y refresca si pudo mover); éxito ⇒ toast, cerrar y refresh", () => {
     expect(dialogo).toMatch(
-      /toast\.success\(toastReagendado\(res\.data\)\);\s*onCerrar\(\);\s*router\.refresh\(\);/,
+      /if \(!r\.ok\) \{\s*setError\(r\.error\);\s*if \(r\.refrescar\) \{\s*setQuizaMovio\(true\);\s*router\.refresh\(\);\s*\}\s*return;\s*\}/,
     );
-    // «No» / Esc: toast informativo y se cierra; mientras guarda no se cierra.
-    expect(dialogo).toMatch(/if \(pending\) return;\s*setError\(null\);\s*toast\.info\(TOAST_NO_MOVIDO\);/);
+    expect(dialogo).toMatch(
+      /toast\.success\(r\.toast\);\s*onCerrar\(\);\s*router\.refresh\(\);/,
+    );
     expect(dialogo).toContain("disabled={pending}");
+  });
+
+  it("«No» / Esc: el toast sale de `toastAlCerrarSinMover` (neutro si hubo un error que pudo mover)", () => {
+    const cerrar = dialogo.slice(dialogo.indexOf("const cerrarSinMover = () => {"));
+    expect(cerrar).toMatch(
+      /if \(pending\) return;\s*const aviso = toastAlCerrarSinMover\(\{ contexto, quizaMovio \}\);/,
+    );
+    expect(cerrar).toMatch(/if \(aviso\) toast\.info\(aviso\);\s*onCerrar\(\);/);
+    expect(dialogo).not.toContain("TOAST_NO_MOVIDO");
+  });
+
+  it("el error usa el token del tema (`text-destructive`), no rojos crudos", () => {
+    expect(dialogo).toContain('<p role="alert" className="text-sm text-destructive">');
+    expect(dialogo).not.toMatch(/text-red-\d/);
+  });
+
+  it("todos los textos salen de la fuente única (`textosDialogoReagendar`)", () => {
+    expect(dialogo).toContain(
+      "const textos = textosDialogoReagendar(contexto, nuevaFecha, fechaOperativa);",
+    );
+    for (const campo of ["titulo", "descripcion", "nota", "botonNo", "botonMover", "botonMoviendo"]) {
+      expect(dialogo).toContain(`textos.${campo}`);
+    }
   });
 });

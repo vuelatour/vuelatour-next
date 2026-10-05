@@ -172,3 +172,37 @@ export function cotizacionEditablePorFecha(
     CANCUN_OFFSET_MIN * 60_000;
   return new Date(fechaVuelo).getTime() >= inicioMesAnterior;
 }
+
+/**
+ * Meses en español (minúsculas) para fechas LARGAS «7 de octubre de 2026».
+ * Fuente única para los textos nuevos (5-oct-2026, revisión del modal de
+ * fecha de la cotización): no se arma otra tabla de meses en cada módulo.
+ */
+export const MESES_LARGOS_ES = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+] as const;
+
+/**
+ * Día de PARED «YYYY-MM-DD» (ya en hora Cancún) → «7 de octubre de 2026».
+ * Sin `Date` ni `Intl`: el día no se corre por zona. Vacío o ilegible ⇒ «—».
+ * Para un instante ISO, primero sacar su día Cancún (`isoToCancunInput`).
+ */
+export function fechaLargaDia(ymd?: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((ymd ?? "").trim());
+  if (!m) return "—";
+  const mes = Number(m[2]);
+  const dia = Number(m[3]);
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return "—";
+  return `${dia} de ${MESES_LARGOS_ES[mes - 1]} de ${m[1]}`;
+}
