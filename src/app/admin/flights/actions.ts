@@ -27,6 +27,10 @@ import {
   validarResolucion,
   validarTextoNota,
 } from "@/lib/admin/seguimiento";
+import {
+  MSG_REAGENDAR_VUELO_INVALIDO,
+  type AlineacionFechaTramos,
+} from "@/lib/admin/quote-fecha-operativa";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -37,6 +41,9 @@ export interface ActionResult<T = unknown> {
   code?: string;
   /** Detalle estructurado del error del API (si lo mandó). */
   details?: unknown;
+  /** Estatus HTTP del rechazo (ADITIVO, 5-oct-2026): solo lo copian las
+      actions que distinguen un 404 «Cannot POST» (API previo) de los demás. */
+  status?: number;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
@@ -1204,6 +1211,46 @@ export async function eliminarSeguimientoAction(
     revalidarSeguimiento(flightId);
     return { ok: true };
   } catch (err) {
+    return fail(err);
+  }
+}
+
+// ═══════════ COTIZACIÓN CON FECHA NUEVA ⇒ MOVER EL VUELO OPERATIVO (5-oct-2026, API 0.0.55) ═══════════
+//
+// El modal que sale al guardar una cotización con otra fecha
+// (`components/admin/quotes/reagendar-tramos-dialog.tsx`) llama a esta action
+// en su «Sí». El API corre CADA tramo vivo los mismos días conservando su
+// hora de pared en Cancún, la fecha final del viaje, permisos, calendario y
+// avisa a la tripulación. Body `{}`: el día objetivo es la `fecha_vuelo` que
+// el guardado de la cotización ACABA de persistir.
+
+/** Mueve el vuelo operativo (sus tramos) al día de la `fecha_vuelo` vigente. Nunca lanza. */
+export async function alinearFechaTramosAction(
+  vueloId: string,
+): Promise<ActionResult<AlineacionFechaTramos>> {
+  if (!esUuid(vueloId)) return { ok: false, error: MSG_REAGENDAR_VUELO_INVALIDO };
+  try {
+    const data = await apiServer<AlineacionFechaTramos>(
+      `/v1/flights/${vueloId}/tramos/alinear-fecha`,
+      { method: "POST", body: {} },
+    );
+    revalidatePath(`/admin/flights/${vueloId}`);
+    revalidatePath("/admin/flights");
+    revalidatePath(`/admin/quotes/${vueloId}`);
+    revalidatePath("/admin/calendar");
+    return { ok: true, data };
+  } catch (err) {
+    // Copia el estatus: un 404 «Cannot POST» (API previo, sin la ruta) se
+    // distingue del 404 `VUELO_NO_EXISTE` y del 409 de negocio.
+    if (isApiError(err)) {
+      return {
+        ok: false,
+        error: err.message,
+        code: err.code,
+        status: err.status,
+        details: err.details,
+      };
+    }
     return fail(err);
   }
 }

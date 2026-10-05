@@ -30,6 +30,7 @@ import { QuotePlegable } from "@/components/admin/quotes/quote-plegable";
 import { QuoteNavegacion } from "@/components/admin/quotes/quote-navegacion";
 import { QuoteVersionsTimeline } from "@/components/admin/quotes/quote-versions-timeline";
 import { QuoteSeguimientoBanda } from "@/components/admin/quotes/quote-seguimiento-banda";
+import { ReagendarTramosDialog } from "@/components/admin/quotes/reagendar-tramos-dialog";
 import type { EscalaPdfPreview } from "@/hooks/use-quote-preview-html";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
@@ -41,6 +42,7 @@ import {
 } from "@/lib/admin/avion-cotizado";
 import { estadoCobroSemaforo, pendienteCobro } from "@/lib/admin/cobros";
 import { candadoRevision, RAZON_REVISION } from "@/lib/admin/quote-revision";
+import { decidirPreguntaReagendar } from "@/lib/admin/quote-fecha-operativa";
 import { hrefListaCotizaciones } from "@/lib/admin/quote-navegacion";
 import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import { bannerSeguimiento } from "@/lib/admin/seguimiento";
@@ -247,6 +249,29 @@ export function QuoteWorkspace({
       const ctl = el instanceof HTMLInputElement ? el : el?.querySelector("input");
       ctl?.focus();
     }, 400);
+  };
+
+  // FECHA NUEVA ⇒ ¿MOVER TAMBIÉN EL VUELO OPERATIVO? (5-oct-2026). Guardar
+  // escribe la fecha de la cotización pero NO mueve los tramos: si el día
+  // cambió y la operación sigue en otro, se pregunta en un modal FUERA de la
+  // hoja (pedido del cliente: nada nuevo en la estructura de la cotización).
+  // `antes` = la cotización que se abrió; `despues` = la que devolvió el
+  // guardado. El diálogo se abre después del toast del guardado y no frena el
+  // `router.refresh()` que hace el cotizador. `abierto` va aparte de las
+  // fechas para que el texto no se vacíe durante la animación de salida.
+  const [reagendar, setReagendar] = useState<{
+    nuevaFecha: string;
+    fechaOperativa: string;
+  } | null>(null);
+  const [reagendarAbierto, setReagendarAbierto] = useState(false);
+  const alGuardarCotizacion = (guardada: PersistedQuote) => {
+    const decision = decidirPreguntaReagendar({ antes: quote, despues: guardada });
+    if (!decision.preguntar) return;
+    setReagendar({
+      nuevaFecha: decision.nuevaFecha,
+      fechaOperativa: decision.fechaOperativa,
+    });
+    setReagendarAbierto(true);
   };
 
   // CONFIRMADO/RESERVA con tripulación: el primer cambio pide confirmación.
@@ -580,8 +605,9 @@ export function QuoteWorkspace({
         }
         onEstadoEdicion={setEdicion}
         // El cotizador ya hace router.refresh() tras guardar; aquí no hay
-        // modo que cerrar (la edición es directa).
-        onGuardado={() => undefined}
+        // modo que cerrar (la edición es directa). Solo se decide si hay que
+        // preguntar por la fecha del vuelo operativo (modal fuera de la hoja).
+        onGuardado={alGuardarCotizacion}
         tramoExtra={tramoExtraLectura}
         notaTramos={notaTramosLectura}
         escalasPdf={escalasPdfPreview}
@@ -631,6 +657,18 @@ export function QuoteWorkspace({
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
       />
+
+      {/* «Se actualizó la fecha de la cotización» (5-oct-2026): modal FUERA
+          de la hoja y del cotizador; solo lo abre `alGuardarCotizacion`. */}
+      {reagendar && (
+        <ReagendarTramosDialog
+          abierto={reagendarAbierto}
+          nuevaFecha={reagendar.nuevaFecha}
+          fechaOperativa={reagendar.fechaOperativa}
+          vueloId={quote.id}
+          onCerrar={() => setReagendarAbierto(false)}
+        />
+      )}
 
       {/* Debajo de la hoja y de sus plegables: cobros (SIEMPRE, también con
           0) y operación. El HISTORIAL bajó a la pila de `<details>` del

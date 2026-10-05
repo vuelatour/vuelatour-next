@@ -5428,3 +5428,85 @@ mismo 403; una tarjeta de OTRA persona ⇒ 403 `TARJETA_DE_OTRO_USUARIO`
 - **Pendientes conocidos**: «Invitar piloto» de BASE sigue visible para la
   coordinación y `POST /v1/users` es solo ADMIN (el externo sí funciona); sin
   QA visual en navegador.
+
+## Cotización: fecha nueva ⇒ modal para mover el vuelo operativo (5-oct-2026)
+
+Pedido del cliente: «al momento de actualizar/editar la fecha de una
+cotización y cuando se guarde de manera correcta, aparezca un pequeño modal
+que diga: se actualizó la fecha de cotización, ¿desea que la fecha del vuelo
+operativo se actualice también? Mostrar la fecha del vuelo operativo al
+momento… mencionar que esto será solo para fecha, y que las horas de los
+tramos se tienen que editar desde el vuelo operativo. Sobre todo necesito que
+esto no agregue nada a la estructura de la hoja de cotización». Contrato con
+el API 0.0.55 (`POST /v1/flights/:id/tramos/alinear-fecha`, ADMIN/COORDINADOR).
+
+- **Por qué**: `revise` escribe `vuelo.fecha_vuelo` (la «Fecha del vuelo» del
+  PDF) pero NO mueve los tramos (`escala.fecha_salida_plan`, con hora): el
+  panel manda la fecha de la escala VIVA y el API la conserva. La cotización
+  decía el día nuevo y la operación (tramos, app del piloto, calendario)
+  seguía en el viejo. `revise` NO cambió.
+- **Cuándo sale** (`decidirPreguntaReagendar({ antes, despues })`, PURA):
+  `antes` = la cotización que se abrió (`quote` del workspace), `despues` = la
+  que devolvió el guardado (`RevisedQuote`, trae `escalas` ya escritas). Solo
+  si el DÍA Cancún de `fecha_vuelo` cambió y hay día nuevo, el vuelo NO está
+  CANCELADO (el API daría 409), NO ha volado (`estadoVueloVolado` de `antes` o
+  `despues`, espejo del API) y la fecha operativa —`fecha_salida_plan` del
+  primer tramo VIVO por `orden` con fecha (`fechaOperativaDe`, la misma
+  referencia del API)— cae en OTRO día. Motivos para no preguntar:
+  `sin_cambio` · `cancelado` · `ya_volo` · `sin_tramos` · `mismo_dia`. Sin
+  `escalas` en la respuesta (API previo) se usan las de `antes`.
+- **FUENTE ÚNICA** `lib/admin/quote-fecha-operativa.ts` (PURA): `diaCancunDe`
+  (día de pared vía `isoToCancunInput`; un «YYYY-MM-DD» ya es pared),
+  `fechaLargaCancun` («7 de octubre de 2026», tabla de meses fija, sin `Date`
+  ni `toLocaleDateString`), `fechaOperativaDe`, la decisión, los textos
+  (`TITULO_REAGENDAR`, `textoReagendar`, `NOTA_SOLO_FECHA`, `BOTON_MOVER`,
+  `BOTON_MOVIENDO`, `BOTON_SOLO_COTIZACION`, `TOAST_NO_MOVIDO`,
+  `TOAST_YA_ESTABA`, `toastReagendado`) y `mensajeErrorReagendar`
+  (`VUELO_YA_VOLO`/`VUELO_CANCELADO` ⇒ texto del API con respaldo; 404 «Cannot
+  POST» ⇒ «Falta actualizar el servidor: mueve la fecha desde el detalle del
+  vuelo»; 401/403 ⇒ sesión/permiso; técnico ⇒ `MSG_SERVIDOR_NO_RESPONDIO` de
+  `errores-tecnicos.ts`; inglés de validación ⇒ genérico; otro español del API
+  ⇒ tal cual). Tipos de la respuesta: `AlineacionFechaTramos`.
+- **Toast tras mover**: «Vuelo operativo movido: 3 tramos ahora salen el 7 de
+  octubre de 2026» (singular con 1); si los tramos quedan en días distintos
+  (viaje multi-día) dice «a partir del …»; `delta_dias = 0` o nada movido ⇒
+  «El vuelo operativo ya estaba en esa fecha».
+- **Action** `alinearFechaTramosAction(vueloId)` (`app/admin/flights/actions.ts`,
+  nunca lanza): uuid antes de la red, `POST` con body `{}` (el día objetivo es
+  la `fecha_vuelo` que el guardado acaba de persistir), copia `code` y
+  **`status`** (campo ADITIVO de `ActionResult`; `fail()` no cambió) y revalida
+  `/admin/flights/:id`, `/admin/flights`, `/admin/quotes/:id` y
+  `/admin/calendar`.
+- **Diálogo** `components/admin/quotes/reagendar-tramos-dialog.tsx`
+  (`AlertDialog`, `{ abierto, nuevaFecha, fechaOperativa, vueloId, onCerrar }`):
+  «Sí, mover el vuelo operativo» ⇒ action ⇒ `toast.success(toastReagendado)` ⇒
+  cerrar ⇒ `router.refresh()` (el cotizador, con el form limpio, se resetea
+  con los tramos movidos: un guardado posterior ya no manda las fechas
+  viejas); mientras guarda, los dos botones apagados; si falla, se QUEDA
+  abierto con el motivo en rojo (`role="alert"`). «No, solo la cotización» o
+  Esc ⇒ `toast.info(TOAST_NO_MOVIDO)` y se cierra. Botones con
+  `cursor-pointer`.
+- **Montaje**: `quote-workspace.tsx`, FUERA del cotizador y de la hoja (después
+  del `CobroFormSheet`). `onGuardado={alGuardarCotizacion}` (antes
+  `() => undefined`) es el ÚNICO que lo abre; el cotizador ya llamaba
+  `onGuardado(res.data)` DESPUÉS del `toast.success` del guardado y ANTES de su
+  `router.refresh()` (síncrono: el modal no lo frena). `abierto` va aparte de
+  las fechas para que el texto no se vacíe durante la animación de salida.
+  **No se tocó** `quote-calculator.tsx`, ningún `quote-sheet*.tsx` (cliente ni
+  interna), sus fixtures ni su CSS.
+- **Pruebas**: `lib/admin/__tests__/quote-fecha-operativa.test.ts` (día
+  Cancún con cruce de medianoche UTC, decisión por caso, textos, toasts,
+  errores), `app/admin/flights/__tests__/alinear-fecha-action.test.ts` (ruta,
+  body `{}`, revalidación, uuid, 409/404 con `status`) y
+  `components/admin/quotes/__tests__/reagendar-tramos-dialog.test.tsx` (render
+  estático con las dos fechas, la nota y los dos botones; cableado por regex:
+  solo `onGuardado` abre el modal, va fuera del cotizador, el cotizador lo
+  llama tras el toast y antes del refresh, ninguna hoja ni el cotizador
+  importan el diálogo o la decisión, una sola llamada a la action).
+- **Orden de deploy: API 0.0.55 antes que panel.** Con el API previo el «Sí»
+  responde 404 «Cannot POST» ⇒ «Falta actualizar el servidor: mueve la fecha
+  desde el detalle del vuelo» y el diálogo se queda abierto para salir con
+  «No».
+- **Pendientes conocidos**: sin QA visual en navegador (el diálogo vive en un
+  portal); el detalle del vuelo no tiene todavía un botón propio para alinear
+  la fecha (fuera del contrato: ahí se edita tramo por tramo).
