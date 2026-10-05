@@ -83,10 +83,13 @@ import {
 import { opcionesFacturacionForm } from "@/lib/admin/facturacion-estatus";
 import { cn } from "@/lib/utils";
 import {
+  ETIQUETA_TIPO_COMBUSTIBLE,
+  PLACEHOLDER_TIPO_COMBUSTIBLE,
   TIPOS_COMBUSTIBLE,
   avisoCombustibleDistinto,
   combustibleDeAeronave,
-  tipoCombustibleSugerido,
+  eleccionManualCombustible,
+  pasoPrellenadoCombustible,
   type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
 
@@ -270,17 +273,15 @@ export function ExpenseCreateDialog({
   useEffect(() => {
     if (!open) return;
     const actual = getValues("tipo_combustible");
-    const sugerido = tipoCombustibleSugerido({
+    const paso = pasoPrellenadoCombustible({
       categoria: getValues("categoria"),
       delAvion: combustibleDeAeronave(aircraft, getValues("aeronave_id")),
       actual,
-      actualEsSugerido: tipoAuto.current,
+      auto: tipoAuto.current,
       ia: tipoIa,
     });
-    if (sugerido !== actual) {
-      setValue("tipo_combustible", sugerido);
-      tipoAuto.current = true;
-    }
+    tipoAuto.current = paso.auto;
+    if (paso.valor !== actual) setValue("tipo_combustible", paso.valor);
   }, [open, categoriaSel, avionSel, tipoSel, tipoIa, aircraft, getValues, setValue]);
   // Registro manual (el control es un SearchableSelect, no un input nativo):
   // handleSubmit bloquea el envío con el medio en blanco y pinta el error
@@ -998,16 +999,17 @@ export function ExpenseCreateDialog({
                     {...register("litros")}
                   />
                 </Field>
-                <Field label="Tipo de combustible">
+                <Field label={ETIQUETA_TIPO_COMBUSTIBLE}>
                   <SearchableSelect
                     options={TIPOS_COMBUSTIBLE.map((t) => ({ value: t.value, label: t.label }))}
                     value={watch("tipo_combustible")}
                     onChange={(v) => {
-                      setValue("tipo_combustible", v);
                       // Elección del operador: manda sobre el prellenado.
-                      tipoAuto.current = false;
+                      const eleccion = eleccionManualCombustible(v);
+                      tipoAuto.current = eleccion.auto;
+                      setValue("tipo_combustible", eleccion.valor);
                     }}
-                    placeholder="Elige el tipo"
+                    placeholder={PLACEHOLDER_TIPO_COMBUSTIBLE}
                   />
                 </Field>
               </div>

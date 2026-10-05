@@ -131,7 +131,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       getClient(snapshot.cliente_id).catch(() => null),
       // Catálogos de los diálogos (asignar avión/piloto, editar ruta): si uno
       // falla, el vuelo SIGUE viéndose — antes tumbaban el detalle entero.
-      degradado.opcional("las aeronaves", listAircraft({ limit: 100, activa: true }), {
+      // Flota COMPLETA (5-oct-2026): los diálogos de gasto necesitan también
+      // los aviones inactivos (una carga GAS del XB-IJP debe prellenar y
+      // avisar su combustible); asignar/cambiar avión usan `flotaActiva`.
+      degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
         data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
       }),
       degradado.opcional("los pilotos", listUsers({ rol: "PILOTO", limit: 50 }), {
@@ -238,7 +241,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       ? puntosRuta(tramosCotizados).join(" → ")
       : `${snapshot.origen_iata} → ${snapshot.destino_iata}`;
 
-  const aircraft = aircraftRes.data.find((a) => a.id === snapshot.aeronave_id);
+  // Mismo filtro que el API con `activa: true`: asignar/cambiar avión y la
+  // ficha del avión del vuelo siguen viendo SOLO la flota activa.
+  const flotaActiva = aircraftRes.data.filter((a) => a.activa === true);
+  const aircraft = flotaActiva.find((a) => a.id === snapshot.aeronave_id);
   // Ficha del avión AJENO (externo): del snapshot, con fallback a la
   // cotización (misma fila de `vuelo`) para respuestas de APIs previas.
   const avionExternoModelo =
@@ -302,7 +308,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   const apoyoNombre =
     apoyosVuelo.length > 0 ? apoyosVuelo.map((a) => a.nombre).join(", ") : null;
 
-  const aircraftOptions = aircraftRes.data.map((a) => ({
+  const aircraftOptions = flotaActiva.map((a) => ({
     id: a.id,
     matricula: a.matricula,
     modelo: a.modelo,

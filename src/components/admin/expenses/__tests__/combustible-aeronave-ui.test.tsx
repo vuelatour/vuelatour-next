@@ -9,11 +9,16 @@
  *  2. Ficha del avión REAL (render): campo «Combustible» con gasavión por
  *     default en el alta, el valor guardado en la edición y «—» (sin selector)
  *     con un API previo.
- *  3. Cableado: prellenado en los dos diálogos (efecto que lee getValues), el
- *     tipo solo viaja en GAS, el PATCH manda el tipo que no es del avión, las
- *     páginas arman el catálogo con `avionCatalogoGasto` (sin él, el
- *     combustible se perdía antes de llegar al diálogo) y el detalle del
- *     avión pinta el campo.
+ *  3. Resultado de la carga masiva REAL (render): las filas que el API guardó
+ *     con el combustible del avión salen en ámbar; con un API previo (sin
+ *     `avisos`) no hay bloque.
+ *  4. Cableado: prellenado en los dos diálogos (efecto que lee getValues y
+ *     corre el paso PURO `pasoPrellenadoCombustible`, cuya secuencia se
+ *     prueba en `lib/admin/__tests__/combustible-aeronave.test.ts`), el tipo
+ *     solo viaja en GAS, el PATCH manda solo lo que cambió, las páginas arman
+ *     el catálogo con `avionCatalogoGasto` (sin él, el combustible se perdía
+ *     antes de llegar al diálogo), el detalle del vuelo le da la flota
+ *     COMPLETA y el detalle del avión pinta el campo.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -36,6 +41,8 @@ vi.mock("@/app/actions/storage", () => ({
   refrescarUrlsFirmadasAction: async () => ({ ok: false }),
 }));
 vi.mock("@/app/admin/expenses/actions", () => ({
+  confirmCargaCombustiblesAction: async () => ({ ok: false }),
+  previewCargaCombustiblesAction: async () => ({ ok: false }),
   verifyGastoAction: async () => ({ ok: true }),
   assignVueloGastoAction: async () => ({ ok: true }),
   buscarVuelosCercanosAction: async () => ({ ok: true, data: [] }),
@@ -52,6 +59,7 @@ vi.mock("@/app/admin/aircraft/actions", () => ({
 vi.mock("@/components/admin/comprobante-preview", () => ({
   ComprobantePreview: () => null,
 }));
+vi.mock("@/components/admin/excel-export-button", () => ({ ExcelExportButton: () => null }));
 // Diálogo abierto sin portal y selectores como testigos: el render estático
 // enseña los campos con su valor.
 vi.mock("@/components/ui/dialog", () => {
@@ -83,6 +91,7 @@ vi.mock("@/components/ui/searchable-select", () => ({
 
 const { ExpenseVerifyDialog } = await import("../expense-verify-dialog");
 const { AircraftFormDialog } = await import("@/components/admin/aircraft/aircraft-form-dialog");
+const { ResultadoCargaCombustibles } = await import("../fuel-bulk-upload-dialog");
 
 const AVISO_PEV =
   "El XB-PEV carga Gasavión: al guardar se corregirá a Gasavión y quedará marcado para revisión.";
@@ -226,22 +235,69 @@ describe("ficha del avión (render real)", () => {
   });
 });
 
+describe("resultado de la carga masiva (render real)", () => {
+  const AVISO_FILA =
+    "La fila decía Turbosina pero el XB-PEV carga Avgas: se guardó como Avgas y quedó marcada para revisión.";
+
+  it("filas ajustadas por el API ⇒ bloque ámbar con su encabezado y cada fila", () => {
+    const html = renderToStaticMarkup(
+      <ResultadoCargaCombustibles
+        resultado={{ creados: 4, errores: [], avisos: [{ fila: 7, aviso: AVISO_FILA }] }}
+      />,
+    );
+    expect(html).toContain("Se cargaron 4 cargas de combustible.");
+    expect(html).toContain(
+      "1 fila se guardó con el combustible del avión (queda para revisión):",
+    );
+    expect(html).toContain(`<li>Fila 7: ${AVISO_FILA}</li>`);
+    const caja =
+      html.match(/<div class="([^"]*)"><p[^>]*>1 fila se guardó con el combustible/)?.[1] ?? "";
+    expect(caja).toContain("border-amber-500/40");
+    expect(caja).toContain("bg-amber-500/10");
+  });
+
+  it("sin avisos (o API previo sin la llave) ⇒ sin bloque ámbar; los errores siguen en rojo", () => {
+    for (const resultado of [
+      { creados: 2, errores: [{ fila: 3, error: "Matrícula desconocida." }] },
+      { creados: 2, errores: [{ fila: 3, error: "Matrícula desconocida." }], avisos: [] },
+    ]) {
+      const html = renderToStaticMarkup(<ResultadoCargaCombustibles resultado={resultado} />);
+      expect(html).not.toContain("con el combustible del avión");
+      expect(html).not.toContain("border-amber-500/40");
+      expect(html).toContain("Fila 3: Matrícula desconocida.");
+    }
+  });
+});
+
 describe("cableado", () => {
   const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
   const alta = leer("../expense-create-dialog.tsx");
   const verif = leer("../expense-verify-dialog.tsx");
   const ficha = leer("../../aircraft/aircraft-form-dialog.tsx");
 
-  it("los dos diálogos prellenan con la regla ÚNICA, leyendo getValues (fresco tras reset)", () => {
+  it("los dos diálogos prellenan con el paso PURO, leyendo getValues (fresco tras reset)", () => {
     for (const src of [alta, verif]) {
       expect(src).toMatch(
-        /useEffect\(\(\) => \{\s*if \(!open\) return;\s*const actual = getValues\("tipo_combustible"\);\s*const sugerido = tipoCombustibleSugerido\(\{/,
+        /useEffect\(\(\) => \{\s*if \(!open\) return;\s*const actual = getValues\("tipo_combustible"\);\s*const paso = pasoPrellenadoCombustible\(\{/,
       );
       expect(src).toContain('delAvion: combustibleDeAeronave(aircraft, getValues("aeronave_id"))');
-      expect(src).toContain("actualEsSugerido: tipoAuto.current");
+      expect(src).toContain("auto: tipoAuto.current");
       expect(src).toContain("ia: tipoIa");
+      // La marca y el valor salen del paso, tal cual.
+      expect(src).toMatch(
+        /tipoAuto\.current = paso\.auto;\s*if \(paso\.valor !== actual\) setValue\("tipo_combustible", paso\.valor\);/,
+      );
       // Elegir a mano manda sobre el prellenado.
-      expect(src).toMatch(/setValue\("tipo_combustible", v\);\s*\/\/[^\n]*\n\s*tipoAuto\.current = false;/);
+      expect(src).toMatch(
+        /const eleccion = eleccionManualCombustible\(v\);\s*tipoAuto\.current = eleccion\.auto;\s*setValue\("tipo_combustible", eleccion\.valor\);/,
+      );
+      // Etiqueta y placeholder del selector salen del helper (no literales).
+      expect(src).toMatch(
+        /<Field label=\{ETIQUETA_TIPO_COMBUSTIBLE\}>\s*<SearchableSelect\s*options=\{TIPOS_COMBUSTIBLE/,
+      );
+      expect(src).toContain("placeholder={PLACEHOLDER_TIPO_COMBUSTIBLE}");
+      expect(src).not.toContain('"Tipo de combustible"');
+      expect(src).not.toContain('"Elige el tipo"');
       // El aviso sale del helper, en ámbar.
       expect(src).toContain("avisoCombustibleDistinto(");
       expect(src).toContain("⚠ {avisoCombustible}");
@@ -251,21 +307,23 @@ describe("cableado", () => {
   it("verificación: el efecto va DESPUÉS del reset y del prellenado por matrícula; el reset limpia la marca", () => {
     const reset = verif.indexOf("reset(defaults(gasto));");
     const matricula = verif.indexOf("avion = avionPorMatricula(aircraft, mIa) ?? null;");
-    const efecto = verif.indexOf("const sugerido = tipoCombustibleSugerido({");
+    const efecto = verif.indexOf("const paso = pasoPrellenadoCombustible({");
     expect(reset).toBeGreaterThan(-1);
     expect(matricula).toBeGreaterThan(reset);
     expect(efecto).toBeGreaterThan(matricula);
     expect(verif).toMatch(/avionLimpiado\.current = false;\s*tipoAuto\.current = false;\s*\}\s*\}, \[open, gasto, reset\]\);/);
   });
 
-  it("verificación: el PATCH manda el tipo que no es del avión (el API solo reajusta si lo trae)", () => {
-    expect(verif).toMatch(
-      /camposCargaParaPatch\(\s*gasto,\s*values,\s*combustibleDeAeronave\(aircraft, values\.aeronave_id\),\s*\)/,
-    );
+  it("verificación: el PATCH manda solo lo que cambió (el API reajusta con la categoría, que siempre viaja)", () => {
+    expect(verif).toContain("Object.assign(payload, camposCargaParaPatch(gasto, values));");
+    // Sin tercer argumento: mandar el tipo sin cambio cambiaría la nota del
+    // API («se capturó …» en vez de «el gasto traía …»).
+    expect(verif).not.toMatch(/camposCargaParaPatch\(\s*gasto,\s*values,\s*\S/);
+    // La categoría viaja siempre (el payload parte de TODOS los valores).
+    expect(verif).toContain("let payload: Record<string, unknown> = { ...values, verificado: true };");
   });
 
   it("alta: el selector vive en el bloque GAS y el tipo solo viaja en GAS", () => {
-    expect(alta).toMatch(/<Field label="Tipo de combustible">\s*<SearchableSelect\s*options=\{TIPOS_COMBUSTIBLE/);
     expect(alta).toContain(
       'tipo_combustible: values.categoria === "GAS" ? values.tipo_combustible : "",',
     );
@@ -291,6 +349,15 @@ describe("cableado", () => {
       const src = leer(rel);
       expect(src.split(".map(avionCatalogoGasto)").length - 1, rel).toBe(n);
     }
+    // Detalle del vuelo: flota COMPLETA para los diálogos de gasto (una
+    // carga GAS de un avión inactivo también prellena y avisa); asignar o
+    // cambiar avión siguen con la flota activa.
+    const vuelo = leer("../../../../app/admin/flights/[id]/page.tsx");
+    expect(vuelo).toContain('degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {');
+    expect(vuelo).not.toContain("listAircraft({ limit: 100, activa: true })");
+    expect(vuelo).toContain("const flotaActiva = aircraftRes.data.filter((a) => a.activa === true);");
+    expect(vuelo).toContain("const aircraftOptions = flotaActiva.map((a) => ({");
+    expect(vuelo).toContain("const aircraft = flotaActiva.find((a) => a.id === snapshot.aeronave_id);");
     // La lista de flota decide si el ALTA manda el campo.
     expect(leer("../../../../app/admin/aircraft/page.tsx")).toContain(
       "<AircraftCreateButton combustibleDisponible={apiConCombustible(aircraft)} />",

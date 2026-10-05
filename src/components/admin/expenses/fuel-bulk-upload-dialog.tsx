@@ -18,6 +18,10 @@ import { cn } from "@/lib/utils";
 import { fmtDateOnly } from "@/lib/datetime";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import {
+  encabezadoAvisosCargaMasiva,
+  renglonAvisoCargaMasiva,
+} from "@/lib/admin/combustibles";
+import {
   confirmCargaCombustiblesAction,
   previewCargaCombustiblesAction,
   type CargaCombustiblePreview,
@@ -348,35 +352,7 @@ export function FuelBulkUploadDialog() {
           )}
 
           {paso === "resultado" && resultado && (
-            <div className="space-y-3 py-2">
-              <div className="flex items-center gap-2">
-                <CheckCircleIcon
-                  className={cn(
-                    "h-6 w-6",
-                    resultado.creados > 0 ? "text-emerald-600" : "text-muted-foreground",
-                  )}
-                />
-                <p className="text-sm font-medium">
-                  Se {resultado.creados === 1 ? "cargó" : "cargaron"} {resultado.creados} carga
-                  {resultado.creados === 1 ? "" : "s"} de combustible.
-                </p>
-              </div>
-              {resultado.errores.length > 0 && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-1">
-                  <p className="text-xs font-medium text-red-600">
-                    {resultado.errores.length} fila
-                    {resultado.errores.length === 1 ? " no se pudo" : "s no se pudieron"} cargar:
-                  </p>
-                  <ul className="text-xs text-red-600 space-y-0.5">
-                    {resultado.errores.map((e) => (
-                      <li key={e.fila}>
-                        Fila {e.fila}: {e.error}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            <ResultadoCargaCombustibles resultado={resultado} />
           )}
 
           <DialogFooter>
@@ -410,5 +386,64 @@ export function FuelBulkUploadDialog() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Paso 3 de la carga masiva: cuántas cargas entraron, las filas que el API
+ * guardó con el combustible del avión (ámbar, `avisos` del API 0.0.56: no son
+ * errores, quedan para revisión) y las filas que no se pudieron cargar.
+ * Exportado para probarlo renderizado (el diálogo arranca cerrado).
+ */
+export function ResultadoCargaCombustibles({
+  resultado,
+}: {
+  resultado: CargaCombustibleResultado;
+}) {
+  // API previo: sin `avisos` ⇒ sin bloque ámbar.
+  const avisos = resultado.avisos ?? [];
+  const encabezadoAvisos = encabezadoAvisosCargaMasiva(avisos.length);
+  return (
+    <div className="space-y-3 py-2">
+      <div className="flex items-center gap-2">
+        <CheckCircleIcon
+          className={cn(
+            "h-6 w-6",
+            resultado.creados > 0 ? "text-emerald-600" : "text-muted-foreground",
+          )}
+        />
+        <p className="text-sm font-medium">
+          Se {resultado.creados === 1 ? "cargó" : "cargaron"} {resultado.creados} carga
+          {resultado.creados === 1 ? "" : "s"} de combustible.
+        </p>
+      </div>
+      {encabezadoAvisos && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-1">
+          <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+            {encabezadoAvisos}
+          </p>
+          <ul className="text-xs text-amber-600 dark:text-amber-400 space-y-0.5">
+            {avisos.map((a) => (
+              <li key={a.fila}>{renglonAvisoCargaMasiva(a)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {resultado.errores.length > 0 && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-1">
+          <p className="text-xs font-medium text-red-600">
+            {resultado.errores.length} fila
+            {resultado.errores.length === 1 ? " no se pudo" : "s no se pudieron"} cargar:
+          </p>
+          <ul className="text-xs text-red-600 space-y-0.5">
+            {resultado.errores.map((e) => (
+              <li key={e.fila}>
+                Fila {e.fila}: {e.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

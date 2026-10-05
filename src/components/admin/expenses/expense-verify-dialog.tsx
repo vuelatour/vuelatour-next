@@ -55,11 +55,14 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  ETIQUETA_TIPO_COMBUSTIBLE,
+  PLACEHOLDER_TIPO_COMBUSTIBLE,
   TIPOS_COMBUSTIBLE,
   avisoCombustibleDistinto,
   camposCargaParaPatch,
   combustibleDeAeronave,
-  tipoCombustibleSugerido,
+  eleccionManualCombustible,
+  pasoPrellenadoCombustible,
   type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
 import {
@@ -326,21 +329,20 @@ export function ExpenseVerifyDialog({
   useEffect(() => {
     if (!open) return;
     const actual = getValues("tipo_combustible");
-    const sugerido = tipoCombustibleSugerido({
+    const paso = pasoPrellenadoCombustible({
       categoria: getValues("categoria"),
       delAvion: combustibleDeAeronave(aircraft, getValues("aeronave_id")),
       actual,
-      actualEsSugerido: tipoAuto.current,
+      auto: tipoAuto.current,
       ia: tipoIa,
     });
-    if (sugerido !== actual) {
-      setValue("tipo_combustible", sugerido);
-      tipoAuto.current = true;
-    }
+    tipoAuto.current = paso.auto;
+    if (paso.valor !== actual) setValue("tipo_combustible", paso.valor);
   }, [open, categoriaSel, avionSel, tipoSel, tipoIa, aircraft, getValues, setValue]);
 
-  // Tipo distinto al del avión: aviso ámbar (no candado; el API corrige al
-  // guardar y lo marca para revisión — `camposCargaParaPatch` lo manda).
+  // Tipo distinto al del avión: aviso ámbar (no candado). El API corrige al
+  // guardar y lo marca para revisión aunque el tipo no viaje: la categoría
+  // SIEMPRE va en el PATCH y con ella reaplica su regla (`camposCargaParaPatch`).
   const delAvionSel = combustibleDeAeronave(aircraft, avionSel);
   const avisoCombustible =
     categoriaSel === "GAS"
@@ -583,14 +585,7 @@ export function ExpenseVerifyDialog({
       // el renglón de Combustibles no siga diciendo la fecha vieja).
       delete (payload as { tipo_combustible?: unknown }).tipo_combustible;
       delete (payload as { lugar?: unknown }).lugar;
-      Object.assign(
-        payload,
-        camposCargaParaPatch(
-          gasto,
-          values,
-          combustibleDeAeronave(aircraft, values.aeronave_id),
-        ),
-      );
+      Object.assign(payload, camposCargaParaPatch(gasto, values));
       // Facturación: viaja SOLO si se cambió en ESTE diálogo. El badge de la
       // tabla y el trigger del amarre de factura recibida también escriben
       // este campo — mandar el valor con que se abrió el form (posiblemente
@@ -952,16 +947,17 @@ export function ExpenseVerifyDialog({
                   {...register("litros")}
                 />
               </Field>
-              <Field label="Tipo de combustible">
+              <Field label={ETIQUETA_TIPO_COMBUSTIBLE}>
                 <SearchableSelect
                   options={TIPOS_COMBUSTIBLE.map((t) => ({ value: t.value, label: t.label }))}
                   value={watch("tipo_combustible")}
                   onChange={(v) => {
-                    setValue("tipo_combustible", v);
                     // Elección de la oficina: manda sobre el prellenado.
-                    tipoAuto.current = false;
+                    const eleccion = eleccionManualCombustible(v);
+                    tipoAuto.current = eleccion.auto;
+                    setValue("tipo_combustible", eleccion.valor);
                   }}
-                  placeholder="Elige el tipo"
+                  placeholder={PLACEHOLDER_TIPO_COMBUSTIBLE}
                 />
               </Field>
               <Field label="Lugar" hint="Aeropuerto o FBO de la carga.">

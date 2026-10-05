@@ -295,6 +295,12 @@ export interface CargaCombustiblePreview {
 export interface CargaCombustibleResultado {
   creados: number;
   errores: Array<{ fila: number; error: string }>;
+  /**
+   * ADITIVO (API 0.0.56, 5-oct-2026): filas CREADAS cuyo tipo de combustible
+   * no era el del avión y se guardaron con el del avión (nota «⚠ … — revisar»
+   * y visto bueno pendiente). No son errores. Ausente con un API previo.
+   */
+  avisos?: Array<{ fila: number; aviso: string }>;
 }
 
 /** Analiza el archivo de la plantilla (base64) y devuelve la vista previa fila por fila. */

@@ -26,6 +26,12 @@ export const TIPOS_COMBUSTIBLE: ReadonlyArray<{ value: TipoCombustible; label: s
   { value: "AVGAS", label: "Gasavión" },
 ];
 
+/** Etiqueta del selector «Tipo de combustible» (alta y verificación de gasto). */
+export const ETIQUETA_TIPO_COMBUSTIBLE = "Tipo de combustible";
+
+/** Placeholder del selector «Tipo de combustible» cuando todavía no hay tipo. */
+export const PLACEHOLDER_TIPO_COMBUSTIBLE = "Elige el tipo";
+
 export function etiquetaTipoCombustible(tipo: string | null | undefined): string | null {
   return TIPOS_COMBUSTIBLE.find((t) => t.value === tipo)?.label ?? null;
 }
@@ -110,9 +116,15 @@ export function momentoParaSugerirVuelo(c: {
  *   y le cambian la fecha, las dos fechas siguen coincidiendo).
  * - `tipo_combustible` y `lugar`: solo si la categoría que se guarda es GAS.
  *   Vaciar el lugar lo QUITA (`null` explícito: «» se tiraría en stripEmpty y
- *   el lugar viejo seguiría vivo). Única excepción a «solo lo que cambió»: un
- *   tipo distinto al del avión (`delAvion`) viaja siempre, para que el API lo
- *   ajuste (5-oct-2026).
+ *   el lugar viejo seguiría vivo).
+ *
+ * Combustible del avión (5-oct-2026, API 0.0.56): un tipo GUARDADO que no es
+ * el del avión NO necesita viajar para que el API lo ajuste. El API reaplica
+ * su regla en todo PATCH de un gasto GAS que traiga `categoria`, `aeronave_id`,
+ * `vuelo_id`, `escala_id` o `tipo_combustible`, y la categoría SIEMPRE viaja
+ * en «Verificar / editar». Además, mandar el tipo sin cambio le cambiaría la
+ * nota de auditoría: con el tipo en el PATCH el API escribe «se capturó …»; sin
+ * él, la redacción correcta de un cambio de avión, «el gasto traía …».
  */
 export function camposCargaParaPatch(
   original: {
@@ -127,10 +139,6 @@ export function camposCargaParaPatch(
     tipo_combustible: string;
     lugar: string;
   },
-  /** Combustible del avión elegido (5-oct-2026): si el tipo NO coincide, viaja
-   *  aunque no haya cambiado — el API solo reaplica su ajuste cuando el PATCH
-   *  trae el tipo, y el aviso ámbar promete que al guardar se corrige. */
-  delAvion?: TipoCombustible | null,
 ): { fecha_hora_carga?: string; tipo_combustible?: TipoCombustible; lugar?: string | null } {
   const out: {
     fecha_hora_carga?: string;
@@ -146,9 +154,7 @@ export function camposCargaParaPatch(
 
   if (form.categoria === "GAS") {
     const tipo = TIPOS_COMBUSTIBLE.find((t) => t.value === form.tipo_combustible)?.value;
-    if (tipo && (tipo !== original.tipo_combustible || (delAvion && tipo !== delAvion))) {
-      out.tipo_combustible = tipo;
-    }
+    if (tipo && tipo !== original.tipo_combustible) out.tipo_combustible = tipo;
     const lugar = normalizarLugarCarga(form.lugar);
     const lugarOriginal = normalizarLugarCarga(original.lugar);
     if (lugar !== lugarOriginal) out.lugar = lugar === "" ? null : lugar;
@@ -169,7 +175,9 @@ export function camposCargaParaPatch(
 //  - la ficha del avión captura el campo (alta: gasavión por default);
 //  - al capturar o verificar una carga con avión, PRELLENA el tipo con el del
 //    avión si está vacío (la IA no pisa al avión) y AVISA en ámbar si el
-//    operador eligió el otro — no bloquea: el API corrige al guardar.
+//    operador eligió el otro — no bloquea: el API corrige al guardar (en
+//    «Verificar / editar» porque la categoría siempre viaja; ver
+//    `camposCargaParaPatch`).
 //
 // Las etiquetas son las MISMAS del selector «Tipo de combustible»
 // (`TIPOS_COMBUSTIBLE`): el aviso no puede decir «Avgas» bajo un selector que
@@ -298,4 +306,73 @@ export function tipoCombustibleSugerido(p: {
   if (p.delAvion) return p.delAvion;
   if (esTipoCombustible(p.ia)) return p.ia;
   return actual;
+}
+
+/**
+ * Estado del selector «Tipo de combustible» en los diálogos de gasto: el valor
+ * del formulario («» = vacío) y si lo puso el SISTEMA (`auto`, prellenado del
+ * avión o de la IA) o el operador (o venía guardado).
+ */
+export interface EstadoTipoCombustible {
+  valor: string;
+  auto: boolean;
+}
+
+/**
+ * Un paso del prellenado (los dos diálogos lo corren cada vez que cambian la
+ * categoría, el avión, el tipo o llega la IA). Envuelve
+ * `tipoCombustibleSugerido` y decide también la marca `auto`:
+ *
+ *  - si el sistema cambia el valor ⇒ `auto = true` (el siguiente cambio de
+ *    avión lo vuelve a prellenar);
+ *  - si no lo cambia ⇒ la marca se conserva tal cual (lo elegido a mano sigue
+ *    siendo del operador; lo prellenado sigue siendo del sistema).
+ *
+ * Es idempotente: correrlo dos veces seguidas con lo mismo no cambia nada (el
+ * efecto vuelve a correr tras su propio `setValue`).
+ */
+export function pasoPrellenadoCombustible(p: {
+  categoria: string;
+  delAvion: TipoCombustible | null | undefined;
+  /** Valor del formulario («» = vacío). */
+  actual: string | null | undefined;
+  /** Marca actual: `true` = el valor lo puso el sistema. */
+  auto: boolean;
+  /** Tipo leído por la IA del ticket, si lo leyó. */
+  ia?: string | null;
+}): EstadoTipoCombustible {
+  const actual = p.actual ?? "";
+  const valor = tipoCombustibleSugerido({
+    categoria: p.categoria,
+    delAvion: p.delAvion,
+    actual,
+    actualEsSugerido: p.auto,
+    ia: p.ia,
+  });
+  return valor !== actual ? { valor, auto: true } : { valor: actual, auto: p.auto };
+}
+
+/** El operador eligió el tipo a mano en el selector: manda sobre el prellenado. */
+export function eleccionManualCombustible(valor: string): EstadoTipoCombustible {
+  return { valor, auto: false };
+}
+
+// ─────────────── Carga masiva: filas ajustadas al combustible del avión ───────────────
+
+/**
+ * Encabezado del bloque ámbar del RESULTADO de la carga masiva: filas CREADAS
+ * cuyo tipo no era el del avión y el API guardó con el del avión
+ * (`avisos` del API 0.0.56; no son errores). `null` si no hubo ninguna (o el
+ * API es previo y no manda `avisos`).
+ */
+export function encabezadoAvisosCargaMasiva(n: number): string | null {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n === 1
+    ? "1 fila se guardó con el combustible del avión (queda para revisión):"
+    : `${n} filas se guardaron con el combustible del avión (quedan para revisión):`;
+}
+
+/** Renglón de una fila ajustada: «Fila 7: La fila decía Turbosina pero …». */
+export function renglonAvisoCargaMasiva(a: { fila: number; aviso: string }): string {
+  return `Fila ${a.fila}: ${a.aviso}`;
 }
