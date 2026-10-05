@@ -22,6 +22,7 @@ import {
   numeroDe,
   textoFaltanteGasto,
 } from "@/lib/admin/conciliacion-parcial";
+import { etiquetaFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { fmtDateOnly } from "@/lib/datetime";
 
 // ───────────────────────── Motivo de «Pendiente» ─────────────────────────
@@ -532,6 +533,8 @@ export interface GastoCandidatoConciliacion {
   tc_implicito?: number | string | null;
   monto_vinculado?: string | number | null;
   faltante?: string | number | null;
+  /** Número de factura (API 0.0.57, aditivo): lo rotula `etiquetaFolioComprobante`. */
+  folio_comprobante?: string | null;
 }
 
 /** Primera línea (no vacía) de un texto multilínea. */
@@ -559,14 +562,16 @@ export function etiquetaCandidatoGasto(g: GastoCandidatoConciliacion): string {
 
 /**
  * Segunda línea del candidato: los datos que DESEMPATAN a ojo — terminación
- * de tarjeta, lugar/nota (lo que casa con la descripción del banco),
- * matrícula, vuelo, pago parcial y T.C. implícito.
+ * de tarjeta, NÚMERO DE FACTURA («Factura FEACZM-72128», 5-oct-2026: va
+ * pronto porque la línea se recorta), lugar/nota (lo que casa con la
+ * descripción del banco), matrícula, vuelo, pago parcial y T.C. implícito.
  */
 export function descripcionCandidatoGasto(g: GastoCandidatoConciliacion): string | null {
   const nota = primeraLinea(g.notas_primera_linea ?? g.notas);
   const tc = numeroDe(g.tc_implicito);
   const partes = [
     g.tarjeta_terminacion ? `Tarjeta ****${g.tarjeta_terminacion}` : null,
+    etiquetaFolioComprobante(g.folio_comprobante),
     g.lugar ?? null,
     nota && nota !== g.lugar ? nota : null,
     g.matricula ? g.matricula.toUpperCase() : null,

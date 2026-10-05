@@ -31,6 +31,12 @@ export interface MovimientoGasto {
   lugar?: string | null;
   notas?: string | null;
   notas_primera_linea?: string | null;
+  /** NÚMERO DE FACTURA del gasto (5-oct-2026, ADITIVO del API 0.0.57), ya
+      resuelto por la fuente única del API (`folioComprobanteDeGasto`):
+      serie-folio del CFDI ligado ⇒ folio del ticket ⇒ folio de la IA ⇒
+      «CFDI <uuid>». Viene en `gasto` y en cada `gastos[]`. Se rotula SIEMPRE
+      con `lib/admin/conciliacion-folio.ts`; sin él no se pinta nada. */
+  folio_comprobante?: string | null;
 }
 
 /** Cómo quedó cada gasto tras ligar un cargo (respuesta del PATCH, 0.0.52). */
@@ -270,6 +276,10 @@ export interface GastoCandidato {
   cruzado?: boolean | null;
   nota?: string | null;
   capturado_por?: string | null;
+  /** NÚMERO DE FACTURA del candidato (5-oct-2026, ADITIVO del API 0.0.57 en
+      `gastos-candidatos` y `sugerir`), misma fuente única que
+      `MovimientoGasto.folio_comprobante`. Lo rotula `descripcionCandidatoGasto`. */
+  folio_comprobante?: string | null;
 }
 
 /**

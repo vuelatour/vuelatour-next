@@ -9,6 +9,12 @@ import {
 } from "@/components/admin/recibidas/recibida-actions";
 import type { FacturaRecibida } from "@/types/invoices";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import {
+  ENCABEZADO_FOLIO_RECIBIDA,
+  PLACEHOLDER_BUSCAR_RECIBIDA,
+  celdaFolioRecibida,
+  textoBusquedaFolioRecibida,
+} from "@/lib/admin/conciliacion-folio";
 
 const ESTADO: Record<FacturaRecibida["estado"], { label: string; cls: string }> = {
   SIN_CLASIFICAR: {
@@ -48,6 +54,18 @@ export function RecibidasTable({
           <p className="text-[11px] text-muted-foreground font-mono">{r.emisor_rfc ?? ""}</p>
         </>
       ),
+    },
+    {
+      // Serie-folio del CFDI (5-oct-2026, API 0.0.57): el número de factura
+      // que la oficina busca al conciliar. Sin él, la referencia corta del
+      // UUID; con un API que aún no manda serie/folio, «—».
+      key: "folio",
+      header: ENCABEZADO_FOLIO_RECIBIDA,
+      cellClassName: "whitespace-nowrap font-mono text-sm",
+      cell: (r) => {
+        const c = celdaFolioRecibida(r);
+        return <span title={c.titulo ?? undefined}>{c.texto}</span>;
+      },
     },
     {
       key: "conceptos",
@@ -115,9 +133,11 @@ export function RecibidasTable({
       rows={recibidas}
       rowKey={(r) => r.id}
       searchText={(r) =>
-        `${r.emisor_nombre ?? ""} ${r.emisor_rfc ?? ""} ${r.uuid_fiscal ?? ""} ${r.conceptos_resumen ?? ""}`
+        `${r.emisor_nombre ?? ""} ${r.emisor_rfc ?? ""} ${textoBusquedaFolioRecibida(r)} ${r.uuid_fiscal ?? ""} ${
+          r.conceptos_resumen ?? ""
+        }`
       }
-      searchPlaceholder="Buscar factura (emisor, RFC, UUID, concepto)…"
+      searchPlaceholder={PLACEHOLDER_BUSCAR_RECIBIDA}
     />
   );
 }

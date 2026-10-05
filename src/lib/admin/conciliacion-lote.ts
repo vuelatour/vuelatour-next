@@ -40,6 +40,7 @@ import {
   toastVinculoGasto,
   type RespuestaVinculoGasto,
 } from "@/lib/admin/conciliacion-parcial";
+import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
 import { fmtDateOnly } from "@/lib/datetime";
 import type {
@@ -905,6 +906,11 @@ export interface LineaGastoLote {
   principal: string;
   /** proveedor ?? lugar ?? nota · fecha. */
   secundaria: string;
+  /** «Factura FEACZM-72128» (5-oct-2026, `folio_comprobante` del API 0.0.57);
+      null = sin folio o API previo (no se pinta nada). */
+  factura: string | null;
+  /** Tooltip de `factura` con el folio completo (UUID entero). */
+  facturaTitulo: string | null;
 }
 
 export interface ResumenLoteFila {
@@ -943,7 +949,14 @@ export function lineaGastoLote(g: MovimientoGasto, i = 0): LineaGastoLote {
   const quien = g.proveedor?.nombre ?? g.lugar ?? notaDe(g);
   const secundaria =
     [quien, g.fecha_gasto ? fmtDateOnly(g.fecha_gasto) : null].filter(Boolean).join(" · ") || "Gasto conciliado";
-  return { key: g.id || `g${i}`, href: hrefGastoConciliado(g), principal, secundaria };
+  return {
+    key: g.id || `g${i}`,
+    href: hrefGastoConciliado(g),
+    principal,
+    secundaria,
+    factura: etiquetaFolioComprobante(g.folio_comprobante),
+    facturaTitulo: tituloFolioComprobante(g.folio_comprobante),
+  };
 }
 
 /**
@@ -981,8 +994,9 @@ export const TOOLTIP_LOTE_SIN_DETALLE = "detalle no disponible: recarga";
 
 /**
  * Texto para la búsqueda rápida de la tabla: categorías, proveedores, lugar,
- * notas, folios y montos de TODOS los gastos del cargo («SAESA», «#315» o
- * «2801.40» encuentran el cargo que los paga).
+ * notas, folios de vuelo, NÚMERO DE FACTURA y montos de TODOS los gastos del
+ * cargo («SAESA», «#315», «FEACZM-72128» o «2801.40» encuentran el cargo que
+ * los paga).
  */
 export function textoBusquedaGastos(m: MovimientoConGastos): string {
   return gastosLigadosDe(m)
@@ -993,6 +1007,7 @@ export function textoBusquedaGastos(m: MovimientoConGastos): string {
         g.lugar,
         notaDe(g),
         g.vuelo?.folio != null ? `#${g.vuelo.folio} vuelo #${g.vuelo.folio}` : null,
+        tituloFolioComprobante(g.folio_comprobante),
         String(g.monto ?? ""),
         g.monto_parte != null ? String(g.monto_parte) : null,
       ]

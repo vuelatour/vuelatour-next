@@ -439,7 +439,13 @@ function SelectorGastos({
                           {esSugerido ? "★ " : ""}
                           {etiquetaCandidatoGasto(ficha)}
                         </span>
-                        {desc && <span className="block truncate text-xs text-muted-foreground">{desc}</span>}
+                        {/* La línea se recorta: completa (con el número de
+                            factura) en el tooltip. */}
+                        {desc && (
+                          <span className="block truncate text-xs text-muted-foreground" title={desc}>
+                            {desc}
+                          </span>
+                        )}
                         {esSugerido && (
                           <span className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">
                             {ETIQUETA_SUGERIDO}

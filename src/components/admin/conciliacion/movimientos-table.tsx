@@ -14,6 +14,10 @@ import {
 } from "@/lib/admin/conciliacion-auto";
 import { textoFaltanteGasto } from "@/lib/admin/conciliacion-parcial";
 import {
+  etiquetaFolioComprobante,
+  tituloFolioComprobante,
+} from "@/lib/admin/conciliacion-folio";
+import {
   TITULO_VER_GASTO_CONCILIADO,
   TOOLTIP_LOTE_SIN_DETALLE,
   gastoUnicoDe,
@@ -161,6 +165,15 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
                     <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
                       {l.secundaria}
                     </span>
+                    {/* Número de factura de ESE gasto (5-oct-2026, API 0.0.57). */}
+                    {l.factura && (
+                      <span
+                        className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"
+                        title={l.facturaTitulo ?? undefined}
+                      >
+                        {l.factura}
+                      </span>
+                    )}
                   </Link>
                 ))}
                 {lote.mas && (
@@ -175,6 +188,10 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
             );
           }
           const gasto = m.conciliado ? gastoUnicoDe(m) : null;
+          // Número de la factura con la que se liga el cargo (pedido del
+          // cliente, 5-oct-2026): lo resuelve el API (`folio_comprobante`);
+          // aquí solo se rotula. Sin él no se pinta nada.
+          const factura = etiquetaFolioComprobante(gasto?.folio_comprobante);
           if (m.conciliado && tieneGastoLigado(m) && !gasto) {
             return (
               <span className="block text-sm text-emerald-600" title={TOOLTIP_LOTE_SIN_DETALLE}>
@@ -206,6 +223,14 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
                   .filter(Boolean)
                   .join(" · ") || "Gasto conciliado"}
               </span>
+              {factura && (
+                <span
+                  className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"
+                  title={tituloFolioComprobante(gasto.folio_comprobante) ?? undefined}
+                >
+                  {factura}
+                </span>
+              )}
               {/* Pago parcial (14-sep-2026): este cargo es solo una parte del
                   gasto (1 factura pagada en 2 cargos). */}
               {textoFaltanteGasto(gasto) && (

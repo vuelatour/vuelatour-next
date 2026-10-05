@@ -5648,3 +5648,50 @@ captura el dato del avión, PRELLENA y AVISA.
   lógica del prellenado vive en funciones puras y su secuencia se prueba ahí.
 - **Orden de deploy**: migración → API 0.0.56 → panel. Con el API previo no
   hay `combustible` en la flota: ni prellenado, ni aviso, ni campo que viaje.
+
+## Conciliación: el NÚMERO DE FACTURA del gasto ligado (5-oct-2026, API 0.0.57)
+
+Pedido del cliente (captura del Excel de conciliación, columna «Notas»
+vacía): «al momento de la conciliación me apoyan a poner el número de la
+factura con la que se enlaza el movimiento. Aquí en notas estaría perfecto».
+El Excel lo arma el API (columna «Notas» = «Factura FEACZM-72128 · <notas del
+banco>»); el panel lo enseña también AL CONCILIAR.
+
+- **El folio lo resuelve el API, nunca el panel**: `folio_comprobante`
+  (ADITIVO, opcional) en `MovimientoGasto` (el `gasto` 1↔1 y cada `gastos[]`
+  del lote) y en `GastoCandidato` (`gastos-candidatos` y `sugerir`). Fuente
+  única del API `folioComprobanteDeGasto`: serie-folio del CFDI de la factura
+  recibida ligada ⇒ `folio_ticket` ⇒ folio leído por la IA ⇒ «CFDI <uuid>».
+  Muchos gastos viejos no tienen ninguno: ahí no se pinta nada (la oficina
+  puede capturar el folio en el gasto).
+- **FUENTE ÚNICA del rótulo** `lib/admin/conciliacion-folio.ts` (PURA, prueba
+  `__tests__/conciliacion-folio.test.ts`): `etiquetaFolioComprobante(folio)`
+  ⇒ «Factura FEACZM-72128» o null (el «CFDI <uuid>» se acorta a «Factura CFDI
+  …1A2B3C4D»; `tituloFolioComprobante` lleva el completo al tooltip). Ningún
+  componente redacta «Factura …» a mano.
+- **Dónde se ve**: (1) columna «Conciliación» de `movimientos-table.tsx`:
+  debajo del proveedor/fecha del gasto 1↔1 y, en un lote, debajo de la línea
+  de CADA gasto (`LineaGastoLote.factura`/`facturaTitulo`); sin el campo el
+  marcado es IDÉNTICO al de antes; (2) la búsqueda rápida de la tabla
+  encuentra el cargo por el folio (`textoBusquedaGastos`); (3) diálogo
+  «Vincular gasto»: `descripcionCandidatoGasto` agrega «Factura …» justo
+  después de la tarjeta (la línea se recorta: va pronto) y el `<span>` lleva
+  `title={desc}` con la línea completa — lo heredan el respaldo con API previo
+  y «Sugerir con IA (pendientes)». El buscador del API ya busca por
+  `folio_ticket` (no se tocó).
+- **Facturas recibidas** (`recibidas/recibidas-table.tsx`): columna «Folio»
+  después de Emisor (`celdaFolioRecibida`): serie-folio del CFDI con la MISMA
+  regla del API («A-0411»; solo con `folio`, reutiliza `etiquetaSerieFolio`);
+  sin folio todavía (el cron del API relee el XML) o CFDI sin Serie/Folio ⇒
+  «…últimos 8 del UUID», como la referencia de facturas emitidas; solo PDF ⇒
+  «—»; **API que no manda `serie` ni `folio` (previo o sin la migración
+  `20261005000002`) ⇒ «—»**. Tooltip con el UUID completo; el buscador suma la
+  serie-folio (`PLACEHOLDER_BUSCAR_RECIBIDA`). `FacturaRecibida.serie?`/
+  `folio?` son aditivos.
+- **Pruebas**: `lib/admin/__tests__/conciliacion-folio.test.ts`,
+  `components/admin/conciliacion/__tests__/folio.test.tsx` (1↔1, CFDI, lote
+  con un folio por gasto, API previo idéntico, cableado de la tabla y del
+  diálogo) y `components/admin/recibidas/__tests__/recibidas-folio.test.tsx`.
+- **Orden de deploy**: pyservices → migración → API 0.0.57 → panel. Con el
+  panel nuevo y un API previo nada cambia (sin `folio_comprobante` no se pinta
+  nada y la columna «Folio» dice «—»).

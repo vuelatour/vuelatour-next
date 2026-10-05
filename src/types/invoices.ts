@@ -89,6 +89,12 @@ export interface FacturaRecibida {
   fecha_emision: string | null;
   conceptos_resumen: string | null;
   xml_url: string | null;
+  /** Serie y Folio del `cfdi:Comprobante` (5-oct-2026, ADITIVOS del API
+      0.0.57; las existentes las relee un cron del XML). `undefined` = el API
+      todavía no los manda; `null` = sin leer aún o el CFDI no los trae. Se
+      pintan SIEMPRE con `celdaFolioRecibida` (`lib/admin/conciliacion-folio.ts`). */
+  serie?: string | null;
+  folio?: string | null;
   estado: "SIN_CLASIFICAR" | "CLASIFICADA" | "DESCARTADA";
   gasto_id: string | null;
   aeronave_id: string | null;
