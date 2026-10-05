@@ -9,6 +9,7 @@ import {
   abrirArchivoFirmado,
   cambiosDeEdicion,
   claveCompacta,
+  folioSinSerie,
   clasificarArchivosFactura,
   datosDeFormulario,
   diferenciasLecturaVsFactura,
@@ -496,6 +497,19 @@ describe("clave compacta (espejo del API) y lo leído vs lo capturado", () => {
     expect(claveCompacta("A", "0")).toBe("A0");
   });
 
+  it("la serie repetida al frente del folio no cuenta dos veces (A-0411, misma tabla que el API)", () => {
+    const k = claveCompacta("A", "0411");
+    expect(claveCompacta("A", "A-0411")).toBe(k);
+    expect(claveCompacta("a", "A 0411")).toBe(k);
+    expect(claveCompacta(null, "A-0411")).toBe(k);
+    expect(folioSinSerie("A", "A-0411")).toBe("0411");
+    expect(folioSinSerie("A", "0411")).toBe("0411");
+    expect(folioSinSerie(null, "A-0411")).toBe("A-0411");
+    expect(folioSinSerie("A", "A123")).toBe("A123");
+    expect(claveCompacta("A", "A123")).toBe("AA123");
+    // Lo leído del archivo y lo que viaja al API ya van sin la serie repetida.
+    expect(valoresDeLectura({ serie: "A", folio: "A-0411" } as never).folio).toBe("0411");
+  });
   it("conserva la Ñ y quita acentos (MISMA tabla que el spec del API)", () => {
     expect(claveCompacta("Ñ", "5")).toBe("Ñ5");
     expect(claveCompacta("ñ", "5")).toBe("Ñ5");

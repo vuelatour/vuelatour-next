@@ -446,7 +446,7 @@ export function valoresDeFactura(f: FacturaEmitida): ValoresFormularioFactura {
 export function valoresDeLectura(c: CamposLeidosFactura): Partial<ValoresFormularioFactura> {
   const out: Partial<ValoresFormularioFactura> = {};
   if (c.serie) out.serie = c.serie;
-  if (c.folio) out.folio = c.folio;
+  if (c.folio) out.folio = folioSinSerie(c.serie, c.folio) ?? c.folio;
   if (c.uuid) out.uuid = c.uuid.toUpperCase();
   if (c.fecha_emision) out.fecha_emision = c.fecha_emision;
   if (c.receptor_rfc) out.receptor_rfc = c.receptor_rfc;
@@ -581,7 +581,7 @@ export function datosDeFormulario(
   const total = parseMonto(v.total);
   const datos: FacturaEmitidaDatos = {
     serie: textoONull(v.serie.toUpperCase()),
-    folio: v.folio.trim().replace(/\s+/g, " "),
+    folio: folioSinSerie(v.serie, v.folio.trim().replace(/\s+/g, " ")) ?? v.folio.trim(),
     uuid: textoONull(v.uuid.toUpperCase()),
     fecha_emision: v.fecha_emision,
     // El RFC del EMISOR no se captura a mano (viene de la lectura del
@@ -649,6 +649,26 @@ export function cambiosDeEdicion(
  * de dígitos. «A» + «00123», «A-123» sin serie y «a 123» ⇒ «A123». Si cambia
  * aquí, cambia allá: el aviso ámbar del diálogo y el 409 no deben discrepar.
  */
+/**
+ * Folio SIN la serie repetida al frente — ESPEJO de `folioSinSerie` del API
+ * (5-oct-2026, factura A-0411): «A-0411» con serie «A» ⇒ «0411»; sin
+ * separador («A123») se deja tal cual. Lo usan `claveCompacta`, la lectura
+ * del archivo y `datosDeFormulario`, para que el aviso ámbar, el 409 y la
+ * comparación contra el XML digan lo mismo.
+ */
+export function folioSinSerie(
+  serie: string | null | undefined,
+  folio: string | null | undefined,
+): string | null {
+  if (folio == null) return null;
+  const s = (serie ?? "").trim();
+  if (!s) return folio;
+  const m = new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^A-Za-z0-9Ññ]+`, "i").exec(
+    folio.trim(),
+  );
+  return m ? folio.trim().slice(m[0].length).trim() || folio : folio;
+}
+
 export function claveCompacta(
   serie: string | null | undefined,
   folio: string | null | undefined,
@@ -656,7 +676,7 @@ export function claveCompacta(
   // La Ñ se CONSERVA (el API la protege antes de quitar acentos: «Ñ5» ≠
   // «N5»); sin esto la NFD la partía en N + tilde y el aviso ámbar decía
   // «coincide» donde el 409 del API no.
-  return `${serie ?? ""}${folio ?? ""}`
+  return `${serie ?? ""}${folioSinSerie(serie, folio) ?? ""}`
     .toUpperCase()
     .replace(/Ñ/g, "")
     .normalize("NFD")
