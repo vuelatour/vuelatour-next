@@ -177,7 +177,13 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
                   </Link>
                 ))}
                 {lote.mas && (
-                  <span className="block text-[10px] text-muted-foreground">{lote.mas}</span>
+                  // Facturas de los gastos que no caben (tooltip).
+                  <span
+                    className="block text-[10px] text-muted-foreground"
+                    title={lote.masTitulo ?? undefined}
+                  >
+                    {lote.mas}
+                  </span>
                 )}
                 {lote.diferencia && (
                   <span className="block text-[10px] text-amber-600 dark:text-amber-400">

@@ -31,6 +31,7 @@ import {
   etiquetaCandidatoGasto,
   motivoPendienteDe,
   textoConfianza,
+  tituloDescripcionCandidatoGasto,
 } from "@/lib/admin/conciliacion-auto";
 import {
   BOTON_CANCELAR,
@@ -417,6 +418,9 @@ function SelectorGastos({
                   const bloqueo = bloqueoDeFila(c, monedaCuenta, marcados);
                   const ficha = fichaCandidatoGasto(c);
                   const desc = descripcionCandidatoGasto(ficha);
+                  // El title del <span> tapa el del <label>: el tooltip de la
+                  // descripción repite el MOTIVO del veto y lleva el folio entero.
+                  const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo);
                   const esSugerido = c.id === sugerido?.id;
                   return (
                     <label
@@ -440,9 +444,13 @@ function SelectorGastos({
                           {etiquetaCandidatoGasto(ficha)}
                         </span>
                         {/* La línea se recorta: completa (con el número de
-                            factura) en el tooltip. */}
+                            factura entero y, si la casilla va apagada, el
+                            motivo) en el tooltip. */}
                         {desc && (
-                          <span className="block truncate text-xs text-muted-foreground" title={desc}>
+                          <span
+                            className="block truncate text-xs text-muted-foreground"
+                            title={tituloDesc ?? undefined}
+                          >
                             {desc}
                           </span>
                         )}

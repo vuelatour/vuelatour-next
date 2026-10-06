@@ -28,6 +28,7 @@ import {
   etiquetaCandidatoGasto,
   gastoDePropuesta,
   textoConfianza,
+  tituloDescripcionCandidatoGasto,
 } from "@/lib/admin/conciliacion-auto";
 import {
   textoGastoYaCubierto,
@@ -251,6 +252,9 @@ export function SugerenciasLoteDialog({
                 const gasto = gastoDePropuesta(p);
                 const conf = textoConfianza(p.confianza);
                 const desc = gasto ? descripcionCandidatoGasto(gasto) : null;
+                // La línea no se recorta: el tooltip solo aporta cuando el
+                // folio es un «CFDI <uuid>» acortado (ahí lleva el UUID entero).
+                const tituloDesc = gasto ? tituloDescripcionCandidatoGasto(gasto) : null;
                 return (
                   <div
                     key={p.movimiento_id}
@@ -287,7 +291,14 @@ export function SugerenciasLoteDialog({
                       <p className="text-sm">
                         {gasto ? etiquetaCandidatoGasto(gasto) : "Gasto propuesto"}
                       </p>
-                      {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
+                      {desc && (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          title={tituloDesc && tituloDesc !== desc ? tituloDesc : undefined}
+                        >
+                          {desc}
+                        </p>
+                      )}
                       {p.razon && (
                         <p className="text-xs text-muted-foreground mt-1">{p.razon}</p>
                       )}

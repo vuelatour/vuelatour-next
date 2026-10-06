@@ -138,6 +138,37 @@ describe("columna «Conciliación»: el número de factura", () => {
     expect(tabla([hoy])).toContain("Factura AB1144717");
   });
 
+  it("1↔1 SOLO por `gastos[]` (API sin el espejo `gasto`): el folio sale de la parte", () => {
+    const g = gasto({ folio_comprobante: "AB1144717" });
+    const conEspejo = tabla([mov({ gasto_id: g.id, gasto: g })]);
+    const sinEspejo = tabla([
+      mov({ gasto_id: g.id, gasto: null, gastos_n: 1, gastos: [g], gastos_suma: 1840.5, gastos_diferencia: 0 }),
+    ]);
+    expect(sinEspejo).toContain("Factura AB1144717");
+    expect(sinEspejo).toBe(conEspejo);
+    // Igual si el API ni siquiera manda la llave `gasto` (`mov` no la trae).
+    const sinLlave = mov({ gasto_id: g.id, gastos_n: 1, gastos: [g] });
+    expect("gasto" in sinLlave).toBe(false);
+    expect(tabla([sinLlave])).toContain("Factura AB1144717");
+  });
+
+  it("lote de 5: «y 2 más» lleva en el tooltip la factura de los gastos que no caben", () => {
+    const partes = ["S-101", "S-102", "S-103", "S-104", "S-105"].map((f, i) =>
+      gasto({ id: `a${i}`, folio_comprobante: f, monto: "2801.40", monto_parte: "2801.40", vuelo: { folio: 315 + i } }),
+    );
+    const html = tabla([
+      mov({ monto: "14007.00", gastos_n: 5, gastos: partes, gastos_suma: 14007, gastos_diferencia: 0 }),
+    ]);
+    expect(html).toContain(">y 2 más<");
+    const iMas = html.indexOf(">y 2 más<");
+    const span = html.slice(html.lastIndexOf("<span", iMas), iMas);
+    expect(span).toContain("Factura S-104");
+    expect(span).toContain("Factura S-105");
+    expect(span).toContain("vuelo #318");
+    // Visibles solo las 3 primeras.
+    expect(html.split(">Factura ").length - 1).toBe(3);
+  });
+
   it("lote: el folio de CADA gasto, debajo de su línea", () => {
     const partes = [
       gasto({ id: "a1", folio_comprobante: "S-101", monto: "2801.40", monto_parte: "2801.40", vuelo: { folio: 315 } }),
@@ -186,8 +217,31 @@ describe("cableado", () => {
   });
 
   it("el diálogo: la descripción del candidato (con el folio) lleva el tooltip completo", () => {
-    expect(auto).toContain("etiquetaFolioComprobante(g.folio_comprobante)");
+    expect(auto).toContain("lineaDescripcionCandidato(g, etiquetaFolioComprobante)");
+    expect(auto).toContain("lineaDescripcionCandidato(g, tituloFolioComprobante)");
+    expect(auto).toContain("rotularFolio(g.folio_comprobante)");
     expect(dialogo).toContain("const desc = descripcionCandidatoGasto(ficha);");
-    expect(dialogo).toMatch(/<span className="block truncate text-xs text-muted-foreground" title=\{desc\}>/);
+    expect(dialogo).toMatch(
+      /<span\s+className="block truncate text-xs text-muted-foreground"\s+title=\{tituloDesc \?\? undefined\}\s*>/,
+    );
+  });
+
+  it("con la casilla apagada, el tooltip de la descripción CONSERVA el motivo del veto", () => {
+    // El title del <span> interior tapa el del <label>: por eso el motivo
+    // viaja también en el de la descripción (helper probado aparte).
+    expect(dialogo).toContain("const bloqueo = bloqueoDeFila(c, monedaCuenta, marcados);");
+    expect(dialogo).toContain("const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo);");
+    expect(dialogo).toContain("title={bloqueo ?? undefined}");
+    expect(dialogo).not.toContain("title={desc}");
+  });
+
+  it("«Sugerir con IA»: el folio entero en el tooltip solo cuando la línea lo acorta", () => {
+    const sug = leer("../sugerencias-lote-dialog.tsx");
+    expect(sug).toContain("tituloDescripcionCandidatoGasto(gasto)");
+    expect(sug).toContain("title={tituloDesc && tituloDesc !== desc ? tituloDesc : undefined}");
+  });
+
+  it("«y N más» del lote lleva el tooltip con las facturas ocultas", () => {
+    expect(tablaSrc).toContain("title={lote.masTitulo ?? undefined}");
   });
 });

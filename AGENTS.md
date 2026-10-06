@@ -5671,14 +5671,21 @@ banco>»); el panel lo enseña también AL CONCILIAR.
   componente redacta «Factura …» a mano.
 - **Dónde se ve**: (1) columna «Conciliación» de `movimientos-table.tsx`:
   debajo del proveedor/fecha del gasto 1↔1 y, en un lote, debajo de la línea
-  de CADA gasto (`LineaGastoLote.factura`/`facturaTitulo`); sin el campo el
-  marcado es IDÉNTICO al de antes; (2) la búsqueda rápida de la tabla
-  encuentra el cargo por el folio (`textoBusquedaGastos`); (3) diálogo
-  «Vincular gasto»: `descripcionCandidatoGasto` agrega «Factura …» justo
-  después de la tarjeta (la línea se recorta: va pronto) y el `<span>` lleva
-  `title={desc}` con la línea completa — lo heredan el respaldo con API previo
-  y «Sugerir con IA (pendientes)». El buscador del API ya busca por
-  `folio_ticket` (no se tocó).
+  de CADA gasto (`LineaGastoLote.factura`/`facturaTitulo`); en un lote de
+  más de `MAX_LINEAS_LOTE` (3) gastos, «y N más» lleva en su tooltip
+  (`ResumenLoteFila.masTitulo`) la factura de cada gasto oculto, uno por
+  renglón; sin el campo el marcado es IDÉNTICO al de antes; (2) la búsqueda
+  rápida de la tabla encuentra el cargo por el folio (`textoBusquedaGastos`);
+  (3) diálogo «Vincular gasto»: `descripcionCandidatoGasto` agrega «Factura …»
+  justo después de la tarjeta (la línea se recorta: va pronto) — lo heredan el
+  respaldo con API previo y «Sugerir con IA (pendientes)». El `<span>` de esa
+  línea lleva `title={tituloDescripcionCandidatoGasto(ficha, bloqueo)}`:
+  PRIMERO el motivo del veto de `bloqueoDeFila` (el `title` del `<span>` tapa
+  el del `<label>`, y ese motivo es lo único que explica la casilla apagada) y
+  luego la línea con el folio ENTERO (`tituloFolioComprobante`: «Factura CFDI
+  <uuid completo>»). JAMÁS `title={desc}` a secas. En «Sugerir con IA» la línea
+  no se recorta: el tooltip solo aparece cuando difiere (CFDI acortado). El
+  buscador del API ya busca por `folio_ticket` (no se tocó).
 - **Facturas recibidas** (`recibidas/recibidas-table.tsx`): columna «Folio»
   después de Emisor (`celdaFolioRecibida`): serie-folio del CFDI con la MISMA
   regla del API («A-0411»; solo con `folio`, reutiliza `etiquetaSerieFolio`);
@@ -5689,9 +5696,10 @@ banco>»); el panel lo enseña también AL CONCILIAR.
   serie-folio (`PLACEHOLDER_BUSCAR_RECIBIDA`). `FacturaRecibida.serie?`/
   `folio?` son aditivos.
 - **Pruebas**: `lib/admin/__tests__/conciliacion-folio.test.ts`,
-  `components/admin/conciliacion/__tests__/folio.test.tsx` (1↔1, CFDI, lote
-  con un folio por gasto, API previo idéntico, cableado de la tabla y del
-  diálogo) y `components/admin/recibidas/__tests__/recibidas-folio.test.tsx`.
+  `components/admin/conciliacion/__tests__/folio.test.tsx` (1↔1 por `gasto`
+  o solo por `gastos[]`, CFDI, lote con un folio por gasto y el tooltip de «y N
+  más», API previo idéntico, cableado de la tabla y de los diálogos con el
+  motivo del veto) y `components/admin/recibidas/__tests__/recibidas-folio.test.tsx`.
 - **Orden de deploy**: pyservices → migración → API 0.0.57 → panel. Con el
   panel nuevo y un API previo nada cambia (sin `folio_comprobante` no se pinta
   nada y la columna «Folio» dice «—»).

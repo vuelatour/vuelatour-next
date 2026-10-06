@@ -919,6 +919,10 @@ export interface ResumenLoteFila {
   lineas: LineaGastoLote[];
   /** «y 2 más» (null si caben). */
   mas: string | null;
+  /** Tooltip de `mas` (5-oct-2026): el NÚMERO DE FACTURA de cada gasto que no
+      cabe, uno por renglón («Operaciones · $2,801.40 · vuelo #326 · Factura
+      S-104», folio completo). null si ninguno oculto trae folio (o API previo). */
+  masTitulo: string | null;
   /** «diferencia $0.01» (null si es 0 o no se sabe). */
   diferencia: string | null;
 }
@@ -977,10 +981,18 @@ export function resumenLoteFila(m: MovimientoConGastos): ResumenLoteFila | null 
   const lineas = gastos.slice(0, MAX_LINEAS_LOTE).map((g, i) => lineaGastoLote(g, i));
   const resto = n - lineas.length;
   const dif = m.gastos_diferencia != null ? numeroDe(m.gastos_diferencia) : 0;
+  // Los gastos que no caben siguen teniendo SU factura: van al tooltip de
+  // «y N más» (el contrato pide el folio por gasto, no solo de los primeros).
+  const ocultos = gastos
+    .slice(MAX_LINEAS_LOTE)
+    .map((g, i) => lineaGastoLote(g, MAX_LINEAS_LOTE + i))
+    .filter((l) => l.facturaTitulo != null)
+    .map((l) => `${l.principal} · ${l.facturaTitulo}`);
   return {
     titulo: `${n} gastos · ${fmt(total, moneda)}`,
     lineas,
     mas: resto > 0 ? `y ${resto} más` : null,
+    masTitulo: resto > 0 && ocultos.length > 0 ? ocultos.join("\n") : null,
     diferencia: Math.abs(dif) >= 0.005 ? `diferencia ${fmt(Math.abs(dif), moneda)}` : null,
   };
 }

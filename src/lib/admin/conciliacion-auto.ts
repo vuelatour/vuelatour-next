@@ -22,7 +22,7 @@ import {
   numeroDe,
   textoFaltanteGasto,
 } from "@/lib/admin/conciliacion-parcial";
-import { etiquetaFolioComprobante } from "@/lib/admin/conciliacion-folio";
+import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { fmtDateOnly } from "@/lib/datetime";
 
 // ───────────────────────── Motivo de «Pendiente» ─────────────────────────
@@ -567,11 +567,39 @@ export function etiquetaCandidatoGasto(g: GastoCandidatoConciliacion): string {
  * descripción del banco), matrícula, vuelo, pago parcial y T.C. implícito.
  */
 export function descripcionCandidatoGasto(g: GastoCandidatoConciliacion): string | null {
+  return lineaDescripcionCandidato(g, etiquetaFolioComprobante);
+}
+
+/**
+ * TOOLTIP de la segunda línea del candidato (5-oct-2026). Dos cosas que la
+ * línea visible no alcanza a decir:
+ *  1. el MOTIVO del veto (`bloqueo`, de `bloqueoDeFila`) va PRIMERO: el
+ *     `title` del `<span>` interior tapa el del `<label>`, y ese motivo
+ *     («Gasto en USD y la cuenta en MXN…», «Ya marcaste un gasto en otra
+ *     moneda…») es lo único que explica la casilla apagada;
+ *  2. la descripción con el folio COMPLETO (`tituloFolioComprobante`: «Factura
+ *     CFDI <uuid entero>» en vez de «…1A2B3C4D»).
+ * Una línea por cosa; null si no hay ninguna.
+ */
+export function tituloDescripcionCandidatoGasto(
+  g: GastoCandidatoConciliacion,
+  bloqueo?: string | null,
+): string | null {
+  const motivo = typeof bloqueo === "string" && bloqueo.trim().length > 0 ? bloqueo.trim() : null;
+  const partes = [motivo, lineaDescripcionCandidato(g, tituloFolioComprobante)].filter(Boolean);
+  return partes.length > 0 ? partes.join("\n") : null;
+}
+
+/** La segunda línea con el folio rotulado por `rotularFolio` (corto o completo). */
+function lineaDescripcionCandidato(
+  g: GastoCandidatoConciliacion,
+  rotularFolio: (folio: string | null | undefined) => string | null,
+): string | null {
   const nota = primeraLinea(g.notas_primera_linea ?? g.notas);
   const tc = numeroDe(g.tc_implicito);
   const partes = [
     g.tarjeta_terminacion ? `Tarjeta ****${g.tarjeta_terminacion}` : null,
-    etiquetaFolioComprobante(g.folio_comprobante),
+    rotularFolio(g.folio_comprobante),
     g.lugar ?? null,
     nota && nota !== g.lugar ? nota : null,
     g.matricula ? g.matricula.toUpperCase() : null,

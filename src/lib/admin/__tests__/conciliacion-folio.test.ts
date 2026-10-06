@@ -24,8 +24,11 @@ import {
 import {
   descripcionCandidatoGasto,
   etiquetaCandidatoGasto,
+  tituloDescripcionCandidatoGasto,
 } from "@/lib/admin/conciliacion-auto";
 import {
+  MAX_LINEAS_LOTE,
+  bloqueoDeFila,
   fichaCandidatoGasto,
   lineaGastoLote,
   opcionesRespaldoVincular,
@@ -128,6 +131,38 @@ describe("candidatos de «Vincular gasto»", () => {
     expect(descripcionCandidatoGasto(ficha)).toContain("Factura FEACZM-72128");
   });
 
+  it("tooltip: la descripción con el folio COMPLETO (el «CFDI <uuid>» no se acorta)", () => {
+    const g = { ...base, folio_comprobante: `CFDI ${UUID}` };
+    expect(descripcionCandidatoGasto(g)).toBe(`Tarjeta ****0585 · Factura CFDI …${UUID.slice(-8)} · CZM`);
+    expect(tituloDescripcionCandidatoGasto(g)).toBe(`Tarjeta ****0585 · Factura CFDI ${UUID} · CZM`);
+    // Un folio normal: el tooltip es la misma línea.
+    const n = { ...base, folio_comprobante: "FEACZM-72128" };
+    expect(tituloDescripcionCandidatoGasto(n)).toBe(descripcionCandidatoGasto(n));
+  });
+
+  it("tooltip con casilla apagada: el MOTIVO del veto va primero, luego la descripción", () => {
+    const usd = { ...base, id: "usd", moneda: "USD", cruzado: true, folio_comprobante: `CFDI ${UUID}` };
+    const mxn = { ...base, id: "mxn" };
+    const bloqueo = bloqueoDeFila(usd, "MXN", [mxn]);
+    expect(bloqueo).toContain("se vincula solo");
+    expect(tituloDescripcionCandidatoGasto(usd, bloqueo)).toBe(
+      `${bloqueo}\nTarjeta ****0585 · Factura CFDI ${UUID} · CZM`,
+    );
+    // Marcado el cruzado, la fila MXN se apaga: su tooltip conserva el motivo.
+    const otra = bloqueoDeFila(mxn, "MXN", [usd])!;
+    expect(tituloDescripcionCandidatoGasto(mxn, otra)?.split("\n")[0]).toBe(
+      "Ya marcaste un gasto en otra moneda: ese se vincula solo. Desmárcalo para elegir varios.",
+    );
+  });
+
+  it("tooltip: sin veto ni descripción ⇒ null; solo veto ⇒ el veto; veto en blanco no cuenta", () => {
+    expect(tituloDescripcionCandidatoGasto({ id: "g", monto: 10 })).toBeNull();
+    expect(tituloDescripcionCandidatoGasto({ id: "g", monto: 10 }, null)).toBeNull();
+    expect(tituloDescripcionCandidatoGasto({ id: "g", monto: 10 }, "  ")).toBeNull();
+    expect(tituloDescripcionCandidatoGasto({ id: "g", monto: 10 }, "Motivo")).toBe("Motivo");
+    expect(tituloDescripcionCandidatoGasto(base, "  ")).toBe("Tarjeta ****0585 · CZM");
+  });
+
   it("el respaldo con API previo (candidatos de la IA) también lo lleva", () => {
     const ops = opcionesRespaldoVincular([], {
       disponible: true,
@@ -171,6 +206,50 @@ describe("lote (1 cargo ↔ N gastos): un folio por gasto", () => {
       gastos: [parte("a", "S-101"), parte("b", null), parte("c", "S-103")],
     });
     expect(r?.lineas.map((l) => l.factura)).toEqual(["Factura S-101", null, "Factura S-103"]);
+  });
+
+  it("lote de 5: los folios que no caben van al tooltip de «y N más», uno por gasto", () => {
+    expect(MAX_LINEAS_LOTE).toBe(3);
+    const r = resumenLoteFila({
+      monto: "14007.00",
+      gastos_n: 5,
+      gastos: [
+        parte("a", "S-101"),
+        parte("b", "S-102"),
+        parte("c", "S-103"),
+        parte("d", "S-104"),
+        parte("e", `CFDI ${UUID}`),
+      ],
+    });
+    expect(r?.lineas).toHaveLength(3);
+    expect(r?.mas).toBe("y 2 más");
+    expect(r?.masTitulo).toBe(
+      ["Operaciones · $2,801.40 · Factura S-104", `Operaciones · $2,801.40 · Factura CFDI ${UUID}`].join("\n"),
+    );
+  });
+
+  it("lote: «y N más» sin tooltip si ningún oculto trae folio (o API previo) o si todo cabe", () => {
+    const sinFolio = resumenLoteFila({
+      monto: "11205.60",
+      gastos_n: 4,
+      gastos: [parte("a", "S-101"), parte("b", "S-102"), parte("c", "S-103"), parte("d", undefined)],
+    });
+    expect(sinFolio?.mas).toBe("y 1 más");
+    expect(sinFolio?.masTitulo).toBeNull();
+    const caben = resumenLoteFila({
+      monto: "5602.80",
+      gastos_n: 2,
+      gastos: [parte("a", "S-101"), parte("b", "S-102")],
+    });
+    expect(caben?.mas).toBeNull();
+    expect(caben?.masTitulo).toBeNull();
+    // Solo los ocultos con folio: el que no trae no inventa renglón.
+    const mixto = resumenLoteFila({
+      monto: "14007.00",
+      gastos_n: 5,
+      gastos: [parte("a", null), parte("b", null), parte("c", null), parte("d", null), parte("e", "S-105")],
+    });
+    expect(mixto?.masTitulo).toBe("Operaciones · $2,801.40 · Factura S-105");
   });
 
   it("la búsqueda rápida encuentra el cargo por el número de factura", () => {
