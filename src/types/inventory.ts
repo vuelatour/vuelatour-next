@@ -304,6 +304,12 @@ export interface InventarioMovimiento {
   empaque?: { nombre: string; factor: number } | null;
   aeronave?: { matricula: string } | null;
   proveedor?: { nombre: string } | null;
+  /**
+   * ADITIVO (6-oct-2026, API 0.0.62): quién registró el movimiento
+   * (usuario.nombre vía registrado_por). Ausente con un API previo: el cardex
+   * pinta «—».
+   */
+  registro?: { nombre: string | null } | null;
   item?: { nombre: string; numero_parte: string | null; categoria: string } | null;
   /**
    * DEVOLUCION: parte del cargo que el API NO pudo revertir (null = revirtió

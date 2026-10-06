@@ -4,7 +4,7 @@ import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
-import { fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
 import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
 import type { InventarioMovimiento, TipoMovimiento } from "@/types/inventory";
@@ -89,7 +89,29 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     cellClassName: "text-muted-foreground font-mono text-xs",
     cell: (m) => m.referencia ?? "—",
   },
+  {
+    // Historial (6-oct-2026): quién registró el movimiento y cuándo lo
+    // capturó (hora Cancún), con las notas al pasar el cursor. Pedido del
+    // cliente: «salió 1 aceite para el N58BT y yo no he realizado esa
+    // salida» (era una PRUEBA de otro usuario). Con un API previo sin
+    // `registro` se pinta «—» y la fecha de captura.
+    key: "registro",
+    header: "Registró",
+    cellClassName: "text-xs",
+    cell: (m) => (
+      <span title={m.notas ?? undefined}>
+        <span className="block">{textoRegistroMovimiento(m)}</span>
+        <span className="block text-muted-foreground">{fmtDateTimeShort(m.created_at)}</span>
+      </span>
+    ),
+  },
 ];
+
+/** Nombre de quien registró el movimiento, o «—» si el API no lo manda. */
+export function textoRegistroMovimiento(m: Pick<InventarioMovimiento, "registro">): string {
+  const nombre = m.registro?.nombre?.trim();
+  return nombre ? nombre : "—";
+}
 
 /**
  * Sub-línea del costo unitario. En dólares: el USD capturado y su T.C. (en
