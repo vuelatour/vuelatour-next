@@ -21,6 +21,11 @@ import { fmtDate } from "@/lib/datetime";
 import { listAircraft } from "@/lib/api/aircraft";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
 import { rangoFiltro } from "@/lib/admin/url-params";
+import {
+  NOTA_BALANCE_VUELATOUR,
+  TITULO_CARD_BALANCE_VUELATOUR,
+  librosBalanceVuelaTour,
+} from "@/lib/admin/reportes-balance";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +86,10 @@ export default async function ReportesPage({ searchParams }: PageProps) {
   } catch {
     aircraftPick = [];
   }
+
+  // «Balance mensual» y «Balance general» del periodo (mismo orden que los
+  // botones de la card).
+  const librosBalance = librosBalanceVuelaTour(desde, hasta);
 
   return (
     <div className="space-y-6">
@@ -146,26 +155,34 @@ export default async function ReportesPage({ searchParams }: PageProps) {
 
       {/* Consolidado de la flota: apartado propio (antes era una opción
           centinela dentro del selector de aviones de arriba y se confundía
-          con el libro individual). Mismo periodo que el resto de la página. */}
+          con el libro individual). Mismo periodo que el resto de la página.
+          Dos libros (6-oct-2026, API 0.0.64): «Balance mensual» (el de
+          siempre) y «Balance general» (hoja de vuelos a costo total y costo
+          por hora); la misma ruta con `modo`. Textos, archivo y parámetros
+          salen de `lib/admin/reportes-balance.ts`. */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Balance general VuelaTour</CardTitle>
-          <CardDescription>
-            Consolidado de toda la flota en el periodo, en un solo libro:
-            resumen por avión, reporte de horas de todos los aviones (filas
-            coloreadas por matrícula), otros movimientos, cobranza, otros
-            gastos de la empresa, repartidos a aviones, inventario de bodega,
-            balance por avión con sus socios y pendientes de captura. Es el
-            cierre de la empresa; el libro de un solo avión se descarga arriba.
+          <CardTitle className="text-base">{TITULO_CARD_BALANCE_VUELATOUR}</CardTitle>
+          <CardDescription className="space-y-1">
+            {librosBalance.map((libro) => (
+              <p key={libro.modo}>
+                <span className="font-medium text-foreground">{`${libro.nombre}:`}</span>{" "}
+                {libro.detalle}
+              </p>
+            ))}
+            <p>{NOTA_BALANCE_VUELATOUR}</p>
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <ExcelExportButton
-            path="/v1/aircraft/balance-general.xlsx"
-            filename={`balance-general-vuelatour-${desde}-${hasta}.xlsx`}
-            label="Descargar balance general VuelaTour (Excel)"
-            query={{ desde, hasta }}
-          />
+        <CardContent className="flex gap-2 flex-wrap">
+          {librosBalance.map((libro) => (
+            <ExcelExportButton
+              key={libro.modo}
+              path={libro.path}
+              filename={libro.filename}
+              label={libro.etiqueta}
+              query={libro.query}
+            />
+          ))}
         </CardContent>
       </Card>
 

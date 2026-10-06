@@ -5726,3 +5726,16 @@ bancario del …» por discrepancia (`lib/admin/notas-gasto.ts`); la lista de
 respaldo no ofrece efectivo; el 409 `GASTO_BODEGA` se lee de
 `details.gastos_bodega` y su mensaje. Pruebas: `*no-bancario*`,
 `notas-gasto` y `discrepancia-vinculo-ui`. Deploy: API 0.0.63 → panel.
+
+## Reportes: «Balance mensual» y «Balance general» (6-oct-2026, API 0.0.64)
+
+La card «Balance general VuelaTour» de `/admin/reportes` es ahora «Balance
+mensual y balance general»: dos `ExcelExportButton` contra la MISMA ruta
+`/v1/aircraft/balance-general.xlsx` con `modo=mensual` (el libro de siempre,
+`balance-mensual-vuelatour-<desde>-a-<hasta>.xlsx`) y `modo=general` (hoja de
+vuelos resumida a costo total y costo por hora = costo total ÷ tiempo volado ÷
+TC ÷ 1.16, `balance-general-vuelatour-…`); título, una línea por libro, nota,
+etiquetas, archivo y query salen SOLO de `lib/admin/reportes-balance.ts` (PURO;
+`reportes-balance.test.ts` prueba textos, paridad de modos con el API y la
+página pintada). Deploy: pyservices → API 0.0.64 → panel (el 0.0.63 responde
+400 a `modo` por `forbidNonWhitelisted`).
