@@ -62,6 +62,7 @@ import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import {
   esCargoConLote,
+  gastosLigadosDe,
   mensajeErrorBusquedaGastos,
   menuDesvincularGastos,
   numeroGastosDe,
@@ -70,6 +71,7 @@ import {
   tituloDesvincularGastos,
   toastDesvinculoGastos,
 } from "@/lib/admin/conciliacion-lote";
+import { textoDesvincularNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
   BOTON_QUITAR_REVERSO,
   MENU_ABONO_DEVOLUCION,
@@ -145,6 +147,9 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
   const vinculadoAGastoOCobro = tieneGastoLigado(movimiento) || vinculadoACobro;
   const conLote = !vinculadoACobro && esCargoConLote(movimiento);
   const gastosDelLote = numeroGastosDe(movimiento);
+  // Un gasto en efectivo ligado con justificación (6-oct-2026): desvincular
+  // borra esa nota del cargo y del gasto, y la confirmación lo dice.
+  const notaDesvincularNoBancario = vinculadoACobro ? null : textoDesvincularNoBancario(gastosLigadosDe(movimiento));
   const clasificado = movimiento.clasificacion_id != null;
   // ABONO conciliado contra un INGRESO registrado (24-sep-2026): se suelta
   // con su propia ruta (`PATCH movimientos/:id/ingreso`), no con la del cobro.
@@ -791,6 +796,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                 <AlertDialogTitle>{tituloDesvincularGastos(gastosDelLote)}</AlertDialogTitle>
                 <AlertDialogDescription>
                   {textoConfirmarDesvincularGastos(gastosDelLote)}
+                  {notaDesvincularNoBancario && ` ${notaDesvincularNoBancario}`}
                 </AlertDialogDescription>
               </>
             ) : (
@@ -818,6 +824,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                     " Las partes por avión del sobre dejan de verse como conciliadas."}
                   {!vinculadoACobro && !vinculadoAIngreso &&
                     " Si el gasto se pagó en varios cargos, los demás siguen ligados: el gasto queda como pago parcial hasta que lo cubran."}
+                  {!vinculadoAIngreso && notaDesvincularNoBancario && ` ${notaDesvincularNoBancario}`}
                 </AlertDialogDescription>
               </>
             )}

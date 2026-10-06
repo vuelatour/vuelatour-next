@@ -20,7 +20,15 @@
  *     apaga el botón, el API es el que acepta o rechaza;
  *   - todos los textos es-MX del diálogo, de la columna «Conciliación», del
  *     menú y de los errores del API (`CARGO_NO_CUADRA`, `LOTE_MONEDA_DISTINTA`,
- *     `MOVIMIENTO_CON_LOTE`, `GASTO_YA_CUBIERTO`…).
+ *     `MOVIMIENTO_CON_LOTE`, `GASTO_YA_CUBIERTO`…);
+ *   - por qué un gasto del MISMO monto no sale en la lista vacía (efectivo,
+ *     ya conciliado, otra moneda, fuera de la ventana): `textoExcluidosCandidatos`
+ *     sobre `excluidos` del API 0.0.63 (6-oct-2026), con «Mostrar estos
+ *     gastos» para los que están en efectivo (`AvisoExcluidos.mostrar`);
+ *   - los errores de vincular un gasto que NO pasó por el banco
+ *     (`JUSTIFICACION_REQUERIDA`, `GASTO_BODEGA`). El resto de esa regla
+ *     (medios, interruptor, justificación, insignias) vive en
+ *     `conciliacion-no-bancario.ts`.
  * Ningún componente redacta estas frases a mano. Todos los campos del API son
  * ADITIVOS: sin ellos (API previo) la UI se comporta como antes.
  */
@@ -42,10 +50,26 @@ import {
 } from "@/lib/admin/conciliacion-parcial";
 import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
+import { MEDIO_PAGO_LABELS, medioPagoLabel } from "@/lib/admin/medios-pago";
+import {
+  MSG_JUSTIFICACION_API_VIEJO,
+  MSG_NO_BANCARIOS_API_VIEJO,
+  badgeVinculoNoBancario,
+  esMedioBodega,
+  esMedioNoBancario,
+  etiquetaMedioNoBancario,
+  noBancariosDeDetalle,
+  type BadgeVinculoNoBancario,
+  type GastoNoBancarioDetalle,
+} from "@/lib/admin/conciliacion-no-bancario";
+import { esDiaValido, esUuid } from "@/lib/admin/url-params";
 import { fmtDateOnly } from "@/lib/datetime";
 import type {
+  CargoConciliadoExcluido,
+  ExcluidosCandidatos,
   GastoCandidato,
   GastoEstadoParte,
+  GastoExcluidoCandidato,
   MovimientoGasto,
   SugerenciaConciliacion,
 } from "@/types/conciliacion";
@@ -96,6 +120,9 @@ export function toleranciaLote(n: number): number {
 export interface MovimientoConGastos {
   conciliado?: boolean | null;
   monto?: string | number | null;
+  /** Notas del CARGO: ahí anota el API la justificación de un gasto en
+      efectivo (6-oct-2026); la insignia de la columna las lleva al tooltip. */
+  notas?: string | null;
   gasto_id?: string | null;
   gasto?: MovimientoGasto | null;
   gastos_n?: number | null;
@@ -472,6 +499,28 @@ export function busquedaParaApi(q: string | null | undefined): string {
   return normalizarBusquedaMonto(q).slice(0, LARGO_MAX_BUSQUEDA).trim();
 }
 
+/** ¿La búsqueda (ya normalizada) es un MONTO que el API entiende? «212» y «2801.40» sí; «ASUR», no. */
+export function esBusquedaMonto(q: string | null | undefined): boolean {
+  return /^\d+(?:\.\d{1,2})?$/.test(busquedaParaApi(q));
+}
+
+/**
+ * La búsqueda con la que «Mostrar estos gastos» (6-oct-2026) los TRAE: un
+ * monto tecleado se queda (los excluidos se buscaron con él); sin búsqueda o
+ * con un TEXTO, el monto de esos gastos («212.00»). Sin monto, la lista con el
+ * interruptor podía llenarse con cien gastos del banco (van primero) antes que
+ * ellos, y un texto podía esconderlos.
+ */
+export function busquedaParaMostrarNoBancarios(
+  q: string | null | undefined,
+  monto: string | number | null | undefined,
+): string {
+  const actual = busquedaParaApi(q);
+  if (esBusquedaMonto(actual)) return actual;
+  const m = centavos(Math.abs(numeroDe(monto)));
+  return m > 0 ? m.toFixed(2) : actual;
+}
+
 // ─────────────────────────── Textos del diálogo ───────────────────────────
 
 export const TITULO_VINCULAR_GASTO = "Vincular gasto";
@@ -498,9 +547,16 @@ export function textoAmpliarVentana(dias: number): string {
   return `Ampliar a ${dias} días`;
 }
 
-/** Nota al pie: qué se ofrece y cómo se usa. */
-export function NOTA_VENTANA_CARGO(dias: number): string {
-  return `Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
+/**
+ * Nota al pie: qué se ofrece y cómo se usa. Con el interruptor de gastos en
+ * efectivo encendido (6-oct-2026) dice que también salen, después de los del
+ * banco.
+ */
+export function NOTA_VENTANA_CARGO(dias: number, incluyeNoBancarios = false): string {
+  const que = incluyeNoBancarios
+    ? "Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y, después, en efectivo u otros medios (nunca bodega)"
+    : "Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar";
+  return `${que}, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
 }
 
 /** Hubo más candidatos que el tope: la búsqueda los encuentra. */
@@ -599,6 +655,8 @@ export function estadoBuscadorGastos(s: {
   resultados: number;
   truncado?: boolean | null;
   dias?: number;
+  /** El interruptor de gastos en efectivo está encendido (el vacío lo dice). */
+  incluyeNoBancarios?: boolean;
 }): { tipo: TipoEstadoBuscador; texto: string } {
   const q = (s.q ?? "").trim();
   const dias = s.dias ?? VENTANA_CARGO_DIAS;
@@ -616,9 +674,360 @@ export function estadoBuscadorGastos(s: {
           tipo: "vacio_con_q",
           texto: `Ningún gasto pendiente coincide con «${q}» en ±${dias} días del cargo. ${salida}`,
         }
-      : { tipo: "vacio_sin_q", texto: `No hay gastos bancarios pendientes en ±${dias} días del cargo. ${salida}` };
+      : {
+          tipo: "vacio_sin_q",
+          texto: s.incluyeNoBancarios
+            ? `No hay gastos pendientes (del banco ni en efectivo) en ±${dias} días del cargo. ${salida}`
+            : `No hay gastos bancarios pendientes en ±${dias} días del cargo. ${salida}`,
+        };
   }
   return { tipo: "lista", texto: s.truncado ? textoTruncado(s.resultados) : "" };
+}
+
+// ────────────── Por qué un gasto del mismo monto NO aparece ──────────────
+//
+// Caso real (6-oct-2026): cargo de $212.00 del 07-sep (ASUR CANCUN, GASTOS
+// GNRAL). La oficina buscó «212» y vio «Ningún gasto pendiente coincide…»,
+// pero había TRES gastos de $212.00 (24, 27 y 28-sep, Taxi / estacionamiento
+// de ASUR, vuelos #338 y #330) capturados en EFECTIVO, y la lista solo ofrece
+// gastos bancarios: creyeron que era un bug. Con la lista VACÍA el API
+// (0.0.63) manda `excluidos` y aquí se redacta UNA frase por motivo, con una
+// liga por gasto. Sin `excluidos` (API previo) no hay frases: el vacío de
+// siempre.
+
+/** Orden de las frases; un motivo que el panel no conoce va al final. */
+export const ORDEN_MOTIVOS_EXCLUIDOS = [
+  "EFECTIVO_U_OTRO_MEDIO",
+  "YA_CONCILIADO",
+  "OTRA_MONEDA",
+  "FUERA_DE_VENTANA",
+] as const;
+
+export const BOTON_VOLVER_A_BUSCAR = "Volver a buscar";
+/** Rótulo de las ligas de los gastos que no entraron. */
+export const ETIQUETA_LIGAS_EXCLUIDOS = "Abrir:";
+
+/** Liga a un gasto que no entró: su vuelo o, sin vuelo, Gastos de ese día. */
+export interface LigaGastoExcluido {
+  key: string;
+  /** «vuelo #338 (24 sep)» / «gasto del 12 jun». */
+  texto: string;
+  href: string;
+  /** Qué gasto es y adónde lleva (abre en otra pestaña). */
+  titulo: string;
+}
+
+/** Una frase por motivo, con las ligas de sus gastos (en orden de fecha). */
+export interface AvisoExcluidos {
+  motivo: string;
+  texto: string;
+  ligas: LigaGastoExcluido[];
+  /**
+   * «Mostrar estos gastos» (6-oct-2026): SOLO en `EFECTIVO_U_OTRO_MEDIO`, con
+   * el interruptor de gastos en efectivo APAGADO y algún gasto vinculable (no
+   * de bodega). `dias` = la ventana con la que salen (la de ahora o ±120 si
+   * alguno cae más lejos); `monto` = el de esos gastos, para buscarlos
+   * (`busquedaParaMostrarNoBancarios`). null = sin botón.
+   */
+  mostrar: { dias: number; monto: number } | null;
+}
+
+const FMT_DIA_MES = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone: "UTC" });
+const FMT_DIA_MES_ANIO = new Intl.DateTimeFormat("es-MX", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** «a» · «a y b» · «a, b y c». */
+function listaY(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+}
+
+/** «2026-09-24» (o un ISO) ⇒ «2026-09-24»; "" si no es un día real. */
+function diaDe(fecha: string | null | undefined): string {
+  const ymd = typeof fecha === "string" ? fecha.slice(0, 10) : "";
+  return esDiaValido(ymd) ? ymd : "";
+}
+
+/**
+ * Fechas para una frase: «24, 27 y 28 sep» (un mes), «30 ago, 2 sep y 5 sep»
+ * (varios meses) y con año si cruzan de año («28 dic 2025 y 3 ene 2026»). Sin
+ * repetir y en orden; lo que no es un día real se ignora.
+ */
+export function textoFechasCortas(fechas: readonly (string | null | undefined)[]): string {
+  const dias = [...new Set(fechas.map(diaDe).filter(Boolean))].sort();
+  if (dias.length === 0) return "";
+  const utc = dias.map((d) => new Date(`${d}T12:00:00Z`));
+  if (new Set(dias.map((d) => d.slice(0, 4))).size > 1) return listaY(utc.map((d) => FMT_DIA_MES_ANIO.format(d)));
+  if (new Set(dias.map((d) => d.slice(0, 7))).size > 1) return listaY(utc.map((d) => FMT_DIA_MES.format(d)));
+  const mes = FMT_DIA_MES.formatToParts(utc[0]).find((p) => p.type === "month")?.value ?? "";
+  return `${listaY(utc.map((d) => String(d.getUTCDate())))} ${mes}`.trim();
+}
+
+function folioDe(g: GastoExcluidoCandidato): number | null {
+  const n = g.vuelo_folio == null ? Number.NaN : Number(g.vuelo_folio);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** «vuelo #338» · «vuelos #338 y #330» (sin repetir, en orden de fecha); "" sin vuelos. */
+function textoVuelos(gastos: readonly GastoExcluidoCandidato[]): string {
+  const folios = [...new Set(gastos.map(folioDe).filter((f): f is number => f != null))];
+  if (folios.length === 0) return "";
+  return `${plural(folios.length, "vuelo", "vuelos")} ${listaY(folios.map((f) => `#${f}`))}`;
+}
+
+/** YA_CONCILIADO: los cargos con los que ya está (`conciliado_con`); [] si el API no los dijo. */
+function cargosDe(g: GastoExcluidoCandidato): CargoConciliadoExcluido[] {
+  return Array.isArray(g.conciliado_con) ? g.conciliado_con.filter((c) => c != null) : [];
+}
+
+/** «pesos» / «dólares» (otra moneda: su código). */
+function nombreMoneda(m: string | null | undefined): string {
+  if (m === "MXN") return "pesos";
+  if (m === "USD") return "dólares";
+  return m || "otra moneda";
+}
+
+/**
+ * El medio dentro de una frase: «efectivo», «bodega (inventario)», «Personal
+ * Pablo»; un código que el panel no conoce ⇒ «otro medio de pago» (JAMÁS el
+ * código).
+ */
+function medioEnFrase(m: string | null | undefined): string {
+  if (m === "EFECTIVO") return "efectivo";
+  if (m === "BODEGA") return "bodega (inventario)";
+  return (m && MEDIO_PAGO_LABELS[m]) || "otro medio de pago";
+}
+
+/** Días entre dos fechas de pared («YYYY-MM-DD» o ISO), en valor absoluto; null si alguna no es día. */
+function distanciaDias(a: string | null | undefined, b: string | null | undefined): number | null {
+  const da = diaDe(a);
+  const db = diaDe(b);
+  if (!da || !db) return null;
+  const utc = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
+  return Math.abs(utc(da) - utc(db)) / 86_400_000;
+}
+
+/**
+ * La ventana con la que «Mostrar estos gastos» los TRAE: la de ahora o, si
+ * alguno cae más lejos del cargo, la ampliada (±120; el API busca los
+ * excluidos hasta ahí). Sin la fecha del cargo, la de ahora.
+ */
+export function ventanaParaMostrarNoBancarios(
+  gastos: readonly Pick<GastoExcluidoCandidato, "fecha_gasto">[],
+  fechaCargo: string | null | undefined,
+  dias: number,
+): number {
+  const lejos = gastos.some((g) => {
+    const d = distanciaDias(fechaCargo, g.fecha_gasto);
+    return d != null && d > dias;
+  });
+  return lejos ? Math.max(dias, VENTANA_AMPLIADA_DIAS) : dias;
+}
+
+/** ¿Hay en el grupo algún gasto que el interruptor TRAE (no de bodega)? Sin fichas, se supone que sí. */
+function hayVinculables(gastos: readonly GastoExcluidoCandidato[]): boolean {
+  return gastos.length === 0 || gastos.some((g) => !esMedioBodega(g.medio_pago));
+}
+
+/**
+ * Liga de un gasto que no entró, para corregirlo en OTRA pestaña (el diálogo
+ * se queda abierto y «Volver a buscar» repite la búsqueda): al vuelo
+ * (`hrefGastoConciliado`, donde se edita el gasto) o, sin vuelo —o si el API
+ * no mandó su `vuelo_id`—, a Gastos filtrado a ese día.
+ */
+export function ligaGastoExcluido(g: GastoExcluidoCandidato): LigaGastoExcluido {
+  const dia = diaDe(g.fecha_gasto);
+  const fecha = textoFechasCortas([dia]);
+  const folio = folioDe(g);
+  const vueloId = esUuid(g.vuelo_id) ? (g.vuelo_id as string) : null;
+  const texto =
+    folio != null ? `vuelo #${folio}${fecha ? ` (${fecha})` : ""}` : fecha ? `gasto del ${fecha}` : "gasto";
+  const href = vueloId
+    ? hrefGastoConciliado({ vuelo_id: vueloId })
+    : dia
+      ? `/admin/expenses?desde=${dia}&hasta=${dia}`
+      : "/admin/expenses";
+  const que = [
+    g.categoria ? categoriaGastoLabel(g.categoria) : null,
+    fmt(g.monto, g.moneda),
+    g.medio_pago ? medioPagoLabel(g.medio_pago) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const donde = vueloId
+    ? `Abre ${folio != null ? `el vuelo #${folio}` : "su vuelo"} en otra pestaña.`
+    : `Abre Gastos${fecha ? ` del ${fecha}` : ""} en otra pestaña.`;
+  return { key: g.id, texto, href, titulo: `${que}. ${donde}` };
+}
+
+/** La frase de UN motivo (`n` = total del API; `gastos` = los que mandó, en orden). */
+function fraseExcluidos(
+  motivo: string,
+  n: number,
+  gastos: readonly GastoExcluidoCandidato[],
+  c: { referencia: number; monedaCuenta: string | null; dias: number; incluyeNoBancarios: boolean },
+): string {
+  const primero = gastos[0];
+  // OTRA_MONEDA dice la moneda con palabras: el monto va sin sufijo.
+  const monto = primero
+    ? fmt(primero.monto, motivo === "OTRA_MONEDA" ? null : primero.moneda)
+    : fmt(c.referencia, c.monedaCuenta);
+  const cuantos = `${n} ${plural(n, "gasto", "gastos")} de ${monto}`;
+  const resto = n - gastos.length;
+  const partes = [textoFechasCortas(gastos.map((g) => g.fecha_gasto)), textoVuelos(gastos)].filter(Boolean);
+  const det = partes.length ? ` (${partes.join(" · ")}${resto > 0 ? `, y ${resto} más` : ""})` : "";
+
+  switch (motivo) {
+    case "EFECTIVO_U_OTRO_MEDIO": {
+      const medios = [...new Set(gastos.map((g) => g.medio_pago).filter((m): m is string => !!m))];
+      if (medios.length > 0 && medios.every((m) => esMedioBodega(m))) {
+        return n === 1
+          ? `Hay ${cuantos} con cargo a bodega${det}: es una salida de inventario y nunca pasa por el banco, así que no se concilia.`
+          : `Hay ${cuantos} con cargo a bodega${det}: son salidas de inventario y nunca pasan por el banco, así que no se concilian.`;
+      }
+      const soloEfectivo = medios.length > 0 && medios.every((m) => m === "EFECTIVO");
+      const como = soloEfectivo
+        ? "en efectivo"
+        : `${plural(n, "pagado", "pagados")} con ${medios.length > 0 ? listaY(medios.map(medioEnFrase)) : "otro medio de pago"}`;
+      const bodega = medios.some((m) => esMedioBodega(m))
+        ? " Los de bodega son salidas de inventario y nunca se vinculan."
+        : "";
+      if (c.incluyeNoBancarios) {
+        // Con el interruptor ENCENDIDO ya salían: si no entran es por otra regla.
+        return `Hay ${cuantos} ${como}${det} que no ${plural(n, "entra", "entran")} ni con los gastos en efectivo incluidos: ${plural(n, "puede estar ya conciliado", "pueden estar ya conciliados")}, en otra moneda o fuera de ±${c.dias} días del cargo.${bodega}`;
+      }
+      const banco = soloEfectivo ? "" : " (tarjeta, transferencia o PayWise)";
+      const salida =
+        n === 1
+          ? "si no, muéstralo y vincúlalo con una justificación (su medio de pago no cambia)."
+          : "si no, muéstralos y vincula el que corresponda con una justificación (su medio de pago no cambia).";
+      return `Hay ${cuantos} ${como}${det}: la lista solo muestra gastos pagados por el banco${banco}. Si en realidad se pagó con tarjeta o transferencia, corrige el medio de pago del gasto; ${salida}${bodega}`;
+    }
+    case "YA_CONCILIADO": {
+      const ya = n === 1 ? "ya está conciliado" : "ya están conciliados";
+      const corrige =
+        n === 1
+          ? "Si se ligó por error, desvincúlalo en Conciliación y vuelve a buscar."
+          : "Si alguno se ligó por error, desvincúlalo en Conciliación y vuelve a buscar.";
+      // Con qué cargo, SOLO si el API lo dijo de TODOS los que llegaron (y no
+      // hay más): `conciliado_con` null = no pudo leer la puente; [] = sin
+      // cargo en la puente. Nunca se presume.
+      const conocidos =
+        resto === 0 &&
+        gastos.length > 0 &&
+        gastos.every((g) => {
+          const cargos = cargosDe(g);
+          return cargos.length > 0 && cargos.every((cg) => diaDe(cg.fecha) !== "");
+        });
+      if (!conocidos) return `${cuantos}${det} ${ya}. ${corrige}`;
+      const cargos = gastos.flatMap(cargosDe);
+      const nCargos = new Set(cargos.map((cg) => cg.movimiento_id || cg.fecha)).size;
+      const cuentas = [...new Set(cargos.map((cg) => (cg.cuenta ?? "").trim()))];
+      const cuenta = cuentas.length === 1 && cuentas[0] ? ` (${cuentas[0]})` : "";
+      const con = `${nCargos === 1 ? "con el cargo" : "con los cargos"} del ${textoFechasCortas(cargos.map((cg) => cg.fecha))}${cuenta}`;
+      return `${cuantos}${det} ${ya} ${con}. ${corrige}`;
+    }
+    case "OTRA_MONEDA": {
+      const monedas = [...new Set(gastos.map((g) => g.moneda).filter((m): m is string => !!m))];
+      const en = monedas.length === 1 ? nombreMoneda(monedas[0]) : "otra moneda";
+      const cuenta = c.monedaCuenta
+        ? `la cuenta es en ${nombreMoneda(c.monedaCuenta)} (${c.monedaCuenta})`
+        : "la cuenta es de otra moneda";
+      return `${cuantos} ${plural(n, "está", "están")} en ${en}${det} y ${cuenta}. Si se ${plural(n, "capturó", "capturaron")} con la moneda equivocada, corrige la moneda del gasto y vuelve a buscar.`;
+    }
+    case "FUERA_DE_VENTANA": {
+      const fuera = `${cuantos}${det} ${plural(n, "cae", "caen")} fuera de ±${c.dias} días del cargo`;
+      return c.dias < VENTANA_AMPLIADA_DIAS ? `${fuera}: amplía a ${VENTANA_AMPLIADA_DIAS} días.` : `${fuera}.`;
+    }
+    default:
+      // Motivo nuevo del API: frase genérica, JAMÁS el código.
+      return `Hay ${cuantos}${det} que no ${plural(n, "entra", "entran")} en la lista de candidatos.`;
+  }
+}
+
+/**
+ * Las frases bajo el vacío de «Vincular gasto»: UNA por motivo de
+ * `excluidos` (API 0.0.63), en es-MX y en palabras de la oficina, cada una
+ * con las ligas de sus gastos. El monto de cada frase es el de SUS gastos;
+ * solo un grupo que llegara sin gastos se rotula con `ctx.montoBuscado`
+ * (`excluidos_monto` del API: el de la búsqueda si es un monto) o, sin él,
+ * con `montoCargo`. El panel no vuelve a interpretar la búsqueda. Sin
+ * `excluidos` (API previo) o sin nada que explicar ⇒ [] y el diálogo queda
+ * como antes. Con el interruptor de gastos en efectivo APAGADO
+ * (`ctx.incluyeNoBancarios` false) la frase de los gastos en efectivo ofrece
+ * «Mostrar estos gastos» (`mostrar`, con la ventana que hace falta según
+ * `ctx.fechaCargo`); encendido, dice que no entran por otra regla.
+ */
+export function textoExcluidosCandidatos(
+  excluidos: readonly ExcluidosCandidatos[] | null | undefined,
+  montoCargo: string | number,
+  ctx: {
+    monedaCuenta?: string | null;
+    dias?: number | null;
+    montoBuscado?: number | string | null;
+    /** El interruptor «Incluir gastos en efectivo y otros medios» está encendido. */
+    incluyeNoBancarios?: boolean;
+    /** Fecha del cargo (YYYY-MM-DD): decide si «Mostrar estos gastos» amplía la ventana. */
+    fechaCargo?: string | null;
+  } = {},
+): AvisoExcluidos[] {
+  if (!Array.isArray(excluidos)) return [];
+  const buscado = Math.abs(numeroDe(ctx.montoBuscado));
+  const c = {
+    referencia: buscado > 0 ? buscado : Math.abs(numeroDe(montoCargo)),
+    monedaCuenta: ctx.monedaCuenta ?? null,
+    dias: ctx.dias ?? VENTANA_CARGO_DIAS,
+    incluyeNoBancarios: ctx.incluyeNoBancarios === true,
+  };
+  const orden = (motivo: string) => {
+    const i = (ORDEN_MOTIVOS_EXCLUIDOS as readonly string[]).indexOf(motivo);
+    return i < 0 ? ORDEN_MOTIVOS_EXCLUIDOS.length : i;
+  };
+  const avisos: Array<AvisoExcluidos & { i: number }> = [];
+  excluidos.forEach((grupo, i) => {
+    if (!grupo || typeof grupo.motivo !== "string" || !grupo.motivo.trim()) return;
+    const vistos = new Set<string>();
+    const lista: readonly (GastoExcluidoCandidato | null | undefined)[] = Array.isArray(grupo.gastos)
+      ? grupo.gastos
+      : [];
+    const gastos = lista
+      .filter((g): g is GastoExcluidoCandidato => {
+        if (!g || typeof g.id !== "string" || !g.id || vistos.has(g.id)) return false;
+        vistos.add(g.id);
+        return true;
+      })
+      .sort((a, b) => {
+        const fa = diaDe(a.fecha_gasto) || "9999";
+        const fb = diaDe(b.fecha_gasto) || "9999";
+        return fa !== fb ? (fa < fb ? -1 : 1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+    const nApi = Math.trunc(numeroDe(grupo.n));
+    const n = Math.max(nApi, gastos.length);
+    if (n <= 0) return;
+    const motivo = grupo.motivo.trim();
+    const vinculables = gastos.filter((g) => !esMedioBodega(g.medio_pago));
+    const mostrar =
+      motivo === "EFECTIVO_U_OTRO_MEDIO" && !c.incluyeNoBancarios && hayVinculables(gastos)
+        ? {
+            dias: ventanaParaMostrarNoBancarios(vinculables, ctx.fechaCargo, c.dias),
+            monto: centavos(Math.abs(numeroDe(vinculables[0]?.monto ?? c.referencia))),
+          }
+        : null;
+    avisos.push({
+      motivo,
+      texto: fraseExcluidos(motivo, n, gastos, c),
+      ligas: gastos.map(ligaGastoExcluido),
+      mostrar,
+      i,
+    });
+  });
+  return avisos
+    .sort((a, b) => orden(a.motivo) - orden(b.motivo) || a.i - b.i)
+    .map(({ motivo, texto, ligas, mostrar }) => ({ motivo, texto, ligas, mostrar }));
 }
 
 // ───────────────────────────── Errores ─────────────────────────────
@@ -688,6 +1097,9 @@ function sinPrefijoCodigo(mensaje: string | null | undefined): string {
 export function mensajeErrorBusquedaGastos(r: ResultadoAccionLote): string {
   if (esApiSinLote(r)) return mensajeApiSinLote(r);
   if (esMovimientoInexistente(r)) return MSG_MOVIMIENTO_NO_EXISTE;
+  // El API previo no conoce el interruptor ni la justificación (6-oct-2026).
+  if (r.code === "API_SIN_NO_BANCARIOS") return MSG_NO_BANCARIOS_API_VIEJO;
+  if (r.code === "API_SIN_JUSTIFICACION") return MSG_JUSTIFICACION_API_VIEJO;
   if (r.status === 401) return "Tu sesión expiró. Recarga la página e inicia sesión.";
   if (r.status === 403) return "Tu usuario no puede conciliar movimientos del banco.";
   if (esErrorTecnico({ error: r.error, code: r.code })) return MSG_SERVIDOR_NO_RESPONDIO;
@@ -799,6 +1211,66 @@ export function textoGastoYaCubiertoLote(
   return etiqueta ? { titulo: t.titulo, descripcion: `Gasto: ${etiqueta}. ${t.descripcion}` } : t;
 }
 
+/** «está en efectivo» / «se pagó con Personal Pablo» / «no se pagó por el banco». */
+function comoSePagoGasto(medio: string | null | undefined): string {
+  if (medio === "EFECTIVO") return "está en efectivo";
+  if (!medio) return "no se pagó por el banco";
+  return `se pagó con ${medioEnFrase(medio)}`;
+}
+
+/**
+ * 400 `JUSTIFICACION_REQUERIDA` (6-oct-2026, API 0.0.63): se mandó a ligar un
+ * gasto que NO pasó por el banco sin decir por qué (la ficha no lo marcaba o
+ * su medio cambió con el diálogo abierto). Con `details.gastos_no_bancarios`
+ * dice cuál y cómo se pagó; el diálogo, además, muestra el campo «¿Por qué…?».
+ */
+export function textoJustificacionRequerida(
+  mensaje: string | null | undefined,
+  details: unknown,
+): { titulo: string; descripcion: string } {
+  const lista = noBancariosDeDetalle(details);
+  const titulo =
+    lista.length >= 2 ? "Escribe por qué se vinculan estos gastos" : "Escribe por qué se vincula este gasto";
+  if (lista.length === 1) {
+    const g = lista[0];
+    const fecha = textoFechasCortas([g.fecha_gasto]);
+    return {
+      titulo,
+      descripcion: `El gasto${fecha ? ` del ${fecha}` : ""} ${comoSePagoGasto(g.medio_pago)}: para vincularlo a un cargo del banco escribe por qué (no cambia el medio de pago).`,
+    };
+  }
+  if (lista.length >= 2) {
+    const medios = [...new Set(lista.map((g) => g.medio_pago).filter((m): m is string => !!m))];
+    const con = medios.length > 0 ? ` (${listaY(medios.map(medioEnFrase))})` : "";
+    return {
+      titulo,
+      descripcion: `${lista.length} gastos no se pagaron por el banco${con}: para vincularlos a un cargo del banco escribe por qué (no cambia el medio de pago).`,
+    };
+  }
+  const delApi = sinPrefijoCodigo(mensaje);
+  return {
+    titulo,
+    descripcion:
+      delApi && !esErrorTecnico({ error: delApi })
+        ? delApi
+        : "Uno de los gastos no se pagó por el banco: para vincularlo escribe por qué (no cambia el medio de pago).",
+  };
+}
+
+/** 409 `GASTO_BODEGA`: una salida de inventario jamás se liga a un cargo del banco. */
+export function textoGastoBodega(
+  details: unknown,
+  etiquetaDe?: (gastoId: string) => string | null | undefined,
+): { titulo: string; descripcion: string } {
+  const id = (details as { gasto_id?: unknown } | null)?.gasto_id;
+  const etiqueta = typeof id === "string" && etiquetaDe ? etiquetaDe(id) : null;
+  const base = "Es una salida de inventario y nunca pasa por el banco: quítalo de la selección.";
+  return {
+    titulo: "Un gasto de bodega no se vincula con el banco",
+    descripcion: etiqueta ? `Gasto: ${etiqueta}. ${base}` : base,
+  };
+}
+
 export interface MensajeErrorVincular {
   titulo: string;
   descripcion?: string;
@@ -806,6 +1278,9 @@ export interface MensajeErrorVincular {
   recargar: boolean;
   /** El API no sabe de lotes: el diálogo pasa a la lista de siempre. */
   apiSinLote: boolean;
+  /** SOLO con `JUSTIFICACION_REQUERIDA`: los gastos que el API dijo que no son
+      bancarios (el diálogo los marca así y aparece el campo «¿Por qué…?»). */
+  noBancarios?: GastoNoBancarioDetalle[];
 }
 
 /** Rechazo del API al vincular, en palabras del operador. */
@@ -825,6 +1300,15 @@ export function mensajeErrorVincularGastos(
       return { ...textoMovimientoConLote(r.error, r.details), recargar: true, apiSinLote: false };
     case "GASTO_YA_CUBIERTO":
       return { ...textoGastoYaCubiertoLote(r.error, r.details, etiquetaDe), recargar: false, apiSinLote: false };
+    case "JUSTIFICACION_REQUERIDA":
+      return {
+        ...textoJustificacionRequerida(r.error, r.details),
+        recargar: false,
+        apiSinLote: false,
+        noBancarios: noBancariosDeDetalle(r.details),
+      };
+    case "GASTO_BODEGA":
+      return { ...textoGastoBodega(r.details, etiquetaDe), recargar: false, apiSinLote: false };
     case "MOVIMIENTO_YA_LIGADO":
     case "REVERSO_INVALIDO":
       return {
@@ -911,6 +1395,9 @@ export interface LineaGastoLote {
   factura: string | null;
   /** Tooltip de `factura` con el folio completo (UUID entero). */
   facturaTitulo: string | null;
+  /** Insignia «Efectivo» (6-oct-2026) si ese gasto NO pasó por el banco; null
+      con uno bancario o sin `medio_pago` (API previo). */
+  medio: BadgeVinculoNoBancario | null;
 }
 
 export interface ResumenLoteFila {
@@ -937,8 +1424,11 @@ function notaDe(g: MovimientoGasto): string | null {
   return primeraLinea(g.notas_primera_linea ?? g.notas ?? null);
 }
 
-/** Una línea del lote: lo que ESTE cargo pagó de ese gasto. */
-export function lineaGastoLote(g: MovimientoGasto, i = 0): LineaGastoLote {
+/**
+ * Una línea del lote: lo que ESTE cargo pagó de ese gasto. `notasCargo` (las
+ * del movimiento) alimenta el tooltip de la insignia de un gasto en efectivo.
+ */
+export function lineaGastoLote(g: MovimientoGasto, i = 0, notasCargo?: string | null): LineaGastoLote {
   const monto = numeroDe(g.monto);
   const parte = g.monto_parte != null ? numeroDe(g.monto_parte) : monto;
   const importe =
@@ -960,6 +1450,7 @@ export function lineaGastoLote(g: MovimientoGasto, i = 0): LineaGastoLote {
     secundaria,
     factura: etiquetaFolioComprobante(g.folio_comprobante),
     facturaTitulo: tituloFolioComprobante(g.folio_comprobante),
+    medio: badgeVinculoNoBancario(g, notasCargo),
   };
 }
 
@@ -978,7 +1469,7 @@ export function resumenLoteFila(m: MovimientoConGastos): ResumenLoteFila | null 
       : gastos.every((g) => g.monto_parte != null)
         ? centavos(gastos.reduce((acc, g) => acc + numeroDe(g.monto_parte), 0))
         : Math.abs(numeroDe(m.monto));
-  const lineas = gastos.slice(0, MAX_LINEAS_LOTE).map((g, i) => lineaGastoLote(g, i));
+  const lineas = gastos.slice(0, MAX_LINEAS_LOTE).map((g, i) => lineaGastoLote(g, i, m.notas));
   const resto = n - lineas.length;
   const dif = m.gastos_diferencia != null ? numeroDe(m.gastos_diferencia) : 0;
   // Los gastos que no caben siguen teniendo SU factura: van al tooltip de
@@ -1022,6 +1513,8 @@ export function textoBusquedaGastos(m: MovimientoConGastos): string {
         tituloFolioComprobante(g.folio_comprobante),
         String(g.monto ?? ""),
         g.monto_parte != null ? String(g.monto_parte) : null,
+        // «efectivo» encuentra los cargos ligados a un gasto en efectivo.
+        esMedioNoBancario(g.medio_pago) ? etiquetaMedioNoBancario(g.medio_pago) : null,
       ]
         .filter(Boolean)
         .join(" "),

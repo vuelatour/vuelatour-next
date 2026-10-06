@@ -37,6 +37,12 @@ export interface MovimientoGasto {
       «CFDI <uuid>». Viene en `gasto` y en cada `gastos[]`. Se rotula SIEMPRE
       con `lib/admin/conciliacion-folio.ts`; sin él no se pinta nada. */
   folio_comprobante?: string | null;
+  /** Medio de pago del gasto ligado (6-oct-2026, ADITIVO del API 0.0.63, en
+      `gasto` y en cada `gastos[]`): un gasto en EFECTIVO u otro medio no
+      bancario solo se liga con una justificación, y la columna lo marca con
+      `badgeVinculoNoBancario` (`lib/admin/conciliacion-no-bancario.ts`).
+      Ausente = API previo: no se pinta nada. */
+  medio_pago?: string | null;
 }
 
 /** Cómo quedó cada gasto tras ligar un cargo (respuesta del PATCH, 0.0.52). */
@@ -280,6 +286,59 @@ export interface GastoCandidato {
       `gastos-candidatos` y `sugerir`), misma fuente única que
       `MovimientoGasto.folio_comprobante`. Lo rotula `descripcionCandidatoGasto`. */
   folio_comprobante?: string | null;
+  /** ADITIVO (6-oct-2026, API 0.0.63): el gasto NO pasó por el banco
+      (EFECTIVO, PERSONAL_*; BODEGA jamás viaja). Solo llega con
+      `incluir_no_bancarios=true`, DESPUÉS de los bancarios; vincularlo exige
+      `justificacion`. Se lee SIEMPRE por `esCandidatoNoBancario` (sin el
+      campo decide `medio_pago`). */
+  no_bancario?: boolean | null;
+}
+
+/** Cargo del banco con el que YA está conciliado un gasto excluido (de la puente). */
+export interface CargoConciliadoExcluido {
+  movimiento_id: string;
+  /** Fecha del cargo (YYYY-MM-DD). */
+  fecha: string | null;
+  /** Lo que ESE cargo aporta al gasto. */
+  monto: number | string;
+  /** Moneda de la CUENTA del cargo. */
+  moneda: string | null;
+  /** Alias de la cuenta del cargo («GASTOS GNRAL»). */
+  cuenta: string | null;
+}
+
+/**
+ * Un gasto del MISMO monto que el cargo que NO entró a la lista de
+ * candidatos (6-oct-2026, API 0.0.63; el API manda hasta 5 por motivo, en
+ * orden de fecha).
+ */
+export interface GastoExcluidoCandidato {
+  id: string;
+  fecha_gasto?: string | null;
+  monto: number | string;
+  moneda?: string | null;
+  medio_pago?: string | null;
+  categoria?: string | null;
+  /** Para ligar al vuelo (`/admin/flights/:id`); null = gasto sin vuelo. */
+  vuelo_id?: string | null;
+  vuelo_folio?: number | null;
+  /** SOLO en `YA_CONCILIADO`: los cargos con los que ya está (el más viejo
+      primero). `[]` = conciliado sin cargo en la puente; `null` = el API no
+      pudo leer la puente (no se dice con qué cargo). */
+  conciliado_con?: CargoConciliadoExcluido[] | null;
+}
+
+/**
+ * Un grupo de `excluidos`: `motivo` = `EFECTIVO_U_OTRO_MEDIO` (medio de pago
+ * no bancario) | `YA_CONCILIADO` | `OTRA_MONEDA` | `FUERA_DE_VENTANA` (en
+ * ±120 días pero fuera de los ±`dias` pedidos). Un motivo nuevo del API se
+ * pinta con una frase genérica, NUNCA con el código. `n` = cuántos son en
+ * total (puede ser mayor que `gastos.length`).
+ */
+export interface ExcluidosCandidatos {
+  motivo: string;
+  n: number;
+  gastos: GastoExcluidoCandidato[];
 }
 
 /**
@@ -300,6 +359,14 @@ export interface GastosCandidatosResponse {
   ventana: { desde: string; hasta: string };
   candidatos: GastoCandidato[];
   truncado: boolean;
+  /** ADITIVO (6-oct-2026, API 0.0.63), SOLO con `candidatos` VACÍO: los
+      gastos del MISMO monto (el del cargo o, si `q` es un monto, el de `q`)
+      en ±120 días que no entraron, agrupados por motivo. Ausente (API previo,
+      o la lectura extra falló) ⇒ el vacío de siempre. Lo redacta
+      `textoExcluidosCandidatos`. */
+  excluidos?: ExcluidosCandidatos[] | null;
+  /** ADITIVO, viaja con `excluidos`: el monto con el que el API los buscó. */
+  excluidos_monto?: number | null;
 }
 
 /** Respuesta de `POST /v1/conciliacion/movimientos/:id/sugerir`. */

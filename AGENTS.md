@@ -5703,3 +5703,52 @@ banco>»); el panel lo enseña también AL CONCILIAR.
 - **Orden de deploy**: pyservices → migración → API 0.0.57 → panel. Con el
   panel nuevo y un API previo nada cambia (sin `folio_comprobante` no se pinta
   nada y la columna «Folio» dice «—»).
+
+## Conciliación: vincular un gasto en EFECTIVO con justificación (6-oct-2026, API 0.0.63)
+
+Caso real: cargo de $212.00 del 07-sep (ASUR CANCUN, GASTOS GNRAL) que ningún
+piloto capturó; el 27 y 28-sep hubo dos estacionamientos de $212.00 en
+EFECTIVO (vuelo #330) que Mari facturó para no perder la deducción. Decisión
+del cliente: ligar el cargo a uno de ellos SIN cambiar su medio de pago (la
+caja de los pilotos no se mueve) y dejar escrito por qué. La regla es del API:
+400 `JUSTIFICACION_REQUERIDA` sin justificación, 409 `GASTO_BODEGA` siempre,
+y la razón se anota en las notas del cargo y del gasto (desvincular la borra).
+
+- **Fuente única** `lib/admin/conciliacion-no-bancario.ts` (PURA): espejo de
+  `MEDIOS_BANCARIOS` (la prueba lo compara con el código del API),
+  `esCandidatoNoBancario` (manda `no_bancario`; sin él, el medio),
+  `apiOfreceNoBancarios`, textos del interruptor/insignia/campo, la
+  justificación (10–300 caracteres YA limpios: espacios y saltos colapsados,
+  `estadoJustificacion`, `justificacionParaEnviar`), `badgeVinculoNoBancario`
+  y `textoDesvincularNoBancario`. Los errores (`textoJustificacionRequerida`,
+  `textoGastoBodega`) y `excluidos` siguen en `conciliacion-lote.ts`.
+- **Diálogo «Vincular gasto»**: interruptor «Incluir gastos en efectivo y
+  otros medios» APAGADO por default; solo se monta cuando el API demostró que
+  lo sabe hacer (`no_bancario` en un candidato o `excluidos` en la respuesta;
+  pegajoso). Viaja `incluir_no_bancarios: true` (el fetcher lo vuelve
+  «true»; el `@ToBooleanQuery` del API NO acepta «1»). Cada candidato no
+  bancario lleva la insignia «Efectivo»; al marcar uno aparece el campo
+  obligatorio «¿Por qué se vincula un gasto en efectivo a este cargo?» y
+  «Vincular» espera a que sea válido (`faltaJustificacion`; nunca por la suma
+  local). La llave `justificacion` viaja SOLO con un no bancario marcado (sin
+  él, el cuerpo de siempre). Apagar el interruptor desmarca los no bancarios y
+  lo dice; un 400 `JUSTIFICACION_REQUERIDA` marca los que el API señaló. Bajo
+  el vacío, `excluidos` dice POR QUÉ no sale un gasto del mismo monto
+  (efectivo, ya conciliado, otra moneda, fuera de ventana; una frase por
+  motivo, ligas a su vuelo en otra pestaña, «Volver a buscar») y la del
+  efectivo ofrece «Mostrar estos gastos»: enciende el interruptor, amplía a
+  ±120 si alguno cae fuera y, si la búsqueda no es un monto, busca el monto de
+  esos gastos (con la lista vacía y sin monto, cien gastos del banco irían
+  antes que ellos).
+- **Tabla y menú**: junto al gasto ligado (1↔1 y cada línea del lote) sale
+  «Efectivo» con el tooltip «Vinculado con justificación: ver notas del
+  cargo» + las líneas «Vinculado a gasto en …» de `m.notas` (la tabla no
+  muestra esas notas); sin `medio_pago` (API previo) el marcado es IDÉNTICO.
+  La confirmación de desvincular avisa que esa nota se borra de los dos lados.
+- **Pruebas**: `lib/admin/__tests__/conciliacion-no-bancario.test.ts`,
+  `conciliacion-excluidos.test.ts`, `app/admin/conciliacion/__tests__/
+  no-bancario-actions.test.ts` y `components/admin/conciliacion/__tests__/
+  no-bancario.test.tsx` + `excluidos.test.tsx` (piezas en render estático,
+  API previo idéntico y el CABLEADO por regex).
+- **Orden de deploy**: API 0.0.63 → panel. Con el panel nuevo y el API
+  previo nada cambia (sin señal no hay interruptor ni insignia).

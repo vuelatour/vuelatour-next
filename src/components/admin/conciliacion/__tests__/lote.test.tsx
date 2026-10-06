@@ -254,8 +254,9 @@ describe("cableado del menú y del diálogo", () => {
 
   it("el lote viaja UNA vez y solo con 2+; con uno, el PATCH de siempre", () => {
     expect(dialogo.match(/linkMovimientoGastosAction\(/g)?.length).toBe(1);
-    expect(dialogo).toMatch(/ids\.length >= 2\s*\?\s*await linkMovimientoGastosAction\(/);
-    expect(dialogo).toMatch(/:\s*await linkMovimientoAction\(movimiento\.id, ids\[0\]\)/);
+    expect(dialogo).toMatch(/ids\.length >= 2\s*\?\s*await linkMovimientoGastosAction\(movimiento\.id, ids, \{ justificacion \}\)/);
+    // La justificación (6-oct-2026) solo viaja con un gasto no bancario marcado.
+    expect(dialogo).toMatch(/:\s*await linkMovimientoAction\(movimiento\.id, ids\[0\], \{ justificacion \}\)/);
   });
 
   it("las vetadas (otra moneda, cruzado) se filtran antes de viajar", () => {
@@ -281,8 +282,8 @@ describe("cableado del menú y del diálogo", () => {
     expect(dialogo).toContain("textoSugeridoSinMarcar(");
   });
 
-  it("el botón NUNCA se apaga por la suma local", () => {
-    expect(dialogo).toContain("disabled={pending || marcados.length === 0}");
+  it("el botón NUNCA se apaga por la suma local (solo por la justificación obligatoria)", () => {
+    expect(dialogo).toContain("disabled={pending || marcados.length === 0 || faltaJustificacion}");
     expect(dialogo).not.toMatch(/disabled=\{[^}]*cuadra/);
   });
 

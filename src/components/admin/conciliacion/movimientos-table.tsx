@@ -27,6 +27,7 @@ import {
   textoLoteSinDetalle,
   tieneGastoLigado,
 } from "@/lib/admin/conciliacion-lote";
+import { badgeVinculoNoBancario, type BadgeVinculoNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
   ETIQUETA_REVERSO,
   contraparteReverso,
@@ -45,6 +46,25 @@ import type { MovimientoBancario } from "@/types/conciliacion";
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
 const fmtDate = fmtDateOnly;
+
+/**
+ * «Efectivo» junto a un gasto ligado que NO pasó por el banco (6-oct-2026,
+ * API 0.0.63): se vinculó con una justificación; el tooltip la trae de las
+ * notas del cargo. Sin `medio_pago` (API previo) no se monta: el marcado
+ * queda IDÉNTICO.
+ */
+function BadgeMedioLigado({ badge }: { badge: BadgeVinculoNoBancario | null }) {
+  if (!badge) return null;
+  return (
+    <Badge
+      variant="outline"
+      className="ml-1.5 h-4 border-amber-500/40 bg-amber-500/10 px-1 py-0 align-middle text-[10px] text-amber-700 dark:text-amber-300"
+      title={badge.titulo}
+    >
+      {badge.texto}
+    </Badge>
+  );
+}
 
 interface MovimientosTableProps {
   movimientos: MovimientoBancario[];
@@ -162,6 +182,7 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
                     title={TITULO_VER_GASTO_CONCILIADO}
                   >
                     {l.principal}
+                    <BadgeMedioLigado badge={l.medio} />
                     <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
                       {l.secundaria}
                     </span>
@@ -221,6 +242,7 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
               {gasto.vuelo?.folio != null && (
                 <span className="text-muted-foreground"> · vuelo #{gasto.vuelo.folio}</span>
               )}
+              <BadgeMedioLigado badge={badgeVinculoNoBancario(gasto, m.notas)} />
               <span className="block text-[10px] text-muted-foreground">
                 {[
                   gasto.proveedor?.nombre,

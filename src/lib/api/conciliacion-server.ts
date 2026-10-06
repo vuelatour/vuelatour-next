@@ -125,6 +125,10 @@ export interface GastosCandidatosQuery {
   dias?: number;
   /** Tope de candidatos (1..300; default del API 100). */
   limite?: number;
+  /** 6-oct-2026 (API 0.0.63): también gastos NO bancarios (efectivo,
+      personal; nunca bodega). Viaja SOLO en true y como «true» (el
+      `@ToBooleanQuery` del API no acepta «1»); un API previo la rechaza. */
+  incluir_no_bancarios?: boolean;
 }
 
 /**
@@ -133,7 +137,7 @@ export interface GastosCandidatosQuery {
  * primero los que cuadran con el cargo. 400 `SOLO_CARGOS` con un abono; 503
  * `CONCILIACION_PARTES_NO_DISPONIBLE` sin la migración; 404 «Cannot GET» con
  * un API previo. Solo viajan los parámetros presentes (el DTO rechaza los
- * desconocidos).
+ * desconocidos): `incluir_no_bancarios` solo cuando es true.
  */
 export function gastosCandidatosMovimiento(movId: string, q: GastosCandidatosQuery = {}) {
   return apiServer<GastosCandidatosResponse>(
@@ -143,6 +147,7 @@ export function gastosCandidatosMovimiento(movId: string, q: GastosCandidatosQue
         ...(q.q ? { q: q.q } : {}),
         ...(q.dias != null ? { dias: q.dias } : {}),
         ...(q.limite != null ? { limite: q.limite } : {}),
+        ...(q.incluir_no_bancarios === true ? { incluir_no_bancarios: true } : {}),
       },
       cache: "no-store",
     },

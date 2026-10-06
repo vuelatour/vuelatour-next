@@ -22,6 +22,14 @@ import {
   esRutaInexistente,
 } from "@/lib/admin/conciliacion-lote";
 import {
+  MSG_JUSTIFICACION_API_VIEJO,
+  MSG_NO_BANCARIOS_API_VIEJO,
+  esDtoSinJustificacion,
+  esDtoSinNoBancarios,
+  estadoJustificacion,
+  limpiarJustificacion,
+} from "@/lib/admin/conciliacion-no-bancario";
+import {
   VENTANA_REVERSO_DIAS,
   abonosCandidatosParaCargo,
   candidatosDeRespuesta,
@@ -510,19 +518,65 @@ export async function estadoCuentaUrlAction(
   }
 }
 
+/**
+ * Opciones de la liga (6-oct-2026, API 0.0.63): `justificacion` = por qué se
+ * vincula un gasto que NO pasó por el banco (efectivo, personal). Solo la
+ * manda el diálogo cuando hay uno marcado; sin ella el cuerpo es el de
+ * siempre (un API previo rechaza llaves desconocidas).
+ */
+export interface OpcionesVinculoGasto {
+  justificacion?: string | null;
+}
+
+/**
+ * La justificación que viaja (limpia: espacios colapsados, sin orillas) o el
+ * error en es-MX ANTES de la red; ausente o vacía ⇒ no viaja.
+ */
+function justificacionQueViaja(
+  j: unknown,
+): { ok: true; valor: string | null } | { ok: false; error: string } {
+  if (j == null) return { ok: true, valor: null };
+  if (typeof j !== "string") return { ok: false, error: estadoJustificacion("").texto };
+  const limpia = limpiarJustificacion(j);
+  if (!limpia) return { ok: true, valor: null };
+  const e = estadoJustificacion(limpia);
+  return e.valida ? { ok: true, valor: limpia } : { ok: false, error: e.texto };
+}
+
+/** Con justificación, la nota también se escribe en el GASTO: Gastos se refresca. */
+function revalidarVinculo(conJustificacion: boolean) {
+  revalidatePath("/admin/conciliacion");
+  if (conJustificacion) revalidatePath("/admin/expenses");
+}
+
+/**
+ * Liga un CARGO con UN gasto (`PATCH movimientos/:id {gasto_id}`) o lo
+ * desliga TODO (`gasto_id: null`, también un lote). Con
+ * `opciones.justificacion` (gasto en EFECTIVO u otro medio no bancario) viaja
+ * `{gasto_id, justificacion}`: el API liga SIN tocar el medio de pago y anota
+ * la razón en el cargo y en el gasto. Al desligar nunca viaja. 400 «property
+ * justificacion should not exist» (API previo) ⇒ `API_SIN_JUSTIFICACION`.
+ */
 export async function linkMovimientoAction(
   movId: string,
   gastoId: string | null,
+  opciones: OpcionesVinculoGasto = {},
 ): Promise<ActionResult<MovimientoBancario>> {
+  const j = gastoId != null ? justificacionQueViaja(opciones?.justificacion) : ({ ok: true, valor: null } as const);
+  if (!j.ok) return { ok: false, code: "JUSTIFICACION_INVALIDA", error: j.error };
   try {
     const data = await apiServer<MovimientoBancario>(`/v1/conciliacion/movimientos/${movId}`, {
       method: "PATCH",
-      body: { gasto_id: gastoId },
+      body: j.valor ? { gasto_id: gastoId, justificacion: j.valor } : { gasto_id: gastoId },
     });
-    revalidatePath("/admin/conciliacion");
+    revalidarVinculo(j.valor != null);
     return { ok: true, data };
   } catch (err) {
-    return fail(err);
+    const r = fail<MovimientoBancario>(err);
+    if (j.valor && esDtoSinJustificacion(r)) {
+      return { ok: false, code: "API_SIN_JUSTIFICACION", status: 400, error: MSG_JUSTIFICACION_API_VIEJO };
+    }
+    return r;
   }
 }
 
@@ -541,27 +595,40 @@ const enteroEn = (v: unknown, min: number, max: number): number | undefined => {
  * JAMÁS devuelve `data: []` ante un fallo: el diálogo dice «no se pudo» (y
  * «Reintentar»), nunca «no hay gastos». 404 «Cannot GET» (API previo) ⇒
  * `code: 'RUTA_NO_DISPONIBLE'`: el diálogo pasa a la lista precargada de
- * siempre (un solo gasto).
+ * siempre (un solo gasto). `incluir_no_bancarios` (6-oct-2026, API 0.0.63)
+ * viaja SOLO en true (también efectivo y dinero personal, nunca bodega); un
+ * API previo responde 400 «property incluir_no_bancarios should not exist» ⇒
+ * `API_SIN_NO_BANCARIOS` con el texto que dice apagar el interruptor.
  */
 export async function gastosCandidatosAction(
   movId: string,
-  query: { q?: string | null; dias?: number | null; limite?: number | null } = {},
+  query: {
+    q?: string | null;
+    dias?: number | null;
+    limite?: number | null;
+    incluir_no_bancarios?: boolean | null;
+  } = {},
 ): Promise<ActionResult<GastosCandidatosResponse>> {
   if (!esUuid(movId)) return MOV_INVALIDO;
   const q = busquedaParaApi(query.q);
   const dias = enteroEn(query.dias, 1, 180);
   const limite = enteroEn(query.limite, 1, 300);
+  const incluir = query.incluir_no_bancarios === true;
   try {
     const data = await gastosCandidatosMovimiento(movId, {
       ...(q ? { q } : {}),
       ...(dias != null ? { dias } : {}),
       ...(limite != null ? { limite } : {}),
+      ...(incluir ? { incluir_no_bancarios: true } : {}),
     });
     return { ok: true, data };
   } catch (err) {
     const r = fail<GastosCandidatosResponse>(err);
     if (esRutaInexistente(r)) {
       return { ok: false, code: "RUTA_NO_DISPONIBLE", status: 404, error: MSG_LOTE_API_VIEJO };
+    }
+    if (incluir && esDtoSinNoBancarios(r)) {
+      return { ok: false, code: "API_SIN_NO_BANCARIOS", status: 400, error: MSG_NO_BANCARIOS_API_VIEJO };
     }
     return r;
   }
@@ -575,11 +642,14 @@ export async function gastosCandidatosAction(
  * `LOTE_INVALIDO`). Un API previo responde 400 «property gasto_ids should not
  * exist» ⇒ `code: 'API_SIN_LOTE'`. Los 409 (`CARGO_NO_CUADRA`,
  * `LOTE_MONEDA_DISTINTA`, `GASTO_YA_CUBIERTO`…) conservan code/status/details.
- * Desligar todo sigue siendo `linkMovimientoAction(id, null)`.
+ * Desligar todo sigue siendo `linkMovimientoAction(id, null)`. Con
+ * `opciones.justificacion` (un lote con algún gasto en EFECTIVO u otro medio
+ * no bancario, 6-oct-2026) viaja `{gasto_ids, justificacion}`.
  */
 export async function linkMovimientoGastosAction(
   movId: string,
   gastoIds: readonly string[],
+  opciones: OpcionesVinculoGasto = {},
 ): Promise<ActionResult<MovimientoBancario>> {
   if (!esUuid(movId)) return MOV_INVALIDO;
   const lista = Array.isArray(gastoIds) ? gastoIds : [];
@@ -587,17 +657,22 @@ export async function linkMovimientoGastosAction(
   const ids = [...new Set(lista)];
   if (ids.length === 0) return { ok: false, error: MSG_ELIGE_UN_GASTO };
   if (ids.length > MAX_GASTOS_LOTE) return { ok: false, error: MSG_TOPE_GASTOS_LOTE };
+  const j = justificacionQueViaja(opciones?.justificacion);
+  if (!j.ok) return { ok: false, code: "JUSTIFICACION_INVALIDA", error: j.error };
   try {
     const data = await apiServer<MovimientoBancario>(`/v1/conciliacion/movimientos/${movId}`, {
       method: "PATCH",
-      body: { gasto_ids: ids },
+      body: j.valor ? { gasto_ids: ids, justificacion: j.valor } : { gasto_ids: ids },
     });
-    revalidatePath("/admin/conciliacion");
+    revalidarVinculo(j.valor != null);
     return { ok: true, data };
   } catch (err) {
     const r = fail<MovimientoBancario>(err);
     if (esDtoSinLote(r)) {
       return { ok: false, code: "API_SIN_LOTE", status: 400, error: MSG_LOTE_API_VIEJO };
+    }
+    if (j.valor && esDtoSinJustificacion(r)) {
+      return { ok: false, code: "API_SIN_JUSTIFICACION", status: 400, error: MSG_JUSTIFICACION_API_VIEJO };
     }
     return r;
   }
