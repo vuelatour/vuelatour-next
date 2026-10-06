@@ -82,6 +82,8 @@ const CATEGORIA_LABELS: Record<string, string> = {
   TACOMETRO: "Lectura de tacómetro",
   GASTO_TICKET: "Ticket de gasto",
   REANALISIS: "Reanálisis de comprobante",
+  // Cron gastos-releer-folio del API 0.0.58 (6-oct-2026).
+  RELEER_FOLIO: "Relectura de folio",
   CONSTANCIA_FISCAL: "Constancia fiscal",
   COMBUSTIBLE_TICKET: "Ticket de combustible",
   INVENTARIO_ITEM: "Ficha de inventario",
