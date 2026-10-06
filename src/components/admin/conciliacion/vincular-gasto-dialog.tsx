@@ -61,6 +61,7 @@ import {
   VENTANA_CARGO_DIAS,
   bloqueoDeFila,
   botonVincularGastos,
+  busquedaAlCambiarNoBancarios,
   busquedaParaApi,
   busquedaParaMostrarNoBancarios,
   conSugeridoAlFrente,
@@ -88,18 +89,21 @@ import {
   textoVetadosAlVincular,
   toastVinculoGastos,
   type AvisoExcluidos,
+  type BusquedaPuestaPorInterruptor,
   type TonoSumaLote,
 } from "@/lib/admin/conciliacion-lote";
 import {
   AYUDA_INCLUIR_NO_BANCARIOS,
   AYUDA_JUSTIFICACION,
+  BOTON_COPIAR_RAZON,
   BOTON_MOSTRAR_NO_BANCARIOS,
   ETIQUETA_INCLUIR_NO_BANCARIOS,
   JUSTIFICACION_MAX,
   MSG_FALTA_JUSTIFICACION,
+  MSG_RAZON_COPIADA,
+  MSG_RAZON_NO_COPIADA,
   PLACEHOLDER_JUSTIFICACION,
   apiOfreceNoBancarios,
-  conNotaJustificacion,
   esCandidatoNoBancario,
   estadoJustificacion,
   etiquetaJustificacion,
@@ -110,6 +114,8 @@ import {
   marcadosSinNoBancarios,
   textoDesmarcadosNoBancarios,
   tituloBadgeCandidatoNoBancario,
+  toastsTrasVincular,
+  type AvisoRazonNoAnotada,
   type TonoJustificacion,
 } from "@/lib/admin/conciliacion-no-bancario";
 import { cn } from "@/lib/utils";
@@ -363,6 +369,38 @@ const sinConexion = (err: unknown) => ({
   error: err instanceof Error && err.message ? err.message : MSG_SIN_CONEXION,
 });
 
+/** Copia al portapapeles; false si el navegador no lo permite (sin https, sin permiso). */
+async function copiarAlPortapapeles(texto: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * La liga quedó pero la razón NO se escribió en las notas
+ * (`vinculo_no_bancario.notas_anotadas: false`, revisión 6-oct-2026): aviso
+ * ámbar que no se va solo, con la razón tecleada y «Copiar la razón». Al
+ * copiar el aviso se queda abierto (la razón sigue a la vista).
+ */
+function avisarRazonNoAnotada(aviso: AvisoRazonNoAnotada) {
+  toast.warning(aviso.titulo, {
+    description: aviso.descripcion,
+    duration: Infinity,
+    action: {
+      label: BOTON_COPIAR_RAZON,
+      onClick: (e) => {
+        e.preventDefault();
+        void copiarAlPortapapeles(aviso.razon).then((ok) =>
+          ok ? toast.success(MSG_RAZON_COPIADA) : toast.error(MSG_RAZON_NO_COPIADA),
+        );
+      },
+    },
+  });
+}
+
 function SelectorGastos({
   movimiento,
   gastos,
@@ -410,6 +448,9 @@ function SelectorGastos({
   const [incluirNoBancarios, setIncluirNoBancarios] = useState(false);
   const [apiNoBancarios, setApiNoBancarios] = useState(false);
   const [textoJustificacion, setTextoJustificacion] = useState("");
+  // La búsqueda que puso el interruptor (o «Mostrar estos gastos») y la de
+  // antes: apagarlo la devuelve si nadie la tocó.
+  const busquedaAutoRef = useRef<BusquedaPuestaPorInterruptor | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setBusqueda(busquedaParaApi(texto)), DEBOUNCE_BUSQUEDA_MS);
@@ -464,6 +505,7 @@ function SelectorGastos({
     truncado: data?.truncado ?? false,
     dias,
     incluyeNoBancarios: incluirNoBancarios,
+    montoCargo: movimiento.monto,
   });
   // El campo «¿Por qué…?» aparece con un gasto no bancario marcado y el
   // botón «Vincular» espera a que la justificación sea válida.
@@ -515,9 +557,28 @@ function SelectorGastos({
     consultarIa();
   };
 
-  /** Apagarlo desmarca los gastos no bancarios (ya no están en la lista) y lo dice. */
+  /** Lo que viaja ya, sin esperar el debounce (y el input dice lo mismo). */
+  const ponerBusqueda = (q: string) => {
+    setTexto(q);
+    setBusqueda(q);
+  };
+
+  /**
+   * Encenderlo SIN búsqueda busca el monto del cargo: la lista se corta en
+   * 100 y el efectivo va detrás de los del banco (sin el monto, podía ni
+   * salir). Apagarlo devuelve la búsqueda de antes si nadie la tocó y
+   * desmarca los gastos no bancarios (ya no están en la lista), y lo dice.
+   */
   const cambiarNoBancarios = (activo: boolean) => {
     setIncluirNoBancarios(activo);
+    const b = busquedaAlCambiarNoBancarios({
+      activo,
+      texto,
+      montoCargo: movimiento.monto,
+      auto: busquedaAutoRef.current,
+    });
+    busquedaAutoRef.current = b.auto;
+    if (b.q !== busquedaParaApi(texto)) ponerBusqueda(b.q);
     if (activo) return;
     const quitados = marcados.filter((m) => esCandidatoNoBancario(m)).length;
     if (quitados === 0) return;
@@ -531,10 +592,8 @@ function SelectorGastos({
     setIncluirNoBancarios(true);
     if (m.dias > dias) setDias(m.dias);
     const q = busquedaParaMostrarNoBancarios(busqueda, m.monto);
-    if (q !== busqueda) {
-      setTexto(q);
-      setBusqueda(q);
-    }
+    busquedaAutoRef.current = q !== busqueda ? { puesta: q, previa: busqueda } : null;
+    if (q !== busqueda) ponerBusqueda(q);
   };
 
   const alternar = (c: GastoCandidato) => {
@@ -553,11 +612,15 @@ function SelectorGastos({
     return f ? etiquetaCandidatoGasto(fichaCandidatoGasto(f)) : null;
   };
 
-  const tras = (r: ActionResult<MovimientoBancario>, conJustificacion = false) => {
+  const tras = (r: ActionResult<MovimientoBancario>, justificacion?: string) => {
     if (r.ok) {
-      // Con justificación, el toast dice que quedó anotada y que el medio no cambió.
-      const t = conNotaJustificacion(toastVinculoGastos(r.data), conJustificacion);
-      toast.success(t.titulo, t.descripcion ? { description: t.descripcion } : undefined);
+      // Con justificación, lo que el API CONFIRMÓ de las notas
+      // (`vinculo_no_bancario.notas_anotadas`): anotada ⇒ el toast lo dice;
+      // no anotada ⇒ además, el aviso ámbar con la razón para volver a
+      // escribirla (la liga sí quedó).
+      const t = toastsTrasVincular(toastVinculoGastos(r.data), justificacion, r.data?.vinculo_no_bancario);
+      toast.success(t.exito.titulo, t.exito.descripcion ? { description: t.exito.descripcion } : undefined);
+      if (t.aviso) avisarRazonNoAnotada(t.aviso);
       onCerrar();
       return;
     }
@@ -610,7 +673,7 @@ function SelectorGastos({
         ids.length >= 2
           ? await linkMovimientoGastosAction(movimiento.id, ids, { justificacion }).catch(sinConexion)
           : await linkMovimientoAction(movimiento.id, ids[0], { justificacion }).catch(sinConexion);
-      tras(r, justificacion != null);
+      tras(r, justificacion);
     });
   };
 

@@ -20,9 +20,15 @@
  *   - el interruptor, la insignia de la fila, el campo «¿Por qué…?» (10 a 300
  *     caracteres, `estadoJustificacion`) y lo que viaja
  *     (`justificacionParaEnviar`: SOLO con un gasto no bancario marcado);
+ *   - el toast tras vincular según lo que el API CONFIRMÓ de las notas
+ *     (`toastsTrasVincular`: `vinculo_no_bancario.notas_anotadas`);
  *   - la insignia de la columna «Conciliación» con la justificación que el
- *     API anotó en el cargo (`badgeVinculoNoBancario`) y la línea extra de la
- *     confirmación de desvincular (`textoDesvincularNoBancario`).
+ *     API anotó en el cargo PARA ESE gasto (`badgeVinculoNoBancario`,
+ *     `lineasVinculoDeGasto`) y la línea extra de la confirmación de
+ *     desvincular (`textoDesvincularNoBancario`);
+ *   - la línea «⚠ Conciliado con el cargo bancario del …» que el API deja en
+ *     las notas del GASTO (`esLineaNotaGastoVinculo`): es una constancia, NO
+ *     una discrepancia (`lib/admin/notas-gasto.ts`).
  * Los errores del API (`JUSTIFICACION_REQUERIDA`, `GASTO_BODEGA`) se redactan
  * en `conciliacion-lote.ts` junto a los demás errores de «Vincular gasto».
  * Ningún componente redacta estas frases a mano.
@@ -300,6 +306,70 @@ export function conNotaJustificacion(
   return { titulo: t.titulo, descripcion: `${previa}${union}${NOTA_TOAST_JUSTIFICACION}` };
 }
 
+/** Aviso cuando el API ligó pero NO pudo escribir la razón (`notas_anotadas: false`). */
+export const TITULO_RAZON_NO_ANOTADA = "La razón no quedó anotada";
+/** Acción del aviso: copia la razón (el aviso NO se cierra: la razón sigue a la vista). */
+export const BOTON_COPIAR_RAZON = "Copiar la razón";
+export const MSG_RAZON_COPIADA = "Razón copiada: pégala al volver a vincular.";
+export const MSG_RAZON_NO_COPIADA = "No se pudo copiar: escríbela de nuevo al volver a vincular.";
+
+/**
+ * Qué hacer cuando la razón no quedó escrita. El panel NO edita las notas de
+ * un cargo ya ligado (solo las de uno clasificado), así que la salida es la
+ * del API: desvincular (borra lo que haya quedado a medias) y volver a
+ * vincular con la misma razón, que la escribe en los dos lados con su forma
+ * EXACTA (la que el API reconoce para borrarla al desvincular).
+ */
+export function textoRazonNoAnotada(razon: string, varios = false): string {
+  return `La liga sí quedó, pero no se pudo escribir la razón en las notas del cargo y ${
+    varios ? "de los gastos" : "del gasto"
+  }. Para que quede escrita, desvincula este cargo y vuelve a vincularlo con la misma razón: «${razon}».`;
+}
+
+export interface AvisoRazonNoAnotada {
+  titulo: string;
+  descripcion: string;
+  /** La razón tal como viajó (la copia «Copiar la razón»). */
+  razon: string;
+}
+
+export interface ToastsTrasVincular {
+  /** El toast verde de siempre; dice que la razón quedó anotada SOLO si el API lo confirmó. */
+  exito: { titulo: string; descripcion?: string };
+  /** Ámbar y persistente: la liga quedó pero la razón NO se escribió. null en lo demás. */
+  aviso: AvisoRazonNoAnotada | null;
+}
+
+/**
+ * Los toasts tras vincular según lo que el API CONFIRMÓ de las notas
+ * (`vinculo_no_bancario.notas_anotadas`, revisión 6-oct-2026):
+ *  - sin justificación: el toast de siempre;
+ *  - `notas_anotadas: true`: + «La razón quedó anotada en el cargo y en el
+ *    gasto; su medio de pago no cambió.»;
+ *  - `notas_anotadas: false`: el de siempre (la liga SÍ quedó) + el aviso
+ *    ámbar con la razón, para volver a escribirla (antes se decía «quedó
+ *    anotada» y la razón tecleada se perdía en silencio);
+ *  - sin el campo (no entró ningún gasto no bancario: ya estaba ligado o
+ *    resultó del banco): el de siempre, SIN prometer una nota que nadie
+ *    escribió.
+ */
+export function toastsTrasVincular(
+  base: { titulo: string; descripcion?: string },
+  justificacion: string | null | undefined,
+  vinculo: { gasto_ids?: unknown; notas_anotadas?: unknown } | null | undefined,
+): ToastsTrasVincular {
+  const razon = limpiarJustificacion(justificacion);
+  const anotadas = vinculo?.notas_anotadas;
+  if (!razon || typeof anotadas !== "boolean") return { exito: base, aviso: null };
+  if (anotadas) return { exito: conNotaJustificacion(base, true), aviso: null };
+  const ids = vinculo?.gasto_ids;
+  const varios = Array.isArray(ids) && ids.length >= 2;
+  return {
+    exito: base,
+    aviso: { titulo: TITULO_RAZON_NO_ANOTADA, descripcion: textoRazonNoAnotada(razon, varios), razon },
+  };
+}
+
 // ───────────────────── Columna «Conciliación» y menú ─────────────────────
 
 export const TITULO_BADGE_VINCULO_NO_BANCARIO = "Vinculado con justificación: ver notas del cargo";
@@ -316,26 +386,98 @@ export function lineasVinculoNoBancario(notasCargo: string | null | undefined): 
     .filter((l) => RE_LINEA_VINCULO.test(l));
 }
 
+const MESES_NOTA = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] as const;
+
+/**
+ * `2026-09-28` ⇒ `28-sep-2026`, como la escribe el API en las notas del
+ * vínculo (`fechaNota` de `common/vinculo-no-bancario.util.ts`: cortando el
+ * texto, jamás `new Date`); sin fecha legible ⇒ `sin fecha`.
+ */
+export function fechaNotaVinculo(fecha: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fecha ?? ""));
+  const mes = m ? MESES_NOTA[Number(m[2]) - 1] : undefined;
+  return m && mes ? `${m[3]}-${mes}-${m[1]}` : "sin fecha";
+}
+
+/** `$1,234.50` (+ « USD» fuera de pesos), como `montoNota` del API (determinista, sin Intl). */
+export function montoNotaVinculo(monto: string | number | null | undefined, moneda?: string | null): string {
+  const n = Math.abs(Math.round((Number(monto) || 0) * 100) / 100);
+  const [ent, dec] = n.toFixed(2).split(".");
+  const m = (moneda ?? "").trim();
+  return `$${ent.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${dec}${m && m !== "MXN" ? ` ${m}` : ""}`;
+}
+
+/**
+ * La línea del CARGO (`lineaNotaCargo` del API): grupo 1 = fecha del gasto
+ * (`dd-mmm-aaaa`), grupo 2 = su detalle («Taxi / estacionamiento · vuelo
+ * #330 · $212.00», con «· gasto 3f9a1c2e» al final cuando el API ya anota
+ * la referencia del gasto).
+ */
+const RE_LLAVE_LINEA_CARGO = /^Vinculado a gasto en .+? del (\d{2}-[a-z]{3}-\d{4}|sin fecha) \((.+?)\): /;
+
+/** «… · gasto 3f9a1c2e» al final del detalle: los 8 primeros caracteres del id del gasto (`refGastoNota` del API). */
+const RE_REF_GASTO_NOTA = / · gasto ([\w-]{1,8})$/;
+
+/**
+ * Las líneas del cargo que nombran a ESTE gasto (revisión 6-oct-2026): en un
+ * lote con dos gastos en efectivo, la insignia de cada uno lleva SOLO la
+ * suya. La llave es la del API: la referencia «gasto 3f9a1c2e» (8 primeros
+ * caracteres del id) cuando la línea la trae; en la forma sin referencia,
+ * la misma fecha y el mismo monto (el monto va SIEMPRE al final del
+ * detalle).
+ */
+export function lineasVinculoDeGasto(
+  notasCargo: string | null | undefined,
+  g: {
+    id?: string | null;
+    fecha_gasto?: string | null;
+    monto?: string | number | null;
+    moneda?: string | null;
+  },
+): string[] {
+  const ref = typeof g.id === "string" ? g.id.trim().slice(0, 8).toLowerCase() : "";
+  const fecha = fechaNotaVinculo(g.fecha_gasto);
+  const monto = montoNotaVinculo(g.monto, g.moneda);
+  return lineasVinculoNoBancario(notasCargo).filter((l) => {
+    const k = RE_LLAVE_LINEA_CARGO.exec(l);
+    if (!k) return false;
+    const r = RE_REF_GASTO_NOTA.exec(k[2]);
+    if (r) return ref !== "" && r[1].toLowerCase() === ref;
+    return k[1] === fecha && (k[2] === monto || k[2].endsWith(` · ${monto}`));
+  });
+}
+
 export interface BadgeVinculoNoBancario {
   /** «Efectivo». */
   texto: string;
-  /** «Vinculado con justificación: ver notas del cargo» + las líneas de la nota (la tabla no muestra las notas del cargo). */
+  /** «Vinculado con justificación: ver notas del cargo» + la línea de la nota de ESE gasto (la tabla no muestra las notas del cargo). */
   titulo: string;
 }
 
 /**
  * La insignia junto a un gasto ligado que NO pasó por el banco (`medio_pago`
- * del embed, ADITIVO del API 0.0.63). null con un gasto bancario o sin el
- * campo (API previo): el marcado queda IDÉNTICO al de antes.
+ * del embed, ADITIVO del API 0.0.63). El tooltip lleva SOLO la línea del
+ * cargo que nombra a ese gasto (`lineasVinculoDeGasto`); sin ninguna, el
+ * título a secas. null con un gasto bancario o sin el campo (API previo): el
+ * marcado queda IDÉNTICO al de antes.
  */
 export function badgeVinculoNoBancario(
-  g: { medio_pago?: string | null } | null | undefined,
+  g:
+    | {
+        id?: string | null;
+        medio_pago?: string | null;
+        fecha_gasto?: string | null;
+        monto?: string | number | null;
+        moneda?: string | null;
+      }
+    | null
+    | undefined,
   notasCargo?: string | null,
 ): BadgeVinculoNoBancario | null {
   if (!g || !esMedioNoBancario(g.medio_pago)) return null;
   return {
     texto: etiquetaMedioNoBancario(g.medio_pago),
-    titulo: [TITULO_BADGE_VINCULO_NO_BANCARIO, ...lineasVinculoNoBancario(notasCargo)].join("\n"),
+    titulo: [TITULO_BADGE_VINCULO_NO_BANCARIO, ...lineasVinculoDeGasto(notasCargo, g)].join("\n"),
   };
 }
 
@@ -350,6 +492,21 @@ export function textoDesvincularNoBancario(gastos: readonly ({ medio_pago?: stri
   return n === 1
     ? "La justificación que se anotó al vincular el gasto en efectivo se borra del cargo y del gasto; su medio de pago sigue igual."
     : `La justificación que se anotó al vincular los ${n} gastos en efectivo u otros medios se borra del cargo y de cada gasto; su medio de pago sigue igual.`;
+}
+
+// ─────────────────── Notas del GASTO («Verificar / editar») ───────────────────
+
+/**
+ * Inicio EXACTO de la línea que el API escribe en las notas del GASTO al
+ * ligarlo con justificación (`lineaNotaGasto`): «⚠ Conciliado con el cargo
+ * bancario del 07-sep-2026 ($212.00 · ASUR CANCUN) sin cambiar el medio de
+ * pago (EFECTIVO): <razón> — <quién>, 06-oct-2026».
+ */
+export const PREFIJO_NOTA_GASTO_VINCULO = "⚠ Conciliado con el cargo bancario del ";
+
+/** ¿El renglón es la constancia de un vínculo no bancario (y NO una discrepancia)? */
+export function esLineaNotaGastoVinculo(linea: string | null | undefined): boolean {
+  return typeof linea === "string" && linea.trim().startsWith(PREFIJO_NOTA_GASTO_VINCULO);
 }
 
 // ───────────────────────────── API previo ─────────────────────────────

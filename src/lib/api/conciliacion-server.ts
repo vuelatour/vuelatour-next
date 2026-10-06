@@ -126,8 +126,9 @@ export interface GastosCandidatosQuery {
   /** Tope de candidatos (1..300; default del API 100). */
   limite?: number;
   /** 6-oct-2026 (API 0.0.63): también gastos NO bancarios (efectivo,
-      personal; nunca bodega). Viaja SOLO en true y como «true» (el
-      `@ToBooleanQuery` del API no acepta «1»); un API previo la rechaza. */
+      personal; nunca bodega). Viaja SOLO en true, como «true» (el
+      `@ToBooleanQuery` del API acepta «true» o «1»); un API previo la
+      rechaza. */
   incluir_no_bancarios?: boolean;
 }
 

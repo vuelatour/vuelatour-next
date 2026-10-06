@@ -3,8 +3,8 @@
  * (6-oct-2026, API 0.0.63). Se custodia el CONTRATO con el API:
  *
  *  1. candidatos: `incluir_no_bancarios` viaja SOLO en true y como booleano
- *     (el fetcher lo vuelve «true»: el `@ToBooleanQuery` del API no acepta
- *     «1»); un API previo (400 «property … should not exist») ⇒
+ *     (el fetcher lo vuelve «true»; el `@ToBooleanQuery` del API acepta
+ *     «true» o «1»); un API previo (400 «property … should not exist») ⇒
  *     `API_SIN_NO_BANCARIOS` con el texto en es-MX;
  *  2. ligar (uno o varios): `justificacion` viaja SOLO si la mandan, limpia
  *     (espacios colapsados) y validada ANTES de la red (10 a 300); sin ella el

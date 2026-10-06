@@ -58,6 +58,19 @@ export interface GastoEstadoParte {
   faltante?: string | number | null;
 }
 
+/**
+ * Gasto NO bancario ligado con justificación (6-oct-2026, ADITIVO de la
+ * RESPUESTA del PATCH `movimientos/:id`, API 0.0.63): viaja SOLO cuando
+ * entró un gasto en efectivo u otro medio no bancario. `notas_anotadas:
+ * false` = la liga YA quedó pero la razón NO se pudo escribir en las notas
+ * (el API no deshace la liga): el panel lo avisa en ámbar. Se lee SIEMPRE por
+ * `toastsTrasVincular` (`lib/admin/conciliacion-no-bancario.ts`).
+ */
+export interface VinculoNoBancarioRespuesta {
+  gasto_ids: string[];
+  notas_anotadas: boolean;
+}
+
 export interface MovimientoBancario {
   id: string;
   cuenta_bancaria_id: string;
@@ -109,6 +122,10 @@ export interface MovimientoBancario {
   gastos_suma?: number | string | null;
   gastos_diferencia?: number | string | null;
   gastos_estado?: GastoEstadoParte[] | null;
+  /** SOLO en la respuesta del PATCH (6-oct-2026, API 0.0.63): ver
+      `VinculoNoBancarioRespuesta`. Ausente = no entró ningún gasto no
+      bancario (o API previo). */
+  vinculo_no_bancario?: VinculoNoBancarioRespuesta | null;
   /** Cobro de vuelo conciliado (ABONOS): detalle + navegación al vuelo. */
   cobro?: {
     monto?: string | null;

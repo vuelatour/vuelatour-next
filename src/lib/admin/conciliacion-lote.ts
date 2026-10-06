@@ -55,6 +55,7 @@ import {
   MSG_JUSTIFICACION_API_VIEJO,
   MSG_NO_BANCARIOS_API_VIEJO,
   badgeVinculoNoBancario,
+  esCandidatoNoBancario,
   esMedioBodega,
   esMedioNoBancario,
   etiquetaMedioNoBancario,
@@ -521,6 +522,42 @@ export function busquedaParaMostrarNoBancarios(
   return m > 0 ? m.toFixed(2) : actual;
 }
 
+/** La búsqueda que puso el interruptor (o «Mostrar estos gastos») y la que había antes. */
+export interface BusquedaPuestaPorInterruptor {
+  puesta: string;
+  previa: string;
+}
+
+/**
+ * La búsqueda al mover el interruptor «Incluir gastos en efectivo y otros
+ * medios» (revisión 6-oct-2026). La lista se corta en 100 y el efectivo va
+ * detrás de los del banco: en el caso real (cargo de $212.00 del 07-sep)
+ * había 254 gastos del banco sin conciliar a ±30 días y, con el API que los
+ * ponía TODOS primero, encenderlo SIN búsqueda no traía ningún gasto en
+ * efectivo y parecía no hacer nada. Con el monto, salen con cualquier orden.
+ *  - Encenderlo con la búsqueda VACÍA ⇒ el monto del cargo («212.00»), como
+ *    «Mostrar estos gastos». Lo tecleado (monto o texto) se respeta.
+ *  - Apagarlo ⇒ si la búsqueda sigue siendo la que puso el interruptor,
+ *    vuelve la de antes.
+ * `auto` = lo que puso el interruptor (para deshacerlo al apagarlo).
+ */
+export function busquedaAlCambiarNoBancarios(s: {
+  activo: boolean;
+  /** Lo tecleado (se normaliza como lo que viaja). */
+  texto: string | null | undefined;
+  montoCargo: string | number | null | undefined;
+  auto: BusquedaPuestaPorInterruptor | null | undefined;
+}): { q: string; auto: BusquedaPuestaPorInterruptor | null } {
+  const actual = busquedaParaApi(s.texto);
+  if (!s.activo) {
+    return s.auto && actual === s.auto.puesta ? { q: s.auto.previa, auto: null } : { q: actual, auto: null };
+  }
+  const m = centavos(Math.abs(numeroDe(s.montoCargo)));
+  if (actual || !(m > 0)) return { q: actual, auto: null };
+  const q = m.toFixed(2);
+  return { q, auto: { puesta: q, previa: actual } };
+}
+
 // ─────────────────────────── Textos del diálogo ───────────────────────────
 
 export const TITULO_VINCULAR_GASTO = "Vincular gasto";
@@ -549,19 +586,32 @@ export function textoAmpliarVentana(dias: number): string {
 
 /**
  * Nota al pie: qué se ofrece y cómo se usa. Con el interruptor de gastos en
- * efectivo encendido (6-oct-2026) dice que también salen, después de los del
- * banco.
+ * efectivo encendido (6-oct-2026) dice que también salen y CÓMO encontrarlos
+ * (revisión: «sin búsqueda, primero los que cuadran con su monto» era falso
+ * para los de efectivo, que el API pone detrás de los del banco y la lista
+ * corta en 100: podían ni salir). No promete un orden: lo decide el API.
  */
 export function NOTA_VENTANA_CARGO(dias: number, incluyeNoBancarios = false): string {
-  const que = incluyeNoBancarios
-    ? "Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y, después, en efectivo u otros medios (nunca bodega)"
-    : "Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar";
-  return `${que}, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
+  if (incluyeNoBancarios) {
+    return `Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±${dias} días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
+  }
+  return `Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
 }
 
 /** Hubo más candidatos que el tope: la búsqueda los encuentra. */
 export function textoTruncado(n: number): string {
   return `Se muestran los primeros ${n}: escribe el monto, el proveedor o la nota para encontrar el que buscas.`;
+}
+
+/**
+ * Hubo más candidatos que el tope CON el interruptor encendido: los de
+ * efectivo pueden no alcanzar a salir (el API los pone detrás de los del
+ * banco; revisión 6-oct-2026). Dice con qué monto buscarlos.
+ */
+export function textoTruncadoNoBancarios(n: number, montoCargo?: string | number | null): string {
+  const m = centavos(Math.abs(numeroDe(montoCargo)));
+  const monto = m > 0 ? `el monto (${m.toFixed(2)})` : "el monto";
+  return `Se muestran los primeros ${n} y los gastos en efectivo pueden quedar fuera: escribe ${monto}, el proveedor o la nota para verlos.`;
 }
 
 /** «Vincular 1 gasto» / «Vincular 3 gastos» (sin marcados: «Vincular»). */
@@ -608,6 +658,9 @@ export function opcionesRespaldoVincular(
   const deIa: OpcionGastoRespaldo[] = [];
   for (const c of sugerencia?.candidatos ?? []) {
     if (!c?.id || vistos.has(c.id)) continue;
+    // Un gasto en efectivo pide una razón y el respaldo no tiene dónde
+    // escribirla (la página tampoco los precarga; revisión 6-oct-2026).
+    if (esCandidatoNoBancario(c)) continue;
     vistos.add(c.id);
     const ficha = fichaCandidatoGasto(c);
     const esSugerido = c.id === sug;
@@ -657,6 +710,8 @@ export function estadoBuscadorGastos(s: {
   dias?: number;
   /** El interruptor de gastos en efectivo está encendido (el vacío lo dice). */
   incluyeNoBancarios?: boolean;
+  /** Monto del cargo: con el interruptor y la lista cortada, con qué buscarlos. */
+  montoCargo?: string | number | null;
 }): { tipo: TipoEstadoBuscador; texto: string } {
   const q = (s.q ?? "").trim();
   const dias = s.dias ?? VENTANA_CARGO_DIAS;
@@ -681,7 +736,11 @@ export function estadoBuscadorGastos(s: {
             : `No hay gastos bancarios pendientes en ±${dias} días del cargo. ${salida}`,
         };
   }
-  return { tipo: "lista", texto: s.truncado ? textoTruncado(s.resultados) : "" };
+  if (!s.truncado) return { tipo: "lista", texto: "" };
+  return {
+    tipo: "lista",
+    texto: s.incluyeNoBancarios ? textoTruncadoNoBancarios(s.resultados, s.montoCargo) : textoTruncado(s.resultados),
+  };
 }
 
 // ────────────── Por qué un gasto del mismo monto NO aparece ──────────────
@@ -1257,18 +1316,46 @@ export function textoJustificacionRequerida(
   };
 }
 
-/** 409 `GASTO_BODEGA`: una salida de inventario jamás se liga a un cargo del banco. */
+/** Ids de `details.gastos_bodega[{id, fecha_gasto, monto}]` del 409, sin vacíos ni repetidos. */
+function idsBodegaDeDetalle(details: unknown): string[] {
+  const lista = (details as { gastos_bodega?: unknown } | null | undefined)?.gastos_bodega;
+  if (!Array.isArray(lista)) return [];
+  const ids = (lista as Array<{ id?: unknown } | null | undefined>).map((g) => (typeof g?.id === "string" ? g.id : ""));
+  return [...new Set(ids.filter(Boolean))];
+}
+
+/**
+ * 409 `GASTO_BODEGA` (API 0.0.63): una salida de inventario jamás se liga a
+ * un cargo del banco. El API manda `details.gastos_bodega[{id, fecha_gasto,
+ * monto}]` y un mensaje en es-MX que nombra la fecha («El gasto del 28 sep es
+ * una salida de inventario (Bodega): …»). Con la etiqueta de CADA gasto (los
+ * marcados) dice cuál quitar; si no, el mensaje del API; si tampoco, el
+ * genérico (revisión 6-oct-2026: se leía un `details.gasto_id` que el API no
+ * manda y el mensaje se tiraba).
+ */
 export function textoGastoBodega(
+  mensaje: string | null | undefined,
   details: unknown,
   etiquetaDe?: (gastoId: string) => string | null | undefined,
 ): { titulo: string; descripcion: string } {
-  const id = (details as { gasto_id?: unknown } | null)?.gasto_id;
-  const etiqueta = typeof id === "string" && etiquetaDe ? etiquetaDe(id) : null;
-  const base = "Es una salida de inventario y nunca pasa por el banco: quítalo de la selección.";
-  return {
-    titulo: "Un gasto de bodega no se vincula con el banco",
-    descripcion: etiqueta ? `Gasto: ${etiqueta}. ${base}` : base,
-  };
+  const ids = idsBodegaDeDetalle(details);
+  const varios = ids.length >= 2;
+  const titulo = varios
+    ? "Los gastos de bodega no se vinculan con el banco"
+    : "Un gasto de bodega no se vincula con el banco";
+  const quitar = varios ? "quítalos de la selección." : "quítalo de la selección.";
+  const base = varios
+    ? `Son salidas de inventario y nunca pasan por el banco: ${quitar}`
+    : `Es una salida de inventario y nunca pasa por el banco: ${quitar}`;
+  const etiquetas = etiquetaDe ? ids.map((id) => etiquetaDe(id)).filter((e): e is string => !!e) : [];
+  if (ids.length > 0 && etiquetas.length === ids.length) {
+    return { titulo, descripcion: `${varios ? "Gastos" : "Gasto"}: ${etiquetas.join("; ")}. ${base}` };
+  }
+  const delApi = sinPrefijoCodigo(mensaje);
+  if (delApi && !esErrorTecnico({ error: delApi })) {
+    return { titulo, descripcion: `${delApi} ${quitar.charAt(0).toUpperCase()}${quitar.slice(1)}` };
+  }
+  return { titulo, descripcion: base };
 }
 
 export interface MensajeErrorVincular {
@@ -1308,7 +1395,7 @@ export function mensajeErrorVincularGastos(
         noBancarios: noBancariosDeDetalle(r.details),
       };
     case "GASTO_BODEGA":
-      return { ...textoGastoBodega(r.details, etiquetaDe), recargar: false, apiSinLote: false };
+      return { ...textoGastoBodega(r.error, r.details, etiquetaDe), recargar: false, apiSinLote: false };
     case "MOVIMIENTO_YA_LIGADO":
     case "REVERSO_INVALIDO":
       return {

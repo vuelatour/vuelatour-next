@@ -54,6 +54,7 @@ import {
   fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
+import { tieneDiscrepanciaIa } from "@/lib/admin/notas-gasto";
 import {
   ETIQUETA_TIPO_COMBUSTIBLE,
   PLACEHOLDER_TIPO_COMBUSTIBLE,
@@ -906,8 +907,11 @@ export function ExpenseVerifyDialog({
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">
-          {/* Si el enriquecimiento IA marcó ⚠ (piloto vs documento), aquí se corrige. */}
-          {(gasto.notas ?? "").includes("⚠") && (
+          {/* Si el enriquecimiento IA marcó ⚠ (piloto vs documento), aquí se corrige.
+              La línea «⚠ Conciliado con el cargo bancario del …» (gasto en
+              efectivo ligado con justificación, 6-oct-2026) NO es una
+              discrepancia: `tieneDiscrepanciaIa` la ignora. */}
+          {tieneDiscrepanciaIa(gasto.notas) && (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
               La IA detectó discrepancias entre lo capturado y el comprobante (ver ⚠ en
               notas). Corrige aquí el dato correcto — monto, fecha y moneda son editables.

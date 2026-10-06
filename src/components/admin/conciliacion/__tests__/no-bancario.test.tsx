@@ -11,7 +11,10 @@
  *     justificación del cargo en el tooltip; sin `medio_pago` (API previo) el
  *     marcado es IDÉNTICO;
  *  3. API previo: el diálogo de siempre (sin interruptor ni campo);
- *  4. el CABLEADO por regex sobre el fuente.
+ *  4. el CABLEADO por regex sobre el fuente: el toast según
+ *     `vinculo_no_bancario.notas_anotadas`, la búsqueda del interruptor, la
+ *     lista de respaldo sin efectivo y «Verificar / editar» que no toma la
+ *     línea ⚠ del vínculo por una discrepancia (revisión 6-oct-2026).
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -216,6 +219,23 @@ describe("columna «Conciliación»: la insignia del gasto ligado", () => {
     expect(antes).not.toContain("Vinculado con justificación");
   });
 
+  it("lote con DOS gastos en efectivo: el tooltip de cada insignia trae SOLO su línea", () => {
+    const L27 =
+      "Vinculado a gasto en EFECTIVO del 27-sep-2026 (Taxi / estacionamiento · vuelo #330 · $212.00): Ticket facturado del 27 — Itzi, 06-oct-2026";
+    const partes = [
+      gasto({ id: "b1", medio_pago: "EFECTIVO", fecha_gasto: "2026-09-27", monto_parte: "212.00" }),
+      gasto({ id: "b2", medio_pago: "EFECTIVO", monto_parte: "212.00" }),
+    ];
+    const html = tabla([
+      mov({ monto: "424.00", gastos_n: 2, gastos: partes, gastos_suma: 424, notas: `${L27}\n${LINEA_NOTA}` }),
+    ]);
+    expect(cuenta(html, ">Efectivo</span>")).toBe(2);
+    expect(html).toContain(`title="Vinculado con justificación: ver notas del cargo\n${L27}"`);
+    expect(html).toContain(`title="Vinculado con justificación: ver notas del cargo\n${LINEA_NOTA}"`);
+    // Ninguna insignia junta las dos líneas.
+    expect(html).not.toContain(`${L27}\n${LINEA_NOTA}"`);
+  });
+
   it("lote mixto: solo la línea del gasto en efectivo lleva la insignia", () => {
     const partes = [
       gasto({ id: "a1", medio_pago: "TARJETA_CORP", monto_parte: "212.00", vuelo: { folio: 338 } }),
@@ -250,6 +270,8 @@ describe("cableado", () => {
   const dialogo = leer("../vincular-gasto-dialog.tsx");
   const acciones = leer("../movimiento-actions.tsx");
   const tablaSrc = leer("../movimientos-table.tsx");
+  const pagina = leer("../../../../app/admin/conciliacion/page.tsx");
+  const verificar = leer("../../expenses/expense-verify-dialog.tsx");
 
   it("el interruptor arranca APAGADO y solo aparece cuando el API lo demostró (pegajoso)", () => {
     expect(dialogo).toContain("const [incluirNoBancarios, setIncluirNoBancarios] = useState(false);");
@@ -266,10 +288,20 @@ describe("cableado", () => {
   });
 
   it("apagarlo desmarca los gastos en efectivo y lo dice; «Mostrar estos gastos» lo enciende y los busca", () => {
-    expect(dialogo).toMatch(/const cambiarNoBancarios = [\s\S]{0,400}setMarcados\(\(prev\) => marcadosSinNoBancarios\(prev\)\);\s*toast\.info\(textoDesmarcadosNoBancarios\(quitados\)\);/);
+    expect(dialogo).toMatch(/const cambiarNoBancarios = [\s\S]{0,900}setMarcados\(\(prev\) => marcadosSinNoBancarios\(prev\)\);\s*toast\.info\(textoDesmarcadosNoBancarios\(quitados\)\);/);
     expect(dialogo).toMatch(/const mostrarNoBancarios = [\s\S]{0,200}setIncluirNoBancarios\(true\);/);
     expect(dialogo).toContain("const q = busquedaParaMostrarNoBancarios(busqueda, m.monto);");
     expect(dialogo).toContain("if (m.dias > dias) setDias(m.dias);");
+  });
+
+  it("encenderlo SIN búsqueda busca el monto del cargo y apagarlo devuelve la de antes (helper puro)", () => {
+    expect(dialogo).toMatch(
+      /const cambiarNoBancarios = [\s\S]{0,200}const b = busquedaAlCambiarNoBancarios\(\{\s*activo,\s*texto,\s*montoCargo: movimiento\.monto,\s*auto: busquedaAutoRef\.current,\s*\}\);\s*busquedaAutoRef\.current = b\.auto;\s*if \(b\.q !== busquedaParaApi\(texto\)\) ponerBusqueda\(b\.q\);/,
+    );
+    // «Mostrar estos gastos» también deja dicho qué búsqueda puso.
+    expect(dialogo).toContain("busquedaAutoRef.current = q !== busqueda ? { puesta: q, previa: busqueda } : null;");
+    // La lista cortada con el interruptor dice con qué monto buscar.
+    expect(dialogo).toContain("incluyeNoBancarios: incluirNoBancarios,\n    montoCargo: movimiento.monto,\n  });");
   });
 
   it("la fila lleva la insignia; el campo aparece con un no bancario marcado y apaga «Vincular»", () => {
@@ -289,8 +321,30 @@ describe("cableado", () => {
     expect(iJust).toBeGreaterThan(-1);
     expect(iFalta).toBeGreaterThan(iJust);
     expect(iLlamada).toBeGreaterThan(iFalta);
-    expect(dialogo).toContain("tras(r, justificacion != null);");
-    expect(dialogo).toContain("conNotaJustificacion(toastVinculoGastos(r.data), conJustificacion)");
+    expect(dialogo).toContain("tras(r, justificacion);");
+  });
+
+  it("el toast sale de lo que el API CONFIRMÓ (`notas_anotadas`); sin anotar, aviso ámbar que no se va solo", () => {
+    expect(dialogo).toContain(
+      "const t = toastsTrasVincular(toastVinculoGastos(r.data), justificacion, r.data?.vinculo_no_bancario);",
+    );
+    expect(dialogo).toMatch(/toast\.success\(t\.exito\.titulo,[\s\S]{0,120}\);\s*if \(t\.aviso\) avisarRazonNoAnotada\(t\.aviso\);\s*onCerrar\(\);/);
+    // Ya nadie decide «quedó anotada» sin mirar la respuesta.
+    expect(dialogo).not.toContain("conNotaJustificacion(");
+    expect(dialogo).toMatch(
+      /function avisarRazonNoAnotada\(aviso: AvisoRazonNoAnotada\) \{\s*toast\.warning\(aviso\.titulo, \{\s*description: aviso\.descripcion,\s*duration: Infinity,\s*action: \{\s*label: BOTON_COPIAR_RAZON,\s*onClick: \(e\) => \{\s*e\.preventDefault\(\);\s*void copiarAlPortapapeles\(aviso\.razon\)/,
+    );
+    expect(dialogo).toContain("ok ? toast.success(MSG_RAZON_COPIADA) : toast.error(MSG_RAZON_NO_COPIADA)");
+  });
+
+  it("la lista de RESPALDO no ofrece gastos en efectivo (no hay dónde escribir la razón)", () => {
+    expect(pagina).toContain(".filter((g) => !esMedioNoBancario(g.medio_pago))");
+    expect(pagina).not.toContain('.filter((g) => g.medio_pago !== "BODEGA")');
+  });
+
+  it("«Verificar / editar»: la línea ⚠ del vínculo no enciende «La IA detectó discrepancias»", () => {
+    expect(verificar).toContain("{tieneDiscrepanciaIa(gasto.notas) && (");
+    expect(verificar).not.toContain('includes("⚠")');
   });
 
   it("400 JUSTIFICACION_REQUERIDA marca los gastos que dijo el API", () => {
@@ -299,7 +353,7 @@ describe("cableado", () => {
 
   it("la nota al pie y el vacío saben si el interruptor está encendido", () => {
     expect(dialogo).toContain("NOTA_VENTANA_CARGO(dias, incluirNoBancarios)");
-    expect(dialogo).toContain("incluyeNoBancarios: incluirNoBancarios,\n  });");
+    expect(dialogo).toMatch(/estadoBuscadorGastos\(\{[\s\S]{0,250}incluyeNoBancarios: incluirNoBancarios,\s*montoCargo: movimiento\.monto,\s*\}\);/);
   });
 
   it("el diálogo no redacta estas frases a mano (salen de conciliacion-no-bancario)", () => {
@@ -310,6 +364,9 @@ describe("cableado", () => {
     expect(codigo).not.toContain("Mostrar estos gastos");
     expect(codigo).not.toMatch(/>\s*Efectivo\s*</);
     expect(codigo).not.toContain("No cambia el medio de pago");
+    expect(codigo).not.toContain("Copiar la razón");
+    expect(codigo).not.toContain("no quedó anotada");
+    expect(codigo).not.toContain("pueden quedar fuera");
   });
 
   it("la tabla pinta la insignia del helper (1↔1 y cada línea del lote)", () => {

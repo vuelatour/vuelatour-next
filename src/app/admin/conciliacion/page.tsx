@@ -40,6 +40,7 @@ import {
   textoFaltanteGasto,
 } from "@/lib/admin/conciliacion-parcial";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
+import { esMedioNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import { isApiError } from "@/lib/api/errors";
 import type { PaywiseAuditoria } from "@/types/conciliacion";
 import { Degradaciones } from "@/lib/api/degradar";
@@ -169,10 +170,13 @@ export default async function ConciliacionPage({
     .filter((c) => c.tipo === "PASARELA")
     .map((c) => ({ id: c.id, label: `${c.alias} (${c.moneda})`, moneda: c.moneda }));
   const gastosOpts = gastosRes.data
-    // Los gastos BODEGA (salida de inventario) NO son egresos bancarios: la
-    // conciliación los excluye por diseño (igual que el auto-cruce del API),
-    // así que tampoco se ofrecen para vincular a mano un cargo del banco.
-    .filter((g) => g.medio_pago !== "BODEGA")
+    // Lista de RESPALDO del diálogo «Vincular gasto» (API sin candidatos):
+    // solo gastos que pasaron por el banco. BODEGA (salida de inventario)
+    // nunca se liga, y uno en EFECTIVO o con dinero personal pide una razón
+    // escrita (6-oct-2026, 400 JUSTIFICACION_REQUERIDA) que el respaldo no
+    // tiene dónde escribir: esos se vinculan desde la lista con el
+    // interruptor «Incluir gastos en efectivo y otros medios».
+    .filter((g) => !esMedioNoBancario(g.medio_pago))
     .map((g) => {
       // PAGOS PARCIALES (14-sep-2026): una factura pagada en dos cargos deja
       // el gasto ligado pero NO cubierto — el diálogo lo dice antes de ligar
