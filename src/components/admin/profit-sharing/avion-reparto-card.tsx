@@ -189,12 +189,14 @@ export function AvionRepartoCard({
             value={avion.ingresos.cobrado_usd}
             ingreso
           />
-          {/* Solo con un API previo al 28-ago (hoy siempre 0: la comisión del
-              vendedor es ingreso/egreso de VuelaTour, no costo del avión). */}
+          {/* Regla de septiembre 2026 (API 0.0.65): el avión absorbe su parte
+              de la comisión bancaria de sus cobros y la provisión de la
+              comisión del vendedor; antes de esa vigencia el API manda 0 y la
+              fila no se pinta. */}
           {(avion.ingresos.comisiones_venta_usd ?? 0) > 0 && (
             <CascadaRow
-              label="Comisiones de venta"
-              sublabel="regla anterior — hoy es ingreso/egreso de VuelaTour"
+              label="Comisiones (banco + vendedor)"
+              sublabel="regla sep-2026: parte del avión de la comisión bancaria + provisión del vendedor"
               value={avion.ingresos.comisiones_venta_usd}
               deduccion
             />
