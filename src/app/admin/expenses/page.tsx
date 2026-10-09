@@ -37,6 +37,7 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "@/lib/admin/url-params";
 import { MEDIOS_CAPTURA_VALUES } from "@/lib/admin/medios-pago";
 import { FILTRO_NO_FACTURADA, FACTURACION_ESTADOS } from "@/lib/admin/facturacion-estatus";
+import { conciliadoDeFiltroBanco } from "@/lib/admin/conciliacion-estado";
 import { avionCatalogoGasto, type AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +88,8 @@ export default async function ExpensesPage({
     desde?: string;
     hasta?: string;
     facturacion?: string;
+    /** conciliados | sin_conciliar (columna «Banco», 9-oct-2026). */
+    banco?: string;
     /** "7d" = solo lo CAPTURADO en los últimos 7 días (aunque el ticket
      *  traiga otra fecha): lo que se subió desde la app esta semana. */
     cap?: string;
@@ -135,6 +138,9 @@ export default async function ExpensesPage({
     // Semáforo de facturación (PENDIENTE/SOLICITADA/FACTURADA/NO_FACTURABLE
     // + el meta-valor NO_FACTURADA).
     estatus_facturacion: valorDeCatalogo(sp.facturacion, FACTURACION_FILTRO_VALUES),
+    // Conciliación con el banco (9-oct-2026): conciliados / sin conciliar.
+    // Hereda al Excel como el resto.
+    conciliado: conciliadoDeFiltroBanco(sp.banco),
     // Fecha de CAPTURA (28-ago): "¿por qué no veo lo que subí desde la app?"
     // — el ticket puede traer otra fecha (la IA leyó 2025) y quedar al fondo.
     // Desde el 7-sep el API corta sobre capturado_en (momento real de
@@ -308,7 +314,13 @@ export default async function ExpensesPage({
             label="Exportar Excel"
             // El Excel sale con LOS MISMOS filtros que se ven en pantalla
             // (incluye el resumen de efectivos por persona y su facturado).
-            query={{ aeronave_id: aeronaveId, ...filtrosExtra }}
+            query={{
+              aeronave_id: aeronaveId,
+              ...filtrosExtra,
+              // El botón arma un querystring de textos; el API lee "true"/"false".
+              conciliado:
+                filtrosExtra.conciliado == null ? undefined : String(filtrosExtra.conciliado),
+            }}
           />
         </div>
       </div>

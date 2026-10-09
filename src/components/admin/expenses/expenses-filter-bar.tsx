@@ -6,6 +6,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { opcionesFacturacionFiltro } from "@/lib/admin/facturacion-estatus";
+import { FILTRO_BANCO } from "@/lib/admin/conciliacion-estado";
 
 // Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
 // el ORDEN del filtro. BODEGA queda fuera a propósito (cargo contable de
@@ -68,6 +69,7 @@ export function ExpensesFilterBar({
   const desde = sp.get("desde") ?? "";
   const hasta = sp.get("hasta") ?? "";
   const facturacion = sp.get("facturacion") ?? "";
+  const banco = sp.get("banco") ?? "";
   const capDesde = sp.get("cap_desde") ?? "";
   const capHasta = sp.get("cap_hasta") ?? "";
   const orden = sp.get("orden") === "captura" ? "captura" : "fecha";
@@ -77,6 +79,7 @@ export function ExpensesFilterBar({
     desde ||
     hasta ||
     facturacion ||
+    banco ||
     capDesde ||
     capHasta ||
     orden !== "fecha"
@@ -104,6 +107,17 @@ export function ExpensesFilterBar({
           value={facturacion}
           onChange={(v) => set({ facturacion: v })}
           placeholder="Todas"
+        />
+      </div>
+      <div className="w-40">
+        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+          Banco
+        </p>
+        <SearchableSelect
+          options={[...FILTRO_BANCO]}
+          value={banco}
+          onChange={(v) => set({ banco: v })}
+          placeholder="Todos"
         />
       </div>
       <div className="w-48">
@@ -188,6 +202,7 @@ export function ExpensesFilterBar({
               desde: null,
               hasta: null,
               facturacion: null,
+              banco: null,
               cap_desde: null,
               cap_hasta: null,
               orden: null,

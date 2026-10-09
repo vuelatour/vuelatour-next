@@ -47,6 +47,9 @@ export interface ListGastosQuery {
   compra_id?: string;
   pendientes?: boolean;
   duplicados?: boolean;
+  /** Conciliación con el banco: true = cubiertos por cargos, false = sin
+   *  cubrir (incluye parciales). Sin el campo, todos. */
+  conciliado?: boolean;
   /** Fecha de CAPTURA (día Cancún): lo subido desde esa fecha, sin importar la fecha del ticket. */
   capturado_desde?: string;
   capturado_hasta?: string;

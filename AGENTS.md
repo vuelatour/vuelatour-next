@@ -1206,6 +1206,29 @@ de oficina son ADMIN (Alejandro Villalobos también, y NO tiene el permiso).
   vuelatour-next --environment production --since 1h --level error` (en el
   plan Hobby los registros duran 1 hora).
 
+## Columna y filtro «Banco» en Gastos (9-oct-2026, API 0.0.67)
+
+Pedido de oficina: «un apartado donde me diga si el gasto está conciliado con
+el banco». Es una TERCERA pregunta, aparte de «¿trajo papel?» (comprobante) y
+«¿ya se facturó?» (semáforo de facturación): «¿ya cruzó con el estado de
+cuenta?».
+
+- FUENTE ÚNICA `src/lib/admin/conciliacion-estado.ts` (PURO):
+  `estadoBancoGasto(g)` → CONCILIADO (`g.conciliado`, que solo escribe la BD al
+  cubrir el gasto; también un efectivo ligado con justificación) / PARCIAL
+  (`estadoParcialDeGasto`: cargos ligados que no cubren; el tooltip dice lo
+  que falta) / SIN_CONCILIAR (medio bancario `MEDIOS_BANCARIOS_CONCILIACION`
+  sin cargo: lo que la oficina persigue, en rojo) / NO_APLICA (efectivo,
+  personal, bodega: «—»). Espejo de `estado-banco.util.ts` del API, que
+  pinta la misma columna en el Excel de gastos.
+- `BancoBadge` (`components/admin/expenses/banco-badge.tsx`) = la columna
+  «Banco» de `expenses-table.tsx`, entre Facturación y las acciones. Solo
+  lectura: el cruce vive en Conciliación.
+- Filtro «Banco» del `expenses-filter-bar` (`?banco=conciliados|sin_conciliar`
+  → `conciliado` true/false del API vía `conciliadoDeFiltroBanco`; el Excel
+  hereda el filtro como texto "true"/"false"). Un valor desconocido se ignora.
+- Tests: `__tests__/banco-badge.test.tsx`.
+
 ## Conciliación Paywise (9-sep-2026)
 
 - Cuenta bancaria con `tipo` BANCO | PASARELA (Paywise = PASARELA): el

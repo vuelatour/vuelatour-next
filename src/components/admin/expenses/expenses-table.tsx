@@ -9,6 +9,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
+import { BancoBadge } from "@/components/admin/expenses/banco-badge";
 import { GastoFacturaButton } from "@/components/admin/expenses/gasto-factura-button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
@@ -490,6 +491,15 @@ export function ExpensesTable({
               <GastoFacturaButton gasto={f.gasto} />
             </span>
           ),
+      },
+      {
+        // ¿Ya cruzó con el banco? (9-oct-2026, pedido de oficina: «un
+        // apartado donde me diga si el gasto está conciliado con el banco»).
+        // Solo lectura; el cruce vive en Conciliación.
+        key: "banco",
+        header: "Banco",
+        cellClassName: "whitespace-nowrap",
+        cell: (f) => (f.kind === "compra" ? GUION : <BancoBadge gasto={f.gasto} />),
       },
       {
         key: "acciones",
