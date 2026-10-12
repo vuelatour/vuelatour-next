@@ -303,6 +303,19 @@ export function textoHojas(n: number): string {
   return n === 1 ? "1 hoja" : `${n} hojas`;
 }
 
+/**
+ * Botón «Pantalla completa» de la vista «pantalla» del libro (12-oct-2026,
+ * tarde): sus textos viven aquí, en lib PURO, y no en el componente
+ * "use client" (un server component que los importara de ahí recibiría una
+ * referencia de cliente, no el texto).
+ */
+export const ETIQUETA_PANTALLA_COMPLETA = "Pantalla completa";
+export const ETIQUETA_SALIR_PANTALLA_COMPLETA = "Salir";
+/** Nombre accesible con la pantalla completa activa (contiene la etiqueta visible «Salir»). */
+export const NOMBRE_SALIR_PANTALLA_COMPLETA = "Salir de pantalla completa";
+export const TITULO_PANTALLA_COMPLETA = "Ver el libro a toda la pantalla (Esc para salir)";
+export const TITULO_SALIR_PANTALLA_COMPLETA = "Volver al panel";
+
 export type TeclaFlecha = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
 
 export function esTeclaFlecha(tecla: string): tecla is TeclaFlecha {

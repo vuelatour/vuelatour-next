@@ -4133,6 +4133,13 @@ movimientos: queda duplicado». Hasta hoy el pago al vendedor solo existía como
 PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
 20260928000001 enum y 20260928000002 CHECK; invariante 31 del API).
 
+- **12-oct-2026 (API 0.0.73, invariante 58 del API)**: «otros movimientos»
+  ya NO provisiona el pago al vendedor: sin el gasto real «Comisión del
+  vendedor» la fila del vuelo no lleva egreso (el ingreso cobrado se queda).
+  Por eso `AYUDA_COMISION_VENDEDOR` y `hojaDestinoGasto` ya no dicen
+  «reemplaza la provisión» (pruebas en `categorias-gasto.test.ts` y
+  `comision-vendedor-ui.test.tsx`). Lo de abajo describe el estado del
+  28-sep; el Libro Dinero sigue provisionando.
 - **Categoría nueva `COMISION_VENDEDOR`** = «Comisión del vendedor», destino
   «Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)»
   (tabla canónica IDÉNTICA en API, panel y app — `lib/admin/categorias-gasto.ts`).
@@ -4191,7 +4198,8 @@ PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
 - **Hint «Con lo elegido cae en:» corregido** (`hojaDestinoGasto`; CLAUDE.md:
   los flujos confusos se corrigen — justo esa pista engañó al cliente). Orden:
   PERSONAL_DUENO → **COMISION_VENDEDOR** («Balance general VuelaTour · Otros
-  movimientos (reemplaza la provisión del pago al vendedor)») → **empresa**
+  movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él
+  esa fila no lleva egreso)») → **empresa**
   (`CATEGORIAS_EMPRESA` = OTRO/NOMINA/GASOLINA/FIJO/VISITA, sincronizada con
   `CATEGORIAS_GASTO_EMPRESA` del API y congelada en el test contra
   `DESTINO_POR_DEFECTO`: con vuelo «… · Otros gastos (el vuelo queda solo como
@@ -5891,6 +5899,124 @@ Fase 2 (pendiente): editar una celda y que el registro ligado cambie.
   Falta: que pyservices anote los vínculos en los balances, un PATCH por tipo
   de registro en el API y, en el panel, la edición en la celda + regenerar
   el libro.
+
+### Vista compacta (12-oct-2026, tarde)
+
+Pedido del cliente, textual, sobre la captura del «Balance mensual» de
+septiembre: «ajustar que se vea en grande el "Excel" y hacer muy sutil el
+título y filtro de fechas para que eso en el navbar ocupe lo menos posible y
+se muestre más de la pantalla del "excel"». Antes, encima del libro iban
+apilados el BackLink, «Tesorería · Reportes», el H1 grande, el párrafo con el
+periodo y la descripción larga, los chips y el `PeriodSelector` en su Card
+(~40 % de la pantalla), y el marco del libro topaba en `calc(100vh - 290px)`.
+
+- **Cabecera de UNA línea** (`app/admin/reportes/balance/page.tsx`, sigue
+  siendo server component; envuelve en pantallas angostas): «← Reportes»
+  (`BackLink`, `hrefReportesDesdeVista`) · `<h1>` chico (`text-sm
+  font-semibold`, `tituloVistaBalance`) · ícono de información
+  (`InformationCircleIcon` dentro de un `<span role="img" tabIndex={0}>` con
+  `title` + `aria-label` = `textoPeriodoVista` + `DESCRIPCION_VISTA_BALANCE`;
+  va FUERA del `<h1>` para no engordar el nombre del encabezado, y es
+  enfocable porque el `title` solo sale con el ratón: con teclado el lector
+  de pantalla lo anuncia al tabular) · chips «Balance mensual | Balance
+  general» (solo libros de la flota; `hrefVistaBalance`, `aria-current`,
+  `cursor-pointer`, size sm) · `PeriodSelector compacto
+  etiquetaGrupo="Periodo del libro"`. Se quitaron «Tesorería · Reportes» y
+  el párrafo: la descripción larga y el periodo ya NO ocupan renglón. La raíz
+  lleva `-mt-3 -mb-3 lg:-mt-5 lg:-mb-5`: recorta el padding VERTICAL de
+  `<main>` (py-6 lg:py-8) a 12 px arriba y 12 abajo; el horizontal se
+  conserva. Las tarjetas de error quedaron como estaban.
+- **`PeriodSelector` gana `compacto?: boolean`** (ADITIVA; default false ⇒
+  byte a byte lo de siempre, lo usan Reportes, Reparto y Tableros) y
+  `etiquetaGrupo?: string` (nombre accesible del grupo compacto; default
+  «Periodo», neutro porque el componente es compartido): sin Card, un `<div
+  role="group">` en línea con los dos `<Input type="date">` chicos (`h-8
+  w-[9.5rem] px-2 text-base md:text-xs`: 16 px en el celular porque iOS
+  Safari hace zoom al enfocar un campo con letra menor, 12 px desde `md`)
+  separados por un guion, `<Label className="sr-only">` para cada uno y SIN
+  atajos de mes (`atajoMesPasado` se ignora). Los dos campos se escriben UNA
+  sola vez (`campos`) y los usan las dos variantes: toda la mecánica del
+  borrador (`value={visible.desde}`, `onBlur={() => onSalir(…)}`,
+  `setTimeout(…, ESPERA_APLICAR_MS)`) es la misma y
+  `periodo-selector.test.ts` la sigue vigilando en el fuente.
+- **`LibroExcel` gana `pantalla?: boolean`** (ADITIVA): clase
+  `xl-libro--pantalla` en la raíz y, en `styles/libro-excel.css`,
+  `.xl-libro--pantalla .xl-marco { max-height: calc(100dvh -
+  var(--xl-pantalla-offset, 221px)); min-height: 60vh; }`. **El offset por
+  default (221 px) sale de MEDIR** lo que queda encima y debajo del marco en
+  esa página, sobre las clases de cada pieza: 64 (barra superior del shell,
+  `h-16`) + 24 (padding vertical de `<main>` que queda tras los márgenes
+  negativos: 12 + 12) + 32 (la cabecera de una línea: su hijo más alto son
+  los inputs h-8) + 8 (gap cabecera → libro) + 2 (bordes del libro) + 41
+  (`.xl-barra`: 6 + 28 del botón size sm + 6 + 1 de borde) + 38
+  (`.xl-pestanas`: 1 de borde + 31 de pestaña [4 + 18 de línea a 12 px con
+  line-height 1.5 + 8 + 1] + 6 de padding) = 209, más 12 px de margen de
+  seguridad. La cuenta está escrita en el CSS junto a la regla. **Esa cuenta
+  vale con la cabecera en UNA línea** (~833 px con los chips de la flota:
+  cabe desde `xl`, donde el contenido mide ≥ 976 px con el sidebar de 256 y
+  el padding de 48); cuando envuelve, cada línea extra suma a lo sumo 38 px
+  (32 del input + 6 de gap-y), así que la página fija la variable por
+  breakpoint en su raíz y el marco la hereda: `[--xl-pantalla-offset:297px]`
+  (tres líneas, teléfono) · `sm:[--xl-pantalla-offset:259px]` (dos) ·
+  `xl:[--xl-pantalla-offset:221px]` (una). En md/lg con la cabecera ya en
+  una línea sobran como mucho 38 px, nunca faltan: la página no desplaza.
+  Otra pantalla que monte el libro con `pantalla` fija su propio
+  `--xl-pantalla-offset`. En una ventana de ~950 px visibles (monitor de
+  1080 px) el libro ocupa ~85 % del alto. `100dvh` y no `100vh` por la barra
+  de direcciones del celular. Sin la prop, el CSS de siempre
+  (`calc(100vh - 290px)`, mínimo 360 px) no cambia.
+- **La raíz del libro lleva `zona-clara`** (siempre, con o sin `pantalla`):
+  es una isla BLANCA dentro del admin oscuro y sin re-escopar los tokens
+  (globals.css, `.dark .zona-clara`) los controles de la barra —`Button
+  outline` de descarga y de pantalla completa, el «N hojas» en
+  `text-muted-foreground`— heredaban los colores del dark mode sobre
+  `#fafafa` (texto casi blanco al pasar el ratón, ~2.5:1). La cuadrícula no
+  cambia: usa sus propios `--xl-*` y colores fijos.
+- **Botón «Pantalla completa»** (⤢ `ArrowsPointingOutIcon`; activo: ⤡ +
+  «Salir», nombre accesible «Salir de pantalla completa») en
+  `.xl-barra-acciones`, antes de la descarga y SOLO con `pantalla`:
+  Fullscreen API sobre el contenedor `.xl-libro` (`requestFullscreen` /
+  `exitFullscreen`; la promesa rechazada nunca tumba la página).
+  `fullscreenchange` dice si el que está a pantalla completa es este libro,
+  así Esc y F11 también actualizan el botón. Sus textos
+  (`ETIQUETA_PANTALLA_COMPLETA`, `ETIQUETA_SALIR_PANTALLA_COMPLETA`,
+  `NOMBRE_SALIR_PANTALLA_COMPLETA`, `TITULO_PANTALLA_COMPLETA`,
+  `TITULO_SALIR_PANTALLA_COMPLETA`) viven en `lib/admin/libro-excel.ts`
+  (PURO, junto a `textoHojas`) y NO en el componente "use client": un server
+  component que los importara de ahí recibiría una referencia de cliente.
+  Bajo `sm` no se pinta (`hidden sm:inline-flex`): en un teléfono la barra
+  de fórmulas ya va justa de ancho y el iPhone no tiene pantalla completa de
+  elementos. El soporte se lee con `useSyncExternalStore`
+  (`document.fullscreenEnabled`): en el servidor se ASUME (todo navegador de
+  escritorio lo tiene) para que el botón salga en el HTML y no brinque al
+  hidratar; donde no existe, React lo retira al hidratar. Es una desviación
+  consciente del contrato «si no la soporta no se pinta»: la alternativa
+  (omitirlo en el servidor) haría que el botón apareciera tras hidratar y
+  moviera la barra en CADA carga de escritorio, que es donde lo usa el
+  cliente. En `:fullscreen`, `.xl-libro` pasa a columna flex sin borde y
+  `.xl-libro:fullscreen .xl-marco { max-height: calc(100vh - 41px - 38px) }`
+  (barra de fórmulas + pestañas).
+- **Pruebas**: `components/admin/reportes/__tests__/libro-excel.test.tsx`
+  (cableado de la página: `compacto` + `etiquetaGrupo`, `pantalla`, tooltip
+  sin párrafo ni «Tesorería · Reportes», ícono enfocable, las tres variables
+  por breakpoint y que la de `xl` sea el MISMO fallback que la regla del
+  CSS; render con `pantalla`: clase + `zona-clara` + botón con nombre
+  accesible, `cursor-pointer`, `hidden sm:inline-flex` y ANTES de la
+  descarga, y sin la prop ni clase ni botón; el CSS: la regla con `100dvh` +
+  `60vh`, que la cuenta del comentario vaya de la barra superior del shell a
+  las pestañas y cierre con el mismo número que el fallback —sin amarrar la
+  prosa—, la de `:fullscreen`, y el marco de siempre intacto) y
+  `components/admin/profit-sharing/__tests__/period-selector-compacto.test.tsx`
+  (render estático del compacto: sin Card, dos inputs con nombre accesible,
+  `text-base md:text-xs`, etiquetas `sr-only`, grupo «Periodo» o el
+  `etiquetaGrupo` que llegue, sin atajos aunque llegue `atajoMesPasado`; y
+  la variante de siempre con su Card, etiquetas visibles y atajos).
+- **Pendiente**: sin QA visual en navegador (el offset está medido sobre las
+  clases, no sobre píxeles reales). El tooltip del ícono no se ve con tacto
+  (iPad): el lector de pantalla y el teclado sí lo tienen. En un teléfono
+  bajo (menos de ~743 px de alto visible) el `min-height: 60vh` del marco
+  gana a `100dvh - 297px` y la página desplaza unos píxeles: es el mínimo
+  que pidió el contrato, no un error de la cuenta.
 
 ## Reportes: el selector de periodo ya no «se traba» (12-oct-2026)
 

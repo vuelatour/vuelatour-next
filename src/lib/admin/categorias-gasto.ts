@@ -24,8 +24,10 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   // Honorario del freelance que voló el avión (doc 3.7): gasto directo del vuelo.
   PILOTO_EXTERNO: "Piloto externo (honorario)",
   // Pago al vendedor (28-sep-2026): SIEMPRE con vuelo; se aparea con la
-  // comisión cobrada en «otros movimientos» del Balance general y reemplaza
-  // la PROVISIÓN (invariante 31 del API). No es costo del avión.
+  // comisión cobrada en «otros movimientos» del Balance general y es el
+  // ÚNICO egreso del vendedor: sin él la fila no lleva egreso ni provisión
+  // (invariantes 31 y 58 del API; la provisión se retiró de esa hoja el
+  // 12-oct-2026). No es costo del avión.
   COMISION_VENDEDOR: "Comisión del vendedor",
   // LEGADO: ya no se ofrece en captura/verificación (se retiró de los
   // dropdowns), pero la etiqueta se conserva para pintar gastos históricos.
@@ -203,7 +205,7 @@ export const MSG_GASTO_REQUIERE_VUELO_COMISION =
 
 /** Ayuda del formulario (alta y verificación) al elegir la categoría. */
 export const AYUDA_COMISION_VENDEDOR =
-  "Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general y reemplaza la PROVISIÓN de ese vuelo; si pagas de menos o de más, la hoja lo marca con «faltan» o «excede». Registra un gasto por vuelo: si una sola transferencia paga varios vuelos (o los aviones de un grupo), captura un gasto por vuelo con su parte. No es costo del avión. No la captures como «Otros gastos VuelaTour»: quedaría duplicada.";
+  "Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general: mientras no se capture, esa fila no lleva egreso (ahí no se provisiona nada); si pagas de menos o de más, la hoja lo marca con «faltan» o «excede». Registra un gasto por vuelo: si una sola transferencia paga varios vuelos (o los aviones de un grupo), captura un gasto por vuelo con su parte. No es costo del avión. No la captures como «Otros gastos VuelaTour»: quedaría duplicada.";
 
 /** Hint del campo «Vuelo» cuando la categoría lo exige. */
 export const HINT_VUELO_COMISION =
@@ -281,7 +283,8 @@ const HOJA_OTROS_GASTOS_SIN_NADA =
  * por default (destinoPorDefecto). Refleja las reglas del API (balance por
  * avión + Balance general). Orden de evaluación:
  * - PERSONAL_DUENO → fuera de todos los balances;
- * - COMISION_VENDEDOR → «otros movimientos» (reemplaza la provisión);
+ * - COMISION_VENDEDOR → «otros movimientos» (es el pago al vendedor; sin él
+ *   esa fila no lleva egreso: desde el 12-oct-2026 ahí no se provisiona);
  * - EMPRESA (OTRO/NOMINA/GASOLINA/FIJO/VISITA) → SIEMPRE «otros gastos» del
  *   general (desde el 11-sep-2026); el vuelo/avión quedan de referencia —
  *   antes decía «hoja del vuelo» y justo esa pista confundió al cliente
@@ -302,7 +305,7 @@ export function hojaDestinoGasto(
 ): string {
   if (categoria === "PERSONAL_DUENO") return "Fuera de balances (personal)";
   if (categoria === CATEGORIA_PAGO_VENDEDOR) {
-    return "Balance general VuelaTour · Otros movimientos (reemplaza la provisión del pago al vendedor)";
+    return "Balance general VuelaTour · Otros movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él esa fila no lleva egreso)";
   }
   if (CATEGORIAS_EMPRESA.has(categoria)) {
     if (tieneVuelo) {

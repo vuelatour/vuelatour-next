@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { ArrowDownTrayIcon, LockClosedIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowDownTrayIcon,
+  InformationCircleIcon,
+  LockClosedIcon,
+} from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
@@ -49,7 +53,14 @@ interface PageProps {
  * `/admin/reportes/balance` (12-oct-2026): el balance mensual, el general o
  * el de un avión EN PANTALLA, como el Excel que se descarga (es el mismo
  * libro). `?modo=mensual|general` o `?avion=<uuid>`, y el periodo
- * `?desde&hasta` (el mismo selector de Reportes).
+ * `?desde&hasta` (el mismo selector de Reportes, en su variante compacta).
+ *
+ * Cabecera de UNA línea y el libro debajo (12-oct-2026, tarde; pedido del
+ * cliente: «que se vea en grande el "Excel" y hacer muy sutil el título y
+ * filtro de fechas para que eso en el navbar ocupe lo menos posible»). La
+ * descripción larga y el periodo en texto van en el tooltip del ícono de
+ * información junto al título: no ocupan renglón. La cuenta del alto que
+ * queda para el libro vive en `styles/libro-excel.css` (`--xl-pantalla-offset`).
  */
 export default async function BalanceVistaPage({ searchParams }: PageProps) {
   const sp = await searchParams;
@@ -75,20 +86,35 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
   const titulo = tituloVistaBalance(destino, matricula);
   const descarga = descargaVistaBalance(destino, desde, hasta, matricula);
   const hrefReportes = hrefReportesDesdeVista(desde, hasta);
+  const ayuda = `${textoPeriodoVista(desde, hasta)}. ${DESCRIPCION_VISTA_BALANCE}`;
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
+    // Los márgenes negativos recortan el padding VERTICAL de <main> (py-6
+    // lg:py-8 ⇒ quedan 12 px arriba y 12 abajo) para ganar alto; el
+    // horizontal se conserva. `--xl-pantalla-offset` (lo hereda el marco del
+    // libro) va por breakpoint porque la cabecera envuelve en pantallas
+    // angostas y cada línea extra suma hasta 38 px: tres líneas en el
+    // teléfono, dos desde `sm`, una desde `xl` (la cuenta está en
+    // styles/libro-excel.css; el valor de `xl` es el fallback de la regla).
+    <div className="flex flex-col gap-2 -mt-3 -mb-3 lg:-mt-5 lg:-mb-5 [--xl-pantalla-offset:297px] sm:[--xl-pantalla-offset:259px] xl:[--xl-pantalla-offset:221px]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <BackLink href={hrefReportes}>{ETIQUETA_VOLVER_REPORTES}</BackLink>
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-muted-foreground">Tesorería · Reportes</p>
+        <div className="flex items-center gap-1.5">
+          <h1 className="text-sm font-semibold tracking-tight">{titulo}</h1>
+          <span
+            role="img"
+            aria-label={ayuda}
+            title={ayuda}
+            // Enfocable: el tooltip `title` solo sale con el ratón; con
+            // teclado el lector de pantalla lo anuncia al tabular.
+            tabIndex={0}
+            className="inline-flex cursor-help rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <InformationCircleIcon className="h-4 w-4" aria-hidden />
+          </span>
         </div>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{titulo}</h1>
-        <p className="text-sm text-muted-foreground">
-          {textoPeriodoVista(desde, hasta)}. {DESCRIPCION_VISTA_BALANCE}
-        </p>
         {destino.tipo === "vuelatour" ? (
-          <div className="flex flex-wrap gap-2 pt-1" aria-label="Libro">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Libro">
             {MODOS_BALANCE_VUELATOUR.map((modo) => {
               const activo = modo === destino.modo;
               return (
@@ -107,12 +133,11 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
             })}
           </div>
         ) : null}
+        <PeriodSelector initial={{ desde, hasta }} compacto etiquetaGrupo="Periodo del libro" />
       </div>
 
-      <PeriodSelector initial={{ desde, hasta }} />
-
       {libro ? (
-        <LibroExcel libro={libro} descarga={descarga} />
+        <LibroExcel libro={libro} descarga={descarga} pantalla />
       ) : error && error.motivo === "fallo" ? (
         <TarjetaErrorCarga titulo={error.titulo} descripcion={error.descripcion} />
       ) : error ? (

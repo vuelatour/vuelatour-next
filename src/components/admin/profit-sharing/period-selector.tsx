@@ -26,7 +26,24 @@ interface Props {
   atajoMesPasado?: boolean;
   /** Hoy en Cancún desde el servidor (evita que el atajo difiera al hidratar). */
   hoy?: string;
+  /** Variante de UNA línea (12-oct-2026, tarde; la vista del balance en
+   *  pantalla): sin Card, los dos inputs de fecha chicos separados por un
+   *  guion, con la etiqueta solo para lectores de pantalla y SIN atajos de
+   *  mes (`atajoMesPasado` se ignora). Sin la prop, el selector de siempre,
+   *  byte a byte. */
+  compacto?: boolean;
+  /** Nombre accesible del grupo en la variante compacta. Default «Periodo»,
+   *  neutro porque el componente es compartido; la vista del balance pasa
+   *  «Periodo del libro». */
+  etiquetaGrupo?: string;
 }
+
+/**
+ * Inputs de la variante compacta: chicos y de ancho fijo para caber en la
+ * línea. `text-base` en el celular (como el Input base): con letra menor de
+ * 16 px iOS Safari hace zoom al enfocar el campo; `md:text-xs` en escritorio.
+ */
+const CLASE_INPUT_COMPACTO = "h-8 w-[9.5rem] px-2 text-base md:text-xs";
 
 /**
  * Desde / Hasta del periodo (12-oct-2026, «se traba el calendario»): los
@@ -36,7 +53,13 @@ interface Props {
  * vuelve a mandar cuando el borrador ya se aplicó (o se descartó por
  * incompleto al salir). Reglas puras en `lib/admin/periodo-selector.ts`.
  */
-export function PeriodSelector({ initial, atajoMesPasado = false, hoy: hoyServidor }: Props) {
+export function PeriodSelector({
+  initial,
+  atajoMesPasado = false,
+  hoy: hoyServidor,
+  compacto = false,
+  etiquetaGrupo = "Periodo",
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -121,39 +144,68 @@ export function PeriodSelector({ initial, atajoMesPasado = false, hoy: hoyServid
   const enMesPasado =
     mesPasado !== null && initial.desde === mesPasado.desde && initial.hasta === mesPasado.hasta;
 
+  // Los DOS campos se escriben UNA sola vez y los usan las dos variantes: la
+  // mecánica del borrador (value / onChange / onBlur / Enter) es la misma, y
+  // duplicarla es donde se cuela que una variante aplique y la otra no.
+  const campos = (
+    <>
+      <div className={compacto ? "flex items-center" : "space-y-1.5"}>
+        <Label className={compacto ? "sr-only" : "text-xs font-medium"} htmlFor="periodo-desde">
+          Periodo desde
+        </Label>
+        <Input
+          id="periodo-desde"
+          type="date"
+          className={compacto ? CLASE_INPUT_COMPACTO : undefined}
+          value={visible.desde}
+          onChange={(e) => onCambio("desde", e.target.value)}
+          onBlur={() => onSalir("desde")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSalir("desde");
+          }}
+        />
+      </div>
+      {compacto ? (
+        <span className="text-xs text-muted-foreground select-none" aria-hidden>
+          –
+        </span>
+      ) : null}
+      <div className={compacto ? "flex items-center" : "space-y-1.5"}>
+        <Label className={compacto ? "sr-only" : "text-xs font-medium"} htmlFor="periodo-hasta">
+          Periodo hasta
+        </Label>
+        <Input
+          id="periodo-hasta"
+          type="date"
+          className={compacto ? CLASE_INPUT_COMPACTO : undefined}
+          value={visible.hasta}
+          onChange={(e) => onCambio("hasta", e.target.value)}
+          onBlur={() => onSalir("hasta")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSalir("hasta");
+          }}
+        />
+      </div>
+    </>
+  );
+
+  if (compacto) {
+    return (
+      <div
+        role="group"
+        aria-label={etiquetaGrupo}
+        className="flex flex-wrap items-center gap-1.5"
+        data-periodo="compacto"
+      >
+        {campos}
+      </div>
+    );
+  }
+
   return (
     <Card>
       <CardContent className="p-4 grid gap-3 sm:grid-cols-2 max-w-md">
-        <div className="space-y-1.5">
-          <Label className="text-xs font-medium" htmlFor="periodo-desde">
-            Periodo desde
-          </Label>
-          <Input
-            id="periodo-desde"
-            type="date"
-            value={visible.desde}
-            onChange={(e) => onCambio("desde", e.target.value)}
-            onBlur={() => onSalir("desde")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onSalir("desde");
-            }}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs font-medium" htmlFor="periodo-hasta">
-            Periodo hasta
-          </Label>
-          <Input
-            id="periodo-hasta"
-            type="date"
-            value={visible.hasta}
-            onChange={(e) => onCambio("hasta", e.target.value)}
-            onBlur={() => onSalir("hasta")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onSalir("hasta");
-            }}
-          />
-        </div>
+        {campos}
         {atajoMesPasado && (
           <MesReporteSelect
             className="sm:col-span-2"

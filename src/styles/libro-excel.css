@@ -81,6 +81,71 @@
   box-shadow: inset 0 0 0 2px rgb(33 115 70 / 0.35);
 }
 
+/*
+ * Vista «pantalla» (12-oct-2026, tarde; prop `pantalla` de LibroExcel). Pedido
+ * del cliente: «que se vea en grande el "Excel" y hacer muy sutil el título y
+ * filtro de fechas». La cuadrícula ocupa casi toda la ventana: el offset es
+ * TODO lo que queda encima y debajo del marco en /admin/reportes/balance,
+ * medido sobre las clases de cada pieza:
+ *
+ *   64 px  barra superior del shell (`AdminTopbar`, h-16)
+ * + 24 px  padding vertical de <main> (py-6 lg:py-8) que queda tras los
+ *          márgenes negativos de la página (-mt-3/-mb-3 lg:-mt-5/-mb-5):
+ *          12 arriba + 12 abajo
+ * + 32 px  cabecera de UNA línea (su hijo más alto: los inputs de fecha, h-8)
+ * +  8 px  separación cabecera → libro (gap-2)
+ * +  2 px  bordes del libro (1 + 1)
+ * + 41 px  .xl-barra: 6 + 28 (botones size sm, h-7) + 6 + 1 de borde
+ * + 38 px  .xl-pestanas: 1 de borde + 31 de pestaña (4 + 18 de línea a 12 px
+ *          con line-height 1.5 + 8 + 1 de borde) + 6 de padding
+ * = 209 px, más 12 px de margen de seguridad (±1 px de redondeo de líneas)
+ * ⇒ 221 px. En una ventana de ~950 px visibles (monitor de 1080 px con la
+ * barra del sistema y el cromo del navegador) el libro ocupa ~85 % del alto.
+ *
+ * Esa cuenta vale con la cabecera en UNA línea (~833 px con los chips de la
+ * flota: cabe desde `xl`, donde el contenido mide ≥ 976 px con el sidebar de
+ * 256 px y el padding de 48). Cuando envuelve, cada línea extra suma a lo
+ * sumo 38 px (32 del input de fecha + 6 de gap-y), así que la página fija la
+ * variable por breakpoint en su raíz y este `.xl-marco` la hereda:
+ * `[--xl-pantalla-offset:297px]` (tres líneas, teléfono) ·
+ * `sm:[--xl-pantalla-offset:259px]` (dos) · `xl:[--xl-pantalla-offset:221px]`
+ * (una). En md/lg con la cabecera ya en una línea sobran como mucho 38 px,
+ * nunca faltan: la página no desplaza.
+ *
+ * `100dvh` y no `100vh`: en el celular la barra de direcciones se come la
+ * diferencia. Otra pantalla que monte el libro con `pantalla` puede fijar su
+ * propio `--xl-pantalla-offset`. Sin la prop, el `.xl-marco` de arriba no
+ * cambia.
+ */
+.xl-libro--pantalla .xl-marco {
+  max-height: calc(100dvh - var(--xl-pantalla-offset, 221px));
+  min-height: 60vh;
+}
+
+/*
+ * Pantalla completa (Fullscreen API sobre `.xl-libro`, botón ⤢ de la barra):
+ * el navegador deja el contenedor a 100 % × 100 % y aquí el marco toma todo
+ * lo que no ocupan la barra de fórmulas (41 px) ni las pestañas (38 px); la
+ * columna flex lo cuadra aunque una línea redondee distinto.
+ */
+.xl-libro:fullscreen {
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+}
+
+.xl-libro:fullscreen .xl-barra,
+.xl-libro:fullscreen .xl-pestanas {
+  flex: none;
+}
+
+.xl-libro:fullscreen .xl-marco {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100vh - 41px - 38px);
+}
+
 .xl-tabla {
   border-collapse: separate;
   border-spacing: 0;

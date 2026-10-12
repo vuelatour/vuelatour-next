@@ -10,6 +10,7 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
+import { ETIQUETA_PANTALLA_COMPLETA } from "@/lib/admin/libro-excel";
 
 interface PropsBotonExcel {
   path: string;
@@ -79,9 +80,12 @@ const LIBRO: LibroExcelJson = {
   ],
 };
 
-function pintar(descarga?: { path: string; filename: string; query?: Record<string, string>; label: string } | null) {
+function pintar(
+  descarga?: { path: string; filename: string; query?: Record<string, string>; label: string } | null,
+  pantalla = false,
+) {
   botonesExcel.length = 0;
-  return renderToStaticMarkup(<LibroExcel libro={LIBRO} descarga={descarga} />);
+  return renderToStaticMarkup(<LibroExcel libro={LIBRO} descarga={descarga} pantalla={pantalla} />);
 }
 
 describe("LibroExcel: la primera hoja como la pintaría Excel", () => {
@@ -200,7 +204,30 @@ describe("cableado", () => {
     expect(src).toContain("descargaVistaBalance(destino, desde, hasta, matricula)");
     expect(src).toContain("getBalanceAvionLibro(destino.avionId, desde, hasta)");
     expect(src).toContain("getBalanceGeneralLibro(desde, hasta, destino.modo)");
-    expect(src).toContain("<PeriodSelector initial={{ desde, hasta }} />");
+    // Cabecera de UNA línea (12-oct-2026, tarde): selector compacto, libro a
+    // pantalla y la descripción larga en el tooltip del ícono, nunca como párrafo.
+    expect(src).toContain(
+      '<PeriodSelector initial={{ desde, hasta }} compacto etiquetaGrupo="Periodo del libro" />',
+    );
+    expect(src).toContain("<LibroExcel libro={libro} descarga={descarga} pantalla />");
+    expect(src).toContain("InformationCircleIcon");
+    expect(src).toContain("title={ayuda}");
+    expect(src).toContain("aria-label={ayuda}");
+    // El ícono es enfocable (con teclado el lector lo anuncia; el `title` solo
+    // sale con el ratón).
+    expect(src).toContain("tabIndex={0}");
+    // El offset del marco va por breakpoint (la cabecera envuelve en pantallas
+    // angostas): tres líneas en el teléfono, dos desde `sm`, una desde `xl`; y
+    // el valor de `xl` es el MISMO fallback que trae la regla del CSS.
+    expect(src).toContain(
+      "[--xl-pantalla-offset:297px] sm:[--xl-pantalla-offset:259px] xl:[--xl-pantalla-offset:221px]",
+    );
+    const fallback = leer("styles/libro-excel.css").match(/var\(--xl-pantalla-offset, (\d+)px\)/)?.[1];
+    expect(fallback).toBeDefined();
+    expect(src).toContain(`xl:[--xl-pantalla-offset:${fallback}px]`);
+    expect(src).not.toMatch(/<p[^>]*>[\s\S]*?\{DESCRIPCION_VISTA_BALANCE\}/);
+    expect(src).not.toContain("Tesorería · Reportes");
+    expect(src).not.toMatch(/text-2xl|text-3xl/);
     expect(src).toContain("<TarjetaErrorCarga");
     // Un error de Next (redirect/notFound) nunca se traga.
     expect(src).toContain("if (esErrorDeNext(e)) throw e;");
@@ -222,5 +249,65 @@ describe("cableado", () => {
     expect(src).toContain('"/v1/aircraft/balance-general/libro"');
     expect(src).toContain("/balance/libro`");
     expect((src.match(/cache: "no-store"/g) ?? []).length).toBe(2);
+  });
+});
+
+describe("LibroExcel: vista «pantalla» (12-oct-2026, tarde)", () => {
+  const DESCARGA = {
+    path: `/v1/aircraft/${UUID}/balance.xlsx`,
+    filename: "balance-XB-PEV-2026-09-01-2026-09-30.xlsx",
+    label: "Descargar este libro (Excel)",
+  };
+
+  it("con `pantalla` la raíz lleva xl-libro--pantalla y la barra gana «Pantalla completa» con nombre accesible y cursor-pointer, antes de la descarga", () => {
+    const html = pintar(DESCARGA, true);
+    // `zona-clara` siempre: el libro es una isla clara dentro del admin oscuro.
+    expect(html).toMatch(/<div[^>]*class="xl-libro zona-clara xl-libro--pantalla"/);
+    const boton = html.match(/<button[^>]*aria-label="Pantalla completa"[^>]*>/)?.[0];
+    expect(boton).toBeDefined();
+    expect(boton).toContain("cursor-pointer");
+    // Bajo `sm` no se pinta (la barra de fórmulas del teléfono ya va justa).
+    expect(boton).toMatch(/class="[^"]*\bhidden\b[^"]*\bsm:inline-flex\b/);
+    // (y el `inline-flex` suelto del Button base se fue: solo queda el de `sm:`)
+    expect(boton).not.toMatch(/class="[^"]*[\s"]inline-flex[\s"]/);
+    expect(boton).toContain('type="button"');
+    expect(boton).toContain('data-pantalla-completa="inactiva"');
+    expect(html).toContain(ETIQUETA_PANTALLA_COMPLETA);
+    // El botón vive en la barra de acciones, ANTES de la descarga.
+    expect(html).toMatch(
+      /class="xl-barra-acciones">[\s\S]*?aria-label="Pantalla completa"[\s\S]*?data-descarga="balance-XB-PEV-2026-09-01-2026-09-30\.xlsx"/,
+    );
+    expect(botonesExcel).toEqual([DESCARGA]);
+  });
+
+  it("sin la prop, ni la clase ni el botón (el libro de siempre)", () => {
+    const html = pintar();
+    expect(html).toContain('class="xl-libro zona-clara"');
+    expect(html).not.toContain("xl-libro--pantalla");
+    expect(html).not.toContain('aria-label="Pantalla completa"');
+    expect(html).not.toContain("data-pantalla-completa");
+  });
+});
+
+describe("styles/libro-excel.css: el alto del marco", () => {
+  const css = leer("styles/libro-excel.css");
+
+  it("la vista «pantalla» mide contra 100dvh con el offset documentado y un mínimo de 60vh; sin la prop, el marco de siempre", () => {
+    expect(css).toMatch(
+      /\.xl-libro--pantalla \.xl-marco\s*\{[^}]*max-height:\s*calc\(100dvh - var\(--xl-pantalla-offset, \d+px\)\);[^}]*min-height:\s*60vh;/,
+    );
+    // La cuenta del offset está escrita junto a la regla (de la barra superior
+    // del shell a las pestañas) y cierra con el MISMO número que el fallback:
+    // si se retoca uno sin el otro, esto lo dice.
+    const fallback = css.match(/var\(--xl-pantalla-offset, (\d+)px\)/)?.[1];
+    expect(fallback).toBeDefined();
+    expect(css).toMatch(/barra superior del shell[\s\S]*?\.xl-pestanas[\s\S]*?⇒ /);
+    expect(css).toContain(`⇒ ${fallback} px`);
+    expect(css).toMatch(/^\.xl-marco\s*\{[^}]*max-height:\s*calc\(100vh - 290px\);[^}]*min-height:\s*360px;/m);
+  });
+
+  it("a pantalla completa el marco toma todo menos la barra de fórmulas y las pestañas", () => {
+    expect(css).toMatch(/\.xl-libro:fullscreen \.xl-marco\s*\{[^}]*max-height:\s*calc\(100vh - \d+px - \d+px\);/);
+    expect(css).toMatch(/\.xl-libro:fullscreen\s*\{[^}]*border:\s*0;/);
   });
 });

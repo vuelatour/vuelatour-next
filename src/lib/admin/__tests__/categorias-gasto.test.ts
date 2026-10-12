@@ -144,7 +144,9 @@ describe("AYUDA_COMISION_VENDEDOR", () => {
     expect(AYUDA_COMISION_VENDEDOR).toContain(
       "Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general",
     );
-    expect(AYUDA_COMISION_VENDEDOR).toContain("reemplaza la PROVISIÓN de ese vuelo");
+    // 12-oct-2026 (API 0.0.73, invariante 58): «otros movimientos» ya no provisiona.
+    expect(AYUDA_COMISION_VENDEDOR).toContain("esa fila no lleva egreso");
+    expect(AYUDA_COMISION_VENDEDOR).not.toContain("reemplaza la PROVISIÓN");
     expect(AYUDA_COMISION_VENDEDOR).toContain("«faltan» o «excede»");
     expect(AYUDA_COMISION_VENDEDOR).toContain("Registra un gasto por vuelo");
     expect(AYUDA_COMISION_VENDEDOR).toContain("No es costo del avión.");
@@ -160,7 +162,7 @@ describe("hojaDestinoGasto: a qué hoja cae CON LO ELEGIDO (sin pistas falsas)",
 
   it("COMISION_VENDEDOR ⇒ otros movimientos, con o sin vuelo/avión", () => {
     const esperado =
-      "Balance general VuelaTour · Otros movimientos (reemplaza la provisión del pago al vendedor)";
+      "Balance general VuelaTour · Otros movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él esa fila no lleva egreso)";
     expect(hojaDestinoGasto("COMISION_VENDEDOR", true, true)).toBe(esperado);
     expect(hojaDestinoGasto("COMISION_VENDEDOR", true, false)).toBe(esperado);
     expect(hojaDestinoGasto("COMISION_VENDEDOR", false, true)).toBe(esperado);

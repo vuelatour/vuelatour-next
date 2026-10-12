@@ -76,7 +76,7 @@ describe("CategoriaDestinoHint", () => {
     );
     expect(html).toContain(`Por default: ${DESTINO}`);
     expect(html).toContain(
-      "Balance general VuelaTour · Otros movimientos (reemplaza la provisión del pago al vendedor)",
+      "Balance general VuelaTour · Otros movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él esa fila no lleva egreso)",
     );
   });
 
