@@ -617,6 +617,7 @@ describe("sugerencias con IA de abonos", () => {
       etiqueta: "Cobro · vuelo #235",
       cliente: "Cristy Chavez",
       fecha: "2026-09-08",
+      fecha_vuelo: null,
       monto: 20400,
       neto: 19380,
     });
@@ -663,5 +664,56 @@ describe("menú: «Ingresos» justo antes de «Gastos»", () => {
     }
     const { getPageTitleFromPathname } = await import("@/lib/admin/page-title");
     expect(getPageTitleFromPathname("/admin/ingresos")).toBe("Ingresos");
+  });
+});
+
+describe("fechasCandidatoCobro (12-oct-2026: la fecha del vuelo junto a la del cobro)", async () => {
+  const { fechasCandidatoCobro, candidatosDeConflicto, descripcionFichaCandidato } = await import("../ingresos-ui");
+  const { fmtDate, fmtDateOnly } = await import("@/lib/datetime");
+
+  it("«vuelo … · cobro …» con las dos; solo «cobro …» con un API previo", () => {
+    const vuelo = "2026-10-04T15:00:00+00:00";
+    const cobro = "2026-10-06T16:30:00+00:00";
+    expect(fechasCandidatoCobro({ fecha_vuelo: vuelo, fecha_cobro: cobro })).toBe(
+      `vuelo ${fmtDate(vuelo)} · cobro ${fmtDate(cobro)}`,
+    );
+    expect(fechasCandidatoCobro({ fecha_cobro: cobro })).toBe(`cobro ${fmtDate(cobro)}`);
+    expect(fechasCandidatoCobro({ fecha_vuelo: null, fecha_cobro: cobro })).toBe(`cobro ${fmtDate(cobro)}`);
+    // Fichas de la IA y 409: el cobro viene como día Cancún.
+    expect(fechasCandidatoCobro({ fecha_vuelo: vuelo, fecha: "2026-10-06" })).toBe(
+      `vuelo ${fmtDate(vuelo)} · cobro ${fmtDateOnly("2026-10-06")}`,
+    );
+    expect(fechasCandidatoCobro({})).toBe("");
+  });
+
+  it("el 409 conserva fecha_vuelo (y la ignora si no viene)", () => {
+    const [con, sin] = candidatosDeConflicto({
+      candidatos: [
+        { id: "a", tipo: "COBRO_VUELO", etiqueta: "Cobro · vuelo #379", fecha: "2026-10-06", fecha_vuelo: "2026-10-04T15:00:00+00:00", monto: 100, neto: 100 },
+        { id: "b", tipo: "COBRO_VUELO", etiqueta: "Cobro · vuelo #380", fecha: "2026-10-06", monto: 100 },
+      ],
+    });
+    expect(con.fecha_vuelo).toBe("2026-10-04T15:00:00+00:00");
+    expect(sin.fecha_vuelo).toBeNull();
+  });
+
+  it("la ficha de la IA de un cobro dice vuelo y cobro; la de un ingreso, su fecha", () => {
+    const base = {
+      id: "x",
+      etiqueta: "Cobro · vuelo #379",
+      fecha: "2026-10-06",
+      monto: 100,
+      neto: 100,
+      moneda: "MXN" as const,
+      metodo_etiqueta: null,
+      cliente: null,
+      vuelo_id: null,
+      grupo_id: null,
+      es_anticipo: false,
+    };
+    expect(
+      descripcionFichaCandidato({ ...base, tipo: "COBRO_VUELO", fecha_vuelo: "2026-10-04T15:00:00+00:00" }),
+    ).toContain(`vuelo ${fmtDate("2026-10-04T15:00:00+00:00")} · cobro ${fmtDateOnly("2026-10-06")}`);
+    expect(descripcionFichaCandidato({ ...base, tipo: "INGRESO" })).toMatch(new RegExp(`^${fmtDateOnly("2026-10-06")}`));
   });
 });

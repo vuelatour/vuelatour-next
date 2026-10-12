@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import {
   Card,
   CardContent,
@@ -20,6 +21,7 @@ import { listFlights } from "@/lib/api/flights-server";
 import { fmtDate } from "@/lib/datetime";
 import { listAircraft } from "@/lib/api/aircraft";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
+import { PreCierreCardCargando } from "@/components/admin/reportes/pre-cierre-card-cargando";
 import { rangoFiltro } from "@/lib/admin/url-params";
 import {
   NOTA_BALANCE_VUELATOUR,
@@ -104,7 +106,12 @@ export default async function ReportesPage({ searchParams }: PageProps) {
 
       <PeriodSelector initial={{ desde, hasta }} />
 
-      <PreCierreCard desde={desde} hasta={hasta} />
+      {/* El pre-cierre es la lectura PESADA de la página (12-oct-2026): va
+          en su propio Suspense para que cambiar el periodo pinte el resto
+          al instante y el selector de fechas no «se trabe» esperándolo. */}
+      <Suspense key={`${desde}:${hasta}`} fallback={<PreCierreCardCargando />}>
+        <PreCierreCard desde={desde} hasta={hasta} />
+      </Suspense>
 
       <Card>
         <CardHeader>

@@ -5886,3 +5886,53 @@ Fase 2 (pendiente): editar una celda y que el registro ligado cambie.
   Falta: que pyservices anote los vínculos en los balances, un PATCH por tipo
   de registro en el API y, en el panel, la edición en la celda + regenerar
   el libro.
+
+## Reportes: el selector de periodo ya no «se traba» (12-oct-2026)
+
+Pedido del cliente: «en los filtros de fecha de Reportes como que se traba el
+calendario de filtro de fecha». Dos causas, dos arreglos:
+
+- **Cada tecla navegaba.** El `<input type="date">` empujaba a la URL cada
+  cambio, también los incompletos («0002-10-01» a medio teclear), y al
+  responder el servidor el input se RE-MONTABA (`key={initial.desde}`) con la
+  fecha validada, pisando lo que el operador seguía escribiendo. Ahora
+  `PeriodSelector` (`components/admin/profit-sharing/period-selector.tsx`,
+  también Reparto y Tableros) guarda un BORRADOR contra el periodo de la URL
+  con el que se escribió (patrón de `CierreRepartoSection`, sin efectos que
+  sincronicen estado) y solo navega con una fecha COMPLETA (año de 4 cifras ≥
+  2000, día real) tras una pausa de `ESPERA_APLICAR_MS` (450 ms) o al salir
+  del campo / Enter; un rango invertido arrastra la otra fecha como siempre.
+  Reglas PURAS en `lib/admin/periodo-selector.ts` (`fechaCompleta`,
+  `periodoAlCambiar`, `periodoCambia`, `queryDePeriodo`), prueba
+  `__tests__/periodo-selector.test.ts` (incluye el cableado: sin `key`, sin
+  `defaultValue`, aplica al salir).
+- **El pre-cierre frenaba la página.** `PreCierreCard` es la lectura PESADA
+  de `/admin/reportes` y, en el mismo render, cambiar el periodo esperaba a
+  todo. Va en `<Suspense key={desde:hasta} fallback={<PreCierreCardCargando />}>`
+  (`components/admin/reportes/pre-cierre-card-cargando.tsx`): el resto de la
+  página se pinta al instante y el pre-cierre llega después con su esqueleto.
+
+## «Inventario/Tienda» (12-oct-2026)
+
+Pedido del cliente: «debemos cambiar el nombre a “Inventario/Tienda”». El
+ítem del menú (`lib/admin/nav-items.ts`) y el H1 de `/admin/inventory` dicen
+«Inventario/Tienda» (la bodega también es la tienda que vende refacciones a
+los aviones). Rutas, roles y el resto de los textos no cambian.
+
+## Candidatos de cobro: fecha del vuelo junto a la del cobro (12-oct-2026, API 0.0.69)
+
+Pedido del cliente: «agregar la fecha del vuelo y la fecha de cobro porque por
+ejemplo el vuelo es del 04 de octubre y el 06 se cobró y solo estamos viendo
+el del cobro». El API manda `fecha_vuelo` (ADITIVO, invariante 54) en los
+candidatos de cobro/sobre (`CandidatoCobroVuelo`, `CandidatoSobreGrupo`), en
+las fichas de la IA (`CandidatoAbonoFicha`) y en los candidatos del 409
+`ABONO_TIENE_COBRO_CANDIDATO` (`CandidatoCobroConflicto`, que ahora lo lee).
+FUENTE ÚNICA de la frase: `lib/admin/ingresos-ui.ts#fechasCandidatoCobro` ⇒
+«vuelo 4 oct 2026 · cobro 6 oct 2026» (acepta el cobro como instante o como
+día Cancún); con un API previo solo «cobro …». La usan «Vincular» de Ingresos
+(`vincular-abono-dialog.tsx`), «Vincular a un cobro» de Conciliación
+(`movimiento-actions.tsx`, lista y resumen del elegido),
+`descripcionFichaCandidato` (IA; un INGRESO sigue con su fecha) y los
+candidatos del 409 en `registrar-ingreso-dialog.tsx`. Pruebas:
+`ingresos-ui.test.ts` y `ingresos/__tests__/fechas-candidato-cobro.test.ts`
+(cableado).

@@ -479,6 +479,8 @@ export interface CandidatoCobroVuelo {
   cobro_id: string;
   vuelo_id: string;
   folio: number | null;
+  /** ADITIVO (12-oct-2026): fecha del vuelo (timestamptz), para verla junto a la del cobro. */
+  fecha_vuelo?: string | null;
   cliente: string | null;
   /** timestamptz: formatear en hora Cancún al mostrar. */
   fecha_cobro: string;
@@ -501,6 +503,8 @@ export interface CandidatoSobreGrupo extends SobreConciliacion {
   cliente: string | null;
   /** |neto − monto del abono| (0 = cuadra exacto). */
   dif_monto: number;
+  /** ADITIVO (12-oct-2026): fecha del vuelo del grupo. */
+  fecha_vuelo?: string | null;
 }
 
 export type CandidatoCobro = CandidatoCobroVuelo | CandidatoSobreGrupo;

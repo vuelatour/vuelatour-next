@@ -24,7 +24,8 @@ import {
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { fmtMonto } from "@/lib/format";
-import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly } from "@/lib/datetime";
+import { fechasCandidatoCobro } from "@/lib/admin/ingresos-ui";
 import type { CandidatoCobro } from "@/types/conciliacion";
 import type { AbonoPendiente, CandidatoIngresoAbono } from "@/types/ingresos";
 
@@ -151,7 +152,7 @@ function Selector({ abono, onCerrar }: { abono: AbonoPendiente; onCerrar: () => 
             [
               c.tipo === "SOBRE_GRUPO" ? c.grupo_nombre : null,
               c.cliente,
-              fmtDate(c.fecha_cobro),
+              fechasCandidatoCobro(c),
               c.neto !== c.monto ? `neto ${fmtMonto(c.neto)}` : null,
               exacto ? "cuadra exacto con el abono" : `diferencia ${fmtMonto(c.dif_monto)}`,
             ]

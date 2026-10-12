@@ -224,6 +224,8 @@ export interface CandidatoAbonoFicha {
   id: string;                    // cobro_id | cobro_grupo_id | ingreso_id (uuid SIN prefijo)
   etiqueta: string;              // 'Cobro · vuelo #312' | 'Sobre G-4' | 'ING-12 · Anticipo'
   fecha: string;                 // día Cancún
+  /** ADITIVO (12-oct-2026): fecha del vuelo (ISO); null en ingresos. */
+  fecha_vuelo?: string | null;
   monto: number;
   neto: number;
   moneda: MonedaIngreso;

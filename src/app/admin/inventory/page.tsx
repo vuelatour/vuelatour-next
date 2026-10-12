@@ -178,7 +178,7 @@ export default async function InventoryPage({
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm text-muted-foreground">Bodega</p>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario/Tienda</h1>
           {/* Con la bodega sin cargar NO se pinta ni un número: "0 ítems ·
               valorizado $0.00" se leería como bodega vacía. */}
           {!bodega.ok ? (

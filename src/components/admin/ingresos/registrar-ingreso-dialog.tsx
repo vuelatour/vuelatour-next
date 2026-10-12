@@ -56,6 +56,7 @@ import {
   etiquetaIngreso,
 } from "@/lib/admin/categorias-ingreso";
 import {
+  fechasCandidatoCobro,
   AVISO_ANTICIPO_VUELO,
   AVISO_OTRO_INGRESO_CLIENTE,
   ETIQUETA_EFECTIVO,
@@ -69,7 +70,6 @@ import {
   erroresFormularioIngreso,
   etiquetaCuentaIngreso,
   etiquetaVueloCandidato,
-  fechaLegible,
   formularioDeIngreso,
   formularioDesdeAbono,
   formularioVacio,
@@ -947,7 +947,7 @@ function FormularioIngreso({
                   <p className="text-xs text-muted-foreground">
                     {[
                       c.cliente,
-                      c.fecha ? fechaLegible(c.fecha) : null,
+                      fechasCandidatoCobro(c) || null,
                       fmtMonto(c.monto, abono?.cuenta_moneda ?? undefined),
                       Math.abs(c.neto - c.monto) > 0.005
                         ? `neto ${fmtMonto(c.neto, abono?.cuenta_moneda ?? undefined)}`

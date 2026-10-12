@@ -1171,6 +1171,8 @@ export interface CandidatoCobroConflicto {
   etiqueta: string;
   cliente: string | null;
   fecha: string | null;
+  /** ADITIVO (12-oct-2026): fecha del vuelo, si el API la manda. */
+  fecha_vuelo: string | null;
   monto: number;
   neto: number;
 }
@@ -1189,6 +1191,7 @@ export function candidatosDeConflicto(details: unknown): CandidatoCobroConflicto
       etiqueta: typeof c.etiqueta === "string" ? c.etiqueta : "Cobro de vuelo",
       cliente: typeof c.cliente === "string" ? c.cliente : null,
       fecha: typeof c.fecha === "string" ? c.fecha : null,
+      fecha_vuelo: typeof c.fecha_vuelo === "string" ? c.fecha_vuelo : null,
       monto: Number(c.monto) || 0,
       neto: Number(c.neto ?? c.monto) || 0,
     });
@@ -1368,7 +1371,7 @@ export function textoAccionPropuesta(p: PropuestaAbono): string {
 /** Renglón de la ficha de un candidato («08 sep 2026 · $20,400 MXN · neto $19,380 · Cristy Chavez»). */
 export function descripcionFichaCandidato(c: CandidatoAbonoFicha): string {
   return [
-    fechaLegible(c.fecha),
+    c.tipo === "INGRESO" ? fechaLegible(c.fecha) : fechasCandidatoCobro(c),
     fmtMonto(c.monto, c.moneda),
     Math.abs(c.neto - c.monto) > 0.005 ? `neto ${fmtUsd(c.neto)}` : null,
     c.metodo_etiqueta,
@@ -1537,6 +1540,29 @@ export function textoValorBitacora(campo: string, valor: unknown): string {
 export function fechaLegible(v: string | null | undefined): string {
   if (!v) return "—";
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? fmtDateOnly(v) : fmtDate(v);
+}
+
+/**
+ * «vuelo 4 oct 2026 · cobro 6 oct 2026» (12-oct-2026). Pedido del cliente:
+ * «agregar la fecha del vuelo y la fecha de cobro porque por ejemplo el
+ * vuelo es del 04 de octubre y el 06 se cobró y solo estamos viendo el del
+ * cobro». Fuente única de las dos fechas de un candidato de cobro o sobre
+ * (`fecha_vuelo` es ADITIVA: con un API previo solo se ve el cobro, con su
+ * rótulo). Acepta la fecha del cobro como instante (`fecha_cobro`) o como
+ * día Cancún (`fecha`, las fichas de la IA y los 409).
+ */
+export function fechasCandidatoCobro(c: {
+  fecha_vuelo?: string | null;
+  fecha_cobro?: string | null;
+  fecha?: string | null;
+}): string {
+  const cobro = c.fecha_cobro ?? c.fecha ?? null;
+  return [
+    c.fecha_vuelo ? `vuelo ${fechaLegible(c.fecha_vuelo)}` : null,
+    cobro ? `cobro ${fechaLegible(cobro)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** Periodo corto «1 sep 2026 – 24 sep 2026». */

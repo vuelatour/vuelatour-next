@@ -128,7 +128,9 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "COORDINADOR", "MECANICO"],
       },
       {
-        label: "Inventario",
+        // «Inventario/Tienda» (pedido del cliente, 12-oct-2026): la bodega
+        // también es la tienda que vende refacciones a los aviones.
+        label: "Inventario/Tienda",
         href: "/admin/inventory",
         icon: ArchiveBoxIcon,
         roles: ["ADMIN", "COORDINADOR", "MECANICO", "SOCIO"],

@@ -59,7 +59,8 @@ import {
 import { ReversoDialog } from "@/components/admin/conciliacion/reverso-dialog";
 import { VincularGastoDialog } from "@/components/admin/conciliacion/vincular-gasto-dialog";
 import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
-import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly } from "@/lib/datetime";
+import { fechasCandidatoCobro } from "@/lib/admin/ingresos-ui";
 import {
   esCargoConLote,
   gastosLigadosDe,
@@ -289,7 +290,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
           [
             c.tipo === "SOBRE_GRUPO" ? c.grupo_nombre : null,
             c.cliente,
-            fmtDateCancun(c.fecha_cobro),
+            fechasCandidatoCobro(c),
             c.neto !== c.monto ? `depósito neto $${fmtMoney(c.neto)}` : null,
             exacto ? "cuadra exacto con el abono" : `diferencia $${fmtMoney(c.dif_monto)}`,
           ]
@@ -585,7 +586,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
                   {[
                     seleccionado.tipo === "SOBRE_GRUPO" ? seleccionado.grupo_nombre : null,
                     seleccionado.cliente,
-                    fmtDateCancun(seleccionado.fecha_cobro),
+                    fechasCandidatoCobro(seleccionado),
                     metodoPagoLabel(seleccionado.metodo_cobro),
                     seleccionado.neto !== seleccionado.monto
                       ? `depósito neto $${fmtMoney(seleccionado.neto)}`
