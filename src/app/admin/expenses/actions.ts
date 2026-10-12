@@ -7,6 +7,8 @@ import { mensajeErrorAccionGasto } from "@/lib/admin/gasto-acciones";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
+import { listInventario } from "@/lib/api/inventory-server";
+import type { ArticuloParaRefaccion } from "@/lib/admin/refaccion-inventario";
 import {
   VENTANA_VUELOS_DEFAULT,
   type VentanaVuelosCercanos,
@@ -87,6 +89,33 @@ export async function createGastoAction(
     return repartoError !== undefined
       ? { ok: true, data: created, repartoError }
       : { ok: true, data: created };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Artículos ACTIVOS de Inventario/Tienda para el selector de la refacción
+ * (12-oct-2026): nombre, nº de parte, existencia y precio de venta de la
+ * ficha. Una página de 300 (el tope del API): la bodega cabe de sobra; si
+ * algún día no, el artículo se elige como «nuevo» y el API lo cruza por su
+ * nº de parte al recibir la compra.
+ */
+export async function listArticulosRefaccionAction(): Promise<ActionResult<ArticuloParaRefaccion[]>> {
+  try {
+    const r = await listInventario({ activo: true, limit: 300 });
+    return {
+      ok: true,
+      data: r.data.map((i) => ({
+        id: i.id,
+        nombre: i.nombre,
+        numero_parte: i.numero_parte ?? null,
+        unidad: i.unidad ?? null,
+        stock: i.stock ?? null,
+        precio_venta: i.precio_venta ?? null,
+        precio_venta_moneda: i.precio_venta_moneda ?? null,
+      })),
+    };
   } catch (err) {
     return fail(err);
   }

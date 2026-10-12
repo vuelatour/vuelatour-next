@@ -38,10 +38,44 @@ import {
   createGastoAction,
   buscarVuelosCercanosAction,
   leerFacturaIAAction,
+  listArticulosRefaccionAction,
   listAvionesActivosAction,
   type GastoTicketIA,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
+import {
+  AYUDA_DESTINO,
+  ETIQUETA_ARTICULO,
+  ETIQUETA_CANTIDAD,
+  ETIQUETA_CATEGORIA_ITEM,
+  ETIQUETA_DESTINO,
+  ETIQUETA_NOMBRE_NUEVO,
+  ETIQUETA_NUMERO_PARTE,
+  ETIQUETA_PRECIO_VENTA,
+  ETIQUETA_VENDER_AL_AVION,
+  HINT_PRECIO_VENTA,
+  HINT_VENDER_AL_AVION,
+  NOTA_DIRECTO_AVION,
+  NOTA_DIRECTO_AVION_SIN_AVION,
+  NOTA_INVENTARIO_SIN_AVION,
+  OPCION_ARTICULO_NUEVO,
+  PLACEHOLDER_ARTICULO,
+  PLACEHOLDER_CATEGORIA_ITEM,
+  TITULO_DESTINO_REFACCION,
+  destinoRefaccionInicial,
+  formAlElegirArticulo,
+  formInventarioVacio,
+  hojaDestinoRefaccionInventario,
+  mensajeErrorInventario,
+  notaInventarioConAvion,
+  opcionesArticulos,
+  payloadInventario,
+  toastRefaccionInventario,
+  type ArticuloParaRefaccion,
+  type DestinoRefaccion,
+  type FormInventarioRefaccion,
+  type InventarioPayload,
+} from "@/lib/admin/refaccion-inventario";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { Gasto } from "@/types/expenses";
 import {
@@ -238,6 +272,22 @@ export function ExpenseCreateDialog({
   const [archivos, setArchivos] = useState<File[]>([]);
   const factura = archivos[0] ?? null;
   const facturaRef = useRef<HTMLInputElement>(null);
+  // REFACCIÓN (12-oct-2026, invariante 57 del API): «Directo al avión» (el
+  // gasto indirecto de siempre; la bodega y el precio de venta no se tocan)
+  // o «A Inventario/Tienda» (compra recibida: artículo existente o nuevo,
+  // unidades, precio de venta OBLIGATORIO y, con avión, salida inmediata
+  // vendida a ese avión: la traza queda en el cardex). Regla y textos en
+  // lib/admin/refaccion-inventario.ts; la cadena la hace el API.
+  const [refDestino, setRefDestino] = useState<DestinoRefaccion>(() =>
+    destinoRefaccionInicial({ conVueloPrefijado: !!defaultVueloId }),
+  );
+  const [inv, setInv] = useState<FormInventarioRefaccion>(() => formInventarioVacio("MXN"));
+  // Artículos activos de la bodega: se piden UNA vez, al llegar al modo inventario.
+  const [articulos, setArticulos] = useState<ArticuloParaRefaccion[] | null>(null);
+  const reiniciarRefaccion = () => {
+    setRefDestino(destinoRefaccionInicial({ conVueloPrefijado: !!defaultVueloId }));
+    setInv(formInventarioVacio("MXN"));
+  };
   // Lectura IA del adjunto: autollenado best-effort (siempre revisable a mano).
   const [leyendoIA, setLeyendoIA] = useState(false);
   const [aiRaw, setAiRaw] = useState<GastoTicketIA | null>(null);
@@ -334,6 +384,25 @@ export function ExpenseCreateDialog({
     tipoAuto.current = paso.auto;
     if (paso.valor !== actual) setValue("tipo_combustible", paso.valor);
   }, [open, categoriaSel, avionSel, tipoSel, tipoIa, aircraft, getValues, setValue]);
+  const esRefaccion = categoriaSel === "REFACCION";
+  const matriculaSel = aircraft.find((a) => a.id === avionSel)?.matricula ?? null;
+  useEffect(() => {
+    if (!open || !esRefaccion || refDestino !== "INVENTARIO" || articulos !== null) return;
+    let cancel = false;
+    void listArticulosRefaccionAction().then((r) => {
+      if (cancel) return;
+      if (r.ok && r.data) {
+        setArticulos(r.data);
+      } else {
+        // Sin lista se puede seguir con «Artículo nuevo»; se dice.
+        setArticulos([]);
+        toast.error(r.error ?? "No se pudieron cargar los artículos de Inventario/Tienda");
+      }
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open, esRefaccion, refDestino, articulos]);
   // Registro manual (el control es un SearchableSelect, no un input nativo):
   // handleSubmit bloquea el envío con el medio en blanco y pinta el error
   // bajo el campo; setValue(..., { shouldValidate: true }) lo limpia.
@@ -668,6 +737,24 @@ export function ExpenseCreateDialog({
         return;
       }
       const totalPagado = Math.round((ticket + propina) * 100) / 100;
+      // REFACCIÓN: directo al avión exige el avión; a Inventario/Tienda arma
+      // el bloque `inventario` (artículo, unidades, precio de venta
+      // obligatorio) ANTES de subir nada.
+      let inventarioPayload: InventarioPayload | null = null;
+      if (values.categoria === "REFACCION") {
+        if (refDestino === "AVION" && !values.aeronave_id) {
+          toast.error(NOTA_DIRECTO_AVION_SIN_AVION);
+          return;
+        }
+        if (refDestino === "INVENTARIO") {
+          const v = payloadInventario(inv, { aeronaveId: values.aeronave_id });
+          if (!v.ok) {
+            toast.error(v.error);
+            return;
+          }
+          inventarioPayload = v.inventario;
+        }
+      }
       // Cinturón: un PERSONAL del dueño jamás manda vuelo/avión aunque algún
       // valor viejo (elegido antes de cambiar la categoría) siga en el form.
       if (
@@ -784,6 +871,9 @@ export function ExpenseCreateDialog({
             hojasPaths,
           ),
           capturar_como_piloto: aplicarComoPiloto,
+          // Refacción a Inventario/Tienda (solo al crear; el API quita el
+          // avión del gasto de compra: el avión paga por la salida).
+          ...(inventarioPayload ? { inventario: inventarioPayload } : {}),
           // > 365 días atrás: SOLO se llega aquí tras la confirmación
           // explícita del diálogo — el API exige este candado para fechas de
           // otro año (auditoría 29-ago). No se manda en el caso normal.
@@ -803,6 +893,13 @@ export function ExpenseCreateDialog({
             `El gasto se creó SIN repartir: repártelo desde Otros gastos (o menú ⋯ → Repartir). Motivo: ${result.repartoError}`,
             { duration: 10000 },
           );
+        } else if (inventarioPayload) {
+          const t = toastRefaccionInventario(
+            result.data?.inventario,
+            aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null,
+          );
+          if (t.tipo === "success") toast.success(t.titulo);
+          else toast.warning(t.titulo, { description: t.descripcion, duration: 15000 });
         } else {
           toast.success(
             repartoItems
@@ -825,6 +922,7 @@ export function ExpenseCreateDialog({
         tipoAuto.current = false;
         setRepartirActivo(false);
         setRepartoSel({});
+        reiniciarRefaccion();
         if (facturaRef.current) facturaRef.current.value = "";
         reset(emptyValues(formDefaults));
         // Modo controlado: quien lo montó liga el gasto nuevo (Conciliación).
@@ -836,7 +934,11 @@ export function ExpenseCreateDialog({
         const f = Object.keys(result.fieldErrors)[0];
         toast.error(result.fieldErrors[f]?.[0] ?? `Validación falló (${f})`);
       } else {
-        toast.error(result.error ?? "Error desconocido");
+        toast.error(
+          inventarioPayload
+            ? mensajeErrorInventario(result.error)
+            : (result.error ?? "Error desconocido"),
+        );
       }
     });
   };
@@ -908,6 +1010,7 @@ export function ExpenseCreateDialog({
             avionLimpiado.current = false;
             setRepartirActivo(false);
             setRepartoSel({});
+            reiniciarRefaccion();
           }
         }}
       >
@@ -1253,6 +1356,14 @@ export function ExpenseCreateDialog({
                     categoria={watch("categoria")}
                     tieneVuelo={!!watch("vuelo_id")}
                     tieneAvion={!!watch("aeronave_id")}
+                    hoja={
+                      esRefaccion && refDestino === "INVENTARIO"
+                        ? hojaDestinoRefaccionInventario({
+                            tieneAvion: !!avionSel,
+                            vender: inv.vender_al_avion,
+                          })
+                        : null
+                    }
                   />
                 }
               >
@@ -1329,6 +1440,150 @@ export function ExpenseCreateDialog({
                 <span className="font-medium">Comisión del vendedor.</span>{" "}
                 {AYUDA_COMISION_VENDEDOR}
               </p>
+            )}
+            {/* REFACCIÓN (12-oct-2026): ¿directo al avión o a Inventario/Tienda?
+                La nota de la TRAZA sale con avión elegido. */}
+            {esRefaccion && (
+              <div className="space-y-3 rounded-lg border border-border p-3" data-refaccion-destino>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label className="text-sm font-medium">{TITULO_DESTINO_REFACCION}</Label>
+                  <div role="group" aria-label={TITULO_DESTINO_REFACCION} className="flex gap-1.5">
+                    {(["AVION", "INVENTARIO"] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={refDestino === d}
+                        title={AYUDA_DESTINO[d]}
+                        onClick={() => setRefDestino(d)}
+                        className={cn(
+                          "inline-flex h-8 cursor-pointer items-center rounded-lg px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          refDestino === d
+                            ? "bg-brand-600 text-white"
+                            : "bg-muted text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {ETIQUETA_DESTINO[d]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {refDestino === "AVION" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {avionSel ? NOTA_DIRECTO_AVION : NOTA_DIRECTO_AVION_SIN_AVION}
+                  </p>
+                ) : (
+                  <>
+                    <p
+                      className={cn(
+                        "rounded-lg border px-3 py-2 text-xs",
+                        matriculaSel
+                          ? "border-brand-500/40 bg-brand-500/5 text-foreground"
+                          : "border-border bg-muted/30 text-muted-foreground",
+                      )}
+                      data-nota-traza
+                    >
+                      {matriculaSel
+                        ? notaInventarioConAvion({
+                            matricula: matriculaSel,
+                            vender: inv.vender_al_avion,
+                            precioVenta: inv.precio_venta,
+                            moneda: inv.precio_venta_moneda,
+                          })
+                        : NOTA_INVENTARIO_SIN_AVION}
+                    </p>
+                    <Field label={ETIQUETA_ARTICULO} required>
+                      <SearchableSelect
+                        options={opcionesArticulos(articulos ?? [])}
+                        value={inv.item_id}
+                        onChange={(v) =>
+                          setInv((f) =>
+                            formAlElegirArticulo(f, v, (articulos ?? []).find((a) => a.id === v) ?? null),
+                          )
+                        }
+                        placeholder={articulos === null ? "Cargando artículos…" : PLACEHOLDER_ARTICULO}
+                        searchPlaceholder={PLACEHOLDER_ARTICULO}
+                      />
+                    </Field>
+                    {inv.item_id === OPCION_ARTICULO_NUEVO && (
+                      <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+                        <Field label={ETIQUETA_NOMBRE_NUEVO} required>
+                          <Input
+                            value={inv.nombre}
+                            onChange={(e) => setInv((f) => ({ ...f, nombre: e.target.value }))}
+                            placeholder="Ej. Filtro de aceite CH48110"
+                          />
+                        </Field>
+                        <Field label={ETIQUETA_NUMERO_PARTE}>
+                          <Input
+                            className="font-mono"
+                            value={inv.numero_parte}
+                            onChange={(e) => setInv((f) => ({ ...f, numero_parte: e.target.value }))}
+                            placeholder="Ej. CH48110"
+                          />
+                        </Field>
+                        <Field label={ETIQUETA_CATEGORIA_ITEM}>
+                          <Input
+                            value={inv.categoria}
+                            onChange={(e) => setInv((f) => ({ ...f, categoria: e.target.value }))}
+                            placeholder={PLACEHOLDER_CATEGORIA_ITEM}
+                          />
+                        </Field>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+                      <Field label={ETIQUETA_CANTIDAD} required>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          inputMode="decimal"
+                          value={inv.cantidad}
+                          onChange={(e) => setInv((f) => ({ ...f, cantidad: e.target.value }))}
+                        />
+                      </Field>
+                      <Field label={ETIQUETA_PRECIO_VENTA} required hint={HINT_PRECIO_VENTA}>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            inputMode="decimal"
+                            value={inv.precio_venta}
+                            onChange={(e) => setInv((f) => ({ ...f, precio_venta: e.target.value }))}
+                            placeholder="0.00"
+                            aria-label={ETIQUETA_PRECIO_VENTA}
+                            className="flex-1"
+                          />
+                          <SearchableSelect
+                            className="w-24 shrink-0"
+                            aria-label="Moneda del precio de venta"
+                            options={[
+                              { value: "MXN", label: "MXN" },
+                              { value: "USD", label: "USD" },
+                            ]}
+                            value={inv.precio_venta_moneda}
+                            onChange={(v) =>
+                              setInv((f) => ({ ...f, precio_venta_moneda: v === "USD" ? "USD" : "MXN" }))
+                            }
+                          />
+                        </div>
+                      </Field>
+                    </div>
+                    {avionSel && (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <Label className="text-sm font-medium">{ETIQUETA_VENDER_AL_AVION}</Label>
+                          <p className="text-xs text-muted-foreground">{HINT_VENDER_AL_AVION}</p>
+                        </div>
+                        <Switch
+                          checked={inv.vender_al_avion}
+                          onCheckedChange={(v) => setInv((f) => ({ ...f, vender_al_avion: v }))}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
             {!defaultVueloId && watch("categoria") === "INDIRECTO" && (
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">

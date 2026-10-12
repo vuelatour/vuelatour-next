@@ -13,12 +13,18 @@ export function CategoriaDestinoHint({
   categoria,
   tieneVuelo,
   tieneAvion,
+  hoja,
 }: {
   categoria: string;
   tieneVuelo: boolean;
   tieneAvion: boolean;
+  /** Hoja ya decidida por el diálogo (p. ej. la refacción que entra a
+   *  Inventario/Tienda, 12-oct-2026): sustituye a `hojaDestinoGasto` y se
+   *  pinta aunque no haya vuelo ni avión. */
+  hoja?: string | null;
 }) {
   const destino = destinoPorDefecto(categoria);
+  const conLoElegido = hoja ?? (tieneVuelo || tieneAvion ? hojaDestinoGasto(categoria, tieneVuelo, tieneAvion) : null);
   return (
     <>
       {destino && (
@@ -26,10 +32,9 @@ export function CategoriaDestinoHint({
           Por default: {destino}
         </span>
       )}
-      {(tieneVuelo || tieneAvion) && (
+      {conLoElegido && (
         <span className="block text-muted-foreground">
-          Con lo elegido cae en:{" "}
-          {hojaDestinoGasto(categoria, tieneVuelo, tieneAvion)}
+          Con lo elegido cae en: {conLoElegido}
         </span>
       )}
     </>

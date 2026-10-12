@@ -1,5 +1,26 @@
 import type { CompraRef, CompraRol } from "./compras";
 
+/**
+ * REFACCIÓN A INVENTARIO/TIENDA (12-oct-2026, API 0.0.72, invariante 57):
+ * lo que pasó con la pieza tras el alta (compra → recibir → precio → salida).
+ * Viaja SOLO en la respuesta de `POST /v1/expenses` con `inventario`. `error`
+ * = la etapa que falló (lo hecho antes se conserva; el gasto nunca se borra)
+ * y `avisos` dice qué hacer. Se lee SIEMPRE por
+ * `lib/admin/refaccion-inventario.ts#toastRefaccionInventario`.
+ */
+export interface GastoInventarioResultado {
+  item_id: string | null;
+  item_nombre: string | null;
+  item_creado: boolean;
+  compra_id: string | null;
+  compra_folio: number | null;
+  entrada_id: string | null;
+  precio_venta_guardado: boolean;
+  salida: { movimiento_id: string; gasto_id: string | null; monto: number; moneda: string } | null;
+  error: "NO_DISPONIBLE" | "ITEM" | "COMPRA" | "RECIBIR" | "SALIDA" | null;
+  avisos: string[];
+}
+
 export interface Gasto {
   id: string;
   vuelo_id: string | null;
@@ -46,6 +67,8 @@ export interface Gasto {
   foto_url: string | null;
   /** Lectura IA del comprobante (jsonb: matricula, conceptos, folio…). */
   valor_ia_extraido: Record<string, unknown> | null;
+  /** ADITIVO, solo en la respuesta del alta con `inventario` (ver el tipo). */
+  inventario?: GastoInventarioResultado | null;
   conciliado: boolean;
   /** PAGOS PARCIALES (14-sep-2026, ADITIVOS): un gasto puede tener N cargos
    *  del banco ligados (misma moneda); `conciliado` solo es true cuando lo

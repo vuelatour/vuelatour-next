@@ -6136,3 +6136,54 @@ visto bueno». Solo panel.
   ofrece crear.
 - Cableado vigilado en `conciliacion/__tests__/crear-gasto-desde-cargo.test.ts`.
 
+
+## Refacción: «Directo al avión» o «A Inventario/Tienda» (12-oct-2026, API 0.0.72)
+
+Pedido del cliente: «si se selecciona un avión al dar de alta un gasto de un
+artículo de inventario, una nota visual: entra a inventario pero se
+asignará/venderá a ese avión, quedando la traza del artículo»; «el gasto
+asignado directo al avión se va al avión sin cambiar el precio de venta;
+desde inventario debe pedir precio de venta obligatorio; el gasto REFACCION
+crea el ítem si no existe». Contrato: invariante 57 del API (`POST
+/v1/expenses` con el bloque `inventario`, solo REFACCION y solo al crear).
+
+- **FUENTE ÚNICA** `lib/admin/refaccion-inventario.ts` (PURA, prueba
+  `__tests__/refaccion-inventario.test.ts`): `destinoRefaccionInicial`
+  (desde «Gastos del vuelo» arranca «Directo al avión»; en el alta general,
+  «A Inventario/Tienda»), los textos del segmento y las notas
+  (`NOTA_DIRECTO_AVION`: no pasa por la bodega ni cambia el precio de venta
+  de ningún artículo; `NOTA_INVENTARIO_SIN_AVION`; `notaInventarioConAvion`
+  = la TRAZA: «entra a Inventario/Tienda y, al guardar, sale vendida a
+  XA-VGV a $450 MXN c/u: en su cardex queda la traza (entrada + salida) y el
+  avión recibe el cargo de bodega»), el sub-formulario
+  (`formInventarioVacio`, `formAlElegirArticulo` —prellena el precio de
+  venta de la ficha—, `opcionesArticulos` con «＋ Artículo nuevo (se crea al
+  guardar)» primero), `payloadInventario` (artículo o nombre nuevo, unidades
+  > 0, precio de venta CAPTURADO —0 = a costo—, `vender_al_avion` solo con
+  avión; sin cadenas vacías), `hojaDestinoRefaccionInventario`,
+  `toastRefaccionInventario` (verde con compra #, artículo nuevo y la venta;
+  ámbar con los `avisos` del API cuando una etapa falló: el gasto SÍ quedó)
+  y `mensajeErrorInventario` (el 400 «property inventario should not exist»
+  de un API previo ⇒ «guarda la refacción Directo al avión o crea la
+  compra desde el menú ⋯»).
+- **Alta** (`expense-create-dialog.tsx`): con categoría REFACCION, el
+  bloque «¿A dónde va la refacción?» con dos botones (`aria-pressed`):
+  «Directo al avión» (el gasto indirecto de siempre; exige el avión al
+  guardar) y «A Inventario/Tienda» (artículo de la bodega —
+  `listArticulosRefaccionAction`, activos, una página de 300 — o nuevo con
+  nombre, nº de parte y categoría; unidades; precio de venta unitario +
+  moneda, OBLIGATORIO; con avión, el switch «Vender al avión al guardar»
+  encendido y la nota de la traza). El bloque `inventario` se valida ANTES
+  de subir el comprobante y viaja en el POST; el API quita el avión del
+  gasto de compra (el avión paga por la salida de bodega, hoja
+  Refacciones) — por eso el hint de la categoría dice «Inventario/Tienda
+  (compra recibida) · el avión recibe el cargo de bodega por su salida»
+  (`CategoriaDestinoHint` gana la prop `hoja`). El toast dice qué pasó por
+  etapa (`result.data.inventario`, tipo `GastoInventarioResultado` en
+  `types/expenses.ts`).
+- **Lo que NO cambia**: la refacción «Directo al avión» es byte a byte el
+  alta de siempre (sin `inventario`); «Verificar / editar» no toca la bodega
+  (un gasto ya en una compra enseña su liga); la app Flutter sigue igual.
+- Cableado vigilado en `expenses/__tests__/refaccion-inventario-ui.test.ts`.
+  Orden de deploy: API 0.0.72 → panel (con un API previo, «A
+  Inventario/Tienda» responde el aviso de «guarda Directo al avión»).
