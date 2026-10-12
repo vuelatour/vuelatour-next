@@ -5982,3 +5982,69 @@ de un vuelo…” porque es lo mismo que “Vincular a un cobro o ingreso”».
 - **El reporte Excel sale en el orden del estado de cuenta** (API 0.0.70,
   invariante 55, migración `20261012000001` pendiente de aplicar): lo arma
   el API; el panel no cambia.
+
+## Conciliación: 1 abono ↔ N cobros («un pago para varios vuelos», 12-oct-2026, API 0.0.71)
+
+Pedido del cliente: «al momento de vincular un cobro o ingreso puedas
+seleccionar 2 para un solo cobro… hicieron un pago para el vuelo 379 y 380».
+Contrato con el API 0.0.71 (migración `20261012000002`, PENDIENTE de aplicar;
+invariante 56 del API): la liga vive en una puente y `movimiento_bancario`
+trae `cobros_n` (espejo); `cobro_id`/`cobro` quedan como ESPEJO solo con UNA
+parte (con 2+ vienen NULL).
+
+- **La regla es del API**: 1 cobro = la liga de siempre; 2+ cobros en la
+  moneda de la cuenta y Σ netos (monto − comisión) = abono ± tolerancia (1 ¢
+  por cobro, 0.02–1.00); un sobre de grupo o un ingreso van SOLOS. El panel
+  NUNCA decide si cuadra: la suma en pantalla es GUÍA.
+- **FUENTE ÚNICA `lib/admin/conciliacion-cobros-lote.ts`** (PURA, prueba
+  `__tests__/conciliacion-cobros-lote.test.ts`): `numeroCobrosDe`,
+  `tieneCobroLigado`, `esAbonoConLote`; la selección del diálogo
+  (`alternarSeleccion`: varios cobros; sobre/ingreso desplazan lo marcado y
+  lo dicen; `seleccionInicial` con los `cobro_ids` que el abono ya paga;
+  `coincideOpcion` con el buscador único); la suma guía (`estadoLoteAbono`,
+  `textoSumaLoteAbono`); `botonVincularAbono`, `toastVinculoCobros`;
+  `resumenLoteCobrosFila` y `textoBusquedaCobros` (bandeja); los textos de
+  desvincular; `mensajeErrorVincularCobros` (`ABONO_NO_CUADRA`,
+  `LOTE_MONEDA_DISTINTA`, `COBRO_YA_CONCILIADO` ⇒ recarga, `COBRO_DE_GRUPO`,
+  `MOVIMIENTO_CON_LOTE`, `API_SIN_LOTE_COBROS` y el 503
+  `CONCILIACION_COBROS_NO_DISPONIBLE` ⇒ «vincúlalo a un solo cobro»).
+- **Diálogo «Vincular a un cobro o ingreso»**
+  (`ingresos/vincular-abono-dialog.tsx`, Ingresos y Conciliación): lista con
+  CASILLAS + buscador local; los cobros que el abono YA paga llegan marcados
+  (`movimiento.cobro_ids`); UN cobro sin lote previo sigue por
+  `ligarAbonoCobroAction({cobro_id})` (funciona con un API previo); 2+ (o
+  editar un lote) por `ligarAbonoCobrosAction(cobro_ids)`
+  (`app/admin/ingresos/actions.ts`; el 400 «property cobro_ids should not
+  exist» de un API previo se traduce a `API_SIN_LOTE_COBROS`). Conserva
+  «¿No está el cobro? Regístralo».
+- **Bandeja** (`movimientos-table.tsx`): rama NUEVA antes de las de siempre
+  para `esAbonoConLote` — «2 cobros · $3,500 MXN» + una línea por cobro con
+  liga al vuelo («Vuelo #379 · Maqar», fechas y monto) + «diferencia $0.01»;
+  sin `cobros[]` (skew) «2 cobros conciliados», JAMÁS «Pendiente». La
+  búsqueda rápida encuentra el abono por folio o cliente de sus cobros. El
+  menú ⋯ (`movimiento-actions.tsx`) ve el lote como «vinculado a cobro»,
+  ofrece «Desvincular los 2 cobros» con confirmación y `esAbonoPendiente`
+  (`conciliacion-abonos.ts`) ya no cuenta un lote como pendiente.
+- **Tipos ADITIVOS** (`types/conciliacion.ts`): `MovimientoCobroParte`,
+  `MovimientoBancario.cobros_n/cobros/cobros_suma/cobros_diferencia/
+  cobros_estado`, `CandidatosCobroResponse.movimiento.cobros_n/cobro_ids`.
+- Pruebas: `lib/admin/__tests__/conciliacion-cobros-lote.test.ts` y
+  `ingresos/__tests__/vincular-abono-lote.test.tsx` (cableado). Orden de
+  deploy: API 0.0.71 → migración → panel (con el panel nuevo y un API previo,
+  marcar 2+ responde el aviso de «versión nueva del servidor»).
+
+## Búsqueda «tipo Algolia, sin contratar Algolia» (12-oct-2026)
+
+Pedido del cliente: «en los buscadores podemos ampliar capacidades de
+búsqueda». FUENTE ÚNICA `lib/admin/busqueda.ts` (PURA, prueba
+`__tests__/busqueda.test.ts`): `normalizarTexto` (sin acentos ni
+mayúsculas, signos como separadores, «$2,801.40» ⇒ «2801.40»), `tokensDe`,
+`coincideBusqueda(texto, consulta)` (TODAS las palabras, en cualquier orden;
+cada una por palabra exacta, inicio de palabra, pedazo o PARECIDA —un error
+de dedo en palabras de 5+ letras: letra cambiada, de más, de menos o dos
+invertidas—), `puntuacionBusqueda` (exacta 3 · prefijo 2 · pedazo 1 ·
+parecida 0.5) y `filtrarPorBusqueda` (filtra y ordena por relevancia, orden
+original en empates). La usan la lista de candidatos de «Vincular a un cobro
+o ingreso» y, desde la misma fecha, `DataTable` (búsqueda rápida) y
+`SearchableSelect` (todo selector con buscador del panel).
+

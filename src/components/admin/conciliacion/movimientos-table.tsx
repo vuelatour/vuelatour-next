@@ -29,6 +29,15 @@ import {
 } from "@/lib/admin/conciliacion-lote";
 import { badgeVinculoNoBancario, type BadgeVinculoNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
+  TITULO_VER_VUELO_COBRO,
+  TOOLTIP_LOTE_COBROS_SIN_DETALLE,
+  esAbonoConLote,
+  numeroCobrosDe,
+  resumenLoteCobrosFila,
+  textoBusquedaCobros,
+  textoLoteCobrosSinDetalle,
+} from "@/lib/admin/conciliacion-cobros-lote";
+import {
   ETIQUETA_REVERSO,
   contraparteReverso,
   esConciliadoPorReverso,
@@ -215,6 +224,42 @@ export function MovimientosTable({ movimientos, gastos, cuentas, abonos }: Movim
                   <span className="block text-[10px] text-amber-600 dark:text-amber-400">
                     {lote.diferencia}
                   </span>
+                )}
+              </span>
+            );
+          }
+          // 1 ABONO ↔ N COBROS (12-oct-2026): un abono que paga VARIOS cobros
+          // trae `cobro_id`/`cobro` NULL; la liga se lee de `cobros_n` y el
+          // detalle en `cobros[]`. Antes de las ramas de siempre, o el lote
+          // se pintaba «Pendiente».
+          if (m.conciliado && esAbonoConLote(m)) {
+            const lote = resumenLoteCobrosFila(m);
+            if (!lote) {
+              return (
+                <span className="block text-sm text-emerald-600" title={TOOLTIP_LOTE_COBROS_SIN_DETALLE}>
+                  {textoLoteCobrosSinDetalle(numeroCobrosDe(m))}
+                </span>
+              );
+            }
+            return (
+              <span className="block text-sm">
+                <span className="block text-emerald-600">{lote.titulo}</span>
+                {lote.lineas.map((l) => (
+                  <Link
+                    key={l.key}
+                    href={l.href}
+                    className="block text-xs text-emerald-600 hover:underline"
+                    title={TITULO_VER_VUELO_COBRO}
+                  >
+                    {l.principal}
+                    <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
+                      {l.secundaria}
+                    </span>
+                  </Link>
+                ))}
+                {lote.mas && <span className="block text-[10px] text-muted-foreground">{lote.mas}</span>}
+                {lote.diferencia && (
+                  <span className="block text-[10px] text-amber-600 dark:text-amber-400">{lote.diferencia}</span>
                 )}
               </span>
             );
@@ -482,6 +527,9 @@ export function MovimientosTable({ movimientos, gastos, cuentas, abonos }: Movim
           // gastos que paga el cargo (uno o varios): «SAESA» o «#315» lo
           // encuentran.
           textoBusquedaGastos(m)
+        } ${
+          // Folios y clientes de los cobros que paga el abono (uno o varios).
+          textoBusquedaCobros(m)
         }`
       }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"

@@ -341,6 +341,45 @@ export async function candidatosAbonoAction(
   }
 }
 
+/**
+ * 1 ABONO ↔ N COBROS (12-oct-2026, API 0.0.71): `PATCH movimientos/:id/cobro
+ * { cobro_ids }`. Con un API previo (400 «property cobro_ids should not
+ * exist») responde `API_SIN_LOTE_COBROS` para que el diálogo lo diga en
+ * es-MX; la liga de UN cobro sigue por `ligarAbonoCobroAction`.
+ */
+export async function ligarAbonoCobrosAction(
+  movId: string,
+  cobroIds: readonly string[],
+): Promise<ActionResult<MovimientoBancario>> {
+  if (!esUuid(movId)) return ID_INVALIDO;
+  const ids = [...new Set(cobroIds.filter((x) => typeof x === "string" && esUuid(x)))];
+  if (ids.length === 0) return { ok: false, error: "Marca al menos un cobro." };
+  if (ids.length > 50) return { ok: false, error: "Un abono paga a lo más 50 cobros." };
+  try {
+    const data = await apiServer<MovimientoBancario>(
+      `/v1/conciliacion/movimientos/${movId}/cobro`,
+      { method: "PATCH", body: { cobro_ids: ids } },
+    );
+    revalidar((data?.cobros_estado ?? []).map((c) => c.vuelo_id ?? null));
+    return { ok: true, data };
+  } catch (err) {
+    if (
+      isApiError(err) &&
+      err.status === 400 &&
+      /cobro_ids should not exist/i.test(`${err.message ?? ""} ${JSON.stringify(err.details ?? "")}`)
+    ) {
+      return {
+        ok: false,
+        code: "API_SIN_LOTE_COBROS",
+        status: 400,
+        error:
+          "Vincular un abono a varios cobros necesita la versión nueva del servidor: por ahora vincúlalo a un solo cobro, o avisa a sistemas.",
+      };
+    }
+    return fail(err);
+  }
+}
+
 /** Vuelos para aplicar un anticipo o registrar el cobro de un abono. */
 export async function vuelosCandidatosAction(q: {
   cliente_id?: string | null;

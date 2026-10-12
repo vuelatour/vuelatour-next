@@ -15,6 +15,7 @@
  * diálogos del menú lo exige y nunca se inventa un motivo.
  */
 import type { CatalogosIngreso } from "@/components/admin/ingresos/registrar-ingreso-dialog";
+import { numeroCobrosDe } from "@/lib/admin/conciliacion-cobros-lote";
 import type { MovimientoBancario } from "@/types/conciliacion";
 import type { AbonoPendiente, MonedaIngreso } from "@/types/ingresos";
 
@@ -43,7 +44,7 @@ function numeroONull(v: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** ABONO que sigue sin identificar: ni conciliado ni ligado a nada. */
+/** ABONO que sigue sin identificar: ni conciliado ni ligado a nada (tampoco a varios cobros). */
 export function esAbonoPendiente(m: MovimientoBancario): boolean {
   return (
     m.tipo === "ABONO" &&
@@ -51,6 +52,7 @@ export function esAbonoPendiente(m: MovimientoBancario): boolean {
     m.gasto_id == null &&
     m.cobro_id == null &&
     m.cobro_grupo_id == null &&
+    numeroCobrosDe(m) === 0 &&
     m.ingreso_id == null &&
     m.clasificacion_id == null
   );

@@ -80,6 +80,12 @@ import {
 } from "@/lib/admin/conciliacion-lote";
 import { textoDesvincularNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
+  menuDesvincularCobros,
+  numeroCobrosDe,
+  textoConfirmarDesvincularCobros,
+  tituloDesvincularCobros,
+} from "@/lib/admin/conciliacion-cobros-lote";
+import {
   BOTON_QUITAR_REVERSO,
   MENU_ABONO_DEVOLUCION,
   MENU_CARGO_DEVUELTO,
@@ -152,7 +158,10 @@ export function MovimientoActions({ movimiento, gastos, abonos }: MovimientoActi
   // liga a un cobro de vuelo (cobro_id) O al sobre de un grupo
   // (cobro_grupo_id): ambos son "cobro" para desvincular.
   const vinculadoASobre = movimiento.cobro_grupo_id != null;
-  const vinculadoACobro = movimiento.cobro_id != null || vinculadoASobre;
+  // 1 abono ↔ N cobros (12-oct-2026): con 2+ partes `cobro_id` viene NULL y
+  // la liga se lee de `cobros_n`.
+  const cobrosDelLote = numeroCobrosDe(movimiento);
+  const vinculadoACobro = movimiento.cobro_id != null || vinculadoASobre || cobrosDelLote > 0;
   // Ligado a gasto = `gasto_id` (espejo con UNA parte) o `gastos_n > 0`: un
   // cargo que paga VARIOS gastos trae `gasto_id` NULL (2-oct-2026).
   const vinculadoAGastoOCobro = tieneGastoLigado(movimiento) || vinculadoACobro;
@@ -546,7 +555,9 @@ export function MovimientoActions({ movimiento, gastos, abonos }: MovimientoActi
               {vinculadoASobre
                 ? "Desvincular cobro de grupo"
                 : vinculadoACobro
-                  ? "Desvincular cobro"
+                  ? cobrosDelLote >= 2
+                    ? menuDesvincularCobros(cobrosDelLote)
+                    : "Desvincular cobro"
                   : conLote
                     ? menuDesvincularGastos(gastosDelLote)
                     : "Desvincular gasto"}
@@ -848,19 +859,28 @@ export function MovimientoActions({ movimiento, gastos, abonos }: MovimientoActi
                     : vinculadoASobre
                       ? "¿Desvincular este cobro de grupo?"
                       : vinculadoACobro
-                        ? "¿Desvincular este cobro?"
+                        ? cobrosDelLote >= 2
+                          ? tituloDesvincularCobros(cobrosDelLote)
+                          : "¿Desvincular este cobro?"
                         : "¿Desvincular este gasto?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  El movimiento bancario volverá a quedar pendiente de conciliar y el{" "}
-                  {vinculadoAIngreso
-                    ? "ingreso"
-                    : vinculadoASobre
-                      ? "sobre del grupo"
-                      : vinculadoACobro
-                        ? "cobro"
-                        : "gasto"}{" "}
-                  quedará libre para vincularse con otro movimiento.
+                  {vinculadoACobro && cobrosDelLote >= 2
+                    ? textoConfirmarDesvincularCobros(cobrosDelLote)
+                    : null}
+                  {!(vinculadoACobro && cobrosDelLote >= 2) && (
+                    <>
+                      El movimiento bancario volverá a quedar pendiente de conciliar y el{" "}
+                      {vinculadoAIngreso
+                        ? "ingreso"
+                        : vinculadoASobre
+                          ? "sobre del grupo"
+                          : vinculadoACobro
+                            ? "cobro"
+                            : "gasto"}{" "}
+                      quedará libre para vincularse con otro movimiento.
+                    </>
+                  )}
                   {vinculadoASobre &&
                     " Las partes por avión del sobre dejan de verse como conciliadas."}
                   {!vinculadoACobro && !vinculadoAIngreso &&

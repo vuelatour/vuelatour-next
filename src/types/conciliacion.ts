@@ -71,6 +71,24 @@ export interface VinculoNoBancarioRespuesta {
   notas_anotadas: boolean;
 }
 
+/** Un cobro de vuelo pagado por un abono con VARIOS cobros (12-oct-2026, API 0.0.71). */
+export interface MovimientoCobroParte {
+  cobro_id: string;
+  /** NETO del cobro en un lote (monto − comisión); el abono completo con una sola parte. */
+  monto_parte: number | string;
+  vuelo_id?: string | null;
+  folio?: number | null;
+  cliente?: string | null;
+  /** timestamptz: formatear en hora Cancún. */
+  fecha_cobro?: string | null;
+  fecha_vuelo?: string | null;
+  monto?: number | string | null;
+  moneda?: string | null;
+  metodo_cobro?: string | null;
+  comision_banco_monto?: number | string | null;
+  neto?: number | string | null;
+}
+
 export interface MovimientoBancario {
   id: string;
   cuenta_bancaria_id: string;
@@ -135,6 +153,20 @@ export interface MovimientoBancario {
     vuelo_id: string | null;
     vuelo?: { folio: number | null } | null;
   } | null;
+  /** 1 ABONO ↔ N COBROS (12-oct-2026, ADITIVOS del API 0.0.71; ausentes =
+      API previo y la fila se pinta como antes). Fuente única de la liga: la
+      tabla puente del API; `cobro_id`/`cobro` quedan como ESPEJO solo cuando
+      hay EXACTAMENTE una parte (con 2+ vienen NULL).
+      - `cobros_n`: cuántos cobros paga este abono.
+      - `cobros`: el detalle de cada parte (vuelo, folio, cliente, montos).
+      - `cobros_suma`: Σ monto_parte; `cobros_diferencia` = |monto| − Σ.
+      - `cobros_estado`: SOLO en la respuesta del PATCH …/cobro.
+      Se leen SIEMPRE por `lib/admin/conciliacion-cobros-lote.ts`. */
+  cobros_n?: number | null;
+  cobros?: MovimientoCobroParte[] | null;
+  cobros_suma?: number | string | null;
+  cobros_diferencia?: number | string | null;
+  cobros_estado?: MovimientoCobroParte[] | null;
   /** Sobre de grupo conciliado (ABONOS): detalle + navegación al grupo.
       Aditivo; null cuando la liga es por cobro de vuelo o gasto. */
   cobro_grupo?: SobreConciliacion | null;
@@ -519,6 +551,10 @@ export interface CandidatosCobroResponse {
     moneda: string | null;
     cobro_id: string | null;
     cobro_grupo_id: string | null;
+    /** ADITIVOS (12-oct-2026, API 0.0.71): cuántos cobros paga ya y cuáles
+        (para marcarlos al editar un lote). Ausentes = API previo. */
+    cobros_n?: number | null;
+    cobro_ids?: string[];
   };
   /** Ordenados por dif_monto asc y luego cercanía de fecha (tope 60). */
   candidatos: CandidatoCobro[];
