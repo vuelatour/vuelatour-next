@@ -45,6 +45,17 @@ import { isApiError } from "@/lib/api/errors";
 import type { PaywiseAuditoria } from "@/types/conciliacion";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { RangoFechasConciliacion } from "@/components/admin/conciliacion/rango-fechas-bar";
+import {
+  filtroConciliacionDeUrl,
+  hrefConciliacion,
+  rangoParaSinBanco,
+  rangoVistaConciliacion,
+  textoListaRecortada,
+  textoRangoVista,
+  textoVentanaSinBanco,
+  type FiltroConciliacion,
+} from "@/lib/admin/conciliacion-vista";
 
 export const dynamic = "force-dynamic";
 // Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
@@ -52,22 +63,7 @@ export const dynamic = "force-dynamic";
 // cortaba antes de que el API respondiera.
 export const maxDuration = 300;
 
-type Filtro =
-  | "todos"
-  | "pendientes"
-  | "conciliados"
-  | "sin_banco"
-  | "cobros_sin_banco"
-  | "paywise";
-
-const FILTROS: Filtro[] = [
-  "todos",
-  "pendientes",
-  "conciliados",
-  "sin_banco",
-  "cobros_sin_banco",
-  "paywise",
-];
+type Filtro = FiltroConciliacion;
 
 /** Ventana ±días abono Paywise ↔ cobro (liquidación diferida; default del API). */
 const PAYWISE_DIAS = 5;
@@ -76,25 +72,28 @@ const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
 const fmtDate = fmtDateOnly;
 
-const esFecha = (v: string | undefined): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
-
 export default async function ConciliacionPage({
   searchParams,
 }: {
   searchParams: Promise<{ f?: string; desde?: string; hasta?: string; cuenta?: string }>;
 }) {
   const sp = await searchParams;
-  const filtro: Filtro = FILTROS.includes(sp.f as Filtro) ? (sp.f as Filtro) : "todos";
+  const filtro: Filtro = filtroConciliacionDeUrl(sp.f);
 
-  // Periodo de la auditoría Paywise: mes corriente en hora Cancún por default.
+  // Rango EXPLÍCITO de la vista (?desde/?hasta, filtro de fechas del
+  // 12-oct-2026): UNO para toda la pantalla — lista, tarjetas por cuenta y
+  // pestañas «sin banco» — y el que heredan «Cruzar pendientes», «Emparejar
+  // devoluciones», la IA, el reporte Excel y la auditoría Paywise. Validado
+  // (día inexistente se ignora, invertido se corrige, futuro se recorta): un
+  // enlace viejo nunca tumba la pantalla. Sin él, cada diálogo pone su default.
   const hoy = todayCancun();
-  const pwDesde = esFecha(sp.desde) ? sp.desde : `${hoy.slice(0, 7)}-01`;
-  const pwHasta = esFecha(sp.hasta) ? sp.hasta : hoy;
+  const rango = rangoVistaConciliacion(sp.desde, sp.hasta, hoy);
+  const desdeVista = rango.desde;
+  const hastaVista = rango.hasta;
+  // Periodo de la auditoría Paywise: mes corriente en hora Cancún por default.
+  const pwDesde = desdeVista ?? `${hoy.slice(0, 7)}-01`;
+  const pwHasta = hastaVista ?? hoy;
   const pwCuenta = sp.cuenta && /^[0-9a-f-]{36}$/i.test(sp.cuenta) ? sp.cuenta : "";
-  // Rango EXPLÍCITO de la vista (?desde/?hasta): es el que heredan «Cruzar
-  // pendientes» y las sugerencias IA. Sin él, cada diálogo pone su default.
-  const desdeVista = esFecha(sp.desde) ? sp.desde : undefined;
-  const hastaVista = esFecha(sp.hasta) ? sp.hasta : undefined;
 
   const query: ListConciliacionQuery = { limit: 300 };
   if (filtro === "pendientes") query.conciliado = false;
@@ -102,10 +101,17 @@ export default async function ConciliacionPage({
   // La bandeja mezclaba TODAS las cuentas: ?cuenta= la filtra (el API ya lo
   // soportaba) y los chips de arriba la cambian.
   if (pwCuenta) query.cuenta_bancaria_id = pwCuenta;
+  // El DTO del API acepta `desde`/`hasta` (YYYY-MM-DD sobre `fecha`) desde el
+  // 24-sep-2026; `rangoVistaConciliacion` ya descartó lo que rechazaría.
+  if (desdeVista) query.desde = desdeVista;
+  if (hastaVista) query.hasta = hastaVista;
+  // Las pestañas «sin banco» tienen su propia ventana (default: últimos 90
+  // días): `rangoParaSinBanco` explica por qué con solo «hasta» se ancla ahí.
+  const sinBancoRango = rangoParaSinBanco(rango);
 
   const degradado = new Degradaciones();
   const [
-    { data: movs },
+    { data: movs, count: totalMovs },
     cuentasRes,
     gastosRes,
     resumen,
@@ -127,15 +133,15 @@ export default async function ConciliacionPage({
     degradado.opcional("los gastos para vincular", listGastos({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listGastos>>["data"],
     }),
-    conciliacionResumen().catch(() => []),
+    conciliacionResumen(desdeVista, hastaVista).catch(() => []),
     // Best-effort: la página no se cae si el archivado aún no responde.
     listEstadosCuenta().catch(() => ({ data: [] })),
     // El INVERSO de la bandeja (28-ago): gastos bancarios del sistema que
     // no aparecen en ningún estado de cuenta. Best-effort (skew de deploy).
-    conciliacionGastosSinBanco().catch(() => null),
+    conciliacionGastosSinBanco(sinBancoRango.desde, sinBancoRango.hasta).catch(() => null),
     // Espejo para COBROS (9-sep): transferencia / HSBC link / cheque /
     // Paywise sin abono importado. Best-effort.
-    conciliacionCobrosSinBanco().catch(() => null),
+    conciliacionCobrosSinBanco(sinBancoRango.desde, sinBancoRango.hasta).catch(() => null),
     getPaywiseComisionPct(),
   ]);
   const estadosCuenta = estadosRes.data;
@@ -233,16 +239,19 @@ export default async function ConciliacionPage({
   }));
 
   /** URL de la vista: pestaña + cuenta + rango explícito (fuente única). */
-  const hrefVista = (f: Filtro, cuentaId: string) => {
-    const q = new URLSearchParams();
-    if (f !== "todos") q.set("f", f);
-    if (cuentaId) q.set("cuenta", cuentaId);
-    if (desdeVista) q.set("desde", desdeVista);
-    if (hastaVista) q.set("hasta", hastaVista);
-    const qs = q.toString();
-    return qs ? `/admin/conciliacion?${qs}` : "/admin/conciliacion";
-  };
+  const hrefVista = (f: Filtro, cuentaId: string) =>
+    hrefConciliacion({ f, cuenta: cuentaId, desde: desdeVista, hasta: hastaVista });
   const hrefConCuenta = (cuentaId: string) => hrefVista(filtro, cuentaId);
+  const ventanaSinBanco = textoVentanaSinBanco(rango);
+  const textoRango = textoRangoVista(rango);
+  // La lista trae `count`: cuando el tope deja movimientos fuera, se dice.
+  const notaRecorte = textoListaRecortada(movs.length, totalMovs);
+  const queHay =
+    filtro === "pendientes"
+      ? "movimientos pendientes"
+      : filtro === "conciliados"
+        ? "movimientos conciliados"
+        : "movimientos";
 
   const tabs: { key: Filtro; label: string }[] = [
     { key: "todos", label: "Todos" },
@@ -318,6 +327,8 @@ export default async function ConciliacionPage({
             filtroActivo={
               filtro === "cobros_sin_banco" || filtro === "paywise" ? "todos" : filtro
             }
+            desde={desdeVista}
+            hasta={hastaVista}
           />
           <ImportButton cuentas={cuentas} />
         </div>
@@ -372,6 +383,11 @@ export default async function ConciliacionPage({
         ))}
       </div>
 
+      {/* Filtro de FECHAS de la vista (12-oct-2026): «de tal fecha a tal
+          fecha». La auditoría Paywise tiene sus propios Desde/Hasta (los
+          MISMOS parámetros de la URL), por eso en esa pestaña no se repite. */}
+      {filtro !== "paywise" && <RangoFechasConciliacion hoy={hoy} />}
+
       {/* Chips de CUENTA: la bandeja mezclaba todas y el operador no sabía a
           cuál pertenecía cada línea. Conservan el filtro y el rango. */}
       {cuentas.length > 1 && filtro !== "paywise" && (
@@ -413,7 +429,7 @@ export default async function ConciliacionPage({
             </CardTitle>
             <CardDescription>
               Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo)
-              sin cruzar con ningún abono importado (últimos 90 días). Puede faltar el periodo
+              sin cruzar con ningún abono importado ({ventanaSinBanco}). Puede faltar el periodo
               por importar, no coincidir fecha/monto, o el dinero nunca llegó.
               {cobrosSinBanco && cobrosSinBanco.por_moneda.length > 0 && (
                 <>
@@ -445,7 +461,7 @@ export default async function ConciliacionPage({
             </CardTitle>
             <CardDescription>
               Pagados con tarjeta corporativa, transferencia o Paywise y aún sin
-              cruzar con ninguna línea del banco (últimos 90 días). Puede faltar
+              cruzar con ninguna línea del banco ({ventanaSinBanco}). Puede faltar
               el periodo por importar, no coincidir fecha/monto, o el cargo nunca
               llegó al banco. Un gasto pagado en VARIOS cargos aparece aquí
               hasta que la suma de los ligados lo cubra (columna «Parcial»).
@@ -471,15 +487,20 @@ export default async function ConciliacionPage({
             <div className="flex justify-center mb-4">
               <ArrowsRightLeftIcon className="h-12 w-12 text-muted-foreground" />
             </div>
-            <CardTitle>Sin movimientos</CardTitle>
+            <CardTitle>{textoRango ? "Sin movimientos en el periodo" : "Sin movimientos"}</CardTitle>
             <CardDescription>
-              Importa un estado de cuenta para cruzar los movimientos con los gastos capturados.
+              {textoRango
+                ? `No hay ${queHay} ${textoRango}${pwCuenta ? " en esta cuenta" : ""}. Cambia o limpia el rango de fechas.`
+                : "Importa un estado de cuenta para cruzar los movimientos con los gastos capturados."}
             </CardDescription>
           </CardHeader>
         </Card>
       ) : (
         <Card>
           <CardContent className="p-0">
+            {notaRecorte && (
+              <p className="px-4 pt-3 text-xs text-amber-600 dark:text-amber-400">{notaRecorte}</p>
+            )}
             <MovimientosTable
               movimientos={movs}
               gastos={gastosOpts}

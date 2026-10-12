@@ -1364,9 +1364,10 @@ cuenta?».
     «Cruzar pendientes».
 - **Filtro por cuenta**: `?cuenta=<uuid>` viaja a `listMovimientosBancarios`
   (el API ya lo soportaba) y los chips de cuenta conservan pestaña y rango
-  (`hrefVista`). El API rechaza parámetros desconocidos
-  (`forbidNonWhitelisted`): NO mandar `desde`/`hasta` a la lista hasta que el
-  DTO los acepte.
+  (`hrefConciliacion`). El API rechaza parámetros desconocidos
+  (`forbidNonWhitelisted`); `desde`/`hasta` los acepta el DTO de la lista
+  desde el 24-sep-2026 (`YYYY-MM-DD` sobre `fecha`) y la vista los manda desde
+  el 12-oct-2026 — ver «Conciliación: filtro de fechas de la vista» al final.
 - **REVISIÓN ADVERSARIA (15-sep-2026) — contratos que NO cuadraban**:
   - `sugerirLoteAction` mandaba `limit` y el DTO del API se llama **`limite`**:
     con `forbidNonWhitelisted` eso es un **400** en cuanto alguien pase el
@@ -5762,3 +5763,42 @@ etiquetas, archivo y query salen SOLO de `lib/admin/reportes-balance.ts` (PURO;
 `reportes-balance.test.ts` prueba textos, paridad de modos con el API y la
 página pintada). Deploy: pyservices → API 0.0.64 → panel (el 0.0.63 responde
 400 a `modo` por `forbidNonWhitelisted`).
+
+## Conciliación: filtro de fechas de la vista (12-oct-2026)
+
+Pedido del cliente (captura de `/admin/conciliacion`): «necesitamos agregar un
+filtro de fecha, es decir de tal fecha a tal fecha». Solo panel: el API ya
+aceptaba `desde`/`hasta` en la lista (DTO del 24-sep-2026), en `resumen`, en
+`gastos-sin-banco` y en `cobros-sin-banco`.
+
+- **UN rango para toda la vista**, en la URL (`?desde`/`?hasta`, días de pared
+  Cancún `YYYY-MM-DD`): lo aplican la lista de movimientos, las tarjetas por
+  cuenta y las pestañas «sin banco»; lo heredan «Cruzar pendientes»,
+  «Emparejar devoluciones», «Sugerir con IA», el reporte Excel (el diálogo
+  arranca con el rango de la vista) y la auditoría Paywise (que ya leía esos
+  parámetros y conserva sus propios Desde/Hasta en su pestaña: por eso la
+  barra no se pinta ahí). Sin rango la vista sigue como siempre.
+- **Barra** `components/admin/conciliacion/rango-fechas-bar.tsx`
+  (`RangoFechasConciliacion`, cliente): «Desde» / «Hasta» (`type="date"`,
+  topados a hoy), periodos rápidos «Este mes · Mes anterior · Últimos 90
+  días» (mismos cortes que Ingresos) y «Limpiar». LEE el rango con
+  `useSearchParams` (regla de las tablas: nunca `useState(propDelServer)`) y
+  conserva `?f` y `?cuenta` al navegar. Una línea debajo dice qué periodo se
+  está viendo y a qué aplica.
+- **FUENTE ÚNICA** `lib/admin/conciliacion-vista.ts` (PURA, prueba
+  `__tests__/conciliacion-vista.test.ts`): `rangoVistaConciliacion(desde,
+  hasta, hoy)` (solo días válidos `YYYY-MM-DD` —el DTO de la lista rechaza un
+  ISO con hora—, invertido se corrige, «hasta» futuro se recorta a hoy y
+  «desde» futuro se descarta), `rangoParaSinBanco` (con solo «hasta» manda
+  `desde = hasta − 90`: el default del API es «hoy − 90» y `cobros-sin-banco`
+  responde 400 si `desde > hasta`), `hrefConciliacion` (sustituye al
+  `hrefVista` inline de la página), `filtroConciliacionDeUrl`,
+  `textoRangoVista`, `textoVentanaSinBanco` (las descripciones de «sin banco»
+  ya no dicen «últimos 90 días» a secas), `textoListaRecortada` (la lista trae
+  `count`: cuando el tope de 300 deja movimientos fuera, la tarjeta lo dice y
+  manda a acotar el periodo — antes el recorte era mudo) y
+  `periodosRapidosConciliacion`.
+- `ListConciliacionQuery` (`lib/api/conciliacion-server.ts`) declara `desde`,
+  `hasta` y `tipo`; `conciliacionGastosSinBanco(desde?, hasta?)` acepta el
+  rango. El estado vacío distingue «Sin movimientos en el periodo» de «Sin
+  movimientos».

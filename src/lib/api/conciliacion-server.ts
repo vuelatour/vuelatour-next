@@ -7,11 +7,18 @@ import type {
   GastosCandidatosResponse,
   MovimientoListResponse,
   PaywiseAuditoria,
+  TipoMovimientoBancario,
 } from "@/types/conciliacion";
 
 export interface ListConciliacionQuery {
   cuenta_bancaria_id?: string;
   conciliado?: boolean;
+  /** ADITIVOS del API (24-sep-2026): tipo y ventana `YYYY-MM-DD` sobre
+      `fecha` (día Cancún). El DTO rechaza un ISO con hora: validar antes con
+      `rangoVistaConciliacion` (`lib/admin/conciliacion-vista.ts`). */
+  tipo?: TipoMovimientoBancario;
+  desde?: string;
+  hasta?: string;
   limit?: number;
   offset?: number;
 }
@@ -50,13 +57,17 @@ export interface GastoSinBanco {
   faltante?: string | number | null;
 }
 
-export function conciliacionGastosSinBanco() {
+/** Default del API: últimos 90 días por `fecha_gasto` (cortes Cancún). */
+export function conciliacionGastosSinBanco(desde?: string, hasta?: string) {
   return apiServer<{
     data: GastoSinBanco[];
     total: number;
     desde: string;
     por_moneda: { moneda: string; monto: number }[];
-  }>("/v1/conciliacion/gastos-sin-banco", { cache: "no-store" });
+  }>("/v1/conciliacion/gastos-sin-banco", {
+    searchParams: { desde, hasta },
+    cache: "no-store",
+  });
 }
 
 /** Estados de cuenta importados (archivo original archivado en el bucket). */

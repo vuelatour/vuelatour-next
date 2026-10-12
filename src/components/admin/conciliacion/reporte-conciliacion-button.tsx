@@ -47,23 +47,33 @@ const ESTADOS: { value: EstadoReporteConciliacion; label: string }[] = [
 export function ReporteConciliacionButton({
   cuentas,
   filtroActivo = "todos",
+  desde: desdeVista,
+  hasta: hastaVista,
 }: {
   cuentas: { id: string; label: string }[];
   /** Pestaña activa de la página: preselecciona el filtro del reporte. */
   filtroActivo?: EstadoReporteConciliacion;
+  /** Rango EXPLÍCITO de la vista (`?desde`/`?hasta`, 12-oct-2026): el
+   *  reporte lo hereda al abrir el diálogo; sin él, el mes corriente. */
+  desde?: string;
+  hasta?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [cuentaId, setCuentaId] = useState("");
   const [estado, setEstado] = useState<EstadoReporteConciliacion>(filtroActivo);
-  const [desde, setDesde] = useState(() => `${hoyCancun().slice(0, 7)}-01`);
-  const [hasta, setHasta] = useState(hoyCancun);
+  const [desde, setDesde] = useState(() => desdeVista ?? `${hoyCancun().slice(0, 7)}-01`);
+  const [hasta, setHasta] = useState(() => hastaVista ?? hoyCancun());
   const [loading, setLoading] = useState(false);
 
   const sinBanco = estado === "sin_banco";
 
   const abrir = () => {
-    // Preselecciona la pestaña activa cada vez que se abre el diálogo.
+    // Preselecciona la pestaña activa cada vez que se abre el diálogo, y el
+    // rango de la vista manda (el operador acaba de elegirlo arriba); sin
+    // rango se conserva lo que tecleó la última vez.
     setEstado(filtroActivo);
+    if (desdeVista) setDesde(desdeVista);
+    if (hastaVista) setHasta(hastaVista);
     setOpen(true);
   };
 
