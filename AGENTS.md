@@ -5936,3 +5936,49 @@ día Cancún); con un API previo solo «cobro …». La usan «Vincular» de Ing
 candidatos del 409 en `registrar-ingreso-dialog.tsx`. Pruebas:
 `ingresos-ui.test.ts` y `ingresos/__tests__/fechas-candidato-cobro.test.ts`
 (cableado).
+
+## Conciliación: los ABONOS tienen el mismo menú que Ingresos (12-oct-2026)
+
+Pedido del cliente: «la sección de ingresos sí tenemos muchas opciones para
+conciliar ese ingreso, pero en Conciliación no vienen las mismas opciones,
+necesitamos las mismas opciones en Conciliación también», «en los cargos
+cuando le das en sugerir con IA te busca cosas similares pero en los abonos
+no tiene la opción de sugerir con IA» y «eliminamos la opción de “Es el pago
+de un vuelo…” porque es lo mismo que “Vincular a un cobro o ingreso”».
+
+- **Fuente única del menú: `components/admin/ingresos/abono-acciones.tsx`
+  (`AbonoAcciones`)**. La bandeja de Conciliación (`movimiento-actions.tsx`)
+  lo monta para todo ABONO sin identificar (`esAbonoPendiente`) cuando la
+  página le pasa `abonos` (catálogos + cuentas): Vincular a un cobro o
+  ingreso · Es un anticipo · Registrar como otro ingreso · Es un traspaso ·
+  Es la devolución de un cargo · **Sugerir con IA** (la IA de abonos por
+  renglón, la misma de Ingresos) y, por `extras`, el «Clasificar (no es de
+  un vuelo)» que es de Conciliación. El diálogo de clasificar
+  (`dialogoClasificar`) se monta en los dos caminos. Sin catálogos (la
+  página no pudo cargar cuentas) sigue el menú de siempre, con «Conciliar en
+  Ingresos».
+- **`MovimientoBancario` ⇒ `AbonoPendiente`**: `lib/admin/conciliacion-abonos.ts`
+  (PURO, prueba `__tests__/conciliacion-abonos.test.ts`):
+  `abonoPendienteDeMovimiento` traduce lo que la bandeja sabe (cuenta,
+  fecha, monto, bruto/comisión, descripción, referencia, notas) y deja en
+  null lo que solo calcula `abonos-pendientes` (motivo, candidatos,
+  duplicado, sugerencias) — nunca se inventa un motivo; `esAbonoPendiente`,
+  `cuentasDeAbonos`, `AbonosConciliacion`. La página
+  (`app/admin/conciliacion/page.tsx`) carga clientes y aeronaves con
+  `degradado.opcional` (los piden «otro ingreso» y «anticipo») y arma
+  `abonosConciliacion`; `MovimientosTable` lo pasa a cada fila.
+- **«Es el pago de un vuelo (registrar su cobro)» ya no es un renglón**:
+  vive DENTRO de «Vincular a un cobro o ingreso» como el botón «¿No está el
+  cobro? Regístralo» (`vincular-abono-dialog.tsx`, prop `onRegistrarCobro`),
+  que abre el MISMO `CobroDesdeAbonoDialog` (título «Registrar el cobro del
+  vuelo desde este abono»). Es la salida cuando el cobro todavía no existe:
+  no se borró la capacidad, se quitó el renglón que el cliente leía como
+  duplicado. El aviso del alta de ingreso ya manda ahí.
+- Pruebas: `conciliacion/__tests__/abonos-menu.test.ts` (cableado: la fila
+  monta `AbonoAcciones` + Clasificar, la tabla y la página pasan `abonos`,
+  el menú de Ingresos sin el renglón y en su orden, Vincular con el botón).
+  Los tests de Conciliación que montan la fila apagan los módulos de red del
+  navegador como `ingresos-pantalla.test.tsx`.
+- **El reporte Excel sale en el orden del estado de cuenta** (API 0.0.70,
+  invariante 55, migración `20261012000001` pendiente de aplicar): lo arma
+  el API; el panel no cambia.

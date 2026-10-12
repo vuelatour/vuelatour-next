@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowsRightLeftIcon,
@@ -8,7 +8,6 @@ import {
   ClockIcon,
   EllipsisHorizontalIcon,
   LinkIcon,
-  PaperAirplaneIcon,
   PlusCircleIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
@@ -55,20 +54,27 @@ type Accion =
   | null;
 
 /**
- * Menú de un ABONO sin identificar («Por conciliar»), en el orden de lo más
- * frecuente y seguro primero: ligarlo a lo que ya existe, registrar el cobro
- * del vuelo que falta, anticipo, otro ingreso, y las dos cosas que NO son
- * ingreso (traspaso, devolución de un cargo —que se EMPAREJA con su cargo,
- * 30-sep-2026—). Los diálogos se montan solo al abrirlos.
+ * Menú de un ABONO sin identificar («Por conciliar» de Ingresos y, desde el
+ * 12-oct-2026, también la bandeja de Conciliación), en el orden de lo más
+ * frecuente y seguro primero: ligarlo a lo que ya existe, anticipo, otro
+ * ingreso, y las dos cosas que NO son ingreso (traspaso, devolución de un
+ * cargo —que se EMPAREJA con su cargo, 30-sep-2026—). «Es el pago de un
+ * vuelo (registrar su cobro)» ya NO es un renglón del menú (pedido del
+ * cliente, 12-oct-2026: «es lo mismo que Vincular»): vive DENTRO de
+ * «Vincular», como la salida cuando el cobro todavía no existe. Los diálogos
+ * se montan solo al abrirlos. `extras` = renglones propios de quien monta el
+ * menú (Conciliación agrega «Clasificar»), antes de «Sugerir con IA».
  */
 export function AbonoAcciones({
   abono,
   catalogos,
   cuentasIa,
+  extras,
 }: {
   abono: AbonoPendiente;
   catalogos: CatalogosIngreso;
   cuentasIa: { id: string; label: string }[];
+  extras?: ReactNode;
 }) {
   const router = useRouter();
   const [accion, setAccion] = useState<Accion>(null);
@@ -107,10 +113,6 @@ export function AbonoAcciones({
             <LinkIcon className="h-4 w-4" />
             Vincular a un cobro o ingreso
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setAccion("cobro")} className="cursor-pointer gap-2">
-            <PaperAirplaneIcon className="h-4 w-4" />
-            Es el pago de un vuelo (registrar su cobro)
-          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setAccion("anticipo")} className="cursor-pointer gap-2">
             <ClockIcon className="h-4 w-4" />
             Es un anticipo (el vuelo aún no existe)
@@ -128,6 +130,7 @@ export function AbonoAcciones({
             <ArrowUturnLeftIcon className="h-4 w-4" />
             {MENU_ABONO_DEVOLUCION}
           </DropdownMenuItem>
+          {extras}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setAccion("ia")} className="cursor-pointer gap-2">
             <SparklesIcon className="h-4 w-4" />
@@ -136,7 +139,14 @@ export function AbonoAcciones({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {accion === "vincular" && <VincularAbonoDialog abono={abono} open onOpenChange={cerrar} />}
+      {accion === "vincular" && (
+        <VincularAbonoDialog
+          abono={abono}
+          open
+          onOpenChange={cerrar}
+          onRegistrarCobro={() => setAccion("cobro")}
+        />
+      )}
       {accion === "cobro" && <CobroDesdeAbonoDialog abono={abono} open onOpenChange={cerrar} />}
       {(accion === "anticipo" || accion === "otro") && (
         <RegistrarIngresoDialog

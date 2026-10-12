@@ -42,6 +42,7 @@ import { etiquetaCategoriaIngreso, etiquetaIngreso } from "@/lib/admin/categoria
 import { fmtMonto } from "@/lib/format";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { MovimientoBancario } from "@/types/conciliacion";
+import type { AbonosConciliacion } from "@/lib/admin/conciliacion-abonos";
 
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
@@ -74,9 +75,13 @@ interface MovimientosTableProps {
   /** Alias por cuenta bancaria: la bandeja mezcla cuentas y el operador
    *  necesita ver de cuál es cada línea (columna «Cuenta»). */
   cuentas?: Record<string, string>;
+  /** Menú de Ingresos para los ABONOS sin identificar (12-oct-2026):
+   *  catálogos y cuentas; sin él (catálogos que no cargaron) el menú de
+   *  siempre. */
+  abonos?: AbonosConciliacion | null;
 }
 
-export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTableProps) {
+export function MovimientosTable({ movimientos, gastos, cuentas, abonos }: MovimientosTableProps) {
   // La columna «Cuenta» solo aparece cuando la vista mezcla varias (con una
   // sola cuenta filtrada sería una columna que repite lo mismo en cada fila).
   const variasCuentas = useMemo(
@@ -452,12 +457,12 @@ export function MovimientosTable({ movimientos, gastos, cuentas }: MovimientosTa
         noLink: true,
         // CARGO vincula gastos y ABONO vincula cobros de vuelo: ambos tienen
         // camino manual (el auto-cruce solo resuelve los montos exactos).
-        cell: (m) => <MovimientoActions movimiento={m} gastos={gastos} />,
+        cell: (m) => <MovimientoActions movimiento={m} gastos={gastos} abonos={abonos} />,
       },
     ],
     // `nombreCuenta` deriva de `cuentas`: se recalcula con ella.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gastos, cuentas, variasCuentas],
+    [gastos, cuentas, variasCuentas, abonos],
   );
 
   return (

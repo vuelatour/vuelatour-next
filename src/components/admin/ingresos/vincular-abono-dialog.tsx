@@ -50,10 +50,15 @@ export function VincularAbonoDialog({
   abono,
   open,
   onOpenChange,
+  onRegistrarCobro,
 }: {
   abono: AbonoPendiente;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** «¿No está el cobro? Regístralo» (12-oct-2026): abre el alta del cobro
+   *  del vuelo desde este abono (antes era el renglón «Es el pago de un
+   *  vuelo» del menú; el cliente lo pidió dentro de Vincular). */
+  onRegistrarCobro?: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,13 +71,27 @@ export function VincularAbonoDialog({
             }. Elige el cobro de vuelo, el pago de grupo o el ingreso registrado al que corresponde.`}
           </DialogDescription>
         </DialogHeader>
-        {open && <Selector abono={abono} onCerrar={() => onOpenChange(false)} />}
+        {open && (
+          <Selector
+            abono={abono}
+            onCerrar={() => onOpenChange(false)}
+            onRegistrarCobro={onRegistrarCobro}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function Selector({ abono, onCerrar }: { abono: AbonoPendiente; onCerrar: () => void }) {
+function Selector({
+  abono,
+  onCerrar,
+  onRegistrarCobro,
+}: {
+  abono: AbonoPendiente;
+  onCerrar: () => void;
+  onRegistrarCobro?: () => void;
+}) {
   const router = useRouter();
   const [opciones, setOpciones] = useState<Opcion[] | null>(null);
   const [sel, setSel] = useState("");
@@ -283,13 +302,32 @@ function Selector({ abono, onCerrar }: { abono: AbonoPendiente; onCerrar: () => 
           </div>
         )}
       </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onCerrar} disabled={ligando}>
-          Cancelar
-        </Button>
-        <Button onClick={() => void vincular()} disabled={ligando || !elegido}>
-          {ligando ? "Vinculando…" : "Vincular"}
-        </Button>
+      <DialogFooter className="sm:justify-between">
+        {onRegistrarCobro ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="cursor-pointer"
+            disabled={ligando}
+            title="El cobro del vuelo todavía no está capturado: regístralo y queda conciliado con este abono en un solo paso"
+            onClick={() => {
+              onCerrar();
+              onRegistrarCobro();
+            }}
+          >
+            ¿No está el cobro? Regístralo
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onCerrar} disabled={ligando}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void vincular()} disabled={ligando || !elegido}>
+            {ligando ? "Vinculando…" : "Vincular"}
+          </Button>
+        </div>
       </DialogFooter>
     </>
   );

@@ -58,6 +58,12 @@ import {
 } from "@/app/admin/conciliacion/actions";
 import { ReversoDialog } from "@/components/admin/conciliacion/reverso-dialog";
 import { VincularGastoDialog } from "@/components/admin/conciliacion/vincular-gasto-dialog";
+import { AbonoAcciones } from "@/components/admin/ingresos/abono-acciones";
+import {
+  abonoPendienteDeMovimiento,
+  esAbonoPendiente,
+  type AbonosConciliacion,
+} from "@/lib/admin/conciliacion-abonos";
 import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fechasCandidatoCobro } from "@/lib/admin/ingresos-ui";
@@ -112,6 +118,10 @@ interface MovimientoActionsProps {
    *  2-oct-2026 son solo el RESPALDO del diálogo de un CARGO con un API
    *  previo (sin candidatos del servidor). */
   gastos: SearchableSelectOption[];
+  /** ABONOS sin identificar con el MISMO menú de Ingresos → «Por conciliar»
+   *  (12-oct-2026: Vincular, anticipo, otro ingreso, traspaso, devolución,
+   *  Sugerir con IA) + «Clasificar». Sin catálogos (null) el menú de siempre. */
+  abonos?: AbonosConciliacion | null;
 }
 
 /**
@@ -121,7 +131,7 @@ interface MovimientoActionsProps {
  * grupo (candidatos buscados al abrir el diálogo, ordenados por cercanía de
  * monto y fecha).
  */
-export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps) {
+export function MovimientoActions({ movimiento, gastos, abonos }: MovimientoActionsProps) {
   const esAbono = movimiento.tipo === "ABONO";
   const [openLink, setOpenLink] = useState(false);
   const [confirmarDesvincular, setConfirmarDesvincular] = useState(false);
@@ -389,6 +399,118 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
       }
     });
   };
+
+  // Clasificar "sin vuelo": catálogo + creación en el mismo espacio. Se
+  // monta en los dos caminos (menú de Ingresos y menú de siempre).
+  const dialogoClasificar = (
+  <Dialog open={openClasificar} onOpenChange={setOpenClasificar}>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Clasificar movimiento (no es de un vuelo)</DialogTitle>
+        <DialogDescription>
+          {`${movimiento.tipo === "ABONO" ? "Abono" : "Cargo"} de ${fmtMoney(movimiento.monto)} del ${fmtDateOnly(movimiento.fecha)}. `}
+          Para movimientos del banco que no corresponden a ningún gasto o
+          cobro capturado (comisiones del banco, impuestos, personales…).
+          Queda conciliado con su clasificación y notas.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">Clasificación</Label>
+          {clasificaciones === null ? (
+            <p className="text-sm text-muted-foreground">Cargando…</p>
+          ) : (
+            <SearchableSelect
+              options={clasificaciones.map((c) => ({
+                value: c.id,
+                label: c.nombre,
+              }))}
+              value={clasifSel}
+              onChange={(v) => {
+                setClasifSel(v);
+                setClasifNueva("");
+              }}
+              placeholder={
+                clasificaciones.length === 0
+                  ? "Aún no hay clasificaciones: crea la primera abajo"
+                  : "Selecciona una clasificación"
+              }
+              emptyText="Sin resultados: créala abajo"
+            />
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`clasif-nueva-${movimiento.id}`} className="text-sm font-medium">
+            …o crea una nueva
+          </Label>
+          <Input
+            id={`clasif-nueva-${movimiento.id}`}
+            value={clasifNueva}
+            onChange={(e) => setClasifNueva(e.target.value)}
+            placeholder="Ej. Comisión del banco"
+            maxLength={80}
+          />
+          {clasifNueva.trim() !== "" && (
+            <p className="text-[11px] text-muted-foreground">
+              Se creará «{clasifNueva.trim()}» y se usará para este
+              movimiento (si ya existía con ese nombre, se reutiliza).
+            </p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`clasif-notas-${movimiento.id}`} className="text-sm font-medium">
+            Notas (opcional)
+          </Label>
+          <Textarea
+            id={`clasif-notas-${movimiento.id}`}
+            value={clasifNotas}
+            onChange={(e) => setClasifNotas(e.target.value)}
+            placeholder="Ej. comisión mensual de la cuenta; no es gasto de operación"
+            rows={2}
+            maxLength={500}
+          />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button
+          variant="outline"
+          onClick={() => setOpenClasificar(false)}
+          disabled={pending}
+        >
+          Cancelar
+        </Button>
+        <Button onClick={guardarClasificacion} disabled={pending}>
+          {pending ? "Guardando…" : "Clasificar y conciliar"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+  );
+
+  // ABONO sin identificar con el MISMO menú de Ingresos → «Por conciliar»
+  // (12-oct-2026): Vincular (y ahí «¿No está el cobro? Regístralo»),
+  // anticipo, otro ingreso, traspaso, devolución de un cargo, Sugerir con
+  // IA; más «Clasificar», que es de Conciliación. Fuente única del menú:
+  // `AbonoAcciones`. Sin catálogos (la página no los pudo cargar) sigue el
+  // menú de siempre, abajo.
+  if (abonos && esAbonoPendiente(movimiento)) {
+    return (
+      <>
+        <AbonoAcciones
+          abono={abonoPendienteDeMovimiento(movimiento, abonos.cuentas[movimiento.cuenta_bancaria_id])}
+          catalogos={abonos.catalogos}
+          cuentasIa={abonos.cuentasIa}
+          extras={
+            <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
+              <TagIcon className="h-4 w-4" />
+              Clasificar (no es de un vuelo)
+            </DropdownMenuItem>
+          }
+        />
+        {dialogoClasificar}
+      </>
+    );
+  }
 
   return (
     <>
@@ -674,89 +796,7 @@ export function MovimientoActions({ movimiento, gastos }: MovimientoActionsProps
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Clasificar "sin vuelo": catálogo + creación en el mismo espacio. */}
-      <Dialog open={openClasificar} onOpenChange={setOpenClasificar}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Clasificar movimiento (no es de un vuelo)</DialogTitle>
-            <DialogDescription>
-              {`${movimiento.tipo === "ABONO" ? "Abono" : "Cargo"} de ${fmtMoney(movimiento.monto)} del ${fmtDateOnly(movimiento.fecha)}. `}
-              Para movimientos del banco que no corresponden a ningún gasto o
-              cobro capturado (comisiones del banco, impuestos, personales…).
-              Queda conciliado con su clasificación y notas.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Clasificación</Label>
-              {clasificaciones === null ? (
-                <p className="text-sm text-muted-foreground">Cargando…</p>
-              ) : (
-                <SearchableSelect
-                  options={clasificaciones.map((c) => ({
-                    value: c.id,
-                    label: c.nombre,
-                  }))}
-                  value={clasifSel}
-                  onChange={(v) => {
-                    setClasifSel(v);
-                    setClasifNueva("");
-                  }}
-                  placeholder={
-                    clasificaciones.length === 0
-                      ? "Aún no hay clasificaciones: crea la primera abajo"
-                      : "Selecciona una clasificación"
-                  }
-                  emptyText="Sin resultados: créala abajo"
-                />
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`clasif-nueva-${movimiento.id}`} className="text-sm font-medium">
-                …o crea una nueva
-              </Label>
-              <Input
-                id={`clasif-nueva-${movimiento.id}`}
-                value={clasifNueva}
-                onChange={(e) => setClasifNueva(e.target.value)}
-                placeholder="Ej. Comisión del banco"
-                maxLength={80}
-              />
-              {clasifNueva.trim() !== "" && (
-                <p className="text-[11px] text-muted-foreground">
-                  Se creará «{clasifNueva.trim()}» y se usará para este
-                  movimiento (si ya existía con ese nombre, se reutiliza).
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`clasif-notas-${movimiento.id}`} className="text-sm font-medium">
-                Notas (opcional)
-              </Label>
-              <Textarea
-                id={`clasif-notas-${movimiento.id}`}
-                value={clasifNotas}
-                onChange={(e) => setClasifNotas(e.target.value)}
-                placeholder="Ej. comisión mensual de la cuenta; no es gasto de operación"
-                rows={2}
-                maxLength={500}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOpenClasificar(false)}
-              disabled={pending}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={guardarClasificacion} disabled={pending}>
-              {pending ? "Guardando…" : "Clasificar y conciliar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialogoClasificar}
 
       {/* Confirmación antes de quitar la clasificación (vuelve a Pendiente). */}
       <AlertDialog

@@ -61,7 +61,7 @@ export function CobroDesdeAbonoDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Es el pago de un vuelo</DialogTitle>
+          <DialogTitle>Registrar el cobro del vuelo desde este abono</DialogTitle>
           <DialogDescription>
             {`Abono del ${fmtDateOnly(abono.fecha)} por ${fmtMonto(abono.monto, abono.cuenta_moneda ?? undefined)}${
               abono.descripcion ? `: «${abono.descripcion}»` : ""

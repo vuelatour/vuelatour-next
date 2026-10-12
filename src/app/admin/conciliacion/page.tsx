@@ -32,6 +32,10 @@ import {
   type ListConciliacionQuery,
 } from "@/lib/api/conciliacion-server";
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
+import { listClients } from "@/lib/api/clients-server";
+import { listAircraft } from "@/lib/api/aircraft";
+import { cuentasDeAbonos, type AbonosConciliacion } from "@/lib/admin/conciliacion-abonos";
+import type { CatalogosIngreso } from "@/components/admin/ingresos/registrar-ingreso-dialog";
 import { listGastos } from "@/lib/api/expenses-server";
 import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
@@ -119,6 +123,8 @@ export default async function ConciliacionPage({
     sinBanco,
     cobrosSinBanco,
     paywiseComisionPct,
+    clientesRes,
+    aeronavesRes,
   ] = await Promise.all([
     listMovimientosBancarios(query),
     // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
@@ -143,6 +149,15 @@ export default async function ConciliacionPage({
     // Paywise sin abono importado. Best-effort.
     conciliacionCobrosSinBanco(sinBancoRango.desde, sinBancoRango.hasta).catch(() => null),
     getPaywiseComisionPct(),
+    // Menú de Ingresos para los ABONOS sin identificar (12-oct-2026):
+    // «Registrar como otro ingreso» / «Es un anticipo» piden cliente y
+    // avión. Accesorios: degradan con aviso y el menú cae al de siempre.
+    degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
+      data: [] as Awaited<ReturnType<typeof listClients>>["data"],
+    }),
+    degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
+      data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+    }),
   ]);
   const estadosCuenta = estadosRes.data;
 
@@ -172,6 +187,29 @@ export default async function ConciliacionPage({
     label: `${c.alias} · ${c.banco} (${c.moneda})${c.tipo === "PASARELA" ? " · pasarela" : ""}`,
     tipo: c.tipo ?? null,
   }));
+  // Catálogos del menú de Ingresos (las MISMAS opciones que «Por conciliar»,
+  // 12-oct-2026). Sin cuentas cargadas no hay menú: ni anticipo ni ingreso
+  // se registran a ciegas.
+  const catalogosAbonos: CatalogosIngreso = {
+    cuentas: cuentasRes.data.map((c) => ({
+      id: c.id,
+      alias: c.alias,
+      banco: c.banco,
+      moneda: c.moneda,
+      tipo: c.tipo === "PASARELA" ? "PASARELA" : "BANCO",
+      activa: c.activa,
+    })),
+    clientes: clientesRes.data.map((c) => ({ id: c.id, nombre: c.nombre })),
+    aeronaves: aeronavesRes.data.map((a) => ({ id: a.id, matricula: a.matricula })),
+  };
+  const abonosConciliacion: AbonosConciliacion | null =
+    cuentasRes.data.length > 0
+      ? {
+          catalogos: catalogosAbonos,
+          cuentasIa: cuentas.map((c) => ({ id: c.id, label: c.label })),
+          cuentas: cuentasDeAbonos(cuentasRes.data),
+        }
+      : null;
   const cuentasPasarela = cuentasRes.data
     .filter((c) => c.tipo === "PASARELA")
     .map((c) => ({ id: c.id, label: `${c.alias} (${c.moneda})`, moneda: c.moneda }));
@@ -505,6 +543,7 @@ export default async function ConciliacionPage({
               movimientos={movs}
               gastos={gastosOpts}
               cuentas={Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.alias]))}
+              abonos={abonosConciliacion}
             />
           </CardContent>
         </Card>

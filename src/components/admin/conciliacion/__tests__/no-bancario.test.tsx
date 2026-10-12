@@ -24,6 +24,15 @@ import { describe, expect, it, vi } from "vitest";
 import { apiOfreceNoBancarios } from "@/lib/admin/conciliacion-no-bancario";
 import type { GastoCandidato, MovimientoBancario, MovimientoGasto } from "@/types/conciliacion";
 
+// Desde el 12-oct-2026 la fila de un ABONO monta el menú de Ingresos
+// (`AbonoAcciones` → diálogos que suben archivos desde el navegador):
+// sus módulos de red se apagan como en `ingresos-pantalla.test.tsx`.
+vi.mock("@/lib/api/ingresos-browser", () => ({
+  registrarIngreso: async () => ({ ok: false, error: "no" }),
+  editarIngreso: async () => ({ ok: false, error: "no" }),
+  motivoComprobanteIngresoInvalido: () => null,
+}));
+vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),

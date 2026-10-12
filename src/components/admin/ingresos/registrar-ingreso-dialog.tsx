@@ -475,7 +475,7 @@ function FormularioIngreso({
                 abono?.categoria_sugerida
                   ? `Sugerencia: «${etiquetaCategoriaIngreso(abono.categoria_sugerida)}» — elígela tú si es correcta. `
                   : ""
-              }Elige qué es este dinero. Si es el pago de un vuelo, cancela y usa «Es el pago de un vuelo».`
+              }Elige qué es este dinero. Si es el pago de un vuelo, cancela y usa «Vincular a un cobro o ingreso» (ahí se registra el cobro si no existe).`
             ) : undefined
           }
         >
