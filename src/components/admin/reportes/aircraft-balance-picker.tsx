@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { descargarDelApi } from "@/lib/download";
+import { VerEnPantallaLink } from "./ver-en-pantalla-link";
 
 export interface AircraftPickItem {
   id: string;
@@ -64,16 +65,24 @@ export function AircraftBalancePicker({
         />
       </div>
       {avion ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          disabled={loading}
-          onClick={download}
-        >
-          <TableCellsIcon className="h-4 w-4" />
-          {loading ? "Generando…" : "Descargar balance del avión (Excel)"}
-        </Button>
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={loading}
+            onClick={download}
+          >
+            <TableCellsIcon className="h-4 w-4" />
+            {loading ? "Generando…" : "Descargar balance del avión (Excel)"}
+          </Button>
+          {/* El mismo libro en pantalla (12-oct-2026), hoja por hoja. */}
+          <VerEnPantallaLink
+            destino={{ tipo: "avion", avionId: avion.id }}
+            desde={desde}
+            hasta={hasta}
+          />
+        </div>
       ) : (
         <p className="text-xs text-muted-foreground">
           Elige un avión para descargar su libro del periodo seleccionado.

@@ -26,6 +26,7 @@ import {
   TITULO_CARD_BALANCE_VUELATOUR,
   librosBalanceVuelaTour,
 } from "@/lib/admin/reportes-balance";
+import { VerEnPantallaLink } from "@/components/admin/reportes/ver-en-pantalla-link";
 
 export const dynamic = "force-dynamic";
 
@@ -173,15 +174,23 @@ export default async function ReportesPage({ searchParams }: PageProps) {
             <p>{NOTA_BALANCE_VUELATOUR}</p>
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-2 flex-wrap">
+        <CardContent className="flex gap-x-6 gap-y-2 flex-wrap">
+          {/* Cada libro: descargar o VERLO EN PANTALLA (12-oct-2026): la
+              vista es el mismo libro, hoja por hoja, con sus colores. */}
           {librosBalance.map((libro) => (
-            <ExcelExportButton
-              key={libro.modo}
-              path={libro.path}
-              filename={libro.filename}
-              label={libro.etiqueta}
-              query={libro.query}
-            />
+            <div key={libro.modo} className="flex gap-2 flex-wrap items-center">
+              <ExcelExportButton
+                path={libro.path}
+                filename={libro.filename}
+                label={libro.etiqueta}
+                query={libro.query}
+              />
+              <VerEnPantallaLink
+                destino={{ tipo: "vuelatour", modo: libro.modo }}
+                desde={desde}
+                hasta={hasta}
+              />
+            </div>
           ))}
         </CardContent>
       </Card>

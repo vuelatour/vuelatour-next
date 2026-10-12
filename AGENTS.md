@@ -5802,3 +5802,87 @@ aceptaba `desde`/`hasta` en la lista (DTO del 24-sep-2026), en `resumen`, en
   `hasta` y `tipo`; `conciliacionGastosSinBanco(desde?, hasta?)` acepta el
   rango. El estado vacío distingue «Sin movimientos en el periodo» de «Sin
   movimientos».
+
+## Balances EN PANTALLA: el mismo libro que el Excel (12-oct-2026, API 0.0.68)
+
+Pedido del cliente: «dale prioridad a la vista de Excel de cada reporte,
+porque lo que queremos hacer después es que se pueda editar la celda y
+afecte a lo relacionado… el dueño está muy acostumbrado al Excel y
+necesitamos el mismo formato, con los mismos colores y estructura para que
+dé la impresión de que está trabajando sobre el Excel». Fase 1 (esta): ver.
+Fase 2 (pendiente): editar una celda y que el registro ligado cambie.
+
+- **El libro en pantalla ES el que se descarga.** pyservices exporta el
+  MISMO libro openpyxl como JSON (`libro_json`, versión 1) y el API lo
+  transporta en `GET /v1/aircraft/balance-general/libro?desde&hasta&modo` y
+  `GET /v1/aircraft/:id/balance/libro?desde&hasta` (ADMIN/ANALISTA, los
+  mismos DTOs y roles que los `.xlsx`; el payload se arma UNA vez en el API).
+  Cada celda llega con su número (`v`), su texto YA formateado como lo
+  mostraría Excel (`t`), su fórmula visible (`f`), su estilo (índice en
+  `estilos`) y su nota (`n`); la hoja, con anchos, altos, combinadas,
+  paneles inmovilizados, cuadrícula y color de pestaña. **El panel no
+  calcula, no formatea y no decide un solo número**: pinta.
+- **Tipos** `types/libro-excel.ts` (COPIA 1:1 de `pyservices/
+  libro-vista.types.ts` del API) + las respuestas `BalanceGeneralLibroResponse`
+  / `BalanceAvionLibroResponse`. **Red** `lib/api/balance-libro-server.ts`
+  (`getBalanceGeneralLibro`, `getBalanceAvionLibro`, `cache: "no-store"`).
+- **Modelo de pantalla** `lib/admin/libro-excel.ts` (PURO, prueba
+  `__tests__/libro-excel.test.ts`): `letraColumna`/`referenciaCelda`,
+  medidas de Excel (`anchoColumnaPx`: 7 px por carácter + 5 ⇒ 8.43 = 64 px;
+  `altoFilaPx`: pt × 96/72 ⇒ 15 pt = 20 px), `cuadriculaHoja` (solo filas y
+  columnas VISIBLES; las combinadas resueltas en `colSpan`/`rowSpan` sobre
+  su primera celda visible; `leftPx`/`topPx` de las fijas; relleno mínimo de
+  40 filas × 14 columnas para que la hoja termine en cuadrícula),
+  `estiloCeldaCss` (relleno, color, negrita/cursiva/subrayado, tamaño en
+  pt, alineación —«general» de Excel: números a la derecha, booleanos al
+  centro, texto a la izquierda—, ajuste, sangría y bordes),
+  `desbordaTexto` (el texto sin ajuste asoma sobre la celda vacía de la
+  derecha, como en Excel; nunca sobre una con valor ni sobre una combinada),
+  `contenidoBarraFormulas` (fórmula o valor crudo), `tituloCelda` (nota +
+  fórmula) y `desplazarSeleccion` (flechas sobre lo visible).
+- **Componente** `components/admin/reportes/libro-excel.tsx` (`LibroExcel`,
+  cliente) + `styles/libro-excel.css`: barra de fórmulas (cuadro de nombres
+  «B7» + fx), la cuadrícula con letras y números grises, `position: sticky`
+  para las letras, los números y los paneles inmovilizados, combinadas,
+  triángulo rojo de nota con tooltip, fórmula en el tooltip y en
+  `data-formula`, selección con clic y flechas (verde #217346), pestañas
+  abajo con el color de la hoja, y el botón de descarga, que baja
+  EXACTAMENTE ese libro. Letra Calibri 11 (la de Excel), fondo blanco: es un
+  papel, no cambia con el tema del panel.
+- **Página** `app/admin/reportes/balance/page.tsx` (`dynamic`,
+  **`maxDuration = 300`**: el libro lo arma pyservices y el general tarda
+  decenas de segundos): `?modo=mensual|general` o `?avion=<uuid>` +
+  `?desde&hasta`, con el MISMO `PeriodSelector` de Reportes (cambiar el
+  periodo re-arma el libro) y chips para pasar de un libro de la flota al
+  otro. Parámetros, enlaces, títulos, descarga y errores en
+  `lib/admin/balance-vista.ts` (PURO, prueba `__tests__/balance-vista.test.ts`):
+  `parametrosVistaBalance` (regla de `url-params`: lo inválido se ignora,
+  nunca tumba la pantalla; `avion` solo uuid y gana sobre `modo`; rango
+  invertido se corrige), `hrefVistaBalance`, `descargaVistaBalance` (= la
+  ruta, el archivo y los parámetros del botón de Reportes: el libro en
+  pantalla y el descargado son el mismo; la prueba lo cruza con
+  `librosBalanceVuelaTour`) y `errorVistaBalance`: 401/403 ⇒ «Tu usuario no
+  puede abrir los balances» (ADMIN y ANALISTA, como la descarga), 404
+  «Cannot GET» ⇒ «Disponible cuando se actualice el servidor», otro 404 ⇒
+  «Ese avión no existe», 400 ⇒ el periodo con el texto del API, lo demás ⇒
+  `TarjetaErrorCarga` con Reintentar. **Jamás un libro vacío que parezca un
+  balance en ceros.**
+- **Enlaces «Ver en pantalla»** (`components/admin/reportes/ver-en-pantalla-link.tsx`,
+  fuente única): junto a cada botón de descarga de la card «Balance mensual
+  y balance general» y junto a «Descargar balance del avión (Excel)» del
+  selector de avión, con el periodo de la página.
+- **Pruebas**: `lib/admin/__tests__/libro-excel.test.ts`,
+  `lib/admin/__tests__/balance-vista.test.ts` y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (marcado con un
+  libro chico: números formateados, `colSpan`, estilos en línea, nota, letras
+  y anchos, fijas con `top`/`left`, pestañas, descarga; y el CABLEADO de la
+  página, de los enlaces y del cliente del API).
+- **Orden de deploy**: pyservices (`libro_json`, f407786) → API 0.0.68 → panel.
+  Con un API previo la página dice «Disponible cuando se actualice el
+  servidor» y manda a descargar; Reportes no cambia de forma.
+- **Fase 2 (edición) — lo que ya está preparado**: cada celda puede traer
+  `vinculo {tipo, id, campo}` (pyservices lo anota con `libro_json.vincular`
+  y el tipo lo transporta); la selección y la barra de fórmulas ya existen.
+  Falta: que pyservices anote los vínculos en los balances, un PATCH por tipo
+  de registro en el API y, en el panel, la edición en la celda + regenerar
+  el libro.

@@ -1,0 +1,218 @@
+/*
+ * Vista EN PANTALLA de un libro de Excel (12-oct-2026). Lo que no cambia de
+ * celda en celda: letra Calibri 11 (la de Excel), fondo blanco, numeración
+ * gris, cuadrícula #d4d4d4, pestañas abajo. Lo que SÍ cambia (relleno,
+ * color, negrita, alineación, bordes, anchos y altos) va en línea desde
+ * `lib/admin/libro-excel.ts`, leído del libro.
+ */
+.xl-libro {
+  --xl-fuente: Calibri, "Carlito", "Segoe UI", Arial, sans-serif;
+  --xl-cuadricula: #d4d4d4;
+  --xl-marco: #c7c7c7;
+  --xl-gris-fondo: #f3f3f3;
+  --xl-gris-texto: #444444;
+  --xl-seleccion: #217346;
+  border: 1px solid var(--xl-marco);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #000000;
+  overflow: hidden;
+  font-family: var(--xl-fuente);
+}
+
+.xl-barra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #d9d9d9;
+  background: #fafafa;
+  font-size: 12px;
+}
+
+.xl-nombre,
+.xl-formula {
+  height: 26px;
+  border: 1px solid var(--xl-marco);
+  background: #ffffff;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xl-nombre {
+  width: 76px;
+  flex: none;
+  justify-content: center;
+}
+
+.xl-fx {
+  flex: none;
+  color: #666666;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.xl-formula {
+  flex: 1;
+  min-width: 0;
+}
+
+.xl-barra-acciones {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.xl-marco {
+  overflow: auto;
+  max-height: calc(100vh - 290px);
+  min-height: 360px;
+  background: #ffffff;
+  outline: none;
+}
+
+.xl-marco:focus-visible {
+  box-shadow: inset 0 0 0 2px rgb(33 115 70 / 0.35);
+}
+
+.xl-tabla {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-family: var(--xl-fuente);
+  font-size: 11pt;
+  line-height: 1.2;
+  color: #000000;
+}
+
+.xl-tabla th {
+  position: sticky;
+  z-index: 3;
+  background: var(--xl-gris-fondo);
+  color: var(--xl-gris-texto);
+  font-weight: 400;
+  font-size: 11px;
+  text-align: center;
+  vertical-align: middle;
+  padding: 0;
+  border-right: 1px solid var(--xl-marco);
+  border-bottom: 1px solid var(--xl-marco);
+  user-select: none;
+}
+
+.xl-tabla thead th {
+  top: 0;
+}
+
+.xl-tabla tbody th {
+  left: 0;
+  z-index: 2;
+}
+
+.xl-tabla th.xl-esquina {
+  top: 0;
+  left: 0;
+  z-index: 5;
+}
+
+.xl-tabla th.xl-fija-col {
+  z-index: 4;
+}
+
+.xl-tabla tbody th.xl-fija-fila {
+  z-index: 4;
+}
+
+.xl-celda {
+  box-sizing: border-box;
+  padding: 0 3px;
+  vertical-align: bottom;
+  background: #ffffff;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  cursor: cell;
+}
+
+.xl-cuadricula .xl-celda {
+  border-right-color: var(--xl-cuadricula);
+  border-bottom-color: var(--xl-cuadricula);
+}
+
+.xl-celda.xl-fija-fila,
+.xl-celda.xl-fija-col {
+  position: sticky;
+  z-index: 2;
+}
+
+.xl-celda.xl-fija-fila.xl-fija-col {
+  z-index: 3;
+}
+
+.xl-celda.xl-seleccionada {
+  outline: 2px solid var(--xl-seleccion);
+  outline-offset: -2px;
+}
+
+.xl-celda.xl-con-nota {
+  position: relative;
+}
+
+.xl-celda.xl-con-nota::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-top: 6px solid #c00000;
+  border-left: 6px solid transparent;
+}
+
+.xl-pestanas {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0 8px 6px;
+  background: var(--xl-gris-fondo);
+  border-top: 1px solid var(--xl-marco);
+  overflow-x: auto;
+}
+
+.xl-pestana {
+  position: relative;
+  padding: 4px 12px 8px;
+  font-size: 12px;
+  font-family: var(--xl-fuente);
+  background: #e8e8e8;
+  border: 1px solid var(--xl-marco);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  color: var(--xl-gris-texto);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xl-pestana[aria-selected="true"] {
+  background: #ffffff;
+  color: var(--xl-seleccion);
+  font-weight: 600;
+}
+
+.xl-pestana-color {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+}
+
+.xl-vacio {
+  padding: 24px;
+  font-size: 13px;
+  color: var(--xl-gris-texto);
+}
