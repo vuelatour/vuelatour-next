@@ -13,6 +13,7 @@ import { BancoBadge } from "@/components/admin/expenses/banco-badge";
 import { GastoFacturaButton } from "@/components/admin/expenses/gasto-factura-button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import { hojasDe, textoHojas, tituloHojas } from "@/lib/admin/comprobante-hojas";
 import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import {
@@ -439,6 +440,8 @@ export function ExpensesTable({
         cell: (f) => {
           if (f.kind === "compra") return GUION;
           const g = f.gasto;
+          // Hojas 2..N del comprobante (12-oct-2026): se abren en «Verificar / editar».
+          const nHojas = hojasDe(g).length;
           return (
             <div className="flex items-center gap-2">
               {g.foto_url && fotoUrls[g.foto_url] && (
@@ -448,6 +451,14 @@ export function ExpensesTable({
                   url={fotoUrls[g.foto_url]}
                   alt={`Comprobante · ${g.categoria}`}
                 />
+              )}
+              {textoHojas(nHojas) && (
+                <span
+                  className="whitespace-nowrap text-[11px] text-muted-foreground"
+                  title={tituloHojas(nHojas)}
+                >
+                  {textoHojas(nHojas)}
+                </span>
               )}
               {/* «Factura» ya no se pinta (14-sep-2026): se confundía con el
                   semáforo «Facturada/Pendiente» de al lado; la miniatura basta. */}

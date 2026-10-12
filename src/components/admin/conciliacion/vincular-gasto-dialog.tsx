@@ -21,6 +21,7 @@ import {
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
+import dynamic from "next/dynamic";
 import { Textarea } from "@/components/ui/textarea";
 import {
   gastosCandidatosAction,
@@ -105,6 +106,7 @@ import {
   PLACEHOLDER_JUSTIFICACION,
   apiOfreceNoBancarios,
   esCandidatoNoBancario,
+  esMedioNoBancario,
   estadoJustificacion,
   etiquetaJustificacion,
   etiquetaMedioNoBancario,
@@ -118,6 +120,31 @@ import {
   type AvisoRazonNoAnotada,
   type TonoJustificacion,
 } from "@/lib/admin/conciliacion-no-bancario";
+import {
+  BOTON_ABRIR_CREAR,
+  BOTON_VOLVER,
+  DIAS_DUPLICADOS,
+  ETIQUETA_DUPLICADOS,
+  MOTIVO_NO_BANCARIO_SIN_VINCULO,
+  NOTA_PRELLENADO,
+  TEXTO_BUSCANDO_DUPLICADOS,
+  TEXTO_DUPLICADOS_NO_LEIDOS,
+  TEXTO_SIN_DUPLICADOS,
+  TITULO_ABRIR_CREAR,
+  TITULO_CREAR_DESDE_CARGO,
+  botonCrear,
+  casillaConfirmacion,
+  duplicadosDeRespuesta,
+  prefillGastoDesdeCargo,
+  puedeCrear,
+  textoContextoCrear,
+  textoResumenCargo,
+  textoTrasCrear,
+  veredictoIa,
+  type CatalogosGastoDesdeCargo,
+  type VeredictoIa,
+} from "@/lib/admin/gasto-desde-cargo";
+import type { Gasto } from "@/types/expenses";
 import { cn } from "@/lib/utils";
 import type {
   GastoCandidato,
@@ -135,6 +162,9 @@ interface VincularGastoDialogProps {
   conIa?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Catálogos del alta de gasto (12-oct-2026, «¿No está el gasto? Créalo»):
+   *  aviones con su combustible y proveedores. Sin ellos no se ofrece crear. */
+  catalogosGasto?: CatalogosGastoDesdeCargo | null;
 }
 
 /**
@@ -151,6 +181,7 @@ export function VincularGastoDialog({
   conIa = false,
   open,
   onOpenChange,
+  catalogosGasto = null,
 }: VincularGastoDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -164,6 +195,7 @@ export function VincularGastoDialog({
             movimiento={movimiento}
             gastos={gastos}
             conIa={conIa}
+            catalogosGasto={catalogosGasto}
             onCerrar={() => onOpenChange(false)}
           />
         )}
@@ -189,12 +221,15 @@ export function VacioCandidatos({
   onVolverABuscar,
   onMostrarNoBancarios,
 }: {
-  texto: string;
+  /** null = sin renglón de vacío (solo los avisos, p. ej. bajo una lista). */
+  texto?: string | null;
   avisos: readonly AvisoExcluidos[];
   onVolverABuscar?: () => void;
   onMostrarNoBancarios?: (m: NonNullable<AvisoExcluidos["mostrar"]>) => void;
 }) {
-  const vacio = <p className="px-3 py-4 text-center text-xs text-muted-foreground">{texto}</p>;
+  const vacio = texto ? (
+    <p className="px-3 py-4 text-center text-xs text-muted-foreground">{texto}</p>
+  ) : null;
   if (avisos.length === 0) return vacio;
   return (
     <>
@@ -401,15 +436,34 @@ function avisarRazonNoAnotada(aviso: AvisoRazonNoAnotada) {
   });
 }
 
+/**
+ * El alta de gasto se carga SOLO al llegar al paso «crear» (12-oct-2026): la
+ * bandeja de Conciliación no la necesita (es el formulario completo de Gastos
+ * con sus server actions) y así las pruebas que renderizan la fila tampoco
+ * cargan esos módulos. Sin SSR: el paso «crear» solo existe tras un clic.
+ */
+const ExpenseCreateDialog = dynamic(
+  () =>
+    import("@/components/admin/expenses/expense-create-dialog").then((m) => m.ExpenseCreateDialog),
+  { ssr: false },
+);
+
+/** Lectura de los posibles duplicados del paso «crear» (misma forma que `Carga`). */
+type CargaDuplicados =
+  | { estado: "cargando" }
+  | { estado: "listo"; r: ActionResult<GastosCandidatosResponse> };
+
 function SelectorGastos({
   movimiento,
   gastos,
   conIa,
+  catalogosGasto,
   onCerrar,
 }: {
   movimiento: MovimientoBancario;
   gastos: SearchableSelectOption[];
   conIa: boolean;
+  catalogosGasto: CatalogosGastoDesdeCargo | null;
   onCerrar: () => void;
 }) {
   const router = useRouter();
@@ -451,6 +505,13 @@ function SelectorGastos({
   // La búsqueda que puso el interruptor (o «Mostrar estos gastos») y la de
   // antes: apagarlo la devuelve si nadie la tocó.
   const busquedaAutoRef = useRef<BusquedaPuestaPorInterruptor | null>(null);
+  // «¿No está el gasto? Créalo» (12-oct-2026): paso previo con los posibles
+  // duplicados, el veredicto de la IA y la confirmación explícita; luego el
+  // alta prellenada (anidada) y, al guardar, la liga con este cargo.
+  const [paso, setPaso] = useState<"lista" | "crear">("lista");
+  const [confirmado, setConfirmado] = useState(false);
+  const [dup, setDup] = useState<CargaDuplicados | null>(null);
+  const [crearAbierto, setCrearAbierto] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setBusqueda(busquedaParaApi(texto)), DEBOUNCE_BUSQUEDA_MS);
@@ -693,6 +754,134 @@ function SelectorGastos({
     [gastos, sugerencia],
   );
 
+  // ===== «¿No está el gasto? Créalo» (12-oct-2026) =====
+  // Regla PURA en `lib/admin/gasto-desde-cargo.ts`. Los posibles duplicados
+  // son los candidatos del MISMO monto en ±120 días, también en efectivo y
+  // con los `excluidos` (ya conciliados, etc.) explicados debajo; la IA es la
+  // misma `sugerir` del cargo (gasta créditos: se pide al entrar, una vez).
+  const cargarDuplicados = () => {
+    setDup({ estado: "cargando" });
+    const monto = Math.abs(Number(movimiento.monto)).toFixed(2);
+    const pedir = (incluir: boolean) =>
+      gastosCandidatosAction(movimiento.id, {
+        q: monto,
+        dias: DIAS_DUPLICADOS,
+        incluir_no_bancarios: incluir,
+      }).catch(sinConexion);
+    void pedir(true).then(async (r) => {
+      // Un API que todavía no sabe de efectivo: se repite sin el interruptor.
+      const final =
+        !r.ok && "code" in r && r.code === "API_SIN_NO_BANCARIOS" ? await pedir(false) : r;
+      setDup({ estado: "listo", r: final });
+    });
+  };
+  const abrirCrear = () => {
+    setPaso("crear");
+    setConfirmado(false);
+    if (sug.tipo === "nada") pedirIa();
+    if (dup === null) cargarDuplicados();
+  };
+  const dupResp = dup?.estado === "listo" ? dup.r : null;
+  const dupData = dupResp?.ok ? (dupResp.data ?? null) : null;
+  const dupError = dupResp && !dupResp.ok ? mensajeErrorBusquedaGastos(dupResp) : null;
+  const buscandoDuplicados = paso === "crear" && (dup === null || dup.estado === "cargando");
+  const veredicto: VeredictoIa = veredictoIa(
+    sug.tipo === "listo" ? sug.data : sug.tipo === "cargando" ? undefined : null,
+    sug.tipo === "cargando",
+  );
+  const duplicados = useMemo(
+    () =>
+      // La ficha que propone la IA va al frente (aunque no sea del mismo monto).
+      conSugeridoAlFrente(duplicadosDeRespuesta(dupData, movimiento.monto).duplicados, sugerido),
+    [dupData, movimiento.monto, sugerido],
+  );
+  const avisosDuplicados = useMemo(
+    () =>
+      textoExcluidosCandidatos(dupData?.excluidos, movimiento.monto, {
+        monedaCuenta,
+        dias: DIAS_DUPLICADOS,
+        montoBuscado: dupData?.excluidos_monto,
+        incluyeNoBancarios: true,
+        fechaCargo: movimiento.fecha,
+      }),
+    [dupData, movimiento.monto, movimiento.fecha, monedaCuenta],
+  );
+  const prefill = useMemo(
+    () => prefillGastoDesdeCargo(movimiento, monedaCuenta),
+    [movimiento, monedaCuenta],
+  );
+  const crear = () => {
+    if (!puedeCrear({ confirmado, buscandoDuplicados })) return;
+    setCrearAbierto(true);
+  };
+  /** El gasto YA quedó: se liga con este cargo (en efectivo exige justificación: no se liga solo). */
+  const trasCrear = (g: Gasto) => {
+    setCrearAbierto(false);
+    if (esMedioNoBancario(g.medio_pago)) {
+      const t = textoTrasCrear(false, MOTIVO_NO_BANCARIO_SIN_VINCULO);
+      toast.warning(t.titulo, { description: t.descripcion, duration: 12000 });
+      onCerrar();
+      router.refresh();
+      return;
+    }
+    start(async () => {
+      const r = await linkMovimientoAction(movimiento.id, g.id).catch(sinConexion);
+      if (r.ok) {
+        toast.success(textoTrasCrear(true).titulo);
+      } else {
+        const t = textoTrasCrear(false, mensajeErrorVincularGastos(r, etiquetaDe).titulo);
+        toast.warning(t.titulo, { description: t.descripcion, duration: 12000 });
+      }
+      onCerrar();
+      router.refresh();
+    });
+  };
+
+  if (paso === "crear") {
+    return (
+      <>
+        <PasoCrearGasto
+          movimiento={movimiento}
+          monedaCuenta={monedaCuenta}
+          cargando={buscandoDuplicados}
+          error={dupError}
+          duplicados={duplicados}
+          avisos={avisosDuplicados}
+          ia={veredicto}
+          confirmado={confirmado}
+          onConfirmado={setConfirmado}
+          disabled={pending}
+        />
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setPaso("lista")} disabled={pending}>
+            {BOTON_VOLVER}
+          </Button>
+          <Button
+            onClick={crear}
+            disabled={pending || !puedeCrear({ confirmado, buscandoDuplicados })}
+            title={buscandoDuplicados ? TEXTO_BUSCANDO_DUPLICADOS : undefined}
+          >
+            {botonCrear(veredicto)}
+          </Button>
+        </DialogFooter>
+        {/* El alta de siempre, en modo controlado y ANIDADA (Base UI apila
+            diálogos): prellenada con el cargo; al guardar, `trasCrear` liga. */}
+        {catalogosGasto && (
+          <ExpenseCreateDialog
+            aircraft={catalogosGasto.aircraft}
+            providers={catalogosGasto.providers}
+            abierto={crearAbierto}
+            onAbiertoChange={setCrearAbierto}
+            prefill={prefill}
+            titulo={TITULO_CREAR_DESDE_CARGO}
+            contexto={textoContextoCrear(movimiento, monedaCuenta)}
+            onCreado={trasCrear}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="space-y-2">
@@ -902,20 +1091,146 @@ function SelectorGastos({
           <p className="text-[11px] text-muted-foreground">{NOTA_VENTANA_CARGO(dias, incluirNoBancarios)}</p>
         )}
       </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onCerrar} disabled={pending}>
-          {BOTON_CANCELAR}
-        </Button>
-        {modoRespaldo ? (
-          <Button onClick={vincularUno} disabled={pending || !seleccionUnica}>
-            {pending ? TEXTO_VINCULANDO : botonVincularGastos(seleccionUnica ? 1 : 0)}
-          </Button>
+      <DialogFooter className="sm:justify-between">
+        {/* «¿No está el gasto? Créalo» (12-oct-2026): el alta prellenada con
+            el cargo, tras revisar duplicados y lo que dice la IA. */}
+        {catalogosGasto ? (
+          <button
+            type="button"
+            className="cursor-pointer self-center text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={abrirCrear}
+            disabled={pending}
+            title={TITULO_ABRIR_CREAR}
+          >
+            {BOTON_ABRIR_CREAR}
+          </button>
         ) : (
-          <Button onClick={vincular} disabled={pending || marcados.length === 0 || faltaJustificacion}>
-            {pending ? TEXTO_VINCULANDO : botonVincularGastos(marcados.length)}
-          </Button>
+          <span />
         )}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <Button variant="outline" onClick={onCerrar} disabled={pending}>
+            {BOTON_CANCELAR}
+          </Button>
+          {modoRespaldo ? (
+            <Button onClick={vincularUno} disabled={pending || !seleccionUnica}>
+              {pending ? TEXTO_VINCULANDO : botonVincularGastos(seleccionUnica ? 1 : 0)}
+            </Button>
+          ) : (
+            <Button onClick={vincular} disabled={pending || marcados.length === 0 || faltaJustificacion}>
+              {pending ? TEXTO_VINCULANDO : botonVincularGastos(marcados.length)}
+            </Button>
+          )}
+        </div>
       </DialogFooter>
     </>
+  );
+}
+
+/**
+ * Paso previo a crear el gasto desde el cargo (12-oct-2026): el resumen del
+ * cargo, los POSIBLES DUPLICADOS (mismo monto, ±120 días, también en
+ * efectivo; y por qué no salen los excluidos), el veredicto de la IA y la
+ * casilla de confirmación explícita. Aquí no se crea ni se liga nada.
+ */
+function PasoCrearGasto({
+  movimiento,
+  monedaCuenta,
+  cargando,
+  error,
+  duplicados,
+  avisos,
+  ia,
+  confirmado,
+  onConfirmado,
+  disabled,
+}: {
+  movimiento: MovimientoBancario;
+  monedaCuenta: string | null;
+  cargando: boolean;
+  error: string | null;
+  duplicados: readonly GastoCandidato[];
+  avisos: readonly AvisoExcluidos[];
+  ia: VeredictoIa;
+  confirmado: boolean;
+  onConfirmado: (v: boolean) => void;
+  disabled: boolean;
+}) {
+  const idCasilla = useId();
+  const claseIa =
+    ia.tipo === "sugiere" && ia.alta
+      ? "border-red-500/40 bg-red-500/5 text-red-700 dark:text-red-300"
+      : ia.tipo === "sugiere"
+        ? "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+        : "border-border bg-muted/30 text-muted-foreground";
+  return (
+    <div className="space-y-3" data-paso-crear-gasto>
+      <p className="text-xs text-muted-foreground">{textoResumenCargo(movimiento, monedaCuenta)}</p>
+      <div className="rounded-lg border border-border">
+        <p className="border-b border-border px-3 py-2 text-xs font-medium">{ETIQUETA_DUPLICADOS}</p>
+        {cargando ? (
+          <p className="px-3 py-4 text-center text-xs text-muted-foreground">{TEXTO_BUSCANDO_DUPLICADOS}</p>
+        ) : error ? (
+          <p className="px-3 py-3 text-xs text-amber-700 dark:text-amber-300">
+            {TEXTO_DUPLICADOS_NO_LEIDOS} {error}
+          </p>
+        ) : duplicados.length === 0 ? (
+          <VacioCandidatos texto={TEXTO_SIN_DUPLICADOS} avisos={avisos} />
+        ) : (
+          <>
+            <ul className="max-h-56 divide-y divide-border overflow-y-auto">
+              {duplicados.map((c) => {
+                const ficha = fichaCandidatoGasto(c);
+                const desc = descripcionCandidatoGasto(ficha);
+                const sugerido = ia.tipo === "sugiere" && ia.gastoId === c.id;
+                return (
+                  <li key={c.id} className="px-3 py-2 text-xs">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium">{etiquetaCandidatoGasto(ficha)}</span>
+                      <BadgeMedioCandidato candidato={c} />
+                      {c.conciliado && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Ya conciliado
+                        </Badge>
+                      )}
+                      {sugerido && (
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                          {ETIQUETA_SUGERIDO}
+                        </span>
+                      )}
+                    </span>
+                    {desc && (
+                      // El tooltip lleva el número de factura ENTERO (la línea lo acorta).
+                      <span
+                        className="block truncate text-muted-foreground"
+                        title={tituloDescripcionCandidatoGasto(ficha) ?? undefined}
+                      >
+                        {desc}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <VacioCandidatos texto={null} avisos={avisos} />
+          </>
+        )}
+      </div>
+      <p className={cn("rounded-lg border px-3 py-2 text-xs", claseIa)} data-veredicto-ia={ia.tipo}>
+        ✨ {ia.texto}
+        {ia.tipo === "sugiere" && ia.razon ? ` ${ia.razon}` : ""}
+      </p>
+      <label htmlFor={idCasilla} className="flex cursor-pointer items-start gap-2 text-xs">
+        <input
+          id={idCasilla}
+          type="checkbox"
+          checked={confirmado}
+          onChange={(e) => onConfirmado(e.target.checked)}
+          disabled={disabled}
+          className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600"
+        />
+        <span className="font-medium">{casillaConfirmacion(ia)}</span>
+      </label>
+      <p className="text-[11px] text-muted-foreground">{NOTA_PRELLENADO}</p>
+    </div>
   );
 }

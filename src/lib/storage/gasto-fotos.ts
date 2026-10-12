@@ -1,5 +1,3 @@
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-
 const BUCKET = "gasto-fotos";
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 // Facturas y recibos: fotos, PDF o Excel/CSV. DEBE coincidir con
@@ -37,6 +35,11 @@ export async function uploadGastoComprobante(file: File): Promise<string> {
   const random = Math.random().toString(36).slice(2, 8);
   const path = `oficina/${stamp}-${random}-${baseName}.${ext}`;
 
+  // Import diferido (12-oct-2026): el cliente de Supabase del navegador
+  // exige sus variables de entorno al CARGAR el módulo, y este helper lo
+  // importan diálogos que también se renderizan en el servidor y en pruebas
+  // sin esas variables. Se resuelve al subir, que es cuando hace falta.
+  const { createSupabaseBrowserClient } = await import("@/lib/supabase/browser");
   const supabase = createSupabaseBrowserClient();
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     contentType: file.type,

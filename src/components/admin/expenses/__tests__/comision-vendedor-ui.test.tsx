@@ -118,7 +118,7 @@ describe("cableado de los diálogos", () => {
   it("alta: bloquea sin vuelo ANTES de subir la factura, con el texto del API", () => {
     const candado = alta.indexOf("errorVueloObligatorio(values.categoria, values.vuelo_id)");
     expect(candado).toBeGreaterThan(-1);
-    expect(candado).toBeLessThan(alta.indexOf("uploadGastoComprobante(factura)"));
+    expect(candado).toBeLessThan(alta.indexOf("uploadGastoComprobante(archivo)"));
     expect(alta).toContain("toast.error(sinVuelo)");
   });
 

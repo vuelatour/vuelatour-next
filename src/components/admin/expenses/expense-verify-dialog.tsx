@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ShoppingCartIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, ShoppingCartIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useForm } from "react-hook-form";
 import {
   listCardsOptionsAction,
@@ -94,6 +94,25 @@ import {
   vueloCercanoLabel,
 } from "@/components/admin/expenses/vuelo-cancelado-hint";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
+import { pedirUrlFirmada } from "@/lib/storage/url-firmada";
+import {
+  AYUDA_AGREGAR_HOJAS,
+  BOTON_AGREGAR_COMPROBANTE,
+  BOTON_QUITAR_HOJA,
+  ETIQUETA_AGREGAR_HOJAS,
+  MAX_HOJAS_COMPROBANTE,
+  TEXTO_NUEVA_HOJA,
+  TEXTO_QUITAR_HOJA,
+  TITULO_HOJAS_COMPROBANTE,
+  TITULO_QUITAR_HOJA,
+  aceptarArchivosComprobante,
+  etiquetaHoja,
+  hojasCambiaron,
+  hojasDe,
+  nombreCorto,
+  valorIaConHojas,
+} from "@/lib/admin/comprobante-hojas";
 
 // Opciones desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto): orden de
 // captura + ATERRIZAJE (solo se reclasifica aquí, tras GAS), etiqueta y
@@ -178,6 +197,42 @@ export function ExpenseVerifyDialog({
   const [selloRetirado, setSelloRetirado] = useState(false);
   // Tarjetas del catálogo para "con cuál se pagó" (solo medio TARJETA_CORP).
   const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
+  // Hojas 2..N del comprobante (12-oct-2026): las GUARDADAS (paths de
+  // `valor_ia_extraido.fotos_adicionales`), las que se agregan aquí (se
+  // suben al guardar) y las URLs firmadas de las guardadas, pedidas al abrir
+  // (la página solo firma la hoja principal). Quitar una guardada confirma.
+  const [hojas, setHojas] = useState<string[]>(() => hojasDe(gasto));
+  const [hojasNuevas, setHojasNuevas] = useState<File[]>([]);
+  const [urlsHojas, setUrlsHojas] = useState<Record<string, string>>({});
+  const [hojaAQuitar, setHojaAQuitar] = useState<string | null>(null);
+  const hojasRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const faltan = hojas.filter((p) => !urlsHojas[p]);
+    if (faltan.length === 0) return;
+    let cancel = false;
+    void Promise.all(
+      faltan.map((p) => pedirUrlFirmada("gasto-fotos", p).then((u) => [p, u] as const)),
+    ).then((pares) => {
+      if (cancel) return;
+      const nuevas: Record<string, string> = {};
+      for (const [p, u] of pares) if (u) nuevas[p] = u;
+      if (Object.keys(nuevas).length > 0) setUrlsHojas((prev) => ({ ...prev, ...nuevas }));
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [open, hojas, urlsHojas]);
+  // Numeración: la hoja principal es la 1 (si existe); luego las guardadas y
+  // las nuevas. Sin principal, la primera que se agregue pasará a serlo.
+  const primeraHoja = gasto.foto_url ? 2 : 1;
+  const totalHojas = (gasto.foto_url ? 1 : 0) + hojas.length + hojasNuevas.length;
+  const agregarHojas = (archivos: File[]) => {
+    if (archivos.length === 0) return;
+    const v = aceptarArchivosComprobante(archivos, totalHojas);
+    if (!v.ok) toast.error(v.mensaje);
+    if (v.archivos.length > 0) setHojasNuevas((prev) => [...prev, ...v.archivos]);
+  };
   useEffect(() => {
     if (!open) return;
     let cancel = false;
@@ -213,6 +268,9 @@ export function ExpenseVerifyDialog({
       reset(defaults(gasto));
       setAiRaw(null);
       setSelloRetirado(false);
+      // Hojas del comprobante: las guardadas de ESTE gasto, sin pendientes.
+      setHojas(hojasDe(gasto));
+      setHojasNuevas([]);
       // reset() no limpia refs: sin esto, el veto a la IA se heredaría a
       // la siguiente apertura del diálogo (u otro gasto).
       avionLimpiado.current = false;
@@ -651,6 +709,33 @@ export function ExpenseVerifyDialog({
       if (vueloEnPatch) {
         payload.vuelo_id = vueloSel;
       }
+      // Hojas del comprobante (12-oct-2026): se suben las nuevas (si una
+      // falla, no se guarda nada a medias) y viaja la lista completa en
+      // `valor_ia_extraido.fotos_adicionales` SOLO si cambió, encima de la
+      // lectura de la IA (la fresca o la guardada: nunca se pierde). Sin hoja
+      // principal, la primera agregada pasa a ser `foto_url`.
+      if (hojasCambiaron(hojasDe(gasto), hojas, hojasNuevas.length)) {
+        const subidas: string[] = [];
+        for (const archivo of hojasNuevas) {
+          try {
+            subidas.push(await uploadGastoComprobante(archivo));
+          } catch (err) {
+            toast.error(
+              err instanceof Error
+                ? `${err.message} (${nombreCorto(archivo.name)})`
+                : `No se pudo subir ${nombreCorto(archivo.name)}`,
+            );
+            return;
+          }
+        }
+        const todas = [...hojas, ...subidas];
+        if (!gasto.foto_url && todas.length > 0) payload.foto_url = todas.shift();
+        const base =
+          (payload.valor_ia_extraido as Record<string, unknown> | undefined) ??
+          gasto.valor_ia_extraido;
+        // `{}` explícito: quitar la última hoja también debe guardarse.
+        payload.valor_ia_extraido = valorIaConHojas(base, todas) ?? {};
+      }
       const result = await verifyGastoAction(gasto.id, payload);
       if (result.ok) {
         // Vuelo elegido (sugerencia o manual) distinto al actual: ligarlo o
@@ -825,6 +910,97 @@ export function ExpenseVerifyDialog({
             Este gasto no tiene foto de comprobante.
           </p>
         )}
+
+        {/* Hojas 2..N del comprobante (12-oct-2026): las guardadas con su
+            miniatura (URL firmada pedida al abrir), las nuevas por nombre;
+            «Agregar hojas» sube más al guardar. Sin hoja principal, el primer
+            archivo agregado pasa a serlo. */}
+        <div
+          className="space-y-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"
+          data-hojas-comprobante
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">{TITULO_HOJAS_COMPROBANTE}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs"
+              onClick={() => hojasRef.current?.click()}
+              disabled={pending || totalHojas >= MAX_HOJAS_COMPROBANTE}
+              title={AYUDA_AGREGAR_HOJAS}
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              {totalHojas > 0 ? ETIQUETA_AGREGAR_HOJAS : BOTON_AGREGAR_COMPROBANTE}
+            </Button>
+          </div>
+          <input
+            ref={hojasRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              agregarHojas(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
+          {hojas.length === 0 && hojasNuevas.length === 0 ? (
+            <p className="text-muted-foreground">{AYUDA_AGREGAR_HOJAS}</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {hojas.map((p, i) => (
+                <li key={p} className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-muted-foreground">
+                    {etiquetaHoja(primeraHoja + i, totalHojas)}
+                  </span>
+                  {urlsHojas[p] ? (
+                    <ComprobantePreview
+                      bucket="gasto-fotos"
+                      path={p}
+                      url={urlsHojas[p]}
+                      alt={`Hoja ${primeraHoja + i} del comprobante`}
+                      thumbClassName="h-10 w-10 rounded object-cover"
+                    />
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground" title={p}>
+                      {nombreCorto(p.split("/").pop() ?? p)}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    title={BOTON_QUITAR_HOJA}
+                    onClick={() => setHojaAQuitar(p)}
+                    disabled={pending}
+                    className="ml-auto cursor-pointer rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <XMarkIcon className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+              {hojasNuevas.map((a, i) => (
+                <li key={`${a.name}-${a.size}-${i}`} className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-muted-foreground">
+                    {etiquetaHoja(primeraHoja + hojas.length + i, totalHojas)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" title={a.name}>
+                    {nombreCorto(a.name)}{" "}
+                    <span className="text-muted-foreground">· {TEXTO_NUEVA_HOJA}</span>
+                  </span>
+                  <button
+                    type="button"
+                    title="Quitar"
+                    onClick={() => setHojasNuevas((prev) => prev.filter((_, j) => j !== i))}
+                    disabled={pending}
+                    className="cursor-pointer rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <XMarkIcon className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         {/* Match automático piloto+fecha (IA si es ambiguo): propone, el humano confirma. */}
         {!gasto.aeronave_id && (
@@ -1374,6 +1550,32 @@ export function ExpenseVerifyDialog({
                 }}
               >
                 Sí, la fecha es correcta
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {/* Quitar una hoja GUARDADA confirma (regla de la casa). */}
+        <AlertDialog
+          open={hojaAQuitar !== null}
+          onOpenChange={(o) => {
+            if (!o) setHojaAQuitar(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_QUITAR_HOJA}</AlertDialogTitle>
+              <AlertDialogDescription>{TEXTO_QUITAR_HOJA}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const p = hojaAQuitar;
+                  setHojaAQuitar(null);
+                  if (p) setHojas((prev) => prev.filter((x) => x !== p));
+                }}
+              >
+                {BOTON_QUITAR_HOJA}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

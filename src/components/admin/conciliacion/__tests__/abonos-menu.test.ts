@@ -26,7 +26,7 @@ describe("menú de abonos en Conciliación", () => {
 
   it("la tabla pasa `abonos` a cada fila y la página los arma con cuentas, clientes y aeronaves", () => {
     const tabla = leer("components/admin/conciliacion/movimientos-table.tsx");
-    expect(tabla).toContain("<MovimientoActions movimiento={m} gastos={gastos} abonos={abonos} />");
+    expect(tabla).toMatch(/<MovimientoActions\s+movimiento=\{m\}\s+gastos=\{gastos\}\s+abonos=\{abonos\}/);
     const pagina = leer("app/admin/conciliacion/page.tsx");
     expect(pagina).toContain('degradado.opcional("los clientes", listClients(');
     expect(pagina).toContain('degradado.opcional("las aeronaves", listAircraft(');

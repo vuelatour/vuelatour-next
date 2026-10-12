@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { ChevronUpDownIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { cn } from "@/lib/utils";
+import { coincideBusqueda } from "@/lib/admin/busqueda";
 import {
   Combobox,
   ComboboxContent,
@@ -20,6 +21,21 @@ export interface SearchableSelectOption {
    *  (default histórico). Úsalo para colorearla o dejar que envuelva. */
   descriptionClassName?: string;
   disabled?: boolean;
+}
+
+/** Texto de una opción para el buscador: etiqueta + descripción. */
+function textoDeOpcion(o: SearchableSelectOption): string {
+  return o.description ? `${o.label} ${o.description}` : o.label;
+}
+
+/**
+ * Filtro del buscador (12-oct-2026, FUENTE ÚNICA `lib/admin/busqueda`): sin
+ * acentos ni mayúsculas, por palabras en cualquier orden y con tolerancia a
+ * un error de dedo. Base UI lo aplica a `items` con lo tecleado en el input;
+ * con el input vacío todas las opciones coinciden.
+ */
+function filtrarOpcion(item: SearchableSelectOption, query: string): boolean {
+  return coincideBusqueda(textoDeOpcion(item), query);
 }
 
 interface SearchableSelectProps {
@@ -71,6 +87,7 @@ export function SearchableSelect({
     <Combobox
       items={options}
       value={selected}
+      filter={filtrarOpcion}
       onValueChange={(item: SearchableSelectOption | null) => {
         if (item) onChange(item.value);
       }}

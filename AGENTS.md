@@ -6045,6 +6045,94 @@ de dedo en palabras de 5+ letras: letra cambiada, de más, de menos o dos
 invertidas—), `puntuacionBusqueda` (exacta 3 · prefijo 2 · pedazo 1 ·
 parecida 0.5) y `filtrarPorBusqueda` (filtra y ordena por relevancia, orden
 original en empates). La usan la lista de candidatos de «Vincular a un cobro
-o ingreso» y, desde la misma fecha, `DataTable` (búsqueda rápida) y
-`SearchableSelect` (todo selector con buscador del panel).
+o ingreso» y, desde la misma fecha, `DataTable` (búsqueda rápida:
+`coincideBusqueda`, SIN reordenar — el orden lo decide el padre) y
+`SearchableSelect` (prop `filter` del Combobox de Base UI sobre etiqueta +
+descripción). Cableado vigilado en `lib/admin/__tests__/busqueda-cableado.test.ts`.
+
+## Comprobante con VARIAS hojas (12-oct-2026)
+
+Pedido del cliente: «un proveedor de gasolina nos emite como 5 comprobantes
+en PDF, y ahorita solo nos deja subir un solo PDF… que sea general». Sin
+cambios en el API: el gasto guarda UN archivo principal (`foto_url`, la hoja
+que lee la IA) y las hojas 2..N en `valor_ia_extraido.fotos_adicionales`,
+el MISMO campo que usa la app para una factura multi-hoja y que el API lee
+al reanalizar (invariante 46, `folio-relectura.util.ts`).
+
+- **FUENTE ÚNICA** `lib/admin/comprobante-hojas.ts` (PURA, prueba
+  `__tests__/comprobante-hojas.test.ts`): `hojasDe(gasto)` (sin repetir la
+  principal ni vacíos), `archivosDelComprobante`, `valorIaConHojas(valorIa,
+  hojas)` (funde las hojas en el jsonb SIN perder la lectura de la IA; sin
+  hojas quita la llave; sin nada ⇒ undefined), `aceptarArchivosComprobante`
+  (tipos del bucket, 10 MB, tope `MAX_HOJAS_COMPROBANTE` = 10; lo rechazado
+  se DICE, nunca se descarta en silencio), `hojasCambiaron`, `textoHojas`
+  («+2 hojas»), `tituloHojas`, `etiquetaHoja`, `textoArchivosZona`,
+  `toastGastoConComprobante` y los textos de los diálogos.
+- **Alta** (`expense-create-dialog.tsx`): el input y el arrastre admiten
+  VARIOS archivos; la lista «Hoja 1 de N…» con ✕ por archivo y «Agregar
+  hojas». La IA lee SOLO la hoja principal (la primera; al quitarla, la
+  siguiente pasa a serlo y se lee). Al guardar se suben en orden (si una
+  falla no se crea nada a medias): la primera ⇒ `foto_url`, el resto ⇒
+  `fotos_adicionales` dentro de `valor_ia_extraido` (con la lectura de la IA).
+- **«Verificar / editar»** (`expense-verify-dialog.tsx`): bloque «Hojas del
+  comprobante» con las guardadas (miniatura con URL firmada pedida al abrir
+  vía `pedirUrlFirmada`: la página solo firma la principal), las nuevas por
+  nombre («nueva · se sube al guardar»), «Agregar hojas» (o «Agregar
+  comprobante» sin ninguna: la primera pasa a ser `foto_url`, por eso
+  `GastoVerifySchema` ganó `foto_url`) y «Quitar hoja» de una guardada CON
+  confirmación. Al guardar viaja la lista completa SOLO si cambió, encima de
+  la lectura de la IA (fresca o guardada); quitar la última manda `{}`.
+- **Tablas** (`expenses-table.tsx`, `flight-gastos-table.tsx`): junto a la
+  miniatura, «+N hojas» con tooltip (se abren en «Verificar / editar»).
+- `lib/storage/gasto-fotos.ts` importa el cliente de Supabase del navegador
+  de forma DIFERIDA (exige sus variables al cargar el módulo y ahora lo
+  importan diálogos que se renderizan en pruebas sin ellas).
+- Cableado vigilado en `expenses/__tests__/comprobante-hojas-ui.test.ts`.
+
+## Conciliación: «¿No está el gasto? Créalo» (12-oct-2026)
+
+Pedido del cliente: «crear gasto desde la opción de vincular el gasto… que ya
+venga una opción para crearlo rápido, incluso si está prellenado» y «que se
+confirme bien que no está el gasto… alguna alerta… que con IA te ayude a
+validar que no esté ya registrado para no duplicar… validando que tú das el
+visto bueno». Solo panel.
+
+- **FUENTE ÚNICA** `lib/admin/gasto-desde-cargo.ts` (PURA, prueba
+  `__tests__/gasto-desde-cargo.test.ts`): `prefillGastoDesdeCargo(mov,
+  monedaCuenta)` (monto positivo a 2 decimales, moneda de la cuenta, fecha
+  del cargo, `TARJETA_CORP` + terminación SOLO con referencia de 8+ dígitos
+  —la regla del auto-cruce del API—, si no `TRANSFERENCIA`; notas =
+  descripción · ref.), `duplicadosDeCandidatos` / `duplicadosDeRespuesta`
+  (mismo monto o faltante ±0.01), `veredictoIa(sugerencia, cargando)`
+  (pendiente · sugiere —`alta` desde 70 %— · sin_match · no_disponible),
+  `botonCrear` («Crear de todos modos» si la IA está segura),
+  `casillaConfirmacion` (más dura si la IA está segura), `puedeCrear` (casilla
+  marcada y sin la búsqueda de duplicados en curso; la IA NO bloquea),
+  `textoTrasCrear`, `textoContextoCrear`, `CatalogosGastoDesdeCargo` y
+  `MOTIVO_NO_BANCARIO_SIN_VINCULO`.
+- **Diálogo «Vincular gasto» del CARGO** (`vincular-gasto-dialog.tsx`): en
+  el pie, a la izquierda, «¿No está el gasto? Créalo» (solo con
+  `catalogosGasto`). Abre el PASO PREVIO (`PasoCrearGasto`): resumen del
+  cargo, «Posibles duplicados (mismo monto, ±120 días)» —candidatos del API
+  con `q` = el monto, `dias` 120 e `incluir_no_bancarios` (si el API no lo
+  sabe, se repite sin él), con «Ya conciliado», la insignia de efectivo y
+  los `excluidos` explicados debajo (`VacioCandidatos` ahora admite `texto`
+  null)—, el veredicto de la IA (`sugerir` del cargo, pedido UNA vez al
+  entrar; rojo si está segura, ámbar si duda, gris si no hay o no está) y la
+  casilla de confirmación explícita. «Crear el gasto» abre el MISMO
+  `ExpenseCreateDialog` en modo CONTROLADO y ANIDADO (Base UI apila
+  diálogos), prellenado y con la nota de contexto; al guardar, `trasCrear`
+  liga el gasto nuevo con `linkMovimientoAction(mov.id, gasto.id)` y cierra
+  (la liga fallida se avisa: el gasto SÍ quedó). En EFECTIVO u otro medio no
+  bancario NO se liga solo (el API exige justificación): se dice cómo.
+- **`ExpenseCreateDialog` en modo controlado** (props ADITIVAS `abierto`,
+  `onAbiertoChange`, `prefill`, `onCreado`, `titulo`, `contexto`): sin botón
+  propio, prellenado al ABRIR encima de los defaults y aviso con el gasto
+  creado antes de cerrar. Sin `abierto`, el diálogo de siempre.
+- **Página**: `app/admin/conciliacion/page.tsx` carga los proveedores
+  (`degradado.opcional`) y arma `catalogosGasto` (aviones con su combustible
+  vía `avionCatalogoGasto`, como Gastos) → `MovimientosTable` →
+  `MovimientoActions` → `VincularGastoDialog`. Sin aeronaves cargadas no se
+  ofrece crear.
+- Cableado vigilado en `conciliacion/__tests__/crear-gasto-desde-cargo.test.ts`.
 

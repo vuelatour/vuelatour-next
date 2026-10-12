@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { coincideBusqueda } from "@/lib/admin/busqueda";
 import {
   Table,
   TableBody,
@@ -120,14 +121,6 @@ interface DataTableProps<T> {
    * nunca en render.
    */
   alCambiarFiltradas?: (filas: T[]) => void;
-}
-
-/** Búsqueda insensible a acentos y mayúsculas (nombres es-MX). */
-function normaliza(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 /**
@@ -261,10 +254,13 @@ export function DataTable<T>({
   };
   const atajos = orden?.alElegirAtajo ? (orden.atajos ?? []) : [];
 
+  // Búsqueda «tipo Algolia» (12-oct-2026, FUENTE ÚNICA lib/admin/busqueda):
+  // sin acentos ni mayúsculas, por PALABRAS en cualquier orden, con un error
+  // de dedo en palabras de 5+ letras y montos con miles («$2,801.40»). El
+  // ORDEN de las filas no cambia: lo decide el padre (columnas ordenables).
   const filtradas = useMemo(() => {
     if (!searchText || !busqueda.trim()) return rows;
-    const q = normaliza(busqueda.trim());
-    return rows.filter((r) => normaliza(searchText(r)).includes(q));
+    return rows.filter((r) => coincideBusqueda(searchText(r), busqueda));
   }, [rows, busqueda, searchText]);
 
   // Aviso al padre (opcional) SOLO cuando cambia el conjunto: la clave son los

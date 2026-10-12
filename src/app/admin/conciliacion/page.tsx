@@ -34,6 +34,9 @@ import {
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
+import { listProviders } from "@/lib/api/providers-server";
+import { avionCatalogoGasto } from "@/lib/admin/combustibles";
+import type { CatalogosGastoDesdeCargo } from "@/lib/admin/gasto-desde-cargo";
 import { cuentasDeAbonos, type AbonosConciliacion } from "@/lib/admin/conciliacion-abonos";
 import type { CatalogosIngreso } from "@/components/admin/ingresos/registrar-ingreso-dialog";
 import { listGastos } from "@/lib/api/expenses-server";
@@ -125,6 +128,7 @@ export default async function ConciliacionPage({
     paywiseComisionPct,
     clientesRes,
     aeronavesRes,
+    providersRes,
   ] = await Promise.all([
     listMovimientosBancarios(query),
     // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
@@ -157,6 +161,11 @@ export default async function ConciliacionPage({
     }),
     degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
       data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
+    }),
+    // «¿No está el gasto? Créalo» (12-oct-2026): el alta prellenada desde el
+    // cargo usa el MISMO formulario de Gastos, que pide los proveedores.
+    degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
+      data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
     }),
   ]);
   const estadosCuenta = estadosRes.data;
@@ -208,6 +217,15 @@ export default async function ConciliacionPage({
           catalogos: catalogosAbonos,
           cuentasIa: cuentas.map((c) => ({ id: c.id, label: c.label })),
           cuentas: cuentasDeAbonos(cuentasRes.data),
+        }
+      : null;
+  // Catálogos del alta de gasto desde un cargo (aviones con su combustible,
+  // como en Gastos, y proveedores). Sin aeronaves cargadas no se ofrece.
+  const catalogosGasto: CatalogosGastoDesdeCargo | null =
+    aeronavesRes.data.length > 0
+      ? {
+          aircraft: aeronavesRes.data.map(avionCatalogoGasto),
+          providers: providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre })),
         }
       : null;
   const cuentasPasarela = cuentasRes.data
@@ -544,6 +562,7 @@ export default async function ConciliacionPage({
               gastos={gastosOpts}
               cuentas={Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.alias]))}
               abonos={abonosConciliacion}
+              catalogosGasto={catalogosGasto}
             />
           </CardContent>
         </Card>

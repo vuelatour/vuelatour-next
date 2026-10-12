@@ -233,7 +233,11 @@ describe("cableado del diálogo", () => {
       /estado\.tipo === "vacio_sin_q" \|\| estado\.tipo === "vacio_con_q" \? \([\s\S]{0,200}<VacioCandidatos\s+texto=\{estado\.texto\}\s+avisos=\{textoExcluidosCandidatos\(data\?\.excluidos, movimiento\.monto, \{/,
     );
     // Se redacta SOLO en el vacío: con candidatos jamás se pinta un porqué.
-    expect(dialogo.match(/textoExcluidosCandidatos\(/g)?.length).toBe(1);
+    // El paso «crear» (12-oct-2026) tiene SU lectura (`dupData`) y ahí sí va
+    // bajo la lista: un gasto del mismo monto ya conciliado ES el duplicado.
+    expect(dialogo.match(/textoExcluidosCandidatos\(data\?\.excluidos/g)?.length).toBe(1);
+    expect(dialogo.match(/textoExcluidosCandidatos\(dupData\?\.excluidos/g)?.length).toBe(1);
+    expect(dialogo.match(/textoExcluidosCandidatos\(/g)?.length).toBe(2);
     // El monto lo dice el API (`excluidos_monto`): el panel no reinterpreta la búsqueda.
     expect(dialogo).toMatch(/monedaCuenta,\s*dias,\s*montoBuscado: data\?\.excluidos_monto,/);
     // La frase sabe si el interruptor está encendido y la fecha del cargo (ventana de «Mostrar…»).

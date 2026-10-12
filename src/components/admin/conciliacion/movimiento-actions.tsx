@@ -64,6 +64,7 @@ import {
   esAbonoPendiente,
   type AbonosConciliacion,
 } from "@/lib/admin/conciliacion-abonos";
+import type { CatalogosGastoDesdeCargo } from "@/lib/admin/gasto-desde-cargo";
 import { ligarAbonoIngresoAction } from "@/app/admin/ingresos/actions";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fechasCandidatoCobro } from "@/lib/admin/ingresos-ui";
@@ -128,6 +129,9 @@ interface MovimientoActionsProps {
    *  (12-oct-2026: Vincular, anticipo, otro ingreso, traspaso, devolución,
    *  Sugerir con IA) + «Clasificar». Sin catálogos (null) el menú de siempre. */
   abonos?: AbonosConciliacion | null;
+  /** Catálogos del alta de gasto para «¿No está el gasto? Créalo» del
+   *  diálogo del CARGO (12-oct-2026). Sin ellos no se ofrece crear. */
+  catalogosGasto?: CatalogosGastoDesdeCargo | null;
 }
 
 /**
@@ -137,7 +141,12 @@ interface MovimientoActionsProps {
  * grupo (candidatos buscados al abrir el diálogo, ordenados por cercanía de
  * monto y fecha).
  */
-export function MovimientoActions({ movimiento, gastos, abonos }: MovimientoActionsProps) {
+export function MovimientoActions({
+  movimiento,
+  gastos,
+  abonos,
+  catalogosGasto = null,
+}: MovimientoActionsProps) {
   const esAbono = movimiento.tipo === "ABONO";
   const [openLink, setOpenLink] = useState(false);
   const [confirmarDesvincular, setConfirmarDesvincular] = useState(false);
@@ -763,6 +772,7 @@ export function MovimientoActions({ movimiento, gastos, abonos }: MovimientoActi
           movimiento={movimiento}
           gastos={gastos}
           conIa={vincularConIa}
+          catalogosGasto={catalogosGasto}
           open
           onOpenChange={setOpenVincularGasto}
         />

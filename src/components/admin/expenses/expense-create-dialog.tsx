@@ -43,6 +43,22 @@ import {
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
+import type { Gasto } from "@/types/expenses";
+import {
+  AYUDA_AGREGAR_HOJAS,
+  AYUDA_VARIOS_ARCHIVOS,
+  ETIQUETA_AGREGAR_HOJAS,
+  MAX_HOJAS_COMPROBANTE,
+  TEXTO_HOJAS_IA,
+  TITULO_QUITAR_PRINCIPAL,
+  TITULO_QUITAR_TODOS,
+  aceptarArchivosComprobante,
+  etiquetaHoja,
+  nombreCorto,
+  textoArchivosZona,
+  toastGastoConComprobante,
+  valorIaConHojas,
+} from "@/lib/admin/comprobante-hojas";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import {
   listCardsOptionsAction,
@@ -93,14 +109,8 @@ import {
   type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
 
-const TIPOS_FACTURA = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/csv",
-];
+// Tipos y tope de archivos del comprobante: `aceptarArchivosComprobante`
+// (lib/admin/comprobante-hojas, espejo de los tipos del bucket).
 
 // Opciones desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto): orden
 // (CATEGORIAS_CAPTURA), etiqueta y destino por default en verde. Semántica
@@ -169,9 +179,28 @@ export function ExpenseCreateDialog({
   defaultAeronaveId,
   defaultCategoria,
   defaultPilotoNombre,
+  abierto,
+  onAbiertoChange,
+  prefill,
+  onCreado,
+  titulo,
+  contexto,
 }: {
   aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
+  /** Modo CONTROLADO (12-oct-2026, «Crear el gasto desde este cargo» en
+      Conciliación): quien lo monta abre y cierra el diálogo y NO se pinta el
+      botón «Nuevo gasto». Sin `abierto`, el diálogo trae su botón de siempre. */
+  abierto?: boolean;
+  onAbiertoChange?: (abierto: boolean) => void;
+  /** Valores con los que abre el formulario, ENCIMA de los defaults (el
+      monto, la fecha, el medio y la descripción del cargo del banco). */
+  prefill?: Partial<GastoCreateValues>;
+  /** Avisa con el gasto creado (antes de cerrar): quien lo montó lo liga. */
+  onCreado?: (gasto: Gasto) => void;
+  /** Título y nota de contexto bajo la descripción (modo controlado). */
+  titulo?: string;
+  contexto?: React.ReactNode;
   /** Con vuelo: el gasto queda LIGADO (reporte por vuelo, reparto, pre-cierre). */
   defaultVueloId?: string;
   defaultVueloFolio?: number;
@@ -183,7 +212,14 @@ export function ExpenseCreateDialog({
   /** Piloto del vuelo prefijado (para "simular como piloto"). null = sin piloto. */
   defaultPilotoNombre?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openLocal, setOpenLocal] = useState(false);
+  // Modo controlado: abre y cierra quien lo monta (ver props).
+  const controlado = abierto !== undefined;
+  const open = controlado ? abierto : openLocal;
+  const setOpen = (o: boolean) => {
+    if (controlado) onAbiertoChange?.(o);
+    else setOpenLocal(o);
+  };
   const [pending, startTransition] = useTransition();
   // Candado de fechas (auditoría 29-ago: gastos con año 2025 fuera de todos
   // los cortes): valores del form esperando la confirmación explícita de
@@ -194,8 +230,13 @@ export function ExpenseCreateDialog({
   // Backfill de oficina: guardar el gasto COMO SI lo subiera el piloto del
   // vuelo (mismo switch que la app). Solo con un vuelo LIGADO.
   const [comoPiloto, setComoPiloto] = useState(false);
-  // Factura/recibo adjunto (foto o PDF): se sube al bucket privado al guardar.
-  const [factura, setFactura] = useState<File | null>(null);
+  // Comprobante adjunto (12-oct-2026: VARIOS archivos — «un proveedor de
+  // gasolina nos emite como 5 comprobantes en PDF»). El PRIMERO es la hoja
+  // principal (`foto_url`, la que lee la IA); las demás se guardan como hojas
+  // del mismo comprobante (`valor_ia_extraido.fotos_adicionales`, el campo
+  // que ya usa la app y que lee el API al reanalizar). Se suben al guardar.
+  const [archivos, setArchivos] = useState<File[]>([]);
+  const factura = archivos[0] ?? null;
   const facturaRef = useRef<HTMLInputElement>(null);
   // Lectura IA del adjunto: autollenado best-effort (siempre revisable a mano).
   const [leyendoIA, setLeyendoIA] = useState(false);
@@ -260,6 +301,16 @@ export function ExpenseCreateDialog({
   } = useForm<GastoCreateValues>({
     defaultValues: emptyValues(formDefaults),
   });
+
+  // Prellenado (modo controlado): al ABRIR, el formulario arranca con los
+  // defaults de siempre y encima lo que manda quien lo monta (el cargo del
+  // banco). La clave serializada evita re-aplicarlo en cada render.
+  const prefillClave = JSON.stringify(prefill ?? null);
+  useEffect(() => {
+    if (!open || !prefill) return;
+    reset({ ...emptyValues(formDefaults), ...prefill });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefillClave, reset]);
 
   // ===== Combustible del avión (5-oct-2026, caso XB-PEV con «Turbosina»):
   // con GAS y avión elegido, el tipo vacío (o prellenado por el sistema) se
@@ -535,26 +586,55 @@ export function ExpenseCreateDialog({
     }
   };
 
-  const seleccionarFactura = (file: File | null) => {
-    if (file && !TIPOS_FACTURA.includes(file.type)) {
-      toast.error(
-        `Formato no soportado (${file.type || "desconocido"}). Usa foto (JPG/PNG/WebP), PDF, Excel (.xlsx) o CSV.`,
-      );
-      return;
-    }
-    setFactura(file);
-    setAiRaw(null);
+  /** «Con comprobante» al adjuntar; «Sin comprobante» al quedarse sin archivos. */
+  const sincronizarComprobante = (hayArchivos: boolean) => {
     // OJO: adjuntar archivo NO auto-marca la facturación — un ticket JPG
     // también se adjunta aquí y "archivo = facturado" es la misma señal
     // contaminada que se descartó en la app. Jamás afirmar facturado en
     // falso: la oficina lo marca en el select si de verdad es la factura.
-    if (file && watch("estatus_comprobante") === COMPROBANTE_SIN) {
+    if (hayArchivos && watch("estatus_comprobante") === COMPROBANTE_SIN) {
       setValue("estatus_comprobante", COMPROBANTE_CON);
     }
-    if (!file && watch("estatus_comprobante") === COMPROBANTE_CON) {
+    if (!hayArchivos && watch("estatus_comprobante") === COMPROBANTE_CON) {
       setValue("estatus_comprobante", COMPROBANTE_SIN);
     }
-    if (file) void leerConIA(file);
+  };
+
+  /**
+   * Agrega archivos (del input o del arrastre). Sin hoja principal todavía,
+   * el primero lo es y la IA lo lee; con una, los nuevos entran como hojas
+   * del mismo comprobante (la IA no se vuelve a pedir). Lo que no se admite
+   * se DICE (`aceptarArchivosComprobante`): nunca se descarta en silencio.
+   */
+  const agregarArchivos = (nuevos: File[]) => {
+    if (nuevos.length === 0) return;
+    const v = aceptarArchivosComprobante(nuevos, archivos.length);
+    if (!v.ok) toast.error(v.mensaje);
+    if (v.archivos.length === 0) return;
+    const habiaPrincipal = archivos.length > 0;
+    setArchivos((prev) => [...prev, ...v.archivos]);
+    sincronizarComprobante(true);
+    if (!habiaPrincipal) {
+      setAiRaw(null);
+      void leerConIA(v.archivos[0]);
+    }
+  };
+
+  /** Quita un archivo; si era la hoja principal, la siguiente pasa a serlo y la IA la lee. */
+  const quitarArchivo = (indice: number) => {
+    const restantes = archivos.filter((_, i) => i !== indice);
+    setArchivos(restantes);
+    sincronizarComprobante(restantes.length > 0);
+    if (indice === 0) {
+      setAiRaw(null);
+      if (restantes[0]) void leerConIA(restantes[0]);
+    }
+  };
+
+  const quitarTodos = () => {
+    setArchivos([]);
+    setAiRaw(null);
+    sincronizarComprobante(false);
   };
 
   /** Guardado real (fecha ya validada o confirmada por el usuario). */
@@ -653,13 +733,22 @@ export function ExpenseCreateDialog({
           monto: Math.round(Number(repartoSel[a.id].monto) * 100) / 100,
         }));
       }
-      // Primero el archivo: si la subida falla, no se crea el gasto a medias.
+      // Primero los archivos: si una subida falla, no se crea el gasto a
+      // medias. El primero es la hoja principal (`foto_url`); el resto, las
+      // hojas 2..N del mismo comprobante.
       let fotoPath = "";
-      if (factura) {
+      const hojasPaths: string[] = [];
+      for (const [i, archivo] of archivos.entries()) {
         try {
-          fotoPath = await uploadGastoComprobante(factura);
+          const path = await uploadGastoComprobante(archivo);
+          if (i === 0) fotoPath = path;
+          else hojasPaths.push(path);
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : "No se pudo subir la factura");
+          toast.error(
+            err instanceof Error
+              ? `${err.message} (${nombreCorto(archivo.name)})`
+              : `No se pudo subir ${nombreCorto(archivo.name)}`,
+          );
           return;
         }
       }
@@ -689,7 +778,11 @@ export function ExpenseCreateDialog({
           // con el del avión.
           tipo_combustible: values.categoria === "GAS" ? values.tipo_combustible : "",
           foto_url: fotoPath,
-          valor_ia_extraido: aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : undefined,
+          // La lectura de la IA + las hojas 2..N (`fotos_adicionales`).
+          valor_ia_extraido: valorIaConHojas(
+            aiRaw ? ({ ...aiRaw } as Record<string, unknown>) : null,
+            hojasPaths,
+          ),
           capturar_como_piloto: aplicarComoPiloto,
           // > 365 días atrás: SOLO se llega aquí tras la confirmación
           // explícita del diálogo — el API exige este candado para fechas de
@@ -719,11 +812,11 @@ export function ExpenseCreateDialog({
               : aplicarComoPiloto
                 ? "Gasto registrado como del piloto del vuelo"
                 : factura
-                  ? "Gasto registrado con su factura"
+                  ? toastGastoConComprobante(archivos.length)
                   : "Gasto registrado",
           );
         }
-        setFactura(null);
+        setArchivos([]);
         setAiRaw(null);
         setComoPiloto(false);
         // reset(emptyValues) NO limpia estos: a mano, o el siguiente alta
@@ -734,6 +827,8 @@ export function ExpenseCreateDialog({
         setRepartoSel({});
         if (facturaRef.current) facturaRef.current.value = "";
         reset(emptyValues(formDefaults));
+        // Modo controlado: quien lo montó liga el gasto nuevo (Conciliación).
+        if (result.data) onCreado?.(result.data);
         setOpen(false);
       } else if (result.fieldErrors) {
         // Los mensajes del schema ya son legibles ("Elige el medio de
@@ -786,21 +881,23 @@ export function ExpenseCreateDialog({
 
   return (
     <>
-      <Button
-        variant="outline"
-        onClick={() => {
-          // Estado que reset(emptyValues) no cubre: se limpia en CADA
-          // apertura (Cancelar cierra con setOpen directo, sin onOpenChange).
-          avionLimpiado.current = false;
-          setRepartirActivo(false);
-          setRepartoSel({});
-          setOpen(true);
-        }}
-        className="gap-2"
-      >
-        <PlusIcon className="h-4 w-4" />
-        {defaultVueloId ? "Registrar gasto" : "Nuevo gasto"}
-      </Button>
+      {!controlado && (
+        <Button
+          variant="outline"
+          onClick={() => {
+            // Estado que reset(emptyValues) no cubre: se limpia en CADA
+            // apertura (Cancelar cierra con setOpen directo, sin onOpenChange).
+            avionLimpiado.current = false;
+            setRepartirActivo(false);
+            setRepartoSel({});
+            setOpen(true);
+          }}
+          className="gap-2"
+        >
+          <PlusIcon className="h-4 w-4" />
+          {defaultVueloId ? "Registrar gasto" : "Nuevo gasto"}
+        </Button>
+      )}
 
       <Dialog
         open={open}
@@ -818,7 +915,7 @@ export function ExpenseCreateDialog({
             provocar scroll horizontal (molesto con datos largos). */}
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle>Nuevo gasto (oficina)</DialogTitle>
+            <DialogTitle>{titulo ?? "Nuevo gasto (oficina)"}</DialogTitle>
             <DialogDescription>
               {defaultVueloId ? (
                 <>
@@ -837,6 +934,14 @@ export function ExpenseCreateDialog({
                 </>
               )}
             </DialogDescription>
+            {contexto && (
+              <p
+                className="rounded-lg border border-brand-500/40 bg-brand-500/5 px-3 py-2 text-xs text-foreground"
+                data-contexto-alta
+              >
+                {contexto}
+              </p>
+            )}
           </DialogHeader>
 
           <form onSubmit={onSubmit} className="space-y-4">
@@ -863,8 +968,7 @@ export function ExpenseCreateDialog({
                 e.preventDefault();
                 setArrastrando(false);
                 if (leyendoIA) return;
-                const file = e.dataTransfer.files?.[0] ?? null;
-                if (file) seleccionarFactura(file);
+                agregarArchivos(Array.from(e.dataTransfer.files ?? []));
               }}
               className={cn(
                 "rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
@@ -889,7 +993,7 @@ export function ExpenseCreateDialog({
                 <div className="flex items-center justify-center gap-2">
                   <CheckCircleIcon className="h-6 w-6 shrink-0 text-emerald-500" />
                   <div className="min-w-0 text-left">
-                    <p className="truncate text-sm font-medium">{factura.name}</p>
+                    <p className="truncate text-sm font-medium">{textoArchivosZona(archivos)}</p>
                     <p className="text-xs text-muted-foreground">
                       {aiRaw
                         ? "La IA llenó los campos — revísalos antes de guardar."
@@ -898,10 +1002,10 @@ export function ExpenseCreateDialog({
                   </div>
                   <button
                     type="button"
-                    title="Quitar el archivo"
+                    title={TITULO_QUITAR_TODOS}
                     onClick={(e) => {
                       e.stopPropagation();
-                      seleccionarFactura(null);
+                      quitarTodos();
                     }}
                     className="ml-1 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
@@ -916,7 +1020,7 @@ export function ExpenseCreateDialog({
                   </p>
                   <p className="text-xs text-muted-foreground">
                     o haz clic para elegirla · foto, PDF o Excel — monto, fecha,
-                    categoría y proveedor se llenan solos
+                    categoría y proveedor se llenan solos · {AYUDA_VARIOS_ARCHIVOS}
                   </p>
                 </div>
               )}
@@ -949,13 +1053,61 @@ export function ExpenseCreateDialog({
             <input
               ref={facturaRef}
               type="file"
+              multiple
               accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,text/csv"
               className="hidden"
               onChange={(e) => {
-                seleccionarFactura(e.target.files?.[0] ?? null);
+                agregarArchivos(Array.from(e.target.files ?? []));
                 e.target.value = "";
               }}
             />
+            {/* Las hojas del comprobante (12-oct-2026): una línea por archivo,
+                la 1 es la que lee la IA; «Agregar hojas» abre el selector. */}
+            {archivos.length > 0 && (
+              <div
+                className="space-y-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"
+                data-hojas-comprobante
+              >
+                <ul className="space-y-1">
+                  {archivos.map((a, i) => (
+                    <li key={`${a.name}-${a.size}-${i}`} className="flex items-center gap-2">
+                      <span className="w-20 shrink-0 text-muted-foreground">
+                        {etiquetaHoja(i + 1, archivos.length)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={a.name}>
+                        {nombreCorto(a.name)}
+                      </span>
+                      <button
+                        type="button"
+                        title={i === 0 ? TITULO_QUITAR_PRINCIPAL : "Quitar esta hoja"}
+                        onClick={() => quitarArchivo(i)}
+                        disabled={leyendoIA || pending}
+                        className="cursor-pointer rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <XMarkIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-muted-foreground">
+                    {archivos.length > 1 ? TEXTO_HOJAS_IA : AYUDA_AGREGAR_HOJAS}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() => facturaRef.current?.click()}
+                    disabled={leyendoIA || pending || archivos.length >= MAX_HOJAS_COMPROBANTE}
+                    title={AYUDA_AGREGAR_HOJAS}
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    {ETIQUETA_AGREGAR_HOJAS}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <Field label="Monto del ticket">

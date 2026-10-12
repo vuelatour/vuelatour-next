@@ -141,6 +141,10 @@ export const GastoVerifySchema = z.object({
     z.number().positive("TC inválido").optional(),
   ),
   notas: z.string().max(2000).optional().or(z.literal("")),
+  /** Hoja principal del comprobante (12-oct-2026): solo viaja cuando el gasto
+   *  no tenía ninguna y se agregaron hojas desde «Verificar / editar» (la
+   *  primera pasa a ser la principal). */
+  foto_url: z.string().max(500).optional().or(z.literal("")),
   /** Sello de confirmación del PANEL: true = confirmar (el API sella quién y
    *  cuándo), false = retirar el sello. Solo oficina puede mandarlo; ambos
    *  valores sobreviven a stripEmpty (solo tira "" y undefined). */
