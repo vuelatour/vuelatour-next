@@ -90,6 +90,10 @@ function gasto(over: Partial<Gasto> = {}): Gasto {
 const AVIONES = [{ id: "av-vgv", matricula: "XA-VGV" }];
 
 describe("el botón ⋯ real (Base UI)", () => {
+  // 20 s: el `await import` de Base UI corre DENTRO del test, así que con la
+  // suite completa en paralelo la colección del módulo contaba contra los 5 s
+  // por defecto y expiraba (visto dos veces seguidas el 12-oct-2026; aislado
+  // tarda ~1.4 s).
   it("lleva la manita y un nombre accesible con el monto y la fecha del gasto", async () => {
     const { ExpenseActions } = await import("../expense-actions");
     const html = renderToStaticMarkup(
@@ -100,7 +104,7 @@ describe("el botón ⋯ real (Base UI)", () => {
     expect(boton).toContain('aria-label="Acciones del gasto de $4,250.50 MXN del 01 oct 2026"');
     expect(boton).toMatch(/class="[^"]*\bcursor-pointer\b/);
     expect(boton).toContain('title="Más acciones"');
-  });
+  }, 20_000);
 });
 
 describe("contenido del menú y confirmación de «Eliminar»", () => {

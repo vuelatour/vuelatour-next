@@ -147,6 +147,38 @@ export function descargaVistaBalance(
   };
 }
 
+/**
+ * Roles que abren o descargan los balances (12-oct-2026): ESPEJO del
+ * `@Roles(Rol.ADMIN, Rol.ANALISTA)` de `balance-general.xlsx`,
+ * `balance-general/libro`, `:id/balance.xlsx` y `:id/balance/libro` del API
+ * (`aircraft.controller.ts`; la paridad la congela `balance-vista.test.ts`).
+ */
+export const ROLES_ABREN_BALANCES = ["ADMIN", "ANALISTA"] as const;
+
+/**
+ * ¿Se le OFRECEN los balances a este rol? Sin rol (`/me` falló) se ofrece
+ * todo: el API es el candado (patrón `puedeEditarPiloto` /
+ * `puedeDescargarBalance`).
+ */
+export function puedeAbrirBalances(rol?: string | null): boolean {
+  if (!rol) return true;
+  return (ROLES_ABREN_BALANCES as readonly string[]).includes(rol);
+}
+
+/**
+ * Card con candado que `/admin/reportes` pinta en lugar del hero de balances
+ * para un rol que no los abre (FACTURACION entra a Reportes por el menú y el
+ * API le responde 403 en los cuatro endpoints). El título es el MISMO del
+ * 403 de `errorVistaBalance`. La descripción NO promete descargas que el rol
+ * no puede usar: en esa pantalla «PDF socios» y «Horas por piloto» también se
+ * filtran por rol (`vePdf` de `ReportDownloads`, `puedeExportarHorasPiloto`).
+ */
+export const TEXTO_BALANCES_SIN_PERMISO = {
+  titulo: "Tu usuario no puede abrir los balances",
+  descripcion:
+    "Solo administración y análisis (ADMIN y ANALISTA) abren o descargan los balances de la flota y de cada avión. El pre-cierre, el cierre del mes y los demás reportes de esta pantalla siguen aquí, con las descargas que tu rol puede usar.",
+} as const;
+
 export type MotivoErrorVista = "permiso" | "api-viejo" | "no-existe" | "periodo" | "fallo";
 
 export interface ErrorVistaBalance {
@@ -170,7 +202,7 @@ export function errorVistaBalance(e: {
   if (status === 401 || status === 403) {
     return {
       motivo: "permiso",
-      titulo: "Tu usuario no puede abrir los balances",
+      titulo: TEXTO_BALANCES_SIN_PERMISO.titulo,
       descripcion:
         "Solo administración y análisis (ADMIN y ANALISTA) ven los balances en pantalla: es el mismo permiso que la descarga en Excel.",
     };

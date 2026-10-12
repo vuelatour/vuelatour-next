@@ -42,9 +42,21 @@ export const TITULO_CARD_BALANCE_VUELATOUR = "Balance mensual y balance general"
 export const NOTA_BALANCE_VUELATOUR =
   "Los dos consolidan toda la flota en el periodo elegido arriba; el libro de un solo avión se descarga en «Balance por avión».";
 
+/**
+ * Título del plegable (`TextoPlegable`) que guarda las descripciones LARGAS de
+ * los libros bajo el hero de balances (12-oct-2026). Cerrado por defecto; las
+ * líneas siguen en el DOM.
+ */
+export const TITULO_DETALLE_LIBROS = "¿Qué trae cada libro?";
+
 interface TextosLibroBalance {
   /** Nombre del libro tal como lo dice el cliente. */
   nombre: string;
+  /**
+   * Una línea CORTA para el tile del libro en `/admin/reportes` (12-oct-2026:
+   * los balances al frente). La larga (`detalle`) vive plegada debajo.
+   */
+  resumen: string;
   /** Qué trae, en una línea (sin el nombre). */
   detalle: string;
   /** Texto del botón de descarga. */
@@ -54,12 +66,16 @@ interface TextosLibroBalance {
 const TEXTOS_LIBRO: Record<ModoBalanceVuelaTour, TextosLibroBalance> = {
   mensual: {
     nombre: "Balance mensual",
+    resumen:
+      "El libro de siempre: resumen por avión, vuelos con desglose, cobranza, gastos, bodega y socios.",
     detalle:
       "el libro completo de siempre — resumen por avión, hoja de vuelos (reporte de horas) con el desglose de operación, piloto, otros y permiso AFAC, otros movimientos, cobranza, otros gastos de la empresa, repartidos a aviones, inventario de bodega, balance por avión con sus socios y pendientes de captura.",
     etiqueta: "Descargar balance mensual (Excel)",
   },
   general: {
     nombre: "Balance general",
+    resumen:
+      "El mismo libro con la hoja de vuelos a costo total y costo por hora. En pantalla puede tardar hasta un minuto.",
     detalle:
       "el mismo libro con la hoja de vuelos resumida a costo total y costo por hora (sin desglose de operación/piloto/AFAC). Costo por hora = costo total ÷ tiempo volado ÷ tipo de cambio ÷ 1.16 (dólares sin IVA).",
     etiqueta: "Descargar balance general (Excel)",

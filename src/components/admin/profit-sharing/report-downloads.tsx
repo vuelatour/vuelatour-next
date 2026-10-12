@@ -26,6 +26,9 @@ export function ReportDownloads({
 }) {
   const [loading, setLoading] = useState<Kind | null>(null);
   const esAdmin = !rol || rol === "ADMIN";
+  // «PDF socios» = `@Roles(ADMIN, ANALISTA, SOCIO)` de GET /v1/profit-sharing/pdf
+  // (12-oct-2026: FACTURACION llega aquí desde Reportes y abría una pestaña con 403).
+  const vePdf = esAdmin || rol === "ANALISTA" || rol === "SOCIO";
   const veExcel = esAdmin || rol === "ANALISTA";
   const veCierre = esAdmin || rol === "FACTURACION";
 
@@ -43,16 +46,18 @@ export function ReportDownloads({
     <div className="flex gap-2 flex-wrap">
       {/* PDF socios: se abre por la URL del proxy (nunca `blob:`, si no el
           botón «Descargar» del visor de Chrome falla). */}
-      <a
-        href={rutaPdfReparto(desde, hasta)}
-        target="_blank"
-        rel="noopener"
-        className={`${buttonVariants({ variant: "outline", size: "sm" })} gap-2`}
-        title="Ver el PDF del reparto en una pestaña."
-      >
-        <DocumentArrowDownIcon className="h-4 w-4" />
-        PDF socios
-      </a>
+      {vePdf && (
+        <a
+          href={rutaPdfReparto(desde, hasta)}
+          target="_blank"
+          rel="noopener"
+          className={`${buttonVariants({ variant: "outline", size: "sm" })} gap-2`}
+          title="Ver el PDF del reparto en una pestaña."
+        >
+          <DocumentArrowDownIcon className="h-4 w-4" />
+          PDF socios
+        </a>
+      )}
       {veExcel && (
         <Button
           variant="outline"

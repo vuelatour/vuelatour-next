@@ -39,7 +39,15 @@ interface Periodo {
  * router.replace que refresca pre-cierre y balance): sin esto, elegir un mes
  * y descargar de inmediato generaba el reporte del periodo anterior.
  */
-export function CierreRepartoSection({ desde, hasta }: Periodo) {
+export function CierreRepartoSection({
+  desde,
+  hasta,
+  rol,
+}: Periodo & {
+  /** Rol del usuario (ADITIVO, 12-oct-2026): `ReportDownloads` pinta solo los
+   *  botones que ese rol puede usar. Sin él, todos (el API es el candado). */
+  rol?: string;
+}) {
   // El override guarda contra QUÉ props se eligió: en cuanto la URL cambia
   // (la transición del select llegó, o el operador tecleó fechas arriba),
   // el snapshot deja de coincidir y vuelven a mandar las props — sin
@@ -63,7 +71,7 @@ export function CierreRepartoSection({ desde, hasta }: Periodo) {
   return (
     <div className="space-y-4">
       <MesReporteSelect desde={ef.desde} hasta={ef.hasta} onElegir={onElegir} />
-      <ReportDownloads desde={ef.desde} hasta={ef.hasta} />
+      <ReportDownloads desde={ef.desde} hasta={ef.hasta} rol={rol} />
     </div>
   );
 }

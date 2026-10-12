@@ -15,6 +15,8 @@ export function ExcelExportButton({
   query,
   variant = "outline",
   className,
+  title,
+  "aria-label": ariaLabel,
 }: {
   path: string;
   filename: string;
@@ -23,6 +25,10 @@ export function ExcelExportButton({
   /** Estilo del botón; `link` permite usarlo como enlace dentro de un texto. */
   variant?: "outline" | "link" | "ghost" | "secondary";
   className?: string;
+  /** Tooltip (ADITIVO, 12-oct-2026): el nombre largo cuando `label` es corto («Excel»). */
+  title?: string;
+  /** Nombre accesible (ADITIVO): distingue botones con el mismo `label` («Descargar el balance de XB-PEV en Excel»). */
+  "aria-label"?: string;
 }) {
   const [loading, setLoading] = useState(false);
 
@@ -33,8 +39,22 @@ export function ExcelExportButton({
     setLoading(false);
   };
 
+  // Con `aria-label` el nombre accesible tapa el texto visible: en carga se
+  // antepone «Generando…» (y va `aria-busy`) para que el lector también lo
+  // sepa. Sin `aria-label` y sin carga, el marcado es byte a byte el de siempre.
+  const nombre = ariaLabel ? (loading ? `Generando… ${ariaLabel}` : ariaLabel) : undefined;
+
   return (
-    <Button variant={variant} size="sm" className={cn("gap-2", className)} disabled={loading} onClick={run}>
+    <Button
+      variant={variant}
+      size="sm"
+      className={cn("gap-2", className)}
+      disabled={loading}
+      onClick={run}
+      title={title}
+      aria-label={nombre}
+      aria-busy={loading || undefined}
+    >
       <TableCellsIcon className="h-4 w-4" />
       {loading ? "Generando…" : label}
     </Button>

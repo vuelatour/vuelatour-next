@@ -3,6 +3,8 @@
  * validados, enlaces, títulos, la descarga IDÉNTICA a la de Reportes y la
  * lectura de los errores del API.
  */
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { fmtDateOnly } from "@/lib/datetime";
 import { RUTA_BALANCE_VUELATOUR, librosBalanceVuelaTour } from "../reportes-balance";
@@ -10,13 +12,16 @@ import {
   DESCRIPCION_VISTA_BALANCE,
   ETIQUETA_DESCARGAR_LIBRO,
   ETIQUETA_VER_EN_PANTALLA,
+  ROLES_ABREN_BALANCES,
   RUTA_VISTA_BALANCE,
+  TEXTO_BALANCES_SIN_PERMISO,
   descargaVistaBalance,
   errorVistaBalance,
   hrefReportesDesdeVista,
   hrefVistaBalance,
   parametrosVistaBalance,
   periodoDefaultVista,
+  puedeAbrirBalances,
   textoPeriodoVista,
   tituloVistaBalance,
 } from "../balance-vista";
@@ -170,6 +175,60 @@ describe("errores del API en palabras", () => {
     for (const e of [{ status: 403 }, { status: 404, message: "Cannot GET /x" }, { status: 404 }, { status: 400 }, {}]) {
       const r = errorVistaBalance(e);
       expect(`${r.titulo} ${r.descripcion}`.toLowerCase()).not.toContain("sin movimientos");
+    }
+  });
+});
+
+/** Repo hermano del API (solo existe en el workspace local). */
+const API = path.resolve(__dirname, "../../../../../vuelatour-api/src");
+const leerApi = (rel: string): string | null => {
+  const p = path.join(API, rel);
+  return existsSync(p) ? readFileSync(p, "utf8") : null;
+};
+
+describe("quién abre los balances (12-oct-2026)", () => {
+  it("ADMIN y ANALISTA sí; los demás roles no; sin rol se ofrece todo (el API es el candado)", () => {
+    expect(puedeAbrirBalances("ADMIN")).toBe(true);
+    expect(puedeAbrirBalances("ANALISTA")).toBe(true);
+    for (const rol of ["FACTURACION", "COORDINADOR", "SOCIO", "PILOTO", "MECANICO", "VISITANTE"]) {
+      expect(puedeAbrirBalances(rol), rol).toBe(false);
+    }
+    expect(puedeAbrirBalances(null)).toBe(true);
+    expect(puedeAbrirBalances(undefined)).toBe(true);
+    expect(puedeAbrirBalances("")).toBe(true);
+    expect(ROLES_ABREN_BALANCES).toEqual(["ADMIN", "ANALISTA"]);
+  });
+
+  it("la card con candado dice lo mismo que el 403 de la vista y nombra los roles, sin mandar a «pedirlo»", () => {
+    expect(TEXTO_BALANCES_SIN_PERMISO.titulo).toBe(errorVistaBalance({ status: 403 }).titulo);
+    expect(TEXTO_BALANCES_SIN_PERMISO.descripcion).toContain("ADMIN");
+    expect(TEXTO_BALANCES_SIN_PERMISO.descripcion).toContain("ANALISTA");
+    // No promete descargas que el rol no puede usar («PDF socios» y «Horas por
+    // piloto» también se filtran por rol en esa pantalla).
+    expect(TEXTO_BALANCES_SIN_PERMISO.descripcion).toContain(
+      "siguen aquí, con las descargas que tu rol puede usar",
+    );
+    expect(TEXTO_BALANCES_SIN_PERMISO.descripcion).not.toContain("siguen disponibles");
+    expect(TEXTO_BALANCES_SIN_PERMISO.descripcion.toLowerCase()).not.toContain("pedirlo a la oficina");
+  });
+
+  const controller = leerApi("modules/aircraft/aircraft.controller.ts");
+  it.skipIf(!controller)("paridad con el API: los 4 endpoints de balance llevan EXACTAMENTE esos roles", () => {
+    const lineas = controller!.split("\n");
+    const rutas = [
+      "@Get('balance-general.xlsx')",
+      "@Get('balance-general/libro')",
+      "@Get(':id/balance.xlsx')",
+      "@Get(':id/balance/libro')",
+    ];
+    for (const ruta of rutas) {
+      const i = lineas.findIndex((l) => l.includes(ruta));
+      expect(i, `no se encontró ${ruta} en el API`).toBeGreaterThanOrEqual(0);
+      const ventana = lineas.slice(i + 1, i + 5).join("\n");
+      const roles = ventana.match(/@Roles\(([^)]*)\)/)?.[1];
+      expect(roles, `sin @Roles tras ${ruta}`).toBeTruthy();
+      const parseados = [...roles!.matchAll(/Rol\.(\w+)/g)].map((m) => m[1]);
+      expect(parseados, ruta).toEqual([...ROLES_ABREN_BALANCES]);
     }
   });
 });

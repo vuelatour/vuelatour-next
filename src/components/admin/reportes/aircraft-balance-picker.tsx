@@ -1,93 +1,132 @@
-"use client";
-
-import { useState } from "react";
-import { TableCellsIcon } from "@heroicons/react/24/outline";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { descargarDelApi } from "@/lib/download";
+import { Badge } from "@/components/ui/badge";
+import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import { descargaVistaBalance } from "@/lib/admin/balance-vista";
+import { tituloColorAvion } from "@/lib/admin/calendario-semaforo";
+import {
+  ARIA_LISTA_AVIONES,
+  ETIQUETA_EXCEL_AVION,
+  MARCA_AVION_INACTIVO,
+  TEXTO_AVIONES_NO_CARGARON,
+  TEXTO_SIN_AVIONES,
+  TITULO_AVION_INACTIVO,
+  ariaVerEnPantalla,
+  tituloExcelAvion,
+  type AvionBalanceItem,
+} from "@/lib/admin/reportes-ui";
 import { VerEnPantallaLink } from "./ver-en-pantalla-link";
 
-export interface AircraftPickItem {
-  id: string;
-  matricula: string;
-  modelo?: string;
-}
+/** El nombre de siempre, por compatibilidad: lo que cada tile necesita. */
+export type AircraftPickItem = AvionBalanceItem;
 
 /**
- * Selector de avión + descarga del libro INDIVIDUAL del periodo en Excel
- * (`GET /v1/aircraft/:id/balance.xlsx?desde&hasta`). Respeta el periodo del
- * PeriodSelector de la página (llega por props).
+ * «Balance por avión» de `/admin/reportes` (12-oct-2026): UN tile por avión
+ * con «Ver en pantalla» y «Excel» a un clic. Ya no es un selector con estado:
+ * la grilla ES el selector (flota de 7; si algún día pasan de ~12, entonces
+ * un filtro por matrícula). Server-safe: sin hooks ni estado, así que al
+ * volver de la vista (`BackLink` = `router.back()`) todo sigue igual.
  *
- * Solo lista aviones. El consolidado de la flota es otro reporte ("Balance
- * general VuelaTour", card hermana en /admin/reportes con su propio botón) y
- * ya NO vive como opción centinela de este selector: Ale y Pablo confundían
- * ambos libros (2-sep-2026).
+ * - El orden lo decide la PÁGINA (`ordenarAvionesBalance`: activos A–Z,
+ *   inactivos al final); aquí se pinta tal cual llega.
+ * - Un avión INACTIVO se lista igual (su libro histórico sirve) con el Badge
+ *   «Inactiva» como única marca: sin `opacity`, sus botones a plena vista.
+ * - Sin marca «En taller» a propósito: es una pantalla de CONSULTA, no un
+ *   selector para operar (el mantenimiento no cambia el libro).
+ * - La descarga es `descargaVistaBalance` (la MISMA ruta, archivo y query que
+ *   la vista en pantalla: `/v1/aircraft/<id>/balance.xlsx`,
+ *   `balance-<matricula>-<desde>-<hasta>.xlsx`) con `ExcelExportButton`: el
+ *   único toast de descarga de balances («No se pudo exportar»).
+ * - La `<ul>` lleva `role="list"`: el preflight de Tailwind quita las viñetas
+ *   y Safari/VoiceOver dejan de anunciar la lista («Aviones, lista, 7
+ *   elementos») sin el rol explícito.
+ * - Columnas: 2 desde `sm`, 3 desde `xl`, 4 desde `2xl`. Con el sidebar de
+ *   256 px, 3 columnas en `lg` o 4 en `xl` dejan ~200 px útiles por tile y
+ *   parten «Ver en pantalla» + «Excel» (~223 px) en dos renglones.
+ * - `disponibles=false` = el catálogo NO cargó y se DICE; `[]` con
+ *   `disponibles` = de verdad no hay aviones. Un 502 jamás se pinta como «sin aviones».
  */
 export function AircraftBalancePicker({
   aircraft,
+  disponibles = true,
   desde,
   hasta,
 }: {
   aircraft: AircraftPickItem[];
+  /** false = el catálogo NO cargó (se dice); true con [] = de verdad no hay aviones. */
+  disponibles?: boolean;
   desde: string;
   hasta: string;
 }) {
-  const [selected, setSelected] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const avion = aircraft.find((a) => a.id === selected);
-
-  const download = async () => {
-    if (!avion) return;
-    setLoading(true);
-    const err = await descargarDelApi(`/v1/aircraft/${avion.id}/balance.xlsx`, {
-      filename: `balance-${avion.matricula}-${desde}-${hasta}.xlsx`,
-      query: { desde, hasta },
-    });
-    if (err) toast.error("No se pudo generar el balance", { description: err });
-    setLoading(false);
-  };
-
+  if (!disponibles) {
+    return (
+      <p role="status" data-aviones="no-cargaron" className="text-sm text-muted-foreground">
+        {TEXTO_AVIONES_NO_CARGARON}
+      </p>
+    );
+  }
+  if (aircraft.length === 0) {
+    return (
+      <p data-aviones="vacio" className="text-sm text-muted-foreground">
+        {TEXTO_SIN_AVIONES}
+      </p>
+    );
+  }
   return (
-    <div className="space-y-3">
-      <div className="space-y-1.5 max-w-md">
-        <Label className="text-sm font-medium">Avión</Label>
-        <SearchableSelect
-          options={aircraft.map((a) => ({
-            value: a.id,
-            label: a.modelo ? `${a.matricula} · ${a.modelo}` : a.matricula,
-          }))}
-          value={selected}
-          onChange={setSelected}
-          placeholder="Busca por matrícula o modelo…"
-          emptyText="Sin aeronaves"
-        />
-      </div>
-      {avion ? (
-        <div className="flex gap-2 flex-wrap items-center">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={loading}
-            onClick={download}
+    <ul role="list" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label={ARIA_LISTA_AVIONES}>
+      {aircraft.map((avion) => {
+        // MISMA ruta, archivo y query que la vista en pantalla (fuente única
+        // congelada en balance-vista.test.ts).
+        const descarga = descargaVistaBalance({ tipo: "avion", avionId: avion.id }, desde, hasta, avion.matricula);
+        return (
+          <li
+            key={avion.id}
+            data-avion={avion.matricula}
+            className="flex flex-col gap-3 rounded-lg border border-border p-3"
           >
-            <TableCellsIcon className="h-4 w-4" />
-            {loading ? "Generando…" : "Descargar balance del avión (Excel)"}
-          </Button>
-          {/* El mismo libro en pantalla (12-oct-2026), hoja por hoja. */}
-          <VerEnPantallaLink
-            destino={{ tipo: "avion", avionId: avion.id }}
-            desde={desde}
-            hasta={hasta}
-          />
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Elige un avión para descargar su libro del periodo seleccionado.
-        </p>
-      )}
-    </div>
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                {avion.color && (
+                  <span
+                    aria-hidden
+                    title={tituloColorAvion(avion.color)}
+                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-border"
+                    style={{ backgroundColor: avion.color }}
+                  />
+                )}
+                <span className="truncate font-mono">{avion.matricula}</span>
+                {!avion.activa && (
+                  <>
+                    <Badge variant="secondary" title={TITULO_AVION_INACTIVO}>
+                      {MARCA_AVION_INACTIVO}
+                    </Badge>
+                    {/* Lo que explica el `title` (solo ratón), también para teclado, táctil y lector. */}
+                    <span className="sr-only">{TITULO_AVION_INACTIVO}</span>
+                  </>
+                )}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">{avion.modelo}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {/* «Ver en pantalla» PRIMERO: la posición es la jerarquía (prioridad a la vista, 12-oct-2026). */}
+              <VerEnPantallaLink
+                destino={{ tipo: "avion", avionId: avion.id }}
+                desde={desde}
+                hasta={hasta}
+                aria-label={ariaVerEnPantalla(avion.matricula)}
+              />
+              {descarga && (
+                <ExcelExportButton
+                  path={descarga.path}
+                  filename={descarga.filename}
+                  query={descarga.query}
+                  label={ETIQUETA_EXCEL_AVION}
+                  title={tituloExcelAvion(avion.matricula)}
+                  aria-label={tituloExcelAvion(avion.matricula)}
+                />
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -1746,8 +1746,12 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
 - `datetime-local` SIEMPRE vía `cancunInputToIso` / `isoToCancunInput`
   (`@/lib/datetime`) — nunca `slice()` ni Date crudo: la operación vive en
   hora Cancún (UTC−5) y el corte de mes se corrompe con UTC.
-- Periodos por defecto: mes corriente en hora Cancún (ver
-  `/admin/reportes/page.tsx` → `currentMonth()`).
+- Periodos por defecto: mes corriente en hora Cancún, del día 1 a HOY. En
+  `/admin/reportes` y `/admin/reportes/balance` es
+  `periodoDefaultVista(todayCancun())` de `lib/admin/balance-vista.ts`;
+  Reparto (`profit-sharing/page.tsx`) y Tableros (`dashboards/page.tsx`)
+  conservan su `currentMonth()` local (`startOfMonthCancun()` +
+  `todayCancun()`, mismo resultado), pendiente de unificar en un lote aparte.
 
 ## UX
 
@@ -5868,9 +5872,10 @@ Fase 2 (pendiente): editar una celda y que el registro ligado cambie.
   `TarjetaErrorCarga` con Reintentar. **Jamás un libro vacío que parezca un
   balance en ceros.**
 - **Enlaces «Ver en pantalla»** (`components/admin/reportes/ver-en-pantalla-link.tsx`,
-  fuente única): junto a cada botón de descarga de la card «Balance mensual
-  y balance general» y junto a «Descargar balance del avión (Excel)» del
-  selector de avión, con el periodo de la página.
+  fuente única): en cada tile de la card «Balance mensual y balance general»
+  y en cada tile de «Balance por avión», ANTES del botón de descarga, con el
+  periodo de la página (desde el 12-oct el selector de avión es una grilla
+  de tiles con «Excel»: ver «Reportes: los balances a un clic»).
 - **Pruebas**: `lib/admin/__tests__/libro-excel.test.ts`,
   `lib/admin/__tests__/balance-vista.test.ts` y
   `components/admin/reportes/__tests__/libro-excel.test.tsx` (marcado con un
@@ -6187,3 +6192,139 @@ crea el ítem si no existe». Contrato: invariante 57 del API (`POST
 - Cableado vigilado en `expenses/__tests__/refaccion-inventario-ui.test.ts`.
   Orden de deploy: API 0.0.72 → panel (con un API previo, «A
   Inventario/Tienda» responde el aviso de «guarda Directo al avión»).
+
+## Reportes: los balances a un clic (12-oct-2026)
+
+Pedido textual del cliente: «esta pantalla de la ruta
+https://vuelatour-next.vercel.app/admin/reportes mejoremos la UI para que
+sea más limpio e intuitivo acceder a las opciones de balance por avión y
+general que son las 2 cosas que más se consultan aquí». Hasta hoy los dos
+balances vivían al FONDO de siete cards apiladas, detrás de un pre-cierre de
+12+ renglones y de un dropdown de avión. Solo panel: sin API, sin migración,
+sin tocar `pre-cierre-card.tsx`, `pre-cierre-card-cargando.tsx`,
+`period-selector.tsx`, `download.ts` ni `balance/page.tsx`
+(`report-downloads.tsx` solo gana el `vePdf` del gating de abajo).
+
+- **Criterio**: lo que más se consulta va ARRIBA y a UN clic; «Ver en
+  pantalla» va PRIMERO en cada tile (la posición es la jerarquía: prioridad a
+  la vista, pedido del 12-oct). Con el periodo por defecto, el balance de un
+  avión o el general = 1 clic (pantalla o Excel); «Mes pasado» = +1 clic.
+- **Orden de la pantalla** (`app/admin/reportes/page.tsx`): cabecera →
+  card del periodo (`PeriodSelector`, sin cambios) + atajos-enlace
+  «Este mes · Octubre 2026» / «Mes pasado · Septiembre 2026» → aviso de
+  degradación (solo si un catálogo no cargó) → `<h2>` **BALANCES** (con el
+  periodo en palabras UNA vez: «Del 01 oct 2026 al 12 oct 2026») [card
+  «Balance mensual y balance general» con 2 tiles; card «Balance por avión»
+  con un tile por avión; plegable cerrado «¿Qué trae cada libro?» con las
+  tres descripciones largas, SIEMPRE en el DOM] → `<h2>` **CIERRE DEL MES**
+  [el pre-cierre ENTERO, mismo `<Suspense>` byte a byte, justo encima de
+  «Cierre y reparto del periodo», cuya descripción arranca con «Revisa
+  primero el pre-cierre de arriba.»] → `<h2>` **OTROS REPORTES** [«Reporte
+  por vuelo» y «Exports de operación», dos columnas desde `lg`].
+- **Fuentes únicas**: `lib/admin/reportes-ui.ts` (PURA, prueba
+  `__tests__/reportes-ui.test.ts`): rótulos, textos de la card del avión y
+  del cierre, etiquetas de degradación («los aviones», «los vuelos
+  recientes», «tu usuario» — el texto de la card del avión que no cargó ES
+  `textoDegradado([…])`, una sola voz con el aviso de arriba), el tile
+  (`AvionBalanceItem`, `avionBalanceDeAeronave`: solo 5 campos
+  serializables, color vacío ⇒ null), el orden (`ordenarAvionesBalance`:
+  activos A–Z, inactivos al final, COPIA, nunca filtra) y los atajos
+  (`atajosPeriodoReportes`: href, etiqueta, activo por coincidencia exacta,
+  `title` con `textoPeriodoVista`). `reportes-balance.ts` gana `resumen`
+  (la línea corta del tile) y `TITULO_DETALLE_LIBROS`. `balance-vista.ts`
+  gana `ROLES_ABREN_BALANCES` / `puedeAbrirBalances` /
+  `TEXTO_BALANCES_SIN_PERMISO` (título = el del 403 de `errorVistaBalance`).
+  La descarga de un avión es ÚNICAMENTE `descargaVistaBalance` (la misma
+  ruta, archivo `balance-<matricula>-<desde>-<hasta>.xlsx` y query que la
+  vista); `components/admin/texto-plegable.tsx` (`TextoPlegable`,
+  server-safe, `<details>` cerrado sin memoria) es reutilizable.
+- **`aircraft-balance-picker.tsx` ya es una GRILLA** (mismo archivo y mismo
+  export `AircraftBalancePicker`; sin `"use client"`, sin `useState`, sin
+  `SearchableSelect`, sin `descargarDelApi` ni toast propio): un `<li
+  data-avion>` por avión con punto de color (solo con hex, `ring-1
+  ring-border`), matrícula mono, modelo, Badge `secondary` «Inactiva» (con
+  `title`; SIN `opacity`: parece deshabilitado y el muted cae por debajo de
+  AA; la frase del `title` va también en un `sr-only` para teclado, táctil
+  y lector), «Ver en pantalla» (`aria-label` «Ver en pantalla · XB-PEV») y
+  «Excel» (`ExcelExportButton` con `title`/`aria-label` «Descargar el
+  balance de XB-PEV en Excel»; el único toast de descarga de BALANCES es su
+  «No se pudo exportar»: Reparto y el reporte por vuelo tienen el suyo). La
+  `<ul>` lleva `role="list"` (el preflight de Tailwind quita las viñetas y
+  VoiceOver deja de anunciar la lista sin el rol; la de la flota también,
+  con `aria-labelledby` del título de la card) y las columnas son `sm:2 /
+  xl:3 / 2xl:4`: con el sidebar de 256 px, 3 columnas en `lg` o 4 en `xl`
+  dejan ~200 px útiles y parten «Ver en pantalla» + «Excel» (~223 px) en dos
+  renglones; por eso «Excel» se queda corto (con «Descargar Excel» también
+  se partirían a 640 y a 1536 px; el nombre largo va en `title`/`aria-label`).
+  NO marca `en_taller` ni atenúa inactivos a propósito: es una pantalla de
+  CONSULTA, no un selector donde se ELIGE un avión para operar (la regla
+  «marcar, nunca deshabilitar» es para esos selectores). Sin foto. Pinta el
+  orden que recibe. `disponibles=false` ⇒ «No se pudieron cargar los
+  aviones…» con `role="status"`; `[]` ⇒ «No hay aviones dados de alta…».
+  Jamás «Sin aeronaves» por un 502.
+- **Atajos = `<Link>` PUROS** (`reportes/atajos-periodo-reportes.tsx`) a
+  `/admin/reportes?desde&hasta`: navegación de servidor, cero estado, cero
+  carrera con los botones, `aria-current` en el activo, el mismo aspecto
+  del chip «Mes pasado» de Reparto (`secondary` activo / `outline`
+  inactivo; nunca `bg-brand-600`, que es el rojo de la casa). `hoy` sale
+  del servidor (`todayCancun()`, UNA vez; también es el default del
+  periodo vía `periodoDefaultVista(hoy)` — `currentMonth()` se borró de
+  esta página). `PeriodSelector` NO se tocó ni recibe `atajoMesPasado`: el
+  `<select>` nativo de `MesReporteSelect` sigue siendo la excepción
+  histórica, solo en el cierre.
+- **Degradar por tarjeta**: `/me`, vuelos y aviones van con
+  `degradado.opcional` (adiós a los dos `try/catch` mudos) +
+  `<AvisoDegradado>`. `null` = NO cargó ≠ `[]` = no hay: la grilla recibe
+  `disponibles`, el selector de vuelo recibe `fallo` (prop aditiva de
+  `FlightReportPicker`: dice «Los vuelos no cargaron: recarga la página» en
+  vez de «Sin vuelos en el rango reciente»). Un 401/403 degrada en silencio
+  (sin aviso arriba; la card del avión sigue diciendo «No se pudieron cargar
+  los aviones…»: `GET /v1/aircraft` no lleva `@Roles` y un 401 lo atrapa el
+  layout, así que ese caso hoy no ocurre; si el API restringiera la lista,
+  tocaría un tercer estado «sin permiso» sin «recarga para reintentar»).
+- **Gating por rol** (espejo del `@Roles(Rol.ADMIN, Rol.ANALISTA)` de los 4
+  endpoints de balance del API, paridad congelada en
+  `balance-vista.test.ts`): FACTURACION entra a Reportes por el menú y el
+  API le responde 403, así que en lugar del hero ve UNA card con candado
+  «Tu usuario no puede abrir los balances» (+ descripción que no lo manda a
+  «pedirlo a la oficina»: FACTURACION ES la oficina — y que NO promete
+  descargas que el rol no puede usar); el subtítulo de la cabecera cambia a
+  `SUBTITULO_REPORTES_SIN_BALANCES` (no invita a abrir lo que la sección
+  niega). `rol` viaja a `CierreRepartoSection` (prop aditiva) →
+  `ReportDownloads`, cuyo gating ya existía y ahora cubre también «PDF
+  socios» (`vePdf`: ADMIN, ANALISTA y SOCIO, espejo del `@Roles` de
+  `GET /v1/profit-sharing/pdf`; FACTURACION ve solo «Cierre (zip)»).
+  «Horas por piloto» (`@Roles(ADMIN, COORDINADOR)` en
+  `dashboards.controller.ts`) se pinta solo con `puedeExportarHorasPiloto(rol)`
+  (`reportes-ui.ts`, paridad con el API en `reportes-ui.test.ts`): ANALISTA y
+  FACTURACION ya no ven un botón que siempre les respondía 403. Sin `/me` se
+  ofrece todo: el API es el candado.
+- **Props ADITIVAS**: `ExcelExportButton` (`title`, `aria-label`; con
+  `aria-label` el nombre accesible en carga es «Generando… <nombre>» y el
+  botón lleva `aria-busy`), `VerEnPantallaLink` (`aria-label`),
+  `FlightReportPicker` (`fallo`), `CierreRepartoSection` (`rol`). Sin ellas,
+  el marcado es byte a byte el de antes: Reparto, Exports, Inventario y la
+  vista de balance no cambian. El `<summary>` de `TextoPlegable` mide 24 px
+  de alto (`min-h-6`, WCAG 2.5.8) sin mover el texto.
+- **El pre-cierre solo bajó de posición, ENTERO**: no se pliega ni se
+  resume con conteos. Los conteos y el «qué bloquea» viven dentro del
+  componente async (la única lectura de `/v1/profit-sharing/pre-cierre`);
+  un resumen «siempre visible» exigiría una segunda llamada al endpoint
+  pesado o un ESPEJO en el panel de la lista `bloqueantes` del API — un
+  cálculo paralelo de la regla que decide el cierre. Queda para un lote con
+  decisión del cliente y, mejor, con un campo aditivo `resumen` en la
+  respuesta del API pintado por un envoltorio nuevo (reutilizando
+  `TextoPlegable`), no editando `pre-cierre-card.tsx`.
+- **Pruebas**: `lib/admin/__tests__/reportes-ui.test.ts`,
+  `reportes-balance.test.ts` (la página con mocks: los 6 `ExcelExportButton`
+  en orden, el hero antes del cierre, aviones ordenados, 502/403 de aviones,
+  502 de vuelos, FACTURACION/ANALISTA/COORDINADOR/`/me` caído, tokens del
+  fuente),
+  `balance-vista.test.ts` («quién abre los balances» + paridad con el API),
+  `components/admin/reportes/__tests__/balances-hero.test.tsx` (la grilla,
+  los atajos, el plegable, el `aria-label` del enlace) y
+  `components/admin/__tests__/excel-export-button-nombre.test.tsx`. Ajeno
+  pero necesario para el gate «suite completa en verde»: el `it` del botón ⋯
+  real de `expenses/__tests__/expense-actions-menu.test.tsx` tiene 20 s (su
+  `await import` de Base UI corre DENTRO del test y, con la suite completa
+  en paralelo, expiraba a los 5 s por defecto). Deploy: solo panel.

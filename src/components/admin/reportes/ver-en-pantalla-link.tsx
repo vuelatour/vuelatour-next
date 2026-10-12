@@ -19,16 +19,24 @@ export function VerEnPantallaLink({
   desde,
   hasta,
   className,
+  "aria-label": ariaLabel,
 }: {
   destino: DestinoVistaBalance;
   desde: string;
   hasta: string;
   className?: string;
+  /**
+   * Nombre accesible (ADITIVO, 12-oct-2026): con nueve enlaces «Ver en
+   * pantalla» en la misma pantalla, cada uno dice de qué libro es
+   * («Ver en pantalla · XB-PEV»). El texto visible no cambia.
+   */
+  "aria-label"?: string;
 }) {
   return (
     <Link
       href={hrefVistaBalance(destino, desde, hasta)}
       title={TITULO_VER_EN_PANTALLA}
+      aria-label={ariaLabel}
       className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 cursor-pointer", className)}
     >
       <EyeIcon className="h-4 w-4" aria-hidden />
