@@ -27,6 +27,7 @@ import {
   esTeclaFlecha,
   estiloCeldaCss,
   referenciaCelda,
+  scrollParaVerCelda,
   textoHojas,
   tituloCelda,
 } from "@/lib/admin/libro-excel";
@@ -100,6 +101,9 @@ export function LibroExcel({
   // `fullscreenchange`; aquí solo se LEE si el que está a pantalla completa
   // es este libro.
   const raiz = useRef<HTMLDivElement>(null);
+  // El `div.xl-marco`: ES el contenedor con scroll (`raiz` es `.xl-libro` y
+  // no desplaza nada). Lo usa `seleccionar` para que el marco siga a la celda.
+  const marco = useRef<HTMLDivElement>(null);
   const soportaPantallaCompleta = useSyncExternalStore(
     SIN_SUSCRIPCION,
     soportaFullscreen,
@@ -128,11 +132,37 @@ export function LibroExcel({
     setSeleccion(null);
   };
 
+  // Teclado y clic pasan por AQUÍ (13-oct-2026): la selección cambia y, si la
+  // celda quedó fuera de la zona visible (descontando numeración/letras y
+  // paneles inmovilizados), el marco se desplaza JUSTO lo necesario
+  // (`scrollParaVerCelda`, puro: la geometría sale de la vista, no del DOM).
+  // Asignación directa de scrollLeft/scrollTop = scroll INSTANTÁNEO, estilo
+  // Excel: `.xl-marco` declara `scroll-behavior: auto` y el `smooth` de
+  // globals.css es de `html` (no se hereda). Nada de pedirle al navegador que
+  // «enseñe» la celda (movería también la página e ignora lo sticky) ni de
+  // animación suave. Va en el manejador y NO en un efecto a propósito: un
+  // `router.refresh()` (RefreshOnFocus al volver a la pestaña) recrea
+  // `libro`/`vista` y un efecto con esas deps volvería a saltar a la celda
+  // activa aunque el operador hubiera hecho scroll con la rueda — Excel nunca
+  // hace eso.
+  const seleccionar = (sel: Seleccion) => {
+    setSeleccion(sel);
+    const el = marco.current;
+    if (!el || !vista) return;
+    const destino = scrollParaVerCelda(vista, sel, el);
+    if (!destino) return;
+    el.scrollLeft = destino.scrollLeft;
+    el.scrollTop = destino.scrollTop;
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!vista || !esTeclaFlecha(e.key)) return;
     e.preventDefault();
-    setSeleccion((sel) =>
-      desplazarSeleccion(vista, sel ?? { r: vista.filas[0].r, c: vista.columnas[0].c }, e.key as never),
+    // `seleccion` del render y no el updater funcional: keydown es un evento
+    // discreto y React lo procesa síncrono, así cada pulsación (también con la
+    // tecla mantenida) ve el estado que dejó la anterior.
+    seleccionar(
+      desplazarSeleccion(vista, seleccion ?? { r: vista.filas[0].r, c: vista.columnas[0].c }, e.key),
     );
   };
 
@@ -197,6 +227,7 @@ export function LibroExcel({
 
       {hoja && vista ? (
         <div
+          ref={marco}
           className={cn("xl-marco", hoja.cuadricula ? "xl-cuadricula" : "xl-sin-cuadricula")}
           tabIndex={0}
           role="grid"
@@ -260,7 +291,7 @@ export function LibroExcel({
                         title={tituloCelda(cv.celda)}
                         data-ref={referenciaCelda(cv.r, cv.c)}
                         data-formula={cv.celda?.f}
-                        onClick={() => setSeleccion({ r: cv.r, c: cv.c })}
+                        onClick={() => seleccionar({ r: cv.r, c: cv.c })}
                       >
                         {cv.celda?.t ?? ""}
                       </td>

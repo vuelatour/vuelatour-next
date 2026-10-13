@@ -21,10 +21,13 @@ import {
   desbordaTexto,
   desplazarSeleccion,
   estiloCeldaCss,
+  geometriaCelda,
   letraColumna,
   referenciaCelda,
+  scrollParaVerCelda,
   textoHojas,
   tituloCelda,
+  type MedidasMarco,
 } from "../libro-excel";
 
 function hoja(p: Partial<LibroExcelHoja> = {}): LibroExcelHoja {
@@ -312,5 +315,170 @@ describe("desplazarSeleccion", () => {
 
   it("una selección que ya no existe (fila oculta) vuelve a la primera celda", () => {
     expect(desplazarSeleccion(vista, { r: 2, c: 1 }, "ArrowDown")).toEqual({ r: 1, c: 1 });
+  });
+});
+
+describe("geometriaCelda y scrollParaVerCelda: el marco sigue a la selección", () => {
+  // Hoja con paneles inmovilizados (2 filas, 1 columna), anchos y altos propios,
+  // una fila oculta y dos combinadas (una cruza la zona fija):
+  //   zona fija izquierda = 46 + 215 = 261 · zona fija arriba = 22 + 20 + 51 = 93
+  //   columnas B..K = 64 px (B en 261, F en 517, G en 581, I en 709, J en 773) · L = 705 px (en 901)
+  //   filas 3.. = 20 px (fila 3 en 93, 8 en 193, 10 en 233, 12 en 273, 13 en 293, 14 en 313)
+  const vista = cuadriculaHoja(
+    hoja({
+      max_fila: 60,
+      max_col: 20,
+      inmovilizar: { filas: 2, columnas: 1 },
+      columnas: [
+        { c: 1, ancho: 30 },
+        { c: 12, ancho: 100 },
+      ],
+      filas: [
+        { r: 2, alto: 38 },
+        { r: 30, oculta: true },
+      ],
+      combinadas: [
+        { r1: 1, c1: 1, r2: 1, c2: 3 },
+        { r1: 5, c1: 9, r2: 5, c2: 10 },
+      ],
+    }),
+    libro(),
+  );
+  const marco = (p: Partial<MedidasMarco> = {}): MedidasMarco => ({
+    scrollLeft: 0,
+    scrollTop: 0,
+    clientWidth: 600,
+    clientHeight: 300,
+    ...p,
+  });
+
+  it("geometriaCelda: x/y acumulan desde la numeración y las letras; combinada ⇒ el span; tapada ⇒ 1×1; oculta ⇒ null", () => {
+    expect(geometriaCelda(vista, { r: 3, c: 2 })).toEqual({
+      x: 261,
+      y: 93,
+      ancho: 64,
+      alto: 20,
+      fijaCol: false,
+      fijaFila: false,
+    });
+    expect(geometriaCelda(vista, { r: 2, c: 1 })).toEqual({
+      x: 46,
+      y: 42,
+      ancho: 215,
+      alto: 51,
+      fijaCol: true,
+      fijaFila: true,
+    });
+    // I5:J5 combinada: el ancla mide las dos columnas.
+    expect(geometriaCelda(vista, { r: 5, c: 9 })).toMatchObject({ x: 709, y: 133, ancho: 128, alto: 20 });
+    // J5 está TAPADA por la combinada (no tiene <td>): se trata como 1×1, sin mirar el DOM.
+    expect(geometriaCelda(vista, { r: 5, c: 10 })).toMatchObject({ x: 773, y: 133, ancho: 64, alto: 20 });
+    // A1:C1 cruza la columna fija: ancho = 215 + 64 + 64.
+    expect(geometriaCelda(vista, { r: 1, c: 1 })).toMatchObject({ x: 46, y: 22, ancho: 343, fijaCol: true, fijaFila: true });
+    // Fila oculta ⇒ null (y una columna fuera de la hoja también).
+    expect(geometriaCelda(vista, { r: 30, c: 2 })).toBeNull();
+    expect(geometriaCelda(vista, { r: 3, c: 21 })).toBeNull();
+    // La fila oculta no suma: la 31 va justo debajo de la 29.
+    const y29 = geometriaCelda(vista, { r: 29, c: 2 })?.y ?? NaN;
+    expect(geometriaCelda(vista, { r: 31, c: 2 })?.y).toBe(y29 + 20);
+  });
+
+  it("una sola cuenta: la geometría nueva coincide con leftPx/topPx de los paneles inmovilizados", () => {
+    for (const col of vista.columnas.filter((x) => x.fija)) {
+      expect(geometriaCelda(vista, { r: 3, c: col.c })?.x).toBe(col.leftPx);
+    }
+    for (const fila of vista.filas.filter((f) => f.fija)) {
+      expect(geometriaCelda(vista, { r: fila.r, c: 2 })?.y).toBe(fila.topPx);
+    }
+    // Y en la hoja D3 de la prueba de los paneles (3 columnas y 2 filas fijas).
+    const d3 = cuadriculaHoja(
+      hoja({ inmovilizar: { filas: 2, columnas: 3 }, columnas: [{ c: 2, ancho: 30 }] }),
+      libro(),
+    );
+    const fijas = d3.columnas.filter((x) => x.fija);
+    expect(fijas.map((x) => geometriaCelda(d3, { r: 1, c: x.c })?.x)).toEqual(fijas.map((x) => x.leftPx));
+    expect(d3.filas.filter((f) => f.fija).map((f) => geometriaCelda(d3, { r: f.r, c: 4 })?.y)).toEqual(
+      d3.filas.filter((f) => f.fija).map((f) => f.topPx),
+    );
+  });
+
+  it("ya visible ⇒ null, también en los bordes EXACTOS", () => {
+    expect(scrollParaVerCelda(vista, { r: 3, c: 2 }, marco())).toBeNull();
+    // Fila 12: y 273, fondo 293 ≤ 300.
+    expect(scrollParaVerCelda(vista, { r: 12, c: 2 }, marco())).toBeNull();
+    // Fila 8 con scrollTop 100: 193 − 100 = 93 = justo el borde de la zona fija.
+    expect(scrollParaVerCelda(vista, { r: 8, c: 2 }, marco({ scrollTop: 100 }))).toBeNull();
+    // Columna F: x 517, derecha 581 ≤ 600.
+    expect(scrollParaVerCelda(vista, { r: 3, c: 6 }, marco())).toBeNull();
+    // Una celda inexistente (fila oculta) tampoco mueve nada.
+    expect(scrollParaVerCelda(vista, { r: 30, c: 2 }, marco({ scrollTop: 900 }))).toBeNull();
+  });
+
+  it("cortada a la derecha o abajo ⇒ justo lo necesario, pegada al borde", () => {
+    // G3: x 581, derecha 645 ⇒ 45 px.
+    expect(scrollParaVerCelda(vista, { r: 3, c: 7 }, marco())).toEqual({ scrollLeft: 45, scrollTop: 0 });
+    // Fila 13 (fondo 313) ⇒ 13; fila 14 (fondo 333) ⇒ 33.
+    expect(scrollParaVerCelda(vista, { r: 13, c: 2 }, marco())).toEqual({ scrollLeft: 0, scrollTop: 13 });
+    expect(scrollParaVerCelda(vista, { r: 14, c: 2 }, marco())).toEqual({ scrollLeft: 0, scrollTop: 33 });
+    // Los dos ejes a la vez.
+    expect(scrollParaVerCelda(vista, { r: 14, c: 7 }, marco())).toEqual({ scrollLeft: 45, scrollTop: 33 });
+  });
+
+  it("bajo lo fijo (o por delante) ⇒ pegada a lo fijo, no al borde del marco", () => {
+    // Con scrollLeft 45, B3 (x 261) queda bajo la columna A fija ⇒ 261 − 261 = 0.
+    expect(scrollParaVerCelda(vista, { r: 3, c: 2 }, marco({ scrollLeft: 45 }))).toEqual({
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+    // Con scrollTop 100, la fila 3 (y 93) queda bajo las filas fijas ⇒ 0.
+    expect(scrollParaVerCelda(vista, { r: 3, c: 2 }, marco({ scrollTop: 100 }))).toEqual({
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+    // Con scrollTop 300, la fila 10 (y 233) ⇒ 233 − 93 = 140 (no 233: quedaría bajo lo fijo).
+    expect(scrollParaVerCelda(vista, { r: 10, c: 2 }, marco({ scrollTop: 300 }))).toEqual({
+      scrollLeft: 0,
+      scrollTop: 140,
+    });
+  });
+
+  it("una celda en columna o fila fija no mueve ese eje", () => {
+    // A10: la columna A es fija ⇒ X se queda en 500; Y sí sube a 140.
+    expect(scrollParaVerCelda(vista, { r: 10, c: 1 }, marco({ scrollLeft: 500, scrollTop: 300 }))).toEqual({
+      scrollLeft: 500,
+      scrollTop: 140,
+    });
+    // B2: la fila 2 es fija ⇒ Y se queda; X ya se ve ⇒ null.
+    expect(scrollParaVerCelda(vista, { r: 2, c: 2 }, marco({ scrollTop: 400 }))).toBeNull();
+    // A1: fija en los dos ejes ⇒ nunca se mueve.
+    expect(scrollParaVerCelda(vista, { r: 1, c: 1 }, marco({ scrollLeft: 900, scrollTop: 900 }))).toBeNull();
+  });
+
+  it("una combinada se enseña completa; una celda más ancha que la zona libre se alinea al inicio", () => {
+    // I5:J5 (x 709, ancho 128): derecha 837 ⇒ 837 − 600 = 237.
+    expect(scrollParaVerCelda(vista, { r: 5, c: 9 }, marco())).toEqual({ scrollLeft: 237, scrollTop: 0 });
+    // Tras aplicarlo ya se ve entera: la segunda llamada no mueve nada.
+    expect(scrollParaVerCelda(vista, { r: 5, c: 9 }, marco({ scrollLeft: 237 }))).toBeNull();
+    // L (x 901, 705 px) no cabe en los 339 px libres ⇒ pegada a lo fijo: 901 − 261 = 640.
+    expect(scrollParaVerCelda(vista, { r: 3, c: 12 }, marco())).toEqual({ scrollLeft: 640, scrollTop: 0 });
+    expect(scrollParaVerCelda(vista, { r: 3, c: 12 }, marco({ scrollLeft: 640 }))).toBeNull();
+  });
+
+  it("marco sin medidas (SSR) o sin zona libre ⇒ no se mueve; nunca devuelve negativos", () => {
+    expect(scrollParaVerCelda(vista, { r: 14, c: 7 }, marco({ clientWidth: 0, clientHeight: 0 }))).toBeNull();
+    // 200 px de ancho < 261 de zona fija: el eje X no se mueve aunque L esté lejos.
+    expect(scrollParaVerCelda(vista, { r: 3, c: 12 }, marco({ clientWidth: 200 }))).toBeNull();
+    // Hoja sin paneles fijos y un scroll exagerado: A1 vuelve a 0, nunca a un negativo.
+    const sencilla = cuadriculaHoja(hoja(), libro());
+    const lejos = marco({ scrollLeft: 5000, scrollTop: 5000 });
+    expect(scrollParaVerCelda(sencilla, { r: 1, c: 1 }, lejos)).toEqual({ scrollLeft: 0, scrollTop: 0 });
+    for (const f of sencilla.filas) {
+      for (const c of sencilla.columnas) {
+        const d = scrollParaVerCelda(sencilla, { r: f.r, c: c.c }, lejos);
+        expect(d).not.toBeNull();
+        expect(d?.scrollLeft).toBeGreaterThanOrEqual(0);
+        expect(d?.scrollTop).toBeGreaterThanOrEqual(0);
+      }
+    }
   });
 });

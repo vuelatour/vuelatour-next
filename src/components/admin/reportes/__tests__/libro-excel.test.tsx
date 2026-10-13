@@ -310,4 +310,68 @@ describe("styles/libro-excel.css: el alto del marco", () => {
     expect(css).toMatch(/\.xl-libro:fullscreen \.xl-marco\s*\{[^}]*max-height:\s*calc\(100vh - \d+px - \d+px\);/);
     expect(css).toMatch(/\.xl-libro:fullscreen\s*\{[^}]*border:\s*0;/);
   });
+
+  it("el marco sigue a la selección con scroll INSTANTÁNEO: `.xl-marco` declara scroll-behavior: auto y el smooth de globals.css es solo de `html`", () => {
+    expect(css).toMatch(/^\.xl-marco\s*\{[^}]*scroll-behavior:\s*auto;/m);
+    // Si alguien globalizara el `smooth` (p. ej. en `*`), el libro dejaría de
+    // desplazarse como Excel y esta prueba lo diría.
+    const globals = leer("app/globals.css");
+    expect(globals).toMatch(/html \{[^}]*scroll-behavior: smooth/);
+    expect(globals).not.toMatch(/\*\s*\{[^}]*scroll-behavior/);
+    expect((globals.match(/scroll-behavior:\s*smooth/g) ?? []).length).toBe(1);
+  });
+});
+
+describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
+  const src = leer("components/admin/reportes/libro-excel.tsx");
+
+  it("el ref vive en el div .xl-marco (el contenedor con scroll), no en la raíz .xl-libro", () => {
+    expect(src).toContain("const marco = useRef<HTMLDivElement>(null);");
+    expect(src).toMatch(/<div\s+ref=\{marco\}\s+className=\{cn\("xl-marco"/);
+    expect(src).not.toMatch(/<div\s+ref=\{raiz\}[^>]*xl-marco/);
+  });
+
+  it("UN solo camino para teclado y clic: `seleccionar` = setSeleccion + scrollParaVerCelda + asignación directa", () => {
+    const bloque = src.match(/const seleccionar = \(sel: Seleccion\) => \{([\s\S]*?)\n  \};/)?.[1];
+    expect(bloque).toBeDefined();
+    expect(bloque).toContain("setSeleccion(sel);");
+    expect(bloque).toContain("scrollParaVerCelda(vista, sel, el)");
+    expect(bloque).toContain("el.scrollLeft = destino.scrollLeft;");
+    expect(bloque).toContain("el.scrollTop = destino.scrollTop;");
+    // Una sola llamada en todo el archivo: la de `seleccionar`.
+    expect((src.match(/scrollParaVerCelda\(/g) ?? []).length).toBe(1);
+    // Las flechas pasan por ahí y conservan el preventDefault.
+    expect(src).toMatch(
+      /if \(!vista \|\| !esTeclaFlecha\(e\.key\)\) return;\s*e\.preventDefault\(\);[\s\S]*?seleccionar\(\s*desplazarSeleccion\(/,
+    );
+    // El clic en la celda también; nadie llama a setSeleccion directo desde el marcado.
+    expect(src).toContain("onClick={() => seleccionar({ r: cv.r, c: cv.c })}");
+    expect(src).not.toContain("onClick={() => setSeleccion(");
+    // Cambiar de hoja sigue limpiando la selección (sin mover el marco).
+    expect(src).toMatch(/const cambiarHoja = \(i: number\) => \{\s*setHojaIdx\(i\);\s*setSeleccion\(null\);/);
+  });
+
+  it("instantáneo y en el manejador: sin scrollIntoView, sin animación suave y sin efecto alrededor del scroll", () => {
+    expect(src).not.toContain("scrollIntoView");
+    expect(src).not.toMatch(/behavior:\s*"smooth"/);
+    expect(src).not.toMatch(/behavior:\s*"instant"/);
+    expect(src).not.toContain("useLayoutEffect");
+    // El único efecto del archivo es el de `fullscreenchange`: ningún efecto toca
+    // el scroll ni la selección (con deps `[vista, seleccion]` el router.refresh()
+    // de RefreshOnFocus volvería a saltar a la celda activa).
+    const efectos = src.match(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g) ?? [];
+    expect(efectos.length).toBeGreaterThan(0);
+    expect((src.match(/useEffect\(/g) ?? []).length).toBe(efectos.length);
+    for (const efecto of efectos) {
+      expect(efecto).not.toMatch(/scroll/i);
+      expect(efecto).not.toContain("seleccion");
+    }
+  });
+
+  it("el marcado estático NO cambió: ref y onClick no se serializan", () => {
+    const html = pintar();
+    expect(html).toContain('class="xl-marco xl-cuadricula" tabindex="0" role="grid"');
+    expect(html).not.toMatch(/scroll/i);
+    expect(pintar(null, true)).not.toMatch(/scroll/i);
+  });
 });

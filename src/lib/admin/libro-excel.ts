@@ -342,3 +342,126 @@ export function desplazarSeleccion(
   const col = vista.columnas[Math.min(vista.columnas.length - 1, Math.max(0, iCol + dCol))];
   return { r: fila.r, c: col.c };
 }
+
+/* ------------------------------------------------------------------------- */
+/* El marco sigue a la selección (13-oct-2026)                                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Medidas del `div.xl-marco` (el contenedor con scroll). Son las MISMAS
+ * propiedades del DOM, así el componente pasa el elemento tal cual y las
+ * pruebas pasan un objeto. `clientWidth`/`clientHeight` excluyen las barras
+ * de scroll, que es lo correcto: la celda tiene que verse, no quedar bajo la
+ * barra.
+ */
+export interface MedidasMarco {
+  scrollLeft: number;
+  scrollTop: number;
+  clientWidth: number;
+  clientHeight: number;
+}
+
+/** Rectángulo de una celda dentro de la tabla (px), contando la numeración y las letras. */
+export interface GeometriaCelda {
+  /** Borde izquierdo dentro de la tabla (0 = borde izquierdo de la numeración). */
+  x: number;
+  /** Borde superior dentro de la tabla (0 = borde superior de las letras). */
+  y: number;
+  ancho: number;
+  alto: number;
+  /** La celda vive en una columna inmovilizada: el eje X no se mueve para verla. */
+  fijaCol: boolean;
+  /** La celda vive en una fila inmovilizada: el eje Y no se mueve para verla. */
+  fijaFila: boolean;
+}
+
+/**
+ * Dónde está la celda `sel` dentro de la tabla, en px, con la MISMA cuenta
+ * que ya da `leftPx`/`topPx` a los paneles inmovilizados en `cuadriculaHoja`:
+ * `x` acumula `anchoPx` desde `ANCHO_NUMERACION_PX` y `y` acumula `altoPx`
+ * desde `ALTO_LETRAS_PX`, solo sobre lo VISIBLE. Si la coordenada es el ancla
+ * de una combinada, `ancho`/`alto` suman su `colSpan`/`rowSpan`; una
+ * coordenada TAPADA por una combinada (no tiene `<td>`) se trata como 1×1;
+ * una fila o columna oculta ⇒ `null`. PURO: nunca consulta el DOM — justo
+ * porque la celda tapada no existe ahí.
+ */
+export function geometriaCelda(
+  vista: Pick<HojaVista, "filas" | "columnas">,
+  sel: { r: number; c: number },
+): GeometriaCelda | null {
+  const iCol = vista.columnas.findIndex((x) => x.c === sel.c);
+  const iFila = vista.filas.findIndex((f) => f.r === sel.r);
+  if (iCol < 0 || iFila < 0) return null;
+  const ancla = vista.filas[iFila].celdas.find((x) => x.c === sel.c);
+  const colSpan = ancla?.colSpan ?? 1;
+  const rowSpan = ancla?.rowSpan ?? 1;
+  const suma = (valores: number[]) => valores.reduce((acc, v) => acc + v, 0);
+  const anchos = vista.columnas.map((x) => x.anchoPx);
+  const altos = vista.filas.map((f) => f.altoPx);
+  return {
+    x: ANCHO_NUMERACION_PX + suma(anchos.slice(0, iCol)),
+    y: ALTO_LETRAS_PX + suma(altos.slice(0, iFila)),
+    ancho: suma(anchos.slice(iCol, iCol + colSpan)),
+    alto: suma(altos.slice(iFila, iFila + rowSpan)),
+    fijaCol: vista.columnas[iCol].fija,
+    fijaFila: vista.filas[iFila].fija,
+  };
+}
+
+/**
+ * El scroll JUSTO para que una celda quede a la vista en un eje. `inicio`/`tam`
+ * = borde y tamaño de la celda dentro de la tabla; `ocupado` = lo que tapa lo
+ * sticky al inicio del eje (numeración + columnas fijas, o letras + filas
+ * fijas); `visible` = el tamaño del marco; `actual` = el scroll de hoy.
+ *   - sin zona libre (`visible <= ocupado`: SSR con clientWidth 0, o más fijo
+ *     que ventana) ⇒ no se mueve;
+ *   - tapada por lo fijo o por delante ⇒ pegada a lo fijo;
+ *   - cortada al final ⇒ pegada al borde; si no cabe en la zona libre,
+ *     alineada al inicio (pegada a lo fijo);
+ *   - los bordes exactos (igualdad) cuentan como visible.
+ */
+function ejeParaVer(
+  inicio: number,
+  tam: number,
+  ocupado: number,
+  visible: number,
+  actual: number,
+): number {
+  if (visible <= ocupado) return actual;
+  if (inicio - actual < ocupado) return Math.max(0, inicio - ocupado);
+  if (inicio + tam - actual > visible) {
+    return tam > visible - ocupado ? Math.max(0, inicio - ocupado) : inicio + tam - visible;
+  }
+  return actual;
+}
+
+/**
+ * El `scrollLeft`/`scrollTop` nuevo del marco para que la celda `sel` se vea
+ * ENTERA en la zona visible que no tapa lo sticky (numeración + columnas
+ * inmovilizadas a la izquierda; letras + filas inmovilizadas arriba), o
+ * `null` si no hay que mover: ya se ve, la celda no existe (oculta) o el
+ * marco no tiene zona libre (SSR, `clientWidth` 0). Una celda en columna/fila
+ * fija no mueve ese eje (siempre se ve). Nunca devuelve negativos. PURO: la
+ * geometría sale de la vista (`geometriaCelda`), nunca del DOM.
+ */
+export function scrollParaVerCelda(
+  vista: Pick<HojaVista, "filas" | "columnas">,
+  sel: { r: number; c: number },
+  marco: MedidasMarco,
+): { scrollLeft: number; scrollTop: number } | null {
+  const g = geometriaCelda(vista, sel);
+  if (!g) return null;
+  const ocupadoIzq =
+    ANCHO_NUMERACION_PX +
+    vista.columnas.filter((x) => x.fija).reduce((acc, x) => acc + x.anchoPx, 0);
+  const ocupadoArriba =
+    ALTO_LETRAS_PX + vista.filas.filter((f) => f.fija).reduce((acc, f) => acc + f.altoPx, 0);
+  const scrollLeft = g.fijaCol
+    ? marco.scrollLeft
+    : ejeParaVer(g.x, g.ancho, ocupadoIzq, marco.clientWidth, marco.scrollLeft);
+  const scrollTop = g.fijaFila
+    ? marco.scrollTop
+    : ejeParaVer(g.y, g.alto, ocupadoArriba, marco.clientHeight, marco.scrollTop);
+  if (scrollLeft === marco.scrollLeft && scrollTop === marco.scrollTop) return null;
+  return { scrollLeft, scrollTop };
+}

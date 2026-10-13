@@ -6018,6 +6018,70 @@ periodo y la descripción larga, los chips y el `PeriodSelector` en su Card
   gana a `100dvh - 297px` y la página desplaza unos píxeles: es el mínimo
   que pidió el contrato, no un error de la cuenta.
 
+### El marco sigue a la selección (13-oct-2026)
+
+Pedido del cliente: al moverse con las flechas por el Excel en pantalla, la
+celda activa se perdía bajo el borde del marco o bajo los paneles
+inmovilizados. Causa: `onKeyDown` hacía `e.preventDefault()` —que además
+suprime el scroll NATIVO de la `div.xl-marco` con las flechas— y solo
+cambiaba `seleccion`; nada movía el marco. Solo panel.
+
+- **Fuente única PURA** en `lib/admin/libro-excel.ts`: `geometriaCelda(vista,
+  sel)` (rectángulo de la celda en px dentro de la tabla: `x` acumula
+  `anchoPx` desde `ANCHO_NUMERACION_PX` y `y` acumula `altoPx` desde
+  `ALTO_LETRAS_PX`, la MISMA cuenta que da `leftPx`/`topPx` a lo fijo en
+  `cuadriculaHoja`; el ancla de una combinada suma su `colSpan`/`rowSpan`;
+  una coordenada TAPADA por una combinada —que no tiene `<td>`— se trata como
+  1×1; oculta ⇒ `null`) y `scrollParaVerCelda(vista, sel, marco)` (dadas
+  `{scrollLeft, scrollTop, clientWidth, clientHeight}` del marco —las MISMAS
+  propiedades del DOM: el componente pasa el elemento tal cual— devuelve el
+  scroll nuevo SOLO si la celda queda fuera de la zona visible no tapada por
+  lo sticky —numeración + columnas inmovilizadas a la izquierda; letras +
+  filas inmovilizadas arriba—, justo lo necesario: pegada a lo fijo si
+  estaba a la izquierda/arriba, pegada al borde si estaba a la
+  derecha/abajo, alineada al inicio si no cabe en la zona libre; una celda en
+  columna/fila fija no mueve ese eje; ya visible, inexistente o marco sin
+  medidas (SSR, `clientWidth` 0) ⇒ `null`; nunca negativos). **Nunca mira el
+  DOM**: la geometría sale de la vista, justo porque la celda tapada no
+  existe ahí.
+- **Componente** (`libro-excel.tsx`): `ref` al `div.xl-marco` (`raiz` es
+  `.xl-libro` y no es el contenedor con scroll) y UNA función
+  `seleccionar(sel)` = `setSeleccion` + `scrollParaVerCelda` + asignación
+  directa de `el.scrollLeft`/`el.scrollTop` (scroll INSTANTÁNEO estilo Excel:
+  nada de `scrollIntoView`, que movería también la página e ignora lo
+  sticky, ni de animación suave; `styles/libro-excel.css` deja
+  `scroll-behavior: auto` en `.xl-marco` porque el `smooth` de globals.css es
+  de `html` y no se hereda). La usan `onKeyDown` (flechas, con el
+  `preventDefault` de siempre y el `seleccion` del render en vez del updater
+  funcional: keydown es un evento discreto y React lo procesa síncrono) y el
+  `onClick` de cada `<td>` (un clic en una celda medio tapada también la
+  enseña completa, como Excel). **Va en el manejador y NO en un efecto a
+  propósito**: el `router.refresh()` de `RefreshOnFocus` recrea
+  `libro`/`vista` y un efecto con `[vista, seleccion]` volvería a saltar a
+  la celda activa aunque el operador hubiera hecho scroll con la rueda
+  (Excel nunca hace eso). El marcado estático no cambió (`ref` y `onClick`
+  no se serializan): las pruebas de marcado siguen byte a byte.
+- **Pruebas**: `lib/admin/__tests__/libro-excel.test.ts` (geometría real con
+  fijas, combinadas, oculta, bordes exactos, celda más ancha que la zona
+  libre, SSR sin medidas, nunca negativos, y que la geometría nueva coincide
+  con `leftPx`/`topPx`) y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (cableado por
+  regex: el `ref` en `.xl-marco`, una sola llamada a `scrollParaVerCelda`
+  dentro de `seleccionar`, teclado y clic por el mismo camino, sin
+  `scrollIntoView`/smooth/efecto alrededor del scroll, el marcado intacto, y
+  el CSS: `.xl-marco` con `scroll-behavior: auto` y el `smooth` solo en
+  `html`).
+- **Pendientes**: `desplazarSeleccion` puede caer en una coordenada TAPADA por
+  una combinada (p. ej. B1 bajo A1:C1: no hay `<td>`, el contorno verde
+  desaparece y el cuadro de nombres dice «B1»; Excel salta la combinada
+  entera); el scroll la trata como 1×1. PageUp/PageDown/Inicio/Fin siguen
+  con el scroll nativo sin mover la selección. Sin QA visual en navegador
+  (vitest sin DOM): en `/admin/reportes/balance` mantener → y ↓ pulsadas y
+  comprobar que el contorno nunca se mete bajo numeración/letras ni bajo lo
+  inmovilizado (ni se «salta» celdas con la tecla mantenida); hacer scroll
+  con la rueda, cambiar de pestaña y volver (RefreshOnFocus), y ver que la
+  vista NO salta a la celda activa.
+
 ## Reportes: el selector de periodo ya no «se traba» (12-oct-2026)
 
 Pedido del cliente: «en los filtros de fecha de Reportes como que se traba el

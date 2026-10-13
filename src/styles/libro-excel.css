@@ -75,6 +75,10 @@
   min-height: 360px;
   background: #ffffff;
   outline: none;
+  /* El marco sigue a la selección (13-oct-2026) con asignación directa de
+     scrollLeft/scrollTop: instantáneo, como Excel. El `scroll-behavior: smooth`
+     de globals.css es de `html` y no se hereda; esto deja la intención escrita. */
+  scroll-behavior: auto;
 }
 
 .xl-marco:focus-visible {
