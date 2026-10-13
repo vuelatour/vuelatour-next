@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  BIT_FILA_ACTIVA,
+  BIT_FILA_ENTRADA,
+  SELECTOR_DESPLEGABLE,
+  SELECTOR_FILA,
+  SELECTOR_FILA_HIJA,
   accionDeTeclaFila,
+  atributosDeInstantanea,
   atributosFila,
+  crearEstadoFilaActiva,
   filaDeEntrada,
   indiceEnlaceDeFila,
   indiceFilaSiguiente,
+  instantaneaFila,
   scrollParaVerFila,
   type ContextoTeclaFila,
 } from "../filas-activas";
@@ -14,8 +22,10 @@ import type { TeclaPulsada } from "../quote-navegacion";
  * Fila activa y teclado de las tablas (13-oct-2026): las reglas PURAS que el
  * hook `use-filas-activas` cablea al DOM. Qué hace cada tecla según dónde
  * está el foco, el índice siguiente (en el borde se queda), la fila de
- * entrada del Tab, los atributos ARIA de cada fila, qué enlace abre Enter y
- * el scroll que descuenta el <thead> sticky.
+ * entrada del Tab, los atributos ARIA de cada fila (`aria-current`, nunca
+ * `aria-selected`: Chrome no lo expone en una <table> nativa), qué enlace
+ * abre Enter, el scroll que descuenta el <thead> sticky y el ESTADO de la
+ * activa fuera de React con su instantánea por fila.
  */
 const tecla = (key: string, extra: Partial<TeclaPulsada> = {}): TeclaPulsada => ({
   key,
@@ -109,6 +119,21 @@ describe("accionDeTeclaFila", () => {
     }
   });
 
+  it("el veto es SOLO [aria-haspopup]: un botón de plegar con aria-expanded suelto («Ver los pagos de la compra») sigue moviendo la activa", () => {
+    expect(SELECTOR_DESPLEGABLE).toBe("[aria-haspopup]");
+    expect(SELECTOR_DESPLEGABLE).not.toContain("aria-expanded");
+    // El hook calcula `conDesplegable` con ese selector: un aria-expanded
+    // suelto no casa ⇒ conDesplegable false ⇒ ↓ baja.
+    const plegar = { ...LIBRE, esFila: false, etiqueta: "BUTTON", conDesplegable: false };
+    expect(accionDeTeclaFila(tecla("ArrowDown"), plegar)).toBe("abajo");
+    expect(accionDeTeclaFila(tecla("Home"), plegar)).toBe("primera");
+  });
+
+  it("selectores de la fila y de su renglón pegado (la hija cuenta para la fila anterior)", () => {
+    expect(SELECTOR_FILA).toBe("tr[data-fila]");
+    expect(SELECTOR_FILA_HIJA).toBe("tr[data-fila-hija]");
+  });
+
   it("rol switch/checkbox/row o sin rol ⇒ las flechas sí actúan", () => {
     for (const rol of ["switch", "checkbox", "row", null]) {
       const ctx = { ...LIBRE, esFila: false, etiqueta: "BUTTON", rol };
@@ -185,10 +210,10 @@ describe("atributosFila", () => {
     expect(Object.keys(a)).toEqual(["data-fila", "tabIndex"]);
   });
 
-  it("activa ⇒ data-fila-activa + aria-selected true (y tabIndex 0 porque es la entrada)", () => {
+  it("activa ⇒ data-fila-activa + aria-current true (y tabIndex 0 porque es la entrada)", () => {
     const a = atributosFila("b", "b", "b");
-    expect(a).toEqual({ "data-fila": "b", tabIndex: 0, "data-fila-activa": "", "aria-selected": true });
-    expect(Object.keys(a)).toEqual(["data-fila", "tabIndex", "data-fila-activa", "aria-selected"]);
+    expect(a).toEqual({ "data-fila": "b", tabIndex: 0, "data-fila-activa": "", "aria-current": true });
+    expect(Object.keys(a)).toEqual(["data-fila", "tabIndex", "data-fila-activa", "aria-current"]);
   });
 
   it("fila normal ⇒ solo data-fila y −1; con href ⇒ data-fila-href igual al href", () => {
@@ -200,15 +225,100 @@ describe("atributosFila", () => {
     });
   });
 
-  it("sin href / null / \"\" ⇒ sin la clave; NUNCA aria-selected false ni role", () => {
+  it("sin href / null / \"\" ⇒ sin la clave; NUNCA aria-current false, aria-selected ni role", () => {
     for (const href of [undefined, null, ""]) {
       const a = atributosFila("c", null, "a", href);
       expect(Object.keys(a)).toEqual(["data-fila", "tabIndex"]);
     }
     for (const a of [atributosFila("c", "b", "b"), atributosFila("b", "b", "b"), atributosFila("a", null, "a")]) {
-      expect("aria-selected" in a ? a["aria-selected"] : true).toBe(true);
+      expect("aria-current" in a ? a["aria-current"] : true).toBe(true);
+      expect("aria-selected" in a).toBe(false);
       expect("role" in a).toBe(false);
     }
+  });
+});
+
+describe("crearEstadoFilaActiva: la activa fuera de React", () => {
+  it("arranca sin activa (o con la inicial del arnés), escribe, lee y avisa a los suscritos", () => {
+    const e = crearEstadoFilaActiva();
+    expect(e.leer()).toBeNull();
+    expect(crearEstadoFilaActiva("b").leer()).toBe("b");
+    const avisos: string[] = [];
+    const baja = e.suscribir(() => avisos.push(String(e.leer())));
+    e.escribir("a");
+    e.escribir("b");
+    expect(e.leer()).toBe("b");
+    expect(avisos).toEqual(["a", "b"]);
+    baja();
+    e.escribir(null);
+    expect(e.leer()).toBeNull();
+    expect(avisos).toEqual(["a", "b"]);
+  });
+
+  it("escribir el MISMO valor no avisa (ni un repintado de más)", () => {
+    const e = crearEstadoFilaActiva("a");
+    let n = 0;
+    e.suscribir(() => n++);
+    e.escribir("a");
+    expect(n).toBe(0);
+    e.escribir("b");
+    e.escribir("b");
+    expect(n).toBe(1);
+  });
+
+  it("darse de baja durante el aviso no rompe la vuelta", () => {
+    const e = crearEstadoFilaActiva();
+    const vistos: number[] = [];
+    const baja1 = e.suscribir(() => {
+      vistos.push(1);
+      baja1();
+    });
+    e.suscribir(() => vistos.push(2));
+    e.escribir("x");
+    e.escribir("y");
+    expect(vistos).toEqual([1, 2, 2]);
+  });
+});
+
+describe("instantaneaFila y atributosDeInstantanea: lo que cada fila necesita, en UN número", () => {
+  const CLAVES = ["a", "b", "c"];
+
+  it("sin activa: la primera es la entrada (2), las demás 0", () => {
+    expect(instantaneaFila("a", null, CLAVES)).toBe(2);
+    expect(instantaneaFila("b", null, CLAVES)).toBe(0);
+    expect(instantaneaFila("c", null, CLAVES)).toBe(0);
+  });
+
+  it("con activa pintada: ella es activa Y entrada (3); las demás 0", () => {
+    expect(instantaneaFila("b", "b", CLAVES)).toBe(BIT_FILA_ACTIVA | BIT_FILA_ENTRADA);
+    expect(instantaneaFila("a", "b", CLAVES)).toBe(0);
+    expect(instantaneaFila("c", "b", CLAVES)).toBe(0);
+  });
+
+  it("activa en otra página (no pintada): la primera vuelve a ser la entrada (2)", () => {
+    expect(instantaneaFila("a", "zzz", CLAVES)).toBe(2);
+    expect(instantaneaFila("b", "zzz", CLAVES)).toBe(0);
+  });
+
+  it("al mover la activa de b a c SOLO cambian b y c (las demás conservan su número: no se repintan)", () => {
+    const antes = CLAVES.map((k) => instantaneaFila(k, "b", CLAVES));
+    const despues = CLAVES.map((k) => instantaneaFila(k, "c", CLAVES));
+    expect(antes).toEqual([0, 3, 0]);
+    expect(despues).toEqual([0, 0, 3]);
+    // Con 100 filas, cambiar de la 7 a la 8 deja 98 números iguales.
+    const cien = Array.from({ length: 100 }, (_, i) => `f${i}`);
+    const a = cien.map((k) => instantaneaFila(k, "f7", cien));
+    const b = cien.map((k) => instantaneaFila(k, "f8", cien));
+    expect(cien.filter((_, i) => a[i] !== b[i])).toEqual(["f7", "f8"]);
+  });
+
+  it("atributosDeInstantanea reproduce atributosFila bit a bit", () => {
+    expect(atributosDeInstantanea("b", 3, "/x/b")).toEqual(atributosFila("b", "b", "b", "/x/b"));
+    expect(atributosDeInstantanea("a", 2)).toEqual(atributosFila("a", null, "a"));
+    expect(atributosDeInstantanea("c", 0)).toEqual(atributosFila("c", "b", "b"));
+    // Activa sin ser entrada no existe en la práctica (la activa pintada es la
+    // entrada), pero el número 1 se traduce igual.
+    expect(atributosDeInstantanea("c", 1)).toEqual({ "data-fila": "c", tabIndex: -1, "data-fila-activa": "", "aria-current": true });
   });
 });
 

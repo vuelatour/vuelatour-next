@@ -20,7 +20,9 @@ import {
   cuadriculaHoja,
   desbordaTexto,
   desplazarSeleccion,
+  esTeclaNavegacionHoja,
   estiloCeldaCss,
+  filasPorPagina,
   geometriaCelda,
   letraColumna,
   referenciaCelda,
@@ -315,6 +317,82 @@ describe("desplazarSeleccion", () => {
 
   it("una selección que ya no existe (fila oculta) vuelve a la primera celda", () => {
     expect(desplazarSeleccion(vista, { r: 2, c: 1 }, "ArrowDown")).toEqual({ r: 1, c: 1 });
+  });
+});
+
+describe("desplazarSeleccion: PageUp/PageDown y Home/End (revisión 13-oct-2026)", () => {
+  // 40 filas visibles de 20 px (la hoja mínima), 14 columnas.
+  const vista = cuadriculaHoja(hoja({ max_fila: 1, max_col: 1 }), libro());
+
+  it("esTeclaNavegacionHoja: flechas, PageUp/PageDown y Home/End; nada más", () => {
+    for (const k of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"]) {
+      expect(esTeclaNavegacionHoja(k), k).toBe(true);
+    }
+    for (const k of ["Enter", "Escape", "Tab", " ", "a", "F5"]) expect(esTeclaNavegacionHoja(k), k).toBe(false);
+  });
+
+  it("PageDown/PageUp saltan `filasPorPagina` filas y se quedan en el borde; sin la opción, una fila", () => {
+    expect(desplazarSeleccion(vista, { r: 7, c: 2 }, "PageDown", { filasPorPagina: 14 })).toEqual({ r: 21, c: 2 });
+    expect(desplazarSeleccion(vista, { r: 21, c: 2 }, "PageDown", { filasPorPagina: 14 })).toEqual({ r: 35, c: 2 });
+    expect(desplazarSeleccion(vista, { r: 35, c: 2 }, "PageDown", { filasPorPagina: 14 })).toEqual({ r: 40, c: 2 });
+    expect(desplazarSeleccion(vista, { r: 21, c: 2 }, "PageUp", { filasPorPagina: 14 })).toEqual({ r: 7, c: 2 });
+    expect(desplazarSeleccion(vista, { r: 7, c: 2 }, "PageUp", { filasPorPagina: 14 })).toEqual({ r: 1, c: 2 });
+    expect(desplazarSeleccion(vista, { r: 7, c: 2 }, "PageDown")).toEqual({ r: 8, c: 2 });
+    // Una página de 0 o fraccionaria cuenta como mínimo 1.
+    expect(desplazarSeleccion(vista, { r: 7, c: 2 }, "PageDown", { filasPorPagina: 0 })).toEqual({ r: 8, c: 2 });
+    expect(desplazarSeleccion(vista, { r: 7, c: 2 }, "PageDown", { filasPorPagina: 2.9 })).toEqual({ r: 9, c: 2 });
+  });
+
+  it("Home/End: primera/última columna de la fila; con Ctrl/⌘, A1 y la última celda visible", () => {
+    expect(desplazarSeleccion(vista, { r: 7, c: 5 }, "Home")).toEqual({ r: 7, c: 1 });
+    expect(desplazarSeleccion(vista, { r: 7, c: 5 }, "End")).toEqual({ r: 7, c: 14 });
+    expect(desplazarSeleccion(vista, { r: 7, c: 5 }, "Home", { conControl: true })).toEqual({ r: 1, c: 1 });
+    expect(desplazarSeleccion(vista, { r: 7, c: 5 }, "End", { conControl: true })).toEqual({ r: 40, c: 14 });
+  });
+
+  it("la secuencia del hallazgo: PageDown, PageDown, ↓ ya NO vuelve a donde empezó (y el marco sigue a la celda)", () => {
+    const marco: MedidasMarco = { scrollLeft: 0, scrollTop: 0, clientWidth: 600, clientHeight: 300 };
+    let sel = { r: 7, c: 2 };
+    let scroll = marco;
+    const pulsar = (tecla: "PageDown" | "ArrowDown") => {
+      sel = desplazarSeleccion(vista, sel, tecla, {
+        filasPorPagina: filasPorPagina(vista, scroll, sel.r, "abajo"),
+      });
+      const d = scrollParaVerCelda(vista, sel, scroll);
+      if (d) scroll = { ...scroll, ...d };
+    };
+    pulsar("PageDown");
+    // Zona libre = 300 − 22 = 278 px ⇒ caben 13 filas de 20 px.
+    expect(sel).toEqual({ r: 20, c: 2 });
+    expect(scroll.scrollTop).toBeGreaterThan(0);
+    pulsar("PageDown");
+    expect(sel).toEqual({ r: 33, c: 2 });
+    const arriba = scroll.scrollTop;
+    pulsar("ArrowDown");
+    expect(sel).toEqual({ r: 34, c: 2 });
+    expect(scroll.scrollTop).toBeGreaterThanOrEqual(arriba);
+  });
+});
+
+describe("filasPorPagina: las filas que caben en la zona libre del marco", () => {
+  it("descuenta las letras y las filas inmovilizadas; cuenta desde la fila dada, hacia abajo o hacia arriba; mínimo 1", () => {
+    const vista = cuadriculaHoja(
+      hoja({ max_fila: 1, max_col: 1, inmovilizar: { filas: 2, columnas: 0 }, filas: [{ r: 2, alto: 38 }] }),
+      libro(),
+    );
+    // Ocupado arriba = 22 + 20 + 51 = 93; con 300 px quedan 207 ⇒ 10 filas de 20 px.
+    expect(filasPorPagina(vista, { clientHeight: 300 }, 7)).toBe(10);
+    expect(filasPorPagina(vista, { clientHeight: 300 }, 7, "abajo")).toBe(10);
+    // Hacia arriba desde la fila 5: 5, 4, 3 (20 cada una) + 2 (51) + 1 (20) = 131 ⇒ las 5 caben.
+    expect(filasPorPagina(vista, { clientHeight: 300 }, 5, "arriba")).toBe(5);
+    // Cerca del final cuenta las que quedan.
+    expect(filasPorPagina(vista, { clientHeight: 300 }, 38)).toBe(3);
+    // Sin medidas (SSR), más fijo que ventana, o fila inexistente ⇒ 1.
+    expect(filasPorPagina(vista, { clientHeight: 0 }, 7)).toBe(1);
+    expect(filasPorPagina(vista, { clientHeight: 93 }, 7)).toBe(1);
+    expect(filasPorPagina(vista, { clientHeight: 300 }, 999)).toBe(1);
+    // Una sola fila que no cabe entera también cuenta 1.
+    expect(filasPorPagina(vista, { clientHeight: 100 }, 7)).toBe(1);
   });
 });
 

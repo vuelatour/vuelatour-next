@@ -1,13 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { useFilasActivas } from "../use-filas-activas";
+import { FilaNavegable } from "@/components/admin/fila-navegable";
 
 /**
- * `useFilasActivas` (13-oct-2026) sobre un arnés mínimo con
- * `renderToStaticMarkup` (sin DOM ni mocks): los atributos que pinta en
+ * `useFilasActivas` + `FilaNavegable` (13-oct-2026) sobre un arnés mínimo con
+ * `renderToStaticMarkup` (sin DOM ni mocks): los atributos que pintan en
  * reposo (SSR determinista: sin activa) y con una activa `inicial` (opción
- * que SOLO existe para este arnés). El teclado vive en el DOM y se vigila por
- * regex en `lib/admin/__tests__/filas-activas-cableado.test.ts`.
+ * que SOLO existe para este arnés; la fila la lee del estado con
+ * `useSyncExternalStore`, también en el servidor). El teclado vive en el DOM
+ * y se vigila por regex en `lib/admin/__tests__/filas-activas-cableado.test.ts`.
  */
 const CLAVES = ["a", "b", "c"];
 
@@ -17,9 +19,9 @@ function Arnes({ inicial }: { inicial?: string | null }) {
     <table>
       <tbody {...f.propsCuerpo}>
         {CLAVES.map((k) => (
-          <tr key={k} {...f.propsFila(k, `/x/${k}`)}>
+          <FilaNavegable key={k} filas={f} clave={k} href={`/x/${k}`} className="fila-de-prueba">
             <td>{k}</td>
-          </tr>
+          </FilaNavegable>
         ))}
       </tbody>
     </table>
@@ -46,42 +48,46 @@ describe("useFilasActivas: marcado de reposo (sin activa)", () => {
     expect(cuenta(html, /tabindex="-1"/g)).toBe(2);
   });
 
-  it("CERO aria-selected y CERO data-fila-activa (SSR determinista)", () => {
+  it("CERO aria-current / aria-selected y CERO data-fila-activa (SSR determinista)", () => {
+    expect(html).not.toContain("aria-current");
     expect(html).not.toContain("aria-selected");
     expect(html).not.toContain("data-fila-activa");
   });
 
-  it("sin role= ni data-state en todo el HTML", () => {
+  it("sin role= ni data-state en todo el HTML; la fila es el TableRow de siempre con su className", () => {
     expect(html).not.toContain("role=");
     expect(html).not.toContain("data-state");
+    expect(fila(html, "a")).toContain('data-slot="table-row"');
+    expect(fila(html, "a")).toMatch(/class="[^"]*fila-de-prueba/);
   });
 });
 
 describe("useFilasActivas: con una activa pintada", () => {
   const html = renderToStaticMarkup(<Arnes inicial="b" />);
 
-  it("aria-selected=\"true\" y data-fila-activa=\"\" SOLO en b", () => {
-    expect(cuenta(html, /aria-selected="true"/g)).toBe(1);
+  it("aria-current=\"true\" y data-fila-activa=\"\" SOLO en b (nunca aria-selected)", () => {
+    expect(cuenta(html, /aria-current="true"/g)).toBe(1);
     expect(cuenta(html, /data-fila-activa=""/g)).toBe(1);
-    expect(fila(html, "b")).toContain('aria-selected="true"');
+    expect(fila(html, "b")).toContain('aria-current="true"');
     expect(fila(html, "b")).toContain('data-fila-activa=""');
-    expect(fila(html, "a")).not.toContain("aria-selected");
+    expect(fila(html, "a")).not.toContain("aria-current");
     expect(fila(html, "c")).not.toContain("data-fila-activa");
+    expect(html).not.toContain("aria-selected");
   });
 
-  it("tabindex 0 en b y −1 en a y c; ningún aria-selected=\"false\"", () => {
+  it("tabindex 0 en b y −1 en a y c; ningún aria-current=\"false\"", () => {
     expect(fila(html, "b")).toContain('tabindex="0"');
     expect(fila(html, "a")).toContain('tabindex="-1"');
     expect(fila(html, "c")).toContain('tabindex="-1"');
     expect(cuenta(html, /tabindex="0"/g)).toBe(1);
-    expect(html).not.toContain('aria-selected="false"');
+    expect(html).not.toContain('aria-current="false"');
   });
 });
 
 describe("useFilasActivas: activa que no está pintada", () => {
   it("sin activa en el HTML y la entrada vuelve a la primera", () => {
     const html = renderToStaticMarkup(<Arnes inicial="zzz" />);
-    expect(html).not.toContain("aria-selected");
+    expect(html).not.toContain("aria-current");
     expect(html).not.toContain("data-fila-activa");
     expect(cuenta(html, /tabindex="0"/g)).toBe(1);
     expect(fila(html, "a")).toContain('tabindex="0"');

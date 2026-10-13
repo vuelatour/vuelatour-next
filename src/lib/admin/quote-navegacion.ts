@@ -336,6 +336,37 @@ export function valorVisibleCampoFecha(
   return borrador && borrador.base === deUrl ? borrador.valor : deUrl;
 }
 
+// -----------------------------------------------------------------------------
+// Navegaciones ENCADENADAS antes de que la URL se mueva (revisión 13-oct-2026)
+// -----------------------------------------------------------------------------
+
+/** La última consulta PEDIDA con `router.replace` y la URL viva que había al pedirla. */
+export interface ConsultaPendiente {
+  /** `useSearchParams().toString()` en el momento de pedirla. */
+  base: string;
+  /** La query string que se pidió. */
+  consulta: string;
+}
+
+/**
+ * Sobre qué query string se arma la SIGUIENTE navegación de la barra.
+ * `useSearchParams` sigue devolviendo la URL ANTERIOR mientras una navegación
+ * está en vuelo (la página es dinámica y espera al servidor), así que dos
+ * cambios dentro de esa latencia —«Desde = 20» + Enter, Tab, «Hasta = 31»—
+ * se armaban los dos sobre la URL vieja y el segundo pisaba al primero (la
+ * lista quedaba 01–31 y el 20 tecleado desaparecía sin aviso). Mientras la
+ * URL viva siga siendo la que había al pedir la última consulta, se parte de
+ * ESA consulta; en cuanto la URL se mueve (llegó esa navegación u otra),
+ * manda la viva. Sin pendiente, la viva. Misma idea que el borrador del
+ * campo: una base que caduca sola.
+ */
+export function consultaBaseParaNavegar(
+  viva: string,
+  pendiente: ConsultaPendiente | null,
+): string {
+  return pendiente !== null && pendiente.base === viva ? pendiente.consulta : viva;
+}
+
 // =============================================================================
 // Textos de las flechas
 // =============================================================================

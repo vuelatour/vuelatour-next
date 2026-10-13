@@ -8,27 +8,34 @@ import {
   SELECTOR_CONTROL,
   SELECTOR_DESPLEGABLE,
   SELECTOR_FILA,
+  SELECTOR_FILA_HIJA,
   SELECTOR_MARCO_TABLA,
   accionDeTeclaFila,
-  atributosFila,
-  filaDeEntrada,
+  crearEstadoFilaActiva,
   indiceEnlaceDeFila,
   indiceFilaSiguiente,
   scrollParaVerFila,
-  type AtributosFila,
   type ContextoTeclaFila,
+  type EstadoFilaActiva,
 } from "@/lib/admin/filas-activas";
 
 /**
  * Fila ACTIVA + teclado ↑/↓/Home/End/Enter/Esc de una tabla (13-oct-2026).
- * Las reglas PURAS viven en `lib/admin/filas-activas.ts` (ahí está la decisión
- * ARIA y la del CSS); aquí solo el cableado DOM, que el runner sin navegador
- * vigila por regex.
+ * Las reglas PURAS viven en `lib/admin/filas-activas.ts` (ahí están la
+ * decisión ARIA, la del CSS y el ESTADO de la activa); aquí solo el cableado
+ * DOM, que el runner sin navegador vigila por regex.
  *
- * Uso: `<TableBody {...f.propsCuerpo}>` + `<TableRow {...f.propsFila(clave,
- * href?)}>` en cada fila NAVEGABLE (hija directa del <tbody>); un renglón
- * pegado no navegable lleva `data-fila-hija=""`; nunca en thead/tfoot ni en
- * la fila «Sin resultados».
+ * Uso: `<TableBody {...f.propsCuerpo}>` + `<FilaNavegable filas={f}
+ * clave={…} href={…}>` (`components/admin/fila-navegable.tsx`) en cada fila
+ * NAVEGABLE (hija directa del <tbody>); un renglón pegado no navegable lleva
+ * `data-fila-hija=""` y cuenta para la fila anterior; nunca en thead/tfoot ni
+ * en la fila «Sin resultados».
+ *
+ * La activa NO es estado de React de la tabla (revisión 13-oct-2026): con un
+ * `useState` aquí, cada ↓, clic o foco repintaba la tabla ENTERA (Gastos:
+ * 100 filas × 13 columnas con menús de Base UI). Vive en
+ * `crearEstadoFilaActiva` (un ref, uno por tabla) y cada `FilaNavegable` se
+ * suscribe POR FILA: solo se repintan las dos filas que cambian.
  *
  * Toda la escucha es DELEGADA en el <tbody> (nunca window/document) y el
  * PRIMER chequeo de los tres handlers es `currentTarget.contains(target)`:
@@ -37,12 +44,11 @@ import {
  * diálogo abierto desde una fila soltaría la activa, ↓ dentro de un menú
  * movería filas y un clic en el fondo de un diálogo le robaría el foco.
  *
- * Sin `useEffect` ni `useRef`: la fila destino ya existe en el DOM cuando se
- * pulsa la tecla, así que foco y scroll se hacen dentro del handler. No
- * persiste (ni URL ni almacenamiento del navegador); en el borde no cambia
- * de página; Enter
- * abre SOLO `data-fila-href`. `inicial` existe SOLO para el arnés de pruebas
- * con `renderToStaticMarkup`: las tablas no lo pasan.
+ * Sin `useEffect`: la fila destino ya existe en el DOM cuando se pulsa la
+ * tecla, así que foco y scroll se hacen dentro del handler. No persiste (ni
+ * URL ni almacenamiento del navegador); en el borde no cambia de página;
+ * Enter abre SOLO `data-fila-href`. `inicial` existe SOLO para el arnés de
+ * pruebas con `renderToStaticMarkup`: las tablas no lo pasan.
  */
 export interface PropsCuerpoFilas {
   "data-filas-activas": "";
@@ -52,54 +58,73 @@ export interface PropsCuerpoFilas {
 }
 
 export interface FilasActivas {
-  activa: string | null;
+  /** El estado de la activa (fuera de React): `FilaNavegable` se suscribe por fila. */
+  estado: EstadoFilaActiva;
+  /** Las filas PINTADAS, en orden (de ellas sale la fila de entrada del Tab). */
+  claves: readonly string[];
   soltar: () => void;
   propsCuerpo: PropsCuerpoFilas;
-  propsFila: (clave: string, href?: string | null) => AtributosFila;
 }
 
 type Cuerpo = HTMLTableSectionElement;
+type Fila = HTMLTableRowElement;
 
-/** El <tr data-fila> que contiene al objetivo, SOLO si es hijo directo de este <tbody>. */
-function filaDe(cuerpo: Cuerpo, objetivo: Element): HTMLTableRowElement | null {
-  const fila = objetivo.closest<HTMLTableRowElement>(SELECTOR_FILA);
-  return fila !== null && fila.parentElement === cuerpo ? fila : null;
+/**
+ * La fila NAVEGABLE a la que pertenece el objetivo: el <tr data-fila> que lo
+ * contiene o, si cayó en un renglón pegado (`tr[data-fila-hija]`), el <tr
+ * data-fila> inmediatamente ANTERIOR. Solo si son hijos directos de este
+ * <tbody>. `renglon` es el <tr> que de verdad contiene al objetivo (la fila o
+ * su hija): ahí se miran rol, desplegable y control.
+ */
+function filaDe(cuerpo: Cuerpo, objetivo: Element): { fila: Fila; renglon: Fila } | null {
+  const fila = objetivo.closest<Fila>(SELECTOR_FILA);
+  if (fila !== null) return fila.parentElement === cuerpo ? { fila, renglon: fila } : null;
+  const hija = objetivo.closest<Fila>(SELECTOR_FILA_HIJA);
+  if (hija === null || hija.parentElement !== cuerpo) return null;
+  const padre = hija.previousElementSibling;
+  return padre !== null && padre.matches(SELECTOR_FILA)
+    ? { fila: padre as Fila, renglon: hija }
+    : null;
 }
 
 /** Las filas navegables de este cuerpo, en orden DOM (sub-filas incluidas). */
-function filasNavegables(cuerpo: Cuerpo): HTMLTableRowElement[] {
-  return Array.from(cuerpo.querySelectorAll<HTMLTableRowElement>(`:scope > ${SELECTOR_FILA}`));
+function filasNavegables(cuerpo: Cuerpo): Fila[] {
+  return Array.from(cuerpo.querySelectorAll<Fila>(`:scope > ${SELECTOR_FILA}`));
 }
 
-function dentroDeFila(fila: Element, el: Element | null): el is Element {
-  return el !== null && fila.contains(el);
+function dentroDe(renglon: Element, el: Element | null): el is Element {
+  return el !== null && renglon.contains(el);
 }
 
-/** El `role` del objetivo o de su contenedor con rol, solo si vive dentro de la fila. */
-function rolDentroDeFila(objetivo: Element, fila: Element): string | null {
+/** El `role` del objetivo o de su contenedor con rol, solo si vive dentro del renglón. */
+function rolDentroDe(objetivo: Element, renglon: Element): string | null {
   const conRol = objetivo.closest("[role]");
-  return dentroDeFila(fila, conRol) ? conRol.getAttribute("role") : null;
+  return dentroDe(renglon, conRol) ? conRol.getAttribute("role") : null;
 }
 
-function contextoDeTecla(objetivo: Element, fila: Element, hayActiva: boolean): ContextoTeclaFila {
+function contextoDeTecla(
+  objetivo: Element,
+  r: { fila: Fila; renglon: Fila },
+  hayActiva: boolean,
+): ContextoTeclaFila {
   return {
-    esFila: objetivo === fila,
+    esFila: objetivo === r.fila,
     etiqueta: objetivo.tagName,
     editable: (objetivo as HTMLElement).isContentEditable === true,
-    rol: rolDentroDeFila(objetivo, fila),
-    conDesplegable: dentroDeFila(fila, objetivo.closest(SELECTOR_DESPLEGABLE)),
+    rol: rolDentroDe(objetivo, r.renglon),
+    conDesplegable: dentroDe(r.renglon, objetivo.closest(SELECTOR_DESPLEGABLE)),
     hayActiva,
   };
 }
 
-/** El clic cayó en un control de la fila (enlace, botón, campo…): no se le roba el foco. */
-function enControlDeFila(objetivo: Element, fila: Element): boolean {
+/** El clic cayó en un control del renglón (enlace, botón, campo…): no se le roba el foco. */
+function enControlDe(objetivo: Element, renglon: Element): boolean {
   const control = objetivo.closest(SELECTOR_CONTROL);
-  return control !== null && control !== fila && fila.contains(control);
+  return control !== null && control !== renglon && renglon.contains(control);
 }
 
 /** Enter: el MISMO clic del mouse sobre el enlace cuyo href es `data-fila-href`. */
-function abrirFila(fila: HTMLTableRowElement): void {
+function abrirFila(fila: Fila): void {
   const href = fila.getAttribute(ATRIBUTO_FILA_HREF);
   if (!href) return;
   const enlaces = Array.from(fila.querySelectorAll<HTMLAnchorElement>("a[href]"));
@@ -117,7 +142,7 @@ function abrirFila(fila: HTMLTableRowElement): void {
  * "instant"; con la fila ya completa en el marco, `nearest` solo mueve la
  * página si hace falta).
  */
-function llevarALaVista(fila: HTMLTableRowElement): void {
+function llevarALaVista(fila: Fila): void {
   const marco = fila.closest<HTMLElement>(SELECTOR_MARCO_TABLA);
   if (marco) {
     const rm = marco.getBoundingClientRect();
@@ -136,32 +161,38 @@ export function useFilasActivas(
   claves: readonly string[],
   opciones?: { inicial?: string | null },
 ): FilasActivas {
-  const [activa, setActiva] = useState<string | null>(opciones?.inicial ?? null);
-  const entrada = filaDeEntrada(claves, activa);
+  // Un estado por tabla, creado UNA vez (inicializador perezoso) y nunca
+  // re-asignado: la instancia es estable y React no vuelve a renderizar la
+  // tabla por él (lo que cambia vive DENTRO, y lo leen las filas suscritas).
+  // No es un ref a propósito: leer `ref.current` en render lo prohíbe el
+  // lint de React (`react-hooks/refs`).
+  const [estado] = useState<EstadoFilaActiva>(() =>
+    crearEstadoFilaActiva(opciones?.inicial ?? null),
+  );
 
   const onKeyDown = (e: KeyboardEvent<HTMLTableSectionElement>) => {
     const cuerpo = e.currentTarget;
     const objetivo = e.target as Element;
     if (!cuerpo.contains(objetivo)) return;
-    const fila = filaDe(cuerpo, objetivo);
-    if (!fila) return;
-    const accion = accionDeTeclaFila(e, contextoDeTecla(objetivo, fila, activa !== null));
+    const r = filaDe(cuerpo, objetivo);
+    if (!r) return;
+    const accion = accionDeTeclaFila(e, contextoDeTecla(objetivo, r, estado.leer() !== null));
     if (!accion) return;
     e.preventDefault();
     if (accion === "soltar") {
-      setActiva(null);
+      estado.escribir(null);
       return;
     }
     if (accion === "abrir") {
-      abrirFila(fila);
+      abrirFila(r.fila);
       return;
     }
     const filas = filasNavegables(cuerpo);
-    const i = indiceFilaSiguiente(filas.indexOf(fila), accion, filas.length);
+    const i = indiceFilaSiguiente(filas.indexOf(r.fila), accion, filas.length);
     if (i === null) return;
     const destino = filas[i];
     const clave = destino.getAttribute(ATRIBUTO_FILA);
-    if (clave !== null) setActiva(clave);
+    if (clave !== null) estado.escribir(clave);
     destino.focus({ preventScroll: true });
     llevarALaVista(destino);
   };
@@ -170,15 +201,15 @@ export function useFilasActivas(
     const cuerpo = e.currentTarget;
     const objetivo = e.target as Element;
     if (!cuerpo.contains(objetivo)) return;
-    const fila = filaDe(cuerpo, objetivo);
-    if (!fila) return;
-    const clave = fila.getAttribute(ATRIBUTO_FILA);
-    if (clave !== null) setActiva(clave);
-    // Un clic en un enlace/botón/campo NO roba el foco (en el ⋯ de Base UI
-    // cerraría el menú); en el resto de la celda, el <tr> lo recibe para que
-    // Enter funcione de inmediato.
-    if (!enControlDeFila(objetivo, fila) && fila.ownerDocument.activeElement !== fila) {
-      fila.focus({ preventScroll: true });
+    const r = filaDe(cuerpo, objetivo);
+    if (!r) return;
+    const clave = r.fila.getAttribute(ATRIBUTO_FILA);
+    if (clave !== null) estado.escribir(clave);
+    // Un clic en un enlace/botón/campo (de la fila O de su renglón pegado) NO
+    // roba el foco (en el ⋯ de Base UI cerraría el menú); en el resto de la
+    // celda, el <tr> navegable lo recibe para que Enter funcione de inmediato.
+    if (!enControlDe(objetivo, r.renglon) && r.fila.ownerDocument.activeElement !== r.fila) {
+      r.fila.focus({ preventScroll: true });
     }
   };
 
@@ -186,16 +217,16 @@ export function useFilasActivas(
     const cuerpo = e.currentTarget;
     const objetivo = e.target as Element;
     if (!cuerpo.contains(objetivo)) return;
-    const fila = filaDe(cuerpo, objetivo);
-    if (!fila) return;
-    const clave = fila.getAttribute(ATRIBUTO_FILA);
-    if (clave !== null) setActiva(clave);
+    const r = filaDe(cuerpo, objetivo);
+    if (!r) return;
+    const clave = r.fila.getAttribute(ATRIBUTO_FILA);
+    if (clave !== null) estado.escribir(clave);
   };
 
   return {
-    activa,
-    soltar: () => setActiva(null),
+    estado,
+    claves,
+    soltar: () => estado.escribir(null),
     propsCuerpo: { "data-filas-activas": "", onKeyDown, onClick, onFocus },
-    propsFila: (clave, href) => atributosFila(clave, activa, entrada, href),
   };
 }

@@ -4,6 +4,7 @@ import { Fragment, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { useFilasActivas } from "@/hooks/use-filas-activas";
+import { FilaNavegable } from "@/components/admin/fila-navegable";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -96,8 +97,9 @@ export function MovimientosCuenta({
             const clave = claveMovimiento(m, i);
             return (
               <Fragment key={clave}>
-                <TableRow
-                  {...filasActivas.propsFila(clave)}
+                <FilaNavegable
+                  filas={filasActivas}
+                  clave={clave}
                   className={cn(saldo && "bg-muted/40", pago && "border-b-0")}
                   data-movimiento={m.tipo}
                   data-en-curso={m.en_curso ? "" : undefined}
@@ -139,7 +141,7 @@ export function MovimientosCuenta({
                   >
                     {fmtUsd(m.saldo_usd)}
                   </TableCell>
-                </TableRow>
+                </FilaNavegable>
                 {pago && p && (
                   <TableRow className="hover:bg-transparent" data-entrega-id={pago.id} data-fila-hija="">
                     <TableCell />

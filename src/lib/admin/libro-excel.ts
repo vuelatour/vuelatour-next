@@ -318,30 +318,117 @@ export const TITULO_PANTALLA_COMPLETA = "Ver el libro a toda la pantalla (Esc pa
 export const TITULO_SALIR_PANTALLA_COMPLETA = "Volver al panel";
 
 export type TeclaFlecha = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
+/** Las teclas que mueven la selección: flechas, PageUp/PageDown y Home/End (con Ctrl/⌘, a las esquinas). */
+export type TeclaNavegacionHoja = TeclaFlecha | "PageUp" | "PageDown" | "Home" | "End";
 
 export function esTeclaFlecha(tecla: string): tecla is TeclaFlecha {
   return tecla === "ArrowUp" || tecla === "ArrowDown" || tecla === "ArrowLeft" || tecla === "ArrowRight";
 }
 
+export function esTeclaNavegacionHoja(tecla: string): tecla is TeclaNavegacionHoja {
+  return (
+    esTeclaFlecha(tecla) ||
+    tecla === "PageUp" ||
+    tecla === "PageDown" ||
+    tecla === "Home" ||
+    tecla === "End"
+  );
+}
+
+export interface OpcionesDesplazamiento {
+  /** Filas que saltan PageUp/PageDown (`filasPorPagina`); default 1. */
+  filasPorPagina?: number;
+  /** Ctrl/⌘ pulsado: Home/End van a la primera/última CELDA de la hoja (A1 / la última visible), como en Excel. */
+  conControl?: boolean;
+}
+
 /**
- * Mover la selección con las flechas sobre las filas y columnas VISIBLES
- * (una oculta se salta, como en Excel). En los bordes se queda donde está.
+ * Mover la selección sobre las filas y columnas VISIBLES (una oculta se
+ * salta, como en Excel). En los bordes se queda donde está. Flechas: una
+ * celda. PageUp/PageDown: `filasPorPagina` filas —las que caben en la zona
+ * libre del marco, así el marco avanza una «pantalla» y la selección viaja
+ * con él; antes esas teclas eran scroll NATIVO sin mover la selección y la
+ * SIGUIENTE flecha devolvía el marco de golpe a la celda activa (revisión
+ * 13-oct-2026)—. Home/End: primera/última columna de la fila; con Ctrl/⌘,
+ * A1 / la última celda visible.
  */
 export function desplazarSeleccion(
   vista: Pick<HojaVista, "filas" | "columnas">,
   sel: { r: number; c: number },
-  tecla: TeclaFlecha,
+  tecla: TeclaNavegacionHoja,
+  opciones: OpcionesDesplazamiento = {},
 ): { r: number; c: number } {
   const iFila = vista.filas.findIndex((f) => f.r === sel.r);
   const iCol = vista.columnas.findIndex((x) => x.c === sel.c);
   if (iFila < 0 || iCol < 0) {
     return { r: vista.filas[0]?.r ?? sel.r, c: vista.columnas[0]?.c ?? sel.c };
   }
-  const dFila = tecla === "ArrowUp" ? -1 : tecla === "ArrowDown" ? 1 : 0;
-  const dCol = tecla === "ArrowLeft" ? -1 : tecla === "ArrowRight" ? 1 : 0;
-  const fila = vista.filas[Math.min(vista.filas.length - 1, Math.max(0, iFila + dFila))];
-  const col = vista.columnas[Math.min(vista.columnas.length - 1, Math.max(0, iCol + dCol))];
-  return { r: fila.r, c: col.c };
+  const ultimaFila = vista.filas.length - 1;
+  const ultimaCol = vista.columnas.length - 1;
+  const pagina = Math.max(1, Math.floor(opciones.filasPorPagina ?? 1));
+  let f = iFila;
+  let k = iCol;
+  switch (tecla) {
+    case "ArrowUp":
+      f -= 1;
+      break;
+    case "ArrowDown":
+      f += 1;
+      break;
+    case "ArrowLeft":
+      k -= 1;
+      break;
+    case "ArrowRight":
+      k += 1;
+      break;
+    case "PageUp":
+      f -= pagina;
+      break;
+    case "PageDown":
+      f += pagina;
+      break;
+    case "Home":
+      k = 0;
+      if (opciones.conControl) f = 0;
+      break;
+    case "End":
+      k = ultimaCol;
+      if (opciones.conControl) f = ultimaFila;
+      break;
+  }
+  f = Math.min(ultimaFila, Math.max(0, f));
+  k = Math.min(ultimaCol, Math.max(0, k));
+  return { r: vista.filas[f].r, c: vista.columnas[k].c };
+}
+
+/**
+ * Cuántas filas VISIBLES caben ENTERAS en la zona libre del marco
+ * (`clientHeight` menos las letras y las filas inmovilizadas), contando desde
+ * la fila `r` hacia abajo (`"abajo"`, PageDown) o hacia arriba (`"arriba"`,
+ * PageUp). Mínimo 1 (también sin medidas: SSR con `clientHeight` 0). Es el
+ * salto de PageUp/PageDown: la celda nueva queda pegada al borde y el marco
+ * avanza justo una pantalla.
+ */
+export function filasPorPagina(
+  vista: Pick<HojaVista, "filas">,
+  marco: Pick<MedidasMarco, "clientHeight">,
+  r: number,
+  direccion: "abajo" | "arriba" = "abajo",
+): number {
+  const ocupado =
+    ALTO_LETRAS_PX + vista.filas.filter((f) => f.fija).reduce((acc, f) => acc + f.altoPx, 0);
+  const libre = marco.clientHeight - ocupado;
+  const i = vista.filas.findIndex((f) => f.r === r);
+  if (i < 0 || libre <= 0) return 1;
+  const paso = direccion === "abajo" ? 1 : -1;
+  let n = 0;
+  let acumulado = 0;
+  for (let j = i; j >= 0 && j < vista.filas.length; j += paso) {
+    acumulado += vista.filas[j].altoPx;
+    if (acumulado > libre) break;
+    n++;
+  }
+  return Math.max(1, n);
 }
 
 /* ------------------------------------------------------------------------- */

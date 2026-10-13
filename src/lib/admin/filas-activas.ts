@@ -6,20 +6,37 @@
  * renglón, Enter abre el detalle y Esc quita el resaltado. Aplica a TODA
  * `DataTable` y a las dos tablas de resumen auditables del reparto
  * (`profit-sharing/desglose-section.tsx` y `movimientos-cuenta.tsx`). El
- * cableado DOM vive en `hooks/use-filas-activas.ts`; aquí, lo que se prueba
- * sin navegador: qué hace cada tecla según dónde está el foco, el índice
+ * cableado DOM vive en `hooks/use-filas-activas.ts` y el <tr> que se suscribe
+ * en `components/admin/fila-navegable.tsx`; aquí, lo que se prueba sin
+ * navegador: qué hace cada tecla según dónde está el foco, el índice
  * siguiente, la fila de entrada del Tab, los atributos de cada fila, qué
- * enlace abre Enter y el scroll necesario.
+ * enlace abre Enter, el scroll necesario y el ESTADO de la activa.
  *
  * DECISIÓN ARIA: la tabla sigue siendo una <table> NATIVA. Cada <tr> de datos
  * lleva `tabindex` ROVING (exactamente UNA fila por tabla con 0: la activa si
  * está pintada, si no la primera; −1 el resto) y la activa lleva
- * `aria-selected="true"`; las demás NO llevan `aria-selected`. NO se usa
+ * `aria-current="true"`; las demás NO llevan `aria-current`. NO se usa
  * `role="grid"`: un grid exige navegación POR CELDA (←/→ entre celdas, un
  * solo tab stop, `gridcell`), quita el «modo tabla» de NVDA/VoiceOver y rompe
  * «los <Link> de cada celda siguen siendo navegables como hoy»; además el
  * atajo ←/→ del detalle de cotización (`direccionDeTecla`) ignora
- * grid/gridcell y aquí ←/→ no significan nada. Plan B en `atributosFila`.
+ * grid/gridcell y aquí ←/→ no significan nada. POR QUÉ `aria-current` y no
+ * `aria-selected` (revisión del 13-oct-2026): Chromium solo expone el estado
+ * «selected» de una fila cuando su tabla es grid/treegrid
+ * (`AXObject::IsSubWidget`: «It's only a subwidget if it's in a grid or
+ * treegrid, not in a table»; `IsSelected()` devuelve «undefined» fuera de ese
+ * caso), así que en una <table> nativa `aria-selected` NO llegaba al árbol de
+ * accesibilidad y NVDA/JAWS con Chrome (el navegador de la oficina) jamás
+ * decían «seleccionado». `aria-current` es un atributo GLOBAL que
+ * Chromium/Gecko/WebKit exponen en cualquier elemento y los lectores anuncian
+ * «actual». El CSS y el hook leen `data-fila-activa`, no el aria.
+ *
+ * ESTADO fuera de React (revisión del 13-oct-2026): la activa vivía en un
+ * `useState` dentro de `DataTable`, así que cada ↓, clic o foco repintaba la
+ * tabla ENTERA (en Gastos, 100 filas × 13 columnas con dos menús de Base UI y
+ * una miniatura por fila). Ahora vive en `crearEstadoFilaActiva` (un valor +
+ * suscriptores) y cada <tr> se suscribe POR FILA con `instantaneaFila`: al
+ * cambiar la activa solo se repintan las filas cuya instantánea cambia.
  *
  * CASCADA del resaltado: `hover:bg-muted/50` (TableRow) y `hover:bg-muted/40`
  * (filas con href) compilan a `.x:hover` con especificidad (0,2,0) y le
@@ -27,7 +44,9 @@
  * `rowClassName` viven en @layer utilities; por eso la regla de la fila activa
  * va en `globals.css` FUERA de las capas (`[data-filas-activas] >
  * tr[data-fila-activa]`), que gana a todo lo que está en capas sin pelear por
- * especificidad. Aquí solo se definen los atributos que esa regla lee.
+ * especificidad, y pinta el tinte como CAPA (`background-image`) para que el
+ * fondo de `rowClassName` siga debajo. Aquí solo se definen los atributos que
+ * esa regla lee.
  */
 import { desplazamientoParaVer } from "./desplazamiento-visible";
 import type { TeclaPulsada } from "./quote-navegacion";
@@ -43,10 +62,24 @@ export const ATRIBUTO_FILA_HREF = "data-fila-href";
 /** Renglón pegado NO navegable (se resalta por hermandad con el CSS). */
 export const ATRIBUTO_FILA_HIJA = "data-fila-hija";
 export const SELECTOR_FILA = "tr[data-fila]";
+/**
+ * El renglón pegado (el detalle de la entrega del socio, con «Editar»,
+ * «Eliminar» y el comprobante): un clic, el foco o una tecla ahí cuentan
+ * para la fila navegable inmediatamente ANTERIOR (revisión 13-oct-2026: antes
+ * el resaltado se quedaba en OTRO movimiento mientras el foco estaba en esos
+ * controles).
+ */
+export const SELECTOR_FILA_HIJA = "tr[data-fila-hija]";
 /** El contenedor con scroll de `ui/table.tsx`. */
 export const SELECTOR_MARCO_TABLA = '[data-slot="table-container"]';
-/** Disparadores con flechas propias (el ⋯ de Base UI lleva aria-haspopup="menu"). */
-export const SELECTOR_DESPLEGABLE = "[aria-haspopup], [aria-expanded]";
+/**
+ * Disparadores con flechas propias: el ⋯ (`aria-haspopup="menu"`), un select
+ * (`listbox`), un combobox, un diálogo o un popover de Base UI llevan TODOS
+ * `aria-haspopup`. Un `aria-expanded` SUELTO (un botón de plegar/desplegar,
+ * p. ej. «Ver los pagos de la compra» de Gastos) NO veta: ahí las flechas no
+ * significan nada y deben seguir moviendo la activa (revisión 13-oct-2026).
+ */
+export const SELECTOR_DESPLEGABLE = "[aria-haspopup]";
 /** Lo que, al hacer clic, NO debe perder el foco a favor de la fila. */
 export const SELECTOR_CONTROL =
   'a[href], button, input, select, textarea, [contenteditable=""], [contenteditable="true"], [tabindex]';
@@ -91,9 +124,9 @@ export interface ContextoTeclaFila {
   etiqueta: string | null;
   /** `isContentEditable` del elemento con el foco. */
   editable: boolean;
-  /** `role` del elemento con el foco o de su contenedor más cercano DENTRO de la fila. */
+  /** `role` del elemento con el foco o de su contenedor más cercano DENTRO del renglón. */
   rol: string | null;
-  /** El foco está en (o dentro de) un disparador `[aria-haspopup]`/`[aria-expanded]`. */
+  /** El foco está en (o dentro de) un disparador `[aria-haspopup]`. */
   conDesplegable: boolean;
   /** Hay una fila activa pintada (Esc solo actúa entonces). */
   hayActiva: boolean;
@@ -166,15 +199,14 @@ export interface AtributosFila {
   tabIndex: 0 | -1;
   "data-fila-href"?: string;
   "data-fila-activa"?: "";
-  "aria-selected"?: true;
+  "aria-current"?: true;
 }
 
 /**
- * Atributos de un <tr> navegable. NUNCA `aria-selected: false` (las filas no
- * activas no llevan el atributo) ni `role`. Plan B si VoiceOver/NVDA no
- * anuncian «seleccionado» en una tabla simple: cambiar aquí
- * `"aria-selected": true` por `"aria-current": true` (una línea; el CSS y el
- * hook leen `data-fila-activa`, no el aria).
+ * Atributos de un <tr> navegable. NUNCA `aria-current: false` (las filas no
+ * activas no llevan el atributo) ni `role`. El estado se anuncia con
+ * `aria-current` y no con `aria-selected` (ver la DECISIÓN ARIA de arriba:
+ * en una <table> nativa Chrome no expone `aria-selected`).
  */
 export function atributosFila(
   clave: string,
@@ -186,9 +218,79 @@ export function atributosFila(
   if (href) a["data-fila-href"] = href;
   if (clave === activa) {
     a["data-fila-activa"] = "";
-    a["aria-selected"] = true;
+    a["aria-current"] = true;
   }
   return a;
+}
+
+// -----------------------------------------------------------------------------
+// El ESTADO de la activa, fuera de React, y la instantánea POR FILA
+// -----------------------------------------------------------------------------
+
+/**
+ * La activa de UNA tabla: un valor y sus suscriptores. Lo crea el hook (uno
+ * por tabla, en un ref) y lo leen las filas (`FilaNavegable`) con
+ * `useSyncExternalStore`. `escribir` con el MISMO valor no avisa a nadie.
+ */
+export interface EstadoFilaActiva {
+  leer(): string | null;
+  escribir(clave: string | null): void;
+  suscribir(avisar: () => void): () => void;
+}
+
+export function crearEstadoFilaActiva(inicial: string | null = null): EstadoFilaActiva {
+  let activa = inicial;
+  const oyentes = new Set<() => void>();
+  return {
+    leer: () => activa,
+    escribir(clave) {
+      if (clave === activa) return;
+      activa = clave;
+      for (const avisar of Array.from(oyentes)) avisar();
+    },
+    suscribir(avisar) {
+      oyentes.add(avisar);
+      return () => {
+        oyentes.delete(avisar);
+      };
+    },
+  };
+}
+
+/** Bits de `InstantaneaFila`. */
+export const BIT_FILA_ACTIVA = 1;
+export const BIT_FILA_ENTRADA = 2;
+/** Lo que una fila necesita saber de la activa, en UN número estable para `Object.is`: bit 1 = es la activa, bit 2 = es la entrada del Tab. */
+export type InstantaneaFila = 0 | 1 | 2 | 3;
+
+/**
+ * La instantánea de la fila `clave` dada la activa y las filas PINTADAS. Dos
+ * llamadas con los mismos datos dan el mismo número, así
+ * `useSyncExternalStore` solo repinta la fila cuyo número cambia (la que deja
+ * de ser activa o entrada y la que pasa a serlo): nunca la tabla entera.
+ */
+export function instantaneaFila(
+  clave: string,
+  activa: string | null,
+  claves: readonly string[],
+): InstantaneaFila {
+  const esActiva = clave === activa;
+  const esEntrada = clave === filaDeEntrada(claves, activa);
+  return ((esActiva ? BIT_FILA_ACTIVA : 0) | (esEntrada ? BIT_FILA_ENTRADA : 0)) as InstantaneaFila;
+}
+
+/** Los atributos del <tr> a partir de su instantánea (lo que pinta `FilaNavegable`). */
+export function atributosDeInstantanea(
+  clave: string,
+  instantanea: InstantaneaFila,
+  href?: string | null,
+): AtributosFila {
+  return atributosFila(
+    clave,
+    instantanea & BIT_FILA_ACTIVA ? clave : null,
+    instantanea & BIT_FILA_ENTRADA ? clave : null,
+    href,
+  );
 }
 
 /**

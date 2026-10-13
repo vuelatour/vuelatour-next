@@ -109,7 +109,7 @@ describe("DesgloseSection: vuelos y gastos por categoría", () => {
     }
   });
 
-  it("el <tfoot> y los encabezados sin data-fila ni tabindex; CERO aria-selected en reposo", () => {
+  it("el <tfoot> y los encabezados sin data-fila ni tabindex; CERO aria-current/aria-selected en reposo", () => {
     const tfoot = html.match(/<tfoot[\s\S]*?<\/tfoot>/)?.[0] ?? "";
     expect(tfoot).not.toBe("");
     expect(tfoot).not.toContain("data-fila");
@@ -118,6 +118,7 @@ describe("DesgloseSection: vuelos y gastos por categoría", () => {
       expect(thead).not.toContain("data-fila");
       expect(thead).not.toContain("tabindex");
     }
+    expect(html).not.toContain("aria-current");
     expect(html).not.toContain("aria-selected");
     expect(html).not.toContain("data-fila-activa");
   });
@@ -199,7 +200,7 @@ describe("MovimientosCuenta: el estado de cuenta del socio", () => {
     expect(fila(html, "UTILIDAD-2026-09-30-" + N4142R + "-1")).toContain('data-movimiento="UTILIDAD"');
   });
 
-  it("el renglón de detalle de la entrega (data-entrega-id) es hija NO navegable: data-fila-hija sin data-fila ni tabindex", () => {
+  it("el renglón de detalle de la entrega (data-entrega-id) es hija NO navegable: data-fila-hija sin data-fila ni tabindex, y va PEGADA a su fila", () => {
     const detalles = html.match(/<tr[^>]*data-entrega-id="[^"]*"[^>]*>/g) ?? [];
     expect(detalles).toHaveLength(2);
     for (const tr of detalles) {
@@ -207,12 +208,25 @@ describe("MovimientosCuenta: el estado de cuenta del socio", () => {
       expect(tr).not.toContain('data-fila="');
       expect(tr).not.toContain("tabindex");
     }
+    // El hook resuelve la hija a su fila con `previousElementSibling`: entre
+    // el </tr> del movimiento y el <tr data-fila-hija> no hay otro renglón, y
+    // ese movimiento es un <tr data-fila> (con «Editar»/«Eliminar»/comprobante
+    // dentro de la hija, el foco y las flechas cuentan para la entrega).
+    const pares = html.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*<\/tr><tr[^>]*data-fila-hija=""[^>]*>/g) ?? [];
+    expect(pares).toHaveLength(2);
+    for (const par of pares) {
+      const apertura = par.match(/^<tr[^>]*>/)?.[0] ?? "";
+      expect(apertura).toContain('data-fila="');
+      expect(apertura).toContain('data-movimiento="ENTREGA"');
+    }
+    expect(cuenta(html, /data-accion="editar-entrega-socio"/g)).toBe(2);
   });
 
-  it("un solo <tr> con tabindex=\"0\" (la primera), CERO aria-selected y los botones siguen con la manita", () => {
+  it("un solo <tr> con tabindex=\"0\" (la primera), CERO aria-current/aria-selected y los botones siguen con la manita", () => {
     // Solo las filas: el comprobante y los diálogos pintan sus propios tabindex.
     expect(cuenta(html, /<tr[^>]*tabindex="0"/g)).toBe(1);
     expect(fila(html, "SALDO_INICIAL-2026-09-01--0")).toContain('tabindex="0"');
+    expect(html).not.toContain("aria-current");
     expect(html).not.toContain("aria-selected");
     for (const b of botones(html)) expect(b, b).toContain("cursor-pointer");
   });

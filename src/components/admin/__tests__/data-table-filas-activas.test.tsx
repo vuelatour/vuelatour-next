@@ -76,7 +76,8 @@ describe("DataTable con rowHref: filas navegables", () => {
     expect(thead).not.toContain("data-fila");
   });
 
-  it("CERO aria-selected / data-fila-activa (SSR determinista)", () => {
+  it("CERO aria-current / aria-selected / data-fila-activa (SSR determinista)", () => {
+    expect(html).not.toContain("aria-current");
     expect(html).not.toContain("aria-selected");
     expect(html).not.toContain("data-fila-activa");
   });

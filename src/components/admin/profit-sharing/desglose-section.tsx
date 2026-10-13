@@ -8,6 +8,7 @@ import {
   ListBulletIcon,
 } from "@heroicons/react/24/outline";
 import { useFilasActivas } from "@/hooks/use-filas-activas";
+import { FilaNavegable } from "@/components/admin/fila-navegable";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -237,7 +238,12 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         const estado = estadoCobro(v);
                         const c = cifrasAvion(v);
                         return (
-                          <TableRow key={v.id} {...filasVuelos.propsFila(v.id, hrefVuelo(v.id))}>
+                          <FilaNavegable
+                            key={v.id}
+                            filas={filasVuelos}
+                            clave={v.id}
+                            href={hrefVuelo(v.id)}
+                          >
                             <TableCell className="font-mono text-xs">
                               <Link
                                 href={hrefVuelo(v.id)}
@@ -328,7 +334,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                 {estado.label}
                               </Badge>
                             </TableCell>
-                          </TableRow>
+                          </FilaNavegable>
                         );
                       })}
                     </TableBody>
@@ -391,7 +397,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                     </TableHeader>
                     <TableBody {...filasGastos.propsCuerpo}>
                       {detalle.gastos_por_categoria.map((g) => (
-                        <TableRow key={claveGasto(g)} {...filasGastos.propsFila(claveGasto(g))}>
+                        <FilaNavegable key={claveGasto(g)} filas={filasGastos} clave={claveGasto(g)}>
                           <TableCell className="text-xs">
                             {/* Etiqueta homologada del API (conserva el sufijo
                                 " (repartido)" de la clave); el fallback local
@@ -432,7 +438,7 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                           <TableCell className="text-right font-mono text-xs">
                             {fmtUsd(g.usd)}
                           </TableCell>
-                        </TableRow>
+                        </FilaNavegable>
                       ))}
                     </TableBody>
                   </Table>

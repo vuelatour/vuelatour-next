@@ -93,6 +93,12 @@
   --border: #e5e5e5;
   --input: #e5e5e5;
   --ring: #e63946;                /* brand-500 */
+  /* Tokens de la fila activa (13-oct-2026): tinte TRASLÚCIDO del rojo de la
+     casa que se pinta como capa encima del fondo de la fila (≈ brand-50 sobre
+     blanco) y la marca (barra + contorno) en --ring. Tokens propios: --accent
+     en oscuro es el mismo tono que el hover. La regla, más abajo. */
+  --fila-activa: color-mix(in srgb, var(--ring) 8%, transparent);
+  --fila-activa-marca: var(--ring);
   --chart-1: #dc2626;
   --chart-2: #486581;
   --chart-3: #f59e0b;
@@ -129,6 +135,11 @@
   --border: #234567;
   --input: #1a3a5c;
   --ring: #e63946;
+  /* Fila activa: 14 % del rojo sobre navy-900 difiere del hover (navy) por
+     MATIZ, y la marca en --ring mide ≥ 3:1 contra la card, contra ese fondo y
+     contra la vecina con hover (lo congela filas-activas-cableado.test.ts). */
+  --fila-activa: color-mix(in srgb, var(--ring) 14%, transparent);
+  --fila-activa-marca: var(--ring);
   --chart-1: #e63946;
   --chart-2: #9fb3c8;
   --chart-3: #f59e0b;
@@ -165,6 +176,7 @@
   --accent-foreground: #b91c1c;
   --border: #d9e2ec;
   --input: #d9e2ec;
+  --fila-activa: color-mix(in srgb, var(--ring) 8%, transparent);
 }
 
 
@@ -239,26 +251,54 @@
 }
 
 /* Fila activa de las tablas (13-oct-2026): DataTable y las tablas de resumen
-   auditables del reparto (lib/admin/filas-activas + hooks/use-filas-activas).
-   Va FUERA de las capas A PROPÓSITO: los `hover:` de TableRow y de las filas
-   con href compilan a `.x:hover` con especificidad (0,2,0) y le ganarían a
-   cualquier utilidad de fondo (0,1,0) al pasar el mouse, y los fondos de
-   `rowClassName` (brand, sky, amber, muted) viven en @layer utilities; una
+   auditables del reparto (lib/admin/filas-activas + hooks/use-filas-activas +
+   components/admin/fila-navegable). Va FUERA de las capas A PROPÓSITO: los
+   `hover:` de TableRow y de las filas con href compilan a `.x:hover` con
+   especificidad (0,2,0) y le ganarían a cualquier utilidad (0,1,0) al pasar
+   el mouse, y los fondos de `rowClassName` viven en @layer utilities; una
    regla sin capa gana a todo lo que está en capas sin pelear por
    especificidad ni depender del orden de clases/twMerge. Solo tokens:
-   --accent (brand-50 claro / navy-800 oscuro / brand-50 en .dark .zona-clara)
-   y --ring (el rojo de la casa en los tres). Nunca el gancho
-   `[state=selected]` del primitivo: su fondo es el tono del hover. La barra
-   va en la PRIMERA celda y el outline del foco (el global de *:focus-visible)
-   se mete 2 px para que el contenedor con scroll no lo recorte. */
-[data-filas-activas] > tr[data-fila-activa] {
-  background-color: var(--accent);
-}
-[data-filas-activas] > tr[data-fila-activa] > :first-child {
-  box-shadow: inset 3px 0 0 0 var(--ring);
-}
+   --fila-activa (tinte traslúcido del rojo de la casa, definido en :root,
+   .dark y .dark .zona-clara) y --fila-activa-marca (= --ring). Nunca el gancho
+   `[state=selected]` del primitivo: su fondo es el tono del hover.
+   (1) El TINTE es una CAPA (`background-image`, nunca `background-color`):
+   el fondo de `rowClassName` (sky de «en cotización», ámbar de ?resaltar=,
+   brand de la compra, muted del pago) y el del hover siguen DEBAJO y no se
+   pierden mientras la fila está activa (revisión 13-oct-2026).
+   (2) La MARCA va celda por celda (una sombra en el <tr> no se pinta igual en
+   todos los navegadores): barra de 4 px a la izquierda en la primera celda,
+   1 px a la derecha en la última y 1 px arriba y abajo en todas, en --ring,
+   que mide ≥ 3:1 también en oscuro, donde el tinte solo difiere del hover
+   por matiz. Con un renglón pegado (`+ tr[data-fila-hija]`) el contorno
+   abraza a los dos: la línea de abajo pasa a la hija (`:has`; sin soporte
+   queda una línea entre ambos, nada más). El outline del foco (el global de
+   *:focus-visible) se mete 2 px para que el contenedor con scroll no lo
+   recorte. */
+[data-filas-activas] > tr[data-fila-activa],
 [data-filas-activas] > tr[data-fila-activa] + tr[data-fila-hija] {
-  background-color: var(--accent);
+  background-image: linear-gradient(var(--fila-activa), var(--fila-activa));
+}
+[data-filas-activas] > tr[data-fila-activa] > *,
+[data-filas-activas] > tr[data-fila-activa] + tr[data-fila-hija] > * {
+  box-shadow:
+    inset var(--fila-marca-izq, 0) 0 0 0 var(--fila-activa-marca),
+    inset var(--fila-marca-der, 0) 0 0 0 var(--fila-activa-marca),
+    inset 0 var(--fila-marca-arriba, 1px) 0 0 var(--fila-activa-marca),
+    inset 0 var(--fila-marca-abajo, -1px) 0 0 var(--fila-activa-marca);
+}
+[data-filas-activas] > tr[data-fila-activa] > :first-child,
+[data-filas-activas] > tr[data-fila-activa] + tr[data-fila-hija] > :first-child {
+  --fila-marca-izq: 4px;
+}
+[data-filas-activas] > tr[data-fila-activa] > :last-child,
+[data-filas-activas] > tr[data-fila-activa] + tr[data-fila-hija] > :last-child {
+  --fila-marca-der: -1px;
+}
+[data-filas-activas] > tr[data-fila-activa]:has(+ tr[data-fila-hija]) > * {
+  --fila-marca-abajo: 0;
+}
+[data-filas-activas] > tr[data-fila-activa] + tr[data-fila-hija] > * {
+  --fila-marca-arriba: 0;
 }
 [data-filas-activas] > tr:focus-visible {
   outline-offset: -2px;

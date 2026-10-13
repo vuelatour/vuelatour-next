@@ -16,6 +16,7 @@ import {
   MSG_SIN_FECHA,
   Q_MAX,
   TITULO_FECHA_VUELO,
+  consultaBaseParaNavegar,
   direccionDeTecla,
   esApiSinRangoFechas,
   filtrosListaDeParams,
@@ -389,6 +390,70 @@ describe("campo date de la barra — el borrador, sin DOM", () => {
     }
     // Al llegar la navegación la URL cambia y el borrador caduca solo.
     expect(valorVisibleCampoFecha("2026-10-05", { base: "2026-10-01", valor: "2026-10-05" })).toBe("2026-10-05");
+  });
+});
+
+describe("consultaBaseParaNavegar — dos cambios dentro de una navegación en vuelo (revisión 13-oct-2026)", () => {
+  // La barra, simulada sin DOM: `viva` es `useSearchParams().toString()`, que
+  // NO se mueve hasta que el servidor responde; `pendiente` es el ref.
+  function barra(urlInicial: string) {
+    let viva = urlInicial;
+    let pendiente: { base: string; consulta: string } | null = null;
+    const pushQuery = (next: Record<string, string>) => {
+      const sp = new URLSearchParams(consultaBaseParaNavegar(viva, pendiente));
+      for (const [k, v] of Object.entries(next)) {
+        if (v) sp.set(k, v);
+        else sp.delete(k);
+      }
+      const qs = sp.toString();
+      pendiente = { base: viva, consulta: qs };
+      return qs;
+    };
+    const aplicar = (campo: "desde" | "hasta", valor: string) => {
+      const sp = new URLSearchParams(consultaBaseParaNavegar(viva, pendiente));
+      const nuevo = rangoAlCambiarCampo(rangoListaCotizaciones(sp.get("desde"), sp.get("hasta")), campo, valor);
+      return pushQuery({ desde: nuevo.desde ?? "", hasta: nuevo.hasta ?? "" });
+    };
+    return { pushQuery, aplicar, llega: (qs: string) => (viva = qs), base: () => consultaBaseParaNavegar(viva, pendiente) };
+  }
+
+  it("sin pendiente, o con la URL ya movida, manda la URL viva", () => {
+    expect(consultaBaseParaNavegar("desde=2026-10-01", null)).toBe("desde=2026-10-01");
+    expect(consultaBaseParaNavegar("desde=2026-10-20", { base: "desde=2026-10-01", consulta: "desde=2026-10-20" })).toBe("desde=2026-10-20");
+    expect(consultaBaseParaNavegar("", { base: "desde=2026-10-01", consulta: "desde=2026-10-20" })).toBe("");
+  });
+
+  it("con la URL sin moverse, manda la última consulta pedida", () => {
+    expect(consultaBaseParaNavegar("desde=2026-10-01", { base: "desde=2026-10-01", consulta: "desde=2026-10-20&hasta=2026-10-20" })).toBe(
+      "desde=2026-10-20&hasta=2026-10-20",
+    );
+  });
+
+  it("el escenario del hallazgo: «Desde = 20» + Enter y enseguida «Hasta = 31» (sin respuesta del servidor) ⇒ 20–31, no 01–31", () => {
+    const b = barra("desde=2026-10-01&hasta=2026-10-15");
+    expect(b.aplicar("desde", "2026-10-20")).toBe("desde=2026-10-20&hasta=2026-10-20");
+    expect(b.aplicar("hasta", "2026-10-31")).toBe("desde=2026-10-20&hasta=2026-10-31");
+    // Llega la última navegación: la base vuelve a ser la viva.
+    b.llega("desde=2026-10-20&hasta=2026-10-31");
+    expect(b.base()).toBe("desde=2026-10-20&hasta=2026-10-31");
+    // Y si antes de eso ya había llegado la PRIMERA (no fue descartada), también se parte de la viva.
+    const c = barra("desde=2026-10-01&hasta=2026-10-15");
+    c.aplicar("desde", "2026-10-20");
+    c.llega("desde=2026-10-20&hasta=2026-10-20");
+    expect(c.aplicar("hasta", "2026-10-31")).toBe("desde=2026-10-20&hasta=2026-10-31");
+  });
+
+  it("la variante del chip: «Este mes» y corregir «Desde» antes de la respuesta conserva el «Hasta» del chip", () => {
+    const b = barra("desde=2026-09-01&hasta=2026-09-15");
+    expect(b.pushQuery({ desde: "2026-10-01", hasta: "2026-10-31" })).toBe("desde=2026-10-01&hasta=2026-10-31");
+    expect(b.aplicar("desde", "2026-10-05")).toBe("desde=2026-10-05&hasta=2026-10-31");
+  });
+
+  it("Estado y Cliente también se arman sobre la consulta pendiente (la misma carrera, preexistente)", () => {
+    const b = barra("estado=COTIZADO");
+    expect(b.pushQuery({ desde: "2026-10-01", hasta: "2026-10-31" })).toBe("estado=COTIZADO&desde=2026-10-01&hasta=2026-10-31");
+    expect(b.pushQuery({ cliente_id: "c1" })).toBe("estado=COTIZADO&desde=2026-10-01&hasta=2026-10-31&cliente_id=c1");
+    expect(b.pushQuery({ estado: "" })).toBe("desde=2026-10-01&hasta=2026-10-31&cliente_id=c1");
   });
 });
 

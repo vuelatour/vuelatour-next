@@ -183,6 +183,26 @@ describe("QuotesFilterBar · cableado", () => {
     expect(src).not.toContain("defaultValue={visible");
   });
 
+  it("la siguiente navegación se arma sobre la última consulta PEDIDA (ref, no estado) mientras la URL no se mueva: pushQuery y aplicar (revisión 13-oct-2026)", () => {
+    expect(src).toContain("const pendiente = useRef<ConsultaPendiente | null>(null);");
+    expect(src).toContain(
+      "() => new URLSearchParams(consultaBaseParaNavegar(params.toString(), pendiente.current))",
+    );
+    const push = src.match(/const pushQuery = useCallback\(([\s\S]*?)\n  \);/)?.[1] ?? "";
+    expect(push).toContain("const viva = params.toString();");
+    expect(push).toContain("const sp = paramsParaNavegar();");
+    expect(push).not.toContain("new URLSearchParams(params.toString())");
+    expect(push).toContain("pendiente.current = { base: viva, consulta: qs };");
+    // La misma consulta ya pedida no se vuelve a pedir.
+    expect(push).toContain("if (pendiente.current?.base === viva && pendiente.current.consulta === qs) return;");
+    const aplicar = src.match(/const aplicar = \(campo: CampoRangoLista, valor: string\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
+    expect(aplicar).toContain("const sp = paramsParaNavegar();");
+    expect(aplicar).toContain('rangoListaCotizaciones(sp.get("desde"), sp.get("hasta"))');
+    expect(aplicar).not.toContain("rangoAlCambiarCampo(rango,");
+    // Ningún estado para la consulta pendiente: lo leen los handlers (y el temporizador).
+    expect(src).not.toMatch(/useState<ConsultaPendiente/);
+  });
+
   it("«Limpiar» suelta también desde/hasta y lleva cursor-pointer", () => {
     expect(src).toContain('pushQuery({ estado: "", cliente_id: "", q: "", desde: "", hasta: "" })');
     expect(src).toMatch(/onClick=\{limpiarTodo\}[\s\S]{0,200}cursor-pointer/);

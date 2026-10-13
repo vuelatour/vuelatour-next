@@ -24,8 +24,9 @@ import {
   contenidoBarraFormulas,
   cuadriculaHoja,
   desplazarSeleccion,
-  esTeclaFlecha,
+  esTeclaNavegacionHoja,
   estiloCeldaCss,
+  filasPorPagina,
   referenciaCelda,
   scrollParaVerCelda,
   textoHojas,
@@ -155,14 +156,26 @@ export function LibroExcel({
     el.scrollTop = destino.scrollTop;
   };
 
+  // Flechas, PageUp/PageDown y Home/End mueven la SELECCIÓN (y el marco la
+  // sigue por `seleccionar`). PageUp/PageDown saltan las filas que caben en la
+  // zona libre del marco (`filasPorPagina`, con las medidas del `div.xl-marco`
+  // de hoy): antes eran scroll nativo sin mover la selección y la siguiente
+  // flecha devolvía el marco de golpe a la celda activa. Con Ctrl/⌘, Home/End
+  // van a A1 / la última celda, como en Excel.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!vista || !esTeclaFlecha(e.key)) return;
+    if (!vista || !esTeclaNavegacionHoja(e.key)) return;
     e.preventDefault();
     // `seleccion` del render y no el updater funcional: keydown es un evento
     // discreto y React lo procesa síncrono, así cada pulsación (también con la
     // tecla mantenida) ve el estado que dejó la anterior.
+    const actual = seleccion ?? { r: vista.filas[0].r, c: vista.columnas[0].c };
     seleccionar(
-      desplazarSeleccion(vista, seleccion ?? { r: vista.filas[0].r, c: vista.columnas[0].c }, e.key),
+      desplazarSeleccion(vista, actual, e.key, {
+        filasPorPagina: marco.current
+          ? filasPorPagina(vista, marco.current, actual.r, e.key === "PageUp" ? "arriba" : "abajo")
+          : 1,
+        conControl: e.ctrlKey || e.metaKey,
+      }),
     );
   };
 
@@ -178,13 +191,22 @@ export function LibroExcel({
       data-libro={libro.titulo}
     >
       <div className="xl-barra">
-        <div className="xl-nombre" title="Celda seleccionada">
+        {/* Regiones VIVAS (revisión 13-oct-2026): al moverse con el teclado la
+            selección solo era un contorno verde y el lector de pantalla no
+            anunciaba nada; el cuadro de nombres («B7») y la barra de fórmulas
+            (su valor) ya cambian con cada movimiento, así que se anuncian. */}
+        <div className="xl-nombre" title="Celda seleccionada" aria-live="polite" aria-atomic="true">
           {seleccion ? referenciaCelda(seleccion.r, seleccion.c) : "—"}
         </div>
         <span className="xl-fx" aria-hidden>
           fx
         </span>
-        <div className="xl-formula" title="Barra de fórmulas: la fórmula o el valor de la celda seleccionada">
+        <div
+          className="xl-formula"
+          title="Barra de fórmulas: la fórmula o el valor de la celda seleccionada"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           {contenidoBarraFormulas(celdaSeleccionada)}
         </div>
         <div className="xl-barra-acciones">

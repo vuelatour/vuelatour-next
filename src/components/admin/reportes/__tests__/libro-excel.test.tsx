@@ -340,10 +340,19 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     expect(bloque).toContain("el.scrollTop = destino.scrollTop;");
     // Una sola llamada en todo el archivo: la de `seleccionar`.
     expect((src.match(/scrollParaVerCelda\(/g) ?? []).length).toBe(1);
-    // Las flechas pasan por ahí y conservan el preventDefault.
+    // Flechas, PageUp/PageDown y Home/End pasan por ahí y conservan el
+    // preventDefault; PageUp/PageDown saltan las filas que caben en el marco
+    // de HOY y Ctrl/⌘ + Home/End van a las esquinas (revisión 13-oct-2026:
+    // antes eran scroll nativo y la siguiente flecha devolvía el marco a la
+    // celda activa).
     expect(src).toMatch(
-      /if \(!vista \|\| !esTeclaFlecha\(e\.key\)\) return;\s*e\.preventDefault\(\);[\s\S]*?seleccionar\(\s*desplazarSeleccion\(/,
+      /if \(!vista \|\| !esTeclaNavegacionHoja\(e\.key\)\) return;\s*e\.preventDefault\(\);[\s\S]*?seleccionar\(\s*desplazarSeleccion\(vista, actual, e\.key, \{/,
     );
+    expect(src).toContain(
+      'filasPorPagina(vista, marco.current, actual.r, e.key === "PageUp" ? "arriba" : "abajo")',
+    );
+    expect(src).toContain("conControl: e.ctrlKey || e.metaKey,");
+    expect(src).not.toContain("esTeclaFlecha(");
     // El clic en la celda también; nadie llama a setSeleccion directo desde el marcado.
     expect(src).toContain("onClick={() => seleccionar({ r: cv.r, c: cv.c })}");
     expect(src).not.toContain("onClick={() => setSeleccion(");
@@ -368,10 +377,18 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     }
   });
 
-  it("el marcado estático NO cambió: ref y onClick no se serializan", () => {
+  it("el marcado estático de la cuadrícula NO cambió: ref y onClick no se serializan", () => {
     const html = pintar();
     expect(html).toContain('class="xl-marco xl-cuadricula" tabindex="0" role="grid"');
     expect(html).not.toMatch(/scroll/i);
     expect(pintar(null, true)).not.toMatch(/scroll/i);
+  });
+
+  it("el cuadro de nombres y la barra de fórmulas son regiones vivas (polite, atómicas): el lector anuncia la celda y su valor al moverse", () => {
+    const html = pintar();
+    expect(html).toMatch(/<div class="xl-nombre"[^>]*aria-live="polite"[^>]*aria-atomic="true"[^>]*>—<\/div>/);
+    expect(html).toMatch(/<div class="xl-formula"[^>]*aria-live="polite"[^>]*aria-atomic="true"[^>]*>/);
+    // Solo esas dos: la cuadrícula no es región viva (anunciaría cada repintado).
+    expect((html.match(/aria-live=/g) ?? []).length).toBe(2);
   });
 });

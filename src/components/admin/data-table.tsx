@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { coincideBusqueda } from "@/lib/admin/busqueda";
 import { useFilasActivas } from "@/hooks/use-filas-activas";
+import { FilaNavegable } from "@/components/admin/fila-navegable";
 import {
   Table,
   TableBody,
@@ -294,6 +295,8 @@ export function DataTable<T>({
   // persiste (ni URL ni localStorage), en el borde NO cambia de página (la
   // paginación escribe la URL y haría desaparecer la fila bajo el dedo) y
   // Enter abre SOLO `rowHref` (el mismo clic del <Link> de la primera celda).
+  // La activa NO es estado de esta tabla: vive en el hook (un ref) y cada
+  // `FilaNavegable` se suscribe por fila, así un ↓ no repinta las 100 filas.
   // Reglas puras y decisión ARIA en lib/admin/filas-activas.ts; sin props
   // nuevas: aplica a TODAS las tablas.
   const clavesRender = subRows
@@ -309,9 +312,11 @@ export function DataTable<T>({
   const pintarFila = (row: T) => {
     const href = rowHref?.(row);
     return (
-      <TableRow
+      <FilaNavegable
         key={rowKey(row)}
-        {...filasActivas.propsFila(rowKey(row), href)}
+        filas={filasActivas}
+        clave={rowKey(row)}
+        href={href}
         className={
           (href ? "cursor-pointer hover:bg-muted/40 " : "") +
           (rowClassName?.(row) ?? "")
@@ -328,7 +333,7 @@ export function DataTable<T>({
             )}
           </TableCell>
         ))}
-      </TableRow>
+      </FilaNavegable>
     );
   };
 

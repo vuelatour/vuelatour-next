@@ -11,6 +11,7 @@ import { ESPERA_APLICAR_MS } from "@/lib/admin/periodo-selector";
 import {
   ETIQUETA_GRUPO_FECHAS,
   TITULO_FECHA_VUELO,
+  consultaBaseParaNavegar,
   hayRangoLista,
   notaRangoCotizaciones,
   pasoAlSalirCampoFecha,
@@ -21,6 +22,7 @@ import {
   valorVisibleCampoFecha,
   type BorradorCampoFecha,
   type CampoRangoLista,
+  type ConsultaPendiente,
 } from "@/lib/admin/quote-navegacion";
 import { cn } from "@/lib/utils";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
@@ -74,19 +76,36 @@ export function QuotesFilterBar({
   const params = useSearchParams();
   const [, startTransition] = useTransition();
 
+  // La última consulta PEDIDA (revisión 13-oct-2026): mientras la navegación
+  // está en vuelo `params` sigue siendo la URL ANTERIOR, y dos cambios dentro
+  // de esa latencia (Desde + Enter, Tab, Hasta) se armaban sobre la URL vieja
+  // y el segundo pisaba al primero. Un ref y no estado: lo leen los handlers
+  // (también el temporizador de `onCambio`) y no cambia lo que se pinta —lo
+  // que se VE sigue saliendo de la URL viva y de los borradores.
+  const pendiente = useRef<ConsultaPendiente | null>(null);
+  /** Los parámetros sobre los que se arma la siguiente navegación (`consultaBaseParaNavegar`). */
+  const paramsParaNavegar = useCallback(
+    () => new URLSearchParams(consultaBaseParaNavegar(params.toString(), pendiente.current)),
+    [params],
+  );
+
   const pushQuery = useCallback(
     (next: Record<string, string>) => {
-      const sp = new URLSearchParams(params.toString());
+      const viva = params.toString();
+      const sp = paramsParaNavegar();
       for (const [k, v] of Object.entries(next)) {
         if (v) sp.set(k, v);
         else sp.delete(k);
       }
       const qs = sp.toString();
+      // La misma consulta ya está pedida y la URL no se ha movido: nada que navegar.
+      if (pendiente.current?.base === viva && pendiente.current.consulta === qs) return;
+      pendiente.current = { base: viva, consulta: qs };
       startTransition(() => {
         router.replace(qs ? `${pathname}?${qs}` : pathname);
       });
     },
-    [params, pathname, router],
+    [params, paramsParaNavegar, pathname, router],
   );
 
   // El rango de la URL VIVA, validado igual que en el servidor.
@@ -124,7 +143,15 @@ export function QuotesFilterBar({
   /** Navega con el rango que resulta de cambiar UN extremo (el otro lo sigue si queda invertido). */
   const aplicar = (campo: CampoRangoLista, valor: string) => {
     cancelarEspera();
-    const nuevo = rangoAlCambiarCampo(rango, campo, valor);
+    // El rango sobre el que se cambia un extremo es el de la última consulta
+    // PEDIDA mientras la URL no se mueva (no el de la URL vieja): así «Desde =
+    // 20» + Enter y enseguida «Hasta = 31» terminan en 20–31, no en 01–31.
+    const sp = paramsParaNavegar();
+    const nuevo = rangoAlCambiarCampo(
+      rangoListaCotizaciones(sp.get("desde"), sp.get("hasta")),
+      campo,
+      valor,
+    );
     setBorradores({
       desde: { base: deUrl.desde, valor: nuevo.desde ?? "" },
       hasta: { base: deUrl.hasta, valor: nuevo.hasta ?? "" },
