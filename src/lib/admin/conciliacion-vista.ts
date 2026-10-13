@@ -14,6 +14,7 @@
  */
 
 import { fmtDateOnly } from "@/lib/datetime";
+import { fmtInt } from "@/lib/format";
 import { diaMas } from "./conciliacion-auto";
 import { esDiaValido } from "./url-params";
 
@@ -114,7 +115,82 @@ export function textoVentanaSinBanco(r: RangoVista): string {
  */
 export function textoListaRecortada(mostrados: number, total: number): string | null {
   if (!(total > mostrados) || mostrados <= 0) return null;
-  return `Se muestran los ${mostrados} movimientos más recientes de ${total}. Acota el periodo con «Desde» y «Hasta» para ver los demás.`;
+  return `Se muestran los ${fmtInt(mostrados)} movimientos más recientes de ${fmtInt(total)}. Acota el periodo con «Desde» y «Hasta» para ver los demás.`;
+}
+
+/**
+ * CARGA COMPLETA de la lista de movimientos (13-oct-2026). Pedido de la
+ * oficina con la captura «Se muestran los 300 movimientos más recientes de
+ * 782»: «¿tenemos una forma de no limitar a los 300?». La bandeja pedía UNA
+ * página de 300 y la búsqueda rápida de la tabla (que filtra en el navegador)
+ * no encontraba lo que quedaba fuera — «aircra» de agosto, por ejemplo.
+ *
+ * Por qué NO se pagina con `offset`: el API ordena por `fecha desc,
+ * created_at desc` y una importación inserta su estado de cuenta en UN lote
+ * (mismo `created_at`): hay cientos de empates, y con `LIMIT/OFFSET` el orden
+ * de los empates puede cambiar entre una página y la siguiente (Postgres arma
+ * cada página con otro top-N) ⇒ filas REPETIDAS o SALTADAS en silencio. Se
+ * pagina por VENTANA DE FECHA: cada página pide `hasta` = la fecha más vieja
+ * que trajo la anterior (INCLUSIVA, así ningún movimiento de ese día se
+ * pierde) y lo que ya llegó se descarta por `id`. Es exacto mientras ningún
+ * día tenga más movimientos que una página (500; hoy el día más cargado no
+ * llega a 60): si pasa, se corta y se DICE (`truncado`), nunca en silencio.
+ */
+/** = `@Max(500)` de `ListConciliacionQuery.limit` en el API. */
+export const PAGINA_MOVIMIENTOS_API = 500;
+/** Tope de la vista: la tabla recibe las filas completas (payload RSC). */
+export const TOPE_MOVIMIENTOS_VISTA = 2000;
+
+export interface PasoPaginaMovimientos<T> {
+  /** Movimientos únicos acumulados, en el orden del API (fecha desc). */
+  filas: T[];
+  /** `hasta` (YYYY-MM-DD) de la siguiente página; null = ya no se pide más. */
+  siguienteHasta: string | null;
+  /** true = se cortó antes de traer TODO (tope, o un día con más de una página). */
+  truncado: boolean;
+}
+
+/**
+ * Suma una página al acumulado y decide la siguiente (PURA). `total` = el
+ * `count` de la PRIMERA respuesta (el universo de la vista); `hastaPedido` =
+ * el `hasta` con que se pidió ESTA página (null = sin `hasta`).
+ */
+export function fusionarPaginaMovimientos<T extends { id: string; fecha: string }>(
+  acumulado: readonly T[],
+  pagina: readonly T[],
+  opts: { limite: number; tope: number; total: number; hastaPedido: string | null },
+): PasoPaginaMovimientos<T> {
+  const vistos = new Set(acumulado.map((m) => m.id));
+  const filas = [...acumulado];
+  for (const m of pagina) {
+    if (vistos.has(m.id)) continue;
+    vistos.add(m.id);
+    filas.push(m);
+  }
+  if (filas.length >= opts.tope) {
+    return {
+      filas: filas.slice(0, opts.tope),
+      siguienteHasta: null,
+      truncado: Math.max(opts.total, filas.length) > opts.tope,
+    };
+  }
+  // Todo lo que dijo el API ya está, o la página vino incompleta: no hay más.
+  if (filas.length >= opts.total || pagina.length < opts.limite) {
+    return { filas, siguienteHasta: null, truncado: false };
+  }
+  let masVieja: string | null = null;
+  for (const m of pagina) {
+    const dia = String(m.fecha ?? "").slice(0, 10);
+    if (esDiaValido(dia) && (masVieja === null || dia < masVieja)) masVieja = dia;
+  }
+  // Sin avance: la página entera es del día que ya se pidió (más movimientos
+  // en un día que una página) o no trajo nada nuevo. No se adivina: se corta.
+  const sinAvance =
+    masVieja === null ||
+    filas.length === acumulado.length ||
+    (opts.hastaPedido !== null && masVieja >= opts.hastaPedido);
+  if (sinAvance) return { filas, siguienteHasta: null, truncado: true };
+  return { filas, siguienteHasta: masVieja, truncado: false };
 }
 
 /**

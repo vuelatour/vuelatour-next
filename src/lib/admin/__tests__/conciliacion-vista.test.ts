@@ -4,13 +4,16 @@ import {
   DIAS_SIN_BANCO_DEFAULT,
   FILTROS_CONCILIACION,
   filtroConciliacionDeUrl,
+  fusionarPaginaMovimientos,
   hayRango,
   hrefConciliacion,
   periodosRapidosConciliacion,
   rangoParaSinBanco,
   rangoVistaConciliacion,
+  PAGINA_MOVIMIENTOS_API,
   textoListaRecortada,
   textoRangoVista,
+  TOPE_MOVIMIENTOS_VISTA,
   textoVentanaSinBanco,
 } from "../conciliacion-vista";
 
@@ -118,6 +121,10 @@ describe("textos del rango", () => {
     expect(textoListaRecortada(300, 945)).toBe(
       "Se muestran los 300 movimientos más recientes de 945. Acota el periodo con «Desde» y «Hasta» para ver los demás.",
     );
+    // Con el tope de la vista los números llevan separador de miles.
+    expect(textoListaRecortada(2000, 2345)).toBe(
+      "Se muestran los 2,000 movimientos más recientes de 2,345. Acota el periodo con «Desde» y «Hasta» para ver los demás.",
+    );
   });
 });
 
@@ -173,5 +180,79 @@ describe("periodosRapidosConciliacion: días Cancún", () => {
       desde: "2026-12-01",
       hasta: "2026-12-31",
     });
+  });
+});
+
+/**
+ * Carga COMPLETA de la lista (13-oct-2026, «¿tenemos una forma de no limitar
+ * a los 300?»): paginación por VENTANA DE FECHA con dedupe por id.
+ */
+describe("fusionarPaginaMovimientos: la siguiente ventana de fecha", () => {
+  const m = (id: string, fecha: string) => ({ id, fecha });
+  const base = { limite: 3, tope: 100, total: 10, hastaPedido: null as string | null };
+
+  it("el contrato del API: páginas de 500 y tope de la vista 2,000", () => {
+    expect(PAGINA_MOVIMIENTOS_API).toBe(500);
+    expect(TOPE_MOVIMIENTOS_VISTA).toBe(2000);
+  });
+
+  it("página llena ⇒ la siguiente pide `hasta` = la fecha más vieja (inclusiva)", () => {
+    const r = fusionarPaginaMovimientos([], [m("a", "2026-10-12"), m("b", "2026-10-11"), m("c", "2026-10-10")], base);
+    expect(r.filas.map((x) => x.id)).toEqual(["a", "b", "c"]);
+    expect(r.siguienteHasta).toBe("2026-10-10");
+    expect(r.truncado).toBe(false);
+  });
+
+  it("lo que ya llegó del día frontera se descarta por id, en el orden del API", () => {
+    const acumulado = [m("a", "2026-10-12"), m("b", "2026-10-10")];
+    const pagina = [m("b", "2026-10-10"), m("c", "2026-10-10"), m("d", "2026-10-09")];
+    const r = fusionarPaginaMovimientos(acumulado, pagina, { ...base, hastaPedido: "2026-10-10" });
+    expect(r.filas.map((x) => x.id)).toEqual(["a", "b", "c", "d"]);
+    expect(r.siguienteHasta).toBe("2026-10-09");
+  });
+
+  it("acepta `fecha` con hora (ISO) y toma el día", () => {
+    const r = fusionarPaginaMovimientos([], [m("a", "2026-10-12T00:00:00"), m("b", "2026-10-11"), m("c", "2026-10-10T00:00:00Z")], base);
+    expect(r.siguienteHasta).toBe("2026-10-10");
+  });
+
+  it("página incompleta ⇒ ya no hay más (sin cortar)", () => {
+    const r = fusionarPaginaMovimientos([], [m("a", "2026-10-12"), m("b", "2026-10-11")], base);
+    expect(r).toMatchObject({ siguienteHasta: null, truncado: false });
+  });
+
+  it("ya están los `total` del API ⇒ para aunque la página venga llena", () => {
+    const r = fusionarPaginaMovimientos([], [m("a", "2026-10-12"), m("b", "2026-10-11"), m("c", "2026-10-10")], { ...base, total: 3 });
+    expect(r).toMatchObject({ siguienteHasta: null, truncado: false });
+  });
+
+  it("un día con más movimientos que una página ⇒ se corta y se DICE", () => {
+    // La página pedida con hasta = 10-oct regresa 3 del MISMO 10-oct: no hay avance.
+    const acumulado = [m("a", "2026-10-11")];
+    const pagina = [m("b", "2026-10-10"), m("c", "2026-10-10"), m("d", "2026-10-10")];
+    const r = fusionarPaginaMovimientos(acumulado, pagina, { ...base, hastaPedido: "2026-10-10" });
+    expect(r.filas.map((x) => x.id)).toEqual(["a", "b", "c", "d"]);
+    expect(r).toMatchObject({ siguienteHasta: null, truncado: true });
+  });
+
+  it("una página que no trae NADA nuevo ⇒ se corta (jamás un bucle)", () => {
+    const acumulado = [m("a", "2026-10-12"), m("b", "2026-10-11"), m("c", "2026-10-10")];
+    const r = fusionarPaginaMovimientos(acumulado, acumulado, { ...base, hastaPedido: "2026-10-12" });
+    expect(r).toMatchObject({ siguienteHasta: null, truncado: true });
+  });
+
+  it("el tope de la vista corta y marca truncado solo si el API tiene más", () => {
+    const pagina = [m("a", "2026-10-12"), m("b", "2026-10-11"), m("c", "2026-10-10")];
+    const corta = fusionarPaginaMovimientos([], pagina, { ...base, tope: 2, total: 10 });
+    expect(corta.filas.map((x) => x.id)).toEqual(["a", "b"]);
+    expect(corta).toMatchObject({ siguienteHasta: null, truncado: true });
+    const justa = fusionarPaginaMovimientos([], pagina, { ...base, tope: 3, total: 3 });
+    expect(justa).toMatchObject({ siguienteHasta: null, truncado: false });
+  });
+
+  it("no muta el acumulado", () => {
+    const acumulado = [m("a", "2026-10-12")];
+    fusionarPaginaMovimientos(acumulado, [m("b", "2026-10-11")], base);
+    expect(acumulado).toEqual([m("a", "2026-10-12")]);
   });
 });

@@ -5814,13 +5814,43 @@ aceptaba `desde`/`hasta` en la lista (DTO del 24-sep-2026), en `resumen`, en
   `hrefVista` inline de la página), `filtroConciliacionDeUrl`,
   `textoRangoVista`, `textoVentanaSinBanco` (las descripciones de «sin banco»
   ya no dicen «últimos 90 días» a secas), `textoListaRecortada` (la lista trae
-  `count`: cuando el tope de 300 deja movimientos fuera, la tarjeta lo dice y
+  `count`: cuando el tope deja movimientos fuera, la tarjeta lo dice y
   manda a acotar el periodo — antes el recorte era mudo) y
   `periodosRapidosConciliacion`.
 - `ListConciliacionQuery` (`lib/api/conciliacion-server.ts`) declara `desde`,
   `hasta` y `tipo`; `conciliacionGastosSinBanco(desde?, hasta?)` acepta el
   rango. El estado vacío distingue «Sin movimientos en el periodo» de «Sin
   movimientos».
+
+### Sin tope de 300: la lista se carga COMPLETA (13-oct-2026)
+
+Pedido de la oficina con la captura «Se muestran los 300 movimientos más
+recientes de 782»: «¿tenemos una forma de no limitar a los 300?». La bandeja
+pedía UNA página de 300 y la búsqueda rápida de la tabla (filtra en el
+navegador) no encontraba lo que quedaba fuera. Solo panel: el API ya
+aceptaba `limit` ≤ 500 y `desde`/`hasta`.
+
+- **`listMovimientosBancariosTodos(query)`** (`lib/api/conciliacion-server.ts`)
+  trae TODA la lista de la vista: páginas de `PAGINA_MOVIMIENTOS_API` (500 =
+  el `@Max` del DTO) hasta los `count` del API, con tope
+  `TOPE_MOVIMIENTOS_VISTA` (2,000: la tabla recibe las filas completas y el
+  payload RSC no debe crecer sin límite; hoy toda la historia son ~1,000).
+  Una página fallida LANZA (el dato del dinero nunca a medias).
+- **Por ventana de FECHA, jamás con `offset`**: el API ordena por `fecha desc,
+  created_at desc` y una importación inserta su estado de cuenta en UN lote
+  (mismo `created_at`); con `LIMIT/OFFSET` el orden de los empates puede
+  cambiar entre páginas y salen movimientos repetidos o SALTADOS. Cada página
+  pide `hasta` = la fecha más vieja de la anterior (INCLUSIVA) y lo repetido
+  se descarta por `id`. Regla PURA `fusionarPaginaMovimientos`
+  (`lib/admin/conciliacion-vista.ts`): un día con más movimientos que una
+  página (o una página sin nada nuevo) corta y marca `truncado`, nunca un
+  bucle. `textoListaRecortada` sigue avisando cuando el tope deja fuera algo
+  (números con separador de miles).
+- Pruebas: `lib/admin/__tests__/conciliacion-vista.test.ts` y
+  `lib/api/__tests__/conciliacion-movimientos-todos.test.ts` (API simulado que
+  BARAJA los empates en cada llamada: llegan los 782 una sola vez; CONTROL:
+  con ese mismo API, `offset` sí pierde movimientos; tope, filtro de pestaña,
+  día con > 500 y página fallida).
 
 ## Balances EN PANTALLA: el mismo libro que el Excel (12-oct-2026, API 0.0.68)
 

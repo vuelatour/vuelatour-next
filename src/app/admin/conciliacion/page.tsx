@@ -28,7 +28,7 @@ import {
   conciliacionGastosSinBanco,
   conciliacionResumen,
   listEstadosCuenta,
-  listMovimientosBancarios,
+  listMovimientosBancariosTodos,
   type ListConciliacionQuery,
 } from "@/lib/api/conciliacion-server";
 import { listBankAccounts } from "@/lib/api/bank-accounts-server";
@@ -102,7 +102,10 @@ export default async function ConciliacionPage({
   const pwHasta = hastaVista ?? hoy;
   const pwCuenta = sp.cuenta && /^[0-9a-f-]{36}$/i.test(sp.cuenta) ? sp.cuenta : "";
 
-  const query: ListConciliacionQuery = { limit: 300 };
+  // Sin tope de 300 (13-oct-2026, «¿tenemos una forma de no limitar a los
+  // 300?»): la lista se carga COMPLETA por ventanas de fecha hasta el tope de
+  // la vista (`listMovimientosBancariosTodos`); `limit`/`offset` los pone él.
+  const query: Omit<ListConciliacionQuery, "limit" | "offset"> = {};
   if (filtro === "pendientes") query.conciliado = false;
   if (filtro === "conciliados") query.conciliado = true;
   // La bandeja mezclaba TODAS las cuentas: ?cuenta= la filtra (el API ya lo
@@ -130,7 +133,7 @@ export default async function ConciliacionPage({
     aeronavesRes,
     providersRes,
   ] = await Promise.all([
-    listMovimientosBancarios(query),
+    listMovimientosBancariosTodos(query),
     // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
     // con aviso; los MOVIMIENTOS (el dato del dinero) nunca (21-sep-2026).
     // DEUDA (2-oct-2026): desde 1 cargo ↔ N gastos el diálogo del CARGO

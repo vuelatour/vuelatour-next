@@ -1,10 +1,16 @@
 import { apiServer } from "./server";
+import {
+  fusionarPaginaMovimientos,
+  PAGINA_MOVIMIENTOS_API,
+  TOPE_MOVIMIENTOS_VISTA,
+} from "@/lib/admin/conciliacion-vista";
 import type {
   CandidatosCobroResponse,
   CobrosSinBancoResponse,
   ConciliacionResumenCuenta,
   EstadoCuentaArchivo,
   GastosCandidatosResponse,
+  MovimientoBancario,
   MovimientoListResponse,
   PaywiseAuditoria,
   TipoMovimientoBancario,
@@ -28,6 +34,49 @@ export function listMovimientosBancarios(query: ListConciliacionQuery = {}) {
     searchParams: query as Record<string, string | number | boolean | undefined>,
     cache: "no-store",
   });
+}
+
+/** Freno de bucle: con el tope de 2,000 y páginas de 500 bastan 5–6. */
+const MAX_PAGINAS_MOVIMIENTOS = 20;
+
+/**
+ * TODA la lista de movimientos de la vista (13-oct-2026): pagina por VENTANA
+ * DE FECHA (`hasta` = la fecha más vieja de la página anterior, inclusiva, y
+ * dedupe por `id`) hasta traer los `count` que dice el API o llegar al tope
+ * `TOPE_MOVIMIENTOS_VISTA`. La regla y el porqué de NO usar `offset` viven en
+ * `fusionarPaginaMovimientos` (`lib/admin/conciliacion-vista.ts`). Una página
+ * fallida LANZA: la lista es el dato del dinero y una lista a medias que
+ * parezca completa es peor que el error (sube al boundary, que reintenta).
+ */
+export async function listMovimientosBancariosTodos(
+  query: Omit<ListConciliacionQuery, "limit" | "offset"> = {},
+  opts: { tope?: number } = {},
+): Promise<{ data: MovimientoBancario[]; count: number; truncado: boolean }> {
+  const tope = opts.tope ?? TOPE_MOVIMIENTOS_VISTA;
+  const limite = PAGINA_MOVIMIENTOS_API;
+  let filas: MovimientoBancario[] = [];
+  let hasta: string | null = query.hasta ?? null;
+  let total = 0;
+  for (let n = 0; n < MAX_PAGINAS_MOVIMIENTOS; n++) {
+    const q: ListConciliacionQuery = { ...query, limit: limite, offset: 0 };
+    if (hasta) q.hasta = hasta;
+    else delete q.hasta;
+    const res = await listMovimientosBancarios(q);
+    const datos = Array.isArray(res?.data) ? res.data : [];
+    if (n === 0) total = Math.max(Number(res?.count) || 0, datos.length);
+    const paso = fusionarPaginaMovimientos(filas, datos, {
+      limite,
+      tope,
+      total,
+      hastaPedido: hasta,
+    });
+    filas = paso.filas;
+    if (paso.siguienteHasta === null) {
+      return { data: filas, count: Math.max(total, filas.length), truncado: paso.truncado };
+    }
+    hasta = paso.siguienteHasta;
+  }
+  return { data: filas, count: Math.max(total, filas.length), truncado: true };
 }
 
 export function conciliacionResumen(desde?: string, hasta?: string) {
