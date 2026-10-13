@@ -3368,7 +3368,8 @@ brincar a la siguiente». Contrato con el API: `GET /v1/quotes/:id/vecinos`
   destino se lee sin pasar el mouse («#338 · 19 sep»).
 - **Fuente única** `lib/admin/quote-navegacion.ts` (PURA, prueba
   `__tests__/quote-navegacion.test.ts`): `FILTROS_LISTA` (`estado`,
-  `cliente_id`, `q`, `grupo_id`), `filtrosListaDeParams` (valida con
+  `cliente_id`, `q`, `grupo_id` y, desde el 13-oct-2026, `desde`/`hasta` —
+  ver «Cotizaciones: filtro de fechas de la lista» al final), `filtrosListaDeParams` (valida con
   `estadoFiltro`/`uuidFiltro`; `q` recortada y topada a 100),
   `qsFiltrosLista` (orden fijo), `hrefCotizacion`, `hrefListaCotizaciones`,
   `textoVecino` («#341 · 27 sep · Maqar», fecha Cancún con
@@ -6518,3 +6519,84 @@ sin tocar `pre-cierre-card.tsx`, `pre-cierre-card-cargando.tsx`,
   real de `expenses/__tests__/expense-actions-menu.test.tsx` tiene 20 s (su
   `await import` de Base UI corre DENTRO del test y, con la suite completa
   en paralelo, expiraba a los 5 s por defecto). Deploy: solo panel.
+
+## Cotizaciones: filtro de fechas de la lista (13-oct-2026)
+
+Pedido del cliente: «Desde / Hasta» en `/admin/quotes`, sobre la FECHA DEL
+VUELO. Solo panel; el API agrega `desde`/`hasta` a `ListQuotesQuery` (y por
+`OmitType` a `/vecinos`) en su propio lote, y mientras no esté desplegado el
+panel DEGRADA sin mentir.
+
+- **El rango vive en la URL** (`?desde`/`?hasta`, día Cancún `YYYY-MM-DD`) y
+  **forma parte de `FILTROS_LISTA`** (`lib/admin/quote-navegacion.ts`, AL
+  FINAL para que las URLs de antes se escriban igual): viaja a
+  `GET /v1/quotes`, a `GET /v1/quotes/:id/vecinos`, al `href` de cada fila, a
+  «‹ Anterior»/«Siguiente ›» y al `BackLink`, SIN tocar el detalle ni el
+  workspace. Si no viajara a `/vecinos`, la flecha brincaría a un vuelo fuera
+  de lo que la lista enseña.
+- **Validación** `rangoListaCotizaciones(desde, hasta)` (PURA): solo días
+  reales `YYYY-MM-DD` (`esDiaValido`; un ISO con hora se ignora, el DTO lo
+  rechaza), inválido se ignora (regla de `url-params`), invertido se
+  intercambia, un solo extremo vale y **NUNCA se recorta a hoy**: la fecha es
+  la del vuelo y hay vuelos por venir. Por lo mismo **«Este mes» = del 1 al
+  ÚLTIMO día del mes** (`periodosRapidosCotizaciones`: Este mes · Mes pasado
+  · Próximos 30 días), a diferencia de Conciliación/Ingresos (1 → hoy). No
+  «alinearlo»: es deliberado.
+- **Barra** (`components/admin/quotes/quotes-filter-bar.tsx`, props ADITIVAS
+  `hoy?` y `rangoIgnorado?`; sin `hoy` el marcado es byte a byte el de antes):
+  fila `role="group" aria-label="Periodo del vuelo"` con `cot-desde` /
+  `cot-hasta` (`type="date"`, SIN `max`, `cursor-pointer`, etiquetas ligadas),
+  3 chips `aria-pressed` y la nota `data-nota-rango`. LEE el rango de la URL
+  viva con la MISMA función del servidor (nunca `useState(propDelServer)`).
+  Los campos usan el BORRADOR de `periodo-selector` (`fechaCompleta` +
+  `ESPERA_APLICAR_MS`; reglas puras `pasoCampoFecha`, `pasoAlSalirCampoFecha`,
+  `valorVisibleCampoFecha`): tecleando el año nada navega; solo una fecha
+  completa tras la pausa, al salir del campo o con Enter; vaciar el campo y
+  salir limpia ese extremo. **Si el extremo nuevo invierte el rango, el otro
+  lo sigue** (`rangoAlCambiarCampo`, la regla de `periodoAlCambiar` del
+  selector de Reportes): con el intercambio, pasar de 01–15 a 20–31 tecleando
+  primero «Desde = 20» dejaba 15–20 y el borrador podía quedar enseñando un
+  valor distinto del aplicado. «Limpiar» (ahora con `cursor-pointer`) suelta
+  también `desde`/`hasta` y `hasFilters` cuenta el rango.
+- **Red** (`lib/api/quotes-server.ts`): `ListQuotesQuery` += `desde?`/`hasta?`
+  (solo viajan si existen: `buildUrl` omite `undefined`, así que sin rango un
+  API previo no ve nada nuevo). `listQuotesAll` devuelve `{data, count,
+  rangoIgnorado}`: ante el 400 «property desde should not exist»
+  (`esApiSinRangoFechas`, espejo de `esApiSinTramosBase`: status 400 + «desde|
+  hasta» + «should not exist/property», tolera mensaje en lista) con rango en
+  la consulta, RELEE sin rango (`sinRango`) y marca `rangoIgnorado: true`. Es
+  un GET deliberado con OTROS parámetros, no el reintento automático de
+  `apiFetch` (prohibido en 4xx); un 400 de otro campo o un 502 se relanzan
+  como siempre. `getQuoteVecinos` hace lo mismo para que las flechas recorran
+  la MISMA lista degradada (404/403 siguen en `null`).
+- **Página** (`app/admin/quotes/page.tsx`): `hoy = todayCancun()` una vez;
+  pasa `desde`/`hasta` a `listQuotesAll`; con `rangoIgnorado` pinta el banner
+  ámbar `role="status" data-aviso="rango-api-viejo"` con `MSG_RANGO_API_VIEJO`
+  (nunca la pantalla rota ni «Sin cotizaciones») y los textos hablan del
+  rango APLICADO (`rangoAplicado = rangoIgnorado ? {} : rango`): encabezado
+  `textoEncabezadoCotizaciones` («12 cotizaciones con fecha de vuelo del 01
+  oct 2026 al 31 oct 2026.» / «312 cotizaciones (todas las fechas).»), vacío
+  `textoVacioCotizaciones` («Sin cotizaciones en el periodo» + «Limpiar»; sin
+  rango, los textos de siempre). Con rango el API EXCLUYE las cotizaciones sin
+  fecha de vuelo: el banner «Hay N sin fecha» no sale porque N = 0 y la nota
+  de la barra lo explica (`notaRangoCotizaciones`); con el API previo sale
+  como siempre.
+- **Pruebas**: `lib/admin/__tests__/quote-navegacion.test.ts` (los 6 filtros,
+  validación sin recorte, ida y vuelta con el rango, periodos con cruce de
+  año y febrero bisiesto, `rangoAlCambiarCampo`, textos congelados,
+  `esApiSinRangoFechas`, la secuencia del borrador sin DOM),
+  `lib/api/__tests__/quotes-server-rango.test.ts` (contrato con `apiServer`
+  simulado: sin rango no viaja; con rango en todas las páginas; relectura
+  sin rango con los demás filtros; 400 de otro campo y 502 se relanzan;
+  `/vecinos` con 404/403/500), `components/admin/quotes/__tests__/
+  quotes-filter-bar.test.tsx` (marcado con y sin `hoy`, con rango, invertido,
+  inválido y `rangoIgnorado`; cableado por regex) y `quote-navegacion.test.tsx`
+  (las flechas conservan el rango; la página y `quotes-server` cableados).
+- **Orden de deploy**: API (desde/hasta en `ListQuotesQuery`, nombres
+  EXACTOS `desde`/`hasta` con `YYYY-MM-DD`) antes que el panel; en cualquier
+  orden el panel no se rompe. Tras desplegar el API, verificar con
+  `curl '/v1/quotes?desde=2026-10-01&hasta=2026-10-31&limit=1'` (200): con
+  otros nombres el panel degradaría para siempre diciendo «cuando se actualice
+  el servidor». Pendientes: sin QA visual en navegador (el borrador se prueba
+  sobre las funciones puras); el campo «Buscar» sigue siendo `defaultValue` y
+  no se vacía solo al pulsar «Limpiar» (como antes de este lote).

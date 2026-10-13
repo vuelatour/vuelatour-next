@@ -8,7 +8,10 @@
  *  2. el CABLEADO: la lista pasa sus filtros al detalle, el detalle los lee
  *     con la MISMA función, el workspace pinta las flechas en la cabecera y
  *     nadie navega con `router.push` (el guard de cambios sin guardar solo
- *     intercepta `<a href>`).
+ *     intercepta `<a href>`);
+ *  3. desde el 13-oct-2026, que el RANGO de fechas viaje con las flechas, al
+ *     API de la lista y a `/vecinos`, y que la página degrade con el API
+ *     previo en vez de romperse.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -69,6 +72,17 @@ describe("QuoteNavegacion · marcado", () => {
     );
     expect(flecha(html, "anterior").startsWith("<a")).toBe(true);
     expect(flecha(html, "siguiente")).toContain("cursor-pointer");
+  });
+
+  it("el RANGO de fechas de la lista viaja en el href de las dos flechas (13-oct-2026)", () => {
+    const html = render(VECINOS, "estado=COTIZADO&desde=2026-10-01&hasta=2026-10-31");
+    for (const dir of ["anterior", "siguiente"] as const) {
+      const f = flecha(html, dir);
+      expect(f).toContain(
+        `?estado=COTIZADO&amp;desde=2026-10-01&amp;hasta=2026-10-31"`,
+      );
+      expect(f.startsWith("<a")).toBe(true);
+    }
   });
 
   it("el destino se lee SIN pasar el mouse («#346 · 20 sep») y el tooltip dice el cliente", () => {
@@ -139,6 +153,30 @@ describe("QuoteNavegacion · cableado", () => {
     expect(tabla).toContain("rowHref={(q) => q.href}");
     expect(tabla).toContain("<Link href={q.href}");
     expect(tabla).not.toContain("`/admin/quotes/${q.id}`");
+  });
+
+  it("la LISTA manda el rango al API, lee `rangoIgnorado`, avisa con el API previo y le da `hoy` a la barra (13-oct-2026)", () => {
+    const pagina = leer("app", "admin", "quotes", "page.tsx");
+    expect(pagina).toContain("desde: filtros.desde,");
+    expect(pagina).toContain("hasta: filtros.hasta,");
+    expect(pagina).toContain("const { data: quotes, count, rangoIgnorado } = quotesRes;");
+    expect(pagina).toMatch(/rangoIgnorado && \(\s*<div[^>]*role="status"[^>]*data-aviso="rango-api-viejo"/);
+    expect(pagina).toContain("{MSG_RANGO_API_VIEJO}");
+    expect(pagina).toContain("hoy={hoy}");
+    expect(pagina).toContain("rangoIgnorado={rangoIgnorado}");
+    expect(pagina).toContain("textoEncabezadoCotizaciones(count, rangoAplicado)");
+    expect(pagina).toContain("textoVacioCotizaciones(rangoAplicado)");
+    expect(pagina).not.toContain("en el rango.");
+    expect(pagina).not.toContain('title="Sin cotizaciones"');
+  });
+
+  it("quotes-server relee SIN rango ante el API previo, en la lista Y en /vecinos", () => {
+    const servidor = leer("lib", "api", "quotes-server.ts");
+    expect((servidor.match(/esApiSinRangoFechas\(/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect((servidor.match(/sinRango\(/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(servidor).toMatch(/desde\?: string;\s*hasta\?: string;/);
+    expect(servidor).toContain("rangoIgnorado: true");
+    expect(servidor).toContain("rangoIgnorado: false");
   });
 
   it("el DETALLE lee los filtros con la MISMA función, pide los vecinos degradando y remonta por cotización", () => {

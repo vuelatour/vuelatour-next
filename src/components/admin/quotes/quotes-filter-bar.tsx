@@ -1,12 +1,28 @@
 "use client";
 
-import { useCallback, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ESPERA_APLICAR_MS } from "@/lib/admin/periodo-selector";
+import {
+  ETIQUETA_GRUPO_FECHAS,
+  TITULO_FECHA_VUELO,
+  hayRangoLista,
+  notaRangoCotizaciones,
+  pasoAlSalirCampoFecha,
+  pasoCampoFecha,
+  periodosRapidosCotizaciones,
+  rangoAlCambiarCampo,
+  rangoListaCotizaciones,
+  valorVisibleCampoFecha,
+  type BorradorCampoFecha,
+  type CampoRangoLista,
+} from "@/lib/admin/quote-navegacion";
+import { cn } from "@/lib/utils";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 const ESTADOS: { value: EstadoVuelo | ""; label: string }[] = [
@@ -23,9 +39,36 @@ const ESTADOS: { value: EstadoVuelo | ""; label: string }[] = [
 interface QuotesFilterBarProps {
   clients: { id: string; nombre: string }[];
   initial: { estado: string; cliente_id: string; q: string };
+  /**
+   * Hoy en Cancún (`todayCancun()` del servidor, 13-oct-2026): con ella se
+   * monta el bloque «Desde / Hasta» de la fecha del vuelo con sus periodos
+   * rápidos. SIN ella el marcado es byte a byte el de antes.
+   */
+  hoy?: string;
+  /**
+   * El API previo rechazó `desde`/`hasta` y la página releyó sin rango: la
+   * nota bajo la barra dice «Sin periodo» (el banner ámbar lo pinta la
+   * página, una sola voz).
+   */
+  rangoIgnorado?: boolean;
 }
 
-export function QuotesFilterBar({ clients, initial }: QuotesFilterBarProps) {
+/**
+ * Barra de filtros de la lista de cotizaciones. El RANGO de fechas se LEE de
+ * la URL viva con la MISMA función del servidor (`rangoListaCotizaciones`;
+ * regla de las tablas: nunca `useState(propDelServer)`, al volver del detalle
+ * Next reusa el payload viejo). Los campos de fecha guardan un BORRADOR
+ * (patrón de `PeriodSelector`, 12-oct-2026): tecleando el año («0002-10-01»)
+ * nada navega; solo una fecha COMPLETA, tras `ESPERA_APLICAR_MS` o al salir
+ * del campo / Enter. Si el extremo nuevo invierte el rango, el otro lo
+ * sigue (`rangoAlCambiarCampo`, la regla del selector de Reportes).
+ */
+export function QuotesFilterBar({
+  clients,
+  initial,
+  hoy,
+  rangoIgnorado = false,
+}: QuotesFilterBarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -46,7 +89,110 @@ export function QuotesFilterBar({ clients, initial }: QuotesFilterBarProps) {
     [params, pathname, router],
   );
 
-  const hasFilters = !!(initial.estado || initial.cliente_id || initial.q);
+  // El rango de la URL VIVA, validado igual que en el servidor.
+  const rango = rangoListaCotizaciones(params.get("desde"), params.get("hasta"));
+  const deUrl: Record<CampoRangoLista, string> = {
+    desde: rango.desde ?? "",
+    hasta: rango.hasta ?? "",
+  };
+
+  // Borrador por campo, guardado contra el valor de la URL con el que se
+  // escribió: cuando la URL cambia (la navegación llegó) caduca solo.
+  const [borradores, setBorradores] = useState<
+    Record<CampoRangoLista, BorradorCampoFecha | null>
+  >({ desde: null, hasta: null });
+  const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelarEspera = useCallback(() => {
+    if (temporizador.current) {
+      clearTimeout(temporizador.current);
+      temporizador.current = null;
+    }
+  }, []);
+  useEffect(() => cancelarEspera, [cancelarEspera]);
+
+  const visible: Record<CampoRangoLista, string> = {
+    desde: valorVisibleCampoFecha(deUrl.desde, borradores.desde),
+    hasta: valorVisibleCampoFecha(deUrl.hasta, borradores.hasta),
+  };
+
+  const guardarBorrador = (campo: CampoRangoLista, valor: string | null) =>
+    setBorradores((b) => ({
+      ...b,
+      [campo]: valor === null ? null : { base: deUrl[campo], valor },
+    }));
+
+  /** Navega con el rango que resulta de cambiar UN extremo (el otro lo sigue si queda invertido). */
+  const aplicar = (campo: CampoRangoLista, valor: string) => {
+    cancelarEspera();
+    const nuevo = rangoAlCambiarCampo(rango, campo, valor);
+    setBorradores({
+      desde: { base: deUrl.desde, valor: nuevo.desde ?? "" },
+      hasta: { base: deUrl.hasta, valor: nuevo.hasta ?? "" },
+    });
+    pushQuery({ desde: nuevo.desde ?? "", hasta: nuevo.hasta ?? "" });
+  };
+
+  const onCambio = (campo: CampoRangoLista, valor: string) => {
+    cancelarEspera();
+    const paso = pasoCampoFecha(valor);
+    guardarBorrador(campo, valor);
+    if (paso.tipo === "aplicar") {
+      temporizador.current = setTimeout(() => aplicar(campo, paso.valor), ESPERA_APLICAR_MS);
+    }
+  };
+
+  const onSalir = (campo: CampoRangoLista) => {
+    const paso = pasoAlSalirCampoFecha(visible[campo], deUrl[campo]);
+    if (paso.tipo === "aplicar") {
+      aplicar(campo, paso.valor);
+      return;
+    }
+    cancelarEspera();
+    if (paso.tipo === "limpiar") {
+      guardarBorrador(campo, "");
+      pushQuery({ [campo]: "" });
+      return;
+    }
+    guardarBorrador(campo, null); // incompleto o igual a la URL: vuelve lo de la URL
+  };
+
+  const irAPeriodo = (desde: string, hasta: string) => {
+    cancelarEspera();
+    setBorradores({
+      desde: { base: deUrl.desde, valor: desde },
+      hasta: { base: deUrl.hasta, valor: hasta },
+    });
+    pushQuery({ desde, hasta });
+  };
+
+  const limpiarTodo = () => {
+    cancelarEspera();
+    setBorradores({ desde: null, hasta: null });
+    pushQuery({ estado: "", cliente_id: "", q: "", desde: "", hasta: "" });
+  };
+
+  const hasFilters =
+    !!(initial.estado || initial.cliente_id || initial.q) || hayRangoLista(rango);
+
+  const campoFecha = (campo: CampoRangoLista, etiqueta: string) => (
+    <div>
+      <Label htmlFor={`cot-${campo}`} className="mb-1 text-[11px] text-muted-foreground">
+        {etiqueta}
+      </Label>
+      <Input
+        id={`cot-${campo}`}
+        type="date"
+        value={visible[campo]}
+        title={TITULO_FECHA_VUELO}
+        className="h-9 w-36 cursor-pointer"
+        onChange={(e) => onCambio(campo, e.target.value)}
+        onBlur={() => onSalir(campo)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSalir(campo);
+        }}
+      />
+    </div>
+  );
 
   return (
     <Card>
@@ -87,12 +233,50 @@ export function QuotesFilterBar({ clients, initial }: QuotesFilterBarProps) {
         {hasFilters && (
           <button
             type="button"
-            onClick={() => pushQuery({ estado: "", cliente_id: "", q: "" })}
-            className="inline-flex items-center gap-1.5 h-9 px-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={limpiarTodo}
+            className="inline-flex items-center gap-1.5 h-9 px-3 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <XMarkIcon className="h-4 w-4" />
             Limpiar
           </button>
+        )}
+        {hoy !== undefined && (
+          <>
+            <div
+              role="group"
+              aria-label={ETIQUETA_GRUPO_FECHAS}
+              data-rango="cotizaciones"
+              className="md:col-span-full flex flex-wrap items-end gap-3"
+            >
+              {campoFecha("desde", "Desde")}
+              {campoFecha("hasta", "Hasta")}
+              <div className="flex flex-wrap gap-1 pb-0.5">
+                {periodosRapidosCotizaciones(hoy).map((p) => {
+                  const activo = p.desde === rango.desde && p.hasta === rango.hasta;
+                  return (
+                    <button
+                      key={p.clave}
+                      type="button"
+                      onClick={() => irAPeriodo(p.desde, p.hasta)}
+                      aria-pressed={activo}
+                      data-periodo={p.clave}
+                      className={cn(
+                        "inline-flex h-8 cursor-pointer items-center rounded-lg px-2.5 text-xs font-medium transition-colors",
+                        activo
+                          ? "bg-foreground text-background"
+                          : "bg-muted text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {p.etiqueta}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <p data-nota-rango className="text-[11px] text-muted-foreground md:col-span-full">
+              {notaRangoCotizaciones(rango, { ignorado: rangoIgnorado })}
+            </p>
+          </>
         )}
       </CardContent>
     </Card>

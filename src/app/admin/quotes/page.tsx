@@ -14,10 +14,15 @@ import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { textoSinVerificar } from "@/lib/admin/lotes";
 import {
+  MSG_RANGO_API_VIEJO,
   filtrosListaDeParams,
   hrefCotizacion,
   qsFiltrosLista,
+  rangoDeFiltros,
+  textoEncabezadoCotizaciones,
+  textoVacioCotizaciones,
 } from "@/lib/admin/quote-navegacion";
+import { todayCancun } from "@/lib/datetime";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
@@ -40,6 +45,9 @@ interface QuotesPageProps {
     q?: string;
     /** Solo los aviones (hijos) de una cotización de GRUPO. */
     grupo_id?: string;
+    /** Rango de la FECHA DEL VUELO (día Cancún `YYYY-MM-DD`, 13-oct-2026). */
+    desde?: string;
+    hasta?: string;
   }>;
 }
 
@@ -68,11 +76,16 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   // FLECHAS entre cotizaciones (24-sep-2026): la MISMA función valida los
   // filtros aquí y en el detalle, y cada fila lleva esos filtros en su liga
   // para que «‹ Anterior» / «Siguiente ›» recorran exactamente esta lista.
+  // RANGO de fechas (13-oct-2026): `desde`/`hasta` también salen de ahí, así
+  // que viajan a `/vecinos` y a los hrefs sin tocar el detalle.
   const filtros = filtrosListaDeParams(sp);
   const grupoFiltro = filtros.grupo_id;
   const estadoFilter = filtros.estado;
   const clienteFiltro = filtros.cliente_id;
   const qsFiltros = qsFiltrosLista(filtros);
+  // Hoy en Cancún, UNA vez en el servidor: los periodos rápidos de la barra
+  // salen de aquí (evita que difieran al hidratar).
+  const hoy = todayCancun();
 
   // Catálogos accesorios: degradan con aviso; la lista de cotizaciones no.
   const degradado = new Degradaciones();
@@ -85,6 +98,8 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         cliente_id: clienteFiltro,
         q: filtros.q,
         grupo_id: grupoFiltro,
+        desde: filtros.desde,
+        hasta: filtros.hasta,
       }),
       degradado.opcional("los clientes", listClients({ limit: 200, activo: true }), {
         data: [] as Awaited<ReturnType<typeof listClients>>["data"],
@@ -107,7 +122,12 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const aircraftById = new Map(aircraftRes.data.map((a) => [a.id, a]));
-  const { data: quotes, count } = quotesRes;
+  const { data: quotes, count, rangoIgnorado } = quotesRes;
+  // El rango que de verdad se APLICÓ: con un API previo (`rangoIgnorado`) la
+  // lista es la de todas las fechas y los textos no pueden decir otra cosa.
+  const rango = rangoDeFiltros(filtros);
+  const rangoAplicado = rangoIgnorado ? {} : rango;
+  const vacio = textoVacioCotizaciones(rangoAplicado);
 
   // Semáforo de cobro (cotización y vuelo comparten id): batch solo para
   // filas con precio y sin cobrar; null degrada a "Por cobrar" sin romper.
@@ -218,7 +238,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           <p className="text-sm text-muted-foreground">Operación</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Cotizaciones</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {count} {count === 1 ? "cotización" : "cotizaciones"} en el rango.
+            {textoEncabezadoCotizaciones(count, rangoAplicado)}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -277,6 +297,19 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         faltantes={degradado.faltantes}
         extra={[textoSinVerificar(cobroSinVerificar.size, "los cobros")]}
       />
+
+      {/* El API previo rechazó `desde`/`hasta` (13-oct-2026): se releyó SIN
+          rango y se dice — nunca la pantalla rota ni «Sin cotizaciones». */}
+      {rangoIgnorado && (
+        <div
+          role="status"
+          data-aviso="rango-api-viejo"
+          className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300"
+        >
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <span>{MSG_RANGO_API_VIEJO}</span>
+        </div>
+      )}
 
       {grupoFiltro && (
         <div className="flex items-center gap-3 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-4 py-3 text-sm text-fuchsia-800 dark:text-fuchsia-200 flex-wrap">
@@ -348,13 +381,15 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           cliente_id: clienteFiltro ?? "",
           q: sp.q ?? "",
         }}
+        hoy={hoy}
+        rangoIgnorado={rangoIgnorado}
       />
 
       {quotes.length === 0 ? (
         <EmptyState
             icon={CalculatorIcon}
-            title="Sin cotizaciones"
-            description="Cuando guardes una cotización aparecerá aquí con su folio e historial."
+            title={vacio.titulo}
+            description={vacio.descripcion}
           />
       ) : (
         <Card>

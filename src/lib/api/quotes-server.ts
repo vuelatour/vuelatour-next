@@ -1,6 +1,11 @@
 import { apiServer } from "./server";
 import type { CotizacionInterna } from "@/types/quotes-interno";
-import type { FiltrosListaCotizaciones } from "@/lib/admin/quote-navegacion";
+import {
+  esApiSinRangoFechas,
+  hayRangoLista,
+  sinRango,
+  type FiltrosListaCotizaciones,
+} from "@/lib/admin/quote-navegacion";
 import type { QuoteVecinos } from "@/types/quote-vecinos";
 import type {
   CotizacionVersion,
@@ -16,6 +21,14 @@ export interface ListQuotesQuery {
   /** Solo los hijos de una cotización de GRUPO (vuelo.grupo_id). */
   grupo_id?: string;
   q?: string;
+  /**
+   * Día Cancún `YYYY-MM-DD` sobre `fecha_vuelo` (API ≥ el que agrega
+   * `desde`/`hasta`, 13-oct-2026); con rango, las cotizaciones SIN fecha de
+   * vuelo quedan fuera. Solo viajan cuando existen (`buildUrl` omite
+   * `undefined`): un API previo nunca los ve si no hay rango.
+   */
+  desde?: string;
+  hasta?: string;
   limit?: number;
   offset?: number;
 }
@@ -27,15 +40,15 @@ export function listQuotes(query: ListQuotesQuery = {}) {
   });
 }
 
+type ConsultaListaCompleta = Omit<ListQuotesQuery, "limit" | "offset">;
+
 /**
  * TODAS las cotizaciones del filtro, SIN cap: pagina con offset hasta cubrir
  * `count` (patrón anti-cap-200, igual que `listFuelLoads`). Con el corte en
  * 200, una cotización recién creada podía "desaparecer" de la lista
  * (auditoría 29-ago: 'ya lo había guardado y no está').
  */
-export async function listQuotesAll(
-  query: Omit<ListQuotesQuery, "limit" | "offset"> = {},
-) {
+async function listarTodas(query: ConsultaListaCompleta) {
   const limit = 200;
   const first = await listQuotes({ ...query, limit, offset: 0 });
   const data = [...first.data];
@@ -45,6 +58,31 @@ export async function listQuotesAll(
     data.push(...page.data);
   }
   return { data, count: first.count };
+}
+
+/**
+ * La lista completa (ver `listarTodas`) y, desde el 13-oct-2026, el rango de
+ * fechas: si el API todavía no conoce `desde`/`hasta` (400 «property desde
+ * should not exist», `esApiSinRangoFechas`) y la consulta traía rango, se
+ * vuelve a leer SIN el rango y se devuelve `rangoIgnorado: true` para que la
+ * página lo DIGA (banner ámbar) en vez de la pantalla rota o un «Sin
+ * cotizaciones» falso. Es un GET deliberado con OTROS parámetros, no el
+ * reintento automático de `apiFetch` (prohibido en 4xx). Un 400 de otro
+ * campo o un 502 siguen subiendo al boundary, como siempre.
+ */
+export async function listQuotesAll(
+  query: ConsultaListaCompleta = {},
+): Promise<{ data: PersistedQuote[]; count: number; rangoIgnorado: boolean }> {
+  try {
+    const r = await listarTodas(query);
+    return { ...r, rangoIgnorado: false };
+  } catch (err) {
+    if (hayRangoLista(query) && esApiSinRangoFechas(err)) {
+      const r = await listarTodas(sinRango(query));
+      return { ...r, rangoIgnorado: true };
+    }
+    throw err;
+  }
 }
 
 export function getQuote(id: string) {
@@ -87,27 +125,32 @@ export async function getQuoteInterno(id: string): Promise<CotizacionInterna | n
 /**
  * FLECHAS entre cotizaciones (`GET /v1/quotes/:id/vecinos`, 24-sep-2026): la
  * anterior y la siguiente EN EL TIEMPO con los MISMOS filtros de la lista
- * (`estado`, `cliente_id`, `q`, `grupo_id`, ya validados con
- * `filtrosListaDeParams`).
+ * (`estado`, `cliente_id`, `q`, `grupo_id` y, desde el 13-oct-2026,
+ * `desde`/`hasta`, ya validados con `filtrosListaDeParams`).
  *
  * `null` en SILENCIO ante 404 (API anterior: la ruta no existe) y 403 (rol
  * sin acceso): recargar no lo arregla y las flechas simplemente no se pintan.
- * Cualquier otro fallo LANZA: quien la llama la envuelve en
- * `degradado.opcional` para AVISAR — jamás se pinta «no hay siguiente» por una
- * lectura que falló.
+ * Si el API previo rechaza el RANGO (400 «property desde should not exist»)
+ * se vuelve a pedir SIN él: así las flechas recorren la MISMA lista degradada
+ * que la página enseña. Cualquier otro fallo LANZA: quien la llama la
+ * envuelve en `degradado.opcional` para AVISAR — jamás se pinta «no hay
+ * siguiente» por una lectura que falló.
  */
 export async function getQuoteVecinos(
   id: string,
   filtros: FiltrosListaCotizaciones,
 ): Promise<QuoteVecinos | null> {
-  try {
-    return await apiServer<QuoteVecinos>(`/v1/quotes/${id}/vecinos`, {
-      searchParams: { ...filtros },
+  const pedir = (f: Omit<FiltrosListaCotizaciones, "desde" | "hasta">) =>
+    apiServer<QuoteVecinos>(`/v1/quotes/${id}/vecinos`, {
+      searchParams: { ...f },
       cache: "no-store",
     });
+  try {
+    return await pedir(filtros);
   } catch (err) {
     const status = (err as { status?: unknown } | null)?.status;
     if (status === 404 || status === 403) return null;
+    if (hayRangoLista(filtros) && esApiSinRangoFechas(err)) return pedir(sinRango(filtros));
     throw err;
   }
 }
