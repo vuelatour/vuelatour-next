@@ -238,6 +238,32 @@
   }
 }
 
+/* Fila activa de las tablas (13-oct-2026): DataTable y las tablas de resumen
+   auditables del reparto (lib/admin/filas-activas + hooks/use-filas-activas).
+   Va FUERA de las capas A PROPÓSITO: los `hover:` de TableRow y de las filas
+   con href compilan a `.x:hover` con especificidad (0,2,0) y le ganarían a
+   cualquier utilidad de fondo (0,1,0) al pasar el mouse, y los fondos de
+   `rowClassName` (brand, sky, amber, muted) viven en @layer utilities; una
+   regla sin capa gana a todo lo que está en capas sin pelear por
+   especificidad ni depender del orden de clases/twMerge. Solo tokens:
+   --accent (brand-50 claro / navy-800 oscuro / brand-50 en .dark .zona-clara)
+   y --ring (el rojo de la casa en los tres). Nunca el gancho
+   `[state=selected]` del primitivo: su fondo es el tono del hover. La barra
+   va en la PRIMERA celda y el outline del foco (el global de *:focus-visible)
+   se mete 2 px para que el contenedor con scroll no lo recorte. */
+[data-filas-activas] > tr[data-fila-activa] {
+  background-color: var(--accent);
+}
+[data-filas-activas] > tr[data-fila-activa] > :first-child {
+  box-shadow: inset 3px 0 0 0 var(--ring);
+}
+[data-filas-activas] > tr[data-fila-activa] + tr[data-fila-hija] {
+  background-color: var(--accent);
+}
+[data-filas-activas] > tr:focus-visible {
+  outline-offset: -2px;
+}
+
 /* Tema oscuro: el icono nativo del calendario/reloj en inputs de fecha era
    negro sobre fondo oscuro (invisible). Se invierte a blanco. */
 input[type="date"]::-webkit-calendar-picker-indicator,

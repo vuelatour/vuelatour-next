@@ -7,6 +7,7 @@ import {
   ExclamationTriangleIcon,
   ListBulletIcon,
 } from "@heroicons/react/24/outline";
+import { useFilasActivas } from "@/hooks/use-filas-activas";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -48,6 +49,11 @@ const GRUPO_BADGE: Record<DetalleGastoGrupo, string> = {
   EXCLUIDO: "border-dashed text-muted-foreground",
   FIJO: "bg-muted text-muted-foreground border-border",
 };
+
+/** UNA sola fuente del href del vuelo: la leen el <Link> del Folio y la fila (Enter abre ese MISMO enlace). */
+const hrefVuelo = (id: string) => `/admin/flights/${id}`;
+/** Clave de la fila de gastos (la misma `key` de siempre). */
+const claveGasto = (g: { grupo: string; categoria: string }) => `${g.grupo}-${g.categoria}`;
 
 /** Estado de cobro derivado: cancelado > bandera cobrado > parcial > pendiente. */
 function estadoCobro(v: DetalleVuelo): { label: string; className: string } {
@@ -128,6 +134,10 @@ function fmtFechaVuelo(fecha: string | null): string {
 export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  // Fila activa + teclado (13-oct-2026): dos instancias = dos tablas
+  // independientes (vuelos y gastos), cada una con su propia activa.
+  const filasVuelos = useFilasActivas(detalle.vuelos.map((v) => v.id));
+  const filasGastos = useFilasActivas(detalle.gastos_por_categoria.map(claveGasto));
 
   // Suma de la VENTA DEL AVIÓN (no del bruto del cliente): así el pie de la
   // tabla cuadra con "Venta del avión cobrada" de la cascada.
@@ -178,8 +188,12 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
         />
       </button>
 
+      {/* Plegado: el contenido sigue en el DOM (0 px + overflow-hidden) y sin
+          `inert` sus enlaces y las filas con tabindex serían paradas de Tab
+          invisibles (defecto previo). React 19 pinta `inert=""`. */}
       <div
         id={panelId}
+        inert={!open || undefined}
         className={`grid transition-[grid-template-rows] duration-300 ease-out ${
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         }`}
@@ -218,15 +232,15 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         <TableHead>Estado</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody {...filasVuelos.propsCuerpo}>
                       {detalle.vuelos.map((v) => {
                         const estado = estadoCobro(v);
                         const c = cifrasAvion(v);
                         return (
-                          <TableRow key={v.id}>
+                          <TableRow key={v.id} {...filasVuelos.propsFila(v.id, hrefVuelo(v.id))}>
                             <TableCell className="font-mono text-xs">
                               <Link
-                                href={`/admin/flights/${v.id}`}
+                                href={hrefVuelo(v.id)}
                                 className="underline underline-offset-2 hover:text-foreground"
                               >
                                 {v.folio != null ? `#${v.folio}` : "s/folio"}
@@ -375,9 +389,9 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         <TableHead className="text-right">USD</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody {...filasGastos.propsCuerpo}>
                       {detalle.gastos_por_categoria.map((g) => (
-                        <TableRow key={`${g.grupo}-${g.categoria}`}>
+                        <TableRow key={claveGasto(g)} {...filasGastos.propsFila(claveGasto(g))}>
                           <TableCell className="text-xs">
                             {/* Etiqueta homologada del API (conserva el sufijo
                                 " (repartido)" de la clave); el fallback local

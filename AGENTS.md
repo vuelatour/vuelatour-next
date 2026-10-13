@@ -192,6 +192,11 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   cambia el conjunto (clave = ids unidos), las filas que quedan tras la
   búsqueda rápida (todas las páginas). Lo usa «Mover a…» del inventario;
   nadie más cambia.
+  **Fila activa y teclado** (13-oct-2026): toda DataTable trae fila activa
+  con clic/foco y ↑/↓/Home/End/Enter/Esc; fuente única
+  `lib/admin/filas-activas.ts` + `lib/admin/desplazamiento-visible.ts` +
+  hook `hooks/use-filas-activas.ts`; sin URL ni localStorage; ver «Tablas:
+  fila activa y teclado ↑/↓/Enter/Esc» al final.
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
@@ -6600,3 +6605,123 @@ panel DEGRADA sin mentir.
   el servidor». Pendientes: sin QA visual en navegador (el borrador se prueba
   sobre las funciones puras); el campo «Buscar» sigue siendo `defaultValue` y
   no se vacía solo al pulsar «Limpiar» (como antes de este lote).
+
+## Tablas: fila activa y teclado ↑/↓/Enter/Esc (13-oct-2026)
+
+Pedido del cliente (lote del 13-oct-2026): al hacer clic en una fila que
+quede «activa» (resaltada, distinta del hover) y poder auditar renglón por
+renglón con ↑/↓, Enter abre el detalle y Esc quita el resaltado. Aplica a
+TODA `DataTable` (48 tablas, sin interruptor ni props nuevas) y a las dos
+tablas de resumen auditables del reparto (`profit-sharing/desglose-section.tsx`
+—vuelos y gastos— y `movimientos-cuenta.tsx`). Solo panel.
+
+- **Fuente única**: `lib/admin/filas-activas.ts` (PURO: `accionDeTeclaFila`,
+  `indiceFilaSiguiente`, `filaDeEntrada`, `atributosFila`,
+  `indiceEnlaceDeFila`, `scrollParaVerFila`, constantes de los atributos y
+  selectores) + `lib/admin/desplazamiento-visible.ts` (`desplazamientoParaVer`,
+  la cuenta 1-D del scroll «justo», COMPARTIDA con el LibroExcel: `ejeParaVer`
+  de `libro-excel.ts` delega en ella, un solo cálculo para los dos) + hook
+  `hooks/use-filas-activas.ts` (`useFilasActivas(claves)` ⇒ `propsCuerpo` para
+  el <tbody> y `propsFila(clave, href?)` para cada <tr> navegable). Sin
+  `useEffect` ni `useRef`: la fila destino ya existe cuando se pulsa la tecla.
+- **Decisión ARIA**: la tabla sigue siendo una `<table>` NATIVA. Cada `<tr>`
+  de datos (hijo DIRECTO del <tbody>) lleva `data-fila="<clave>"` + `tabindex`
+  ROVING (exactamente UNA fila con 0 por tabla: la activa si está pintada, si
+  no la primera; −1 el resto); la activa lleva `aria-selected="true"` +
+  `data-fila-activa=""` y las demás NO llevan `aria-selected`; con enlace de
+  fila, `data-fila-href="<href>"`. **NO `role="grid"`** (ni `row`, `gridcell`,
+  `aria-activedescendant`): un grid exige navegación por celda, quita el
+  modo tabla de NVDA/VoiceOver y rompe «los <Link> de cada celda siguen siendo
+  navegables como hoy». Plan B si los lectores no anuncian «seleccionado»:
+  cambiar `aria-selected: true` por `aria-current: true` en `atributosFila`
+  (una línea).
+- **Teclas (solo con el foco dentro de ESA tabla; la escucha es DELEGADA en el
+  <tbody>, nunca en window)**: ↑/↓ mueven la activa entre las filas VISIBLES
+  de la página (sub-filas incluidas, orden DOM) y **en el borde se queda: NO
+  cambia de página** (la paginación escribe la URL y haría desaparecer la
+  fila bajo el dedo; los botones siguen siendo el camino); Home/End primera/
+  última; **Enter con el foco EN el <tr>** hace `.click()` sobre el `a[href]`
+  de la fila cuyo href es EXACTAMENTE `data-fila-href` (el MISMO clic del
+  mouse: pasa por `useCambiosSinGuardar` y por el <Link> de Next); sin
+  `data-fila-href` no hace nada (la mayoría de las tablas no tienen `rowHref`
+  y sí enlaces sueltos: nunca se navega a algo no elegido); con el foco en un
+  enlace o botón Enter es el nativo. Esc suelta el resaltado SOLO si hay
+  activa (sin activa no se traga la tecla); el foco se queda.
+- **Cuándo NO**: modificadores, `defaultPrevented`, foco en INPUT/TEXTAREA/
+  SELECT/contenteditable, roles con flechas propias (listbox, option,
+  combobox, menu*, slider, spinbutton, radio*, tab*, tree*, grid*, textbox,
+  searchbox, scrollbar), disparadores `[aria-haspopup]`/`[aria-expanded]` (el
+  ⋯ de Base UI), y **←/→ JAMÁS** (el atajo del detalle de cotización,
+  `direccionDeTecla`, queda intacto; la prueba de cableado lo congela). Los
+  menús y diálogos de Base UI viven en portales y React les burbujea los
+  eventos por el árbol de componentes: por eso el PRIMER chequeo de los tres
+  handlers es `currentTarget.contains(target)` (Esc dentro de un diálogo
+  abierto desde una fila NO suelta la activa; ↓ dentro de un menú no mueve
+  filas).
+- **Activación**: clic en cualquier celda (si no cae en un control, el <tr>
+  recibe el foco para que Enter funcione de inmediato; un clic en un enlace/
+  botón/campo NO roba el foco); foco en la fila O en cualquier control de la
+  fila (el resaltado sigue al Tab por los enlaces y al ⋯; Tab que entra a la
+  tabla activa la fila de entrada; Esc la suelta). **No persiste**: ni URL ni
+  localStorage (`useState` por instancia; Conciliación y las 6 tablas de
+  Paywise tienen cada una su activa; al volver del detalle no se recuerda).
+  SSR determinista: sin activa ⇒ sin mismatch de hidratación.
+- **Scroll**: al mover por teclado, `destino.focus({preventScroll:true})`,
+  scroll INSTANTÁNEO del `div[data-slot="table-container"]` con
+  `scrollParaVerFila` (descuenta el `<thead>` sticky; geometría por
+  `getBoundingClientRect` relativa al marco) y después
+  `scrollIntoView({block:"nearest", behavior:"instant"})` para la ventana
+  (`html` lleva desplazamiento suave por CSS; nada sticky tapa filas en el
+  shell).
+- **Resaltado**: regla en `globals.css` FUERA de las capas a propósito:
+  `[data-filas-activas] > tr[data-fila-activa]` ⇒ `var(--accent)` (brand-50
+  claro / navy-800 oscuro / brand-50 en `.dark .zona-clara`), su primera celda
+  con barra `inset 3px 0 0 0 var(--ring)` (rojo de la casa), `+
+  tr[data-fila-hija]` acompaña, y `tr:focus-visible { outline-offset: -2px }`.
+  Razón exacta: `hover:bg-muted/50` (TableRow) y `hover:bg-muted/40` (filas
+  con href) compilan a `.x:hover` con especificidad (0,2,0) y le ganan a
+  cualquier `bg-accent` (0,1,0) al pasar el mouse, y los fondos de
+  `rowClassName` viven en @layer utilities; una regla sin capa gana a todo lo
+  que está en capas. **Nunca `data-state="selected"`** (su `bg-muted` del
+  primitivo es el tono del hover) ni clases Tailwind para la activa. Mientras
+  una fila está activa su fondo de `rowClassName` (ámbar de `?resaltar`, sky,
+  brand, muted) queda debajo del accent y vuelve al soltar; el `ring-amber`
+  y la `opacity` conviven.
+- **Cómo se suma una tabla de resumen**: `const f = useFilasActivas(claves)`
+  (claves = las filas PINTADAS en orden) → `<TableBody {...f.propsCuerpo}>` +
+  `<TableRow {...f.propsFila(clave, href?)}>` en cada fila navegable; un
+  renglón pegado no navegable lleva `data-fila-hija=""` (el detalle de la
+  entrega del socio); nunca en thead/tfoot ni en la fila «Sin resultados»; el
+  href de `propsFila` y el del `<Link>` salen de UNA función (`hrefVuelo` en
+  el desglose: Enter abre ese MISMO enlace). Un panel plegado que conserva el
+  contenido en el DOM lleva `inert` cerrado (`desglose-section.tsx`: sin él,
+  sus enlaces y las filas con tabindex eran paradas de Tab invisibles,
+  defecto previo). `ui/table.tsx` no cambió: el hook localiza el marco por
+  `data-slot="table-container"` y la cabecera por `table.tHead`.
+- **Pruebas**: `lib/admin/__tests__/desplazamiento-visible.test.ts`,
+  `filas-activas.test.ts`, `filas-activas-cableado.test.ts` (regex sobre
+  DataTable, el hook, las dos tablas de resumen, el CSS fuera de capas y sin
+  hex, `ui/table.tsx` y `direccionDeTecla` intactos, `ejeParaVer` delegando),
+  `hooks/__tests__/use-filas-activas.test.tsx` (arnés con
+  `renderToStaticMarkup`: reposo, con activa `inicial` —opción SOLO para
+  pruebas—, activa no pintada), `components/admin/__tests__/
+  data-table-filas-activas.test.tsx` (con/sin rowHref, subRows, vacía, dos
+  tablas) y `profit-sharing/__tests__/filas-activas-resumen.test.tsx`. Las
+  existentes siguen sin tocarse (`busqueda-cableado`, `items-table-orden`,
+  `aircraft-table`, `lote`, `cuentas-socios`, `quote-navegacion`,
+  `libro-excel`).
+- **QA manual pendiente** (sin DOM en el runner): Chrome Windows (el de la
+  oficina) en `/admin/expenses` (↓ en el ⋯ abre el menú y no mueve filas; Esc
+  dentro de un diálogo abierto desde una fila NO suelta la activa),
+  `/admin/conciliacion` (cada tabla con su activa), `/admin/flights` (↓ en una
+  tabla alta no deja la fila bajo el thead sticky; Enter abre el vuelo y pasa
+  por el guard de cambios sin guardar donde aplique) y el desglose del
+  reparto (Tab no entra al panel plegado; Enter en un vuelo abre el folio);
+  VoiceOver + Safari y NVDA + Chrome (al enfocar una fila se lee su contenido
+  y «seleccionado»; si no, plan B `aria-current`); que el `outline` de la fila
+  y el `box-shadow` de la primera celda se pinten en Chrome/Firefox/Safari
+  (respaldo sin tocar componentes: mover el marco de foco a `> :first-child`
+  / `> :last-child` con sombras internas en la misma regla CSS). Un tab stop
+  nuevo por tabla y activación al enfocar: tabular por la página deja
+  resaltada la fila de entrada de cada tabla que se cruza (Esc la suelta);
+  si molesta, se cambia en `filaDeEntrada` sin tocar consumidores.

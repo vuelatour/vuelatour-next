@@ -19,6 +19,7 @@ import type {
   LibroExcelEstilo,
   LibroExcelHoja,
 } from "@/types/libro-excel";
+import { desplazamientoParaVer } from "./desplazamiento-visible";
 
 /** Ancho de columna de Excel (caracteres de Calibri 11) → px: 7 px por carácter + 5 de margen. 8.43 ⇒ 64 px, como Excel. */
 export const PX_POR_CARACTER = 7;
@@ -428,11 +429,18 @@ function ejeParaVer(
   actual: number,
 ): number {
   if (visible <= ocupado) return actual;
-  if (inicio - actual < ocupado) return Math.max(0, inicio - ocupado);
-  if (inicio + tam - actual > visible) {
-    return tam > visible - ocupado ? Math.max(0, inicio - ocupado) : inicio + tam - visible;
-  }
-  return actual;
+  // FUENTE ÚNICA con las filas activas de las tablas (13-oct-2026): la misma
+  // cuenta 1-D de `desplazamiento-visible.ts`, con lo sticky como zona fija
+  // al inicio del eje; `null` = ya se ve ⇒ se conserva el scroll de hoy.
+  return (
+    desplazamientoParaVer({
+      inicio,
+      fin: inicio + tam,
+      scroll: actual,
+      alto: visible,
+      fijoAntes: ocupado,
+    }) ?? actual
+  );
 }
 
 /**

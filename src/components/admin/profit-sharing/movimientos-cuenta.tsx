@@ -3,6 +3,7 @@
 import { Fragment, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { useFilasActivas } from "@/hooks/use-filas-activas";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -43,6 +44,15 @@ import { ComprobanteEntrega } from "./comprobante-entrega";
  * «Adelanto a cuenta» a toda entrega sin mes. El SALDO negativo se pinta en
  * azul (adelantado) y el positivo en ámbar, con la tolerancia del API.
  */
+/**
+ * Clave de un renglón: UNA sola fuente para la `key` del Fragment y para la
+ * fila activa (la MISMA expresión que armaba la key hasta el 13-oct-2026).
+ */
+function claveMovimiento(m: MovimientoCuenta, i: number): string {
+  const pago = m.tipo === "ENTREGA" ? m.pago : null;
+  return pago?.id ?? `${m.tipo}-${m.fecha}-${m.aeronave?.id ?? ""}-${i}`;
+}
+
 export function MovimientosCuenta({
   movimientos,
   contexto,
@@ -59,6 +69,9 @@ export function MovimientosCuenta({
   const [dialogo, setDialogo] = useState<(DialogoEntrega & { clave: string }) | null>(null);
   const [aEliminar, setAEliminar] = useState<PagoSocio | null>(null);
   const contador = useRef(0);
+  // Fila activa + teclado (13-oct-2026): solo el renglón principal de cada
+  // movimiento es navegable; el detalle de la entrega se resalta pegado a él.
+  const filasActivas = useFilasActivas(movimientos.map(claveMovimiento));
 
   return (
     <div className="space-y-2">
@@ -73,16 +86,18 @@ export function MovimientosCuenta({
             <TableHead className="text-right">Saldo</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody {...filasActivas.propsCuerpo}>
           {movimientos.map((m, i) => {
             const { suma, resta } = importesMovimiento(m);
             const saldo = esRenglonDeSaldo(m.tipo);
             const pago = m.tipo === "ENTREGA" ? m.pago : null;
             const p = pago ? piezasPago(pago) : null;
             const extras = p ? ([p.recibio, p.factura, p.referencia].filter(Boolean) as string[]) : [];
+            const clave = claveMovimiento(m, i);
             return (
-              <Fragment key={pago?.id ?? `${m.tipo}-${m.fecha}-${m.aeronave?.id ?? ""}-${i}`}>
+              <Fragment key={clave}>
                 <TableRow
+                  {...filasActivas.propsFila(clave)}
                   className={cn(saldo && "bg-muted/40", pago && "border-b-0")}
                   data-movimiento={m.tipo}
                   data-en-curso={m.en_curso ? "" : undefined}
@@ -126,7 +141,7 @@ export function MovimientosCuenta({
                   </TableCell>
                 </TableRow>
                 {pago && p && (
-                  <TableRow className="hover:bg-transparent" data-entrega-id={pago.id}>
+                  <TableRow className="hover:bg-transparent" data-entrega-id={pago.id} data-fila-hija="">
                     <TableCell />
                     <TableCell colSpan={4} className="whitespace-normal pt-0 pb-2.5">
                       <div className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-border bg-muted/20 px-2 py-1.5">

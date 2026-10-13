@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { coincideBusqueda } from "@/lib/admin/busqueda";
+import { useFilasActivas } from "@/hooks/use-filas-activas";
 import {
   Table,
   TableBody,
@@ -33,8 +34,11 @@ import {
 
 /**
  * Tabla de LISTA unificada del panel (fuente única): paginado con selector
- * de filas por página (10/20/50/100), búsqueda rápida instantánea opcional y
- * encabezados fijos al hacer scroll (vienen del <Table> base).
+ * de filas por página (10/20/50/100), búsqueda rápida instantánea opcional,
+ * encabezados fijos al hacer scroll (vienen del <Table> base) y, desde el
+ * 13-oct-2026, fila ACTIVA + teclado ↑/↓/Home/End/Enter/Esc en TODAS las
+ * tablas (`hooks/use-filas-activas`; reglas puras y decisión ARIA en
+ * `lib/admin/filas-activas`).
  *
  * Uso: las páginas (server) arman filas serializables y las pasan a un
  * componente cliente delgado que define las columnas. Las tablas de RESUMEN
@@ -284,6 +288,19 @@ export function DataTable<T>({
   const desde = (paginaActual - 1) * pageSize;
   const visibles = filtradas.slice(desde, desde + pageSize);
 
+  // Fila ACTIVA + teclado ↑/↓/Home/End/Enter/Esc (13-oct-2026): un clic o el
+  // foco dejan una fila resaltada y las flechas la mueven entre las filas
+  // PINTADAS (página actual, sub-filas incluidas, orden DOM). Qué NO hace: no
+  // persiste (ni URL ni localStorage), en el borde NO cambia de página (la
+  // paginación escribe la URL y haría desaparecer la fila bajo el dedo) y
+  // Enter abre SOLO `rowHref` (el mismo clic del <Link> de la primera celda).
+  // Reglas puras y decisión ARIA en lib/admin/filas-activas.ts; sin props
+  // nuevas: aplica a TODAS las tablas.
+  const clavesRender = subRows
+    ? visibles.flatMap((r) => [rowKey(r), ...(subRows(r) ?? []).map(rowKey)])
+    : visibles.map(rowKey);
+  const filasActivas = useFilasActivas(clavesRender);
+
   const conBuscador = !!searchText && rows.length > 0;
   const conAtajos = atajos.length > 0 && rows.length > 0;
   // Sin suficientes filas no hay nada que paginar: la barra solo estorba.
@@ -294,6 +311,7 @@ export function DataTable<T>({
     return (
       <TableRow
         key={rowKey(row)}
+        {...filasActivas.propsFila(rowKey(row), href)}
         className={
           (href ? "cursor-pointer hover:bg-muted/40 " : "") +
           (rowClassName?.(row) ?? "")
@@ -405,7 +423,7 @@ export function DataTable<T>({
             })}
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody {...filasActivas.propsCuerpo}>
           {visibles.length === 0 ? (
             <TableRow>
               <TableCell
