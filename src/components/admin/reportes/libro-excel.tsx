@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -32,6 +33,12 @@ import {
   textoHojas,
   tituloCelda,
 } from "@/lib/admin/libro-excel";
+import {
+  ETIQUETA_QUITAR_FRANJA_GASTO,
+  franjaDeLlegada,
+  llegadaAGasto,
+  type FranjaGasto,
+} from "@/lib/admin/libro-vinculos";
 import "@/styles/libro-excel.css";
 
 export interface DescargaLibro {
@@ -77,6 +84,7 @@ export function LibroExcel({
   descarga,
   className,
   pantalla = false,
+  gastoInicial = null,
 }: {
   libro: LibroExcelJson;
   descarga?: DescargaLibro | null;
@@ -86,9 +94,24 @@ export function LibroExcel({
    *  del offset) y la barra gana el botón «Pantalla completa» (Fullscreen
    *  API sobre este contenedor). Sin la prop, el libro de siempre. */
   pantalla?: boolean;
+  /** Llegada desde Conciliación (`?gasto=`, 13-oct-2026, punto 5): abre el
+   *  libro en la hoja y la celda de ese gasto, con la franja que lo explica.
+   *  Sin la prop, el libro de siempre. */
+  gastoInicial?: string | null;
 }) {
-  const [hojaIdx, setHojaIdx] = useState(0);
-  const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
+  // Dónde vive el gasto en ESTE libro (puro, `lib/admin/libro-vinculos.ts`).
+  // UNA vez por montaje y también en el servidor: el HTML ya trae la pestaña,
+  // la celda, el cuadro de nombres y la franja. La página remonta el libro con
+  // `key` (gasto · título · archivo) al cambiar de gasto, de periodo o de
+  // libro; un router.refresh() conserva la key y no vuelve a calcular ni a saltar.
+  const [llegada] = useState(() => (gastoInicial ? llegadaAGasto(libro, gastoInicial) : null));
+  const [hojaIdx, setHojaIdx] = useState(() => llegada?.hallazgo?.hojaIdx ?? 0);
+  const [seleccion, setSeleccion] = useState<Seleccion | null>(() =>
+    llegada?.hallazgo ? { r: llegada.hallazgo.r, c: llegada.hallazgo.c } : null,
+  );
+  const [franja, setFranja] = useState<FranjaGasto | null>(() =>
+    llegada ? franjaDeLlegada(llegada) : null,
+  );
   const hoja = libro.hojas[hojaIdx] ?? libro.hojas[0] ?? null;
   const vista = useMemo(() => (hoja ? cuadriculaHoja(hoja, libro) : null), [hoja, libro]);
 
@@ -145,9 +168,9 @@ export function LibroExcel({
   // `router.refresh()` (RefreshOnFocus al volver a la pestaña) recrea
   // `libro`/`vista` y un efecto con esas deps volvería a saltar a la celda
   // activa aunque el operador hubiera hecho scroll con la rueda — Excel nunca
-  // hace eso.
-  const seleccionar = (sel: Seleccion) => {
-    setSeleccion(sel);
+  // hace eso. `desplazarMarcoA` es la ÚNICA llamada a `scrollParaVerCelda`:
+  // la usan `seleccionar` y la llegada desde Conciliación (abajo).
+  const desplazarMarcoA = (sel: Seleccion) => {
     const el = marco.current;
     if (!el || !vista) return;
     const destino = scrollParaVerCelda(vista, sel, el);
@@ -155,6 +178,25 @@ export function LibroExcel({
     el.scrollLeft = destino.scrollLeft;
     el.scrollTop = destino.scrollTop;
   };
+  const seleccionar = (sel: Seleccion) => {
+    setSeleccion(sel);
+    desplazarMarcoA(sel);
+  };
+
+  // Efecto de LLEGADA (13-oct-2026, punto 5; la ÚNICA excepción documentada a
+  // «el scroll va en el manejador»): al montar, el marco va a la celda del
+  // gasto. NO toca estado —la hoja, la celda y la franja nacieron en los
+  // inicializadores; `react-hooks/set-state-in-effect` es error en
+  // eslint-plugin-react-hooks 7— y no depende de `vista` ni de `libro`
+  // (`useEffectEvent` lee los de ese render): un router.refresh() no vuelve a
+  // saltar.
+  const alLlegar = useEffectEvent(() => {
+    const h = llegada?.hallazgo;
+    if (h) desplazarMarcoA({ r: h.r, c: h.c });
+  });
+  useEffect(() => {
+    alLlegar();
+  }, []);
 
   // Flechas, PageUp/PageDown y Home/End mueven la SELECCIÓN (y el marco la
   // sigue por `seleccionar`). PageUp/PageDown saltan las filas que caben en la
@@ -190,6 +232,24 @@ export function LibroExcel({
       className={cn("xl-libro zona-clara", pantalla && "xl-libro--pantalla", className)}
       data-libro={libro.titulo}
     >
+      {/* Franja del gasto (13-oct-2026, punto 5): ANTES de la barra y solo con
+          la llegada desde Conciliación. 28 px exactos (`ALTO_FRANJA_PX`); el
+          marco se los cede por CSS (`:has`) mientras existe. `role="status"`
+          ya es región viva: sin `aria-live` explícito. */}
+      {franja ? (
+        <div className="xl-franja" data-tono={franja.tono} role="status" title={franja.titulo}>
+          <span className="xl-franja-texto">{franja.texto}</span>
+          <button
+            type="button"
+            className="xl-franja-cerrar cursor-pointer"
+            aria-label={ETIQUETA_QUITAR_FRANJA_GASTO}
+            title={ETIQUETA_QUITAR_FRANJA_GASTO}
+            onClick={() => setFranja(null)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       <div className="xl-barra">
         {/* Regiones VIVAS (revisión 13-oct-2026): al moverse con el teclado la
             selección solo era un contorno verde y el lector de pantalla no

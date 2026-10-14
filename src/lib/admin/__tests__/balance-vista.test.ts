@@ -27,6 +27,7 @@ import {
 } from "../balance-vista";
 
 const UUID = "3f9a1c2e-0000-4000-8000-000000000001";
+const UUID_GASTO = "2a3e7a09-5d1c-4b7e-9f00-000000000430";
 const DEF = { desde: "2026-10-01", hasta: "2026-10-12" };
 
 describe("parámetros de la URL", () => {
@@ -74,6 +75,20 @@ describe("parámetros de la URL", () => {
       hasta: "2026-10-01",
     });
   });
+
+  it("`gasto` (13-oct-2026, llegada desde Conciliación): la llave solo existe con un uuid válido", () => {
+    expect(parametrosVistaBalance({ avion: UUID, gasto: UUID_GASTO }, DEF)).toEqual({
+      destino: { tipo: "avion", avionId: UUID },
+      ...DEF,
+      gasto: UUID_GASTO,
+    });
+    // Inválido o vacío ⇒ ni la llave (los `toEqual` de siempre siguen valiendo).
+    expect(parametrosVistaBalance({ gasto: "nada" }, DEF)).toEqual({
+      destino: { tipo: "vuelatour", modo: "mensual" },
+      ...DEF,
+    });
+    expect(Object.keys(parametrosVistaBalance({ gasto: "" }, DEF))).toEqual(["destino", "desde", "hasta"]);
+  });
 });
 
 describe("enlaces y títulos", () => {
@@ -94,6 +109,31 @@ describe("enlaces y títulos", () => {
       destino: { tipo: "avion", avionId: UUID },
       desde: "2026-09-01",
       hasta: "2026-09-30",
+    });
+  });
+
+  it("con `extra.gasto` agrega `&gasto=` AL FINAL; sin `extra` o con un gasto inválido, la URL de siempre", () => {
+    expect(
+      hrefVistaBalance({ tipo: "avion", avionId: UUID }, "2026-10-01", "2026-10-31", { gasto: UUID_GASTO }),
+    ).toBe(`${RUTA_VISTA_BALANCE}?avion=${UUID}&desde=2026-10-01&hasta=2026-10-31&gasto=${UUID_GASTO}`);
+    expect(
+      hrefVistaBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-10-01", "2026-10-31", { gasto: UUID_GASTO }),
+    ).toBe(`${RUTA_VISTA_BALANCE}?modo=mensual&desde=2026-10-01&hasta=2026-10-31&gasto=${UUID_GASTO}`);
+    const siempre = hrefVistaBalance({ tipo: "vuelatour", modo: "general" }, "2026-10-01", "2026-10-31");
+    expect(siempre).toBe(`${RUTA_VISTA_BALANCE}?modo=general&desde=2026-10-01&hasta=2026-10-31`);
+    for (const extra of [{}, { gasto: null }, { gasto: undefined }, { gasto: "nada" }, { gasto: "" }]) {
+      expect(hrefVistaBalance({ tipo: "vuelatour", modo: "general" }, "2026-10-01", "2026-10-31", extra)).toBe(
+        siempre,
+      );
+    }
+    // Ida y vuelta: la página entiende el enlace de Conciliación.
+    const href = hrefVistaBalance({ tipo: "avion", avionId: UUID }, "2026-10-01", "2026-10-31", { gasto: UUID_GASTO });
+    const sp = Object.fromEntries(new URL(`https://x${href}`).searchParams);
+    expect(parametrosVistaBalance(sp, DEF)).toEqual({
+      destino: { tipo: "avion", avionId: UUID },
+      desde: "2026-10-01",
+      hasta: "2026-10-31",
+      gasto: UUID_GASTO,
     });
   });
 

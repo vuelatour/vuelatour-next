@@ -140,7 +140,8 @@
 }
 
 .xl-libro:fullscreen .xl-barra,
-.xl-libro:fullscreen .xl-pestanas {
+.xl-libro:fullscreen .xl-pestanas,
+.xl-libro:fullscreen .xl-franja {
   flex: none;
 }
 
@@ -148,6 +149,71 @@
   flex: 1 1 auto;
   min-height: 0;
   max-height: calc(100vh - 41px - 38px);
+}
+
+/*
+ * Franja del gasto (13-oct-2026, punto 5): la llegada desde Conciliación
+ * (`?gasto=`) dice qué celda es la del gasto, o por qué no está. Va ANTES de
+ * la barra de fórmulas (primer hijo de `.xl-libro`) y mide EXACTAMENTE 28 px
+ * con su borde (box-sizing border-box del preflight) = `ALTO_FRANJA_PX` de
+ * `lib/admin/libro-vinculos.ts`. El marco le cede esos 28 px SOLO mientras
+ * existe (`:has`, ya usado en globals.css): al pulsar «Quitar aviso»
+ * recupera su alto y la cuenta de `--xl-pantalla-offset` de arriba no cambia.
+ */
+.xl-franja {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-bottom: 1px solid #d9d9d9;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.xl-franja[data-tono="aviso"] {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.xl-franja-texto {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xl-franja-cerrar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.xl-franja-cerrar:hover {
+  background: rgb(0 0 0 / 0.06);
+}
+
+.xl-franja-cerrar:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.xl-libro--pantalla:has(.xl-franja) .xl-marco {
+  max-height: calc(100dvh - var(--xl-pantalla-offset, 221px) - 28px);
+}
+
+.xl-libro:fullscreen:has(.xl-franja) .xl-marco {
+  max-height: calc(100vh - 41px - 38px - 28px);
 }
 
 .xl-tabla {

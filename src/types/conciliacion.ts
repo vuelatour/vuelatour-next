@@ -43,6 +43,47 @@ export interface MovimientoGasto {
       `badgeVinculoNoBancario` (`lib/admin/conciliacion-no-bancario.ts`).
       Ausente = API previo: no se pinta nada. */
   medio_pago?: string | null;
+  /** En qué balance y en qué mes vive el gasto (13-oct-2026, punto 5):
+      ADITIVO, API 0.0.75, en `gasto` y en cada `gastos[]`. Ausente = API
+      previo o lectura fallida: sin enlaces. null = no vive en ningún
+      balance. Se lee SIEMPRE con `lib/admin/conciliacion-balance.ts`. */
+  balance?: UbicacionBalanceGasto | null;
+}
+
+/** Hoja del libro del AVIÓN donde vive un gasto (informativo, punto 5). */
+export type HojaBalanceAvion =
+  | "reporte_horas"
+  | "combustible"
+  | "gastos_indirectos"
+  | "refacciones"
+  | "permisos";
+
+/** PRIMERA hoja del balance de la FLOTA donde aparece un gasto (informativo). */
+export type HojaBalanceGeneral =
+  | "reporte_horas"
+  | "combustible"
+  | "otros_gastos"
+  | "repartidos"
+  | "inventario";
+
+/**
+ * «¿En qué libro y en qué mes vive este gasto?» (13-oct-2026, API 0.0.75,
+ * punto 5). Lo decide SOLO el API (`common/ubicacion-balance-gasto.util.ts`,
+ * espejo de los libros): el panel no deduce hojas ni meses, solo arma los
+ * enlaces «Ver en balance…» de Conciliación con esto.
+ */
+export interface UbicacionBalanceGasto {
+  /** Mes calendario completo: 'YYYY-MM-01' … último día del mes. */
+  periodo: { desde: string; hasta: string };
+  /** De qué fecha sale el mes: la del vuelo (día Cancún) o la del gasto. */
+  eje: "vuelo" | "gasto";
+  /** Balances de avión donde aparece, ordenados por matrícula (null = no se
+      pudo leer; es cosmética). */
+  aviones: { id: string; matricula: string | null }[];
+  /** ¿Aparece en el balance de la flota? */
+  general: boolean;
+  hoja_avion?: HojaBalanceAvion | null;
+  hoja_general?: HojaBalanceGeneral | null;
 }
 
 /** Cómo quedó cada gasto tras ligar un cargo (respuesta del PATCH, 0.0.52). */

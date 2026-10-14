@@ -31,6 +31,7 @@ import {
   tituloVistaBalance,
   type ErrorVistaBalance,
 } from "@/lib/admin/balance-vista";
+import { claveSalto } from "@/lib/admin/libro-vinculos";
 import { MODOS_BALANCE_VUELATOUR } from "@/lib/admin/reportes-balance";
 import { getBalanceAvionLibro, getBalanceGeneralLibro } from "@/lib/api/balance-libro-server";
 import { esErrorDeNext } from "@/lib/api/degradar";
@@ -46,7 +47,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 interface PageProps {
-  searchParams: Promise<{ modo?: string; avion?: string; desde?: string; hasta?: string }>;
+  searchParams: Promise<{ modo?: string; avion?: string; desde?: string; hasta?: string; gasto?: string }>;
 }
 
 /**
@@ -61,10 +62,16 @@ interface PageProps {
  * descripción larga y el periodo en texto van en el tooltip del ícono de
  * información junto al título: no ocupan renglón. La cuenta del alto que
  * queda para el libro vive en `styles/libro-excel.css` (`--xl-pantalla-offset`).
+ *
+ * `?gasto=<uuid>` (13-oct-2026, punto 5): llegada desde Conciliación. El
+ * libro abre en la hoja y la celda de ese gasto con su franja
+ * (`lib/admin/libro-vinculos.ts`); no viaja al API. La `key` del libro
+ * (`claveSalto`: gasto · título · archivo) lo remonta al cambiar de periodo,
+ * de avión o de chip, y un `router.refresh()` la conserva y no vuelve a saltar.
  */
 export default async function BalanceVistaPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const { destino, desde, hasta } = parametrosVistaBalance(sp, periodoDefaultVista(todayCancun()));
+  const { destino, desde, hasta, gasto } = parametrosVistaBalance(sp, periodoDefaultVista(todayCancun()));
 
   let libro: LibroExcelJson | null = null;
   let matricula: string | null = null;
@@ -120,7 +127,9 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
               return (
                 <Link
                   key={modo}
-                  href={hrefVistaBalance({ tipo: "vuelatour", modo }, desde, hasta)}
+                  // Conserva `?gasto=`: del mensual (OPERACIONES/PILOTO/OTROS)
+                  // al general cae en TOTAL PARA PROVEEDOR (PESOS).
+                  href={hrefVistaBalance({ tipo: "vuelatour", modo }, desde, hasta, { gasto })}
                   aria-current={activo ? "page" : undefined}
                   className={cn(
                     buttonVariants({ variant: activo ? "secondary" : "outline", size: "sm" }),
@@ -137,7 +146,13 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
       </div>
 
       {libro ? (
-        <LibroExcel libro={libro} descarga={descarga} pantalla />
+        <LibroExcel
+          key={claveSalto(gasto, libro) ?? undefined}
+          libro={libro}
+          descarga={descarga}
+          pantalla
+          gastoInicial={gasto ?? null}
+        />
       ) : error && error.motivo === "fallo" ? (
         <TarjetaErrorCarga titulo={error.titulo} descripcion={error.descripcion} />
       ) : error ? (

@@ -206,6 +206,11 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   (`clave_cliente`) y el panel lo pinta SOLO con
   `components/admin/clave-cliente.tsx`; textos y reglas del alias en
   `lib/admin/clave-cliente.ts`. Ver «ID de vuelo por cliente junto al folio».
+- Abrir el balance EN LA CELDA de un gasto (13-oct-2026, API 0.0.75): la
+  llegada (`?gasto=`, celda, franja) sale SOLO de `lib/admin/libro-vinculos.ts`
+  y los enlaces «Ver en balance…» de Conciliación SOLO de
+  `lib/admin/conciliacion-balance.ts`. Ver «Desde Conciliación: el libro abre
+  en la celda del gasto».
 - Compras en DÓLARES contra cargos en PESOS (13-oct-2026, API 0.0.75): la
   regla del T.C. oficial del día es del API; el panel la PINTA solo con
   `lib/admin/conciliacion-tc.ts` (3.ª línea del candidato, marca de la liga,
@@ -6607,7 +6612,10 @@ Fase 2 (pendiente): editar una celda y que el registro ligado cambie.
   y el tipo lo transporta); la selección y la barra de fórmulas ya existen.
   Falta: que pyservices anote los vínculos en los balances, un PATCH por tipo
   de registro en el API y, en el panel, la edición en la celda + regenerar
-  el libro.
+  el libro. (Desde el 13-oct-2026 las celdas de costos traen además
+  `vinculos`, una LISTA de solo lectura para llegar a la celda de un gasto
+  desde Conciliación: ver «Desde Conciliación: el libro abre en la celda del
+  gasto». No es el `vinculo` de edición.)
 
 ### Vista compacta (12-oct-2026, tarde)
 
@@ -6817,6 +6825,143 @@ cambiaba `seleccion`; nada movía el marco. Solo panel.
   se «salta» celdas con la tecla mantenida); PageDown dos veces y ↓ sigue
   desde ahí; hacer scroll con la rueda, cambiar de pestaña y volver
   (RefreshOnFocus), y ver que la vista NO salta a la celda activa.
+
+### Desde Conciliación: el libro abre en la celda del gasto (13-oct-2026, API 0.0.75)
+
+Punto 5 del lote 2 del 13-oct-2026: desde un cargo conciliado, abrir en una
+pestaña nueva el balance del avión o el general EN LA CELDA del gasto. Tres
+piezas aditivas: pyservices anota los gastos de cada celda en el libro JSON,
+el API dice en `GET /v1/conciliacion/movimientos` en qué libro y en qué mes
+vive cada gasto ligado, y el panel pinta los enlaces y la llegada. SIN
+migración. **Ningún número cambia**: vínculos y `balance` son metadatos que
+se derivan en cada render y el panel no suma ni decide nada con ellos.
+
+- **Contrato del libro** (`types/libro-excel.ts`, COPIA 1:1 de
+  `LibroVistaVinculo` del API y de `libro_json.py`): `LibroExcelCelda.vinculos?:
+  LibroExcelVinculo[]` (`{tipo:'gasto', id, rol, monto_mxn?, gasto_mxn?,
+  parte?:'reparto'|'remanente', fila?, columna?}`) y la raíz
+  `vinculos_gasto?: true` (= el libro marca las celdas de los gastos). Roles:
+  `fila` = la celda ES el monto de la fila del gasto (MONTO MXN de las hojas
+  de gastos y combustible, VENTA AL AVIÓN de inventario); `suma` = la celda
+  lo suma con otros (OPERACIONES/PILOTO/OTROS de la hoja de vuelos; TOTAL
+  PARA PROVEEDOR (PESOS) en la variante general, con la unión por id);
+  `nota` = solo va en la nota (TUA o extensión de horario trasladadas): no
+  suma; `sin_tc` = USD sin T.C.: todavía no suma. `monto_mxn` = lo que ESE
+  gasto aporta a la celda (pesos); `gasto_mxn` = el gasto completo cuando la
+  celda lleva una parte (operación + FBO de una factura). No se anotan
+  TOTALES, COSTO TOTAL, COMISIONES, AFAC, «otros movimientos» ni «balance».
+- **Contrato de Conciliación** (`types/conciliacion.ts`): `MovimientoGasto.balance?:
+  UbicacionBalanceGasto | null` en `gasto` y en cada `gastos[]` =
+  `{periodo:{desde,hasta} (mes calendario), eje:'vuelo'|'gasto', aviones:[{id,
+  matricula|null}] (por matrícula), general, hoja_avion?, hoja_general?}`.
+  Ausente = API previo o lectura fallida (sin enlaces); `null` = el gasto no
+  vive en ningún balance (COMISION_VENDEDOR, PERSONAL_DUENO, TUAS sin vuelo,
+  gas sin avión, PERMISO/INDIRECTO de un externo sin avión, el hueco #255).
+  La regla «a qué libro y a qué mes» es SOLO del API
+  (`common/ubicacion-balance-gasto.util.ts`, espejo de los libros).
+- **URL**: `/admin/reportes/balance?avion=<uuid>|modo=mensual|general&desde&hasta&gasto=<uuid>`.
+  `parametrosVistaBalance` devuelve `gasto` SOLO con un uuid válido (si no,
+  ni la llave); `hrefVistaBalance(destino, desde, hasta, { gasto })` lo pone
+  AL FINAL y sin `extra` la URL es byte a byte la de antes
+  (`VerEnPantallaLink` no cambió). `gasto` NO viaja al API: el libro es el
+  mismo. Lo conservan el `PeriodSelector` (copia los params) y los chips
+  «Balance mensual | Balance general» (`{ gasto }`): del mensual al general
+  el salto cae en TOTAL PARA PROVEEDOR (PESOS).
+- **La llegada** (`lib/admin/libro-vinculos.ts`, PURO, FUENTE ÚNICA):
+  `buscarCeldaDeGasto` recorre hojas y celdas y gana la de menor (prioridad
+  del rol `fila` > `suma` > `nota` > `sin_tc` > desconocido, hoja, fila,
+  columna); `llegadaAGasto` (null si no es uuid); `textoFranjaGasto` (los
+  textos de la franja: «Gasto $1,899.09 MXN · hoja «reporte horas N4142R» ·
+  fila #430 · Beh Kay · OPERACIONES · la celda suma 3 gastos», «… · en esta
+  celda $67.14 MXN · … · otra parte en OTROS», reparto/remanente, nota, USD
+  sin T.C., «aparece en N renglones de este libro»); `franjaDeLlegada` y
+  `claveSalto`. **«la celda suma N gastos» cuenta SOLO los vínculos `suma`**
+  (`sumanEnCelda`): una TUA anotada (`nota`) o un USD sin T.C. van en la
+  celda pero no suman, y contarlos diría un número falso en todo vuelo con
+  TUA (`enCelda` sigue contando todos).
+- **Componente** (`LibroExcel`, prop ADITIVA `gastoInicial`): la hoja, la
+  selección y la franja nacen en **inicializadores perezosos** de `useState`
+  (una vez por montaje y TAMBIÉN en el servidor: el HTML ya trae la pestaña,
+  la celda `xl-seleccionada`, el cuadro de nombres y la franja; sin mismatch
+  de hidratación). El marco se desplaza en el **ÚNICO efecto de llegada**:
+  `const alLlegar = useEffectEvent(…)` + `useEffect(() => { alLlegar(); }, [])`,
+  SIN setState y sin depender de `vista`/`libro`. Es la única excepción a «el
+  scroll va en el manejador»: `seleccionar` = `setSeleccion` +
+  `desplazarMarcoA`, y `desplazarMarcoA` lleva la ÚNICA llamada a
+  `scrollParaVerCelda`. Por qué así: `react-hooks/set-state-in-effect` es
+  ERROR en eslint-plugin-react-hooks 7.1.1 (la variante que ponía la
+  selección en el efecto no pasa el lint) y `useEffectEvent` lo soportan
+  React 19.2.4 y @types/react 19.2.14 (si alguien bajara React, el fallo es
+  ruidoso). Si algún día se activa `cacheComponents` (hoy NO: las páginas se
+  desmontan al navegar), `<Activity>` re-ejecuta los efectos al volver a
+  mostrar la página y la llegada se repetiría: revisar entonces.
+- **La `key`** del libro en la página = `claveSalto(gasto, libro)` (gasto ·
+  título · archivo; sin gasto, sin key): cambiar de periodo, de avión o de
+  chip cambia el título o el archivo ⇒ remonta y vuelve a saltar. Un
+  `router.refresh()` (RefreshOnFocus) trae un objeto nuevo con lo mismo ⇒
+  misma key ⇒ React conserva el estado y NO salta (el operador pudo haber
+  hecho scroll o «Quitar aviso»).
+- **La franja** (`.xl-franja`, PRIMER hijo de `.xl-libro`, antes de
+  `.xl-barra`): 28 px EXACTOS con su borde (`ALTO_FRANJA_PX`), `role="status"`
+  (ya es región viva: las `aria-live=` siguen siendo 2), texto con elipsis y
+  el completo en `title`, botón «Quitar aviso» (×, `cursor-pointer`).
+  Tres estados honestos: verde con la celda; ámbar
+  `TEXTO_GASTO_NO_ENCONTRADO` («… puede ser de otro mes o del otro balance…»)
+  si el libro marca gastos y no está; ámbar `TEXTO_LIBRO_SIN_VINCULOS` («…
+  falta actualizar el servidor…») si el libro no trae la bandera. El marco
+  le cede los 28 px SOLO mientras existe (`.xl-libro--pantalla:has(.xl-franja)
+  .xl-marco` y `.xl-libro:fullscreen:has(.xl-franja) .xl-marco`): la cuenta
+  297/259/221 de `--xl-pantalla-offset` y las clases de la página NO cambian.
+- **Enlaces de Conciliación** (`lib/admin/conciliacion-balance.ts`, PURO,
+  FUENTE ÚNICA de URLs y textos; `components/admin/conciliacion/enlaces-balance-gasto.tsx`,
+  sin hooks): «Ver en balance del avión N4142R» (máximo `MAX_ENLACES_AVION`
+  = 2; el resto, «y N aviones más» con las matrículas en el tooltip) y «Ver
+  en balance general» (`modo=mensual`: es el libro con OPERACIONES/PILOTO/
+  OTROS), con `title` «Abre en una pestaña nueva el balance de N4142R (del 01
+  oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto». Son
+  `<a target="_blank" rel="noopener noreferrer">` NATIVOS (pestaña nueva sin
+  prefetch por fila) con `cursor-pointer` y « (se abre en una pestaña nueva)»
+  en `sr-only`, HERMANOS del `<Link>` de la línea del gasto (`<Fragment>` en
+  el lote, `<>` en el 1↔1) y NUNCA dentro: un `<a>` en otro es HTML
+  inválido. Cada `LineaGastoLote` trae `balances`. Sin `balance`, con
+  `balance: null`, id que no es uuid, periodo inválido o avión sin uuid ⇒
+  nada: el marcado de la celda es byte a byte el de antes.
+- **Corte por rol**: `MovimientosTable` gana `abreBalances?` (default true);
+  la página lee `/me` con `degradado.opcional("tu usuario", getMe(), null)`
+  (cacheado por petición: sin HTTP extra) y pasa
+  `abreBalances={puedeAbrirBalances(me?.rol)}`. Conciliación es
+  ADMIN/FACTURACION y los libros ADMIN/ANALISTA: FACTURACION no ve enlaces
+  (abrirían un 403; abrirle los balances es decisión del cliente). Sin rol se
+  ofrecen.
+- **Skew** (los tres órdenes son seguros): panel nuevo + API previo ⇒ sin
+  `balance`, sin enlaces, marcado idéntico; API nuevo + pyservices previo ⇒
+  sin bandera ⇒ con `?gasto=` la franja ámbar «todavía no marca…» (la
+  verdad); panel previo ⇒ ignora `balance` y `vinculos`.
+- **Pruebas**: `lib/admin/__tests__/libro-vinculos.test.ts` (prioridad y
+  desempates, conteos, otras columnas, TODOS los textos exactos, tres
+  estados, `claveSalto`), `conciliacion-balance.test.ts` (casos reales de
+  prod: #430 de N4142R, el INDIRECTO de $16,240 al 50/50, el OTRO de $890 a 5
+  aviones, matrícula null, fechas e ids inválidos), `balance-vista.test.ts`
+  (ampliada: `gasto` y `extra`), `components/admin/conciliacion/__tests__/balance-links.test.tsx`
+  (hermanos sin `<a>` anidado, target/rel/`gasto=`, lote, corte por rol,
+  marcado idéntico sin `balance`, cableado de la página) y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (adaptadas «UN
+  solo camino…» e «instantáneo y en el manejador»; cableado de la página;
+  llegada en SSR con pestaña, celda, cuadro de nombres y franja en los tres
+  estados; CSS de la franja y de `:has`).
+- **Verificado en navegador** (Chrome headless contra `next dev`, con un
+  libro de prueba de 80 × 30 con paneles fijos, ruta temporal NO
+  commiteada): llega a la pestaña y a la celda (Y60, dentro del marco, el
+  marco desplazado), la franja mide 28 px, «Quitar aviso» la quita y el marco
+  crece EXACTAMENTE 28 px sin volver a saltar, sin errores de hidratación;
+  sin `gasto` el libro de siempre; un gasto que no está ⇒ ámbar.
+- **Pendiente**: QA con datos reales tras el deploy (ADMIN en
+  `/admin/conciliacion`, cargo del gasto 2a3e7a09 de #430 de N4142R: los dos
+  enlaces, la celda OPERACIONES de #430 con «la celda suma 3 gastos», el chip
+  «Balance general» en TOTAL PARA PROVEEDOR (PESOS), septiembre ⇒ ámbar,
+  volver a la pestaña ⇒ no salta, el Excel descargado el de siempre, el gasto
+  12f38801 de #255 sin enlaces y FACTURACION sin enlaces). El alto de fila
+  NOMINAL (ver arriba) puede dejar la celda destino recortada abajo.
 
 ## Reportes: el selector de periodo ya no «se traba» (12-oct-2026)
 

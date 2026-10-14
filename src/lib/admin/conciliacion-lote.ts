@@ -48,6 +48,7 @@ import {
   toastVinculoGasto,
   type RespuestaVinculoGasto,
 } from "@/lib/admin/conciliacion-parcial";
+import { enlacesBalanceDeGasto, type EnlacesBalanceDeGasto } from "@/lib/admin/conciliacion-balance";
 import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { NOTA_COMPRAS_USD } from "@/lib/admin/conciliacion-tc";
 import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
@@ -1494,6 +1495,10 @@ export interface LineaGastoLote {
       Gastos (`?gasto=` de Conciliación). Solo viaja cuando es true: sin
       opciones el objeto es el de siempre. */
   destacada?: boolean;
+  /** «Ver en balance…» de ESE gasto (13-oct-2026, punto 5; `balance` del API
+      0.0.75 leído por `enlacesBalanceDeGasto`). Sin `balance` va vacío y la
+      tabla no pinta nada. */
+  balances: EnlacesBalanceDeGasto;
 }
 
 export interface ResumenLoteFila {
@@ -1547,6 +1552,7 @@ export function lineaGastoLote(g: MovimientoGasto, i = 0, notasCargo?: string | 
     factura: etiquetaFolioComprobante(g.folio_comprobante),
     facturaTitulo: tituloFolioComprobante(g.folio_comprobante),
     medio: badgeVinculoNoBancario(g, notasCargo),
+    balances: enlacesBalanceDeGasto(g),
   };
 }
 

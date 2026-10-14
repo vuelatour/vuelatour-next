@@ -11,6 +11,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
 import { ETIQUETA_PANTALLA_COMPLETA } from "@/lib/admin/libro-excel";
+import {
+  ALTO_FRANJA_PX,
+  TEXTO_GASTO_NO_ENCONTRADO,
+  TEXTO_LIBRO_SIN_VINCULOS,
+} from "@/lib/admin/libro-vinculos";
 
 interface PropsBotonExcel {
   path: string;
@@ -209,7 +214,19 @@ describe("cableado", () => {
     expect(src).toContain(
       '<PeriodSelector initial={{ desde, hasta }} compacto etiquetaGrupo="Periodo del libro" />',
     );
-    expect(src).toContain("<LibroExcel libro={libro} descarga={descarga} pantalla />");
+    // El libro a pantalla y, desde el 13-oct-2026 (punto 5), la llegada desde
+    // Conciliación: `?gasto=` validado, la `key` que remonta al cambiar de
+    // periodo, avión o chip (y que un refresh conserva) y los chips que
+    // conservan el gasto. Sin gasto no hay key y el libro es el de siempre.
+    expect(src).toContain("const { destino, desde, hasta, gasto } = parametrosVistaBalance(");
+    const libroJsx = src.match(/<LibroExcel\b[\s\S]*?\/>/)?.[0] ?? "";
+    expect(libroJsx).toContain("key={claveSalto(gasto, libro) ?? undefined}");
+    expect(libroJsx).toContain("libro={libro}");
+    expect(libroJsx).toContain("descarga={descarga}");
+    expect(libroJsx).toMatch(/\spantalla\s/);
+    expect(libroJsx).toContain("gastoInicial={gasto ?? null}");
+    expect(src).toContain('from "@/lib/admin/libro-vinculos"');
+    expect(src).toContain('hrefVistaBalance({ tipo: "vuelatour", modo }, desde, hasta, { gasto })');
     expect(src).toContain("InformationCircleIcon");
     expect(src).toContain("title={ayuda}");
     expect(src).toContain("aria-label={ayuda}");
@@ -331,14 +348,22 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     expect(src).not.toMatch(/<div\s+ref=\{raiz\}[^>]*xl-marco/);
   });
 
-  it("UN solo camino para teclado y clic: `seleccionar` = setSeleccion + scrollParaVerCelda + asignación directa", () => {
+  it("UN solo camino para teclado, clic y llegada: `seleccionar` = setSeleccion + `desplazarMarcoA` (scrollParaVerCelda + asignación directa)", () => {
+    // Desde el 13-oct-2026 (punto 5) el desplazamiento vive en
+    // `desplazarMarcoA`, que usan `seleccionar` (teclado y clic) y la llegada
+    // desde Conciliación; `seleccionar` sigue siendo setSeleccion + mover.
     const bloque = src.match(/const seleccionar = \(sel: Seleccion\) => \{([\s\S]*?)\n  \};/)?.[1];
     expect(bloque).toBeDefined();
     expect(bloque).toContain("setSeleccion(sel);");
-    expect(bloque).toContain("scrollParaVerCelda(vista, sel, el)");
-    expect(bloque).toContain("el.scrollLeft = destino.scrollLeft;");
-    expect(bloque).toContain("el.scrollTop = destino.scrollTop;");
-    // Una sola llamada en todo el archivo: la de `seleccionar`.
+    expect(bloque).toContain("desplazarMarcoA(sel);");
+    const desplazar = src.match(/const desplazarMarcoA = \(sel: Seleccion\) => \{([\s\S]*?)\n  \};/)?.[1];
+    expect(desplazar).toBeDefined();
+    expect(desplazar).toContain("scrollParaVerCelda(vista, sel, el)");
+    expect(desplazar).toContain("el.scrollLeft = destino.scrollLeft;");
+    expect(desplazar).toContain("el.scrollTop = destino.scrollTop;");
+    // Mover el marco no toca estado (la llegada lo llama desde un efecto).
+    expect(desplazar).not.toMatch(/\bset[A-Z]/);
+    // Una sola llamada en todo el archivo: la de `desplazarMarcoA`.
     expect((src.match(/scrollParaVerCelda\(/g) ?? []).length).toBe(1);
     // Flechas, PageUp/PageDown y Home/End pasan por ahí y conservan el
     // preventDefault; PageUp/PageDown saltan las filas que caben en el marco
@@ -365,9 +390,10 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     expect(src).not.toMatch(/behavior:\s*"smooth"/);
     expect(src).not.toMatch(/behavior:\s*"instant"/);
     expect(src).not.toContain("useLayoutEffect");
-    // El único efecto del archivo es el de `fullscreenchange`: ningún efecto toca
-    // el scroll ni la selección (con deps `[vista, seleccion]` el router.refresh()
-    // de RefreshOnFocus volvería a saltar a la celda activa).
+    // Efectos del archivo: el de `fullscreenchange` y el de LLEGADA (13-oct-2026,
+    // punto 5), que solo llama al evento `alLlegar`. Ninguno toca el scroll ni
+    // la selección en su cuerpo (con deps `[vista, seleccion]` el
+    // router.refresh() de RefreshOnFocus volvería a saltar a la celda activa).
     const efectos = src.match(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g) ?? [];
     expect(efectos.length).toBeGreaterThan(0);
     expect((src.match(/useEffect\(/g) ?? []).length).toBe(efectos.length);
@@ -375,6 +401,27 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
       expect(efecto).not.toMatch(/scroll/i);
       expect(efecto).not.toContain("seleccion");
     }
+  });
+
+  it("la llegada desde Conciliación: inicializadores perezosos y UN efecto de llegada con useEffectEvent, sin setState", () => {
+    // La hoja, la celda y la franja nacen en los inicializadores (también en el
+    // servidor): ningún efecto les pone estado (`react-hooks/set-state-in-effect`).
+    expect(src).toContain(
+      "const [llegada] = useState(() => (gastoInicial ? llegadaAGasto(libro, gastoInicial) : null));",
+    );
+    expect(src).toContain("useState(() => llegada?.hallazgo?.hojaIdx ?? 0)");
+    expect(src).toMatch(
+      /useState<Seleccion \| null>\(\(\) =>\s*llegada\?\.hallazgo \? \{ r: llegada\.hallazgo\.r, c: llegada\.hallazgo\.c \} : null,?\s*\)/,
+    );
+    expect(src).toMatch(/useState<FranjaGasto \| null>\(\(\) =>\s*llegada \? franjaDeLlegada\(llegada\) : null,?\s*\)/);
+    // El evento de llegada: mueve el marco y nada más.
+    expect((src.match(/useEffectEvent\(/g) ?? []).length).toBe(1);
+    const alLlegar = src.match(/const alLlegar = useEffectEvent\(\(\) => \{([\s\S]*?)\n  \}\);/)?.[1];
+    expect(alLlegar).toBeDefined();
+    expect(alLlegar).toContain("desplazarMarcoA(");
+    expect(alLlegar).not.toMatch(/\bset[A-Z]/);
+    // Se dispara UNA vez al montar (deps vacías): un refresh no vuelve a saltar.
+    expect(src).toMatch(/useEffect\(\(\) => \{\s*alLlegar\(\);\s*\}, \[\]\);/);
   });
 
   it("el marcado estático de la cuadrícula NO cambió: ref y onClick no se serializan", () => {
@@ -390,5 +437,127 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     expect(html).toMatch(/<div class="xl-formula"[^>]*aria-live="polite"[^>]*aria-atomic="true"[^>]*>/);
     // Solo esas dos: la cuadrícula no es región viva (anunciaría cada repintado).
     expect((html.match(/aria-live=/g) ?? []).length).toBe(2);
+  });
+});
+
+describe("llegada desde Conciliación (13-oct-2026, punto 5): el libro abre en la celda del gasto", () => {
+  const UUID_GASTO = "9e9e9e9e-0000-4000-8000-000000002549";
+  // La hoja 2 «permisos» trae en D9 el MONTO de ese gasto (rol `fila`).
+  const LIBRO_GASTO: LibroExcelJson = {
+    ...LIBRO,
+    vinculos_gasto: true,
+    hojas: [
+      LIBRO.hojas[0],
+      {
+        nombre: "permisos",
+        pestana: null,
+        cuadricula: true,
+        inmovilizar: { filas: 1, columnas: 0 },
+        max_fila: 9,
+        max_col: 4,
+        columnas: [],
+        filas: [],
+        combinadas: [],
+        celdas: [
+          { r: 1, c: 4, v: "MONTO MXN", t: "MONTO MXN" },
+          {
+            r: 9,
+            c: 4,
+            v: 2549,
+            t: "2,549.00",
+            s: 2,
+            vinculos: [{ tipo: "gasto", id: UUID_GASTO, rol: "fila", monto_mxn: 2549, columna: "MONTO MXN" }],
+          },
+        ],
+      },
+    ],
+  };
+  const llegar = (libro: LibroExcelJson, gastoInicial?: string | null) =>
+    renderToStaticMarkup(<LibroExcel libro={libro} pantalla gastoInicial={gastoInicial} />);
+
+  it("el HTML del servidor ya trae la pestaña, la celda seleccionada y el cuadro de nombres", () => {
+    const html = llegar(LIBRO_GASTO, UUID_GASTO);
+    expect(html).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>permisos/);
+    expect(html).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="false"[^>]*>balance/);
+    expect(html).toMatch(/<td[^>]*class="[^"]*\bxl-seleccionada\b[^"]*"[^>]*data-ref="D9"[^>]*>2,549\.00<\/td>/);
+    expect((html.match(/xl-seleccionada/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/<div class="xl-nombre"[^>]*>D9<\/div>/);
+    expect(html).toContain('data-hoja="permisos"');
+  });
+
+  it("la franja verde va ANTES de la barra, con role=status, el texto del gasto y «Quitar aviso»", () => {
+    const html = llegar(LIBRO_GASTO, UUID_GASTO);
+    const franja = html.match(/<div class="xl-franja"[^>]*>[\s\S]*?<\/button><\/div>/)?.[0];
+    expect(franja).toBeDefined();
+    expect(html.indexOf('class="xl-franja"')).toBeLessThan(html.indexOf('class="xl-barra"'));
+    // Primer hijo de `.xl-libro`.
+    expect(html).toMatch(/<div[^>]*class="xl-libro[^"]*"[^>]*><div class="xl-franja"/);
+    expect(franja).toContain('data-tono="ok"');
+    expect(franja).toContain('role="status"');
+    expect(franja).toContain(
+      '<span class="xl-franja-texto">Gasto $2,549.00 MXN · hoja «permisos» · fila 9</span>',
+    );
+    expect(franja).toContain(
+      'title="Celda del gasto que abriste desde Conciliación: Gasto $2,549.00 MXN · hoja «permisos» · fila 9"',
+    );
+    const boton = franja!.match(/<button[^>]*>/)?.[0] ?? "";
+    expect(boton).toContain('aria-label="Quitar aviso"');
+    expect(boton).toContain("cursor-pointer");
+    expect(boton).toContain('type="button"');
+    // `role=status` ya es región viva: las únicas `aria-live` siguen siendo las dos de la barra.
+    expect((html.match(/aria-live=/g) ?? []).length).toBe(2);
+  });
+
+  it("el gasto no está: con la bandera, ámbar «no está en este libro»; sin ella, ámbar «falta actualizar el servidor»", () => {
+    const ausente = "00000000-0000-4000-8000-000000000000";
+    const conBandera = llegar(LIBRO_GASTO, ausente);
+    expect(conBandera).toMatch(/<div class="xl-franja" data-tono="aviso" role="status"/);
+    expect(conBandera).toContain(TEXTO_GASTO_NO_ENCONTRADO);
+    // Sin celda: la primera pestaña y el cuadro de nombres vacío.
+    expect(conBandera).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>balance/);
+    expect(conBandera).not.toContain("xl-seleccionada");
+    const sinBandera = llegar({ ...LIBRO_GASTO, vinculos_gasto: undefined }, ausente);
+    expect(sinBandera).toMatch(/data-tono="aviso"/);
+    expect(sinBandera).toContain(TEXTO_LIBRO_SIN_VINCULOS);
+  });
+
+  it("un id que no es uuid o ninguna prop ⇒ sin franja y la primera pestaña: el libro de siempre", () => {
+    const siempre = renderToStaticMarkup(<LibroExcel libro={LIBRO_GASTO} pantalla />);
+    for (const html of [llegar(LIBRO_GASTO, "nada"), llegar(LIBRO_GASTO, null), llegar(LIBRO_GASTO)]) {
+      expect(html).not.toContain("xl-franja");
+      expect(html).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>balance/);
+      expect(html).toBe(siempre);
+    }
+  });
+});
+
+describe("styles/libro-excel.css: la franja del gasto", () => {
+  const css = leer("styles/libro-excel.css");
+
+  it("mide ALTO_FRANJA_PX y el marco le cede EXACTAMENTE eso mientras existe (`:has`), en pantalla y a pantalla completa", () => {
+    expect(css).toMatch(new RegExp(`\\.xl-franja\\s*\\{[^}]*height:\\s*${ALTO_FRANJA_PX}px;`));
+    expect(css).toMatch(
+      new RegExp(
+        `\\.xl-libro--pantalla:has\\(\\.xl-franja\\) \\.xl-marco\\s*\\{[^}]*max-height:\\s*calc\\(100dvh - var\\(--xl-pantalla-offset, \\d+px\\) - ${ALTO_FRANJA_PX}px\\);`,
+      ),
+    );
+    expect(css).toMatch(
+      new RegExp(
+        `\\.xl-libro:fullscreen:has\\(\\.xl-franja\\) \\.xl-marco\\s*\\{[^}]*max-height:\\s*calc\\(100vh - 41px - 38px - ${ALTO_FRANJA_PX}px\\);`,
+      ),
+    );
+    // A pantalla completa la franja no se encoge (columna flex).
+    expect(css).toMatch(/\.xl-libro:fullscreen \.xl-pestanas,\s*\.xl-libro:fullscreen \.xl-franja\s*\{\s*flex:\s*none;/);
+    expect(css).toMatch(/\.xl-franja\[data-tono="aviso"\]\s*\{/);
+    expect(css).toMatch(/\.xl-franja-cerrar:focus-visible\s*\{[^}]*outline:/);
+  });
+
+  it("todo `var(--xl-pantalla-offset, N)` lleva el MISMO N y es el `xl:` de la página (la cuenta 297/259/221 no cambia)", () => {
+    const ns = [...css.matchAll(/var\(--xl-pantalla-offset, (\d+)px\)/g)].map((m) => m[1]);
+    expect(ns.length).toBe(2);
+    expect(new Set(ns).size).toBe(1);
+    const page = leer("app/admin/reportes/balance/page.tsx");
+    expect(page).toContain(`xl:[--xl-pantalla-offset:${ns[0]}px]`);
+    expect(page).toContain("[--xl-pantalla-offset:297px] sm:[--xl-pantalla-offset:259px]");
   });
 });

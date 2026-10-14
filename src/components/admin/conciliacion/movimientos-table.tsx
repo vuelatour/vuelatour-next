@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { FacturaConceptoChip } from "@/components/admin/conciliacion/factura-concepto-chip";
+import { EnlacesBalanceGasto } from "@/components/admin/conciliacion/enlaces-balance-gasto";
+import { enlacesBalanceDeGasto } from "@/lib/admin/conciliacion-balance";
 import { textoBusquedaFacturaConcepto } from "@/lib/admin/conciliacion-factura-concepto";
 import { marcaLigaCruzada, sufijoMonedaLigada } from "@/lib/admin/conciliacion-tc";
 import {
@@ -110,6 +112,10 @@ interface MovimientosTableProps {
   gastoResaltado?: string | null;
   /** La lista llegó al tope de la vista: la búsqueda vacía lo dice. */
   huboCorte?: boolean;
+  /** «Ver en balance…» bajo cada gasto ligado (13-oct-2026, punto 5): los
+   *  balances son de ADMIN/ANALISTA (`puedeAbrirBalances`); sin la prop se
+   *  ofrecen y el candado es el API. */
+  abreBalances?: boolean;
 }
 
 export function MovimientosTable({
@@ -121,6 +127,7 @@ export function MovimientosTable({
   resaltar = null,
   gastoResaltado = null,
   huboCorte = false,
+  abreBalances = true,
 }: MovimientosTableProps) {
   // La fila que se abrió desde Gastos se trae a la vista (mismo patrón que
   // «Por facturar»). El id ya llega validado (uuid).
@@ -243,31 +250,36 @@ export function MovimientosTable({
               <span className="block text-sm">
                 <span className="block text-emerald-600">{lote.titulo}</span>
                 {lote.lineas.map((l) => (
-                  <Link
-                    key={l.key}
-                    href={l.href}
-                    className={cn(
-                      "block text-xs text-emerald-600 hover:underline",
-                      l.destacada && CLASE_LINEA_ENFOCADA,
-                    )}
-                    title={TITULO_VER_GASTO_CONCILIADO}
-                  >
-                    {l.principal}
-                    {l.destacada && <span className="text-[10px] font-normal">{SUFIJO_GASTO_ENFOCADO}</span>}
-                    <BadgeMedioLigado badge={l.medio} />
-                    <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
-                      {l.secundaria}
-                    </span>
-                    {/* Número de factura de ESE gasto (5-oct-2026, API 0.0.57). */}
-                    {l.factura && (
-                      <span
-                        className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"
-                        title={l.facturaTitulo ?? undefined}
-                      >
-                        {l.factura}
+                  // «Ver en balance…» de ESE gasto (13-oct-2026, punto 5): HERMANO
+                  // del <Link> de la línea, nunca dentro (un <a> en otro <a> es
+                  // HTML inválido). Sin `balance` no pinta nada.
+                  <Fragment key={l.key}>
+                    <Link
+                      href={l.href}
+                      className={cn(
+                        "block text-xs text-emerald-600 hover:underline",
+                        l.destacada && CLASE_LINEA_ENFOCADA,
+                      )}
+                      title={TITULO_VER_GASTO_CONCILIADO}
+                    >
+                      {l.principal}
+                      {l.destacada && <span className="text-[10px] font-normal">{SUFIJO_GASTO_ENFOCADO}</span>}
+                      <BadgeMedioLigado badge={l.medio} />
+                      <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
+                        {l.secundaria}
                       </span>
-                    )}
-                  </Link>
+                      {/* Número de factura de ESE gasto (5-oct-2026, API 0.0.57). */}
+                      {l.factura && (
+                        <span
+                          className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"
+                          title={l.facturaTitulo ?? undefined}
+                        >
+                          {l.factura}
+                        </span>
+                      )}
+                    </Link>
+                    {abreBalances ? <EnlacesBalanceGasto enlaces={l.balances} /> : null}
+                  </Fragment>
                 ))}
                 {lote.mas && (
                   // Facturas de los gastos que no caben (tooltip).
@@ -342,59 +354,64 @@ export function MovimientosTable({
           }
           return gasto ? (
             // Verificable de un clic: al vuelo del gasto (donde se
-            // ve su desglose) o, sin vuelo, a la lista de gastos.
-            <Link
-              href={
-                gasto.vuelo_id
-                  ? `/admin/flights/${gasto.vuelo_id}`
-                  : "/admin/expenses"
-              }
-              className="block text-sm text-emerald-600 hover:underline"
-              title="Ver el gasto con el que se concilió"
-            >
-              {categoriaGastoLabel(gasto.categoria)} · ${fmtMoney(gasto.monto)}
-              {sufijoMoneda ? sufijoMoneda : null}
-              {gasto.vuelo?.folio != null && (
-                <span className="text-muted-foreground"> · vuelo #{gasto.vuelo.folio}</span>
-              )}
-              <BadgeMedioLigado badge={badgeVinculoNoBancario(gasto, m.notas)} />
-              <span className="block text-[10px] text-muted-foreground">
-                {[
-                  gasto.proveedor?.nombre,
-                  gasto.fecha_gasto ? fmtDate(gasto.fecha_gasto) : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "Gasto conciliado"}
-              </span>
-              {marcaTc && (
-                <span
-                  data-tc-cruce={marcaTc.tono}
-                  className={
-                    marcaTc.tono === "ambar"
-                      ? "block text-[11px] font-medium text-amber-700 dark:text-amber-300"
-                      : "block text-[11px] text-muted-foreground"
-                  }
-                  title={marcaTc.titulo}
-                >
-                  {marcaTc.texto}
+            // ve su desglose) o, sin vuelo, a la lista de gastos. Debajo, como
+            // HERMANOS del <Link> (13-oct-2026, punto 5), «Ver en balance…»:
+            // sin `balance` el fragmento no emite nada y la celda es la de siempre.
+            <>
+              <Link
+                href={
+                  gasto.vuelo_id
+                    ? `/admin/flights/${gasto.vuelo_id}`
+                    : "/admin/expenses"
+                }
+                className="block text-sm text-emerald-600 hover:underline"
+                title="Ver el gasto con el que se concilió"
+              >
+                {categoriaGastoLabel(gasto.categoria)} · ${fmtMoney(gasto.monto)}
+                {sufijoMoneda ? sufijoMoneda : null}
+                {gasto.vuelo?.folio != null && (
+                  <span className="text-muted-foreground"> · vuelo #{gasto.vuelo.folio}</span>
+                )}
+                <BadgeMedioLigado badge={badgeVinculoNoBancario(gasto, m.notas)} />
+                <span className="block text-[10px] text-muted-foreground">
+                  {[
+                    gasto.proveedor?.nombre,
+                    gasto.fecha_gasto ? fmtDate(gasto.fecha_gasto) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Gasto conciliado"}
                 </span>
-              )}
-              {factura && (
-                <span
-                  className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"
-                  title={tituloFolioComprobante(gasto.folio_comprobante) ?? undefined}
-                >
-                  {factura}
-                </span>
-              )}
-              {/* Pago parcial (14-sep-2026): este cargo es solo una parte del
-                  gasto (1 factura pagada en 2 cargos). */}
-              {textoFaltanteGasto(gasto) && (
-                <span className="block text-[10px] text-amber-600 dark:text-amber-400">
-                  Pago parcial: {textoFaltanteGasto(gasto)}
-                </span>
-              )}
-            </Link>
+                {marcaTc && (
+                  <span
+                    data-tc-cruce={marcaTc.tono}
+                    className={
+                      marcaTc.tono === "ambar"
+                        ? "block text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                        : "block text-[11px] text-muted-foreground"
+                    }
+                    title={marcaTc.titulo}
+                  >
+                    {marcaTc.texto}
+                  </span>
+                )}
+                {factura && (
+                  <span
+                    className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"
+                    title={tituloFolioComprobante(gasto.folio_comprobante) ?? undefined}
+                  >
+                    {factura}
+                  </span>
+                )}
+                {/* Pago parcial (14-sep-2026): este cargo es solo una parte del
+                    gasto (1 factura pagada en 2 cargos). */}
+                {textoFaltanteGasto(gasto) && (
+                  <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                    Pago parcial: {textoFaltanteGasto(gasto)}
+                  </span>
+                )}
+              </Link>
+              {abreBalances ? <EnlacesBalanceGasto enlaces={enlacesBalanceDeGasto(gasto)} /> : null}
+            </>
           ) : m.conciliado && m.cobro_grupo_id ? (
             // Conciliado contra el SOBRE de un grupo (lo que depositó el
             // cliente por N aviones): se verifica en el detalle del grupo.
@@ -592,7 +609,7 @@ export function MovimientosTable({
     ],
     // `nombreCuenta` deriva de `cuentas`: se recalcula con ella.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, gastoResaltado],
+    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, gastoResaltado, abreBalances],
   );
 
   return (

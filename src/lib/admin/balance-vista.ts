@@ -49,17 +49,21 @@ export interface ParametrosVistaBalance {
   destino: DestinoVistaBalance;
   desde: string;
   hasta: string;
+  /** `?gasto=<uuid>` (13-oct-2026, punto 5): el libro abre en la celda de
+   *  ese gasto (llegada desde Conciliación). La llave solo existe con un uuid
+   *  válido y NO viaja al API: el libro es el mismo con o sin ella. */
+  gasto?: string;
 }
 
 /**
  * Parámetros de la URL YA validados (regla de `url-params`: lo inválido se
  * ignora, nunca tumba la pantalla): `avion` solo si es uuid (y entonces gana
  * sobre `modo`), `modo` solo si está en el catálogo (si no, mensual), fechas
- * solo si son días válidos (si no, el mes corriente) y el rango invertido se
- * corrige.
+ * solo si son días válidos (si no, el mes corriente), el rango invertido se
+ * corrige y `gasto` solo si es uuid.
  */
 export function parametrosVistaBalance(
-  sp: { modo?: string; avion?: string; desde?: string; hasta?: string },
+  sp: { modo?: string; avion?: string; desde?: string; hasta?: string; gasto?: string },
   periodoDefault: { desde: string; hasta: string },
 ): ParametrosVistaBalance {
   const rango = rangoFiltro(sp.desde, sp.hasta);
@@ -73,20 +77,30 @@ export function parametrosVistaBalance(
         tipo: "vuelatour",
         modo: valorDeCatalogo(sp.modo, MODOS_BALANCE_VUELATOUR) ?? MODO_VISTA_BALANCE_DEFAULT,
       };
-  return { destino, desde, hasta };
+  const gasto = uuidFiltro(sp.gasto);
+  return { destino, desde, hasta, ...(gasto ? { gasto } : {}) };
 }
 
-/** Enlace a la vista de un libro en un periodo (lo usan Reportes y el selector de avión). */
+/**
+ * Enlace a la vista de un libro en un periodo (lo usan Reportes, el selector
+ * de avión, los chips de la vista y los enlaces de Conciliación). Con
+ * `extra.gasto` (uuid válido) agrega `&gasto=` AL FINAL: el libro abre en la
+ * celda de ese gasto. Sin `extra` (o con un gasto inválido) la URL es la de
+ * siempre.
+ */
 export function hrefVistaBalance(
   destino: DestinoVistaBalance,
   desde: string,
   hasta: string,
+  extra?: { gasto?: string | null },
 ): string {
   const q = new URLSearchParams();
   if (destino.tipo === "avion") q.set("avion", destino.avionId);
   else q.set("modo", destino.modo);
   q.set("desde", desde);
   q.set("hasta", hasta);
+  const gasto = uuidFiltro(extra?.gasto);
+  if (gasto) q.set("gasto", gasto);
   return `${RUTA_VISTA_BALANCE}?${q.toString()}`;
 }
 

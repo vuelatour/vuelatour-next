@@ -40,7 +40,9 @@ import type { CatalogosGastoDesdeCargo } from "@/lib/admin/gasto-desde-cargo";
 import { cuentasDeAbonos, type AbonosConciliacion } from "@/lib/admin/conciliacion-abonos";
 import type { CatalogosIngreso } from "@/components/admin/ingresos/registrar-ingreso-dialog";
 import { listGastos } from "@/lib/api/expenses-server";
+import { getMe } from "@/lib/api/me";
 import { getPaywiseComisionPct } from "@/lib/api/paywise-config-server";
+import { puedeAbrirBalances } from "@/lib/admin/balance-vista";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
   notaParcialGasto,
@@ -148,6 +150,7 @@ export default async function ConciliacionPage({
     clientesRes,
     aeronavesRes,
     providersRes,
+    me,
   ] = await Promise.all([
     listMovimientosBancariosTodos(query),
     // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
@@ -186,6 +189,11 @@ export default async function ConciliacionPage({
     degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
     }),
+    // «Ver en balance…» de cada gasto ligado (13-oct-2026, punto 5): los
+    // libros son de ADMIN/ANALISTA y Conciliación de ADMIN/FACTURACION, así
+    // que FACTURACION no los ve (abrirían un 403). `getMe` está cacheado por
+    // petición (el layout ya lo pidió): no hay HTTP extra. Sin rol se ofrecen.
+    degradado.opcional("tu usuario", getMe(), null),
   ]);
   const estadosCuenta = estadosRes.data;
 
@@ -618,6 +626,7 @@ export default async function ConciliacionPage({
               resaltar={foco.encontrado ? enfoque.mov : null}
               gastoResaltado={enfoque.gasto}
               huboCorte={notaRecorte != null}
+              abreBalances={puedeAbrirBalances(me?.rol)}
             />
           </CardContent>
         </Card>

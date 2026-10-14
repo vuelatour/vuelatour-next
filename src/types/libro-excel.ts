@@ -46,6 +46,40 @@ export interface LibroExcelCelda {
   n?: string;
   /** Fase 2 (edición): registro del API al que pertenece la celda. */
   vinculo?: Record<string, unknown>;
+  /** Gastos que componen la celda (13-oct-2026, API 0.0.75, punto 5): solo
+   *  en los libros de la vista en pantalla que los marcan (`vinculos_gasto`).
+   *  Se leen SIEMPRE con `lib/admin/libro-vinculos.ts`. */
+  vinculos?: LibroExcelVinculo[];
+}
+
+/**
+ * Vínculo celda → GASTO (13-oct-2026, API 0.0.75, punto 5: abrir el balance
+ * en la celda del gasto desde Conciliación). COPIA 1:1 de `LibroVistaVinculo`
+ * del API y del contrato de `libro_json.py` de pyservices. Es METADATO de
+ * presentación: el panel jamás lo suma ni recalcula una celda con él.
+ *  - `fila`: la celda ES el monto de la fila de ese gasto (MONTO MXN de las
+ *    hojas de gastos y de combustible, VENTA AL AVIÓN de inventario).
+ *  - `suma`: la celda lo suma junto con otros (OPERACIONES, PILOTO y OTROS de
+ *    la hoja de vuelos; TOTAL PARA PROVEEDOR (PESOS) en la variante general).
+ *  - `nota`: el gasto solo va en la nota de la celda (TUA o extensión de
+ *    horario trasladadas al cliente): no suma.
+ *  - `sin_tc`: gasto en USD sin tipo de cambio: todavía no suma en pesos.
+ */
+export interface LibroExcelVinculo {
+  tipo: "gasto";
+  id: string;
+  rol: "fila" | "suma" | "nota" | "sin_tc";
+  /** Lo que ESE gasto aporta a la celda, en pesos; null si no suma. */
+  monto_mxn?: number | null;
+  /** El gasto completo, solo cuando la celda lleva una PARTE de él (o la
+   *  nota trae su monto). */
+  gasto_mxn?: number | null;
+  /** Parcial de un reparto manual: la parte de un avión o el remanente. */
+  parte?: "reparto" | "remanente";
+  /** Clave del vuelo de la fila (hoja de vuelos). */
+  fila?: string;
+  /** Encabezado de la columna, sin saltos de línea. */
+  columna?: string;
 }
 
 export interface LibroExcelHoja {
@@ -76,6 +110,10 @@ export interface LibroExcel {
   alto_fila_default: number;
   estilos: LibroExcelEstilo[];
   hojas: LibroExcelHoja[];
+  /** true = este libro marca las celdas de los gastos (`vinculos`, punto 5
+   *  del 13-oct-2026). Ausente = pyservices o API previo: un `?gasto=` no se
+   *  puede ubicar y la franja lo dice. */
+  vinculos_gasto?: boolean;
 }
 
 /** `GET /v1/aircraft/balance-general/libro?desde&hasta&modo`. */
