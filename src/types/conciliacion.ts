@@ -411,6 +411,19 @@ export interface GastoCandidato {
       contra una cuenta en pesos) evaluado contra el T.C. OFICIAL del día del
       cargo. Lo pinta `lineaTcCandidato` (tercera línea del candidato). */
   tc_cruce?: TcCruceUsd | null;
+  /** ADITIVO (14-oct-2026, API 0.0.76, revisión): el CANDADO DEL MES DEL
+      VUELO del gasto (`candadoMesDelVuelo` del API, la misma regla del 409
+      FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO): su fecha solo se mueve dentro del
+      mes que ya tiene o al mes de ese vuelo. Ausente = sin candado (o API
+      previo: el panel no adivina). Lo lee `bloqueoMesDelVuelo`. */
+  candado_mes_vuelo?: CandadoMesVuelo | null;
+}
+
+/** El candado del mes del vuelo de un candidato (API 0.0.76). */
+export interface CandadoMesVuelo {
+  /** Día Cancún del vuelo (YYYY-MM-DD). */
+  vuelo_dia: string;
+  vuelo_folio?: number | null;
 }
 
 /** Cargo del banco con el que YA está conciliado un gasto excluido (de la puente). */
@@ -1232,7 +1245,11 @@ export interface CambioFechaGasto {
   fecha_anterior: string;
   cambio: boolean;
   cambia_de_mes: boolean;
+  /** La hora de la carga que QUEDÓ en la fila (movida o no). */
   fecha_hora_carga: string | null;
+  /** ADITIVO (revisión del 14-oct-2026): true SOLO si esta llamada movió la
+      hora de la carga al día nuevo (una que ya caía en ese día no se toca). */
+  fecha_hora_carga_movida?: boolean;
   updated_at: string;
   aviso: string | null;
 }

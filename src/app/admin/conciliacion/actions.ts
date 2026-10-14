@@ -611,8 +611,8 @@ export async function conciliacionDeGastoAction(gastoId: string): Promise<Action
  * Corregir la FECHA DEL PAGO de un gasto desde «Vincular gasto» (14-oct-2026,
  * API 0.0.76, invariante 74): `PATCH /v1/expenses/:id/fecha` SIN auto-cruce
  * (liga la persona con «Vincular»). No es `verifyGastoAction`: esa no valida
- * el uuid, no devuelve code/status/details, no revalida Conciliación y su
- * PATCH dispara el cruce automático en segundo plano.
+ * el uuid, no devuelve code/status/details y su PATCH dispara el cruce
+ * automático en segundo plano.
  *
  *  1. Un id que no es uuid ⇒ `GASTO_INVALIDO` sin llamar al API.
  *  2. Fechas con las reglas del diálogo (`validarNuevaFechaGasto`, hoy en
@@ -620,9 +620,14 @@ export async function conciliacionDeGastoAction(gastoId: string): Promise<Action
  *  3. El cuerpo viaja como OBJETO (apiFetch lo serializa) y SOLO con
  *     `fecha_gasto`, `fecha_anterior` y, tras la confirmación del API,
  *     `confirmar: true` (el DTO es estricto: otra llave ⇒ 400).
- *  4. Con `cambio: true` revalida las pantallas que pintan la fecha del
- *     gasto (en Next 16 eso repinta la página abierta: sin auto-cruce es
- *     inofensivo y actualiza el motivo del cargo y los contadores).
+ *  4. NO revalida (revisión del 14-oct-2026): en Next 16 cualquier
+ *     `revalidatePath` dentro de una server action repinta la página
+ *     abierta y, con el buscador de la tabla de movimientos filtrando por
+ *     motivo («sin candidato»), el cargo cambiaba de motivo, su fila salía
+ *     del filtro y se desmontaba «Vincular gasto» con lo marcado. Quien
+ *     llama hace UN `router.refresh()` al cerrar el diálogo (o al instante si
+ *     ya está cerrado: «Deshacer»); las demás pantallas son dinámicas y se
+ *     leen frescas al entrar.
  *  5. 404 «Cannot PATCH …» (API previo) ⇒ `RUTA_NO_DISPONIBLE` con el texto
  *     del API viejo: no se escribió nada. Los demás errores conservan code,
  *     status y details (`FECHA_GASTO_CONFIRMAR` lleva el texto del API).
@@ -644,9 +649,9 @@ export async function corregirFechaGastoAction(
     fecha_anterior: anterior,
   };
   if (input?.confirmar === true) body.confirmar = true;
-  let data: CambioFechaGasto;
   try {
-    data = await apiServer<CambioFechaGasto>(`/v1/expenses/${gastoId}/fecha`, { method: "PATCH", body });
+    const data = await apiServer<CambioFechaGasto>(`/v1/expenses/${gastoId}/fecha`, { method: "PATCH", body });
+    return { ok: true, data };
   } catch (err) {
     const r = fail<CambioFechaGasto>(err);
     if (esRutaInexistente(r)) {
@@ -654,21 +659,6 @@ export async function corregirFechaGastoAction(
     }
     return r;
   }
-  if (data?.cambio === true) {
-    // La fecha YA quedó en el API: un fallo al revalidar jamás se reporta
-    // como «no se cambió» (la pantalla se pone al día con el siguiente
-    // refresco).
-    try {
-      revalidatePath("/admin/conciliacion");
-      revalidatePath("/admin/expenses");
-      revalidatePath("/admin/combustibles");
-      revalidatePath("/admin/gastos-personales");
-      revalidatePath("/admin/flights", "layout");
-    } catch {
-      /* best-effort */
-    }
-  }
-  return { ok: true, data };
 }
 
 /** URL firmada (1 h, con descarga) del estado de cuenta archivado. */

@@ -13,7 +13,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
   "is not valid JSON" (bug histórico en las actions de tacómetro).
 - Server components/actions llaman al API con `apiServer` (`@/lib/api/server`,
   inyecta el JWT). Mutaciones = server actions en `actions.ts` que devuelven
-  `ActionResult` y revalidan (`revalidateFlight`, `revalidatePath`).
+  `ActionResult` y revalidan (`revalidateFlight`, `revalidatePath`). OJO: en
+  Next 16 un `revalidatePath` dentro de una server action repinta la página
+  ABIERTA; una action que se llama desde un diálogo que debe seguir montado
+  NO revalida y quien la llama hace `router.refresh()` al cerrar (caso
+  `corregirFechaGastoAction`, sección «Conciliación: corregir la fecha del
+  gasto…»).
 
 ## Cuando el API no contesta: reintento, degradar sin mentir — 21-sep-2026
 
@@ -8072,48 +8077,106 @@ SPEI), no la de la factura; el cruce automático sigue a ±3 días
 - **Reglas**: solo gastos BANCARIOS (tarjeta, transferencia, PayWise, pago
   domiciliado; sin `medio_pago` ⇒ no se ofrece: falla cerrado) — en
   efectivo la fecha decide qué reposición de caja chica lo cubre y se
-  corrige en Gastos. El campo nace con la fecha del CARGO; nunca futura ni
-  de hace más de 365 días (el mismo borde del API, cuenta a mediodía UTC).
-  El API bloquea sacar un gasto con vuelo del mes de su vuelo (409
-  `FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO`, caja roja) y pide confirmación con
-  SU texto cuando la fecha mueve dinero de mes o cambia un mes que ya
-  terminó (409 `FECHA_GASTO_CONFIRMAR` ⇒ caja ámbar y «Sí, pasarlo a octubre
-  2026» / «Sí, cambiar la fecha», que reenvía con `confirmar: true`). **SIN
-  auto-cruce**: guardar NO liga el gasto; liga la persona con «Vincular».
-  `fecha_hora_carga` (combustible) la mueve el API al día nuevo. Avisos del
-  diálogo (no bloquean): el cargo es mayor que el gasto (caso Winjet:
-  $345.00 contra $321.54, «con la fecha no basta»), fecha de hace más de 60
-  días, cambio de mes, fuera de la ventana de la lista, pago parcial y, con
-  tarjeta a 3 días o menos, «el cruce ya lo tolera». Bajo un renglón
-  MARCADO a más de 3 días del cargo, «Si este cargo es su pago, corrígela con
-  «Fecha»»; los motivos SIN_CANDIDATOS y FUERA_DE_VENTANA
+  corrige en Gastos. El campo nace con la fecha del CARGO
+  (`fechaInicialCorregirFecha`), salvo una TARJETA a 3 días o menos del
+  cargo (`esDesfaseTarjetaTolerado`), que nace con la del TICKET y ofrece el
+  atajo «Usar la fecha del cargo»; su descripción tampoco dice «(la del
+  cargo del banco)» (revisión del 14-oct-2026, caso Winjet: el camino por
+  default hacía lo que la nota de tarjeta pide no hacer; ticket o banco
+  sigue siendo decisión del cliente). La MISMA fecha que ya tiene se dice
+  en gris (no es error) y «Guardar fecha» queda apagado. Nunca futura ni de
+  hace más de 365 días (el mismo borde del API, cuenta a mediodía UTC). El
+  API bloquea sacar un gasto con vuelo del mes de su vuelo (409
+  `FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO`, caja roja); desde el 0.0.76 la
+  ficha del candidato trae ese candado (`candado_mes_vuelo { vuelo_dia,
+  vuelo_folio }`, solo cuando aplica) y el diálogo lo dice ANTES de guardar
+  con el MISMO texto del API (`bloqueoMesDelVuelo` dentro de
+  `bloqueoNuevaFechaGasto`; el panel no decide qué categorías lo tienen:
+  sin la llave, decide el API). Pide confirmación con SU texto cuando la
+  fecha mueve dinero de mes o cambia un mes que ya terminó (409
+  `FECHA_GASTO_CONFIRMAR` ⇒ caja ámbar y «Sí, pasarlo a octubre 2026» / «Sí,
+  cambiar la fecha», que reenvía con `confirmar: true`). Un gasto que otra
+  persona concilió mientras el diálogo seguía abierto ⇒ 409
+  `FECHA_GASTO_YA_CONCILIADO`: sale de la lista como uno borrado
+  (`no_existe`: se desmarca y se vuelve a pedir). **SIN auto-cruce**:
+  guardar NO liga el gasto; liga la persona con «Vincular».
+  `fecha_hora_carga` (combustible) la mueve el API al día nuevo y el toast
+  lo dice SOLO con `fecha_hora_carga_movida: true` (la de la fila puede ya
+  caer en el día nuevo sin tocarse). Avisos del diálogo (no bloquean): el
+  cargo es mayor que el gasto (caso Winjet: $345.00 contra $321.54, «con la
+  fecha no basta»), fecha de hace más de 60 días, cambio de mes, fuera de la
+  ventana de la lista, pago parcial y, con tarjeta a 3 días o menos, «el
+  cruce ya lo tolera». Bajo un renglón MARCADO a más de 3 días del cargo,
+  «Si este cargo es su pago, corrígela con «Fecha»» — salvo que el candado
+  del vuelo rechace la fecha del cargo (no se invita a algo que no se
+  puede; caso vivo: TAXI del vuelo #109 del 31-jul contra el Tren Maya del
+  10-ago); los motivos SIN_CANDIDATOS y FUERA_DE_VENTANA
   (`conciliacion-auto.ts`) también mandan a «Fecha».
 - **Por qué no `verifyGastoAction`**: no valida el uuid, no devuelve
-  code/status/details, no revalida Conciliación y su PATCH dispara el
-  auto-cruce en segundo plano (con montos repetidos —VIP SAESA— podía ligar
-  OTRO cargo sin que el panel se enterara).
+  code/status/details y su PATCH dispara el auto-cruce en segundo plano (con
+  montos repetidos —VIP SAESA— podía ligar OTRO cargo sin que el panel se
+  enterara). Y como ahora hay DOS escritores de la fecha, «Verificar /
+  editar» manda `fecha_gasto` SOLO si se cambió en su formulario (como
+  `estatus_facturacion`): mandar la que tenía al abrirse revertía en
+  silencio la que corrigió Conciliación y disparaba el auto-cruce con la
+  fecha vieja (vigilado en `components/admin/expenses/__tests__/verificar-fecha-ui.test.ts`).
 - **Por qué el botón va FUERA del `<label>`**: un botón dentro de la etiqueta
   sería HTML inválido, ensuciaría el nombre accesible de la casilla y un clic
   podría marcarla. Como hermano no hereda `opacity-60` ni el `title` del veto
-  de un renglón apagado (la fecha no tiene que ver con armar un lote). En el
-  teléfono solo se ve el ícono; desde `sm`, «Fecha».
+  de un renglón apagado (la fecha no tiene que ver con armar un lote). Dice
+  «Fecha» también en el teléfono (revisión del 14-oct-2026: la ayuda y el
+  aviso dicen «corrígela con «Fecha»» y en pantalla táctil no hay tooltip).
+  Su `aria-label`/`title` dice CUÁL gasto (`etiquetaBotonFecha`: la etiqueta
+  del renglón + vuelo + la nota recortada): con varios gastos del mismo día,
+  la lista de botones de un lector de pantalla ya los distingue.
 - **Por qué el mapa `fechasCorregidas` y no `setRecarga`**: volver a pedir
   la lista esconde los no marcados mientras carga y pierde el orden que el
-  operador estaba viendo; el mapa corrige en sitio TODAS las filas pintadas
-  (también los marcados y el sugerido de la IA, que se pintan con su copia
-  guardada) y la siguiente búsqueda ya trae lo del servidor. Solo un 404
-  `GASTO_NO_EXISTE` vuelve a pedirla (y desmarca el gasto).
-- **Next 16 repinta la página abierta tras `revalidatePath`** en una server
-  action (aunque la ruta no coincida): sin auto-cruce es inofensivo (el
-  cargo sigue pendiente, su fila y `SelectorGastos` siguen montados) y así
-  se actualizan solos el motivo del cargo y los contadores. La action solo
-  revalida con `cambio: true`, y un fallo al revalidar jamás se reporta como
-  «no se cambió» (la fecha ya quedó).
+  operador estaba viendo. El mapa (`FechasCorregidas`: id ⇒ `{ fecha,
+  reemplaza }`, `registrarFechaCorregida`) corrige en sitio las filas que
+  todavía pintan una fecha que ya NO es la vigente (los marcados y el
+  sugerido de la IA se pintan con su copia guardada; una respuesta pudo
+  venir en camino al guardar) y CEDE ante una lectura nueva del servidor
+  con otra fecha (revisión del 14-oct-2026: antes le ganaba siempre y el
+  diálogo mandaba como `fecha_anterior` una fecha que ya no existía ⇒ 409, o
+  «Es la misma fecha» y «Guardar fecha» apagado). Un 409
+  `FECHA_GASTO_CAMBIO` (también el de «Deshacer») anota la VIGENTE. La copia
+  guardada de un MARCADO sigue sin refrescar el resto de sus datos
+  (previo). Un 404 `GASTO_NO_EXISTE`, un 409 `FECHA_GASTO_YA_CONCILIADO` o un
+  resultado INCIERTO vuelven a pedir la lista.
+- **La página NO se repinta mientras «Vincular gasto» está abierto**
+  (revisión del 14-oct-2026): en Next 16 cualquier `revalidatePath` dentro
+  de una server action repinta la página abierta, y con el buscador de la
+  tabla de movimientos filtrando por motivo («sin candidato», justo lo que
+  los MOTIVOS mandan a corregir) el cargo pasaba a «Se puede cruzar», su
+  fila salía del filtro y se desmontaba «Vincular gasto» con lo marcado, la
+  búsqueda y la sugerencia de la IA. Por eso `corregirFechaGastoAction` YA
+  NO revalida: `SelectorGastos` anota que algo cambió
+  (`refrescarAlCerrarRef`) y al DESMONTARSE (se cerró el diálogo por
+  cualquier camino) hace UN `router.refresh()` (motivo del cargo, «Gastos
+  sin banco»). «Deshacer» con el diálogo ya cerrado refresca de una vez
+  (`ponerAlDia`). Las demás pantallas son `force-dynamic` y se leen frescas
+  al entrar.
+- **Red o 5xx = no se sabe si se guardó** (`esResultadoIncierto`): el PATCH
+  pudo llegar y escribir antes de perderse la respuesta (las mutaciones no
+  se reintentan). El diálogo dice «No se pudo confirmar si la fecha se
+  guardó…» (nunca «La fecha no se cambió», que queda solo para los 4xx) y la
+  lista se vuelve a pedir para pintar la VIGENTE; «Deshacer» dice «No se pudo
+  confirmar si se deshizo el cambio de fecha». Un 401 dice «Tu sesión
+  expiró…» (`MSG_SESION_EXPIRADA`, el mismo de la búsqueda de gastos) y
+  cualquier otro 404 o texto en inglés del API se traduce: ningún texto del
+  AuthGuard llega al operador. «Load failed» (Safari) es técnico
+  (`errores-tecnicos.ts`).
 - **«Deshacer»** (toast de 10 s) reenvía la fecha anterior con
-  `confirmar: true` por la MISMA action; si el API lo bloquea (otro mes,
-  alguien la cambió) el toast «No se pudo deshacer el cambio de fecha» dice
-  por qué. **API previo** (0.0.75): 404 «Cannot PATCH» ⇒ «El servidor
-  todavía no corrige fechas desde Conciliación…»: no se escribe nada.
+  `confirmar: true` por la MISMA action y lee la respuesta con
+  `resultadoCorregirFecha` (como el diálogo); si el API lo bloquea (otro mes,
+  alguien la cambió, ya se concilió) el toast «No se pudo deshacer el cambio
+  de fecha» dice por qué. **API previo** (0.0.75): 404 «Cannot PATCH» ⇒ «El
+  servidor todavía no corrige fechas desde Conciliación…»: no se escribe
+  nada.
+- **El chunk del diálogo anidado se PRECARGA** al abrir «Vincular gasto»
+  (`precargarCorregirFecha`, en paralelo con los candidatos): sin eso el
+  primer «Fecha» en una red lenta no pintaba nada y un Esc en ese lapso
+  cerraba «Vincular gasto» (todavía no existía el diálogo de arriba).
 - **«Gastos sin banco» cuando la carga falla** (mismo día): la página
   montaba `GastosSinBancoTable` con cero filas aunque la lectura hubiera
   fallado (`.catch(() => null)`) — una lista de dinero vacía que decía «no
@@ -8122,11 +8185,15 @@ SPEI), no la de la factura; el cruce automático sigue a ±3 días
   (`components/admin/conciliacion/lista-sin-banco-no-cargo.tsx`, texto en
   `conciliacion-vista.ts`) con «Reintentar» (`router.refresh()`).
 - **Cableado vigilado** en `components/admin/conciliacion/__tests__/fecha-gasto.test.tsx`
-  (botón fuera del `<label>`, `type="button"`, `aria-haspopup`,
-  `cursor-pointer`, `dynamic` sin SSR, el mapa en el `useMemo` de `filas`,
-  «Deshacer» con `confirmar: true` y `.catch(sinConexion)`, formulario
-  `noValidate` y ningún texto literal en el diálogo),
-  `app/admin/conciliacion/__tests__/fecha-gasto-action.test.ts` y
-  `app/admin/conciliacion/__tests__/sin-banco-carga.test.tsx`.
+  (botón fuera del `<label>` y con «Fecha» visible, `type="button"`,
+  `aria-haspopup`, `cursor-pointer`, `dynamic` sin SSR y la precarga, el mapa
+  en el `useMemo` de `filas`, «Deshacer» con `confirmar: true`,
+  `.catch(sinConexion)` y `resultadoCorregirFecha`, el `router.refresh()` al
+  desmontar y la action sin `revalidatePath`, formulario `noValidate`, la
+  tarjeta que abre con la fecha del ticket, el candado del vuelo antes de
+  guardar y ningún texto literal en el diálogo),
+  `app/admin/conciliacion/__tests__/fecha-gasto-action.test.ts`,
+  `app/admin/conciliacion/__tests__/sin-banco-carga.test.tsx` y
+  `components/admin/expenses/__tests__/verificar-fecha-ui.test.ts`.
 - **Orden de deploy**: API 0.0.76 → panel. Con el panel antes, «Fecha» abre
   el diálogo y guardar dice «falta actualizar el API» (nada escrito).

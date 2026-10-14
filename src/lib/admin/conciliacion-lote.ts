@@ -1161,6 +1161,14 @@ function sinPrefijoCodigo(mensaje: string | null | undefined): string {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : "";
 }
 
+/**
+ * 401 del API (token vencido, cuenta dada de baja, JWKS que no contestó): sus
+ * textos vienen en inglés («Invalid or expired token», «User account is
+ * INACTIVO») y jamás se pintan. Fuente ÚNICA de los diálogos de Conciliación
+ * (la búsqueda de gastos y la fecha del gasto, revisión del 14-oct-2026).
+ */
+export const MSG_SESION_EXPIRADA = "Tu sesión expiró. Recarga la página e inicia sesión.";
+
 /** Error de la búsqueda (o de cualquier llamada del diálogo) en palabras del operador. */
 export function mensajeErrorBusquedaGastos(r: ResultadoAccionLote): string {
   if (esApiSinLote(r)) return mensajeApiSinLote(r);
@@ -1168,7 +1176,7 @@ export function mensajeErrorBusquedaGastos(r: ResultadoAccionLote): string {
   // El API previo no conoce el interruptor ni la justificación (6-oct-2026).
   if (r.code === "API_SIN_NO_BANCARIOS") return MSG_NO_BANCARIOS_API_VIEJO;
   if (r.code === "API_SIN_JUSTIFICACION") return MSG_JUSTIFICACION_API_VIEJO;
-  if (r.status === 401) return "Tu sesión expiró. Recarga la página e inicia sesión.";
+  if (r.status === 401) return MSG_SESION_EXPIRADA;
   if (r.status === 403) return "Tu usuario no puede conciliar movimientos del banco.";
   if (esErrorTecnico({ error: r.error, code: r.code })) return MSG_SERVIDOR_NO_RESPONDIO;
   return sinPrefijoCodigo(r.error) || MSG_SERVIDOR_NO_RESPONDIO;

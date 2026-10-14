@@ -15,15 +15,31 @@
  * del API). El API vuelve a validar TODO (medio bancario, fecha, mes del
  * vuelo, confirmación con SU texto) y JAMÁS dispara el auto-cruce: liga la
  * persona con «Vincular». El panel no calcula dinero: solo avisa.
+ *
+ * Revisión del 14-oct-2026: el candado del mes del vuelo viaja en la ficha
+ * (`candado_mes_vuelo`) y el panel ya no invita a una fecha que el API
+ * rechaza; un gasto que se concilió mientras tanto (409
+ * FECHA_GASTO_YA_CONCILIADO) sale de la lista; un fallo de red o 5xx dice
+ * que NO se sabe si se guardó (y la lista se vuelve a pedir); el 401 dice
+ * «Tu sesión expiró»; la tarjeta con 1 a 3 días de desfase abre con la
+ * fecha del ticket; el mapa de fechas corregidas cede ante una lectura
+ * NUEVA del servidor.
  */
 
 import { DIAS_FECHA_ANTIGUA, DIAS_PASADO_SOSPECHOSO } from "@/lib/admin/fecha-gasto";
 import { esDiaValido } from "@/lib/admin/url-params";
 import { MEDIOS_BANCARIOS_CONCILIACION, esCandidatoNoBancario } from "@/lib/admin/conciliacion-no-bancario";
-import { estadoLoteCargo, esRutaInexistente } from "@/lib/admin/conciliacion-lote";
+import {
+  MSG_SESION_EXPIRADA,
+  MSG_SIN_CONEXION,
+  esRutaInexistente,
+  estadoLoteCargo,
+  fichaCandidatoGasto,
+} from "@/lib/admin/conciliacion-lote";
+import { etiquetaCandidatoGasto } from "@/lib/admin/conciliacion-auto";
 import { fmtMontoConciliacion, numeroDe } from "@/lib/admin/conciliacion-parcial";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
-import { esErrorTecnico, MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
+import { esErrorTecnico } from "@/lib/admin/errores-tecnicos";
 import { fmtDateOnly, MESES_LARGOS_ES } from "@/lib/datetime";
 import type { CambioFechaGasto, GastoCandidato } from "@/types/conciliacion";
 
@@ -50,6 +66,7 @@ export const CODIGOS_FECHA_GASTO = [
   "FECHA_GASTO_CAMBIO",
   "FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO",
   "FECHA_GASTO_CONFIRMAR",
+  "FECHA_GASTO_YA_CONCILIADO",
 ] as const;
 
 export const BOTON_FECHA_FILA = "Fecha";
@@ -80,15 +97,37 @@ export const MSG_FECHA_SIN_PERMISO = "Tu usuario no puede corregir la fecha de u
 export const MSG_FECHA_CONFLICTO =
   "Alguien modificó este gasto en este momento: no se cambió la fecha. Vuelve a intentarlo.";
 export const MSG_GASTO_NO_EXISTE_FECHA = "Ese gasto ya no existe: la lista se actualizó.";
+/** 409 FECHA_GASTO_YA_CONCILIADO (alguien lo ligó a un cargo mientras el diálogo seguía abierto). */
+export const MSG_FECHA_YA_CONCILIADO =
+  "Este gasto ya quedó conciliado con un cargo del banco mientras tanto: su fecha es la de ese pago. La lista se actualizó.";
 export const MSG_FECHA_DATOS_RECHAZADOS =
   "La fecha no se cambió: el servidor no aceptó los datos. Recarga la página y vuelve a intentarlo.";
 export const MSG_FECHA_SIN_CAMBIO = "El gasto ya tenía esa fecha: no se cambió nada.";
 
-/** Lo que se le dice al operador cuando el servidor no contestó con un mensaje útil. */
-export const MSG_FECHA_TECNICO = `La fecha no se cambió. ${MSG_SERVIDOR_NO_RESPONDIO}`;
+/**
+ * Sin respuesta útil del servidor (red cortada, 5xx, HTML de Railway): NO se
+ * sabe si la fecha se guardó — el PATCH pudo llegar y escribir antes de que
+ * se perdiera la respuesta (las mutaciones no se reintentan). Revisión del
+ * 14-oct-2026: antes decía «La fecha no se cambió», y un reintento respondía
+ * «El gasto ya tenía esa fecha»: dos mensajes que negaban un cambio real.
+ * La lista se vuelve a pedir para que el renglón diga la fecha VIGENTE.
+ */
+export const MSG_FECHA_TECNICO =
+  "No se pudo confirmar si la fecha se guardó: el servidor no respondió. La lista se volvió a pedir: revisa la fecha del gasto antes de intentarlo otra vez.";
+/** «Deshacer» sin respuesta útil: tampoco se sabe si se deshizo. */
+export const TITULO_DESHACER_INCIERTO = "No se pudo confirmar si se deshizo el cambio de fecha";
+export const MSG_DESHACER_INCIERTO =
+  "El servidor no respondió: revisa la fecha del gasto en la lista antes de volver a cambiarla.";
 
 /** Cierre fijo de la descripción del diálogo (la regla del 13-oct-2026). */
 const FRASE_FECHA_ES_PAGO = "La fecha del gasto es la del PAGO (la del cargo del banco), no la de la factura.";
+/**
+ * Con TARJETA a 3 días o menos del cargo (revisión del 14-oct-2026): el
+ * diálogo no puede decir «la del cargo del banco» y a la vez la nota de
+ * tarjeta «cambia la fecha solo si la del ticket está mal» (ticket o banco es
+ * decisión pendiente del cliente). Sin el paréntesis; la nota lo explica.
+ */
+const FRASE_FECHA_ES_PAGO_TARJETA = "La fecha del gasto es la del PAGO, no la de la factura.";
 
 /** class-validator del API (DTO estricto): el panel mandó algo que el API no acepta. */
 const RE_DATOS_RECHAZADOS = /should not exist|must be|debe ser AAAA-MM-DD|debe ser true o false/i;
@@ -149,6 +188,22 @@ export function validarNuevaFechaGasto(nueva: string, actual: string, hoy: strin
   return null;
 }
 
+/**
+ * ¿Se puede guardar `nueva` para ESTE gasto? `validarNuevaFechaGasto` + el
+ * candado del mes del vuelo que manda el API en la ficha
+ * (`bloqueoMesDelVuelo`). La comparten el campo (texto bajo el campo,
+ * «Guardar fecha» apagado) y el envío del diálogo. La server action solo
+ * valida lo genérico (no tiene la ficha): el API vuelve a decidir todo.
+ */
+export function bloqueoNuevaFechaGasto(
+  c: Pick<GastoCandidato, "candado_mes_vuelo">,
+  nueva: string,
+  actual: string,
+  hoy: string,
+): string | null {
+  return validarNuevaFechaGasto(nueva, actual, hoy) ?? bloqueoMesDelVuelo(c, nueva, actual);
+}
+
 // ───────────────────────────── Candidato ─────────────────────────────
 
 const limpio = (t: string | null | undefined): string | null => {
@@ -169,17 +224,59 @@ export function puedeCorregirFechaDeCandidato(c: GastoCandidato | null | undefin
   return MEDIOS_BANCARIOS_CONCILIACION.includes(medio) && !esCandidatoNoBancario(c) && fechaDeCandidato(c) != null;
 }
 
-/** `aria-label` y `title` del botón del renglón: «Corregir la fecha del gasto (10 oct 2026)». */
-export function etiquetaBotonFecha(c: Pick<GastoCandidato, "fecha" | "fecha_gasto">): string {
-  const f = fechaDeCandidato(c);
-  return f ? `${TITULO_CORREGIR_FECHA} (${fmtDateOnly(f)})` : TITULO_CORREGIR_FECHA;
+/** Largo máximo de la nota que identifica al gasto en el nombre del botón. */
+const LARGO_NOTA_ETIQUETA = 40;
+
+/**
+ * `aria-label` y `title` del botón del renglón, con el gasto que corrige
+ * (revisión del 14-oct-2026: varios gastos del mismo día tenían botones con
+ * el MISMO nombre y en la lista de botones de un lector de pantalla no se
+ * distinguían): «Corregir la fecha del gasto: Taxi / estacionamiento ·
+ * $321.54 MXN · 10 oct 2026 · vuelo #436 · Winjet · Boleto Adulto ferry
+ * CZM-PDC». La etiqueta del renglón (`etiquetaCandidatoGasto`, la misma que se
+ * ve) + el vuelo + la primera línea de la nota o el lugar (si no hay
+ * proveedor, que ya va en la etiqueta), recortada.
+ */
+export function etiquetaBotonFecha(c: GastoCandidato): string {
+  const nota = limpio(c.proveedor) ? null : (limpio(c.lugar) ?? limpio(c.notas_primera_linea) ?? limpio(c.nota));
+  const partes = [
+    etiquetaCandidatoGasto(fichaCandidatoGasto(c)),
+    c.vuelo_folio != null ? `vuelo #${c.vuelo_folio}` : null,
+    nota && nota.length > LARGO_NOTA_ETIQUETA ? `${nota.slice(0, LARGO_NOTA_ETIQUETA - 1).trimEnd()}…` : nota,
+  ].filter((p): p is string => Boolean(p));
+  return partes.length > 0 ? `${TITULO_CORREGIR_FECHA}: ${partes.join(" · ")}` : TITULO_CORREGIR_FECHA;
+}
+
+/**
+ * ¿El API rechazaría mover la fecha del gasto a `nueva`? ESPEJO del 409
+ * FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO con la regla que manda el propio API en
+ * la ficha (`candado_mes_vuelo`, revisión del 14-oct-2026): el gasto es de un
+ * vuelo y su fecha solo se mueve dentro del mes que ya tiene (`actual`) o al
+ * mes del vuelo. El panel no decide QUÉ categorías tienen candado: si la
+ * ficha no lo trae (o es de un API previo), null y decide el API. Devuelve el
+ * texto del bloqueo (el mismo del API) o null.
+ */
+export function bloqueoMesDelVuelo(
+  c: Pick<GastoCandidato, "candado_mes_vuelo">,
+  nueva: string,
+  actual: string,
+): string | null {
+  const dia = c.candado_mes_vuelo?.vuelo_dia ?? "";
+  if (!esDiaValido(dia) || !esDiaValido(nueva) || !esDiaValido(actual)) return null;
+  const mesVuelo = dia.slice(0, 7);
+  const mesNuevo = nueva.slice(0, 7);
+  if (mesNuevo === mesVuelo || mesNuevo === actual.slice(0, 7)) return null;
+  const folio = c.candado_mes_vuelo?.vuelo_folio;
+  return `No se puede: este gasto es del vuelo ${folio != null ? `#${folio} ` : ""}(${fmtDateOnly(dia)}). Con fecha de ${mesTexto(mesNuevo)} quedaría en otro mes que su vuelo y el balance de ${mesTexto(mesVuelo)} lo marcaría como pendiente («fecha FUERA del periodo del libro»). Déjale una fecha de ${mesTexto(mesVuelo)}; para vincularlo no hace falta cambiarla.`;
 }
 
 /**
  * Bajo un renglón MARCADO cuya fecha está a más de 3 días del cargo: «La
  * fecha del gasto (18 sep 2026) está a 12 días de este cargo (30 sep 2026).
  * Si este cargo es su pago, corrígela con «Fecha».». null si no aplica (no
- * se puede corregir, o el cruce ya tolera la diferencia).
+ * se puede corregir, el cruce ya tolera la diferencia, o —revisión del
+ * 14-oct-2026— el API rechazaría la fecha del cargo por el mes del vuelo:
+ * no se invita a algo que no se puede; para vincularlo no hace falta).
  */
 export function nudgeFechaMarcado(c: GastoCandidato, fechaCargo: string | null | undefined): string | null {
   if (!puedeCorregirFechaDeCandidato(c)) return null;
@@ -188,16 +285,52 @@ export function nudgeFechaMarcado(c: GastoCandidato, fechaCargo: string | null |
   if (!f || !esDiaValido(cargo)) return null;
   const d = Math.abs(diasEntreDias(f, cargo));
   if (d <= DIAS_MARGEN_CRUCE) return null;
+  if (bloqueoMesDelVuelo(c, cargo, f)) return null;
   return `La fecha del gasto (${fmtDateOnly(f)}) está a ${d} días de este cargo (${fmtDateOnly(cargo)}). Si este cargo es su pago, corrígela con «${BOTON_FECHA_FILA}».`;
+}
+
+/**
+ * ¿Tarjeta con un desfase que el cruce ya tolera? TARJETA_CORP con la fecha
+ * actual a 3 días o menos del cargo: el banco registra el cargo 1 a 3 días
+ * después del ticket. Decide la nota de tarjeta, la frase de la descripción y
+ * la fecha con que abre el campo (revisión del 14-oct-2026).
+ */
+export function esDesfaseTarjetaTolerado(
+  c: Pick<GastoCandidato, "medio_pago">,
+  fechaActual: string,
+  fechaCargo: string,
+): boolean {
+  const cargo = (fechaCargo ?? "").slice(0, 10);
+  return (
+    (c.medio_pago ?? "").trim() === "TARJETA_CORP" &&
+    esDiaValido(fechaActual) &&
+    esDiaValido(cargo) &&
+    Math.abs(diasEntreDias(fechaActual, cargo)) <= DIAS_MARGEN_CRUCE
+  );
+}
+
+/**
+ * La fecha con que ABRE el campo del diálogo: la del CARGO (dos clics:
+ * «Fecha» y «Guardar fecha»), salvo una tarjeta con desfase tolerado, que abre
+ * con la fecha ACTUAL (la del ticket) y deja el atajo «Usar la fecha del
+ * cargo»: el camino por default ya no hace lo que la nota de tarjeta pide no
+ * hacer (revisión del 14-oct-2026, caso Winjet: ticket del 10-oct, cargo del
+ * 12-oct).
+ */
+export function fechaInicialCorregirFecha(c: GastoCandidato, fechaCargo: string): string {
+  const cargo = (fechaCargo ?? "").slice(0, 10);
+  const actual = fechaDeCandidato(c);
+  return actual && esDesfaseTarjetaTolerado(c, actual, cargo) ? actual : cargo;
 }
 
 /**
  * Descripción del diálogo: «Taxi / estacionamiento · $321.54 MXN · Winjet ·
  * Boleto Adulto ferry CZM-PDC. La fecha del gasto es la del PAGO (la del
  * cargo del banco), no la de la factura.» Quién: proveedor, lugar o la
- * primera línea de las notas (el orden de `lineaGastoLote`).
+ * primera línea de las notas (el orden de `lineaGastoLote`). Con una tarjeta
+ * de desfase tolerado (`fechaCargo`), sin «(la del cargo del banco)».
  */
-export function descripcionCorregirFecha(c: GastoCandidato): string {
+export function descripcionCorregirFecha(c: GastoCandidato, fechaCargo?: string | null): string {
   const quien = limpio(c.proveedor) ?? limpio(c.lugar) ?? limpio(c.notas_primera_linea) ?? limpio(c.nota);
   const categoria = limpio(c.categoria);
   const partes = [
@@ -205,7 +338,9 @@ export function descripcionCorregirFecha(c: GastoCandidato): string {
     `${fmtMontoConciliacion(c.monto)} ${limpio(c.moneda) ?? "MXN"}`,
     quien,
   ].filter((p): p is string => Boolean(p));
-  return `${partes.join(" · ")}. ${FRASE_FECHA_ES_PAGO}`;
+  const actual = fechaDeCandidato(c);
+  const tarjeta = actual != null && esDesfaseTarjetaTolerado(c, actual, fechaCargo ?? "");
+  return `${partes.join(" · ")}. ${tarjeta ? FRASE_FECHA_ES_PAGO_TARJETA : FRASE_FECHA_ES_PAGO}`;
 }
 
 /** «Fecha actual del gasto: 10 oct 2026». */
@@ -303,12 +438,7 @@ export function avisosFechaPago(e: {
     });
   }
 
-  if (
-    (c.medio_pago ?? "").trim() === "TARJETA_CORP" &&
-    actualValida &&
-    cargoValido &&
-    Math.abs(diasEntreDias(e.fechaActual, cargo)) <= DIAS_MARGEN_CRUCE
-  ) {
+  if (esDesfaseTarjetaTolerado(c, e.fechaActual, cargo)) {
     avisos.push({ clave: "tarjeta", tono: "neutro", texto: NOTA_TARJETA_DESFASE });
   }
 
@@ -324,15 +454,58 @@ interface ConFecha {
 }
 
 /**
- * El renglón con la fecha que el API acaba de guardar (`mapa`: id ⇒ día).
- * Sin corrección (o ya con esa fecha) devuelve el MISMO objeto.
+ * Lo que esta sesión sabe de la fecha de un gasto: la que el API acaba de
+ * guardar (`fecha`) y las que ya NO son vigentes (`reemplaza`: la que tenía
+ * antes de cada corrección, o la que el renglón pintaba cuando el API dijo
+ * que alguien la cambió).
  */
-export function conFechaCorregida<T extends ConFecha>(c: T, mapa: Readonly<Record<string, string>>): T {
-  if (!Object.prototype.hasOwnProperty.call(mapa, c.id)) return c;
-  const f = mapa[c.id];
-  if (!f) return c;
+export interface FechaCorregida {
+  fecha: string;
+  reemplaza: readonly string[];
+}
+/** id del gasto ⇒ su fecha corregida. */
+export type FechasCorregidas = Readonly<Record<string, FechaCorregida>>;
+
+const entradaDe = (mapa: FechasCorregidas, id: string): FechaCorregida | undefined =>
+  Object.prototype.hasOwnProperty.call(mapa, id) ? mapa[id] : undefined;
+
+/**
+ * Anota en el mapa que el gasto `id` ahora tiene `fecha` y que `vista` (la
+ * que pintaba el renglón; normalmente la fecha anterior) ya no es la vigente.
+ * Una fecha que vuelve («Deshacer») deja de estar entre las reemplazadas. Sin
+ * cambio ⇒ el MISMO mapa (no repinta).
+ */
+export function registrarFechaCorregida(
+  mapa: FechasCorregidas,
+  id: string,
+  fecha: string,
+  vista?: string | null,
+): FechasCorregidas {
+  if (!esDiaValido(fecha)) return mapa;
+  const prev = entradaDe(mapa, id);
+  const candidatas = [...(prev?.reemplaza ?? []), prev?.fecha, (vista ?? "").slice(0, 10)];
+  const reemplaza = [...new Set(candidatas)].filter(
+    (f): f is string => typeof f === "string" && esDiaValido(f) && f !== fecha,
+  );
+  if (prev && prev.fecha === fecha && reemplaza.every((f) => prev.reemplaza.includes(f))) return mapa;
+  return { ...mapa, [id]: { fecha, reemplaza } };
+}
+
+/**
+ * El renglón con la fecha que el API acaba de guardar. SOLO si el renglón
+ * todavía trae una fecha que el mapa sabe REEMPLAZADA: la copia guardada de
+ * un marcado o del sugerido de la IA, o una respuesta que venía en camino al
+ * guardar. Si el servidor ya devuelve OTRA fecha (alguien la cambió después),
+ * manda la lectura nueva (revisión del 14-oct-2026: antes el mapa le ganaba
+ * siempre y el diálogo mandaba como `fecha_anterior` una fecha que ya no
+ * existía). Sin corrección (o ya con esa fecha) devuelve el MISMO objeto.
+ */
+export function conFechaCorregida<T extends ConFecha>(c: T, mapa: FechasCorregidas): T {
+  const e = entradaDe(mapa, c.id);
+  if (!e) return c;
   const vigente = (c.fecha ?? c.fecha_gasto ?? "").slice(0, 10);
-  return vigente === f ? c : { ...c, fecha: f, fecha_gasto: f };
+  if (vigente === e.fecha || !e.reemplaza.includes(vigente)) return c;
+  return { ...c, fecha: e.fecha, fecha_gasto: e.fecha };
 }
 
 /**
@@ -341,7 +514,7 @@ export function conFechaCorregida<T extends ConFecha>(c: T, mapa: Readonly<Recor
  * sin coincidencias ⇒ la MISMA referencia; si no, un arreglo nuevo donde solo
  * cambian los renglones corregidos (los demás conservan su referencia).
  */
-export function conFechasCorregidas<T extends ConFecha>(lista: readonly T[], mapa: Readonly<Record<string, string>>): T[] {
+export function conFechasCorregidas<T extends ConFecha>(lista: readonly T[], mapa: FechasCorregidas): T[] {
   if (Object.keys(mapa).length === 0) return lista as T[];
   let cambio = false;
   const nueva = lista.map((c) => {
@@ -364,12 +537,19 @@ export interface RespuestaCorregirFecha {
   details?: unknown;
 }
 
+/**
+ * `no_existe` = el gasto ya no está en la lista: se borró (404) o se concilió
+ * mientras tanto (409 FECHA_GASTO_YA_CONCILIADO); el padre lo desmarca y
+ * vuelve a pedir la lista. `incierto` = NO se sabe si se guardó (red, 5xx):
+ * el padre vuelve a pedir la lista para pintar la fecha vigente.
+ */
 export type ResultadoCorregirFecha =
   | { tipo: "ok"; data: CambioFechaGasto }
   | { tipo: "confirmar"; titulo: string; texto: string; boton: string }
   | { tipo: "bloqueo"; texto: string }
   | { tipo: "fecha_vigente"; fecha: string; texto: string }
   | { tipo: "no_existe"; texto: string }
+  | { tipo: "incierto"; texto: string }
   | { tipo: "error"; texto: string };
 
 const detalle = (d: unknown): Record<string, unknown> | null =>
@@ -380,23 +560,49 @@ export function textoFechaVigente(f: string): string {
   return `Alguien cambió la fecha de este gasto mientras tanto: ahora dice ${fmtDateOnly(f)}. Revisa y vuelve a guardar.`;
 }
 
+type FalloFecha = { ok?: boolean; error?: string | null; code?: string | null; status?: number | null };
+
+/**
+ * ¿NO se sabe si la fecha se guardó? Sin respuesta, un `ok` sin datos, un 5xx
+ * (incluida la orilla de Railway/Vercel), el HTML de un API reiniciando
+ * (`PARSE_ERROR`), un error de red («fetch failed», «Failed to fetch», «Load
+ * failed», «unexpected response») o la action que ni contestó. Un 4xx es
+ * determinista (el API respondió y no escribió): jamás incierto.
+ */
+export function esResultadoIncierto(r: FalloFecha | null | undefined): boolean {
+  if (!r) return true;
+  if (r.ok) return !(r as { data?: unknown }).data;
+  const status = r.status ?? 0;
+  if (status >= 400 && status < 500) return false;
+  return (
+    status >= 500 ||
+    r.code === "PARSE_ERROR" ||
+    esErrorTecnico({ error: r.error, code: r.code }) ||
+    r.error === MSG_SIN_CONEXION
+  );
+}
+
 /**
  * Texto para el operador de CUALQUIER fallo (el diálogo y «Deshacer»), en
- * orden: versión (CAS), API previo, permiso, gasto borrado, técnico o 5xx,
- * DTO rechazado; si no, el texto del API tal cual (los FECHA_GASTO_* ya
- * vienen en español, igual que los textos locales de la action).
+ * orden: versión (CAS), API previo, sesión vencida (401), permiso, gasto
+ * borrado (cualquier otro 404) o conciliado mientras tanto, resultado
+ * INCIERTO (red/5xx: «No se pudo confirmar si la fecha se guardó…»), DTO
+ * rechazado o un 4xx con texto técnico; si no, el texto del API tal cual (los
+ * FECHA_GASTO_* ya vienen en español, igual que los textos locales de la
+ * action). Ningún texto en inglés del API llega al operador.
  */
-export function mensajeErrorFechaGasto(
-  r: { error?: string | null; code?: string | null; status?: number | null } | null | undefined,
-): string {
+export function mensajeErrorFechaGasto(r: FalloFecha | null | undefined): string {
   if (!r) return MSG_FECHA_TECNICO;
   const code = r.code ?? "";
   if (code === "CONFLICTO_VERSION") return MSG_FECHA_CONFLICTO;
   if (code === "RUTA_NO_DISPONIBLE" || esRutaInexistente(r)) return MSG_FECHA_API_VIEJO;
+  if (r.status === 401) return MSG_SESION_EXPIRADA;
   if (r.status === 403) return MSG_FECHA_SIN_PERMISO;
-  if (code === "GASTO_NO_EXISTE") return MSG_GASTO_NO_EXISTE_FECHA;
-  if (esErrorTecnico({ error: r.error, code: r.code }) || (r.status ?? 0) >= 500) return MSG_FECHA_TECNICO;
+  if (code === "GASTO_NO_EXISTE" || r.status === 404) return MSG_GASTO_NO_EXISTE_FECHA;
+  if (code === "FECHA_GASTO_YA_CONCILIADO") return MSG_FECHA_YA_CONCILIADO;
+  if (esResultadoIncierto(r)) return MSG_FECHA_TECNICO;
   if (r.status === 400 && RE_DATOS_RECHAZADOS.test(r.error ?? "")) return MSG_FECHA_DATOS_RECHAZADOS;
+  if (esErrorTecnico({ error: r.error, code: r.code })) return MSG_FECHA_DATOS_RECHAZADOS;
   return (r.error ?? "").trim() || MSG_FECHA_TECNICO;
 }
 
@@ -407,12 +613,13 @@ export function mensajeErrorFechaGasto(
  *    «Sí, pasarlo a octubre 2026» / «Sí, cambiar la fecha»;
  *  - FUERA_DEL_MES_DEL_VUELO / SOLO_BANCARIOS ⇒ bloqueo con el texto del API;
  *  - FECHA_GASTO_CAMBIO con la fecha vigente ⇒ se toma esa como la actual;
- *  - GASTO_NO_EXISTE (o un 404 que no es «ruta inexistente») ⇒ la lista se
- *    vuelve a pedir;
+ *  - GASTO_NO_EXISTE (o un 404 que no es «ruta inexistente») o
+ *    FECHA_GASTO_YA_CONCILIADO ⇒ sale de la lista y se vuelve a pedir;
+ *  - red, 5xx o sin respuesta ⇒ incierto: NO se sabe si se guardó;
  *  - lo demás ⇒ error con `mensajeErrorFechaGasto`.
  */
 export function resultadoCorregirFecha(r: RespuestaCorregirFecha | null | undefined): ResultadoCorregirFecha {
-  if (!r) return { tipo: "error", texto: MSG_FECHA_TECNICO };
+  if (!r) return { tipo: "incierto", texto: MSG_FECHA_TECNICO };
   if (r.ok && r.data) return { tipo: "ok", data: r.data };
   const code = r.code ?? "";
   const d = detalle(r.details);
@@ -448,6 +655,10 @@ export function resultadoCorregirFecha(r: RespuestaCorregirFecha | null | undefi
     return { tipo: "no_existe", texto: MSG_GASTO_NO_EXISTE_FECHA };
   }
 
+  if (code === "FECHA_GASTO_YA_CONCILIADO") return { tipo: "no_existe", texto: MSG_FECHA_YA_CONCILIADO };
+
+  if (esResultadoIncierto(r)) return { tipo: "incierto", texto: MSG_FECHA_TECNICO };
+
   return { tipo: "error", texto: mensajeErrorFechaGasto(r) };
 }
 
@@ -457,12 +668,15 @@ export function resultadoCorregirFecha(r: RespuestaCorregirFecha | null | undefi
  * Tras guardar: «Fecha del gasto corregida: 10 oct 2026 → 12 oct 2026», con
  * la línea del API (mes terminado) y/o la de la hora de carga movida como
  * descripción; sin ninguna, sin descripción. Si el gasto ya tenía esa fecha,
- * «El gasto ya tenía esa fecha: no se cambió nada.».
+ * «El gasto ya tenía esa fecha: no se cambió nada.». La hora de carga solo se
+ * menciona si el API dice que ESTA llamada la movió
+ * (`fecha_hora_carga_movida`, revisión del 14-oct-2026): `fecha_hora_carga`
+ * es la de la fila y una carga que ya caía en el día nuevo no se toca.
  */
 export function toastFechaCorregida(r: CambioFechaGasto): { titulo: string; descripcion?: string } {
   if (!r.cambio) return { titulo: MSG_FECHA_SIN_CAMBIO };
   const titulo = `Fecha del gasto corregida: ${fmtDateOnly(r.fecha_anterior)} → ${fmtDateOnly(r.fecha_gasto)}`;
-  const partes = [limpio(r.aviso), r.fecha_hora_carga ? NOTA_HORA_CARGA_MOVIDA : null].filter(
+  const partes = [limpio(r.aviso), r.fecha_hora_carga_movida === true ? NOTA_HORA_CARGA_MOVIDA : null].filter(
     (p): p is string => Boolean(p),
   );
   return partes.length > 0 ? { titulo, descripcion: partes.join(" ") } : { titulo };

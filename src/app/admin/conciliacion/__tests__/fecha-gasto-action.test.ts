@@ -1,10 +1,12 @@
 /**
  * `corregirFechaGastoAction` (14-oct-2026, API 0.0.76): `PATCH
  * /v1/expenses/:id/fecha` con el cuerpo como OBJETO y solo sus 2 o 3 llaves;
- * lo inválido no sale a la red; revalida SOLO si la fecha cambió; un 404
- * «Cannot PATCH» (API previo) ⇒ `RUTA_NO_DISPONIBLE`; los demás errores
- * conservan code, status y details; nunca lanza. Reloj fijo en el 14-oct
- * (hoy en Cancún).
+ * lo inválido no sale a la red; NUNCA revalida (revisión del 14-oct-2026: en
+ * Next 16 repintaba la página abierta y, con el buscador filtrando por
+ * motivo, desmontaba «Vincular gasto»; el diálogo hace UN `router.refresh()`
+ * al cerrar); un 404 «Cannot PATCH» (API previo) ⇒ `RUTA_NO_DISPONIBLE`; los
+ * demás errores conservan code, status y details; nunca lanza. Reloj fijo en
+ * el 14-oct (hoy en Cancún).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
@@ -78,7 +80,7 @@ describe("corregirFechaGastoAction", () => {
     expect(apiServer).not.toHaveBeenCalled();
   });
 
-  it("OK: PATCH con el cuerpo como OBJETO y solo sus dos llaves; revalida las 5 pantallas", async () => {
+  it("OK: PATCH con el cuerpo como OBJETO y solo sus dos llaves; NO revalida (la página no se repinta con el diálogo abierto)", async () => {
     apiServer.mockResolvedValue(RESPUESTA);
     const r = await corregirFechaGastoAction(G, { fecha: " 2026-10-12 ", fechaAnterior: "2026-10-10" });
     expect(r).toEqual({ ok: true, data: RESPUESTA });
@@ -90,13 +92,7 @@ describe("corregirFechaGastoAction", () => {
     const body = apiServer.mock.calls[0][1].body;
     expect(typeof body).toBe("object");
     expect(Object.keys(body)).toEqual(["fecha_gasto", "fecha_anterior"]);
-    expect(revalidatePath.mock.calls).toEqual([
-      ["/admin/conciliacion"],
-      ["/admin/expenses"],
-      ["/admin/combustibles"],
-      ["/admin/gastos-personales"],
-      ["/admin/flights", "layout"],
-    ]);
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("confirmar true ⇒ viaja confirmar: true; false o ausente ⇒ no viaja", async () => {
@@ -123,14 +119,12 @@ describe("corregirFechaGastoAction", () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("si revalidar falla, la fecha YA quedó: responde ok (nunca «no se cambió»)", async () => {
-    apiServer.mockResolvedValue(RESPUESTA);
-    revalidatePath.mockImplementationOnce(() => {
-      throw new Error("Invariant: static generation store missing");
-    });
+  it("la respuesta del API viaja TAL CUAL (también fecha_hora_carga_movida, aditivo del 0.0.76)", async () => {
+    const conCarga = { ...RESPUESTA, fecha_hora_carga: "2026-10-13T02:00:00+00:00", fecha_hora_carga_movida: false };
+    apiServer.mockResolvedValue(conCarga);
     expect(await corregirFechaGastoAction(G, { fecha: "2026-10-12", fechaAnterior: "2026-10-10" })).toEqual({
       ok: true,
-      data: RESPUESTA,
+      data: conCarga,
     });
   });
 

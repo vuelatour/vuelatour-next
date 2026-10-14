@@ -739,6 +739,16 @@ export function ExpenseVerifyDialog({
       ) {
         delete (payload as { estatus_facturacion?: unknown }).estatus_facturacion;
       }
+      // Fecha: viaja SOLO si se cambió en ESTE diálogo (revisión del
+      // 14-oct-2026). «Vincular gasto» de Conciliación también la corrige
+      // (`PATCH /v1/expenses/:id/fecha`): mandar la del formulario con que se
+      // abrió (posiblemente vieja) la revertía en silencio y el PATCH
+      // disparaba el cruce automático con la fecha vieja. Sin la llave, el
+      // API conserva la guardada (y la hora de la carga tampoco viaja:
+      // `camposCargaParaPatch` solo la muda si la fecha cambió).
+      if (values.fecha_gasto === (gasto.fecha_gasto ?? "").slice(0, 10)) {
+        delete (payload as { fecha_gasto?: unknown }).fecha_gasto;
+      }
       // El usuario LIMPIÓ el avión a mano ("Sin avión"): desligar con null
       // explícito — "" se tira en stripEmpty y el avión viejo seguiría vivo
       // (la opción sería un no-op mentiroso). El API valida lo que aplique

@@ -4,8 +4,11 @@
  * «Corregir la fecha del gasto» (14-oct-2026, API 0.0.76): el diálogo ANIDADO
  * que abre el botón «Fecha» de un renglón de «Vincular gasto». La fecha del
  * gasto es la del PAGO (la del cargo): el campo nace con la fecha del cargo
- * y «Guardar fecha» llama `PATCH /v1/expenses/:id/fecha` SIN auto-cruce (el
- * gasto no se liga solo: liga la persona con «Vincular»).
+ * (salvo una tarjeta con 1 a 3 días de desfase, que nace con la del ticket y
+ * ofrece el atajo: `fechaInicialCorregirFecha`) y «Guardar fecha» llama
+ * `PATCH /v1/expenses/:id/fecha` SIN auto-cruce (el gasto no se liga solo:
+ * liga la persona con «Vincular»). Una fecha que el API rechazaría por el mes
+ * del vuelo (`candado_mes_vuelo`) se dice ANTES de guardar.
  *
  * Reglas y textos en `lib/admin/conciliacion-fecha-gasto.ts` (PURO, con
  * prueba): aquí no hay ningún texto literal. El API vuelve a validar todo y,
@@ -33,17 +36,19 @@ import { BOTON_CANCELAR, MSG_SIN_CONEXION } from "@/lib/admin/conciliacion-lote"
 import {
   BOTON_GUARDAR_FECHA,
   ETIQUETA_FECHA_PAGO,
+  MSG_FECHA_IGUAL,
   NOTA_FECHA_SOLO_FECHA,
   TEXTO_GUARDANDO_FECHA,
   TITULO_CORREGIR_FECHA,
   avisosFechaPago,
+  bloqueoNuevaFechaGasto,
   botonUsarFechaCargo,
   descripcionCorregirFecha,
   fechaDeCandidato,
+  fechaInicialCorregirFecha,
   limitesFechaPago,
   resultadoCorregirFecha,
   textoFechaActual,
-  validarNuevaFechaGasto,
 } from "@/lib/admin/conciliacion-fecha-gasto";
 import { textoResumenCargo } from "@/lib/admin/gasto-desde-cargo";
 import { todayCancun } from "@/lib/datetime";
@@ -67,10 +72,12 @@ export interface CorregirFechaGastoDialogProps {
   onCerrar: () => void;
   /** El API guardó (o el gasto ya tenía esa fecha): el padre cierra, corrige la lista y avisa. */
   onCorregida: (r: CambioFechaGasto) => void;
-  /** Otra persona cambió la fecha mientras tanto: el renglón pinta la vigente. */
-  onFechaVigente: (gastoId: string, fecha: string) => void;
-  /** 404: el gasto ya no existe; el padre lo desmarca y vuelve a pedir la lista. */
+  /** Otra persona cambió la fecha mientras tanto: el renglón pinta la vigente (`vista` ya no lo es). */
+  onFechaVigente: (gastoId: string, fecha: string, vista: string) => void;
+  /** El gasto salió de la lista (404, o se concilió mientras tanto): el padre lo desmarca y la vuelve a pedir. */
   onGastoNoExiste: (gastoId: string, texto: string) => void;
+  /** No se sabe si se guardó (red, 5xx): el padre vuelve a pedir la lista para pintar la fecha vigente. */
+  onResultadoIncierto?: (gastoId: string) => void;
 }
 
 /** La server action ni siquiera salió (sin red, Vercel cortó): nunca lanza. */
@@ -84,7 +91,7 @@ export function CorregirFechaGastoDialog(p: CorregirFechaGastoDialogProps) {
   const [hoy] = useState(() => todayCancun());
   const fechaCargo = (p.movimiento.fecha ?? "").slice(0, 10);
   const [fechaActual, setFechaActual] = useState(() => fechaDeCandidato(p.candidato) ?? "");
-  const [fecha, setFecha] = useState(fechaCargo);
+  const [fecha, setFecha] = useState(() => fechaInicialCorregirFecha(p.candidato, fechaCargo));
   const [estado, setEstado] = useState<EstadoCorregirFecha>({ tipo: "editando" });
   const [pending, start] = useTransition();
 
@@ -95,7 +102,7 @@ export function CorregirFechaGastoDialog(p: CorregirFechaGastoDialogProps) {
   };
 
   const enviar = () => {
-    if (pending || validarNuevaFechaGasto(fecha, fechaActual, hoy) || estado.tipo === "bloqueo") return;
+    if (pending || bloqueoNuevaFechaGasto(p.candidato, fecha, fechaActual, hoy) || estado.tipo === "bloqueo") return;
     const confirmar = estado.tipo === "confirmar";
     start(async () => {
       const r = await corregirFechaGastoAction(p.candidato.id, {
@@ -113,9 +120,16 @@ export function CorregirFechaGastoDialog(p: CorregirFechaGastoDialogProps) {
         return;
       }
       if (d.tipo === "fecha_vigente") {
+        p.onFechaVigente(p.candidato.id, d.fecha, fechaActual);
         setFechaActual(d.fecha);
-        p.onFechaVigente(p.candidato.id, d.fecha);
         setEstado({ tipo: "error", texto: d.texto });
+        return;
+      }
+      if (d.tipo === "incierto") {
+        // No se sabe si se guardó: caja roja con el texto honesto y la lista
+        // del padre se vuelve a pedir (el renglón dirá la fecha vigente).
+        setEstado({ tipo: "error", texto: d.texto });
+        p.onResultadoIncierto?.(p.candidato.id);
         return;
       }
       // confirmar | bloqueo | error
@@ -191,7 +205,11 @@ export function CuerpoCorregirFecha({
 }: CuerpoCorregirFechaProps) {
   const fechaCargo = (movimiento.fecha ?? "").slice(0, 10);
   const limites = limitesFechaPago(hoy);
-  const bloqueoLocal = validarNuevaFechaGasto(fecha, fechaActual, hoy);
+  const bloqueoLocal = bloqueoNuevaFechaGasto(candidato, fecha, fechaActual, hoy);
+  // La MISMA fecha que ya tiene no es un error: no hay nada que guardar
+  // (gris, sin role=alert; «Guardar fecha» sigue apagado). Pasa al abrir con
+  // la fecha del ticket de una tarjeta o si el gasto ya tiene la del cargo.
+  const sinCambio = bloqueoLocal === MSG_FECHA_IGUAL;
   const avisos = avisosFechaPago({
     candidato,
     nueva: fecha,
@@ -214,7 +232,7 @@ export function CuerpoCorregirFecha({
     >
       <DialogHeader>
         <DialogTitle>{TITULO_CORREGIR_FECHA}</DialogTitle>
-        <DialogDescription>{descripcionCorregirFecha(candidato)}</DialogDescription>
+        <DialogDescription>{descripcionCorregirFecha(candidato, fechaCargo)}</DialogDescription>
       </DialogHeader>
 
       <div className="space-y-0.5 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
@@ -233,7 +251,7 @@ export function CuerpoCorregirFecha({
           onChange={(e) => onFecha(e.target.value)}
           disabled={pending}
           required
-          aria-invalid={bloqueoLocal != null}
+          aria-invalid={bloqueoLocal != null && !sinCambio}
           aria-describedby={`${idCampo}-nota`}
           className="cursor-pointer"
         />
@@ -247,11 +265,16 @@ export function CuerpoCorregirFecha({
             {botonUsarFechaCargo(fechaCargo)}
           </button>
         )}
-        {bloqueoLocal && (
-          <p role="alert" className="text-xs text-destructive">
-            {bloqueoLocal}
-          </p>
-        )}
+        {bloqueoLocal &&
+          (sinCambio ? (
+            <p data-sin-cambio-fecha="" className="text-xs text-muted-foreground">
+              {bloqueoLocal}
+            </p>
+          ) : (
+            <p role="alert" className="text-xs text-destructive">
+              {bloqueoLocal}
+            </p>
+          ))}
       </div>
 
       {estado.tipo === "confirmar" && (

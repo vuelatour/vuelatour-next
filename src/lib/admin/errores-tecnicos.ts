@@ -19,9 +19,12 @@
  * newer deployment.» (revisión 2-oct-2026) es lo que lanza Next cuando la
  * pestaña quedó abierta durante un deploy de Vercel: justo la ventana que
  * cuida el contrato del lote. Es técnico: la salida es recargar, no leerlo.
+ * «Load failed» (revisión del 14-oct-2026) es el `TypeError` de red de
+ * Safari (el «Failed to fetch» de Chrome): EXACTO, para no tragarse un texto
+ * útil que lo contenga.
  */
 export const RE_TEXTO_TECNICO =
-  /^(Internal server error|Request failed|Bad Request|Not Found|Unauthorized|Forbidden|Conflict|Service Unavailable|Bad Gateway|Gateway Timeout|fetch failed|Error desconocido)$|fetch failed|failed to fetch|unexpected response|ECONN|socket hang up|network|Failed to find Server Action|older or newer deployment/i;
+  /^(Internal server error|Request failed|Bad Request|Not Found|Unauthorized|Forbidden|Conflict|Service Unavailable|Bad Gateway|Gateway Timeout|fetch failed|Error desconocido|Load failed)$|fetch failed|failed to fetch|unexpected response|ECONN|socket hang up|network|Failed to find Server Action|older or newer deployment/i;
 
 /** Lo que ve el operador cuando el servidor no contestó con un mensaje útil. */
 export const MSG_SERVIDOR_NO_RESPONDIO =

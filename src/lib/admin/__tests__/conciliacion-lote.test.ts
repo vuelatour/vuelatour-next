@@ -845,6 +845,9 @@ describe("errores técnicos (fuente única, movida desde reversos)", () => {
   it("el regex y la regla", () => {
     expect(RE_TEXTO_TECNICO.test("Bad Gateway")).toBe(true);
     expect(esTextoTecnico("socket hang up")).toBe(true);
+    // Safari (revisión del 14-oct-2026): su «Failed to fetch», EXACTO.
+    expect(esTextoTecnico("Load failed")).toBe(true);
+    expect(esTextoTecnico("Upload failed: el archivo pesa más de 10 MB")).toBe(false);
     expect(esTextoTecnico("")).toBe(true);
     expect(esTextoTecnico("El gasto ya está cubierto.")).toBe(false);
     expect(esErrorTecnico({ code: "PARSE_ERROR", error: "Algo en español" })).toBe(true);

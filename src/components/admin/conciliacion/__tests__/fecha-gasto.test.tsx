@@ -4,13 +4,19 @@
  * sobre los fuentes:
  *  1. el diálogo con el caso Winjet (gasto 08c0632c $321.54 del 10-oct contra
  *     el cargo 5e3178db de $345.00 del 12-oct): textos, campo de fecha con
- *     sus límites, aviso de monto, nota de tarjeta y la nota fija;
- *  2. los estados del cuerpo: atajo, misma fecha, confirmación del API,
- *     bloqueo y «Guardando…»;
+ *     sus límites, aviso de monto, nota de tarjeta y la nota fija. Desde la
+ *     revisión del 14-oct-2026 una TARJETA a 3 días o menos abre con la fecha
+ *     del ticket (atajo a la del cargo) y la descripción no dice «la del
+ *     cargo del banco»; una transferencia abre con la del cargo;
+ *  2. los estados del cuerpo: atajo, misma fecha (gris, no error), candado
+ *     del mes del vuelo, confirmación del API, bloqueo y «Guardando…»;
  *  3. el renglón: el botón «Fecha» va FUERA del <label> (hermano), lleva
- *     type="button", aria-haspopup y cursor-pointer, y solo en gastos
- *     bancarios; la lista se corrige con el mapa (sin volver a pedirla);
- *     «Deshacer» manda confirmar: true; el diálogo se carga sin SSR;
+ *     type="button", aria-haspopup y cursor-pointer, dice «Fecha» también en
+ *     el teléfono y solo sale en gastos bancarios; la lista se corrige con el
+ *     mapa (sin volver a pedirla); «Deshacer» manda confirmar: true y lee la
+ *     respuesta con `resultadoCorregirFecha`; la página se refresca al CERRAR
+ *     (la action ya no revalida); el diálogo se carga sin SSR y su chunk se
+ *     precarga al abrir;
  *  4. el diálogo: la action con .catch(sinConexion), formulario noValidate,
  *     cursor-pointer y type en todo botón, ningún texto literal.
  */
@@ -82,10 +88,10 @@ const CARGO: Pick<MovimientoBancario, "id" | "fecha" | "monto" | "descripcion"> 
 
 const nada = () => {};
 
-function dialogo(): string {
+function dialogo(candidato: GastoCandidato = WINJET): string {
   return renderToStaticMarkup(
     <CorregirFechaGastoDialog
-      candidato={WINJET}
+      candidato={candidato}
       movimiento={CARGO}
       monedaCuenta="MXN"
       dias={30}
@@ -97,17 +103,19 @@ function dialogo(): string {
   );
 }
 
-function cuerpo(o: { fecha?: string; estado?: Estado; pending?: boolean } = {}): string {
+function cuerpo(
+  o: { fecha?: string; estado?: Estado; pending?: boolean; candidato?: GastoCandidato; fechaActual?: string } = {},
+): string {
   return renderToStaticMarkup(
     <CuerpoCorregirFecha
       idCampo="campo"
-      candidato={WINJET}
+      candidato={o.candidato ?? WINJET}
       movimiento={CARGO}
       monedaCuenta="MXN"
       dias={30}
       hoy="2026-10-14"
       fecha={o.fecha ?? "2026-10-12"}
-      fechaActual="2026-10-10"
+      fechaActual={o.fechaActual ?? "2026-10-10"}
       estado={o.estado ?? { tipo: "editando" }}
       pending={o.pending ?? false}
       onFecha={nada}
@@ -126,34 +134,39 @@ const cancelar = (html: string) => {
   return html.slice(abre, html.indexOf(">", abre) + 1);
 };
 
-describe("el diálogo con el caso Winjet", () => {
+describe("el diálogo con el caso Winjet (tarjeta con 2 días de desfase)", () => {
   const html = dialogo();
 
-  it("título, descripción, fecha actual y el cargo", () => {
+  it("título, descripción SIN «la del cargo del banco», fecha actual y el cargo", () => {
     expect(html).toContain('data-dialogo="abierto"');
     expect(html).toContain("Corregir la fecha del gasto");
     expect(html).toContain(
-      "Taxi / estacionamiento · $321.54 MXN · Winjet · Boleto Adulto ferry CZM-PDC. La fecha del gasto es la del PAGO (la del cargo del banco), no la de la factura.",
+      "Taxi / estacionamiento · $321.54 MXN · Winjet · Boleto Adulto ferry CZM-PDC. La fecha del gasto es la del PAGO, no la de la factura.",
     );
+    expect(html).not.toContain("(la del cargo del banco)");
     expect(html).toContain("Fecha actual del gasto: 10 oct 2026");
     expect(html).toContain("Cargo de $345 MXN del 12 oct 2026 · WINJET PLAYA DEL CARME");
   });
 
-  it("el campo nace con la fecha del CARGO, de hace 365 días a hoy; sin atajo", () => {
+  it("el campo nace con la fecha del TICKET (no se mueve en dos clics), de hace 365 días a hoy, con el atajo al cargo", () => {
     const campo = html.match(/<input[^>]*type="date"[^>]*>/)?.[0] ?? "";
-    expect(campo).toContain('value="2026-10-12"');
+    expect(campo).toContain('value="2026-10-10"');
     expect(campo).toContain('min="2025-10-14"');
     expect(campo).toContain('max="2026-10-14"');
     expect(campo).toContain("cursor-pointer");
+    // La misma fecha no es un error: gris, sin role=alert ni aria-invalid.
+    expect(campo).toContain('aria-invalid="false"');
+    expect(html).toMatch(/<p data-sin-cambio-fecha="" class="[^"]*text-muted-foreground[^"]*">Es la misma fecha que ya tiene el gasto\.<\/p>/);
+    expect(html).not.toMatch(/role="alert"[^>]*>Es la misma fecha/);
     expect(html).toContain("Fecha del pago");
-    expect(html).not.toContain("Usar la fecha del cargo");
+    expect(html).toContain("Usar la fecha del cargo (12 oct 2026)");
     // El campo describe con la nota fija (la misma id).
     const describe = /aria-describedby="([^"]+)"/.exec(campo)?.[1];
     expect(describe).toBeTruthy();
     expect(html).toContain(`id="${describe}"`);
   });
 
-  it("aviso de monto (ámbar), nota de tarjeta y la nota fija; «Guardar fecha» encendido", () => {
+  it("aviso de monto (ámbar), nota de tarjeta y la nota fija; «Guardar fecha» apagado hasta elegir otra fecha", () => {
     expect(html).toContain(
       "Ojo: con la fecha no basta para vincularlo solo: el cargo ($345.00) es mayor que el gasto ($321.54) por $23.46. Si el ticket dice otro monto, corrígelo en Gastos; si el cargo pagó varios gastos, márcalos todos.",
     );
@@ -162,6 +175,19 @@ describe("el diálogo con el caso Winjet", () => {
     expect(html).toContain("Con tarjeta, el banco registra el cargo 1 a 3 días después del ticket");
     expect(html).toContain("Guardar solo cambia la fecha: no vincula el gasto. El cambio queda registrado con tu nombre.");
     expect(html).toContain(">Guardar fecha</button>");
+    expect(guardar(html)).toMatch(/\sdisabled=""/);
+  });
+});
+
+describe("el diálogo con una transferencia (sin desfase de tarjeta)", () => {
+  const html = dialogo({ ...WINJET, medio_pago: "TRANSFERENCIA", tarjeta_terminacion: null });
+
+  it("nace con la fecha del CARGO, sin atajo, con la frase completa y «Guardar fecha» encendido", () => {
+    const campo = html.match(/<input[^>]*type="date"[^>]*>/)?.[0] ?? "";
+    expect(campo).toContain('value="2026-10-12"');
+    expect(html).toContain("La fecha del gasto es la del PAGO (la del cargo del banco), no la de la factura.");
+    expect(html).not.toContain("Usar la fecha del cargo");
+    expect(html).not.toContain('data-aviso-fecha="tarjeta"');
     expect(guardar(html)).not.toMatch(/\sdisabled=""/);
   });
 });
@@ -175,11 +201,31 @@ describe("estados del cuerpo", () => {
     expect(atajo).toContain("cursor-pointer");
   });
 
-  it("la misma fecha que ya tiene ⇒ el aviso en role=alert y «Guardar fecha» apagado", () => {
+  it("la misma fecha que ya tiene ⇒ nota GRIS (no es un error) y «Guardar fecha» apagado", () => {
     const html = cuerpo({ fecha: "2026-10-10" });
-    expect(html).toMatch(/<p role="alert"[^>]*>Es la misma fecha que ya tiene el gasto\.<\/p>/);
+    expect(html).toMatch(/<p data-sin-cambio-fecha=""[^>]*>Es la misma fecha que ya tiene el gasto\.<\/p>/);
+    expect(html).not.toMatch(/<p role="alert"[^>]*>Es la misma fecha/);
     expect(guardar(html)).toMatch(/\sdisabled=""/);
+    expect(html).toMatch(/<input[^>]*aria-invalid="false"/);
+  });
+
+  it("una fecha que el API rechazaría por el mes del vuelo ⇒ caja roja ANTES de guardar y «Guardar fecha» apagado", () => {
+    // Prod, 14-oct: TAXI del vuelo #109 (31-jul) contra el cargo del Tren Maya del 10-ago.
+    const tren: GastoCandidato = {
+      ...WINJET,
+      fecha: "2026-07-31",
+      vuelo_folio: 109,
+      candado_mes_vuelo: { vuelo_dia: "2026-07-31", vuelo_folio: 109 },
+    };
+    const html = cuerpo({ candidato: tren, fechaActual: "2026-07-31", fecha: "2026-08-10" });
+    expect(html).toMatch(
+      /<p role="alert"[^>]*>No se puede: este gasto es del vuelo #109 \(31 jul 2026\)\. Con fecha de agosto 2026 quedaría en otro mes que su vuelo/,
+    );
+    expect(html).toContain("para vincularlo no hace falta cambiarla.");
     expect(html).toMatch(/<input[^>]*aria-invalid="true"/);
+    expect(guardar(html)).toMatch(/\sdisabled=""/);
+    // Dentro de julio sí se puede.
+    expect(guardar(cuerpo({ candidato: tren, fechaActual: "2026-07-31", fecha: "2026-07-29" }))).not.toMatch(/\sdisabled=""/);
   });
 
   it("confirmación del API ⇒ caja ámbar en role=alert con su título y el botón «Sí, pasarlo a octubre 2026»", () => {
@@ -236,7 +282,10 @@ describe("cableado del renglón en «Vincular gasto»", () => {
     );
     expect(src).toContain("const puedeFecha = puedeCorregirFechaDeCandidato(c);");
     expect(src).toContain('<CalendarDaysIcon className="h-4 w-4" aria-hidden />');
-    expect(src).toContain('<span className="hidden sm:inline">{BOTON_FECHA_FILA}</span>');
+    // «Fecha» se ve también en el teléfono (revisión del 14-oct-2026): la
+    // ayuda y el aviso dicen «corrígela con «Fecha»».
+    expect(src).toMatch(/<CalendarDaysIcon className="h-4 w-4" aria-hidden \/>[\s\S]{0,200}<span>\{BOTON_FECHA_FILA\}<\/span>/);
+    expect(src).not.toContain("hidden sm:inline\">{BOTON_FECHA_FILA}");
   });
 
   it("el renglón conserva lo que fijan las demás pruebas (casilla, veto, tooltip)", () => {
@@ -252,9 +301,16 @@ describe("cableado del renglón en «Vincular gasto»", () => {
       /const filas = useMemo\(\s*\(\) =>\s*conFechasCorregidas\(\s*listaConMarcadosPrimero\(conSugeridoAlFrente\(resultados, sugerido\), marcados\),\s*fechasCorregidas,\s*\),\s*\[resultados, sugerido, marcados, fechasCorregidas\],\s*\);/,
     );
     expect(src).toContain("fichaCandidatoGasto(conFechaCorregida(f, fechasCorregidas))");
-    expect(src).toMatch(/const ponerFecha = useCallback\(\(id: string, fecha: string\) => \{\s*setFechasCorregidas\(\(prev\) => \(prev\[id\] === fecha \? prev : \{ \.\.\.prev, \[id\]: fecha \}\)\);/);
-    // Solo un 404 del gasto vuelve a pedir la lista.
+    // El mapa anota la fecha vigente Y la que reemplaza (cede ante una lectura nueva).
+    expect(src).toContain("useState<FechasCorregidas>({})");
+    expect(src).toMatch(
+      /const ponerFecha = useCallback\(\(id: string, fecha: string, vista\?: string \| null\) => \{\s*setFechasCorregidas\(\(prev\) => registrarFechaCorregida\(prev, id, fecha, vista\)\);/,
+    );
+    expect(src).toContain("ponerFecha(r.id, r.fecha_gasto, r.fecha_anterior);");
+    // Un 404 (o el gasto conciliado mientras tanto) vuelve a pedir la lista.
     expect(src).toMatch(/const gastoYaNoExiste = [\s\S]{0,200}setMarcados\(\(prev\) => prev\.filter\(\(m\) => m\.id !== id\)\);\s*toast\.error\(texto\);\s*setRecarga\(\(n\) => n \+ 1\);/);
+    // Sin saber si se guardó: también.
+    expect(src).toMatch(/const recargarTrasIncierto = \(\) => \{\s*setRecarga\(\(n\) => n \+ 1\);/);
   });
 
   it("«Deshacer» manda confirmar: true por la MISMA action y nunca lanza", () => {
@@ -267,6 +323,41 @@ describe("cableado del renglón en «Vincular gasto»", () => {
     expect(src).not.toContain("verifyGastoAction");
   });
 
+  it("«Deshacer» lee la respuesta como el diálogo: incierto, fecha vigente y gasto que salió de la lista", () => {
+    const i = src.indexOf("const deshacerFecha = ");
+    const fin = src.indexOf("const trasCorregirFecha = ", i);
+    const deshacer = src.slice(i, fin);
+    expect(deshacer).toContain("const d = resultadoCorregirFecha(res);");
+    expect(deshacer).toMatch(
+      /if \(d\.tipo === "incierto"\) \{[\s\S]{0,200}toast\.error\(TITULO_DESHACER_INCIERTO, \{ description: MSG_DESHACER_INCIERTO \}\);\s*ponerAlDia\(true\);/,
+    );
+    expect(deshacer).toContain('if (d.tipo === "fecha_vigente") ponerFecha(r.id, d.fecha, r.fecha_gasto);');
+    expect(deshacer).toMatch(/if \(d\.tipo === "no_existe"\) \{\s*setMarcados\(\(prev\) => prev\.filter\(\(m\) => m\.id !== r\.id\)\);\s*ponerAlDia\(true\);/);
+  });
+
+  it("la página NO se repinta con el diálogo abierto: UN router.refresh() al cerrar (o al instante si ya se cerró)", () => {
+    // Al desmontar, si algo cambió.
+    expect(src).toMatch(
+      /return \(\) => \{\s*montadoRef\.current = false;\s*if \(refrescarAlCerrarRef\.current\) \{\s*refrescarAlCerrarRef\.current = false;\s*routerRef\.current\.refresh\(\);/,
+    );
+    // Guardar una fecha (con cambio) lo anota; «Deshacer» ya cerrado refresca de una vez.
+    expect(src).toContain("if (r.cambio) refrescarAlCerrarRef.current = true;");
+    expect(src).toMatch(/const ponerAlDia = \(recargarLista = false\) => \{\s*if \(!montadoRef\.current\) \{\s*router\.refresh\(\);\s*return;\s*\}\s*refrescarAlCerrarRef\.current = true;/);
+    // Y la action ya no revalida (en Next 16 repintaba la página abierta).
+    const acciones = leer("../../../../app/admin/conciliacion/actions.ts");
+    const i = acciones.indexOf("export async function corregirFechaGastoAction(");
+    const cuerpoAction = acciones.slice(i, acciones.indexOf("\nexport ", i + 1));
+    expect(i).toBeGreaterThan(-1);
+    expect(cuerpoAction).not.toContain("revalidatePath(");
+  });
+
+  it("el chunk del diálogo anidado se PRECARGA al abrir «Vincular gasto» (el mismo módulo que dynamic)", () => {
+    expect(src).toContain(
+      'const precargarCorregirFecha = () => import("@/components/admin/conciliacion/corregir-fecha-gasto-dialog");',
+    );
+    expect(src).toMatch(/montadoRef\.current = true;[\s\S]{0,200}void precargarCorregirFecha\(\)\.catch\(\(\) => undefined\);/);
+  });
+
   it("el diálogo anidado: dynamic sin SSR, montado SOLO al abrirse y dentro del árbol de la lista", () => {
     expect(src).toMatch(
       /const CorregirFechaGastoDialog = dynamic\(\s*\(\) =>\s*import\("@\/components\/admin\/conciliacion\/corregir-fecha-gasto-dialog"\)\.then\(\s*\(m\) => m\.CorregirFechaGastoDialog,\s*\),\s*\{ ssr: false \},\s*\);/,
@@ -275,7 +366,7 @@ describe("cableado del renglón en «Vincular gasto»", () => {
     expect(iMontaje).toBeGreaterThan(src.indexOf('estado.tipo === "lista" && filas.some(puedeCorregirFechaDeCandidato)'));
     expect(iMontaje).toBeLessThan(src.indexOf("function PasoCrearGasto("));
     expect(src).toMatch(
-      /\{editandoFecha && \(\s*<CorregirFechaGastoDialog\s+key=\{editandoFecha\.id\}\s+candidato=\{editandoFecha\}\s+movimiento=\{movimiento\}\s+monedaCuenta=\{monedaCuenta\}\s+dias=\{dias\}\s+onCerrar=\{\(\) => setEditandoFecha\(null\)\}\s+onCorregida=\{trasCorregirFecha\}\s+onFechaVigente=\{ponerFecha\}\s+onGastoNoExiste=\{gastoYaNoExiste\}\s*\/>/,
+      /\{editandoFecha && \(\s*<CorregirFechaGastoDialog\s+key=\{editandoFecha\.id\}\s+candidato=\{editandoFecha\}\s+movimiento=\{movimiento\}\s+monedaCuenta=\{monedaCuenta\}\s+dias=\{dias\}\s+onCerrar=\{\(\) => setEditandoFecha\(null\)\}\s+onCorregida=\{trasCorregirFecha\}\s+onFechaVigente=\{ponerFecha\}\s+onGastoNoExiste=\{gastoYaNoExiste\}\s+onResultadoIncierto=\{recargarTrasIncierto\}\s*\/>/,
     );
   });
 
@@ -295,6 +386,15 @@ describe("cableado del diálogo anidado", () => {
     expect(src).toMatch(/await corregirFechaGastoAction\(p\.candidato\.id, \{[\s\S]{0,120}\}\)\.catch\(sinConexion\);/);
     expect(src).toMatch(/<form\s+noValidate/);
     expect(src).toContain("const d = resultadoCorregirFecha(r);");
+  });
+
+  it("abre con fechaInicialCorregirFecha, valida con el candado del vuelo y un resultado incierto avisa al padre", () => {
+    expect(src).toContain("useState(() => fechaInicialCorregirFecha(p.candidato, fechaCargo))");
+    expect(src).toMatch(/if \(pending \|\| bloqueoNuevaFechaGasto\(p\.candidato, fecha, fechaActual, hoy\)/);
+    expect(src).toContain("const bloqueoLocal = bloqueoNuevaFechaGasto(candidato, fecha, fechaActual, hoy);");
+    expect(src).toMatch(/if \(d\.tipo === "incierto"\) \{\s*[\s\S]{0,200}setEstado\(\{ tipo: "error", texto: d\.texto \}\);\s*p\.onResultadoIncierto\?\.\(p\.candidato\.id\);/);
+    // La fecha vigente se anota con la que el renglón pintaba (ya no lo es).
+    expect(src).toContain("p.onFechaVigente(p.candidato.id, d.fecha, fechaActual);");
   });
 
   it("mientras guarda no se cierra (Esc / clic fuera / X)", () => {

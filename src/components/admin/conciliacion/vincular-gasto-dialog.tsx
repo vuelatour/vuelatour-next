@@ -163,6 +163,8 @@ import {
   AYUDA_CORREGIR_FECHA,
   BOTON_DESHACER_FECHA,
   BOTON_FECHA_FILA,
+  MSG_DESHACER_INCIERTO,
+  TITULO_DESHACER_INCIERTO,
   TITULO_NO_SE_DESHIZO,
   conFechaCorregida,
   conFechasCorregidas,
@@ -170,8 +172,11 @@ import {
   mensajeErrorFechaGasto,
   nudgeFechaMarcado,
   puedeCorregirFechaDeCandidato,
+  registrarFechaCorregida,
+  resultadoCorregirFecha,
   toastFechaCorregida,
   toastFechaRestaurada,
+  type FechasCorregidas,
 } from "@/lib/admin/conciliacion-fecha-gasto";
 import type { Gasto } from "@/types/expenses";
 import { cn } from "@/lib/utils";
@@ -480,9 +485,12 @@ const ExpenseCreateDialog = dynamic(
 
 /**
  * «Corregir la fecha del gasto» (14-oct-2026, API 0.0.76): el diálogo
- * anidado del botón «Fecha» de un renglón. Se carga SOLO al pulsarlo (sin
- * SSR) y se monta dentro del árbol de este diálogo (Base UI apila los
- * diálogos por contexto: Esc cierra solo el de arriba).
+ * anidado del botón «Fecha» de un renglón. Se MONTA solo al pulsarlo (sin
+ * SSR) dentro del árbol de este diálogo (Base UI apila los diálogos por
+ * contexto: Esc cierra solo el de arriba); su chunk se PRECARGA al abrir
+ * «Vincular gasto» (`precargarCorregirFecha`, revisión del 14-oct-2026: sin
+ * eso el primer clic en una red lenta no pintaba nada y un Esc en ese lapso
+ * cerraba «Vincular gasto» con lo marcado).
  */
 const CorregirFechaGastoDialog = dynamic(
   () =>
@@ -491,6 +499,9 @@ const CorregirFechaGastoDialog = dynamic(
     ),
   { ssr: false },
 );
+
+/** Baja el chunk del diálogo anidado antes del primer clic (el bundler lo comparte con `dynamic`). */
+const precargarCorregirFecha = () => import("@/components/admin/conciliacion/corregir-fecha-gasto-dialog");
 
 /** Lectura de los posibles duplicados del paso «crear» (misma forma que `Carga`). */
 type CargaDuplicados =
@@ -566,12 +577,38 @@ function SelectorGastos({
   const [crearAbierto, setCrearAbierto] = useState(false);
   // «Fecha» del renglón (14-oct-2026, API 0.0.76): el gasto cuya fecha del
   // pago se está corrigiendo (diálogo anidado) y las fechas que el API ya
-  // guardó (id ⇒ día). El mapa corrige TODAS las filas pintadas (también los
-  // marcados y el sugerido de la IA, que se pintan con su copia guardada) sin
-  // volver a pedir la lista: `setRecarga` escondería los no marcados mientras
-  // carga.
+  // guardó (id ⇒ {fecha, las que reemplaza}). El mapa corrige las filas
+  // pintadas con una fecha YA reemplazada (los marcados y el sugerido de la
+  // IA se pintan con su copia guardada; una respuesta pudo venir en camino)
+  // sin volver a pedir la lista —`setRecarga` escondería los no marcados
+  // mientras carga— y cede ante una lectura NUEVA del servidor.
   const [editandoFecha, setEditandoFecha] = useState<GastoCandidato | null>(null);
-  const [fechasCorregidas, setFechasCorregidas] = useState<Readonly<Record<string, string>>>({});
+  const [fechasCorregidas, setFechasCorregidas] = useState<FechasCorregidas>({});
+  // La página NO se repinta mientras este diálogo sigue abierto (revisión del
+  // 14-oct-2026): la action ya no revalida y aquí se anota que algo cambió;
+  // al CERRAR (desmontar) se hace UN `router.refresh()` (motivo del cargo,
+  // «Gastos sin banco»). Con el buscador de la tabla filtrando por motivo
+  // («sin candidato»), repintar a medio camino sacaba la fila del cargo y
+  // desmontaba este diálogo con lo marcado, la búsqueda y la sugerencia.
+  const montadoRef = useRef(false);
+  const refrescarAlCerrarRef = useRef(false);
+  // El router más reciente para la limpieza (el efecto de abajo corre UNA vez).
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+  useEffect(() => {
+    montadoRef.current = true;
+    // El chunk del diálogo anidado baja YA (en paralelo con los candidatos).
+    void precargarCorregirFecha().catch(() => undefined);
+    return () => {
+      montadoRef.current = false;
+      if (refrescarAlCerrarRef.current) {
+        refrescarAlCerrarRef.current = false;
+        routerRef.current.refresh();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setBusqueda(busquedaParaApi(texto)), DEBOUNCE_BUSQUEDA_MS);
@@ -758,18 +795,48 @@ function SelectorGastos({
   // ===== «Fecha» del renglón (14-oct-2026, API 0.0.76) =====
   // La fecha del gasto es la del PAGO (decisión del 13-oct-2026). Guardar NO
   // liga (el API no corre el auto-cruce): liga la persona con «Vincular».
-  const ponerFecha = useCallback((id: string, fecha: string) => {
-    setFechasCorregidas((prev) => (prev[id] === fecha ? prev : { ...prev, [id]: fecha }));
+  /** `fecha` es la vigente del gasto; `vista` (la que pintaba el renglón) ya no lo es. */
+  const ponerFecha = useCallback((id: string, fecha: string, vista?: string | null) => {
+    setFechasCorregidas((prev) => registrarFechaCorregida(prev, id, fecha, vista));
   }, []);
+  /**
+   * Algo cambió en el servidor: con «Vincular gasto» abierto, se refresca la
+   * página AL CERRAR (y, si hace falta, se vuelve a pedir la lista); ya
+   * cerrado (el «Deshacer» del aviso vive 10 s más), se refresca de una vez.
+   */
+  const ponerAlDia = (recargarLista = false) => {
+    if (!montadoRef.current) {
+      router.refresh();
+      return;
+    }
+    refrescarAlCerrarRef.current = true;
+    if (recargarLista) setRecarga((n) => n + 1);
+  };
   /** «Deshacer» del aviso: regresa la fecha anterior (con confirmar: el API ya la había aceptado). */
   const deshacerFecha = (r: CambioFechaGasto) => {
     void corregirFechaGastoAction(r.id, { fecha: r.fecha_anterior, fechaAnterior: r.fecha_gasto, confirmar: true })
       .catch(sinConexion)
       .then((res) => {
-        if (res.ok && res.data) {
-          ponerFecha(res.data.id, res.data.fecha_gasto);
-          toast.success(toastFechaRestaurada(res.data));
+        const d = resultadoCorregirFecha(res);
+        if (d.tipo === "ok") {
+          ponerFecha(d.data.id, d.data.fecha_gasto, d.data.fecha_anterior);
+          toast.success(toastFechaRestaurada(d.data));
+          ponerAlDia();
           return;
+        }
+        if (d.tipo === "incierto") {
+          // No se sabe si se deshizo: lo dice así y la lista se vuelve a pedir.
+          toast.error(TITULO_DESHACER_INCIERTO, { description: MSG_DESHACER_INCIERTO });
+          ponerAlDia(true);
+          return;
+        }
+        // Alguien la cambió en esos segundos: el renglón pinta la VIGENTE.
+        if (d.tipo === "fecha_vigente") ponerFecha(r.id, d.fecha, r.fecha_gasto);
+        // Se borró o se concilió: sale de lo marcado y la lista se vuelve a
+        // pedir (lo que dice el texto, «la lista se actualizó», es cierto).
+        if (d.tipo === "no_existe") {
+          setMarcados((prev) => prev.filter((m) => m.id !== r.id));
+          ponerAlDia(true);
         }
         // Si el API lo bloquea (otro mes, alguien la cambió), dice por qué.
         toast.error(TITULO_NO_SE_DESHIZO, { description: mensajeErrorFechaGasto(res) });
@@ -777,7 +844,8 @@ function SelectorGastos({
   };
   const trasCorregirFecha = (r: CambioFechaGasto) => {
     setEditandoFecha(null);
-    ponerFecha(r.id, r.fecha_gasto);
+    ponerFecha(r.id, r.fecha_gasto, r.fecha_anterior);
+    if (r.cambio) refrescarAlCerrarRef.current = true;
     const t = toastFechaCorregida(r);
     toast.success(t.titulo, {
       description: t.descripcion,
@@ -785,12 +853,22 @@ function SelectorGastos({
       action: r.cambio ? { label: BOTON_DESHACER_FECHA, onClick: () => deshacerFecha(r) } : undefined,
     });
   };
-  /** 404: el gasto se borró mientras tanto; se desmarca y se vuelve a pedir la lista. */
+  /**
+   * El gasto salió de la lista (404: se borró; 409 FECHA_GASTO_YA_CONCILIADO:
+   * alguien lo ligó a un cargo mientras tanto): se desmarca y se vuelve a
+   * pedir la lista; al cerrar, la página se pone al día.
+   */
   const gastoYaNoExiste = (id: string, texto: string) => {
     setEditandoFecha(null);
     setMarcados((prev) => prev.filter((m) => m.id !== id));
     toast.error(texto);
     setRecarga((n) => n + 1);
+    refrescarAlCerrarRef.current = true;
+  };
+  /** No se sabe si la fecha se guardó (red, 5xx): la lista se vuelve a pedir para pintar la VIGENTE. */
+  const recargarTrasIncierto = () => {
+    setRecarga((n) => n + 1);
+    refrescarAlCerrarRef.current = true;
   };
 
   const tras = (r: ActionResult<MovimientoBancario>, justificacion?: string) => {
@@ -1205,7 +1283,9 @@ function SelectorGastos({
                             className="mr-2 mt-1.5 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-brand-600 hover:bg-brand-600/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <CalendarDaysIcon className="h-4 w-4" aria-hidden />
-                            <span className="hidden sm:inline">{BOTON_FECHA_FILA}</span>
+                            {/* Visible también en el teléfono: la ayuda y el
+                                aviso dicen «corrígela con «Fecha»». */}
+                            <span>{BOTON_FECHA_FILA}</span>
                           </button>
                         )}
                       </div>
@@ -1383,6 +1463,7 @@ function SelectorGastos({
           onCorregida={trasCorregirFecha}
           onFechaVigente={ponerFecha}
           onGastoNoExiste={gastoYaNoExiste}
+          onResultadoIncierto={recargarTrasIncierto}
         />
       )}
     </>
