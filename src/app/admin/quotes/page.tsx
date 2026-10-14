@@ -156,6 +156,10 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
     // tabla son una constante de módulo y no pueden cerrar sobre ellos).
     href: hrefCotizacion(q.id, qsFiltros),
     folio: q.folio,
+    // ID del vuelo por cliente (13-oct-2026): viene del API y NUNCA se
+    // recalcula aquí; null/ausente (API previo) = solo el folio. La barra
+    // manda `q` al API, que desde la 0.0.75 también entiende «january02».
+    claveCliente: q.clave_cliente ?? null,
     clienteNombre: clientsById.get(q.cliente_id)?.nombre ?? null,
     esExterno: q.es_externo,
     operadorExterno: q.operador_externo,

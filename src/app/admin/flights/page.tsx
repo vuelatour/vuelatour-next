@@ -140,6 +140,9 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const rows: FlightRow[] = flightsRes.data.map((v) => ({
     id: v.id,
     folio: v.folio,
+    // ID del vuelo por cliente (13-oct-2026): viene del API y NUNCA se
+    // recalcula aquí; null/ausente (API previo) = solo el folio.
+    clave_cliente: v.clave_cliente ?? null,
     cliente_nombre: clientsById.get(v.cliente_id)?.nombre ?? null,
     es_externo: v.es_externo,
     operador_externo: v.operador_externo,

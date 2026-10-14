@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ESPERA_APLICAR_MS } from "@/lib/admin/periodo-selector";
+import { PLACEHOLDER_BARRA_COTIZACIONES } from "@/lib/admin/clave-cliente";
 import {
   ETIQUETA_GRUPO_FECHAS,
   TITULO_FECHA_VUELO,
@@ -230,7 +231,9 @@ export function QuotesFilterBar({
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               defaultValue={initial.q}
-              placeholder="Cliente, folio, ruta IATA…"
+              // «ID (diego01)»: el API 0.0.75 busca también por el ID del
+              // vuelo por cliente; un API previo simplemente no lo encuentra.
+              placeholder={PLACEHOLDER_BARRA_COTIZACIONES}
               className="pl-9"
               onChange={(e) => pushQuery({ q: e.target.value })}
             />

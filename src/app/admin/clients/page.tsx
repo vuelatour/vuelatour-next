@@ -20,11 +20,19 @@ export default async function ClientsPage({
   // llegue por URL directa ve un aviso en lugar del error boundary.
   let clients: Awaited<ReturnType<typeof listClients>>["data"];
   let count: number;
+  // El alta ofrece el campo «Alias» SOLO si el API lo habilita
+  // (`alias_disponible`, 13-oct-2026): no depende de las filas visibles (un
+  // ?q= sin resultados lo sigue ofreciendo) y con un API previo no se ofrece
+  // (así no hay 400 por forbidNonWhitelisted).
+  let aliasDisponible = false;
   try {
-    ({ data: clients, count } = await listClients({
+    const res = await listClients({
       limit: 200,
       q: q || undefined,
-    }));
+    });
+    clients = res.data;
+    count = res.count;
+    aliasDisponible = res.alias_disponible === true;
   } catch {
     return (
       <EmptyState
@@ -54,7 +62,7 @@ export default async function ClientsPage({
             )}
           </p>
         </div>
-        <ClientCreateButton />
+        <ClientCreateButton aliasDisponible={aliasDisponible} />
       </div>
 
       {clients.length === 0 ? (

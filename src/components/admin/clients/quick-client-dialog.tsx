@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { createClientAction } from "@/app/admin/clients/actions";
 import type { Client } from "@/types/clients";
 import { Field } from "@/components/admin/form-field";
+import { avisoAliasCompartido, textoClienteRapidoCreado } from "@/lib/admin/clave-cliente";
 
 /**
  * Alta RÁPIDA de cliente desde el flujo de apartar/cotizar: solo el nombre,
@@ -48,7 +49,13 @@ export function QuickClientDialog({
     startTransition(async () => {
       const res = await createClientAction({ nombre: n, es_broker: false });
       if (res.ok && res.data) {
-        toast.success(`Cliente "${res.data.nombre}" creado. Completa sus datos en Clientes cuando puedas.`);
+        // Con el alias que puso la BD (13-oct-2026); sin alias (API previo)
+        // el texto es el de siempre. El alias se cambia después en Clientes.
+        toast.success(textoClienteRapidoCreado(res.data.nombre, res.data.alias));
+        if (res.data.alias && res.data.alias_compartido_con?.length) {
+          const aviso = avisoAliasCompartido(res.data.alias, res.data.alias_compartido_con);
+          if (aviso) toast.warning(aviso);
+        }
         onCreated?.(res.data);
         cerrar(false);
       } else {

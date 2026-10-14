@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ALIAS_REGEX, MENSAJE_ALIAS_INVALIDO } from "@/lib/admin/clave-cliente";
 
 const CanalEnum = z.enum(["WHATSAPP", "EMAIL", "LANDING", "LLAMADA", "REFERIDO"]);
 
@@ -39,6 +40,11 @@ export const ClientFormSchema = z.object({
   // operador tocó el switch (stripEmpty descarta undefined).
   es_interno: z.boolean().optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
+  // Alias para el ID de sus vuelos (13-oct-2026, API 0.0.75): se maneja
+  // FUERA de react-hook-form (como es_interno) y viaja SOLO si se tocó;
+  // null = volver al sugerido (la BD lo recalcula del nombre). Sin .default:
+  // con zod 4 un default se colaría también en `.partial()` del PATCH.
+  alias: z.string().regex(ALIAS_REGEX, MENSAJE_ALIAS_INVALIDO).nullable().optional(),
 });
 
 export type ClientFormValues = z.input<typeof ClientFormSchema>;

@@ -200,6 +200,10 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   «Tablas: fila activa y teclado ↑/↓/Enter/Esc» al final.
 - Confirmación antes de TODO borrado/acción destructiva (Dialog + toast
   `sonner`). Regla permanente del cliente.
+- ID de vuelo por cliente («january02-211026», 13-oct-2026): lo ARMA el API
+  (`clave_cliente`) y el panel lo pinta SOLO con
+  `components/admin/clave-cliente.tsx`; textos y reglas del alias en
+  `lib/admin/clave-cliente.ts`. Ver «ID de vuelo por cliente junto al folio».
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
   `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
   ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
@@ -4786,6 +4790,111 @@ dinero va a VuelaTour».
   vuelo y la app Flutter (el piloto no registra ingresos). El vínculo de la
   celda «Otros ingresos» desde Conciliación queda para el punto del enlace al
   balance.
+
+## ID de vuelo por cliente junto al folio (13-oct-2026, API 0.0.75)
+
+Pedido del lote 2 del 13-oct-2026: un ID que el cliente reconozca,
+«diego01-131026» = alias del cliente + número de vuelo de ESE cliente (2
+dígitos mínimo, fijo al crear el vuelo; el histórico se numeró por fecha de
+vuelo) + fecha del vuelo DDMMAA en día Cancún (sin fecha, sin sufijo:
+«francisco10»), JUNTO al folio. Contrato con el API **0.0.75** (migración
+`20261013000006_vuelo_id_cliente`: `cliente.alias`, el contador
+`cliente_consecutivo_vuelo` y `vuelo.consecutivo_cliente`; invariante «ID de
+vuelo por cliente junto al folio» del CLAUDE.md del API).
+
+- **El panel NUNCA arma el ID**: `clave_cliente` (string | null) llega ARMADO
+  en GET /v1/flights, /v1/flights/:id/snapshot, /v1/quotes y /v1/quotes/:id
+  y se pinta TAL CUAL (tipos ADITIVOS `FlightListItem.clave_cliente?`, que
+  hereda `FlightSnapshot`, y `PersistedQuote.clave_cliente?`). null o ausente
+  (API previo, migración sin aplicar o lectura fallida) = solo el folio. El
+  panel no recibe el número del cliente y nadie concatena alias + número
+  (candado en `lib/admin/__tests__/clave-cliente-cableado.test.ts`).
+  Reprogramar el vuelo o editar el alias re-etiqueta sus vuelos (se calcula
+  al leer).
+- **El FOLIO no se quita de ninguna pantalla** y sigue siendo la referencia
+  del sistema: cobros, gastos, facturas, conciliación, flechas «‹ Anterior» /
+  «Siguiente ›», reparto, pre-cierre, PDFs y diálogos siguen solo con el
+  folio. Los libros (Excel y balance en pantalla) muestran la CLAVE nueva sin
+  código del panel: la arma el API en el payload de pyservices.
+- **UI única** `components/admin/clave-cliente.tsx`: `ClaveClienteLinea` (sin
+  hooks; mono 11px, `data-clave-cliente`, title «ID del vuelo por cliente:
+  alias + número de vuelo de ese cliente + fecha del vuelo (DDMMAA). El folio
+  sigue siendo la referencia del sistema.») BAJO el folio en Vuelos
+  (`flights-table`), Cotizaciones (`quotes-table`) y la tarjeta «Vuelos» del
+  avión (`aircraft-flights-table`), con el encabezado «Folio / ID». En Vuelos y
+  Cotizaciones va DENTRO del link del folio (su clic abre lo mismo que la
+  fila) y antes del badge del grupo; sin clave, el marcado de la celda es
+  byte a byte el de antes (congelado en la prueba). `ClaveClienteCabecera`:
+  chip-botón COPIABLE (cursor-pointer, aria-label «Copiar ID del vuelo …»,
+  toasts «ID copiado: …» / «No se pudo copiar al portapapeles») JUNTO al h1
+  de `/admin/flights/[id]` y de `quote-workspace.tsx`, nunca dentro (el
+  título sigue siendo «Vuelo #376»). `copiarClaveCliente(clave, deps)` nunca
+  lanza.
+- **Búsqueda**: las tres tablas suman la clave a su `searchText` («january02»
+  empata por inicio de palabra: el «-» no separa palabras en
+  `normalizarTexto`) y sus placeholders dicen «folio o ID tipo diego01». La
+  barra de Cotizaciones («Cliente, folio, ID (diego01), ruta IATA…») manda
+  `q` al API, que desde la 0.0.75 entiende «january02» y «january02-211026»
+  (la fecha escrita se ignora: un vuelo reprogramado se encuentra con su ID
+  viejo); con un API previo simplemente no lo encuentra.
+- **Textos y reglas** `lib/admin/clave-cliente.ts` (PURO): `ALIAS_REGEX` y
+  `MENSAJE_ALIAS_INVALIDO` (los MISMOS literales del API), `aliasSugerido`
+  (espejo EXACTO de `public.cliente_alias_default`: primera palabra, mapa
+  `ACENTOS_DE`/`ACENTOS_A` de 50 copiado del `translate()`, minúsculas, solo
+  a-z, máximo 24, si no queda nada «cliente»; la MISMA tabla de 24 casos del
+  dry-run — si cambia uno, cambian los dos), `normalizarAliasCaptura`
+  (onBlur: NFD sin marcas, minúsculas, solo a-z, 24), avisos, toasts,
+  rótulos y placeholders. La prueba de paridad lee
+  `../vuelatour-api/src/common/clave-cliente.util.ts` y la migración
+  `*_vuelo_id_cliente.sql` SI el repo hermano está al lado (en Vercel se
+  omite).
+- **Clientes, tabla**: tipos ADITIVOS `Client.alias?` (ausente = API previo o
+  sin migración; cuando viene, nunca es null), `Client.alias_compartido_con?`
+  (string[] | null) y `ClientListResponse.alias_disponible?`. El alias va
+  bajo el nombre (mono) y el badge ámbar «Alias repetido» (title «También lo
+  usa(n): … Sus IDs de vuelo se verán iguales; cámbialo con «Editar».») sale
+  SOLO cuando `alias_compartido_con` trae nombres: lo decide el API sobre
+  TODO el catálogo (activos e inactivos), no la página filtrada; `null` = no
+  se pudo saber ⇒ sin badge. La búsqueda rápida incluye el alias.
+- **Clientes, formulario** (`client-form-dialog.tsx`): campo «Alias para el
+  ID de sus vuelos» justo después de «Nombre» SOLO si el API lo habilita —
+  alta: `aliasDisponible` (= `alias_disponible === true` de la lista, que
+  `clients/page.tsx` pasa a `ClientCreateButton`; no depende de las filas
+  visibles); edición: la fila trae `alias`. Con un API previo no aparece y así
+  no hay 400 por forbidNonWhitelisted. Se maneja FUERA de react-hook-form
+  (como es_interno): viaja SOLO si se tocó; vacío ⇒ `null` (= volver al
+  sugerido: la BD lo recalcula del nombre ACTUAL); en edición, si quedó
+  igual, no viaja. El sugerido es solo el placeholder y NUNCA se manda. En
+  vivo: «Ejemplo: diego01-131026 (vuelo 1 del cliente con la fecha de hoy).»
+  (con lo que quedará al salir del campo), «Usar el sugerido (diego)», el
+  aviso ámbar de re-etiquetado al cambiarlo en edición y «Ya lo usa…»
+  (GET /v1/clients/alias-en-uso vía `aliasEnUsoAction`, que nunca lanza;
+  debounce 400 ms, ligado al alias consultado, sin consultar con el
+  formulario vacío; un fallo no avisa ni bloquea). Cambiar el alias NO es
+  acción destructiva (es reversible y no borra datos): basta el aviso ámbar,
+  sin diálogo. Toasts «Cliente creado · alias «diego» para el ID de sus
+  vuelos» y «Cliente actualizado · alias «jchacon»» (este solo si se
+  cambió). Schema: `alias` = `z.string().regex(ALIAS_REGEX).nullable()
+  .optional()` SIN `.default` (con zod 4 se colaría en el `.partial()` del
+  PATCH); `stripEmpty` conserva `null` y descarta `undefined`.
+- **Alta rápida** (`quick-client-dialog.tsx`): sigue pidiendo SOLO el nombre
+  (no frena la captura del vuelo; el alias queda en el default de la BD). El
+  toast dice el alias asignado y, si otro cliente ya lo usa, un
+  `toast.warning` con el aviso. Sin alias (API previo) el texto es el de
+  siempre.
+- **Pruebas (sin DOM)**: `lib/admin/__tests__/clave-cliente.test.ts` (24
+  casos, limpieza, textos exactos y paridad con el API),
+  `lib/admin/__tests__/clave-cliente-cableado.test.ts` (páginas, cabeceras,
+  barra, `searchText` y que nadie arme el ID),
+  `components/admin/__tests__/clave-cliente.test.tsx` (línea, chip y copiar),
+  `components/admin/__tests__/clave-cliente-tablas.test.tsx` (las tres
+  tablas con y sin clave), `app/admin/clients/__tests__/alias-actions.test.ts`
+  (el BODY real del alta/edición y `aliasEnUsoAction`),
+  `components/admin/clients/__tests__/clients-alias.test.tsx` (tabla y
+  cableado del formulario) y `client-form-alias.test.tsx` (render del campo).
+- **Orden de deploy**: migración → pyservices → API 0.0.75 → panel. El panel
+  tolera un API previo (todo opcional: sin clave se ve solo el folio y el
+  alias no se ofrece). La app Flutter no cambia (sigue mostrando «#NNN»).
 
 ## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
 

@@ -4,6 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ClientActions } from "@/components/admin/clients/client-actions";
 import { datosFiscalesCompletos, RFC_EXTRANJERO, type Client } from "@/types/clients";
+import {
+  LABEL_ALIAS,
+  PLACEHOLDER_BUSCAR_CLIENTES,
+  TEXTO_ALIAS_REPETIDO,
+  tituloAliasRepetido,
+} from "@/lib/admin/clave-cliente";
 
 const CANAL_LABELS: Record<string, string> = {
   WHATSAPP: "WhatsApp",
@@ -18,15 +24,38 @@ const columns: Array<DataTableColumn<Client>> = [
     key: "nombre",
     header: "Nombre",
     cellClassName: "font-medium",
+    // Bajo el nombre, el ALIAS del ID de sus vuelos (13-oct-2026, solo si el
+    // API lo manda) y «Alias repetido» cuando OTROS clientes lo usan — eso lo
+    // decide el API sobre TODO el catálogo (`alias_compartido_con`), no la
+    // página filtrada.
     cell: (c) => (
-      <span className="inline-flex items-center gap-1.5">
-        {c.nombre}
-        {c.es_interno && (
-          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
-            Interno
-          </Badge>
+      <div className="space-y-0.5">
+        <span className="inline-flex items-center gap-1.5">
+          {c.nombre}
+          {c.es_interno && (
+            <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+              Interno
+            </Badge>
+          )}
+          {c.alias_compartido_con && c.alias_compartido_con.length > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px] font-normal border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              title={tituloAliasRepetido(c.alias_compartido_con)}
+            >
+              {TEXTO_ALIAS_REPETIDO}
+            </Badge>
+          )}
+        </span>
+        {typeof c.alias === "string" && (
+          <span
+            className="block font-mono text-[11px] font-normal text-muted-foreground"
+            title={LABEL_ALIAS}
+          >
+            {c.alias}
+          </span>
         )}
-      </span>
+      </div>
     ),
   },
   {
@@ -125,9 +154,9 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
       rows={clients}
       rowKey={(c) => c.id}
       searchText={(c) =>
-        `${c.nombre} ${c.rfc ?? ""} ${c.razon_social_default ?? ""} ${c.email ?? ""} ${c.telefono ?? ""} ${c.es_interno ? "interno" : ""}`
+        `${c.nombre} ${c.rfc ?? ""} ${c.razon_social_default ?? ""} ${c.email ?? ""} ${c.telefono ?? ""} ${c.es_interno ? "interno" : ""} ${c.alias ?? ""}`
       }
-      searchPlaceholder="Buscar cliente (nombre, RFC, email, teléfono)…"
+      searchPlaceholder={PLACEHOLDER_BUSCAR_CLIENTES}
     />
   );
 }

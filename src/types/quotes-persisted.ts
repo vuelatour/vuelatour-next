@@ -98,6 +98,14 @@ export interface AvionFichaMin {
 export interface PersistedQuote extends SeguimientoContadores {
   id: string;
   folio: number;
+  /**
+   * ID del vuelo por cliente («january02-211026»; 13-oct-2026, API 0.0.75):
+   * alias del cliente + número de vuelo de ese cliente + fecha DDMMAA. Viene
+   * en GET /v1/quotes y GET /v1/quotes/:id. Lo ARMA el API; el panel solo lo
+   * pinta junto al folio y JAMÁS lo recalcula. null o ausente = API previo,
+   * migración sin aplicar o lectura fallida ⇒ solo folio.
+   */
+  clave_cliente?: string | null;
   cliente_id: string;
   aeronave_id: string | null;
   piloto_id: string | null;

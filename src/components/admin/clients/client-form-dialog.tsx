@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  aliasEnUsoAction,
   createClientAction,
   updateClientAction,
   getClientTarifasAction,
@@ -33,6 +34,23 @@ import { ClientFormSchema, type ClientFormValues } from "@/app/admin/clients/sch
 import { RFC_EXTRANJERO, type Client } from "@/types/clients";
 import { Field } from "@/components/admin/form-field";
 import { cn } from "@/lib/utils";
+import { todayCancun } from "@/lib/datetime";
+import {
+  ALIAS_MAX,
+  AYUDA_ALIAS,
+  LABEL_ALIAS,
+  MENSAJE_ALIAS_INVALIDO,
+  aliasSugerido,
+  avisoAliasEnUso,
+  avisoCambioAlias,
+  esAliasValido,
+  normalizarAlias,
+  normalizarAliasCaptura,
+  textoClienteActualizado,
+  textoClienteCreado,
+  textoEjemplo,
+  textoUsarSugerido,
+} from "@/lib/admin/clave-cliente";
 
 const CANALES = [
   { value: "WHATSAPP", label: "WhatsApp" },
@@ -73,9 +91,21 @@ interface ClientFormDialogProps {
   initialClient?: Client;
   /** Al crear (no editar): permite seleccionar al cliente recién creado in situ (ej. desde el cotizador). */
   onCreated?: (client: Client) => void;
+  /**
+   * Alta: el API habilita el alias del cliente (`alias_disponible` de
+   * GET /v1/clients, 13-oct-2026). En la edición lo decide la fila (que
+   * traiga `alias`).
+   */
+  aliasDisponible?: boolean;
 }
 
-export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated }: ClientFormDialogProps) {
+export function ClientFormDialog({
+  open,
+  onOpenChange,
+  initialClient,
+  onCreated,
+  aliasDisponible,
+}: ClientFormDialogProps) {
   const [pending, startTransition] = useTransition();
   const isEdit = !!initialClient;
 
@@ -116,6 +146,22 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
   const [leyendoConstancia, setLeyendoConstancia] = useState(false);
   const constanciaRef = useRef<HTMLInputElement>(null);
 
+  // ALIAS para el ID de sus vuelos (13-oct-2026, API 0.0.75): el campo
+  // aparece solo si el API lo habilita (alta: `alias_disponible`; edición:
+  // la fila trae `alias`). Se maneja FUERA de react-hook-form (como
+  // es_interno) y viaja SOLO si se tocó. El sugerido es solo el placeholder
+  // y NUNCA se manda: el alias real lo fija la BD.
+  const puedeAlias = isEdit
+    ? typeof initialClient?.alias === "string"
+    : aliasDisponible === true;
+  const [alias, setAlias] = useState(initialClient?.alias ?? "");
+  const [aliasTocado, setAliasTocado] = useState(false);
+  // Aviso «ya lo usa…» LIGADO al alias consultado: si el operador sigue
+  // escribiendo, el aviso viejo no se pinta mientras llega el nuevo.
+  const [avisoEnUso, setAvisoEnUso] = useState<{ alias: string; texto: string | null } | null>(
+    null,
+  );
+
   useEffect(() => {
     if (!open) return;
     reset(defaults(initialClient));
@@ -126,6 +172,9 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
     setEsExtranjero(initialClient?.rfc === RFC_EXTRANJERO);
     setEsInterno(initialClient?.es_interno ?? false);
     esInternoTouched.current = false;
+    setAlias(initialClient?.alias ?? "");
+    setAliasTocado(false);
+    setAvisoEnUso(null);
     createdIdRef.current = null;
     let cancelled = false;
     listAircraftTarifaOptionsAction().then((r) => {
@@ -157,6 +206,52 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
   }, [open, initialClient, reset]);
 
   const esBroker = watch("es_broker");
+
+  const nombreActual = watch("nombre") ?? "";
+  const sugerido = aliasSugerido(nombreActual);
+  const aliasNormalizado = normalizarAlias(alias);
+  const aliasEfectivo = aliasNormalizado || sugerido;
+  const aliasInvalido = alias.trim() !== "" && !esAliasValido(aliasNormalizado);
+  // Lo que quedará al salir del campo (para el ejemplo y el aviso de
+  // cambio mientras se teclea algo aún sin limpiar, p. ej. «José»).
+  const aliasVistaPrevia = aliasInvalido
+    ? normalizarAliasCaptura(alias) || sugerido
+    : aliasEfectivo;
+  // Sin nombre ni alias tecleado no hay nada que revisar (el «cliente» de
+  // respaldo avisaría «Ya lo usa…» en un formulario vacío).
+  const revisarEnUso = aliasNormalizado !== "" || nombreActual.trim() !== "";
+  const avisoCambio =
+    isEdit && aliasTocado && typeof initialClient?.alias === "string"
+      ? avisoCambioAlias(initialClient.alias, aliasVistaPrevia)
+      : null;
+  const avisoEnUsoVisible =
+    revisarEnUso && avisoEnUso && avisoEnUso.alias === aliasEfectivo ? avisoEnUso.texto : null;
+  const clienteId = initialClient?.id;
+
+  // ¿Otros clientes ya usan el alias? Aviso NO bloqueante, con debounce de
+  // 400 ms; descarta respuestas viejas y un fallo simplemente no avisa.
+  useEffect(() => {
+    if (!open || !puedeAlias || !revisarEnUso || !esAliasValido(aliasEfectivo)) return;
+    let vigente = true;
+    const t = setTimeout(() => {
+      aliasEnUsoAction(aliasEfectivo, clienteId)
+        .then((r) => {
+          if (!vigente) return;
+          setAvisoEnUso({
+            alias: aliasEfectivo,
+            texto: r.ok && r.data ? avisoAliasEnUso(aliasEfectivo, r.data.clientes) : null,
+          });
+        })
+        .catch(() => {
+          if (vigente) setAvisoEnUso({ alias: aliasEfectivo, texto: null });
+        });
+    }, 400);
+    return () => {
+      vigente = false;
+      clearTimeout(t);
+    };
+  }, [open, puedeAlias, revisarEnUso, aliasEfectivo, clienteId]);
+
   // Tarifas pactadas sobre aviones que ya no están activos: se muestran aparte
   // para poder verlas y quitarlas (si el avión se reactiva, volverían a aplicar).
   const tarifasInactivas = Object.keys(tarifas).filter(
@@ -262,6 +357,17 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
       }
       tarifasPayload.push({ aeronave_id: aeronaveId, tarifa_hora_usd: monto });
     }
+    // Alias: SOLO viaja si se tocó; vacío ⇒ null (= volver al sugerido, la
+    // BD lo recalcula del nombre). En edición, si quedó igual, no viaja.
+    let aliasPayload: string | null | undefined;
+    if (puedeAlias && aliasTocado) {
+      if (aliasInvalido) {
+        toast.error(MENSAJE_ALIAS_INVALIDO);
+        return;
+      }
+      const final = alias.trim() === "" ? null : normalizarAlias(alias);
+      if (!(isEdit && final === initialClient?.alias)) aliasPayload = final;
+    }
     // Nunca descartar en silencio lo tecleado: si el set actual no cargó, no
     // se puede reemplazar sin riesgo de perder tarifas ya pactadas.
     if (isEdit && !tarifasReady && tarifasPayload.length > 0) {
@@ -276,9 +382,13 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
     startTransition(async () => {
       // es_interno viaja SOLO si se tocó el switch (patrón de los demás
       // booleanos: nada de mandar valores que el operador no decidió).
-      const payload: ClientFormValues = esInternoTouched.current
+      const base: ClientFormValues = esInternoTouched.current
         ? { ...values, es_interno: esInterno }
         : values;
+      const payload: ClientFormValues = {
+        ...base,
+        ...(aliasPayload !== undefined ? { alias: aliasPayload } : {}),
+      };
       const existingId = isEdit ? initialClient!.id : createdIdRef.current;
       const result = existingId
         ? await updateClientAction(existingId, payload)
@@ -297,7 +407,13 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
             return;
           }
         }
-        toast.success(isEdit ? "Cliente actualizado" : "Cliente creado");
+        // Con el alias asignado (API 0.0.75): al crear, el que puso la BD
+        // (el sugerido si no se tocó); al editar, solo si se cambió.
+        toast.success(
+          isEdit
+            ? textoClienteActualizado(aliasPayload !== undefined ? result.data?.alias : undefined)
+            : textoClienteCreado(result.data?.alias),
+        );
         if (!isEdit && result.data) onCreated?.(result.data);
         onOpenChange(false);
       } else if (result.fieldErrors) {
@@ -325,6 +441,59 @@ export function ClientFormDialog({ open, onOpenChange, initialClient, onCreated 
           <Field label="Nombre" required error={errors.nombre?.message}>
             <Input placeholder="Persona o empresa" {...register("nombre")} />
           </Field>
+
+          {/* Alias para el ID de sus vuelos (13-oct-2026): solo si el API lo
+              habilita. Cambiarlo re-etiqueta sus vuelos (reversible: aviso
+              ámbar, sin diálogo de confirmación). */}
+          {puedeAlias && (
+            <div className="space-y-1.5">
+              <Field
+                label={LABEL_ALIAS}
+                hint={AYUDA_ALIAS}
+                error={aliasInvalido ? MENSAJE_ALIAS_INVALIDO : undefined}
+              >
+                <Input
+                  className="font-mono"
+                  value={alias}
+                  placeholder={sugerido}
+                  maxLength={ALIAS_MAX}
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setAliasTocado(true);
+                    setAlias(e.target.value.toLowerCase());
+                  }}
+                  onBlur={() => setAlias((v) => normalizarAliasCaptura(v))}
+                />
+              </Field>
+              <div className="space-y-1 text-xs">
+                <p className="text-muted-foreground">
+                  {textoEjemplo(aliasVistaPrevia, todayCancun())}
+                </p>
+                {aliasNormalizado !== "" && aliasNormalizado !== sugerido && (
+                  <button
+                    type="button"
+                    className="cursor-pointer text-brand-600 hover:underline"
+                    onClick={() => {
+                      setAliasTocado(true);
+                      setAlias("");
+                    }}
+                  >
+                    {textoUsarSugerido(sugerido)}
+                  </button>
+                )}
+                {avisoCambio && (
+                  <p className="text-amber-700 dark:text-amber-400">{avisoCambio}</p>
+                )}
+                {avisoEnUsoVisible && (
+                  <p role="status" className="text-amber-700 dark:text-amber-400">
+                    {avisoEnUsoVisible}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Teléfono" hint="WhatsApp preferente" error={errors.telefono?.message}>

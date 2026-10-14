@@ -6,6 +6,7 @@ import {
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
+import { ClaveClienteCabecera } from "@/components/admin/clave-cliente";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -395,6 +396,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
                 Vuelo <span className="font-mono">#{snapshot.folio}</span>
               </h1>
+              {/* ID del vuelo por cliente (13-oct-2026), copiable, JUNTO al
+                  h1 (el título sigue siendo el folio); sin clave no se pinta. */}
+              <ClaveClienteCabecera clave={snapshot.clave_cliente} />
               <Badge variant="outline" className={ESTADO_STYLES[snapshot.estado]}>
                 {ESTADO_LABELS[snapshot.estado]}
               </Badge>

@@ -9,6 +9,8 @@ import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ChipPorFacturar } from "@/components/admin/quotes/quotes-table";
 import { estadoCobroSemaforo } from "@/lib/admin/cobros";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import { ClaveClienteLinea } from "@/components/admin/clave-cliente";
+import { ENCABEZADO_FOLIO_ID, PLACEHOLDER_BUSCAR_VUELOS } from "@/lib/admin/clave-cliente";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -18,6 +20,9 @@ import type { EstadoVuelo } from "@/types/quotes-persisted";
 export interface FlightRow {
   id: string;
   folio: number;
+  /** ID del vuelo por cliente («january02-211026», 13-oct-2026): viene del
+      API tal cual (`clave_cliente`) y NUNCA se recalcula; null = solo folio. */
+  clave_cliente?: string | null;
   cliente_nombre: string | null;
   es_externo: boolean;
   operador_externo: string | null;
@@ -57,16 +62,19 @@ function hrefDeFila(v: FlightRow): string {
 const columns: Array<DataTableColumn<FlightRow>> = [
   {
     key: "folio",
-    header: "Folio",
-    headClassName: "w-24",
+    header: ENCABEZADO_FOLIO_ID,
+    headClassName: "w-36",
     cellClassName: "font-mono text-xs",
     // noLink: el badge del grupo enlaza al GRUPO; la celda arma su propio
-    // link de fila (mismo destino que el resto de la fila).
+    // link de fila (mismo destino que el resto de la fila). El ID por
+    // cliente va BAJO el folio y DENTRO de ese link (su clic abre lo mismo);
+    // sin clave, el marcado de la celda es el de siempre.
     noLink: true,
     cell: (v) => (
       <span className="inline-flex flex-col items-start gap-1">
         <Link href={hrefDeFila(v)} className="block hover:underline underline-offset-2">
           #{v.folio}
+          <ClaveClienteLinea clave={v.clave_cliente} />
         </Link>
         {v.grupo && (
           <GrupoBadge
@@ -215,10 +223,12 @@ export function FlightsTable({
       rowHref={hrefDeFila}
       // Azul = aún en cotización (sin confirmar): identificable de un vistazo.
       rowClassName={(v) => (v.en_cotizacion ? "bg-sky-500/[0.07]" : undefined)}
+      // El ID por cliente también se busca: «january02» empata por inicio de
+      // palabra (el «-» no separa palabras en `normalizarTexto`).
       searchText={(v) =>
-        `#${v.folio} ${v.cliente_nombre ?? ""} ${v.operador_externo ?? ""} ${v.ruta} ${v.matricula ?? ""} ${v.piloto_nombre ?? ""} ${v.grupo ? `G-${v.grupo.folio ?? ""} ${v.grupo.nombre ?? ""}` : ""}`
+        `#${v.folio} ${v.cliente_nombre ?? ""} ${v.operador_externo ?? ""} ${v.ruta} ${v.matricula ?? ""} ${v.piloto_nombre ?? ""} ${v.grupo ? `G-${v.grupo.folio ?? ""} ${v.grupo.nombre ?? ""}` : ""} ${v.clave_cliente ?? ""}`
       }
-      searchPlaceholder="Buscar vuelo (folio, cliente, ruta, matrícula, piloto)…"
+      searchPlaceholder={PLACEHOLDER_BUSCAR_VUELOS}
     />
   );
 }

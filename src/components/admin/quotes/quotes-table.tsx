@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { estadoCobroSemaforo } from "@/lib/admin/cobros";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import { ClaveClienteLinea } from "@/components/admin/clave-cliente";
+import { ENCABEZADO_FOLIO_ID, PLACEHOLDER_BUSCAR_COTIZACIONES } from "@/lib/admin/clave-cliente";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -37,6 +39,9 @@ export interface QuoteListRow {
    */
   href: string;
   folio: number;
+  /** ID del vuelo por cliente («january02-211026», 13-oct-2026): viene del
+      API tal cual (`clave_cliente`) y NUNCA se recalcula; null = solo folio. */
+  claveCliente?: string | null;
   clienteNombre: string | null;
   esExterno: boolean;
   operadorExterno: string | null;
@@ -96,16 +101,19 @@ export function ChipPorFacturar({ pagaContraFactura = false }: { pagaContraFactu
 const columns: Array<DataTableColumn<QuoteListRow>> = [
   {
     key: "folio",
-    header: "Folio",
-    headClassName: "w-24",
+    header: ENCABEZADO_FOLIO_ID,
+    headClassName: "w-36",
     cellClassName: "font-mono text-xs",
     // noLink: el badge del grupo enlaza al GRUPO, así que la celda arma su
     // propio link de fila al folio (mismo destino que el resto de la fila).
+    // El ID por cliente va BAJO el folio y DENTRO de ese link; sin clave, el
+    // marcado de la celda es el de siempre.
     noLink: true,
     cell: (q) => (
       <span className="inline-flex flex-col items-start gap-1">
         <Link href={q.href} className="block hover:underline underline-offset-2">
           #{q.folio}
+          <ClaveClienteLinea clave={q.claveCliente} />
         </Link>
         {q.grupo && (
           <GrupoBadge
@@ -275,9 +283,9 @@ export function QuotesTable({
       rowKey={(q) => q.id}
       rowHref={(q) => q.href}
       searchText={(q) =>
-        `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""} ${q.grupo ? `G-${q.grupo.folio ?? ""} ${q.grupo.nombre ?? ""}` : ""}`
+        `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""} ${q.grupo ? `G-${q.grupo.folio ?? ""} ${q.grupo.nombre ?? ""}` : ""} ${q.claveCliente ?? ""}`
       }
-      searchPlaceholder="Buscar cotización (folio, cliente, ruta, avión)…"
+      searchPlaceholder={PLACEHOLDER_BUSCAR_COTIZACIONES}
     />
   );
 }

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ChevronRightIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import { ClaveClienteLinea } from "@/components/admin/clave-cliente";
+import { ENCABEZADO_FOLIO_ID, PLACEHOLDER_BUSCAR_VUELOS_AVION } from "@/lib/admin/clave-cliente";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
@@ -21,9 +23,19 @@ function rutaDe(f: FlightListItem): string {
 const columns: Array<DataTableColumn<FlightListItem>> = [
   {
     key: "folio",
-    header: "Folio",
+    header: ENCABEZADO_FOLIO_ID,
     cellClassName: "font-mono text-sm",
-    cell: (f) => <>#{f.folio}</>,
+    // ID del vuelo por cliente (13-oct-2026) BAJO el folio: viene de
+    // GET /v1/flights tal cual; sin clave, la celda es la de siempre.
+    cell: (f) =>
+      f.clave_cliente ? (
+        <span className="inline-flex flex-col items-start">
+          <span>#{f.folio}</span>
+          <ClaveClienteLinea clave={f.clave_cliente} />
+        </span>
+      ) : (
+        <>#{f.folio}</>
+      ),
   },
   {
     key: "ruta",
@@ -86,8 +98,8 @@ export function AircraftFlightsTable({ flights }: { flights: FlightListItem[] })
       rows={flights}
       rowKey={(f) => f.id}
       rowClassName={() => "group"}
-      searchText={(f) => `#${f.folio} ${rutaDe(f)} ${ESTADO_LABELS[f.estado]}`}
-      searchPlaceholder="Buscar vuelo (folio, ruta, estado)…"
+      searchText={(f) => `#${f.folio} ${rutaDe(f)} ${ESTADO_LABELS[f.estado]} ${f.clave_cliente ?? ""}`}
+      searchPlaceholder={PLACEHOLDER_BUSCAR_VUELOS_AVION}
     />
   );
 }

@@ -5,7 +5,8 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { ClientFormDialog } from "./client-form-dialog";
 
-export function ClientCreateButton() {
+/** `aliasDisponible`: el API habilita el alias del cliente (alta). */
+export function ClientCreateButton({ aliasDisponible = false }: { aliasDisponible?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -13,7 +14,7 @@ export function ClientCreateButton() {
         <PlusIcon className="h-4 w-4" />
         Nuevo cliente
       </Button>
-      <ClientFormDialog open={open} onOpenChange={setOpen} />
+      <ClientFormDialog open={open} onOpenChange={setOpen} aliasDisponible={aliasDisponible} />
     </>
   );
 }

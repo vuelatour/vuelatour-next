@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { BackLink } from "@/components/admin/back-link";
+import { ClaveClienteCabecera } from "@/components/admin/clave-cliente";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -426,6 +427,10 @@ export function QuoteWorkspace({
               <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
                 Cotización <span className="font-mono">#{quote.folio}</span>
               </h1>
+              {/* ID del vuelo por cliente (13-oct-2026), copiable, JUNTO al
+                  h1: viene de GET /v1/quotes/:id y router.refresh() lo
+                  rehidrata; sin clave no se pinta. */}
+              <ClaveClienteCabecera clave={quote.clave_cliente} />
               <Badge variant="outline" className={ESTADO_STYLES[quote.estado]}>
                 {ESTADO_LABELS[quote.estado]}
               </Badge>

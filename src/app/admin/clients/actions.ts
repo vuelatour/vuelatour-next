@@ -18,6 +18,11 @@ function fail<T>(err: unknown): ActionResult<T> {
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
+/**
+ * Quita lo vacío del body. Conserva `null` (p. ej. `alias: null` = volver al
+ * sugerido) y descarta `undefined` (= no tocado): así el alias viaja SOLO si
+ * el diálogo lo puso (13-oct-2026).
+ */
 function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const out: Partial<T> = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -56,6 +61,33 @@ export async function updateClientAction(id: string, raw: unknown): Promise<Acti
     });
     revalidatePath("/admin/clients");
     return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** GET /v1/clients/alias-en-uso (API 0.0.75): quién más usa ese alias. */
+export interface AliasEnUso {
+  alias: string;
+  clientes: Array<{ id: string; nombre: string; activo: boolean }>;
+}
+
+/**
+ * ¿Qué clientes ya usan este alias? Alimenta el aviso NO bloqueante del
+ * formulario («Ya lo usa Juan Chacon…»). `excluirId` = el cliente que se
+ * edita (no cuenta). Nunca lanza: un fallo vuelve como `ok: false` y el
+ * formulario simplemente no avisa.
+ */
+export async function aliasEnUsoAction(
+  alias: string,
+  excluirId?: string,
+): Promise<ActionResult<AliasEnUso>> {
+  try {
+    const data = await apiServer<AliasEnUso>("/v1/clients/alias-en-uso", {
+      searchParams: { alias, ...(excluirId ? { excluir: excluirId } : {}) },
+      cache: "no-store",
+    });
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }
