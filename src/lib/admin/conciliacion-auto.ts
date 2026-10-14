@@ -39,7 +39,15 @@ export type MotivoPendienteCodigo =
   | "ERROR"
   | "OTRO";
 
-/** Texto base de cada motivo (el badge y su tooltip). */
+/**
+ * Texto base de cada motivo (el badge y su tooltip). Los «3 días» de
+ * SIN_CANDIDATOS y FUERA_DE_VENTANA son `MATCH_DAYS` del API (espejo
+ * `DIAS_MARGEN_CRUCE` de `conciliacion-fecha-gasto.ts`; la prueba los cruza).
+ * Van como literal a propósito: importar aquel módulo cerraría un ciclo
+ * (conciliacion-fecha-gasto → conciliacion-lote → conciliacion-auto). Desde
+ * el 14-oct-2026 (API 0.0.76) mandan a corregir la fecha con «Fecha» en
+ * «Vincular gasto»: la fecha del gasto es la del PAGO.
+ */
 const MOTIVOS: Record<
   MotivoPendienteCodigo,
   { etiqueta: string; detalle: string }
@@ -47,7 +55,7 @@ const MOTIVOS: Record<
   SIN_CANDIDATOS: {
     etiqueta: "Sin candidato",
     detalle:
-      "No hay ningún gasto sin conciliar que cuadre con este movimiento en la ventana de fechas. Captura el gasto, amplía la ventana de la cuenta o clasifícalo si no es de un vuelo.",
+      "No hay ningún gasto sin conciliar que cuadre con este movimiento a 3 días o menos. Si el gasto ya está capturado con la fecha de la factura, ábrelo en «Vincular gasto» y corrige su fecha con «Fecha» (la fecha del gasto es la del pago); si no existe, créalo ahí mismo; si no es de un vuelo, clasifícalo.",
   },
   SE_PUEDE_CRUZAR: {
     etiqueta: "Se puede cruzar",
@@ -72,7 +80,7 @@ const MOTIVOS: Record<
   FUERA_DE_VENTANA: {
     etiqueta: "Fuera de la ventana",
     detalle:
-      "Hay un gasto igual pero con fecha fuera de la ventana de cruce de la cuenta. Vincúlalo a mano o amplía la ventana de la cuenta.",
+      "Hay un gasto igual pero con una fecha a más de 3 días de este cargo. En «Vincular gasto» corrige su fecha a la del pago con «Fecha», o vincúlalo a mano.",
   },
   NO_ES_DE_VUELO: {
     etiqueta: "No es de un vuelo",

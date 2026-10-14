@@ -111,6 +111,20 @@ export function textoVentanaSinBanco(r: RangoVista): string {
 }
 
 /**
+ * Las pestañas «Gastos sin banco» y «Cobros sin banco» cuando su lista NO se
+ * pudo leer (14-oct-2026). Regla del proyecto: jamás «sin datos» cuando la
+ * carga falló — una lista de dinero vacía porque el API no contestó lleva a
+ * capturar dos veces o a dar por cerrado lo que falta. Hasta hoy «Gastos sin
+ * banco» pintaba la tabla VACÍA (la página atrapa el fallo con null y montaba
+ * la tabla con cero filas); «Cobros sin banco» ya lo decía. Lo pinta
+ * `AvisoListaSinBancoNoCargo` en las dos, con «Reintentar».
+ */
+export const MSG_LISTA_SIN_BANCO_NO_CARGO =
+  "No se pudo consultar la lista (el API no respondió). Pulsa «Reintentar» o recarga la página.";
+export const BOTON_REINTENTAR_LISTA = "Reintentar";
+export const TEXTO_REINTENTANDO_LISTA = "Reintentando…";
+
+/**
  * Nota cuando la lista llegó al tope del API y hay más movimientos de los
  * que se ven: acotar el periodo es la salida. null si se ven todos.
  */

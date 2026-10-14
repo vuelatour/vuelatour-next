@@ -1217,3 +1217,31 @@ export interface ConciliacionDeGasto {
   /** Solo SIN_CONCILIAR o PARCIAL (null si falló o no aplica). */
   ultimos_movimientos: UltimoMovimientoCuenta[] | null;
 }
+
+/**
+ * Respuesta de `PATCH /v1/expenses/:id/fecha` (API 0.0.76, 14-oct-2026,
+ * invariante 74): la fecha del PAGO corregida desde «Vincular gasto», SIN
+ * auto-cruce. `cambio: false` = el gasto ya tenía esa fecha (no escribió ni
+ * movió `updated_at`); `aviso` = la línea de «mes terminado» cuando hubo
+ * confirmación; `fecha_hora_carga` = la hora de la carga de combustible tal
+ * como quedó (el API la mueve al día nuevo conservando su hora de pared).
+ */
+export interface CambioFechaGasto {
+  id: string;
+  fecha_gasto: string;
+  fecha_anterior: string;
+  cambio: boolean;
+  cambia_de_mes: boolean;
+  fecha_hora_carga: string | null;
+  updated_at: string;
+  aviso: string | null;
+}
+
+/** `details` del 409 FECHA_GASTO_CONFIRMAR (el texto lo arma el API). */
+export interface ConfirmarCambioFechaDetalle {
+  cambia_de_mes: boolean;
+  mes_antes: string;
+  mes_despues: string;
+  etiqueta_mes_despues: string;
+  meses_terminados: string[];
+}

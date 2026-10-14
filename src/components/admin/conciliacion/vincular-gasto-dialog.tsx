@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import dynamic from "next/dynamic";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  corregirFechaGastoAction,
   gastosCandidatosAction,
   linkMovimientoAction,
   linkMovimientoGastosAction,
@@ -157,9 +159,24 @@ import {
   avisoVincularCruzado,
   lineaTcCandidato,
 } from "@/lib/admin/conciliacion-tc";
+import {
+  AYUDA_CORREGIR_FECHA,
+  BOTON_DESHACER_FECHA,
+  BOTON_FECHA_FILA,
+  TITULO_NO_SE_DESHIZO,
+  conFechaCorregida,
+  conFechasCorregidas,
+  etiquetaBotonFecha,
+  mensajeErrorFechaGasto,
+  nudgeFechaMarcado,
+  puedeCorregirFechaDeCandidato,
+  toastFechaCorregida,
+  toastFechaRestaurada,
+} from "@/lib/admin/conciliacion-fecha-gasto";
 import type { Gasto } from "@/types/expenses";
 import { cn } from "@/lib/utils";
 import type {
+  CambioFechaGasto,
   GastoCandidato,
   GastosCandidatosResponse,
   MovimientoBancario,
@@ -461,6 +478,20 @@ const ExpenseCreateDialog = dynamic(
   { ssr: false },
 );
 
+/**
+ * «Corregir la fecha del gasto» (14-oct-2026, API 0.0.76): el diálogo
+ * anidado del botón «Fecha» de un renglón. Se carga SOLO al pulsarlo (sin
+ * SSR) y se monta dentro del árbol de este diálogo (Base UI apila los
+ * diálogos por contexto: Esc cierra solo el de arriba).
+ */
+const CorregirFechaGastoDialog = dynamic(
+  () =>
+    import("@/components/admin/conciliacion/corregir-fecha-gasto-dialog").then(
+      (m) => m.CorregirFechaGastoDialog,
+    ),
+  { ssr: false },
+);
+
 /** Lectura de los posibles duplicados del paso «crear» (misma forma que `Carga`). */
 type CargaDuplicados =
   | { estado: "cargando" }
@@ -533,6 +564,14 @@ function SelectorGastos({
   const [confirmado, setConfirmado] = useState(false);
   const [dup, setDup] = useState<CargaDuplicados | null>(null);
   const [crearAbierto, setCrearAbierto] = useState(false);
+  // «Fecha» del renglón (14-oct-2026, API 0.0.76): el gasto cuya fecha del
+  // pago se está corrigiendo (diálogo anidado) y las fechas que el API ya
+  // guardó (id ⇒ día). El mapa corrige TODAS las filas pintadas (también los
+  // marcados y el sugerido de la IA, que se pintan con su copia guardada) sin
+  // volver a pedir la lista: `setRecarga` escondería los no marcados mientras
+  // carga.
+  const [editandoFecha, setEditandoFecha] = useState<GastoCandidato | null>(null);
+  const [fechasCorregidas, setFechasCorregidas] = useState<Readonly<Record<string, string>>>({});
 
   useEffect(() => {
     const t = setTimeout(() => setBusqueda(busquedaParaApi(texto)), DEBOUNCE_BUSQUEDA_MS);
@@ -594,8 +633,12 @@ function SelectorGastos({
   // dice «Vincular de todos modos» (NO bloquea: liga como siempre).
   const avisoCruzado = avisoVincularCruzado(marcados);
   const filas = useMemo(
-    () => listaConMarcadosPrimero(conSugeridoAlFrente(resultados, sugerido), marcados),
-    [resultados, sugerido, marcados],
+    () =>
+      conFechasCorregidas(
+        listaConMarcadosPrimero(conSugeridoAlFrente(resultados, sugerido), marcados),
+        fechasCorregidas,
+      ),
+    [resultados, sugerido, marcados, fechasCorregidas],
   );
   const estado = estadoBuscadorGastos({
     cargando,
@@ -709,7 +752,45 @@ function SelectorGastos({
 
   const etiquetaDe = (id: string) => {
     const f = marcados.find((m) => m.id === id) ?? resultados.find((m) => m.id === id);
-    return f ? etiquetaCandidatoGasto(fichaCandidatoGasto(f)) : null;
+    return f ? etiquetaCandidatoGasto(fichaCandidatoGasto(conFechaCorregida(f, fechasCorregidas))) : null;
+  };
+
+  // ===== «Fecha» del renglón (14-oct-2026, API 0.0.76) =====
+  // La fecha del gasto es la del PAGO (decisión del 13-oct-2026). Guardar NO
+  // liga (el API no corre el auto-cruce): liga la persona con «Vincular».
+  const ponerFecha = useCallback((id: string, fecha: string) => {
+    setFechasCorregidas((prev) => (prev[id] === fecha ? prev : { ...prev, [id]: fecha }));
+  }, []);
+  /** «Deshacer» del aviso: regresa la fecha anterior (con confirmar: el API ya la había aceptado). */
+  const deshacerFecha = (r: CambioFechaGasto) => {
+    void corregirFechaGastoAction(r.id, { fecha: r.fecha_anterior, fechaAnterior: r.fecha_gasto, confirmar: true })
+      .catch(sinConexion)
+      .then((res) => {
+        if (res.ok && res.data) {
+          ponerFecha(res.data.id, res.data.fecha_gasto);
+          toast.success(toastFechaRestaurada(res.data));
+          return;
+        }
+        // Si el API lo bloquea (otro mes, alguien la cambió), dice por qué.
+        toast.error(TITULO_NO_SE_DESHIZO, { description: mensajeErrorFechaGasto(res) });
+      });
+  };
+  const trasCorregirFecha = (r: CambioFechaGasto) => {
+    setEditandoFecha(null);
+    ponerFecha(r.id, r.fecha_gasto);
+    const t = toastFechaCorregida(r);
+    toast.success(t.titulo, {
+      description: t.descripcion,
+      duration: 10000,
+      action: r.cambio ? { label: BOTON_DESHACER_FECHA, onClick: () => deshacerFecha(r) } : undefined,
+    });
+  };
+  /** 404: el gasto se borró mientras tanto; se desmarca y se vuelve a pedir la lista. */
+  const gastoYaNoExiste = (id: string, texto: string) => {
+    setEditandoFecha(null);
+    setMarcados((prev) => prev.filter((m) => m.id !== id));
+    toast.error(texto);
+    setRecarga((n) => n + 1);
   };
 
   const tras = (r: ActionResult<MovimientoBancario>, justificacion?: string) => {
@@ -1036,73 +1117,107 @@ function SelectorGastos({
                   // Su folio es el número que dice el concepto del banco
                   // (API 0.0.75): ★ y su renglón, NUNCA una marca.
                   const coincide = c.coincide_factura === true;
+                  // «Fecha» (14-oct-2026): solo gastos bancarios con fecha
+                  // legible; el aviso bajo un MARCADO cuya fecha está a más
+                  // de 3 días del cargo invita a corregirla.
+                  const puedeFecha = puedeCorregirFechaDeCandidato(c);
+                  const nudge = marcado ? nudgeFechaMarcado(c, movimiento.fecha) : null;
                   return (
-                    <label
-                      key={c.id}
-                      title={bloqueo ?? undefined}
-                      className={cn(
-                        "flex items-start gap-2 px-3 py-2 text-sm",
-                        bloqueo ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/50",
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={marcado}
-                        disabled={bloqueo != null}
-                        onChange={() => alternar(c)}
-                        className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
-                      />
-                      <span className="min-w-0">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="block min-w-0 truncate font-medium">
-                            {esSugerido || coincide ? "★ " : ""}
-                            {etiquetaCandidatoGasto(ficha)}
-                          </span>
-                          {/* «Efectivo»: no pasó por el banco (pide justificación). */}
-                          <BadgeMedioCandidato candidato={c} />
-                        </span>
-                        {/* La línea se recorta: completa (con el número de
-                            factura entero y, si la casilla va apagada, el
-                            motivo) en el tooltip. */}
-                        {desc && (
-                          <span
-                            className="block truncate text-xs text-muted-foreground"
-                            title={tituloDesc ?? undefined}
-                          >
-                            {desc}
-                          </span>
-                        )}
-                        {/* «T.C. 17.06 · oficial 17.01 (+0.3 %)»: ámbar si
-                            queda lejos del oficial o fuera de banda. */}
-                        {lineaTc && (
-                          <span
-                            data-tc-cruce={lineaTc.tono}
-                            className={cn(
-                              "block text-[11px]",
-                              lineaTc.tono === "ambar"
-                                ? "text-amber-700 dark:text-amber-400"
-                                : "text-muted-foreground",
+                    <div key={c.id} data-candidato-gasto="">
+                      <div className="flex items-start">
+                        <label
+                          title={bloqueo ?? undefined}
+                          className={cn(
+                            "flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-sm",
+                            bloqueo ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/50",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            disabled={bloqueo != null}
+                            onChange={() => alternar(c)}
+                            className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
+                          />
+                          <span className="min-w-0">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="block min-w-0 truncate font-medium">
+                                {esSugerido || coincide ? "★ " : ""}
+                                {etiquetaCandidatoGasto(ficha)}
+                              </span>
+                              {/* «Efectivo»: no pasó por el banco (pide justificación). */}
+                              <BadgeMedioCandidato candidato={c} />
+                            </span>
+                            {/* La línea se recorta: completa (con el número de
+                                factura entero y, si la casilla va apagada, el
+                                motivo) en el tooltip. */}
+                            {desc && (
+                              <span
+                                className="block truncate text-xs text-muted-foreground"
+                                title={tituloDesc ?? undefined}
+                              >
+                                {desc}
+                              </span>
                             )}
-                            title={lineaTc.titulo}
+                            {/* «T.C. 17.06 · oficial 17.01 (+0.3 %)»: ámbar si
+                                queda lejos del oficial o fuera de banda. */}
+                            {lineaTc && (
+                              <span
+                                data-tc-cruce={lineaTc.tono}
+                                className={cn(
+                                  "block text-[11px]",
+                                  lineaTc.tono === "ambar"
+                                    ? "text-amber-700 dark:text-amber-400"
+                                    : "text-muted-foreground",
+                                )}
+                                title={lineaTc.titulo}
+                              >
+                                {lineaTc.texto}
+                              </span>
+                            )}
+                            {coincide && textoFactura && (
+                              <span
+                                className="block text-xs text-emerald-600 dark:text-emerald-400"
+                                title={TITULO_COINCIDE_FACTURA}
+                              >
+                                {ETIQUETA_COINCIDE_FACTURA(textoFactura)}
+                              </span>
+                            )}
+                            {esSugerido && (
+                              <span className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                {ETIQUETA_SUGERIDO}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                        {/* Hermano de la etiqueta, nunca dentro: no marca la
+                            casilla, no ensucia su nombre accesible y no hereda
+                            el veto (opacity/title) de un renglón apagado. */}
+                        {puedeFecha && (
+                          <button
+                            type="button"
+                            data-fecha-pago=""
+                            aria-haspopup="dialog"
+                            aria-label={etiquetaBotonFecha(c)}
+                            title={etiquetaBotonFecha(c)}
+                            onClick={() => setEditandoFecha(c)}
+                            disabled={pending}
+                            className="mr-2 mt-1.5 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-brand-600 hover:bg-brand-600/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {lineaTc.texto}
-                          </span>
+                            <CalendarDaysIcon className="h-4 w-4" aria-hidden />
+                            <span className="hidden sm:inline">{BOTON_FECHA_FILA}</span>
+                          </button>
                         )}
-                        {coincide && textoFactura && (
-                          <span
-                            className="block text-xs text-emerald-600 dark:text-emerald-400"
-                            title={TITULO_COINCIDE_FACTURA}
-                          >
-                            {ETIQUETA_COINCIDE_FACTURA(textoFactura)}
-                          </span>
-                        )}
-                        {esSugerido && (
-                          <span className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                            {ETIQUETA_SUGERIDO}
-                          </span>
-                        )}
-                      </span>
-                    </label>
+                      </div>
+                      {nudge && (
+                        <p
+                          data-nudge-fecha=""
+                          className="px-3 pb-2 pl-9 text-[11px] text-amber-700 dark:text-amber-300"
+                        >
+                          {nudge}
+                        </p>
+                      )}
+                    </div>
                   );
                 })}
               {estado.tipo === "cargando" ? (
@@ -1137,6 +1252,9 @@ function SelectorGastos({
             </div>
             {estado.tipo === "lista" && estado.texto && (
               <p className="text-[11px] text-muted-foreground">{estado.texto}</p>
+            )}
+            {estado.tipo === "lista" && filas.some(puedeCorregirFechaDeCandidato) && (
+              <p className="text-[11px] text-muted-foreground">{AYUDA_CORREGIR_FECHA}</p>
             )}
             {suma && <p className={cn("text-xs font-medium", CLASE_TONO[suma.tono])}>{suma.texto}</p>}
             {avisoCruzado && (
@@ -1252,6 +1370,21 @@ function SelectorGastos({
           )}
         </div>
       </DialogFooter>
+      {/* «Corregir la fecha del gasto», ANIDADO dentro del árbol de este
+          diálogo (el mismo lugar que el alta en el paso «crear»). */}
+      {editandoFecha && (
+        <CorregirFechaGastoDialog
+          key={editandoFecha.id}
+          candidato={editandoFecha}
+          movimiento={movimiento}
+          monedaCuenta={monedaCuenta}
+          dias={dias}
+          onCerrar={() => setEditandoFecha(null)}
+          onCorregida={trasCorregirFecha}
+          onFechaVigente={ponerFecha}
+          onGastoNoExiste={gastoYaNoExiste}
+        />
+      )}
     </>
   );
 }

@@ -579,7 +579,7 @@ describe("T.C. oficial del día en la línea del candidato y en el motivo (13-oc
     expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "AMBIGUO", motivo_detalle: det })?.detalle).toBe(det);
     expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "SE_PUEDE_CRUZAR", motivo_detalle: det })?.detalle).toBe(det);
     expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "SIN_CANDIDATOS", motivo_detalle: det })?.detalle).toBe(
-      `No hay ningún gasto sin conciliar que cuadre con este movimiento en la ventana de fechas. Captura el gasto, amplía la ventana de la cuenta o clasifícalo si no es de un vuelo. ${det}`,
+      `No hay ningún gasto sin conciliar que cuadre con este movimiento a 3 días o menos. Si el gasto ya está capturado con la fecha de la factura, ábrelo en «Vincular gasto» y corrige su fecha con «Fecha» (la fecha del gasto es la del pago); si no existe, créalo ahí mismo; si no es de un vuelo, clasifícalo. ${det}`,
     );
     expect(
       motivoPendienteDe({ conciliado: false, motivo_pendiente: "ERROR", auto_match_error: "boom", motivo_detalle: det })?.detalle,

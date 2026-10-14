@@ -21,6 +21,7 @@ import {
   type GastoSinBancoRow,
 } from "@/components/admin/conciliacion/gastos-sin-banco-table";
 import { CobrosSinBancoTable } from "@/components/admin/conciliacion/cobros-sin-banco-table";
+import { AvisoListaSinBancoNoCargo } from "@/components/admin/conciliacion/lista-sin-banco-no-cargo";
 import { PaywiseAuditoriaPanel } from "@/components/admin/conciliacion/paywise-auditoria";
 import {
   auditoriaPaywise,
@@ -553,12 +554,11 @@ export default async function ConciliacionPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
+            {/* null = la lectura FALLÓ (no «sin cobros»): el aviso, nunca la tabla vacía. */}
             {cobrosSinBanco ? (
               <CobrosSinBancoTable rows={cobrosSinBanco.data} />
             ) : (
-              <p className="px-4 pb-4 text-sm text-muted-foreground">
-                No se pudo consultar la lista (el API no respondió). Recarga la página.
-              </p>
+              <AvisoListaSinBancoNoCargo />
             )}
           </CardContent>
         </Card>
@@ -587,7 +587,13 @@ export default async function ConciliacionPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <GastosSinBancoTable rows={sinBancoRows} />
+            {/* null = la lectura FALLÓ (no «sin gastos»): hasta el 14-oct-2026
+                aquí se montaba la tabla con cero filas. */}
+            {sinBanco ? (
+              <GastosSinBancoTable rows={sinBancoRows} />
+            ) : (
+              <AvisoListaSinBancoNoCargo />
+            )}
           </CardContent>
         </Card>
       ) : movs.length === 0 ? (
