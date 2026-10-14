@@ -13,6 +13,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type {
   FacturaEmitida,
   ListaFacturasEmitidas,
@@ -41,6 +43,7 @@ vi.mock("@/lib/api/facturas-emitidas-browser", () => ({
   reemplazarArchivoFactura: async () => ({ ok: false, error: "no" }),
   guardarFacturaEmitida: async () => ({ ok: false, error: "no" }),
   buscarVuelosCandidatos: async () => ({ ok: true, data: [] }),
+  ligarVueloAFactura: async () => ({ ok: false, error: "no" }),
 }));
 vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }));
 
@@ -294,7 +297,75 @@ describe("Por facturar", () => {
     expect(html).not.toContain("Registrar factura");
     expect(html).toContain("Más acciones del vuelo #341");
   });
+
+  // ---- Caso #376 (13-oct-2026) ----
+
+  it("la MISMA tabla sirve a la segunda tarjeta (`syncId` propio); sin él, la de siempre", () => {
+    expect(renderToStaticMarkup(<PorFacturarTable items={[item]} rol="FACTURACION" syncId="pfm" />)).toContain(
+      "Registrar factura",
+    );
+    expect(renderToStaticMarkup(<PorFacturarTable items={[item]} rol="FACTURACION" />)).toContain(
+      "Registrar factura",
+    );
+    const fuente = leerFuente("../por-facturar-table.tsx");
+    expect(fuente).toContain('syncId={syncId ?? "pf"}');
+  });
+
+  it("la página: descripción según el API, segunda tarjeta con `marcados_sin_registro` y su propia paginación", () => {
+    const pagina = leerFuente("../../../../app/admin/facturas-emitidas/page.tsx");
+    expect(pagina).toContain("porFacturar.datos.marcados_sin_registro ?? []");
+    expect(pagina).toContain("descripcionPorFacturar(porFacturar.datos.marcados_sin_registro)");
+    expect(pagina).toContain("{TITULO_MARCADOS_SIN_REGISTRO} ({marcados.length})");
+    expect(pagina).toContain("{DESCRIPCION_MARCADOS_SIN_REGISTRO}");
+    expect(pagina).toContain('syncId="pfm"');
+    expect(pagina).toContain("{marcados.length > 0 && (");
+  });
+
+  const conSugerencia: PorFacturarItem = {
+    ...item,
+    vuelo: { ...item.vuelo, folio: 376, estatus_manual: "SIN_FACTURA", grupo: null },
+    facturas_del_cliente: [
+      {
+        id: "f-440",
+        etiqueta: "A-0440",
+        fecha_emision: "2026-10-08",
+        total: 31435.91,
+        moneda: "MXN",
+        vuelo_ids: ["v-375"],
+        vuelo_folios: [375],
+      },
+    ],
+  };
+
+  it("Parte B: la factura del cliente que quizá cubre este vuelo y «Ligar a A-0440» (solo facturación)", () => {
+    const html = renderToStaticMarkup(<PorFacturarTable items={[conSugerencia]} rol="FACTURACION" />);
+    expect(html).toContain(
+      "El cliente ya tiene registrada la factura A-0440 (8 oct · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.",
+    );
+    expect(html).toMatch(/<button[^>]*cursor-pointer[^>]*>Ligar a A-0440<\/button>/);
+    const coord = renderToStaticMarkup(<PorFacturarTable items={[conSugerencia]} rol="COORDINADOR" />);
+    expect(coord).toContain("El cliente ya tiene registrada la factura A-0440");
+    expect(coord).not.toContain("Ligar a A-0440");
+    // API previo (sin la llave): nada nuevo.
+    expect(renderToStaticMarkup(<PorFacturarTable items={[item]} rol="FACTURACION" />)).not.toContain("Ligar a");
+  });
+
+  it("Parte B: confirma antes de ligar y liga por la llamada que relee la factura (cableado: el diálogo es un portal)", () => {
+    const fuente = leerFuente("../por-facturar-table.tsx");
+    expect(fuente).toContain("ligarVueloAFactura(f.id, it.vuelo.id)");
+    expect(fuente).toContain("tituloLigarFactura(ligar.f, ligar.it.vuelo.folio)");
+    expect(fuente).toContain("descripcionLigarFactura(ligar.f, ligar.it.vuelo.folio)");
+    expect(fuente).toContain('{ligando ? "Ligando…" : "Ligar factura"}');
+    expect(fuente).toContain("toast.warning(a.mensaje, { duration: 10_000 })");
+    expect(fuente).toContain("avisarCambioPorFacturar();");
+    // Nunca se liga sola: el botón solo ABRE la confirmación.
+    expect(fuente).toContain("onClick={() => setLigar({ it, f })}");
+  });
 });
+
+function leerFuente(rel: string): string {
+  return readFileSync(path.resolve(__dirname, rel), "utf8");
+}
 
 describe("alta de cotización: «El cliente pide factura»", () => {
   it("apagado: solo el switch; encendido: también «paga hasta recibir la factura»", () => {

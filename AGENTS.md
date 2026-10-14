@@ -3358,6 +3358,56 @@ cambio (agente NAV).
     «Con comprobante» sin botón («Solo oficina abre el comprobante»); el
     botón queda para oficina cuando el lote falló.
 
+- **«Por facturar» vs «marcado Facturado a mano» (13-oct-2026, caso #376;
+  contrato aditivo del API del lote 0.0.75)**. Caso real: A-0440 ($31,435.91
+  MXN ≈ 2 × 904.51 USD) cubría #375 y #376 del mismo cliente y se ligó solo a
+  #375; #376 siguió «Por facturar» («Mary dice que ya lo hizo») hasta que el
+  13-oct a las 13:21 la ligaron a mano. Lo que cambia en el panel:
+  - **Regla del API** (el panel no la recalcula): un vuelo con «Necesito
+    factura», sin factura VIGENTE y marcado «Facturado» A MANO sale de la
+    bandeja y del badge y viaja aparte en `marcados_sin_registro`
+    (`ListaPorFacturar`, misma forma `PorFacturarItem`); el conteo trae
+    `marcados_sin_registro` (el badge del menú sigue leyendo SOLO
+    `por_facturar`). Todo opcional: con un API previo nada cambia.
+  - **Página**: «Por facturar (n)» con `descripcionPorFacturar(...)` (con la
+    llave del API nuevo: «…ni están marcados «Facturado» en el vuelo…»; sin
+    ella, la frase de siempre) y, DEBAJO y solo si hay, la segunda tarjeta
+    «Marcados «Facturado» sin factura registrada (n)»
+    (`TITULO_MARCADOS_SIN_REGISTRO` / `DESCRIPCION_MARCADOS_SIN_REGISTRO`) con
+    la MISMA `PorFacturarTable` y `syncId="pfm"` (paginación aparte; la
+    primera sigue en `"pf"`).
+  - **Burbuja** (`factura_servicio.marcado_sin_registro`): chip GRIS
+    `textoSolicitudMarcada` («Factura pedida por Itzi · 5 oct — marcada
+    «Facturado» en el vuelo, sin factura registrada», tooltip
+    `AYUDA_SOLICITUD_MARCADA` + la nota); «Retirar» y «Registrar factura»
+    igual. Sin el campo, el chip ámbar de siempre.
+  - **Parte B — «Ligar a A-0440»** (`PorFacturarItem.facturas_del_cliente`,
+    máx. 3: facturas VIGENTES del mismo cliente NO ligadas a ese vuelo,
+    emitidas desde la solicitud − 30 días): la fila dice «El cliente ya tiene
+    registrada la factura A-0440 (8 oct · $31,435.91 MXN · vuelo #375). Si
+    también cubre este vuelo, lígala.» (`textoFacturaDelCliente`; la fecha es
+    un DÍA de pared: `fechaCortaDeDia`, sin corrimiento) y, SOLO para
+    ADMIN/FACTURACION, el botón «Ligar a A-0440» (cursor-pointer) que abre la
+    confirmación «¿Ligar la factura A-0440 al vuelo #376?» / «La factura
+    quedará ligada a los vuelos #375 y #376 y el vuelo saldrá de «Por
+    facturar». Si este vuelo lleva su propia factura, usa «Registrar
+    factura».» («Cancelar» / «Ligar factura»). **Nunca se liga sola.** La
+    llamada `ligarVueloAFactura` (`lib/api/facturas-emitidas-browser.ts`)
+    RELEE la factura (`GET /v1/facturas-emitidas/:id`) y manda la UNIÓN en
+    `PATCH … datos.vuelo_ids` — ese PATCH REEMPLAZA el conjunto: mandar una
+    lista vieja desligaría vuelos —; ya ligada ⇒ ok sin escribir; ya no
+    VIGENTE ⇒ error («recarga la página»). Al ligar: toast «Factura A-0440
+    ligada al vuelo #376.», los `avisos` del API como `toast.warning` de 10 s,
+    `avisarCambioPorFacturar()` y `router.refresh()`.
+  - **Pruebas**: `lib/admin/__tests__/facturas-emitidas.test.ts` (textos
+    exactos, descripción según el API, Parte B), `facturas-emitidas/
+    __tests__/registro-facturas.test.tsx` (`syncId`, cableado de la página,
+    línea y botón por rol, confirmación por regex: el diálogo es un portal),
+    `flights/__tests__/cobros-card-facturas-emitidas.test.tsx` (chip gris en
+    las dos cards; sin el campo, ámbar) y `lib/api/__tests__/
+    facturas-emitidas-browser.test.ts` (relee y manda la unión, idempotente,
+    no vigente, relectura fallida sin escribir).
+
 ## Factura obligatoria por la cuenta de cobro (13-oct-2026, invariante 60 del API)
 
 Pendiente del lote del 13-oct (decisión 4 del cliente: un cobro que cae en

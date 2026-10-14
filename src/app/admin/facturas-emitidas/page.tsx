@@ -30,6 +30,9 @@ import {
 import { Degradaciones, esErrorDeNext } from "@/lib/api/degradar";
 import { isApiError } from "@/lib/api/errors";
 import {
+  DESCRIPCION_MARCADOS_SIN_REGISTRO,
+  TITULO_MARCADOS_SIN_REGISTRO,
+  descripcionPorFacturar,
   esNoDisponible,
   filtrosFacturasDeUrl,
   hayFiltrosFacturas,
@@ -143,6 +146,10 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
   }
 
   const filtrado = hayFiltrosFacturas(filtros);
+  // Caso #376 (13-oct-2026): los pedidos que en el vuelo marcaron «Facturado»
+  // a mano ya no van en «Por facturar»; el API los manda aparte. Sin la llave
+  // (API previo) no hay segunda tarjeta y la descripción es la de siempre.
+  const marcados = porFacturar.ok ? (porFacturar.datos.marcados_sin_registro ?? []) : [];
 
   return (
     <div className="space-y-6">
@@ -171,8 +178,7 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
             <CardHeader className="space-y-1">
               <CardTitle className="text-sm">Por facturar ({porFacturar.datos.count})</CardTitle>
               <CardDescription className="text-xs">
-                Vuelos en los que alguien pidió factura (con «Necesito factura») y todavía no
-                tienen una factura registrada. Primero los que pagan contra factura.
+                {descripcionPorFacturar(porFacturar.datos.marcados_sin_registro)}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -196,6 +202,30 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
             titulo="No se pudo cargar «Por facturar»"
             descripcion="Los vuelos que piden factura no se pudieron leer. Pulsa Reintentar; si sigue igual, avisa a sistemas."
           />
+        )}
+        {/* Marcados «Facturado» sin factura registrada (caso #376): la MISMA
+            tabla (datos fiscales, cobro, quién pidió, «Registrar factura»),
+            con su propia paginación. Borde neutro: no es urgente, es
+            completar el registro. */}
+        {marcados.length > 0 && (
+          <Card className="mt-4" data-marcados-sin-registro>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-sm">
+                {TITULO_MARCADOS_SIN_REGISTRO} ({marcados.length})
+              </CardTitle>
+              <CardDescription className="text-xs">{DESCRIPCION_MARCADOS_SIN_REGISTRO}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <PorFacturarTable
+                items={marcados}
+                rol={me.rol}
+                resaltar={filtros.resaltar}
+                clientes={clientes}
+                emisoras={emisoras}
+                syncId="pfm"
+              />
+            </CardContent>
+          </Card>
         )}
       </section>
 

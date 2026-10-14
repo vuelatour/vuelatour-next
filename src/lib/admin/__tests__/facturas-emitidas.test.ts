@@ -1,5 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  AYUDA_SOLICITUD_MARCADA,
+  DESCRIPCION_MARCADOS_SIN_REGISTRO,
+  DESCRIPCION_POR_FACTURAR,
+  DESCRIPCION_POR_FACTURAR_API_PREVIO,
+  MAX_FACTURAS_DEL_CLIENTE,
+  TITULO_MARCADOS_SIN_REGISTRO,
+  botonLigarFactura,
+  descripcionLigarFactura,
+  descripcionPorFacturar,
+  fechaCortaDeDia,
+  textoFacturaDelCliente,
+  textoFacturaLigada,
+  textoFoliosVuelos,
+  textoSolicitudMarcada,
+  tituloLigarFactura,
   ALERTA_DE_FILTRO,
   EMISORA_OTRA,
   ETIQUETAS_ALERTA,
@@ -314,6 +329,18 @@ describe("solicitud de factura: textos (hora Cancún)", () => {
     expect(textoFacturaPedidaAlta(["Mary Cruz"])).toBe("Factura pedida a Mary Cruz.");
     expect(textoFacturaPedidaAlta([])).toBe(
       "Factura pedida: aparece en Facturas emitidas → Por facturar.",
+    );
+  });
+
+  it("marcada «Facturado» a mano sin factura registrada (caso #376): chip gris", () => {
+    expect(textoSolicitudMarcada(s)).toBe(
+      "Factura pedida por Itzi · 24 sep — marcada «Facturado» en el vuelo, sin factura registrada",
+    );
+    expect(textoSolicitudMarcada({ ...s, solicitada_por: null })).toBe(
+      "Factura pedida · 24 sep — marcada «Facturado» en el vuelo, sin factura registrada",
+    );
+    expect(AYUDA_SOLICITUD_MARCADA).toBe(
+      "En el vuelo lo marcaron «Facturado» a mano; regístrala aquí para que quede en el registro.",
     );
   });
 
@@ -715,5 +742,76 @@ describe("menú: «Facturas emitidas» primero en Tesorería y la automática re
     // COORDINADOR no ve el registro (ni su badge).
     const coord = filterNavGroupsForRole("COORDINADOR").flatMap((g) => g.items);
     expect(coord.some((i) => i.href === "/admin/facturas-emitidas")).toBe(false);
+  });
+});
+
+// =============================================================================
+// Caso #376 (13-oct-2026): «Por facturar» que no se iba con la factura
+// emitida ligada. A-0440 ($31,435.91 MXN ≈ 2 × 904.51 USD) cubría #375 y
+// #376 del mismo cliente y se ligó solo a #375.
+// =============================================================================
+
+describe("«Por facturar» y «Marcados «Facturado» sin factura registrada»", () => {
+  it("títulos y descripciones exactos", () => {
+    expect(TITULO_MARCADOS_SIN_REGISTRO).toBe("Marcados «Facturado» sin factura registrada");
+    expect(DESCRIPCION_MARCADOS_SIN_REGISTRO).toBe(
+      "Salieron de «Por facturar» porque en el vuelo los marcaron «Facturado» a mano. Para que el registro quede completo, registra su factura aquí (o corrige el estatus en el vuelo).",
+    );
+    expect(DESCRIPCION_POR_FACTURAR).toBe(
+      "Vuelos en los que alguien pidió factura (con «Necesito factura») y todavía no tienen una factura registrada ni están marcados «Facturado» en el vuelo. Primero los que pagan contra factura.",
+    );
+  });
+
+  it("la descripción de «Por facturar» sigue lo que mandó el API (sin la llave ⇒ la de siempre)", () => {
+    expect(descripcionPorFacturar([])).toBe(DESCRIPCION_POR_FACTURAR);
+    expect(descripcionPorFacturar([{}])).toBe(DESCRIPCION_POR_FACTURAR);
+    expect(descripcionPorFacturar(undefined)).toBe(DESCRIPCION_POR_FACTURAR_API_PREVIO);
+    expect(DESCRIPCION_POR_FACTURAR_API_PREVIO).not.toContain("marcados");
+  });
+});
+
+describe("Parte B: «el cliente ya tiene registrada la factura A-0440»", () => {
+  const A0440 = {
+    id: "f-440",
+    etiqueta: "A-0440",
+    fecha_emision: "2026-10-08",
+    total: 31435.91,
+    moneda: "MXN" as const,
+    vuelo_ids: ["v-375"],
+    vuelo_folios: [375],
+  };
+
+  it("fecha de pared sin corrimiento y folios en es-MX", () => {
+    expect(fechaCortaDeDia("2026-10-08")).toBe("8 oct");
+    expect(fechaCortaDeDia("2026-10-01")).toBe("1 oct");
+    expect(fechaCortaDeDia("nada")).toBe("");
+    expect(fechaCortaDeDia(null)).toBe("");
+    expect(textoFoliosVuelos([375])).toBe("vuelo #375");
+    expect(textoFoliosVuelos([375, 376])).toBe("vuelos #375 y #376");
+    expect(textoFoliosVuelos([375, 375])).toBe("vuelo #375");
+    expect(textoFoliosVuelos([])).toBe("sin vuelo");
+    expect(MAX_FACTURAS_DEL_CLIENTE).toBe(3);
+  });
+
+  it("la línea de la fila (1 y 2 vuelos, MXN y USD, sin vuelo)", () => {
+    expect(textoFacturaDelCliente(A0440)).toBe(
+      "El cliente ya tiene registrada la factura A-0440 (8 oct · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.",
+    );
+    expect(textoFacturaDelCliente({ ...A0440, vuelo_folios: [375, 377], moneda: "USD", total: 1809.02 })).toBe(
+      "El cliente ya tiene registrada la factura A-0440 (8 oct · $1,809.02 USD · vuelos #375 y #377). Si también cubre este vuelo, lígala.",
+    );
+    expect(textoFacturaDelCliente({ ...A0440, vuelo_ids: [], vuelo_folios: [] })).toContain("· sin vuelo)");
+  });
+
+  it("botón, diálogo y toast", () => {
+    expect(botonLigarFactura(A0440)).toBe("Ligar a A-0440");
+    expect(tituloLigarFactura(A0440, 376)).toBe("¿Ligar la factura A-0440 al vuelo #376?");
+    expect(descripcionLigarFactura(A0440, 376)).toBe(
+      "La factura quedará ligada a los vuelos #375 y #376 y el vuelo saldrá de «Por facturar». Si este vuelo lleva su propia factura, usa «Registrar factura».",
+    );
+    expect(descripcionLigarFactura({ vuelo_folios: [] }, 376)).toBe(
+      "La factura quedará ligada al vuelo #376 y el vuelo saldrá de «Por facturar». Si este vuelo lleva su propia factura, usa «Registrar factura».",
+    );
+    expect(textoFacturaLigada(A0440, 376)).toBe("Factura A-0440 ligada al vuelo #376.");
   });
 });

@@ -29,20 +29,27 @@ import { fmtMonto, fmtMxn } from "@/lib/format";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { retirarSolicitudFacturaAction } from "@/app/admin/flights/actions";
 import {
+  MAX_FACTURAS_DEL_CLIENTE,
   avisarCambioPorFacturar,
+  botonLigarFactura,
+  descripcionLigarFactura,
   fechaCortaCancun,
   puedePedirFactura,
   puedeRegistrarFactura,
   semaforoDeCobro,
+  textoFacturaDelCliente,
+  textoFacturaLigada,
   textoFaltanDatosFiscales,
+  tituloLigarFactura,
 } from "@/lib/admin/facturas-emitidas";
+import { ligarVueloAFactura } from "@/lib/api/facturas-emitidas-browser";
 import {
   RegistrarFacturaDialog,
   type ClienteOpcion,
   type EmisoraOpcion,
 } from "./registrar-factura-dialog";
 import type { VueloSeleccionado } from "./selector-vuelos-factura";
-import type { PorFacturarItem } from "@/types/facturas-emitidas";
+import type { FacturaDelClienteSugerida, PorFacturarItem } from "@/types/facturas-emitidas";
 
 function vueloDeItem(it: PorFacturarItem): VueloSeleccionado {
   return {
@@ -79,6 +86,12 @@ function datosFiscales(c: NonNullable<PorFacturarItem["cliente"]>): string {
  *
  * `resaltar` (link de la notificación) pone esa fila primero, con un anillo
  * ámbar, y la lleva a la vista.
+ *
+ * 13-oct-2026 (caso #376): la MISMA tabla pinta la segunda tarjeta
+ * «Marcados «Facturado» sin factura registrada» (`syncId="pfm"`, pagina
+ * aparte) y, en cada fila, las facturas YA registradas del cliente que el API
+ * sugiere (`facturas_del_cliente`) con «Ligar a A-0440» (ADMIN/FACTURACION,
+ * con confirmación; `ligarVueloAFactura` relee la factura y manda la unión).
  */
 export function PorFacturarTable({
   items,
@@ -86,17 +99,22 @@ export function PorFacturarTable({
   resaltar,
   clientes,
   emisoras,
+  syncId,
 }: {
   items: PorFacturarItem[];
   rol: string | null;
   resaltar?: string;
   clientes?: ClienteOpcion[];
   emisoras?: EmisoraOpcion[];
+  /** Llave de paginación de la DataTable (dos tablas en la misma página). */
+  syncId?: string;
 }) {
   const router = useRouter();
   const [registrarPara, setRegistrarPara] = useState<VueloSeleccionado[] | null>(null);
   const [retirar, setRetirar] = useState<PorFacturarItem | null>(null);
+  const [ligar, setLigar] = useState<{ it: PorFacturarItem; f: FacturaDelClienteSugerida } | null>(null);
   const [pendiente, startTransition] = useTransition();
+  const [ligando, startLigar] = useTransition();
   const puedeRegistrar = puedeRegistrarFactura(rol);
   const puedeRetirar = puedePedirFactura(rol);
 
@@ -137,6 +155,25 @@ export function PorFacturarTable({
         router.refresh();
       } else {
         toast.error(res.error ?? "No se pudo retirar la solicitud.");
+      }
+    });
+  };
+
+  const confirmarLigar = () => {
+    if (!ligar) return;
+    const { it, f } = ligar;
+    startLigar(async () => {
+      const res = await ligarVueloAFactura(f.id, it.vuelo.id);
+      if (res.ok) {
+        toast.success(textoFacturaLigada(f, it.vuelo.folio));
+        // Avisos NO bloqueantes del API (otra factura en el vuelo, total
+        // distinto, receptor…): se dicen, no se esconden.
+        for (const a of res.data.avisos) toast.warning(a.mensaje, { duration: 10_000 });
+        setLigar(null);
+        avisarCambioPorFacturar();
+        router.refresh();
+      } else {
+        toast.error(res.error);
       }
     });
   };
@@ -248,6 +285,25 @@ export function PorFacturarTable({
                 Marcado «Facturado» sin factura registrada
               </span>
             )}
+            {/* Parte B (caso #376): el cliente ya tiene una factura
+                registrada que quizá cubre ESTE vuelo. Nunca se liga sola. */}
+            {(it.facturas_del_cliente ?? []).slice(0, MAX_FACTURAS_DEL_CLIENTE).map((f) => (
+              <span key={f.id} className="inline-flex flex-col gap-0.5" data-factura-del-cliente>
+                <span className="text-[11px] text-muted-foreground">{textoFacturaDelCliente(f)}</span>
+                {puedeRegistrar && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-fit cursor-pointer px-2 text-[11px]"
+                    onClick={() => setLigar({ it, f })}
+                    disabled={ligando}
+                  >
+                    {botonLigarFactura(f)}
+                  </Button>
+                )}
+              </span>
+            ))}
           </span>
         );
       },
@@ -295,7 +351,7 @@ export function PorFacturarTable({
         columns={columns}
         rows={filas}
         rowKey={(it) => it.vuelo.id}
-        syncId="pf"
+        syncId={syncId ?? "pf"}
         defaultPageSize={50}
         rowClassName={(it) =>
           it.vuelo.id === resaltar ? "ring-2 ring-inset ring-amber-400 bg-amber-500/5" : undefined
@@ -312,6 +368,25 @@ export function PorFacturarTable({
           emisoras={emisoras}
         />
       )}
+
+      <AlertDialog open={ligar !== null} onOpenChange={(o) => !o && !ligando && setLigar(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {ligar ? tituloLigarFactura(ligar.f, ligar.it.vuelo.folio) : ""}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {ligar ? descripcionLigarFactura(ligar.f, ligar.it.vuelo.folio) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ligando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmarLigar} disabled={ligando}>
+              {ligando ? "Ligando…" : "Ligar factura"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={retirar !== null} onOpenChange={(o) => !o && !pendiente && setRetirar(null)}>
         <AlertDialogContent>

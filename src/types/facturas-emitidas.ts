@@ -258,6 +258,13 @@ export interface FacturaServicioBloque {
   facturas: FacturaEmitidaMini[];
   /** CANCELADAS ligadas (no borradas). */
   canceladas: number;
+  /**
+   * ADITIVO (13-oct-2026, caso #376): pedida, sin factura VIGENTE ligada y
+   * marcada «Facturado» a mano en el vuelo — ya NO cuenta como
+   * `por_facturar`. La burbuja la pinta en gris. Ausente = API previo (chip
+   * ámbar de siempre).
+   */
+  marcado_sin_registro?: boolean;
 }
 
 /** Campo ADITIVO por fila de GET /flights y GET /quotes. */
@@ -308,6 +315,27 @@ export interface PorFacturarItem {
   cobro: CobroResumen;
   solicitud: SolicitudFactura;
   facturas_canceladas: number;
+  /**
+   * ADITIVO (13-oct-2026, caso #376, Parte B): facturas VIGENTES del MISMO
+   * cliente que NO están ligadas a este vuelo (emitidas entre la solicitud −
+   * 30 días y hoy), máx. 3, recientes primero. El panel ofrece «Ligar a
+   * A-0440» (con confirmación). Ausente = API previo (no se ofrece nada).
+   */
+  facturas_del_cliente?: FacturaDelClienteSugerida[];
+}
+
+/** Factura ya registrada del cliente que quizá también cubre ESTE vuelo. */
+export interface FacturaDelClienteSugerida {
+  id: string;
+  /** «A-0440». */
+  etiqueta: string;
+  /** YYYY-MM-DD (día de pared). */
+  fecha_emision: string;
+  total: number;
+  moneda: MonedaFactura;
+  /** Vuelos a los que YA está ligada (puede ir vacía). */
+  vuelo_ids: string[];
+  vuelo_folios: number[];
 }
 
 export interface VueloCandidatoFactura {
@@ -360,12 +388,21 @@ export interface ResultadoComprobanteCobro {
 
 /** Respuesta de GET /v1/facturas-emitidas/por-facturar. */
 export interface ListaPorFacturar {
+  /** Solo POR FACTURAR (desde el 13-oct-2026 sin los marcados «Facturado» a mano). */
   data: PorFacturarItem[];
   count: number;
+  /**
+   * ADITIVO (13-oct-2026, caso #376): pedidas, sin factura VIGENTE y
+   * marcadas «Facturado» a mano en el vuelo; misma forma y orden que `data`.
+   * Ausente = API previo (no se pinta la segunda tarjeta).
+   */
+  marcados_sin_registro?: PorFacturarItem[];
 }
 
 /** Respuesta de GET /v1/facturas-emitidas/por-facturar/conteo. */
 export interface ConteoPorFacturar {
   por_facturar: number;
   paga_contra_factura: number;
+  /** ADITIVO (13-oct-2026): el badge del menú sigue leyendo SOLO `por_facturar`. */
+  marcados_sin_registro?: number;
 }

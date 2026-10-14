@@ -32,6 +32,7 @@ import type {
   CamposLeidosFactura,
   CobroResumen,
   EstatusFacturaEmitida,
+  FacturaDelClienteSugerida,
   FacturaEmitida,
   FacturaEmitidaDatos,
   HuecoSerie,
@@ -313,6 +314,117 @@ export function unirNombres(nombres: string[]): string {
   const n = nombres.map((x) => x.trim()).filter(Boolean);
   if (n.length <= 1) return n[0] ?? "";
   return `${n.slice(0, -1).join(", ")} y ${n[n.length - 1]}`;
+}
+
+// =============================================================================
+// «Por facturar» vs «marcado Facturado a mano» (13-oct-2026, caso #376)
+// =============================================================================
+//
+// Desde el API del lote del 13-oct, un vuelo con «Necesito factura», sin
+// factura VIGENTE registrada y marcado «Facturado» A MANO en el vuelo SALE de
+// la bandeja (y del badge) y viaja aparte en `marcados_sin_registro`. Aquí
+// solo los textos; quién va en cada lista lo DERIVA el API.
+
+/** Chip GRIS de la burbuja: «Factura pedida por Itzi · 5 oct — marcada «Facturado» en el vuelo, sin factura registrada». */
+export function textoSolicitudMarcada(s: SolicitudFactura): string {
+  return `Factura pedida${quienYCuando(s)} — marcada «Facturado» en el vuelo, sin factura registrada`;
+}
+
+/** Tooltip del chip gris. */
+export const AYUDA_SOLICITUD_MARCADA =
+  "En el vuelo lo marcaron «Facturado» a mano; regístrala aquí para que quede en el registro.";
+
+/** Segunda tarjeta de la página (sin el conteo; la página agrega « (n)»). */
+export const TITULO_MARCADOS_SIN_REGISTRO = "Marcados «Facturado» sin factura registrada";
+
+export const DESCRIPCION_MARCADOS_SIN_REGISTRO =
+  "Salieron de «Por facturar» porque en el vuelo los marcaron «Facturado» a mano. Para que el registro quede completo, registra su factura aquí (o corrige el estatus en el vuelo).";
+
+/** Descripción de «Por facturar» con el API del 13-oct (que ya separa los marcados). */
+export const DESCRIPCION_POR_FACTURAR =
+  "Vuelos en los que alguien pidió factura (con «Necesito factura») y todavía no tienen una factura registrada ni están marcados «Facturado» en el vuelo. Primero los que pagan contra factura.";
+
+/** La de siempre: un API previo todavía mete en la bandeja a los marcados «Facturado». */
+export const DESCRIPCION_POR_FACTURAR_API_PREVIO =
+  "Vuelos en los que alguien pidió factura (con «Necesito factura») y todavía no tienen una factura registrada. Primero los que pagan contra factura.";
+
+/**
+ * Descripción de «Por facturar» según lo que mandó el API: con
+ * `marcados_sin_registro` (aunque vaya vacío) el API ya los separa; sin la
+ * llave (API previo) la frase nueva mentiría.
+ */
+export function descripcionPorFacturar(marcados: unknown): string {
+  return Array.isArray(marcados) ? DESCRIPCION_POR_FACTURAR : DESCRIPCION_POR_FACTURAR_API_PREVIO;
+}
+
+// ---- Parte B: «el cliente ya tiene registrada la factura A-0440» ----
+//
+// Caso real: A-0440 cubría #375 y #376 (mismo cliente, $904.51 USD cada uno)
+// y se ligó solo a #375; #376 se quedó «Por facturar» y «Mary dice que ya lo
+// hizo». La fila de «Por facturar» ofrece ligar la factura del cliente que el
+// API sugiere (`facturas_del_cliente`, máx. 3), SIEMPRE con confirmación.
+
+/** Tope de sugerencias por vuelo (espejo del API). */
+export const MAX_FACTURAS_DEL_CLIENTE = 3;
+
+const fechaCortaUtc = new Intl.DateTimeFormat("es-MX", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/** «8 oct» de un DÍA de pared `YYYY-MM-DD` (sin corrimiento de zona). */
+export function fechaCortaDeDia(dia: string | null | undefined): string {
+  const d = (dia ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
+  const t = new Date(`${d}T12:00:00Z`);
+  return Number.isNaN(t.getTime()) ? "" : fechaCortaUtc.format(t);
+}
+
+/** «vuelo #375» · «vuelos #375 y #376» · «sin vuelo». */
+export function textoFoliosVuelos(folios: readonly number[] | null | undefined): string {
+  const f = [...new Set((folios ?? []).filter((n) => Number.isFinite(n) && n > 0))];
+  if (f.length === 0) return "sin vuelo";
+  return `${f.length === 1 ? "vuelo" : "vuelos"} ${unirNombres(f.map((n) => `#${n}`))}`;
+}
+
+/** «El cliente ya tiene registrada la factura A-0440 (8 oct · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.» */
+export function textoFacturaDelCliente(f: FacturaDelClienteSugerida): string {
+  const partes = [fechaCortaDeDia(f.fecha_emision), fmtMonto(Number(f.total) || 0, f.moneda), textoFoliosVuelos(f.vuelo_folios)]
+    .filter(Boolean)
+    .join(" · ");
+  return `El cliente ya tiene registrada la factura ${f.etiqueta} (${partes}). Si también cubre este vuelo, lígala.`;
+}
+
+/** Botón de la fila: «Ligar a A-0440». */
+export function botonLigarFactura(f: Pick<FacturaDelClienteSugerida, "etiqueta">): string {
+  return `Ligar a ${f.etiqueta}`;
+}
+
+/** Título del diálogo: «¿Ligar la factura A-0440 al vuelo #376?». */
+export function tituloLigarFactura(f: Pick<FacturaDelClienteSugerida, "etiqueta">, folio: number): string {
+  return `¿Ligar la factura ${f.etiqueta} al vuelo #${folio}?`;
+}
+
+/**
+ * Cuerpo del diálogo: «La factura quedará ligada a los vuelos #375 y #376 y
+ * el vuelo saldrá de «Por facturar». Si este vuelo lleva su propia factura,
+ * usa «Registrar factura».» (sin otros vuelos: «al vuelo #376»).
+ */
+export function descripcionLigarFactura(
+  f: Pick<FacturaDelClienteSugerida, "vuelo_folios">,
+  folio: number,
+): string {
+  const folios = [...new Set([...(f.vuelo_folios ?? []), folio].filter((n) => Number.isFinite(n) && n > 0))].sort(
+    (a, b) => a - b,
+  );
+  const a = folios.length <= 1 ? `al vuelo #${folio}` : `a los ${textoFoliosVuelos(folios)}`;
+  return `La factura quedará ligada ${a} y el vuelo saldrá de «Por facturar». Si este vuelo lleva su propia factura, usa «Registrar factura».`;
+}
+
+/** Toast al ligar: «Factura A-0440 ligada al vuelo #376.». */
+export function textoFacturaLigada(f: Pick<FacturaDelClienteSugerida, "etiqueta">, folio: number): string {
+  return `Factura ${f.etiqueta} ligada al vuelo #${folio}.`;
 }
 
 /** Toast tras «Necesito factura» (a quién se avisó; nunca en silencio). */

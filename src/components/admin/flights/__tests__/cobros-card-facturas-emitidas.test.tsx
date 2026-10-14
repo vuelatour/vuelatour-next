@@ -267,6 +267,29 @@ describe("burbuja de FACTURA", () => {
     expect(socio).not.toMatch(/<button[^>]*>Factura <span/);
   });
 
+  it("pedida pero marcada «Facturado» a mano (caso #376): chip GRIS, sin «— pendiente», con «Retirar» y «Registrar factura»", () => {
+    const marcada: FacturaServicioBloque = { ...PEDIDA, por_facturar: false, marcado_sin_registro: true };
+    for (const html of [vuelo({ facturaServicio: marcada, rol: "ADMIN" }), cotizacion({ facturaServicio: marcada, rol: "ADMIN" })]) {
+      expect(html).toContain(
+        "Factura pedida por Itzi · 24 sep — marcada «Facturado» en el vuelo, sin factura registrada",
+      );
+      expect(html).toContain("data-solicitud-marcada");
+      expect(html).not.toContain("— pendiente");
+      expect(html).toContain(">Retirar<");
+      expect(html).toContain("Registrar factura");
+      // El tooltip dice qué hacer y conserva la nota.
+      expect(html).toContain(
+        "En el vuelo lo marcaron «Facturado» a mano; regístrala aquí para que quede en el registro. Nota: Mandó sus datos por correo",
+      );
+    }
+    // Sin el campo (API previo) o en false: el chip ámbar de siempre.
+    for (const bloque of [PEDIDA, { ...PEDIDA, marcado_sin_registro: false }]) {
+      const html = vuelo({ facturaServicio: bloque, rol: "ADMIN" });
+      expect(html).toContain("Factura pedida por Itzi · 24 sep — pendiente");
+      expect(html).not.toContain("data-solicitud-marcada");
+    }
+  });
+
   it("vuelo CANCELADO: no se ofrece «Necesito factura» (el API respondería 409); sí registrar", () => {
     const html = vuelo({ facturaServicio: SIN_NADA, rol: "ADMIN", estado: "CANCELADO" });
     expect(html).not.toContain("Necesito factura");

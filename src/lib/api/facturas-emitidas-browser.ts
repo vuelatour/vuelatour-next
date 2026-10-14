@@ -57,6 +57,7 @@ export function esAbort(e: unknown): boolean {
 }
 
 const NO_SE_GUARDO_FACTURA = "La factura NO se guardó.";
+const NO_SE_LIGO_FACTURA = "El vuelo NO se ligó.";
 const NO_SE_GUARDO_COMPROBANTE = "El comprobante NO se guardó.";
 
 function fallo<T>(err: unknown, sufijo?: string): ResultadoApi<T> {
@@ -169,6 +170,51 @@ export async function guardarFacturaEmitida(
   } catch (err) {
     return fallo(err, NO_SE_GUARDO_FACTURA);
   }
+}
+
+/**
+ * PARTE B del caso #376 (13-oct-2026): liga ESTE vuelo a una factura YA
+ * registrada del cliente («Ligar a A-0440» en «Por facturar»). El PATCH con
+ * `vuelo_ids` REEMPLAZA el conjunto, así que NUNCA se manda una lista vieja:
+ *  1. se RELEE la factura (`GET /v1/facturas-emitidas/:id`) y se toman sus
+ *     vuelos ACTUALES;
+ *  2. si ya incluye el vuelo ⇒ ok sin escribir (idempotente: doble clic o
+ *     alguien más la ligó);
+ *  3. si ya no está VIGENTE ⇒ error (una cancelada no saca al vuelo de «Por
+ *     facturar»);
+ *  4. si no, `guardarFacturaEmitida({ id, datos: { vuelo_ids: [...actuales,
+ *     vuelo] } })` — los efectos de ligar (estatus del vuelo, aviso a quien
+ *     pidió, avisos no bloqueantes) son los de siempre del API.
+ * Nunca lanza.
+ */
+export async function ligarVueloAFactura(
+  facturaId: string,
+  vueloId: string,
+  opts: OpcionesLlamada = {},
+): Promise<ResultadoApi<ResultadoGuardarFactura>> {
+  let actual: FacturaEmitida;
+  try {
+    actual = await apiBrowser<FacturaEmitida>(`/v1/facturas-emitidas/${facturaId}`);
+  } catch (err) {
+    return fallo(err, NO_SE_LIGO_FACTURA);
+  }
+  if (!actual || typeof actual !== "object" || !Array.isArray(actual.vuelos)) {
+    return {
+      ok: false,
+      error: `No se pudo leer la factura. ${NO_SE_LIGO_FACTURA}`,
+      code: "SIN_CONFIRMACION",
+    };
+  }
+  const actuales = actual.vuelos.map((v) => v.id).filter((id): id is string => typeof id === "string" && !!id);
+  if (actuales.includes(vueloId)) return { ok: true, data: { factura: actual, avisos: [] } };
+  if (actual.estatus !== "VIGENTE") {
+    return {
+      ok: false,
+      error: `La factura ${actual.etiqueta} ya no está vigente: recarga la página. ${NO_SE_LIGO_FACTURA}`,
+      code: "FACTURA_NO_VIGENTE",
+    };
+  }
+  return guardarFacturaEmitida({ id: facturaId, datos: { vuelo_ids: [...actuales, vueloId] } }, opts);
 }
 
 /** Reemplaza (o agrega) el PDF y/o XML de una factura ya registrada. */

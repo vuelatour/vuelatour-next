@@ -19,6 +19,7 @@ import {
 import { retirarSolicitudFacturaAction } from "@/app/admin/flights/actions";
 import { urlArchivoFacturaAction } from "@/app/admin/facturas-emitidas/actions";
 import {
+  AYUDA_SOLICITUD_MARCADA,
   abrirArchivoFirmado,
   avisarCambioPorFacturar,
   puedePedirFactura,
@@ -27,6 +28,7 @@ import {
   textoCanceladas,
   textoPedidaPor,
   textoSolicitud,
+  textoSolicitudMarcada,
 } from "@/lib/admin/facturas-emitidas";
 import {
   AYUDA_FACTURA_OBLIGATORIA,
@@ -48,7 +50,10 @@ import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas
  *  - Facturas VIGENTES ⇒ un chip verde «Factura A-123» por factura; clic =
  *    el PDF (URL firmada, ventana abierta en el mismo clic).
  *  - Pedida y sin factura ⇒ chip ámbar «Factura pedida por Itzi · 24 sep —
- *    pendiente» (+ «Paga contra factura») y «Retirar» (confirma).
+ *    pendiente» (+ «Paga contra factura») y «Retirar» (confirma). Si en el
+ *    vuelo la marcaron «Facturado» a mano (`marcado_sin_registro`, 13-oct-2026,
+ *    caso #376) el chip va en GRIS: «… — marcada «Facturado» en el vuelo, sin
+ *    factura registrada» (ya no está «Por facturar»; falta registrarla).
  *  - Nada ⇒ «Sin factura» + «Necesito factura».
  *  - Facturación (ADMIN/FACTURACION) ve «Registrar factura» con el vuelo ya
  *    elegido.
@@ -185,12 +190,22 @@ export function FacturaServicioBurbuja({
         </>
       ) : solicitud ? (
         <>
-          <span
-            className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-            title={solicitud.nota ? `Nota: ${solicitud.nota}` : undefined}
-          >
-            {textoSolicitud(solicitud)}
-          </span>
+          {bloque.marcado_sin_registro === true ? (
+            <span
+              data-solicitud-marcada
+              className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+              title={solicitud.nota ? `${AYUDA_SOLICITUD_MARCADA} Nota: ${solicitud.nota}` : AYUDA_SOLICITUD_MARCADA}
+            >
+              {textoSolicitudMarcada(solicitud)}
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+              title={solicitud.nota ? `Nota: ${solicitud.nota}` : undefined}
+            >
+              {textoSolicitud(solicitud)}
+            </span>
+          )}
           {solicitud.paga_contra_factura && (
             <span className="inline-flex items-center rounded-full border border-amber-600/50 bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
               Paga contra factura

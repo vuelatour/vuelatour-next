@@ -45,6 +45,7 @@ const {
   buscarVuelosCandidatos,
   guardarFacturaEmitida,
   leerArchivoFactura,
+  ligarVueloAFactura,
   reemplazarArchivoFactura,
 } = await import("@/lib/api/facturas-emitidas-browser");
 
@@ -254,5 +255,66 @@ describe("el camino queda congelado en el código", () => {
     expect(dialogo).toContain("guardarFacturaEmitida(");
     const comprobante = leer("src/components/admin/flights/comprobante-cobro.tsx");
     expect(comprobante).toContain("adjuntarComprobanteCobro(");
+  });
+});
+
+describe("ligarVueloAFactura · Parte B del caso #376 (13-oct-2026)", () => {
+  const V375 = "423e468d-0000-4000-8000-000000000375";
+  const V376 = "eb474572-8bda-469f-adca-db556f811d86";
+  const A0440 = { id: "f-440", etiqueta: "A-0440", estatus: "VIGENTE", vuelos: [{ id: V375, folio: 375 }] };
+  const ligar = (f: string, v: string) => ligarVueloAFactura(f, v);
+
+  it("relee la factura y manda la UNIÓN (el PATCH reemplaza el conjunto: jamás una lista vieja)", async () => {
+    const ligada = { ...A0440, vuelos: [{ id: V375, folio: 375 }, { id: V376, folio: 376 }] };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(json(200, A0440))
+      .mockResolvedValueOnce(json(200, { factura: ligada, avisos: [{ code: "TOTAL_DISTINTO_VUELO", mensaje: "Revisa el total" }] }));
+
+    const res = await ligar("f-440", V376);
+
+    expect(res).toEqual({
+      ok: true,
+      data: { factura: ligada, avisos: [{ code: "TOTAL_DISTINTO_VUELO", mensaje: "Revisa el total" }] },
+    });
+    const [urlGet, initGet] = fetchSpy.mock.calls[0] as Llamada;
+    expect(urlGet).toBe("https://api.example.com/v1/facturas-emitidas/f-440");
+    expect((initGet.method ?? "GET").toUpperCase()).toBe("GET");
+    const [urlPatch, initPatch] = fetchSpy.mock.calls[1] as Llamada;
+    expect(urlPatch).toBe("https://api.example.com/v1/facturas-emitidas/f-440");
+    expect(initPatch.method).toBe("PATCH");
+    const fd = initPatch.body as FormData;
+    expect([...fd.keys()]).toEqual(["datos"]);
+    expect(JSON.parse(fd.get("datos") as string)).toEqual({ vuelo_ids: [V375, V376] });
+  });
+
+  it("ya ligada (doble clic u otra persona): ok SIN escribir", async () => {
+    const yaLigada = { ...A0440, vuelos: [{ id: V375, folio: 375 }, { id: V376, folio: 376 }] };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(json(200, yaLigada));
+    const res = await ligar("f-440", V376);
+    expect(res).toEqual({ ok: true, data: { factura: yaLigada, avisos: [] } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("ya no está VIGENTE: no se liga y se dice", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(json(200, { ...A0440, estatus: "CANCELADA" }));
+    const res = await ligar("f-440", V376);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("FACTURA_NO_VIGENTE");
+      expect(res.error).toBe("La factura A-0440 ya no está vigente: recarga la página. El vuelo NO se ligó.");
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("si la relectura falla, no se escribe nada (y se dice en español)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const res = await ligar("f-440", V376);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("SIN_CONEXION");
+      expect(res.error).toContain("El vuelo NO se ligó.");
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
