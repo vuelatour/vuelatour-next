@@ -4418,6 +4418,58 @@ con el API **0.0.75** (migración `20261013000001`, valor del enum; la
   (el 0.0.74 rechaza la categoría con el 400 de `IsEnum` y el panel solo
   muestra el toast) → APK.
 
+## Medio de pago «Pago domiciliado» (13-oct-2026, API 0.0.75)
+
+Pedido del cliente (13-oct-2026): «a la hora de vincular un gasto… no viene
+en método de pago algo que diga Pago domiciliado». Contrato con el API
+**0.0.75** (migración `20261013000009`, 8.º valor de `public.medio_pago`; se
+renumeró desde la 000004, que ya usa la comisión del vendedor del avión).
+
+- **Qué es**: `DOMICILIADO` = «Pago domiciliado», cargo AUTOMÁTICO a la
+  cuenta (suscripciones, seguros, servicios). Es BANCARIO: se concilia con
+  el cargo del estado de cuenta como una transferencia (auto-cruce, «Vincular
+  gasto» SIN justificación ni interruptor, «Gastos sin banco», pre-cierre,
+  columna/filtro «Banco»). Sin tarjeta (el CHECK de la BD y el acoplamiento
+  medio↔tarjeta de Verificar ya mandan `tarjeta_terminacion` null). Solo lo
+  registra la oficina: el API responde 400 `MEDIO_SOLO_OFICINA` («El pago
+  domiciliado lo registra la oficina: elige otro medio de pago.») a
+  piloto/mecánico/visitante en el ALTA. La IA de tickets nunca lo sugiere.
+- **Fuente única** `lib/admin/medios-pago.ts`: etiqueta en
+  `MEDIO_PAGO_LABELS`, `MEDIOS_CAPTURA_VALUES` con el orden del selector
+  (TRANSFERENCIA, **DOMICILIADO**, PAYWISE, EFECTIVO, TARJETA_CORP,
+  PERSONAL_PABLO, PERSONAL_ALE; `MEDIOS_VERIFICACION` = + BODEGA), que
+  gobierna el selector del alta, el `z.enum` del alta y la validación de
+  `?medio=` de Gastos; `MedioPagoEnum` (Verificar) lo trae antes de BODEGA.
+  `AYUDA_MEDIO_DOMICILIADO` / `ayudaMedioPago(medio)` = el hint bajo el
+  selector en los dos diálogos («Cargo automático a la cuenta (suscripción,
+  seguro, servicio). Se concilia con el cargo del banco como una
+  transferencia; no lleva tarjeta.»). Filtro «Medio» de Gastos: tras
+  «Transferencia».
+- **Espejo bancario** `MEDIOS_BANCARIOS_CONCILIACION`
+  (`lib/admin/conciliacion-no-bancario.ts`) = `["TARJETA_CORP",
+  "TRANSFERENCIA", "PAYWISE", "DOMICILIADO"]`, en el MISMO orden que
+  `MEDIOS_BANCARIOS` del API (el test espejo lo lee del repo hermano por
+  regex). De ahí salen solos `esMedioNoBancario` (false), la columna «Banco»
+  (`conciliacion-estado.ts`: SIN_CONCILIAR / PARCIAL / CONCILIADO) y la liga
+  automática de «¿No está el gasto? Créalo».
+- **Prellenado desde el cargo** (`gasto-desde-cargo.ts`): si
+  `pareceCargoRecurrente(descripcion)` (`RE_CARGO_RECURRENTE` =
+  `/\bCARG\.?\s*RECUR|\bRECURRENTE\b|DOMICILIA|CARGO\s+AUTOM|SUSCRIP/i`) el
+  alta abre con «Pago domiciliado» y SIN tarjeta, aunque la referencia traiga
+  8+ dígitos (casos reales: «STR*AMAZON RET REC Carg Recur.», «DLO*STARLINK
+  Carg Recur.», «03 POR COBRANZA DOMICILIADA» con 20 dígitos que NO son una
+  tarjeta); si no, la regla de siempre (tarjeta con 8+ dígitos, si no
+  transferencia). «RECURSOS HUMANOS» no dispara la regla. La oficina puede
+  cambiar el medio antes de guardar.
+- **Pruebas**: `lib/admin/__tests__/medios-pago.test.ts` (orden, etiquetas
+  de los 8 valores, zod, ayuda), `conciliacion-no-bancario.test.ts` (lista y
+  espejo del API), `expenses/__tests__/banco-badge.test.tsx` y
+  `gasto-desde-cargo.test.ts` (casos reales).
+- **Orden de deploy**: migración `20261013000009` → API 0.0.75 → **panel**
+  (con un API previo el selector lo ofrece y el API responde el 400 de
+  `IsEnum`, legible y sin escribir nada). El espejo del API (test) solo pasa
+  cuando el API trae `DOMICILIADO` al final de `MEDIOS_BANCARIOS`.
+
 ## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
 
 Pedido del cliente con la captura del alta de producto: «me ayudas a poder

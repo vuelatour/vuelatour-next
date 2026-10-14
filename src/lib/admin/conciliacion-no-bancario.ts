@@ -41,9 +41,18 @@ import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 /**
  * Espejo de `MEDIOS_BANCARIOS` del API (`gastos-candidatos.util.ts`): los
  * únicos medios que tocan el banco. Todo lo demás (EFECTIVO, PERSONAL_*,
- * BODEGA) es «no bancario». Si el API cambia la lista, cambia aquí.
+ * BODEGA) es «no bancario». Si el API cambia la lista, cambia aquí — en el
+ * MISMO orden: el test espejo la compara con la del repo hermano.
+ * DOMICILIADO («Pago domiciliado», 13-oct-2026, API 0.0.75) entró AL FINAL:
+ * cargo automático a la cuenta, se vincula sin justificación y su columna
+ * «Banco» dice «Sin conciliar» mientras no tenga cargo.
  */
-export const MEDIOS_BANCARIOS_CONCILIACION: readonly string[] = ["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE"];
+export const MEDIOS_BANCARIOS_CONCILIACION: readonly string[] = [
+  "TARJETA_CORP",
+  "TRANSFERENCIA",
+  "PAYWISE",
+  "DOMICILIADO",
+];
 
 /** Salida de inventario: nunca pasa por el banco ni se vincula (409 `GASTO_BODEGA`). */
 export const MEDIO_BODEGA = "BODEGA";

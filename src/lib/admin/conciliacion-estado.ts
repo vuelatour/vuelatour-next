@@ -15,7 +15,8 @@ import type { Gasto } from "@/types/expenses";
  *  - PARCIAL: hay cargos ligados que no cubren (aditivos `monto_vinculado` /
  *    `faltante` del API, vía `estadoParcialDeGasto`).
  *  - SIN_CONCILIAR: medio bancario (tarjeta corporativa, transferencia,
- *    Paywise) sin cargo ligado — lo que la oficina persigue.
+ *    Paywise, pago domiciliado — `MEDIOS_BANCARIOS_CONCILIACION`) sin cargo
+ *    ligado — lo que la oficina persigue.
  *  - NO_APLICA: efectivo / personal / bodega sin cargo: no se concilia.
  */
 export type EstadoBanco = "CONCILIADO" | "PARCIAL" | "SIN_CONCILIAR" | "NO_APLICA";

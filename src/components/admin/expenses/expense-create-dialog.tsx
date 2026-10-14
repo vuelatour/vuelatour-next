@@ -125,7 +125,7 @@ import {
   opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
-import { MEDIOS_CAPTURA, medioPagoLabel } from "@/lib/admin/medios-pago";
+import { MEDIOS_CAPTURA, ayudaMedioPago, medioPagoLabel } from "@/lib/admin/medios-pago";
 import {
   AYUDA_COMPROBANTE,
   COMPROBANTE_CON,
@@ -1737,6 +1737,8 @@ export function ExpenseCreateDialog({
                 label="Medio de pago"
                 required
                 error={errors.medio_pago?.message}
+                // «Pago domiciliado» (13-oct-2026): qué es y cómo se concilia.
+                hint={ayudaMedioPago(watch("medio_pago")) ?? undefined}
               >
                 <SearchableSelect
                   options={MEDIOS}

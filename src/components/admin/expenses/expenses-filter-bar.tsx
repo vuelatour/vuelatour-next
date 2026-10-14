@@ -10,11 +10,14 @@ import { FILTRO_BANCO } from "@/lib/admin/conciliacion-estado";
 
 // Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
 // el ORDEN del filtro. BODEGA queda fuera a propósito (cargo contable de
-// inventario, no un pago que la oficina persiga).
+// inventario, no un pago que la oficina persiga). «Pago domiciliado»
+// (13-oct-2026) va tras «Transferencia»; `?medio=DOMICILIADO` lo valida la
+// página contra MEDIOS_CAPTURA_VALUES.
 const MEDIOS = [
   "EFECTIVO",
   "TARJETA_CORP",
   "TRANSFERENCIA",
+  "DOMICILIADO",
   "PAYWISE",
   "PERSONAL_PABLO",
   "PERSONAL_ALE",

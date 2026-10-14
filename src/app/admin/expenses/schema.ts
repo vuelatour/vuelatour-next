@@ -61,6 +61,10 @@ export const MedioPagoEnum = z.enum([
   "TRANSFERENCIA",
   // Plataforma de pago de servicios aeroportuarios (recibos Paywise).
   "PAYWISE",
+  // Pago domiciliado (13-oct-2026, API 0.0.75 + migración 20261013000009):
+  // cargo automático a la cuenta; bancario. El API 0.0.74 lo rechaza
+  // (IsEnum): el panel sale DESPUÉS del API.
+  "DOMICILIADO",
   // Cargo automático por salida de bodega (no es egreso bancario).
   "BODEGA",
 ]);

@@ -10,6 +10,7 @@ import {
   duplicadosDeCandidatos,
   duplicadosDeRespuesta,
   fichaSugeridaIa,
+  pareceCargoRecurrente,
   prefillGastoDesdeCargo,
   puedeCrear,
   terminacionDeReferencia,
@@ -54,6 +55,52 @@ describe("prellenado del alta desde el cargo", () => {
     });
     expect(terminacionDeReferencia("00000000000000000001 AUT. 456529")).toBe("6529");
     expect(terminacionDeReferencia(null)).toBeNull();
+  });
+
+  it("cargo automático/recurrente (casos reales de prod) ⇒ «Pago domiciliado» SIN tarjeta, aunque la referencia traiga 8+ dígitos", () => {
+    const amazon = prefillGastoDesdeCargo(
+      { monto: "-299.00", fecha: "2026-10-03", descripcion: "STR*AMAZON RET REC Carg Recur.", referencia: "REF. 9155656231 AUT. 404085" },
+      "MXN",
+    );
+    expect(amazon).toMatchObject({ medio_pago: "DOMICILIADO", tarjeta_terminacion: "" });
+    // Las notas conservan «descripción · ref.» como siempre.
+    expect(amazon.notas).toBe("STR*AMAZON RET REC Carg Recur. · ref. REF. 9155656231 AUT. 404085");
+    // 20 dígitos en la referencia: NO es una tarjeta ****9048.
+    expect(
+      prefillGastoDesdeCargo(
+        { monto: "-1520.00", fecha: "2026-10-01", descripcion: "03 POR COBRANZA DOMICILIADA", referencia: "00000000000241579048" },
+        "MXN",
+      ),
+    ).toMatchObject({ medio_pago: "DOMICILIADO", tarjeta_terminacion: "" });
+    expect(
+      prefillGastoDesdeCargo(
+        { monto: "-1100.00", fecha: "2026-10-02", descripcion: "DLO*STARLINK Carg Recur.", referencia: null },
+        "MXN",
+      ),
+    ).toMatchObject({ medio_pago: "DOMICILIADO", tarjeta_terminacion: "" });
+    // El caso de siempre no cambia: ASUR con referencia larga ⇒ tarjeta 0577.
+    expect(prefillGastoDesdeCargo(CARGO, "MXN")).toMatchObject({
+      medio_pago: "TARJETA_CORP",
+      tarjeta_terminacion: "0577",
+    });
+  });
+
+  it("pareceCargoRecurrente: leyendas de cargo automático sí; «RECURSOS HUMANOS», vacío o null no", () => {
+    for (const d of [
+      "STR*AMAZON RET REC Carg Recur.",
+      "DLO*STARLINK Carg Recur.",
+      "03 POR COBRANZA DOMICILIADA",
+      "CARGO AUTOMATICO SEGURO",
+      "CARGO AUTOMÁTICO SEGURO GNP",
+      "SUSCRIPCION X",
+      "PAGO RECURRENTE TELMEX",
+      "Carg.Recur NETFLIX",
+    ]) {
+      expect(pareceCargoRecurrente(d), d).toBe(true);
+    }
+    for (const d of ["RECURSOS HUMANOS", "ASUR CANCUN", "SPEI ENVIADO SAESA", "CARGO INDEBIDO 21 SEP", "", "   ", null, undefined]) {
+      expect(pareceCargoRecurrente(d), String(d)).toBe(false);
+    }
   });
 
   it("el resumen del cargo", () => {

@@ -85,7 +85,7 @@ import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
 import { Field } from "@/components/admin/form-field";
-import { MEDIOS_VERIFICACION } from "@/lib/admin/medios-pago";
+import { MEDIOS_VERIFICACION, ayudaMedioPago } from "@/lib/admin/medios-pago";
 import {
   AYUDA_COMPROBANTE,
   opcionesComprobante,
@@ -1463,7 +1463,11 @@ export function ExpenseVerifyDialog({
                 placeholder="Estatus"
               />
             </Field>
-            <Field label="Medio de pago">
+            <Field
+              label="Medio de pago"
+              // «Pago domiciliado» (13-oct-2026): qué es y cómo se concilia.
+              hint={ayudaMedioPago(watch("medio_pago")) ?? undefined}
+            >
               <SearchableSelect
                 options={MEDIOS}
                 value={watch("medio_pago")}

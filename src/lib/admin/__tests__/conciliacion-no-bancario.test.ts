@@ -115,9 +115,13 @@ const leerApi = (rel: string): string | null => {
 };
 
 describe("medios: qué toca el banco y qué no (espejo de MEDIOS_BANCARIOS del API)", () => {
-  it("TARJETA_CORP, TRANSFERENCIA y PAYWISE son bancarios; EFECTIVO, PERSONAL_* y BODEGA no", () => {
-    expect(MEDIOS_BANCARIOS_CONCILIACION).toEqual(["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE"]);
-    for (const m of ["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE"]) expect(esMedioNoBancario(m)).toBe(false);
+  it("TARJETA_CORP, TRANSFERENCIA, PAYWISE y DOMICILIADO son bancarios; EFECTIVO, PERSONAL_* y BODEGA no", () => {
+    // DOMICILIADO («Pago domiciliado», 13-oct-2026, API 0.0.75) AL FINAL,
+    // como en el API: se vincula sin justificación ni interruptor.
+    expect(MEDIOS_BANCARIOS_CONCILIACION).toEqual(["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE", "DOMICILIADO"]);
+    for (const m of ["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE", "DOMICILIADO"]) {
+      expect(esMedioNoBancario(m), m).toBe(false);
+    }
     for (const m of ["EFECTIVO", "PERSONAL_PABLO", "PERSONAL_ALE", "BODEGA"]) expect(esMedioNoBancario(m)).toBe(true);
     // Vacío o ausente no es «no bancario» (no se inventa).
     expect(esMedioNoBancario(null)).toBe(false);
@@ -127,10 +131,20 @@ describe("medios: qué toca el banco y qué no (espejo de MEDIOS_BANCARIOS del A
   });
 
   it("todo medio del enum del gasto tiene etiqueta (ninguno cae en el código crudo)", () => {
-    // Enum `public.medio_pago` de prod (6-oct-2026).
-    for (const m of ["EFECTIVO", "TARJETA_CORP", "PERSONAL_PABLO", "PERSONAL_ALE", "TRANSFERENCIA", "BODEGA", "PAYWISE"]) {
-      expect(MEDIO_PAGO_LABELS[m]).toBeTruthy();
+    // Enum `public.medio_pago` de prod (13-oct-2026: + DOMICILIADO, migración 20261013000009).
+    for (const m of [
+      "EFECTIVO",
+      "TARJETA_CORP",
+      "PERSONAL_PABLO",
+      "PERSONAL_ALE",
+      "TRANSFERENCIA",
+      "BODEGA",
+      "PAYWISE",
+      "DOMICILIADO",
+    ]) {
+      expect(MEDIO_PAGO_LABELS[m], m).toBeTruthy();
     }
+    expect(MEDIO_PAGO_LABELS.DOMICILIADO).toBe("Pago domiciliado");
     expect(etiquetaMedioNoBancario("EFECTIVO")).toBe("Efectivo");
     expect(etiquetaMedioNoBancario("PERSONAL_PABLO")).toBe("Personal Pablo");
     expect(etiquetaMedioNoBancario("PERSONAL_ALE")).toBe("Personal Ale");

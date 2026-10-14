@@ -13,6 +13,7 @@
  * aquí no hay red.
  */
 import { fmtMonto } from "@/lib/format";
+import { MEDIO_DOMICILIADO } from "@/lib/admin/medios-pago";
 import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 import { fmtDateOnly } from "@/lib/datetime";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
@@ -46,13 +47,35 @@ export function terminacionDeReferencia(referencia: string | null | undefined): 
   return digitos.length >= 8 ? digitos.slice(-4) : null;
 }
 
-/** Valores del alta de gasto prellenados con el cargo (lo demás, el default del formulario). */
+/**
+ * Leyendas de un CARGO AUTOMÁTICO / recurrente del estado de cuenta
+ * (13-oct-2026, «Pago domiciliado»). Casos reales de prod: «STR*AMAZON RET
+ * REC Carg Recur.», «DLO*STARLINK Carg Recur.», «03 POR COBRANZA
+ * DOMICILIADA». Con ancla de palabra: «RECURSOS HUMANOS» NO es recurrente.
+ */
+export const RE_CARGO_RECURRENTE = /\bCARG\.?\s*RECUR|\bRECURRENTE\b|DOMICILIA|CARGO\s+AUTOM|SUSCRIP/i;
+
+/** ¿La descripción del cargo es la de un cargo automático/recurrente? Vacía ⇒ false. */
+export function pareceCargoRecurrente(descripcion: string | null | undefined): boolean {
+  const d = (descripcion ?? "").trim();
+  return d !== "" && RE_CARGO_RECURRENTE.test(d);
+}
+
+/**
+ * Valores del alta de gasto prellenados con el cargo (lo demás, el default
+ * del formulario). Medio: un cargo automático/recurrente ⇒ «Pago domiciliado»
+ * SIN tarjeta (13-oct-2026; gana a la regla de la referencia: «03 POR
+ * COBRANZA DOMICILIADA» trae 20 dígitos y no es una tarjeta); si no, con
+ * referencia de 8+ dígitos ⇒ tarjeta corporativa con esa terminación; si no,
+ * transferencia. La oficina lo revisa antes de guardar (NOTA_PRELLENADO).
+ */
 export function prefillGastoDesdeCargo(
   mov: Pick<MovimientoBancario, "monto" | "fecha" | "descripcion" | "referencia">,
   monedaCuenta: string | null | undefined,
 ): Partial<GastoCreateValues> {
   const monto = centavos(Math.abs(numeroDe(mov.monto)));
-  const terminacion = terminacionDeReferencia(mov.referencia);
+  const recurrente = pareceCargoRecurrente(mov.descripcion);
+  const terminacion = recurrente ? null : terminacionDeReferencia(mov.referencia);
   const notas = [mov.descripcion?.trim() || null, mov.referencia?.trim() ? `ref. ${mov.referencia.trim()}` : null]
     .filter(Boolean)
     .join(" · ");
@@ -60,7 +83,7 @@ export function prefillGastoDesdeCargo(
     monto: monto > 0 ? monto.toFixed(2) : "",
     moneda: monedaCuenta === "USD" ? "USD" : "MXN",
     fecha_gasto: (mov.fecha ?? "").slice(0, 10),
-    medio_pago: terminacion ? "TARJETA_CORP" : "TRANSFERENCIA",
+    medio_pago: recurrente ? MEDIO_DOMICILIADO : terminacion ? "TARJETA_CORP" : "TRANSFERENCIA",
     tarjeta_terminacion: terminacion ?? "",
     notas,
   };

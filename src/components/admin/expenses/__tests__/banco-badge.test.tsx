@@ -60,9 +60,15 @@ describe("estadoBancoGasto", () => {
   });
 
   it("medio bancario sin cargo = sin conciliar; efectivo/personal = no aplica", () => {
-    for (const medio of ["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE"]) {
-      expect(estadoBancoGasto(gasto({ medio_pago: medio })).value).toBe("SIN_CONCILIAR");
+    // DOMICILIADO («Pago domiciliado», 13-oct-2026) es bancario: sin cargo
+    // ligado, «Sin conciliar» como una transferencia.
+    for (const medio of ["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE", "DOMICILIADO"]) {
+      expect(estadoBancoGasto(gasto({ medio_pago: medio })).value, medio).toBe("SIN_CONCILIAR");
     }
+    expect(estadoBancoGasto(gasto({ medio_pago: "DOMICILIADO", conciliado: true })).value).toBe("CONCILIADO");
+    expect(
+      estadoBancoGasto(gasto({ medio_pago: "DOMICILIADO", monto_vinculado: "200", faltante: "300" })).value,
+    ).toBe("PARCIAL");
     for (const medio of ["EFECTIVO", "PERSONAL_PABLO", "PERSONAL_ALE", "BODEGA"]) {
       expect(estadoBancoGasto(gasto({ medio_pago: medio })).value).toBe("NO_APLICA");
     }
