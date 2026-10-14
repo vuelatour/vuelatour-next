@@ -4588,6 +4588,97 @@ renumeró desde la 000004, que ya usa la comisión del vendedor del avión).
   `IsEnum`, legible y sin escribir nada). El espejo del API (test) solo pasa
   cuando el API trae `DOMICILIADO` al final de `MEDIOS_BANCARIOS`.
 
+## TUA incluida en este gasto (13-oct-2026, API 0.0.75)
+
+Caso real (#383): la factura del aeropuerto traía la TUA ($559.63 MXN con
+IVA) DENTRO de su total de $1,925.27 y la IA la leyó con la etiqueta corrida
+(«Autobuses» en vez de «Tarifa TUA»): el balance cargó esa TUA al avión como
+operación. «TUA sistémica»: pyservices pide la tabla resumen más estricta y
+manda `tua_monto` (la TUA con IVA leída aparte), y la OFICINA puede fijar la
+TUA de un gasto en «Verificar / editar». Contrato con el API **0.0.75**
+(migración `20261013000008`, columna `gasto.tua_incluida`; se renumeró desde
+la 000003, que ya usa la comisión del vendedor del avión).
+
+- **Qué es**: `gasto.tua_incluida` = override de OFICINA sobre la lectura de
+  la IA, CON IVA y en la moneda del gasto. `null` = usar la lectura de la IA;
+  `0` = esta factura no cobra TUA (todo el ticket es costo del avión); `> 0` =
+  esa TUA se separa del costo del avión y va a «Otros movimientos» del
+  Balance general, junto a la TUA cobrada al cliente.
+- **Prioridad (la decide el API, `common/desglose-gasto.util.ts#partesDeGasto`;
+  el panel NO calcula ninguna TUA)**: oficina > renglón de la IA reconocido
+  como TUA > `tua_monto` SOLO si ningún renglón es TUA y la tabla CUADRA (una
+  lectura rota no se repara: regla del 26-ago, caso #118). Lo que separa la
+  lectura lo dice el API: `tua_detectada_ia` en el gasto (GET lista y
+  detalle) y `tua_detectada` en una lectura fresca (`POST
+  /v1/vision/gasto-ticket` y «Reanalizar con IA»). `tua_monto` crudo solo se
+  ENSEÑA como sugerencia (`tuaLeidaIa`). Un 0 de oficina gana aunque un
+  reanálisis posterior lea la TUA bien (decisión humana sobre esa factura);
+  volver a la IA = vaciar el campo y guardar.
+- **FUENTE ÚNICA** `lib/admin/tua-incluida.ts` (PURA):
+  `CATEGORIAS_TUA_INCLUIDA` (= `['OPERACIONES','ATERRIZAJE','FBO']`, COPIA de
+  la del API; el test de paridad lee `common/desglose-gasto.util.ts` del repo
+  hermano) + `categoriaAdmiteTuaIncluida`, `ETIQUETA_TUA_INCLUIDA` («TUA
+  incluida en este gasto»), `apiConTuaIncluida` (la LLAVE existe = API con la
+  migración), `valorFormTuaIncluida`, `tuaLeidaIa`, `placeholderTuaIncluida`
+  («IA: 559.63» / «0.00»), `ayudaTuaIncluida` (cinco textos + el sufijo «Este
+  gasto no tiene vuelo…»), `notaTuaVigente` («Vigente: fijada por oficina
+  ($559.63 MXN). Borra el valor y guarda para volver a la lectura de la
+  IA.»), `mensajeTuaMayorQueTicket` / `errorTuaIncluida` (MISMOS textos que
+  los 400 del API: «La TUA incluida ($600 MXN) no puede ser mayor que el
+  monto del ticket ($559.63 MXN, sin propina).», «La TUA incluida no puede
+  ser negativa.», «La TUA incluida no es un número válido.») y
+  `tuaIncluidaParaPatch`. Ningún componente redacta estas frases.
+- **«Verificar / editar»** (`expense-verify-dialog.tsx`): el campo va en su
+  propia fila JUSTO debajo de «Monto del ticket / Propina» y se pinta SOLO
+  con la llave `tua_incluida` del API Y la categoría en la lista (con un API
+  sin la columna ni se pinta ni viaja: cero 400 por `forbidNonWhitelisted`).
+  Debajo, con cifra guardada, la nota de la vigente (en la moneda del gasto
+  GUARDADO). El error local se ve mientras se escribe (`error` del `Field`) y
+  frena el guardado con un toast, evaluado SIEMPRE que el campo tenga valor
+  (también si solo cambió el monto: bajar el monto por debajo de la TUA se
+  ataja antes del 400 «vigente» del API). **La llave viaja SOLO si cambió**
+  (`null` al vaciar una vigente) **o si cambió la moneda del gasto con un
+  valor en el campo** (la oficina lo confirma en la moneda nueva; si no
+  viajara, el API la limpiaría: USD y MXN nunca se mezclan). Campo oculto
+  (categoría fuera de la lista) ⇒ no viaja y, al reclasificar, el API la
+  limpia solo (con bitácora). `tua_incluida` no es dinero del banco: se
+  corrige aunque el gasto esté conciliado. La lectura fresca se persiste SIN
+  `tua_detectada` (es cálculo); `tua_monto` sí se queda. El bloque «Desglose
+  leído» no cambió: ya pinta la línea «TUA (IVA incluido) - $X MXN» que
+  compone el API.
+- **Schema**: `GastoVerifySchema.tua_incluida` (preprocess: vacío/espacios ⇒
+  no viaja, `null` ⇒ null, si no `Number`; mín. 0; mensajes del API) — sin
+  declararla, el `z.object` la TIRA. `GastoCreateSchema` no cambia (la TUA se
+  captura en Verificar). `stripEmpty` conserva el `null` («volver a la IA»).
+- **Historial de gastos del vuelo**: «TUA incluida: Lectura de la IA →
+  $3,443.89» (`null` se pinta «Lectura de la IA» y la línea siempre es «antes
+  → después», nunca «se agregó» / «se quitó»: `CAMPOS_NULL_CON_NOMBRE`).
+- **Pre-cierre**: renglón NO bloqueante `tua_cobrada_sin_pagada` («Vuelos con
+  TUA cobrada al cliente sin TUA pagada», justo después de
+  `vuelos_sin_gasto_operaciones`): renderer genérico (chips `#folio` al
+  vuelo, `monto_usd` = TUA cobrada sin IVA, `lectura_fallida` ⇒ «sin
+  verificar») + «Resolver →» a `/admin/expenses` (la factura del aeropuerto
+  se corrige en Verificar / editar). `PreCierreVuelo.tua_cobrada_usd` es
+  aditivo.
+- **Tipos** (todos ADITIVOS): `Gasto.tua_incluida?: string | number | null`,
+  `Gasto.tua_detectada_ia?`, `GastoTicketIA.tua_monto?` y `.tua_detectada?`,
+  `GastoVerifyValues.tua_incluida`.
+- **Pruebas**: `lib/admin/__tests__/tua-incluida.test.ts` (textos exactos,
+  qué viaja, paridad con el API), `app/admin/expenses/__tests__/
+  tua-incluida-schema.test.ts` (zod y el PATCH real de `verifyGastoAction`) y
+  `components/admin/expenses/__tests__/tua-incluida-ui.test.tsx` (el diálogo
+  REAL con la llave, sin ella, COMIDA, 0, leída, sin vuelo y el error en
+  vivo; el historial; el pre-cierre renderizado; el cableado del guardado).
+- **Orden de deploy**: pyservices → migración `20261013000008` → API 0.0.75 →
+  **panel** (con un API viejo o sin la migración el gasto no trae la llave y
+  el campo simplemente no se pinta). Avisar al cliente: capturar la TUA o
+  «Reanalizar con IA» + guardar un gasto viejo mueve el balance de ESE mes
+  (septiembre ya cerrado incluido).
+- **Pendientes conocidos**: sin QA visual en navegador; al reclasificar fuera
+  de la lista el panel no AVISA que la cifra de oficina se va a limpiar (lo
+  hace el API y lo registra la bitácora); los chips del pre-cierre no pintan
+  la TUA cobrada por vuelo (el total va en el renglón).
+
 ## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
 
 Pedido del cliente con la captura del alta de producto: «me ayudas a poder

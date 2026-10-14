@@ -63,6 +63,10 @@ interface PreCierreVuelo {
   solicitada?: boolean;
   matricula?: string | null;
   fecha_vuelo?: string | null;
+  /** ADITIVO (tua_cobrada_sin_pagada, 13-oct-2026, API 0.0.75): TUA cobrada
+      al cliente (sin IVA, USD) del vuelo que no tiene gasto que la pague.
+      El renderer genérico pinta el chip #folio; el total va en `monto_usd`. */
+  tua_cobrada_usd?: number;
 }
 
 /** Grupo con saldo por cobrar (clave grupo_con_saldo). Montos del API. */
@@ -180,6 +184,10 @@ const LINK_POR_CLAVE: Record<
   // Factura obligatoria por cuenta de cobro (13-oct-2026): se registra en
   // Facturas emitidas (los chips llevan a la card de cobros de cada vuelo).
   [CLAVE_PRECIERRE_VUELOS_SIN_FACTURA]: hrefPrecierreVuelosSinFactura,
+  // TUA cobrada sin TUA pagada (13-oct-2026, API 0.0.75, NO bloquea): la
+  // factura del aeropuerto se corrige en Gastos → «Verificar / editar»
+  // («TUA incluida en este gasto»); los chips #folio llevan a cada vuelo.
+  tua_cobrada_sin_pagada: () => "/admin/expenses",
 };
 
 function fmtMonto(item: PreCierreItem): string | null {

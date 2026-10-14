@@ -81,6 +81,18 @@ import {
   opcionCategoriaGasto,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
+import {
+  ETIQUETA_TUA_INCLUIDA,
+  apiConTuaIncluida,
+  ayudaTuaIncluida,
+  categoriaAdmiteTuaIncluida,
+  errorTuaIncluida,
+  notaTuaVigente,
+  placeholderTuaIncluida,
+  tuaIncluidaParaPatch,
+  tuaLeidaIa,
+  valorFormTuaIncluida,
+} from "@/lib/admin/tua-incluida";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
@@ -622,6 +634,10 @@ export function ExpenseVerifyDialog({
         const lectura: Record<string, unknown> = { ...aiRaw };
         delete lectura.disponible;
         delete lectura.motivo;
+        // `tua_detectada` la CALCULA el API con esta lectura: es cálculo, no
+        // lectura (la que separa los libros la recalcula el API al leer el
+        // gasto). `tua_monto` sí se queda: es lo que leyó la IA.
+        delete lectura.tua_detectada;
         payload = { ...payload, valor_ia_extraido: lectura };
       }
       if (values.monto !== "" || values.propina !== "") {
@@ -643,6 +659,33 @@ export function ExpenseVerifyDialog({
           propina,
         };
       }
+      // «TUA incluida en este gasto» (13-oct-2026, API 0.0.75): la llave
+      // viaja SOLO si cambió (null al vaciar) o si cambió la moneda con un
+      // valor en el campo; campo oculto (API sin la columna o categoría fuera
+      // de Operaciones/Aterrizaje/FBO) ⇒ no viaja y, al reclasificar, el API
+      // la limpia solo. El error local se evalúa SIEMPRE que el campo tenga
+      // valor (también si solo cambió el monto): MISMO texto que el 400.
+      delete (payload as { tua_incluida?: unknown }).tua_incluida;
+      const tuaVisibleAlGuardar =
+        apiConTuaIncluida(gasto) && categoriaAdmiteTuaIncluida(values.categoria);
+      if (tuaVisibleAlGuardar && (values.tua_incluida ?? "").trim() !== "") {
+        const err = errorTuaIncluida({
+          valor: Number(values.tua_incluida),
+          ticket: ticket > 0 ? ticket : Number(gasto.monto) - Number(gasto.propina ?? 0),
+          moneda: values.moneda,
+        });
+        if (err) {
+          toast.error(err);
+          return;
+        }
+      }
+      const tuaPatch = tuaIncluidaParaPatch({
+        visible: tuaVisibleAlGuardar,
+        valorForm: values.tua_incluida,
+        actual: gasto.tua_incluida,
+        monedaCambio: values.moneda !== gasto.moneda,
+      });
+      if (tuaPatch !== undefined) payload.tua_incluida = tuaPatch;
       // Litros solo aplican a GAS; vacío = no tocar (el zod los descarta).
       if (values.categoria !== "GAS" || values.litros === "") {
         delete (payload as { litros?: unknown }).litros;
@@ -812,6 +855,29 @@ export function ExpenseVerifyDialog({
     style: "currency",
     currency: gasto.moneda,
   });
+
+  // «TUA incluida en este gasto» (13-oct-2026, API 0.0.75): SOLO con la llave
+  // `tua_incluida` del API (migración aplicada) y en las facturas de
+  // aeropuerto. El panel no calcula ninguna TUA: la detectada la dice el API
+  // (`tua_detectada` de la lectura fresca o `tua_detectada_ia` del gasto) y
+  // la leída es el `tua_monto` crudo (solo sugerencia).
+  const tuaVisible = apiConTuaIncluida(gasto) && categoriaAdmiteTuaIncluida(watch("categoria"));
+  const tuaDetectada = aiRaw ? (aiRaw.tua_detectada ?? null) : (gasto.tua_detectada_ia ?? null);
+  const tuaLeida = aiRaw ? (aiRaw.tua_monto ?? null) : tuaLeidaIa(gasto.valor_ia_extraido);
+  const tuaEscrita = (watch("tua_incluida") ?? "").trim();
+  const ticketVivo = Number(watch("monto"));
+  // El mismo error que frena el guardado, a la vista mientras se escribe.
+  const errorTuaVivo =
+    tuaVisible && tuaEscrita !== ""
+      ? errorTuaIncluida({
+          valor: Number(tuaEscrita),
+          ticket:
+            ticketVivo > 0 ? ticketVivo : Number(gasto.monto) - Number(gasto.propina ?? 0),
+          moneda: watch("moneda"),
+        })
+      : null;
+  // La nota habla de lo GUARDADO: en la moneda del gasto guardado.
+  const tuaVigente = tuaVisible ? notaTuaVigente(gasto, gasto.moneda) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1117,6 +1183,37 @@ export function ExpenseVerifyDialog({
               />
             </Field>
           </div>
+
+          {/* TUA incluida (13-oct-2026): la cifra de OFICINA manda sobre la
+              lectura de la IA (vacío = IA, 0 = sin TUA). Solo con la llave
+              del API y en Operaciones/Aterrizaje/FBO. */}
+          {tuaVisible && (
+            <div className="space-y-1" data-tua-incluida>
+              <Field
+                label={ETIQUETA_TUA_INCLUIDA}
+                hint={ayudaTuaIncluida({
+                  valor: watch("tua_incluida"),
+                  detectada: tuaDetectada,
+                  leida: tuaLeida,
+                  moneda: watch("moneda"),
+                  conVuelo: !!vueloSel,
+                })}
+                error={errorTuaVivo ?? undefined}
+              >
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  inputMode="decimal"
+                  placeholder={placeholderTuaIncluida(tuaDetectada)}
+                  {...register("tua_incluida")}
+                />
+              </Field>
+              {tuaVigente && (
+                <p className="text-[11px] text-muted-foreground">{tuaVigente}</p>
+              )}
+            </div>
+          )}
 
           {/* Solo combustible: litros (el balance no calcula $/litro sin
               ellos), tipo y lugar — las columnas de Combustibles se corrigen
@@ -1638,5 +1735,7 @@ function defaults(g: Gasto): GastoVerifyValues {
     folio_ticket: g.folio_ticket ?? "",
     tc_gasto: g.tc_gasto != null ? String(g.tc_gasto) : "",
     notas: g.notas ?? "",
+    // Vacío = usar la lectura de la IA (o el API aún no trae la columna).
+    tua_incluida: valorFormTuaIncluida(g),
   };
 }

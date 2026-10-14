@@ -87,6 +87,8 @@ const ACCION_UI: Record<
 const CAMPO_LABELS: Record<string, string> = {
   monto: "Monto",
   propina: "Propina",
+  // TUA fijada por OFICINA (13-oct-2026, API 0.0.75): null = «Lectura de la IA».
+  tua_incluida: "TUA incluida",
   moneda: "Moneda",
   tc_gasto: "Tipo de cambio",
   categoria: "Categoría",
@@ -112,6 +114,11 @@ const CAMPO_LABELS: Record<string, string> = {
 /** Campos cuyo valor es un uuid: jamás se pinta el id crudo. */
 const CAMPOS_ID = new Set(["vuelo_id", "aeronave_id", "escala_id", "proveedor_id"]);
 
+/** Campos donde null NO es «vacío» sino un valor con nombre (la TUA sin cifra
+ *  de oficina = «Lectura de la IA»): la línea siempre es «antes → después»,
+ *  nunca «se agregó» / «se quitó». */
+const CAMPOS_NULL_CON_NOMBRE = new Set(["tua_incluida"]);
+
 
 /** Monto con su moneda cuando se conoce (mismo formato que fmtMoney de las
  *  tablas de gastos); sin moneda en el diff, número es-MX a secas. */
@@ -132,10 +139,13 @@ function fmtMonto(v: unknown, moneda: string | null): string {
 }
 
 function fmtValor(campo: string, v: unknown, moneda: string | null): string {
+  // Sin cifra de oficina manda la lectura de la IA: se dice, no «—».
+  if (campo === "tua_incluida" && v == null) return "Lectura de la IA";
   if (v == null) return "—";
   switch (campo) {
     case "monto":
     case "propina":
+    case "tua_incluida":
       return fmtMonto(v, moneda);
     case "categoria":
       return categoriaGastoLabel(String(v));
@@ -206,6 +216,18 @@ function DiffLinea({
       <li className="text-xs">
         <span className="text-muted-foreground">{label}:</span>{" "}
         {antes == null ? "se asignó" : despues == null ? "se quitó" : "se reasignó"}
+      </li>
+    );
+  }
+
+  if (CAMPOS_NULL_CON_NOMBRE.has(campo)) {
+    return (
+      <li className="text-xs">
+        <span className="text-muted-foreground">{label}:</span>{" "}
+        <span className="line-through text-muted-foreground">
+          {fmtValor(campo, antes, monedaAntes)}
+        </span>{" "}
+        → <span className="font-medium">{fmtValor(campo, despues, monedaDespues)}</span>
       </li>
     );
   }

@@ -147,6 +147,13 @@ export interface GastoTicketIA {
   conceptos?: { concepto: string; monto: number }[];
   /** Desglose compuesto por el API (regla FBO/TUA) tal como irá en notas. */
   desglose_lineas?: string[];
+  /** ADITIVO (13-oct-2026, TUA sistémica): TUA CON IVA leída aparte por la
+   *  IA (sugerencia; un pyservices previo no la manda). Viaja dentro de la
+   *  lectura que se persiste en `valor_ia_extraido`. */
+  tua_monto?: number | null;
+  /** ADITIVO (API 0.0.75): lo que separaría el desglose con ESTA lectura (lo
+   *  calcula el API). Es cálculo, no lectura: NO se persiste. */
+  tua_detectada?: number | null;
   matricula?: string | null;
   confianza?: number;
   legible?: boolean;

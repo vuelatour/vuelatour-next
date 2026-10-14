@@ -168,6 +168,25 @@ export const GastoVerifySchema = z.object({
    *  verificación — los reportes derivan de este jsonb el desglose
    *  Operación/TUA/FBO, así que solo se persiste cuando el humano guarda. */
   valor_ia_extraido: z.record(z.string(), z.unknown()).optional(),
+  /** «TUA incluida en este gasto» (13-oct-2026, API 0.0.75 + migración
+   *  20261013000008): la cifra de OFICINA manda sobre la lectura de la IA.
+   *  null = volver a la lectura de la IA (sobrevive a stripEmpty); 0 = sin
+   *  TUA; vacío = no viaja. Sin declararla aquí, el z.object la TIRA y nunca
+   *  llega al API. Qué viaja lo decide `tuaIncluidaParaPatch`
+   *  (lib/admin/tua-incluida.ts). */
+  tua_incluida: z.preprocess(
+    (v) =>
+      v === undefined || (typeof v === "string" && v.trim() === "")
+        ? undefined
+        : v === null
+          ? null
+          : Number(v),
+    z
+      .number({ error: "La TUA incluida no es un número válido." })
+      .min(0, "La TUA incluida no puede ser negativa.")
+      .nullable()
+      .optional(),
+  ),
   /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
    *  fecha corregida en el diálogo. Solo se manda cuando es true. */
   permitir_fecha_antigua: z.boolean().optional(),
@@ -299,4 +318,8 @@ export type GastoVerifyValues = {
   folio_ticket: string;
   tc_gasto: string;
   notas: string;
+  /** «TUA incluida en este gasto» (13-oct-2026): vacío = usar la lectura de
+   *  la IA; «0» = sin TUA. Solo se pinta con la llave `tua_incluida` del API
+   *  y en Operaciones/Aterrizaje/FBO. */
+  tua_incluida: string;
 };

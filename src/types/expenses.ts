@@ -67,6 +67,16 @@ export interface Gasto {
   foto_url: string | null;
   /** Lectura IA del comprobante (jsonb: matricula, conceptos, folio…). */
   valor_ia_extraido: Record<string, unknown> | null;
+  /** ADITIVO (API 0.0.75 con la migración 20261013000008): TUA incluida
+   *  fijada por OFICINA (string numérico de PostgREST o número, CON IVA, en la
+   *  moneda del gasto). null = usar la lectura de la IA; 0 = la factura no
+   *  cobra TUA; undefined = API sin la columna ⇒ el panel NO pinta ni manda
+   *  el campo. Leerla SIEMPRE vía `@/lib/admin/tua-incluida`. */
+  tua_incluida?: string | number | null;
+  /** ADITIVO (API 0.0.75, solo en GET lista y detalle): la TUA que separa la
+   *  LECTURA de la IA (ignora la cifra de oficina); informativo. El panel no
+   *  la recalcula. */
+  tua_detectada_ia?: number | null;
   /** ADITIVO, solo en la respuesta del alta con `inventario` (ver el tipo). */
   inventario?: GastoInventarioResultado | null;
   conciliado: boolean;
