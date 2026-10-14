@@ -14,6 +14,9 @@ import {
   ETIQUETA_ACTUALIZAR_LIBRO,
   ETIQUETA_PANTALLA_COMPLETA,
   TITULO_ACTUALIZAR_LIBRO,
+  TITULO_MANIJA_COLUMNA,
+  letraColumna,
+  nombreManijaColumna,
 } from "@/lib/admin/libro-excel";
 import {
   ALTO_FRANJA_PX,
@@ -141,8 +144,10 @@ describe("LibroExcel: la primera hoja como la pintaría Excel", () => {
     expect(html).toContain('<col style="width:46px"/>');
     expect(html).toContain('<col style="width:215px"/>');
     expect(html).toContain('<col style="width:64px"/>');
-    expect(html).toMatch(/<th[^>]*scope="col"[^>]*>A<\/th>/);
-    expect(html).toMatch(/<th[^>]*scope="col"[^>]*>N<\/th>/); // relleno mínimo de 14 columnas
+    // La letra es el texto del <th>; detrás va SOLO su manija para ajustar
+    // el ancho (14-oct-2026; su marcado completo, en «ajustar el ancho…»).
+    expect(html).toMatch(/<th[^>]*scope="col"[^>]*>A<button[^>]*class="xl-manija"[^>]*><\/button><\/th>/);
+    expect(html).toMatch(/<th[^>]*scope="col"[^>]*>N<button[^>]*class="xl-manija"[^>]*><\/button><\/th>/); // relleno mínimo de 14 columnas
     expect(html).toMatch(/<th[^>]*scope="row"[^>]*>40<\/th>/); // y de 40 filas
     expect(html).toContain('style="height:51px"');
     expect(html).toContain('style="height:20px"');
@@ -151,7 +156,9 @@ describe("LibroExcel: la primera hoja como la pintaría Excel", () => {
 
   it("paneles inmovilizados: 2 filas y 1 columna fijas con su desplazamiento", () => {
     const html = pintar();
-    expect(html).toMatch(/<th[^>]*xl-fija-col[^>]*style="left:46px"[^>]*>A<\/th>/);
+    expect(html).toMatch(
+      /<th[^>]*xl-fija-col[^>]*style="left:46px"[^>]*>A<button[^>]*class="xl-manija"[^>]*><\/button><\/th>/,
+    );
     expect(html).toMatch(/<th[^>]*xl-fija-fila[^>]*style="top:22px"[^>]*>1<\/th>/);
     expect(html).toMatch(/<th[^>]*xl-fija-fila[^>]*style="top:42px"[^>]*>2<\/th>/);
     expect(html).toMatch(/<td[^>]*xl-fija-fila xl-fija-col[^>]*top:22px;left:46px[^>]*>Balance XB-PEV<\/td>/);
@@ -670,5 +677,159 @@ describe("«Actualizar datos» junto a «Pantalla completa» (14-oct-2026)", () 
     // La hoja se resuelve por nombre al cambiar el libro.
     expect(src).toMatch(/const hojaIdx = resolverHojaIdx\(libro\.hojas, hojaSel\);/);
     expect(src).not.toMatch(/setHojaIdx/);
+  });
+});
+
+describe("ajustar el ancho de las columnas como en Excel (14-oct-2026)", () => {
+  // Pedido del cliente con la captura del Balance general («otros
+  // movimientos»: la columna F cortaba «TUAs + extras con IVA · 2 concept…»):
+  // «que si das doble clic entre las columnas se pueda abrir a lo ancho del
+  // contenido para alcanzar a leer todo como lo hacemos con el excel».
+  const src = leer("components/admin/reportes/libro-excel.tsx");
+  /** Del texto `desde` hasta el primer `hasta` que le sigue (inclusive); "" si no está. */
+  const tramo = (texto: string, desde: string, hasta: string) => {
+    const i = texto.indexOf(desde);
+    const j = i < 0 ? -1 : texto.indexOf(hasta, i);
+    return i < 0 || j < 0 ? "" : texto.slice(i, j + hasta.length);
+  };
+  const letras = (html: string) => [...html.matchAll(/<th scope="col"[^>]*>[\s\S]*?<\/th>/g)].map((m) => m[0]);
+
+  it("cada letra lleva en su borde derecho UNA manija: botón sin tab stop, con nombre accesible y title; también la columna inmovilizada", () => {
+    const html = pintar();
+    const ths = letras(html);
+    expect(ths).toHaveLength(14); // A..N: el relleno mínimo de la hoja
+    ths.forEach((th, i) => {
+      const letra = letraColumna(i + 1);
+      // La letra conserva su nombre (el lector no le suma el de la manija) y su
+      // texto; detrás va la manija y nada más.
+      expect(th).toMatch(new RegExp(`^<th scope="col"[^>]*aria-label="${letra}">${letra}<button `));
+      expect(th).toContain(
+        `>${letra}<button type="button" tabindex="-1" class="xl-manija" aria-label="${nombreManijaColumna(letra)}" title="${TITULO_MANIJA_COLUMNA}"></button></th>`,
+      );
+    });
+    // A está inmovilizada: su letra sigue sticky con su `left` y lleva manija igual.
+    expect(ths[0]).toMatch(/^<th scope="col" class="xl-fija-col" style="left:46px" aria-label="A">A<button /);
+    expect(ths[0]).toContain('aria-label="Ajustar el ancho de la columna A"');
+    // Ninguna en la esquina, en la numeración de filas ni en las celdas.
+    expect((html.match(/class="xl-manija"/g) ?? []).length).toBe(14);
+    expect(html).toContain('<th class="xl-esquina" aria-hidden="true"></th>');
+    expect(html.slice(html.indexOf("<tbody>"))).not.toContain("xl-manija");
+    // Sin tab stops nuevos: el único enfocable de la cuadrícula sigue siendo el marco.
+    expect(html.match(/tabindex="(\d+)"/g)).toEqual(['tabindex="0"']);
+  });
+
+  it("el HTML del servidor es el de siempre con o sin `claveAnchos` (los anchos manuales arrancan vacíos) y los <col> son los del libro", () => {
+    const sin = pintar();
+    expect(renderToStaticMarkup(<LibroExcel libro={LIBRO} claveAnchos="general" />)).toBe(sin);
+    expect(sin).toContain('<col style="width:215px"/>');
+    expect(sin).toContain('<table class="xl-tabla" style="width:1093px">'); // 46 + 215 + 64 × 13
+    // Fuera de un arrastre, la raíz no lleva la clase del arrastre.
+    expect(sin).not.toContain("xl-libro--redimensionando");
+  });
+
+  it("cableado: doble clic ⇒ autoajuste, medido con la fuente REAL de cada celda en UN canvas; qué celdas cuentan y la regla de px son puras", () => {
+    expect(src).toContain("onDoubleClick={() => autoajustarColumna(col.c)}");
+    const auto = tramo(src, "const autoajustarColumna = (c: number) => {", "\n  };");
+    expect(auto).not.toBe("");
+    expect(auto).toContain("celdasParaAutoajuste(vista, c)");
+    expect(auto).toContain("const estilo = getComputedStyle(td);");
+    expect(auto).toContain("ctx.font = fuenteCanvas(estilo);");
+    expect(auto).toContain("ctx.measureText(r).width");
+    expect(auto).toContain("cajaPx: cajaHorizontalPx(estilo)");
+    expect(auto).toContain("td.dataset.ref !== x.ref");
+    // Sin contenido, la regla da null y la columna vuelve al ancho del libro.
+    expect(auto).toContain("fijarAncho(c, anchoAutoajustePx(medidas));");
+    // UN solo canvas: se crea al primer doble clic y se reutiliza.
+    expect((src.match(/createElement\("canvas"\)/g) ?? []).length).toBe(1);
+    expect(auto).toContain('lienzo.current ??= document.createElement("canvas").getContext("2d");');
+    // Activada con teclado o lector (detail 0) también ajusta; un clic suelto del ratón, no.
+    expect(src).toContain("if (e.detail === 0) autoajustarColumna(col.c);");
+  });
+
+  it("cableado: arrastre con pointer capture y UN ancho por cuadro (regla pura), que no selecciona celda ni texto", () => {
+    const manija = src.match(/<button\s+type="button"\s+tabIndex=\{-1\}\s+className="xl-manija"[\s\S]*?\/>/)?.[0] ?? "";
+    for (const h of [
+      "aria-label={nombreManijaColumna(col.letra)}",
+      "title={TITULO_MANIJA_COLUMNA}",
+      "onMouseDown={(e) => e.preventDefault()}",
+      "onPointerDown={(e) => empezarArrastre(e, col)}",
+      "onPointerMove={moverArrastre}",
+      "onPointerUp={terminarArrastre}",
+      "onPointerCancel={terminarArrastre}",
+      "onLostPointerCapture={terminarArrastre}",
+    ]) {
+      expect(manija, h).toContain(h);
+    }
+    const empezar = tramo(src, "const empezarArrastre", "\n  };");
+    expect(empezar).toContain("if (e.button !== 0) return;");
+    expect(empezar).toContain("e.currentTarget.setPointerCapture(e.pointerId);");
+    const mover = tramo(src, "const moverArrastre", "\n  };");
+    expect(mover).toContain("a.cuadro ??= requestAnimationFrame(aplicarArrastre);");
+    const aplicar = tramo(src, "const aplicarArrastre", "\n  };");
+    expect(aplicar).toContain("anchoArrastrePx(a.anchoInicialPx, a.xInicial, a.x)");
+    expect(aplicar).toContain("if (px === a.aplicadoPx) return;");
+    const terminar = tramo(src, "const terminarArrastre", "\n  };");
+    expect(terminar).toContain("cancelAnimationFrame(a.cuadro)");
+    expect(terminar).toContain("aplicarArrastre();");
+    // Ni la manija ni el arrastre ni el autoajuste tocan la selección o el marco.
+    const auto = tramo(src, "const autoajustarColumna", "\n  };");
+    for (const bloque of [manija, empezar, mover, aplicar, terminar, auto]) {
+      expect(bloque).not.toMatch(/seleccionar\(|setSeleccion|desplazarMarcoA|scroll/);
+    }
+  });
+
+  it("cableado: el ancho NO recalcula celdas (cuadriculaHoja solo con hoja y libro; aplicarAnchos reusa las filas) y vive en estado por tipo de libro y hoja: sin localStorage ni efectos nuevos", () => {
+    expect(src).toContain(
+      "const vistaBase = useMemo(() => (hoja ? cuadriculaHoja(hoja, libro) : null), [hoja, libro]);",
+    );
+    expect(src).toMatch(
+      /const vista = useMemo\(\s*\(\) => \(vistaBase \? aplicarAnchos\(vistaBase, anchosHoja\) : null\),\s*\[vistaBase, anchosHoja\],?\s*\);/,
+    );
+    expect((src.match(/cuadriculaHoja\(/g) ?? []).length).toBe(1);
+    expect(src).toContain('const claveHoja = claveAnchosHoja(claveAnchos, hoja?.nombre ?? "");');
+    expect(src).toMatch(/^ {2}claveAnchos = "",$/m);
+    expect(src).toContain(
+      "setAnchosManuales((prev) => ({ ...prev, [claveHoja]: conAnchoColumna(prev[claveHoja], c, px) }));",
+    );
+    // Se pierden al recargar: nada de almacenamiento del navegador (en el
+    // CÓDIGO; el comentario que explica por qué no, sí lo nombra).
+    const codigo = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(codigo).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+    // Ningún efecto nuevo: siguen el de «Actualizar datos», el de pantalla
+    // completa y el de llegada, y ninguno habla de anchos ni de desplazar.
+    expect((src.match(/useEffect\(/g) ?? []).length).toBe(3);
+    const efectos = src.match(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g) ?? [];
+    expect(efectos).toHaveLength(3);
+    for (const efecto of efectos) expect(efecto).not.toMatch(/ancho|arrastre|autoajust|scroll/i);
+    // La tabla lleva el ref para medir (un ref no se serializa: el marcado no cambia).
+    expect(src).toContain('<table ref={tabla} className="xl-tabla" style={{ width: vista.anchoTablaPx }}>');
+  });
+
+  it("la página pasa el TIPO de libro como `claveAnchos`", () => {
+    const page = leer("app/admin/reportes/balance/page.tsx");
+    const libroJsx = page.match(/<LibroExcel\b[\s\S]*?\/>/)?.[0] ?? "";
+    expect(libroJsx).toContain("claveAnchos={claveAnchosVistaBalance(destino)}");
+    expect(page).toContain("claveAnchosVistaBalance,");
+  });
+
+  it("CSS: la manija es absoluta DENTRO del <th> sticky (8 px en su borde derecho, col-resize, sin pan táctil); ninguna regla le cambia el position a un <th>; el arrastre pone col-resize en todo el libro", () => {
+    const css = leer("styles/libro-excel.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const regla = css.match(/\.xl-manija\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(regla).toMatch(/position:\s*absolute;/);
+    expect(regla).toMatch(/right:\s*-1px;/);
+    expect(regla).toMatch(/width:\s*8px;/);
+    expect(regla).toMatch(/cursor:\s*col-resize;/);
+    expect(regla).toMatch(/touch-action:\s*none;/);
+    // Las letras siguen sticky (y por eso son el bloque contenedor de la
+    // manija): ninguna regla de <th> les pone otro position.
+    const reglas = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => [m[1].trim(), m[2]] as const);
+    const deTh = reglas.filter(([sel, cuerpo]) => /\bth\b/.test(sel) && /position\s*:/.test(cuerpo));
+    expect(deTh.length).toBeGreaterThan(0);
+    for (const [sel, cuerpo] of deTh) expect(cuerpo, sel).toMatch(/position:\s*sticky/);
+    // Durante el arrastre: col-resize y sin seleccionar texto, y AL FINAL de la
+    // hoja (les gana por orden a los cursores de celdas y pestañas).
+    expect(css).toMatch(
+      /\.xl-libro--redimensionando,\s*\.xl-libro--redimensionando \*\s*\{[^}]*cursor:\s*col-resize;[^}]*user-select:\s*none;[^}]*\}\s*$/,
+    );
   });
 });

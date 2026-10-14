@@ -35,6 +35,22 @@ import {
   TITULO_ACTUALIZAR_LIBRO as TITULO_ACTUALIZAR,
   TOAST_LIBRO_ACTUALIZADO as TOAST_ACTUALIZADO,
   resolverHojaIdx,
+  ANCHO_MAXIMO_COLUMNA_PX,
+  ANCHO_MINIMO_COLUMNA_PX,
+  HOLGURA_AUTOAJUSTE_PX,
+  TITULO_MANIJA_COLUMNA,
+  anchoArrastrePx,
+  anchoAutoajustePx,
+  aplicarAnchos,
+  cajaHorizontalPx,
+  celdasParaAutoajuste,
+  claveAnchosHoja,
+  conAnchoColumna,
+  fuenteCanvas,
+  limitarAnchoColumnaPx,
+  nombreManijaColumna,
+  renglonesTexto,
+  type AnchosColumnas,
 } from "../libro-excel";
 
 function hoja(p: Partial<LibroExcelHoja> = {}): LibroExcelHoja {
@@ -599,5 +615,218 @@ describe("«Actualizar datos» (14-oct-2026): la hoja que se veía sigue al actu
       "Vuelve a leer los datos del libro sin recargar la página: se quedan la hoja, la celda seleccionada y el desplazamiento",
     );
     expect(TOAST_ACTUALIZADO).toBe("Datos actualizados");
+  });
+});
+
+describe("ajustar el ancho de las columnas como en Excel (14-oct-2026): aplicarAnchos", () => {
+  // A (30 caracteres = 215 px) y B inmovilizadas, D oculta: visibles A, B, C, E…N.
+  const base = cuadriculaHoja(
+    hoja({
+      max_fila: 6,
+      max_col: 6,
+      inmovilizar: { filas: 1, columnas: 2 },
+      columnas: [
+        { c: 1, ancho: 30 },
+        { c: 4, oculta: true },
+      ],
+    }),
+    libro(),
+  );
+  const marco: MedidasMarco = { scrollLeft: 0, scrollTop: 0, clientWidth: 600, clientHeight: 300 };
+
+  it("sin anchos, sin cambios reales, con una columna oculta o un valor no finito ⇒ la MISMA vista", () => {
+    expect(aplicarAnchos(base, undefined)).toBe(base);
+    expect(aplicarAnchos(base, null)).toBe(base);
+    expect(aplicarAnchos(base, {})).toBe(base);
+    expect(aplicarAnchos(base, { 2: 64 })).toBe(base); // igual al del libro
+    expect(aplicarAnchos(base, { 4: 300 })).toBe(base); // D está oculta: no está en la vista
+    expect(aplicarAnchos(base, { 3: Number.NaN })).toBe(base);
+  });
+
+  it("columnas y ancho de tabla nuevos REUSANDO las filas; la vista del libro no se toca", () => {
+    const v = aplicarAnchos(base, { 2: 100, 3: 300 });
+    expect(v).not.toBe(base);
+    expect(v.filas).toBe(base.filas);
+    expect(v.inmovilizar).toBe(base.inmovilizar);
+    expect(v.columnas.slice(0, 4).map((x) => [x.c, x.anchoPx, x.fija, x.leftPx])).toEqual([
+      [1, 215, true, ANCHO_NUMERACION_PX],
+      [2, 100, true, ANCHO_NUMERACION_PX + 215],
+      [3, 300, false, null],
+      [5, 64, false, null],
+    ]);
+    expect(v.anchoTablaPx).toBe(base.anchoTablaPx + (100 - 64) + (300 - 64));
+    expect(base.columnas[1].anchoPx).toBe(64);
+    expect(base.columnas[2].anchoPx).toBe(64);
+  });
+
+  it("el leftPx de lo inmovilizado es la suma de los anchos NUEVOS y geometriaCelda sigue cuadrando con él", () => {
+    const v = aplicarAnchos(base, { 1: 80, 2: 150, 7: 333 });
+    // A se angostó: B (también fija) se recorre a 46 + 80.
+    expect(v.columnas[1].leftPx).toBe(ANCHO_NUMERACION_PX + 80);
+    v.columnas.forEach((col, i) => {
+      if (!col.fija) return;
+      const antes = v.columnas.slice(0, i).reduce((acc, x) => acc + x.anchoPx, 0);
+      expect(col.leftPx).toBe(ANCHO_NUMERACION_PX + antes);
+      expect(geometriaCelda(v, { r: 3, c: col.c })?.x).toBe(col.leftPx);
+    });
+    expect(v.anchoTablaPx).toBe(ANCHO_NUMERACION_PX + v.columnas.reduce((acc, x) => acc + x.anchoPx, 0));
+    // Una no fija también se mide con los anchos nuevos: H va después de C, E, F y G (333 px).
+    expect(geometriaCelda(v, { r: 3, c: 8 })?.x).toBe(ANCHO_NUMERACION_PX + 80 + 150 + 64 * 3 + 333);
+  });
+
+  it("scrollParaVerCelda usa los anchos NUEVOS: una columna ensanchada empuja a las de su derecha y una fija ensanchada agranda la zona tapada", () => {
+    // Con los anchos del libro, E (x 389, derecha 453) y F (453–517) se ven en 600 px.
+    expect(scrollParaVerCelda(base, { r: 3, c: 5 }, marco)).toBeNull();
+    expect(scrollParaVerCelda(base, { r: 3, c: 6 }, marco)).toBeNull();
+    // C a 300 px ⇒ E queda en 625–689: justo lo necesario, 89.
+    expect(scrollParaVerCelda(aplicarAnchos(base, { 3: 300 }), { r: 3, c: 5 }, marco)).toEqual({
+      scrollLeft: 89,
+      scrollTop: 0,
+    });
+    // B (fija) a 200 px ⇒ zona fija de 461; F queda en 589–653 ⇒ 53.
+    expect(scrollParaVerCelda(aplicarAnchos(base, { 2: 200 }), { r: 3, c: 6 }, marco)).toEqual({
+      scrollLeft: 53,
+      scrollTop: 0,
+    });
+  });
+
+  it("los anchos se limitan al mínimo y al tope", () => {
+    const v = aplicarAnchos(base, { 3: 5000, 5: 2 });
+    expect(v.columnas.find((x) => x.c === 3)?.anchoPx).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    expect(v.columnas.find((x) => x.c === 5)?.anchoPx).toBe(ANCHO_MINIMO_COLUMNA_PX);
+    expect([ANCHO_MINIMO_COLUMNA_PX, ANCHO_MAXIMO_COLUMNA_PX]).toEqual([12, 1000]);
+    expect(limitarAnchoColumnaPx(64.4)).toBe(64);
+  });
+});
+
+describe("ajustar el ancho de las columnas (14-oct-2026): qué celdas cuentan y la regla de px", () => {
+  const vista = cuadriculaHoja(
+    hoja({
+      max_fila: 7,
+      max_col: 4,
+      filas: [{ r: 6, oculta: true }],
+      combinadas: [
+        { r1: 2, c1: 2, r2: 2, c2: 3 }, // B2:C2 abarca dos columnas: no cuenta (regla de Excel)
+        { r1: 3, c1: 2, r2: 4, c2: 2 }, // B3:B4 es de una sola columna: cuenta
+      ],
+      celdas: [
+        { r: 1, c: 2, v: "Concepto", t: "Concepto" },
+        { r: 2, c: 2, v: "Título combinado larguísimo", t: "Título combinado larguísimo" },
+        { r: 3, c: 2, v: "uno\ndos más largo", t: "uno\ndos más largo" },
+        { r: 5, c: 2, v: null, t: "" },
+        { r: 6, c: 2, v: "en fila oculta", t: "en fila oculta" },
+        { r: 7, c: 2, v: 1234.5, t: "1,234.50" },
+        { r: 7, c: 3, v: "otra columna", t: "otra columna" },
+      ],
+    }),
+    libro(),
+  );
+
+  it("celdasParaAutoajuste: el texto que SE VE, sin combinadas de varias columnas, sin vacías ni ocultas; renglones por salto de línea", () => {
+    const celdas = celdasParaAutoajuste(vista, 2);
+    expect(celdas.map((x) => [x.ref, x.renglones])).toEqual([
+      ["B1", ["Concepto"]],
+      ["B3", ["uno", "dos más largo"]],
+      ["B7", ["1,234.50"]],
+    ]);
+    // iFila/iCelda señalan la celda PINTADA (el componente coteja su data-ref).
+    for (const x of celdas) {
+      const cv = vista.filas[x.iFila].celdas[x.iCelda];
+      expect(referenciaCelda(cv.r, cv.c)).toBe(x.ref);
+    }
+    // La fila 6 está oculta: B7 es la sexta fila pintada.
+    expect(celdas[2].iFila).toBe(5);
+    // C2 está tapada por B2:C2 (no tiene <td>); C7 sí cuenta. D no tiene nada.
+    expect(celdasParaAutoajuste(vista, 3).map((x) => x.ref)).toEqual(["C7"]);
+    expect(celdasParaAutoajuste(vista, 4)).toEqual([]);
+    expect(renglonesTexto("a\r\nbb\rccc\nd")).toEqual(["a", "bb", "ccc", "d"]);
+    expect(renglonesTexto("solo")).toEqual(["solo"]);
+  });
+
+  it("anchoAutoajustePx: el renglón más largo + relleno y borde reales + holgura, el máximo de la columna, hacia arriba", () => {
+    expect(HOLGURA_AUTOAJUSTE_PX).toBeGreaterThanOrEqual(4);
+    expect(HOLGURA_AUTOAJUSTE_PX).toBeLessThanOrEqual(6);
+    expect(anchoAutoajustePx([{ renglonesPx: [80.2, 120.4], cajaPx: 7 }])).toBe(
+      Math.ceil(120.4 + 7 + HOLGURA_AUTOAJUSTE_PX),
+    );
+    // Gana la celda que más necesita CON su caja: 100 + 26 de sangría > 110 + 7.
+    expect(
+      anchoAutoajustePx([
+        { renglonesPx: [110], cajaPx: 7 },
+        { renglonesPx: [100], cajaPx: 26 },
+      ]),
+    ).toBe(126 + HOLGURA_AUTOAJUSTE_PX);
+  });
+
+  it("anchoAutoajustePx: sin contenido ⇒ null (vuelve al ancho del libro); tope, mínimo y medidas no finitas", () => {
+    expect(anchoAutoajustePx([])).toBeNull();
+    expect(anchoAutoajustePx([{ renglonesPx: [0], cajaPx: 7 }])).toBeNull();
+    expect(anchoAutoajustePx([{ renglonesPx: [Number.POSITIVE_INFINITY], cajaPx: 7 }])).toBeNull();
+    expect(anchoAutoajustePx([{ renglonesPx: [5000], cajaPx: 7 }])).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    expect(anchoAutoajustePx([{ renglonesPx: [1], cajaPx: 0 }])).toBe(ANCHO_MINIMO_COLUMNA_PX);
+    expect(anchoAutoajustePx([{ renglonesPx: [Number.NaN, 40], cajaPx: Number.NaN }])).toBe(40 + HOLGURA_AUTOAJUSTE_PX);
+  });
+
+  it("la fuente y la caja salen del estilo CALCULADO de la celda; la sangría llega como padding-left", () => {
+    expect(
+      fuenteCanvas({
+        fontStyle: "italic",
+        fontWeight: "700",
+        fontSize: "18.6667px",
+        fontFamily: 'Calibri, Carlito, "Segoe UI", Arial, sans-serif',
+      }),
+    ).toBe('italic 700 18.6667px Calibri, Carlito, "Segoe UI", Arial, sans-serif');
+    expect(fuenteCanvas({ fontStyle: "", fontWeight: "", fontSize: "", fontFamily: "" })).toBe(
+      "normal 400 11pt Calibri, sans-serif",
+    );
+    expect(
+      cajaHorizontalPx({ paddingLeft: "3px", paddingRight: "3px", borderLeftWidth: "0px", borderRightWidth: "1px" }),
+    ).toBe(7);
+    // Sangría 2 ⇒ padding-left 21 px (`estiloCeldaCss`): el autoajuste la cuenta una vez.
+    const conSangria = estiloCeldaCss({ r: 1, c: 1, v: "x", t: "x" }, { ind: 2 }, { desborda: false });
+    expect(
+      cajaHorizontalPx({
+        paddingLeft: String(conSangria.paddingLeft),
+        paddingRight: "3px",
+        borderLeftWidth: "0px",
+        borderRightWidth: "1px",
+      }),
+    ).toBe(25);
+    expect(
+      cajaHorizontalPx({ paddingLeft: "", paddingRight: "3px", borderLeftWidth: "medium", borderRightWidth: "1.5px" }),
+    ).toBe(4.5);
+  });
+});
+
+describe("ajustar el ancho de las columnas (14-oct-2026): arrastre, estado y textos", () => {
+  it("anchoArrastrePx: el ancho de antes más lo que se movió el puntero, entero, entre el mínimo y el tope", () => {
+    expect(anchoArrastrePx(64, 100, 150)).toBe(114);
+    expect(anchoArrastrePx(64, 100, 60)).toBe(24);
+    expect(anchoArrastrePx(64, 100, 100.6)).toBe(65);
+    expect(anchoArrastrePx(64, 100, 0)).toBe(ANCHO_MINIMO_COLUMNA_PX);
+    expect(anchoArrastrePx(64, 0, 5000)).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+  });
+
+  it("conAnchoColumna pone o quita (null ⇒ el ancho del libro) sin mutar", () => {
+    const antes: AnchosColumnas = { 3: 120 };
+    const puesto = conAnchoColumna(antes, 6, 250.4);
+    expect(puesto).toEqual({ 3: 120, 6: 250 });
+    expect(antes).toEqual({ 3: 120 });
+    expect(conAnchoColumna(puesto, 6, null)).toEqual({ 3: 120 });
+    expect(conAnchoColumna(puesto, 3, Number.NaN)).toEqual({ 6: 250 });
+    expect(conAnchoColumna(undefined, 2, 5)).toEqual({ 2: ANCHO_MINIMO_COLUMNA_PX });
+  });
+
+  it("claveAnchosHoja: por TIPO de libro y hoja; el «balance» del general no es el de un avión", () => {
+    expect(claveAnchosHoja("general", "balance")).toBe(claveAnchosHoja("general", "balance"));
+    expect(claveAnchosHoja("general", "balance")).not.toBe(claveAnchosHoja("avion", "balance"));
+    expect(claveAnchosHoja("", "balance")).not.toBe(claveAnchosHoja("general", "balance"));
+    expect(claveAnchosHoja("a,b", "c")).not.toBe(claveAnchosHoja("a", "b,c"));
+  });
+
+  it("textos de la manija, exactos", () => {
+    expect(nombreManijaColumna("F")).toBe("Ajustar el ancho de la columna F");
+    expect(nombreManijaColumna("AA")).toBe("Ajustar el ancho de la columna AA");
+    expect(TITULO_MANIJA_COLUMNA).toBe("Doble clic: ajustar al contenido · Arrastra para cambiar el ancho");
   });
 });

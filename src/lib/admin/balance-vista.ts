@@ -26,8 +26,10 @@ export const ETIQUETA_VER_EN_PANTALLA = "Ver en pantalla";
 export const TITULO_VER_EN_PANTALLA =
   "Abre el mismo libro en pantalla, con sus hojas, números y colores, sin descargarlo";
 export const ETIQUETA_DESCARGAR_LIBRO = "Descargar este libro (Excel)";
+/** La ayuda del ícono ⓘ. La última frase (14-oct-2026) es para que se descubra
+ *  el autoajuste de columnas: la manija no se ve hasta pasar el ratón. */
 export const DESCRIPCION_VISTA_BALANCE =
-  "Es el mismo libro que se descarga: las mismas hojas, los mismos números y fórmulas y los mismos colores. Cambia de hoja abajo, como en Excel.";
+  "Es el mismo libro que se descarga: las mismas hojas, los mismos números y fórmulas y los mismos colores. Cambia de hoja abajo, como en Excel. Doble clic en la línea entre dos letras de columna ajusta el ancho al contenido.";
 export const ETIQUETA_VOLVER_REPORTES = "Reportes";
 
 /** Nombre de cada libro de la flota, como lo dice el cliente. */
@@ -39,6 +41,20 @@ export const NOMBRE_LIBRO_VUELATOUR: Record<ModoBalanceVuelaTour, string> = {
 export type DestinoVistaBalance =
   | { tipo: "vuelatour"; modo: ModoBalanceVuelaTour }
   | { tipo: "avion"; avionId: string };
+
+/**
+ * El TIPO de libro para los anchos de columna que ajusta el operador
+ * (`claveAnchos` de `LibroExcel`, 14-oct-2026): «mensual», «general» o
+ * «avion». Los tres tienen hojas con el mismo nombre («balance») y columnas
+ * distintas, así que no comparten anchos; los libros de los aviones sí entre
+ * ellos (es el mismo libro con otros datos). Los anchos viven en el estado del
+ * componente: sobreviven a «Actualizar datos», al cambio de hoja y al de
+ * periodo o de libro (sin `?gasto=`; con él, la `key` de la página remonta el
+ * libro) y se pierden al recargar.
+ */
+export function claveAnchosVistaBalance(destino: DestinoVistaBalance): string {
+  return destino.tipo === "avion" ? "avion" : destino.modo;
+}
 
 /** Mes corriente (hoy en Cancún), el mismo default que `/admin/reportes`. */
 export function periodoDefaultVista(hoy: string): { desde: string; hasta: string } {

@@ -6856,6 +6856,118 @@ desplazamiento.
   en la barra y cableado: refresh en la transición, sin recarga, toast solo
   del botón, hoja por nombre).
 
+### Ajustar el ancho de las columnas como en Excel (14-oct-2026)
+
+Pedido del cliente, con la captura del Balance general (pestaña «otros
+movimientos»: la columna F cortaba «TUAs + extras con IVA · 2 concept…»):
+«Y hace falta en el "Excel" que si das doble clic entre las columnas se pueda
+abrir a lo ancho del contenido para alcanzar a leer todo como lo hacemos con
+el excel». Solo panel: el `.xlsx` descargado, los números, la selección, el
+teclado, la llegada desde Conciliación, la pantalla completa y el marcado de
+las celdas NO cambian.
+
+- **La manija**: cada `<th>` de letra (también los de columnas inmovilizadas)
+  lleva DESPUÉS de la letra un `<button type="button" tabIndex={-1}
+  class="xl-manija">` con `aria-label` «Ajustar el ancho de la columna F»
+  (`nombreManijaColumna`) y `title` «Doble clic: ajustar al contenido ·
+  Arrastra para cambiar el ancho» (`TITULO_MANIJA_COLUMNA`), textos en
+  `lib/admin/libro-excel.ts`. Sin tab stop (son decenas de columnas); el
+  `<th>` lleva `aria-label` = su letra para que el lector no le sume el
+  nombre de la manija. Cursor `col-resize` y NO `cursor-pointer`: es su
+  promesa y se cumple (doble clic y arrastre). Activada con teclado o lector
+  (`click` con `detail` 0) ajusta como el doble clic; un clic suelto del
+  ratón no hace nada (es el inicio de un arrastre).
+- **CSS** (`styles/libro-excel.css`): `.xl-manija` absoluta DENTRO del `<th>`
+  sticky —un sticky ya es bloque contenedor de un hijo absoluto: al `<th>`
+  NO se le pone `relative` (sería el «escalón» de las notas)—, `right: -1px;
+  width: 8px` (7 px del relleno + el borde: no tapa la letra centrada y no se
+  sale del `<th>`, cuyo vecino es otro contexto de apilamiento y taparía lo
+  que asomara), `touch-action: none` y una línea verde de 2 px al pasar el
+  ratón. `.xl-libro--redimensionando` (en la raíz, solo mientras se arrastra,
+  AL FINAL de la hoja para ganar por orden): `col-resize` en todo el libro y
+  `user-select: none`.
+- **Doble clic ⇒ al contenido** (`autoajustarColumna`, delgada):
+  `celdasParaAutoajuste(vista, c)` (PURO) dice qué celdas cuentan —el texto
+  que SE VE (`celda.t`), en filas visibles, sin vacías y sin combinadas que
+  abarcan varias columnas (regla de Excel; una combinada vertical sí
+  cuenta)— y dónde está su `<td>` (`iFila`/`iCelda`, cotejado con
+  `data-ref`). El componente mide cada renglón (saltos de línea explícitos,
+  `renglonesTexto`) con UN canvas reutilizado (`ctx.font =
+  fuenteCanvas(getComputedStyle(td))`: familia, tamaño, negrita y cursiva
+  reales) y su caja horizontal real (`cajaHorizontalPx`: relleno + borde; la
+  sangría ya va ahí porque `estiloCeldaCss` la pinta como `padding-left`).
+  La regla PURA `anchoAutoajustePx`: máx(renglón más largo + caja) +
+  `HOLGURA_AUTOAJUSTE_PX` (5), hacia arriba, entre `ANCHO_MINIMO_COLUMNA_PX`
+  (12) y `ANCHO_MAXIMO_COLUMNA_PX` (1000); sin nada medible ⇒ `null` ⇒ la
+  columna vuelve al ancho original del libro. Como en Excel, un texto con
+  ajuste (`wr`) cuenta por sus renglones explícitos y el autoajuste también
+  puede ANGOSTAR.
+- **Arrastre** (pointer capture): `pointerdown` (botón principal) guarda
+  columna, x y ancho en una REF; `pointermove` solo anota la x y pide UN
+  `requestAnimationFrame`; el cuadro aplica `anchoArrastrePx` (puro: ancho +
+  desplazamiento, entero, entre mínimo y tope) si cambió; `pointerup`,
+  `pointercancel` y `lostpointercapture` cancelan el cuadro pendiente y
+  aplican el último. `onMouseDown` con `preventDefault`: no le roba el foco
+  al marco ni empieza a seleccionar texto. La manija vive en el `<thead>`:
+  ni el arrastre ni el doble clic tocan la selección ni el scroll.
+- **El ancho NO recalcula celdas**: `cuadriculaHoja` se partió. La parte
+  barata (anchos ⇒ `leftPx` de lo inmovilizado y `anchoTablaPx`) es
+  `acomodarColumnas`, FUENTE ÚNICA de `cuadriculaHoja` y de
+  `aplicarAnchos(vista, anchos)` (PURO): columnas y ancho de tabla nuevos
+  REUSANDO `filas` (misma referencia); sin anchos o sin cambios devuelve la
+  MISMA vista. En el componente `vistaBase = useMemo(cuadriculaHoja…, [hoja,
+  libro])` y `vista = useMemo(aplicarAnchos(vistaBase, anchosHoja), …)`:
+  `geometriaCelda`, `scrollParaVerCelda` y `filasPorPagina` leen los anchos
+  nuevos. Ojo: React sí vuelve a pintar la tabla en cada cuadro del arrastre
+  (uno por cuadro, no por evento); memoizar el `<tbody>` pediría un
+  `seleccionar` estable (ref al día o delegación de clics) y tocar el
+  contrato de «El marco sigue a la selección». Queda para si en QA el
+  arrastre se siente pesado en la hoja más grande.
+- **Estado**: `anchosManuales` en `useState` (ningún efecto), llave
+  `claveAnchosHoja(claveAnchos, hoja.nombre)` ⇒ `{ [c]: px }`. Prop ADITIVA
+  `claveAnchos` (default `""`); la página pasa `claveAnchosVistaBalance(destino)`
+  (`lib/admin/balance-vista.ts`): «mensual» | «general» | «avion», por TIPO
+  de libro (un ancho del «balance» del general no se aplica al «balance» de
+  un avión; los aviones comparten: es el mismo libro con otros datos).
+  Sobreviven a «Actualizar datos» y a RefreshOnFocus (`router.refresh()`
+  conserva el estado), al cambio de hoja y, sin `?gasto=`, al de periodo o de
+  libro (sin `key` el componente no se remonta); con `?gasto=` la `key`
+  remonta y se pierden, y siempre al recargar. Sin localStorage a propósito:
+  un ancho viejo caería en la columna equivocada si pyservices cambia las
+  columnas.
+- **Ayuda**: `DESCRIPCION_VISTA_BALANCE` (tooltip del ⓘ) termina con «Doble
+  clic en la línea entre dos letras de columna ajusta el ancho al
+  contenido.».
+- **Pruebas**: `lib/admin/__tests__/libro-excel.test.ts` (`aplicarAnchos`:
+  misma vista sin cambios, filas reusadas, `leftPx` = suma de los anchos
+  NUEVOS con `geometriaCelda` cuadrando, `scrollParaVerCelda` con anchos
+  nuevos, límites; `celdasParaAutoajuste` con combinadas horizontal y
+  vertical, vacías, fila oculta y renglones; `anchoAutoajustePx` con
+  holgura, máximo, sangría, `null` sin contenido, tope, mínimo y no finitos;
+  `anchoArrastrePx`, `conAnchoColumna`, `claveAnchosHoja`, `fuenteCanvas`,
+  `cajaHorizontalPx` y los textos exactos), `balance-vista.test.ts` (la llave
+  por tipo y la frase de ayuda) y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (marcado: una
+  manija con nombre accesible y `title` en CADA letra, también la
+  inmovilizada, ninguna en la esquina, la numeración ni las celdas, sin tab
+  stops nuevos, HTML idéntico con o sin `claveAnchos`; cableado por regex:
+  doble clic ⇒ `autoajustarColumna`, un solo canvas, la fuente real, arrastre
+  con pointer capture y un cuadro, nada toca la selección, `cuadriculaHoja`
+  solo con hoja y libro, sin localStorage, sin efectos nuevos, la prop en la
+  página; CSS: la manija absoluta dentro del sticky, ningún `<th>` con otro
+  `position`, la clase del arrastre al final). Las dos pruebas de letras que
+  exigían `>A</th>` ahora exigen la letra seguida SOLO de su manija; las de
+  celdas no cambiaron.
+- **Pendiente**: sin QA en navegador (vitest sin DOM). En
+  `/admin/reportes/balance?modo=general`, pestaña «otros movimientos»: doble
+  clic en el borde derecho de la F ⇒ se lee el concepto completo; arrastrar
+  la manija de una columna inmovilizada ⇒ las fijas siguen pegadas y el
+  marco sigue a la selección; doble clic en una columna vacía ⇒ ancho del
+  libro; «Actualizar datos» y cambiar de hoja ⇒ los anchos se quedan; ir al
+  balance de un avión ⇒ los del libro; el arrastre fluido en la hoja más
+  grande. Angostar una columna con texto ajustado (`wr`) puede crecer filas
+  por encima del alto NOMINAL (ver abajo).
+
 ### El marco sigue a la selección (13-oct-2026)
 
 Pedido del cliente: al moverse con las flechas por el Excel en pantalla, la

@@ -264,6 +264,52 @@
   z-index: 4;
 }
 
+/*
+ * Manija para ajustar el ancho de la columna (14-oct-2026; pedido del
+ * cliente: «que si das doble clic entre las columnas se pueda abrir a lo
+ * ancho del contenido… como lo hacemos con el excel»). Vive DENTRO del <th>
+ * de la letra, en su borde derecho. El <th> es sticky y un sticky YA es el
+ * bloque contenedor de un hijo absoluto: NO se le pone `position: relative`
+ * (sería el «escalón» de las notas otra vez: perdería lo fijo). Tampoco se
+ * sale del <th>: cada <th> es su propio contexto de apilamiento y el de la
+ * derecha taparía lo que asomara. 8 px de zona de clic (7 del relleno + el
+ * borde de 1 px, por `right: -1px`) que no tapan la letra centrada; invisible
+ * en reposo y una línea verde al pasar el ratón.
+ */
+.xl-manija {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.xl-manija::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 0;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.xl-manija:hover::after {
+  background: var(--xl-seleccion);
+}
+
+.xl-manija:focus-visible {
+  outline: 2px solid var(--xl-seleccion);
+  outline-offset: -2px;
+}
+
 .xl-celda {
   box-sizing: border-box;
   padding: 0 3px;
@@ -356,4 +402,16 @@
   padding: 24px;
   font-size: 13px;
   color: var(--xl-gris-texto);
+}
+
+/*
+ * Mientras se arrastra una manija (14-oct-2026): cursor col-resize en todo el
+ * libro aunque el puntero pase sobre celdas o pestañas, y nada de seleccionar
+ * texto. Va AL FINAL para ganarles por orden a los `cursor` de las celdas y
+ * de las pestañas (misma especificidad).
+ */
+.xl-libro--redimensionando,
+.xl-libro--redimensionando * {
+  cursor: col-resize;
+  user-select: none;
 }

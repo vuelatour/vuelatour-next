@@ -24,6 +24,7 @@ import {
   DESCRIPCION_VISTA_BALANCE,
   ETIQUETA_VOLVER_REPORTES,
   NOMBRE_LIBRO_VUELATOUR,
+  claveAnchosVistaBalance,
   descargaVistaBalance,
   errorVistaBalance,
   hrefReportesDesdeVista,
@@ -85,6 +86,11 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
  * (`lib/admin/libro-vinculos.ts`); no viaja al API. La `key` del libro
  * (`claveSalto`: gasto · título · archivo) lo remonta al cambiar de periodo,
  * de avión o de chip, y un `router.refresh()` la conserva y no vuelve a saltar.
+ *
+ * Anchos de columna (14-oct-2026): el operador ajusta una columna con doble
+ * clic o arrastre en la manija de su letra; `claveAnchos` separa los anchos
+ * por TIPO de libro (mensual, general, avión), porque las hojas se llaman
+ * igual en los tres.
  */
 export default async function BalanceVistaPage({ searchParams }: PageProps) {
   const sp = await searchParams;
@@ -171,6 +177,7 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
           descarga={descarga}
           pantalla
           gastoInicial={gasto ?? null}
+          claveAnchos={claveAnchosVistaBalance(destino)}
         />
       ) : error && error.motivo === "fallo" ? (
         <TarjetaErrorCarga titulo={error.titulo} descripcion={error.descripcion} />

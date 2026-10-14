@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   useTransition,
   type KeyboardEvent,
+  type PointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -26,20 +27,32 @@ import {
   ETIQUETA_SALIR_PANTALLA_COMPLETA,
   NOMBRE_SALIR_PANTALLA_COMPLETA,
   TITULO_ACTUALIZAR_LIBRO,
+  TITULO_MANIJA_COLUMNA,
   TITULO_PANTALLA_COMPLETA,
   TITULO_SALIR_PANTALLA_COMPLETA,
   TOAST_LIBRO_ACTUALIZADO,
+  anchoArrastrePx,
+  anchoAutoajustePx,
+  aplicarAnchos,
+  cajaHorizontalPx,
+  celdasParaAutoajuste,
+  claveAnchosHoja,
+  conAnchoColumna,
   contenidoBarraFormulas,
   cuadriculaHoja,
   desplazarSeleccion,
   esTeclaNavegacionHoja,
   estiloCeldaCss,
   filasPorPagina,
+  fuenteCanvas,
+  nombreManijaColumna,
   referenciaCelda,
   resolverHojaIdx,
   scrollParaVerCelda,
   textoHojas,
   tituloCelda,
+  type AnchosColumnas,
+  type ColumnaVista,
 } from "@/lib/admin/libro-excel";
 import {
   ETIQUETA_QUITAR_FRANJA_GASTO,
@@ -59,6 +72,23 @@ export interface DescargaLibro {
 interface Seleccion {
   r: number;
   c: number;
+}
+
+/**
+ * Un arrastre de manija en curso (14-oct-2026). Vive en una ref y no en
+ * estado: moverse solo anota la x del puntero y el ancho nuevo se aplica UNA
+ * vez por cuadro (`requestAnimationFrame`).
+ */
+interface ArrastreColumna {
+  c: number;
+  pointerId: number;
+  xInicial: number;
+  anchoInicialPx: number;
+  /** La última x del puntero (la aplica el siguiente cuadro). */
+  x: number;
+  /** El ancho ya aplicado: si el cuadro da el mismo, no se re-pinta. */
+  aplicadoPx: number;
+  cuadro: number | null;
 }
 
 /**
@@ -133,7 +163,9 @@ const soportaFullscreenServidor = () => true;
  * paneles inmovilizados, combinadas, notas y el estilo de cada celda tal
  * como viene del libro, y las pestañas de hojas abajo. Todo el modelo lo
  * arma `lib/admin/libro-excel.ts` (puro); aquí solo se pinta y se mueve la
- * selección. El botón de descarga baja EXACTAMENTE este libro.
+ * selección. El botón de descarga baja EXACTAMENTE este libro. Desde el
+ * 14-oct-2026 cada letra de columna lleva su manija para ajustar el ancho
+ * (doble clic: al contenido; arrastre: a mano), solo en pantalla.
  */
 export function LibroExcel({
   libro,
@@ -141,6 +173,7 @@ export function LibroExcel({
   className,
   pantalla = false,
   gastoInicial = null,
+  claveAnchos = "",
 }: {
   libro: LibroExcelJson;
   descarga?: DescargaLibro | null;
@@ -154,6 +187,11 @@ export function LibroExcel({
    *  libro en la hoja y la celda de ese gasto, con la franja que lo explica.
    *  Sin la prop, el libro de siempre. */
   gastoInicial?: string | null;
+  /** TIPO de libro para los anchos de columna que ajusta el operador
+   *  (14-oct-2026; la página de balance pasa `claveAnchosVistaBalance`):
+   *  un ancho del «balance» del general no se aplica al «balance» de un
+   *  avión aunque las hojas se llamen igual. Sin la prop, clave vacía. */
+  claveAnchos?: string;
 }) {
   // Dónde vive el gasto en ESTE libro (puro, `lib/admin/libro-vinculos.ts`).
   // UNA vez por montaje y también en el servidor: el HTML ya trae la pestaña,
@@ -176,7 +214,26 @@ export function LibroExcel({
     llegada ? franjaDeLlegada(llegada) : null,
   );
   const hoja = libro.hojas[hojaIdx] ?? null;
-  const vista = useMemo(() => (hoja ? cuadriculaHoja(hoja, libro) : null), [hoja, libro]);
+  // Anchos que el operador ajustó con la manija (14-oct-2026), por TIPO de
+  // libro (`claveAnchos`) y hoja (`claveAnchosHoja`, puro). Estado del
+  // componente: sobreviven a «Actualizar datos» (router.refresh() conserva el
+  // estado) y al cambio de hoja; se pierden al recargar. Sin localStorage a
+  // propósito: un ancho guardado caería en la columna equivocada el día que
+  // pyservices cambie las columnas del libro.
+  const [anchosManuales, setAnchosManuales] = useState<
+    Readonly<Partial<Record<string, AnchosColumnas>>>
+  >({});
+  const claveHoja = claveAnchosHoja(claveAnchos, hoja?.nombre ?? "");
+  const anchosHoja = anchosManuales[claveHoja];
+  // La parte CARA (celdas, combinadas, desbordes) solo se arma con la hoja o
+  // el libro; la BARATA (anchos, `leftPx` de lo inmovilizado, ancho de la
+  // tabla) sale de los anchos manuales REUSANDO las filas: arrastrar una
+  // manija no reconstruye las celdas.
+  const vistaBase = useMemo(() => (hoja ? cuadriculaHoja(hoja, libro) : null), [hoja, libro]);
+  const vista = useMemo(
+    () => (vistaBase ? aplicarAnchos(vistaBase, anchosHoja) : null),
+    [vistaBase, anchosHoja],
+  );
 
   const celdaSeleccionada = useMemo(() => {
     if (!hoja || !seleccion) return null;
@@ -284,6 +341,85 @@ export function LibroExcel({
     );
   };
 
+  // Ajustar el ancho de las columnas como en Excel (14-oct-2026): la manija
+  // del borde derecho de cada letra. Doble clic ⇒ al contenido; arrastre ⇒
+  // sigue al puntero. Todo en MANEJADORES, ningún efecto: el marco no se
+  // mueve solo y un router.refresh() no toca los anchos.
+  const fijarAncho = (c: number, px: number | null) => {
+    setAnchosManuales((prev) => ({ ...prev, [claveHoja]: conAnchoColumna(prev[claveHoja], c, px) }));
+  };
+
+  // Medición = el texto que SE VE (`celda.t`) con la fuente REAL de cada
+  // celda (su estilo calculado: familia, tamaño, negrita, cursiva) en UN solo
+  // canvas reutilizado, más su relleno y borde reales. Qué celdas cuentan y la
+  // regla de px son puras (`celdasParaAutoajuste`, `anchoAutoajustePx`); aquí
+  // solo se lee el DOM.
+  const tabla = useRef<HTMLTableElement>(null);
+  const lienzo = useRef<CanvasRenderingContext2D | null>(null);
+  const autoajustarColumna = (c: number) => {
+    const cuerpo = tabla.current?.tBodies[0];
+    if (!vista || !cuerpo) return;
+    lienzo.current ??= document.createElement("canvas").getContext("2d");
+    const ctx = lienzo.current;
+    if (!ctx) return;
+    const medidas = celdasParaAutoajuste(vista, c).flatMap((x) => {
+      // El <tr> y el <td> por posición (la vista ES lo que se pintó; el <th>
+      // de la numeración va primero), cotejando su `data-ref`.
+      const td = cuerpo.rows[x.iFila]?.cells[x.iCelda + 1];
+      if (!td || td.dataset.ref !== x.ref) return [];
+      const estilo = getComputedStyle(td);
+      ctx.font = fuenteCanvas(estilo);
+      return [{ renglonesPx: x.renglones.map((r) => ctx.measureText(r).width), cajaPx: cajaHorizontalPx(estilo) }];
+    });
+    // Sin contenido ⇒ null ⇒ la columna vuelve al ancho original del libro.
+    fijarAncho(c, anchoAutoajustePx(medidas));
+  };
+
+  // Arrastre: pointer capture (el puntero puede salir de la manija y del
+  // marco) y UN ancho por cuadro de animación. No selecciona texto (el
+  // `onMouseDown` de la manija y `.xl-libro--redimensionando`) ni la celda:
+  // la manija vive en las letras, nunca en un <td>.
+  const arrastre = useRef<ArrastreColumna | null>(null);
+  const [redimensionando, setRedimensionando] = useState(false);
+  const aplicarArrastre = () => {
+    const a = arrastre.current;
+    if (!a) return;
+    a.cuadro = null;
+    const px = anchoArrastrePx(a.anchoInicialPx, a.xInicial, a.x);
+    if (px === a.aplicadoPx) return;
+    a.aplicadoPx = px;
+    setRedimensionando(true);
+    fijarAncho(a.c, px);
+  };
+  const empezarArrastre = (e: PointerEvent<HTMLButtonElement>, col: ColumnaVista) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    arrastre.current = {
+      c: col.c,
+      pointerId: e.pointerId,
+      xInicial: e.clientX,
+      anchoInicialPx: col.anchoPx,
+      x: e.clientX,
+      aplicadoPx: col.anchoPx,
+      cuadro: null,
+    };
+  };
+  const moverArrastre = (e: PointerEvent<HTMLButtonElement>) => {
+    const a = arrastre.current;
+    if (!a || a.pointerId !== e.pointerId) return;
+    a.x = e.clientX;
+    a.cuadro ??= requestAnimationFrame(aplicarArrastre);
+  };
+  const terminarArrastre = (e: PointerEvent<HTMLButtonElement>) => {
+    const a = arrastre.current;
+    if (!a || a.pointerId !== e.pointerId) return;
+    if (a.cuadro !== null) cancelAnimationFrame(a.cuadro);
+    // El último movimiento no se pierde aunque su cuadro no haya llegado.
+    aplicarArrastre();
+    arrastre.current = null;
+    setRedimensionando(false);
+  };
+
   // `zona-clara`: el libro es una isla BLANCA dentro del admin oscuro; sin
   // re-escopar los tokens (globals.css, `.dark .zona-clara`) los controles de
   // la barra —Button outline, «N hojas»— heredan los colores del dark mode
@@ -292,7 +428,12 @@ export function LibroExcel({
   return (
     <div
       ref={raiz}
-      className={cn("xl-libro zona-clara", pantalla && "xl-libro--pantalla", className)}
+      className={cn(
+        "xl-libro zona-clara",
+        pantalla && "xl-libro--pantalla",
+        redimensionando && "xl-libro--redimensionando",
+        className,
+      )}
       data-libro={libro.titulo}
     >
       {/* Franja del gasto (13-oct-2026, punto 5): ANTES de la barra y solo con
@@ -381,7 +522,7 @@ export function LibroExcel({
           onKeyDown={onKeyDown}
           data-hoja={hoja.nombre}
         >
-          <table className="xl-tabla" style={{ width: vista.anchoTablaPx }}>
+          <table ref={tabla} className="xl-tabla" style={{ width: vista.anchoTablaPx }}>
             <colgroup>
               <col style={{ width: ANCHO_NUMERACION_PX }} />
               {vista.columnas.map((col) => (
@@ -397,8 +538,37 @@ export function LibroExcel({
                     scope="col"
                     className={cn(col.fija && "xl-fija-col")}
                     style={col.fija ? { left: col.leftPx ?? undefined } : undefined}
+                    // El nombre de la letra es la letra: sin esto el lector le
+                    // sumaría el de su manija («F Ajustar el ancho…»).
+                    aria-label={col.letra}
                   >
                     {col.letra}
+                    {/* La manija (14-oct-2026), en el borde derecho de la letra
+                        y DENTRO del <th> sticky (ya es su bloque contenedor; el
+                        <th> siguiente taparía lo que se saliera). Sin tab stop:
+                        son decenas de columnas. Cursor col-resize, no
+                        cursor-pointer: esa es su promesa, y se cumple con el
+                        doble clic y con el arrastre. */}
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="xl-manija"
+                      aria-label={nombreManijaColumna(col.letra)}
+                      title={TITULO_MANIJA_COLUMNA}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onPointerDown={(e) => empezarArrastre(e, col)}
+                      onPointerMove={moverArrastre}
+                      onPointerUp={terminarArrastre}
+                      onPointerCancel={terminarArrastre}
+                      onLostPointerCapture={terminarArrastre}
+                      onDoubleClick={() => autoajustarColumna(col.c)}
+                      onClick={(e) => {
+                        // Activada con teclado o lector de pantalla (detail 0)
+                        // ajusta como el doble clic; un clic de ratón suelto no
+                        // hace nada (es el inicio de un arrastre).
+                        if (e.detail === 0) autoajustarColumna(col.c);
+                      }}
+                    />
                   </th>
                 ))}
               </tr>

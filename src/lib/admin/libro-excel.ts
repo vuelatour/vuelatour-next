@@ -136,10 +136,31 @@ export function desbordaTexto(
 }
 
 /**
+ * La parte BARATA de la cuadrícula (14-oct-2026): el `leftPx` de las columnas
+ * inmovilizadas (acumula los anchos desde la numeración) y el ancho de la
+ * tabla. FUENTE ÚNICA para `cuadriculaHoja` (anchos del libro) y
+ * `aplicarAnchos` (anchos que ajustó el operador), y la MISMA cuenta que
+ * `geometriaCelda`: el marco sigue cuadrando con lo inmovilizado.
+ */
+function acomodarColumnas(
+  columnas: ReadonlyArray<Omit<ColumnaVista, "leftPx">>,
+): Pick<HojaVista, "columnas" | "anchoTablaPx"> {
+  let left = ANCHO_NUMERACION_PX;
+  const acomodadas = columnas.map((col): ColumnaVista => {
+    const leftPx = col.fija ? left : null;
+    left += col.anchoPx;
+    return { c: col.c, letra: col.letra, anchoPx: col.anchoPx, fija: col.fija, leftPx };
+  });
+  return { columnas: acomodadas, anchoTablaPx: left };
+}
+
+/**
  * La hoja lista para pintarse: solo filas y columnas VISIBLES (las ocultas
  * no se pintan, y una combinada que las cruza se encoge a lo visible), con
  * las combinadas resueltas en `colSpan`/`rowSpan` sobre su primera celda
- * visible y los desplazamientos de los paneles inmovilizados.
+ * visible y los desplazamientos de los paneles inmovilizados. Es la parte
+ * CARA (celdas, combinadas, desbordes): los anchos que ajusta el operador NO
+ * pasan por aquí, van por `aplicarAnchos`, que reusa las filas.
  */
 export function cuadriculaHoja(hoja: LibroExcelHoja, libro: DimensionesLibro): HojaVista {
   const maxCol = Math.max(hoja.max_col, COLUMNAS_MINIMAS);
@@ -148,17 +169,18 @@ export function cuadriculaHoja(hoja: LibroExcelHoja, libro: DimensionesLibro): H
   const dimFila = new Map(hoja.filas.map((x) => [x.r, x]));
   const inmovilizar = hoja.inmovilizar ?? { filas: 0, columnas: 0 };
 
-  const columnas: ColumnaVista[] = [];
-  let left = ANCHO_NUMERACION_PX;
+  const delLibro: Omit<ColumnaVista, "leftPx">[] = [];
   for (let c = 1; c <= maxCol; c++) {
     const d = dimCol.get(c);
     if (d?.oculta) continue;
-    const anchoPx = anchoColumnaPx(d?.ancho ?? libro.ancho_columna_default);
-    const fija = c <= inmovilizar.columnas;
-    columnas.push({ c, letra: letraColumna(c), anchoPx, fija, leftPx: fija ? left : null });
-    left += anchoPx;
+    delLibro.push({
+      c,
+      letra: letraColumna(c),
+      anchoPx: anchoColumnaPx(d?.ancho ?? libro.ancho_columna_default),
+      fija: c <= inmovilizar.columnas,
+    });
   }
-  const anchoTablaPx = left;
+  const { columnas, anchoTablaPx } = acomodarColumnas(delLibro);
 
   const filasVisibles: Omit<FilaVista, "celdas">[] = [];
   let top = ALTO_LETRAS_PX;
@@ -593,3 +615,191 @@ export function scrollParaVerCelda(
   if (scrollLeft === marco.scrollLeft && scrollTop === marco.scrollTop) return null;
   return { scrollLeft, scrollTop };
 }
+
+/* ------------------------------------------------------------------------- */
+/* Ajustar el ancho de las columnas como en Excel (14-oct-2026)                */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Pedido del cliente, con la captura del Balance general («otros
+ * movimientos»: la columna F cortaba «TUAs + extras con IVA · 2 concept…»):
+ * «que si das doble clic entre las columnas se pueda abrir a lo ancho del
+ * contenido para alcanzar a leer todo como lo hacemos con el excel». Cada
+ * letra de columna lleva en su borde derecho una manija: doble clic ⇒ el
+ * ancho se ajusta al contenido; arrastrar ⇒ el ancho sigue al puntero. Aquí
+ * vive lo PURO (la regla de medidas a px, la vista con los anchos nuevos, la
+ * llave del estado y los textos); el componente solo mide el DOM y guarda el
+ * estado. Ningún número del libro cambia: solo el ancho con que se pinta.
+ */
+
+/** Anchos que el operador ajustó, por número de columna (px). Sin la llave, el ancho del libro. */
+export type AnchosColumnas = Readonly<Partial<Record<number, number>>>;
+
+/** Holgura del autoajuste: que la última letra no quede cortada por el redondeo de la fuente. */
+export const HOLGURA_AUTOAJUSTE_PX = 5;
+/** Tope de una columna ajustada: un texto larguísimo no se lleva la hoja entera. */
+export const ANCHO_MAXIMO_COLUMNA_PX = 1000;
+/** Mínimo: la columna nunca desaparece y su manija siempre se puede volver a agarrar. */
+export const ANCHO_MINIMO_COLUMNA_PX = 12;
+
+/** Un ancho (finito) en px enteros, entre el mínimo y el tope. */
+export function limitarAnchoColumnaPx(px: number): number {
+  return Math.min(ANCHO_MAXIMO_COLUMNA_PX, Math.max(ANCHO_MINIMO_COLUMNA_PX, Math.round(px)));
+}
+
+/**
+ * La vista con los anchos que ajustó el operador SIN recalcular celdas:
+ * devuelve columnas y ancho de tabla nuevos —el `leftPx` de lo inmovilizado
+ * es la suma de los anchos NUEVOS, por `acomodarColumnas`, la misma cuenta
+ * de `cuadriculaHoja` y `geometriaCelda`— y REUSA `filas` tal cual: arrastrar
+ * una manija no reconstruye miles de celdas por cada movimiento. Recibe la
+ * vista de `cuadriculaHoja` (los anchos del libro); la llave de una columna
+ * que no está en la vista (oculta) o un valor no finito se ignoran. Sin
+ * anchos, o si ninguno cambia algo, devuelve la MISMA vista.
+ */
+export function aplicarAnchos(vista: HojaVista, anchos: AnchosColumnas | null | undefined): HojaVista {
+  if (!anchos) return vista;
+  let cambia = false;
+  const columnas = vista.columnas.map((col) => {
+    const manual = anchos[col.c];
+    if (manual === undefined || !Number.isFinite(manual)) return col;
+    const anchoPx = limitarAnchoColumnaPx(manual);
+    if (anchoPx === col.anchoPx) return col;
+    cambia = true;
+    return { ...col, anchoPx };
+  });
+  return cambia ? { ...vista, ...acomodarColumnas(columnas) } : vista;
+}
+
+/** Los anchos de una hoja con el de la columna `c` puesto, o quitado con `null` (vuelve al ancho del libro). Nunca muta. */
+export function conAnchoColumna(
+  anchos: AnchosColumnas | undefined,
+  c: number,
+  px: number | null,
+): AnchosColumnas {
+  const nuevos: Partial<Record<number, number>> = { ...anchos };
+  if (px === null || !Number.isFinite(px)) delete nuevos[c];
+  else nuevos[c] = limitarAnchoColumnaPx(px);
+  return nuevos;
+}
+
+/**
+ * Llave del estado de anchos: el TIPO de libro (`claveAnchos` de la página;
+ * `""` sin la prop) + el nombre de la hoja. El balance mensual, el general y
+ * el de un avión tienen hojas con el mismo nombre («balance») y columnas
+ * distintas: un ancho del «balance» del general no se aplica al «balance» de
+ * un avión.
+ */
+export function claveAnchosHoja(claveLibro: string, hoja: string): string {
+  return JSON.stringify([claveLibro, hoja]);
+}
+
+/** Una celda que cuenta para el autoajuste de su columna y dónde está su `<td>`. */
+export interface CeldaAutoajuste {
+  /** Posición de la fila en `vista.filas` = su `<tr>` dentro del `<tbody>`. */
+  iFila: number;
+  /** Posición en `fila.celdas` = su `<td>` (antes va el `<th>` de la numeración). */
+  iCelda: number;
+  /** «F7»: el `data-ref` del `<td>`; el componente lo coteja antes de medir. */
+  ref: string;
+  /** El texto que SE VE (`celda.t`) partido en sus renglones. */
+  renglones: string[];
+}
+
+/** Los renglones de un texto: sus saltos de línea explícitos (\n, \r\n o \r). */
+export function renglonesTexto(t: string): string[] {
+  return t.split(/\r\n|\r|\n/);
+}
+
+/**
+ * Qué celdas cuentan para ajustar la columna `c` al contenido, con la regla
+ * de Excel: las que tienen texto visible (`celda.t`), en filas visibles (las
+ * ocultas no están en la vista) y que NO son combinadas que abarcan varias
+ * columnas (Excel las ignora al autoajustar). Una coordenada tapada por una
+ * combinada no tiene `<td>`: tampoco cuenta.
+ */
+export function celdasParaAutoajuste(vista: Pick<HojaVista, "filas">, c: number): CeldaAutoajuste[] {
+  const out: CeldaAutoajuste[] = [];
+  vista.filas.forEach((fila, iFila) => {
+    const iCelda = fila.celdas.findIndex((x) => x.c === c);
+    if (iCelda < 0) return;
+    const cv = fila.celdas[iCelda];
+    const t = cv.celda?.t ?? "";
+    if (cv.colSpan > 1 || t === "") return;
+    out.push({ iFila, iCelda, ref: referenciaCelda(cv.r, cv.c), renglones: renglonesTexto(t) });
+  });
+  return out;
+}
+
+/** Lo que se mide de una celda para el autoajuste (el componente lo lee del DOM). */
+export interface MedidaCeldaAutoajuste {
+  /** Ancho de cada renglón del texto con la fuente REAL de la celda (canvas `measureText`), px. */
+  renglonesPx: readonly number[];
+  /** Relleno + borde horizontales REALES del `<td>` (`cajaHorizontalPx`). La sangría
+   *  de Excel ya va aquí: `estiloCeldaCss` la pinta como `padding-left`. */
+  cajaPx: number;
+}
+
+/**
+ * La regla del autoajuste (doble clic en la manija), de medidas a px: el
+ * renglón más largo de cada celda más su relleno y borde; el máximo de la
+ * columna, más la holgura, hacia arriba y entre el mínimo y el tope. Sin
+ * ninguna celda con texto medible ⇒ `null`: la columna vuelve al ancho
+ * original del libro. Las medidas no finitas se ignoran.
+ */
+export function anchoAutoajustePx(medidas: readonly MedidaCeldaAutoajuste[]): number | null {
+  let necesario = 0;
+  for (const m of medidas) {
+    const texto = m.renglonesPx.reduce((max, px) => (Number.isFinite(px) && px > max ? px : max), 0);
+    if (texto <= 0) continue;
+    const caja = Number.isFinite(m.cajaPx) && m.cajaPx > 0 ? m.cajaPx : 0;
+    necesario = Math.max(necesario, texto + caja);
+  }
+  return necesario > 0 ? limitarAnchoColumnaPx(Math.ceil(necesario + HOLGURA_AUTOAJUSTE_PX)) : null;
+}
+
+/** El ancho mientras se arrastra la manija: el de antes más lo que se movió el puntero, entero y entre el mínimo y el tope. */
+export function anchoArrastrePx(anchoInicialPx: number, xInicial: number, x: number): number {
+  return limitarAnchoColumnaPx(anchoInicialPx + (x - xInicial));
+}
+
+/**
+ * La fuente de una celda para el canvas, de su estilo CALCULADO: el
+ * componente pasa `getComputedStyle(td)` tal cual (como `MedidasMarco`), así
+ * cuentan la negrita, la cursiva y el tamaño propios de la celda.
+ */
+export function fuenteCanvas(estilo: {
+  fontStyle: string;
+  fontWeight: string;
+  fontSize: string;
+  fontFamily: string;
+}): string {
+  return [
+    estilo.fontStyle || "normal",
+    estilo.fontWeight || "400",
+    estilo.fontSize || "11pt",
+    estilo.fontFamily || "Calibri, sans-serif",
+  ].join(" ");
+}
+
+/** Relleno + borde horizontales de una celda (px), de su estilo CALCULADO. */
+export function cajaHorizontalPx(estilo: {
+  paddingLeft: string;
+  paddingRight: string;
+  borderLeftWidth: string;
+  borderRightWidth: string;
+}): number {
+  return [estilo.paddingLeft, estilo.paddingRight, estilo.borderLeftWidth, estilo.borderRightWidth].reduce(
+    (acc, v) => acc + (Number.parseFloat(v) || 0),
+    0,
+  );
+}
+
+/**
+ * Textos de la manija (en lib PURO, no en el componente "use client"). Sin
+ * tab stop: son decenas de columnas; el nombre accesible dice qué hace.
+ */
+export function nombreManijaColumna(letra: string): string {
+  return `Ajustar el ancho de la columna ${letra}`;
+}
+export const TITULO_MANIJA_COLUMNA = "Doble clic: ajustar al contenido · Arrastra para cambiar el ancho";

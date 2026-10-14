@@ -15,6 +15,7 @@ import {
   ROLES_ABREN_BALANCES,
   RUTA_VISTA_BALANCE,
   TEXTO_BALANCES_SIN_PERMISO,
+  claveAnchosVistaBalance,
   descargaVistaBalance,
   errorVistaBalance,
   hrefReportesDesdeVista,
@@ -147,6 +148,19 @@ describe("enlaces y títulos", () => {
     );
     expect(ETIQUETA_VER_EN_PANTALLA).toBe("Ver en pantalla");
     expect(DESCRIPCION_VISTA_BALANCE).toContain("Es el mismo libro que se descarga");
+    // 14-oct-2026: que se descubra el autoajuste de columnas (la manija no se ve en reposo).
+    expect(DESCRIPCION_VISTA_BALANCE.endsWith(
+      " Doble clic en la línea entre dos letras de columna ajusta el ancho al contenido.",
+    )).toBe(true);
+  });
+
+  it("los anchos de columna se separan por TIPO de libro: mensual, general y avión (los aviones comparten)", () => {
+    const mensual = claveAnchosVistaBalance({ tipo: "vuelatour", modo: "mensual" });
+    const general = claveAnchosVistaBalance({ tipo: "vuelatour", modo: "general" });
+    const avion = claveAnchosVistaBalance({ tipo: "avion", avionId: UUID });
+    expect(new Set([mensual, general, avion]).size).toBe(3);
+    expect(claveAnchosVistaBalance({ tipo: "avion", avionId: UUID_GASTO })).toBe(avion);
+    expect([mensual, general, avion]).toEqual(["mensual", "general", "avion"]);
   });
 });
 
