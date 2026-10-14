@@ -237,7 +237,13 @@ describe("cableado del diálogo", () => {
     // bajo la lista: un gasto del mismo monto ya conciliado ES el duplicado.
     expect(dialogo.match(/textoExcluidosCandidatos\(data\?\.excluidos/g)?.length).toBe(1);
     expect(dialogo.match(/textoExcluidosCandidatos\(dupData\?\.excluidos/g)?.length).toBe(1);
-    expect(dialogo.match(/textoExcluidosCandidatos\(/g)?.length).toBe(2);
+    // 13-oct-2026 (concepto del SPEI, API 0.0.75): el cuadro «El banco dice:
+    // Factura 7360» reutiliza la MISMA frase con `factura_concepto.otros_gastos`
+    // (los gastos con esa factura que no salen como candidatos: «ya está
+    // conciliado con el cargo del…»). Es otra fuente; `excluidos` sigue
+    // pintándose SOLO en el vacío.
+    expect(dialogo.match(/textoExcluidosCandidatos\(facturaConcepto\.otros_gastos/g)?.length).toBe(1);
+    expect(dialogo.match(/textoExcluidosCandidatos\(/g)?.length).toBe(3);
     // El monto lo dice el API (`excluidos_monto`): el panel no reinterpreta la búsqueda.
     expect(dialogo).toMatch(/monedaCuenta,\s*dias,\s*montoBuscado: data\?\.excluidos_monto,/);
     // La frase sabe si el interruptor está encendido y la fecha del cargo (ventana de «Mostrar…»).

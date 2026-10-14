@@ -76,6 +76,7 @@ import {
   type FormInventarioRefaccion,
   type InventarioPayload,
 } from "@/lib/admin/refaccion-inventario";
+import { hintFolioGasto } from "@/lib/admin/gasto-folio";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { Gasto } from "@/types/expenses";
 import {
@@ -2002,7 +2003,12 @@ export function ExpenseCreateDialog({
 
             <Field
               label="Folio / remisión del ticket"
-              hint="La IA lo llena al adjuntar la foto. Si otro gasto ya trae el mismo folio, el sistema rechaza la captura: es el candado anti-duplicados."
+              // En transferencias, el folio es el número de la factura que se
+              // paga: Conciliación lo compara con el concepto del SPEI.
+              hint={hintFolioGasto(
+                watch("medio_pago"),
+                "La IA lo llena al adjuntar la foto. Si otro gasto ya trae el mismo folio, el sistema rechaza la captura: es el candado anti-duplicados.",
+              )}
             >
               <Input
                 className="font-mono"

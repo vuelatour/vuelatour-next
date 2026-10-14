@@ -7523,3 +7523,109 @@ tablas de resumen auditables del reparto (`profit-sharing/desglose-section.tsx`
   enfocar: tabular por la página deja resaltada la fila de entrada de cada
   tabla que se cruza (Esc la suelta); si molesta, se cambia en
   `filaDeEntrada` sin tocar consumidores.
+
+## Conciliación: concepto del SPEI, completar al re-subir y «Factura NNNN» (13-oct-2026, API 0.0.75)
+
+Caso real (VIP SAESA): los SPEI de septiembre entraron con la leyenda del
+banco sola («SEL TRANSF. INTERBANCARIA SPEI»): la IA no juntó los renglones
+de abajo (banco, beneficiario y el CONCEPTO que tecleó quien pagó, «fact vip
+7360»), así que nadie podía decir qué factura pagó cada cargo. pyservices
+ahora lee esos renglones, el API completa el concepto de las filas YA
+importadas al re-subir el PDF (sin duplicar nada) y lee el número de factura
+de cada concepto (invariante «CONCEPTO DEL SPEI…» del API; el número de la
+invariante lo fija el carril del API). SIN migración.
+
+- **El número lo lee SOLO el API** (`factura-concepto.util.ts`): el panel
+  NO parsea, rotula lo que llega en `factura_concepto` (ADITIVO). Fuentes
+  únicas: `lib/admin/conciliacion-factura-concepto.ts` (chip, cuadro de
+  candidatos, renglón ★, búsqueda) y `lib/admin/conciliacion-importacion.ts`
+  (vista previa, botones, detalle del job, `movimientosParaImportar`, textos
+  fijos); `resumenImportJob` (`conciliacion-auto.ts`) suma las ramas nuevas.
+  Ningún componente redacta estas frases.
+- **Chip «Factura 7360»** (`components/admin/conciliacion/factura-concepto-chip.tsx`,
+  sin hooks) bajo la descripción de `movimientos-table.tsx`: gris = lo que
+  dice el banco (en un cargo pendiente el tooltip avisa que los gastos con
+  esa factura salen con ★); verde «· coincide» = el gasto ligado tiene esa
+  factura; ámbar «· el gasto dice 7361» / «· falta 7360» = posible gasto
+  equivocado (con montos iguales puede ser el de otro vuelo); gris
+  SIN_FOLIO con cómo capturarla. «Prefactura» cuando el tipo lo es (en
+  Corner la prefactura es el folio de la factura). Es un `<a target="_blank"
+  rel="noopener noreferrer">` con `cursor-pointer` y nombre accesible: abre
+  Conciliación ±7 días (de la fila y sus repetidas) buscando el número en
+  `?mvq=` (`hrefConciliacion({…, buscar})`; la tabla lee la búsqueda AL
+  MONTAR, por eso pestaña nueva). 2.º chip ámbar «también en otro pago» /
+  «también en N pagos más» con fecha · monto · cuenta de cada una: un pago en
+  partes está bien, si no es un posible pago doble. `repetida_en` null = NO
+  verificado (no se pinta nada, jamás «no se repite»).
+- **Celda «Descripción»**: dos renglones (`line-clamp-2`, sin `truncate`: el
+  concepto va AL FINAL del texto) con el texto completo en el `title`; la
+  búsqueda rápida suma `textoBusquedaFacturaConcepto` («factura 7360»
+  encuentra la fila aunque el banco diga «fact»).
+- **«Vincular gasto»** (`vincular-gasto-dialog.tsx`): con
+  `factura_concepto` en la respuesta, un cuadro `data-factura-concepto`
+  arriba de la lista (`avisoFacturaEnCandidatos`): «El banco dice: Factura
+  7360 (VIP)», «★ 1 gasto tiene esa factura…» en verde, los gastos con esa
+  factura que NO salen aquí (`otros_gastos`, misma forma que `excluidos`:
+  se pintan con el MISMO `VacioCandidatos` + `textoExcluidosCandidatos`, que
+  dice con qué cargo ya está conciliado) y, si nadie la tiene capturada,
+  cómo capturarla. Cada candidato con `coincide_factura` lleva «★ » y el
+  renglón «★ Su folio coincide con el concepto del banco (Factura 7360)»
+  (tooltip: es una señal, no una prueba). Es SEÑAL dentro de su nivel de
+  monto: el ORDEN lo da el API (nunca brinca sobre uno que cuadra), NUNCA
+  marca ni preselecciona (no toca `setMarcados` ni
+  `marcadosTrasSugerencia`) y el auto-cruce no la usa.
+- **Importar un periodo ya importado** (`import-dialog.tsx` +
+  `import-dialog-partes.tsx`, piezas sin hooks): con cuenta y archivo leído
+  el diálogo pide `vistaPreviaImportAction` (`POST importar/vista-previa`,
+  solo cuenta + movimientos, sin el archivo; turno + `.catch`, clave =
+  cuenta|archivo|total|lectura) y pinta «Antes de importar: 98 líneas» ARRIBA
+  de la tabla: cuántas ya estaban, a cuántas se les agregará el concepto,
+  cuántas no (gemelos del mismo día y monto, cargos ligados a efectivo) y
+  las nuevas, con «misma fecha y monto» marcado. Botones según el caso
+  (`botonesImportacion`, el principal al final): sin vista previa o nada ya
+  importado ⇒ «Importar y conciliar»; todo ya estaba ⇒ «Completar
+  conceptos»; nuevas y ya estaban ⇒ «Solo completar conceptos (no agrega
+  las N nuevas)» como principal si TODAS las nuevas son de misma fecha y
+  monto (relecturas), si no «Importar y conciliar».
+- **`solo_enriquecer`** (`importarMovimientosAsyncAction`, viaja SOLO en
+  true): el API completa conceptos y NO inserta, no cruza ni empareja
+  reversos; lo que no encuentre lo lista sin agregarlo. Un API previo
+  responde 400 «property solo_enriquecer should not exist» ⇒
+  `API_SIN_ENRIQUECER` con `MSG_API_SIN_ENRIQUECER`.
+- **El diálogo se queda abierto** (`debeQuedarseAbierto`: LISTO con filas
+  sin concepto, no encontradas o nuevas de misma fecha y monto): sin
+  cerrar, `router.refresh()` + `toast.info`, el bloque del job pinta
+  `DetallesImportacion` (gemelos con qué facturas dice el archivo y cómo
+  resolverlo —Folio o «fact NNNN»—, vínculos, CAS/errores, no encontrados y
+  «Ojo: nuevos con la misma fecha y monto…») y el pie queda solo con
+  «Cerrar». El aviso de re-cruce es `TEXTO_SUGERIR_RECRUCE` (re-importar no
+  duplica ni reintenta el cruce: solo completa conceptos) y la descripción
+  suma `DESCRIPCION_IMPORT_REPETIDO`.
+- **Advertencias de la lectura** (`ParsedStatement.advertencias`, ya
+  llegaban y se perdían): recuadro ámbar «Revisa antes de importar:» (hasta
+  10) bajo el archivo, p. ej. «N transferencia(s)… se leyeron SIN su
+  concepto». La tabla de la vista previa pinta la descripción PRIMERO y la
+  referencia después, con el texto completo en el `title`.
+- **Folio en transferencias** (`lib/admin/gasto-folio.ts`, `hintFolioGasto`
+  en «Folio / remisión del ticket» de alta y Verificar): con TRANSFERENCIA
+  el hint pide el número de la factura que se paga. Una factura ↔ un gasto ⇒
+  «Folio»; una factura ↔ varios gastos ⇒ «fact NNNN» en la PRIMERA línea de
+  las notas de cada uno (`uq_gasto_folio_ticket_norm` es único desde 4
+  caracteres: el 2.º gasto con el mismo folio rebota). Ni el schema ni el
+  payload cambian.
+- **API previo** (≤ 0.0.74): sin `factura_concepto` no hay chip ni cuadro
+  ni ★; la vista previa responde 404 «Cannot POST» ⇒ `RUTA_NO_DISPONIBLE`
+  (no se pinta el cuadro y quedan los botones de siempre); sin las llaves
+  nuevas `resumenImportJob` es BYTE-IDÉNTICO (golden en
+  `conciliacion-auto.test.ts`).
+- **Pruebas**: `lib/admin/__tests__/conciliacion-factura-concepto.test.ts`,
+  `conciliacion-importacion.test.ts`, `gasto-folio.test.ts`,
+  `conciliacion-auto.test.ts` y `conciliacion-vista.test.ts` (ampliadas),
+  `app/admin/conciliacion/__tests__/vista-previa-action.test.ts`,
+  `components/admin/conciliacion/__tests__/factura-concepto.test.tsx` y
+  `import-vista-previa.test.tsx`; `excluidos.test.tsx` ahora admite el 3.er
+  uso de `textoExcluidosCandidatos` (el de `otros_gastos`).
+- **Orden de deploy**: API 0.0.75 → pyservices → **panel** (siempre después
+  del API). En otro orden nada se rompe ni se cuenta dos veces: con el panel
+  antes, la vista previa no aparece y «Solo completar conceptos» nunca se
+  ofrece.

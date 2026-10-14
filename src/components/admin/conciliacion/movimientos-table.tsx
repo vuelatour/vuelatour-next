@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
+import { FacturaConceptoChip } from "@/components/admin/conciliacion/factura-concepto-chip";
+import { textoBusquedaFacturaConcepto } from "@/lib/admin/conciliacion-factura-concepto";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
@@ -130,8 +132,21 @@ export function MovimientosTable({
       {
         key: "descripcion",
         header: "Descripción",
-        cellClassName: "text-muted-foreground truncate max-w-[280px]",
-        cell: (m) => m.descripcion ?? "—",
+        // Concepto del SPEI (13-oct-2026): el concepto («BANORTE fact vip
+        // 7360») va al FINAL del texto y el `truncate` lo cortaba. Dos
+        // renglones y el texto completo en el tooltip; debajo, «Factura 7360»
+        // cuando el API la leyó (sin el campo, solo la celda de siempre).
+        cellClassName: "text-muted-foreground max-w-[320px]",
+        cell: (m) => (
+          <>
+            <span className="line-clamp-2" title={m.descripcion ?? undefined}>
+              {m.descripcion ?? "—"}
+            </span>
+            {m.factura_concepto && (
+              <FacturaConceptoChip fc={m.factura_concepto} fecha={m.fecha} tipo={m.tipo} />
+            )}
+          </>
+        ),
       },
       {
         key: "tipo",
@@ -547,6 +562,9 @@ export function MovimientosTable({
         } ${
           // Folios y clientes de los cobros que paga el abono (uno o varios).
           textoBusquedaCobros(m)
+        } ${
+          // «factura 7360» encuentra el SPEI aunque el banco diga «fact».
+          textoBusquedaFacturaConcepto(m)
         }`
       }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"

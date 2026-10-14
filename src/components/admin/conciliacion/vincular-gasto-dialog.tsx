@@ -144,6 +144,11 @@ import {
   type CatalogosGastoDesdeCargo,
   type VeredictoIa,
 } from "@/lib/admin/gasto-desde-cargo";
+import {
+  ETIQUETA_COINCIDE_FACTURA,
+  TITULO_COINCIDE_FACTURA,
+  avisoFacturaEnCandidatos,
+} from "@/lib/admin/conciliacion-factura-concepto";
 import type { Gasto } from "@/types/expenses";
 import { cn } from "@/lib/utils";
 import type {
@@ -480,6 +485,10 @@ function SelectorGastos({
   // Moneda de la CUENTA del cargo: no cambia entre búsquedas, así que se
   // conserva mientras llega la siguiente (las casillas vetadas no parpadean).
   const [monedaCuenta, setMonedaCuenta] = useState<string | null>(null);
+  // «Factura 7360» del concepto del cargo (13-oct-2026, API 0.0.75): tampoco
+  // cambia entre búsquedas; el renglón «★ Su folio coincide…» de un gasto
+  // MARCADO no parpadea mientras llega la siguiente respuesta.
+  const [facturaCargo, setFacturaCargo] = useState<string | null>(null);
   // La misma moneda para los callbacks asíncronos (la IA contesta cuando
   // quiera): sin ella la preselección no conocía la cuenta (revisión 2-oct).
   const monedaRef = useRef<string | null>(null);
@@ -532,6 +541,7 @@ function SelectorGastos({
         if (r.ok && r.data) {
           monedaRef.current = r.data.movimiento.moneda ?? null;
           setMonedaCuenta(monedaRef.current);
+          if (r.data.factura_concepto?.texto) setFacturaCargo(r.data.factura_concepto.texto);
           // El API sabe incluir gastos en efectivo: aparece el interruptor.
           if (apiOfreceNoBancarios(r.data)) setApiNoBancarios(true);
         }
@@ -554,6 +564,12 @@ function SelectorGastos({
   const sugerencia = sug.tipo === "listo" ? sug.data : null;
   const sugerido = fichaSugerida(sugerencia);
   const resultados = useMemo(() => data?.candidatos ?? [], [data]);
+  // El concepto del cargo cita una factura (API 0.0.75): qué dice el banco,
+  // cuántos candidatos la tienen (★) y los gastos con esa factura que NO
+  // salen aquí. Es una SEÑAL: nada se marca solo por la factura.
+  const facturaConcepto = data?.factura_concepto ?? null;
+  const avisoFactura = facturaConcepto ? avisoFacturaEnCandidatos(facturaConcepto, resultados) : null;
+  const textoFactura = facturaConcepto?.texto ?? facturaCargo;
   const filas = useMemo(
     () => listaConMarcadosPrimero(conSugeridoAlFrente(resultados, sugerido), marcados),
     [resultados, sugerido, marcados],
@@ -934,6 +950,35 @@ function SelectorGastos({
                 disabled={pending}
               />
             )}
+            {facturaConcepto && avisoFactura && (
+              <div
+                data-factura-concepto=""
+                className="space-y-1 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"
+              >
+                <p className="text-muted-foreground">{avisoFactura.encabezado}</p>
+                {avisoFactura.coincidentes && (
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400">{avisoFactura.coincidentes}</p>
+                )}
+                {avisoFactura.otrosTitulo && (
+                  <>
+                    <p className="text-amber-700 dark:text-amber-300">{avisoFactura.otrosTitulo}</p>
+                    {/* La MISMA frase de los excluidos: dice con qué cargo ya
+                        está conciliado (posible pago doble o liga equivocada). */}
+                    <VacioCandidatos
+                      texto={null}
+                      avisos={textoExcluidosCandidatos(facturaConcepto.otros_gastos, movimiento.monto, {
+                        monedaCuenta,
+                        dias,
+                        incluyeNoBancarios: incluirNoBancarios,
+                        fechaCargo: movimiento.fecha,
+                      })}
+                      onMostrarNoBancarios={mostrarNoBancarios}
+                    />
+                  </>
+                )}
+                {avisoFactura.sinCaptura && <p className="text-muted-foreground">{avisoFactura.sinCaptura}</p>}
+              </div>
+            )}
             <div className="max-h-72 overflow-y-auto rounded-lg border border-border divide-y divide-border">
               {filas
                 .filter((c) => estado.tipo === "lista" || marcados.some((m) => m.id === c.id))
@@ -946,6 +991,9 @@ function SelectorGastos({
                   // descripción repite el MOTIVO del veto y lleva el folio entero.
                   const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo);
                   const esSugerido = c.id === sugerido?.id;
+                  // Su folio es el número que dice el concepto del banco
+                  // (API 0.0.75): ★ y su renglón, NUNCA una marca.
+                  const coincide = c.coincide_factura === true;
                   return (
                     <label
                       key={c.id}
@@ -965,7 +1013,7 @@ function SelectorGastos({
                       <span className="min-w-0">
                         <span className="flex min-w-0 items-center gap-1.5">
                           <span className="block min-w-0 truncate font-medium">
-                            {esSugerido ? "★ " : ""}
+                            {esSugerido || coincide ? "★ " : ""}
                             {etiquetaCandidatoGasto(ficha)}
                           </span>
                           {/* «Efectivo»: no pasó por el banco (pide justificación). */}
@@ -980,6 +1028,14 @@ function SelectorGastos({
                             title={tituloDesc ?? undefined}
                           >
                             {desc}
+                          </span>
+                        )}
+                        {coincide && textoFactura && (
+                          <span
+                            className="block text-xs text-emerald-600 dark:text-emerald-400"
+                            title={TITULO_COINCIDE_FACTURA}
+                          >
+                            {ETIQUETA_COINCIDE_FACTURA(textoFactura)}
                           </span>
                         )}
                         {esSugerido && (

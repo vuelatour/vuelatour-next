@@ -36,20 +36,26 @@ import {
   diaMasReverso,
   ordenarCargosParaAbono,
 } from "@/lib/admin/conciliacion-reverso";
+import { MSG_API_SIN_ENRIQUECER, esDtoSinEnriquecer } from "@/lib/admin/conciliacion-importacion";
 import type {
   AutoMatchResultado,
   CandidatoReverso,
   CandidatosCobroResponse,
+  EnriquecimientoDetalle,
+  EnriquecimientoOmitido,
   GastosCandidatosResponse,
   MapeoColumnasPaywise,
   MovimientoBancario,
   MovimientoListResponse,
+  NoEncontradoImport,
+  NuevoMismoDia,
   ParejaReverso,
   ParsedStatement,
   PaywiseAuditoria,
   ReversosAutoResultado,
   SugerenciaConciliacion,
   SugerirLoteResponse,
+  VistaPreviaImportacion,
 } from "@/types/conciliacion";
 
 export interface ActionResult<T = unknown> {
@@ -146,21 +152,66 @@ export async function importarMovimientosAction(payload: {
  * Importación como JOB del servidor: responde job_id de inmediato; el
  * proceso sigue en el backend aunque se cierre el navegador. El avance se
  * consulta con importJobStatusAction (barra de porcentaje en el diálogo).
+ *
+ * `solo_enriquecer` (13-oct-2026, API 0.0.75): «Solo completar conceptos» —
+ * el API completa el concepto del banco de los movimientos YA importados y
+ * no inserta, no cruza ni empareja reversos. Viaja SOLO cuando vale true
+ * (el DTO rechaza llaves desconocidas): un API previo responde 400 «property
+ * solo_enriquecer should not exist» ⇒ `API_SIN_ENRIQUECER`.
  */
 export async function importarMovimientosAsyncAction(payload: {
   cuenta_bancaria_id: string;
   movimientos: MovimientoImport[];
   filename?: string;
   file_base64?: string;
+  solo_enriquecer?: boolean;
 }): Promise<ActionResult<{ job_id: string }>> {
+  const { solo_enriquecer: soloEnriquecer, ...resto } = payload;
+  const body = soloEnriquecer === true ? { ...resto, solo_enriquecer: true } : resto;
   try {
     const data = await apiServer<{ job_id: string }>(
       "/v1/conciliacion/importar-async",
-      { method: "POST", body: payload },
+      { method: "POST", body },
     );
     return { ok: true, data };
   } catch (err) {
-    return fail(err);
+    const r = fail<{ job_id: string }>(err);
+    if (soloEnriquecer === true && esDtoSinEnriquecer(r)) {
+      return { ok: false, code: "API_SIN_ENRIQUECER", status: 400, error: MSG_API_SIN_ENRIQUECER };
+    }
+    return r;
+  }
+}
+
+/**
+ * VISTA PREVIA de la importación (13-oct-2026, API 0.0.75): el API simula
+ * la importación SIN escribir nada — cuántas líneas ya estaban, a cuántas se
+ * les completaría el concepto del banco, cuáles no (gemelos, vínculos) y las
+ * nuevas (marcando las de misma fecha y monto que otra). Viajan SOLO la
+ * cuenta y los movimientos (nunca el archivo). Nunca lanza; un 404 «Cannot
+ * POST» (API previo) ⇒ `RUTA_NO_DISPONIBLE` y el diálogo no pinta el cuadro.
+ * No revalida: no escribe nada.
+ */
+export async function vistaPreviaImportAction(payload: {
+  cuenta_bancaria_id: string;
+  movimientos: MovimientoImport[];
+}): Promise<ActionResult<VistaPreviaImportacion>> {
+  if (!esUuid(payload?.cuenta_bancaria_id)) {
+    return { ok: false, code: "CUENTA_INVALIDA", error: "Cuenta bancaria inválida." };
+  }
+  try {
+    const data = await apiServer<VistaPreviaImportacion>("/v1/conciliacion/importar/vista-previa", {
+      method: "POST",
+      body: {
+        cuenta_bancaria_id: payload.cuenta_bancaria_id,
+        movimientos: Array.isArray(payload.movimientos) ? payload.movimientos : [],
+      },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    const r = fail<VistaPreviaImportacion>(err);
+    if (esRutaInexistente(r)) return { ok: false, code: "RUTA_NO_DISPONIBLE", status: 404, error: r.error };
+    return r;
   }
 }
 
@@ -188,6 +239,27 @@ export interface ImportJobStatus {
   por_criterio?: Record<string, number> | null;
   /** 'IMPORT' | 'RECRUCE' (el re-cruce reusa la tabla de jobs). */
   tipo?: string | null;
+  /** CONCEPTO DEL SPEI (13-oct-2026, ADITIVOS del API 0.0.75; `importar-
+      status` aplana `resultados`). Se leen SIEMPRE por
+      `lib/admin/conciliacion-importacion.ts` y `resumenImportJob`. */
+  enriquecidos?: number | null;
+  /** Σ de las filas que se quedaron sin concepto. */
+  enriquecimiento_omitidos?: number | null;
+  enriquecimiento?: {
+    estado_cuenta_id?: string | null;
+    /** ≤300. */
+    detalle?: EnriquecimientoDetalle[] | null;
+    /** ≤50. */
+    omitidos?: EnriquecimientoOmitido[] | null;
+  } | null;
+  nuevos_mismo_dia_y_monto?: number | null;
+  /** ≤20. */
+  nuevos_mismo_dia_y_monto_detalle?: NuevoMismoDia[] | null;
+  /** «Solo completar conceptos»: no se insertó ni se cruzó nada. */
+  solo_enriquecer?: boolean | null;
+  no_encontrados?: number | null;
+  /** ≤50. */
+  no_encontrados_detalle?: NoEncontradoImport[] | null;
 }
 
 export async function importJobStatusAction(

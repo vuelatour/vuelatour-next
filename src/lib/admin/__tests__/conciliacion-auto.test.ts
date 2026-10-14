@@ -391,3 +391,144 @@ describe("corrida truncada", () => {
     expect(r.descripcion).not.toContain("vuelve a ejecutarlo");
   });
 });
+
+describe("resumenImportJob: concepto del SPEI (13-oct-2026, API 0.0.75)", () => {
+  it("sin las llaves nuevas los textos son BYTE-IDÉNTICOS a los de antes (golden)", () => {
+    expect(
+      resumenImportJob({ estado: "ERROR", importados: 101, conciliados_auto: 0, error: "operator does not exist" }),
+    ).toEqual({
+      titulo: "La importación se interrumpió",
+      descripcion:
+        "101 movimientos ya entraron: no vuelvas a importar el archivo — usa «Cruzar pendientes» para cruzarlos. Detalle: operator does not exist",
+      tono: "error",
+      sugerirRecruce: true,
+    });
+    expect(resumenImportJob({ estado: "ERROR", importados: 0 })).toEqual({
+      titulo: "La importación se interrumpió",
+      descripcion: "No se alcanzó a importar ningún movimiento. ",
+      tono: "error",
+      sugerirRecruce: false,
+    });
+    expect(resumenImportJob({ estado: "LISTO", importados: 0, conciliados_auto: 0, duplicados_omitidos: 98 })).toEqual({
+      titulo: "Los 98 movimientos ya estaban importados: no se duplicó nada",
+      descripcion:
+        "El archivo quedó archivado. Si siguen saliendo como pendientes, usa «Cruzar pendientes» para volver a intentar el cruce.",
+      tono: "info",
+      sugerirRecruce: true,
+    });
+    expect(
+      resumenImportJob({ estado: "LISTO", importados: 5, conciliados_auto: 3, duplicados_omitidos: 93, sin_candidato: 2 }),
+    ).toEqual({
+      titulo: "Importados 5 · conciliados automáticamente 3",
+      descripcion: "2 sin candidato · 93 ya existían (omitidos) · 2 quedan pendientes de vincular",
+      tono: "exito",
+      sugerirRecruce: true,
+    });
+    expect(resumenImportJob({ estado: "LISTO", importados: 10, conciliados_auto: 10 })).toEqual({
+      titulo: "Importados 10 · conciliados automáticamente 10",
+      descripcion: "",
+      tono: "exito",
+      sugerirRecruce: false,
+    });
+    // Con las llaves nuevas en cero/false, igual.
+    expect(
+      resumenImportJob({
+        estado: "LISTO",
+        importados: 5,
+        conciliados_auto: 3,
+        duplicados_omitidos: 93,
+        sin_candidato: 2,
+        enriquecidos: 0,
+        enriquecimiento_omitidos: 0,
+        nuevos_mismo_dia_y_monto: 0,
+        solo_enriquecer: false,
+      }).descripcion,
+    ).toBe("2 sin candidato · 93 ya existían (omitidos) · 2 quedan pendientes de vincular");
+  });
+
+  it("«Solo completar conceptos» con 85 completados de 96 que ya estaban", () => {
+    const r = resumenImportJob({
+      estado: "LISTO",
+      solo_enriquecer: true,
+      importados: 0,
+      conciliados_auto: 0,
+      duplicados_omitidos: 96,
+      enriquecidos: 85,
+      enriquecimiento_omitidos: 0,
+      no_encontrados: 0,
+    });
+    expect(r).toEqual({
+      titulo: "Se completó el concepto de 85 movimientos",
+      descripcion: "96 del archivo ya estaban importados",
+      tono: "exito",
+      sugerirRecruce: true,
+    });
+    expect(
+      resumenImportJob({ estado: "LISTO", solo_enriquecer: true, duplicados_omitidos: 1, enriquecidos: 1 }).titulo,
+    ).toBe("Se completó el concepto de 1 movimiento");
+  });
+
+  it("«Solo completar conceptos» con gemelos y no encontrados: tono info y lo que hay abajo", () => {
+    const r = resumenImportJob({
+      estado: "LISTO",
+      solo_enriquecer: true,
+      duplicados_omitidos: 96,
+      enriquecidos: 70,
+      enriquecimiento_omitidos: 4,
+      no_encontrados: 2,
+    });
+    expect(r.descripcion).toBe(
+      "96 del archivo ya estaban importados · 4 se quedaron sin concepto (detalle abajo) · 2 no se encontraron y NO se agregaron (lista abajo)",
+    );
+    expect(r.tono).toBe("info");
+  });
+
+  it("«Solo completar conceptos» sin nada encontrado: «¿Elegiste la cuenta correcta?»", () => {
+    const r = resumenImportJob({ estado: "LISTO", solo_enriquecer: true, duplicados_omitidos: 0, enriquecidos: 0, no_encontrados: 98 });
+    expect(r.titulo).toBe("No se encontró ningún movimiento del archivo en esta cuenta");
+    expect(r.descripcion).toBe("98 no se encontraron y NO se agregaron (lista abajo) · ¿Elegiste la cuenta correcta?");
+    expect(r.sugerirRecruce).toBe(false);
+    const nada = resumenImportJob({ estado: "LISTO", solo_enriquecer: true, duplicados_omitidos: 96, enriquecidos: 0 });
+    expect(nada.titulo).toBe("Ningún movimiento necesitaba concepto nuevo");
+    expect(nada.tono).toBe("exito");
+  });
+
+  it("todo duplicado + concepto completado: lo antepone, agrega los que quedaron sin concepto y es éxito", () => {
+    const r = resumenImportJob({
+      estado: "LISTO",
+      importados: 0,
+      duplicados_omitidos: 98,
+      enriquecidos: 85,
+      enriquecimiento_omitidos: 2,
+    });
+    expect(r.titulo).toBe("Los 98 movimientos ya estaban importados: no se duplicó nada");
+    expect(r.descripcion).toBe(
+      "A 85 se les agregó el concepto del banco. El archivo quedó archivado. Si siguen saliendo como pendientes, usa «Cruzar pendientes» para volver a intentar el cruce. 2 se quedaron sin concepto (detalle abajo).",
+    );
+    expect(r.tono).toBe("exito");
+  });
+
+  it("mixto: «93 ya existían (omitidos; a 41 se les agregó el concepto)» y el «ojo» de misma fecha y monto", () => {
+    const r = resumenImportJob({
+      estado: "LISTO",
+      importados: 5,
+      conciliados_auto: 3,
+      duplicados_omitidos: 93,
+      enriquecidos: 41,
+      nuevos_mismo_dia_y_monto: 2,
+    });
+    expect(r.descripcion).toBe(
+      "93 ya existían (omitidos; a 41 se les agregó el concepto) · ojo: 2 nuevos con la misma fecha y monto que otros que ya estaban · 2 quedan pendientes de vincular",
+    );
+  });
+
+  it("ERROR con concepto ya completado: se dice lo que sí se hizo antes del error", () => {
+    const r = resumenImportJob({ estado: "ERROR", importados: 0, enriquecidos: 12, error: "timeout" });
+    expect(r.descripcion).toBe(
+      "No se alcanzó a importar ningún movimiento. A 12 movimientos que ya estaban se les completó el concepto antes del error. Detalle: timeout",
+    );
+    expect(resumenImportJob({ estado: "ERROR", importados: 0, enriquecidos: 1 }).descripcion).toBe(
+      "No se alcanzó a importar ningún movimiento. A 1 movimiento que ya estaba se le completó el concepto antes del error. ",
+    );
+  });
+});

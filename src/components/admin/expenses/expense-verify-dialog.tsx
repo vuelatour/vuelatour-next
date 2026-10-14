@@ -47,6 +47,7 @@ import {
   llegoAlServidorDistinto,
   origenCapturaLabel,
 } from "@/lib/admin/gastos-captura";
+import { hintFolioGasto } from "@/lib/admin/gasto-folio";
 import {
   fechaGastoAntigua,
   fechaGastoDistancia,
@@ -1319,7 +1320,12 @@ export function ExpenseVerifyDialog({
 
           <Field
             label="Folio / remisión del ticket"
-            hint="Candado anti-duplicados: otro gasto con el mismo folio se rechaza."
+            // En transferencias, el folio es el número de la factura que se
+            // paga: Conciliación lo compara con el concepto del SPEI.
+            hint={hintFolioGasto(
+              watch("medio_pago"),
+              "Candado anti-duplicados: otro gasto con el mismo folio se rechaza.",
+            )}
           >
             <Input
               className="font-mono"

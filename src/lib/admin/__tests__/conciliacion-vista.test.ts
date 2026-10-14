@@ -256,3 +256,24 @@ describe("fusionarPaginaMovimientos: la siguiente ventana de fecha", () => {
     expect(acumulado).toEqual([m("a", "2026-10-12")]);
   });
 });
+
+describe("hrefConciliacion: `buscar` prellena la búsqueda de la tabla (13-oct-2026)", () => {
+  it("`buscar` ⇒ `mvq` (el `${syncId}q` de la tabla «mv»), al final y recortado", () => {
+    expect(hrefConciliacion({ desde: "2026-10-05", hasta: "2026-10-19", buscar: "7360" })).toBe(
+      "/admin/conciliacion?desde=2026-10-05&hasta=2026-10-19&mvq=7360",
+    );
+    expect(hrefConciliacion({ f: "pendientes", buscar: "  8939.38 " })).toBe(
+      "/admin/conciliacion?f=pendientes&mvq=8939.38",
+    );
+    expect(hrefConciliacion({ buscar: "x".repeat(90) })).toBe(`/admin/conciliacion?mvq=${"x".repeat(80)}`);
+  });
+
+  it("sin `buscar` (o vacío) la URL es byte a byte la de antes", () => {
+    expect(hrefConciliacion({})).toBe("/admin/conciliacion");
+    expect(hrefConciliacion({ f: "pendientes", cuenta: "x", desde: "2026-09-01", hasta: "2026-09-30" })).toBe(
+      "/admin/conciliacion?f=pendientes&cuenta=x&desde=2026-09-01&hasta=2026-09-30",
+    );
+    expect(hrefConciliacion({ f: "todos", desde: "2026-09-01", buscar: "   " })).toBe("/admin/conciliacion?desde=2026-09-01");
+    expect(hrefConciliacion({ buscar: null })).toBe("/admin/conciliacion");
+  });
+});

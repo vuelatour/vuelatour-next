@@ -19,10 +19,30 @@ import {
   importarMovimientosAsyncAction,
   importJobStatusAction,
   parseEstadoCuentaAction,
+  vistaPreviaImportAction,
+  type ActionResult,
   type ImportJobStatus,
 } from "@/app/admin/conciliacion/actions";
 import { resumenImportJob } from "@/lib/admin/conciliacion-auto";
-import type { MapeoColumnasPaywise, ParsedStatement } from "@/types/conciliacion";
+import {
+  BOTON_CERRAR_IMPORTACION,
+  DESCRIPCION_IMPORT_REPETIDO,
+  TEXTO_SUGERIR_RECRUCE,
+  botonesImportacion,
+  debeQuedarseAbierto,
+  movimientosParaImportar,
+  type AccionImportacion,
+} from "@/lib/admin/conciliacion-importacion";
+import {
+  AdvertenciasParse,
+  DetallesImportacion,
+  VistaPreviaImportacionBox,
+} from "@/components/admin/conciliacion/import-dialog-partes";
+import type {
+  MapeoColumnasPaywise,
+  ParsedStatement,
+  VistaPreviaImportacion,
+} from "@/types/conciliacion";
 
 /** Cuenta del selector; `tipo` PASARELA = Paywise (bruto/comisión/neto). */
 export interface CuentaImportOption {
@@ -81,6 +101,44 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
   const columnas = parsed?.columnas ?? [];
   const puedeMapear = !!parsed && !esPaywise && columnas.length > 0;
 
+  // VISTA PREVIA (13-oct-2026, API 0.0.75): con cuenta y archivo leído, el
+  // API simula la importación SIN escribir nada (cuántas ya estaban, a
+  // cuántas se les completará el concepto del banco, las nuevas). La clave
+  // lleva la cuenta, el archivo, el total y CADA lectura (`lectura`: releer
+  // con el mapeo cambia las líneas aunque el total sea el mismo); el turno
+  // descarta una respuesta vieja. Un error o un API previo no pintan nada y
+  // dejan los botones de siempre.
+  const [lectura, setLectura] = useState(0);
+  const [vista, setVista] = useState<{ clave: string; r: ActionResult<VistaPreviaImportacion> } | null>(null);
+  const turnoVista = useRef(0);
+  const claveVista =
+    parsed && parsed.total > 0 && cuentaId ? `${cuentaId}|${archivo?.filename ?? ""}|${parsed.total}|${lectura}` : null;
+  useEffect(() => {
+    if (!claveVista || !parsed) return;
+    const movimientos = movimientosParaImportar(parsed);
+    if (movimientos.length === 0) return;
+    const turno = ++turnoVista.current;
+    void vistaPreviaImportAction({ cuenta_bancaria_id: cuentaId, movimientos })
+      .catch(
+        (err: unknown): ActionResult<VistaPreviaImportacion> => ({
+          ok: false,
+          code: "SIN_CONEXION",
+          error: err instanceof Error ? err.message : "Sin conexión",
+        }),
+      )
+      .then((r) => {
+        if (turno === turnoVista.current) setVista({ clave: claveVista, r });
+      });
+    return () => {
+      turnoVista.current += 1;
+    };
+  }, [claveVista, cuentaId, parsed]);
+  const vistaLista = vista != null && vista.clave === claveVista;
+  const vp = vistaLista && vista.r.ok ? (vista.r.data ?? null) : null;
+  const revisandoVista = claveVista != null && !vistaLista;
+  const botones = botonesImportacion(vp);
+  const terminado = job?.estado === "LISTO";
+
   const stopPolling = () => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -96,6 +154,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
     setJob(null);
     setMapeoAbierto(false);
     setMapeo({});
+    setVista(null);
     stopPolling();
   };
 
@@ -119,6 +178,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         return;
       }
       setParsed(res.data);
+      setLectura((n) => n + 1);
       setArchivo({ filename: file.name, base64: b64 });
       if (res.data.total === 0) {
         toast.warning(res.data.notas || "No se reconocieron movimientos");
@@ -168,6 +228,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         return;
       }
       setParsed(res.data);
+      setLectura((n) => n + 1);
       if (res.data.total === 0) {
         toast.warning(res.data.notas || "No se reconocieron operaciones con ese mapeo");
       } else {
@@ -181,24 +242,19 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
     }
   };
 
-  const onImport = () => {
+  /**
+   * IMPORTAR (la de siempre) o SOLO_CONCEPTOS («Solo completar conceptos»,
+   * 13-oct-2026): con `solo_enriquecer` el API completa el concepto del banco
+   * de lo que ya estaba y NO inserta ni cruza nada (lo que no encuentre lo
+   * lista, sin agregarlo).
+   */
+  const onImport = (accion: AccionImportacion = "IMPORTAR") => {
     if (!cuentaId) {
       toast.error("Selecciona la cuenta bancaria");
       return;
     }
-    const movimientos = (parsed?.movimientos ?? [])
-      .filter((m) => m.fecha)
-      .map((m) => ({
-        fecha: m.fecha!,
-        descripcion: m.descripcion ?? undefined,
-        monto: m.monto,
-        tipo: m.tipo,
-        referencia: m.referencia ?? undefined,
-        // Paywise: bruto y comisión del movimiento (el API los guarda y la
-        // auditoría los coteja contra el cobro).
-        monto_bruto: m.monto_bruto != null && m.monto_bruto > 0 ? m.monto_bruto : undefined,
-        comision_monto: m.comision != null && m.comision >= 0 ? m.comision : undefined,
-      }));
+    // El cuerpo de siempre (fuente única, sin campos que no son del DTO).
+    const movimientos = movimientosParaImportar(parsed);
     if (movimientos.length === 0) {
       toast.error("No hay movimientos con fecha para importar");
       return;
@@ -212,6 +268,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         // Archivo original: queda archivado para consultarlo después.
         filename: archivo?.filename,
         file_base64: archivo?.base64,
+        ...(accion === "SOLO_CONCEPTOS" ? { solo_enriquecer: true } : {}),
       }).catch((err: unknown) => ({
         ok: false as const,
         data: undefined,
@@ -235,8 +292,8 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
       });
       // Polling del avance: el trabajo corre en el servidor.
       pollRef.current = setInterval(async () => {
-        const st = await importJobStatusAction(jobId);
-        if (!st.ok || !st.data) return; // reintenta en el siguiente tick
+        const st = await importJobStatusAction(jobId).catch(() => null);
+        if (!st?.ok || !st.data) return; // reintenta en el siguiente tick
         setJob(st.data);
         if (st.data.estado === "PROCESANDO") return;
         stopPolling();
@@ -249,6 +306,14 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
           // Lo ya insertado SÍ está en la bandeja: que se vea (el 15-sep el
           // operador no lo vio y reimportó el mismo archivo dos veces).
           router.refresh();
+          return;
+        }
+        // Hay algo que LEER (filas sin concepto, líneas no encontradas, nuevas
+        // con la misma fecha y monto, 13-oct-2026): la ventana NO se cierra;
+        // el detalle se pinta en el bloque del job y queda solo «Cerrar».
+        if (debeQuedarseAbierto(st.data)) {
+          router.refresh();
+          toast.info(res.titulo);
           return;
         }
         if (res.tono === "exito") {
@@ -286,6 +351,7 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
             CSV o Excel (preferido) o PDF. Los cargos se cruzan automáticamente con los gastos del
             mismo monto y fecha; los abonos con los cobros. En la cuenta Paywise se leen bruto,
             comisión y neto por operación.
+            {DESCRIPCION_IMPORT_REPETIDO}
           </DialogDescription>
         </DialogHeader>
 
@@ -317,6 +383,9 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
               onChange={(e) => onFile(e.target.files?.[0])}
             />
             {parsing && <p className="text-xs text-muted-foreground">Leyendo el estado de cuenta…</p>}
+            {/* Avisos de la lectura (saldos que no cuadran, transferencias sin
+                su concepto…): llegaban del API y se perdían. */}
+            {parsed && <AdvertenciasParse advertencias={parsed.advertencias} />}
           </div>
 
           {/* Barra de progreso del job (corre en el servidor: cerrar esta
@@ -357,13 +426,11 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
                     </p>
                   )}
                   {resumenImportJob(job).sugerirRecruce && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                      Cierra esta ventana y usa «Cruzar pendientes» para volver a
-                      intentar el cruce de los que quedaron pendientes: NO vuelvas
-                      a importar el mismo archivo (se detecta como duplicado y no
-                      reintenta nada).
-                    </p>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">{TEXTO_SUGERIR_RECRUCE}</p>
                   )}
+                  {/* Lo que no se completó, lo que no se encontró y las nuevas
+                      con la misma fecha y monto (13-oct-2026). */}
+                  <DetallesImportacion job={job} />
                 </div>
               )}
             </div>
@@ -432,6 +499,15 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
             </div>
           )}
 
+          {/* «Antes de importar: N líneas» (vista previa del API, sin escribir
+              nada): ARRIBA de la tabla, antes de elegir el botón. */}
+          {!job && vp && <VistaPreviaImportacionBox vp={vp} />}
+          {!job && revisandoVista && (
+            <p className="text-xs text-muted-foreground" role="status">
+              Revisando qué movimientos ya estaban importados…
+            </p>
+          )}
+
           {parsed && parsed.movimientos.length > 0 && (
             <div className="rounded-lg border max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
@@ -449,8 +525,13 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
                   {parsed.movimientos.slice(0, 100).map((m, i) => (
                     <tr key={i} className="border-t">
                       <td className="px-3 py-1.5 whitespace-nowrap">{m.fecha ?? "—"}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[260px]">
-                        {[m.referencia, m.descripcion].filter(Boolean).join(" · ") || "—"}
+                      {/* La descripción PRIMERO (el concepto del SPEI va al
+                          final de ella); el texto completo en el tooltip. */}
+                      <td
+                        className="px-3 py-1.5 text-muted-foreground truncate max-w-[260px]"
+                        title={[m.descripcion, m.referencia].filter(Boolean).join(" · ") || undefined}
+                      >
+                        {[m.descripcion, m.referencia].filter(Boolean).join(" · ") || "—"}
                       </td>
                       <td className="px-3 py-1.5">{m.tipo === "CARGO" ? "Cargo" : "Abono"}</td>
                       {esPaywise && (
@@ -473,26 +554,51 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
         </div>
 
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              // Mismo comportamiento que ESC/overlay: cancelar descarta el
-              // archivo parseado (no debe quedar precargado al reabrir).
-              reset();
-              onOpenChange(false);
-            }}
-            disabled={importing}
-          >
-            Cancelar
-          </Button>
-          <Button
-            type="button"
-            onClick={onImport}
-            disabled={importing || !parsed || parsed.total === 0}
-          >
-            {importing ? "Importando…" : "Importar y conciliar"}
-          </Button>
+          {terminado ? (
+            // Terminó y se quedó abierta para leer el detalle: solo «Cerrar».
+            <Button
+              type="button"
+              className="cursor-pointer"
+              onClick={() => {
+                reset();
+                onOpenChange(false);
+              }}
+            >
+              {BOTON_CERRAR_IMPORTACION}
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="cursor-pointer"
+                onClick={() => {
+                  // Mismo comportamiento que ESC/overlay: cancelar descarta el
+                  // archivo parseado (no debe quedar precargado al reabrir).
+                  reset();
+                  onOpenChange(false);
+                }}
+                disabled={importing}
+              >
+                Cancelar
+              </Button>
+              {/* Los botones según la vista previa (`botonesImportacion`): el
+                  principal al final; «Solo completar conceptos» manda
+                  `solo_enriquecer` (no inserta ni cruza nada). */}
+              {botones.map((b) => (
+                <Button
+                  key={b.accion}
+                  type="button"
+                  variant={b.principal ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => onImport(b.accion)}
+                  disabled={importing || !parsed || parsed.total === 0}
+                >
+                  {importing && b.principal ? "Importando…" : b.texto}
+                </Button>
+              ))}
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -194,14 +194,29 @@ export function fusionarPaginaMovimientos<T extends { id: string; fecha: string 
 }
 
 /**
+ * Prefijo de la tabla de movimientos (`DataTable`): su búsqueda rápida vive
+ * en `?mvq=` y su página en `?mvp=` (la página tiene dos tablas).
+ */
+export const SYNC_ID_MOVIMIENTOS = "mv";
+/** La búsqueda que la tabla RESTAURA al montar (`${syncId}q`). */
+export const PARAM_BUSQUEDA_MOVIMIENTOS = `${SYNC_ID_MOVIMIENTOS}q`;
+/** Tope del texto de búsqueda que viaja en la URL (el mismo del buscador). */
+const LARGO_MAX_BUSCAR = 80;
+
+/**
  * URL de la vista (FUENTE ÚNICA): pestaña + cuenta + rango. «todos», una
  * cuenta vacía y un rango vacío quedan FUERA de la URL (default limpio).
+ * `buscar` (13-oct-2026, ADITIVO) prellena la búsqueda rápida de la tabla
+ * (`?mvq=`, recortada a 80): la tabla la lee AL MONTAR, por eso estas ligas
+ * se abren en una pestaña nueva (el chip «Factura 7360»). Sin él la URL es
+ * byte a byte la de antes.
  */
 export function hrefConciliacion(v: {
   f?: string | null;
   cuenta?: string | null;
   desde?: string | null;
   hasta?: string | null;
+  buscar?: string | null;
 }): string {
   const q = new URLSearchParams();
   const f = filtroConciliacionDeUrl(v.f);
@@ -209,6 +224,8 @@ export function hrefConciliacion(v: {
   if (v.cuenta) q.set("cuenta", v.cuenta);
   if (v.desde) q.set("desde", v.desde);
   if (v.hasta) q.set("hasta", v.hasta);
+  const buscar = typeof v.buscar === "string" ? v.buscar.trim().slice(0, LARGO_MAX_BUSCAR).trim() : "";
+  if (buscar) q.set(PARAM_BUSQUEDA_MOVIMIENTOS, buscar);
   const qs = q.toString();
   return qs ? `/admin/conciliacion?${qs}` : "/admin/conciliacion";
 }

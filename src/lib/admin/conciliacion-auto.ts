@@ -403,6 +403,18 @@ export interface ImportJobResumenLike extends AutoMatchResultadoLike {
   errores_detalle?: ErrorImportLike[] | null;
   error?: string | null;
   total_movimientos?: number | null;
+  /** CONCEPTO DEL SPEI (13-oct-2026, ADITIVOS del API 0.0.75): a cuántas
+      filas que ya estaban se les completó el concepto del banco y cuántas se
+      quedaron sin él (Σ de los omitidos). */
+  enriquecidos?: number | null;
+  enriquecimiento_omitidos?: number | null;
+  /** Solo en modo normal: líneas NUEVAS con la misma fecha y monto que otra
+      que ya estaba (posible duplicado leído distinto). */
+  nuevos_mismo_dia_y_monto?: number | null;
+  /** «Solo completar conceptos»: no se insertó ni se cruzó nada. */
+  solo_enriquecer?: boolean | null;
+  /** Solo con `solo_enriquecer`: líneas del archivo que no estaban (NO se agregaron). */
+  no_encontrados?: number | null;
 }
 
 export interface ResumenImport {
@@ -432,6 +444,12 @@ export function resumenImportJob(job: ImportJobResumenLike | null | undefined): 
   const rechazados = n(job?.rechazados);
   const criterios = lineaCriterios(job?.por_criterio);
   const comun = motivoMasComun(job?.errores_detalle);
+  // CONCEPTO DEL SPEI (13-oct-2026, API 0.0.75): sin estas llaves (API
+  // previo) TODOS los textos de abajo quedan byte a byte como antes.
+  const enriquecidos = n(job?.enriquecidos);
+  const sinConcepto = n(job?.enriquecimiento_omitidos);
+  const mismoDia = n(job?.nuevos_mismo_dia_y_monto);
+  const noEncontrados = n(job?.no_encontrados);
 
   const detalle: string[] = [];
   if (traspasos > 0)
@@ -441,7 +459,23 @@ export function resumenImportJob(job: ImportJobResumenLike | null | undefined): 
   if (sinCandidato > 0) detalle.push(`${sinCandidato} sin candidato`);
   if (rechazados > 0)
     detalle.push(`${rechazados} con el gasto ya cubierto`);
-  if (dups > 0) detalle.push(`${dups} ya existían (omitidos)`);
+  if (dups > 0) {
+    detalle.push(
+      enriquecidos > 0
+        ? `${dups} ya existían (omitidos; ${
+            enriquecidos === 1 ? "a 1 se le agregó" : `a ${enriquecidos} se les agregó`
+          } el concepto)`
+        : `${dups} ya existían (omitidos)`,
+    );
+  }
+  // Una línea «nueva» con la misma fecha y monto que otra que ya estaba puede
+  // ser la misma leída distinta por la IA: se avisa (el diálogo lista cuáles).
+  if (mismoDia > 0)
+    detalle.push(
+      mismoDia === 1
+        ? "ojo: 1 nuevo con la misma fecha y monto que otro que ya estaba"
+        : `ojo: ${mismoDia} nuevos con la misma fecha y monto que otros que ya estaban`,
+    );
   if (criterios) detalle.push(criterios);
   if (errores > 0) {
     detalle.push(
@@ -453,23 +487,78 @@ export function resumenImportJob(job: ImportJobResumenLike | null | undefined): 
 
   if ((job?.estado ?? "") === "ERROR") {
     const err = (job?.error ?? "").toString().trim();
+    // El rastro del enriquecimiento sobrevive al error: lo que se completó
+    // se dice (antes del detalle técnico, que puede ser cualquier texto).
+    const completados =
+      enriquecidos > 0
+        ? enriquecidos === 1
+          ? "A 1 movimiento que ya estaba se le completó el concepto antes del error. "
+          : `A ${enriquecidos} movimientos que ya estaban se les completó el concepto antes del error. `
+        : "";
+    const descripcion =
+      (importados > 0
+        ? `${plural(importados, "movimiento ya entró", "movimientos ya entraron")}: no vuelvas a importar el archivo — usa «Cruzar pendientes» para cruzarlos. `
+        : "No se alcanzó a importar ningún movimiento. ") +
+      completados +
+      (err ? `Detalle: ${err}` : "");
     return {
       titulo: "La importación se interrumpió",
-      descripcion:
-        (importados > 0
-          ? `${plural(importados, "movimiento ya entró", "movimientos ya entraron")}: no vuelvas a importar el archivo — usa «Cruzar pendientes» para cruzarlos. `
-          : "No se alcanzó a importar ningún movimiento. ") + (err ? `Detalle: ${err}` : ""),
+      descripcion,
       tono: "error",
       sugerirRecruce: importados > 0,
     };
   }
 
+  // «Solo completar conceptos»: no se insertó ni se cruzó nada; se dice qué
+  // se completó, qué ya estaba, qué quedó sin concepto y qué NO se encontró.
+  if (job?.solo_enriquecer === true) {
+    const titulo =
+      enriquecidos > 0
+        ? `Se completó el concepto de ${plural(enriquecidos, "movimiento", "movimientos")}`
+        : dups > 0
+          ? "Ningún movimiento necesitaba concepto nuevo"
+          : "No se encontró ningún movimiento del archivo en esta cuenta";
+    const partes: string[] = [];
+    if (dups > 0) partes.push(dups === 1 ? "1 del archivo ya estaba importado" : `${dups} del archivo ya estaban importados`);
+    if (sinConcepto > 0)
+      partes.push(
+        sinConcepto === 1 ? "1 se quedó sin concepto (detalle abajo)" : `${sinConcepto} se quedaron sin concepto (detalle abajo)`,
+      );
+    if (noEncontrados > 0)
+      partes.push(
+        noEncontrados === 1
+          ? "1 no se encontró y NO se agregó (lista abajo)"
+          : `${noEncontrados} no se encontraron y NO se agregaron (lista abajo)`,
+      );
+    if (dups === 0) partes.push("¿Elegiste la cuenta correcta?");
+    return {
+      titulo,
+      descripcion: partes.join(" · "),
+      tono: sinConcepto > 0 || noEncontrados > 0 ? "info" : "exito",
+      sugerirRecruce: enriquecidos > 0,
+    };
+  }
+
   if (importados === 0 && dups > 0) {
+    const descripcion = [
+      enriquecidos > 0
+        ? enriquecidos === 1
+          ? "A 1 se le agregó el concepto del banco."
+          : `A ${enriquecidos} se les agregó el concepto del banco.`
+        : null,
+      "El archivo quedó archivado. Si siguen saliendo como pendientes, usa «Cruzar pendientes» para volver a intentar el cruce.",
+      sinConcepto > 0
+        ? sinConcepto === 1
+          ? "1 se quedó sin concepto (detalle abajo)."
+          : `${sinConcepto} se quedaron sin concepto (detalle abajo).`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
     return {
       titulo: `Los ${dups} movimientos ya estaban importados: no se duplicó nada`,
-      descripcion:
-        "El archivo quedó archivado. Si siguen saliendo como pendientes, usa «Cruzar pendientes» para volver a intentar el cruce.",
-      tono: "info",
+      descripcion,
+      tono: enriquecidos > 0 ? "exito" : "info",
       sugerirRecruce: true,
     };
   }

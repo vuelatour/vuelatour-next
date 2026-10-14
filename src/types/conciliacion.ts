@@ -205,6 +205,13 @@ export interface MovimientoBancario {
   reverso_de_id?: string | null;
   reverso_de?: MovimientoReversoRef | null;
   revertido_por?: MovimientoReversoRef | null;
+  /** CONCEPTO DEL SPEI (13-oct-2026, ADITIVO del API 0.0.75): solo en las
+      filas cuya descripción cita una factura («SEL TRANSF. INTERBANCARIA
+      SPEI BANORTE fact vip 7360»). El NÚMERO lo lee el API
+      (`factura-concepto.util.ts`): el panel NO parsea, solo rotula con
+      `lib/admin/conciliacion-factura-concepto.ts`. Ausente = API previo o
+      el texto no cita factura: la celda de siempre. */
+  factura_concepto?: FacturaConceptoMovimiento | null;
 }
 
 // ===== Cargo devuelto ↔ devolución (30-sep-2026, API 0.0.44) =====
@@ -341,6 +348,12 @@ export interface GastoCandidato {
       `justificacion`. Se lee SIEMPRE por `esCandidatoNoBancario` (sin el
       campo decide `medio_pago`). */
   no_bancario?: boolean | null;
+  /** ADITIVO (13-oct-2026, API 0.0.75), solo cuando el concepto del cargo
+      cita una factura: el folio del gasto (factura recibida, `folio_ticket`,
+      folio de la IA o «fact NNNN» en la 1.ª línea de las notas) es el número
+      que dice el banco. Es una SEÑAL dentro de su nivel de monto: pinta ★ y
+      su renglón, jamás marca ni preselecciona (el orden lo da el API). */
+  coincide_factura?: boolean | null;
 }
 
 /** Cargo del banco con el que YA está conciliado un gasto excluido (de la puente). */
@@ -416,6 +429,12 @@ export interface GastosCandidatosResponse {
   excluidos?: ExcluidosCandidatos[] | null;
   /** ADITIVO, viaja con `excluidos`: el monto con el que el API los buscó. */
   excluidos_monto?: number | null;
+  /** ADITIVO (13-oct-2026, API 0.0.75), solo cuando el concepto del cargo
+      cita una factura: qué dice el banco y los gastos ±120 días con esa
+      factura que NO salen como candidatos (`otros_gastos`, misma forma que
+      `excluidos`; null = no se pudo leer). Lo redacta
+      `avisoFacturaEnCandidatos`. */
+  factura_concepto?: FacturaConceptoCandidatos | null;
 }
 
 /** Respuesta de `POST /v1/conciliacion/movimientos/:id/sugerir`. */
@@ -625,6 +644,10 @@ export interface ParsedStatement {
   modelo: string | null;
   /** Encabezados del archivo tabular (para el mapeo manual). Aditivo. */
   columnas?: string[];
+  /** Avisos de la lectura (pyservices; ya llegaban y nadie los declaraba):
+      saldos que no cuadran, transferencias leídas SIN su concepto
+      (13-oct-2026)… El diálogo de importación los pinta antes de importar. */
+  advertencias?: string[];
 }
 
 // ===== Auditoría Paywise (GET /v1/conciliacion/paywise/auditoria) =====
@@ -752,4 +775,165 @@ export interface EstadoCuentaArchivo {
   movimientos_importados: number | null;
   created_at: string;
   cuenta?: { banco: string | null; alias: string | null; moneda: string | null } | null;
+}
+
+// ===== Concepto del SPEI y «Factura NNNN» (13-oct-2026, API 0.0.75) =====
+//
+// Todo es ADITIVO y opcional: un API ≤ 0.0.74 no manda nada de esto y la
+// pantalla queda como antes. El NÚMERO de factura lo lee SOLO el API
+// (`factura-concepto.util.ts`); el panel rotula con
+// `lib/admin/conciliacion-factura-concepto.ts` y redacta la importación con
+// `lib/admin/conciliacion-importacion.ts`.
+
+export type TipoFacturaConcepto = "FACTURA" | "PREFACTURA";
+
+export type EstadoLigadosFactura = "COINCIDE" | "PARCIAL" | "NO_COINCIDE" | "SIN_FOLIO";
+
+/** Otro movimiento (cualquier cuenta, mismo tipo, ±120 días) que cita la MISMA factura. */
+export interface RepeticionFacturaConcepto {
+  movimiento_id: string;
+  /** DATE `YYYY-MM-DD`. */
+  fecha: string;
+  /** |monto| en la moneda de SU cuenta. */
+  monto: number;
+  /** Alias de su cuenta. */
+  cuenta: string | null;
+  descripcion: string | null;
+  conciliado: boolean;
+}
+
+/**
+ * `factura_concepto` de una fila de `GET movimientos`: qué factura cita el
+ * concepto del banco y si cuadra con los gastos ligados.
+ *  - `ligados`: null en los ABONOS, en filas sin gasto y cuando el lote no se
+ *    pudo leer; si no, COINCIDE / PARCIAL / NO_COINCIDE / SIN_FOLIO.
+ *  - `repetida_en`: null = NO verificado (la lectura falló o llegó a 1,000
+ *    filas: jamás «no se repite»); [] = no se repite.
+ */
+export interface FacturaConceptoMovimiento {
+  tipo: TipoFacturaConcepto;
+  /** Como se imprimieron: «7360», «A-123». */
+  numeros: string[];
+  /** «Factura 7360» · «Facturas 7359 · 7360» · «Prefactura 4409». */
+  texto: string;
+  /** Palabras junto a la clave («VIP»); null sin ellas. */
+  pista: string | null;
+  ligados: {
+    estado: EstadoLigadosFactura;
+    /** Números de los gastos ligados (≤5). */
+    folios: string[];
+    /** Números del concepto que ningún gasto ligado tiene. */
+    faltan: string[];
+  } | null;
+  repetida_en: RepeticionFacturaConcepto[] | null;
+}
+
+/**
+ * `factura_concepto` de `gastos-candidatos`: lo que dice el banco y los
+ * gastos con esa factura que NO salen como candidatos (forma idéntica a
+ * `excluidos`; null = no se pudo leer).
+ */
+export interface FacturaConceptoCandidatos {
+  tipo: TipoFacturaConcepto;
+  numeros: string[];
+  texto: string;
+  pista: string | null;
+  otros_gastos: ExcluidosCandidatos[] | null;
+}
+
+/** Regla con la que el API completó el concepto de una fila ya importada. */
+export type ReglaEnriquecimiento =
+  | "UNICO"
+  | "MISMO_TEXTO"
+  | "INTERCAMBIABLES"
+  | "REFERENCIA"
+  | "ORDEN_ARCHIVO"
+  | "FOLIO";
+
+/** Por qué una fila ya importada NO recibió el concepto. */
+export type MotivoSinEnriquecer = "GEMELOS" | "VINCULO_NO_BANCARIO" | "CAMBIO_CONCURRENTE" | "ERROR";
+
+export interface EnriquecimientoOmitido {
+  /** Un motivo nuevo del API se tolera (se pinta genérico). */
+  motivo: MotivoSinEnriquecer | string;
+  fecha: string;
+  tipo: TipoMovimientoBancario;
+  monto: number;
+  moneda: string | null;
+  /** Las filas que se quedaron sin concepto (2 gemelos ⇒ 2 ids). */
+  movimiento_ids: string[];
+  /** Conceptos distintos que trae el archivo (≤5, ≤160 caracteres). */
+  conceptos: string[];
+  /** «Factura 7352» de cada concepto que cita una. */
+  facturas: string[];
+  /** Solo en ERROR (≤200). */
+  detalle?: string;
+}
+
+/** Una fila a la que se le completó (o se le completaría) el concepto. */
+export interface EnriquecimientoDetalle {
+  movimiento_id: string;
+  fecha: string;
+  tipo: TipoMovimientoBancario;
+  monto: number;
+  antes: string;
+  despues: string;
+  regla: ReglaEnriquecimiento | string;
+}
+
+/** Línea del archivo que «Solo completar conceptos» no encontró (NO se agregó). */
+export interface NoEncontradoImport {
+  orden_archivo: number;
+  fecha: string;
+  tipo: TipoMovimientoBancario;
+  monto: number;
+  moneda: string | null;
+  descripcion: string | null;
+  referencia: string | null;
+  /** «Factura 7360» si su concepto cita una. */
+  factura: string | null;
+}
+
+/** Línea NUEVA con la misma fecha y monto que otra que ya estaba (posible duplicado). */
+export interface NuevoMismoDia {
+  orden_archivo: number;
+  fecha: string;
+  tipo: TipoMovimientoBancario;
+  monto: number;
+  moneda: string | null;
+  descripcion: string | null;
+}
+
+/** Línea nueva de la vista previa (la moneda va en la raíz). */
+export interface NuevoVistaPrevia {
+  orden_archivo: number;
+  fecha: string;
+  tipo: TipoMovimientoBancario;
+  monto: number;
+  descripcion: string | null;
+  mismo_dia_y_monto: boolean;
+}
+
+/**
+ * `POST /v1/conciliacion/importar/vista-previa` (API 0.0.75): simula la
+ * importación SIN escribir nada.
+ */
+export interface VistaPreviaImportacion {
+  total: number;
+  /** Líneas que ya estaban importadas (no se duplican). */
+  ya_estaban: number;
+  nuevos: number;
+  nuevos_mismo_dia_y_monto: number;
+  /** A cuántas ya importadas se les completaría el concepto. */
+  se_enriquecen: number;
+  /** Σ de las filas que se quedarían sin concepto. */
+  enriquecimiento_omitidos: number;
+  /** Moneda de la cuenta. */
+  moneda: string | null;
+  /** ≤20. */
+  omitidos: EnriquecimientoOmitido[];
+  /** ≤50. */
+  nuevos_detalle: NuevoVistaPrevia[];
+  /** ≤50. */
+  enriquecibles_detalle: EnriquecimientoDetalle[];
 }
