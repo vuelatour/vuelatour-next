@@ -2,21 +2,31 @@
  * «Comisión del vendedor» en la UI de gastos (28-sep-2026). Pedido del
  * cliente: «¿cómo registro el pago de la comisión a Saab para que aparezca en
  * otros movimientos? Si lo capturo como "Otros gastos VuelaTour" queda
- * duplicado».
+ * duplicado». Desde el 13-oct-2026 (API 0.0.74) son DOS categorías:
+ * «Comisión del vendedor (VuelaTour)» (la paga VuelaTour) y «Comisión del
+ * vendedor (avión)» (la carga el avión del vuelo).
  *
  *  1. El hint bajo el selector dice a dónde va (default + con lo elegido).
- *  2. «Gastos del vuelo» pinta el destino bajo la etiqueta, SOLO en la
- *     comisión (el total de la card no cambia: un gasto es un gasto).
+ *  2. «Gastos del vuelo» pinta el destino bajo la etiqueta, SOLO en las dos
+ *     comisiones (el total de la card no cambia: un gasto es un gasto) — así
+ *     se ve quién paga cada pago.
  *  3. Cableado de los dos diálogos (alta y verificación): exige vuelo con el
- *     mismo texto que el API, sin «Sin vuelo», ventana de 90 días, ayuda,
- *     la IA no la pisa, sin «simular como piloto», y en la verificación el
- *     vuelo viaja en el MISMO PATCH (sin la 2.ª llamada de ligar vuelo).
+ *     mismo texto que el API, sin «Sin vuelo», ventana de 90 días, el cuadro
+ *     de ayuda de SU categoría (y en Verificar cómo reclasificar entre las
+ *     dos), la IA no la pisa, sin «simular como piloto», y en la verificación
+ *     el vuelo viaja en el MISMO PATCH (sin la 2.ª llamada de ligar vuelo).
+ *  4. Tablero de Gastos y reparto: el renglón y el sublabel de la «(avión)».
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Gasto } from "@/types/expenses";
+import {
+  AYUDA_COMISION_VENDEDOR,
+  AYUDA_COMISION_VENDEDOR_AVION,
+  categoriaExigeVueloSiempre,
+} from "@/lib/admin/categorias-gasto";
 
 // La renovación de URLs firmadas de las fotos (server action: sesión y red)
 // no es parte de este test.
@@ -36,6 +46,8 @@ const { CategoriaDestinoHint } = await import("../categoria-destino-hint");
 const { FlightGastosTable } = await import("@/components/admin/flights/flight-gastos-table");
 
 const DESTINO = "Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)";
+const DESTINO_AVION =
+  "Pago al vendedor (columna COMISIONES del balance del avión; sí es costo del avión)";
 
 function gasto(over: Partial<Gasto>): Gasto {
   return {
@@ -80,6 +92,17 @@ describe("CategoriaDestinoHint", () => {
     );
   });
 
+  it("comisión «(avión)» con vuelo: su destino + columna COMISIONES y reparto con lo elegido", () => {
+    const html = renderToStaticMarkup(
+      <CategoriaDestinoHint categoria="COMISION_VENDEDOR_AVION" tieneVuelo tieneAvion />,
+    );
+    expect(html).toContain(`Por default: ${DESTINO_AVION}`);
+    expect(html).toContain(
+      "Con lo elegido cae en: Balance del avión · columna COMISIONES y reparto a socios, en el mes del vuelo",
+    );
+    expect(html).not.toContain(DESTINO);
+  });
+
   it("«Otros gastos VuelaTour» con vuelo ya no promete la hoja del vuelo", () => {
     const html = renderToStaticMarkup(<CategoriaDestinoHint categoria="OTRO" tieneVuelo tieneAvion />);
     expect(html).toContain(
@@ -90,11 +113,12 @@ describe("CategoriaDestinoHint", () => {
 });
 
 describe("Gastos del vuelo", () => {
-  it("la comisión lleva su destino bajo la etiqueta; los demás gastos no", () => {
+  it("cada comisión lleva su destino bajo la etiqueta (se ve quién paga); los demás gastos no", () => {
     const html = renderToStaticMarkup(
       <FlightGastosTable
         gastos={[
           gasto({ id: "g-com", categoria: "COMISION_VENDEDOR" }),
+          gasto({ id: "g-com-av", categoria: "COMISION_VENDEDOR_AVION", monto: "1000" }),
           gasto({ id: "g-otro", categoria: "OTRO", monto: "250000" }),
         ]}
         fotoUrls={{}}
@@ -102,11 +126,26 @@ describe("Gastos del vuelo", () => {
         providers={[]}
       />,
     );
-    expect(html).toContain("Comisión del vendedor");
+    expect(html).toContain("Comisión del vendedor (VuelaTour)");
+    expect(html).toContain("Comisión del vendedor (avión)");
     expect(html).toContain("Otros gastos VuelaTour");
     expect(html.split(DESTINO)).toHaveLength(2); // una sola vez
+    expect(html.split(DESTINO_AVION)).toHaveLength(2); // una sola vez
     // El destino de «Otros gastos VuelaTour» NO se pinta en la tabla.
     expect(html).not.toContain("Otros gastos (Balance general VuelaTour)");
+  });
+
+  it("un código parecido NO se toma por comisión (comparación exacta)", () => {
+    const html = renderToStaticMarkup(
+      <FlightGastosTable
+        gastos={[gasto({ id: "g-x", categoria: "COMISION_VENDEDOR_AVIONX" })]}
+        fotoUrls={{}}
+        aircraft={[]}
+        providers={[]}
+      />,
+    );
+    expect(html).not.toContain(DESTINO);
+    expect(html).not.toContain(DESTINO_AVION);
   });
 });
 
@@ -122,11 +161,18 @@ describe("cableado de los diálogos", () => {
     expect(alta).toContain("toast.error(sinVuelo)");
   });
 
-  it("alta: sin «Sin vuelo», hint obligatorio, ventana de 90 días y ayuda (con o sin vuelo prefijado)", () => {
+  it("alta: sin «Sin vuelo», hint obligatorio, ventana de 90 días y la ayuda de SU categoría (con o sin vuelo prefijado)", () => {
     expect(alta).toContain('...(esComision ? [] : [{ value: "", label: "Sin vuelo" }])');
     expect(alta).toContain("HINT_VUELO_COMISION");
     expect(alta).toContain("esComision ? VENTANA_VUELOS_COMISION : undefined");
-    expect(alta).toMatch(/\{esComision && \(\s*<p[^>]*>\s*<span className="font-medium">Comisión del vendedor\.<\/span>\{" "\}\s*\{AYUDA_COMISION_VENDEDOR\}/);
+    expect(alta).toContain('const ayudaComision = ayudaComisionVendedor(watch("categoria"));');
+    expect(alta).toMatch(
+      /\{ayudaComision && \(\s*<p[^>]*>\s*<span className="font-medium">\{ayudaComision\.titulo\}\.<\/span>\{" "\}\s*\{ayudaComision\.texto\}\s*<\/p>/,
+    );
+    // Ya no se rotula a mano: el título sale de la etiqueta de SU categoría.
+    expect(alta).not.toContain('<span className="font-medium">Comisión del vendedor.</span>');
+    // El alta NO trae el aviso de reclasificar (es de Verificar / editar).
+    expect(alta).not.toContain("AYUDA_RECLASIFICAR_COMISION");
   });
 
   it("alta: la IA no la pisa y «simular como piloto» no aplica", () => {
@@ -143,12 +189,26 @@ describe("cableado de los diálogos", () => {
     expect(verif).toContain("const vueloEnPatch = categoriaExigeVueloSiempre(values.categoria);");
   });
 
-  it("verificación: bloquea sin vuelo, sin «Sin vuelo», ventana ancha, ayuda y la IA no la pisa", () => {
+  it("verificación: bloquea sin vuelo, sin «Sin vuelo», ventana ancha, ayuda + reclasificar y la IA no la pisa", () => {
     expect(verif).toContain("errorVueloObligatorio(values.categoria, vueloSel)");
     expect(verif).toContain('...(esComision ? [] : [{ value: "", label: "Sin vuelo" }])');
     expect(verif).toContain("esComision ? VENTANA_VUELOS_COMISION : undefined");
-    expect(verif).toContain("{AYUDA_COMISION_VENDEDOR}");
+    expect(verif).toContain('const ayudaComision = ayudaComisionVendedor(watch("categoria"));');
+    expect(verif).toMatch(
+      /\{ayudaComision && \(\s*<p[^>]*>\s*<span className="font-medium">\{ayudaComision\.titulo\}\.<\/span>\{" "\}\s*\{ayudaComision\.texto\}\s*<span[^>]*>\{AYUDA_RECLASIFICAR_COMISION\}<\/span>\s*<\/p>/,
+    );
     expect(verif).toContain('iaPuedeCambiarCategoria(watch("categoria"), ai.categoria_sugerida)');
+  });
+
+  it("la «(avión)» usa el MISMO cableado: 90 días, sin «Sin vuelo» y vuelo en el MISMO PATCH", () => {
+    // `esComision` y `vueloEnPatch` salen de categoriaExigeVueloSiempre, que
+    // cubre las DOS; y el cuadro de ayuda le da su propio texto.
+    expect(categoriaExigeVueloSiempre("COMISION_VENDEDOR_AVION")).toBe(true);
+    expect(categoriaExigeVueloSiempre("COMISION_VENDEDOR")).toBe(true);
+    for (const fuente of [alta, verif]) {
+      expect(fuente).toContain('const esComision = categoriaExigeVueloSiempre(watch("categoria"));');
+    }
+    expect(AYUDA_COMISION_VENDEDOR).not.toBe(AYUDA_COMISION_VENDEDOR_AVION);
   });
 
   it("verificación: cambiar la categoría NO reinicia el vuelo elegido", () => {
@@ -156,5 +216,29 @@ describe("cableado de los diálogos", () => {
     expect(verif).toMatch(
       /setVueloSel\(gasto\.vuelo_id \?\? ""\);\s*\}, \[open, gasto\.id, gasto\.vuelo_id\]\);/,
     );
+  });
+});
+
+describe("tablero de Gastos y reparto (cableado de la «(avión)»)", () => {
+  const leer = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
+
+  it("el tablero pinta el renglón con la llave ADITIVA del API, después del de empresa", () => {
+    const pagina = leer("src/app/admin/dashboards/page.tsx");
+    expect(pagina).toContain(
+      "textoTableroComisionVendedorAvion(\n    resumen.gastos_comision_vendedor_avion_usd,\n  )",
+    );
+    expect(pagina).toMatch(
+      /\{comisionVendedorAvion && \(\s*<p className="text-xs text-muted-foreground">\{comisionVendedorAvion\}<\/p>/,
+    );
+    expect(pagina.indexOf("{comisionVendedorAvion && (")).toBeGreaterThan(
+      pagina.indexOf("resumen.gastos_empresa_usd ?? 0) > 0"),
+    );
+  });
+
+  it("la cascada del reparto usa el sublabel de la fuente única (sin «provisión»)", () => {
+    const card = leer("src/components/admin/profit-sharing/avion-reparto-card.tsx");
+    expect(card).toContain("sublabel={SUBLABEL_COMISIONES_REPARTO}");
+    expect(card).not.toMatch(/provisión del vendedor/);
+    expect(leer("src/components/admin/profit-sharing/kpi-strip.tsx")).not.toMatch(/provisi/);
   });
 });

@@ -15,6 +15,7 @@ import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { DesgloseSection } from "./desglose-section";
 import { SociosSection } from "./socios-section";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { SUBLABEL_COMISIONES_REPARTO } from "@/lib/admin/categorias-gasto";
 import type { AvionReparto } from "@/types/profit-sharing";
 
 const AMBAR =
@@ -26,9 +27,11 @@ const INFO =
 /**
  * Card de reparto por avión: cascada del saldo (las filas SUMAN el saldo),
  * reparto a socios, desglose expandible y descarga del balance del avión en
- * Excel. Desde el 28-ago-2026 la comisión del vendedor NO es costo del avión
- * (es ingreso/egreso de VuelaTour): el API la manda en 0 y la fila solo se
- * pinta si un API previo todavía descuenta algo.
+ * Excel. Lo cobrado al cliente por la comisión del vendedor es ingreso de
+ * VuelaTour (28-ago-2026); al avión solo le restan, en «Comisiones», su parte
+ * de la comisión bancaria (regla sep-2026) y los pagos capturados como
+ * «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74). La fila solo se
+ * pinta si el API manda algo que restar.
  */
 export function AvionRepartoCard({
   avion,
@@ -189,14 +192,17 @@ export function AvionRepartoCard({
             value={avion.ingresos.cobrado_usd}
             ingreso
           />
-          {/* Regla de septiembre 2026 (API 0.0.65): el avión absorbe su parte
-              de la comisión bancaria de sus cobros y la provisión de la
-              comisión del vendedor; antes de esa vigencia el API manda 0 y la
-              fila no se pinta. */}
+          {/* El avión absorbe su parte de la comisión bancaria de sus cobros
+              (regla de septiembre 2026, API 0.0.65) y los pagos capturados
+              como «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74;
+              sin pago capturado no resta nada del vendedor).
+              `comisiones_venta_usd > 0` también puede venir de un mes
+              ANTERIOR a la regla si el avión cargó un pago «(avión)»; con 0
+              la fila no se pinta. */}
           {(avion.ingresos.comisiones_venta_usd ?? 0) > 0 && (
             <CascadaRow
               label="Comisiones (banco + vendedor)"
-              sublabel="regla sep-2026: parte del avión de la comisión bancaria + provisión del vendedor"
+              sublabel={SUBLABEL_COMISIONES_REPARTO}
               value={avion.ingresos.comisiones_venta_usd}
               deduccion
             />

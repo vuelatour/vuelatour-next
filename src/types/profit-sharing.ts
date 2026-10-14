@@ -117,10 +117,14 @@ export interface AvionReparto {
     otros_ingresos_vuelatour_usd?: number;
     /** Ídem, pendientes de cobro. */
     otros_ingresos_vuelatour_pendiente_usd?: number;
-    /** Comisiones de venta descontadas al avión. Desde el 28-ago-2026 es
-        SIEMPRE 0: la comisión del vendedor es ingreso/egreso de VuelaTour
-        (otros ingresos), no un costo del avión. Se conserva por
-        compatibilidad de shape (PDF/XLSX/API previo). */
+    /** Comisiones que absorbe el avión («Comisiones (banco + vendedor)» de
+        la cascada): su parte de la comisión bancaria de sus cobros (regla
+        de septiembre 2026, API 0.0.65) + los pagos capturados como
+        «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74; puede ser
+        ≠ 0 en un mes anterior a la regla). Lo cobrado al cliente por la
+        comisión sigue siendo ingreso de VuelaTour (28-ago-2026) y la
+        «Comisión del vendedor (VuelaTour)» nunca entra aquí. 0 = nada que
+        restar. */
     comisiones_venta_usd: number;
     /** Pendiente de la VENTA DEL AVIÓN (parte que cuadra con la cascada). */
     pendiente_cobro_usd: number;

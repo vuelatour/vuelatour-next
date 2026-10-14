@@ -34,9 +34,10 @@ export function KpiStrip({
     aviones.reduce((acc, a) => acc + fn(a), 0);
 
   const ingresos = sum((a) => a.ingresos.cobrado_usd);
-  // Misma cascada que la card: desde la regla de septiembre 2026 (API
-  // 0.0.65) comisiones_venta_usd trae la parte del avión de la comisión
-  // bancaria + la provisión del vendedor; antes de esa vigencia vale 0.
+  // Misma cascada que la card: comisiones_venta_usd trae la parte del avión
+  // de la comisión bancaria (regla de septiembre 2026, API 0.0.65) + los
+  // pagos «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74); vale 0
+  // si no hay nada que restar.
   const gastos = sum(
     (a) =>
       (a.ingresos.comisiones_venta_usd ?? 0) +

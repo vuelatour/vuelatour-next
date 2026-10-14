@@ -1,5 +1,6 @@
 /**
- * «Comisión del vendedor» (28-sep-2026) en las server actions de Gastos:
+ * «Comisión del vendedor» (28-sep-2026; DOS categorías desde el 13-oct-2026,
+ * «(VuelaTour)» y «(avión)») en las server actions de Gastos:
  *
  *  1. `buscarVuelosCercanosAction` sin `opts` pide la ventana de SIEMPRE
  *     (±15 días, 100 vuelos: Paywise y demás llamadas sin cambio); con la
@@ -7,7 +8,8 @@
  *     (el tope del API). El argumento viene del cliente ⇒ se acota.
  *  2. `createGastoAction` manda la categoría y el vuelo al API y refresca
  *     también el detalle del vuelo (alta desde «Gastos del vuelo»).
- *  3. `verifyGastoAction` manda categoría + vuelo en el MISMO PATCH.
+ *  3. `verifyGastoAction` manda categoría + vuelo en el MISMO PATCH (también
+ *     al reclasificar ENTRE las dos).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
@@ -135,9 +137,36 @@ describe("createGastoAction con «Comisión del vendedor»", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/admin/flights", "layout");
   });
 
+  it("POST de la «(avión)» con su vuelo: mismo contrato que la de VuelaTour", async () => {
+    apiServer.mockResolvedValue({ id: GASTO });
+    const res = await createGastoAction({
+      categoria: "COMISION_VENDEDOR_AVION",
+      monto: 1305,
+      moneda: "MXN",
+      fecha_gasto: "2026-09-24",
+      medio_pago: "TRANSFERENCIA",
+      vuelo_id: VUELO,
+      aeronave_id: "",
+      proveedor_id: "",
+      notas: "",
+    });
+    expect(res.ok).toBe(true);
+    const [ruta, init] = apiServer.mock.calls[0];
+    expect(ruta).toBe("/v1/expenses");
+    expect(init.body).toEqual({
+      categoria: "COMISION_VENDEDOR_AVION",
+      monto: 1305,
+      moneda: "MXN",
+      fecha_gasto: "2026-09-24",
+      medio_pago: "TRANSFERENCIA",
+      vuelo_id: VUELO,
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/flights", "layout");
+  });
+
   it("el 400 GASTO_REQUIERE_VUELO del API llega tal cual al toast", async () => {
     const msg =
-      "Esta categoría es del vuelo: elige el vuelo. «Comisión del vendedor» siempre se registra con el vuelo al que pertenece.";
+      "Esta categoría es del vuelo: elige el vuelo. «Comisión del vendedor (VuelaTour)» siempre se registra con el vuelo al que pertenece.";
     apiServer.mockRejectedValue(
       new ApiError({ statusCode: 400, code: "GASTO_REQUIERE_VUELO", message: msg }),
     );
@@ -170,5 +199,37 @@ describe("verifyGastoAction: reclasificar a comisión", () => {
       vuelo_id: VUELO,
       verificado: true,
     });
+  });
+
+  it("reclasificar de «(VuelaTour)» a «(avión)»: un solo PATCH con categoría y vuelo", async () => {
+    apiServer.mockResolvedValue({ id: GASTO });
+    const res = await verifyGastoAction(GASTO, {
+      categoria: "COMISION_VENDEDOR_AVION",
+      vuelo_id: VUELO,
+      verificado: true,
+    });
+    expect(res.ok).toBe(true);
+    expect(apiServer).toHaveBeenCalledTimes(1);
+    const [ruta, init] = apiServer.mock.calls[0];
+    expect(ruta).toBe(`/v1/expenses/${GASTO}`);
+    expect(init.method).toBe("PATCH");
+    expect(init.body).toEqual({
+      categoria: "COMISION_VENDEDOR_AVION",
+      vuelo_id: VUELO,
+      verificado: true,
+    });
+  });
+
+  it("un API previo (0.0.73) rechaza la «(avión)» con 400: el mensaje llega tal cual", async () => {
+    // Skew de deploy: el panel sale DESPUÉS del API 0.0.74; si no, el IsEnum
+    // del API viejo rebota y el panel no se rompe (toast con el texto).
+    const msg = "categoria must be one of the following values: GAS, ATERRIZAJE";
+    apiServer.mockRejectedValue(new ApiError({ statusCode: 400, code: "BAD_REQUEST", message: msg }));
+    const res = await verifyGastoAction(GASTO, {
+      categoria: "COMISION_VENDEDOR_AVION",
+      vuelo_id: VUELO,
+      verificado: true,
+    });
+    expect(res).toEqual({ ok: false, error: msg });
   });
 });

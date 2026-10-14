@@ -29,7 +29,10 @@ import {
 import { fmtUsd, fmtInt, fmtDecimal, fmtPercent } from "@/lib/format";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import {
+  categoriaGastoLabel,
+  textoTableroComisionVendedorAvion,
+} from "@/lib/admin/categorias-gasto";
 import type { Rol } from "@/types/me";
 import { rangoFiltro } from "@/lib/admin/url-params";
 
@@ -363,6 +366,11 @@ async function Operativo({ desde, hasta }: { desde: string; hasta: string }) {
 async function Gastos({ desde, hasta }: { desde: string; hasta: string }) {
   const data = await getDashboardGastos({ desde, hasta });
   const { resumen, por_avion } = data;
+  // «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74): renglón
+  // aparte; null con 0 o con un API previo sin la llave (no se pinta).
+  const comisionVendedorAvion = textoTableroComisionVendedorAvion(
+    resumen.gastos_comision_vendedor_avion_usd,
+  );
 
   return (
     <div className="space-y-6">
@@ -391,6 +399,9 @@ async function Gastos({ desde, hasta }: { desde: string; hasta: string }) {
           {fmtUsd(resumen.gastos_empresa_usd ?? 0)} en gastos de la empresa
           VuelaTour (remanentes de repartos: no se imputan a aeronaves).
         </p>
+      )}
+      {comisionVendedorAvion && (
+        <p className="text-xs text-muted-foreground">{comisionVendedorAvion}</p>
       )}
 
       <Card>

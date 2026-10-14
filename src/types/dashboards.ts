@@ -105,6 +105,12 @@ export interface DashboardGastos {
     gastos_sin_avion_usd: number;
   /** Remanentes de repartos manuales: gasto de la empresa VuelaTour. */
   gastos_empresa_usd?: number;
+    /** ADITIVA (13-oct-2026, API 0.0.74): pagos «Comisión del vendedor
+     *  (avión)» del periodo, por fecha del gasto. Van DENTRO de
+     *  `gastos_totales_usd` y FUERA de `gastos_avion_usd`, del costo por hora
+     *  y de `gastos_empresa_usd` (al avión le restan en su columna
+     *  COMISIONES, en el mes del vuelo). Un API previo no la manda. */
+    gastos_comision_vendedor_avion_usd?: number;
     horas_voladas: number;
     costo_hora_promedio_usd: number | null;
     gastos_sin_tc: number;

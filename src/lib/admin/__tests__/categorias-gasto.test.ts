@@ -1,23 +1,34 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AYUDA_COMISION_VENDEDOR,
+  AYUDA_COMISION_VENDEDOR_AVION,
+  AYUDA_RECLASIFICAR_COMISION,
   CATEGORIA_GASTO_LABELS,
   CATEGORIA_PAGO_VENDEDOR,
+  CATEGORIA_PAGO_VENDEDOR_AVION,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_EMPRESA,
+  CATEGORIAS_PAGO_VENDEDOR,
   CATEGORIAS_REPARTIBLES,
   DESTINO_POR_DEFECTO,
   HINT_VUELO_COMISION,
   MSG_GASTO_REQUIERE_VUELO_COMISION,
+  SUBLABEL_COMISIONES_REPARTO,
   VENTANA_VUELOS_COMISION,
   VENTANA_VUELOS_DEFAULT,
+  ayudaComisionVendedor,
   categoriaExigeVueloSiempre,
   categoriaGastoLabel,
   destinoPorDefecto,
   errorVueloObligatorio,
+  esCategoriaPagoVendedor,
   hojaDestinoGasto,
   iaPuedeCambiarCategoria,
+  mensajeGastoRequiereVuelo,
   opcionCategoriaGasto,
+  textoTableroComisionVendedorAvion,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaEnum, GastoCreateSchema, GastoVerifySchema } from "@/app/admin/expenses/schema";
 
@@ -25,43 +36,66 @@ import { CategoriaEnum, GastoCreateSchema, GastoVerifySchema } from "@/app/admin
  * «Comisión del vendedor» como gasto (pedido del cliente, 28-sep-2026): «¿cómo
  * registro el pago de la comisión a Saab para que aparezca en otros
  * movimientos? Si lo capturo como "Otros gastos VuelaTour" queda
- * duplicado». La tabla canónica (etiqueta + destino) es LITERAL del contrato
- * y la MISMA que congela el API (`common/categoria-gasto.util.spec.ts`) y la
- * app: si un texto cambia en un solo lado, este test falla.
+ * duplicado». Desde el 13-oct-2026 (API 0.0.74, invariante 61) son DOS
+ * categorías: «aqui en las categorias necesitamos una opcion que sea
+ * Comision del vendedor pero que esa opcion si se cargue al balance del
+ * avión, y dejamos el otro que se va a balance de vuelatour para tener esas
+ * 2 opciones». La tabla canónica (etiqueta + destino) es LITERAL del
+ * contrato y la MISMA que congela el API (`common/categoria-gasto.util.spec.ts`)
+ * y la app (`categoria_comision_vendedor*_test.dart`): si un texto cambia en
+ * un solo lado, este test falla.
  */
 
 const VUELO = "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+const VT = "COMISION_VENDEDOR";
+const AV = "COMISION_VENDEDOR_AVION";
+const ETIQUETA_VT = "Comisión del vendedor (VuelaTour)";
+const ETIQUETA_AV = "Comisión del vendedor (avión)";
+const DESTINO_VT = "Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)";
+const DESTINO_AV =
+  "Pago al vendedor (columna COMISIONES del balance del avión; sí es costo del avión)";
 
-describe("tabla canónica de COMISION_VENDEDOR (== API == app)", () => {
-  it("etiqueta y destino exactos", () => {
-    expect(CATEGORIA_PAGO_VENDEDOR).toBe("COMISION_VENDEDOR");
-    expect(CATEGORIA_GASTO_LABELS.COMISION_VENDEDOR).toBe("Comisión del vendedor");
-    expect(categoriaGastoLabel("COMISION_VENDEDOR")).toBe("Comisión del vendedor");
-    expect(destinoPorDefecto("COMISION_VENDEDOR")).toBe(
-      "Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)",
-    );
+describe("tabla canónica de las DOS comisiones del vendedor (== API == app)", () => {
+  it("códigos, etiquetas y destinos exactos", () => {
+    expect(CATEGORIA_PAGO_VENDEDOR).toBe(VT);
+    expect(CATEGORIA_PAGO_VENDEDOR_AVION).toBe(AV);
+    expect(CATEGORIA_GASTO_LABELS[VT]).toBe(ETIQUETA_VT);
+    expect(CATEGORIA_GASTO_LABELS[AV]).toBe(ETIQUETA_AV);
+    expect(categoriaGastoLabel(VT)).toBe(ETIQUETA_VT);
+    expect(categoriaGastoLabel(AV)).toBe(ETIQUETA_AV);
+    expect(destinoPorDefecto(VT)).toBe(DESTINO_VT);
+    expect(destinoPorDefecto(AV)).toBe(DESTINO_AV);
   });
 
-  it("su destino NO es el de empresa ni el de gasto directo del vuelo", () => {
-    const destino = DESTINO_POR_DEFECTO.COMISION_VENDEDOR;
-    expect(destino).not.toBe("Otros gastos (Balance general VuelaTour)");
-    expect(destino.startsWith("Gastos directos del vuelo")).toBe(false);
+  it("ningún destino es el de empresa ni el de gasto directo del vuelo", () => {
+    for (const c of [VT, AV]) {
+      const destino = DESTINO_POR_DEFECTO[c];
+      expect(destino, c).not.toBe("Otros gastos (Balance general VuelaTour)");
+      expect(destino.startsWith("Gastos directos del vuelo"), c).toBe(false);
+    }
   });
 
-  it("opción del selector: etiqueta + destino en verde", () => {
-    expect(opcionCategoriaGasto("COMISION_VENDEDOR")).toEqual({
-      value: "COMISION_VENDEDOR",
-      label: "Comisión del vendedor",
-      description: "Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)",
+  it("opción del selector: etiqueta + destino en verde (se ve quién paga)", () => {
+    expect(opcionCategoriaGasto(VT)).toEqual({
+      value: VT,
+      label: ETIQUETA_VT,
+      description: DESTINO_VT,
+      descriptionClassName: expect.stringContaining("text-green-600!"),
+    });
+    expect(opcionCategoriaGasto(AV)).toEqual({
+      value: AV,
+      label: ETIQUETA_AV,
+      description: DESTINO_AV,
       descriptionClassName: expect.stringContaining("text-green-600!"),
     });
   });
 
-  it("se ofrece al capturar, justo después de PILOTO_EXTERNO", () => {
+  it("orden del selector: …PILOTO_EXTERNO, «(VuelaTour)», «(avión)», INDIRECTO…", () => {
     const i = CATEGORIAS_CAPTURA.indexOf("PILOTO_EXTERNO");
     expect(i).toBeGreaterThanOrEqual(0);
-    expect(CATEGORIAS_CAPTURA[i + 1]).toBe("COMISION_VENDEDOR");
-    expect(CATEGORIAS_CAPTURA.filter((c) => c === "COMISION_VENDEDOR")).toHaveLength(1);
+    expect(CATEGORIAS_CAPTURA.slice(i, i + 4)).toEqual(["PILOTO_EXTERNO", VT, AV, "INDIRECTO"]);
+    expect(CATEGORIAS_CAPTURA.filter((c) => c === VT)).toHaveLength(1);
+    expect(CATEGORIAS_CAPTURA.filter((c) => c === AV)).toHaveLength(1);
   });
 
   it("toda categoría ofrecida tiene etiqueta y destino propios (nada cae al fallback)", () => {
@@ -71,41 +105,93 @@ describe("tabla canónica de COMISION_VENDEDOR (== API == app)", () => {
     }
   });
 
-  it("NO es repartible (el reparto es de gastos generales SIN vuelo)", () => {
-    expect(CATEGORIAS_REPARTIBLES.has("COMISION_VENDEDOR")).toBe(false);
+  it("NINGUNA es repartible (el reparto es de gastos generales SIN vuelo): lista sin cambio", () => {
+    expect(CATEGORIAS_REPARTIBLES.has(VT)).toBe(false);
+    expect(CATEGORIAS_REPARTIBLES.has(AV)).toBe(false);
     expect([...CATEGORIAS_REPARTIBLES].sort()).toEqual(
       ["FIJO", "GASOLINA", "INDIRECTO", "NOMINA", "OTRO", "VISITA"],
     );
   });
 });
 
+describe("comparación EXACTA: 'COMISION_VENDEDOR' es prefijo de 'COMISION_VENDEDOR_AVION'", () => {
+  it("esCategoriaPagoVendedor: solo las dos, por igualdad", () => {
+    expect([...CATEGORIAS_PAGO_VENDEDOR].sort()).toEqual([VT, AV]);
+    expect(esCategoriaPagoVendedor(VT)).toBe(true);
+    expect(esCategoriaPagoVendedor(AV)).toBe(true);
+    for (const c of [
+      "COMISION_VENDEDOR_AVIONX",
+      "COMISION_VENDEDOR_",
+      "COMISION_VENDEDO",
+      "comision_vendedor",
+      "comision_vendedor_avion",
+      " COMISION_VENDEDOR",
+      "OTRO",
+      "",
+      null,
+      undefined,
+    ]) {
+      expect(esCategoriaPagoVendedor(c), String(c)).toBe(false);
+    }
+  });
+
+  it("guardián: ningún archivo del panel compara la categoría con prefijo", () => {
+    const raiz = path.resolve(__dirname, "../../..");
+    const archivos: string[] = [];
+    const recorrer = (dir: string) => {
+      for (const nombre of readdirSync(dir)) {
+        const ruta = path.join(dir, nombre);
+        if (statSync(ruta).isDirectory()) {
+          if (nombre !== "node_modules" && nombre !== "__tests__") recorrer(ruta);
+        } else if (/\.(ts|tsx)$/.test(nombre)) {
+          archivos.push(ruta);
+        }
+      }
+    };
+    recorrer(raiz);
+    expect(archivos.length).toBeGreaterThan(100);
+    const prohibido = /\.(startsWith|includes|indexOf)\(\s*["'`]COMISION_VENDEDOR/;
+    const culpables = archivos.filter((f) => prohibido.test(readFileSync(f, "utf8")));
+    expect(culpables).toEqual([]);
+  });
+});
+
 describe("vuelo obligatorio (espejo del 400 GASTO_REQUIERE_VUELO del API)", () => {
-  it("solo COMISION_VENDEDOR lo exige para todos los roles", () => {
-    expect(categoriaExigeVueloSiempre("COMISION_VENDEDOR")).toBe(true);
-    for (const c of Object.keys(CATEGORIA_GASTO_LABELS).filter((c) => c !== "COMISION_VENDEDOR")) {
+  it("solo las DOS comisiones lo exigen para todos los roles", () => {
+    expect(categoriaExigeVueloSiempre(VT)).toBe(true);
+    expect(categoriaExigeVueloSiempre(AV)).toBe(true);
+    for (const c of Object.keys(CATEGORIA_GASTO_LABELS).filter((c) => c !== VT && c !== AV)) {
       expect(categoriaExigeVueloSiempre(c), c).toBe(false);
     }
     expect(categoriaExigeVueloSiempre("")).toBe(false);
+    expect(categoriaExigeVueloSiempre("COMISION_VENDEDOR_AVIONX")).toBe(false);
   });
 
-  it("mensaje idéntico al del API", () => {
-    expect(MSG_GASTO_REQUIERE_VUELO_COMISION).toBe(
-      "Esta categoría es del vuelo: elige el vuelo. «Comisión del vendedor» siempre se registra con el vuelo al que pertenece.",
+  it("mensaje idéntico al del API, con la etiqueta de SU categoría", () => {
+    expect(mensajeGastoRequiereVuelo(VT)).toBe(
+      "Esta categoría es del vuelo: elige el vuelo. «Comisión del vendedor (VuelaTour)» siempre se registra con el vuelo al que pertenece.",
     );
+    expect(mensajeGastoRequiereVuelo(AV)).toBe(
+      "Esta categoría es del vuelo: elige el vuelo. «Comisión del vendedor (avión)» siempre se registra con el vuelo al que pertenece.",
+    );
+    // El nombre de siempre conserva el texto de la «(VuelaTour)».
+    expect(MSG_GASTO_REQUIERE_VUELO_COMISION).toBe(mensajeGastoRequiereVuelo(VT));
   });
 
-  it("errorVueloObligatorio: sin vuelo ⇒ mensaje; con vuelo ⇒ null; otra categoría ⇒ null", () => {
-    expect(errorVueloObligatorio("COMISION_VENDEDOR", "")).toBe(MSG_GASTO_REQUIERE_VUELO_COMISION);
-    expect(errorVueloObligatorio("COMISION_VENDEDOR", null)).toBe(MSG_GASTO_REQUIERE_VUELO_COMISION);
-    expect(errorVueloObligatorio("COMISION_VENDEDOR", undefined)).toBe(
-      MSG_GASTO_REQUIERE_VUELO_COMISION,
-    );
-    expect(errorVueloObligatorio("COMISION_VENDEDOR", VUELO)).toBeNull();
+  it("errorVueloObligatorio: sin vuelo ⇒ mensaje de SU categoría; con vuelo ⇒ null; otra categoría ⇒ null", () => {
+    expect(errorVueloObligatorio(VT, "")).toBe(MSG_GASTO_REQUIERE_VUELO_COMISION);
+    expect(errorVueloObligatorio(VT, null)).toBe(MSG_GASTO_REQUIERE_VUELO_COMISION);
+    expect(errorVueloObligatorio(VT, undefined)).toBe(MSG_GASTO_REQUIERE_VUELO_COMISION);
+    expect(errorVueloObligatorio(VT, VUELO)).toBeNull();
+    expect(errorVueloObligatorio(AV, "")).toBe(mensajeGastoRequiereVuelo(AV));
+    expect(errorVueloObligatorio(AV, null)).toBe(mensajeGastoRequiereVuelo(AV));
+    expect(errorVueloObligatorio(AV, undefined)).toBe(mensajeGastoRequiereVuelo(AV));
+    expect(errorVueloObligatorio(AV, VUELO)).toBeNull();
     expect(errorVueloObligatorio("OTRO", "")).toBeNull();
     expect(errorVueloObligatorio("COMIDA", null)).toBeNull();
   });
 
-  it("hint del campo Vuelo", () => {
+  it("hint del campo Vuelo (vale para las dos)", () => {
     expect(HINT_VUELO_COMISION).toBe(
       "Obligatorio: la comisión se aparea con lo cobrado en ese vuelo. La lista trae los vuelos de los últimos 90 días.",
     );
@@ -118,13 +204,19 @@ describe("vuelo obligatorio (espejo del 400 GASTO_REQUIERE_VUELO del API)", () =
 });
 
 describe("iaPuedeCambiarCategoria: la IA jamás pisa lo que no sabe sugerir", () => {
-  it("una comisión elegida a mano NO se cambia", () => {
-    expect(iaPuedeCambiarCategoria("COMISION_VENDEDOR", "OPERACIONES")).toBe(false);
-    expect(iaPuedeCambiarCategoria("COMISION_VENDEDOR", "OTRO")).toBe(false);
+  it("una comisión elegida a mano (cualquiera de las dos) NO se cambia", () => {
+    for (const c of [VT, AV]) {
+      expect(iaPuedeCambiarCategoria(c, "OPERACIONES"), c).toBe(false);
+      expect(iaPuedeCambiarCategoria(c, "OTRO"), c).toBe(false);
+    }
+    // Ni la IA decide quién paga: no cambia una por la otra.
+    expect(iaPuedeCambiarCategoria(VT, AV)).toBe(false);
+    expect(iaPuedeCambiarCategoria(AV, VT)).toBe(false);
   });
 
-  it("la IA tampoco la propone (un pago al vendedor lo decide la oficina)", () => {
-    expect(iaPuedeCambiarCategoria("OPERACIONES", "COMISION_VENDEDOR")).toBe(false);
+  it("la IA tampoco propone ninguna (un pago al vendedor lo decide la oficina)", () => {
+    expect(iaPuedeCambiarCategoria("OPERACIONES", VT)).toBe(false);
+    expect(iaPuedeCambiarCategoria("OPERACIONES", AV)).toBe(false);
   });
 
   it("el caso de siempre sigue igual: la IA llena la categoría del ticket", () => {
@@ -139,8 +231,11 @@ describe("iaPuedeCambiarCategoria: la IA jamás pisa lo que no sabe sugerir", ()
   });
 });
 
-describe("AYUDA_COMISION_VENDEDOR", () => {
-  it("explica el apareo, la regla «un gasto por vuelo» y el duplicado", () => {
+describe("ayudas de la comisión (alta y Verificar / editar)", () => {
+  it("«(VuelaTour)»: texto exacto; conserva las frases de siempre y apunta a la «(avión)»", () => {
+    expect(AYUDA_COMISION_VENDEDOR).toBe(
+      "La paga VuelaTour. Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general: mientras no se capture, esa fila no lleva egreso (ahí no se provisiona nada); si pagas de menos o de más, la hoja lo marca con «faltan» o «excede». Registra un gasto por vuelo: si una sola transferencia paga varios vuelos (o los aviones de un grupo), captura un gasto por vuelo con su parte. No es costo del avión. Si el pago le toca al avión, usa «Comisión del vendedor (avión)». No la captures como «Otros gastos VuelaTour»: quedaría duplicada.",
+    );
     expect(AYUDA_COMISION_VENDEDOR).toContain(
       "Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general",
     );
@@ -153,6 +248,32 @@ describe("AYUDA_COMISION_VENDEDOR", () => {
     expect(AYUDA_COMISION_VENDEDOR).toContain(
       "No la captures como «Otros gastos VuelaTour»: quedaría duplicada.",
     );
+    // 13-oct-2026: dice quién paga y cuándo usar la otra.
+    expect(AYUDA_COMISION_VENDEDOR.startsWith("La paga VuelaTour.")).toBe(true);
+    expect(AYUDA_COMISION_VENDEDOR).toContain(`Si el pago le toca al avión, usa «${ETIQUETA_AV}».`);
+  });
+
+  it("«(avión)»: texto exacto (lo carga el avión del vuelo y cuándo lo paga VuelaTour)", () => {
+    expect(AYUDA_COMISION_VENDEDOR_AVION).toBe(
+      "La carga el avión del vuelo: resta en la columna COMISIONES de su balance y en el reparto a sus socios, en el mes del vuelo (en un vuelo de varios aviones, cada uno su parte, como la venta). En la hoja «otros movimientos» del balance general sale junto a la comisión cobrada al cliente —que sigue siendo de VuelaTour— con egreso $0.00 «a cargo del avión». Solo la carga el avión con el vuelo completado (o cancelado con cobros retenidos); antes, o en un vuelo sin avión de la flota, la paga VuelaTour y el balance lo avisa. Registra un gasto por vuelo. Si el pago le toca a VuelaTour, usa «Comisión del vendedor (VuelaTour)». No la captures como «Otros gastos VuelaTour»: quedaría duplicada.",
+    );
+    expect(AYUDA_COMISION_VENDEDOR_AVION).toContain(`usa «${ETIQUETA_VT}»`);
+    expect(AYUDA_COMISION_VENDEDOR_AVION).not.toMatch(/provisi/i);
+  });
+
+  it("reclasificar entre las dos (solo en Verificar / editar): texto exacto", () => {
+    expect(AYUDA_RECLASIFICAR_COMISION).toBe(
+      "¿Cambió quién la paga? Cambia aquí la categoría entre «Comisión del vendedor (VuelaTour)» y «Comisión del vendedor (avión)»: se puede aunque el gasto ya esté conciliado (el banco no se toca). El balance y el reparto del mes del vuelo cambian al regenerarlos.",
+    );
+    expect(AYUDA_RECLASIFICAR_COMISION).toContain(`«${ETIQUETA_VT}» y «${ETIQUETA_AV}»`);
+  });
+
+  it("ayudaComisionVendedor: título = etiqueta de SU categoría; null fuera de las dos", () => {
+    expect(ayudaComisionVendedor(VT)).toEqual({ titulo: ETIQUETA_VT, texto: AYUDA_COMISION_VENDEDOR });
+    expect(ayudaComisionVendedor(AV)).toEqual({ titulo: ETIQUETA_AV, texto: AYUDA_COMISION_VENDEDOR_AVION });
+    for (const c of ["OTRO", "PILOTO_EXTERNO", "COMISION_VENDEDOR_AVIONX", "", null, undefined]) {
+      expect(ayudaComisionVendedor(c), String(c)).toBeNull();
+    }
   });
 });
 
@@ -160,23 +281,33 @@ describe("hojaDestinoGasto: a qué hoja cae CON LO ELEGIDO (sin pistas falsas)",
   const OTROS_GASTOS_SIN_NADA =
     "Balance general VuelaTour · Otros gastos (repártelo desde la pantalla Otros gastos para cargarlo a aviones)";
 
-  it("COMISION_VENDEDOR ⇒ otros movimientos, con o sin vuelo/avión", () => {
+  it("«(VuelaTour)» ⇒ otros movimientos, con o sin vuelo/avión", () => {
     const esperado =
       "Balance general VuelaTour · Otros movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él esa fila no lleva egreso)";
-    expect(hojaDestinoGasto("COMISION_VENDEDOR", true, true)).toBe(esperado);
-    expect(hojaDestinoGasto("COMISION_VENDEDOR", true, false)).toBe(esperado);
-    expect(hojaDestinoGasto("COMISION_VENDEDOR", false, true)).toBe(esperado);
-    expect(hojaDestinoGasto("COMISION_VENDEDOR", false, false)).toBe(esperado);
+    expect(hojaDestinoGasto(VT, true, true)).toBe(esperado);
+    expect(hojaDestinoGasto(VT, true, false)).toBe(esperado);
+    expect(hojaDestinoGasto(VT, false, true)).toBe(esperado);
+    expect(hojaDestinoGasto(VT, false, false)).toBe(esperado);
   });
 
-  it("empresa = las 5 del destino «Otros gastos» (sincronizada con el API)", () => {
+  it("«(avión)» ⇒ columna COMISIONES del avión y reparto, con o sin vuelo/avión", () => {
+    const esperado =
+      "Balance del avión · columna COMISIONES y reparto a socios, en el mes del vuelo (con el vuelo completado; en «otros movimientos» sale con egreso $0.00 «a cargo del avión»)";
+    expect(hojaDestinoGasto(AV, true, true)).toBe(esperado);
+    expect(hojaDestinoGasto(AV, true, false)).toBe(esperado);
+    expect(hojaDestinoGasto(AV, false, true)).toBe(esperado);
+    expect(hojaDestinoGasto(AV, false, false)).toBe(esperado);
+  });
+
+  it("empresa = las 5 del destino «Otros gastos» (sincronizada con el API, sin cambio)", () => {
     const porDestino = Object.entries(DESTINO_POR_DEFECTO)
       .filter(([, d]) => d === "Otros gastos (Balance general VuelaTour)")
       .map(([c]) => c)
       .sort();
     expect([...CATEGORIAS_EMPRESA].sort()).toEqual(porDestino);
     expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "VISITA"]);
-    expect(CATEGORIAS_EMPRESA.has("COMISION_VENDEDOR")).toBe(false);
+    expect(CATEGORIAS_EMPRESA.has(VT)).toBe(false);
+    expect(CATEGORIAS_EMPRESA.has(AV)).toBe(false);
   });
 
   it.each(["OTRO", "NOMINA", "GASOLINA", "FIJO", "VISITA"])(
@@ -235,9 +366,37 @@ describe("hojaDestinoGasto: a qué hoja cae CON LO ELEGIDO (sin pistas falsas)",
   });
 });
 
+describe("tablero de Gastos y reparto: textos de la «(avión)»", () => {
+  it("renglón del tablero: solo con cifra > 0 (0 o API previo sin la llave ⇒ no se pinta)", () => {
+    expect(textoTableroComisionVendedorAvion(1305.5)).toBe(
+      "$1,305.50 en comisiones del vendedor a cargo de los aviones (restan en la columna COMISIONES de su balance y en el reparto; no entran al costo por hora).",
+    );
+    expect(textoTableroComisionVendedorAvion(240)).toMatch(/^\$240 en comisiones del vendedor a cargo de los aviones/);
+    expect(textoTableroComisionVendedorAvion(undefined)).toBeNull();
+    expect(textoTableroComisionVendedorAvion(null)).toBeNull();
+    expect(textoTableroComisionVendedorAvion(0)).toBeNull();
+    expect(textoTableroComisionVendedorAvion(-5)).toBeNull();
+    expect(textoTableroComisionVendedorAvion(Number.NaN)).toBeNull();
+  });
+
+  it("sublabel de «Comisiones (banco + vendedor)» del reparto: sin provisión, con la «(avión)»", () => {
+    expect(SUBLABEL_COMISIONES_REPARTO).toBe(
+      "parte del avión de la comisión bancaria (regla sep-2026) + pagos «Comisión del vendedor (avión)»",
+    );
+    expect(SUBLABEL_COMISIONES_REPARTO).not.toMatch(/provisi/i);
+  });
+});
+
 describe("schema zod del panel", () => {
-  it("el enum acepta COMISION_VENDEDOR", () => {
-    expect(CategoriaEnum.safeParse("COMISION_VENDEDOR").success).toBe(true);
+  it("el enum acepta las dos (y nada parecido)", () => {
+    expect(CategoriaEnum.safeParse(VT).success).toBe(true);
+    expect(CategoriaEnum.safeParse(AV).success).toBe(true);
+    expect(CategoriaEnum.safeParse("COMISION_VENDEDOR_AVIONX").success).toBe(false);
+  });
+
+  it("la «(avión)» va justo después de la «(VuelaTour)» en el enum", () => {
+    const opciones = CategoriaEnum.options as readonly string[];
+    expect(opciones[opciones.indexOf(VT) + 1]).toBe(AV);
   });
 
   it("toda categoría ofrecida al capturar pasa el enum", () => {
@@ -246,9 +405,9 @@ describe("schema zod del panel", () => {
     }
   });
 
-  it("GastoCreateSchema acepta una comisión ligada a su vuelo", () => {
+  it.each([VT, AV])("GastoCreateSchema acepta %s ligada a su vuelo", (cat) => {
     const r = GastoCreateSchema.safeParse({
-      categoria: "COMISION_VENDEDOR",
+      categoria: cat,
       monto: "2030",
       moneda: "MXN",
       fecha_gasto: "2026-09-28",
@@ -257,14 +416,14 @@ describe("schema zod del panel", () => {
     });
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data.categoria).toBe("COMISION_VENDEDOR");
+      expect(r.data.categoria).toBe(cat);
       expect(r.data.monto).toBe(2030);
       expect(r.data.vuelo_id).toBe(VUELO);
     }
   });
 
-  it("GastoVerifySchema acepta reclasificar a comisión con el vuelo en el MISMO PATCH", () => {
-    const r = GastoVerifySchema.safeParse({ categoria: "COMISION_VENDEDOR", vuelo_id: VUELO });
+  it.each([VT, AV])("GastoVerifySchema acepta reclasificar a %s con el vuelo en el MISMO PATCH", (cat) => {
+    const r = GastoVerifySchema.safeParse({ categoria: cat, vuelo_id: VUELO });
     expect(r.success).toBe(true);
   });
 });

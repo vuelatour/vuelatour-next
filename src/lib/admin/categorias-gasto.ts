@@ -1,3 +1,5 @@
+import { fmtUsd } from "@/lib/format";
+
 /**
  * FUENTE ÚNICA de etiquetas es-MX para las categorías de gasto del API.
  * Antes cada tabla/diálogo tenía su propio mapa (o pintaba el código crudo
@@ -23,12 +25,15 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   PERMISO: "Permiso",
   // Honorario del freelance que voló el avión (doc 3.7): gasto directo del vuelo.
   PILOTO_EXTERNO: "Piloto externo (honorario)",
-  // Pago al vendedor (28-sep-2026): SIEMPRE con vuelo; se aparea con la
-  // comisión cobrada en «otros movimientos» del Balance general y es el
-  // ÚNICO egreso del vendedor: sin él la fila no lleva egreso ni provisión
-  // (invariantes 31 y 58 del API; la provisión se retiró de esa hoja el
-  // 12-oct-2026). No es costo del avión.
-  COMISION_VENDEDOR: "Comisión del vendedor",
+  // Pago al vendedor en DOS categorías (13-oct-2026, invariante 61 del API;
+  // ver «Dos categorías» más abajo). Las dos exigen vuelo.
+  // «(VuelaTour)» (28-sep-2026): la paga VuelaTour; se aparea con la
+  // comisión cobrada en «otros movimientos» del Balance general y nunca es
+  // costo del avión. Sin pago capturado esa fila no lleva egreso.
+  COMISION_VENDEDOR: "Comisión del vendedor (VuelaTour)",
+  // «(avión)» (13-oct-2026): la carga el avión del vuelo en la columna
+  // COMISIONES de su balance y en el reparto a sus socios.
+  COMISION_VENDEDOR_AVION: "Comisión del vendedor (avión)",
   // LEGADO: ya no se ofrece en captura/verificación (se retiró de los
   // dropdowns), pero la etiqueta se conserva para pintar gastos históricos.
   FIJO: "Gasto fijo",
@@ -83,10 +88,14 @@ export const DESTINO_POR_DEFECTO: Record<string, string> = {
   HOTEL: DESTINO_DIRECTO_VUELO,
   TAXI: DESTINO_DIRECTO_VUELO,
   PILOTO_EXTERNO: DESTINO_DIRECTO_VUELO,
-  // NO empieza con «Gastos directos del vuelo» ni es el destino de empresa:
-  // no resta al avión ni va a «otros gastos» (idéntico al API y la app).
+  // Las dos del pago al vendedor NO empiezan con «Gastos directos del vuelo»
+  // ni son el destino de empresa: ninguna va a «otros gastos» y
+  // CATEGORIAS_EMPRESA no cambia. Textos simétricos a propósito («no es / sí
+  // es costo del avión»), idénticos al API y la app.
   COMISION_VENDEDOR:
     "Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)",
+  COMISION_VENDEDOR_AVION:
+    "Pago al vendedor (columna COMISIONES del balance del avión; sí es costo del avión)",
   REFACCION:
     "Inventario en el Balance general VuelaTour; al salir del inventario se vende al avión y cae en sus Gastos Indirectos",
   PERMISO: "Hoja de permisos (en el balance del avión)",
@@ -124,8 +133,11 @@ export const CATEGORIAS_CAPTURA: readonly string[] = [
   // Honorario del freelance que voló el avión (doc 3.7): resta en el reparto
   // como gasto directo del vuelo.
   "PILOTO_EXTERNO",
-  // Pago al vendedor (28-sep-2026): exige vuelo; va a «otros movimientos».
+  // Pago al vendedor en DOS categorías (13-oct-2026); las dos exigen vuelo.
+  // Primero «(VuelaTour)» (la de siempre: «otros movimientos») y justo
+  // después «(avión)» (columna COMISIONES del avión y reparto a socios).
   "COMISION_VENDEDOR",
+  "COMISION_VENDEDOR_AVION",
   // Sin vuelo (avión opcional): INDIRECTO/NOMINA; SERVICIOS es del avión.
   "INDIRECTO",
   "NOMINA",
@@ -181,33 +193,104 @@ export const CATEGORIAS_REPARTIBLES: ReadonlySet<string> = new Set([
 // Pedido del cliente: «¿cómo registro el pago de la comisión a Saab para que
 // aparezca en otros movimientos? Si lo capturo como "Otros gastos VuelaTour"
 // me lo manda a la hoja otros gastos y queda duplicado». El pago real al
-// vendedor se captura con esta categoría LIGADO AL VUELO: en «otros
-// movimientos» del Balance general (y «Otros ingresos» del Libro Dinero) se
-// aparea con la comisión cobrada al cliente y REEMPLAZA a la PROVISIÓN. No es
-// costo del avión, no va a «otros gastos», no se reparte. Espejo del API
-// (`common/categoria-gasto.util.ts`, invariante 31) y de la app.
+// vendedor se captura LIGADO AL VUELO y en «otros movimientos» del Balance
+// general se aparea con la comisión cobrada al cliente; sin pago capturado
+// esa fila no lleva egreso (ningún libro provisiona el pago al vendedor desde
+// el API 0.0.74). No va a «otros gastos» ni se reparte. Espejo del API
+// (`common/categoria-gasto.util.ts`, invariantes 31 y 61) y de la app.
+//
+// ===== Dos categorías (13-oct-2026, API 0.0.74, invariante 61) =====
+//
+// Pedido del cliente (13-oct-2026, 17:10): «aqui en las categorias
+// necesitamos una opcion que sea Comision del vendedor pero que esa opcion
+// si se cargue al balance del avión, y dejamos el otro que se va a balance
+// de vuelatour para tener esas 2 opciones».
+//  - `COMISION_VENDEDOR` = «Comisión del vendedor (VuelaTour)»: la paga
+//    SIEMPRE VuelaTour (egreso en «otros movimientos»); nunca es costo del
+//    avión.
+//  - `COMISION_VENDEDOR_AVION` = «Comisión del vendedor (avión)»: la carga el
+//    avión del vuelo en la columna COMISIONES de su balance y en el reparto a
+//    sus socios, en el mes del vuelo (con el vuelo completado o cancelado con
+//    cobros retenidos; antes de eso, o en un vuelo sin avión de la flota, la
+//    paga VuelaTour y el balance lo avisa). En «otros movimientos» sale con
+//    egreso $0.00 «a cargo del avión».
+// Reglas comunes: vuelo obligatorio a TODOS los roles, no repartibles, la IA
+// no las sugiere ni las pisa, y reclasificar entre las dos en «Verificar /
+// editar» se puede aunque el gasto esté conciliado. TODA comparación es
+// EXACTA (`Set.has` / `===`): 'COMISION_VENDEDOR' es PREFIJO de
+// 'COMISION_VENDEDOR_AVION' ⇒ prohibido `startsWith`/`includes`/regex sin
+// ancla (el test lo vigila). El panel no calcula dinero: solo etiqueta,
+// candado y ayuda.
 
-/** Código del pago real al vendedor (espejo de `CATEGORIA_PAGO_VENDEDOR` del API). */
+/** «Comisión del vendedor (VuelaTour)» (espejo de `CATEGORIA_PAGO_VENDEDOR` del API). */
 export const CATEGORIA_PAGO_VENDEDOR = "COMISION_VENDEDOR";
+
+/** «Comisión del vendedor (avión)» (espejo de `CATEGORIA_PAGO_VENDEDOR_AVION` del API). */
+export const CATEGORIA_PAGO_VENDEDOR_AVION = "COMISION_VENDEDOR_AVION";
+
+/** Las DOS categorías del pago al vendedor (espejo de
+ *  `CATEGORIAS_GASTO_PAGO_VENDEDOR` del API). */
+export const CATEGORIAS_PAGO_VENDEDOR: ReadonlySet<string> = new Set([
+  CATEGORIA_PAGO_VENDEDOR,
+  CATEGORIA_PAGO_VENDEDOR_AVION,
+]);
+
+/** ¿Es un pago al vendedor de CUALQUIERA de las dos categorías? Igualdad
+ *  EXACTA: 'COMISION_VENDEDOR_AVIONX' o 'comision_vendedor' ⇒ false. */
+export function esCategoriaPagoVendedor(cat: string | null | undefined): boolean {
+  return !!cat && CATEGORIAS_PAGO_VENDEDOR.has(cat);
+}
 
 /**
  * Vuelo obligatorio para TODOS los roles, la oficina incluida (espejo de
  * `categoriaExigeVueloSiempre` del API: 400 `GASTO_REQUIERE_VUELO` en alta y
- * edición; respaldo en BD con el CHECK `gasto_comision_vendedor_exige_vuelo`).
+ * edición; respaldo en BD con los CHECK `gasto_comision_vendedor_exige_vuelo`
+ * y `gasto_comision_vendedor_avion_exige_vuelo`). Las DOS del pago al
+ * vendedor.
  */
-export function categoriaExigeVueloSiempre(cat: string): boolean {
-  return cat === CATEGORIA_PAGO_VENDEDOR;
+export function categoriaExigeVueloSiempre(cat: string | null | undefined): boolean {
+  return esCategoriaPagoVendedor(cat);
 }
 
-/** Mismo texto que el 400 `GASTO_REQUIERE_VUELO` del API para esta categoría. */
-export const MSG_GASTO_REQUIERE_VUELO_COMISION =
-  "Esta categoría es del vuelo: elige el vuelo. «Comisión del vendedor» siempre se registra con el vuelo al que pertenece.";
+/** Mismo texto que el 400 `GASTO_REQUIERE_VUELO` del API, con la etiqueta de
+ *  SU categoría («(VuelaTour)» o «(avión)»). */
+export function mensajeGastoRequiereVuelo(categoria: string): string {
+  return `Esta categoría es del vuelo: elige el vuelo. «${categoriaGastoLabel(categoria)}» siempre se registra con el vuelo al que pertenece.`;
+}
 
-/** Ayuda del formulario (alta y verificación) al elegir la categoría. */
+/** El 400 de «Comisión del vendedor (VuelaTour)» (nombre de siempre). */
+export const MSG_GASTO_REQUIERE_VUELO_COMISION = mensajeGastoRequiereVuelo(CATEGORIA_PAGO_VENDEDOR);
+
+/** Ayuda de «Comisión del vendedor (VuelaTour)» (alta y verificación). */
 export const AYUDA_COMISION_VENDEDOR =
-  "Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general: mientras no se capture, esa fila no lleva egreso (ahí no se provisiona nada); si pagas de menos o de más, la hoja lo marca con «faltan» o «excede». Registra un gasto por vuelo: si una sola transferencia paga varios vuelos (o los aviones de un grupo), captura un gasto por vuelo con su parte. No es costo del avión. No la captures como «Otros gastos VuelaTour»: quedaría duplicada.";
+  "La paga VuelaTour. Se aparea con la comisión cobrada al cliente en la hoja «otros movimientos» del balance general: mientras no se capture, esa fila no lleva egreso (ahí no se provisiona nada); si pagas de menos o de más, la hoja lo marca con «faltan» o «excede». Registra un gasto por vuelo: si una sola transferencia paga varios vuelos (o los aviones de un grupo), captura un gasto por vuelo con su parte. No es costo del avión. Si el pago le toca al avión, usa «Comisión del vendedor (avión)». No la captures como «Otros gastos VuelaTour»: quedaría duplicada.";
 
-/** Hint del campo «Vuelo» cuando la categoría lo exige. */
+/** Ayuda de «Comisión del vendedor (avión)» (alta y verificación). */
+export const AYUDA_COMISION_VENDEDOR_AVION =
+  "La carga el avión del vuelo: resta en la columna COMISIONES de su balance y en el reparto a sus socios, en el mes del vuelo (en un vuelo de varios aviones, cada uno su parte, como la venta). En la hoja «otros movimientos» del balance general sale junto a la comisión cobrada al cliente —que sigue siendo de VuelaTour— con egreso $0.00 «a cargo del avión». Solo la carga el avión con el vuelo completado (o cancelado con cobros retenidos); antes, o en un vuelo sin avión de la flota, la paga VuelaTour y el balance lo avisa. Registra un gasto por vuelo. Si el pago le toca a VuelaTour, usa «Comisión del vendedor (VuelaTour)». No la captures como «Otros gastos VuelaTour»: quedaría duplicada.";
+
+/** SOLO en «Verificar / editar»: cómo cambiar quién paga. */
+export const AYUDA_RECLASIFICAR_COMISION =
+  "¿Cambió quién la paga? Cambia aquí la categoría entre «Comisión del vendedor (VuelaTour)» y «Comisión del vendedor (avión)»: se puede aunque el gasto ya esté conciliado (el banco no se toca). El balance y el reparto del mes del vuelo cambian al regenerarlos.";
+
+/**
+ * Cuadro de ayuda de la categoría elegida (alta y verificación): el título es
+ * SU etiqueta y el texto dice quién la paga y cuándo usar la otra. null =
+ * no es pago al vendedor (no se pinta el cuadro).
+ */
+export function ayudaComisionVendedor(
+  categoria: string | null | undefined,
+): { titulo: string; texto: string } | null {
+  if (categoria === CATEGORIA_PAGO_VENDEDOR) {
+    return { titulo: categoriaGastoLabel(categoria), texto: AYUDA_COMISION_VENDEDOR };
+  }
+  if (categoria === CATEGORIA_PAGO_VENDEDOR_AVION) {
+    return { titulo: categoriaGastoLabel(categoria), texto: AYUDA_COMISION_VENDEDOR_AVION };
+  }
+  return null;
+}
+
+/** Hint del campo «Vuelo» cuando la categoría lo exige (vale para las dos). */
 export const HINT_VUELO_COMISION =
   "Obligatorio: la comisión se aparea con lo cobrado en ese vuelo. La lista trae los vuelos de los últimos 90 días.";
 
@@ -225,37 +308,57 @@ export const VENTANA_VUELOS_DEFAULT: VentanaVuelosCercanos = {
   limit: 100,
 };
 
-/** La comisión se paga días o semanas DESPUÉS del vuelo: 90 días hacia
- *  atrás (el API admite `limit ≤ 500` en /v1/flights). */
+/** La comisión (cualquiera de las dos) se paga días o semanas DESPUÉS del
+ *  vuelo: 90 días hacia atrás (el API admite `limit ≤ 500` en /v1/flights). */
 export const VENTANA_VUELOS_COMISION: VentanaVuelosCercanos = {
   diasAtras: 90,
   diasAdelante: 15,
   limit: 500,
 };
 
-/** null = ok; texto = bloquear el guardado (antes de subir nada). */
+/** null = ok; texto = bloquear el guardado (antes de subir nada), con el
+ *  mismo texto que el 400 del API para SU categoría. */
 export function errorVueloObligatorio(
   categoria: string,
   vueloId: string | null | undefined,
 ): string | null {
   if (!categoriaExigeVueloSiempre(categoria)) return null;
-  return vueloId ? null : MSG_GASTO_REQUIERE_VUELO_COMISION;
+  return vueloId ? null : mensajeGastoRequiereVuelo(categoria);
 }
 
 /**
  * La IA jamás pisa una categoría que no sabe sugerir: si el humano eligió
- * «Comisión del vendedor», la lectura del ticket (que llega segundos
- * después) no la cambia. Tampoco la PROPONE (pyservices no la sugiere; si
- * algún día llegara, un pago al vendedor lo decide la oficina, no la IA).
+ * cualquiera de las dos «Comisión del vendedor», la lectura del ticket (que
+ * llega segundos después) no la cambia. Tampoco PROPONE ninguna de las dos
+ * (pyservices no las sugiere; si algún día llegara, un pago al vendedor —y
+ * quién lo paga— lo decide la oficina, no la IA).
  */
 export function iaPuedeCambiarCategoria(
   actual: string,
   sugerida: string | null | undefined,
 ): boolean {
   if (!sugerida) return false;
-  if (actual === CATEGORIA_PAGO_VENDEDOR) return false;
-  return sugerida !== CATEGORIA_PAGO_VENDEDOR;
+  if (esCategoriaPagoVendedor(actual)) return false;
+  return !esCategoriaPagoVendedor(sugerida);
 }
+
+/**
+ * Renglón del tablero de Gastos con los pagos «Comisión del vendedor
+ * (avión)» del periodo (API 0.0.74: `resumen.gastos_comision_vendedor_avion_usd`,
+ * por fecha del gasto; van dentro de «Gastos totales» y fuera de «Gastos por
+ * avión» y del costo por hora). null = no se pinta (0, o un API previo que
+ * todavía no manda la llave). El panel solo FORMATEA la cifra del API.
+ */
+export function textoTableroComisionVendedorAvion(
+  usd: number | null | undefined,
+): string | null {
+  if (usd == null || !(usd > 0)) return null;
+  return `${fmtUsd(usd)} en comisiones del vendedor a cargo de los aviones (restan en la columna COMISIONES de su balance y en el reparto; no entran al costo por hora).`;
+}
+
+/** Sublabel de «Comisiones (banco + vendedor)» en la cascada del reparto por
+ *  avión (`ingresos.comisiones_venta_usd`). */
+export const SUBLABEL_COMISIONES_REPARTO = `parte del avión de la comisión bancaria (regla sep-2026) + pagos «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR_AVION)}»`;
 
 /**
  * Categorías de EMPRESA — «la categoría de empresa manda sobre el vuelo»
@@ -283,8 +386,12 @@ const HOJA_OTROS_GASTOS_SIN_NADA =
  * por default (destinoPorDefecto). Refleja las reglas del API (balance por
  * avión + Balance general). Orden de evaluación:
  * - PERSONAL_DUENO → fuera de todos los balances;
- * - COMISION_VENDEDOR → «otros movimientos» (es el pago al vendedor; sin él
- *   esa fila no lleva egreso: desde el 12-oct-2026 ahí no se provisiona);
+ * - COMISION_VENDEDOR («(VuelaTour)») → «otros movimientos» (es el pago al
+ *   vendedor; sin él esa fila no lleva egreso: desde el 12-oct-2026 ahí no se
+ *   provisiona);
+ * - COMISION_VENDEDOR_AVION («(avión)», 13-oct-2026) → columna COMISIONES
+ *   del balance del avión y reparto a socios, en el mes del vuelo (en «otros
+ *   movimientos» sale con egreso $0.00 «a cargo del avión»);
  * - EMPRESA (OTRO/NOMINA/GASOLINA/FIJO/VISITA) → SIEMPRE «otros gastos» del
  *   general (desde el 11-sep-2026); el vuelo/avión quedan de referencia —
  *   antes decía «hoja del vuelo» y justo esa pista confundió al cliente
@@ -306,6 +413,9 @@ export function hojaDestinoGasto(
   if (categoria === "PERSONAL_DUENO") return "Fuera de balances (personal)";
   if (categoria === CATEGORIA_PAGO_VENDEDOR) {
     return "Balance general VuelaTour · Otros movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él esa fila no lleva egreso)";
+  }
+  if (categoria === CATEGORIA_PAGO_VENDEDOR_AVION) {
+    return "Balance del avión · columna COMISIONES y reparto a socios, en el mes del vuelo (con el vuelo completado; en «otros movimientos» sale con egreso $0.00 «a cargo del avión»)";
   }
   if (CATEGORIAS_EMPRESA.has(categoria)) {
     if (tieneVuelo) {

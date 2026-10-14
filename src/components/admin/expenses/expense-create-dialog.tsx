@@ -112,11 +112,11 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
-  AYUDA_COMISION_VENDEDOR,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
   HINT_VUELO_COMISION,
   VENTANA_VUELOS_COMISION,
+  ayudaComisionVendedor,
   categoriaExigeVueloSiempre,
   errorVueloObligatorio,
   iaPuedeCambiarCategoria,
@@ -409,10 +409,12 @@ export function ExpenseCreateDialog({
   register("medio_pago", { required: MSG_MEDIO_REQUERIDO });
 
   const fechaGasto = watch("fecha_gasto");
-  // «Comisión del vendedor» (28-sep-2026): SIEMPRE con vuelo (400
-  // GASTO_REQUIERE_VUELO del API para todos los roles) y se paga días o
-  // semanas DESPUÉS del vuelo ⇒ la lista trae 90 días hacia atrás.
+  // Las dos «Comisión del vendedor» — «(VuelaTour)» (28-sep-2026) y
+  // «(avión)» (13-oct-2026): SIEMPRE con vuelo (400 GASTO_REQUIERE_VUELO del
+  // API para todos los roles) y se pagan días o semanas DESPUÉS del vuelo ⇒
+  // la lista trae 90 días hacia atrás. El cuadro de ayuda dice quién la paga.
   const esComision = categoriaExigeVueloSiempre(watch("categoria"));
+  const ayudaComision = ayudaComisionVendedor(watch("categoria"));
   useEffect(() => {
     // Con vuelo prefijado (alta desde el detalle del vuelo) no hace falta lista.
     if (!open || defaultVueloId) return;
@@ -537,8 +539,9 @@ export function ExpenseCreateDialog({
     }
     // La categoría prefijada por la pantalla (Gastos personales, pistas)
     // MANDA sobre la sugerencia de la IA: pisarla convertiría un gasto
-    // personal del dueño en gasto de empresa en silencio. Tampoco pisa una
-    // «Comisión del vendedor» elegida a mano (la IA no sabe sugerirla).
+    // personal del dueño en gasto de empresa en silencio. Tampoco pisa
+    // ninguna de las dos «Comisión del vendedor» elegida a mano (la IA no
+    // sabe sugerirlas ni decide quién paga).
     if (
       !defaultCategoria &&
       ai.categoria_sugerida &&
@@ -729,8 +732,9 @@ export function ExpenseCreateDialog({
         toast.error(`${MSG_MEDIO_REQUERIDO}.`);
         return;
       }
-      // «Comisión del vendedor» sin vuelo: mismo texto que el 400
-      // GASTO_REQUIERE_VUELO del API, ANTES de subir la factura.
+      // Cualquiera de las dos «Comisión del vendedor» sin vuelo: mismo texto
+      // que el 400 GASTO_REQUIERE_VUELO del API (con la etiqueta de SU
+      // categoría), ANTES de subir la factura.
       const sinVuelo = errorVueloObligatorio(values.categoria, values.vuelo_id);
       if (sinVuelo) {
         toast.error(sinVuelo);
@@ -1024,8 +1028,8 @@ export function ExpenseCreateDialog({
                 <>
                   Se liga al vuelo{defaultVueloFolio != null ? ` #${defaultVueloFolio}` : ""}
                   {esComision
-                    ? // La comisión NO resta al avión ni al reparto: lo
-                      // explica el cuadro de la categoría.
+                    ? // Comisión del vendedor: quién la paga (VuelaTour o el
+                      // avión) lo explica el cuadro de SU categoría.
                       "."
                     : ": las categorías del vuelo entran a su reporte y restan en el reparto; las de empresa (p. ej. «Otros gastos VuelaTour») van a «otros gastos» del balance general."}
                   {defaultVueloCancelado && <VueloCanceladoHint className="mt-1" />}
@@ -1431,14 +1435,15 @@ export function ExpenseCreateDialog({
               </Field>
             </div>
 
-            {/* Comisión del vendedor (28-sep-2026): con o sin vuelo
-                prefijado — explica el apareo y la regla «un gasto por
-                vuelo» (la única defensa contra el doble conteo de un pago
-                agregado). */}
-            {esComision && (
+            {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026):
+                con o sin vuelo prefijado — el cuadro de SU categoría dice
+                quién la paga (VuelaTour o el avión), cuándo usar la otra y
+                la regla «un gasto por vuelo» (la única defensa contra el
+                doble conteo de un pago agregado). */}
+            {ayudaComision && (
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                <span className="font-medium">Comisión del vendedor.</span>{" "}
-                {AYUDA_COMISION_VENDEDOR}
+                <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
+                {ayudaComision.texto}
               </p>
             )}
             {/* REFACCIÓN (12-oct-2026): ¿directo al avión o a Inventario/Tienda?

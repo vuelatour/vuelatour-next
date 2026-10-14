@@ -4140,13 +4140,21 @@ movimientos: queda duplicado». Hasta hoy el pago al vendedor solo existía como
 PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
 20260928000001 enum y 20260928000002 CHECK; invariante 31 del API).
 
+- **13-oct-2026 (API 0.0.74, invariante 61 del API): DOS categorías.** Esta
+  categoría se llama ahora **«Comisión del vendedor (VuelaTour)»** (mismo
+  código `COMISION_VENDEDOR`, solo cambia la etiqueta: donde esta sección
+  dice «Comisión del vendedor» se lee «(VuelaTour)») y nace **«Comisión del
+  vendedor (avión)»** (`COMISION_VENDEDOR_AVION`), que sí carga el balance
+  del avión. Ver «Dos categorías de comisión del vendedor» justo abajo.
+  Desde el 0.0.74 ningún libro provisiona el pago al vendedor (tampoco el
+  Libro Dinero).
 - **12-oct-2026 (API 0.0.73, invariante 58 del API)**: «otros movimientos»
   ya NO provisiona el pago al vendedor: sin el gasto real «Comisión del
   vendedor» la fila del vuelo no lleva egreso (el ingreso cobrado se queda).
   Por eso `AYUDA_COMISION_VENDEDOR` y `hojaDestinoGasto` ya no dicen
   «reemplaza la provisión» (pruebas en `categorias-gasto.test.ts` y
   `comision-vendedor-ui.test.tsx`). Lo de abajo describe el estado del
-  28-sep; el Libro Dinero sigue provisionando.
+  28-sep; el Libro Dinero sigue provisionando (hasta el API 0.0.74).
 - **Categoría nueva `COMISION_VENDEDOR`** = «Comisión del vendedor», destino
   «Pago al vendedor (otros movimientos VuelaTour; no es costo del avión)»
   (tabla canónica IDÉNTICA en API, panel y app — `lib/admin/categorias-gasto.ts`).
@@ -4238,6 +4246,118 @@ PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
   gastos); las dos PRUEBAS del cliente en el vuelo #317 (`OTRO`, 250,000.00 y
   870,000.00 MXN) siguen duplicando en «otros gastos» hasta que la oficina las
   borre (nadie las tocó).
+
+## Dos categorías de comisión del vendedor (13-oct-2026, API 0.0.74)
+
+Pedido textual del cliente (13-oct-2026, 17:10): «aqui en las categorias
+necesitamos una opcion que sea Comision del vendedor pero que esa opcion si se
+cargue al balance del avión, y dejamos el otro que se va a balance de
+vuelatour para tener esas 2 opciones». Contrato con el API **0.0.74**
+(invariante 61 del API; migraciones 20261013000003 —valor del enum— y
+20261013000004 —CHECK «exige vuelo»—). Corrige la decisión 3 del lote del
+13-oct (en ella el avión absorbía la `COMISION_VENDEDOR` por vigencia): eso ya
+no existe.
+
+- **Tabla canónica** (IDÉNTICA en API `common/categoria-gasto.util.ts`, panel
+  `lib/admin/categorias-gasto.ts` y app `categoria_gasto.dart`):
+
+  | código | etiqueta | destino (verde en el selector) |
+  |---|---|---|
+  | `COMISION_VENDEDOR` | Comisión del vendedor (VuelaTour) | Pago al vendedor (otros movimientos VuelaTour; no es costo del avión) |
+  | `COMISION_VENDEDOR_AVION` | Comisión del vendedor (avión) | Pago al vendedor (columna COMISIONES del balance del avión; sí es costo del avión) |
+
+  Orden en `CATEGORIAS_CAPTURA` (alta, alta desde «Gastos del vuelo»,
+  verificación y «¿No está el gasto? Créalo»): …PILOTO_EXTERNO,
+  COMISION_VENDEDOR, COMISION_VENDEDOR_AVION, INDIRECTO… La «(VuelaTour)»
+  queda PRIMERO a propósito (quien elige por costumbre la sigue cargando a
+  VuelaTour); cambiar el orden es tocar `CATEGORIAS_CAPTURA` y su test.
+  `CategoriaEnum` (zod) trae la nueva justo después de COMISION_VENDEDOR.
+- **Quién paga** (lo decide el API; el panel NO calcula dinero): la
+  «(VuelaTour)» SIEMPRE la paga VuelaTour (egreso en «otros movimientos» del
+  Balance general) y nunca es costo del avión. La «(avión)» la carga el avión
+  del vuelo en la columna COMISIONES de su balance y en el reparto a socios,
+  en el MES DEL VUELO (vuelo completado o cancelado con cobros retenidos; en
+  un vuelo de varios aviones, por participación, como la venta); en «otros
+  movimientos» sale con egreso $0.00 «a cargo del avión». Fuera de ese
+  universo (vuelo aún no completado, cancelado sin cobros, sin avión de la
+  flota) la paga VuelaTour y el balance lo avisa en el concepto y en
+  pendientes.
+- **Comparación EXACTA** (`esCategoriaPagoVendedor` /
+  `CATEGORIAS_PAGO_VENDEDOR` / `===`): 'COMISION_VENDEDOR' es PREFIJO de
+  'COMISION_VENDEDOR_AVION' ⇒ prohibido `startsWith`/`includes`/`indexOf` con
+  ese literal. Un test guardián recorre `src/` y falla si aparece. (En las
+  cotizaciones `clave === "COMISION_VENDEDOR"` es la línea del DESGLOSE, no
+  esta categoría: no cambia.)
+- **Reglas comunes** (las dos; los diálogos no cambiaron de cableado porque
+  todo cuelga de `categoriaExigeVueloSiempre` = `esCategoriaPagoVendedor`):
+  vuelo obligatorio a TODOS los roles (sin «Sin vuelo», asterisco,
+  `HINT_VUELO_COMISION`, ventana de 90 días `VENTANA_VUELOS_COMISION`);
+  candado ANTES de subir la factura con `errorVueloObligatorio` ⇒
+  `mensajeGastoRequiereVuelo(cat)`, IDÉNTICO al 400 `GASTO_REQUIERE_VUELO` del
+  API con la etiqueta de SU categoría («Esta categoría es del vuelo: elige el
+  vuelo. «Comisión del vendedor (avión)» siempre se registra con el vuelo al
+  que pertenece.»); `MSG_GASTO_REQUIERE_VUELO_COMISION` conserva el de la
+  «(VuelaTour)». «Simular operación como piloto» oculto y en false (la paga la
+  oficina). No repartibles (`CATEGORIAS_REPARTIBLES` sin cambio), no son pago
+  de compra (`CATEGORIAS_COMPRA` es lista blanca) y `CATEGORIAS_EMPRESA` no
+  cambia. La IA no sugiere ni pisa ninguna (`iaPuedeCambiarCategoria`:
+  tampoco cambia una por la otra; quién paga lo decide la oficina).
+- **Ayudas** (`ayudaComisionVendedor(cat)` ⇒ `{ titulo: etiqueta, texto }`;
+  el cuadro ya no rotula a mano «Comisión del vendedor.»):
+  `AYUDA_COMISION_VENDEDOR` empieza con «La paga VuelaTour.», conserva las
+  frases de siempre y remite a la «(avión)»; `AYUDA_COMISION_VENDEDOR_AVION`
+  («La carga el avión del vuelo: …») remite a la «(VuelaTour)». En
+  **Verificar / editar** el cuadro suma, en su propia línea,
+  `AYUDA_RECLASIFICAR_COMISION` («¿Cambió quién la paga? …»): reclasificar
+  entre las dos se permite aunque el gasto esté conciliado (el candado
+  `GASTO_CONCILIADO` del API solo cubre monto, moneda y medio) y el vuelo
+  viaja en el MISMO PATCH (`vueloEnPatch`). El cambio mueve el mes DEL VUELO
+  al regenerar balance y reparto.
+- **«Con lo elegido cae en:»** (`hojaDestinoGasto`, rama nueva ANTES de las
+  de empresa): la «(avión)» ⇒ «Balance del avión · columna COMISIONES y
+  reparto a socios, en el mes del vuelo (con el vuelo completado; en «otros
+  movimientos» sale con egreso $0.00 «a cargo del avión»)». La «(VuelaTour)»
+  sin cambio.
+- **Gastos del vuelo** (`flight-gastos-table.tsx`): el destino en verde sale
+  bajo las DOS (`esCategoriaPagoVendedor`): así se ve quién paga cada pago.
+- **Tablero de Gastos**: `DashboardGastos.resumen.gastos_comision_vendedor_avion_usd?`
+  (ADITIVA del API 0.0.74, por fecha del gasto: dentro de «Gastos totales»,
+  fuera de «Gastos por avión», del costo por hora y de empresa). Renglón
+  `textoTableroComisionVendedorAvion`: «$X en comisiones del vendedor a cargo
+  de los aviones (restan en la columna COMISIONES de su balance y en el
+  reparto; no entran al costo por hora).», solo con > 0; con un API previo no
+  se pinta.
+- **Reparto**: el sublabel de «Comisiones (banco + vendedor)» es
+  `SUBLABEL_COMISIONES_REPARTO` («parte del avión de la comisión bancaria
+  (regla sep-2026) + pagos «Comisión del vendedor (avión)»»); decía
+  «provisión del vendedor», desfasado desde la D3. `comisiones_venta_usd > 0`
+  también puede venir de un mes ANTERIOR a la regla si el avión cargó un pago
+  «(avión)». El título del botón «Dinero (Excel)» ya no promete un pago
+  «provisionado»: el Libro Dinero resta el pago real de las dos categorías.
+- **Datos del cliente** (nada se reclasifica solo): #251 (N990GG, $4,080.00) y
+  #332 (N621TX, $1,305.00, conciliado) se quedan «(VuelaTour)»; si el pago le
+  toca al avión, la oficina lo cambia en Verificar / editar. Comisiones
+  cotizadas sin pago capturado (#233, #237, #260 y #317 de N4142R en
+  septiembre; #404 y #417 de N990GG en octubre): capturar el pago real en la
+  categoría correcta ANTES de regenerar septiembre y octubre.
+- **Orden de deploy**: migraciones → pyservices → API 0.0.74 → **panel**
+  (SIEMPRE después del API). Con el API 0.0.73 el panel no se rompe: la
+  categoría nueva rebota con el 400 de `IsEnum` (el toast lo dice tal cual) y
+  el renglón del tablero no se pinta.
+- **Pruebas** (congelan los textos): `lib/admin/__tests__/categorias-gasto.test.ts`
+  (tabla == API == app, orden en el selector, solo las dos exigen vuelo,
+  mensaje por categoría, ayudas exactas, `ayudaComisionVendedor`, IA,
+  `hojaDestinoGasto`, renglón del tablero, sublabel del reparto, zod y el
+  guardián del prefijo), `components/admin/expenses/__tests__/comision-vendedor-ui.test.tsx`
+  (hint de las dos, «Gastos del vuelo» con las dos, cableado del cuadro y de
+  reclasificar, tablero y reparto) y
+  `app/admin/expenses/__tests__/comision-vendedor-actions.test.ts` (POST y
+  PATCH de la «(avión)», 400 con «(VuelaTour)», skew con el API previo).
+- **Pendientes conocidos**: sin QA visual en navegador; un vuelo de varios
+  aviones no se puede cargar a UNO solo (se reparte como la venta); una
+  «(avión)» de un vuelo sin avión de la flota aparece en la bandeja «sin
+  avión» del API (asignarle avión al gasto NO cambia quién paga: la salida es
+  reclasificarla a «(VuelaTour)»).
 
 ## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
 
