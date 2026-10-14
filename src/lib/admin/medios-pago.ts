@@ -66,6 +66,32 @@ export const MEDIOS_VERIFICACION = [...MEDIOS_CAPTURA_VALUES, "BODEGA"].map(
   opcionMedioPago,
 );
 
+/**
+ * ¿El API acepta este medio en el alta y en el PATCH de un gasto? Son
+ * EXACTAMENTE los de captura: el enum `MedioPago` de su DTO no trae BODEGA
+ * (lo pone solo la salida de inventario). Verificación del lote 2
+ * (14-oct-2026): «Verificar / editar» mandaba SIEMPRE el medio del
+ * formulario y en los 20 gastos BODEGA de prod el PATCH rebotaba con el 400
+ * en inglés «medio_pago must be one of the following values: …» — no se
+ * podían verificar ni editar. El test espejo compara esta lista con el enum
+ * del DTO del API (repo hermano).
+ */
+export function medioPagoAceptadoPorApi(medio: string | null | undefined): boolean {
+  return (MEDIOS_CAPTURA_VALUES as readonly string[]).includes(medio ?? "");
+}
+
+/**
+ * Opciones del selector de «Verificar / editar» para ESTE gasto: los de
+ * captura y, SOLO si el gasto ya es de bodega, «Bodega (inventario)» para no
+ * perder su medio. A un gasto que no es de bodega no se le ofrece: el API lo
+ * rechazaría (y el PATCH lo omite, así que elegirlo no cambiaría nada).
+ */
+export function opcionesMedioVerificacion(
+  actual: string | null | undefined,
+): { value: string; label: string }[] {
+  return actual === "BODEGA" ? MEDIOS_VERIFICACION : MEDIOS_CAPTURA;
+}
+
 /** Código del «Pago domiciliado» (espejo de `MedioPago.DOMICILIADO` del API). */
 export const MEDIO_DOMICILIADO = "DOMICILIADO";
 

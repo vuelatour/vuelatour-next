@@ -104,7 +104,11 @@ import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { COMPRA_ESTADO_LABELS, COMPRA_ROL_LABELS } from "@/types/compras";
 import { Field } from "@/components/admin/form-field";
-import { MEDIOS_VERIFICACION, ayudaMedioPago } from "@/lib/admin/medios-pago";
+import {
+  ayudaMedioPago,
+  medioPagoAceptadoPorApi,
+  opcionesMedioVerificacion,
+} from "@/lib/admin/medios-pago";
 import {
   AYUDA_COMPROBANTE,
   opcionesComprobante,
@@ -147,10 +151,11 @@ const CATEGORIAS = CATEGORIAS_CAPTURA.flatMap((c) =>
   c === "GAS" ? [c, "ATERRIZAJE"] : [c],
 ).map(opcionCategoriaGasto);
 
-// Medios de pago: FUENTE ÚNICA en @/lib/admin/medios-pago (los de captura +
-// BODEGA, que aquí sí se muestra para no perder el medio de una salida de
-// inventario al verificarla).
-const MEDIOS = MEDIOS_VERIFICACION;
+// Medios de pago: FUENTE ÚNICA en @/lib/admin/medios-pago. Las opciones son
+// POR GASTO (`opcionesMedioVerificacion`): los de captura y «Bodega
+// (inventario)» SOLO si el gasto ya es de bodega (para no perder su medio al
+// verificarlo). El PATCH nunca manda BODEGA: el API no lo acepta y omitirlo
+// conserva el guardado (`verifyGastoAction`, verificación del 14-oct-2026).
 
 // Seguimiento de oficina "¿ya lo facturé?" — independiente del comprobante
 // que entregó el piloto (semáforo pedido por el cliente, ago 2026; ⚪ No
@@ -517,7 +522,7 @@ export function ExpenseVerifyDialog({
     const medioActual = watch("medio_pago");
     if (
       ai.medio_pago &&
-      MEDIOS.some((m) => m.value === ai.medio_pago) &&
+      medioPagoAceptadoPorApi(ai.medio_pago) &&
       medioActual !== ai.medio_pago &&
       !["PERSONAL_PABLO", "PERSONAL_ALE", "BODEGA"].includes(medioActual ?? "")
     ) {
@@ -1674,7 +1679,7 @@ export function ExpenseVerifyDialog({
               hint={ayudaMedioPago(watch("medio_pago")) ?? undefined}
             >
               <SearchableSelect
-                options={MEDIOS}
+                options={opcionesMedioVerificacion(gasto.medio_pago)}
                 value={watch("medio_pago")}
                 onChange={(v) => setValue("medio_pago", v)}
                 placeholder="Medio"

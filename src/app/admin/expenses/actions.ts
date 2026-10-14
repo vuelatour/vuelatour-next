@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { mensajeErrorAccionGasto } from "@/lib/admin/gasto-acciones";
+import { medioPagoAceptadoPorApi } from "@/lib/admin/medios-pago";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -377,10 +378,16 @@ export async function confirmCargaCombustiblesAction(
 export async function verifyGastoAction(id: string, raw: unknown): Promise<ActionResult<Gasto>> {
   const parsed = GastoVerifySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  const body = stripEmpty(parsed.data);
+  // BODEGA (y cualquier medio que el DTO del API no acepte) NO viaja: el
+  // `UpdateGastoDto` rebota «medio_pago must be one of…» y un gasto de
+  // salida de inventario no se podía verificar ni editar. Omitirlo conserva
+  // el medio guardado (verificación del lote 2, 14-oct-2026).
+  if (!medioPagoAceptadoPorApi(body.medio_pago)) delete body.medio_pago;
   try {
     const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
       method: "PATCH",
-      body: stripEmpty(parsed.data),
+      body,
     });
     revalidatePath("/admin/expenses");
     // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).

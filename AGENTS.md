@@ -4591,6 +4591,21 @@ renumeró desde la 000004, que ya usa la comisión del vendedor del avión).
   seguro, servicio). Se concilia con el cargo del banco como una
   transferencia; no lleva tarjeta.»). Filtro «Medio» de Gastos: tras
   «Transferencia».
+- **BODEGA nunca viaja al API (verificación del lote 2, 14-oct-2026)**: el
+  enum `MedioPago` del DTO del API (alta Y PATCH: `UpdateGastoDto extends
+  PartialType(CreateGastoDto)`) no trae BODEGA —lo pone solo la salida de
+  inventario— y «Verificar / editar» mandaba SIEMPRE el medio del
+  formulario: los 20 gastos BODEGA de prod no se podían verificar ni editar
+  (400 «medio_pago must be one of the following values: …»). Fuente única
+  en `medios-pago.ts`: `medioPagoAceptadoPorApi` (= los de captura) decide
+  qué viaja — `verifyGastoAction` omite el resto (el API conserva el medio
+  guardado) y la IA de «Reanalizar» solo propone uno aceptado — y
+  `opcionesMedioVerificacion(gasto.medio_pago)` ofrece «Bodega (inventario)»
+  SOLO a un gasto que ya lo es (en cualquier otro, elegirlo sería un no-op).
+  Pruebas: `medios-pago.test.ts` (con la paridad contra el enum del DTO del
+  API, si el repo hermano está al lado) y
+  `app/admin/expenses/__tests__/medio-bodega-action.test.ts` (PATCH sin
+  `medio_pago`, cableado del diálogo).
 - **Espejo bancario** `MEDIOS_BANCARIOS_CONCILIACION`
   (`lib/admin/conciliacion-no-bancario.ts`) = `["TARJETA_CORP",
   "TRANSFERENCIA", "PAYWISE", "DOMICILIADO"]`, en el MISMO orden que
