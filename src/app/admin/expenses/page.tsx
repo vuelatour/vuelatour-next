@@ -57,7 +57,9 @@ const FACTURACION_FILTRO_VALUES = [
 // Vista general en dos columnas (pedido del cliente): gastos OPERATIVOS
 // (ligados a operar el vuelo: combustible, pistas, TUAS, FBO, permisos) vs
 // GENERALES (viáticos, refacciones, fijos...). El desglose completo de cada
-// vuelo vive en su detalle (/admin/flights/{id}).
+// vuelo vive en su detalle (/admin/flights/{id}). COMISARIATO (13-oct-2026)
+// NO está a propósito: es amenidad de los pasajeros, no operar el avión — va
+// en «generales» como COMIDA (en el balance sí es gasto directo del vuelo).
 const CATEGORIAS_OPERATIVAS = new Set([
   "GAS",
   "OPERACIONES",

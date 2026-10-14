@@ -8,6 +8,10 @@ export const CategoriaEnum = z.enum([
   "TUAS",
   "FBO",
   "COMIDA",
+  // Comisariato (13-oct-2026, API 0.0.75): snacks/bebidas de los PASAJEROS,
+  // gasto directo del vuelo (columna OTROS del balance del avión). El API
+  // 0.0.74 la rechaza (IsEnum): el panel sale DESPUÉS del API.
+  "COMISARIATO",
   "HOTEL",
   "TAXI",
   "REFACCION",

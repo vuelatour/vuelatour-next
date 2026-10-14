@@ -4359,6 +4359,65 @@ no existe.
   avión» del API (asignarle avión al gasto NO cambia quién paga: la salida es
   reclasificarla a «(VuelaTour)»).
 
+## Comisariato (13-oct-2026, API 0.0.75)
+
+Pedido del cliente (Jimmy, 12-oct): «agregar en la categoría de gastos:
+Comisariato; entraría en [la columna OTROS de costos directos] en el balance
+del avión». Snacks, bebidas y comisariato para los PASAJEROS: hasta hoy se
+capturaban como «Otros gastos VuelaTour» y nunca llegaban al avión. Contrato
+con el API **0.0.75** (migración `20261013000001`, valor del enum; la
+`20261013000002` reclasifica los 4 gastos OTRO de agosto con vuelo y
+«comisariato» en notas). La app ya la tiene (commit `66e8036`, +81).
+
+- **Tabla canónica** (IDÉNTICA en API `common/categoria-gasto.util.ts`, panel
+  `lib/admin/categorias-gasto.ts` y app `categoria_gasto.dart`): código
+  `COMISARIATO`, etiqueta «Comisariato», destino «Gastos directos del vuelo
+  (en el balance del avión)» — el MISMO de COMIDA. Va JUSTO después de
+  «Comida» en `CATEGORIAS_CAPTURA` (alta, alta desde «Gastos del vuelo»,
+  verificación y «¿No está el gasto? Créalo») y en `CategoriaEnum` (zod).
+  Con ella el enum tiene **22 valores**: `categorias-gasto.test.ts` congela
+  que zod, etiquetas y destinos tengan los mismos 22 códigos y, si el repo
+  del API está al lado, que sus tablas (`CATEGORIA_GASTO_LABEL` /
+  `CATEGORIA_GASTO_DESTINO`) sean byte a byte las del panel.
+- **Reglas (las decide el API; el panel solo etiqueta, ofrece y explica)**:
+  gasto DIRECTO del vuelo — en el balance del avión cae en la columna OTROS
+  de costos directos (junto al FBO) y en el reparto resta como DIRECTO;
+  exige vuelo SOLO al PILOTO (`categoriaExigeVueloSiempre` NO la incluye: la
+  oficina la captura suelta y la liga después; sin vuelo NI avión queda en
+  «otros gastos» del general y como pendiente de avión, como una COMIDA
+  suelta); no es de empresa (`CATEGORIAS_EMPRESA` sin cambio) ni repartible
+  (`CATEGORIAS_REPARTIBLES` sin cambio). La IA SÍ la propone para
+  snacks/bebidas de pasajeros y el alta la aplica como cualquier directa
+  (`iaPuedeCambiarCategoria` la acepta; nunca pisa una comisión elegida a
+  mano).
+- **Ayuda** `AYUDA_COMISARIATO` (cuadro con «Comisariato.» en los dos
+  diálogos, solo con la categoría elegida): «Snacks, bebidas y comisariato
+  para los PASAJEROS. Es gasto directo del vuelo: en el balance del avión
+  cae en la columna OTROS de costos directos (junto al FBO) y resta en el
+  reparto a socios. La comida de la tripulación va en «Comida». Sin vuelo
+  queda como pendiente de avión hasta ligarlo.»
+- **«Con lo elegido cae en:»** (`hojaDestinoGasto`): con vuelo «Balance del
+  avión · hoja del vuelo (columna OTROS de costos directos, junto al FBO)»;
+  con avión sin vuelo «Balance del avión · Gastos Indirectos»; sin nada, el
+  texto de siempre de «otros gastos».
+- **Gastos** (`/admin/expenses`): cae en la columna «generales» —
+  `CATEGORIAS_OPERATIVAS` NO la incluye a propósito (amenidad de pasajeros,
+  no operar el avión; igual que COMIDA). `/admin/otros-gastos` no la lista
+  (solo empresa). «Gastos del vuelo» la pinta con su etiqueta, sin destino
+  en verde (eso es solo de las comisiones del vendedor).
+- **Capturas viejas**: el camino manual es Verificar / editar → reclasificar
+  un «Otros gastos VuelaTour» CON vuelo a «Comisariato» (sale de «otros
+  gastos» y entra a la columna OTROS del vuelo; el balance y el reparto de
+  ese mes cambian al regenerarlos).
+- **Pruebas**: `lib/admin/__tests__/categorias-gasto.test.ts` (tabla, orden,
+  listas, vuelo, IA, `hojaDestinoGasto` por rama, ayuda exacta, zod con y
+  sin vuelo, paridad de 22 y espejo del API) y
+  `components/admin/expenses/__tests__/comisariato-ui.test.tsx` (hint,
+  cableado de los dos diálogos, «Gastos del vuelo»).
+- **Orden de deploy**: migración `20261013000001` → API 0.0.75 → **panel**
+  (el 0.0.74 rechaza la categoría con el 400 de `IsEnum` y el panel solo
+  muestra el toast) → APK.
+
 ## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
 
 Pedido del cliente con la captura del alta de producto: «me ayudas a poder

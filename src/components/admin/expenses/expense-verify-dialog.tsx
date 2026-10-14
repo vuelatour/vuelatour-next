@@ -67,7 +67,9 @@ import {
   type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
 import {
+  AYUDA_COMISARIATO,
   AYUDA_RECLASIFICAR_COMISION,
+  CATEGORIA_COMISARIATO,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
   HINT_VUELO_COMISION,
@@ -1440,6 +1442,15 @@ export function ExpenseVerifyDialog({
               <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
               {ayudaComision.texto}
               <span className="mt-1 block">{AYUDA_RECLASIFICAR_COMISION}</span>
+            </p>
+          )}
+          {/* Comisariato (13-oct-2026): reclasificar aquí un «Otros gastos
+              VuelaTour» CON vuelo a «Comisariato» es el camino manual para
+              las capturas viejas de snacks/bebidas de pasajeros (sale de
+              «otros gastos» y entra a la columna OTROS del vuelo). */}
+          {watch("categoria") === CATEGORIA_COMISARIATO && (
+            <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-medium">Comisariato.</span> {AYUDA_COMISARIATO}
             </p>
           )}
 

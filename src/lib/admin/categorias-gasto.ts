@@ -19,6 +19,10 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   TUAS: "TUAS",
   FBO: "FBO",
   COMIDA: "Comida",
+  // Snacks/bebidas de los PASAJEROS (13-oct-2026, API 0.0.75): gasto directo
+  // del vuelo, columna OTROS del balance del avión; la comida de la
+  // tripulación es COMIDA.
+  COMISARIATO: "Comisariato",
   HOTEL: "Hotel",
   TAXI: "Taxi / estacionamiento",
   REFACCION: "Refacción",
@@ -85,6 +89,9 @@ export const DESTINO_POR_DEFECTO: Record<string, string> = {
   TUAS: DESTINO_DIRECTO_VUELO,
   FBO: DESTINO_DIRECTO_VUELO,
   COMIDA: DESTINO_DIRECTO_VUELO,
+  // Comisariato (13-oct-2026): el MISMO destino que COMIDA (gasto directo
+  // del vuelo; en el balance cae en la columna OTROS, junto al FBO).
+  COMISARIATO: DESTINO_DIRECTO_VUELO,
   HOTEL: DESTINO_DIRECTO_VUELO,
   TAXI: DESTINO_DIRECTO_VUELO,
   PILOTO_EXTERNO: DESTINO_DIRECTO_VUELO,
@@ -118,7 +125,9 @@ export function destinoPorDefecto(categoria: string): string {
  * Categorías que se OFRECEN al capturar un gasto nuevo, en el orden del
  * selector. La verificación agrega ATERRIZAJE y la categoría legado del
  * gasto (FIJO/VISITA no se capturan; la fuente única conserva sus etiquetas
- * para pintar gastos históricos).
+ * para pintar gastos históricos). «Comisariato» (13-oct-2026) va justo
+ * después de «Comida», como en la app: la de los pasajeros junto a la de la
+ * tripulación.
  */
 export const CATEGORIAS_CAPTURA: readonly string[] = [
   "GAS",
@@ -126,6 +135,8 @@ export const CATEGORIAS_CAPTURA: readonly string[] = [
   "TUAS",
   "FBO",
   "COMIDA",
+  // Snacks/bebidas de los PASAJEROS (13-oct-2026, API 0.0.75).
+  "COMISARIATO",
   "HOTEL",
   "TAXI",
   "REFACCION",
@@ -187,6 +198,28 @@ export const CATEGORIAS_REPARTIBLES: ReadonlySet<string> = new Set([
   "VISITA",
   "NOMINA",
 ]);
+
+// ===== Comisariato (13-oct-2026, API 0.0.75) =====
+//
+// Pedido del cliente (Jimmy, 12-oct): «agregar en la categoría de gastos: Comisariato;
+// entraría en [la columna OTROS de costos directos] en el balance del
+// avión». Snacks, bebidas y comisariato para los PASAJEROS: hasta hoy se
+// capturaba como «Otros gastos VuelaTour» y nunca llegaba al avión. Es gasto
+// DIRECTO del vuelo con el MISMO destino que COMIDA (tabla canónica idéntica
+// en API, panel y app): en el balance del avión cae en la columna OTROS de
+// costos directos (junto al FBO) y en el reparto resta como DIRECTO. Exige
+// vuelo SOLO al piloto (la oficina la captura suelta y la liga después: sin
+// vuelo queda como pendiente de avión, como una COMIDA suelta); no es de
+// empresa ni repartible, y la IA SÍ la propone (snacks/bebidas de pasajeros)
+// y la aplica al crear como cualquier directa. Nada de esto vive aquí: el
+// panel solo etiqueta, ofrece y explica.
+
+/** Código de «Comisariato» (espejo del enum del API, 13-oct-2026). */
+export const CATEGORIA_COMISARIATO = "COMISARIATO";
+
+/** Cuadro de ayuda de «Comisariato» (alta y Verificar / editar). */
+export const AYUDA_COMISARIATO =
+  "Snacks, bebidas y comisariato para los PASAJEROS. Es gasto directo del vuelo: en el balance del avión cae en la columna OTROS de costos directos (junto al FBO) y resta en el reparto a socios. La comida de la tripulación va en «Comida». Sin vuelo queda como pendiente de avión hasta ligarlo.";
 
 // ===== Comisión del vendedor como gasto (28-sep-2026) =====
 //
@@ -398,7 +431,8 @@ const HOJA_OTROS_GASTOS_SIN_NADA =
  *   (28-sep-2026: capturó la comisión como «Otros gastos VuelaTour»);
  * - con vuelo: TUAS → «otros movimientos» (apareado con las TUAS cobradas;
  *   en la hoja del vuelo solo es nota); GAS → Combustible (por avión y mes);
- *   PERMISO → Permisos; lo demás → la hoja de ese vuelo;
+ *   PERMISO → Permisos; COMISARIATO (13-oct-2026) → la hoja del vuelo,
+ *   columna OTROS de costos directos; lo demás → la hoja de ese vuelo;
  * - sin avión ni vuelo → hoja Otros gastos del Balance general VuelaTour;
  * - GAS con avión → hoja Combustible; PERMISO con avión → hoja Permisos;
  * - REFACCION manual con avión → hoja Gastos Indirectos (la hoja
@@ -434,6 +468,11 @@ export function hojaDestinoGasto(
       return "Balance del avión · Combustible (por avión y mes; el vuelo es referencia)";
     }
     if (categoria === "PERMISO") return "Balance del avión · Permisos";
+    // Comisariato (13-oct-2026): directa del vuelo, pero el balance la pinta
+    // en la columna OTROS de costos directos (no en OPERACIONES).
+    if (categoria === CATEGORIA_COMISARIATO) {
+      return "Balance del avión · hoja del vuelo (columna OTROS de costos directos, junto al FBO)";
+    }
     return "Balance del avión · hoja del vuelo";
   }
   if (!tieneAvion) return HOJA_OTROS_GASTOS_SIN_NADA;

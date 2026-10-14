@@ -112,6 +112,8 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
+  AYUDA_COMISARIATO,
+  CATEGORIA_COMISARIATO,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
   HINT_VUELO_COMISION,
@@ -1444,6 +1446,15 @@ export function ExpenseCreateDialog({
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
                 {ayudaComision.texto}
+              </p>
+            )}
+            {/* Comisariato (13-oct-2026): para los PASAJEROS, columna OTROS
+                del balance del avión; la comida de la tripulación es
+                «Comida». Sin candado nuevo: la oficina la puede dejar sin
+                vuelo (queda pendiente de avión) y el piloto sí la captura. */}
+            {watch("categoria") === CATEGORIA_COMISARIATO && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium">Comisariato.</span> {AYUDA_COMISARIATO}
               </p>
             )}
             {/* REFACCIÓN (12-oct-2026): ¿directo al avión o a Inventario/Tienda?

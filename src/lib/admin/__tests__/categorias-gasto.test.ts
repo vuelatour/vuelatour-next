@@ -1,10 +1,12 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AYUDA_COMISARIATO,
   AYUDA_COMISION_VENDEDOR,
   AYUDA_COMISION_VENDEDOR_AVION,
   AYUDA_RECLASIFICAR_COMISION,
+  CATEGORIA_COMISARIATO,
   CATEGORIA_GASTO_LABELS,
   CATEGORIA_PAGO_VENDEDOR,
   CATEGORIA_PAGO_VENDEDOR_AVION,
@@ -425,5 +427,144 @@ describe("schema zod del panel", () => {
   it.each([VT, AV])("GastoVerifySchema acepta reclasificar a %s con el vuelo en el MISMO PATCH", (cat) => {
     const r = GastoVerifySchema.safeParse({ categoria: cat, vuelo_id: VUELO });
     expect(r.success).toBe(true);
+  });
+});
+
+// =====================================================================
+// COMISARIATO (13-oct-2026, API 0.0.75). Pedido del cliente (Jimmy,
+// 12-oct): snacks/bebidas de los PASAJEROS como gasto DIRECTO del vuelo —
+// columna OTROS de costos directos del balance del avión, junto al FBO. Se
+// capturaban como «Otros gastos VuelaTour» y nunca llegaban al avión. La
+// app ya la tiene (commit 66e8036); la tabla canónica es la MISMA en los
+// tres repos.
+// =====================================================================
+
+const CM = "COMISARIATO";
+const DESTINO_DIRECTO = "Gastos directos del vuelo (en el balance del avión)";
+
+describe("tabla canónica de COMISARIATO (== API == app)", () => {
+  it("código, etiqueta y destino exactos (el destino es el de COMIDA)", () => {
+    expect(CATEGORIA_COMISARIATO).toBe(CM);
+    expect(CATEGORIA_GASTO_LABELS[CM]).toBe("Comisariato");
+    expect(categoriaGastoLabel(CM)).toBe("Comisariato");
+    expect(destinoPorDefecto(CM)).toBe(DESTINO_DIRECTO);
+    expect(destinoPorDefecto(CM)).toBe(destinoPorDefecto("COMIDA"));
+    expect(opcionCategoriaGasto(CM)).toEqual({
+      value: CM,
+      label: "Comisariato",
+      description: DESTINO_DIRECTO,
+      descriptionClassName: expect.stringContaining("text-green-600!"),
+    });
+  });
+
+  it("en el selector va JUSTO después de «Comida» y una sola vez", () => {
+    const i = CATEGORIAS_CAPTURA.indexOf("COMIDA");
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(CATEGORIAS_CAPTURA[i + 1]).toBe(CM);
+    expect(CATEGORIAS_CAPTURA.filter((c) => c === CM)).toHaveLength(1);
+  });
+
+  it("no es de empresa ni repartible (las listas no cambian)", () => {
+    expect(CATEGORIAS_EMPRESA.has(CM)).toBe(false);
+    expect(CATEGORIAS_REPARTIBLES.has(CM)).toBe(false);
+    expect([...CATEGORIAS_REPARTIBLES].sort()).toEqual(
+      ["FIJO", "GASOLINA", "INDIRECTO", "NOMINA", "OTRO", "VISITA"],
+    );
+    expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "VISITA"]);
+  });
+
+  it("no exige vuelo a TODOS los roles: la oficina la captura suelta (solo el piloto la liga a fuerza, en el API)", () => {
+    expect(categoriaExigeVueloSiempre(CM)).toBe(false);
+    expect(errorVueloObligatorio(CM, null)).toBeNull();
+    expect(errorVueloObligatorio(CM, "")).toBeNull();
+    expect(esCategoriaPagoVendedor(CM)).toBe(false);
+  });
+
+  it("la IA SÍ puede proponerla (snacks/bebidas de pasajeros), salvo sobre una comisión elegida a mano", () => {
+    expect(iaPuedeCambiarCategoria("OTRO", CM)).toBe(true);
+    expect(iaPuedeCambiarCategoria("COMIDA", CM)).toBe(true);
+    expect(iaPuedeCambiarCategoria(CM, "COMIDA")).toBe(true);
+    expect(iaPuedeCambiarCategoria("COMISION_VENDEDOR", CM)).toBe(false);
+    expect(iaPuedeCambiarCategoria("COMISION_VENDEDOR_AVION", CM)).toBe(false);
+  });
+
+  it("«Con lo elegido cae en:» por rama (columna OTROS con vuelo; Gastos Indirectos con avión; otros gastos sin nada)", () => {
+    const conVuelo =
+      "Balance del avión · hoja del vuelo (columna OTROS de costos directos, junto al FBO)";
+    expect(hojaDestinoGasto(CM, true, true)).toBe(conVuelo);
+    expect(hojaDestinoGasto(CM, true, false)).toBe(conVuelo);
+    expect(hojaDestinoGasto(CM, false, true)).toBe("Balance del avión · Gastos Indirectos");
+    expect(hojaDestinoGasto(CM, false, false)).toBe(
+      "Balance general VuelaTour · Otros gastos (repártelo desde la pantalla Otros gastos para cargarlo a aviones)",
+    );
+    // COMIDA (la de la tripulación) no cambia.
+    expect(hojaDestinoGasto("COMIDA", true, true)).toBe("Balance del avión · hoja del vuelo");
+  });
+
+  it("ayuda exacta: para los PASAJEROS, columna OTROS y la comida de la tripulación en «Comida»", () => {
+    expect(AYUDA_COMISARIATO).toBe(
+      "Snacks, bebidas y comisariato para los PASAJEROS. Es gasto directo del vuelo: en el balance del avión cae en la columna OTROS de costos directos (junto al FBO) y resta en el reparto a socios. La comida de la tripulación va en «Comida». Sin vuelo queda como pendiente de avión hasta ligarlo.",
+    );
+    expect(AYUDA_COMISARIATO).toContain("PASAJEROS");
+    expect(AYUDA_COMISARIATO).toContain("columna OTROS");
+    expect(AYUDA_COMISARIATO).toContain("La comida de la tripulación va en «Comida».");
+  });
+
+  it("schema zod: el enum la acepta; alta con y sin vuelo; Verificar con el vuelo", () => {
+    expect(CategoriaEnum.safeParse(CM).success).toBe(true);
+    const opciones = CategoriaEnum.options as readonly string[];
+    expect(opciones[opciones.indexOf("COMIDA") + 1]).toBe(CM);
+    const base = {
+      categoria: CM,
+      monto: "176.5",
+      moneda: "MXN",
+      fecha_gasto: "2026-08-18",
+      medio_pago: "TARJETA_CORP",
+    };
+    const conVuelo = GastoCreateSchema.safeParse({ ...base, vuelo_id: VUELO });
+    expect(conVuelo.success).toBe(true);
+    if (conVuelo.success) expect(conVuelo.data.monto).toBe(176.5);
+    expect(GastoCreateSchema.safeParse(base).success).toBe(true);
+    expect(GastoVerifySchema.safeParse({ categoria: CM, vuelo_id: VUELO }).success).toBe(true);
+  });
+});
+
+describe("paridad del enum de categorías (22 valores con Comisariato)", () => {
+  it("el zod, las etiquetas y los destinos tienen EXACTAMENTE los mismos 22 códigos", () => {
+    const enumZod = [...(CategoriaEnum.options as readonly string[])].sort();
+    expect(enumZod).toHaveLength(22);
+    expect(Object.keys(CATEGORIA_GASTO_LABELS).sort()).toEqual(enumZod);
+    expect(Object.keys(DESTINO_POR_DEFECTO).sort()).toEqual(enumZod);
+    // Toda categoría que se ofrece pasa el enum (las 3 legado/de verificación
+    // —ATERRIZAJE, FIJO, VISITA— no se ofrecen al capturar).
+    expect([...CATEGORIAS_CAPTURA].sort()).toEqual(
+      enumZod.filter((c) => !["ATERRIZAJE", "FIJO", "VISITA"].includes(c)),
+    );
+  });
+
+  // Repo hermano del API (solo existe en el workspace local): etiquetas y
+  // destinos IDÉNTICOS byte a byte (`common/categoria-gasto.util.ts`).
+  const API = path.resolve(__dirname, "../../../../../vuelatour-api/src/common/categoria-gasto.util.ts");
+  const fuenteApi = existsSync(API) ? readFileSync(API, "utf8") : null;
+  const tablaApi = (nombre: string): Record<string, string> => {
+    const ini = (fuenteApi ?? "").indexOf(`export const ${nombre}`);
+    const fin = (fuenteApi ?? "").indexOf("};", ini);
+    const bloque = (fuenteApi ?? "").slice(ini, fin);
+    const out: Record<string, string> = {};
+    for (const m of bloque.matchAll(/^\s*([A-Z_]+):\s*'([^']*)'/gm)) out[m[1]] = m[2];
+    for (const m of bloque.matchAll(/^\s*([A-Z_]+):\s*\n\s*'([^']*)'/gm)) out[m[1]] = m[2];
+    return out;
+  };
+
+  it.skipIf(!fuenteApi)("etiquetas del API (CATEGORIA_GASTO_LABEL) == panel, con COMISARIATO", () => {
+    const api = tablaApi("CATEGORIA_GASTO_LABEL");
+    expect(api[CM]).toBe("Comisariato");
+    expect(api).toEqual({ ...CATEGORIA_GASTO_LABELS });
+  });
+
+  it.skipIf(!fuenteApi)("destinos del API (CATEGORIA_GASTO_DESTINO) == panel, con COMISARIATO", () => {
+    const api = tablaApi("CATEGORIA_GASTO_DESTINO");
+    expect(api[CM]).toBe(DESTINO_DIRECTO);
+    expect(api).toEqual({ ...DESTINO_POR_DEFECTO });
   });
 });
