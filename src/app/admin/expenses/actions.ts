@@ -1,10 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { z } from "zod";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { mensajeErrorAccionGasto } from "@/lib/admin/gasto-acciones";
 import { medioPagoAceptadoPorApi } from "@/lib/admin/medios-pago";
+import { esUuid } from "@/lib/admin/url-params";
+import {
+  MSG_REPARTO_INVALIDO,
+  centavosDe,
+  estadoRepartoTrasFalla,
+  itemsDeRespuesta,
+  mismoReparto,
+  planGuardadoReparto,
+  textoRefuerzoAvion,
+  validarItemsReparto,
+  type ItemReparto,
+  type PasoGuardado,
+  type ResultadoGastoConReparto,
+} from "@/lib/admin/reparto-gasto";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -376,20 +391,50 @@ export async function confirmCargaCombustiblesAction(
 }
 
 export async function verifyGastoAction(id: string, raw: unknown): Promise<ActionResult<Gasto>> {
-  const parsed = GastoVerifySchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
-  const body = stripEmpty(parsed.data);
+  const r = await patchVerificacion(id, raw);
+  // La forma de SIEMPRE (sin `status`): `{ ok: false, error }` exacto.
+  if (r.ok) return { ok: true, data: r.data };
+  if (r.fieldErrors) return { ok: false, fieldErrors: r.fieldErrors };
+  return { ok: false, error: r.error };
+}
+
+// El cuerpo de `verifyGastoAction` vive en `patchVerificacion` (justo aquí
+// abajo: las declaraciones de función se elevan), que también usa el paso
+// GASTO de `guardarGastoConRepartoAction`.
+
+/** Cuerpo del PATCH de «Verificar / editar»: sin "" ni undefined y sin un
+ *  medio que el API no acepta. */
+function cuerpoVerificacion(data: z.infer<typeof GastoVerifySchema>) {
+  const body = stripEmpty(data);
   // BODEGA (y cualquier medio que el DTO del API no acepte) NO viaja: el
   // `UpdateGastoDto` rebota «medio_pago must be one of…» y un gasto de
   // salida de inventario no se podía verificar ni editar. Omitirlo conserva
   // el medio guardado (verificación del lote 2, 14-oct-2026).
   if (!medioPagoAceptadoPorApi(body.medio_pago)) delete body.medio_pago;
+  return body;
+}
+
+/**
+ * El PATCH de «Verificar / editar» (cuerpo ÚNICO de `verifyGastoAction` y del
+ * paso GASTO de `guardarGastoConRepartoAction`). Devuelve además el `status`
+ * del API para que el guardado con reparto distinga un rechazo (4xx: nada se
+ * escribió) de una falla incierta (red o 5xx). NO se exporta.
+ */
+async function patchVerificacion(
+  id: string,
+  raw: unknown,
+): Promise<ActionResult<Gasto> & { status?: number }> {
+  const parsed = GastoVerifySchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  const body = cuerpoVerificacion(parsed.data);
   try {
     const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
       method: "PATCH",
       body,
     });
     revalidatePath("/admin/expenses");
+    // Una reclasificación entre categorías repartibles se ve en Otros gastos.
+    revalidatePath("/admin/otros-gastos");
     // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).
     revalidatePath("/admin/combustibles");
     revalidatePath("/admin/caja-chica", "layout");
@@ -397,7 +442,7 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
     revalidatePath("/admin/flights", "layout");
     return { ok: true, data: updated };
   } catch (err) {
-    return fail(err);
+    return isApiError(err) ? { ...fail<Gasto>(err), status: err.status } : fail<Gasto>(err);
   }
 }
 
@@ -801,9 +846,219 @@ export async function saveRepartoAction(
     });
     revalidatePath("/admin/otros-gastos");
     revalidatePath("/admin/expenses");
+    // Caja chica también monta el menú ⋯ (y «Verificar / editar»).
+    revalidatePath("/admin/caja-chica", "layout");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
+  }
+}
+
+// ===== Reparto desde «Verificar / editar» (14-oct-2026) =====
+
+/** Motivo de un error del API para las frases del resultado. */
+function motivoDeError(err: unknown): string {
+  if (isApiError(err)) return mensajeErrorAccionGasto(err.status, err.message);
+  return err instanceof Error ? err.message : "";
+}
+
+/** GET del reparto vigente (no-store: el panel compara contra lo que hay HOY). */
+function leerReparto(id: string): Promise<RepartoResponse> {
+  return apiServer<RepartoResponse>(`/v1/expenses/${id}/reparto`, { cache: "no-store" });
+}
+
+/** Relectura tras un PUT que falló: null = tampoco se pudo leer. */
+async function releerRepartoSinLanzar(id: string): Promise<RepartoResponse | null> {
+  try {
+    return await leerReparto(id);
+  } catch {
+    return null;
+  }
+}
+
+function revalidarReparto() {
+  revalidatePath("/admin/expenses");
+  revalidatePath("/admin/otros-gastos");
+  revalidatePath("/admin/caja-chica", "layout");
+}
+
+/**
+ * Refuerzo (caso 3 del diseño): el PUT del reparto limpia `gasto.aeronave_id`
+ * pero el API no lee el error de esa limpieza. Si el gasto aún trae avión
+ * individual, se quita con un PATCH (el candado del API deja pasar `null`).
+ * Nunca falla el guardado: devuelve el aviso, o null.
+ */
+async function reforzarSinAvion(id: string): Promise<string | null> {
+  try {
+    const g = await apiServer<Gasto>(`/v1/expenses/${id}`, { cache: "no-store" });
+    if (!g?.aeronave_id) return null;
+    await apiServer<Gasto>(`/v1/expenses/${id}`, {
+      method: "PATCH",
+      body: { aeronave_id: null },
+    });
+    return null;
+  } catch (err) {
+    return textoRefuerzoAvion(motivoDeError(err));
+  }
+}
+
+/**
+ * Guarda «Verificar / editar» CON un cambio de reparto (crearlo, editarlo o
+ * quitarlo) en UN clic. NUNCA lanza.
+ *
+ *  1. Valida sin red: id, base y nuevo (uuid por avión, sin repetir, monto >
+ *     0 con 2 decimales, ≤ 20) y el formulario con `GastoVerifySchema`.
+ *  2. Relee el reparto vigente (`GET …/reparto`, no-store).
+ *  3. Si difiere de la base del diálogo ⇒ REPARTO_CAMBIO sin escribir nada.
+ *  4. `planGuardadoReparto` decide el orden PATCH/PUT que no choca con los
+ *     candados del API (o bloquea sin escribir).
+ *  5. Ejecuta. Tras CUALQUIER falla del PUT relee el reparto y dice cómo
+ *     quedó (igual al pedido ⇒ sigue; igual al anterior; distinto; no se
+ *     sabe). Un PATCH con red/5xx es INCIERTO (pudo escribir).
+ *  6. Refuerzo del avión individual (si el PATCH lo traía).
+ *  7. Revalida Gastos, Otros gastos y Caja chica cuando escribió el reparto.
+ *
+ * La regla Σ ≤ monto y el remanente son del API: aquí solo se ordenan las
+ * dos escrituras que ya existen.
+ */
+export async function guardarGastoConRepartoAction(
+  id: string,
+  raw: unknown,
+  reparto: { base: ItemReparto[]; nuevo: ItemReparto[] },
+  contexto: { riesgoConciliado: boolean },
+): Promise<ResultadoGastoConReparto> {
+  const pasos: PasoGuardado[] = [];
+  const avisos: string[] = [];
+  let gastoGuardado = false;
+  let gastoData: Gasto | undefined;
+  let tocoReparto = false;
+  let repartoFinal: RepartoResponse | null = null;
+  const resultado = (
+    codigo: ResultadoGastoConReparto["codigo"],
+    extra: Partial<ResultadoGastoConReparto> = {},
+  ): ResultadoGastoConReparto => ({
+    ok: codigo === "OK",
+    codigo,
+    gastoGuardado,
+    gastoIncierto: false,
+    repartoGuardado: pasos.includes("REPARTO"),
+    repartoEstado: null,
+    pasos: [...pasos],
+    reparto: repartoFinal,
+    ...(gastoData ? { data: gastoData } : {}),
+    avisos: [...avisos],
+    ...extra,
+  });
+  try {
+    // (1) Sin red.
+    const base = validarItemsReparto(reparto?.base);
+    const nuevo = validarItemsReparto(reparto?.nuevo);
+    if (!esUuid(id) || !base || !nuevo) {
+      return resultado("BLOQUEO", { error: MSG_REPARTO_INVALIDO, reparto: null });
+    }
+    const parsed = GastoVerifySchema.safeParse(raw);
+    if (!parsed.success) {
+      return resultado("GASTO", { fieldErrors: parsed.error.flatten().fieldErrors, reparto: null });
+    }
+    const body = cuerpoVerificacion(parsed.data);
+
+    // (2) El reparto de HOY.
+    let actual: RepartoResponse;
+    try {
+      actual = await leerReparto(id);
+    } catch (err) {
+      return resultado("LECTURA", { error: motivoDeError(err), reparto: null });
+    }
+    repartoFinal = actual;
+    const actualItems = itemsDeRespuesta(actual);
+
+    // (3) Otra persona lo cambió mientras se editaba: no se escribe nada.
+    if (!mismoReparto(actualItems, base)) return resultado("REPARTO_CAMBIO");
+
+    // (4) El orden que no choca con los candados del API.
+    const plan = planGuardadoReparto({
+      sumaActualCents: actualItems.reduce((acc, i) => acc + centavosDe(i.monto), 0),
+      montoActualCents: centavosDe(actual.gasto?.monto),
+      monedaActual: String(actual.gasto?.moneda ?? ""),
+      montoNuevoCents: body.monto !== undefined ? centavosDe(body.monto) : null,
+      monedaNueva: body.moneda ?? null,
+      categoriaNueva: body.categoria ?? String(actual.gasto?.categoria ?? ""),
+      patchConAvion: !!body.aeronave_id,
+      patchConVuelo: !!body.vuelo_id,
+      nuevo,
+      riesgoConciliado: contexto?.riesgoConciliado === true,
+    });
+    if (plan.tipo === "BLOQUEO") return resultado("BLOQUEO", { error: plan.mensaje });
+
+    // (5) Las escrituras, en ese orden.
+    for (const [i, paso] of plan.pasos.entries()) {
+      if (paso === "GASTO") {
+        const r = await patchVerificacion(id, raw);
+        if (!r.ok) {
+          const incierto = r.status === undefined || r.status >= 500;
+          if (i === 0) {
+            return incierto
+              ? resultado("GASTO_INCIERTO", { gastoIncierto: true, error: r.error })
+              : resultado("GASTO", { error: r.error, fieldErrors: r.fieldErrors });
+          }
+          // El reparto ya quedó; el gasto no (o no se sabe).
+          revalidarReparto();
+          return resultado("PARCIAL_SOLO_REPARTO", {
+            gastoIncierto: incierto,
+            repartoEstado: "IGUAL_AL_NUEVO",
+            error: r.error,
+          });
+        }
+        gastoGuardado = true;
+        gastoData = r.data;
+        pasos.push("GASTO");
+        continue;
+      }
+      tocoReparto = true;
+      try {
+        repartoFinal = await apiServer<RepartoResponse>(`/v1/expenses/${id}/reparto`, {
+          method: "PUT",
+          body: { items: nuevo },
+        });
+        pasos.push("REPARTO");
+      } catch (err) {
+        const motivo = motivoDeError(err);
+        const releido = await releerRepartoSinLanzar(id);
+        const estado = estadoRepartoTrasFalla(
+          releido ? itemsDeRespuesta(releido) : null,
+          base,
+          nuevo,
+        );
+        if (estado === "IGUAL_AL_NUEVO" && releido) {
+          // El PUT sí escribió (la respuesta se perdió): sigue.
+          repartoFinal = releido;
+          pasos.push("REPARTO");
+          continue;
+        }
+        repartoFinal = releido;
+        revalidarReparto();
+        return gastoGuardado
+          ? resultado("PARCIAL_SIN_REPARTO", { repartoEstado: estado, error: motivo })
+          : resultado("SIN_NADA_REPARTO", { repartoEstado: estado, error: motivo });
+      }
+    }
+
+    // (6) Refuerzo del avión individual (el PATCH lo traía).
+    if (nuevo.length > 0 && gastoData?.aeronave_id) {
+      const aviso = await reforzarSinAvion(id);
+      if (aviso) avisos.push(aviso);
+    }
+    // (7)
+    if (tocoReparto) revalidarReparto();
+    return resultado("OK", { repartoEstado: "IGUAL_AL_NUEVO" });
+  } catch (err) {
+    // Defensivo: algo inesperado a medio camino. Se dice lo que se sabe.
+    if (tocoReparto) revalidarReparto();
+    const error = motivoDeError(err);
+    if (!gastoGuardado && !tocoReparto) return resultado("LECTURA", { error });
+    return gastoGuardado
+      ? resultado("PARCIAL_SIN_REPARTO", { repartoEstado: "DESCONOCIDO", error })
+      : resultado("SIN_NADA_REPARTO", { repartoEstado: "DESCONOCIDO", error });
   }
 }
 

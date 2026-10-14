@@ -176,7 +176,9 @@ export interface RepartoResponse {
     fecha_gasto: string | null;
     notas: string | null;
   };
-  items: Array<{ aeronave_id: string; monto: string | number; matricula: string }>;
+  /** `matricula` null si el join no la trajo (`getReparto` del API manda
+   *  `?? null`): leerla SIEMPRE con respaldo «¿?» (14-oct-2026). */
+  items: Array<{ aeronave_id: string; monto: string | number; matricula: string | null }>;
   suma: string | number;
   /** monto − suma: la parte que absorbe VuelaTour (empresa). */
   remanente_empresa: string | number;

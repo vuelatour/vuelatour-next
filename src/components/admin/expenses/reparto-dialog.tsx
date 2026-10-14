@@ -28,6 +28,12 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
+  MSG_SERVIDOR_NO_RESPONDIO,
+  TITULO_QUITAR_REPARTO,
+  textoQuitarRepartoDialogo,
+  toastRepartoQuitadoDialogo,
+} from "@/lib/admin/reparto-gasto";
+import {
   getRepartoAction,
   listAvionesActivosAction,
   saveRepartoAction,
@@ -98,8 +104,8 @@ export function RepartoDialog({
   useEffect(() => {
     if (!key) return;
     let vigente = true;
-    Promise.all([listAvionesActivosAction(), getRepartoAction(key)]).then(
-      ([avRes, repRes]) => {
+    Promise.all([listAvionesActivosAction(), getRepartoAction(key)])
+      .then(([avRes, repRes]) => {
         if (!vigente) return;
         if (!avRes.ok || !avRes.data || !repRes.ok || !repRes.data) {
           toast.error(
@@ -117,7 +123,8 @@ export function RepartoDialog({
           if (!opciones.some((a) => a.id === it.aeronave_id)) {
             opciones.push({
               id: it.aeronave_id,
-              matricula: it.matricula,
+              // El API manda `matricula: null` si el join no la trae.
+              matricula: it.matricula ?? "¿?",
               modelo: "Inactivo",
               inactivo: true,
             });
@@ -135,8 +142,15 @@ export function RepartoDialog({
         setSeleccion(sel);
         setTeniaReparto(items.length > 0);
         setCargaEstado({ key, error: false });
-      },
-    );
+      })
+      // Una server action que LANZA (red caída, «Failed to find Server
+      // Action» tras un deploy) dejaba «Cargando aviones y reparto…» para
+      // siempre (14-oct-2026).
+      .catch(() => {
+        if (!vigente) return;
+        toast.error(MSG_SERVIDOR_NO_RESPONDIO);
+        setCargaEstado({ key, error: true });
+      });
     return () => {
       vigente = false;
     };
@@ -208,7 +222,9 @@ export function RepartoDialog({
     startTransition(async () => {
       const res = await saveRepartoAction(gasto.id, []);
       if (res.ok) {
-        toast.success("Reparto eliminado: el gasto queda 100% de VuelaTour");
+        // FIJO vuelve al prorrateo entre los aviones activos (no es «100%
+        // de VuelaTour» en el reparto a socios).
+        toast.success(toastRepartoQuitadoDialogo(gasto.categoria));
         setOpenQuitar(false);
         onOpenChange(false);
       } else {
@@ -220,208 +236,207 @@ export function RepartoDialog({
   if (!gasto) return null;
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Repartir entre aviones</DialogTitle>
-            <DialogDescription>
-              Asigna o divide este gasto entre los aviones que elijas, con
-              montos editables. Lo que no asignes queda como gasto de la
-              empresa VuelaTour (no resta a ningún avión).
-            </DialogDescription>
-            <p className="text-xs text-slate-400">
-              Cada parcial cae en la hoja Gastos Indirectos del balance del
-              avión que elijas (con la nota reparto manual).
-            </p>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Repartir entre aviones</DialogTitle>
+          <DialogDescription>
+            Asigna o divide este gasto entre los aviones que elijas, con
+            montos editables. Lo que no asignes queda como gasto de la
+            empresa VuelaTour (no resta a ningún avión).
+          </DialogDescription>
+          <p className="text-xs text-slate-400">
+            Cada parcial cae en la hoja Gastos Indirectos del balance del
+            avión que elijas (con la nota reparto manual).
+          </p>
+        </DialogHeader>
 
-          {/* Encabezado del gasto: para saber QUÉ se está repartiendo. */}
-          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline">{categoriaGastoLabel(gasto.categoria)}</Badge>
-              <span className="text-xs text-muted-foreground">
-                {gasto.fecha_gasto ? fmtDateOnly(gasto.fecha_gasto) : "Sin fecha"}
-              </span>
-              <span className="ml-auto font-mono text-sm font-semibold">
-                {fmtMonto(gasto.monto, gasto.moneda)}
-              </span>
-            </div>
-            {gasto.descripcion && (
-              <p className="text-sm text-muted-foreground">{gasto.descripcion}</p>
-            )}
+        {/* Encabezado del gasto: para saber QUÉ se está repartiendo. */}
+        <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline">{categoriaGastoLabel(gasto.categoria)}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {gasto.fecha_gasto ? fmtDateOnly(gasto.fecha_gasto) : "Sin fecha"}
+            </span>
+            <span className="ml-auto font-mono text-sm font-semibold">
+              {fmtMonto(gasto.monto, gasto.moneda)}
+            </span>
           </div>
+          {gasto.descripcion && (
+            <p className="text-sm text-muted-foreground">{gasto.descripcion}</p>
+          )}
+        </div>
 
-          {cargando ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Cargando aviones y reparto…
-            </p>
-          ) : cargaFallo ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No se pudo cargar el reparto del gasto. Cierra el diálogo y
-              vuelve a intentar.
-            </p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Marca los aviones y captura cuánto le toca a cada uno.
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="gap-1.5 shrink-0"
-                  onClick={dividirIguales}
-                  disabled={pending || incluidos.length === 0}
-                >
-                  <ArrowsRightLeftIcon className="h-4 w-4" />
-                  Dividir en partes iguales
-                </Button>
-              </div>
-
-              <div className="rounded-lg border border-border divide-y divide-border">
-                {aviones.map((a) => {
-                  const sel = seleccion[a.id] ?? { incluir: false, monto: "" };
-                  return (
-                    <label
-                      key={a.id}
-                      className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/40"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={sel.incluir}
-                        onChange={(e) =>
-                          setSeleccion((s) => ({
-                            ...s,
-                            [a.id]: { ...sel, incluir: e.target.checked },
-                          }))
-                        }
-                        className="h-4 w-4 accent-brand-600"
-                      />
-                      <span className="font-mono text-sm font-medium">
-                        {a.matricula}
-                      </span>
-                      <span className="text-xs text-muted-foreground truncate">
-                        {a.modelo}
-                      </span>
-                      {a.inactivo && (
-                        <Badge
-                          variant="outline"
-                          className="border-amber-500/50 text-amber-600 text-[10px]"
-                        >
-                          Inactivo
-                        </Badge>
-                      )}
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        inputMode="decimal"
-                        value={sel.monto}
-                        placeholder="0.00"
-                        disabled={!sel.incluir}
-                        onChange={(e) =>
-                          setSeleccion((s) => ({
-                            ...s,
-                            [a.id]: { ...sel, monto: e.target.value },
-                          }))
-                        }
-                        className="h-8 w-28 text-right ml-auto"
-                      />
-                    </label>
-                  );
-                })}
-                {aviones.length === 0 && (
-                  <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    Sin aviones activos para repartir.
-                  </p>
-                )}
-              </div>
-
-              {/* Línea viva SIEMPRE visible: cuánto va asignado y cuánto
-                  absorbe la empresa. En rojo si la suma se pasa del total. */}
-              <p
-                className={
-                  excedido
-                    ? "text-sm font-medium text-red-600 dark:text-red-400"
-                    : "text-sm text-muted-foreground"
-                }
-              >
-                Asignado {fmtMonto(sumaCents / 100, gasto.moneda)} de{" "}
-                {fmtMonto(totalCents / 100, gasto.moneda)} ·{" "}
-                {excedido
-                  ? `se pasa por ${fmtMonto((sumaCents - totalCents) / 100, gasto.moneda)} — ajusta los montos`
-                  : `VuelaTour absorbe ${fmtMonto(Math.max(0, totalCents - sumaCents) / 100, gasto.moneda)}`}
+        {cargando ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Cargando aviones y reparto…
+          </p>
+        ) : cargaFallo ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No se pudo cargar el reparto del gasto. Cierra el diálogo y
+            vuelve a intentar.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Marca los aviones y captura cuánto le toca a cada uno.
               </p>
-              {sinMonto.length > 0 && (
-                <p className="text-xs text-amber-600">
-                  Captura el monto de {sinMonto.map((a) => a.matricula).join(", ")}{" "}
-                  (o desmárcalos).
+              <Button
+                variant="secondary"
+                size="sm"
+                className="gap-1.5 shrink-0"
+                onClick={dividirIguales}
+                disabled={pending || incluidos.length === 0}
+              >
+                <ArrowsRightLeftIcon className="h-4 w-4" />
+                Dividir en partes iguales
+              </Button>
+            </div>
+
+            <div className="rounded-lg border border-border divide-y divide-border">
+              {aviones.map((a) => {
+                const sel = seleccion[a.id] ?? { incluir: false, monto: "" };
+                return (
+                  <label
+                    key={a.id}
+                    className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/40"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sel.incluir}
+                      onChange={(e) =>
+                        setSeleccion((s) => ({
+                          ...s,
+                          [a.id]: { ...sel, incluir: e.target.checked },
+                        }))
+                      }
+                      className="h-4 w-4 accent-brand-600"
+                    />
+                    <span className="font-mono text-sm font-medium">
+                      {a.matricula}
+                    </span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {a.modelo}
+                    </span>
+                    {a.inactivo && (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500/50 text-amber-600 text-[10px]"
+                      >
+                        Inactivo
+                      </Badge>
+                    )}
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      inputMode="decimal"
+                      value={sel.monto}
+                      placeholder="0.00"
+                      disabled={!sel.incluir}
+                      onChange={(e) =>
+                        setSeleccion((s) => ({
+                          ...s,
+                          [a.id]: { ...sel, monto: e.target.value },
+                        }))
+                      }
+                      className="h-8 w-28 text-right ml-auto"
+                    />
+                  </label>
+                );
+              })}
+              {aviones.length === 0 && (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  Sin aviones activos para repartir.
                 </p>
               )}
-            </>
-          )}
+            </div>
 
-          <DialogFooter className="items-center gap-2">
-            {teniaReparto && !cargando && !cargaFallo && (
-              <Button
-                variant="outline"
-                className="mr-auto text-destructive hover:text-destructive"
-                onClick={() => setOpenQuitar(true)}
-                disabled={pending}
-              >
-                Quitar reparto
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={pending}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={guardar}
-              disabled={
-                pending ||
-                cargando ||
-                cargaFallo ||
-                excedido ||
-                incluidos.length === 0 ||
-                sinMonto.length > 0
+            {/* Línea viva SIEMPRE visible: cuánto va asignado y cuánto
+                absorbe la empresa. En rojo si la suma se pasa del total. */}
+            <p
+              className={
+                excedido
+                  ? "text-sm font-medium text-red-600 dark:text-red-400"
+                  : "text-sm text-muted-foreground"
               }
             >
-              {pending ? "Guardando…" : "Guardar reparto"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              Asignado {fmtMonto(sumaCents / 100, gasto.moneda)} de{" "}
+              {fmtMonto(totalCents / 100, gasto.moneda)} ·{" "}
+              {excedido
+                ? `se pasa por ${fmtMonto((sumaCents - totalCents) / 100, gasto.moneda)} — ajusta los montos`
+                : `VuelaTour absorbe ${fmtMonto(Math.max(0, totalCents - sumaCents) / 100, gasto.moneda)}`}
+            </p>
+            {sinMonto.length > 0 && (
+              <p className="text-xs text-amber-600">
+                Captura el monto de {sinMonto.map((a) => a.matricula).join(", ")}{" "}
+                (o desmárcalos).
+              </p>
+            )}
+          </>
+        )}
 
-      <AlertDialog open={openQuitar} onOpenChange={setOpenQuitar}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Quitar el reparto de este gasto?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El gasto queda 100% como gasto de VuelaTour (empresa): no
-              restará a ningún avión. Puedes volver a repartirlo cuando
-              quieras.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                quitar();
-              }}
+        <DialogFooter className="items-center gap-2">
+          {teniaReparto && !cargando && !cargaFallo && (
+            <Button
+              variant="outline"
+              className="mr-auto text-destructive hover:text-destructive"
+              onClick={() => setOpenQuitar(true)}
               disabled={pending}
-              className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {pending ? "Quitando…" : "Quitar reparto"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+              Quitar reparto
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={pending}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={guardar}
+            disabled={
+              pending ||
+              cargando ||
+              cargaFallo ||
+              excedido ||
+              incluidos.length === 0 ||
+              sinMonto.length > 0
+            }
+          >
+            {pending ? "Guardando…" : "Guardar reparto"}
+          </Button>
+        </DialogFooter>
+
+        {/* DENTRO del DialogContent (14-oct-2026): así Base UI registra la
+            confirmación como hija del diálogo y Esc cierra SOLO la
+            confirmación (afuera, Esc cerraba los dos). */}
+        <AlertDialog open={openQuitar} onOpenChange={setOpenQuitar}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_QUITAR_REPARTO}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {textoQuitarRepartoDialogo(gasto.categoria)}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  quitar();
+                }}
+                disabled={pending}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                {pending ? "Quitando…" : "Quitar reparto"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </DialogContent>
+    </Dialog>
   );
 }

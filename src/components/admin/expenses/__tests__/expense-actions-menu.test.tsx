@@ -44,6 +44,7 @@ vi.mock("@/app/admin/expenses/actions", () => ({
   getRepartoAction: async () => ({ ok: true, data: null }),
   listAvionesActivosAction: async () => ({ ok: true, data: [] }),
   saveRepartoAction: async () => ({ ok: true }),
+  guardarGastoConRepartoAction: async () => ({ ok: false }),
 }));
 vi.mock("@/app/admin/inventory/compras/actions", () => ({
   createCompraAction: async () => ({ ok: false }),

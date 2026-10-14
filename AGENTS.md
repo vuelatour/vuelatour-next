@@ -1887,8 +1887,17 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   todas las páginas son `force-dynamic` + `no-store`, pero una pestaña ya
   abierta (p. ej. el detalle del vuelo) no se vuelve a pedir sola: la
   oficina movía un gasto de vuelo en Gastos y al volver a la otra pestaña
-  seguía viendo la lista vieja. No toca el estado de formularios abiertos
-  (refresh re-renderiza Server Components, no remonta clientes).
+  seguía viendo la lista vieja.
+- **El refresh NO remonta los componentes cliente, pero SÍ les entrega
+  props NUEVAS**: el mismo dato llega como OTRO objeto. Un formulario que se
+  reinicia con `useEffect(…, [gasto])` (o con la identidad de
+  `initialItem`) pierde lo capturado cada vez que la oficina vuelve a la
+  pestaña. Regla: un formulario se reinicia UNA vez por apertura, con una
+  `sesionRef` (el id del registro; se suelta al cerrar) — así lo hacen
+  `inventory/item-form-dialog.tsx` (28-sep-2026) y
+  `expenses/expense-verify-dialog.tsx` (14-oct-2026: el reset por identidad
+  borraba lo tecleado y volvía a prellenar N990GG sobre el gasto repartido
+  STARLINK). Ver «Repartir entre aviones desde «Verificar / editar»».
 
 ## Próximo servicio: la orden se ve, no solo «faltan 9.8 h» (19-sep-2026)
 
@@ -8468,6 +8477,224 @@ SPEI), no la de la factura; el cruce automático sigue a ±3 días
 - **Orden de deploy**: API 0.0.76 → panel. Con el panel antes, «Fecha» abre
   el diálogo y guardar dice «falta actualizar el API» (nada escrito).
 
+## Repartir entre aviones desde «Verificar / editar» (14-oct-2026)
+
+Caso real (STARLINK, gasto `e23b5587`, 1-sep-2026, $4,733.76 MXN INDIRECTO
+repartido 3 × $1,577.92 entre N4142R, N621TX y N990GG): el diálogo
+prellenaba N990GG con la matrícula que leyó la IA, la mandaba en el PATCH y
+el API rechazaba el guardado («El gasto está repartido entre aviones…»). El
+reparto solo se veía y cambiaba desde el menú ⋯ / Otros gastos. Desde hoy se
+ve, se crea, se edita y se quita AQUÍ, en el mismo «Guardar». **Solo panel**:
+sin API ni migración (funciona con el API 0.0.75 y con el 0.0.76; la Fase 2
+del API —códigos estructurados del candado, base en el PUT, RPC atómica— es
+opcional y va en otro lote).
+
+- **Fuentes únicas**: `lib/admin/reparto-gasto.ts` (PURA: estado, selección,
+  sumas GUÍA, planificador, confirmación, resultados y TODOS los textos;
+  ningún componente redacta estas frases),
+  `components/admin/expenses/reparto-aviones-editor.tsx` (`RepartoAvionesEditor`
+  y `RepartoResumen`, presentación sin hooks) y, en
+  `app/admin/expenses/actions.ts`, `guardarGastoConRepartoAction` +
+  `patchVerificacion` (el PATCH de siempre, compartido con
+  `verifyGastoAction`).
+- **Las cuentas en pantalla son GUÍA**: Σ ≤ monto y el remanente («lo absorbe
+  VuelaTour») los decide el API. El techo es el total pagado del FORMULARIO
+  (ticket + propina, `techoRepartoCents`) y todo se compara en centavos.
+
+### Bloque «Avión»: dos modos
+
+- `configAvionGasto({ categoria, vueloSel, repartoGuardado })` decide: con
+  categoría repartible (`CATEGORIAS_REPARTIBLES`) o con reparto guardado, el
+  campo «Avión» lleva dos botones (`role="group"`, `aria-pressed`, `title`
+  por categoría, `cursor-pointer`): **«Un avión»** («Sin avión» en Gasolina y
+  Visita) y **«Repartir entre aviones»**, deshabilitado —con el motivo a la
+  vista— si la categoría no se reparte o el gasto lleva vuelo («Un gasto
+  ligado a un vuelo no se reparte: para repartirlo, cambia «Vuelo» a «Sin
+  vuelo».»). Sin modos (categoría no repartible y sin reparto) queda el campo
+  de siempre, «Avión (resuelve pendiente)».
+- **«Un avión»**: el selector con «Sin avión (gasto de VuelaTour)» y la ayuda
+  por categoría (`ayudaModoUno`: un INDIRECTO con un avión resta en su
+  balance pero NO en su reparto a socios; un FIJO se prorratea; en OTRO y
+  NÓMINA el avión es solo referencia). Sobre un gasto repartido, el guardado
+  QUITA el reparto: aviso ámbar (`avisoRepartoSeQuita`) y confirmación.
+- **«Repartir»**: con reparto guardado, el RESUMEN de solo lectura
+  (`RepartoResumen`: partes por matrícula —«¿?» si el API no la manda—,
+  «Asignado $X de $Y del total pagado · VuelaTour absorbe $Z», «Editar
+  reparto» y «Quitar el reparto»); sin reparto o al editar, el EDITOR en
+  línea (`RepartoAvionesEditor`): los aviones ACTIVOS
+  (`listAvionesActivosAction`, pedidos SOLO al mostrar el editor; nunca la
+  prop `aircraft`, que trae inactivos y el PUT los rechaza), casilla y monto
+  por avión (`aria-label` «Monto de N4142R»), «Dividir en partes iguales»
+  (Σ exacta; el primero absorbe el residuo, como el RepartoDialog), la línea
+  viva (roja si se pasa) y los avisos de sin monto / inactivo. La PRIMERA vez
+  arranca con el avión del formulario al 100 % del total pagado
+  (`seleccionInicialAlRepartir`) y un recuadro dice qué cambia
+  (`textoQueCambiaAlRepartir`; en un FIJO, además `AVISO_REPARTO_FIJO`).
+- En modo reparto el gasto **no lleva vuelo** (selector deshabilitado,
+  `HINT_VUELO_EN_REPARTO`) y no hay prellenado por matrícula, sugerencia de
+  vuelo ni «Usar este avión» (en su lugar `avisoMatriculaFueraDeReparto`: «El
+  comprobante trae la matrícula X y el reparto no la incluye…»). «Total
+  pagado» lleva la cola del reparto (`lineaTotalPagadoReparto`), «Con lo
+  elegido cae en:» dice `hojaDestinoReparto` (prop `hoja` de
+  `CategoriaDestinoHint`) y la descripción del diálogo es
+  `descripcionVerificarGasto`.
+- Notas en línea: el monto cambia con el reparto intacto
+  (`notaMontoConReparto`: «…VuelaTour absorbería $X…»), reclasificar entre
+  dos repartibles (`notaCategoriaEntreRepartibles`), la moneda no cambia con
+  un reparto que se conserva (`textoRepartoMoneda`), cambiar el dinero de un
+  gasto conciliado o parcial (`NOTA_DINERO_BLOQUEADO`, vía `estadoBancoGasto`)
+  y el mes ya terminado (`notaRepartoMesTerminado`) cuando no hay
+  confirmación que lo diga.
+
+### Estados del reparto (`EstadoRepartoDialogo`)
+
+`SIN_REPARTO` · `REPARTIDO` · `POR_CONFIRMAR` · `LECTURA_FALLIDA`. Nacen del
+embed `repartos` de la lista (`estadoRepartoInicial`, inicializadores
+perezosos: el HTML ya trae el modo y el resumen). Un gasto repartible SIN
+embed queda POR_CONFIRMAR y lee `GET …/reparto` al abrir («Leyendo el
+reparto del gasto…», «Repartir» apagado mientras); si falla, «No se pudo leer
+el reparto de este gasto.» + «Reintentar» — **jamás «sin reparto» por una
+lectura fallida**. El editor relee el reparto vigente al mostrarse: si cambió
+y no se tocó nada, base y selección se reemplazan en silencio; si ya se tocó,
+solo la base, con un banner ámbar (`textoRepartoActualizado`). Si el PATCH de
+siempre rebota por reparto (`esRechazoPorReparto`: el prefijo «El gasto está
+repartido entre aviones»; embed viejo), se relee y se pasa a «Repartir» con
+el banner `textoRepartoDescubierto`.
+
+### Guardar: UN clic, el planificador decide el orden
+
+- **Sin cambio de reparto**: el camino de siempre (`verifyGastoAction`); en
+  modo reparto el PATCH va sin `aeronave_id` (o `null` si el gasto guardado
+  aún trae avión) y con `vuelo_id`/`escala_id` null.
+- **Con cambio** (crear, editar o quitar): `guardarGastoConRepartoAction(id,
+  raw, { base, nuevo }, { riesgoConciliado })`, que NUNCA lanza — y el
+  diálogo la llama con `llamarSinLanzar`: una server action que revienta en
+  el cliente («Failed to find Server Action» tras un deploy) no llega al
+  error boundary. (1) Valida sin red (uuid, ≤ 20 aviones sin repetir, montos
+  > 0 con 2 decimales; el formulario con `GastoVerifySchema`); (2) relee el
+  reparto (`no-store`); (3) distinto de la base del diálogo ⇒
+  `REPARTO_CAMBIO` sin escribir; (4) `planGuardadoReparto` ordena PATCH y PUT
+  para que ninguno choque con los candados del API (el PATCH con reparto
+  guardado rechaza un monto bajo la suma, una categoría que no se reparte, un
+  vuelo, otra moneda o un avión individual; el PUT valida contra lo GUARDADO,
+  también el PUT []); (5) ejecuta: tras CUALQUIER falla del PUT relee y
+  clasifica (`estadoRepartoTrasFalla`: igual a lo pedido ⇒ sigue; igual a la
+  base; distinto; no se sabe) y un PATCH con red/5xx es INCIERTO (pudo
+  escribir); (6) refuerzo del avión; (7) revalida Gastos, Otros gastos y Caja
+  chica.
+
+| Caso | Orden |
+|---|---|
+| Crear, o editar con monto final ≥ suma vigente | PATCH → PUT |
+| Editar con monto final < suma vigente (el PUT cabe en el monto viejo) | PUT → PATCH |
+| Quitar sin choque | PATCH → PUT [] |
+| Quitar con choque (avión elegido, vuelo, categoría que no se reparte, otra moneda o monto bajo la suma) | PUT [] → PATCH |
+| Conciliado con un plan que empezaría por PUT · otra moneda con un reparto que se conserva · reparto guardado mayor que el monto guardado · incompatible · Σ > monto final | BLOQUEO: solo el GET, nada se escribe |
+
+  Lo congela un fuzz determinista de 20,000 casos contra un simulador
+  ESTRICTO del API (`reparto-gasto.test.ts`, semilla 20261014): 0 rechazos
+  en el 2.º paso.
+- **Resultado** (`mensajeResultadoGastoReparto`, textos exactos): OK ·
+  BLOQUEO · LECTURA · REPARTO_CAMBIO · GASTO · GASTO_INCIERTO ·
+  PARCIAL_SIN_REPARTO · PARCIAL_SOLO_REPARTO · SIN_NADA_REPARTO y
+  SIN_RESPUESTA (la llamada reventó: se relee con `getRepartoAction` para
+  decir cómo quedó). Éxito: «Gasto verificado y repartido entre 3 aviones» /
+  «Gasto verificado y reparto actualizado (2 aviones)» / «Gasto verificado y
+  reparto quitado: quedó en N4142R» / «…: lo absorbe VuelaTour» / en un FIJO
+  «…: el gasto fijo vuelve al prorrateo entre los aviones activos». Las
+  fallas parciales y la falta de respuesta van en toast de 15 s
+  (`TOAST_LARGO_MS`) y en un banner del bloque «Avión» (`data-reparto-aviso`)
+  que se limpia al siguiente guardado y al reabrir; cuando el reparto quedó
+  distinto o solo se guardó el reparto, el banner ofrece «Regresar el reparto
+  anterior» (confirmado: «¿Regresar el reparto anterior?», PUT con lo de
+  antes; si falla, se relee). Con el gasto ya guardado (parcial), el
+  reintento no vuelve a subir las hojas ni reenvía la lectura de la IA.
+- **Refuerzo del avión**: si el PATCH devolvió `aeronave_id` y quedó un
+  reparto, GET + `PATCH { aeronave_id: null }` (el PUT limpia el avión, pero
+  el API no lee el error de esa limpieza); si no se puede, aviso de 10 s
+  (`textoRefuerzoAvion`) y el siguiente «Guardar» lo autocorrige.
+- **Errores en pantalla** (antes de la red, `errorRepartoEnPantalla`):
+  aviones cargando con cambios, ninguno marcado, un marcado sin monto, un
+  inactivo marcado, Σ > total pagado y la moneda cambiada con un reparto
+  guardado.
+
+### La UNA confirmación
+
+`confirmacionRepartoAlGuardar` (regla del cliente: lo destructivo confirma,
+en cualquier mes): **quitar** el reparto («¿Quitar el reparto de este
+gasto?», con el reparto de hoy, a dónde pasa el gasto —`destinoTrasQuitar`—,
+la nota de socios de un INDIRECTO con un avión y la del prorrateo de un
+FIJO) o un cambio que **baja o saca** a un avión, **sustituye** al avión
+guardado o es el **primer reparto de un FIJO** («¿Guardar el cambio del
+reparto?», con «Bajan o salen del reparto: N4142R ($1,577.92 MXN → $0.00
+MXN)…»). El primer reparto sin avión y subir o agregar no preguntan. El mes
+ya terminado va como párrafo de la confirmación. «Revisar» no guarda; «Sí,
+guardar» deja el cuadro abierto con «Guardando…» hasta terminar. Vive DENTRO
+del `DialogContent` (Base UI: Esc cierra solo el de arriba) y, después, si
+aplica, sigue la confirmación de la TUA que se borra. Un guardado nuevo nunca
+hereda la confirmación del anterior.
+
+### IA y prellenado
+
+- `debePrellenarAvionPorMatricula`: la matrícula de la IA se prellena SOLO en
+  un gasto sin reparto (sabido), en «Un avión», sin avión, sin el veto de
+  «Sin avión» elegido a mano, en una categoría que lleva avión y a lo más UNA
+  vez por apertura. Jamás en REPARTIDO, POR_CONFIRMAR ni LECTURA_FALLIDA (el
+  caso STARLINK). La sugerencia de vuelo, igual: una vez por apertura y solo
+  sin reparto.
+- «Reanalizar con IA» con reparto (guardado o armándose) no aplica la
+  moneda, una categoría que no se reparte ni el avión; el toast lo dice
+  (`notaIaConReparto`).
+
+### Sesión, efectos y lint
+
+- **Reset UNA vez por apertura** (`sesionRef` = `gasto.id`, se suelta al
+  cerrar): con `[open, gasto]` a secas, el `router.refresh()` de
+  `RefreshOnFocus` (o una revalidación) traía un `gasto` nuevo, borraba lo
+  capturado y el prellenado reimponía N990GG. Ver la corrección en «El panel
+  se pone al día al volver a la pestaña».
+- **Ficha de sesión** (`sesionN` estado + `sesionNRef` ref): los efectos del
+  reparto, del prellenado y de la sugerencia esperan al render que YA trae el
+  estado de la apertura nueva (en el commit del reset corren con el estado
+  viejo: la misma clase de bug que el N990GG). Las cargas se DERIVAN de su
+  clave (`gasto#sesión#intento`: «cargando» y «falló» sin estados aparte),
+  los callbacks van con `useEffectEvent` y una respuesta de otra sesión se
+  descarta.
+- **React Compiler**: el archivo sale «Compilation Skipped: incompatible
+  library» por el `watch` de react-hook-form (aviso previo), así que el lint
+  NO revisa sus reglas aquí. Se revisó con una copia temporal sin `useForm`:
+  0 errores nuevos (quedan 2 previos: el efecto del vuelo elegido y
+  `handleSubmit`). Los efectos nuevos solo hacen setState en callbacks
+  asíncronos o en bloques controlados por ref (reset, prellenado y
+  sugerencia, una vez por sesión).
+
+### Lo que cambió alrededor
+
+- `verifyGastoAction` delega en `patchVerificacion` (declarada DESPUÉS a
+  propósito: la prueba de combustibles busca su `revalidatePath` en ese
+  tramo) y revalida además `/admin/otros-gastos`; `saveRepartoAction`
+  revalida también `/admin/caja-chica` (layout).
+  `RepartoResponse.items[].matricula` es `string | null`.
+- **RepartoDialog compartido** (menú ⋯ y Otros gastos), 4 arreglos: la
+  confirmación de «Quitar reparto» vive DENTRO del `DialogContent` (Esc
+  cierra solo ella); la carga tiene `.catch` (una action que lanzaba dejaba
+  «Cargando…» para siempre; ahora toast + estado de falla); los textos de
+  «Quitar reparto» salen de `textoQuitarRepartoDialogo` /
+  `toastRepartoQuitadoDialogo` (un FIJO vuelve al prorrateo, ya no «100 %
+  VuelaTour»); la matrícula null se pinta «¿?».
+- **Pruebas**: `lib/admin/__tests__/reparto-gasto.test.ts` (63: ids reales,
+  STARLINK, Cramex, f3c625e6, FIJO, GASOLINA, textos exactos, el fuzz y la
+  guarda de que ningún texto mande a «Otros gastos»),
+  `app/admin/expenses/__tests__/gasto-con-reparto-action.test.ts` (22),
+  `components/admin/expenses/__tests__/verificar-reparto-ui.test.tsx` (16),
+  `reparto-aviones-editor.test.tsx` (7) y `reparto-dialog.test.tsx` (4). Las
+  fábricas de mocks de `@/app/admin/expenses/actions` de los tests que montan
+  el diálogo suman `getRepartoAction`, `listAvionesActivosAction`,
+  `saveRepartoAction` y `guardarGastoConRepartoAction`: un test nuevo que lo
+  monte las necesita.
+- **Deploy**: solo panel. **Pendientes**: QA manual en producción
+  (STARLINK, af52d6f4 y un gasto de prueba con montos raros por el
+  auto-cruce) y sin QA visual en navegador (los diálogos viven en portales).
 ## Títulos de las pestañas del navegador (14-oct-2026)
 
 Pedido del cliente: «estaría genial que en cada pestaña del navegador se

@@ -38,6 +38,10 @@ vi.mock("@/app/admin/expenses/actions", () => ({
   buscarVuelosCercanosAction: async () => ({ ok: true, data: [] }),
   reanalizarComprobanteAction: async () => ({ ok: false }),
   sugerirAsignacionGastoAction: async () => ({ ok: false }),
+  getRepartoAction: async () => ({ ok: false }),
+  listAvionesActivosAction: async () => ({ ok: false }),
+  saveRepartoAction: async () => ({ ok: false }),
+  guardarGastoConRepartoAction: async () => ({ ok: false }),
 }));
 vi.mock("@/app/admin/users/actions", () => ({
   listCardsOptionsAction: async () => ({ ok: true, data: [] }),
