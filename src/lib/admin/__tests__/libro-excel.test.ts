@@ -30,6 +30,11 @@ import {
   textoHojas,
   tituloCelda,
   type MedidasMarco,
+  ETIQUETA_ACTUALIZANDO_LIBRO as ETIQUETA_ACTUALIZANDO,
+  ETIQUETA_ACTUALIZAR_LIBRO as ETIQUETA_ACTUALIZAR,
+  TITULO_ACTUALIZAR_LIBRO as TITULO_ACTUALIZAR,
+  TOAST_LIBRO_ACTUALIZADO as TOAST_ACTUALIZADO,
+  resolverHojaIdx,
 } from "../libro-excel";
 
 function hoja(p: Partial<LibroExcelHoja> = {}): LibroExcelHoja {
@@ -558,5 +563,41 @@ describe("geometriaCelda y scrollParaVerCelda: el marco sigue a la selección", 
         expect(d?.scrollTop).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+});
+
+describe("«Actualizar datos» (14-oct-2026): la hoja que se veía sigue al actualizar", () => {
+  const hojas = (...nombres: string[]) => nombres.map((nombre) => ({ nombre }));
+
+  it("por NOMBRE: si el libro ganó una hoja antes, se sigue enseñando la misma", () => {
+    // Se veía «balance» (posición 2); el libro nuevo trae «otros ingresos aviones» antes.
+    const antes = hojas("RESUMEN flota", "reporte horas FLOTA", "balance");
+    const despues = hojas("RESUMEN flota", "reporte horas FLOTA", "otros ingresos aviones", "balance");
+    expect(resolverHojaIdx(antes, { idx: 2, nombre: "balance" })).toBe(2);
+    expect(resolverHojaIdx(despues, { idx: 2, nombre: "balance" })).toBe(3);
+  });
+
+  it("si la hoja ya no existe, la misma posición; y si tampoco, la primera", () => {
+    const libro = hojas("A", "B", "C");
+    expect(resolverHojaIdx(libro, { idx: 1, nombre: "ya no está" })).toBe(1);
+    expect(resolverHojaIdx(libro, { idx: 7, nombre: "ya no está" })).toBe(0);
+    expect(resolverHojaIdx(libro, { idx: -1, nombre: null })).toBe(0);
+    expect(resolverHojaIdx(libro, { idx: 1.5, nombre: null })).toBe(0);
+    expect(resolverHojaIdx([], { idx: 3, nombre: "A" })).toBe(0);
+  });
+
+  it("con nombres repetidos gana el de la misma posición", () => {
+    const libro = hojas("vuelos", "vuelos", "balance");
+    expect(resolverHojaIdx(libro, { idx: 1, nombre: "vuelos" })).toBe(1);
+    expect(resolverHojaIdx(libro, { idx: 2, nombre: "vuelos" })).toBe(0);
+  });
+
+  it("textos del botón, exactos", () => {
+    expect(ETIQUETA_ACTUALIZAR).toBe("Actualizar datos");
+    expect(ETIQUETA_ACTUALIZANDO).toBe("Actualizando…");
+    expect(TITULO_ACTUALIZAR).toBe(
+      "Vuelve a leer los datos del libro sin recargar la página: se quedan la hoja, la celda seleccionada y el desplazamiento",
+    );
+    expect(TOAST_ACTUALIZADO).toBe("Datos actualizados");
   });
 });

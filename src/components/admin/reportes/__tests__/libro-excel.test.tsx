@@ -10,7 +10,11 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
-import { ETIQUETA_PANTALLA_COMPLETA } from "@/lib/admin/libro-excel";
+import {
+  ETIQUETA_ACTUALIZAR_LIBRO,
+  ETIQUETA_PANTALLA_COMPLETA,
+  TITULO_ACTUALIZAR_LIBRO,
+} from "@/lib/admin/libro-excel";
 import {
   ALTO_FRANJA_PX,
   TEXTO_GASTO_NO_ENCONTRADO,
@@ -31,6 +35,11 @@ vi.mock("@/components/admin/excel-export-button", () => ({
     return <button data-descarga={p.filename}>{p.label}</button>;
   },
 }));
+
+// «Actualizar datos» (14-oct-2026) usa el router de Next: aquí no hay App
+// Router montado, así que se simula (solo lo pide la vista «pantalla»).
+const refrescar = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: refrescar }) }));
 
 const { LibroExcel } = await import("../libro-excel");
 const { VerEnPantallaLink } = await import("../ver-en-pantalla-link");
@@ -382,7 +391,9 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     expect(src).toContain("onClick={() => seleccionar({ r: cv.r, c: cv.c })}");
     expect(src).not.toContain("onClick={() => setSeleccion(");
     // Cambiar de hoja sigue limpiando la selección (sin mover el marco).
-    expect(src).toMatch(/const cambiarHoja = \(i: number\) => \{\s*setHojaIdx\(i\);\s*setSeleccion\(null\);/);
+    expect(src).toMatch(
+      /const cambiarHoja = \(i: number\) => \{\s*setHojaSel\(\{ idx: i, nombre: libro\.hojas\[i\]\?\.nombre \?\? null \}\);\s*setSeleccion\(null\);/,
+    );
   });
 
   it("instantáneo y en el manejador: sin scrollIntoView, sin animación suave y sin efecto alrededor del scroll", () => {
@@ -409,7 +420,8 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     expect(src).toContain(
       "const [llegada] = useState(() => (gastoInicial ? llegadaAGasto(libro, gastoInicial) : null));",
     );
-    expect(src).toContain("useState(() => llegada?.hallazgo?.hojaIdx ?? 0)");
+    // La hoja nace en el inicializador (posición y nombre: «Actualizar datos» la conserva por nombre).
+    expect(src).toMatch(/useState\(\(\) => \{\s*const idx = llegada\?\.hallazgo\?\.hojaIdx \?\? 0;\s*return \{ idx, nombre: libro\.hojas\[idx\]\?\.nombre \?\? null \};/);
     expect(src).toMatch(
       /useState<Seleccion \| null>\(\(\) =>\s*llegada\?\.hallazgo \? \{ r: llegada\.hallazgo\.r, c: llegada\.hallazgo\.c \} : null,?\s*\)/,
     );
@@ -608,5 +620,55 @@ describe("una celda inmovilizada con nota no se recorre (14-oct-2026)", () => {
         /:not\(\.xl-fija-col\)/,
       );
     }
+  });
+});
+
+describe("«Actualizar datos» junto a «Pantalla completa» (14-oct-2026)", () => {
+  // Pedido del cliente: «un botón para refrescar la información sin que se
+  // refresque toda la página… porque me mueve la celda que tengo
+  // seleccionada cuando recargo toda la página».
+  const DESCARGA_B = { path: "/v1/x", filename: "libro.xlsx", label: "Descargar este libro (Excel)" };
+
+  it("con `pantalla`: botón con texto, nombre accesible, tooltip y cursor-pointer, ANTES de «Pantalla completa» y de la descarga", () => {
+    const html = pintar(DESCARGA_B, true);
+    const boton = html.match(/<button[^>]*data-actualizar-libro="listo"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
+    expect(boton).toContain(`aria-label="${ETIQUETA_ACTUALIZAR_LIBRO}"`);
+    expect(boton).toContain(`title="${TITULO_ACTUALIZAR_LIBRO}"`);
+    expect(boton).toContain('type="button"');
+    expect(boton).toContain("cursor-pointer");
+    // Listo para pulsar: sin el ATRIBUTO disabled (las clases `disabled:` del Button base no cuentan).
+    expect(boton).not.toMatch(/\sdisabled(=""|\s|>)/);
+    // Bajo `sm` queda solo el ícono (el texto se esconde, el nombre accesible no).
+    expect(boton).toMatch(/<span class="hidden sm:inline">Actualizar datos<\/span>/);
+    expect(html).toMatch(
+      /class="xl-barra-acciones">[\s\S]*?data-actualizar-libro="listo"[\s\S]*?aria-label="Pantalla completa"[\s\S]*?data-descarga="libro\.xlsx"/,
+    );
+  });
+
+  it("sin la vista «pantalla» no hay botón (ni router)", () => {
+    const html = pintar(DESCARGA_B, false);
+    expect(html).not.toContain("data-actualizar-libro");
+    expect(html).not.toContain(ETIQUETA_ACTUALIZAR_LIBRO);
+  });
+
+  it("cableado: refresh dentro de una transición (sin recargar la página), un clic a la vez, toast al terminar y la hoja por nombre", () => {
+    const src = leer("components/admin/reportes/libro-excel.tsx");
+    const boton = src.slice(src.indexOf("function BotonActualizarLibro"), src.indexOf("export function LibroExcel"));
+    expect(boton).toMatch(/const router = useRouter\(\);/);
+    expect(boton).toMatch(/const \[actualizando, iniciar\] = useTransition\(\);/);
+    expect(boton).toMatch(/iniciar\(\(\) => \{\s*router\.refresh\(\);\s*\}\);/);
+    expect(boton).toMatch(/if \(actualizando\) return;/);
+    expect(boton).toMatch(/disabled=\{actualizando\}/);
+    expect(boton).toMatch(/toast\.success\(TOAST_LIBRO_ACTUALIZADO\)/);
+    // El toast solo para un refresh pedido con el botón (no el de RefreshOnFocus).
+    expect(boton).toMatch(/if \(actualizando \|\| !pidioActualizar\.current\) return;/);
+    // Nunca una recarga de página completa.
+    expect(src).not.toMatch(/location\.reload|window\.location\s*=/);
+    // `useRouter` solo vive en el botón (la vista sin «pantalla» no lo necesita).
+    expect((src.match(/useRouter\(\)/g) ?? []).length).toBe(1);
+    expect(src).toMatch(/\{pantalla \? <BotonActualizarLibro \/> : null\}/);
+    // La hoja se resuelve por nombre al cambiar el libro.
+    expect(src).toMatch(/const hojaIdx = resolverHojaIdx\(libro\.hojas, hojaSel\);/);
+    expect(src).not.toMatch(/setHojaIdx/);
   });
 });

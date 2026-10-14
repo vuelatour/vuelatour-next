@@ -7,9 +7,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  useTransition,
   type KeyboardEvent,
 } from "react";
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from "@heroicons/react/24/outline";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { ArrowPathIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon } from "@heroicons/react/24/outline";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
@@ -17,11 +20,15 @@ import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
 import {
   ALTO_LETRAS_PX,
   ANCHO_NUMERACION_PX,
+  ETIQUETA_ACTUALIZANDO_LIBRO,
+  ETIQUETA_ACTUALIZAR_LIBRO,
   ETIQUETA_PANTALLA_COMPLETA,
   ETIQUETA_SALIR_PANTALLA_COMPLETA,
   NOMBRE_SALIR_PANTALLA_COMPLETA,
+  TITULO_ACTUALIZAR_LIBRO,
   TITULO_PANTALLA_COMPLETA,
   TITULO_SALIR_PANTALLA_COMPLETA,
+  TOAST_LIBRO_ACTUALIZADO,
   contenidoBarraFormulas,
   cuadriculaHoja,
   desplazarSeleccion,
@@ -29,6 +36,7 @@ import {
   estiloCeldaCss,
   filasPorPagina,
   referenciaCelda,
+  resolverHojaIdx,
   scrollParaVerCelda,
   textoHojas,
   tituloCelda,
@@ -59,6 +67,54 @@ interface Seleccion {
  * y el iPhone no tiene pantalla completa de elementos.
  */
 const CLASE_BOTON_PANTALLA_COMPLETA = "hidden sm:inline-flex cursor-pointer gap-1.5";
+
+/**
+ * «Actualizar datos» (14-oct-2026): vuelve a pedir el libro al servidor SIN
+ * recargar la página. `router.refresh()` vuelve a correr la página del
+ * servidor y React conserva el estado de este componente (hoja, celda
+ * seleccionada, franja) y el scroll del marco: la `key` que pone la página
+ * (gasto · título · archivo) no cambia con un refresh. Va en un componente
+ * aparte para que `useRouter` solo viva con la vista «pantalla». Mientras
+ * llega el libro nuevo el botón gira y no se deja pulsar dos veces; al
+ * terminar avisa con un toast (un refresh de RefreshOnFocus no pasa por aquí
+ * y no avisa). Bajo `sm` queda solo el ícono, con su nombre accesible.
+ */
+function BotonActualizarLibro() {
+  const router = useRouter();
+  const [actualizando, iniciar] = useTransition();
+  const pidioActualizar = useRef(false);
+  useEffect(() => {
+    if (actualizando || !pidioActualizar.current) return;
+    pidioActualizar.current = false;
+    toast.success(TOAST_LIBRO_ACTUALIZADO);
+  }, [actualizando]);
+  const actualizar = () => {
+    if (actualizando) return;
+    pidioActualizar.current = true;
+    iniciar(() => {
+      router.refresh();
+    });
+  };
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="cursor-pointer gap-1.5"
+      aria-label={actualizando ? ETIQUETA_ACTUALIZANDO_LIBRO : ETIQUETA_ACTUALIZAR_LIBRO}
+      aria-busy={actualizando || undefined}
+      title={TITULO_ACTUALIZAR_LIBRO}
+      disabled={actualizando}
+      data-actualizar-libro={actualizando ? "actualizando" : "listo"}
+      onClick={actualizar}
+    >
+      <ArrowPathIcon className={cn("h-4 w-4", actualizando && "animate-spin")} aria-hidden />
+      <span className="hidden sm:inline">
+        {actualizando ? ETIQUETA_ACTUALIZANDO_LIBRO : ETIQUETA_ACTUALIZAR_LIBRO}
+      </span>
+    </Button>
+  );
+}
 
 /** El soporte de la Fullscreen API no cambia mientras la página vive: no hay a qué suscribirse. */
 const SIN_SUSCRIPCION = () => () => {};
@@ -105,14 +161,21 @@ export function LibroExcel({
   // `key` (gasto · título · archivo) al cambiar de gasto, de periodo o de
   // libro; un router.refresh() conserva la key y no vuelve a calcular ni a saltar.
   const [llegada] = useState(() => (gastoInicial ? llegadaAGasto(libro, gastoInicial) : null));
-  const [hojaIdx, setHojaIdx] = useState(() => llegada?.hallazgo?.hojaIdx ?? 0);
+  // La hoja se recuerda por posición Y por nombre (14-oct-2026): al actualizar
+  // los datos el libro puede ganar o perder una hoja y se sigue enseñando la
+  // MISMA (`resolverHojaIdx`, puro).
+  const [hojaSel, setHojaSel] = useState(() => {
+    const idx = llegada?.hallazgo?.hojaIdx ?? 0;
+    return { idx, nombre: libro.hojas[idx]?.nombre ?? null };
+  });
+  const hojaIdx = resolverHojaIdx(libro.hojas, hojaSel);
   const [seleccion, setSeleccion] = useState<Seleccion | null>(() =>
     llegada?.hallazgo ? { r: llegada.hallazgo.r, c: llegada.hallazgo.c } : null,
   );
   const [franja, setFranja] = useState<FranjaGasto | null>(() =>
     llegada ? franjaDeLlegada(llegada) : null,
   );
-  const hoja = libro.hojas[hojaIdx] ?? libro.hojas[0] ?? null;
+  const hoja = libro.hojas[hojaIdx] ?? null;
   const vista = useMemo(() => (hoja ? cuadriculaHoja(hoja, libro) : null), [hoja, libro]);
 
   const celdaSeleccionada = useMemo(() => {
@@ -152,7 +215,7 @@ export function LibroExcel({
   };
 
   const cambiarHoja = (i: number) => {
-    setHojaIdx(i);
+    setHojaSel({ idx: i, nombre: libro.hojas[i]?.nombre ?? null });
     setSeleccion(null);
   };
 
@@ -273,6 +336,7 @@ export function LibroExcel({
           <span className="text-xs text-muted-foreground hidden sm:inline">
             {textoHojas(libro.hojas.length)}
           </span>
+          {pantalla ? <BotonActualizarLibro /> : null}
           {pantalla && soportaPantallaCompleta ? (
             <Button
               type="button"

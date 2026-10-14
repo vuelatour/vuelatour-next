@@ -6826,6 +6826,36 @@ valores. Eran justo los encabezados con nota (triángulo rojo).
 - Verificado en Chrome headless (antes: los dos encabezados desplazados;
   después: alineados y con su triángulo en la esquina).
 
+### «Actualizar datos» sin recargar la página (14-oct-2026)
+
+Pedido del cliente: «al lado del botón de "Pantalla completa" necesito un
+botón para refrescar la información sin que se refresque toda la página…
+porque me mueve la celda que tengo seleccionada cuando recargo toda la
+página». Con F5 se perdían la hoja, la celda seleccionada y el
+desplazamiento.
+
+- **Botón** `BotonActualizarLibro` (en `libro-excel.tsx`, SOLO con la vista
+  «pantalla», ANTES de «Pantalla completa»): `router.refresh()` dentro de
+  `useTransition`. Next vuelve a correr la página del servidor (el libro se
+  pide otra vez al API) y React CONSERVA el estado del componente (hoja,
+  celda, franja) y el scroll del marco: la `key` de la página (gasto · título
+  · archivo) no cambia con un refresh y el efecto de llegada no se repite.
+  Mientras llega gira («Actualizando…», `aria-busy`, deshabilitado: un clic a
+  la vez) y al terminar avisa «Datos actualizados» (solo el refresh pedido
+  con el botón; el de `RefreshOnFocus` no avisa). Bajo `sm` queda el ícono
+  con su nombre accesible. Nunca `location.reload()`.
+- **La hoja se recuerda por NOMBRE** (`resolverHojaIdx`, puro): un libro
+  puede ganar o perder una hoja al actualizar («otros ingresos aviones» solo
+  sale con filas); se enseña la misma por nombre, si no la misma posición y
+  si no la primera. Estado `hojaSel = { idx, nombre }` (ya no `hojaIdx`).
+- Si el servidor falla al actualizar, la página pinta su tarjeta de error de
+  siempre (con Reintentar), igual que al entrar: nunca un libro a medias.
+- Textos en `lib/admin/libro-excel.ts`; pruebas en
+  `lib/admin/__tests__/libro-excel.test.ts` y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (marcado, orden
+  en la barra y cableado: refresh en la transición, sin recarga, toast solo
+  del botón, hoja por nombre).
+
 ### El marco sigue a la selección (13-oct-2026)
 
 Pedido del cliente: al moverse con las flechas por el Excel en pantalla, la

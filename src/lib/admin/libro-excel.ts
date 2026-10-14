@@ -317,6 +317,39 @@ export const NOMBRE_SALIR_PANTALLA_COMPLETA = "Salir de pantalla completa";
 export const TITULO_PANTALLA_COMPLETA = "Ver el libro a toda la pantalla (Esc para salir)";
 export const TITULO_SALIR_PANTALLA_COMPLETA = "Volver al panel";
 
+/**
+ * Botón «Actualizar datos» de la vista «pantalla» (14-oct-2026). Pedido del
+ * cliente: «un botón para refrescar la información sin que se refresque toda
+ * la página… porque me mueve la celda que tengo seleccionada cuando recargo».
+ * Vuelve a pedir el libro al servidor (`router.refresh()`) y React conserva
+ * la hoja, la celda seleccionada y el desplazamiento del marco.
+ */
+export const ETIQUETA_ACTUALIZAR_LIBRO = "Actualizar datos";
+export const ETIQUETA_ACTUALIZANDO_LIBRO = "Actualizando…";
+export const TITULO_ACTUALIZAR_LIBRO =
+  "Vuelve a leer los datos del libro sin recargar la página: se quedan la hoja, la celda seleccionada y el desplazamiento";
+export const TOAST_LIBRO_ACTUALIZADO = "Datos actualizados";
+
+/**
+ * Qué hoja enseñar cuando el libro cambió (p. ej. al actualizar los datos):
+ * la que se veía, por NOMBRE (un libro puede ganar o perder una hoja
+ * —«otros ingresos aviones» solo sale con filas— y la posición dejaría de
+ * ser la misma hoja); si ya no existe, la misma posición; y si tampoco, la
+ * primera. Con nombres repetidos gana el que está en la misma posición.
+ */
+export function resolverHojaIdx(
+  hojas: ReadonlyArray<{ nombre: string }>,
+  sel: { idx: number; nombre: string | null },
+): number {
+  if (hojas.length === 0) return 0;
+  if (sel.nombre != null) {
+    if (hojas[sel.idx]?.nombre === sel.nombre) return sel.idx;
+    const porNombre = hojas.findIndex((h) => h.nombre === sel.nombre);
+    if (porNombre >= 0) return porNombre;
+  }
+  return Number.isInteger(sel.idx) && sel.idx >= 0 && sel.idx < hojas.length ? sel.idx : 0;
+}
+
 export type TeclaFlecha = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
 /** Las teclas que mueven la selección: flechas, PageUp/PageDown y Home/End (con Ctrl/⌘, a las esquinas). */
 export type TeclaNavegacionHoja = TeclaFlecha | "PageUp" | "PageDown" | "Home" | "End";
