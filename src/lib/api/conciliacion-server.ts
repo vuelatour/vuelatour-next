@@ -7,6 +7,7 @@ import {
 import type {
   CandidatosCobroResponse,
   CobrosSinBancoResponse,
+  ConciliacionDeGasto,
   ConciliacionResumenCuenta,
   EstadoCuentaArchivo,
   GastosCandidatosResponse,
@@ -213,4 +214,19 @@ export function gastosCandidatosMovimiento(movId: string, q: GastosCandidatosQue
       cache: "no-store",
     },
   );
+}
+
+// ===== Conciliación AL REVÉS de un gasto (13-oct-2026, API 0.0.75) =====
+
+/**
+ * `GET /v1/conciliacion/gastos/:id`: los cargos del banco de UN gasto (cuenta
+ * sin número ni CLABE, leyenda, lo que aporta cada cargo, su estado de cuenta
+ * o por qué no hay archivo, el lote, la justificación de un no bancario,
+ * quién registró la liga) y, si sigue pendiente, el último día importado por
+ * cuenta. Solo lectura. Roles ADMIN y FACTURACION (403 para los demás); 404
+ * `GASTO_NO_EXISTE`; un 404 «Cannot GET» es un API previo. Es GET: hereda el
+ * reintento del fetcher ante 502/503/504.
+ */
+export function conciliacionDeGasto(gastoId: string) {
+  return apiServer<ConciliacionDeGasto>(`/v1/conciliacion/gastos/${gastoId}`, { cache: "no-store" });
 }

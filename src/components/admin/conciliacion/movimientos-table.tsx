@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
@@ -8,6 +8,13 @@ import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-ac
 import { FacturaConceptoChip } from "@/components/admin/conciliacion/factura-concepto-chip";
 import { textoBusquedaFacturaConcepto } from "@/lib/admin/conciliacion-factura-concepto";
 import { marcaLigaCruzada, sufijoMonedaLigada } from "@/lib/admin/conciliacion-tc";
+import {
+  CLASE_FILA_ENFOCADA,
+  CLASE_LINEA_ENFOCADA,
+  SUFIJO_GASTO_ENFOCADO,
+  SYNC_ID_MOVIMIENTOS,
+} from "@/lib/admin/conciliacion-vista";
+import { cn } from "@/lib/utils";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
@@ -95,6 +102,14 @@ interface MovimientosTableProps {
   /** Catálogos del alta de gasto para «¿No está el gasto? Créalo» del
    *  diálogo «Vincular gasto» (12-oct-2026). Sin ellos no se ofrece crear. */
   catalogosGasto?: CatalogosGastoDesdeCargo | null;
+  /** «Conciliación al revés» (13-oct-2026, ADITIVOS): el movimiento que se
+   *  abrió desde Gastos (`?mov=`, ya validado; la página lo pone PRIMERO) va
+   *  con el anillo ámbar y se trae a la vista; `gastoResaltado` (`?gasto=`)
+   *  marca su línea dentro del lote. Sin ellos, el marcado de siempre. */
+  resaltar?: string | null;
+  gastoResaltado?: string | null;
+  /** La lista llegó al tope de la vista: la búsqueda vacía lo dice. */
+  huboCorte?: boolean;
 }
 
 export function MovimientosTable({
@@ -103,7 +118,18 @@ export function MovimientosTable({
   cuentas,
   abonos,
   catalogosGasto,
+  resaltar = null,
+  gastoResaltado = null,
+  huboCorte = false,
 }: MovimientosTableProps) {
+  // La fila que se abrió desde Gastos se trae a la vista (mismo patrón que
+  // «Por facturar»). El id ya llega validado (uuid).
+  useEffect(() => {
+    if (!resaltar) return;
+    document
+      .querySelector(`[data-fila="${CSS.escape(resaltar)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [resaltar]);
   // La columna «Cuenta» solo aparece cuando la vista mezcla varias (con una
   // sola cuenta filtrada sería una columna que repite lo mismo en cada fila).
   const variasCuentas = useMemo(
@@ -201,7 +227,9 @@ export function MovimientosTable({
           // Esta rama va ANTES que todas: sin ella el lote se pintaba
           // «Pendiente».
           if (m.conciliado && tieneGastoLigado(m) && numeroGastosDe(m) >= 2) {
-            const lote = resumenLoteFila(m);
+            // Con `?gasto=` (13-oct-2026) la línea de ese gasto se resalta y,
+            // si quedaba en «y N más», se trae a la vista.
+            const lote = resumenLoteFila(m, { destacar: gastoResaltado });
             if (!lote) {
               // El API no mandó el detalle (skew de deploy): se dice cuántos
               // sin inventar ligas.
@@ -218,10 +246,14 @@ export function MovimientosTable({
                   <Link
                     key={l.key}
                     href={l.href}
-                    className="block text-xs text-emerald-600 hover:underline"
+                    className={cn(
+                      "block text-xs text-emerald-600 hover:underline",
+                      l.destacada && CLASE_LINEA_ENFOCADA,
+                    )}
                     title={TITULO_VER_GASTO_CONCILIADO}
                   >
                     {l.principal}
+                    {l.destacada && <span className="text-[10px] font-normal">{SUFIJO_GASTO_ENFOCADO}</span>}
                     <BadgeMedioLigado badge={l.medio} />
                     <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
                       {l.secundaria}
@@ -560,16 +592,21 @@ export function MovimientosTable({
     ],
     // `nombreCuenta` deriva de `cuentas`: se recalcula con ella.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gastos, cuentas, variasCuentas, abonos, catalogosGasto],
+    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, gastoResaltado],
   );
 
   return (
     <DataTable
       // /admin/conciliacion tiene dos tablas: prefijo propio para no chocar
-      syncId="mv"
+      // (su búsqueda `?mvq=` la prellenan las ligas de `hrefConciliacion`).
+      syncId={SYNC_ID_MOVIMIENTOS}
       columns={columns}
       rows={movimientos}
       rowKey={(m) => m.id}
+      // La fila que se abrió desde Gastos (13-oct-2026): el MISMO anillo de
+      // «Por facturar». DataTable no se toca: la página ya la puso primero.
+      rowClassName={(m) => (resaltar && m.id === resaltar ? CLASE_FILA_ENFOCADA : undefined)}
+      huboCorte={huboCorte}
       searchText={(m) =>
         `${m.descripcion ?? ""} ${m.monto} ${m.referencia ?? ""} ${
           m.cobro_grupo ? folioTexto(m.cobro_grupo.grupo_folio) : ""

@@ -10,6 +10,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { BancoBadge } from "@/components/admin/expenses/banco-badge";
+import { GastoBancoSheet, useDetalleBancoGasto } from "@/components/admin/expenses/gasto-banco-sheet";
+import { puedeVerDetalleBancoGasto } from "@/lib/admin/gasto-banco";
 import { GastoFacturaButton } from "@/components/admin/expenses/gasto-factura-button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
@@ -104,6 +106,11 @@ export function ExpensesTable({
 }) {
   const seleccion = useSeleccionGastos();
   const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
+  // «Conciliación al revés» (13-oct-2026): UNA hoja por tabla. Solo ADMIN /
+  // FACTURACION (o rol desconocido: el API es el candado) abren el detalle;
+  // para los demás el badge queda exactamente como antes.
+  const detalleBanco = useDetalleBancoGasto();
+  const abrirBanco = puedeVerDetalleBancoGasto(rol) ? detalleBanco.abrir : null;
 
   const toggleCompra = (id: string) =>
     setExpandidas((prev) => {
@@ -506,11 +513,19 @@ export function ExpensesTable({
       {
         // ¿Ya cruzó con el banco? (9-oct-2026, pedido de oficina: «un
         // apartado donde me diga si el gasto está conciliado con el banco»).
-        // Solo lectura; el cruce vive en Conciliación.
+        // Clic para ADMIN/FACTURACION: conciliación al revés (13-oct-2026,
+        // el cargo, su cuenta y su estado de cuenta); el cruce sigue en
+        // Conciliación.
         key: "banco",
         header: "Banco",
         cellClassName: "whitespace-nowrap",
-        cell: (f) => (f.kind === "compra" ? GUION : <BancoBadge gasto={f.gasto} />),
+        noLink: true,
+        cell: (f) =>
+          f.kind === "compra" ? (
+            GUION
+          ) : (
+            <BancoBadge gasto={f.gasto} alAbrir={abrirBanco ? () => abrirBanco(f.gasto) : undefined} />
+          ),
       },
       {
         key: "acciones",
@@ -538,32 +553,35 @@ export function ExpensesTable({
       },
     );
     return cols;
-  }, [aircraft, providers, fotoUrls, seleccion, rol]);
+  }, [aircraft, providers, fotoUrls, seleccion, rol, abrirBanco]);
 
   return (
-    <DataTable
-      columns={columns}
-      rows={filas}
-      rowKey={(f) => f.key}
-      huboCorte={huboCorte}
-      rowClassName={(f) =>
-        f.kind === "compra" ? "bg-brand-600/5" : f.hijo ? "bg-muted/30" : undefined
-      }
-      // Los pagos van pegados al grupo (no se paginan ni se filtran sueltos).
-      subRows={(f) => (f.kind === "compra" && f.abierta ? f.hijos : undefined)}
-      searchText={(f) => {
-        if (f.kind === "compra") {
-          return [
-            `compra #${f.folio}`,
-            f.proveedor ?? "",
-            f.referencia ?? "",
-            ...f.pagos.map(textoGasto),
-          ].join(" ");
+    <>
+      <DataTable
+        columns={columns}
+        rows={filas}
+        rowKey={(f) => f.key}
+        huboCorte={huboCorte}
+        rowClassName={(f) =>
+          f.kind === "compra" ? "bg-brand-600/5" : f.hijo ? "bg-muted/30" : undefined
         }
-        return textoGasto(f.gasto);
-      }}
-      searchPlaceholder="Buscar gasto (proveedor, categoría, matrícula, descripción, compra)…"
-    />
+        // Los pagos van pegados al grupo (no se paginan ni se filtran sueltos).
+        subRows={(f) => (f.kind === "compra" && f.abierta ? f.hijos : undefined)}
+        searchText={(f) => {
+          if (f.kind === "compra") {
+            return [
+              `compra #${f.folio}`,
+              f.proveedor ?? "",
+              f.referencia ?? "",
+              ...f.pagos.map(textoGasto),
+            ].join(" ");
+          }
+          return textoGasto(f.gasto);
+        }}
+        searchPlaceholder="Buscar gasto (proveedor, categoría, matrícula, descripción, compra)…"
+      />
+      <GastoBancoSheet detalle={detalleBanco} />
+    </>
   );
 }
 

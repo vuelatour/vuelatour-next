@@ -33,6 +33,9 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
 import { MEDIO_PAGO_LABELS } from "@/components/admin/expenses/expenses-table";
+import { BancoBadge } from "@/components/admin/expenses/banco-badge";
+import { GastoBancoSheet, useDetalleBancoGasto } from "@/components/admin/expenses/gasto-banco-sheet";
+import { puedeVerDetalleBancoGasto } from "@/lib/admin/gasto-banco";
 import {
   removePagoCompraAction,
   updatePagoRolAction,
@@ -57,12 +60,21 @@ import { CompraPagoAddDialog } from "./compra-pago-add-dialog";
 export function CompraPagosCard({
   compra,
   fotoUrls,
+  rolUsuario = null,
 }: {
   compra: CompraDetalle;
   /** URLs firmadas de las facturas (bucket privado) por path. */
   fotoUrls: Record<string, string>;
+  /** Rol de quien mira (de `/me`; null si falló). No se llama `rol`: ese
+      nombre ya es el `CompraRol` del pago dentro de este componente. */
+  rolUsuario?: string | null;
 }) {
   const router = useRouter();
+  // «Conciliación al revés» (13-oct-2026): el MISMO badge «Banco» de Gastos;
+  // con clic solo para quien concilia (Compras es de ADMIN y COORDINADOR, así
+  // que aquí solo ADMIN lo tiene). UNA hoja para todo el card.
+  const detalleBanco = useDetalleBancoGasto();
+  const abrirBanco = puedeVerDetalleBancoGasto(rolUsuario) ? detalleBanco.abrir : null;
   const [pending, startTransition] = useTransition();
   const [openAdd, setOpenAdd] = useState(false);
   const [quitar, setQuitar] = useState<CompraPago | null>(null);
@@ -182,13 +194,11 @@ export function CompraPagosCard({
                     )}
                   </TableCell>
                   <TableCell>
-                    {p.conciliado ? (
-                      <span className="text-emerald-600" title="Conciliado con el estado de cuenta">
-                        ✓ Conciliado
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Sin conciliar</span>
-                    )}
+                    {/* La fuente única del estado (Conciliado / Sin
+                        conciliar / «—» en efectivo). El API de compras no
+                        manda lo ligado: un pago parcial se ve «Sin conciliar»
+                        y la hoja dice la verdad. */}
+                    <BancoBadge gasto={p} alAbrir={abrirBanco ? () => abrirBanco(p) : undefined} />
                   </TableCell>
                   <TableCell>
                     <button
@@ -255,6 +265,8 @@ export function CompraPagosCard({
       </CardContent>
 
       <CompraPagoAddDialog open={openAdd} onOpenChange={setOpenAdd} compraId={compra.id} />
+
+      <GastoBancoSheet detalle={detalleBanco} />
 
       <AlertDialog open={quitar !== null} onOpenChange={(o) => !o && setQuitar(null)}>
         <AlertDialogContent>

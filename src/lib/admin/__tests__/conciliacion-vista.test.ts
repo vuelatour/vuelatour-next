@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { fmtDateOnly } from "@/lib/datetime";
 import {
+  CLASE_FILA_ENFOCADA,
   DIAS_SIN_BANCO_DEFAULT,
+  PARAM_BUSQUEDA_MOVIMIENTOS,
+  SYNC_ID_MOVIMIENTOS,
+  enfoqueConciliacionDeUrl,
+  filasConFoco,
+  textoMovimientoEnfocado,
   FILTROS_CONCILIACION,
   filtroConciliacionDeUrl,
   fusionarPaginaMovimientos,
@@ -275,5 +281,59 @@ describe("hrefConciliacion: `buscar` prellena la búsqueda de la tabla (13-oct-2
     );
     expect(hrefConciliacion({ f: "todos", desde: "2026-09-01", buscar: "   " })).toBe("/admin/conciliacion?desde=2026-09-01");
     expect(hrefConciliacion({ buscar: null })).toBe("/admin/conciliacion");
+  });
+});
+
+describe("enfoque desde Gastos: ?mov= y ?gasto= (13-oct-2026, conciliación al revés)", () => {
+  const MOV = "73a8d809-6468-4554-add4-f874a0c4ed9c";
+  const GASTO = "4e29c476-a956-440f-bd83-2c70f78279d4";
+  const CUENTA = "212add6c-c4e5-44cc-a30c-0635c0ab3036";
+
+  it("hrefConciliacion: orden f, cuenta, desde, hasta, mov, gasto, mvq", () => {
+    expect(
+      hrefConciliacion({ f: "conciliados", cuenta: CUENTA, desde: "2026-09-30", hasta: "2026-09-30", mov: MOV, gasto: GASTO, buscar: "2801.4" }),
+    ).toBe(`/admin/conciliacion?f=conciliados&cuenta=${CUENTA}&desde=2026-09-30&hasta=2026-09-30&mov=${MOV}&gasto=${GASTO}&mvq=2801.4`);
+    expect(hrefConciliacion({ f: "todos", cuenta: CUENTA, desde: "2026-09-30", hasta: "2026-09-30", mov: MOV, gasto: GASTO })).toBe(
+      `/admin/conciliacion?cuenta=${CUENTA}&desde=2026-09-30&hasta=2026-09-30&mov=${MOV}&gasto=${GASTO}`,
+    );
+  });
+
+  it("un uuid inválido se descarta; sin los parámetros nuevos, la URL de antes", () => {
+    expect(hrefConciliacion({ mov: "nada", gasto: "1 OR 1=1" })).toBe("/admin/conciliacion");
+    expect(hrefConciliacion({ f: "pendientes", cuenta: "x", desde: "2026-09-01", hasta: "2026-09-30", mov: null, gasto: undefined })).toBe(
+      "/admin/conciliacion?f=pendientes&cuenta=x&desde=2026-09-01&hasta=2026-09-30",
+    );
+  });
+
+  it("enfoqueConciliacionDeUrl: válido, inválido, ausente y en mayúsculas", () => {
+    expect(enfoqueConciliacionDeUrl({ mov: MOV, gasto: GASTO })).toEqual({ mov: MOV, gasto: GASTO });
+    expect(enfoqueConciliacionDeUrl({ mov: "nada", gasto: "123" })).toEqual({ mov: null, gasto: null });
+    expect(enfoqueConciliacionDeUrl({})).toEqual({ mov: null, gasto: null });
+    expect(enfoqueConciliacionDeUrl({ mov: MOV.toUpperCase() })).toEqual({ mov: MOV, gasto: null });
+  });
+
+  it("filasConFoco: la enfocada PRIMERO sin mover a las demás; sin foco o sin encontrarla, el mismo arreglo", () => {
+    const filas = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+    expect(filasConFoco(filas, "c")).toEqual({ filas: [{ id: "c" }, { id: "a" }, { id: "b" }, { id: "d" }], encontrado: true });
+    expect(filasConFoco(filas, "a")).toEqual({ filas, encontrado: true });
+    const sinFoco = filasConFoco(filas, null);
+    expect(sinFoco.filas).toBe(filas);
+    expect(sinFoco.encontrado).toBe(false);
+    const noEsta = filasConFoco(filas, "z");
+    expect(noEsta.filas).toBe(filas);
+    expect(noEsta.encontrado).toBe(false);
+    expect(filas.map((f) => f.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("textoMovimientoEnfocado con y sin alias; la búsqueda de la tabla es `mvq`", () => {
+    expect(textoMovimientoEnfocado({ fecha: "2026-09-30", monto: "-11205.60" }, "EJE SCOTIA")).toBe(
+      `Primero en la lista y resaltado: el cargo del ${fmtDateOnly("2026-09-30")} por $11,205.60 (EJE SCOTIA) que abriste desde Gastos.`,
+    );
+    expect(textoMovimientoEnfocado({ fecha: "2026-09-30", monto: 11205.6 })).toBe(
+      `Primero en la lista y resaltado: el cargo del ${fmtDateOnly("2026-09-30")} por $11,205.60 que abriste desde Gastos.`,
+    );
+    expect(PARAM_BUSQUEDA_MOVIMIENTOS).toBe("mvq");
+    expect(SYNC_ID_MOVIMIENTOS).toBe("mv");
+    expect(CLASE_FILA_ENFOCADA).toBe("ring-2 ring-inset ring-amber-400 bg-amber-500/5");
   });
 });

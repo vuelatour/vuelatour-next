@@ -26,6 +26,7 @@ import { listUsers } from "@/lib/api/users-server";
 import { getMe } from "@/lib/api/me";
 import { ExpensesFilterBar } from "@/components/admin/expenses/expenses-filter-bar";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import { tituloExcelGastos } from "@/lib/admin/gasto-banco";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
@@ -236,6 +237,9 @@ export default async function ExpensesPage({
     "desde",
     "hasta",
     "facturacion",
+    // Filtro «Banco» (9-oct-2026): faltaba aquí y las pestañas, el chip de
+    // la semana y «quitar avión» lo tiraban (13-oct-2026).
+    "banco",
     "cap",
     "cap_desde",
     "cap_hasta",
@@ -314,6 +318,9 @@ export default async function ExpensesPage({
             path="/v1/expenses/export"
             filename="gastos.xlsx"
             label="Exportar Excel"
+            // A quien concilia (o rol desconocido) el API le agrega factura,
+            // cargo del banco y estado de cuenta (pestaña «Cargos del banco»).
+            title={tituloExcelGastos(me?.rol ?? null)}
             // El Excel sale con LOS MISMOS filtros que se ven en pantalla
             // (incluye el resumen de efectivos por persona y su facturado).
             query={{

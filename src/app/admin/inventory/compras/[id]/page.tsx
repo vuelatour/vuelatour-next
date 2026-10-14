@@ -5,6 +5,7 @@ import { getCompra } from "@/lib/api/compras-server";
 import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 import { signFuelPhotos } from "@/lib/api/expenses-server";
+import { getMe } from "@/lib/api/me";
 import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { CompraEstadoBadge } from "@/components/admin/inventory/compras/compra-badges";
 import { CompraActions } from "@/components/admin/inventory/compras/compra-actions";
@@ -37,10 +38,12 @@ export default async function CompraDetallePage({
   let compra: CompraDetalle;
   let providers: { id: string; nombre: string }[];
   let items: ItemOption[];
+  let rolUsuario: string | null = null;
   try {
     // La COMPRA es el dato de la pantalla; proveedores e ítems solo llenan
-    // los selectores de sus diálogos: degradan con aviso.
-    const [compraRes, providersRes, itemsRes] = await Promise.all([
+    // los selectores de sus diálogos: degradan con aviso. El rol (de `/me`,
+    // ya cacheado por el layout) decide el clic del badge «Banco».
+    const [compraRes, providersRes, itemsRes, me] = await Promise.all([
       getCompra(id),
       degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
         data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
@@ -48,8 +51,10 @@ export default async function CompraDetallePage({
       degradado.opcional("los ítems de bodega", listInventario({ limit: 500, activo: true }), {
         data: [] as Awaited<ReturnType<typeof listInventario>>["data"],
       }),
+      getMe().catch(() => null),
     ]);
     compra = compraRes;
+    rolUsuario = me?.rol ?? null;
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
     items = itemsRes.data.map((i) => ({
       id: i.id,
@@ -105,7 +110,7 @@ export default async function CompraDetallePage({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <CompraCargosFacturaCard compra={compra} />
         <div className="lg:col-span-2">
-          <CompraPagosCard compra={compra} fotoUrls={fotoUrls} />
+          <CompraPagosCard compra={compra} fotoUrls={fotoUrls} rolUsuario={rolUsuario} />
         </div>
       </div>
     </div>

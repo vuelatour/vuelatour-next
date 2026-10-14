@@ -1018,3 +1018,149 @@ export interface LigaUsdTcPreCierre {
   /** El renglón completo, ya redactado por el API. */
   texto: string;
 }
+
+// ===== Conciliación AL REVÉS de un gasto (13-oct-2026, API 0.0.75) =====
+//
+// `GET /v1/conciliacion/gastos/:id` (ADMIN y FACTURACION): desde Gastos, el
+// cargo del banco con el que se concilió un gasto, su cuenta, su estado de
+// cuenta y su lote. Copia 1:1 del contrato del API. Se leen SIEMPRE por
+// `lib/admin/gasto-banco.ts`: ningún número se recalcula en el panel. Los
+// montos son `number`; las fechas DATE vienen `YYYY-MM-DD` y los timestamptz
+// se pintan en hora Cancún. Nada existente cambia.
+
+/** El estado del API (`estadoBancoGasto` de allá); el del panel es `EstadoBanco`. */
+export type EstadoBancoApi = "CONCILIADO" | "PARCIAL" | "SIN_CONCILIAR" | "NO_APLICA";
+
+export type AlertaConciliacionGasto =
+  | "CONCILIADO_SIN_CARGOS"
+  | "ESTADO_DESFASADO"
+  | "TC_NO_REGISTRADO"
+  | "LOTE_SIN_DETALLE";
+
+export type MotivoSinArchivo = "IMPORTADO_SIN_ARCHIVO" | "CAPTURA_MANUAL";
+
+/** La fila de `v_gasto_conciliacion` TAL CUAL (en un cruzado, suma 0 y monto_vinculado = monto). */
+export interface VistaConciliacionGasto {
+  n_partes: number;
+  cruzado: boolean;
+  suma: number;
+  monto_vinculado: number;
+  faltante: number;
+  cubierto: boolean;
+}
+
+/** La cuenta del cargo: JAMÁS trae número de cuenta ni CLABE. */
+export interface CuentaDeCargo {
+  id: string;
+  alias: string;
+  banco: string;
+  moneda: string;
+  tipo: "BANCO" | "PASARELA" | string;
+}
+
+/** El estado de cuenta del que salió el cargo: JAMÁS trae `storage_path`. */
+export interface EstadoCuentaDeCargo {
+  id: string;
+  filename: string;
+  formato: string | null;
+  /** timestamptz. */
+  importado_at: string;
+  importado_por: string | null;
+  movimientos_importados: number;
+}
+
+/** Quién hizo la liga (solo partes creadas desde el 2-oct-2026 00:00 Cancún). */
+export interface RegistroLiga {
+  por: string | null;
+  /** timestamptz. */
+  at: string;
+}
+
+/** La línea «Vinculado a gasto en EFECTIVO …» de ESTE gasto (invariante 48 del API). */
+export interface JustificacionVinculoCargo {
+  linea: string;
+  medio: string;
+  razon: string;
+  firmante: string;
+  /** «06-oct-2026» o null. */
+  fecha: string | null;
+}
+
+/** El lote que paga el cargo (solo con 2+ gastos). */
+export interface LoteDeCargo {
+  gastos_n: number;
+  /** La forma de GET movimientos (incluye ESTE gasto); null = no se pudo leer. */
+  gastos: MovimientoGasto[] | null;
+  gastos_suma: number | null;
+  /** |cargo| − Σ partes; null con una parte cruzada. Jamás ajusta un gasto. */
+  gastos_diferencia: number | null;
+}
+
+/** Un cargo del banco ligado al gasto (uno por parte de la puente). */
+export interface CargoDeGasto {
+  movimiento_id: string;
+  /** DATE. */
+  fecha: string;
+  tipo: "CARGO";
+  /** |monto| en la moneda de SU cuenta. */
+  monto: number;
+  moneda: string | null;
+  descripcion: string | null;
+  referencia: string | null;
+  conciliado: boolean;
+  origen: "IMPORTADO" | "MANUAL" | string;
+  /** timestamptz: cuándo se importó o capturó el cargo. */
+  creado_at: string | null;
+  creado_por: string | null;
+  orden_archivo: number | null;
+  cuenta: CuentaDeCargo | null;
+  estado_cuenta: EstadoCuentaDeCargo | null;
+  sin_archivo: MotivoSinArchivo | null;
+  parte: {
+    /** Lo que ESTE cargo aporta a ESTE gasto. */
+    monto_parte: number;
+    moneda: string | null;
+    /** La moneda de la parte es distinta de la del gasto (USD pagado en pesos). */
+    cruzada: boolean;
+    registro: RegistroLiga | null;
+  };
+  lote: LoteDeCargo | null;
+  justificacion: JustificacionVinculoCargo | null;
+  /** Las notas del cargo SIN las líneas del vínculo. */
+  notas_oficina: string | null;
+}
+
+export interface UltimoMovimientoCuenta {
+  cuenta: CuentaDeCargo;
+  /** DATE del último movimiento importado (null = sin movimientos). */
+  ultima_fecha: string | null;
+}
+
+/** Respuesta de `GET /v1/conciliacion/gastos/:id`. */
+export interface ConciliacionDeGasto {
+  gasto: {
+    id: string;
+    fecha_gasto: string | null;
+    categoria: string;
+    monto: number;
+    moneda: string;
+    medio_pago: string | null;
+    tarjeta_terminacion: string | null;
+    /** El T.C. GUARDADO en el gasto (nunca monto_parte ÷ monto). */
+    tc_gasto: number | null;
+    conciliado: boolean;
+    vuelo_id: string | null;
+    vuelo_folio: number | null;
+    proveedor: string | null;
+    lugar: string | null;
+    notas_primera_linea: string | null;
+    folio_comprobante: string | null;
+  };
+  estado: EstadoBancoApi;
+  fuente: "PUENTE" | "ESPEJO";
+  vista: VistaConciliacionGasto | null;
+  cargos: CargoDeGasto[];
+  alertas: AlertaConciliacionGasto[];
+  /** Solo SIN_CONCILIAR o PARCIAL (null si falló o no aplica). */
+  ultimos_movimientos: UltimoMovimientoCuenta[] | null;
+}

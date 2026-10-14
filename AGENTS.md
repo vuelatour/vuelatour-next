@@ -96,7 +96,9 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   valor YA validado. Enlaces viejos y marcadores reproducían el boundary en
   `/admin/inventory/<no-uuid>`, `/admin/flights?cobro=…`,
   `/admin/quotes?estado=…`, `/admin/expenses?desde=2026-13-45`,
-  `/admin/profit-sharing?desde=nada`.
+  `/admin/profit-sharing?desde=nada`. Conciliación acepta además `?mov=` y
+  `?gasto=` (13-oct-2026, enfoque desde Gastos; `uuidFiltro` vía
+  `enfoqueConciliacionDeUrl`): un valor que no es uuid se ignora.
 - **Verificado de punta a punta con el arnés** (build de PRODUCCIÓN contra
   una copia del API y un proxy que finge el 502/503 de Railway, 21-sep-2026):
   (a) con el API de vuelta dentro de la ventana, las 7 pantallas de muestra
@@ -1238,8 +1240,12 @@ cuenta?».
   personal, bodega: «—»). Espejo de `estado-banco.util.ts` del API, que
   pinta la misma columna en el Excel de gastos.
 - `BancoBadge` (`components/admin/expenses/banco-badge.tsx`) = la columna
-  «Banco» de `expenses-table.tsx`, entre Facturación y las acciones. Solo
-  lectura: el cruce vive en Conciliación.
+  «Banco» de `expenses-table.tsx`, entre Facturación y las acciones. Para
+  ADMIN y FACTURACION el badge abre la conciliación al revés (sección del
+  13-oct-2026, «Gastos: «conciliación al revés» desde el badge «Banco»»); para
+  los demás sigue de solo lectura. El cruce vive en Conciliación. `banco` está
+  en `FILTROS_URL` (las pestañas, el chip de la semana y «quitar avión» lo
+  conservan).
 - Filtro «Banco» del `expenses-filter-bar` (`?banco=conciliados|sin_conciliar`
   → `conciliado` true/false del API vía `conciliadoDeFiltroBanco`; el Excel
   hereda el filtro como texto "true"/"false"). Un valor desconocido se ignora.
@@ -6474,7 +6480,10 @@ aceptaba `desde`/`hasta` en la lista (DTO del 24-sep-2026), en `resumen`, en
   «desde» futuro se descarta), `rangoParaSinBanco` (con solo «hasta» manda
   `desde = hasta − 90`: el default del API es «hoy − 90» y `cobros-sin-banco`
   responde 400 si `desde > hasta`), `hrefConciliacion` (sustituye al
-  `hrefVista` inline de la página), `filtroConciliacionDeUrl`,
+  `hrefVista` inline de la página; desde el 13-oct-2026 acepta además `mov`,
+  `gasto` —validados con `uuidFiltro`— y `buscar` ⇒ `?mvq=` recortado a 80,
+  AL FINAL y en ese orden: f, cuenta, desde, hasta, mov, gasto, mvq; sin
+  ellos la URL es la de antes), `filtroConciliacionDeUrl`,
   `textoRangoVista`, `textoVentanaSinBanco` (las descripciones de «sin banco»
   ya no dicen «últimos 90 días» a secas), `textoListaRecortada` (la lista trae
   `count`: cuando el tope deja movimientos fuera, la tarjeta lo dice y
@@ -7709,3 +7718,108 @@ y hace visible lo sospechoso. SIN migración.
 - **Orden de deploy**: API 0.0.75 → panel; seguro en los dos sentidos (un
   panel nuevo con el API previo no pinta nada nuevo; un panel viejo ignora
   los campos y pinta el item del pre-cierre con el renderer genérico).
+
+## Gastos: «conciliación al revés» desde el badge «Banco» (13-oct-2026, API 0.0.75)
+
+Pedido de la oficina: desde el GASTO, ver con qué cargo del banco se
+concilió, de qué cuenta y de qué estado de cuenta (para descargarlo), y si no
+se concilió, por qué y dónde buscarlo; el Excel de gastos con el detalle del
+banco y sin el corte de 1,000 filas. El API lo arma en `GET
+/v1/conciliacion/gastos/:id` (lector único de la puente; invariante
+«CONCILIACIÓN AL REVÉS DE UN GASTO» del API, el número lo fija su carril).
+SIN migración.
+
+- **Fuentes únicas**: `lib/admin/gasto-banco.ts` (roles, TODOS los textos,
+  fichas de cada cargo, «¿Qué hacer?», cobertura importada, errores, URLs y
+  el título del Excel), `lib/admin/conciliacion-estado.ts`
+  (`GastoParaBanco`, `abreDetalleBanco`, `tituloBancoConClic`) y la ruta del
+  API (`conciliacionDeGasto` en `lib/api/conciliacion-server.ts` +
+  `conciliacionDeGastoAction`: uuid antes de la red ⇒ `GASTO_INVALIDO`; 404
+  «Cannot GET» ⇒ `RUTA_NO_DISPONIBLE`; nunca lanza). Tipos 1:1 en
+  `types/conciliacion.ts` (`ConciliacionDeGasto`, `CargoDeGasto`…).
+- **La regla**: el panel JAMÁS suma ni recalcula. Estado, suma y faltante
+  (la vista `v_gasto_conciliacion`), lo que aporta cada cargo
+  (`monto_parte`), la diferencia del lote y el T.C. (el GUARDADO en el
+  gasto) vienen del API. Un cruzado (USD pagado en pesos) tiene `suma` 0 por
+  definición: la hoja jamás dice «suman $0.00». Nunca viajan ni se pintan el
+  número de cuenta, la CLABE ni el `storage_path`.
+- **Espejo de PARCIAL** (`estadoBancoGasto`): algo ligado (`monto_vinculado`
+  > 0) y sin conciliar ⇒ «Parcial», EXACTO como el API (antes un desfasado
+  caía en «Sin conciliar» mientras el Excel decía «Parcial»; la hoja lo
+  explica con la alerta ESTADO_DESFASADO). Un efectivo ligado a medias pasa
+  de «—» a «Parcial».
+- **Roles**: ADMIN y FACTURACION (`ROLES_DETALLE_BANCO_GASTO`, espejo de
+  `ROLES_CONCILIACION` del API y del menú «Conciliación»). Sin rol conocido
+  (`/me` falló) se ofrece: el API es el candado y su 403 tiene texto. Para
+  COORDINADOR, ANALISTA y SOCIO el badge queda exactamente como antes.
+- **El badge** (`BancoBadge` con `alAbrir`): Conciliado / Parcial / Sin
+  conciliar se pintan como `<button>` (Base UI `render`) con el mismo color,
+  `cursor-pointer`, `title` «… Clic para …», `aria-haspopup="dialog"` (↑/↓
+  con el foco ahí no mueven la fila activa) y un nombre accesible que EMPIEZA
+  con el texto visible. «—» nunca es botón. La columna lleva `noLink`.
+- **La hoja** (`components/admin/expenses/gasto-banco-sheet.tsx`, UNA por
+  tabla): `useDetalleBancoGasto` pide con TURNO y `.catch` (jamás un `await`
+  desnudo en una transición: un «Failed to find Server Action» tras un deploy
+  mandaba la pantalla al boundary); cerrar no vacía el texto durante la
+  animación; el cuerpo (`gasto-banco-detalle.tsx`, PRESENTACIONAL, se prueba
+  con `renderToStaticMarkup`) se carga con `next/dynamic` sin SSR al primer
+  clic. Muestra: el gasto y con qué se pagó; la frase del estado (9 ramas) y
+  las alertas; una tarjeta por cargo (fecha y monto, cuenta y si es
+  pasarela, leyenda y referencia, lo que aporta, el T.C. guardado de un
+  cruzado, la justificación de un efectivo, el lote COMPLETO con «(este
+  gasto)» sin enlace y la diferencia de centavos, el estado de cuenta con
+  «Descargar» o el motivo REAL de que no haya archivo, quién registró la liga
+  y «Ver en Conciliación»). Con SIN_CONCILIAR / PARCIAL (o conciliado sin
+  cargos) agrega «¿Qué hacer?»: causas, hasta qué día hay estado de cuenta
+  importado por cuenta (PAYWISE ⇒ solo PASARELA), «Buscar el cargo en
+  Conciliación» (pendientes ±30 días con el monto en `?mvq=`; en PARCIAL el
+  faltante y la cuenta de sus cargos; en USD sin monto) y «Ver los cargos ya
+  conciliados de esas fechas» (±7 días: si sale ligado a OTRO gasto, es un
+  posible duplicado). Todas las ligas en pestaña nueva con `cursor-pointer`.
+- **«Registró la liga»** solo para partes creadas desde el 2-oct-2026 00:00
+  Cancún (las anteriores son del backfill, que copió el `updated_by` del
+  cargo): «Liga anterior al 2 oct 2026: el sistema todavía no guardaba quién
+  la hizo.» En ESPEJO (sin la migración de partes) no se dice nada.
+- **«Sin archivo»** por `origen` y día Cancún: los 124 movimientos sin
+  archivo de prod son IMPORTADOS del 16-jul-2026 (en UTC dicen 17) ⇒ «Sin
+  archivo guardado: este cargo se importó el 16 jul 2026 por Jimmy Chi…»;
+  jamás «capturado a mano» salvo con origen MANUAL.
+- **Descarga** del estado de cuenta: `estadoCuentaUrlAction` (POST
+  `estados-cuenta/:id/url`, enlace de 1 h firmado al clic) con
+  `abrirArchivoFirmado`: la pestaña se abre en el MISMO clic (Safari no la
+  bloquea); si el navegador no la abrió, toast con «Descargar».
+- **Conciliación con el cargo enfocado** (`?mov=` y `?gasto=`, mismo nombre
+  y significado que `?gasto=` del balance): «Ver en Conciliación» acota
+  cuenta + día del cargo; la página pone esa fila PRIMERO (`filasConFoco`,
+  solo en Todos / Pendientes / Conciliados), `MovimientosTable` le pone el
+  anillo ámbar de «Por facturar» (`CLASE_FILA_ENFOCADA` por `rowClassName`)
+  y la trae a la vista; en un lote la línea de ese gasto se resalta con «·
+  el que abriste» aunque fuera la 4.ª (`resumenLoteFila(m, {destacar})`). Una
+  franja dice «Primero en la lista y resaltado…» con «Quitar resaltado»; si
+  no está en la vista, «No encontramos en esta vista el cargo…» con «Ver
+  todos los movimientos» (jamás se inventa la fila). SIN `mvq` (la búsqueda
+  es difusa y la tabla solo la lee al montar). DataTable NO se toca.
+- **Compras** (`compra-pagos-card.tsx`): el MISMO `BancoBadge` (adiós a «✓
+  Conciliado»); el clic con `rolUsuario` (la página pasa `getMe()` que puede
+  fallar), y como Compras es de ADMIN y COORDINADOR solo ADMIN lo tiene. El
+  API de compras no manda lo ligado: un pago parcial se ve «Sin conciliar» y
+  la hoja dice la verdad (`estadoCambio` solo compara «cubierto» sin los
+  aditivos: no avisa en falso). Un pago en efectivo pasa a «—».
+- **Excel de gastos**: el API lo pagina (ya no se corta en 1,000) y a ADMIN /
+  FACTURACION les agrega «Factura», «Cargo del banco», «Estado de cuenta» y
+  la pestaña «Cargos del banco»; el botón lleva `title` =
+  `tituloExcelGastos(rol)` (solo a quien lo recibe; los demás, el marcado de
+  siempre).
+- **API previo**: la hoja dice «El servidor todavía no tiene este detalle
+  (falta actualizar el API). Mientras, búscalo en Conciliación.» con el
+  enlace de búsqueda; `?mov=`/`?gasto=` ya funcionan (son solo del panel).
+- **Pruebas**: `lib/admin/__tests__/gasto-banco.test.ts` (fixtures reales en
+  `gasto-banco.fixtures.ts`), `conciliacion-vista.test.ts` y
+  `conciliacion-lote.test.ts` (ampliadas),
+  `components/admin/expenses/__tests__/banco-badge.test.tsx` (ampliada),
+  `gasto-banco-sheet.test.tsx`, `banco-cableado.test.ts`,
+  `components/admin/conciliacion/__tests__/enfoque.test.tsx` y
+  `app/admin/conciliacion/__tests__/conciliacion-gasto-action.test.ts`.
+- **Orden de deploy**: API 0.0.75 → panel (seguro en los dos sentidos: con el
+  panel antes, la hoja degrada con su aviso; con el API antes, solo cambian
+  el Excel de ADMIN/FACTURACION y el aditivo de los no bancarios).

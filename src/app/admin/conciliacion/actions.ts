@@ -6,6 +6,7 @@ import { isApiError } from "@/lib/api/errors";
 import {
   auditoriaPaywise,
   candidatosCobroMovimiento,
+  conciliacionDeGasto,
   gastosCandidatosMovimiento,
   type PaywiseAuditoriaQuery,
 } from "@/lib/api/conciliacion-server";
@@ -37,10 +38,12 @@ import {
   ordenarCargosParaAbono,
 } from "@/lib/admin/conciliacion-reverso";
 import { MSG_API_SIN_ENRIQUECER, esDtoSinEnriquecer } from "@/lib/admin/conciliacion-importacion";
+import { MSG_DETALLE_BANCO_API_VIEJO } from "@/lib/admin/gasto-banco";
 import type {
   AutoMatchResultado,
   CandidatoReverso,
   CandidatosCobroResponse,
+  ConciliacionDeGasto,
   EnriquecimientoDetalle,
   EnriquecimientoOmitido,
   GastosCandidatosResponse,
@@ -572,6 +575,28 @@ export async function emparejarReversosAutoAction(q: {
     return { ok: true, data };
   } catch (err) {
     return fail(err);
+  }
+}
+
+/**
+ * «Conciliación AL REVÉS» de un gasto (13-oct-2026, API 0.0.75): la hoja
+ * «Conciliación con el banco» que abre el badge de la columna «Banco» de
+ * Gastos y de Compras. Solo lectura (no revalida). Un id que no es uuid ⇒
+ * `GASTO_INVALIDO` SIN llamar al API; un 404 «Cannot GET» (API previo) ⇒
+ * `RUTA_NO_DISPONIBLE` con `MSG_DETALLE_BANCO_API_VIEJO` (la hoja ofrece
+ * buscar el cargo en Conciliación); cualquier otro error conserva code,
+ * status y details (404 `GASTO_NO_EXISTE`, 403 por rol…). Nunca lanza.
+ */
+export async function conciliacionDeGastoAction(gastoId: string): Promise<ActionResult<ConciliacionDeGasto>> {
+  if (!esUuid(gastoId)) return { ok: false, code: "GASTO_INVALIDO", status: 400, error: MSG_GASTO_INVALIDO };
+  try {
+    return { ok: true, data: await conciliacionDeGasto(gastoId) };
+  } catch (err) {
+    const r = fail<ConciliacionDeGasto>(err);
+    if (esRutaInexistente(r)) {
+      return { ok: false, code: "RUTA_NO_DISPONIBLE", status: 404, error: MSG_DETALLE_BANCO_API_VIEJO };
+    }
+    return r;
   }
 }
 

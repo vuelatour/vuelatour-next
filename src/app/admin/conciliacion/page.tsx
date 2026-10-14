@@ -54,11 +54,17 @@ import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { RangoFechasConciliacion } from "@/components/admin/conciliacion/rango-fechas-bar";
 import {
+  ETIQUETA_QUITAR_RESALTADO,
+  ETIQUETA_VER_TODOS_MOVIMIENTOS,
+  TEXTO_MOVIMIENTO_NO_ENCONTRADO,
+  enfoqueConciliacionDeUrl,
+  filasConFoco,
   filtroConciliacionDeUrl,
   hrefConciliacion,
   rangoParaSinBanco,
   rangoVistaConciliacion,
   textoListaRecortada,
+  textoMovimientoEnfocado,
   textoRangoVista,
   textoVentanaSinBanco,
   type FiltroConciliacion,
@@ -82,10 +88,20 @@ const fmtDate = fmtDateOnly;
 export default async function ConciliacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ f?: string; desde?: string; hasta?: string; cuenta?: string }>;
+  searchParams: Promise<{
+    f?: string;
+    desde?: string;
+    hasta?: string;
+    cuenta?: string;
+    /** «Conciliación al revés» (13-oct-2026): el cargo que se abrió desde
+        Gastos (va PRIMERO y resaltado) y el gasto que se viene a ver. */
+    mov?: string;
+    gasto?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const filtro: Filtro = filtroConciliacionDeUrl(sp.f);
+  const enfoque = enfoqueConciliacionDeUrl(sp);
 
   // Rango EXPLÍCITO de la vista (?desde/?hasta, filtro de fechas del
   // 12-oct-2026): UNO para toda la pantalla — lista, tarjetas por cuenta y
@@ -306,6 +322,13 @@ export default async function ConciliacionPage({
   const textoRango = textoRangoVista(rango);
   // La lista trae `count`: cuando el tope deja movimientos fuera, se dice.
   const notaRecorte = textoListaRecortada(movs.length, totalMovs);
+  // ENFOQUE desde Gastos (13-oct-2026): el cargo de `?mov=` va PRIMERO (en la
+  // página 1 con cualquier tamaño) y resaltado. Solo en las pestañas de la
+  // lista; las pestañas, los chips y la barra de fechas arman su href SIN
+  // `mov`/`gasto`, así que el enfoque se aplica una sola vez.
+  const pestanaDeLista = filtro === "todos" || filtro === "pendientes" || filtro === "conciliados";
+  const foco = pestanaDeLista ? filasConFoco(movs, enfoque.mov) : { filas: movs, encontrado: false };
+  const aliasPorCuenta = Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.alias]));
   const queHay =
     filtro === "pendientes"
       ? "movimientos pendientes"
@@ -470,6 +493,20 @@ export default async function ConciliacionPage({
         </div>
       )}
 
+      {/* El cargo que se abrió desde Gastos no está en esta vista: se dice (también
+          con la lista vacía), jamás se inventa la fila. */}
+      {pestanaDeLista && enfoque.mov && !foco.encontrado && (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-300"
+        >
+          {TEXTO_MOVIMIENTO_NO_ENCONTRADO}{" "}
+          <Link href="/admin/conciliacion" className="cursor-pointer font-medium underline underline-offset-2">
+            {ETIQUETA_VER_TODOS_MOVIMIENTOS}
+          </Link>
+        </p>
+      )}
+
       {filtro === "paywise" ? (
         <PaywiseAuditoriaPanel
           auditoria={auditoria}
@@ -561,12 +598,26 @@ export default async function ConciliacionPage({
             {notaRecorte && (
               <p className="px-4 pt-3 text-xs text-amber-600 dark:text-amber-400">{notaRecorte}</p>
             )}
+            {enfoque.mov && foco.encontrado && (
+              <p role="status" className="px-4 pt-3 text-xs text-amber-700 dark:text-amber-300">
+                {textoMovimientoEnfocado(foco.filas[0], aliasPorCuenta[foco.filas[0].cuenta_bancaria_id] ?? null)}{" "}
+                <Link
+                  href={hrefVista(filtro, pwCuenta)}
+                  className="cursor-pointer font-medium underline underline-offset-2"
+                >
+                  {ETIQUETA_QUITAR_RESALTADO}
+                </Link>
+              </p>
+            )}
             <MovimientosTable
-              movimientos={movs}
+              movimientos={foco.filas}
               gastos={gastosOpts}
-              cuentas={Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.alias]))}
+              cuentas={aliasPorCuenta}
               abonos={abonosConciliacion}
               catalogosGasto={catalogosGasto}
+              resaltar={foco.encontrado ? enfoque.mov : null}
+              gastoResaltado={enfoque.gasto}
+              huboCorte={notaRecorte != null}
             />
           </CardContent>
         </Card>

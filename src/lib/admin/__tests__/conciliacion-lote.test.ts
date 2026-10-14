@@ -887,3 +887,36 @@ describe("reversos: un abono con gastos (dato inconsistente) no es «pendiente»
     expect(abonosCandidatosParaCargo(cargo, [abono({ gastos: [{ id: "g" }] })])).toEqual([]);
   });
 });
+
+describe("resumenLoteFila con `destacar` (13-oct-2026, conciliación al revés)", () => {
+  // El lote VIP SAESA del 30-sep: 4 × 2,801.40 (#332, #345, #344, #337).
+  const saesa = [
+    parte("g332", 332, "2801.40", { folio_comprobante: "A-332" }),
+    parte("g345", 345, "2801.40"),
+    parte("g344", 344, "2801.40"),
+    parte("g337", 337, "2801.40", { folio_comprobante: "A-337" }),
+  ];
+  const mov = { monto: "11205.60", gastos_n: 4, gastos: saesa, gastos_suma: 11205.6, gastos_diferencia: 0 };
+
+  it("el 4.º gasto (oculto en «y 1 más») se trae a la vista entre las 3 líneas, marcado", () => {
+    const r = resumenLoteFila(mov, { destacar: "g337" });
+    expect(r?.lineas.map((l) => l.key)).toEqual(["g332", "g345", "g337"]);
+    expect(r?.lineas[2].destacada).toBe(true);
+    expect(r?.lineas[0]).not.toHaveProperty("destacada");
+    expect(r?.mas).toBe("y 1 más");
+    // El oculto ahora es #344 (sin factura): «y 1 más» ya no lleva tooltip.
+    expect(r?.masTitulo).toBeNull();
+  });
+
+  it("destacar el 1.º no cambia el orden; sin opciones el objeto es IDÉNTICO al de antes", () => {
+    const r = resumenLoteFila(mov, { destacar: "g332" });
+    expect(r?.lineas.map((l) => l.key)).toEqual(["g332", "g345", "g344"]);
+    expect(r?.lineas[0].destacada).toBe(true);
+    const antes = resumenLoteFila(mov);
+    expect(resumenLoteFila(mov, {})).toEqual(antes);
+    expect(resumenLoteFila(mov, { destacar: null })).toEqual(antes);
+    expect(resumenLoteFila(mov, { destacar: "otro" })).toEqual(antes);
+    for (const l of antes?.lineas ?? []) expect(l).not.toHaveProperty("destacada");
+    expect(antes?.masTitulo).toBe("Operaciones · $2,801.40 · vuelo #337 · Factura A-337");
+  });
+});

@@ -1490,6 +1490,10 @@ export interface LineaGastoLote {
   /** Insignia «Efectivo» (6-oct-2026) si ese gasto NO pasó por el banco; null
       con uno bancario o sin `medio_pago` (API previo). */
   medio: BadgeVinculoNoBancario | null;
+  /** 13-oct-2026 («conciliación al revés»): ES el gasto que se abrió desde
+      Gastos (`?gasto=` de Conciliación). Solo viaja cuando es true: sin
+      opciones el objeto es el de siempre. */
+  destacada?: boolean;
 }
 
 export interface ResumenLoteFila {
@@ -1546,11 +1550,22 @@ export function lineaGastoLote(g: MovimientoGasto, i = 0, notasCargo?: string | 
   };
 }
 
+/** Opciones de `resumenLoteFila` (un solo objeto, para que otros puntos sumen las suyas). */
+export interface OpcionesResumenLote {
+  /** Id del gasto que se abrió desde Gastos (`?gasto=`): su línea se marca
+      `destacada` y, si quedaba en «y N más», se trae a la vista. */
+  destacar?: string | null;
+}
+
 /**
  * Lo que pinta la columna «Conciliación» de un cargo con VARIOS gastos. null
  * si el API no mandó `gastos[]` (skew de deploy): ahí va `textoLoteSinDetalle`.
+ * Con `opciones.destacar` (13-oct-2026) la línea de ese gasto lleva
+ * `destacada: true`; si quedaba más allá de `MAX_LINEAS_LOTE`, se ven las 2
+ * primeras más ESA (el 4.º gasto del lote SAESA no se esconde en «y 1 más»).
+ * Sin opciones el resultado es idéntico al de siempre.
  */
-export function resumenLoteFila(m: MovimientoConGastos): ResumenLoteFila | null {
+export function resumenLoteFila(m: MovimientoConGastos, opciones: OpcionesResumenLote = {}): ResumenLoteFila | null {
   const gastos = Array.isArray(m.gastos) ? m.gastos.filter(Boolean) : [];
   if (gastos.length === 0) return null;
   const n = Math.max(numeroGastosDe(m), gastos.length);
@@ -1561,14 +1576,26 @@ export function resumenLoteFila(m: MovimientoConGastos): ResumenLoteFila | null 
       : gastos.every((g) => g.monto_parte != null)
         ? centavos(gastos.reduce((acc, g) => acc + numeroDe(g.monto_parte), 0))
         : Math.abs(numeroDe(m.monto));
-  const lineas = gastos.slice(0, MAX_LINEAS_LOTE).map((g, i) => lineaGastoLote(g, i, m.notas));
+  // Índices visibles: los primeros MAX_LINEAS_LOTE o, si el destacado queda
+  // fuera, los 2 primeros más él (los demás van a «y N más»).
+  const destacar = (opciones.destacar ?? "").toLowerCase();
+  const iDestacado = destacar ? gastos.findIndex((g) => (g.id ?? "").toLowerCase() === destacar) : -1;
+  const visibles =
+    iDestacado >= MAX_LINEAS_LOTE
+      ? [...Array.from({ length: MAX_LINEAS_LOTE - 1 }, (_, i) => i), iDestacado]
+      : Array.from({ length: Math.min(MAX_LINEAS_LOTE, gastos.length) }, (_, i) => i);
+  const lineas = visibles.map((i) => {
+    const l = lineaGastoLote(gastos[i], i, m.notas);
+    return i === iDestacado ? { ...l, destacada: true } : l;
+  });
   const resto = n - lineas.length;
   const dif = m.gastos_diferencia != null ? numeroDe(m.gastos_diferencia) : 0;
   // Los gastos que no caben siguen teniendo SU factura: van al tooltip de
   // «y N más» (el contrato pide el folio por gasto, no solo de los primeros).
   const ocultos = gastos
-    .slice(MAX_LINEAS_LOTE)
-    .map((g, i) => lineaGastoLote(g, MAX_LINEAS_LOTE + i))
+    .map((g, i) => ({ g, i }))
+    .filter(({ i }) => !visibles.includes(i))
+    .map(({ g, i }) => lineaGastoLote(g, i))
     .filter((l) => l.facturaTitulo != null)
     .map((l) => `${l.principal} · ${l.facturaTitulo}`);
   return {
