@@ -57,7 +57,7 @@ export function FlightGastosCard({
           <div>
             <CardTitle>Gastos del vuelo</CardTitle>
             <CardDescription>
-              Operativos y generales, con su desglose. Se administran en{" "}
+              Todos los gastos del vuelo, con su desglose. Se administran en{" "}
               <Link href="/admin/expenses" className="text-brand-600 hover:underline">
                 Gastos
               </Link>

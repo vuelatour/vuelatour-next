@@ -19,6 +19,8 @@ import {
   type SugerenciaBandeja,
 } from "@/app/admin/expenses/actions";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { ayudaSugerirAsignaciones, textoAnalizandoPendientes } from "@/lib/admin/gastos-vista";
+import { llamarSinLanzar } from "@/lib/admin/reparto-gasto";
 
 function fmtMonto(g: SugerenciaBandeja["gasto"]): string {
   if (g.monto == null) return "—";
@@ -30,8 +32,14 @@ function fmtMonto(g: SugerenciaBandeja["gasto"]): string {
  * (piloto+fecha; IA si es ambiguo), muestra cada sugerencia con su razón y la
  * oficina aplica en lote las palomeadas. Sin match → se queda pendiente para
  * asignación manual.
+ *
+ * `pendientes` = el total GLOBAL de la bandeja (14-oct-2026): la acción barre
+ * TODA la bandeja, así que el número va en el `title`, no en la etiqueta (la
+ * pestaña «Pendientes» ya lo enseña y antes contaba lo FILTRADO). 0 ⇒ no se
+ * pinta; null (no se pudo contar) ⇒ se pinta igual, sin número: un conteo
+ * que falló jamás se lee como «no hay pendientes».
  */
-export function SuggestAssignmentsButton({ pendientes }: { pendientes: number }) {
+export function SuggestAssignmentsButton({ pendientes }: { pendientes: number | null }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,8 +54,16 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
     setLoading(true);
     setResultados([]);
     setSeleccion(new Set());
-    const res = await sugerirAsignacionesBandejaAction();
+    // Sin lanzar: un fallo de transporte (red, deploy) se dice en un toast y
+    // el diálogo no se queda «Analizando…» para siempre.
+    const r = await llamarSinLanzar(() => sugerirAsignacionesBandejaAction());
     setLoading(false);
+    if (!r.ok) {
+      toast.error(r.error);
+      setOpen(false);
+      return;
+    }
+    const res = r.valor;
     if (!res.ok || !res.data) {
       toast.error(res.ok ? "Sin respuesta" : res.error);
       setOpen(false);
@@ -79,8 +95,13 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
       }));
     if (items.length === 0) return;
     setApplying(true);
-    const res = await aplicarAsignacionesAction(items);
+    const r = await llamarSinLanzar(() => aplicarAsignacionesAction(items));
     setApplying(false);
+    if (!r.ok) {
+      toast.error(r.error);
+      return;
+    }
+    const res = r.valor;
     if (res.ok && res.data) {
       toast.success(
         `${res.data.aplicados} gasto(s) asignados${res.data.fallidos ? ` · ${res.data.fallidos} fallaron` : ""}.`,
@@ -99,9 +120,14 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
 
   return (
     <>
-      <Button variant="outline" className="gap-2" onClick={run}>
+      <Button
+        variant="outline"
+        className="gap-2"
+        onClick={run}
+        title={ayudaSugerirAsignaciones(pendientes)}
+      >
         <SparklesIcon className="h-4 w-4" />
-        Sugerir asignaciones ({pendientes})
+        Sugerir asignaciones
       </Button>
 
       <Dialog open={open} onOpenChange={(o) => !applying && setOpen(o)}>
@@ -117,7 +143,7 @@ export function SuggestAssignmentsButton({ pendientes }: { pendientes: number })
 
           {loading ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Analizando {pendientes} pendiente(s)… esto toma unos segundos.
+              {textoAnalizandoPendientes(pendientes)}
             </p>
           ) : (
             <div className="space-y-4">

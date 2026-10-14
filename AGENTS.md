@@ -1254,7 +1254,7 @@ cuenta?».
   ADMIN y FACTURACION el badge abre la conciliación al revés (sección del
   13-oct-2026, «Gastos: «conciliación al revés» desde el badge «Banco»»); para
   los demás sigue de solo lectura. El cruce vive en Conciliación. `banco` está
-  en `FILTROS_URL` (las pestañas, el chip de la semana y «quitar avión» lo
+  en `FILTROS_URL` (las pestañas, la fecha de captura y «quitar avión» lo
   conservan).
 - Filtro «Banco» del `expenses-filter-bar` (`?banco=conciliados|sin_conciliar`
   → `conciliado` true/false del API vía `conciliadoDeFiltroBanco`; el Excel
@@ -4560,9 +4560,10 @@ con el API **0.0.75** (migración `20261013000001`, valor del enum; la
   avión · hoja del vuelo (columna OTROS de costos directos, junto al FBO)»;
   con avión sin vuelo «Balance del avión · Gastos Indirectos»; sin nada, el
   texto de siempre de «otros gastos».
-- **Gastos** (`/admin/expenses`): cae en la columna «generales» —
-  `CATEGORIAS_OPERATIVAS` NO la incluye a propósito (amenidad de pasajeros,
-  no operar el avión; igual que COMIDA). `/admin/otros-gastos` no la lista
+- **Gastos** (`/admin/expenses`): desde el 14-oct-2026 hay UNA sola tabla
+  (sección «Gastos: una sola tabla»): se encuentra con el filtro «Categoría»
+  y, sin vuelo ni avión, dice «Falta avión» (es pendiente, como una COMIDA
+  suelta). `/admin/otros-gastos` no la lista
   (solo empresa). «Gastos del vuelo» la pinta con su etiqueta, sin destino
   en verde (eso es solo de las comisiones del vendedor).
 - **Capturas viejas**: el camino manual es Verificar / editar → reclasificar
@@ -8695,6 +8696,126 @@ hereda la confirmación del anterior.
 - **Deploy**: solo panel. **Pendientes**: QA manual en producción
   (STARLINK, af52d6f4 y un gasto de prueba con montos raros por el
   auto-cruce) y sin QA visual en navegador (los diálogos viven en portales).
+
+## Gastos: una sola tabla (14-oct-2026)
+
+Pedido del cliente: «unir Gastos generales y Gastos operativos en una sola
+tabla… está como ambigua la información… toda la vista debe quedar bien e
+intuitiva». La división vieja (dos tarjetas por `CATEGORIAS_OPERATIVAS`)
+partía los gastos de un mismo vuelo —233 directos del vuelo (comida, hotel,
+taxi, comisariato…) caían en «generales»— y no decía a dónde iba el dinero;
+además la columna «Avión» decía «Pendiente» en los 251 gastos sin avión
+cuando para el API solo 36 lo son. **Solo panel**: sin API ni migración (el
+DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
+`GET /v1/expenses/export`).
+
+- **Fuentes únicas (PURAS, con prueba)**: `lib/admin/gastos-vista.ts`
+  (lectura y validación de la URL —la MISMA en la página y en la barra—,
+  consultas de lista, contadores y Excel, vacíos, pestañas, opciones de los
+  filtros, descripción y búsqueda del renglón, línea del teléfono, compra,
+  «Sugerir asignaciones», modo «Unir en compra» y TODOS los textos de la
+  pantalla) y `lib/admin/gasto-avion.ts` («Avión · vuelo»). Lo importa la
+  barra (cliente): de `lib/api/expenses-server.ts` solo `import type`.
+- **«Falta avión» = espejo EXACTO de la bandeja del API**:
+  `CATEGORIAS_SIN_AVION` (categorias-gasto.ts) = empresa + INDIRECTO +
+  PERSONAL_DUENO + «Comisión del vendedor (VuelaTour)», sin la «(avión)» (igual
+  que `CATEGORIAS_GASTO_SIN_AVION` de `common/categoria-gasto.util.ts`; la
+  prueba de paridad lee el repo del API). `estadoAvionGasto`: reparto ⇒
+  «Repartido:» + insignias (remanente en centavos ⇒ «VuelaTour»);
+  PERSONAL_DUENO ⇒ «Personal»; empresa o comisión (VuelaTour) ⇒ «VuelaTour»
+  SIEMPRE (con «ref. N4142R» si trae avión sellado: no se le carga); con avión
+  ⇒ la matrícula; INDIRECTO sin avión ⇒ «VuelaTour»; lo demás ⇒ «Falta
+  avión» (title y sr-only dicen qué hacer). Así el ámbar de la tabla suma lo
+  mismo que la pestaña «Pendientes». El vuelo va debajo («Vuelo #437»).
+- **Columnas** (`expenses-table.tsx`): Fecha (8rem: «14 oct 2026»,
+  «Capturado 14 oct 10:33» y «Mary Cruz · panel» con `CapturadoCompacto`; el
+  nombre se trunca, el origen se conserva) · Concepto (`w-full`, mínimo
+  10rem: categoría + compra/«¿Duplicado?»/«Falta visto bueno» + la primera
+  línea de las notas en 2 renglones, sin la matrícula propia al inicio;
+  debajo de 768 px la línea de estado `md:hidden`) · Monto (`fmtMonto`, el
+  medio corto «Tarjeta ****2865» y la propina) · Avión · vuelo · Comp.
+  (`hidden xl:table-cell`; «Sin vista previa» si la firma de la foto falló)
+  · Facturación (`FacturacionBadge compacta`: «No requiere») · Banco (igual)
+  · ⋯ (la compra: ícono que abre la compra). Desaparecen Categoría,
+  Descripción, Pago, Vuelo y Capturó. Tinte de la compra `bg-muted/40` (el de
+  la marca se confundía con la fila activa).
+- **Distintivo de origen** (pedido del 9-jul): NO se quitó. La insignia
+  «Oficina/Sistema/Visitante» de la vieja columna «Capturó» es ahora el COLOR
+  de la palabra de origen en la tercera línea de la fecha («panel» sky,
+  «sistema» violet, «app» teal del visitante; piloto/mecánico «app» en gris),
+  con su etiqueta en el `title` y en sr-only (`DISTINTIVO_ORIGEN`,
+  `TITULO_DISTINTIVO_ORIGEN`). Una insignia con texto le quitaba al nombre el
+  espacio que necesita (medido: «Pablo Canales» se cortaba).
+- **Anchos MEDIDOS** (render real: tabla real + CSS de Tailwind compilado +
+  Inter en Chrome headless, 100 gastos de prod + extremos: $290,800.85 MXN
+  con propina, compra parcial, reparto de 3, foto sin firma con +2 hojas;
+  barras de Windows emuladas, ancho útil = viewport − 336): Fecha 128 ·
+  Concepto ≥ 176 · Monto 124–142 · Avión 102 · Comp. 91 · Facturación 130
+  · Banco 104 · ⋯ 48 (+ casilla 32). Sin scroll horizontal de 1170 a 1536 px;
+  a 1280 sobran 23 px en el peor bloque (41 en uno típico). Perillas
+  aplicadas: Concepto mínimo 10rem y, SOLO en modo unir, «Comp.» desde
+  1300 px (a 1280 con la casilla y un monto de seis cifras la tabla se
+  deslizaba 9 px). La propina larga y el aviso de compra parcial envuelven
+  (en una línea ensanchaban Monto ≈ 80 px). Debajo de ≈1166 px la tabla se
+  desliza dentro de su caja; la página nunca (390 px verificado).
+- **Breakpoints de VIEWPORT, no container queries**: la barra lateral es fija
+  (256 px desde `lg`) y `container-type` haría de la tabla el contenedor de
+  los `position: fixed` descendientes: el visor de `ImagePreview` (`fixed
+  inset-0`, sin portal) quedaría atrapado dentro de la tabla.
+- **Filtro de SERVIDOR «Categoría»** (`?categoria=`, las 22 de
+  `CATEGORIAS_FILTRO_GASTO` con su destino en verde; desconocida o en
+  minúsculas se ignora): lo heredan los contadores de las pestañas, el Excel
+  y `FILTROS_URL` (al final). Gastos personales enlaza
+  `/admin/expenses?categoria=PERSONAL_DUENO`.
+- **Barra** (`expenses-filter-bar.tsx`, reescrita): `<Label htmlFor>` +
+  `id` en cada control, «Todos/Todas» para quitar un filtro suelto, «Avión»
+  (activos, dados de baja, «Avión desconocido»), «Fecha del gasto» y «Fecha
+  de captura: Todas · Esta semana · Rango…» (sustituye al chip «Subidos esta
+  semana») con BORRADOR (`useRangoBorrador`, mecánica de
+  `quotes-filter-bar`: nada navega a media tecla), `CLASE_FILTRO_ACTIVO` en
+  lo que tiene valor, «Limpiar» (quita avión, categoría y captura; conserva
+  pestaña, orden y búsqueda), «Actualizando…» (`role="status"` siempre
+  montado) y la pista «La búsqueda de la tabla solo filtra lo que ves…» con
+  `?tq`. Navega con `consultaBaseParaNavegar` (UN pendiente para toda la
+  barra), borra `tp` (página 1), conserva `tq`, `startTransition` y
+  `scroll: false`; si nada cambió no navega.
+- **Pestañas** en `<nav aria-label="Vistas de gastos">` con `aria-current`,
+  `title` de ayuda (un conteo que falló dice «(no se pudo contar)», jamás
+  «0»), `prefetch={false}` e `IndicadorEnlace` (`useLinkStatus`, en la
+  esquina para no descentrar la etiqueta). «Unir en compra…» es un MODO
+  (`UnirCompraToggle` en la fila de vistas): las casillas solo aparecen con
+  él; «Terminar» (o unir con éxito) lo apaga y limpia la selección.
+- **Encabezado**: «Nuevo gasto» primario (`varianteBoton="default"`),
+  «Sugerir asignaciones» sin número en la etiqueta y con el total GLOBAL de la
+  bandeja en su `title` (con filtros, una lectura extra degradable), «Exportar
+  Excel» a la altura de los demás. **El Excel hereda la pestaña**
+  (`pendientes`/`duplicados` = "true"): desde «Pendientes» trae solo los
+  pendientes (cambio de comportamiento: avisar a la oficina).
+- **Estados honestos**: la lista principal va con `principal()` y, si falla,
+  `TarjetaErrorCarga` en el lugar de la tabla (cabecera, pestañas y filtros
+  siguen vivos; jamás «Sin gastos»); vacíos por pestaña con `EmptyState` y
+  «Quitar filtros» si hay filtros; la firma de las fotos degrada con aviso;
+  el corte como siempre. «Todos» sigue cargando TODOS los gastos (sin mes por
+  defecto: decisión pendiente del cliente).
+- **Pruebas**: `lib/admin/__tests__/gasto-avion.test.ts`,
+  `gastos-vista.test.ts`, `gastos-captura.test.ts` (nueva) y las ampliadas
+  `categorias-gasto.test.ts` (paridad con el API), `medios-pago.test.ts`,
+  `facturacion-estatus.test.ts`; `components/admin/expenses/__tests__/
+  gastos-una-tabla.test.tsx` (marcado + cableado de la página),
+  `expenses-filter-bar.test.tsx`, `unir-compra-modo.test.tsx`,
+  `suggest-assignments.test.tsx` y `facturacion-badge-compacta.test.tsx`.
+- **Decisiones del cliente pendientes**: ¿vista agrupada por destino (exige
+  `categorias[]` en el API para que el Excel la herede)?; ¿el Excel con la
+  pestaña es lo esperado?; ¿«Todos» abre en el mes corriente (rendimiento a
+  ~430 gastos/mes)? **Fase 2**: `listGastosAll` en paralelo, `<Suspense>`
+  con esqueleto, diálogos del ⋯ montados al abrirlos, miniatura con
+  «Reintentar», contraste oscuro de las insignias de compra, tarjetas en
+  teléfono, filtro «Comprobante: con / sin», fila sin `valor_ia_extraido`.
+- **QA manual** (sin DOM en el runner): Chrome Windows a 1280/1366/1440/1536
+  (también 1280 en modo unir), teléfono 390 px, contar «Falta avión» = la
+  pestaña «Pendientes», `?categoria=PERSONAL_DUENO` y su Excel, «Exportar
+  Excel» desde «Pendientes», página 5 + cambiar «Banco» ⇒ página 1 con la
+  búsqueda conservada, teclear el año en una fecha sin navegar.
 ## Títulos de las pestañas del navegador (14-oct-2026)
 
 Pedido del cliente: «estaría genial que en cada pestaña del navegador se

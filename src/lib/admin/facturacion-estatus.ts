@@ -35,6 +35,12 @@ export interface EstadoFacturacion {
   value: EstatusFacturacion;
   /** Corta: badge de la tabla, filtro e historial. */
   label: string;
+  /**
+   * Aún más corta, SOLO para la columna «Facturación» de Gastos (14-oct-2026,
+   * una sola tabla): «No requiere» cabe sin ensanchar la columna. El menú, el
+   * filtro y el title siguen con `label` completo.
+   */
+  labelCorta?: string;
   /** Larga: selectores de los diálogos de alta/verificación. */
   labelForm: string;
   emoji: string;
@@ -77,6 +83,7 @@ export const FACTURACION_ESTADOS: EstadoFacturacion[] = [
     // factura) — es «este gasto no lleva factura y no hay nada que perseguir».
     value: "NO_FACTURABLE",
     label: "No requiere factura",
+    labelCorta: "No requiere",
     labelForm: "No requiere factura",
     emoji: "⚪",
     dot: "bg-slate-400",
@@ -92,6 +99,20 @@ export function estadoFacturacion(
     FACTURACION_ESTADOS.find((e) => e.value === value) ?? FACTURACION_ESTADOS[0]
   );
 }
+
+/**
+ * Lo que dice el pill de la tabla de Gastos: `labelCorta` si el estado la
+ * tiene («No requiere»), si no su `label`. Desconocido o ausente ⇒ «Pendiente»
+ * (misma regla conservadora de `estadoFacturacion`).
+ */
+export function etiquetaFacturacionTabla(value: string | null | undefined): string {
+  const e = estadoFacturacion(value);
+  return e.labelCorta ?? e.label;
+}
+
+/** Title del pill del semáforo (se antepone la etiqueta completa en la versión compacta). */
+export const TITULO_FACTURACION_BADGE =
+  "Seguimiento de facturación de oficina (no toca el comprobante del piloto). Clic para cambiar.";
 
 /** Etiqueta corta; `null` si el valor no se conoce (el llamador pinta el crudo). */
 export function etiquetaFacturacion(
@@ -113,6 +134,18 @@ export function opcionesFacturacionForm(): Array<{
 
 /** Filtro agregado de la barra de Gastos: lo que SIGUE por resolver. */
 export const FILTRO_NO_FACTURADA = "NO_FACTURADA";
+
+/**
+ * Valores que el API acepta en `estatus_facturacion` (los 4 del enum + el
+ * meta-valor NO_FACTURADA). Derivado de la fuente única para que agregar un
+ * estado no deje el filtro fuera; `?facturacion=` se valida contra esta
+ * lista (movida aquí desde la página de Gastos el 14-oct-2026: la usan la
+ * página y la barra de filtros).
+ */
+export const FACTURACION_FILTRO_VALUES: readonly string[] = [
+  ...FACTURACION_ESTADOS.map((e) => e.value as string),
+  FILTRO_NO_FACTURADA,
+];
 
 /**
  * Opciones del filtro de Gastos. «Sin facturar» agrupa pendiente + solicitada

@@ -49,7 +49,7 @@ export function TarjetaErrorCarga({
           type="button"
           onClick={() => empezar(() => router.refresh())}
           disabled={refrescando}
-          className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+          className="inline-flex cursor-pointer items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:cursor-default disabled:opacity-60"
         >
           <ArrowPathIcon className={`h-4 w-4 ${refrescando ? "animate-spin" : ""}`} />
           {refrescando ? "Reintentando…" : "Reintentar"}

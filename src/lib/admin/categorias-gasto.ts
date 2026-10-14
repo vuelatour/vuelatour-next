@@ -161,6 +161,22 @@ export const CATEGORIAS_CAPTURA: readonly string[] = [
 ];
 
 /**
+ * Opciones del filtro «Categoría» de Gastos (14-oct-2026, una sola tabla):
+ * las de captura en su orden y al final las tres que solo se verifican o
+ * son legado (ATERRIZAJE, FIJO, VISITA). Son las 22 del enum sin repetir
+ * (= llaves de CATEGORIA_GASTO_LABELS); `?categoria=` se valida contra esta
+ * lista con `valorDeCatalogo` (desconocida o en minúsculas ⇒ se ignora y
+ * jamás viaja al API). Las opciones son `CATEGORIAS_FILTRO_GASTO.map(
+ * opcionCategoriaGasto)`: etiqueta + destino en verde, como en la captura.
+ */
+export const CATEGORIAS_FILTRO_GASTO: readonly string[] = [
+  ...CATEGORIAS_CAPTURA,
+  "ATERRIZAJE",
+  "FIJO",
+  "VISITA",
+];
+
+/**
  * Clases del texto verde "a dónde se va por default" dentro del selector
  * (descripción secundaria de la opción). `whitespace-normal` porque el
  * destino de REFACCION no cabe en una línea; el `!` (important de Tailwind
@@ -419,6 +435,31 @@ export const CATEGORIAS_EMPRESA: ReadonlySet<string> = new Set([
   "FIJO",
   "VISITA",
 ]);
+
+/**
+ * Categorías que NUNCA son «pendiente de asignarle avión» — ESPEJO EXACTO de
+ * `CATEGORIAS_GASTO_SIN_AVION` del API (`common/categoria-gasto.util.ts`),
+ * la fuente única de la bandeja `?pendientes=true`, de «Sugerir
+ * asignaciones», de la alerta diaria y del pre-cierre: las de EMPRESA,
+ * INDIRECTO (sin avión por diseño), PERSONAL_DUENO (jamás lleva avión) y la
+ * «Comisión del vendedor (VuelaTour)». `COMISION_VENDEDOR_AVION` NO está, a
+ * propósito, igual que en el API (una «(avión)» sin avión SÍ sale en la
+ * bandeja). La columna «Avión · vuelo» de Gastos pinta «Falta avión» con
+ * esta regla, así su conteo es el de la pestaña «Pendientes» (14-oct-2026).
+ * Comparaciones SOLO con `Set.has` (el prefijo COMISION_VENDEDOR lo vigila
+ * el guardián de las pruebas). La paridad con el API la congela la prueba.
+ */
+export const CATEGORIAS_SIN_AVION: ReadonlySet<string> = new Set([
+  ...CATEGORIAS_EMPRESA,
+  "INDIRECTO",
+  "PERSONAL_DUENO",
+  CATEGORIA_PAGO_VENDEDOR,
+]);
+
+/** ¿La categoría necesita avión? (lo contrario de `CATEGORIAS_SIN_AVION`, igualdad exacta). */
+export function categoriaLlevaAvion(categoria: string): boolean {
+  return !CATEGORIAS_SIN_AVION.has(categoria);
+}
 
 /** «A», «A y B», «A, B y C» (textos del tablero). */
 function unirTextos(partes: readonly string[]): string {

@@ -12,8 +12,10 @@ import {
   CATEGORIA_PAGO_VENDEDOR_AVION,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_EMPRESA,
+  CATEGORIAS_FILTRO_GASTO,
   CATEGORIAS_PAGO_VENDEDOR,
   CATEGORIAS_REPARTIBLES,
+  CATEGORIAS_SIN_AVION,
   DESTINO_POR_DEFECTO,
   HINT_VUELO_COMISION,
   MSG_GASTO_REQUIERE_VUELO_COMISION,
@@ -24,6 +26,7 @@ import {
   ayudaComisionVendedor,
   categoriaExigeVueloSiempre,
   categoriaGastoLabel,
+  categoriaLlevaAvion,
   destinoPorDefecto,
   errorVueloObligatorio,
   esCategoriaPagoVendedor,
@@ -586,5 +589,70 @@ describe("paridad del enum de categorías (22 valores con Comisariato)", () => {
     const api = tablaApi("CATEGORIA_GASTO_DESTINO");
     expect(api[CM]).toBe(DESTINO_DIRECTO);
     expect(api).toEqual({ ...DESTINO_POR_DEFECTO });
+  });
+});
+
+/**
+ * Tabla única de Gastos (14-oct-2026): «Falta avión» en la columna «Avión ·
+ * vuelo» es ESPEJO de la bandeja de pendientes del API, y el filtro
+ * «Categoría» ofrece las 22.
+ */
+describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)", () => {
+  it("las de empresa + INDIRECTO + PERSONAL_DUENO + la comisión (VuelaTour); SIN la «(avión)»", () => {
+    expect([...CATEGORIAS_SIN_AVION].sort()).toEqual([
+      "COMISION_VENDEDOR",
+      "FIJO",
+      "GASOLINA",
+      "INDIRECTO",
+      "NOMINA",
+      "OTRO",
+      "PERSONAL_DUENO",
+      "VISITA",
+    ]);
+    for (const c of CATEGORIAS_EMPRESA) expect(CATEGORIAS_SIN_AVION.has(c), c).toBe(true);
+    expect(CATEGORIAS_SIN_AVION.has(CATEGORIA_PAGO_VENDEDOR_AVION)).toBe(false);
+  });
+
+  it("categoriaLlevaAvion es lo contrario, con igualdad EXACTA", () => {
+    expect(categoriaLlevaAvion("OTRO")).toBe(false);
+    expect(categoriaLlevaAvion("INDIRECTO")).toBe(false);
+    expect(categoriaLlevaAvion("PERSONAL_DUENO")).toBe(false);
+    expect(categoriaLlevaAvion(CATEGORIA_PAGO_VENDEDOR)).toBe(false);
+    expect(categoriaLlevaAvion(CATEGORIA_PAGO_VENDEDOR_AVION)).toBe(true);
+    expect(categoriaLlevaAvion("SERVICIOS")).toBe(true);
+    expect(categoriaLlevaAvion("REFACCION")).toBe(true);
+    expect(categoriaLlevaAvion("COMISARIATO")).toBe(true);
+    expect(categoriaLlevaAvion("otro")).toBe(true);
+    expect(Object.keys(CATEGORIA_GASTO_LABELS).filter((c) => categoriaLlevaAvion(c))).toHaveLength(14);
+  });
+
+  // Repo hermano del API (solo en el workspace local).
+  const API = path.resolve(__dirname, "../../../../../vuelatour-api/src/common/categoria-gasto.util.ts");
+  const fuenteApi = existsSync(API) ? readFileSync(API, "utf8") : null;
+
+  it.skipIf(!fuenteApi)("PARIDAD: los literales del API = CATEGORIAS_SIN_AVION menos las de empresa", () => {
+    const src = fuenteApi ?? "";
+    const ini = src.indexOf("export const CATEGORIAS_GASTO_SIN_AVION");
+    expect(ini).toBeGreaterThan(-1);
+    const bloque = src
+      .slice(ini, src.indexOf("];", ini))
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("//"))
+      .join("\n");
+    expect(bloque).toContain("...CATEGORIAS_GASTO_EMPRESA");
+    const literales = [...bloque.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]).sort();
+    const esperados = [...CATEGORIAS_SIN_AVION].filter((c) => !CATEGORIAS_EMPRESA.has(c)).sort();
+    expect(literales).toEqual(esperados);
+  });
+});
+
+describe("filtro «Categoría» de Gastos (CATEGORIAS_FILTRO_GASTO)", () => {
+  it("las 22 sin repetir = llaves de CATEGORIA_GASTO_LABELS, en el orden de captura + ATERRIZAJE, FIJO, VISITA", () => {
+    expect(CATEGORIAS_FILTRO_GASTO).toHaveLength(22);
+    expect(new Set(CATEGORIAS_FILTRO_GASTO).size).toBe(22);
+    expect([...CATEGORIAS_FILTRO_GASTO].sort()).toEqual(Object.keys(CATEGORIA_GASTO_LABELS).sort());
+    expect(CATEGORIAS_FILTRO_GASTO).toEqual([...CATEGORIAS_CAPTURA, "ATERRIZAJE", "FIJO", "VISITA"]);
+    // Las opciones salen de la MISMA función de la captura (etiqueta + destino).
+    expect(opcionCategoriaGasto(CATEGORIAS_FILTRO_GASTO[0]).label).toBe("Gasavión / Turbosina");
   });
 });

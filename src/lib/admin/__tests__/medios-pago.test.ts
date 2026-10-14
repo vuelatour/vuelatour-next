@@ -21,6 +21,7 @@ import {
   medioPagoAceptadoPorApi,
   medioPagoLabel,
   opcionesMedioVerificacion,
+  textoPagoCorto,
 } from "@/lib/admin/medios-pago";
 import { GastoCreateSchema, MedioPagoEnum } from "@/app/admin/expenses/schema";
 
@@ -147,5 +148,51 @@ describe("BODEGA no viaja al API", () => {
     for (const m of bloque.matchAll(/^\s*([A-Z_]+):\s*'([^']*)',?\s*$/gm)) api[m[1]] = m[2];
     expect(Object.keys(api).length).toBe(Object.keys(MEDIO_PAGO_LABELS).length);
     expect(api).toEqual({ ...MEDIO_PAGO_LABELS });
+  });
+});
+
+/**
+ * Medio de pago CORTO bajo el monto en la tabla única de Gastos (14-oct-2026;
+ * la columna «Pago» desapareció). La terminación solo con tarjeta corporativa,
+ * con la convención de Conciliación («Tarjeta ****2865»).
+ */
+describe("textoPagoCorto", () => {
+  it("los 8 medios: texto corto y title largo", () => {
+    const casos: Array<[string, string, string]> = [
+      ["EFECTIVO", "Efectivo", "Efectivo"],
+      ["TARJETA_CORP", "Tarjeta", "Tarjeta corporativa"],
+      ["TRANSFERENCIA", "Transferencia", "Transferencia"],
+      ["PAYWISE", "Paywise", "Paywise"],
+      ["DOMICILIADO", "Domiciliado", "Pago domiciliado"],
+      ["PERSONAL_PABLO", "Personal Pablo", "Personal Pablo"],
+      ["PERSONAL_ALE", "Personal Ale", "Personal Ale"],
+      ["BODEGA", "Bodega", "Bodega (inventario)"],
+    ];
+    expect(casos.map((c) => c[0]).sort()).toEqual([...ENUM_PROD].sort());
+    for (const [medio, texto, title] of casos) {
+      expect(textoPagoCorto(medio), medio).toEqual({ texto, title });
+    }
+  });
+
+  it("terminación SOLO con tarjeta corporativa (recortada)", () => {
+    expect(textoPagoCorto("TARJETA_CORP", "2865")).toEqual({
+      texto: "Tarjeta ****2865",
+      title: "Tarjeta corporativa ****2865",
+    });
+    expect(textoPagoCorto("TARJETA_CORP", " 0593 ")).toEqual({
+      texto: "Tarjeta ****0593",
+      title: "Tarjeta corporativa ****0593",
+    });
+    expect(textoPagoCorto("TARJETA_CORP", "")).toEqual({ texto: "Tarjeta", title: "Tarjeta corporativa" });
+    expect(textoPagoCorto("TARJETA_CORP", null)).toEqual({ texto: "Tarjeta", title: "Tarjeta corporativa" });
+    expect(textoPagoCorto("EFECTIVO", "2865")).toEqual({ texto: "Efectivo", title: "Efectivo" });
+    expect(textoPagoCorto("TRANSFERENCIA", "2865")).toEqual({ texto: "Transferencia", title: "Transferencia" });
+  });
+
+  it("medio desconocido ⇒ su código; sin medio ⇒ null", () => {
+    expect(textoPagoCorto("CHEQUE")).toEqual({ texto: "CHEQUE", title: "CHEQUE" });
+    expect(textoPagoCorto(null)).toBeNull();
+    expect(textoPagoCorto(undefined)).toBeNull();
+    expect(textoPagoCorto("")).toBeNull();
   });
 });

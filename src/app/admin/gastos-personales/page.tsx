@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
+import Link from "next/link";
 import { WalletIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -166,7 +167,14 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
             Compras que hace el personal para el dueño. No son gastos de la
             empresa ni de los aviones: no entran a balances, reparto ni cierre
             — aquí vive su seguimiento. Para corregir o ver el comprobante,
-            búscalo en Gastos (card Gastos generales).
+            ábrelo en{" "}
+            <Link
+              href="/admin/expenses?categoria=PERSONAL_DUENO"
+              className="text-brand-600 hover:underline dark:text-brand-400"
+            >
+              Gastos
+            </Link>{" "}
+            (categoría «Gasto personal del dueño»).
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">

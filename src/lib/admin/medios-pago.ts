@@ -24,6 +24,33 @@ export function medioPagoLabel(medio: string): string {
   return MEDIO_PAGO_LABELS[medio] ?? medio;
 }
 
+/** Versión CORTA de las etiquetas largas (renglón bajo el monto en Gastos). */
+const MEDIO_PAGO_CORTO: Record<string, string> = {
+  TARJETA_CORP: "Tarjeta",
+  DOMICILIADO: "Domiciliado",
+  BODEGA: "Bodega",
+};
+
+/**
+ * Medio de pago CORTO para el renglón bajo el monto en la tabla de Gastos
+ * (14-oct-2026, una sola tabla: la columna «Pago» desapareció). La
+ * terminación va SOLO con tarjeta corporativa, con la convención de
+ * Conciliación («Tarjeta ****2865»). `title` = la etiqueta larga con la misma
+ * terminación («Tarjeta corporativa ****2865»). Sin medio ⇒ null; un medio
+ * que el panel no conoce ⇒ su código en los dos.
+ */
+export function textoPagoCorto(
+  medio: string | null | undefined,
+  terminacion?: string | null,
+): { texto: string; title: string } | null {
+  if (!medio) return null;
+  const largo = medioPagoLabel(medio);
+  const corto = MEDIO_PAGO_CORTO[medio] ?? largo;
+  const term = medio === "TARJETA_CORP" ? (terminacion ?? "").trim() : "";
+  const cola = term ? ` ****${term}` : "";
+  return { texto: `${corto}${cola}`, title: `${largo}${cola}` };
+}
+
 /**
  * Medios que la oficina puede ELEGIR al capturar un gasto nuevo, en el orden
  * del selector. BODEGA queda fuera: lo pone solo la salida de inventario.

@@ -263,7 +263,7 @@
    `[state=selected]` del primitivo: su fondo es el tono del hover.
    (1) El TINTE es una CAPA (`background-image`, nunca `background-color`):
    el fondo de `rowClassName` (sky de «en cotización», ámbar de ?resaltar=,
-   brand de la compra, muted del pago) y el del hover siguen DEBAJO y no se
+   muted de la compra, muted del pago) y el del hover siguen DEBAJO y no se
    pierden mientras la fila está activa (revisión 13-oct-2026).
    (2) La MARCA va celda por celda (una sombra en el <tr> no se pinta igual en
    todos los navegadores): barra de 4 px a la izquierda en la primera celda,

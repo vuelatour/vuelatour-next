@@ -26,6 +26,21 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { fmtMontoMoneda, sugerirRolCompra, COMPRA_ROL_LABELS } from "@/types/compras";
 import type { Gasto } from "@/types/expenses";
+import {
+  AYUDA_MODO_UNIR,
+  AYUDA_UN_SELECCIONADO,
+  INSTRUCCION_MODO_UNIR,
+  TEXTO_BOTON_UNIR,
+  TEXTO_LIMPIAR_SELECCION,
+  TEXTO_MODO_UNIR,
+  TEXTO_TERMINAR_BARRA,
+  TEXTO_TERMINAR_UNIR,
+  TITULO_MINIMO_UNIR,
+  TITULO_TERMINAR_UNIR,
+  textoGastosSeleccionados,
+  tituloUnirSinSeleccionables,
+} from "@/lib/admin/gastos-vista";
+import { llamarSinLanzar } from "@/lib/admin/reparto-gasto";
 
 /** Lo mínimo del gasto para mostrarlo en el diálogo de unir. */
 export interface GastoSeleccionado {
@@ -54,14 +69,23 @@ interface SeleccionCtx {
   seleccion: Map<string, GastoSeleccionado>;
   toggle: (g: GastoSeleccionado) => void;
   limpiar: () => void;
+  /**
+   * Modo «Unir en compra» (14-oct-2026): las casillas SOLO aparecen con el
+   * modo encendido («Unir en compra…» en la fila de vistas). Apagarlo limpia
+   * la selección.
+   */
+  modoUnir: boolean;
+  setModoUnir: (activo: boolean) => void;
+  /** ¿La vista tiene gastos que se puedan unir? (la barra lo explica si no). */
+  haySeleccionables: boolean;
 }
 
 const Ctx = createContext<SeleccionCtx | null>(null);
 
 /**
- * Selección múltiple de gastos compartida entre las tablas de la página
- * (generales y operativos). Null fuera del provider: las tablas que no viven
- * en /admin/expenses (vuelo, caja chica) no muestran casillas.
+ * Selección múltiple de la tabla de Gastos (una sola tabla desde el
+ * 14-oct-2026). Null fuera del provider: las tablas que no viven en
+ * /admin/expenses (vuelo, caja chica) no muestran casillas.
  */
 export function useSeleccionGastos(): SeleccionCtx | null {
   return useContext(Ctx);
@@ -69,6 +93,7 @@ export function useSeleccionGastos(): SeleccionCtx | null {
 
 export function ExpensesSeleccionProvider({
   idsVisibles,
+  modoInicial = false,
   children,
 }: {
   /**
@@ -77,9 +102,12 @@ export function ExpensesSeleccionProvider({
    * poda a estos ids.
    */
   idsVisibles: string[];
+  /** Modo «Unir en compra» al montar. SOLO para pruebas (la página no lo pasa). */
+  modoInicial?: boolean;
   children: React.ReactNode;
 }) {
   const [seleccion, setSeleccion] = useState<Map<string, GastoSeleccionado>>(() => new Map());
+  const [modoUnir, setModoUnirEstado] = useState(modoInicial);
 
   // Poda anti "selección fantasma": tras eliminar un gasto, ligarlo a una
   // compra desde ⋯ o cambiar de filtro/pestaña, el provider sigue montado y
@@ -108,8 +136,18 @@ export function ExpensesSeleccionProvider({
     });
   }, []);
   const limpiar = useCallback(() => setSeleccion(new Map()), []);
+  // Apagar el modo limpia la selección: al volver a encenderlo no reaparecen
+  // casillas marcadas de antes.
+  const setModoUnir = useCallback((activo: boolean) => {
+    setModoUnirEstado(activo);
+    if (!activo) setSeleccion(new Map());
+  }, []);
+  const haySeleccionables = idsVisibles.length > 0;
 
-  const value = useMemo(() => ({ seleccion, toggle, limpiar }), [seleccion, toggle, limpiar]);
+  const value = useMemo(
+    () => ({ seleccion, toggle, limpiar, modoUnir, setModoUnir, haySeleccionables }),
+    [seleccion, toggle, limpiar, modoUnir, setModoUnir, haySeleccionables],
+  );
 
   return (
     <Ctx.Provider value={value}>
@@ -122,41 +160,101 @@ export function ExpensesSeleccionProvider({
 /** Unir exige la factura de mercancía + al menos otro pago (el API pide ≥2). */
 const MIN_GASTOS_UNIR = 2;
 
-/** Barra flotante: aparece con la primera casilla marcada. */
+/**
+ * Botón de la fila de vistas que enciende/apaga el modo «Unir en compra»
+ * (14-oct-2026): antes las casillas estaban SIEMPRE en la tabla. Siempre
+ * habilitado (un botón deshabilitado no enseña su `title`); si la vista no
+ * tiene nada que unir, la barra flotante lo explica. Null fuera del provider.
+ */
+export function UnirCompraToggle() {
+  const ctx = useContext(Ctx);
+  if (!ctx) return null;
+  const activo = ctx.modoUnir;
+  return (
+    <Button
+      variant={activo ? "secondary" : "outline"}
+      aria-pressed={activo}
+      onClick={() => ctx.setModoUnir(!activo)}
+      className="gap-1.5"
+      title={activo ? TITULO_TERMINAR_UNIR : AYUDA_MODO_UNIR}
+    >
+      {activo ? (
+        <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+      ) : (
+        <ShoppingCartIcon className="h-4 w-4" aria-hidden="true" />
+      )}
+      {activo ? TEXTO_TERMINAR_UNIR : TEXTO_MODO_UNIR}
+    </Button>
+  );
+}
+
+/**
+ * Barra flotante del modo «Unir en compra» (solo con el modo encendido): sin
+ * nada que unir en la vista lo dice; sin marcas, la instrucción; con marcas,
+ * cuántas, «Unir en compra», «Limpiar» y «Terminar».
+ */
 function UnirCompraBar() {
   const ctx = useContext(Ctx);
   const [open, setOpen] = useState(false);
-  if (!ctx || ctx.seleccion.size === 0) return null;
+  if (!ctx || !ctx.modoUnir) return null;
   const n = ctx.seleccion.size;
   const puedeUnir = n >= MIN_GASTOS_UNIR;
+  const terminar = (
+    <Button size="sm" variant="ghost" onClick={() => ctx.setModoUnir(false)} title={TITULO_TERMINAR_UNIR}>
+      {TEXTO_TERMINAR_BARRA}
+    </Button>
+  );
   return (
     <>
-      <div className="fixed bottom-6 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 shadow-lg">
-        <div className="flex items-center gap-3">
-          <p className="text-sm">
-            <span className="font-semibold tabular-nums">{n}</span>{" "}
-            {n === 1 ? "gasto seleccionado" : "gastos seleccionados"}
-          </p>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setOpen(true)}
-            disabled={!puedeUnir}
-            title={puedeUnir ? undefined : "Marca al menos dos gastos para unirlos"}
-          >
-            <ShoppingCartIcon className="h-4 w-4" />
-            Unir en compra
-          </Button>
-          <Button size="sm" variant="ghost" onClick={ctx.limpiar} className="gap-1">
-            <XMarkIcon className="h-4 w-4" />
-            Limpiar
-          </Button>
-        </div>
-        {!puedeUnir && (
-          <p className="max-w-md text-center text-[11px] text-muted-foreground">
-            Marca la factura de mercancía y al menos otro pago (envío, impuestos…). Para un solo
-            gasto usa &ldquo;Crear compra con esta factura&rdquo; en su menú.
-          </p>
+      {/* Hueco al final de la página: con el modo encendido la barra fija no
+          tapa el paginador ni las últimas filas. */}
+      <div aria-hidden="true" className="h-20" />
+      <div
+        data-barra-unir
+        className="fixed bottom-6 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 shadow-lg"
+      >
+        {!ctx.haySeleccionables && n === 0 ? (
+          <div className="flex items-center gap-3">
+            <p className="max-w-md text-sm text-muted-foreground">{tituloUnirSinSeleccionables()}</p>
+            {terminar}
+          </div>
+        ) : n === 0 ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <p className="max-w-md text-sm text-muted-foreground">{INSTRUCCION_MODO_UNIR}</p>
+            <Button size="sm" className="gap-1.5" disabled>
+              <ShoppingCartIcon className="h-4 w-4" />
+              {TEXTO_BOTON_UNIR}
+            </Button>
+            {terminar}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <p className="text-sm">
+                <span className="font-semibold tabular-nums">{n}</span> {textoGastosSeleccionados(n)}
+              </p>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setOpen(true)}
+                disabled={!puedeUnir}
+                title={puedeUnir ? undefined : TITULO_MINIMO_UNIR}
+              >
+                <ShoppingCartIcon className="h-4 w-4" />
+                {TEXTO_BOTON_UNIR}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={ctx.limpiar} className="gap-1">
+                <XMarkIcon className="h-4 w-4" />
+                {TEXTO_LIMPIAR_SELECCION}
+              </Button>
+              {terminar}
+            </div>
+            {!puedeUnir && (
+              <p className="max-w-md text-center text-[11px] text-muted-foreground">
+                {AYUDA_UN_SELECCIONADO}
+              </p>
+            )}
+          </>
         )}
       </div>
       <UnirCompraDialog open={open} onOpenChange={setOpen} />
@@ -201,17 +299,25 @@ function UnirCompraDialog({
   const confirmar = () => {
     if (!ctx || !elegido || !suficientes) return;
     startTransition(async () => {
-      const r = await unirGastosEnCompraAction({
-        gasto_ids: gastos.map((g) => g.id),
-        mercancia_gasto_id: elegido,
-      });
+      // Sin lanzar: un fallo de transporte (red, deploy) no tumba la página
+      // al error boundary; se dice en el toast y el diálogo sigue abierto.
+      const llamada = await llamarSinLanzar(() =>
+        unirGastosEnCompraAction({
+          gasto_ids: gastos.map((g) => g.id),
+          mercancia_gasto_id: elegido,
+        }),
+      );
+      const r: Awaited<ReturnType<typeof unirGastosEnCompraAction>> = llamada.ok
+        ? llamada.valor
+        : { ok: false, error: llamada.error };
       if (r.ok && r.data) {
         toast.success(`Compra #${r.data.folio} creada con ${gastos.length} pagos`);
-        ctx.limpiar();
+        // Unir con éxito apaga el modo (y con él la selección).
+        ctx.setModoUnir(false);
         onOpenChange(false);
         router.push(`/admin/inventory/compras/${r.data.id}`);
       } else {
-        toast.error(r.error ?? "No se pudieron unir los gastos");
+        toast.error(r.error || "No se pudieron unir los gastos");
       }
     });
   };

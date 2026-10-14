@@ -6,6 +6,7 @@ import {
   ArrowTopRightOnSquareIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ShoppingCartIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
@@ -26,31 +27,58 @@ import {
   aGastoSeleccionado,
   useSeleccionGastos,
 } from "@/components/admin/expenses/expenses-seleccion";
-import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
+import { CapturadoCompacto } from "@/components/admin/expenses/capturado-linea";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { fmtMonto } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
-import { lineaCaptura } from "@/lib/admin/gastos-captura";
-import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
+import { lineaCapturaCompacta } from "@/lib/admin/gastos-captura";
+import { MEDIO_PAGO_LABELS, textoPagoCorto } from "@/lib/admin/medios-pago";
+import {
+  ETIQUETA_AVION_VUELATOUR,
+  ETIQUETA_FALTA_AVION,
+  ETIQUETA_REPARTIDO,
+  MATRICULA_DESCONOCIDA,
+  TEXTO_VER_AVION,
+  TITULO_FALTA_AVION,
+  TITULO_REFERENCIA_AVION,
+  estadoAvionGasto,
+  textoReferenciaAvion,
+  textoVueloGasto,
+  tituloRemanenteReparto,
+} from "@/lib/admin/gasto-avion";
+import {
+  ENCABEZADO_COLUMNA_UNIR,
+  ENCABEZADOS_GASTOS,
+  ETIQUETA_SIN_VISTA_PREVIA,
+  PLACEHOLDER_BUSCAR_GASTOS,
+  TEXTO_DUPLICADO,
+  TEXTO_FALTA_VISTO_BUENO,
+  TITULO_COLUMNA_UNIR,
+  TITULO_DUPLICADO,
+  TITULO_ENCABEZADO_COMP,
+  TITULO_ENCABEZADO_FECHA,
+  TITULO_FALTA_VISTO_BUENO,
+  TITULO_OCULTAR_PAGOS_COMPRA,
+  TITULO_SIN_VISTA_PREVIA,
+  TITULO_VER_PAGOS_COMPRA,
+  altComprobanteGasto,
+  descripcionGasto,
+  etiquetaCompra,
+  lineaEstadoMovilGasto,
+  textoBusquedaGasto,
+  textoPagosCompra,
+  textoPropinaGasto,
+  tituloAbrirCompra,
+} from "@/lib/admin/gastos-vista";
 import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
 import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
-
-const fmtMoney = (monto: string | number, moneda: string) =>
-  Number(monto).toLocaleString("es-MX", { style: "currency", currency: moneda });
 
 // Solo se pinta badge cuando NO hay comprobante (14-sep-2026: la columna
 // responde «¿hay papel?» y con papel la miniatura ya lo dice). Las etiquetas
 // salen de @/lib/admin/comprobante-badge.
 const ESTATUS_STYLE: Record<string, string> = {
   SIN_COMPROBANTE: "border-navy-400/50 text-muted-foreground",
-};
-
-// Distintivo pedido por el cliente: los gastos que sube administración (o que
-// genera el sistema, p.ej. pistas) se distinguen de los capturados en campo.
-const ORIGEN_BADGE: Record<string, { label: string; cls: string }> = {
-  OFICINA: { label: "Oficina", cls: "border-sky-500/50 text-sky-600" },
-  SISTEMA: { label: "Sistema", cls: "border-violet-500/50 text-violet-600" },
-  VISITANTE: { label: "Visitante", cls: "border-teal-500/50 text-teal-600" },
 };
 
 /**
@@ -74,7 +102,7 @@ type Fila =
       proveedor: string | null;
       referencia: string | null;
       fecha: string | null;
-      /** Pagos que SÍ llegaron a esta vista (filtros + corte de 200). */
+      /** Pagos que SÍ llegaron a esta vista (filtros + corte). */
       pagos: Gasto[];
       /** Total real de pagos de la compra según el API; null si no viene. */
       nPagos: number | null;
@@ -87,6 +115,17 @@ type Fila =
 
 const GUION = <span className="text-muted-foreground">—</span>;
 
+/**
+ * La tabla ÚNICA de Gastos (14-oct-2026; antes «Gastos generales» y «Gastos
+ * operativos» en dos tarjetas). 8 columnas (9 con el modo «Unir en compra»)
+ * que caben sin scroll horizontal desde 1280 px: Fecha (con la captura y
+ * quién, una sola vez), Concepto (categoría + insignias + descripción),
+ * Monto (con el medio de pago corto y la propina), Avión · vuelo (a dónde va
+ * el dinero: `gasto-avion.ts`), Comp. (desde 1280 px), Facturación, Banco y ⋯.
+ * Concepto absorbe el ancho sobrante (`w-full`). Breakpoints de VIEWPORT, no
+ * container queries: `container-type` atraparía el visor `fixed` de
+ * ImagePreview dentro de la tabla. Textos y reglas: `lib/admin/gastos-vista.ts`.
+ */
 export function ExpensesTable({
   gastos,
   aircraft,
@@ -121,6 +160,16 @@ export function ExpensesTable({
     });
 
   const filas = useMemo<Fila[]>(() => {
+    // Pagos por compra en UNA pasada (antes un `filter` por compra dentro del
+    // ciclo); el orden de las filas es el mismo: la compra aparece donde
+    // aparece su primer pago.
+    const pagosPorCompra = new Map<string, Gasto[]>();
+    for (const g of gastos) {
+      if (!g.compra_id || !g.compra) continue;
+      const lista = pagosPorCompra.get(g.compra_id);
+      if (lista) lista.push(g);
+      else pagosPorCompra.set(g.compra_id, [g]);
+    }
     const out: Fila[] = [];
     const vistas = new Set<string>();
     for (const g of gastos) {
@@ -131,7 +180,7 @@ export function ExpensesTable({
       }
       if (vistas.has(cid)) continue;
       vistas.add(cid);
-      const pagos = gastos.filter((x) => x.compra_id === cid);
+      const pagos = pagosPorCompra.get(cid) ?? [g];
       const porMoneda = new Map<string, number>();
       for (const p of pagos) {
         porMoneda.set(p.moneda, (porMoneda.get(p.moneda) ?? 0) + Number(p.monto));
@@ -165,12 +214,18 @@ export function ExpensesTable({
   const columns = useMemo<Array<DataTableColumn<Fila>>>(() => {
     const cols: Array<DataTableColumn<Fila>> = [];
 
-    if (seleccion) {
+    // Casillas SOLO con el modo «Unir en compra» encendido (14-oct-2026).
+    if (seleccion?.modoUnir) {
       cols.push({
         key: "sel",
-        header: "",
-        headClassName: "w-8",
-        cellClassName: "w-8",
+        header: (
+          <span title={TITULO_COLUMNA_UNIR} className="inline-flex">
+            <ShoppingCartIcon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+            <span className="sr-only">{ENCABEZADO_COLUMNA_UNIR}</span>
+          </span>
+        ),
+        headClassName: "w-8 text-center",
+        cellClassName: "w-8 text-center",
         // Solo gastos sueltos de categoría de compra (fuente única
         // esCategoriaCompra): GAS, VISITA, PERSONAL_DUENO… no se unen.
         cell: (f) =>
@@ -179,7 +234,7 @@ export function ExpensesTable({
               type="checkbox"
               checked={seleccion.seleccion.has(f.gasto.id)}
               onChange={() => seleccion.toggle(aGastoSeleccionado(f.gasto))}
-              className="h-4 w-4 accent-brand-600"
+              className="h-4 w-4 cursor-pointer accent-brand-600"
               aria-label="Seleccionar gasto para unir en compra"
               title="Seleccionar para unir en compra"
             />
@@ -187,18 +242,23 @@ export function ExpensesTable({
       });
     }
 
+    const claseComp = seleccion?.modoUnir
+      ? "hidden min-[1300px]:table-cell"
+      : "hidden xl:table-cell";
+
     cols.push(
       {
         key: "fecha",
-        header: "Fecha",
-        cellClassName: "whitespace-nowrap",
+        header: <span title={TITULO_ENCABEZADO_FECHA}>{ENCABEZADOS_GASTOS.fecha}</span>,
+        headClassName: "w-[8rem]",
+        cellClassName: "w-[8rem]",
         cell: (f) =>
           f.kind === "compra" ? (
             <button
               type="button"
               onClick={() => toggleCompra(f.compraId)}
-              className="inline-flex items-center gap-1 font-medium hover:text-brand-600"
-              title={f.abierta ? "Ocultar pagos" : "Ver los pagos de la compra"}
+              className="inline-flex cursor-pointer items-center gap-1 font-medium hover:text-brand-600 dark:hover:text-brand-400"
+              title={f.abierta ? TITULO_OCULTAR_PAGOS_COMPRA : TITULO_VER_PAGOS_COMPRA}
               aria-expanded={f.abierta}
             >
               {f.abierta ? (
@@ -209,255 +269,270 @@ export function ExpensesTable({
               {fmtDateOnly(f.fecha)}
             </button>
           ) : (
-            <span className={f.hijo ? "pl-6 text-muted-foreground" : undefined}>
-              {fmtDateOnly(f.gasto.fecha_gasto)}
-              {/* Cuándo, quién y desde dónde se capturó (pedido 7-sep), en
-                  hora Cancún. Conserva la pista ámbar de 28-ago (ticket con
-                  otro año o fecha muy lejana), ahora contra capturado_en. */}
-              <CapturadoLinea linea={lineaCaptura(f.gasto)} />
-            </span>
+            <div className={f.hijo ? "pl-6 text-muted-foreground" : undefined}>
+              <span className="block">{fmtDateOnly(f.gasto.fecha_gasto)}</span>
+              {/* Cuándo, quién y desde dónde se capturó (7-sep), en hora
+                  Cancún, con la pista ámbar del 28-ago y el DISTINTIVO de
+                  origen (Oficina / Sistema / Visitante, pedido del 9-jul). */}
+              <CapturadoCompacto captura={lineaCapturaCompacta(f.gasto)} />
+            </div>
           ),
       },
       {
-        key: "categoria",
-        header: "Categoría",
-        cell: (f) =>
-          f.kind === "compra" ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Badge variant="outline" className="border-brand-600/50 text-brand-600">
-                Compra #{f.folio}
-              </Badge>
-              <CompraEstadoBadge estado={f.estado} />
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5">
-              {categoriaGastoLabel(f.gasto.categoria)}
-              {f.gasto.compra_rol && <CompraRolBadge rol={f.gasto.compra_rol} />}
-              {f.gasto.duplicado_sospechado && (
-                <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-                  Duplicado?
-                </Badge>
-              )}
-              {f.gasto.requiere_visto_bueno === true && (
-                <Badge
-                  variant="outline"
-                  className="border-sky-500/50 text-sky-600"
-                  title="Prellenado con IA desde la app: pendiente del visto bueno de administración (menú ⋯ → Dar visto bueno)."
-                >
-                  Visto bueno
-                </Badge>
-              )}
-            </span>
-          ),
-      },
-      {
-        // Descripción/motivo a la vista (pedido oficina 20-ago): la primera
-        // línea de la nota — antes había que abrir Verificar/editar para
-        // leerla. El hover muestra la nota completa.
-        key: "descripcion",
-        header: "Descripción",
+        key: "concepto",
+        header: ENCABEZADOS_GASTOS.concepto,
+        headClassName: "w-full",
+        cellClassName: "whitespace-normal",
         cell: (f) => {
           if (f.kind === "compra") {
             const texto = [f.proveedor, f.referencia].filter(Boolean).join(" · ");
-            return texto ? (
-              <span className="block max-w-[240px] truncate text-xs" title={texto}>
-                {texto}
-              </span>
-            ) : (
-              GUION
+            return (
+              <div className="min-w-[10rem] max-w-[40rem]">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <Badge
+                    variant="outline"
+                    className="border-brand-600/50 text-brand-600 dark:text-brand-400"
+                  >
+                    {etiquetaCompra(f.folio)}
+                  </Badge>
+                  <CompraEstadoBadge estado={f.estado} />
+                </div>
+                {texto && (
+                  <p className="mt-0.5 line-clamp-1 text-xs" title={texto}>
+                    {texto}
+                  </p>
+                )}
+              </div>
             );
           }
-          const linea = (f.gasto.notas ?? "").split("\n")[0].trim();
-          return linea ? (
-            <span
-              className="block max-w-[240px] truncate text-xs text-muted-foreground"
-              title={f.gasto.notas ?? undefined}
-            >
-              {linea}
-            </span>
-          ) : (
-            GUION
+          const g = f.gasto;
+          const desc = descripcionGasto(g);
+          return (
+            <div className="min-w-[10rem] max-w-[40rem]">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="font-medium">{categoriaGastoLabel(g.categoria)}</span>
+                {g.compra_rol && <CompraRolBadge rol={g.compra_rol} />}
+                {g.duplicado_sospechado && (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+                    title={TITULO_DUPLICADO}
+                  >
+                    {TEXTO_DUPLICADO}
+                  </Badge>
+                )}
+                {g.requiere_visto_bueno === true && (
+                  <Badge
+                    variant="outline"
+                    className="border-sky-500/50 text-sky-600 dark:text-sky-400"
+                    title={TITULO_FALTA_VISTO_BUENO}
+                  >
+                    {TEXTO_FALTA_VISTO_BUENO}
+                  </Badge>
+                )}
+              </div>
+              {desc.texto && (
+                <p
+                  className="mt-0.5 line-clamp-2 text-xs text-muted-foreground"
+                  title={desc.title ?? undefined}
+                >
+                  {desc.texto}
+                </p>
+              )}
+              {/* Teléfono (<768 px): lo de las columnas de la derecha, en texto. */}
+              <p className="mt-0.5 text-[11px] text-muted-foreground md:hidden">
+                {lineaEstadoMovilGasto(g)}
+              </p>
+            </div>
           );
         },
       },
       {
         key: "monto",
-        header: "Monto",
+        header: ENCABEZADOS_GASTOS.monto,
         headClassName: "text-right",
         cellClassName: "text-right tabular-nums whitespace-nowrap",
         // El monto ES el total pagado (ticket + propina): lo que llega al
-        // banco. La propina solo se anota como sub-línea informativa.
-        cell: (f) =>
-          f.kind === "compra" ? (
-            <span className="font-medium">
-              {f.totales.map((t) => (
-                <span key={t.moneda} className="block">
-                  {fmtMoney(t.total, t.moneda)}
-                </span>
-              ))}
-            </span>
-          ) : (
+        // banco. Debajo, con qué se pagó y la propina (informativa).
+        cell: (f) => {
+          if (f.kind === "compra") {
+            const pagos = textoPagosCompra(f.pagos.length, f.nPagos);
+            return (
+              <>
+                {f.totales.map((t) => (
+                  <span key={t.moneda} className="block font-medium">
+                    {fmtMonto(t.total, t.moneda)}
+                  </span>
+                ))}
+                {pagos.parcial ? (
+                  // El API sabe cuántos pagos tiene la compra; aquí solo
+                  // llegaron los que caben en el filtro/corte: el conteo y los
+                  // totales del grupo son parciales y hay que decirlo.
+                  // El aviso envuelve (renglones cortos alineados a la derecha):
+                  // en una línea ensanchaba la columna ≈80 px (medido).
+                  <span
+                    className="ml-auto block max-w-[7.5rem] whitespace-normal text-[11px] leading-tight text-amber-600 dark:text-amber-400"
+                    title={pagos.title ?? undefined}
+                  >
+                    {pagos.texto}
+                    <span className="block text-[10px]">{pagos.parcial}</span>
+                  </span>
+                ) : (
+                  <span className="block text-[11px] text-muted-foreground">{pagos.texto}</span>
+                )}
+              </>
+            );
+          }
+          const g = f.gasto;
+          const pago = textoPagoCorto(g.medio_pago, g.tarjeta_terminacion);
+          const propina = textoPropinaGasto(g.propina, g.moneda);
+          return (
             <>
-              {fmtMoney(f.gasto.monto, f.gasto.moneda)}
-              {Number(f.gasto.propina ?? 0) > 0 && (
-                <p className="text-[10px] text-muted-foreground">
-                  incl. propina {fmtMoney(f.gasto.propina!, f.gasto.moneda)}
-                </p>
+              <span className="block font-medium">{fmtMonto(g.monto, g.moneda)}</span>
+              {pago && (
+                <span className="block text-[11px] text-muted-foreground" title={pago.title}>
+                  {pago.texto}
+                </span>
+              )}
+              {/* Puede partirse en dos renglones si el monto de la propina es largo. */}
+              {propina && (
+                <span className="ml-auto block max-w-[7.5rem] whitespace-normal text-[10px] leading-tight text-muted-foreground">
+                  {propina}
+                </span>
               )}
             </>
-          ),
-      },
-      {
-        key: "pago",
-        header: "Pago",
-        cellClassName: "whitespace-nowrap",
-        cell: (f) =>
-          f.kind === "compra" ? (
-            f.nPagos !== null && f.nPagos > f.pagos.length ? (
-              // El API sabe cuántos pagos tiene la compra; aquí solo llegaron
-              // los que caben en el filtro/corte: el conteo y los totales del
-              // grupo son parciales y hay que decirlo.
-              <span
-                className="text-xs text-amber-600"
-                title="La compra tiene pagos que no entran en el filtro o en el corte de esta vista; los totales del grupo son parciales. Abre la compra para verlos todos."
-              >
-                {f.pagos.length} de {f.nPagos} pagos
-                <span className="block text-[10px]">(parcial: hay pagos fuera de este filtro)</span>
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                {f.pagos.length} {f.pagos.length === 1 ? "pago" : "pagos"}
-              </span>
-            )
-          ) : (
-            <span className="text-xs">
-              {MEDIO_PAGO_LABELS[f.gasto.medio_pago] ?? f.gasto.medio_pago}
-              {f.gasto.medio_pago === "TARJETA_CORP" && f.gasto.tarjeta_terminacion && (
-                <span className="ml-1 font-mono text-[11px] text-muted-foreground">
-                  **** {f.gasto.tarjeta_terminacion}
-                </span>
-              )}
-            </span>
-          ),
-      },
-      {
-        key: "avion",
-        header: "Avión",
-        cell: (f) => {
-          if (f.kind === "compra") return GUION;
-          const g = f.gasto;
-          // Gasto REPARTIDO entre aviones (tabla hija gasto_reparto): cada
-          // parcial liga a la ficha del avión (patrón de otros-gastos) con
-          // su monto en el title. Skew-tolerante: sin campo `repartos`, el
-          // comportamiento clásico de abajo sigue intacto.
-          const repartos = g.repartos ?? [];
-          if (repartos.length > 0) {
-            const remanenteCents =
-              Math.round(Number(g.monto) * 100) -
-              repartos.reduce(
-                (acc, r) => acc + Math.round(Number(r.monto) * 100),
-                0,
-              );
-            return (
-              <div className="flex max-w-[240px] flex-wrap items-center gap-1">
-                <span className="w-full text-[10px] text-muted-foreground">
-                  Repartido:
-                </span>
-                {repartos.map((r) => (
-                  <Link key={r.aeronave_id} href={`/admin/aircraft/${r.aeronave_id}`}>
-                    <Badge
-                      variant="outline"
-                      className="font-mono text-[11px] transition-colors hover:border-brand-600/60 hover:text-brand-600"
-                      title={fmtMoney(r.monto, g.moneda)}
-                    >
-                      {r.aeronave?.matricula ?? "¿?"}
-                    </Badge>
-                  </Link>
-                ))}
-                {remanenteCents / 100 > 0.004 && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[11px]"
-                    title={`Parte que absorbe la empresa: ${fmtMoney(remanenteCents / 100, g.moneda)}`}
-                  >
-                    VuelaTour
-                  </Badge>
-                )}
-              </div>
-            );
-          }
-          if (g.aeronave?.matricula) {
-            // Matrícula → ficha del avión (mismo patrón que la columna Vuelo).
-            return g.aeronave_id ? (
-              <Link
-                href={`/admin/aircraft/${g.aeronave_id}`}
-                className="font-mono text-brand-600 hover:underline"
-              >
-                {g.aeronave.matricula}
-              </Link>
-            ) : (
-              <span className="font-mono">{g.aeronave.matricula}</span>
-            );
-          }
-          // "Pendiente" SOLO sin avión Y sin reparto: un repartido ya está
-          // resuelto (la bandeja del API también lo excluye).
-          return (
-            <Badge variant="outline" className="border-amber-500/50 text-amber-600">
-              Pendiente
-            </Badge>
           );
         },
       },
       {
-        key: "vuelo",
-        header: "Vuelo",
-        cell: (f) =>
-          f.kind === "gasto" && f.gasto.vuelo_id ? (
-            <Link
-              href={`/admin/flights/${f.gasto.vuelo_id}`}
-              className="font-mono text-brand-600 hover:underline"
-            >
-              #{f.gasto.vuelo?.folio ?? "ver"}
-            </Link>
-          ) : (
-            GUION
-          ),
-      },
-      {
-        key: "capturo",
-        header: "Capturó",
-        cellClassName: "text-muted-foreground",
-        cell: (f) =>
-          f.kind === "compra" ? (
-            GUION
-          ) : (
-            <span className="inline-flex items-center gap-1.5">
-              {f.gasto.captura?.nombre ?? "—"}
-              {f.gasto.origen && ORIGEN_BADGE[f.gasto.origen] && (
-                <Badge variant="outline" className={ORIGEN_BADGE[f.gasto.origen].cls}>
-                  {ORIGEN_BADGE[f.gasto.origen].label}
+        key: "avion",
+        header: ENCABEZADOS_GASTOS.avion,
+        cellClassName: "whitespace-normal",
+        cell: (f) => {
+          if (f.kind === "compra") return GUION;
+          const g = f.gasto;
+          const e = estadoAvionGasto(g);
+          let principal: React.ReactNode;
+          if (e.tipo === "REPARTIDO") {
+            // Cada parte liga a la ficha del avión con su monto en el title;
+            // «VuelaTour» si queda remanente (centavos: lo absorbe la empresa).
+            principal = (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="w-full text-[10px] text-muted-foreground">{ETIQUETA_REPARTIDO}</span>
+                {e.partes.map((p) => (
+                  <Link key={p.aeronaveId} href={`/admin/aircraft/${p.aeronaveId}`}>
+                    <Badge
+                      variant="outline"
+                      className="font-mono text-[11px] transition-colors hover:border-brand-600/60 hover:text-brand-600 dark:hover:text-brand-400"
+                      title={fmtMonto(p.monto, g.moneda)}
+                    >
+                      {p.matricula ?? MATRICULA_DESCONOCIDA}
+                    </Badge>
+                  </Link>
+                ))}
+                {e.remanente > 0.004 && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[11px]"
+                    title={tituloRemanenteReparto(e.remanente, g.moneda)}
+                  >
+                    {ETIQUETA_AVION_VUELATOUR}
+                  </Badge>
+                )}
+              </div>
+            );
+          } else if (e.tipo === "FUERA_DEL_AVION") {
+            principal = (
+              <>
+                <Badge variant="secondary" className="text-[11px]" title={e.titulo}>
+                  {e.etiqueta}
+                  <span className="sr-only"> · {e.titulo}</span>
                 </Badge>
+                {e.referencia && (
+                  <span
+                    className="block text-[10px] text-muted-foreground"
+                    title={TITULO_REFERENCIA_AVION}
+                  >
+                    {textoReferenciaAvion(e.referencia)}
+                  </span>
+                )}
+              </>
+            );
+          } else if (e.tipo === "AVION") {
+            principal = (
+              <Link
+                href={`/admin/aircraft/${e.aeronaveId}`}
+                className="font-mono text-brand-600 hover:underline dark:text-brand-400"
+              >
+                {e.matricula ?? TEXTO_VER_AVION}
+              </Link>
+            );
+          } else {
+            principal = (
+              <Badge
+                variant="outline"
+                className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+                title={TITULO_FALTA_AVION}
+              >
+                {ETIQUETA_FALTA_AVION}
+                <span className="sr-only"> · {TITULO_FALTA_AVION}</span>
+              </Badge>
+            );
+          }
+          return (
+            <div className="max-w-[6.5rem]">
+              {principal}
+              {g.vuelo_id && (
+                <Link
+                  href={`/admin/flights/${g.vuelo_id}`}
+                  className="block whitespace-nowrap text-xs text-brand-600 hover:underline dark:text-brand-400"
+                >
+                  {textoVueloGasto(g.vuelo?.folio)}
+                </Link>
               )}
-            </span>
-          ),
+            </div>
+          );
+        },
       },
       {
         key: "comprobante",
-        header: "Comp.",
+        header: (
+          <span title={TITULO_ENCABEZADO_COMP}>
+            <span aria-hidden="true">{ENCABEZADOS_GASTOS.comp}</span>
+            <span className="sr-only">{ENCABEZADOS_GASTOS.compLargo}</span>
+          </span>
+        ),
+        // Desde 1280 px de VIEWPORT (en modo «Unir en compra», desde 1300:
+        // la casilla suma 32 px y a 1280 en Windows la tabla se deslizaba
+        // 9 px con un monto de seis cifras — medido). Debajo, «Sin comp.»
+        // sigue en la línea del teléfono y la foto en «Verificar / editar».
+        headClassName: claseComp,
+        cellClassName: claseComp,
         cell: (f) => {
           if (f.kind === "compra") return GUION;
           const g = f.gasto;
           // Hojas 2..N del comprobante (12-oct-2026): se abren en «Verificar / editar».
           const nHojas = hojasDe(g).length;
+          const firmada = g.foto_url ? fotoUrls[g.foto_url] : undefined;
           return (
-            <div className="flex items-center gap-2">
-              {g.foto_url && fotoUrls[g.foto_url] && (
+            <div className="flex max-w-[6.5rem] flex-wrap items-center gap-x-2 gap-y-0.5">
+              {g.foto_url && firmada && (
                 <ComprobantePreview
                   bucket="gasto-fotos"
                   path={g.foto_url}
-                  url={fotoUrls[g.foto_url]}
-                  alt={`Comprobante · ${g.categoria}`}
+                  url={firmada}
+                  alt={altComprobanteGasto(g.categoria)}
                 />
+              )}
+              {/* La firma falló o no llegó esa ruta: se dice, en vez de una
+                  celda vacía que parece «sin comprobante». */}
+              {g.foto_url && !firmada && (
+                <span
+                  className="whitespace-normal text-[11px] leading-tight text-muted-foreground"
+                  title={TITULO_SIN_VISTA_PREVIA}
+                >
+                  {ETIQUETA_SIN_VISTA_PREVIA}
+                </span>
               )}
               {textoHojas(nHojas) && (
                 <span
@@ -489,14 +564,15 @@ export function ExpensesTable({
       },
       {
         // Seguimiento de oficina "¿ya lo facturé?" (pedido del cliente,
-        // ago 2026): semáforo de un clic, independiente del comprobante.
+        // ago 2026): semáforo de un clic, independiente del comprobante;
+        // «No requiere» en corto (compacta) para no ensanchar la columna.
         //
         // AL LADO, «Subir factura» (22-sep-2026): el XML del CFDI se registra
         // en Facturas recibidas y se amarra a ESTE gasto sin salir de la
         // pantalla — al amarrar, el trigger del API pone el semáforo en
         // 🟢 Facturada (el panel no lo toca por su cuenta).
         key: "facturacion",
-        header: "Facturación",
+        header: ENCABEZADOS_GASTOS.facturacion,
         // La columna tiene botones y la fila no es un link (Gastos no usa
         // `rowHref`), pero se marca igual por si algún día lo usa.
         noLink: true,
@@ -505,7 +581,7 @@ export function ExpensesTable({
             GUION
           ) : (
             <span className="inline-flex items-center gap-1">
-              <FacturacionBadge gasto={f.gasto} />
+              <FacturacionBadge gasto={f.gasto} compacta />
               <GastoFacturaButton gasto={f.gasto} />
             </span>
           ),
@@ -517,7 +593,7 @@ export function ExpensesTable({
         // el cargo, su cuenta y su estado de cuenta); el cruce sigue en
         // Conciliación.
         key: "banco",
-        header: "Banco",
+        header: ENCABEZADOS_GASTOS.banco,
         cellClassName: "whitespace-nowrap",
         noLink: true,
         cell: (f) =>
@@ -529,17 +605,20 @@ export function ExpensesTable({
       },
       {
         key: "acciones",
-        header: "",
-        headClassName: "w-10",
+        header: <span className="sr-only">{ENCABEZADOS_GASTOS.acciones}</span>,
+        headClassName: "w-12",
+        cellClassName: "w-12 text-center",
         cell: (f) =>
           f.kind === "compra" ? (
+            // Solo ícono: «Ver compra» con texto ensanchaba la columna ≈60 px
+            // cada vez que una compra caía en la página.
             <Link
               href={`/admin/inventory/compras/${f.compraId}`}
-              className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-brand-600 hover:bg-muted"
-              title="Abrir la compra"
+              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-brand-600 hover:bg-muted dark:text-brand-400"
+              aria-label={tituloAbrirCompra(f.folio)}
+              title={tituloAbrirCompra(f.folio)}
             >
-              Ver compra
-              <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+              <ArrowTopRightOnSquareIcon className="h-4 w-4" aria-hidden="true" />
             </Link>
           ) : (
             <ExpenseActions
@@ -562,8 +641,10 @@ export function ExpensesTable({
         rows={filas}
         rowKey={(f) => f.key}
         huboCorte={huboCorte}
+        // Tinte neutro (antes `bg-brand-600/5`, que se confundía con el
+        // tinte rojizo de la fila ACTIVA).
         rowClassName={(f) =>
-          f.kind === "compra" ? "bg-brand-600/5" : f.hijo ? "bg-muted/30" : undefined
+          f.kind === "compra" ? "bg-muted/40" : f.hijo ? "bg-muted/20" : undefined
         }
         // Los pagos van pegados al grupo (no se paginan ni se filtran sueltos).
         subRows={(f) => (f.kind === "compra" && f.abierta ? f.hijos : undefined)}
@@ -573,36 +654,16 @@ export function ExpensesTable({
               `compra #${f.folio}`,
               f.proveedor ?? "",
               f.referencia ?? "",
-              ...f.pagos.map(textoGasto),
+              ...f.pagos.map(textoBusquedaGasto),
             ].join(" ");
           }
-          return textoGasto(f.gasto);
+          return textoBusquedaGasto(f.gasto);
         }}
-        searchPlaceholder="Buscar gasto (proveedor, categoría, matrícula, descripción, compra)…"
+        searchPlaceholder={PLACEHOLDER_BUSCAR_GASTOS}
       />
       <GastoBancoSheet detalle={detalleBanco} />
     </>
   );
-}
-
-function textoGasto(g: Gasto): string {
-  return [
-    g.categoria,
-    // El label mostrado también se indexa ("gasto personal del dueño" no es
-    // substring de PERSONAL_DUENO).
-    categoriaGastoLabel(g.categoria),
-    g.proveedor?.nombre ?? "",
-    g.aeronave?.matricula ?? "",
-    // Matrículas del reparto: un gasto repartido se encuentra buscando
-    // cualquiera de sus aviones (igual que en otros-gastos).
-    ...(g.repartos ?? []).map((r) => r.aeronave?.matricula ?? ""),
-    g.lugar ?? "",
-    g.vuelo?.folio ?? "",
-    g.captura?.nombre ?? "",
-    g.tarjeta_terminacion ?? "",
-    g.notas ?? "",
-    g.compra ? `compra #${g.compra.folio}` : "",
-  ].join(" ");
 }
 
 // Fuente única movida a @/lib/admin/medios-pago (la necesita también el

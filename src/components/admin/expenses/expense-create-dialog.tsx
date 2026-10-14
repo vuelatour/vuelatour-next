@@ -222,6 +222,7 @@ export function ExpenseCreateDialog({
   onCreado,
   titulo,
   contexto,
+  varianteBoton = "outline",
 }: {
   aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
@@ -248,6 +249,9 @@ export function ExpenseCreateDialog({
   defaultCategoria?: string;
   /** Piloto del vuelo prefijado (para "simular como piloto"). null = sin piloto. */
   defaultPilotoNombre?: string | null;
+  /** Estilo del botón propio (14-oct-2026): «default» = primario, como en
+      Gastos; las demás pantallas lo dejan «outline». */
+  varianteBoton?: "default" | "outline";
 }) {
   const [openLocal, setOpenLocal] = useState(false);
   // Modo controlado: abre y cierra quien lo monta (ver props).
@@ -992,7 +996,7 @@ export function ExpenseCreateDialog({
     <>
       {!controlado && (
         <Button
-          variant="outline"
+          variant={varianteBoton}
           onClick={() => {
             // Estado que reset(emptyValues) no cubre: se limpia en CADA
             // apertura (Cancelar cierra con setOpen directo, sin onOpenChange).

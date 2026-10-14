@@ -201,3 +201,88 @@ export function lineaCaptura(g: GastoCaptura): CapturaLinea | null {
   }
   return { texto, ambar: false, title: detalle };
 }
+
+// =============================================================================
+// Variante COMPACTA para la tabla de Gastos (14-oct-2026, una sola tabla)
+// =============================================================================
+
+/** Orígenes que llevan el DISTINTIVO de color que pidió el cliente (9-jul). */
+export type OrigenConDistintivo = "OFICINA" | "SISTEMA" | "VISITANTE";
+
+/**
+ * Distintivo de origen (pedido del cliente, 9-jul-2026): los gastos que sube
+ * administración, los que genera el sistema (p. ej. pistas) y los de un
+ * visitante se distinguen de un vistazo de los capturados en campo. Antes
+ * era una insignia de color en la columna «Capturó»; desde la tabla única
+ * (14-oct-2026) es el COLOR de la palabra de origen en la tercera línea de
+ * la celda «Fecha» («Mary Cruz · panel», con «panel» en el color de
+ * «Oficina»), sin ensanchar la columna: una insignia con su etiqueta le
+ * quitaba al nombre el espacio que necesita (medido: «Pablo Canales» se
+ * cortaba). La etiqueta va en el `title` de la palabra y para el lector de
+ * pantalla. Piloto y mecánico no llevan distintivo («app» en gris).
+ */
+export const DISTINTIVO_ORIGEN: Readonly<Record<OrigenConDistintivo, string>> = {
+  OFICINA: "Oficina",
+  SISTEMA: "Sistema",
+  VISITANTE: "Visitante",
+};
+
+/** Qué significa cada distintivo (title de la palabra de origen). */
+export const TITULO_DISTINTIVO_ORIGEN: Readonly<Record<OrigenConDistintivo, string>> = {
+  OFICINA: "Oficina: lo capturó administración desde el panel.",
+  SISTEMA: "Sistema: lo generó el sistema (p. ej. las pistas).",
+  VISITANTE: "Visitante: lo capturó un visitante desde la app.",
+};
+
+/** El distintivo del origen, o null si no lleva (piloto, mecánico, sin dato). */
+export function distintivoOrigen(
+  origen: string | null | undefined,
+): { codigo: OrigenConDistintivo; etiqueta: string; titulo: string } | null {
+  if (origen === "OFICINA" || origen === "SISTEMA" || origen === "VISITANTE") {
+    return {
+      codigo: origen,
+      etiqueta: DISTINTIVO_ORIGEN[origen],
+      titulo: TITULO_DISTINTIVO_ORIGEN[origen],
+    };
+  }
+  return null;
+}
+
+/**
+ * Viewmodel de la celda «Fecha» de Gastos en DOS sublíneas cortas (la
+ * columna mide 8rem): «Capturado 14 oct 10:33» y «Mary Cruz · panel». El
+ * nombre se trunca y el origen se conserva (con el color de su distintivo);
+ * `ambar` y `title` son EXACTAMENTE los de `lineaCaptura` (pista del 28-ago y
+ * detalle completo).
+ */
+export interface CapturaCompacta {
+  /** «Capturado 14 oct 10:33» (con «⚠ año 2025 · » delante si el ticket trae otro año). */
+  cuando: string;
+  /** Quién lo capturó (recortado) o null. */
+  nombre: string | null;
+  /** «panel», «app» o «sistema» (`origenCapturaLabel`); null sin dato. */
+  origen: string | null;
+  /** Distintivo de color (Oficina / Sistema / Visitante) o null. */
+  distintivo: { codigo: OrigenConDistintivo; etiqueta: string; titulo: string } | null;
+  ambar: boolean;
+  title: string;
+}
+
+/** null cuando `lineaCaptura` es null (fila sin instante de captura: no se inventa). */
+export function lineaCapturaCompacta(g: GastoCaptura): CapturaCompacta | null {
+  const linea = lineaCaptura(g);
+  if (!linea) return null;
+  const base = `Capturado ${fmtCapturaCorta(capturadoEnDe(g))}`;
+  const desfase = desfaseCaptura(g);
+  const cuando = desfase?.anioRaro
+    ? `⚠ año ${(g.fecha_gasto ?? "").slice(0, 4)} · ${base}`
+    : base;
+  return {
+    cuando,
+    nombre: g.captura?.nombre?.trim() || null,
+    origen: origenCapturaLabel(g.origen),
+    distintivo: distintivoOrigen(g.origen),
+    ambar: linea.ambar,
+    title: linea.title,
+  };
+}

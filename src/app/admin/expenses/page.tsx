@@ -1,26 +1,14 @@
-import type { Metadata } from "next";
-import { tituloGastos } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   BanknotesIcon,
   ExclamationTriangleIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExpensesTable } from "@/components/admin/expenses/expenses-table";
-import {
-  listGastos,
-  listGastosAll,
-  signFuelPhotos,
-  type ListGastosQuery,
-} from "@/lib/api/expenses-server";
+import { listGastos, listGastosAll, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { listPilots } from "@/lib/api/pilots-server";
@@ -32,77 +20,63 @@ import { tituloExcelGastos } from "@/lib/admin/gasto-banco";
 import { SuggestAssignmentsButton } from "@/components/admin/expenses/suggest-assignments-button";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { PistasDialog } from "@/components/admin/expenses/pistas-dialog";
-import { ExpensesSeleccionProvider } from "@/components/admin/expenses/expenses-seleccion";
+import {
+  ExpensesSeleccionProvider,
+  UnirCompraToggle,
+} from "@/components/admin/expenses/expenses-seleccion";
+import { IndicadorEnlace } from "@/components/admin/indicador-enlace";
+import { EmptyState } from "@/components/admin/empty-state";
+import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { esCategoriaCompra } from "@/types/compras";
 import { todayCancun } from "@/lib/datetime";
-import { Degradaciones } from "@/lib/api/degradar";
+import { Degradaciones, principal } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
-import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "@/lib/admin/url-params";
-import { MEDIOS_CAPTURA_VALUES } from "@/lib/admin/medios-pago";
-import { FILTRO_NO_FACTURADA, FACTURACION_ESTADOS } from "@/lib/admin/facturacion-estatus";
-import { conciliadoDeFiltroBanco } from "@/lib/admin/conciliacion-estado";
-import { avionCatalogoGasto, type AvionCatalogoGasto } from "@/lib/admin/combustibles";
+import { avionCatalogoGasto } from "@/lib/admin/combustibles";
+import {
+  AVION_FILTRO_DESCONOCIDO,
+  DESCRIPCION_ERROR_LISTA_GASTOS,
+  ETIQUETA_CHIP_AVION,
+  ETIQUETA_FOTOS_COMPROBANTES,
+  ETIQUETA_LISTA_GASTOS,
+  ETIQUETA_TOTAL_PENDIENTES,
+  ETIQUETA_VISTA,
+  TEXTO_QUITAR_FILTROS_GASTOS,
+  TITULO_ERROR_LISTA_GASTOS,
+  TITULO_QUITAR_FILTRO_AVION,
+  ariaQuitarFiltroAvion,
+  hayFiltrosGastos,
+  hrefQuitarFiltrosGastos,
+  leerFiltrosGastos,
+  queryBaseGastos,
+  queryExcelGastos,
+  queryListaGastos,
+  textoCorteGastos,
+  tituloVistaGastos,
+  vacioGastos,
+  type VistaGastos,
+} from "@/lib/admin/gastos-vista";
 
 export const dynamic = "force-dynamic";
 
-type Filtro = "todos" | "pendientes" | "duplicados";
-
-/** Pestaña de la URL (`?f=`): la MISMA regla para la pantalla y su título. */
-function filtroGastosDeUrl(f: string | undefined): Filtro {
-  return f === "pendientes" || f === "duplicados" ? f : "todos";
-}
-
-/** «Gastos» (Todos) · «Gastos · Pendientes» · «Gastos · Duplicados». */
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: Promise<{ f?: string }>;
-}): Promise<Metadata> {
-  const sp = await searchParams;
-  return { title: tituloGastos(filtroGastosDeUrl(sp.f)) };
-}
-
 /**
- * Valores que el API acepta en `estatus_facturacion` (los 4 del enum + el
- * meta-valor NO_FACTURADA). Derivado de la fuente única para que agregar un
- * estado no deje el filtro fuera.
+ * Gastos: UNA sola tabla (14-oct-2026). Pedido del cliente: unir en una sola
+ * tabla las dos tarjetas de antes (generales y operativos) — «está como
+ * ambigua la información… toda la vista debe quedar bien e intuitiva». La
+ * división vieja partía en dos tarjetas los gastos de un mismo vuelo (233
+ * directos del vuelo caían en «generales») y no decía a dónde iba el dinero;
+ * ahora cada renglón lo dice en «Avión · vuelo» y el filtro de SERVIDOR
+ * «Categoría» sustituye a la división (lo heredan las pestañas y el Excel).
+ * Reglas y textos en `lib/admin/gastos-vista.ts`; columnas en
+ * `expenses-table.tsx`.
  */
-const FACTURACION_FILTRO_VALUES = [
-  ...FACTURACION_ESTADOS.map((e) => e.value as string),
-  FILTRO_NO_FACTURADA,
-] as const;
-
-// Vista general en dos columnas (pedido del cliente): gastos OPERATIVOS
-// (ligados a operar el vuelo: combustible, pistas, TUAS, FBO, permisos) vs
-// GENERALES (viáticos, refacciones, fijos...). El desglose completo de cada
-// vuelo vive en su detalle (/admin/flights/{id}). COMISARIATO (13-oct-2026)
-// NO está a propósito: es amenidad de los pasajeros, no operar el avión — va
-// en «generales» como COMIDA (en el balance sí es gasto directo del vuelo).
-const CATEGORIAS_OPERATIVAS = new Set([
-  "GAS",
-  "OPERACIONES",
-  "ATERRIZAJE",
-  "TUAS",
-  "FBO",
-  "PERMISO",
-  // Honorario del piloto externo: es costo de operar el vuelo.
-  "PILOTO_EXTERNO",
-]);
-
-/**
- * Los pagos de una COMPRA de refacciones (aunque uno sea OPERACIONES, p. ej.
- * la aduana) se quedan juntos en "generales": la tabla los muestra como una
- * sola fila-grupo y partirlos entre dos cards la rompería.
- */
-const esOperativo = (g: { categoria: string; compra_id?: string | null }) =>
-  CATEGORIAS_OPERATIVAS.has(g.categoria) && !g.compra_id;
-
 export default async function ExpensesPage({
   searchParams,
 }: {
   searchParams: Promise<{
     f?: string;
     aeronave_id?: string;
+    /** Una de las 22 categorías (filtro de servidor, 14-oct-2026). */
+    categoria?: string;
     medio?: string;
     piloto?: string;
     desde?: string;
@@ -111,10 +85,10 @@ export default async function ExpensesPage({
     /** conciliados | sin_conciliar (columna «Banco», 9-oct-2026). */
     banco?: string;
     /** "7d" = solo lo CAPTURADO en los últimos 7 días (aunque el ticket
-     *  traiga otra fecha): lo que se subió desde la app esta semana. */
+     *  traiga otra fecha): «Esta semana» de «Fecha de captura». */
     cap?: string;
     /** Rango explícito de CAPTURA (día Cancún, 7-sep): mismo eje que `cap`
-     *  — si viene un rango, el chip de la semana se ignora. */
+     *  — si viene un rango, la semana se ignora. */
     cap_desde?: string;
     cap_hasta?: string;
     /** fecha (default) | captura: orden del listado y del Excel. */
@@ -122,89 +96,50 @@ export default async function ExpensesPage({
   }>;
 }) {
   const sp = await searchParams;
-  // Días de CAPTURA: antes bastaba con que tuvieran forma de fecha, así que
-  // `?cap_desde=2026-13-45` viajaba al API (que solo valida el patrón) y
-  // reventaba al armar el timestamp. `esDiaValido` exige que el día EXISTA.
-  const capDesdeExplicito = esDiaValido(sp.cap_desde) ? sp.cap_desde : undefined;
-  const capHastaExplicito = esDiaValido(sp.cap_hasta) ? sp.cap_hasta : undefined;
-  const hayRangoCaptura = !!(capDesdeExplicito || capHastaExplicito);
-  const capturadoSemana = sp.cap === "7d" && !hayRangoCaptura;
-  const capturadoDesde = capturadoSemana
-    ? (() => {
-        const d = new Date(`${todayCancun()}T12:00:00Z`);
-        d.setUTCDate(d.getUTCDate() - 7);
-        return d.toISOString().slice(0, 10);
-      })()
-    : capDesdeExplicito;
-  const orden = sp.orden === "captura" ? ("captura" as const) : undefined;
-  const filtro: Filtro = filtroGastosDeUrl(sp.f);
-  // Filtro por avión (link desde el expediente del avión). El API lo soporta
-  // nativo en /v1/expenses; los contadores de las pestañas lo respetan.
-  const aeronaveId = uuidFiltro(sp.aeronave_id);
-  // Filtros de oficina (ago 2026): tipo de pago, quién capturó y fechas de
-  // corte — los mismos que hereda "Exportar Excel" (reporte de efectivos por
-  // piloto con dos clics).
-  //
-  // TODOS validados contra el catálogo del API (21-sep-2026): un enlace viejo
-  // con `?desde=2026-13-45` o un `?medio=` que ya no existe daba 400 y la
-  // pantalla entera caía al error boundary. Un filtro inválido se IGNORA.
-  const rango = rangoFiltro(sp.desde, sp.hasta);
-  const filtrosExtra = {
-    medio_pago: valorDeCatalogo(sp.medio, MEDIOS_CAPTURA_VALUES),
-    usuario_captura_id: uuidFiltro(sp.piloto),
-    desde: rango.desde,
-    hasta: rango.hasta,
-    // Semáforo de facturación (PENDIENTE/SOLICITADA/FACTURADA/NO_FACTURABLE
-    // + el meta-valor NO_FACTURADA).
-    estatus_facturacion: valorDeCatalogo(sp.facturacion, FACTURACION_FILTRO_VALUES),
-    // Conciliación con el banco (9-oct-2026): conciliados / sin conciliar.
-    // Hereda al Excel como el resto.
-    conciliado: conciliadoDeFiltroBanco(sp.banco),
-    // Fecha de CAPTURA (28-ago): "¿por qué no veo lo que subí desde la app?"
-    // — el ticket puede traer otra fecha (la IA leyó 2025) y quedar al fondo.
-    // Desde el 7-sep el API corta sobre capturado_en (momento real de
-    // captura) y acepta el rango completo + orden por captura.
-    capturado_desde: capturadoDesde,
-    capturado_hasta: capHastaExplicito,
-    orden,
-  };
-
-  const query: Omit<ListGastosQuery, "limit" | "offset"> = {
-    aeronave_id: aeronaveId,
-    ...filtrosExtra,
-  };
-  if (filtro === "pendientes") query.pendientes = true;
-  if (filtro === "duplicados") query.duplicados = true;
+  const hoy = todayCancun();
+  // Lectura y validación de la URL: la MISMA función que usa la barra de
+  // filtros en el navegador (un filtro inválido se IGNORA: jamás viaja al API
+  // ni provoca un 400 que tumbe la pantalla, 21-sep-2026).
+  const filtros = leerFiltrosGastos((k) => (sp as Record<string, string | undefined>)[k]);
+  const filtro = filtros.vista;
+  const conFiltros = hayFiltrosGastos(filtros);
+  // Filtro por avión (link desde el expediente del avión); lo respetan las
+  // pestañas, el Excel y la barra.
+  const aeronaveId = filtros.aeronave_id;
+  const base = queryBaseGastos(filtros, hoy);
 
   // Los GASTOS son la llamada principal (no se degrada: una lista de dinero
-  // vacía por un 502 llevaría a recapturar). Los contadores de pestaña y los
-  // catálogos de los selectores sí degradan, con aviso (21-sep-2026).
+  // vacía por un 502 llevaría a recapturar; si falla se dice con
+  // TarjetaErrorCarga y la cabecera y los filtros siguen vivos). Los
+  // contadores de pestaña y los catálogos de los selectores sí degradan, con
+  // aviso (21-sep-2026).
   const degradado = new Degradaciones();
-  const [
-    { data: gastos, count: gastosCount },
-    pendientesRes,
-    duplicadosRes,
-    aircraftRes,
-    providersRes,
-    pilotsRes,
-    me,
-  ] =
+  const [lista, pendientesRes, duplicadosRes, totalPendientesRes, aircraftRes, providersRes, pilotsRes, me] =
     await Promise.all([
-      // SIN cap (anti-cap-200): prod ya rebasó los 500 gastos y el corte
+      // SIN cap (anti-cap-200): prod ya rebasó los 1,000 gastos y el corte
       // silencioso hacía parecer "no guardado" un gasto que sí existía.
-      listGastosAll(query),
+      principal(listGastosAll(queryListaGastos(filtros, hoy))),
       degradado.opcional(
         "el contador de pendientes",
-        listGastos({ pendientes: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
+        listGastos({ ...base, pendientes: true, limit: 1 }),
         // `null` = no se sabe; la pestaña NO pinta "0" (sería «ya no hay
         // pendientes», justo lo contrario de lo que esta bandeja vigila).
         { count: null as number | null },
       ),
       degradado.opcional(
         "el contador de duplicados",
-        listGastos({ duplicados: true, limit: 1, aeronave_id: aeronaveId, ...filtrosExtra }),
+        listGastos({ ...base, duplicados: true, limit: 1 }),
         { count: null as number | null },
       ),
+      // «Sugerir asignaciones» barre TODA la bandeja: con filtros puestos, su
+      // title lleva el total GLOBAL (una lectura más, solo entonces).
+      conFiltros
+        ? degradado.opcional(
+            ETIQUETA_TOTAL_PENDIENTES,
+            listGastos({ pendientes: true, limit: 1 }),
+            { count: null as number | null },
+          )
+        : Promise.resolve(null),
       degradado.opcional("las aeronaves", listAircraft({ limit: 100 }), {
         data: [] as Awaited<ReturnType<typeof listAircraft>>["data"],
       }),
@@ -237,31 +172,37 @@ export default async function ExpensesPage({
   const personas = [...pilotsRes].sort((a, b) =>
     a.nombre.localeCompare(b.nombre, "es"),
   );
+  const pendientesGlobal = conFiltros
+    ? (totalPendientesRes?.count ?? null)
+    : pendientesRes.count;
 
   // Con el combustible de cada avión: los diálogos prellenan y avisan (5-oct-2026).
   const aircraft = aircraftRes.data.map(avionCatalogoGasto);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const aeronaveFiltro = aeronaveId
-    ? (aircraft.find((a) => a.id === aeronaveId)?.matricula ?? "desconocido")
+    ? (aircraft.find((a) => a.id === aeronaveId)?.matricula ?? AVION_FILTRO_DESCONOCIDO)
     : null;
 
-  // Filtros de oficina que TODO link interno conserva (pestañas, chip de la
-  // semana, quitar avión): agregar aquí cualquier filtro nuevo de la barra.
+  // Filtros de oficina que TODO link interno conserva (pestañas y «quitar
+  // avión»): agregar aquí cualquier filtro nuevo de la barra.
   const FILTROS_URL = [
     "medio",
     "piloto",
     "desde",
     "hasta",
     "facturacion",
-    // Filtro «Banco» (9-oct-2026): faltaba aquí y las pestañas, el chip de
-    // la semana y «quitar avión» lo tiraban (13-oct-2026).
+    // Filtro «Banco» (9-oct-2026): faltaba aquí y las pestañas, la semana
+    // de captura y «quitar avión» lo tiraban (13-oct-2026).
     "banco",
     "cap",
     "cap_desde",
     "cap_hasta",
     "orden",
+    // Filtro «Categoría» (14-oct-2026, una sola tabla): al final, así las
+    // URLs de antes se escriben igual.
+    "categoria",
   ] as const;
-  const paramsFiltros = (key: Filtro, conAvion: boolean) => {
+  const paramsFiltros = (key: VistaGastos, conAvion: boolean) => {
     const params = new URLSearchParams();
     if (key !== "todos") params.set("f", key);
     if (conAvion && aeronaveId) params.set("aeronave_id", aeronaveId);
@@ -272,35 +213,27 @@ export default async function ExpensesPage({
     const qs = params.toString();
     return qs ? `/admin/expenses?${qs}` : "/admin/expenses";
   };
-  const hrefTab = (key: Filtro) => hrefCon(paramsFiltros(key, true));
-  // Mismo href que la pestaña activa, con/sin el chip "Subidos esta semana".
-  // Activarlo quita el rango explícito de captura (es el mismo eje).
-  const hrefCapturado = (activar: boolean) => {
-    const params = paramsFiltros(filtro, true);
-    if (activar) {
-      params.set("cap", "7d");
-      params.delete("cap_desde");
-      params.delete("cap_hasta");
-    } else {
-      params.delete("cap");
-    }
-    return hrefCon(params);
-  };
+  const hrefTab = (key: VistaGastos) => hrefCon(paramsFiltros(key, true));
+  // Clave de la tabla: cambiar de pestaña o de filtro la REMONTA (página 1,
+  // compras plegadas, sin fila activa); un refresh deja la misma clave.
+  const claveVista = paramsFiltros(filtro, true).toString();
 
+  const gastos = lista.ok ? lista.datos.data : [];
   // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
   // de dejar que un gasto "desaparezca" en silencio (auditoría 29-ago).
-  const huboCorte = gastos.length < gastosCount;
+  const huboCorte = lista.ok && gastos.length < lista.datos.count;
 
-  // Firma las fotos de los comprobantes (bucket privado) para verlas en el admin.
+  // Firma las fotos de los comprobantes (bucket privado). Si la firma falla
+  // se DICE (aviso discreto y «Sin vista previa» en la fila), en vez de
+  // dejar celdas vacías que parecen «sin comprobante».
   const fotoPaths = gastos.map((g) => g.foto_url).filter((p): p is string => !!p);
-  let fotoUrls: Record<string, string> = {};
-  if (fotoPaths.length > 0) {
-    try {
-      fotoUrls = await signFuelPhotos(fotoPaths);
-    } catch {
-      fotoUrls = {};
-    }
-  }
+  const fotoUrls = fotoPaths.length
+    ? await degradado.opcional(
+        ETIQUETA_FOTOS_COMPROBANTES,
+        signFuelPhotos(fotoPaths),
+        {} as Record<string, string>,
+      )
+    : {};
 
   // Gastos que pueden marcarse para "Unir en compra" en ESTA vista (sueltos y
   // de categoría de compra: misma regla que la casilla). El provider poda la
@@ -309,16 +242,17 @@ export default async function ExpensesPage({
     .filter((g) => !g.compra_id && esCategoriaCompra(g.categoria))
     .map((g) => g.id);
 
-  const tabs: { key: Filtro; label: string; count?: number | null }[] = [
-    { key: "todos", label: "Todos" },
-    { key: "pendientes", label: "Pendientes", count: pendientesRes.count },
-    { key: "duplicados", label: "Duplicados", count: duplicadosRes.count },
+  const tabs: { key: VistaGastos; count?: number | null }[] = [
+    { key: "todos" },
+    { key: "pendientes", count: pendientesRes.count },
+    { key: "duplicados", count: duplicadosRes.count },
   ];
+  const vacio = vacioGastos(filtro, conFiltros);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div>
+        <div className="max-w-3xl">
           <p className="text-sm text-muted-foreground">Operación</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Gastos</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -327,195 +261,134 @@ export default async function ExpensesPage({
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <ExpenseCreateDialog aircraft={aircraft} providers={providers} />
+          <ExpenseCreateDialog aircraft={aircraft} providers={providers} varianteBoton="default" />
           <PistasDialog />
-          <SuggestAssignmentsButton pendientes={pendientesRes.count ?? 0} />
+          <SuggestAssignmentsButton pendientes={pendientesGlobal} />
           <ExcelExportButton
             path="/v1/expenses/export"
             filename="gastos.xlsx"
             label="Exportar Excel"
+            className="h-8"
             // A quien concilia (o rol desconocido) el API le agrega factura,
             // cargo del banco y estado de cuenta (pestaña «Cargos del banco»).
             title={tituloExcelGastos(me?.rol ?? null)}
             // El Excel sale con LOS MISMOS filtros que se ven en pantalla
-            // (incluye el resumen de efectivos por persona y su facturado).
-            query={{
-              aeronave_id: aeronaveId,
-              ...filtrosExtra,
-              // El botón arma un querystring de textos; el API lee "true"/"false".
-              conciliado:
-                filtrosExtra.conciliado == null ? undefined : String(filtrosExtra.conciliado),
-            }}
+            // (incluye el resumen de efectivos por persona y su facturado) y,
+            // desde el 14-oct-2026, con la pestaña (Pendientes/Duplicados).
+            query={queryExcelGastos(filtros, hoy)}
           />
         </div>
       </div>
 
-      <div className="flex gap-2 flex-wrap items-center">
-        {tabs.map((t) => (
-          <Link
-            key={t.key}
-            href={hrefTab(t.key)}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-              filtro === t.key
-                ? "bg-brand-600 text-white"
-                : "bg-muted text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t.label}
-            {t.count != null && t.count > 0 && (
-              <span
-                className={cn(
-                  "rounded-full px-1.5 text-xs",
-                  filtro === t.key ? "bg-white/20" : "bg-amber-500/20 text-amber-600",
-                )}
+      <ExpensesSeleccionProvider idsVisibles={idsSeleccionables}>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <nav aria-label="Vistas de gastos" className="flex flex-wrap gap-2">
+              {tabs.map((t) => (
+                <Link
+                  key={t.key}
+                  href={hrefTab(t.key)}
+                  prefetch={false}
+                  aria-current={filtro === t.key ? "page" : undefined}
+                  title={tituloVistaGastos(t.key, t.count)}
+                  className={cn(
+                    "relative inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                    filtro === t.key
+                      ? "bg-brand-600 text-white"
+                      : "bg-muted text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {ETIQUETA_VISTA[t.key]}
+                  {t.count != null && t.count > 0 && (
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 text-xs tabular-nums",
+                        filtro === t.key
+                          ? "bg-white/20"
+                          : "bg-amber-500/20 text-amber-600 dark:text-amber-400",
+                      )}
+                    >
+                      {t.count}
+                    </span>
+                  )}
+                  {/* Gira en la esquina mientras llega la vista pulsada. */}
+                  <IndicadorEnlace className="absolute -right-1 -top-1 bg-background text-muted-foreground" />
+                </Link>
+              ))}
+            </nav>
+            {aeronaveFiltro && (
+              <Link
+                // Quitar SOLO el avión: los demás filtros activos (pestaña,
+                // categoría, medio, capturó, fechas, captura, orden,
+                // facturación, banco) se conservan.
+                href={hrefCon(paramsFiltros(filtro, false))}
+                prefetch={false}
+                title={TITULO_QUITAR_FILTRO_AVION}
+                aria-label={ariaQuitarFiltroAvion(aeronaveFiltro)}
+                className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-1.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-600/20 dark:text-brand-400"
               >
-                {t.count}
-              </span>
+                {ETIQUETA_CHIP_AVION} <span className="font-mono">{aeronaveFiltro}</span>
+                <XMarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                <IndicadorEnlace className="absolute -right-1 -top-1 bg-background" />
+              </Link>
             )}
-          </Link>
-        ))}
-        <Link
-          href={hrefCapturado(!capturadoSemana)}
-          title="Solo lo capturado en los últimos 7 días (aunque el ticket traiga otra fecha): lo que subieron desde la app esta semana"
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-            capturadoSemana
-              ? "bg-brand-600 text-white"
-              : "bg-muted text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Subidos esta semana
-          {capturadoSemana && <XMarkIcon className="h-3.5 w-3.5" />}
-        </Link>
-        <ExpensesFilterBar personas={personas} />
-        {aeronaveFiltro && (
-          <Link
-            // Quitar SOLO el avión: los demás filtros activos (pestaña,
-            // medio, capturó, fechas, captura, orden, facturación) se conservan.
-            href={hrefCon(paramsFiltros(filtro, false))}
-            title="Quitar el filtro de avión"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-1.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-600/20"
-          >
-            Avión: <span className="font-mono">{aeronaveFiltro}</span>
-            <XMarkIcon className="h-3.5 w-3.5" />
-          </Link>
-        )}
-      </div>
-
-      {/* Catálogos/contadores que no cargaron: se dice en vez de pintar 0. */}
-      <AvisoDegradado faltantes={degradado.faltantes} />
-
-      {huboCorte && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
-          <span>
-            Mostrando {gastos.length} de {gastosCount} gastos — usa los
-            filtros para acotar la lista.
-          </span>
-        </div>
-      )}
-
-      {gastos.length === 0 ? (
-        <Card>
-          <CardHeader className="text-center py-12">
-            <div className="flex justify-center mb-4">
-              <BanknotesIcon className="h-12 w-12 text-muted-foreground" />
+            <div className="ml-auto">
+              <UnirCompraToggle />
             </div>
-            <CardTitle>
-              {filtro === "pendientes"
-                ? "Sin gastos pendientes"
-                : filtro === "duplicados"
-                  ? "Sin duplicados sospechosos"
-                  : "Sin gastos capturados"}
-            </CardTitle>
-            <CardDescription>
-              {filtro === "pendientes"
-                ? "Todos los gastos tienen avión asignado. Bandeja limpia."
-                : "Aquí verás los gastos que capturen pilotos y oficina."}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        // Cards APILADAS a lo ancho (pedido de oficina 14-ago): lado a lado
-        // las columnas no cabían y las tablas se cortaban. El desglose por
-        // vuelo está en el detalle del vuelo (link en la columna Vuelo).
-        // El provider comparte la selección múltiple entre ambas tablas
-        // ("Unir en compra": la factura de refacciones y su envío/impuestos
-        // pueden caer en cards distintas).
-        <ExpensesSeleccionProvider idsVisibles={idsSeleccionables}>
-          <div className="space-y-6">
-            <GastosCard
-              titulo="Gastos generales"
-              descripcion="Viáticos, refacciones, compras de refacciones, fijos y otros."
-              gastos={gastos.filter((g) => !esOperativo(g))}
-              aircraft={aircraft}
-              providers={providers}
-              fotoUrls={fotoUrls}
-              huboCorte={huboCorte}
-              rol={me?.rol ?? null}
-            />
-            <GastosCard
-              titulo="Gastos operativos"
-              descripcion="Combustible, pistas/aterrizajes, TUAS, FBO, permisos y piloto externo."
-              gastos={gastos.filter(esOperativo)}
-              aircraft={aircraft}
-              providers={providers}
-              fotoUrls={fotoUrls}
-              huboCorte={huboCorte}
-              rol={me?.rol ?? null}
-            />
           </div>
-        </ExpensesSeleccionProvider>
-      )}
-    </div>
-  );
-}
 
-function GastosCard({
-  titulo,
-  descripcion,
-  gastos,
-  aircraft,
-  providers,
-  fotoUrls,
-  huboCorte = false,
-  rol,
-}: {
-  titulo: string;
-  descripcion: string;
-  gastos: Awaited<ReturnType<typeof listGastos>>["data"];
-  aircraft: AvionCatalogoGasto[];
-  providers: { id: string; nombre: string }[];
-  fotoUrls: Record<string, string>;
-  /** true = no se cargaron TODOS los gastos (corte defensivo del anti-cap). */
-  huboCorte?: boolean;
-  /** Rol de quien mira (menú ⋯: `lib/admin/gasto-acciones.ts`). */
-  rol: string | null;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">
-          {titulo}{" "}
-          <span className="text-sm font-normal text-muted-foreground">({gastos.length})</span>
-        </CardTitle>
-        <CardDescription>{descripcion}</CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        {gastos.length === 0 ? (
-          <p className="px-6 pb-6 text-sm text-muted-foreground">Sin gastos en esta vista.</p>
-        ) : (
-          <ExpensesTable
-            gastos={gastos}
-            aircraft={aircraft}
-            providers={providers}
-            fotoUrls={fotoUrls}
-            huboCorte={huboCorte}
-            rol={rol}
+          <ExpensesFilterBar
+            personas={personas}
+            aviones={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa }))}
           />
-        )}
-      </CardContent>
-    </Card>
+
+          {/* Catálogos/contadores/fotos que no cargaron: se dice en vez de pintar 0. */}
+          <AvisoDegradado faltantes={degradado.faltantes} />
+
+          {huboCorte && lista.ok && (
+            <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+              <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+              <span>{textoCorteGastos(gastos.length, lista.datos.count)}</span>
+            </div>
+          )}
+
+          {!lista.ok ? (
+            // La lista NO cargó: jamás «Sin gastos» (sería mentir sobre dinero).
+            <TarjetaErrorCarga
+              titulo={TITULO_ERROR_LISTA_GASTOS}
+              descripcion={DESCRIPCION_ERROR_LISTA_GASTOS}
+            />
+          ) : gastos.length === 0 ? (
+            // Con lista vacía no se monta la tabla (evita «Sin resultados para “”»).
+            <EmptyState icon={BanknotesIcon} title={vacio.titulo} description={vacio.descripcion}>
+              {conFiltros && (
+                <div className="mt-4 flex justify-center">
+                  <Link
+                    href={hrefQuitarFiltrosGastos(filtro, filtros.orden)}
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-pointer")}
+                  >
+                    {TEXTO_QUITAR_FILTROS_GASTOS}
+                  </Link>
+                </div>
+              )}
+            </EmptyState>
+          ) : (
+            <Card role="region" aria-label={ETIQUETA_LISTA_GASTOS} className="gap-0 py-0">
+              <CardContent className="p-0">
+                <ExpensesTable
+                  key={claveVista}
+                  gastos={gastos}
+                  aircraft={aircraft}
+                  providers={providers}
+                  fotoUrls={fotoUrls}
+                  huboCorte={huboCorte}
+                  rol={me?.rol ?? null}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </ExpensesSeleccionProvider>
+    </div>
   );
 }
