@@ -237,7 +237,8 @@ export default async function IngresosPage({ searchParams }: PageProps) {
   const catalogos: CatalogosIngreso = {
     cuentas,
     clientes: clientesRes.data.map((c) => ({ id: c.id, nombre: c.nombre })),
-    aeronaves: aeronavesRes.data.map((a) => ({ id: a.id, matricula: a.matricula })),
+    // `activa` (13-oct-2026): el selector del ingreso marca el avión dado de baja.
+    aeronaves: aeronavesRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa })),
   };
   const cuentasSelect = cuentas
     .filter((c) => c.activa)

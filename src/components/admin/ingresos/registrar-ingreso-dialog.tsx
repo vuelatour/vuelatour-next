@@ -48,19 +48,23 @@ import {
 import {
   CATEGORIAS_INGRESO,
   CATEGORIA_INGRESO_AYUDA,
-  CATEGORIA_INGRESO_DESTINO,
+  categoriaIngresoAdmiteAvion,
   categoriaIngresoAdmiteVuelo,
   categoriaIngresoSumaAResultados,
   esAnticipo,
   etiquetaCategoriaIngreso,
   etiquetaIngreso,
+  textoDestinoIngreso,
 } from "@/lib/admin/categorias-ingreso";
 import {
   fechasCandidatoCobro,
   AVISO_ANTICIPO_VUELO,
   AVISO_OTRO_INGRESO_CLIENTE,
+  DESCRIPCION_AVION_DADO_DE_BAJA,
+  ETIQUETA_AVION_INGRESO,
   ETIQUETA_EFECTIVO,
   HINT_TC_OFICIAL,
+  OPCION_SIN_AVION_INGRESO,
   VALOR_EFECTIVO,
   cambiosDeEdicion,
   candidatosDeConflicto,
@@ -75,6 +79,7 @@ import {
   formularioVacio,
   hayCambios,
   hayMasDatos,
+  hintAvionIngreso,
   metodoDerivado,
   opcionCategoriaIngreso,
   opcionesMetodoIngreso,
@@ -100,7 +105,9 @@ import type {
 export interface CatalogosIngreso {
   cuentas: CuentaIngresoOpcion[];
   clientes: { id: string; nombre: string }[];
-  aeronaves: { id: string; matricula: string }[];
+  /** `activa` (13-oct-2026): un avión dado de baja se ofrece igual, marcado
+   *  (cuenta en su balance, no en el reparto). Opcional: sin el dato no se marca. */
+  aeronaves: { id: string; matricula: string; activa?: boolean }[];
 }
 
 export interface RegistrarIngresoDialogProps extends CatalogosIngreso {
@@ -187,11 +194,11 @@ const CODES_MAS_DATOS: ReadonlySet<string> = new Set([
   "VUELO_SOLO_EN_REEMBOLSO",
   "GASTO_SOLO_EN_REEMBOLSO",
   "VUELO_NO_EXISTE",
-  "AERONAVE_NO_EXISTE",
   "GASTO_NO_EXISTE",
 ]);
 
-function FormularioIngreso({
+/** El formulario del alta / edición (exportado para la prueba de render). */
+export function FormularioIngreso({
   ingreso,
   abono,
   forzarCategoria,
@@ -288,6 +295,9 @@ function FormularioIngreso({
       // categoría se sueltan (si no, el API respondería 400).
       vuelo_id: categoriaIngresoAdmiteVuelo(cat) ? f.vuelo_id : "",
       gasto_id: cat === "REEMBOLSO_DEVOLUCION" ? f.gasto_id : "",
+      // Un anticipo o una aportación jamás lleva avión (400
+      // AVION_SOLO_EN_RESULTADO): reclasificar lo suelta.
+      aeronave_id: categoriaIngresoAdmiteAvion(cat) ? f.aeronave_id : "",
     }));
     if (!categoriaIngresoAdmiteVuelo(cat)) setVueloElegido(null);
   };
@@ -451,6 +461,32 @@ function FormularioIngreso({
   const sinCuenta = form.cuenta === VALOR_EFECTIVO;
   const clientesOpciones = clientes.map((c) => ({ value: c.id, label: c.nombre }));
   const clienteNombre = clientes.find((c) => c.id === form.cliente_id)?.nombre ?? null;
+  // Avión del ingreso (13-oct-2026, API 0.0.75): un ingreso de resultado con
+  // avión cuenta para ESE avión. El selector va a la vista en las categorías
+  // de resultado (o con un dato legado, que se ve con su error). Si el avión
+  // vigente no está en el catálogo (no cargó, o ya no aparece), se conserva
+  // con su matrícula: nunca se pinta «Sin avión» por una carga que falló.
+  const avionEnCatalogo = aeronaves.find((a) => a.id === form.aeronave_id) ?? null;
+  const matriculaVigente =
+    form.aeronave_id && ingreso?.aeronave_id === form.aeronave_id ? (ingreso.matricula ?? null) : null;
+  const matriculaElegida = avionEnCatalogo?.matricula ?? matriculaVigente;
+  const muestraAvion = categoriaIngresoAdmiteAvion(cat) || !!form.aeronave_id;
+  const opcionesAvion = [
+    { value: "", label: OPCION_SIN_AVION_INGRESO },
+    ...aeronaves.map((a) => ({
+      value: a.id,
+      label: a.matricula,
+      ...(a.activa === false
+        ? {
+            description: DESCRIPCION_AVION_DADO_DE_BAJA,
+            descriptionClassName: "text-amber-600 dark:text-amber-400",
+          }
+        : {}),
+    })),
+    ...(form.aeronave_id && !avionEnCatalogo
+      ? [{ value: form.aeronave_id, label: matriculaVigente ?? "Avión asignado" }]
+      : []),
+  ];
 
   return (
     <>
@@ -464,7 +500,8 @@ function FormularioIngreso({
             cat ? (
               <>
                 <span className="block text-green-600 dark:text-green-400">
-                  Va a: {CATEGORIA_INGRESO_DESTINO[cat]}
+                  {/* Con avión, el del avión: es local porque aún no hay respuesta del API. */}
+                  Va a: {textoDestinoIngreso(cat, form.aeronave_id || null, matriculaElegida)}
                 </span>
                 <span className="block">{CATEGORIA_INGRESO_AYUDA[cat]}</span>
               </>
@@ -633,6 +670,22 @@ function FormularioIngreso({
           </Field>
         )}
 
+        {muestraAvion && (
+          <Field
+            label={ETIQUETA_AVION_INGRESO}
+            error={errores.aeronave_id}
+            hint={hintAvionIngreso(matriculaElegida)}
+          >
+            <SearchableSelect
+              options={opcionesAvion}
+              value={form.aeronave_id}
+              onChange={(v) => set("aeronave_id", v)}
+              placeholder={OPCION_SIN_AVION_INGRESO}
+              disabled={guardando}
+            />
+          </Field>
+        )}
+
         <Field
           label="Comprobante (foto o PDF, hasta 10 MB)"
           error={archivoError ?? undefined}
@@ -695,7 +748,7 @@ function FormularioIngreso({
             )}
             Más datos
             <span className="text-xs font-normal text-muted-foreground">
-              comisión, tipo de cambio, método, {esReembolso ? "vuelo, gasto, " : ""}avión, referencia y notas
+              comisión, tipo de cambio, método, {esReembolso ? "vuelo, gasto, " : ""}referencia y notas
             </span>
           </button>
           {masDatos && (
@@ -866,29 +919,15 @@ function FormularioIngreso({
                 </Field>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Avión (opcional)" hint="Solo referencia: el dinero va a VuelaTour.">
-                  <SearchableSelect
-                    options={[
-                      { value: "", label: "Sin avión" },
-                      ...aeronaves.map((a) => ({ value: a.id, label: a.matricula })),
-                    ]}
-                    value={form.aeronave_id}
-                    onChange={(v) => set("aeronave_id", v)}
-                    placeholder="Sin avión"
-                    disabled={guardando}
-                  />
-                </Field>
-                <Field label="Referencia del banco" error={errores.referencia}>
-                  <Input
-                    value={form.referencia}
-                    onChange={(e) => set("referencia", e.target.value)}
-                    maxLength={120}
-                    placeholder="Clave de rastreo, folio…"
-                    disabled={guardando}
-                  />
-                </Field>
-              </div>
+              <Field label="Referencia del banco" error={errores.referencia}>
+                <Input
+                  value={form.referencia}
+                  onChange={(e) => set("referencia", e.target.value)}
+                  maxLength={120}
+                  placeholder="Clave de rastreo, folio…"
+                  disabled={guardando}
+                />
+              </Field>
               <Field label="Notas" error={errores.notas}>
                 <Textarea
                   value={form.notas}

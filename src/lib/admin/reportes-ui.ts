@@ -55,7 +55,7 @@ export const DESCRIPCION_BALANCE_POR_AVION =
  * para ir tras «Balance por avión:» dentro de «¿Qué trae cada libro?».
  */
 export const DETALLE_BALANCE_POR_AVION =
-  "libro completo de un avión en el periodo — reporte de horas (ventas, tacómetros, costos por vuelo), cobranza, combustible, gastos indirectos (incluye la parte repartida a mano), refacciones de bodega, permisos y balance con socios. Incluye la hoja de pendientes de captura para completar el mes.";
+  "libro completo de un avión en el periodo — reporte de horas (ventas, tacómetros, costos por vuelo), cobranza, combustible, gastos indirectos (incluye la parte repartida a mano), refacciones de bodega, permisos, otros ingresos asignados al avión (reembolsos, ventas) y balance con socios. Incluye la hoja de pendientes de captura para completar el mes.";
 
 /** `aria-label` de la grilla de aviones. */
 export const ARIA_LISTA_AVIONES = "Aviones";

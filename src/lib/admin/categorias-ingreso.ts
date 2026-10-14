@@ -97,6 +97,55 @@ export function esAnticipo(c: string | null | undefined): boolean {
   return c === "ANTICIPO_CLIENTE";
 }
 
+// ═══════════════ Ingreso asignado a un avión (13-oct-2026, API 0.0.75) ═══════════════
+// COPIA de los 5 exports nuevos de `common/categoria-ingreso.util.ts` del API,
+// con los MISMOS nombres y textos: un ingreso de RESULTADO con avión cuenta
+// UNA vez, para ESE avión (hoja «Otros ingresos» de su balance y su reparto a
+// socios) y deja de ser ingreso de VuelaTour. Anticipos y aportaciones jamás
+// llevan avión (CHECK `ingreso_aeronave_chk` + 400 AVION_SOLO_EN_RESULTADO).
+
+/**
+ * ¿La categoría admite avión? ≡ suma a resultados (espejo del CHECK
+ * `ingreso_aeronave_chk`). Un anticipo cuenta como cobro del vuelo al
+ * aplicarse y una aportación es capital: ninguno es ingreso de un avión.
+ */
+export function categoriaIngresoAdmiteAvion(c: string | null | undefined): boolean {
+  return categoriaIngresoSumaAResultados(c);
+}
+
+/** A dónde cuenta un ingreso. */
+export type DestinoIngreso = "AVION" | "VUELATOUR" | "FUERA_DE_RESULTADOS";
+
+export function destinoIngreso(
+  categoria: string | null | undefined,
+  aeronaveId: string | null | undefined,
+): DestinoIngreso {
+  if (!categoriaIngresoSumaAResultados(categoria)) return "FUERA_DE_RESULTADOS";
+  return aeronaveId ? "AVION" : "VUELATOUR";
+}
+
+/** Destino legible de un ingreso con avión (con o sin la matrícula a la mano). */
+export function destinoIngresoAvion(matricula: string | null | undefined): string {
+  const m = (matricula ?? "").trim();
+  return m
+    ? `Otros ingresos del avión ${m} (balance del avión y reparto a socios)`
+    : "Otros ingresos del avión (balance del avión y reparto a socios)";
+}
+
+/**
+ * Texto del destino (el «Va a:» del alta, la línea verde de la lista, el
+ * detalle y la columna «Destino» del Excel del API): con avión, el del avión;
+ * si no, el destino de la categoría.
+ */
+export function textoDestinoIngreso(
+  categoria: string | null | undefined,
+  aeronaveId: string | null | undefined,
+  matricula?: string | null,
+): string {
+  if (destinoIngreso(categoria, aeronaveId) === "AVION") return destinoIngresoAvion(matricula);
+  return (CATEGORIA_INGRESO_DESTINO as Record<string, string | undefined>)[categoria ?? ""] ?? "";
+}
+
 /**
  * Etiqueta legible; fallback capitalizado para un código que el panel aún no
  * conozca («PREMIO_X» → «Premio x»); cadena vacía si no hay código.

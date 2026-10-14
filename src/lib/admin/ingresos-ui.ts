@@ -34,6 +34,7 @@ import type {
 import {
   CATEGORIAS_INGRESO,
   CATEGORIA_INGRESO_DESTINO,
+  categoriaIngresoAdmiteAvion,
   categoriaIngresoAdmiteVuelo,
   categoriaIngresoSumaAResultados,
   esAnticipo,
@@ -604,6 +605,8 @@ export const FALLBACK_ERROR_INGRESO: Record<string, string> = {
   CLIENTE_NO_EXISTE: "Ese cliente ya no existe.",
   VUELO_NO_EXISTE: "Ese vuelo ya no existe.",
   AERONAVE_NO_EXISTE: "Ese avión ya no existe.",
+  // Ingreso asignado a un avión (13-oct-2026, API 0.0.75): solo los de resultado.
+  AVION_SOLO_EN_RESULTADO: "Un anticipo o una aportación no se asigna a un avión.",
   GASTO_NO_EXISTE: "Ese gasto ya no existe.",
   SIN_ARCHIVO: "Este ingreso no tiene comprobante.",
 };
@@ -729,6 +732,48 @@ export const AVISO_ANTICIPO_VUELO =
 export const AVISO_OTRO_INGRESO_CLIENTE =
   "Si este dinero es el pago de un vuelo, NO lo registres aquí: regístralo como cobro del vuelo (contaría dos veces).";
 export const HINT_TC_OFICIAL = "Si lo dejas vacío se usa el oficial del día.";
+
+// ═══════════════ Avión del ingreso (13-oct-2026, API 0.0.75) ═══════════════
+// Un ingreso de RESULTADO con avión cuenta para ESE avión (hoja «Otros
+// ingresos» de su balance y su reparto a socios) y deja de ser ingreso de
+// VuelaTour. La regla la aplica el API; aquí solo viven los textos.
+
+export const ETIQUETA_AVION_INGRESO = "Avión (opcional)";
+export const OPCION_SIN_AVION_INGRESO = "Sin avión (ingreso de VuelaTour)";
+export const HINT_AVION_SIN_ELEGIR =
+  "Si este dinero es de un avión (reembolso de su servicio o de su aseguradora, venta de una pieza suya…), elígelo: contará en su balance (hoja «Otros ingresos») y en su reparto a socios. Déjalo vacío si es dinero de VuelaTour.";
+export const MSG_AVION_SOLO_RESULTADO = "Un anticipo o una aportación no se asigna a un avión.";
+/** Descripción (ámbar) de un avión dado de baja en el selector: se elige igual. */
+export const DESCRIPCION_AVION_DADO_DE_BAJA = "Dado de baja: cuenta en su balance, no en el reparto";
+
+/** Hint del selector de avión: con matrícula, a dónde cuenta; sin ella, la invitación. */
+export function hintAvionIngreso(matricula: string | null): string {
+  const m = (matricula ?? "").trim();
+  return m
+    ? `Cuenta para el avión ${m}: hoja «Otros ingresos» de su balance y su reparto a socios. Ya no cuenta como ingreso de VuelaTour.`
+    : HINT_AVION_SIN_ELEGIR;
+}
+
+/** Chip de la lista bajo la categoría: «Avión N990GG». */
+export function etiquetaChipAvionIngreso(matricula: string): string {
+  return `Avión ${matricula}`;
+}
+
+/**
+ * Renglón «Avión» del detalle: con `destino` AVION (API 0.0.75) dice que
+ * cuenta para ese avión; sin `destino` (API previo) o con otro, solo la
+ * matrícula, como antes. Sin matrícula, null (no se pinta).
+ */
+export function textoAvionDetalleIngreso(
+  matricula: string | null,
+  destino?: string | null,
+): string | null {
+  const m = (matricula ?? "").trim();
+  if (!m) return null;
+  return destino === "AVION"
+    ? `${m} · cuenta para este avión: su balance («Otros ingresos») y su reparto a socios`
+    : m;
+}
 
 // ═══════════════════════════════ Tipos de escritura (fuera de §4) ═══════════════════════════════
 
@@ -991,13 +1036,13 @@ function decimales(v: string): number {
   return i < 0 ? 0 : limpio.length - i - 1;
 }
 
-/** ¿Hay algo capturado en «Más datos»? (el plegable abre solo si sí). */
+/** ¿Hay algo capturado en «Más datos»? (el plegable abre solo si sí). El
+ *  avión ya NO vive ahí (13-oct-2026): está a la vista. */
 export function hayMasDatos(f: FormIngreso): boolean {
   return !!(
     f.comision.trim() ||
     f.tc.trim() ||
     f.vuelo_id ||
-    f.aeronave_id ||
     f.gasto_id ||
     f.referencia.trim() ||
     f.notas.trim()
@@ -1050,6 +1095,10 @@ export function erroresFormularioIngreso(
   if (f.vuelo_id && f.categoria && !categoriaIngresoAdmiteVuelo(f.categoria)) {
     e.vuelo_id = "Solo un reembolso recibido se liga a un vuelo.";
   }
+  // Espejo del 400 AVION_SOLO_EN_RESULTADO (un dato legado inválido se ve con su error).
+  if (f.aeronave_id && f.categoria && !categoriaIngresoAdmiteAvion(f.categoria)) {
+    e.aeronave_id = MSG_AVION_SOLO_RESULTADO;
+  }
   return e;
 }
 
@@ -1099,7 +1148,7 @@ export function datosAltaDeFormulario(
   if (pagador) d.pagador = pagador;
   if (f.cliente_id) d.cliente_id = f.cliente_id;
   if (f.vuelo_id && categoriaIngresoAdmiteVuelo(cat)) d.vuelo_id = f.vuelo_id;
-  if (f.aeronave_id) d.aeronave_id = f.aeronave_id;
+  if (f.aeronave_id && categoriaIngresoAdmiteAvion(cat)) d.aeronave_id = f.aeronave_id;
   if (f.gasto_id && cat === "REEMBOLSO_DEVOLUCION") d.gasto_id = f.gasto_id;
   const notas = opcional(f.notas);
   if (notas) d.notas = notas;
@@ -1147,7 +1196,8 @@ export function cambiosDeEdicion(f: FormIngreso, base: Ingreso): DatosEdicionIng
   const ids = [
     ["cliente_id", f.cliente_id],
     ["vuelo_id", categoriaIngresoAdmiteVuelo(cat || base.categoria) ? f.vuelo_id : ""],
-    ["aeronave_id", f.aeronave_id],
+    // Reclasificar a anticipo o aportación suelta el avión (null), igual que el vuelo.
+    ["aeronave_id", categoriaIngresoAdmiteAvion(cat || base.categoria) ? f.aeronave_id : ""],
     ["gasto_id", (cat || base.categoria) === "REEMBOLSO_DEVOLUCION" ? f.gasto_id : ""],
   ] as const;
   for (const [k, v] of ids) {

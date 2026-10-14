@@ -9,6 +9,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { NOTA_PAGO_VENDEDOR_REPARTO } from "@/lib/admin/categorias-gasto";
+import { hintKpiOtrosIngresosAviones } from "@/lib/admin/otros-ingresos-avion";
 import type {
   AvionReparto,
   OtrosIngresosVuelatour,
@@ -35,6 +36,10 @@ export function KpiStrip({
     aviones.reduce((acc, a) => acc + fn(a), 0);
 
   const ingresos = sum((a) => a.ingresos.cobrado_usd);
+  // Otros ingresos ASIGNADOS a los aviones (13-oct-2026, API 0.0.75): ya
+  // están dentro del saldo de cada avión. La cifra de VENTA no se mezcla:
+  // van en el hint para que Venta + Otros − Gastos − Reserva = Saldo se lea.
+  const otrosAvion = sum((a) => a.ingresos.otros_ingresos_avion_usd ?? 0);
   // Misma cascada que la card: comisiones_venta_usd trae la parte del avión
   // de la comisión bancaria (regla de septiembre 2026, API 0.0.65) + los
   // pagos «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74); vale 0
@@ -80,7 +85,13 @@ export function KpiStrip({
         icon={BanknotesIcon}
         label="Venta de aviones cobrada"
         value={fmtUsd(ingresos)}
-        hint={`${vuelosCobrados} vuelo(s) cobrados`}
+        hint={`${vuelosCobrados} vuelo(s) cobrados${hintKpiOtrosIngresosAviones(otrosAvion)}`}
+        // El hint se trunca en tarjetas angostas: completo en el tooltip.
+        title={
+          otrosAvion > 0
+            ? `${vuelosCobrados} vuelo(s) cobrados${hintKpiOtrosIngresosAviones(otrosAvion)}`
+            : undefined
+        }
         valueClass="text-emerald-600 dark:text-emerald-400"
       />
       <Kpi

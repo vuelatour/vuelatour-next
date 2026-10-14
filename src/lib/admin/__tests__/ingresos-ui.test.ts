@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  DESCRIPCION_AVION_DADO_DE_BAJA,
+  ETIQUETA_AVION_INGRESO,
   ETIQUETA_TAB_INGRESOS,
   FALLBACK_ERROR_INGRESO,
+  HINT_AVION_SIN_ELEGIR,
+  MSG_AVION_SOLO_RESULTADO,
+  OPCION_SIN_AVION_INGRESO,
   VALOR_CUENTA_DEL_ABONO,
   VALOR_EFECTIVO,
   aceptableEnLote,
@@ -17,7 +22,10 @@ import {
   formularioDeIngreso,
   formularioDesdeAbono,
   formularioVacio,
+  etiquetaChipAvionIngreso,
   hayCambios,
+  hayMasDatos,
+  hintAvionIngreso,
   hrefIngresos,
   lineaConciliacionResumen,
   mensajeErrorIngreso,
@@ -38,6 +46,7 @@ import {
   textoConfirmarDesaplicar,
   textoIaNoDisponible,
   textoResultadoLote,
+  textoAvionDetalleIngreso,
   textoSaldoAnticipo,
   textoValorBitacora,
   tituloDuplicado,
@@ -715,5 +724,99 @@ describe("fechasCandidatoCobro (12-oct-2026: la fecha del vuelo junto a la del c
       descripcionFichaCandidato({ ...base, tipo: "COBRO_VUELO", fecha_vuelo: "2026-10-04T15:00:00+00:00" }),
     ).toContain(`vuelo ${fmtDate("2026-10-04T15:00:00+00:00")} · cobro ${fmtDateOnly("2026-10-06")}`);
     expect(descripcionFichaCandidato({ ...base, tipo: "INGRESO" })).toMatch(new RegExp(`^${fmtDateOnly("2026-10-06")}`));
+  });
+});
+
+describe("avión del ingreso (13-oct-2026, API 0.0.75)", () => {
+  const AV = "8f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+  const base: FormIngreso = {
+    ...formularioVacio(HOY),
+    categoria: "REEMBOLSO_DEVOLUCION",
+    descripcion: "TRANSF INTERBANCARIA SPEI",
+    monto: "46550.80",
+    cuenta: CUENTA_HSBC,
+    metodo: "TRANSFERENCIA",
+    aeronave_id: AV,
+  };
+
+  it("textos literales", () => {
+    expect(ETIQUETA_AVION_INGRESO).toBe("Avión (opcional)");
+    expect(OPCION_SIN_AVION_INGRESO).toBe("Sin avión (ingreso de VuelaTour)");
+    expect(HINT_AVION_SIN_ELEGIR).toBe(
+      "Si este dinero es de un avión (reembolso de su servicio o de su aseguradora, venta de una pieza suya…), elígelo: contará en su balance (hoja «Otros ingresos») y en su reparto a socios. Déjalo vacío si es dinero de VuelaTour.",
+    );
+    expect(hintAvionIngreso(null)).toBe(HINT_AVION_SIN_ELEGIR);
+    expect(hintAvionIngreso("  ")).toBe(HINT_AVION_SIN_ELEGIR);
+    expect(hintAvionIngreso("N990GG")).toBe(
+      "Cuenta para el avión N990GG: hoja «Otros ingresos» de su balance y su reparto a socios. Ya no cuenta como ingreso de VuelaTour.",
+    );
+    expect(MSG_AVION_SOLO_RESULTADO).toBe("Un anticipo o una aportación no se asigna a un avión.");
+    expect(DESCRIPCION_AVION_DADO_DE_BAJA).toBe("Dado de baja: cuenta en su balance, no en el reparto");
+    expect(etiquetaChipAvionIngreso("N990GG")).toBe("Avión N990GG");
+  });
+
+  it("el detalle: con destino AVION dice que cuenta; con VUELATOUR o API previo, la matrícula", () => {
+    expect(textoAvionDetalleIngreso("N990GG", "AVION")).toBe(
+      "N990GG · cuenta para este avión: su balance («Otros ingresos») y su reparto a socios",
+    );
+    expect(textoAvionDetalleIngreso("N990GG", "VUELATOUR")).toBe("N990GG");
+    expect(textoAvionDetalleIngreso("N990GG", undefined)).toBe("N990GG");
+    expect(textoAvionDetalleIngreso(null, "AVION")).toBeNull();
+  });
+
+  it("fallback del 400 AVION_SOLO_EN_RESULTADO = el error del formulario", () => {
+    expect(FALLBACK_ERROR_INGRESO.AVION_SOLO_EN_RESULTADO).toBe(MSG_AVION_SOLO_RESULTADO);
+    expect(mensajeErrorIngreso("AVION_SOLO_EN_RESULTADO", "Bad Request", 400)).toBe(MSG_AVION_SOLO_RESULTADO);
+  });
+
+  it("el avión ya no abre «Más datos» (vive a la vista)", () => {
+    expect(hayMasDatos({ ...formularioVacio(HOY), aeronave_id: AV })).toBe(false);
+    expect(hayMasDatos({ ...formularioVacio(HOY), aeronave_id: AV, notas: "x" })).toBe(true);
+  });
+
+  it("error con anticipo o aportación + avión; sin error en un reembolso", () => {
+    expect(erroresFormularioIngreso(base, { hoy: HOY }).aeronave_id).toBeUndefined();
+    expect(
+      erroresFormularioIngreso(
+        { ...base, categoria: "ANTICIPO_CLIENTE", cliente_id: "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a" },
+        { hoy: HOY },
+      ).aeronave_id,
+    ).toBe("Un anticipo o una aportación no se asigna a un avión.");
+    expect(erroresFormularioIngreso({ ...base, categoria: "APORTACION_PRESTAMO" }, { hoy: HOY }).aeronave_id).toBe(
+      MSG_AVION_SOLO_RESULTADO,
+    );
+  });
+
+  it("alta: manda el avión en un reembolso y lo omite en un anticipo", () => {
+    expect(datosAltaDeFormulario(base, { clientRequestId: "k" }).aeronave_id).toBe(AV);
+    expect(
+      datosAltaDeFormulario({ ...base, categoria: "ANTICIPO_CLIENTE" }, { clientRequestId: "k" }),
+    ).not.toHaveProperty("aeronave_id");
+    expect(datosAltaDeFormulario({ ...base, aeronave_id: "" }, { clientRequestId: "k" })).not.toHaveProperty(
+      "aeronave_id",
+    );
+  });
+
+  it("edición: reclasificar a aportación suelta el avión (null); sin cambios solo el CAS", () => {
+    const i = ingreso({ categoria: "REEMBOLSO_DEVOLUCION", aeronave_id: AV, matricula: "N990GG" });
+    const sinCambios = cambiosDeEdicion(formularioDeIngreso(i), i);
+    expect(sinCambios).toEqual({ if_updated_at: i.updated_at });
+    const f = { ...formularioDeIngreso(i), categoria: "APORTACION_PRESTAMO" as const };
+    expect(cambiosDeEdicion(f, i)).toEqual({
+      categoria: "APORTACION_PRESTAMO",
+      aeronave_id: null,
+      if_updated_at: i.updated_at,
+    });
+    // Quitar el avión de un reembolso = null explícito.
+    expect(cambiosDeEdicion({ ...formularioDeIngreso(i), aeronave_id: "" }, i)).toEqual({
+      aeronave_id: null,
+      if_updated_at: i.updated_at,
+    });
+    // Asignar avión a un ingreso sin avión.
+    const sin = ingreso({ categoria: "OTRO_INGRESO" });
+    expect(cambiosDeEdicion({ ...formularioDeIngreso(sin), aeronave_id: AV }, sin)).toEqual({
+      aeronave_id: AV,
+      if_updated_at: sin.updated_at,
+    });
   });
 });

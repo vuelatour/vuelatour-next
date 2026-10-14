@@ -95,6 +95,31 @@ export interface DetalleGastoCategoria {
 }
 
 /**
+ * Un ingreso de Ingresos ASIGNADO a este avión (13-oct-2026, API 0.0.75):
+ * cuenta en su saldo y su reparto. `usd` = neto (monto − comisión) en USD con
+ * el T.C. propio del ingreso o el oficial de su día (`tc_oficial`); null =
+ * MXN sin T.C. (NO entró al saldo: va en `otros_ingresos_avion_sin_tc_mxn`).
+ */
+export interface DetalleOtroIngresoAvion {
+  id: string;
+  /** «ING-4». */
+  clave: string;
+  /** Día Cancún YYYY-MM-DD. */
+  fecha: string;
+  categoria: string;
+  categoria_etiqueta: string;
+  /** Descripción · cliente o pagador. */
+  concepto: string;
+  moneda: "MXN" | "USD";
+  monto: number;
+  comision: number | null;
+  neto: number;
+  usd: number | null;
+  tc: number | null;
+  tc_oficial: boolean;
+}
+
+/**
  * Desglose por avión (vuelos + gastos + reserva). Campo ADITIVO del API:
  * puede faltar si el backend aún no lo publica — la UI degrada sin crashear.
  */
@@ -102,6 +127,9 @@ export interface AvionRepartoDetalle {
   vuelos: DetalleVuelo[];
   gastos_por_categoria: DetalleGastoCategoria[];
   reserva: { horas_hr: number; tarifa_hora_usd: number; monto_usd: number };
+  /** ADITIVO (13-oct-2026, API 0.0.75): los ingresos asignados a este avión
+      ([] sin ingresos; ausente con un API previo). */
+  otros_ingresos_avion?: DetalleOtroIngresoAvion[];
 }
 
 export interface AvionReparto {
@@ -142,6 +170,14 @@ export interface AvionReparto {
         cuyos cobros MXN sin TC se convirtieron con el TC oficial del día de
         la cotización; ya están dentro de cobrado_usd. */
     cobros_tc_oficial_count?: number;
+    /** ADITIVOS (13-oct-2026, API 0.0.75): ingresos de Ingresos ASIGNADOS a
+        este avión, netos de comisión, en USD. SUMAN al saldo (ya están
+        dentro de `saldo_disponible_usd`) y NO se mezclan con la venta. */
+    otros_ingresos_avion_usd?: number;
+    /** Los de esos ingresos en MXN sin T.C. propio ni oficial: NO suman. */
+    otros_ingresos_avion_sin_tc_mxn?: number;
+    /** Cuántos de esos ingresos se convirtieron con el T.C. oficial del día. */
+    otros_ingresos_avion_tc_oficial_count?: number;
   };
   /** Horas de tacómetro voladas en el periodo (base de la reserva). */
   horas_voladas_hr: number;
@@ -211,6 +247,9 @@ export interface OtrosIngresosVuelatour {
 export interface TcOficialResumen {
   vuelos: number;
   gastos: TcOficialGastos;
+  /** ADITIVO (13-oct-2026, API 0.0.75): otros ingresos de aviones en MXN
+      convertidos con el T.C. oficial (mismo shape que `gastos`). */
+  ingresos?: TcOficialGastos;
   /** Fuentes legibles usadas ("open.er-api", "BCE (frankfurter)"). */
   fuentes: string[];
   leyenda: string;

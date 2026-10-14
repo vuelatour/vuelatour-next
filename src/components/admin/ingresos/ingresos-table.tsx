@@ -32,7 +32,11 @@ import { AplicarAnticipoDialog } from "@/components/admin/ingresos/aplicar-antic
 import { archivoIngresoUrlAction } from "@/app/admin/ingresos/actions";
 import { abrirArchivoFirmado } from "@/lib/admin/facturas-emitidas";
 import { CATEGORIA_INGRESO_DESTINO, esAnticipo, etiquetaIngreso } from "@/lib/admin/categorias-ingreso";
-import { hrefIngresos, type FiltrosIngresos } from "@/lib/admin/ingresos-ui";
+import {
+  etiquetaChipAvionIngreso,
+  hrefIngresos,
+  type FiltrosIngresos,
+} from "@/lib/admin/ingresos-ui";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -159,14 +163,28 @@ export function DialogosIngreso({
   );
 }
 
-/** Categoría + destino en verde (como el selector de Gastos). */
+/**
+ * Categoría + destino en verde (como el selector de Gastos). El destino lo
+ * manda el API (`destino_etiqueta`, 13-oct-2026: con avión, «Otros ingresos
+ * del avión N990GG…»); con un API previo, el de la categoría. Con avión, el
+ * chip «Avión N990GG» debajo.
+ */
 export function CeldaCategoriaIngreso({ ingreso }: { ingreso: Ingreso }) {
   return (
     <span className="block min-w-[160px]">
       <span className="block text-sm">{ingreso.categoria_etiqueta}</span>
       <span className="block text-[10px] leading-tight text-green-600 dark:text-green-400">
-        {CATEGORIA_INGRESO_DESTINO[ingreso.categoria] ?? ""}
+        {ingreso.destino_etiqueta ?? CATEGORIA_INGRESO_DESTINO[ingreso.categoria] ?? ""}
       </span>
+      {ingreso.matricula && (
+        <Badge
+          variant="outline"
+          className="mt-0.5 text-[10px]"
+          title={ingreso.destino_etiqueta ?? undefined}
+        >
+          {etiquetaChipAvionIngreso(ingreso.matricula)}
+        </Badge>
+      )}
     </span>
   );
 }

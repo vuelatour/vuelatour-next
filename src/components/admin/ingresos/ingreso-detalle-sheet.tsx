@@ -46,6 +46,7 @@ import {
   ACCION_BITACORA_INGRESO,
   hrefIngresos,
   puedeConciliarIngresos,
+  textoAvionDetalleIngreso,
   textoCampoBitacora,
   textoConfirmarDesaplicar,
   textoSaldoAnticipo,
@@ -153,7 +154,7 @@ export function IngresoDetalleSheet({
                 <SheetDescription>
                   {i.categoria_etiqueta}
                   <span className="block text-[11px] text-green-600 dark:text-green-400">
-                    {CATEGORIA_INGRESO_DESTINO[i.categoria]}
+                    {i.destino_etiqueta ?? CATEGORIA_INGRESO_DESTINO[i.categoria]}
                   </span>
                 </SheetDescription>
               </SheetHeader>
@@ -240,7 +241,9 @@ export function IngresoDetalleSheet({
                     </Link>
                   </Dato>
                 )}
-                {i.matricula && <Dato etiqueta="Avión">{i.matricula}</Dato>}
+                {i.matricula && (
+                  <Dato etiqueta="Avión">{textoAvionDetalleIngreso(i.matricula, i.destino)}</Dato>
+                )}
                 {i.gasto_id && <Dato etiqueta="Gasto relacionado">Ligado</Dato>}
                 {i.notas && <Dato etiqueta="Notas">{i.notas}</Dato>}
                 <Dato etiqueta="Registró">

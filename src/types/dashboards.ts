@@ -11,6 +11,11 @@ export interface DashboardResumen {
   otros_ingresos_vuelatour_usd?: number;
   gastos_totales_usd: number;
   saldo_disponible_usd: number;
+  /** ADITIVO (13-oct-2026, API 0.0.75): ingresos de Ingresos asignados a los
+      aviones (netos, USD). Identidad: ingresos_cobrados_usd +
+      otros_ingresos_aviones_usd − gastos_totales_usd = saldo_disponible_usd.
+      Un API previo no lo manda. */
+  otros_ingresos_aviones_usd?: number;
   vuelos_periodo: number;
   vuelos_completados: number;
   vuelos_cancelados: number;
@@ -24,6 +29,9 @@ export interface DashboardAvion {
   ingresos_cobrado_usd: number;
   gastos_usd: number;
   saldo_usd: number;
+  /** ADITIVO (13-oct-2026, API 0.0.75): otros ingresos asignados a este
+      avión (suman a su saldo). Un API previo no lo manda. */
+  otros_ingresos_avion_usd?: number;
 }
 
 export interface DashboardOperacion {

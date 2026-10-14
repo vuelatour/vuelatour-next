@@ -7,13 +7,19 @@
  *  - Resumen: «Dinero que entró» dice que no es utilidad; la tarjeta de
  *    abonos solo para quien puede abrir «Por conciliar».
  *  - Entradas: el cobro de un anticipo en gris con su chip; reembolso en rojo.
+ *  - Ingreso asignado a un avión (13-oct-2026, API 0.0.75): chip «Avión
+ *    N990GG», línea verde = `destino_etiqueta` (o la de la categoría con un
+ *    API previo) y el detalle que dice que cuenta para ese avión.
  */
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
   AbonoPendiente,
   AbonosPendientesRespuesta,
   EntradaDinero,
+  Ingreso,
+  IngresoDetalle,
   ResumenIngresos,
 } from "@/types/ingresos";
 import { filtrosIngresosDeUrl } from "@/lib/admin/ingresos-ui";
@@ -36,7 +42,24 @@ vi.mock("@/app/admin/ingresos/actions", () => ({
   archivoIngresoUrlAction: async () => ({ ok: true, data: "https://x" }),
   bajaIngresoAction: async () => ({ ok: true }),
   aplicarAnticipoAction: async () => ({ ok: true }),
+  desaplicarAnticipoAction: async () => ({ ok: true }),
+  quitarArchivoIngresoAction: async () => ({ ok: true }),
 }));
+// El detalle es un Sheet (portal): abierto sin portal para el render estático.
+vi.mock("@/components/ui/sheet", () => {
+  const Caja = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  return {
+    Sheet: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+      open ? <div data-sheet="">{children}</div> : null,
+    SheetContent: Caja,
+    SheetDescription: Caja,
+    SheetHeader: Caja,
+    SheetTitle: Caja,
+    SheetFooter: Caja,
+    SheetClose: Caja,
+    SheetTrigger: Caja,
+  };
+});
 vi.mock("@/app/admin/conciliacion/actions", () => ({
   autoMatchAction: async () => ({ ok: true }),
   importJobStatusAction: async () => ({ ok: true }),
@@ -51,6 +74,8 @@ vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }))
 const { AbonosPendientesTable } = await import("../abonos-pendientes-table");
 const { IngresosResumen } = await import("../ingresos-resumen");
 const { EntradasTable } = await import("../entradas-table");
+const { CeldaCategoriaIngreso } = await import("../ingresos-table");
+const { IngresoDetalleSheet } = await import("../ingreso-detalle-sheet");
 
 const CATALOGOS = { cuentas: [], clientes: [], aeronaves: [] };
 
@@ -236,5 +261,100 @@ describe("entradas: cobro de anticipo y reembolso", () => {
     );
     expect(html).toContain("-$500 MXN");
     expect(html).toContain("text-red-600");
+  });
+});
+
+describe("ingreso asignado a un avión (13-oct-2026, API 0.0.75)", () => {
+  const ING_ID = "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+  const AV = "8f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+  const DESTINO_AVION = "Otros ingresos del avión N990GG (balance del avión y reparto a socios)";
+
+  /** ING-4 de prod: reembolso de $46,550.80 MXN del servicio de N990GG. */
+  const ING4: Ingreso = {
+    id: ING_ID,
+    folio: 4,
+    etiqueta: "ING-4",
+    categoria: "REEMBOLSO_DEVOLUCION",
+    categoria_etiqueta: "Reembolsos y devoluciones recibidos",
+    suma_a_resultados: true,
+    fecha: "2026-09-04",
+    descripcion: "TRANSF INTERBANCARIA SPEI",
+    monto: 46550.8,
+    comision_monto: null,
+    neto: 46550.8,
+    moneda: "MXN",
+    tc_usd_mxn: null,
+    metodo: "TRANSFERENCIA",
+    metodo_etiqueta: "Transferencia",
+    cuenta_bancaria_id: null,
+    cuenta: null,
+    referencia: null,
+    pagador: "angel alvarez",
+    cliente_id: null,
+    cliente_nombre: null,
+    vuelo_id: null,
+    vuelo_folio: null,
+    aeronave_id: AV,
+    matricula: "N990GG",
+    destino: "AVION",
+    destino_etiqueta: DESTINO_AVION,
+    gasto_id: null,
+    notas: "reembolso del pago del serv de 50 hrs en toledo, fact 53",
+    archivo: null,
+    conciliacion: { estado: "CONCILIADO", movimiento_id: null, movimiento_fecha: null, movimiento_monto: null },
+    anticipo: null,
+    registrado_por_nombre: "Ale",
+    created_at: "2026-09-04T18:00:00Z",
+    updated_at: "2026-09-04T18:00:00Z",
+    baja: null,
+  };
+
+  it("la celda: línea verde = destino_etiqueta y chip «Avión N990GG» con ese title", () => {
+    const html = renderToStaticMarkup(<CeldaCategoriaIngreso ingreso={ING4} />);
+    expect(html).toContain("Reembolsos y devoluciones recibidos");
+    expect(html).toMatch(new RegExp(`text-green-600[^>]*>${DESTINO_AVION.replace(/[()]/g, "\\$&")}<`));
+    expect(html).toMatch(/title="Otros ingresos del avión N990GG \(balance del avión y reparto a socios\)"[^>]*>Avión N990GG</);
+  });
+
+  it("API previo (sin destino_etiqueta): destino por categoría, chip sin title", () => {
+    const viejo: Ingreso = { ...ING4, destino: undefined, destino_etiqueta: undefined };
+    const html = renderToStaticMarkup(<CeldaCategoriaIngreso ingreso={viejo} />);
+    expect(html).toContain("Otros ingresos (Balance general VuelaTour y Libro Dinero)");
+    expect(html).toContain(">Avión N990GG<");
+    expect(html).not.toContain("title=");
+  });
+
+  it("sin avión: sin chip", () => {
+    const html = renderToStaticMarkup(
+      <CeldaCategoriaIngreso
+        ingreso={{ ...ING4, aeronave_id: null, matricula: null, destino: "VUELATOUR", destino_etiqueta: "Otros ingresos (Balance general VuelaTour y Libro Dinero)" }}
+      />,
+    );
+    expect(html).not.toContain("Avión ");
+  });
+
+  const detalle = (i: Ingreso): IngresoDetalle => ({ ingreso: i, aplicaciones: [], movimiento: null, bitacora: [] });
+  const sheet = (i: Ingreso) =>
+    renderToStaticMarkup(
+      <IngresoDetalleSheet
+        detalle={detalle(i)}
+        noExiste={false}
+        filtros={filtrosIngresosDeUrl({ tab: "otros", ingreso: ING_ID }, "ADMIN", "2026-09-24")}
+        catalogos={CATALOGOS}
+        rol="ADMIN"
+      />,
+    );
+
+  it("detalle: con destino AVION dice que cuenta para ese avión; su destino arriba", () => {
+    const html = sheet(ING4);
+    expect(html).toContain("N990GG · cuenta para este avión: su balance («Otros ingresos») y su reparto a socios");
+    expect(html).toContain(DESTINO_AVION);
+  });
+
+  it("detalle con un API previo: solo la matrícula y el destino de la categoría", () => {
+    const html = sheet({ ...ING4, destino: undefined, destino_etiqueta: undefined });
+    expect(html).not.toContain("cuenta para este avión");
+    expect(html).toContain(">N990GG<");
+    expect(html).toContain("Otros ingresos (Balance general VuelaTour y Libro Dinero)");
   });
 });

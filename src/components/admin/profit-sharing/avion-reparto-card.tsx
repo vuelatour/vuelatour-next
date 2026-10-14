@@ -19,6 +19,15 @@ import {
   NOTA_PAGO_VENDEDOR_REPARTO,
   SUBLABEL_COMISIONES_REPARTO,
 } from "@/lib/admin/categorias-gasto";
+import {
+  ETIQUETA_FILA_OTROS_INGRESOS_AVION,
+  SUBLABEL_OTROS_INGRESOS_AVION,
+  TITULO_BADGE_OTROS_INGRESOS_SIN_TC,
+  TITULO_BADGE_OTROS_INGRESOS_TC_OFICIAL,
+  textoBadgeOtrosIngresosSinTc,
+  textoBadgeOtrosIngresosTcOficial,
+  tituloOtrosIngresosAvion,
+} from "@/lib/admin/otros-ingresos-avion";
 import type { AvionReparto } from "@/types/profit-sharing";
 
 const AMBAR =
@@ -149,6 +158,17 @@ export function AvionRepartoCard({
               Cobros sin TC · {fmtDecimal(avion.ingresos.cobros_sin_tc_mxn)} MXN
             </Badge>
           )}
+          {/* Otros ingresos del avión en MXN sin T.C. (13-oct-2026): no
+              entraron al saldo — se dice, nunca se inventa un T.C. */}
+          {(avion.ingresos.otros_ingresos_avion_sin_tc_mxn ?? 0) > 0 && (
+            <Badge
+              variant="outline"
+              className={AMBAR}
+              title={TITULO_BADGE_OTROS_INGRESOS_SIN_TC}
+            >
+              {textoBadgeOtrosIngresosSinTc(avion.ingresos.otros_ingresos_avion_sin_tc_mxn ?? 0)}
+            </Badge>
+          )}
           {/* Informativos (29-ago-2026): lo que SÍ entró con el TC oficial
               de referencia del día. Ya está dentro de las cifras. */}
           {(avion.gastos.gastos_tc_oficial?.count ?? 0) > 0 && (
@@ -168,6 +188,17 @@ export function AvionRepartoCard({
             >
               {avion.ingresos.cobros_tc_oficial_count} vuelo(s) con cobros a TC
               oficial
+            </Badge>
+          )}
+          {(avion.ingresos.otros_ingresos_avion_tc_oficial_count ?? 0) > 0 && (
+            <Badge
+              variant="outline"
+              className={INFO}
+              title={TITULO_BADGE_OTROS_INGRESOS_TC_OFICIAL}
+            >
+              {textoBadgeOtrosIngresosTcOficial(
+                avion.ingresos.otros_ingresos_avion_tc_oficial_count ?? 0,
+              )}
             </Badge>
           )}
           {avion.reparto.length > 0 && avion.reparto_porcentaje_total !== 100 && (
@@ -195,6 +226,20 @@ export function AvionRepartoCard({
             value={avion.ingresos.cobrado_usd}
             ingreso
           />
+          {/* Otros ingresos ASIGNADOS a este avión (13-oct-2026, API
+              0.0.75): reembolsos y ventas registrados en Ingresos con el
+              avión, netos de comisión. SUMAN al saldo (el API ya los
+              incluye); la venta NO se mezcla. Con 0 o un API previo, la
+              fila no se pinta y la cascada sigue sumando el saldo. */}
+          {(avion.ingresos.otros_ingresos_avion_usd ?? 0) > 0 && (
+            <CascadaRow
+              label={ETIQUETA_FILA_OTROS_INGRESOS_AVION}
+              sublabel={SUBLABEL_OTROS_INGRESOS_AVION}
+              value={avion.ingresos.otros_ingresos_avion_usd ?? 0}
+              title={tituloOtrosIngresosAvion(detalle?.otros_ingresos_avion)}
+              ingreso
+            />
+          )}
           {/* El avión absorbe su parte de la comisión bancaria de sus cobros
               (regla de septiembre 2026, API 0.0.65) y los pagos capturados
               como «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74;
@@ -316,17 +361,20 @@ function CascadaRow({
   label,
   sublabel,
   value,
+  title,
   ingreso,
   deduccion,
 }: {
   label: string;
   sublabel?: string;
   value: number;
+  /** Tooltip con el detalle (p. ej. los ingresos del avión, uno por renglón). */
+  title?: string;
   ingreso?: boolean;
   deduccion?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex items-baseline justify-between gap-3" title={title}>
       <span className="text-muted-foreground">
         {label}
         {sublabel && (

@@ -34,6 +34,10 @@ import {
   textoTableroComisionVendedorAvion,
   textoTableroGastosEmpresa,
 } from "@/lib/admin/categorias-gasto";
+import {
+  hintDashboardOtrosIngresosAviones,
+  textoCeldaOtrosIngresosAvion,
+} from "@/lib/admin/otros-ingresos-avion";
 import type { Rol } from "@/types/me";
 import { rangoFiltro } from "@/lib/admin/url-params";
 
@@ -144,7 +148,13 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Ingresos cobrados" value={fmtUsd(resumen.ingresos_cobrados_usd)} />
+        <Kpi
+          label="Ingresos cobrados"
+          value={fmtUsd(resumen.ingresos_cobrados_usd)}
+          // Otros ingresos ASIGNADOS a los aviones (13-oct-2026, API 0.0.75):
+          // suman al saldo; con un API previo no hay hint.
+          hint={hintDashboardOtrosIngresosAviones(resumen.otros_ingresos_aviones_usd ?? 0)}
+        />
         <Kpi
           label="Saldo disponible"
           value={fmtUsd(resumen.saldo_disponible_usd)}
@@ -223,6 +233,11 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
                     <TableCell className="text-right text-sm">{fmtInt(a.vuelos)}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {fmtUsd(a.ingresos_cobrado_usd)}
+                      {(a.otros_ingresos_avion_usd ?? 0) > 0 && (
+                        <span className="block text-xs text-muted-foreground">
+                          {textoCeldaOtrosIngresosAvion(a.otros_ingresos_avion_usd ?? 0)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm text-muted-foreground">
                       {fmtUsd(a.gastos_usd)}

@@ -3597,7 +3597,9 @@ ingresos». Contrato INGRESOS con el API 0.0.34 (migración
   bitácora; desvincular y desaplicar solo ADMIN/FACTURACION y confirman.
 - **Diálogos**: `registrar-ingreso-dialog` (DIVULGACIÓN PROGRESIVA: a la
   vista categoría, fecha, concepto, monto, «¿Dónde entró el dinero?», cliente
-  o «Quién pagó», comprobante; el resto en «Más datos»; `client_request_id`
+  o «Quién pagó», comprobante —desde el 13-oct-2026 también «Avión
+  (opcional)» en las categorías de resultado: ver «Ingreso asignado a un
+  avión»—; el resto en «Más datos»; `client_request_id`
   por apertura, el MISMO en los reintentos de confirmación);
   `aplicar-anticipo-dialog` (monto sugerido = menor entre saldos, confirm con
   el texto exacto, 409 `ANTICIPO_OTRO_CLIENTE` ⇒ segundo confirm con la misma
@@ -4678,6 +4680,112 @@ la 000003, que ya usa la comisión del vendedor del avión).
   de la lista el panel no AVISA que la cifra de oficina se va a limpiar (lo
   hace el API y lo registra la bitácora); los chips del pre-cierre no pintan
   la TUA cobrada por vuelo (el total va en el renglón).
+
+## Ingreso asignado a un avión (13-oct-2026, API 0.0.75)
+
+Pedido del lote 2 del 13-oct-2026: un ingreso registrado en Ingresos que es
+DE UN AVIÓN (reembolso de su servicio o de su aseguradora, venta de una pieza
+suya…) debe sumar al balance de ese avión y a su reparto a socios, no a
+VuelaTour. Caso real: ING-4 ($46,550.80 MXN, 4-sep, «reembolso del pago del
+serv de 50 hrs en toledo», pagador = el socio al 51 % de N990GG). Contrato con
+el API **0.0.75** (migración `20261013000005` = solo CHECK
+`ingreso_aeronave_chk` + COMMENT; la columna `ingreso.aeronave_id` existe
+desde el 24-sep). Hasta hoy el avión de un ingreso era «solo referencia: el
+dinero va a VuelaTour».
+
+- **El avión MANDA (regla del API, el panel solo la DICE)**: un ingreso VIVO
+  de RESULTADO (`OTRO_INGRESO`, `INGRESO_BANCARIO`, `REEMBOLSO_DEVOLUCION`,
+  `VENTA_ACTIVO`) con `aeronave_id` cuenta UNA vez, en el mes de su `fecha`,
+  para ESE avión: hoja «Otros ingresos» de su libro, «(+) OTROS INGRESOS USD»
+  de su cascada (suma a la utilidad) y su reparto a socios. Deja de contar en
+  «otros movimientos», en el bloque VUELATOUR (empresa) y en los totales de
+  VuelaTour del Libro Dinero. Anticipos y aportaciones JAMÁS llevan avión
+  (CHECK + 400 `AVION_SOLO_EN_RESULTADO`). Un avión dado de baja cuenta en su
+  libro, no en ningún reparto (el reparto computa solo activos).
+- **Fuentes únicas**: `lib/admin/categorias-ingreso.ts` gana los 5 exports del
+  API con los MISMOS nombres y textos (`categoriaIngresoAdmiteAvion` ≡ suma a
+  resultados, `DestinoIngreso`, `destinoIngreso`, `destinoIngresoAvion`,
+  `textoDestinoIngreso`; el test de paridad por nombre los congela y repite
+  los casos literales del spec del API). `lib/admin/ingresos-ui.ts`:
+  `ETIQUETA_AVION_INGRESO`, `OPCION_SIN_AVION_INGRESO`,
+  `HINT_AVION_SIN_ELEGIR`, `hintAvionIngreso`, `MSG_AVION_SOLO_RESULTADO`
+  (= el fallback de `AVION_SOLO_EN_RESULTADO`), `DESCRIPCION_AVION_DADO_DE_BAJA`,
+  `etiquetaChipAvionIngreso`, `textoAvionDetalleIngreso`; `hayMasDatos` ya no
+  mira el avión; `erroresFormularioIngreso` marca el avión en un anticipo o
+  aportación; `datosAltaDeFormulario` solo lo manda en categorías de
+  resultado y `cambiosDeEdicion` manda `null` al reclasificar a anticipo o
+  aportación (igual que suelta el vuelo).
+- **Alta / edición** (`registrar-ingreso-dialog.tsx`): «Avión (opcional)» sale
+  de «Más datos» a la zona A LA VISTA, después de Cliente/«Quién pagó» y antes
+  del comprobante, SOLO en categorías de resultado (o con un dato legado
+  inválido, que se ve con su error). `SearchableSelect` con «Sin avión
+  (ingreso de VuelaTour)» al frente; un avión dado de baja se ofrece igual,
+  con la descripción ámbar «Dado de baja: cuenta en su balance, no en el
+  reparto» (nunca deshabilitado; `CatalogosIngreso.aeronaves[].activa`
+  opcional, lo pasan Ingresos y Conciliación). Si el avión vigente no está en
+  el catálogo (no cargó), se conserva con su matrícula: jamás «Sin avión» por
+  una carga fallida. El hint dice a dónde cuenta y el «Va a:» es local
+  (`textoDestinoIngreso` con la matrícula elegida). Reclasificar a anticipo o
+  aportación suelta el avión; `AERONAVE_NO_EXISTE` ya no despliega «Más
+  datos»; el resumen del plegable ya no dice «avión». Los `avisos[]` del API
+  («Este ingreso cuenta para el avión…» / «…vuelve a ser ingreso de
+  VuelaTour…») se pintan con el `toast.warning` de 10 s de siempre.
+  `FormularioIngreso` se exporta para la prueba de render.
+- **Lista y detalle**: la línea verde bajo la categoría = `destino_etiqueta`
+  del API (con un API previo, la de la categoría) y, con avión, el chip
+  «Avión N990GG» (title = el destino). El detalle dice «N990GG · cuenta para
+  este avión: su balance («Otros ingresos») y su reparto a socios» SOLO con
+  `destino: 'AVION'` (con un API previo, la matrícula a secas). Tipos:
+  `Ingreso.destino?` y `.destino_etiqueta?` (ADITIVOS, copia del API).
+- **Reparto** (`avion-reparto-card.tsx`): fila VERDE «Otros ingresos del
+  avión» («reembolsos y ventas registrados en Ingresos con este avión, netos
+  de comisión») justo después de «Venta del avión cobrada», SOLO con
+  `ingresos.otros_ingresos_avion_usd > 0`, con un renglón por ingreso en el
+  tooltip (`tituloOtrosIngresosAvion` sobre `detalle.otros_ingresos_avion`;
+  `CascadaRow` ganó `title`). El API ya la incluye en `saldo_disponible_usd`:
+  la cascada sigue sumando EXACTO el saldo. Badges: ámbar «Otros ingresos sin
+  TC · X MXN» (no entraron al saldo: nunca se inventa un T.C.) e informativo
+  «N ingreso(s) con TC oficial». **KpiStrip**: la cifra de «Venta de aviones
+  cobrada» NO se mezcla; su hint (y tooltip) suma « · + $X otros ingresos de
+  aviones», así Venta + Otros − Gastos − Reserva = Saldo se lee en pantalla.
+  Tipos ADITIVOS: `AvionReparto.ingresos.otros_ingresos_avion_usd?`,
+  `.otros_ingresos_avion_sin_tc_mxn?`, `.otros_ingresos_avion_tc_oficial_count?`,
+  `DetalleOtroIngresoAvion`, `AvionRepartoDetalle.otros_ingresos_avion?`,
+  `TcOficialResumen.ingresos?`.
+- **Tablero ejecutivo** (`dashboards/page.tsx`): «Ingresos cobrados» gana el
+  hint «+ $X otros ingresos de los aviones (suman al saldo)» y la celda
+  «Ingresos» por avión una segunda línea «+ $X otros». Identidad del API:
+  `ingresos_cobrados_usd + otros_ingresos_aviones_usd − gastos_totales_usd ==
+  saldo_disponible_usd`. Tipos ADITIVOS `DashboardResumen.otros_ingresos_aviones_usd?`
+  y `DashboardAvion.otros_ingresos_avion_usd?`. Textos en
+  `lib/admin/otros-ingresos-avion.ts` (PURO).
+- **Balance en pantalla**: hereda la pestaña «Otros ingresos» y la línea de la
+  cascada SIN código (el `libro_json` es genérico). En Reportes,
+  `DETALLE_BALANCE_POR_AVION` nombra «otros ingresos asignados al avión
+  (reembolsos, ventas)».
+- **Pruebas (sin DOM)**: `lib/admin/__tests__/categorias-ingreso.test.ts`,
+  `ingresos-ui.test.ts`, `otros-ingresos-avion.test.ts` y
+  `reportes-ui.test.ts`; `components/admin/ingresos/__tests__/
+  registrar-ingreso-avion.test.tsx` (render de `FormularioIngreso`: a la
+  vista, hint, «Va a:», anticipo sin campo, legado visible, dado de baja,
+  catálogo que no cargó, «Más datos» sin «avión» y cableado),
+  `ingresos-pantalla.test.tsx` (chip, línea verde con su respaldo y detalle) y
+  `components/admin/profit-sharing/__tests__/otros-ingresos-avion.test.tsx`
+  (card con la fila y sus badges, API previo = marcado de hoy, KpiStrip y
+  cableado del tablero).
+- **Orden de deploy**: pyservices → API 0.0.75 → migración `20261013000005`
+  (se recomienda después del API; antes es aceptable si el lote aplica sus
+  migraciones juntas) → **panel al final** (es el único que ofrece el
+  selector nuevo y sus textos dicen que el ingreso cuenta para el avión; con
+  un API previo la lista y el reparto degradan solos —sin `destino_etiqueta`
+  ni campos nuevos— pero el hint del alta ya lo prometería). Antes
+  del API, el PASO 0 del cliente: confirmar a qué avión pertenece ING-4
+  (septiembre 2026 cambia: VuelaTour baja y N990GG y sus socios suben).
+- **Fuera de alcance**: filtro «Avión» en la lista de Ingresos (el API ya
+  acepta `?aeronave_id`), `EntradaDinero.matricula`, pre-cierre, reporte por
+  vuelo y la app Flutter (el piloto no registra ingresos). El vínculo de la
+  celda «Otros ingresos» desde Conciliación queda para el punto del enlace al
+  balance.
 
 ## Inventario: alta de producto con el costo PENDIENTE (28-sep-2026)
 

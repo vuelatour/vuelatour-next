@@ -232,6 +232,10 @@ describe("textos", () => {
     expect(DETALLE_BALANCE_POR_AVION.startsWith("libro completo de un avión en el periodo — reporte de horas")).toBe(true);
     expect(DETALLE_BALANCE_POR_AVION).not.toContain("periodo:");
     expect(DETALLE_BALANCE_POR_AVION).toContain("pendientes de captura para completar el mes");
+    // Hoja «Otros ingresos» del libro del avión (13-oct-2026, API 0.0.75).
+    expect(DETALLE_BALANCE_POR_AVION).toContain(
+      "permisos, otros ingresos asignados al avión (reembolsos, ventas) y balance con socios",
+    );
   });
 
   it("para un rol sin balances la cabecera no invita a abrirlos", () => {
