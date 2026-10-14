@@ -16,6 +16,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { FlightCobro } from "@/types/flights";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 
@@ -291,6 +293,133 @@ describe("burbuja de FACTURA", () => {
     expect(html).not.toContain("Agregar folio");
     expect(html).not.toContain("Sin archivo de factura cargado.");
     expect(html.indexOf("A-123")).toBeLessThan(html.indexOf("Seguimiento manual"));
+  });
+});
+
+describe("burbuja: FACTURA OBLIGATORIA por la cuenta de cobro (13-oct-2026, invariante 60 del API)", () => {
+  // COBRO = transferencia a «Scotiabank Pesos»: una de las cuatro que exigen.
+  const OBLIGATORIA = "Factura obligatoria: cobro en Scotiabank Pesos";
+
+  it("sin factura: chip «Factura obligatoria: cobro en …» ANTES de «Sin factura» y «Necesito factura»", () => {
+    for (const html of [
+      vuelo({ facturaServicio: SIN_NADA, rol: "COORDINADOR" }),
+      cotizacion({ facturaServicio: SIN_NADA, rol: "COORDINADOR" }),
+    ]) {
+      expect(html).toContain(OBLIGATORIA);
+      expect(html).toContain("data-factura-obligatoria");
+      expect(html).toContain("Sin factura");
+      expect(html).toContain("Necesito factura");
+      // Dentro de la burbuja: el chip va justo antes de «Sin factura».
+      expect(html).toMatch(
+        /Factura obligatoria: cobro en Scotiabank Pesos<\/span><span[^>]*>Sin factura<\/span>/,
+      );
+      // El tooltip dice por qué (y que el pre-cierre lo marca).
+      expect(html).toContain("el pre-cierre lo marca");
+    }
+  });
+
+  it("pedida y pendiente: también se dice (junto al chip ámbar)", () => {
+    const html = vuelo({ facturaServicio: PEDIDA, rol: "ADMIN" });
+    expect(html).toContain(OBLIGATORIA);
+    expect(html).toContain("Factura pedida por Itzi · 24 sep — pendiente");
+  });
+
+  it("con factura VIGENTE ya está cumplida: no se anuncia", () => {
+    expect(vuelo({ facturaServicio: FACTURADA, rol: "ADMIN" })).not.toContain("Factura obligatoria");
+    expect(cotizacion({ facturaServicio: FACTURADA, rol: "ADMIN" })).not.toContain("Factura obligatoria");
+  });
+
+  it("registrada por fuera del registro (estatus manual / CFDI / folio): tampoco", () => {
+    const html = renderToStaticMarkup(
+      <CobrosCard
+        flightId="v-1"
+        flightFolio={341}
+        flightEstado="COMPLETADO"
+        montoTotalUsd={8050.4}
+        pendingUsd={0}
+        cobradoUsd={8050.4}
+        cobros={[COBRO]}
+        facturaCliente={{ estatus: "FACTURADO", archivo: null, folio: null, uuid: null }}
+        facturaServicio={SIN_NADA}
+        rol="ADMIN"
+      />,
+    );
+    expect(html).not.toContain("Factura obligatoria");
+    const cfdi = renderToStaticMarkup(
+      <CobrosCard
+        flightId="v-1"
+        flightFolio={341}
+        flightEstado="COMPLETADO"
+        montoTotalUsd={8050.4}
+        pendingUsd={0}
+        cobradoUsd={8050.4}
+        cobros={[COBRO]}
+        facturado
+        facturaServicio={SIN_NADA}
+        rol="ADMIN"
+      />,
+    );
+    expect(cfdi).not.toContain("Factura obligatoria");
+    const cotiz = renderToStaticMarkup(
+      <QuoteCobrosCard
+        quoteId="v-1"
+        quoteFolio={341}
+        montoTotalUsd={8050.4}
+        totalCobrado={8050.4}
+        cobros={[COBRO]}
+        facturaServicio={SIN_NADA}
+        facturaRegistradaFuera
+        rol="ADMIN"
+        vueloEstado="CONFIRMADO"
+      />,
+    );
+    expect(cotiz).not.toContain("Factura obligatoria");
+  });
+
+  it("Paywise / efectivo / anticipo devuelto COMPLETO en la misma cuenta: no exige", () => {
+    const paywise = vuelo({
+      facturaServicio: SIN_NADA,
+      rol: "ADMIN",
+      cobros: [{ ...COBRO, metodo_cobro: "PAYWISE", cuenta_destino: "Paywise" }],
+    });
+    expect(paywise).not.toContain("Factura obligatoria");
+    const devuelto = vuelo({
+      facturaServicio: SIN_NADA,
+      rol: "ADMIN",
+      cobros: [COBRO, { ...COBRO, id: "c-2", monto: "-136856.8" }],
+    });
+    expect(devuelto).not.toContain("Factura obligatoria");
+    // Devuelto en EFECTIVO: el dinero de Scotiabank sigue ahí ⇒ exige.
+    const enEfectivo = vuelo({
+      facturaServicio: SIN_NADA,
+      rol: "ADMIN",
+      cobros: [COBRO, { ...COBRO, id: "c-2", monto: "-136856.8", metodo_cobro: "EFECTIVO", cuenta_destino: null }],
+    });
+    expect(enEfectivo).toContain(OBLIGATORIA);
+  });
+
+  it("vuelo CANCELADO con el cobro retenido: se dice, sin «Necesito factura», y el tooltip manda a registrarla directo", () => {
+    const html = vuelo({ facturaServicio: SIN_NADA, rol: "ADMIN", estado: "CANCELADO" });
+    expect(html).toContain(OBLIGATORIA);
+    expect(html).toContain("Vuelo cancelado: regístrala directo en Facturas emitidas.");
+    expect(html).not.toContain("Necesito factura");
+    expect(html).toContain("Registrar factura");
+  });
+
+  it("sin el bloque (API previo o sin migración): ni burbuja ni chip", () => {
+    expect(vuelo({ facturaServicio: undefined, rol: "ADMIN" })).not.toContain("Factura obligatoria");
+  });
+
+  it("«Retirar» advierte que el pre-cierre lo seguirá marcando (cableado en el fuente: el diálogo es un portal)", () => {
+    const fuente = readFileSync(
+      path.resolve(__dirname, "../../facturas-emitidas/factura-servicio-burbuja.tsx"),
+      "utf8",
+    );
+    expect(fuente).toContain("const avisoRetirar = avisoRetirarFacturaObligatoria(obligatoria);");
+    expect(fuente).toMatch(/\{avisoRetirar && \(\s*<span[^>]*>\s*\{avisoRetirar\}/);
+    expect(fuente).toContain(
+      "vigentes.length === 0 && !facturaRegistradaFuera ? textoFacturaObligatoria(cobros) : null;",
+    );
   });
 });
 

@@ -28,6 +28,13 @@ import {
   textoPedidaPor,
   textoSolicitud,
 } from "@/lib/admin/facturas-emitidas";
+import {
+  AYUDA_FACTURA_OBLIGATORIA,
+  AYUDA_FACTURA_OBLIGATORIA_CANCELADO,
+  avisoRetirarFacturaObligatoria,
+  textoFacturaObligatoria,
+  type CobroExigeFacturaRow,
+} from "@/lib/admin/factura-obligatoria";
 import { NecesitoFacturaDialog } from "./necesito-factura-dialog";
 import { RegistrarFacturaDialog } from "./registrar-factura-dialog";
 import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas-emitidas";
@@ -45,6 +52,14 @@ import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas
  *  - Nada ⇒ «Sin factura» + «Necesito factura».
  *  - Facturación (ADMIN/FACTURACION) ve «Registrar factura» con el vuelo ya
  *    elegido.
+ *  - FACTURA OBLIGATORIA (13-oct-2026, invariante 60 del API): si el dinero
+ *    de los cobros quedó en una cuenta que exige factura (HSBC/Scotiabank, o
+ *    link HSBC/transferencia/cheque sin cuenta; por el NETO de cada cuenta)
+ *    y todavía no hay factura registrada, chip «Factura obligatoria: cobro en
+ *    HSBC Pesos» (espejo `lib/admin/factura-obligatoria.ts`, con los cobros
+ *    de la card: el API no manda nada nuevo). Con una factura VIGENTE o
+ *    registrada por fuera (CFDI, folio o estatus manual) ya está cumplida y
+ *    no se anuncia — igual que el pre-cierre.
  *
  * `bloque` ausente o `null` (API previo o sin la migración) ⇒ no se pinta
  * NADA: ofrecer un botón que el API rechazaría es peor que no tenerlo.
@@ -59,6 +74,8 @@ export function FacturaServicioBurbuja({
   grupo,
   bloque,
   rol,
+  cobros,
+  facturaRegistradaFuera = false,
 }: {
   vueloId: string;
   vueloFolio: number;
@@ -69,6 +86,12 @@ export function FacturaServicioBurbuja({
   grupo?: { id: string; total_aviones: number } | null;
   bloque: FacturaServicioBloque | null | undefined;
   rol: string | null | undefined;
+  /** Cobros del vuelo (los de la card) para decir si la factura es
+   *  OBLIGATORIA por la cuenta de cobro. Ausente ⇒ no se dice nada. */
+  cobros?: ReadonlyArray<CobroExigeFacturaRow> | null;
+  /** El vuelo ya tiene factura fuera del registro (CFDI timbrado, folio
+   *  legado o estatus manual ≠ «Sin factura»): la obligación está cumplida. */
+  facturaRegistradaFuera?: boolean;
 }) {
   const router = useRouter();
   const [pedirAbierto, setPedirAbierto] = useState(false);
@@ -84,6 +107,11 @@ export function FacturaServicioBurbuja({
   const cancelado = vueloEstado === "CANCELADO";
   const vigentes = bloque.facturas;
   const solicitud = bloque.solicitud;
+  // «Factura obligatoria: cobro en HSBC Pesos» SOLO mientras no haya factura
+  // registrada (ni en el registro ni por fuera): cumplida no se anuncia.
+  const obligatoria =
+    vigentes.length === 0 && !facturaRegistradaFuera ? textoFacturaObligatoria(cobros) : null;
+  const avisoRetirar = avisoRetirarFacturaObligatoria(obligatoria);
 
   const verPdf = (f: FacturaEmitidaMini) => {
     void abrirArchivoFirmado(() => urlArchivoFacturaAction(f.id, "pdf")).then((r) => {
@@ -116,6 +144,16 @@ export function FacturaServicioBurbuja({
         <DocumentTextIcon className="h-3.5 w-3.5" />
         Factura
       </span>
+
+      {obligatoria && (
+        <span
+          data-factura-obligatoria
+          className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:text-rose-300"
+          title={cancelado ? AYUDA_FACTURA_OBLIGATORIA_CANCELADO : AYUDA_FACTURA_OBLIGATORIA}
+        >
+          {obligatoria}
+        </span>
+      )}
 
       {vigentes.length > 0 ? (
         <>
@@ -248,6 +286,11 @@ export function FacturaServicioBurbuja({
             <AlertDialogDescription>
               El vuelo #{vueloFolio} sale de «Por facturar». Si ya le avisaste a facturación, dile
               que ya no hace falta.
+              {avisoRetirar && (
+                <span className="mt-2 block font-medium text-rose-700 dark:text-rose-300">
+                  {avisoRetirar}
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

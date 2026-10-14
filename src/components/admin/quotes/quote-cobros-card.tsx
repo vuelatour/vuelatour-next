@@ -90,6 +90,7 @@ export function QuoteCobrosCard({
   onRegistrar,
   registrarTitle,
   facturaServicio,
+  facturaRegistradaFuera = false,
   rol = null,
   vueloEstado = "",
   clienteId = null,
@@ -117,6 +118,9 @@ export function QuoteCobrosCard({
   registrarTitle?: string;
   /** `snapshot.factura_servicio` (ADITIVO; ausente/null ⇒ sin burbuja). */
   facturaServicio?: FacturaServicioBloque | null;
+  /** El vuelo ya tiene factura fuera del registro (CFDI, folio legado o
+   *  estatus manual): la burbuja no anuncia «Factura obligatoria». */
+  facturaRegistradaFuera?: boolean;
   /** Rol del usuario (permisos de la burbuja y del comprobante). */
   rol?: string | null;
   vueloEstado?: string;
@@ -237,6 +241,9 @@ export function QuoteCobrosCard({
           grupo={grupo}
           bloque={quoteFolio != null ? facturaServicio : null}
           rol={rol}
+          // Factura OBLIGATORIA por la cuenta de cobro (13-oct-2026).
+          cobros={cobros}
+          facturaRegistradaFuera={facturaRegistradaFuera}
         />
         {sinCobros && (
           <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center">

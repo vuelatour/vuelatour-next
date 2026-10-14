@@ -23,6 +23,7 @@ import {
 } from "@/lib/admin/cotizacion-cobrada";
 import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
 import { esUuid } from "@/lib/admin/url-params";
+import { facturaRegistradaFuera } from "@/lib/admin/factura-obligatoria";
 import { filtrosListaDeParams, qsFiltrosLista } from "@/lib/admin/quote-navegacion";
 import { CANCUN_TZ } from "@/lib/datetime";
 
@@ -178,6 +179,9 @@ export default async function QuoteDetailPage({
       // FACTURA DEL SERVICIO (24-sep-2026, ADITIVO del snapshot): la burbuja
       // de la card de cobros. Ausente/null ⇒ no se pinta.
       facturaServicio={cobrosVuelo?.factura_servicio}
+      // FACTURA OBLIGATORIA (13-oct-2026): con CFDI, folio legado o estatus
+      // manual la obligación ya está cumplida (mismo criterio del API).
+      facturaRegistradaFuera={cobrosVuelo ? facturaRegistradaFuera(cobrosVuelo) : false}
       voucherUrls={voucherUrls}
       grupoTotalAviones={cobrosVuelo?.grupo_total_aviones ?? null}
       navegacion={{ vecinos, qs: qsLista }}

@@ -39,6 +39,11 @@ import {
   notaPreCierreSocios,
 } from "@/lib/admin/reparto-pagos";
 import type { PreCierreSocioCuenta } from "@/types/reparto-pagos";
+import {
+  CLAVE_PRECIERRE_VUELOS_SIN_FACTURA,
+  chipVueloSinFactura,
+  hrefPrecierreVuelosSinFactura,
+} from "@/lib/admin/pre-cierre-factura";
 
 interface PreCierreVuelo {
   id: string;
@@ -51,6 +56,13 @@ interface PreCierreVuelo {
   /** ADITIVO (seguimiento_cotizacion_pendiente, 29-sep-2026): notas
       PENDIENTES que afectan la cotización en ese vuelo. */
   notas?: number;
+  /** ADITIVOS (vuelos_cobrados_sin_factura, 13-oct-2026, invariante 60 del
+      API): cuentas que exigen la factura, si ya está en «Por facturar» y la
+      matrícula. `estado` viaja SOLO en un cancelado («CANCELADO»). */
+  cuentas?: string[];
+  solicitada?: boolean;
+  matricula?: string | null;
+  fecha_vuelo?: string | null;
 }
 
 /** Grupo con saldo por cobrar (clave grupo_con_saldo). Montos del API. */
@@ -165,6 +177,9 @@ const LINK_POR_CLAVE: Record<
   // registra cada entrega (el saldo es de toda la cuenta, no del periodo).
   [CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR]: hrefPrecierreSocios,
   [CLAVE_PRECIERRE_SOCIOS_ADELANTADOS]: hrefPrecierreSocios,
+  // Factura obligatoria por cuenta de cobro (13-oct-2026): se registra en
+  // Facturas emitidas (los chips llevan a la card de cobros de cada vuelo).
+  [CLAVE_PRECIERRE_VUELOS_SIN_FACTURA]: hrefPrecierreVuelosSinFactura,
 };
 
 function fmtMonto(item: PreCierreItem): string | null {
@@ -309,7 +324,37 @@ export async function PreCierreCard({
                       {item.detalle}
                     </p>
                   )}
-                  {item.vuelos && item.vuelos.length > 0 && (
+                  {/* Vuelos cobrados en cuentas que exigen factura
+                      (13-oct-2026): cada chip dice la cuenta, si ya está
+                      pedida y si el vuelo se canceló, y lleva a su card de
+                      cobros (ahí está «Necesito factura» / «Registrar
+                      factura»). */}
+                  {item.clave === CLAVE_PRECIERRE_VUELOS_SIN_FACTURA &&
+                    item.vuelos &&
+                    item.vuelos.length > 0 && (
+                      <p className="text-xs mt-1 flex flex-wrap gap-1.5" data-precierre-sin-factura>
+                        {item.vuelos.slice(0, 8).map((v) => {
+                          const chip = chipVueloSinFactura(v);
+                          return (
+                            <Link
+                              key={v.id}
+                              href={chip.href}
+                              title={chip.title}
+                              className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
+                            >
+                              {chip.texto}
+                            </Link>
+                          );
+                        })}
+                        {item.vuelos.length > 8 && (
+                          <span className="text-muted-foreground">
+                            y {item.vuelos.length - 8} más…
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  {item.clave !== CLAVE_PRECIERRE_VUELOS_SIN_FACTURA &&
+                    item.vuelos && item.vuelos.length > 0 && (
                     <p className="text-xs mt-1 flex flex-wrap gap-1.5">
                       {item.vuelos.slice(0, 8).map((v) => (
                         <Link

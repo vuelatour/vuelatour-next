@@ -55,6 +55,7 @@ import {
   estadoFacturaCliente,
   estatusFacturaCliente,
 } from "@/lib/admin/factura-cliente";
+import { facturaRegistradaFuera } from "@/lib/admin/factura-obligatoria";
 import type { FacturaClienteBloque as FacturaClienteData } from "@/types/flights";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
@@ -351,6 +352,14 @@ export function CobrosCard({
             grupo={grupo}
             bloque={facturaServicio}
             rol={rol}
+            // Factura OBLIGATORIA por la cuenta de cobro (13-oct-2026): los
+            // mismos cobros de esta card; cumplida si ya hay factura fuera
+            // del registro (CFDI, folio legado o estatus manual).
+            cobros={cobros}
+            facturaRegistradaFuera={facturaRegistradaFuera({
+              facturado,
+              factura_cliente: facturaCliente,
+            })}
           />
           {/* Estatus manual + archivo LEGADO de la factura del servicio. Solo
               con el API que lo soporta: sin el bloque no se ofrece un control

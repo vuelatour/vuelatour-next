@@ -104,6 +104,7 @@ export function QuoteWorkspace({
   tcOficialFecha = null,
   paywiseComisionPct,
   facturaServicio,
+  facturaRegistradaFuera = false,
   voucherUrls = {},
   grupoTotalAviones = null,
   navegacion = null,
@@ -140,6 +141,13 @@ export function QuoteWorkspace({
    * `undefined`/`null` = API previo o sin la migración ⇒ sin burbuja.
    */
   facturaServicio?: FacturaServicioBloque | null;
+  /**
+   * FACTURA OBLIGATORIA (13-oct-2026): el vuelo ya tiene factura fuera del
+   * registro (CFDI timbrado, folio legado o estatus manual ≠ «Sin factura»;
+   * lo calcula la página con el snapshot). La burbuja entonces no anuncia
+   * «Factura obligatoria».
+   */
+  facturaRegistradaFuera?: boolean;
   /** URLs firmadas de los comprobantes de los cobros (best-effort). */
   voucherUrls?: Record<string, string>;
   /** Aviones vivos del grupo (`snapshot.grupo_total_aviones`). */
@@ -690,6 +698,7 @@ export function QuoteWorkspace({
             registrarTitle={registrarTitle}
             // Factura del servicio + comprobantes (24-sep-2026).
             facturaServicio={facturaServicio}
+            facturaRegistradaFuera={facturaRegistradaFuera}
             rol={rol}
             vueloEstado={quote.estado}
             clienteId={quote.cliente_id}

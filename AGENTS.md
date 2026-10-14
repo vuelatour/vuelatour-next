@@ -3358,6 +3358,53 @@ cambio (agente NAV).
     «Con comprobante» sin botón («Solo oficina abre el comprobante»); el
     botón queda para oficina cuando el lote falló.
 
+## Factura obligatoria por la cuenta de cobro (13-oct-2026, invariante 60 del API)
+
+Pendiente del lote del 13-oct (decisión 4 del cliente: un cobro que cae en
+HSBC Dólares / HSBC Pesos / Scotiabank Dólares / Scotiabank Pesos EXIGE
+factura del servicio). El API ya la aplica (solicitud automática, columna
+«FACTURA VUELATOUR», pre-cierre); el panel la DICE. **Sin cambios de API.**
+
+- **Regla espejo PURA** `lib/admin/factura-obligatoria.ts` (copia de
+  `common/cuentas-cobro.ts` del API, con la MISMA tabla de verdad en
+  `__tests__/factura-obligatoria.test.ts` y comparación por regex de las dos
+  listas contra el repo hermano): la CUENTA manda (las cuatro de banco ⇒ sí;
+  Paywise ⇒ no; vacía o fuera del catálogo ⇒ decide el método: link de pago
+  HSBC, transferencia y cheque exigen); reembolsos nunca por sí solos; a
+  nivel vuelo **por el NETO** de cada cuenta (o método sin cuenta) y moneda
+  — un anticipo en HSBC devuelto completo en la misma cuenta ya no exige;
+  devuelto en efectivo, en otra cuenta o en otra moneda, sí (USD y MXN
+  jamás se suman). No es dinero: es clasificación, con los cobros que la
+  card ya tiene.
+- **Burbuja de FACTURA** (`factura-servicio-burbuja.tsx`, en las cards de
+  cobros del vuelo y de la cotización; props nuevas OPCIONALES `cobros` y
+  `facturaRegistradaFuera`): chip rosa «Factura obligatoria: cobro en HSBC
+  Pesos» (2+: «cobros en HSBC Pesos y por Transferencia») junto a la
+  etiqueta «Factura», con el tooltip `AYUDA_FACTURA_OBLIGATORIA` (y, en un
+  vuelo CANCELADO, «Vuelo cancelado: regístrala directo en Facturas
+  emitidas.»). Solo mientras NO haya factura registrada: con una emitida
+  VIGENTE o registrada por fuera del registro (`facturaRegistradaFuera`:
+  CFDI timbrado, folio legado o estatus manual ≠ «Sin factura» — los pasos
+  de la cascada del API) la obligación está cumplida y no se anuncia, igual
+  que el pre-cierre. «Retirar» la solicitud agrega «Ojo: la factura es
+  obligatoria (…); el pre-cierre seguirá marcando el vuelo mientras no se
+  registre.». La cotización recibe `facturaRegistradaFuera` de su página
+  (snapshot del vuelo) a través de `QuoteWorkspace`.
+- **Pre-cierre** (`reportes/pre-cierre-card.tsx` + `lib/admin/pre-cierre-factura.ts`):
+  el renglón `vuelos_cobrados_sin_factura` pinta cada vuelo como «#341
+  (HSBC Pesos · pedida)» / «#430 (CANCELADO · HSBC Dólares)» (`cuentas`,
+  `solicitada` y el aditivo `estado` del API), con title de qué hacer
+  («Pídela con «Necesito factura»…», «Ya está en «Por facturar»…» o «Vuelo
+  cancelado: regístrala directo…») y liga a la card de cobros del vuelo
+  (`/admin/flights/<id>#cobros`). «Resolver →» va a `/admin/facturas-emitidas`.
+  El `detalle` y la lectura fallida son los del API.
+- **Pruebas**: `lib/admin/__tests__/factura-obligatoria.test.ts`,
+  `lib/admin/__tests__/pre-cierre-factura.test.ts` y el describe «FACTURA
+  OBLIGATORIA» de `flights/__tests__/cobros-card-facturas-emitidas.test.tsx`
+  (cuentas, Paywise, devuelto completo / en efectivo, cumplida por vigente,
+  estatus manual, CFDI o la prop de la cotización, cancelado, sin bloque, el
+  aviso de «Retirar»).
+
 ## Flechas «‹ Anterior» / «Siguiente ›» entre cotizaciones (24-sep-2026)
 
 Pedido de Itzi (audio): «ya le piqué al vuelo del 20 de septiembre. Y si hay
