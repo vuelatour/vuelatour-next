@@ -3359,7 +3359,7 @@ cambio (agente NAV).
     botón queda para oficina cuando el lote falló.
 
 - **«Por facturar» vs «marcado Facturado a mano» (13-oct-2026, caso #376;
-  contrato aditivo del API del lote 0.0.75)**. Caso real: A-0440 ($31,435.91
+  contrato aditivo del API del lote 0.0.75, invariante 65 del API)**. Caso real: A-0440 ($31,435.91
   MXN ≈ 2 × 904.51 USD) cubría #375 y #376 del mismo cliente y se ligó solo a
   #375; #376 siguió «Por facturar» («Mary dice que ya lo hizo») hasta que el
   13-oct a las 13:21 la ligaron a mano. Lo que cambia en el panel:
@@ -4477,7 +4477,7 @@ no existe.
   avión» del API (asignarle avión al gasto NO cambia quién paga: la salida es
   reclasificarla a «(VuelaTour)»).
 
-## Comisariato (13-oct-2026, API 0.0.75)
+## Comisariato (13-oct-2026, API 0.0.75, invariante 63 del API)
 
 Pedido del cliente (Jimmy, 12-oct): «agregar en la categoría de gastos:
 Comisariato; entraría en [la columna OTROS de costos directos] en el balance
@@ -4536,7 +4536,7 @@ con el API **0.0.75** (migración `20261013000001`, valor del enum; la
   (el 0.0.74 rechaza la categoría con el 400 de `IsEnum` y el panel solo
   muestra el toast) → APK.
 
-## Medio de pago «Pago domiciliado» (13-oct-2026, API 0.0.75)
+## Medio de pago «Pago domiciliado» (13-oct-2026, API 0.0.75, invariante 64 del API)
 
 Pedido del cliente (13-oct-2026): «a la hora de vincular un gasto… no viene
 en método de pago algo que diga Pago domiciliado». Contrato con el API
