@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import {
   categoriaGastoLabel,
   textoTableroComisionVendedorAvion,
+  textoTableroGastosEmpresa,
 } from "@/lib/admin/categorias-gasto";
 import type { Rol } from "@/types/me";
 import { rangoFiltro } from "@/lib/admin/url-params";
@@ -371,6 +372,10 @@ async function Gastos({ desde, hasta }: { desde: string; hasta: string }) {
   const comisionVendedorAvion = textoTableroComisionVendedorAvion(
     resumen.gastos_comision_vendedor_avion_usd,
   );
+  // Gastos de la EMPRESA (13-oct-2026): el renglón dice TODO lo que el API
+  // suma ahí — categorías de empresa, «Comisión del vendedor (VuelaTour)» y
+  // remanentes de repartos (antes solo mencionaba los remanentes).
+  const gastosEmpresa = textoTableroGastosEmpresa(resumen.gastos_empresa_usd);
 
   return (
     <div className="space-y-6">
@@ -394,11 +399,8 @@ async function Gastos({ desde, hasta }: { desde: string; hasta: string }) {
           imputan a ninguna aeronave).
         </p>
       )}
-      {(resumen.gastos_empresa_usd ?? 0) > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {fmtUsd(resumen.gastos_empresa_usd ?? 0)} en gastos de la empresa
-          VuelaTour (remanentes de repartos: no se imputan a aeronaves).
-        </p>
+      {gastosEmpresa && (
+        <p className="text-xs text-muted-foreground">{gastosEmpresa}</p>
       )}
       {comisionVendedorAvion && (
         <p className="text-xs text-muted-foreground">{comisionVendedorAvion}</p>

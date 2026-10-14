@@ -201,8 +201,10 @@ export interface PersistedQuote extends SeguimientoContadores {
    * comisión del vendedor + su IVA → "Otros movimientos" del balance
    * general). `comision_vendedor_usd` informa el monto pre-IVA de la
    * comisión, que desde el 28-ago-2026 (tarde) vive DENTRO de vuelatour_usd
-   * (es ingreso de VuelaTour, como un extra; su pago al vendedor es egreso
-   * de VuelaTour, no del avión). Opcional: respuestas previas no la traen.
+   * (es ingreso de VuelaTour, como un extra; su PAGO es el gasto real
+   * capturado — desde el 13-oct-2026 en dos categorías: «(VuelaTour)» la paga
+   * VuelaTour y «(avión)» la carga el avión). Opcional: respuestas previas no
+   * la traen.
    */
   particion_ingreso?: {
     total_usd: number;

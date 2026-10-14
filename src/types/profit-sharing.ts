@@ -17,9 +17,11 @@ export interface DetalleVuelo {
   total_usd: number;
   cobrado_usd: number;
   pendiente_usd: number;
-  /** Comisión del vendedor (pre-IVA), INFORMATIVA: desde el 28-ago-2026 es
-      ingreso/egreso de VuelaTour (va en "otros ingresos"), ya no se descuenta
-      al avión. */
+  /** Comisión del vendedor COBRADA (pre-IVA), INFORMATIVA: desde el
+      28-ago-2026 es ingreso de VuelaTour (va en "otros ingresos"). Su PAGO
+      es solo el gasto real (13-oct-2026, dos categorías): la «(VuelaTour)»
+      egresa en «otros movimientos» y la «(avión)» resta en
+      `comisiones_venta_usd` del avión. */
   comision_vendedor_usd: number;
   cobrado: boolean;
   cobros_sin_tc_mxn: number;
@@ -195,9 +197,10 @@ export interface OtrosIngresosVuelatour {
     extras_usd: number;
     pernocta_usd: number;
     iva_usd: number;
-    /** Comisión del vendedor (pre-IVA), ingreso de VuelaTour desde el
-        28-ago-2026; su pago al vendedor es egreso de VuelaTour (otros
-        movimientos). Aditivo: el API previo no lo manda. */
+    /** Comisión del vendedor COBRADA (pre-IVA), ingreso de VuelaTour desde
+        el 28-ago-2026. Su pago es el gasto real: «(VuelaTour)» egresa en
+        otros movimientos; «(avión)» resta en las Comisiones del avión
+        (13-oct-2026). Aditivo: el API previo no lo manda. */
     comision_usd?: number;
   };
 }

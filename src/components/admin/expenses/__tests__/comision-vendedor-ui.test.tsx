@@ -231,8 +231,15 @@ describe("tablero de Gastos y reparto (cableado de la «(avión)»)", () => {
       /\{comisionVendedorAvion && \(\s*<p className="text-xs text-muted-foreground">\{comisionVendedorAvion\}<\/p>/,
     );
     expect(pagina.indexOf("{comisionVendedorAvion && (")).toBeGreaterThan(
-      pagina.indexOf("resumen.gastos_empresa_usd ?? 0) > 0"),
+      pagina.indexOf("{gastosEmpresa && ("),
     );
+  });
+
+  it("el renglón de gastos de la EMPRESA sale de la fuente única (13-oct-2026: ya no dice solo «remanentes de repartos»)", () => {
+    const pagina = leer("src/app/admin/dashboards/page.tsx");
+    expect(pagina).toContain("const gastosEmpresa = textoTableroGastosEmpresa(resumen.gastos_empresa_usd);");
+    expect(pagina).toMatch(/\{gastosEmpresa && \(\s*<p className="text-xs text-muted-foreground">\{gastosEmpresa\}<\/p>/);
+    expect(pagina).not.toContain("(remanentes de repartos: no se imputan a aeronaves)");
   });
 
   it("la cascada del reparto usa el sublabel de la fuente única (sin «provisión»)", () => {
@@ -240,5 +247,15 @@ describe("tablero de Gastos y reparto (cableado de la «(avión)»)", () => {
     expect(card).toContain("sublabel={SUBLABEL_COMISIONES_REPARTO}");
     expect(card).not.toMatch(/provisión del vendedor/);
     expect(leer("src/components/admin/profit-sharing/kpi-strip.tsx")).not.toMatch(/provisi/);
+  });
+
+  it("los tooltips de «Otros ingresos VuelaTour» dicen quién paga con la nota única (sin «egreso de VuelaTour» a secas)", () => {
+    const card = leer("src/components/admin/profit-sharing/avion-reparto-card.tsx");
+    const kpi = leer("src/components/admin/profit-sharing/kpi-strip.tsx");
+    for (const fuente of [card, kpi]) {
+      expect(fuente).toContain("${NOTA_PAGO_VENDEDOR_REPARTO}");
+      expect(fuente).not.toContain("la comisión se paga al vendedor desde VuelaTour");
+      expect(fuente).not.toContain("su pago al vendedor, egreso de VuelaTour");
+    }
   });
 });

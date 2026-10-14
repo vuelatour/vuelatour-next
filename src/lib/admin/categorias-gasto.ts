@@ -394,6 +394,17 @@ export function textoTableroComisionVendedorAvion(
 export const SUBLABEL_COMISIONES_REPARTO = `parte del avión de la comisión bancaria (regla sep-2026) + pagos «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR_AVION)}»`;
 
 /**
+ * Quién paga al vendedor (13-oct-2026, invariantes 50 y 61 del API) — para
+ * los tooltips de «Otros ingresos VuelaTour» del reparto (KPI de la flota y
+ * card por avión). Lo COBRADO al cliente por la comisión es ingreso de
+ * VuelaTour; el PAGO es solo el gasto real capturado, en una de las dos
+ * categorías: la «(VuelaTour)» egresa en «otros movimientos» y la «(avión)»
+ * resta en las Comisiones del avión. Antes decía «su pago al vendedor,
+ * egreso de VuelaTour»: desfasado desde las dos categorías.
+ */
+export const NOTA_PAGO_VENDEDOR_REPARTO = `Lo cobrado al cliente por la comisión del vendedor es ingreso de VuelaTour; el pago al vendedor es el gasto real capturado: «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR)}» egresa en «otros movimientos» del Balance general y «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR_AVION)}» resta en «Comisiones» del avión (sin pago capturado no se resta nada).`;
+
+/**
  * Categorías de EMPRESA — «la categoría de empresa manda sobre el vuelo»
  * (regla del cliente, 11-sep-2026): van SIEMPRE a la hoja «otros gastos» del
  * Balance general aunque traigan vuelo o avión sellados. SINCRONIZADA con
@@ -408,6 +419,27 @@ export const CATEGORIAS_EMPRESA: ReadonlySet<string> = new Set([
   "FIJO",
   "VISITA",
 ]);
+
+/** «A», «A y B», «A, B y C» (textos del tablero). */
+function unirTextos(partes: readonly string[]): string {
+  if (partes.length <= 1) return partes[0] ?? "";
+  return `${partes.slice(0, -1).join(", ")} y ${partes[partes.length - 1]}`;
+}
+
+/**
+ * Renglón del tablero de Gastos con `resumen.gastos_empresa_usd` (13-oct-2026).
+ * Decía solo «(remanentes de repartos…)» y se quedaba corto: el API suma ahí
+ * TODA categoría de empresa (OTRO, NOMINA, GASOLINA, FIJO, VISITA, aunque
+ * traigan avión sellado), la «Comisión del vendedor (VuelaTour)» (la paga
+ * VuelaTour) y los remanentes de los repartos manuales. La «(avión)» va en su
+ * propio renglón (`textoTableroComisionVendedorAvion`). null = no se pinta
+ * (0 o un API previo sin la llave). El panel solo FORMATEA la cifra del API.
+ */
+export function textoTableroGastosEmpresa(usd: number | null | undefined): string | null {
+  if (usd == null || !(usd > 0)) return null;
+  const empresa = unirTextos([...CATEGORIAS_EMPRESA].map(categoriaGastoLabel));
+  return `${fmtUsd(usd)} en gastos de la empresa VuelaTour: categorías de empresa (${empresa}), «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR)}» y remanentes de repartos. No se imputan a aeronaves.`;
+}
 
 const HOJA_OTROS_GASTOS_SIN_NADA =
   "Balance general VuelaTour · Otros gastos (repártelo desde la pantalla Otros gastos para cargarlo a aviones)";

@@ -8,6 +8,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { NOTA_PAGO_VENDEDOR_REPARTO } from "@/lib/admin/categorias-gasto";
 import type {
   AvionReparto,
   OtrosIngresosVuelatour,
@@ -127,7 +128,7 @@ export function KpiStrip({
           }
           title={
             otrosDesglose
-              ? `Ingresos de VuelaTour (no de los aviones): ${otrosDesglose}. La comisión del vendedor es ingreso de VuelaTour y su pago al vendedor, egreso de VuelaTour (Otros movimientos).`
+              ? `Ingresos de VuelaTour (no de los aviones): ${otrosDesglose}. ${NOTA_PAGO_VENDEDOR_REPARTO}`
               : undefined
           }
         />

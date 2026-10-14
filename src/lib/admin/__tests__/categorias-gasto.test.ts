@@ -17,6 +17,7 @@ import {
   DESTINO_POR_DEFECTO,
   HINT_VUELO_COMISION,
   MSG_GASTO_REQUIERE_VUELO_COMISION,
+  NOTA_PAGO_VENDEDOR_REPARTO,
   SUBLABEL_COMISIONES_REPARTO,
   VENTANA_VUELOS_COMISION,
   VENTANA_VUELOS_DEFAULT,
@@ -31,6 +32,7 @@ import {
   mensajeGastoRequiereVuelo,
   opcionCategoriaGasto,
   textoTableroComisionVendedorAvion,
+  textoTableroGastosEmpresa,
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaEnum, GastoCreateSchema, GastoVerifySchema } from "@/app/admin/expenses/schema";
 
@@ -379,6 +381,24 @@ describe("tablero de Gastos y reparto: textos de la «(avión)»", () => {
     expect(textoTableroComisionVendedorAvion(0)).toBeNull();
     expect(textoTableroComisionVendedorAvion(-5)).toBeNull();
     expect(textoTableroComisionVendedorAvion(Number.NaN)).toBeNull();
+  });
+
+  it("renglón de gastos de la EMPRESA: dice todo lo que suma el API (categorías de empresa, «(VuelaTour)» y remanentes)", () => {
+    expect(textoTableroGastosEmpresa(4250.3)).toBe(
+      "$4,250.30 en gastos de la empresa VuelaTour: categorías de empresa (Otros gastos VuelaTour, Nómina, Gasolina (vehículos), Gasto fijo y Visita), «Comisión del vendedor (VuelaTour)» y remanentes de repartos. No se imputan a aeronaves.",
+    );
+    // La «(avión)» NO está ahí: tiene su propio renglón.
+    expect(textoTableroGastosEmpresa(1)).not.toContain(ETIQUETA_AV);
+    for (const v of [undefined, null, 0, -5, Number.NaN]) {
+      expect(textoTableroGastosEmpresa(v), String(v)).toBeNull();
+    }
+  });
+
+  it("tooltips del reparto: quién paga al vendedor con las DOS categorías (sin «provisión» ni «egreso de VuelaTour» a secas)", () => {
+    expect(NOTA_PAGO_VENDEDOR_REPARTO).toBe(
+      "Lo cobrado al cliente por la comisión del vendedor es ingreso de VuelaTour; el pago al vendedor es el gasto real capturado: «Comisión del vendedor (VuelaTour)» egresa en «otros movimientos» del Balance general y «Comisión del vendedor (avión)» resta en «Comisiones» del avión (sin pago capturado no se resta nada).",
+    );
+    expect(NOTA_PAGO_VENDEDOR_REPARTO).not.toMatch(/provisi/i);
   });
 
   it("sublabel de «Comisiones (banco + vendedor)» del reparto: sin provisión, con la «(avión)»", () => {

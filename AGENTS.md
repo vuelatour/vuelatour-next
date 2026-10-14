@@ -4381,6 +4381,27 @@ no existe.
   también puede venir de un mes ANTERIOR a la regla si el avión cargó un pago
   «(avión)». El título del botón «Dinero (Excel)» ya no promete un pago
   «provisionado»: el Libro Dinero resta el pago real de las dos categorías.
+- **Rótulos al día (13-oct-2026, lote 2; invariantes 50 y 61 del API; solo
+  textos)**: ya no queda «provisión del vendedor» ni «Comisiones de venta ·
+  regla anterior» en el panel (la cascada usa `SUBLABEL_COMISIONES_REPARTO`
+  y `categorias-gasto.test.ts` lo vigila). Los tooltips de «Otros ingresos
+  VuelaTour» del reparto (KPI de la flota en `kpi-strip.tsx` y la línea
+  informativa de `avion-reparto-card.tsx`) decían «su pago al vendedor,
+  egreso de VuelaTour» / «la comisión se paga al vendedor desde VuelaTour»:
+  hoy cierran con `NOTA_PAGO_VENDEDOR_REPARTO` («Lo cobrado al cliente por la
+  comisión del vendedor es ingreso de VuelaTour; el pago al vendedor es el
+  gasto real capturado: «Comisión del vendedor (VuelaTour)» egresa en «otros
+  movimientos» del Balance general y «Comisión del vendedor (avión)» resta en
+  «Comisiones» del avión (sin pago capturado no se resta nada).»). En el
+  **tablero de Gastos** el renglón de `resumen.gastos_empresa_usd` sale de
+  `textoTableroGastosEmpresa`: «$X en gastos de la empresa VuelaTour:
+  categorías de empresa (Otros gastos VuelaTour, Nómina, Gasolina
+  (vehículos), Gasto fijo y Visita), «Comisión del vendedor (VuelaTour)» y
+  remanentes de repartos. No se imputan a aeronaves.» (antes solo decía
+  «remanentes de repartos», y esa cifra incluye las categorías de empresa y
+  la «(VuelaTour)»; las etiquetas salen de `CATEGORIAS_EMPRESA` y de la
+  tabla canónica). Comentarios de `types/profit-sharing.ts`,
+  `types/quotes-persisted.ts` y `quote-desglose-card.tsx` al día.
 - **Datos del cliente** (nada se reclasifica solo): #251 (N990GG, $4,080.00) y
   #332 (N621TX, $1,305.00, conciliado) se quedan «(VuelaTour)»; si el pago le
   toca al avión, la oficina lo cambia en Verificar / editar. Comisiones

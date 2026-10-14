@@ -15,7 +15,10 @@ import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { DesgloseSection } from "./desglose-section";
 import { SociosSection } from "./socios-section";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
-import { SUBLABEL_COMISIONES_REPARTO } from "@/lib/admin/categorias-gasto";
+import {
+  NOTA_PAGO_VENDEDOR_REPARTO,
+  SUBLABEL_COMISIONES_REPARTO,
+} from "@/lib/admin/categorias-gasto";
 import type { AvionReparto } from "@/types/profit-sharing";
 
 const AMBAR =
@@ -247,11 +250,13 @@ export function AvionRepartoCard({
           </div>
           {/* Informativo (fuera de la cascada): TUAs/extras/pernocta/comisión
               del vendedor/IVA son ingresos de VuelaTour, no del avión — no se
-              reparten. Solo si el API ya lo manda. */}
+              reparten. Solo si el API ya lo manda. El PAGO al vendedor ya no
+              es «egreso de VuelaTour» a secas (13-oct-2026): depende de la
+              categoría del gasto real (NOTA_PAGO_VENDEDOR_REPARTO). */}
           {avion.ingresos.otros_ingresos_vuelatour_usd != null && (
             <div
               className="flex items-baseline justify-between gap-3 pt-1 text-xs text-muted-foreground"
-              title="Ingresos de VuelaTour cobrados en vuelos de este avión: TUAs, extras, pernocta y comisión del vendedor (con su IVA). No entran al saldo del avión ni al reparto; la comisión se paga al vendedor desde VuelaTour."
+              title={`Ingresos de VuelaTour cobrados en vuelos de este avión: TUAs, extras, pernocta y comisión del vendedor (con su IVA). No entran al saldo del avión ni al reparto. ${NOTA_PAGO_VENDEDOR_REPARTO}`}
             >
               <span>
                 Otros ingresos VuelaTour (TUAs/extras/pernocta/comisión) — no se

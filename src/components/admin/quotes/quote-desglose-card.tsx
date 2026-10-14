@@ -264,8 +264,10 @@ export function QuoteDesgloseCard({ quote }: { quote: PersistedQuote }) {
               misma regla que el reporte por vuelo); meta.neto_vuelatour_usd
               (total − comisión pre-IVA, del motor) es el respaldo para
               respuestas previas. Desde el 28-ago-2026 la comisión es INGRESO
-              de VuelaTour (como un extra) y su pago al vendedor es egreso de
-              VuelaTour — nunca costo del avión. Cotizaciones viejas (sin esa
+              de VuelaTour (como un extra); su PAGO es el gasto real capturado
+              (13-oct-2026: «Comisión del vendedor (VuelaTour)» la paga
+              VuelaTour, «(avión)» la carga el avión en su columna
+              COMISIONES). Aquí solo se muestra lo COTIZADO. Cotizaciones viejas (sin esa
               línea) se calcularon con la regla anterior (salía del precio):
               conservan su signo para no contradecir los números guardados. */}
           {(() => {
