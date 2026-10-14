@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { apiServer } from "@/lib/api/server";
 import { fmtDate } from "@/lib/datetime";
-import { fmtUsd } from "@/lib/format";
+import { fmtMonto, fmtUsd } from "@/lib/format";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import {
   lineasTramosTacos,
@@ -207,13 +207,16 @@ const LINK_POR_CLAVE: Record<
   [CLAVE_PRECIERRE_LIGAS_USD_TC]: hrefLigasUsdTcPeriodo,
 };
 
-function fmtMonto(item: PreCierreItem): string | null {
-  if (item.monto_usd != null && item.monto_usd > 0)
-    return `$${item.monto_usd.toLocaleString("en-US")} USD`;
-  if (item.monto_mxn != null && item.monto_mxn > 0)
-    return `$${item.monto_mxn.toLocaleString("en-US")} MXN`;
-  if (item.monto != null && item.monto > 0)
-    return `$${item.monto.toLocaleString("en-US")}`;
+/**
+ * Monto del renglón con la regla de `lib/format` (revisión del lote 2,
+ * 14-oct-2026): entero sin decimales o EXACTAMENTE 2 — nunca «$172.4 USD»
+ * (`toLocaleString` daba 0 a 3 decimales; el renglón de TUA cobrada lo
+ * estrenó con sumas que casi nunca son cerradas).
+ */
+function textoMontoItem(item: PreCierreItem): string | null {
+  if (item.monto_usd != null && item.monto_usd > 0) return fmtMonto(item.monto_usd, "USD");
+  if (item.monto_mxn != null && item.monto_mxn > 0) return fmtMonto(item.monto_mxn, "MXN");
+  if (item.monto != null && item.monto > 0) return fmtUsd(item.monto);
   return null;
 }
 
@@ -289,7 +292,7 @@ export async function PreCierreCard({
       {pendientes.length > 0 && (
         <CardContent className="space-y-3">
           {pendientes.map((item) => {
-            const monto = fmtMonto(item);
+            const monto = textoMontoItem(item);
             const href = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
             const info = item.informativo === true;
             // Tramos con tacómetro en revisión: las líneas las arma el
@@ -401,7 +404,7 @@ export async function PreCierreCard({
                         >
                           {v.folio > 0 ? `#${v.folio}` : "vuelo"}
                           {v.saldo_usd != null
-                            ? ` ($${v.saldo_usd.toLocaleString("en-US")})`
+                            ? ` (${fmtUsd(v.saldo_usd)})`
                             : v.notas != null && v.notas > 0
                               ? ` (${textoAjustesPrecierre(v.notas)})`
                               : v.estado

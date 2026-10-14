@@ -61,6 +61,7 @@ import {
   esMedioBodega,
   esMedioNoBancario,
   etiquetaMedioNoBancario,
+  mediosBancariosEnFrase,
   noBancariosDeDetalle,
   type BadgeVinculoNoBancario,
   type GastoNoBancarioDetalle,
@@ -594,14 +595,16 @@ export function textoAmpliarVentana(dias: number): string {
  * corta en 100: podían ni salir). No promete un orden: lo decide el API.
  * Con `cruzaUsd` (13-oct-2026, cuenta en pesos con un API 0.0.75) agrega
  * que también salen las compras en dólares (`NOTA_COMPRAS_USD`); sin el 3.er
- * argumento el texto es byte a byte el de antes.
+ * argumento no se menciona. Los medios bancarios salen de
+ * `mediosBancariosEnFrase` (revisión del lote 2: «pago domiciliado» faltaba).
  */
 export function NOTA_VENTANA_CARGO(dias: number, incluyeNoBancarios = false, cruzaUsd = false): string {
   const usd = cruzaUsd ? NOTA_COMPRAS_USD : "";
+  const medios = mediosBancariosEnFrase();
   if (incluyeNoBancarios) {
-    return `Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±${dias} días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.${usd}`;
+    return `Gastos sin conciliar del banco (${medios}) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±${dias} días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.${usd}`;
   }
-  return `Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.${usd}`;
+  return `Gastos bancarios (${medios}) sin conciliar, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.${usd}`;
 }
 
 /** Hubo más candidatos que el tope: la búsqueda los encuentra. */
@@ -965,12 +968,12 @@ function fraseExcluidos(
         // Con el interruptor ENCENDIDO ya salían: si no entran es por otra regla.
         return `Hay ${cuantos} ${como}${det} que no ${plural(n, "entra", "entran")} ni con los gastos en efectivo incluidos: ${plural(n, "puede estar ya conciliado", "pueden estar ya conciliados")}, en otra moneda o fuera de ±${c.dias} días del cargo.${bodega}`;
       }
-      const banco = soloEfectivo ? "" : " (tarjeta, transferencia o PayWise)";
+      const banco = soloEfectivo ? "" : ` (${mediosBancariosEnFrase()})`;
       const salida =
         n === 1
           ? "si no, muéstralo y vincúlalo con una justificación (su medio de pago no cambia)."
           : "si no, muéstralos y vincula el que corresponda con una justificación (su medio de pago no cambia).";
-      return `Hay ${cuantos} ${como}${det}: la lista solo muestra gastos pagados por el banco${banco}. Si en realidad se pagó con tarjeta o transferencia, corrige el medio de pago del gasto; ${salida}${bodega}`;
+      return `Hay ${cuantos} ${como}${det}: la lista solo muestra gastos pagados por el banco${banco}. Si en realidad se pagó con tarjeta, transferencia o pago domiciliado, corrige el medio de pago del gasto; ${salida}${bodega}`;
     }
     case "YA_CONCILIADO": {
       const ya = n === 1 ? "ya está conciliado" : "ya están conciliados";

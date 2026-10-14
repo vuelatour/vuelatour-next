@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BOTON_CONFIRMAR_BORRAR_TUA,
+  BOTON_REVISAR_TUA,
   CATEGORIAS_TUA_INCLUIDA,
+  COLA_CONFIRMAR_BORRAR_TUA,
   ETIQUETA_TUA_INCLUIDA,
   MSG_TUA_INCLUIDA_INVALIDA,
   MSG_TUA_INCLUIDA_NEGATIVA,
@@ -11,10 +14,13 @@ import {
   categoriaAdmiteTuaIncluida,
   errorTuaIncluida,
   mensajeTuaMayorQueTicket,
+  notaTuaMonedaNueva,
   notaTuaVigente,
   placeholderTuaIncluida,
+  TITULO_CONFIRMAR_BORRAR_TUA,
   tuaIncluidaParaPatch,
   tuaLeidaIa,
+  tuaQueSeBorra,
   valorFormTuaIncluida,
 } from "@/lib/admin/tua-incluida";
 
@@ -190,14 +196,78 @@ describe("qué viaja en el PATCH", () => {
     expect(p({ valorForm: "0", actual: "559.63" })).toBe(0);
   });
 
-  it("con cambio de moneda y valor en el campo viaja AUNQUE no cambie", () => {
-    expect(p({ valorForm: "559.63", actual: "559.63", monedaCambio: true })).toBe(559.63);
+  it("con cambio de moneda viaja SOLO si la oficina reescribió la cifra (revisión del lote 2)", () => {
+    // Caso del hallazgo: USD 1,000 con TUA de oficina 300 → MXN 17,500 sin
+    // tocar el campo. Antes viajaba 300 y el API la guardaba como 300 MXN en
+    // silencio; hoy la llave NO viaja y el API la limpia (LIMPIAR MONEDA),
+    // avisado y confirmado antes en el diálogo.
+    expect(p({ valorForm: "300", actual: "300.00", monedaCambio: true })).toBeUndefined();
+    expect(p({ valorForm: "300", actual: "300.00", monedaCambio: true, editada: false })).toBeUndefined();
+    // Reescrita (aunque sea la MISMA cifra): la oficina la confirma en la moneda nueva.
+    expect(p({ valorForm: "300", actual: "300.00", monedaCambio: true, editada: true })).toBe(300);
+    expect(p({ valorForm: "5250", actual: "300.00", monedaCambio: true, editada: true })).toBe(5250);
+    // Vaciarla sigue siendo «volver a la IA»; sin vigente ni valor, nada.
     expect(p({ valorForm: "", actual: "559.63", monedaCambio: true })).toBeNull();
     expect(p({ valorForm: "", actual: null, monedaCambio: true })).toBeUndefined();
   });
 
   it("un texto que no es número no viaja (el diálogo ya lo frenó)", () => {
     expect(p({ valorForm: "abc", actual: null })).toBeUndefined();
+  });
+});
+
+describe("¿el guardado BORRA la TUA de oficina? (confirmación; revisión del lote 2)", () => {
+  const base = {
+    apiConCampo: true,
+    actual: "559.63",
+    categoria: "OPERACIONES",
+    monedaVieja: "MXN",
+    monedaNueva: "MXN",
+    editada: false,
+  };
+
+  it("reclasificar fuera de Operaciones/Aterrizaje/FBO ⇒ CATEGORIA con la cifra y la etiqueta", () => {
+    expect(tuaQueSeBorra({ ...base, categoria: "COMIDA" })).toEqual({
+      motivo: "CATEGORIA",
+      texto:
+        "Al guardar se borrará la TUA incluida de $559.63 MXN que fijó la oficina: «Comida» no lleva TUA (solo Operaciones, Aterrizaje o FBO).",
+    });
+    // Aun reescrita, la categoría manda (el API la limpia igual).
+    expect(tuaQueSeBorra({ ...base, categoria: "COMIDA", editada: true })?.motivo).toBe("CATEGORIA");
+  });
+
+  it("moneda nueva sin reescribir ⇒ MONEDA; reescrita ⇒ nada (y dice en qué moneda se guarda)", () => {
+    const usd = { ...base, actual: "300.00", monedaVieja: "USD", monedaNueva: "MXN" };
+    expect(tuaQueSeBorra(usd)).toEqual({
+      motivo: "MONEDA",
+      texto:
+        "La TUA incluida ($300 USD) estaba en USD: al guardar con MXN se borrará (USD y MXN nunca se mezclan). Si este gasto lleva TUA, escríbela en MXN.",
+    });
+    expect(tuaQueSeBorra({ ...usd, editada: true })).toBeNull();
+    expect(
+      notaTuaMonedaNueva({ valorForm: "5250", monedaVieja: "USD", monedaNueva: "MXN", editada: true }),
+    ).toBe("Se guardará en MXN: $5,250 MXN.");
+    expect(notaTuaMonedaNueva({ valorForm: "5250", monedaVieja: "USD", monedaNueva: "MXN", editada: false })).toBeNull();
+    expect(notaTuaMonedaNueva({ valorForm: "5250", monedaVieja: "MXN", monedaNueva: "MXN", editada: true })).toBeNull();
+    expect(notaTuaMonedaNueva({ valorForm: "", monedaVieja: "USD", monedaNueva: "MXN", editada: true })).toBeNull();
+  });
+
+  it("nada que borrar: sin la llave del API, sin cifra, con 0 (sin TUA es de cualquier moneda) o sin cambios", () => {
+    expect(tuaQueSeBorra({ ...base, apiConCampo: false, categoria: "COMIDA" })).toBeNull();
+    expect(tuaQueSeBorra({ ...base, actual: null, categoria: "COMIDA" })).toBeNull();
+    expect(tuaQueSeBorra({ ...base, actual: 0, categoria: "COMIDA" })).toBeNull();
+    expect(tuaQueSeBorra({ ...base, actual: "0", monedaNueva: "USD" })).toBeNull();
+    expect(tuaQueSeBorra(base)).toBeNull();
+    expect(tuaQueSeBorra({ ...base, categoria: "FBO" })).toBeNull();
+  });
+
+  it("textos de la confirmación", () => {
+    expect(TITULO_CONFIRMAR_BORRAR_TUA).toBe("¿Borrar la TUA incluida?");
+    expect(BOTON_CONFIRMAR_BORRAR_TUA).toBe("Sí, guardar y borrar la TUA");
+    expect(BOTON_REVISAR_TUA).toBe("Revisar");
+    expect(COLA_CONFIRMAR_BORRAR_TUA).toBe(
+      " La TUA volverá a salir de la lectura de la IA (si la leyó) y el cambio queda en el historial del gasto.",
+    );
   });
 });
 

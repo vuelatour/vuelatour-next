@@ -162,9 +162,14 @@ describe("cableado de «Vincular gasto» (regex sobre el fuente)", () => {
     expect(src).toContain('const cruzaUsd = apiUsd && monedaCuenta === "MXN";');
   });
 
-  it("placeholder y nota solo con cruzaUsd", () => {
-    expect(src).toContain("placeholder={cruzaUsd ? PLACEHOLDER_BUSCAR_GASTO_CON_USD : PLACEHOLDER_BUSCAR_GASTO}");
+  it("placeholder y nota solo con cruzaUsd; con la lectura del oficial FALLIDA, sin prometer pesos y con aviso", () => {
+    expect(src).toMatch(
+      /placeholder=\{\s*cruzaUsd\s*\?\s*avisoSinTc\s*\?\s*PLACEHOLDER_BUSCAR_GASTO_SIN_TC\s*:\s*PLACEHOLDER_BUSCAR_GASTO_CON_USD\s*:\s*PLACEHOLDER_BUSCAR_GASTO\s*\}/,
+    );
     expect(src).toContain("NOTA_VENTANA_CARGO(dias, incluirNoBancarios, cruzaUsd)");
+    // Revisión del lote 2 (14-oct-2026): la raíz `tc_oficial_lectura_fallida`.
+    expect(src).toContain("const avisoSinTc = cruzaUsd ? avisoTcSinLectura(data) : null;");
+    expect(src).toMatch(/\{avisoSinTc && \([\s\S]{0,300}role="alert"[\s\S]{0,80}data-aviso="tc-sin-lectura"[\s\S]{0,40}\{avisoSinTc\}/);
   });
 
   it("la 3.ª línea del cruzado SIN truncate, con su tooltip, y la 2.ª sin el T.C.", () => {

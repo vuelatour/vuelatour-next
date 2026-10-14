@@ -27,7 +27,9 @@ import { resumenImportJob } from "@/lib/admin/conciliacion-auto";
 import {
   BOTON_CERRAR_IMPORTACION,
   DESCRIPCION_IMPORT_REPETIDO,
+  TEXTO_BOTON_REVISANDO,
   TEXTO_SUGERIR_RECRUCE,
+  avisoVistaPreviaFallida,
   botonesImportacion,
   debeQuedarseAbierto,
   movimientosParaImportar,
@@ -136,6 +138,11 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
   const vistaLista = vista != null && vista.clave === claveVista;
   const vp = vistaLista && vista.r.ok ? (vista.r.data ?? null) : null;
   const revisandoVista = claveVista != null && !vistaLista;
+  // Revisión del lote 2 (14-oct-2026): mientras corre la vista previa los
+  // botones de importar se DESHABILITAN (un clic rápido saltaba la
+  // protección contra relecturas duplicadas: el botón de siempre ya estaba
+  // activo) y, si falla por algo que no es un API previo, se DICE.
+  const avisoVistaFallida = vistaLista ? avisoVistaPreviaFallida(vista.r) : null;
   const botones = botonesImportacion(vp);
   const terminado = job?.estado === "LISTO";
 
@@ -507,6 +514,15 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
               Revisando qué movimientos ya estaban importados…
             </p>
           )}
+          {!job && avisoVistaFallida && (
+            <p
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300"
+              role="alert"
+              data-aviso="vista-previa-fallida"
+            >
+              {avisoVistaFallida}
+            </p>
+          )}
 
           {parsed && parsed.movimientos.length > 0 && (
             <div className="rounded-lg border max-h-72 overflow-y-auto">
@@ -592,9 +608,13 @@ export function ImportDialog({ open, onOpenChange, cuentas }: ImportDialogProps)
                   variant={b.principal ? "default" : "outline"}
                   className="cursor-pointer"
                   onClick={() => onImport(b.accion)}
-                  disabled={importing || !parsed || parsed.total === 0}
+                  disabled={importing || revisandoVista || !parsed || parsed.total === 0}
                 >
-                  {importing && b.principal ? "Importando…" : b.texto}
+                  {importing && b.principal
+                    ? "Importando…"
+                    : revisandoVista && b.principal
+                      ? TEXTO_BOTON_REVISANDO
+                      : b.texto}
                 </Button>
               ))}
             </>

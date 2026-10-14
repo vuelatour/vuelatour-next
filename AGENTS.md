@@ -3342,7 +3342,12 @@ cambio (agente NAV).
   `-0` ⇒ «$0». `fmtMonto(valor, moneda)` ⇒ «$136,856.80 MXN». Los títulos de
   `estadoCobroSemaforo` usan `fmtUsd`. Misma regla que `fmtDineroTexto` del
   API. Quedan `toLocaleString("en-US")` de dinero fuera de este alcance
-  (expediente del piloto, pre-cierre, CFDI automático).
+  (expediente del piloto, CFDI automático). El PRE-CIERRE ya no
+  (revisión del lote 2, 14-oct-2026): su monto por renglón es
+  `textoMontoItem` = `fmtMonto(item.monto_usd, "USD")` / `fmtMonto(…,
+  "MXN")` / `fmtUsd(item.monto)` y el chip de saldo `fmtUsd(v.saldo_usd)` —
+  el renglón «TUA cobrada sin TUA pagada» decía «$172.4 USD» (lo congela
+  `tua-incluida-ui.test.tsx`).
 - **Orden de deploy recomendado**: migración → API → pyservices → panel. Con
   el panel nuevo y SIN migración, el detalle del vuelo ya no ofrece la
   subida vieja y la burbuja está oculta (la ventana debe ser de minutos).
@@ -4602,10 +4607,25 @@ renumeró desde la 000004, que ya usa la comisión del vendedor del avión).
   tarjeta); si no, la regla de siempre (tarjeta con 8+ dígitos, si no
   transferencia). «RECURSOS HUMANOS» no dispara la regla. La oficina puede
   cambiar el medio antes de guardar.
+- **Textos de Conciliación que nombran los medios bancarios** (revisión del
+  lote 2, 14-oct-2026): la nota al pie de «Vincular gasto»
+  (`NOTA_VENTANA_CARGO`), el aviso de excluidos `EFECTIVO_U_OTRO_MEDIO` y la
+  descripción de la pestaña «Gastos sin banco» decían «tarjeta,
+  transferencia, PayWise» mientras un «Pago domiciliado» salía ahí mismo como
+  candidato: hoy los dos primeros se arman con `mediosBancariosEnFrase()`
+  (`conciliacion-no-bancario.ts`: `MEDIO_BANCARIO_EN_FRASE`, una frase por
+  código de `MEDIOS_BANCARIOS_CONCILIACION` en su orden — «tarjeta,
+  transferencia, PayWise o pago domiciliado»; un medio bancario nuevo sin
+  frase rompe el test, no el texto) y la corrección sugerida dice «Si en
+  realidad se pagó con tarjeta, transferencia o pago domiciliado…»; la
+  pestaña dice «Pagados con tarjeta corporativa, transferencia, Paywise o
+  pago domiciliado…». No se usa `medioPagoLabel` (las etiquetas de selector
+  no van en minúscula dentro de una oración).
 - **Pruebas**: `lib/admin/__tests__/medios-pago.test.ts` (orden, etiquetas
-  de los 8 valores, zod, ayuda), `conciliacion-no-bancario.test.ts` (lista y
-  espejo del API), `expenses/__tests__/banco-badge.test.tsx` y
-  `gasto-desde-cargo.test.ts` (casos reales).
+  de los 8 valores, zod, ayuda), `conciliacion-no-bancario.test.ts` (lista,
+  espejo del API y la frase de los medios en los tres textos),
+  `expenses/__tests__/banco-badge.test.tsx` y `gasto-desde-cargo.test.ts`
+  (casos reales).
 - **Orden de deploy**: migración `20261013000009` → API 0.0.75 → **panel**
   (con un API previo el selector lo ofrece y el API responde el 400 de
   `IsEnum`, legible y sin escribir nada). El espejo del API (test) solo pasa
@@ -4659,12 +4679,32 @@ la 000003, que ya usa la comisión del vendedor del avión).
   GUARDADO). El error local se ve mientras se escribe (`error` del `Field`) y
   frena el guardado con un toast, evaluado SIEMPRE que el campo tenga valor
   (también si solo cambió el monto: bajar el monto por debajo de la TUA se
-  ataja antes del 400 «vigente» del API). **La llave viaja SOLO si cambió**
-  (`null` al vaciar una vigente) **o si cambió la moneda del gasto con un
-  valor en el campo** (la oficina lo confirma en la moneda nueva; si no
-  viajara, el API la limpiaría: USD y MXN nunca se mezclan). Campo oculto
-  (categoría fuera de la lista) ⇒ no viaja y, al reclasificar, el API la
-  limpia solo (con bitácora). `tua_incluida` no es dinero del banco: se
+  ataja antes del 400 «vigente» del API) — salvo con moneda nueva y la
+  cifra sin reescribir (`tuaSeLimpiaPorMoneda`): no viaja y el API la
+  limpia, así que validarla contra el ticket en la moneda nueva frenaría en
+  falso. **La llave viaja SOLO si cambió**
+  (`null` al vaciar una vigente) **o si cambió la moneda del gasto Y la
+  oficina REESCRIBIÓ la cifra en el campo** (`tuaEditada`: tecleó en él,
+  aunque sea el mismo número; así la confirma en la moneda nueva). Revisión
+  del lote 2 (14-oct-2026): antes la cifra PRECARGADA viajaba siempre con la
+  moneda nueva y el API la aceptaba tal cual (USD 1,000 con TUA 300 → MXN
+  17,500 guardaba 300 MXN de TUA en silencio; «Reanalizar con IA» podía
+  cambiar la moneda sin que nadie tocara el campo). Hoy, sin reescribirla, la
+  llave NO viaja y el API la LIMPIA por la moneda (USD y MXN nunca se
+  mezclan). Campo oculto (categoría fuera de la lista) ⇒ no viaja y el API
+  la limpia solo (con bitácora). **Las dos limpiezas se AVISAN y se
+  CONFIRMAN** (regla del cliente: lo destructivo confirma): `tuaQueSeBorra`
+  (espejo de `decidirTuaIncluidaEnUpdate`; solo con la llave del API y una
+  TUA de oficina > 0 — un 0 nunca se borra solo) da el motivo y el texto:
+  CATEGORIA bajo el selector («Al guardar se borrará la TUA incluida de
+  $559.63 MXN que fijó la oficina: «Comida» no lleva TUA (solo
+  Operaciones, Aterrizaje o FBO).»), MONEDA bajo el campo («La TUA incluida
+  ($300 USD) estaba en USD: al guardar con MXN se borrará (USD y MXN nunca
+  se mezclan). Si este gasto lleva TUA, escríbela en MXN.»); con la cifra
+  reescrita en otra moneda, `notaTuaMonedaNueva` («Se guardará en MXN:
+  $5,250 MXN.»). Al guardar, tras la confirmación de fecha
+  (`continuarGuardado`), un borrado abre «¿Borrar la TUA incluida?» con
+  «Revisar» / «Sí, guardar y borrar la TUA» antes del PATCH. `tua_incluida` no es dinero del banco: se
   corrige aunque el gasto esté conciliado. La lectura fresca se persiste SIN
   `tua_detectada` (es cálculo); `tua_monto` sí se queda. El bloque «Desglose
   leído» no cambió: ya pinta la línea «TUA (IVA incluido) - $X MXN» que
@@ -4697,10 +4737,11 @@ la 000003, que ya usa la comisión del vendedor del avión).
   el campo simplemente no se pinta). Avisar al cliente: capturar la TUA o
   «Reanalizar con IA» + guardar un gasto viejo mueve el balance de ESE mes
   (septiembre ya cerrado incluido).
-- **Pendientes conocidos**: sin QA visual en navegador; al reclasificar fuera
-  de la lista el panel no AVISA que la cifra de oficina se va a limpiar (lo
-  hace el API y lo registra la bitácora); los chips del pre-cierre no pintan
-  la TUA cobrada por vuelo (el total va en el renglón).
+- **Pendientes conocidos**: sin QA visual en navegador; los chips del
+  pre-cierre no pintan la TUA cobrada por vuelo (el total va en el
+  renglón). RESUELTO en la revisión del lote 2: al reclasificar fuera de la
+  lista (o cambiar la moneda sin reescribir la cifra) el panel avisa y
+  confirma antes de que el API limpie la cifra de oficina.
 
 ## Ingreso asignado a un avión (13-oct-2026, API 0.0.75)
 
@@ -6498,6 +6539,14 @@ aceptaba `desde`/`hasta` en la lista (DTO del 24-sep-2026), en `resumen`, en
   `hasta` y `tipo`; `conciliacionGastosSinBanco(desde?, hasta?)` acepta el
   rango. El estado vacío distingue «Sin movimientos en el periodo» de «Sin
   movimientos».
+- **Tarjetas por cuenta (`conciliacionResumen`) con aviso si fallan**
+  (revisión del lote 2, 14-oct-2026): el API pagina el resumen por la PK
+  (antes, sin fechas, PostgREST lo cortaba en 1000 filas sin avisar y las
+  tarjetas contaban de menos) y con más de 20,000 movimientos responde 400
+  `RESUMEN_MUY_GRANDE` en vez de un total recortado. La página ya no lo
+  traga con `.catch(() => [])` (un `[]` callado se leía como «no hay
+  cuentas»): va por `degradado.opcional("el resumen por cuenta", …, [])` y
+  sale en el aviso de degradación de siempre.
 
 ### Sin tope de 300: la lista se carga COMPLETA (13-oct-2026)
 
@@ -7746,7 +7795,15 @@ invariante lo fija el carril del API). SIN migración.
   importado ⇒ «Importar y conciliar»; todo ya estaba ⇒ «Completar
   conceptos»; nuevas y ya estaban ⇒ «Solo completar conceptos (no agrega
   las N nuevas)» como principal si TODAS las nuevas son de misma fecha y
-  monto (relecturas), si no «Importar y conciliar».
+  monto (relecturas), si no «Importar y conciliar». **Mientras corre la
+  vista previa NO se puede importar** (revisión del lote 2, 14-oct-2026: el
+  botón de siempre ya estaba activo y un clic rápido metía las relecturas
+  como movimientos nuevos): los botones van `disabled` con `revisandoVista`
+  y el principal dice `TEXTO_BOTON_REVISANDO` («Revisando…»). Si la vista
+  previa FALLA por algo que no es un API previo (500, red, el 400 de
+  «impórtalo por partes») se dice en ámbar (`avisoVistaPreviaFallida` ⇒
+  `MSG_VISTA_PREVIA_FALLO`, `data-aviso="vista-previa-fallida"`); con
+  `RUTA_NO_DISPONIBLE`, como siempre, nada.
 - **`solo_enriquecer`** (`importarMovimientosAsyncAction`, viaja SOLO en
   true): el API completa conceptos y NO inserta, no cruza ni empareja
   reversos; lo que no encuentre lo lista sin agregarlo. Un API previo
@@ -7760,7 +7817,10 @@ invariante lo fija el carril del API). SIN migración.
   «Ojo: nuevos con la misma fecha y monto…») y el pie queda solo con
   «Cerrar». El aviso de re-cruce es `TEXTO_SUGERIR_RECRUCE` (re-importar no
   duplica ni reintenta el cruce: solo completa conceptos) y la descripción
-  suma `DESCRIPCION_IMPORT_REPETIDO`.
+  suma `DESCRIPCION_IMPORT_REPETIDO` (desde la revisión del lote 2 ya no
+  promete «no se duplica nada» a secas: «lo que el sistema reconoce no se
+  duplica… Una línea que la IA leyó distinto puede entrar como nueva: la
+  revisión de antes de importar te lo avisa.»).
 - **Advertencias de la lectura** (`ParsedStatement.advertencias`, ya
   llegaban y se perdían): recuadro ámbar «Revisa antes de importar:» (hasta
   10) bajo el archivo, p. ej. «N transferencia(s)… se leyeron SIN su
@@ -7839,7 +7899,15 @@ y hace visible lo sospechoso. SIN migración.
   «Vincular de todos modos»: NO bloquea, liga como siempre (una compra
   legítima con sobreprecio del banco > 2 % existe). El ORDEN es el del API
   (7 niveles: los que cuadran con el oficial salen antes del corte de 100);
-  la lista de respaldo (API previo) no cambia.
+  la lista de respaldo (API previo) no cambia. **Lectura FALLIDA del oficial
+  ≠ «sin dato»** (revisión del lote 2, 14-oct-2026; ADITIVOS del API: raíz
+  `tc_oficial_lectura_fallida` y `tc_cruce.lectura_fallida`): antes el tubo
+  del caso Aircraft Spruce salía en gris como «sin T.C. oficial del día»,
+  sin aviso. Hoy la 3.ª línea va en ámbar («T.C. 21.14 · no se pudo leer el
+  T.C. oficial del día»), marcar UNO pinta `AVISO_VINCULAR_SIN_LECTURA` con
+  «Vincular de todos modos», el diálogo dice `AVISO_TC_SIN_LECTURA`
+  (`avisoTcSinLectura`, `data-aviso="tc-sin-lectura"`) y el placeholder pasa
+  a `PLACEHOLDER_BUSCAR_GASTO_SIN_TC` (no promete la búsqueda en pesos).
 - **Bandeja** (`movimientos-table.tsx`): el gasto 1↔1 dice su moneda
   («Refacción · $422.86 USD») y, con `tc_cruce`, la marca bajo el
   proveedor/fecha: tenue si cuadra, «⚠ T.C. 21.14 · oficial 17.01 (+24.3 %):

@@ -54,6 +54,30 @@ export const MEDIOS_BANCARIOS_CONCILIACION: readonly string[] = [
   "DOMICILIADO",
 ];
 
+/**
+ * Cómo se NOMBRA cada medio bancario dentro de una frase de Conciliación
+ * (revisión del lote 2, 14-oct-2026): tres textos seguían diciendo
+ * «tarjeta, transferencia, PayWise» sin el «pago domiciliado» que desde el
+ * API 0.0.75 sale como candidato y en «Gastos sin banco». Una entrada por
+ * código de `MEDIOS_BANCARIOS_CONCILIACION` (el test lo exige): un medio
+ * bancario nuevo sin frase rompe la prueba, no el texto. No se usa
+ * `medioPagoLabel` porque las etiquetas de selector («Tarjeta corporativa»,
+ * «Paywise») no van en minúscula dentro de una oración.
+ */
+export const MEDIO_BANCARIO_EN_FRASE: Readonly<Record<string, string>> = Object.freeze({
+  TARJETA_CORP: "tarjeta",
+  TRANSFERENCIA: "transferencia",
+  PAYWISE: "PayWise",
+  DOMICILIADO: "pago domiciliado",
+});
+
+/** «tarjeta, transferencia, PayWise o pago domiciliado» (en el orden del espejo del API). */
+export function mediosBancariosEnFrase(): string {
+  const nombres = MEDIOS_BANCARIOS_CONCILIACION.map((m) => MEDIO_BANCARIO_EN_FRASE[m] ?? m.toLowerCase());
+  if (nombres.length <= 1) return nombres[0] ?? "";
+  return `${nombres.slice(0, -1).join(", ")} o ${nombres[nombres.length - 1]}`;
+}
+
 /** Salida de inventario: nunca pasa por el banco ni se vincula (409 `GASTO_BODEGA`). */
 export const MEDIO_BODEGA = "BODEGA";
 

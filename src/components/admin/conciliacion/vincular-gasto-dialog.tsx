@@ -151,7 +151,9 @@ import {
 } from "@/lib/admin/conciliacion-factura-concepto";
 import {
   PLACEHOLDER_BUSCAR_GASTO_CON_USD,
+  PLACEHOLDER_BUSCAR_GASTO_SIN_TC,
   apiCruzaConOficial,
+  avisoTcSinLectura,
   avisoVincularCruzado,
   lineaTcCandidato,
 } from "@/lib/admin/conciliacion-tc";
@@ -585,6 +587,9 @@ function SelectorGastos({
   // En una cuenta en pesos el API también ofrece las compras en dólares
   // (con su T.C. contra el oficial del día del cargo).
   const cruzaUsd = apiUsd && monedaCuenta === "MXN";
+  // Revisión del lote 2 (14-oct-2026): la LECTURA del oficial falló (≠ «sin
+  // dato»): aviso ámbar y el buscador no promete la búsqueda en pesos.
+  const avisoSinTc = cruzaUsd ? avisoTcSinLectura(data) : null;
   // UN gasto en dólares marcado lejos del oficial: aviso ámbar y el botón
   // dice «Vincular de todos modos» (NO bloquea: liga como siempre).
   const avisoCruzado = avisoVincularCruzado(marcados);
@@ -955,10 +960,25 @@ function SelectorGastos({
               id={idBuscar}
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder={cruzaUsd ? PLACEHOLDER_BUSCAR_GASTO_CON_USD : PLACEHOLDER_BUSCAR_GASTO}
+              placeholder={
+                cruzaUsd
+                  ? avisoSinTc
+                    ? PLACEHOLDER_BUSCAR_GASTO_SIN_TC
+                    : PLACEHOLDER_BUSCAR_GASTO_CON_USD
+                  : PLACEHOLDER_BUSCAR_GASTO
+              }
               maxLength={LARGO_MAX_BUSQUEDA}
               autoComplete="off"
             />
+            {avisoSinTc && (
+              <p
+                className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-300"
+                role="alert"
+                data-aviso="tc-sin-lectura"
+              >
+                {avisoSinTc}
+              </p>
+            )}
             {/* Gastos en efectivo y otros medios (6-oct-2026): solo con un API
                 que lo sabe hacer (o ya encendido, para poder apagarlo). */}
             {(apiNoBancarios || incluirNoBancarios) && (

@@ -498,6 +498,13 @@ export interface GastosCandidatosResponse {
       (`apiCruzaConOficial`, pegajosa): solo entonces el diálogo pinta el
       placeholder y la nota de las compras en dólares. */
   tc_oficial?: TcOficialDelDia | null;
+  /** ADITIVO (revisión del lote 2, 14-oct-2026): SOLO cuando la LECTURA del
+      T.C. oficial del día del cargo FALLÓ (≠ «no hay dato»). Entonces las
+      compras en dólares salen sin compararse (`tc_cruce.lectura_fallida`) y
+      no se pudieron buscar por su monto en pesos: el diálogo lo dice en
+      ámbar y no promete esa búsqueda. Ausente = la lectura funcionó o API
+      previo. */
+  tc_oficial_lectura_fallida?: true | null;
 }
 
 /** Respuesta de `POST /v1/conciliacion/movimientos/:id/sugerir`. */
@@ -1037,6 +1044,11 @@ export interface TcCruceUsd {
   texto: string;
   /** El detalle exacto (T.C. de 6 decimales, oficial, fecha, fuente, tolerancia). */
   titulo: string;
+  /** ADITIVO (revisión del lote 2, 14-oct-2026): la LECTURA del T.C. oficial
+      falló (≠ «sin dato»); `nivel` sigue SIN_OFICIAL y `texto` lo dice («…
+      no se pudo leer el T.C. oficial del día»). Ámbar y «Vincular de todos
+      modos». */
+  lectura_fallida?: true | null;
 }
 
 /** Item del pre-cierre `gastos_usd_tc_fuera_de_lugar` (= `LigaUsdTcFueraDeLugar` del API). */

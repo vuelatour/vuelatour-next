@@ -165,7 +165,11 @@ export default async function ConciliacionPage({
     degradado.opcional("los gastos para vincular", listGastos({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listGastos>>["data"],
     }),
-    conciliacionResumen(desdeVista, hastaVista).catch(() => []),
+    // Tarjetas por cuenta: accesorias, pero si fallan se DICE (revisión del
+    // lote 2, 14-oct-2026): el API ya no manda un total recortado — con más
+    // de 20,000 movimientos en el periodo responde 400 RESUMEN_MUY_GRANDE —
+    // y un `[]` callado se leía como «no hay cuentas».
+    degradado.opcional("el resumen por cuenta", conciliacionResumen(desdeVista, hastaVista), []),
     // Best-effort: la página no se cae si el archivado aún no responde.
     listEstadosCuenta().catch(() => ({ data: [] })),
     // El INVERSO de la bandeja (28-ago): gastos bancarios del sistema que
@@ -565,7 +569,7 @@ export default async function ConciliacionPage({
               Gastos que no aparecen en el estado de cuenta
             </CardTitle>
             <CardDescription>
-              Pagados con tarjeta corporativa, transferencia o Paywise y aún sin
+              Pagados con tarjeta corporativa, transferencia, Paywise o pago domiciliado y aún sin
               cruzar con ninguna línea del banco ({ventanaSinBanco}). Puede faltar
               el periodo por importar, no coincidir fecha/monto, o el cargo nunca
               llegó al banco. Un gasto pagado en VARIOS cargos aparece aquí

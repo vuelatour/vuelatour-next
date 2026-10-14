@@ -20,12 +20,43 @@
  *  - la bandeja: «$422.86 USD» (`sufijoMonedaLigada`) y la marca «⚠ …» de
  *    una liga cruzada fuera de lugar (`marcaLigaCruzada`).
  * Todo es ADITIVO: sin `tc_oficial` / `tc_cruce` (API previo) nada cambia.
+ * Revisión del lote 2 (14-oct-2026): una LECTURA FALLIDA del oficial ya no
+ * se ve como «sin T.C. oficial del día» en gris — el API la marca
+ * (`tc_cruce.lectura_fallida` y la raíz `tc_oficial_lectura_fallida`) y aquí
+ * se pinta en ámbar, con su aviso y «Vincular de todos modos», y el buscador
+ * no promete la búsqueda en pesos (`avisoTcSinLectura`,
+ * `PLACEHOLDER_BUSCAR_GASTO_SIN_TC`).
  */
 
 import type { TcCruceUsd } from "@/types/conciliacion";
 
 /** Placeholder del buscador cuando la cuenta en pesos también ofrece compras en dólares. */
 export const PLACEHOLDER_BUSCAR_GASTO_CON_USD = "Busca por monto en pesos o en dólares (2801.40), proveedor o nota";
+
+/**
+ * Placeholder cuando la lectura del T.C. oficial falló: las compras en
+ * dólares solo se encuentran por su monto en DÓLARES (el equivalente en
+ * pesos necesita el oficial).
+ */
+export const PLACEHOLDER_BUSCAR_GASTO_SIN_TC =
+  "Busca por monto (las compras en dólares, por su monto en dólares), proveedor o nota";
+
+/** Aviso ámbar del diálogo cuando la lectura del T.C. oficial del día falló. */
+export const AVISO_TC_SIN_LECTURA =
+  "No se pudo leer el T.C. oficial del día del cargo: las compras en dólares salen sin compararse contra él y no se pueden buscar por su monto en pesos. Cierra y vuelve a abrir «Vincular gasto» para compararlas.";
+
+/** Texto del aviso al marcar UNA compra en dólares que no se pudo comparar. */
+export const AVISO_VINCULAR_SIN_LECTURA =
+  "No se pudo comprobar el tipo de cambio de este gasto en dólares contra el oficial del día del cargo (la lectura falló): confirma que este cargo sea esa compra antes de vincular, o vuelve a abrir «Vincular gasto» para compararlo.";
+
+/** ¿La respuesta dice que la LECTURA del oficial falló? (≠ «sin dato»). */
+export function avisoTcSinLectura(r: unknown): string | null {
+  return typeof r === "object" &&
+    r !== null &&
+    (r as { tc_oficial_lectura_fallida?: unknown }).tc_oficial_lectura_fallida === true
+    ? AVISO_TC_SIN_LECTURA
+    : null;
+}
 
 /** Se agrega a `NOTA_VENTANA_CARGO` (con `cruzaUsd`). */
 export const NOTA_COMPRAS_USD =
@@ -62,7 +93,11 @@ export function apiCruzaConOficial(r: unknown): boolean {
 
 export type TonoTcCandidato = "ambar" | "normal";
 
-/** 3.ª línea de un candidato cruzado: el texto y el tooltip del API; ámbar si queda lejos o fuera de banda. */
+/**
+ * 3.ª línea de un candidato cruzado: el texto y el tooltip del API; ámbar si
+ * queda lejos, fuera de banda o si la lectura del oficial FALLÓ (no se
+ * comprobó: la oficina debe verlo distinto de «cuadra»).
+ */
 export function lineaTcCandidato(
   c: { tc_cruce?: TcCruceUsd | null } | null | undefined,
 ): { texto: string; titulo: string; tono: TonoTcCandidato } | null {
@@ -71,7 +106,7 @@ export function lineaTcCandidato(
   return {
     texto: tc.texto,
     titulo: tc.titulo ?? tc.texto,
-    tono: tc.nivel === "LEJOS" || tc.en_banda === false ? "ambar" : "normal",
+    tono: tc.nivel === "LEJOS" || tc.en_banda === false || tc.lectura_fallida === true ? "ambar" : "normal",
   };
 }
 
@@ -96,8 +131,10 @@ export function marcaLigaCruzada(
 /**
  * El aviso de «Vincular gasto» cuando lo marcado es EXACTAMENTE UN gasto
  * cruzado lejos del oficial: qué revisar, el T.C. y el botón «Vincular de
- * todos modos». No bloquea: el clic liga como siempre. null en cualquier
- * otro caso (nada marcado, varios, uno CERCA o sin oficial).
+ * todos modos». No bloquea: el clic liga como siempre. Desde la revisión del
+ * lote 2 (14-oct-2026) también cuando la LECTURA del oficial falló (no se
+ * comprobó). null en cualquier otro caso (nada marcado, varios, uno CERCA o
+ * sin dato oficial de verdad).
  */
 export function avisoVincularCruzado(
   marcados: readonly { tc_cruce?: TcCruceUsd | null }[] | null | undefined,
@@ -105,7 +142,11 @@ export function avisoVincularCruzado(
   const lista = Array.isArray(marcados) ? marcados : [];
   if (lista.length !== 1) return null;
   const tc = lista[0]?.tc_cruce;
-  if (!tc || tc.nivel !== "LEJOS") return null;
+  if (!tc) return null;
+  if (tc.lectura_fallida === true) {
+    return { texto: AVISO_VINCULAR_SIN_LECTURA, detalle: tc.texto, boton: BOTON_VINCULAR_DE_TODOS_MODOS };
+  }
+  if (tc.nivel !== "LEJOS") return null;
   return {
     texto: textoAvisoVincularCruzado(tc.tolerancia_pct),
     detalle: tc.texto,

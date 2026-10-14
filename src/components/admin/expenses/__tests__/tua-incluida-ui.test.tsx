@@ -146,6 +146,18 @@ describe("«Verificar / editar» (render real)", () => {
     expect(verificar(gasto({ categoria: "COMIDA" }))).not.toContain(ETIQUETA);
   });
 
+  it("COMIDA con TUA de oficina vigente ⇒ aviso bajo el selector de que se borrará (revisión del lote 2)", () => {
+    const html = verificar(gasto({ categoria: "COMIDA", tua_incluida: "559.63" }));
+    expect(html).toContain('data-tua-se-borra="CATEGORIA"');
+    expect(html).toContain(
+      "Al guardar se borrará la TUA incluida de $559.63 MXN que fijó la oficina: «Comida» no lleva TUA (solo Operaciones, Aterrizaje o FBO).",
+    );
+    // Sin cifra de oficina, nada que avisar.
+    expect(verificar(gasto({ categoria: "COMIDA" }))).not.toContain("data-tua-se-borra");
+    // En Operaciones con la misma moneda, tampoco.
+    expect(verificar(gasto({ tua_incluida: "559.63" }))).not.toContain("data-tua-se-borra");
+  });
+
   it("API viejo (sin la llave `tua_incluida`) ⇒ sin el campo", () => {
     const viejo = gasto();
     delete (viejo as { tua_incluida?: unknown }).tua_incluida;
@@ -254,7 +266,7 @@ describe("pre-cierre: TUA cobrada sin TUA pagada (render)", () => {
     });
     const html = renderToStaticMarkup(await PreCierreCard({ desde: "2026-10-01", hasta: "2026-10-31" }));
     expect(html).toContain("Vuelos con TUA cobrada al cliente sin TUA pagada");
-    expect(html).toContain("$120.5 USD");
+    expect(html).toContain("$120.50 USD");
     expect(html).toContain(`href="/admin/flights/${V1}"`);
     expect(html).toContain(">#384<");
     expect(html).toContain(`href="/admin/flights/${V2}"`);
@@ -290,11 +302,34 @@ describe("cableado", () => {
     expect(valida).toBeGreaterThan(-1);
     expect(patch).toBeGreaterThan(valida);
     expect(guardar).toMatch(/tuaIncluidaParaPatch\(\{[\s\S]*?monedaCambio: values\.moneda !== gasto\.moneda/);
+    // Revisión del lote 2: con moneda nueva viaja SOLO si la oficina tecleó, y
+    // sin reescribirla no se valida contra el ticket nuevo (no viaja: el API
+    // la limpia), o frenaría en falso.
+    expect(guardar).toMatch(/monedaCambio: values\.moneda !== gasto\.moneda,\s*editada: tuaEditada,/);
+    expect(guardar).toContain("const tuaSeLimpiaPorMoneda = values.moneda !== gasto.moneda && !tuaEditada;");
+    expect(guardar).toMatch(/tuaVisibleAlGuardar &&\s*!tuaSeLimpiaPorMoneda &&/);
     expect(guardar).toContain("if (tuaPatch !== undefined) payload.tua_incluida = tuaPatch;");
     // Se valida contra el ticket NUEVO (o el guardado si el monto quedó vacío).
     expect(guardar).toContain("ticket: ticket > 0 ? ticket : Number(gasto.monto) - Number(gasto.propina ?? 0)");
     // DESPUÉS del bloque monto/propina (el ticket ya se validó).
     expect(guardar.indexOf('toast.error("Captura el monto del ticket.")')).toBeLessThan(valida);
+  });
+
+  it("borrar la TUA de oficina CONFIRMA antes del PATCH (también tras la fecha) y teclear la marca como reescrita", () => {
+    const enviar = verif.slice(verif.indexOf("const continuarGuardado"), verif.indexOf("const onSubmit = handleSubmit"));
+    expect(enviar).toMatch(/const borra = tuaQueSeBorra\(\{[\s\S]*?categoria: values\.categoria,[\s\S]*?monedaNueva: values\.moneda,[\s\S]*?editada: tuaEditada,/);
+    expect(enviar).toContain("setConfirmarTua({ values: { ...values }, texto: borra.texto });");
+    const submit = verif.slice(verif.indexOf("const onSubmit = handleSubmit"), verif.indexOf("const fechaIaOtroAnio"));
+    expect(submit).toContain("continuarGuardado(values);");
+    expect(submit).not.toContain("guardarVerificacion(values)");
+    // La confirmación de la fecha también pasa por la de la TUA.
+    expect(verif).toContain("if (values) continuarGuardado(values);");
+    expect(verif).toContain("if (pendiente) guardarVerificacion(pendiente.values);");
+    expect(verif).toContain("{TITULO_CONFIRMAR_BORRAR_TUA}");
+    expect(verif).toContain("{BOTON_CONFIRMAR_BORRAR_TUA}");
+    // Teclear en el campo = reescrita (con moneda nueva, solo así viaja).
+    expect(verif).toMatch(/onChange=\{\(e\) => \{[\s\S]{0,300}setTuaEditada\(true\);[\s\S]{0,40}void registroTua\.onChange\(e\);/);
+    expect(verif).toContain("setTuaEditada(false);");
   });
 
   it("la lectura fresca no persiste el cálculo `tua_detectada` (sí `tua_monto`)", () => {
@@ -316,5 +351,9 @@ describe("cableado", () => {
     expect(historial).toMatch(/tua_incluida: ["']TUA incluida["']/);
     expect(historial).toContain('if (campo === "tua_incluida" && v == null) return "Lectura de la IA";');
     expect(precierre).toContain('tua_cobrada_sin_pagada: () => "/admin/expenses"');
+    // Dinero del pre-cierre con la regla de lib/format (revisión del lote 2):
+    // nunca `toLocaleString("en-US")` (daba «$172.4 USD»).
+    expect(precierre).not.toMatch(/toLocaleString\("en-US"\)/);
+    expect(precierre).toContain('fmtMonto(item.monto_usd, "USD")');
   });
 });

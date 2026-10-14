@@ -25,6 +25,7 @@
  * Prueba: `__tests__/tua-incluida.test.ts`.
  */
 
+import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { fmtMonto } from "@/lib/format";
 import type { Gasto } from "@/types/expenses";
 
@@ -187,15 +188,22 @@ export function errorTuaIncluida(p: {
  *    sin cambio a centavos;
  *  - `null` = se vació un valor vigente (volver a la lectura de la IA);
  *  - número a 2 decimales = la TUA nueva (0 = sin TUA).
- * Con `monedaCambio` y un valor en el campo viaja el número AUNQUE no cambie:
- * la oficina lo confirma en la moneda nueva (si no viajara, el API lo
- * limpiaría por el cambio de moneda: USD y MXN nunca se mezclan).
+ * Con `monedaCambio` viaja el número SOLO si la oficina REESCRIBIÓ el campo
+ * (`editada`: tecleó en él, aunque sea la misma cifra) — así la confirma en
+ * la moneda nueva. Si no lo tocó, la llave NO viaja y el API la LIMPIA por el
+ * cambio de moneda (USD y MXN nunca se mezclan; `decidirTuaIncluidaEnUpdate`
+ * ⇒ LIMPIAR MONEDA), avisado y confirmado antes en el diálogo. Revisión del
+ * lote 2 (14-oct-2026): antes la cifra PRECARGADA viajaba siempre con la
+ * moneda nueva y el API la aceptaba tal cual (USD 1,000 con TUA 300 → MXN
+ * 17,500 guardaba 300 MXN de TUA en silencio).
  */
 export function tuaIncluidaParaPatch(p: {
   visible: boolean;
   valorForm: string | null | undefined;
   actual: string | number | null | undefined;
   monedaCambio: boolean;
+  /** La oficina tecleó en el campo durante ESTE diálogo. */
+  editada?: boolean;
 }): number | null | undefined {
   if (!p.visible) return undefined;
   const actual = tuaFijada(p.actual);
@@ -206,7 +214,74 @@ export function tuaIncluidaParaPatch(p: {
   // `errorTuaIncluida` antes de llegar aquí).
   if (!Number.isFinite(n)) return undefined;
   const nuevo = centavos(n);
-  if (p.monedaCambio) return nuevo;
+  if (p.monedaCambio) return p.editada === true ? nuevo : undefined;
   if (actual !== null && Math.abs(nuevo - actual) < 0.005) return undefined;
   return nuevo;
 }
+
+/** Por qué el guardado va a BORRAR la TUA que fijó la oficina. */
+export type MotivoTuaSeBorra = "CATEGORIA" | "MONEDA";
+
+/**
+ * ¿Este guardado borra la TUA de OFICINA vigente? (revisión del lote 2,
+ * 14-oct-2026; regla del cliente: toda acción destructiva confirma). Espejo
+ * de la limpieza automática del API (`decidirTuaIncluidaEnUpdate`, PATCH
+ * SIN la llave con una TUA vigente > 0): (a) la categoría nueva no la admite
+ * (fuera de Operaciones/Aterrizaje/FBO) ⇒ CATEGORIA; (b) cambió la moneda y
+ * la oficina no reescribió la cifra ⇒ MONEDA. Un 0 vigente nunca se borra
+ * solo; sin la llave del API no hay nada que borrar. El texto va bajo el
+ * selector o el campo y en la confirmación.
+ */
+export function tuaQueSeBorra(p: {
+  apiConCampo: boolean;
+  actual: string | number | null | undefined;
+  categoria: string | null | undefined;
+  monedaVieja: string | null | undefined;
+  monedaNueva: string | null | undefined;
+  editada: boolean;
+}): { motivo: MotivoTuaSeBorra; texto: string } | null {
+  if (!p.apiConCampo) return null;
+  const vigente = tuaFijada(p.actual);
+  if (vigente === null || !(vigente > 0)) return null;
+  const cifra = fmtMonto(vigente, p.monedaVieja);
+  if (!categoriaAdmiteTuaIncluida(p.categoria)) {
+    const cat = p.categoria ? categoriaGastoLabel(p.categoria) : "Esta categoría";
+    return {
+      motivo: "CATEGORIA",
+      texto: `Al guardar se borrará la TUA incluida de ${cifra} que fijó la oficina: «${cat}» no lleva TUA (solo Operaciones, Aterrizaje o FBO).`,
+    };
+  }
+  const vieja = (p.monedaVieja ?? "").trim();
+  const nueva = (p.monedaNueva ?? "").trim();
+  if (vieja && nueva && vieja !== nueva && !p.editada) {
+    return {
+      motivo: "MONEDA",
+      texto: `La TUA incluida (${cifra}) estaba en ${vieja}: al guardar con ${nueva} se borrará (USD y MXN nunca se mezclan). Si este gasto lleva TUA, escríbela en ${nueva}.`,
+    };
+  }
+  return null;
+}
+
+/** Con moneda nueva y la cifra reescrita: en qué moneda se guarda. */
+export function notaTuaMonedaNueva(p: {
+  valorForm: string | null | undefined;
+  monedaVieja: string | null | undefined;
+  monedaNueva: string | null | undefined;
+  editada: boolean;
+}): string | null {
+  const t = (p.valorForm ?? "").trim();
+  const vieja = (p.monedaVieja ?? "").trim();
+  const nueva = (p.monedaNueva ?? "").trim();
+  if (!p.editada || t === "" || !vieja || !nueva || vieja === nueva) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return `Se guardará en ${nueva}: ${fmtMonto(centavos(n), nueva)}.`;
+}
+
+/** Título y botón de la confirmación de borrar la TUA de oficina. */
+export const TITULO_CONFIRMAR_BORRAR_TUA = "¿Borrar la TUA incluida?";
+export const BOTON_CONFIRMAR_BORRAR_TUA = "Sí, guardar y borrar la TUA";
+export const BOTON_REVISAR_TUA = "Revisar";
+/** Se agrega al texto de `tuaQueSeBorra` en la confirmación. */
+export const COLA_CONFIRMAR_BORRAR_TUA =
+  " La TUA volverá a salir de la lectura de la IA (si la leyó) y el cambio queda en el historial del gasto.";

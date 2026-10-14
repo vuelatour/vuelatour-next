@@ -271,7 +271,7 @@ describe("API previo (sin `no_bancario` ni `excluidos`): el diálogo de siempre"
     expect(html).not.toContain("Incluir gastos en efectivo");
     expect(html).not.toContain("¿Por qué se vincula");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Vincular<\/button>/);
-    expect(html).toContain("Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar");
+    expect(html).toContain("Gastos bancarios (tarjeta, transferencia, PayWise o pago domiciliado) sin conciliar");
   });
 });
 

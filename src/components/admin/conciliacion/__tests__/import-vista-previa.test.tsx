@@ -111,6 +111,15 @@ describe("cableado de import-dialog.tsx (regex sobre el fuente)", () => {
     expect(src).toContain("movimientosParaImportar(parsed)");
   });
 
+  it("mientras corre la vista previa NO se puede importar y su fallo se dice (revisión del lote 2)", () => {
+    // El botón de siempre ya estaba activo durante la revisión: un clic rápido
+    // insertaba las relecturas como movimientos nuevos.
+    expect(src).toContain("disabled={importing || revisandoVista || !parsed || parsed.total === 0}");
+    expect(src).toMatch(/revisandoVista && b\.principal\s*\?\s*TEXTO_BOTON_REVISANDO/);
+    expect(src).toContain("const avisoVistaFallida = vistaLista ? avisoVistaPreviaFallida(vista.r) : null;");
+    expect(src).toMatch(/\{!job && avisoVistaFallida && \([\s\S]{0,300}role="alert"[\s\S]{0,120}\{avisoVistaFallida\}/);
+  });
+
   it("advertencias bajo el archivo y la descripción PRIMERO en la tabla, con tooltip", () => {
     expect(src).toContain("<AdvertenciasParse advertencias={parsed.advertencias} />");
     expect(src).toContain('[m.descripcion, m.referencia].filter(Boolean).join(" · ")');

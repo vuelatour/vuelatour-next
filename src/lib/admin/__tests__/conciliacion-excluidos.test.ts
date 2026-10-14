@@ -64,7 +64,7 @@ const EFECTIVO_REAL: ExcluidosCandidatos = { motivo: "EFECTIVO_U_OTRO_MEDIO", n:
 const CTX = { monedaCuenta: "MXN", dias: 30, montoBuscado: 212, fechaCargo: "2026-09-07" };
 /** 6-oct-2026: los gastos en efectivo YA se pueden vincular con justificación. */
 const SOLO_BANCO = "la lista solo muestra gastos pagados por el banco";
-const CORRIGE = "Si en realidad se pagó con tarjeta o transferencia, corrige el medio de pago del gasto;";
+const CORRIGE = "Si en realidad se pagó con tarjeta, transferencia o pago domiciliado, corrige el medio de pago del gasto;";
 const SALIDA_UNO = `${CORRIGE} si no, muéstralo y vincúlalo con una justificación (su medio de pago no cambia).`;
 const SALIDA_VARIOS = `${CORRIGE} si no, muéstralos y vincula el que corresponda con una justificación (su medio de pago no cambia).`;
 
@@ -256,7 +256,7 @@ describe("las ligas: al vuelo o a Gastos de ese día", () => {
 describe("EFECTIVO_U_OTRO_MEDIO: el medio va en la frase", () => {
   it("Personal Pablo", () => {
     expect(textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [{ ...T24, medio_pago: "PERSONAL_PABLO" }] }])).toEqual([
-      `Hay 1 gasto de $212.00 pagado con Personal Pablo (24 sep · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia o PayWise). ${SALIDA_UNO}`,
+      `Hay 1 gasto de $212.00 pagado con Personal Pablo (24 sep · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_UNO}`,
     ]);
   });
 
@@ -264,7 +264,7 @@ describe("EFECTIVO_U_OTRO_MEDIO: el medio va en la frase", () => {
     expect(
       textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 2, gastos: [T24, { ...T27, medio_pago: "PERSONAL_ALE" }] }]),
     ).toEqual([
-      `Hay 2 gastos de $212.00 pagados con efectivo y Personal Ale (24 y 27 sep · vuelos #338 y #330): ${SOLO_BANCO} (tarjeta, transferencia o PayWise). ${SALIDA_VARIOS}`,
+      `Hay 2 gastos de $212.00 pagados con efectivo y Personal Ale (24 y 27 sep · vuelos #338 y #330): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_VARIOS}`,
     ]);
   });
 
@@ -291,7 +291,7 @@ describe("EFECTIVO_U_OTRO_MEDIO: el medio va en la frase", () => {
 
   it("sin `medio_pago`: «otro medio de pago»", () => {
     expect(textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [{ ...T24, medio_pago: null }] }])[0]).toBe(
-      `Hay 1 gasto de $212.00 pagado con otro medio de pago (24 sep · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia o PayWise). ${SALIDA_UNO}`,
+      `Hay 1 gasto de $212.00 pagado con otro medio de pago (24 sep · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_UNO}`,
     );
   });
 });

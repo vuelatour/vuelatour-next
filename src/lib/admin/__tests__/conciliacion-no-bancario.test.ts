@@ -22,6 +22,7 @@ import {
   JUSTIFICACION_MAX,
   JUSTIFICACION_MIN,
   MEDIOS_BANCARIOS_CONCILIACION,
+  MEDIO_BANCARIO_EN_FRASE,
   MSG_JUSTIFICACION_API_VIEJO,
   MSG_NO_BANCARIOS_API_VIEJO,
   MSG_RAZON_COPIADA,
@@ -52,6 +53,7 @@ import {
   lineasVinculoNoBancario,
   marcadosConNoBancarios,
   marcadosSinNoBancarios,
+  mediosBancariosEnFrase,
   montoNotaVinculo,
   noBancariosDeDetalle,
   textoDesmarcadosNoBancarios,
@@ -152,6 +154,17 @@ describe("medios: qué toca el banco y qué no (espejo de MEDIOS_BANCARIOS del A
     // Un código que el panel no conoce: «Otro medio», JAMÁS el código.
     expect(etiquetaMedioNoBancario("VALE_DESPENSA")).toBe("Otro medio");
     expect(etiquetaMedioNoBancario(null)).toBe("Otro medio");
+  });
+
+  it("cada medio bancario tiene su nombre en frase y los textos de Conciliación los nombran TODOS (revisión del lote 2)", () => {
+    // Un medio bancario nuevo sin frase rompe AQUÍ (no el texto de la oficina).
+    expect(Object.keys(MEDIO_BANCARIO_EN_FRASE)).toEqual([...MEDIOS_BANCARIOS_CONCILIACION]);
+    expect(mediosBancariosEnFrase()).toBe("tarjeta, transferencia, PayWise o pago domiciliado");
+    // Los tres textos que la oficina lee junto a un candidato «Pago domiciliado».
+    expect(NOTA_VENTANA_CARGO(30)).toContain("(tarjeta, transferencia, PayWise o pago domiciliado)");
+    expect(NOTA_VENTANA_CARGO(30, true)).toContain("(tarjeta, transferencia, PayWise o pago domiciliado)");
+    const pagina = readFileSync(path.resolve(__dirname, "../../../app/admin/conciliacion/page.tsx"), "utf8");
+    expect(pagina).toContain("Pagados con tarjeta corporativa, transferencia, Paywise o pago domiciliado");
   });
 
   const util = leerApi("modules/conciliacion/gastos-candidatos.util.ts");
@@ -517,7 +530,7 @@ describe("el diálogo con el interruptor encendido (y apagado = como hoy)", () =
       "No hay gastos pendientes (del banco ni en efectivo) en ±30 días del cargo. Amplía a 120 días o búscalo por monto, proveedor o nota.",
     );
     expect(NOTA_VENTANA_CARGO(30, true)).toBe(
-      "Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±30 días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.",
+      "Gastos sin conciliar del banco (tarjeta, transferencia, PayWise o pago domiciliado) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±30 días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.",
     );
     // Ya no promete «sin búsqueda, primero los que cuadran»: con el corte a 100, el efectivo podía ni salir.
     expect(NOTA_VENTANA_CARGO(30, true)).not.toContain("sin búsqueda");
@@ -590,7 +603,7 @@ describe("el diálogo con el interruptor encendido (y apagado = como hoy)", () =
       "No hay gastos bancarios pendientes en ±30 días del cargo. Amplía a 120 días o búscalo por monto, proveedor o nota.",
     );
     expect(NOTA_VENTANA_CARGO(30)).toBe(NOTA_VENTANA_CARGO(30, false));
-    expect(NOTA_VENTANA_CARGO(30)).toMatch(/^Gastos bancarios \(tarjeta, transferencia, PayWise\) sin conciliar, en la moneda/);
+    expect(NOTA_VENTANA_CARGO(30)).toMatch(/^Gastos bancarios \(tarjeta, transferencia, PayWise o pago domiciliado\) sin conciliar, en la moneda/);
   });
 });
 

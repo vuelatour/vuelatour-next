@@ -12,15 +12,18 @@ import {
   BOTON_IMPORTAR_Y_CONCILIAR,
   DESCRIPCION_IMPORT_REPETIDO,
   MSG_API_SIN_ENRIQUECER,
+  MSG_VISTA_PREVIA_FALLO,
   PIE_GEMELOS_ABONOS,
   PIE_GEMELOS_CARGOS,
   PIE_NO_ENCONTRADOS,
   PIE_NUEVOS_MISMO_DIA,
+  TEXTO_BOTON_REVISANDO,
   TEXTO_SUGERIR_RECRUCE,
   TITULO_DETALLE_GEMELOS,
   TITULO_DETALLE_VINCULO,
   TITULO_NO_ENCONTRADOS,
   TITULO_NUEVOS_MISMO_DIA,
+  avisoVistaPreviaFallida,
   botonesImportacion,
   debeQuedarseAbierto,
   esDtoSinEnriquecer,
@@ -337,6 +340,26 @@ describe("lo que viaja y los textos fijos", () => {
       "El servidor todavía no sabe completar conceptos: espera a que termine la actualización e intenta de nuevo.",
     );
     expect(TEXTO_SUGERIR_RECRUCE).toContain("no duplica nada ni reintenta el cruce");
-    expect(DESCRIPCION_IMPORT_REPETIDO.startsWith(" Si el archivo ya estaba importado no se duplica nada")).toBe(true);
+    // Revisión del lote 2 (14-oct-2026): ya no promete «no se duplica nada»
+    // a secas — una relectura distinta de la IA puede entrar como nueva.
+    expect(DESCRIPCION_IMPORT_REPETIDO).toBe(
+      " Si el archivo ya estaba importado, lo que el sistema reconoce no se duplica: solo se completa el concepto del banco (por ejemplo, qué factura se pagó) de los movimientos que ya estaban. Una línea que la IA leyó distinto puede entrar como nueva: la revisión de antes de importar te lo avisa.",
+    );
+    expect(DESCRIPCION_IMPORT_REPETIDO).not.toContain("no se duplica nada");
+  });
+
+  it("vista previa FALLIDA: se dice (salvo un API previo) y el botón dice «Revisando…» mientras corre", () => {
+    expect(TEXTO_BOTON_REVISANDO).toBe("Revisando…");
+    expect(MSG_VISTA_PREVIA_FALLO).toBe(
+      "No se pudo revisar qué movimientos ya estaban importados. Si importas, al terminar revisa las líneas nuevas: una línea que la IA leyó distinto pudo entrar como nueva.",
+    );
+    expect(avisoVistaPreviaFallida({ ok: false, code: "SIN_CONEXION" })).toBe(MSG_VISTA_PREVIA_FALLO);
+    expect(avisoVistaPreviaFallida({ ok: false, code: null })).toBe(MSG_VISTA_PREVIA_FALLO);
+    expect(avisoVistaPreviaFallida({ ok: false })).toBe(MSG_VISTA_PREVIA_FALLO);
+    // API previo (no tiene la ruta): como siempre, nada.
+    expect(avisoVistaPreviaFallida({ ok: false, code: "RUTA_NO_DISPONIBLE" })).toBeNull();
+    expect(avisoVistaPreviaFallida({ ok: true })).toBeNull();
+    expect(avisoVistaPreviaFallida(null)).toBeNull();
+    expect(avisoVistaPreviaFallida(undefined)).toBeNull();
   });
 });

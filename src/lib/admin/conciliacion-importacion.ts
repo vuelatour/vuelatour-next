@@ -37,9 +37,25 @@ export const MSG_API_SIN_ENRIQUECER =
 export const TEXTO_SUGERIR_RECRUCE =
   "Cierra esta ventana y usa «Cruzar pendientes» para volver a intentar el cruce de los que quedaron pendientes. Volver a importar el mismo archivo no duplica nada ni reintenta el cruce: solo completa el concepto del banco que les faltara.";
 
-/** Se suma a la descripción del diálogo «Importar estado de cuenta». */
+/**
+ * Se suma a la descripción del diálogo «Importar estado de cuenta». Revisión
+ * del lote 2 (14-oct-2026): ya no promete «no se duplica nada» a secas —
+ * una línea que la IA leyó distinto (otro renglón, otro dígito de la
+ * factura) puede entrar como nueva; la vista previa lo avisa ANTES.
+ */
 export const DESCRIPCION_IMPORT_REPETIDO =
-  " Si el archivo ya estaba importado no se duplica nada: solo se completa el concepto del banco (por ejemplo, qué factura se pagó) de los movimientos que ya estaban.";
+  " Si el archivo ya estaba importado, lo que el sistema reconoce no se duplica: solo se completa el concepto del banco (por ejemplo, qué factura se pagó) de los movimientos que ya estaban. Una línea que la IA leyó distinto puede entrar como nueva: la revisión de antes de importar te lo avisa.";
+
+/** Botón principal mientras corre la vista previa (deshabilitado). */
+export const TEXTO_BOTON_REVISANDO = "Revisando…";
+
+/**
+ * Aviso cuando la vista previa FALLA por algo que no es un API previo (500,
+ * red, el 400 de «impórtalo por partes»): antes no se decía nada y quedaba el
+ * botón de siempre, sin la protección contra relecturas duplicadas.
+ */
+export const MSG_VISTA_PREVIA_FALLO =
+  "No se pudo revisar qué movimientos ya estaban importados. Si importas, al terminar revisa las líneas nuevas: una línea que la IA leyó distinto pudo entrar como nueva.";
 
 export const TITULO_ADVERTENCIAS_PARSE = "Revisa antes de importar:";
 /** Tope de advertencias de la lectura que se pintan. */
@@ -262,6 +278,18 @@ export function textoSoloCompletarConceptos(nuevos: number): string {
 /** «Importar también la nueva» / «Importar también las 2 nuevas». */
 export function textoImportarTambien(nuevos: number): string {
   return nuevos === 1 ? "Importar también la nueva" : `Importar también las ${fmtInt(nuevos)} nuevas`;
+}
+
+/**
+ * ¿La vista previa falló por algo que sí hay que decir? Un API previo
+ * (`RUTA_NO_DISPONIBLE`: no tiene la ruta) no pinta nada, como siempre; un
+ * resultado bueno o sin resultado, tampoco.
+ */
+export function avisoVistaPreviaFallida(
+  r: { ok?: boolean | null; code?: string | null } | null | undefined,
+): string | null {
+  if (!r || r.ok !== false) return null;
+  return r.code === "RUTA_NO_DISPONIBLE" ? null : MSG_VISTA_PREVIA_FALLO;
 }
 
 /**

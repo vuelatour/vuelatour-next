@@ -83,15 +83,21 @@ import {
 } from "@/lib/admin/categorias-gasto";
 import { CategoriaDestinoHint } from "@/components/admin/expenses/categoria-destino-hint";
 import {
+  BOTON_CONFIRMAR_BORRAR_TUA,
+  BOTON_REVISAR_TUA,
+  COLA_CONFIRMAR_BORRAR_TUA,
   ETIQUETA_TUA_INCLUIDA,
+  TITULO_CONFIRMAR_BORRAR_TUA,
   apiConTuaIncluida,
   ayudaTuaIncluida,
   categoriaAdmiteTuaIncluida,
   errorTuaIncluida,
+  notaTuaMonedaNueva,
   notaTuaVigente,
   placeholderTuaIncluida,
   tuaIncluidaParaPatch,
   tuaLeidaIa,
+  tuaQueSeBorra,
   valorFormTuaIncluida,
 } from "@/lib/admin/tua-incluida";
 import type { GastoVerifyValues } from "@/app/admin/expenses/schema";
@@ -176,6 +182,16 @@ export function ExpenseVerifyDialog({
   const [confirmarFecha, setConfirmarFecha] = useState<GastoVerifyValues | null>(
     null,
   );
+  // «TUA incluida» (revisión del lote 2, 14-oct-2026): la oficina tecleó en
+  // el campo durante ESTE diálogo (con moneda nueva, solo entonces viaja la
+  // cifra) y los valores esperando confirmar el BORRADO de la TUA de oficina
+  // (reclasificar fuera de Operaciones/Aterrizaje/FBO o cambiar la moneda sin
+  // reescribirla: el API la limpia; regla del cliente, lo destructivo confirma).
+  const [tuaEditada, setTuaEditada] = useState(false);
+  const [confirmarTua, setConfirmarTua] = useState<{
+    values: GastoVerifyValues;
+    texto: string;
+  } | null>(null);
   // Sugerencia IA/regla de a qué vuelo pertenece (solo gastos sin avión).
   const [sugerencia, setSugerencia] = useState<SugerenciaAsignacion | null>(null);
   const [sugiriendo, setSugiriendo] = useState(false);
@@ -284,6 +300,7 @@ export function ExpenseVerifyDialog({
       reset(defaults(gasto));
       setAiRaw(null);
       setSelloRetirado(false);
+      setTuaEditada(false);
       // Hojas del comprobante: las guardadas de ESTE gasto, sin pendientes.
       setHojas(hojasDe(gasto));
       setHojasNuevas([]);
@@ -669,7 +686,16 @@ export function ExpenseVerifyDialog({
       delete (payload as { tua_incluida?: unknown }).tua_incluida;
       const tuaVisibleAlGuardar =
         apiConTuaIncluida(gasto) && categoriaAdmiteTuaIncluida(values.categoria);
-      if (tuaVisibleAlGuardar && (values.tua_incluida ?? "").trim() !== "") {
+      // Moneda nueva con la cifra SIN reescribir: la llave no viaja y el API
+      // la limpia (ya avisado y confirmado) — validarla contra el ticket en
+      // la moneda nueva frenaría en falso (5,250 MXN contra un ticket de 300
+      // USD).
+      const tuaSeLimpiaPorMoneda = values.moneda !== gasto.moneda && !tuaEditada;
+      if (
+        tuaVisibleAlGuardar &&
+        !tuaSeLimpiaPorMoneda &&
+        (values.tua_incluida ?? "").trim() !== ""
+      ) {
         const err = errorTuaIncluida({
           valor: Number(values.tua_incluida),
           ticket: ticket > 0 ? ticket : Number(gasto.monto) - Number(gasto.propina ?? 0),
@@ -685,6 +711,7 @@ export function ExpenseVerifyDialog({
         valorForm: values.tua_incluida,
         actual: gasto.tua_incluida,
         monedaCambio: values.moneda !== gasto.moneda,
+        editada: tuaEditada,
       });
       if (tuaPatch !== undefined) payload.tua_incluida = tuaPatch;
       // Litros solo aplican a GAS; vacío = no tocar (el zod los descarta).
@@ -829,6 +856,28 @@ export function ExpenseVerifyDialog({
     });
   };
 
+  /**
+   * Tras la fecha: si el guardado BORRA la TUA que fijó la oficina (categoría
+   * que no la admite, o moneda nueva sin reescribirla) se pide confirmación
+   * antes del PATCH — es destructivo y antes pasaba en silencio (solo un warn
+   * en el log del API y la bitácora).
+   */
+  const continuarGuardado = (values: GastoVerifyValues) => {
+    const borra = tuaQueSeBorra({
+      apiConCampo: apiConTuaIncluida(gasto),
+      actual: gasto.tua_incluida,
+      categoria: values.categoria,
+      monedaVieja: gasto.moneda,
+      monedaNueva: values.moneda,
+      editada: tuaEditada,
+    });
+    if (borra) {
+      setConfirmarTua({ values: { ...values }, texto: borra.texto });
+      return;
+    }
+    guardarVerificacion(values);
+  };
+
   const onSubmit = handleSubmit((values) => {
     // Candado de fechas (auditoría 29-ago): SOLO si la oficina CAMBIÓ la
     // fecha aquí y quedó > 60 días atrás o > 2 días a futuro se pide
@@ -842,7 +891,7 @@ export function ExpenseVerifyDialog({
       setConfirmarFecha({ ...values });
       return;
     }
-    guardarVerificacion(values);
+    continuarGuardado(values);
   });
 
   // La IA (reanálisis) propuso una fecha con OTRO año: campo en ámbar hasta
@@ -869,7 +918,7 @@ export function ExpenseVerifyDialog({
   const ticketVivo = Number(watch("monto"));
   // El mismo error que frena el guardado, a la vista mientras se escribe.
   const errorTuaVivo =
-    tuaVisible && tuaEscrita !== ""
+    tuaVisible && tuaEscrita !== "" && !(watch("moneda") !== gasto.moneda && !tuaEditada)
       ? errorTuaIncluida({
           valor: Number(tuaEscrita),
           ticket:
@@ -879,6 +928,26 @@ export function ExpenseVerifyDialog({
       : null;
   // La nota habla de lo GUARDADO: en la moneda del gasto guardado.
   const tuaVigente = tuaVisible ? notaTuaVigente(gasto, gasto.moneda) : null;
+  // Lo que el guardado BORRARÍA de la TUA de oficina, a la vista ANTES de
+  // guardar (bajo el selector de categoría o bajo el campo) y en la
+  // confirmación; con la cifra reescrita en otra moneda, en cuál se guarda.
+  const tuaSeBorra = tuaQueSeBorra({
+    apiConCampo: apiConTuaIncluida(gasto),
+    actual: gasto.tua_incluida,
+    categoria: watch("categoria"),
+    monedaVieja: gasto.moneda,
+    monedaNueva: watch("moneda"),
+    editada: tuaEditada,
+  });
+  const tuaMonedaNueva = tuaVisible
+    ? notaTuaMonedaNueva({
+        valorForm: watch("tua_incluida"),
+        monedaVieja: gasto.moneda,
+        monedaNueva: watch("moneda"),
+        editada: tuaEditada,
+      })
+    : null;
+  const registroTua = register("tua_incluida");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1207,11 +1276,32 @@ export function ExpenseVerifyDialog({
                   min="0"
                   inputMode="decimal"
                   placeholder={placeholderTuaIncluida(tuaDetectada)}
-                  {...register("tua_incluida")}
+                  {...registroTua}
+                  onChange={(e) => {
+                    // Teclear (aunque sea la misma cifra) = la oficina la
+                    // confirma en la moneda del gasto: solo así viaja con
+                    // una moneda nueva (`tuaIncluidaParaPatch`).
+                    setTuaEditada(true);
+                    void registroTua.onChange(e);
+                  }}
                 />
               </Field>
               {tuaVigente && (
                 <p className="text-[11px] text-muted-foreground">{tuaVigente}</p>
+              )}
+              {tuaSeBorra?.motivo === "MONEDA" && (
+                <p
+                  className="text-[11px] text-amber-700 dark:text-amber-300"
+                  role="status"
+                  data-tua-se-borra="MONEDA"
+                >
+                  {tuaSeBorra.texto}
+                </p>
+              )}
+              {tuaMonedaNueva && (
+                <p className="text-[11px] text-muted-foreground" data-tua-moneda-nueva="">
+                  {tuaMonedaNueva}
+                </p>
               )}
             </div>
           )}
@@ -1547,6 +1637,18 @@ export function ExpenseVerifyDialog({
               <span className="mt-1 block">{AYUDA_RECLASIFICAR_COMISION}</span>
             </p>
           )}
+          {/* TUA de oficina que se borraría al reclasificar fuera de
+              Operaciones/Aterrizaje/FBO (revisión del lote 2): se dice aquí,
+              bajo el selector, y el guardado pide confirmación. */}
+          {tuaSeBorra?.motivo === "CATEGORIA" && (
+            <p
+              className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+              role="status"
+              data-tua-se-borra="CATEGORIA"
+            >
+              {tuaSeBorra.texto}
+            </p>
+          )}
           {/* Comisariato (13-oct-2026): reclasificar aquí un «Otros gastos
               VuelaTour» CON vuelo a «Comisariato» es el camino manual para
               las capturas viejas de snacks/bebidas de pasajeros (sale de
@@ -1674,10 +1776,40 @@ export function ExpenseVerifyDialog({
                 onClick={() => {
                   const values = confirmarFecha;
                   setConfirmarFecha(null);
-                  if (values) guardarVerificacion(values);
+                  if (values) continuarGuardado(values);
                 }}
               >
                 Sí, la fecha es correcta
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {/* Borrar la TUA de OFICINA confirma (regla de la casa; revisión del
+            lote 2, 14-oct-2026): reclasificar fuera de Operaciones/
+            Aterrizaje/FBO o cambiar la moneda sin reescribirla. */}
+        <AlertDialog
+          open={confirmarTua !== null}
+          onOpenChange={(o) => {
+            if (!o) setConfirmarTua(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_CONFIRMAR_BORRAR_TUA}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmarTua ? `${confirmarTua.texto}${COLA_CONFIRMAR_BORRAR_TUA}` : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{BOTON_REVISAR_TUA}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const pendiente = confirmarTua;
+                  setConfirmarTua(null);
+                  if (pendiente) guardarVerificacion(pendiente.values);
+                }}
+              >
+                {BOTON_CONFIRMAR_BORRAR_TUA}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
