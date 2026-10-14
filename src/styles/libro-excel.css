@@ -294,7 +294,13 @@
   outline-offset: -2px;
 }
 
-.xl-celda.xl-con-nota {
+/* El triángulo de la nota necesita un ancestro POSICIONADO. Una celda
+   inmovilizada ya lo es (sticky): NO se le cambia a relative. Con relative,
+   su `top`/`left` en línea (el desplazamiento del panel fijo) la RECORRE:
+   los encabezados con nota de la fila 2 bajaban como «un escalón» sobre las
+   filas 3 y 4 (TOTAL PARA PROVEEDOR (PESOS) y REMANENTE del Balance general,
+   14-oct-2026) y dejaban de quedarse fijos al hacer scroll. */
+.xl-celda.xl-con-nota:not(.xl-fija-fila):not(.xl-fija-col) {
   position: relative;
 }
 

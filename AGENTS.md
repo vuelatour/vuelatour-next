@@ -6804,6 +6804,28 @@ periodo y la descripción larga, los chips y el `PeriodSelector` en su Card
   gana a `100dvh - 297px` y la página desplaza unos píxeles: es el mínimo
   que pidió el contrato, no un error de la cuenta.
 
+### Encabezados con nota en el panel fijo (14-oct-2026)
+
+Reporte del cliente con la captura del Balance general («reporte horas
+FLOTA»): «TOTAL PARA PROVEEDOR (PESOS)» y «REMANENTE VENTA MENOS COMPRA
+(PESOS)» bajaban «como un escalón» sobre las filas 3 y 4 y tapaban sus
+valores. Eran justo los encabezados con nota (triángulo rojo).
+
+- **Causa**: `.xl-celda.xl-con-nota { position: relative }` iba DESPUÉS de
+  `.xl-celda.xl-fija-fila, .xl-celda.xl-fija-col { position: sticky }` con
+  la misma especificidad y le ganaba. Con `relative`, el `top`/`left` en
+  línea de la celda fija la RECORRÍA en vez de anclarla, y además dejaba de
+  quedarse fija al hacer scroll.
+- **Regla**: la nota solo pone `relative` a celdas NO fijas
+  (`:not(.xl-fija-fila):not(.xl-fija-col)`). Una celda sticky ya es un
+  ancestro posicionado y el triángulo (`::after` absoluto) se ancla igual.
+  **Ninguna regla de `.xl-celda` le cambia el `position` a una celda fija**:
+  lo vigila la prueba «guardia del escalón» de
+  `components/admin/reportes/__tests__/libro-excel.test.tsx`, que falla con
+  la regla vieja.
+- Verificado en Chrome headless (antes: los dos encabezados desplazados;
+  después: alineados y con su triángulo en la esquina).
+
 ### El marco sigue a la selección (13-oct-2026)
 
 Pedido del cliente: al moverse con las flechas por el Excel en pantalla, la

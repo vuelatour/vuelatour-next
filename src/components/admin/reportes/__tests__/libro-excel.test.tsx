@@ -561,3 +561,52 @@ describe("styles/libro-excel.css: la franja del gasto", () => {
     expect(page).toContain("[--xl-pantalla-offset:297px] sm:[--xl-pantalla-offset:259px]");
   });
 });
+
+describe("una celda inmovilizada con nota no se recorre (14-oct-2026)", () => {
+  // Reporte del cliente con la captura del Balance general: los encabezados
+  // con nota de la fila 2 («TOTAL PARA PROVEEDOR (PESOS)», «REMANENTE VENTA
+  // MENOS COMPRA (PESOS)») bajaban «como un escalón» sobre las filas 3 y 4.
+  // La regla de la nota les ponía `position: relative` (le ganaba al sticky
+  // del panel fijo por ir después en la hoja) y su `top` en línea —el
+  // desplazamiento del panel— los RECORRÍA en vez de anclarlos.
+  const css = leer("styles/libro-excel.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const reglas = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => [m[1].trim(), m[2]] as const);
+  const esPseudo = (sel: string) => /::?(after|before)\b/.test(sel);
+
+  it("el marcado: la celda fija con nota lleva las dos clases y su desplazamiento en línea (por eso importa el CSS)", () => {
+    const hoja = LIBRO.hojas[0];
+    const libro: LibroExcelJson = {
+      ...LIBRO,
+      hojas: [{ ...hoja, celdas: [...hoja.celdas, { r: 2, c: 2, v: "TOTAL", t: "TOTAL", s: 1, n: "nota del encabezado" }] }],
+    };
+    const html = renderToStaticMarkup(<LibroExcel libro={libro} />);
+    const td = html.match(/<td[^>]*>TOTAL<\/td>/)?.[0] ?? "";
+    expect(td).toMatch(/class="[^"]*xl-fija-fila[^"]*xl-con-nota[^"]*"/);
+    expect(td).toMatch(/style="[^"]*top:42px/);
+    expect(td).toContain('title="nota del encabezado"');
+  });
+
+  it("la regla de la nota NO toca el position de una celda fija: el sticky manda y el triángulo se ancla igual", () => {
+    const nota = reglas.filter(([sel, cuerpo]) => sel.includes(".xl-con-nota") && !esPseudo(sel) && /position\s*:/.test(cuerpo));
+    expect(nota).toHaveLength(1);
+    expect(nota[0][0]).toBe(".xl-celda.xl-con-nota:not(.xl-fija-fila):not(.xl-fija-col)");
+    expect(nota[0][1]).toMatch(/position:\s*relative/);
+    // El triángulo sigue siendo absoluto respecto a la celda (relative o sticky).
+    expect(css).toMatch(/\.xl-celda\.xl-con-nota::after\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*right:\s*0;/);
+  });
+
+  it("guardia del «escalón»: ninguna regla de celdas le cambia el position a una celda fija (solo sticky)", () => {
+    const posicionan = reglas.filter(([sel, cuerpo]) => /\.xl-celda/.test(sel) && !esPseudo(sel) && /position\s*:/.test(cuerpo));
+    expect(posicionan.some(([sel, c]) => /\.xl-fija-fila/.test(sel) && /position:\s*sticky/.test(c))).toBe(true);
+    for (const [sel, cuerpo] of posicionan) {
+      const valor = cuerpo.match(/position\s*:\s*([a-z-]+)/)?.[1];
+      if (valor === "sticky") continue;
+      expect(sel, `«${sel}» pone position: ${valor} y le ganaría al sticky de una celda inmovilizada`).toMatch(
+        /:not\(\.xl-fija-fila\)/,
+      );
+      expect(sel, `«${sel}» pone position: ${valor} y le ganaría al sticky de una columna inmovilizada`).toMatch(
+        /:not\(\.xl-fija-col\)/,
+      );
+    }
+  });
+});
