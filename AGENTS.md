@@ -204,6 +204,12 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   (`clave_cliente`) y el panel lo pinta SOLO con
   `components/admin/clave-cliente.tsx`; textos y reglas del alias en
   `lib/admin/clave-cliente.ts`. Ver «ID de vuelo por cliente junto al folio».
+- Compras en DÓLARES contra cargos en PESOS (13-oct-2026, API 0.0.75): la
+  regla del T.C. oficial del día es del API; el panel la PINTA solo con
+  `lib/admin/conciliacion-tc.ts` (3.ª línea del candidato, marca de la liga,
+  aviso «Vincular de todos modos», sufijo de moneda) y
+  `lib/admin/pre-cierre-tc-usd.ts` (renglones del pre-cierre). Ver
+  «Conciliación: compras en dólares contra el T.C. oficial del día».
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
   `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
   ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
@@ -7629,3 +7635,77 @@ invariante lo fija el carril del API). SIN migración.
   del API). En otro orden nada se rompe ni se cuenta dos veces: con el panel
   antes, la vista previa no aparece y «Solo completar conceptos» nunca se
   ofrece.
+
+## Conciliación: compras en dólares contra el T.C. oficial del día (lote 2 del 13-oct-2026, API 0.0.75)
+
+Caso real (Aircraft Spruce): el auto-cruce ligaba un gasto en USD a un cargo
+en MXN solo porque el cociente caía en la banda 15–25 y el candidato era
+único. El tubo Michelin (422.86 USD) quedó ligado a «ASA CANCUN» $8,939.38
+de COMBUSTIBLE (T.C. 21.14 contra un oficial de 17.01, +24.3 %) y las bujías
+(794.61 USD) a «ASA CANCUN I\CARR CANC» $14,197.17 (+2.3 %), mientras sus
+cargos reales «AIRCRAFT SPRUCE AND SP» seguían pendientes. La corrección de
+datos YA se aplicó en prod (13-oct-2026, 21:40 Cancún; hoy las 6 ligas
+cruzadas quedan entre −0.4 % y +1.5 %). Este lote impide que vuelva a pasar
+y hace visible lo sospechoso. SIN migración.
+
+- **La regla es del API** (invariante «GASTO EN DÓLARES ↔ CARGO EN PESOS…»;
+  el número lo fija el carril del API): `auto-cruce.util.ts` compara el T.C.
+  implícito con el T.C. OFICIAL del día del cargo (±2 %, respaldo de 7 días)
+  y el auto-cruce solo liga con oficial, a ±2 %, con la leyenda del banco que
+  COINCIDE con el gasto y sin otro cargo que cuadre igual (recíproco). El
+  panel solo PINTA: texto y tooltip del T.C. llegan ya redactados en
+  `tc_cruce`; el `tc_gasto` lo sigue derivando solo la BD. Nada se corrige
+  solo.
+- **Contrato ADITIVO**: raíz `tc_oficial` de `gastos-candidatos` (SIEMPRE
+  presente desde 0.0.75, aunque sea null: es la CAPACIDAD, pegajosa en el
+  diálogo como `apiOfreceNoBancarios`), `tc_cruce` en cada candidato cruzado
+  y en cada fila CARGO con exactamente una parte cruzada, `motivo_detalle` en
+  los cargos pendientes (lo lee `motivoPendienteDe`: reemplaza el texto
+  genérico en AMBIGUO / SE_PUEDE_CRUZAR, se agrega en SIN_CANDIDATOS, se
+  ignora en ERROR) y el item del pre-cierre `gastos_usd_tc_fuera_de_lugar`
+  (`ligas[]`, `sin_verificar`, `lectura_fallida`; NO bloquea). Tipos
+  `TcCruceUsd` (copia 1:1 del API), `TcOficialDelDia` y `LigaUsdTcPreCierre`
+  en `types/conciliacion.ts`.
+- **Fuentes únicas**: `lib/admin/conciliacion-tc.ts` (`apiCruzaConOficial`,
+  `lineaTcCandidato`, `marcaLigaCruzada`, `avisoVincularCruzado`,
+  `sufijoMonedaLigada`, placeholder, nota y botón) y
+  `lib/admin/pre-cierre-tc-usd.ts` (`lineasLigasUsdTc`,
+  `hrefLigasUsdTcPeriodo`, clave copiada del API). `NOTA_VENTANA_CARGO(dias,
+  incluyeNoBancarios, cruzaUsd)` agrega `NOTA_COMPRAS_USD` (sin el 3.er
+  argumento, byte a byte la de antes) y `descripcionCandidatoGasto` /
+  `tituloDescripcionCandidatoGasto` aceptan `{sinTc}` (la pieza del T.C. es
+  `tc_cruce.texto` o, con un API previo, el «T.C. 17.06» crudo).
+- **«Vincular gasto»** (`vincular-gasto-dialog.tsx`): con la capacidad y en
+  una cuenta en pesos (`cruzaUsd`), placeholder «Busca por monto en pesos o
+  en dólares (2801.40), proveedor o nota» y la nota de las compras en
+  dólares. Un candidato cruzado lleva una 3.ª línea SIN recortar con
+  «T.C. 17.06 · oficial 17.01 (+0.3 %)» y su tooltip exacto (ámbar si queda
+  LEJOS o fuera de banda); la 2.ª va sin el T.C. Marcar EXACTAMENTE UN
+  cruzado LEJOS pinta un aviso ámbar (`role="status"`) y el botón dice
+  «Vincular de todos modos»: NO bloquea, liga como siempre (una compra
+  legítima con sobreprecio del banco > 2 % existe). El ORDEN es el del API
+  (7 niveles: los que cuadran con el oficial salen antes del corte de 100);
+  la lista de respaldo (API previo) no cambia.
+- **Bandeja** (`movimientos-table.tsx`): el gasto 1↔1 dice su moneda
+  («Refacción · $422.86 USD») y, con `tc_cruce`, la marca bajo el
+  proveedor/fecha: tenue si cuadra, «⚠ T.C. 21.14 · oficial 17.01 (+24.3 %):
+  lejos del oficial» ámbar si quedó fuera de lugar (tooltip: el pre-cierre
+  lista estas ligas y el sistema no corrige nada). Una fila en pesos queda
+  byte a byte como antes (golden en `tc-cruce.test.tsx`).
+- **Pre-cierre** (`reportes/pre-cierre-card.tsx`): «Resolver →» va a
+  Conciliación, pestaña conciliados, del periodo; un renglón por liga con el
+  texto del API (tooltip = el T.C. exacto) y DOS enlaces con `cursor-pointer`:
+  «Ver el cargo» (conciliados, su cuenta y su día) y «Ver el vuelo #N» /
+  «Ver el gasto»; «y N más…» contra `count`. La visibilidad sigue en
+  `itemPreCierreVisible` (count 0 ⇒ oculto; lectura fallida ⇒ «sin
+  verificar»).
+- **Pruebas**: `lib/admin/__tests__/conciliacion-tc.test.ts`,
+  `pre-cierre-tc-usd.test.ts` (fixtures reales en `tc-cruce.fixtures.ts`, que
+  no es un archivo de pruebas), `conciliacion-auto.test.ts` (T.C. en la línea
+  y `motivo_detalle`), `components/admin/conciliacion/__tests__/tc-cruce.test.tsx`
+  y `components/admin/reportes/__tests__/pre-cierre-ligas-usd-tc.test.tsx`;
+  `folio.test.tsx` y `no-bancario.test.tsx` siguen las nuevas firmas
+  (`opts`, `cruzaUsd`).
+- **Orden de deploy**: API 0.0.75 → panel; seguro en los dos sentidos (un
+  panel nuevo con el API previo no pinta nada nuevo; un panel viejo ignora
+  los campos y pinta el item del pre-cierre con el renderer genérico).

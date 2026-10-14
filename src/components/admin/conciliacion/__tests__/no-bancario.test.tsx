@@ -361,7 +361,9 @@ describe("cableado", () => {
   });
 
   it("la nota al pie y el vacío saben si el interruptor está encendido", () => {
-    expect(dialogo).toContain("NOTA_VENTANA_CARGO(dias, incluirNoBancarios)");
+    // 13-oct-2026 (T.C. oficial, API 0.0.75): y si la cuenta en pesos ofrece
+    // las compras en dólares (`cruzaUsd`).
+    expect(dialogo).toContain("NOTA_VENTANA_CARGO(dias, incluirNoBancarios, cruzaUsd)");
     expect(dialogo).toMatch(/estadoBuscadorGastos\(\{[\s\S]{0,250}incluyeNoBancarios: incluirNoBancarios,\s*montoCargo: movimiento\.monto,\s*\}\);/);
   });
 

@@ -226,10 +226,12 @@ describe("cableado", () => {
   });
 
   it("el diálogo: la descripción del candidato (con el folio) lleva el tooltip completo", () => {
-    expect(auto).toContain("lineaDescripcionCandidato(g, etiquetaFolioComprobante)");
-    expect(auto).toContain("lineaDescripcionCandidato(g, tituloFolioComprobante)");
+    // 13-oct-2026 (T.C. oficial, API 0.0.75): las dos llevan además `opts`
+    // (`sinTc` cuando el T.C. va en la 3.ª línea del candidato cruzado).
+    expect(auto).toContain("lineaDescripcionCandidato(g, etiquetaFolioComprobante, opts)");
+    expect(auto).toContain("lineaDescripcionCandidato(g, tituloFolioComprobante, opts)");
     expect(auto).toContain("rotularFolio(g.folio_comprobante)");
-    expect(dialogo).toContain("const desc = descripcionCandidatoGasto(ficha);");
+    expect(dialogo).toContain("const desc = descripcionCandidatoGasto(ficha, optsDesc);");
     expect(dialogo).toMatch(
       /<span\s+className="block truncate text-xs text-muted-foreground"\s+title=\{tituloDesc \?\? undefined\}\s*>/,
     );
@@ -239,7 +241,7 @@ describe("cableado", () => {
     // El title del <span> interior tapa el del <label>: por eso el motivo
     // viaja también en el de la descripción (helper probado aparte).
     expect(dialogo).toContain("const bloqueo = bloqueoDeFila(c, monedaCuenta, marcados);");
-    expect(dialogo).toContain("const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo);");
+    expect(dialogo).toContain("const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo, optsDesc);");
     expect(dialogo).toContain("title={bloqueo ?? undefined}");
     expect(dialogo).not.toContain("title={desc}");
   });

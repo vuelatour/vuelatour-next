@@ -7,6 +7,7 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { FacturaConceptoChip } from "@/components/admin/conciliacion/factura-concepto-chip";
 import { textoBusquedaFacturaConcepto } from "@/lib/admin/conciliacion-factura-concepto";
+import { marcaLigaCruzada, sufijoMonedaLigada } from "@/lib/admin/conciliacion-tc";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
@@ -294,6 +295,12 @@ export function MovimientosTable({
           // cliente, 5-oct-2026): lo resuelve el API (`folio_comprobante`);
           // aquí solo se rotula. Sin él no se pinta nada.
           const factura = etiquetaFolioComprobante(gasto?.folio_comprobante);
+          // Compra en dólares pagada con este cargo en pesos (13-oct-2026,
+          // API 0.0.75): «$422.86 USD» y su T.C. contra el oficial del día;
+          // «⚠ …» ámbar si quedó fuera de lugar. Una fila en pesos (sufijo
+          // vacío y sin `tc_cruce`) queda byte a byte como antes.
+          const sufijoMoneda = sufijoMonedaLigada(gasto?.moneda);
+          const marcaTc = marcaLigaCruzada(m.tc_cruce);
           if (m.conciliado && tieneGastoLigado(m) && !gasto) {
             return (
               <span className="block text-sm text-emerald-600" title={TOOLTIP_LOTE_SIN_DETALLE}>
@@ -314,6 +321,7 @@ export function MovimientosTable({
               title="Ver el gasto con el que se concilió"
             >
               {categoriaGastoLabel(gasto.categoria)} · ${fmtMoney(gasto.monto)}
+              {sufijoMoneda ? sufijoMoneda : null}
               {gasto.vuelo?.folio != null && (
                 <span className="text-muted-foreground"> · vuelo #{gasto.vuelo.folio}</span>
               )}
@@ -326,6 +334,19 @@ export function MovimientosTable({
                   .filter(Boolean)
                   .join(" · ") || "Gasto conciliado"}
               </span>
+              {marcaTc && (
+                <span
+                  data-tc-cruce={marcaTc.tono}
+                  className={
+                    marcaTc.tono === "ambar"
+                      ? "block text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                      : "block text-[11px] text-muted-foreground"
+                  }
+                  title={marcaTc.titulo}
+                >
+                  {marcaTc.texto}
+                </span>
+              )}
               {factura && (
                 <span
                   className="block max-w-[240px] truncate text-[10px] font-medium text-muted-foreground"

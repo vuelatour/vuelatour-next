@@ -149,6 +149,12 @@ import {
   TITULO_COINCIDE_FACTURA,
   avisoFacturaEnCandidatos,
 } from "@/lib/admin/conciliacion-factura-concepto";
+import {
+  PLACEHOLDER_BUSCAR_GASTO_CON_USD,
+  apiCruzaConOficial,
+  avisoVincularCruzado,
+  lineaTcCandidato,
+} from "@/lib/admin/conciliacion-tc";
 import type { Gasto } from "@/types/expenses";
 import { cn } from "@/lib/utils";
 import type {
@@ -510,6 +516,10 @@ function SelectorGastos({
   // justificación (no cambia el medio de pago ni la caja del piloto).
   const [incluirNoBancarios, setIncluirNoBancarios] = useState(false);
   const [apiNoBancarios, setApiNoBancarios] = useState(false);
+  // Compras en DÓLARES contra el T.C. oficial (13-oct-2026, API 0.0.75):
+  // capacidad PEGAJOSA (la raíz `tc_oficial` viaja siempre desde ese API).
+  // Solo entonces, y en una cuenta en pesos, cambian el placeholder y la nota.
+  const [apiUsd, setApiUsd] = useState(false);
   const [textoJustificacion, setTextoJustificacion] = useState("");
   // La búsqueda que puso el interruptor (o «Mostrar estos gastos») y la de
   // antes: apagarlo la devuelve si nadie la tocó.
@@ -544,6 +554,8 @@ function SelectorGastos({
           if (r.data.factura_concepto?.texto) setFacturaCargo(r.data.factura_concepto.texto);
           // El API sabe incluir gastos en efectivo: aparece el interruptor.
           if (apiOfreceNoBancarios(r.data)) setApiNoBancarios(true);
+          // El API compara las compras en dólares contra el T.C. oficial.
+          if (apiCruzaConOficial(r.data)) setApiUsd(true);
         }
         setCarga({ clave, r });
       });
@@ -570,6 +582,12 @@ function SelectorGastos({
   const facturaConcepto = data?.factura_concepto ?? null;
   const avisoFactura = facturaConcepto ? avisoFacturaEnCandidatos(facturaConcepto, resultados) : null;
   const textoFactura = facturaConcepto?.texto ?? facturaCargo;
+  // En una cuenta en pesos el API también ofrece las compras en dólares
+  // (con su T.C. contra el oficial del día del cargo).
+  const cruzaUsd = apiUsd && monedaCuenta === "MXN";
+  // UN gasto en dólares marcado lejos del oficial: aviso ámbar y el botón
+  // dice «Vincular de todos modos» (NO bloquea: liga como siempre).
+  const avisoCruzado = avisoVincularCruzado(marcados);
   const filas = useMemo(
     () => listaConMarcadosPrimero(conSugeridoAlFrente(resultados, sugerido), marcados),
     [resultados, sugerido, marcados],
@@ -937,7 +955,7 @@ function SelectorGastos({
               id={idBuscar}
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder={PLACEHOLDER_BUSCAR_GASTO}
+              placeholder={cruzaUsd ? PLACEHOLDER_BUSCAR_GASTO_CON_USD : PLACEHOLDER_BUSCAR_GASTO}
               maxLength={LARGO_MAX_BUSQUEDA}
               autoComplete="off"
             />
@@ -986,10 +1004,14 @@ function SelectorGastos({
                   const marcado = marcados.some((m) => m.id === c.id);
                   const bloqueo = bloqueoDeFila(c, monedaCuenta, marcados);
                   const ficha = fichaCandidatoGasto(c);
-                  const desc = descripcionCandidatoGasto(ficha);
+                  // Un cruzado (USD contra la cuenta en pesos) lleva su T.C.
+                  // contra el oficial en una 3.ª línea propia (sin recortar).
+                  const lineaTc = lineaTcCandidato(c);
+                  const optsDesc = lineaTc ? { sinTc: true } : undefined;
+                  const desc = descripcionCandidatoGasto(ficha, optsDesc);
                   // El title del <span> tapa el del <label>: el tooltip de la
                   // descripción repite el MOTIVO del veto y lleva el folio entero.
-                  const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo);
+                  const tituloDesc = tituloDescripcionCandidatoGasto(ficha, bloqueo, optsDesc);
                   const esSugerido = c.id === sugerido?.id;
                   // Su folio es el número que dice el concepto del banco
                   // (API 0.0.75): ★ y su renglón, NUNCA una marca.
@@ -1028,6 +1050,22 @@ function SelectorGastos({
                             title={tituloDesc ?? undefined}
                           >
                             {desc}
+                          </span>
+                        )}
+                        {/* «T.C. 17.06 · oficial 17.01 (+0.3 %)»: ámbar si
+                            queda lejos del oficial o fuera de banda. */}
+                        {lineaTc && (
+                          <span
+                            data-tc-cruce={lineaTc.tono}
+                            className={cn(
+                              "block text-[11px]",
+                              lineaTc.tono === "ambar"
+                                ? "text-amber-700 dark:text-amber-400"
+                                : "text-muted-foreground",
+                            )}
+                            title={lineaTc.titulo}
+                          >
+                            {lineaTc.texto}
                           </span>
                         )}
                         {coincide && textoFactura && (
@@ -1081,6 +1119,16 @@ function SelectorGastos({
               <p className="text-[11px] text-muted-foreground">{estado.texto}</p>
             )}
             {suma && <p className={cn("text-xs font-medium", CLASE_TONO[suma.tono])}>{suma.texto}</p>}
+            {avisoCruzado && (
+              <div
+                role="status"
+                data-aviso-cruzado=""
+                className="space-y-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300"
+              >
+                <p>{avisoCruzado.texto}</p>
+                <p className="font-medium">{avisoCruzado.detalle}</p>
+              </div>
+            )}
             {hayNoBancarios && (
               <CampoJustificacion
                 id={idJustificacion}
@@ -1144,7 +1192,9 @@ function SelectorGastos({
           )}
 
         {!modoRespaldo && (
-          <p className="text-[11px] text-muted-foreground">{NOTA_VENTANA_CARGO(dias, incluirNoBancarios)}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {NOTA_VENTANA_CARGO(dias, incluirNoBancarios, cruzaUsd)}
+          </p>
         )}
       </div>
       <DialogFooter className="sm:justify-between">
@@ -1172,8 +1222,12 @@ function SelectorGastos({
               {pending ? TEXTO_VINCULANDO : botonVincularGastos(seleccionUnica ? 1 : 0)}
             </Button>
           ) : (
-            <Button onClick={vincular} disabled={pending || marcados.length === 0 || faltaJustificacion}>
-              {pending ? TEXTO_VINCULANDO : botonVincularGastos(marcados.length)}
+            <Button
+              className="cursor-pointer"
+              onClick={vincular}
+              disabled={pending || marcados.length === 0 || faltaJustificacion}
+            >
+              {pending ? TEXTO_VINCULANDO : avisoCruzado ? avisoCruzado.boton : botonVincularGastos(marcados.length)}
             </Button>
           )}
         </div>

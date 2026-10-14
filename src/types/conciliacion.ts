@@ -192,6 +192,18 @@ export interface MovimientoBancario {
   motivo_pendiente?: string | null;
   candidatos_n?: number | null;
   auto_match_error?: string | null;
+  /** ADITIVO (13-oct-2026, API 0.0.75): el texto de la regla USD↔MXN para
+      un CARGO pendiente de una cuenta en pesos («El gasto en USD de $422.86
+      USD daría T.C. 21.14 · oficial 17.01 (+24.3 %): fuera de ±2 %, no se
+      liga.»). Lo lee `motivoPendienteDe`: en AMBIGUO / SE_PUEDE_CRUZAR
+      reemplaza el texto genérico del tooltip; en SIN_CANDIDATOS se agrega. */
+  motivo_detalle?: string | null;
+  /** ADITIVO (13-oct-2026, API 0.0.75): CARGO con EXACTAMENTE una parte
+      cruzada (gasto en USD pagado con este cargo en pesos): su T.C.
+      implícito contra el T.C. OFICIAL del día del cargo. Ausente si la
+      lectura de oficiales falló. Lo pinta `marcaLigaCruzada`
+      (`lib/admin/conciliacion-tc.ts`): «⚠ …» ámbar si quedó fuera de lugar. */
+  tc_cruce?: TcCruceUsd | null;
   /** Conciliado por una REGLA automática (traspaso interno, comisión del
       banco…): el API deja `notas = 'Regla: <patrón>'`; este flag es el
       camino explícito si el API lo manda. */
@@ -354,6 +366,10 @@ export interface GastoCandidato {
       que dice el banco. Es una SEÑAL dentro de su nivel de monto: pinta ★ y
       su renglón, jamás marca ni preselecciona (el orden lo da el API). */
   coincide_factura?: boolean | null;
+  /** ADITIVO (13-oct-2026, API 0.0.75): candidato CRUZADO (gasto en USD
+      contra una cuenta en pesos) evaluado contra el T.C. OFICIAL del día del
+      cargo. Lo pinta `lineaTcCandidato` (tercera línea del candidato). */
+  tc_cruce?: TcCruceUsd | null;
 }
 
 /** Cargo del banco con el que YA está conciliado un gasto excluido (de la puente). */
@@ -435,6 +451,12 @@ export interface GastosCandidatosResponse {
       `excluidos`; null = no se pudo leer). Lo redacta
       `avisoFacturaEnCandidatos`. */
   factura_concepto?: FacturaConceptoCandidatos | null;
+  /** ADITIVO (13-oct-2026, API 0.0.75), SIEMPRE presente desde ese API:
+      T.C. oficial del día del cargo (null en cuentas no MXN, sin dato o con
+      lectura fallida). Su PRESENCIA es la capacidad del API
+      (`apiCruzaConOficial`, pegajosa): solo entonces el diálogo pinta el
+      placeholder y la nota de las compras en dólares. */
+  tc_oficial?: TcOficialDelDia | null;
 }
 
 /** Respuesta de `POST /v1/conciliacion/movimientos/:id/sugerir`. */
@@ -936,4 +958,63 @@ export interface VistaPreviaImportacion {
   nuevos_detalle: NuevoVistaPrevia[];
   /** ≤50. */
   enriquecibles_detalle: EnriquecimientoDetalle[];
+}
+
+// ===== Compras en dólares contra el T.C. oficial del día (13-oct-2026, API 0.0.75) =====
+//
+// La regla es del API (`auto-cruce.util.ts`): el panel solo PINTA lo que
+// manda (`lib/admin/conciliacion-tc.ts`, `lib/admin/pre-cierre-tc-usd.ts`).
+
+export type NivelTcCruce = "CERCA" | "LEJOS" | "SIN_OFICIAL";
+
+/** T.C. oficial del día del cargo (respaldo de hasta 7 días). */
+export interface TcOficialDelDia {
+  tc: number;
+  /** El día REAL del dato (`YYYY-MM-DD`). */
+  fecha_dato: string;
+  /** Legible: «open.er-api», «BCE (frankfurter)», «Banxico FIX (histórico)»… */
+  fuente: string;
+}
+
+/** COPIA 1:1 del `TcCruceUsd` del API (auto-cruce.util.ts). */
+export interface TcCruceUsd {
+  /** round6(|pesos del cargo| ÷ |dólares del gasto|). */
+  tc_implicito: number;
+  /** Cociente SIN redondear dentro de [15, 25] (el mismo criterio de la BD). */
+  en_banda: boolean;
+  tc_oficial: number | null;
+  tc_oficial_fecha: string | null;
+  tc_oficial_fuente: string | null;
+  /** 1 decimal; −0 ⇒ 0. */
+  desvio_pct: number | null;
+  nivel: NivelTcCruce;
+  /** La tolerancia de la regla (2). */
+  tolerancia_pct: number;
+  /** No en banda o nivel LEJOS. */
+  fuera_de_lugar: boolean;
+  /** «T.C. 17.06 · oficial 17.01 (+0.3 %)». */
+  texto: string;
+  /** El detalle exacto (T.C. de 6 decimales, oficial, fecha, fuente, tolerancia). */
+  titulo: string;
+}
+
+/** Item del pre-cierre `gastos_usd_tc_fuera_de_lugar` (= `LigaUsdTcFueraDeLugar` del API). */
+export interface LigaUsdTcPreCierre {
+  gasto_id: string;
+  fecha_gasto: string;
+  monto_usd: number;
+  tc_gasto: number | null;
+  categoria: string | null;
+  descripcion_gasto: string;
+  vuelo_id: string | null;
+  vuelo_folio: number | null;
+  movimiento_id: string;
+  fecha_cargo: string;
+  monto_cargo: number;
+  cuenta_bancaria_id: string;
+  cuenta: string | null;
+  descripcion_cargo: string | null;
+  tc_cruce: TcCruceUsd;
+  /** El renglón completo, ya redactado por el API. */
+  texto: string;
 }

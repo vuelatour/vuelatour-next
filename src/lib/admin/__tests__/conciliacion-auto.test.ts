@@ -15,6 +15,7 @@ import {
   resumenAutoMatch,
   resumenImportJob,
   textoConfianza,
+  tituloDescripcionCandidatoGasto,
   tonoMotivo,
 } from "@/lib/admin/conciliacion-auto";
 
@@ -529,6 +530,74 @@ describe("resumenImportJob: concepto del SPEI (13-oct-2026, API 0.0.75)", () => 
     );
     expect(resumenImportJob({ estado: "ERROR", importados: 0, enriquecidos: 1 }).descripcion).toBe(
       "No se alcanzó a importar ningún movimiento. A 1 movimiento que ya estaba se le completó el concepto antes del error. ",
+    );
+  });
+});
+
+describe("T.C. oficial del día en la línea del candidato y en el motivo (13-oct-2026, API 0.0.75)", () => {
+  const tubo = {
+    id: "2d37d95e",
+    monto: "422.86",
+    moneda: "USD",
+    tc_implicito: 17.060351,
+    cruzado: true,
+    notas_primera_linea: "Aircraft Spruce",
+  };
+  const tcCruce = {
+    tc_implicito: 17.060351,
+    en_banda: true,
+    tc_oficial: 17.0077,
+    tc_oficial_fecha: "2026-09-01",
+    tc_oficial_fuente: "open.er-api",
+    desvio_pct: 0.3,
+    nivel: "CERCA" as const,
+    tolerancia_pct: 2,
+    fuera_de_lugar: false,
+    texto: "T.C. 17.06 · oficial 17.01 (+0.3 %)",
+    titulo: "T.C. exacto 17.060351 …",
+  };
+
+  it("sin `tc_cruce` ni opciones, la salida es la de antes (golden)", () => {
+    expect(descripcionCandidatoGasto(tubo)).toBe("Aircraft Spruce · T.C. 17.06");
+    expect(
+      descripcionCandidatoGasto({ id: "b", monto: "2801.40", moneda: "MXN", tarjeta_terminacion: "4929", folio_comprobante: "A-0411", lugar: "CUN" }),
+    ).toBe("Tarjeta ****4929 · Factura A-0411 · CUN");
+    expect(tituloDescripcionCandidatoGasto(tubo, "veto")).toBe("veto\nAircraft Spruce · T.C. 17.06");
+  });
+
+  it("con `tc_cruce` la pieza del T.C. es el texto del API; `sinTc` la quita (va en la 3.ª línea)", () => {
+    expect(descripcionCandidatoGasto({ ...tubo, tc_cruce: tcCruce })).toBe(
+      "Aircraft Spruce · T.C. 17.06 · oficial 17.01 (+0.3 %)",
+    );
+    expect(descripcionCandidatoGasto({ ...tubo, tc_cruce: tcCruce }, { sinTc: true })).toBe("Aircraft Spruce");
+    expect(tituloDescripcionCandidatoGasto({ ...tubo, tc_cruce: tcCruce }, null, { sinTc: true })).toBe("Aircraft Spruce");
+    expect(descripcionCandidatoGasto(tubo, { sinTc: true })).toBe("Aircraft Spruce");
+  });
+
+  it("motivo_detalle REEMPLAZA en AMBIGUO y SE_PUEDE_CRUZAR, se AGREGA en SIN_CANDIDATOS y se ignora en ERROR", () => {
+    const det = "El gasto en USD de $422.86 USD daría T.C. 21.14 · oficial 17.01 (+24.3 %): fuera de ±2 %, no se liga.";
+    expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "AMBIGUO", motivo_detalle: det })?.detalle).toBe(det);
+    expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "SE_PUEDE_CRUZAR", motivo_detalle: det })?.detalle).toBe(det);
+    expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "SIN_CANDIDATOS", motivo_detalle: det })?.detalle).toBe(
+      `No hay ningún gasto sin conciliar que cuadre con este movimiento en la ventana de fechas. Captura el gasto, amplía la ventana de la cuenta o clasifícalo si no es de un vuelo. ${det}`,
+    );
+    expect(
+      motivoPendienteDe({ conciliado: false, motivo_pendiente: "ERROR", auto_match_error: "boom", motivo_detalle: det })?.detalle,
+    ).toBe(
+      "El cruce automático de este movimiento falló. Los demás sí se procesaron: vuelve a intentarlo con «Cruzar pendientes» o vincúlalo a mano. Detalle: boom",
+    );
+  });
+
+  it("sin `motivo_detalle` (o vacío) el motivo es el de antes", () => {
+    expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "AMBIGUO", candidatos_n: 3, motivo_detalle: "  " })).toEqual({
+      codigo: "AMBIGUO",
+      etiqueta: "Ambiguo entre 3",
+      detalle:
+        "Más de un gasto cuadra con este movimiento: el sistema NO liga cuando hay duda. Vincúlalo a mano (o pide la sugerencia con IA).",
+      candidatos: 3,
+    });
+    expect(motivoPendienteDe({ conciliado: false, motivo_pendiente: "SE_PUEDE_CRUZAR" })?.detalle).toBe(
+      "Hay UN gasto que cuadra en monto, fecha y moneda: el cruce automático todavía no ha corrido sobre este movimiento. Pulsa «Cruzar pendientes» (o vincúlalo tú desde el menú).",
     );
   });
 });

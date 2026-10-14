@@ -24,6 +24,7 @@ import {
 } from "@/lib/admin/conciliacion-parcial";
 import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { fmtDateOnly } from "@/lib/datetime";
+import type { TcCruceUsd } from "@/types/conciliacion";
 
 // ───────────────────────── Motivo de «Pendiente» ─────────────────────────
 
@@ -138,6 +139,10 @@ export interface MovimientoPendienteInfo {
   candidatos_n?: number | string | null;
   /** Mensaje del error que tumbó el cruce de ESTE movimiento (aditivo). */
   auto_match_error?: string | null;
+  /** El texto de la regla USD↔MXN (13-oct-2026, API 0.0.75, aditivo): en
+      AMBIGUO / SE_PUEDE_CRUZAR REEMPLAZA el texto genérico del tooltip; en
+      SIN_CANDIDATOS se AGREGA tras el de siempre; en ERROR se ignora. */
+  motivo_detalle?: string | null;
 }
 
 export interface MotivoPendiente {
@@ -209,7 +214,16 @@ export function motivoPendienteDe(
     etiqueta = `Ambiguo entre ${candidatos}`;
   }
   const error = (m.auto_match_error ?? "").toString().trim();
-  const detalle = codigo === "ERROR" && error ? `${base.detalle} Detalle: ${error}` : base.detalle;
+  let detalle = codigo === "ERROR" && error ? `${base.detalle} Detalle: ${error}` : base.detalle;
+  // La regla USD↔MXN (13-oct-2026, API 0.0.75) dice POR QUÉ con sus números
+  // («…daría T.C. 21.14 · oficial 17.01 (+24.3 %): fuera de ±2 %…»): en
+  // AMBIGUO y SE_PUEDE_CRUZAR es mejor que el texto genérico; en
+  // SIN_CANDIDATOS completa el de siempre; un ERROR conserva el suyo.
+  const motivoDetalle = (m.motivo_detalle ?? "").toString().trim();
+  if (motivoDetalle) {
+    if (codigo === "AMBIGUO" || codigo === "SE_PUEDE_CRUZAR") detalle = motivoDetalle;
+    else if (codigo === "SIN_CANDIDATOS") detalle = `${base.detalle} ${motivoDetalle}`;
+  }
   return { codigo, etiqueta, detalle, candidatos };
 }
 
@@ -624,6 +638,16 @@ export interface GastoCandidatoConciliacion {
   faltante?: string | number | null;
   /** Número de factura (API 0.0.57, aditivo): lo rotula `etiquetaFolioComprobante`. */
   folio_comprobante?: string | null;
+  /** Gasto en USD contra cuenta en pesos evaluado contra el T.C. OFICIAL del
+      día del cargo (13-oct-2026, API 0.0.75, aditivo): su texto reemplaza al
+      «T.C. 17.06» crudo de la segunda línea. */
+  tc_cruce?: TcCruceUsd | null;
+}
+
+/** Opciones de la segunda línea del candidato. */
+export interface OpcionesDescripcionCandidato {
+  /** true = el T.C. va en OTRA línea (la 3.ª de «Vincular gasto»): aquí no se repite. */
+  sinTc?: boolean;
 }
 
 /** Primera línea (no vacía) de un texto multilínea. */
@@ -655,8 +679,11 @@ export function etiquetaCandidatoGasto(g: GastoCandidatoConciliacion): string {
  * pronto porque la línea se recorta), lugar/nota (lo que casa con la
  * descripción del banco), matrícula, vuelo, pago parcial y T.C. implícito.
  */
-export function descripcionCandidatoGasto(g: GastoCandidatoConciliacion): string | null {
-  return lineaDescripcionCandidato(g, etiquetaFolioComprobante);
+export function descripcionCandidatoGasto(
+  g: GastoCandidatoConciliacion,
+  opts: OpcionesDescripcionCandidato = {},
+): string | null {
+  return lineaDescripcionCandidato(g, etiquetaFolioComprobante, opts);
 }
 
 /**
@@ -673,19 +700,27 @@ export function descripcionCandidatoGasto(g: GastoCandidatoConciliacion): string
 export function tituloDescripcionCandidatoGasto(
   g: GastoCandidatoConciliacion,
   bloqueo?: string | null,
+  opts: OpcionesDescripcionCandidato = {},
 ): string | null {
   const motivo = typeof bloqueo === "string" && bloqueo.trim().length > 0 ? bloqueo.trim() : null;
-  const partes = [motivo, lineaDescripcionCandidato(g, tituloFolioComprobante)].filter(Boolean);
+  const partes = [motivo, lineaDescripcionCandidato(g, tituloFolioComprobante, opts)].filter(Boolean);
   return partes.length > 0 ? partes.join("\n") : null;
 }
 
-/** La segunda línea con el folio rotulado por `rotularFolio` (corto o completo). */
+/**
+ * La segunda línea con el folio rotulado por `rotularFolio` (corto o
+ * completo). La pieza del T.C. (13-oct-2026): el texto del API contra el
+ * oficial (`tc_cruce.texto`) o, con un API previo, el «T.C. 17.06» crudo;
+ * ninguna con `opts.sinTc` (el diálogo la pinta en su 3.ª línea).
+ */
 function lineaDescripcionCandidato(
   g: GastoCandidatoConciliacion,
   rotularFolio: (folio: string | null | undefined) => string | null,
+  opts: OpcionesDescripcionCandidato = {},
 ): string | null {
   const nota = primeraLinea(g.notas_primera_linea ?? g.notas);
   const tc = numeroDe(g.tc_implicito);
+  const piezaTc = opts.sinTc ? null : (g.tc_cruce?.texto ?? (tc > 0 ? `T.C. ${tc.toFixed(2)}` : null));
   const partes = [
     g.tarjeta_terminacion ? `Tarjeta ****${g.tarjeta_terminacion}` : null,
     rotularFolio(g.folio_comprobante),
@@ -700,7 +735,7 @@ function lineaDescripcionCandidato(
       monto_vinculado: g.monto_vinculado,
       faltante: g.faltante,
     }),
-    tc > 0 ? `T.C. ${tc.toFixed(2)}` : null,
+    piezaTc,
     g.conciliado === true && !g.faltante ? "ya cubierto por el banco" : null,
   ].filter(Boolean) as string[];
   return partes.length > 0 ? partes.join(" · ") : null;

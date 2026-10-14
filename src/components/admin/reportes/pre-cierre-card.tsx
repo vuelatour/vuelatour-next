@@ -44,6 +44,13 @@ import {
   chipVueloSinFactura,
   hrefPrecierreVuelosSinFactura,
 } from "@/lib/admin/pre-cierre-factura";
+import {
+  CLAVE_PRECIERRE_LIGAS_USD_TC,
+  ETIQUETA_VER_CARGO,
+  hrefLigasUsdTcPeriodo,
+  lineasLigasUsdTc,
+} from "@/lib/admin/pre-cierre-tc-usd";
+import type { LigaUsdTcPreCierre } from "@/types/conciliacion";
 
 interface PreCierreVuelo {
   id: string;
@@ -123,6 +130,12 @@ interface PreCierreItem {
   /** ADITIVO (mismos items, API 0.0.50): el MES del cierre (`YYYY-MM`) con
       el que el API contó las utilidades «hasta». */
   mes?: string;
+  /** ADITIVOS (gastos_usd_tc_fuera_de_lugar, 13-oct-2026, API 0.0.75, NO
+      bloquea): cada gasto en dólares conciliado con un cargo en pesos cuyo
+      T.C. queda lejos del oficial del día del cargo, ya redactado; y cuántos
+      no se pudieron revisar (sin T.C. oficial de su día). */
+  ligas?: LigaUsdTcPreCierre[];
+  sin_verificar?: number;
 }
 
 interface PreCierre {
@@ -188,6 +201,10 @@ const LINK_POR_CLAVE: Record<
   // factura del aeropuerto se corrige en Gastos → «Verificar / editar»
   // («TUA incluida en este gasto»); los chips #folio llevan a cada vuelo.
   tua_cobrada_sin_pagada: () => "/admin/expenses",
+  // Gastos en dólares con un T.C. fuera de lugar (13-oct-2026, API 0.0.75,
+  // NO bloquea): se revisan en Conciliación, pestaña conciliados, del
+  // periodo (cada renglón lleva además su cargo y su vuelo).
+  [CLAVE_PRECIERRE_LIGAS_USD_TC]: hrefLigasUsdTcPeriodo,
 };
 
 function fmtMonto(item: PreCierreItem): string | null {
@@ -300,6 +317,12 @@ export async function PreCierreCard({
                 : null;
             // Con la lista del panel, el `detalle` del API la repetiría.
             const ocultarDetalle = esSocios && sociosLineas.lineas.length > 0;
+            // Gastos en dólares con un T.C. fuera de lugar: un renglón por liga
+            // (texto del API) con el cargo y el vuelo; «y N más…» contra `count`.
+            const ligasUsd =
+              item.clave === CLAVE_PRECIERRE_LIGAS_USD_TC
+                ? lineasLigasUsdTc(item.ligas, item.count)
+                : { lineas: [], restantes: 0 };
             return (
               <div
                 key={item.clave}
@@ -445,6 +468,31 @@ export async function PreCierreCard({
                     <p className="text-[11px] text-muted-foreground mt-1" data-nota-precierre-socios>
                       {notaSocios}
                     </p>
+                  )}
+                  {ligasUsd.lineas.length > 0 && (
+                    <ul className="text-xs mt-1 space-y-1" data-precierre-ligas-usd>
+                      {ligasUsd.lineas.map((l) => (
+                        <li key={l.key} className="text-muted-foreground">
+                          <span title={l.titulo}>{l.texto}</span>{" "}
+                          <Link
+                            href={l.hrefConciliacion}
+                            className="cursor-pointer underline underline-offset-2 hover:text-foreground"
+                          >
+                            {ETIQUETA_VER_CARGO}
+                          </Link>
+                          {" · "}
+                          <Link
+                            href={l.hrefGasto}
+                            className="cursor-pointer underline underline-offset-2 hover:text-foreground"
+                          >
+                            {l.etiquetaGasto}
+                          </Link>
+                        </li>
+                      ))}
+                      {ligasUsd.restantes > 0 && (
+                        <li className="text-muted-foreground">y {ligasUsd.restantes} más…</li>
+                      )}
+                    </ul>
                   )}
                   {/* Grupos con saldo: total / cobrado / saldo por grupo
                       (montos del API) con link al detalle del grupo. */}

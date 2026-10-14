@@ -49,6 +49,7 @@ import {
   type RespuestaVinculoGasto,
 } from "@/lib/admin/conciliacion-parcial";
 import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
+import { NOTA_COMPRAS_USD } from "@/lib/admin/conciliacion-tc";
 import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
 import { MEDIO_PAGO_LABELS, medioPagoLabel } from "@/lib/admin/medios-pago";
 import {
@@ -590,12 +591,16 @@ export function textoAmpliarVentana(dias: number): string {
  * (revisión: «sin búsqueda, primero los que cuadran con su monto» era falso
  * para los de efectivo, que el API pone detrás de los del banco y la lista
  * corta en 100: podían ni salir). No promete un orden: lo decide el API.
+ * Con `cruzaUsd` (13-oct-2026, cuenta en pesos con un API 0.0.75) agrega
+ * que también salen las compras en dólares (`NOTA_COMPRAS_USD`); sin el 3.er
+ * argumento el texto es byte a byte el de antes.
  */
-export function NOTA_VENTANA_CARGO(dias: number, incluyeNoBancarios = false): string {
+export function NOTA_VENTANA_CARGO(dias: number, incluyeNoBancarios = false, cruzaUsd = false): string {
+  const usd = cruzaUsd ? NOTA_COMPRAS_USD : "";
   if (incluyeNoBancarios) {
-    return `Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±${dias} días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
+    return `Gastos sin conciliar del banco (tarjeta, transferencia, PayWise) y en efectivo u otros medios (nunca bodega), en la moneda de la cuenta y con fecha ±${dias} días del cargo; los de efectivo pueden quedar al final de la lista: para encontrar uno, búscalo por su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.${usd}`;
   }
-  return `Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.`;
+  return `Gastos bancarios (tarjeta, transferencia, PayWise) sin conciliar, en la moneda de la cuenta y con fecha ±${dias} días del cargo; sin búsqueda, primero los que cuadran con su monto. Si el cargo pagó varias facturas, márcalas todas: deben sumar el cargo.${usd}`;
 }
 
 /** Hubo más candidatos que el tope: la búsqueda los encuentra. */
