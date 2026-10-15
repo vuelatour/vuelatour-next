@@ -327,7 +327,10 @@ describe("Por facturar", () => {
     const html = renderToStaticMarkup(
       <PorFacturarTable items={[item]} rol="FACTURACION" resaltar={VUELO} syncId="pfy" yaNoAplican />,
     );
-    expect(html).toContain("Registrar factura");
+    // Revisión del 15-oct-2026: lo VISIBLE es «Retirar solicitud» (lo que pide la
+    // tarjeta); «Registrar factura» queda en el ⋯ (cerrado no se pinta).
+    expect(html).toMatch(/<button[^>]*cursor-pointer[^>]*>[\s\S]{0,400}Retirar solicitud<\/button>/);
+    expect(html).not.toContain("Registrar factura");
     expect(html).toContain("Más acciones del vuelo #341");
     expect(html).toContain("ring-amber-400");
     const pagina = leerFuente("../../../../app/admin/facturas-emitidas/page.tsx");
@@ -339,6 +342,23 @@ describe("Por facturar", () => {
     expect(pagina).toMatch(/items=\{yaNoAplican\}[\s\S]{0,200}resaltar=\{filtros\.resaltar\}[\s\S]{0,200}syncId="pfy"\s*yaNoAplican\s*\/>/);
     // Las tres tarjetas resaltan la fila del aviso.
     expect(pagina.match(/resaltar=\{filtros\.resaltar\}/g)?.length).toBe(3);
+  });
+
+  it("ya no aplican: COORDINADOR la retira (sin ⋯: no registra) y jamás se sugiere «Ligar a…» (un anticipo devuelto no lleva CFDI)", () => {
+    const coord = renderToStaticMarkup(<PorFacturarTable items={[item]} rol="COORDINADOR" syncId="pfy" yaNoAplican />);
+    expect(coord).toContain("Retirar solicitud");
+    expect(coord).not.toContain("Más acciones del vuelo #341");
+    const conFactura = renderToStaticMarkup(
+      <PorFacturarTable items={[conSugerencia]} rol="FACTURACION" syncId="pfy" yaNoAplican />,
+    );
+    expect(conFactura).not.toContain("El cliente ya tiene registrada la factura A-0440");
+    expect(conFactura).not.toContain("Ligar a A-0440");
+    // En «Por facturar» la sugerencia sigue.
+    expect(renderToStaticMarkup(<PorFacturarTable items={[conSugerencia]} rol="FACTURACION" />)).toContain("Ligar a A-0440");
+    const fuente = leerFuente("../por-facturar-table.tsx");
+    expect(fuente).toContain("{(yaNoAplican ? [] : (it.facturas_del_cliente ?? [])).slice(0, MAX_FACTURAS_DEL_CLIENTE).map((f) => (");
+    // «Registrar factura» de la tarjeta vive en el ⋯ con su cursor.
+    expect(fuente).toMatch(/<DropdownMenuItem onClick=\{\(\) => abrirRegistrar\(it\)\} className="cursor-pointer gap-2">/);
   });
 
   it("«Retirar solicitud» confirma con el texto de SU tarjeta y la llamada nunca tumba la pantalla (cableado: el diálogo es un portal)", () => {

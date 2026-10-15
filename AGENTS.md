@@ -3581,6 +3581,13 @@ diferencia_cambiaria?: true` y el renglón BLOQUEANTE `permisos_sin_avion`.
   `syncId="pfy"` y el `resaltar` de los avisos (las TRES tarjetas resaltan la
   fila). Solo con el arreglo presente y no vacío; si «Por facturar» no se
   pudo leer, la tarjeta de error de siempre (nunca «nada pendiente»).
+  Revisión del 15-oct-2026: en esa tarjeta lo VISIBLE es «Retirar solicitud»
+  (lo que la tarjeta pide, con su confirmación de siempre), «Registrar
+  factura» pasa al ⋯ (solo facturación) y NO se sugiere «Ligar a A-0440» (un
+  anticipo devuelto no lleva CFDI y su confirmación diría que el vuelo sale de
+  «Por facturar», donde no está). En la burbuja, con la solicitud que ya no
+  aplica, «Retirar» es el botón principal (outline) y «Registrar factura» va
+  en segundo plano (ghost).
 - **«Retirar» dice lo que pasa** (`descripcionRetirarSolicitud` /
   `textoSolicitudRetirada`, PUROS; prop `yaNoAplican` de `PorFacturarTable`
   y el `yaNoAplica` de la burbuja): la confirmación de siempre dice «El
@@ -8666,24 +8673,29 @@ Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
   `conciliacion-seleccion`, nunca al revés. Paridad con el API (nombre
   canónico, topes, textos del DTO) cuando el repo hermano está al lado.
 - **Tabla** (`movimientos-table.tsx`, prop ADITIVA `seleccion {vista,
-  monedaPorCuenta}`): columna `sel` PRIMERA (casilla NATIVA solo en filas
+  monedaPorCuenta}` y, desde el 15-oct, `monedaPorCuenta` PROPIA para todas
+  las pestañas): columna `sel` PRIMERA (casilla NATIVA solo en filas
   seleccionables, `aria-label` único de `etiquetaCasillaMovimiento`; marcada,
-  se tiñe la CELDA con una capa absoluta —la línea `rowClassName` no se
-  toca—); botón «Seleccionar los N pendientes de la búsqueda / de la lista»
-  arriba (REEMPLAZA la selección con lo que deja la búsqueda en todas las
-  páginas ∩ seleccionables, las 200 más recientes como máximo) y «Quitar
+  la CELDA se tiñe con su FONDO —`has-checked:bg-brand-50
+  dark:has-checked:bg-brand-900/30` en el `cellClassName`, debajo de la marca
+  de la fila activa—; la línea `rowClassName` no se toca); grupo «Selección
+  de movimientos» arriba con «Seleccionar los N pendientes de la búsqueda /
+  de la lista» (SUMA a lo marcado lo que deja la búsqueda en todas las
+  páginas ∩ seleccionables; con todas ya marcadas se queda montado con
+  `aria-disabled` y dice «Los N … ya están seleccionados») y «Quitar
   selección»; `alCambiarFiltradas` solo con la selección; rama «Omitido»
   (badge gris + motivo, tooltip «Omitido por … el …: …») ANTES de la de
-  clasificación; `searchText` con «Omitido <motivo> <por>»; espaciador `h-24`
-  mientras se ve la barra. Sin selección devuelve la `DataTable` TAL CUAL
-  (sin envoltura: cambiaría los ids de `useId` del ⋯).
+  clasificación; `searchText` con «Omitido <motivo> <por>»; hueco al final
+  del alto MEDIDO de la barra mientras se ve. Sin selección devuelve la
+  `DataTable` TAL CUAL (sin envoltura: cambiaría los ids de `useId` del ⋯).
 - **Barra** (`barra-seleccion-movimientos.tsx`): región «Movimientos
-  seleccionados», fija abajo al centro (z-40, bajo los diálogos), conteo en
-  `aria-live`. No decide: lee los helpers; ningún botón se apaga por regla de
-  negocio (el motivo se ve y el clic lo repite en `toast.info`). Lista:
-  «Vincular a un gasto…», «Omitir…» y «Limpiar»; Omitidos: «Deshacer la
-  omisión…» y «Limpiar». Los diálogos los monta la TABLA con una copia
-  CONGELADA de la selección.
+  seleccionados», fija abajo al centro (z-40, bajo los diálogos), ANTES de la
+  tabla en el DOM; el conteo NO es región viva (la permanente vive en la
+  tabla) y reporta su alto (`alMedir`). No decide: lee los helpers; ningún
+  botón se apaga por regla de negocio (el motivo se ve y el clic lo repite en
+  `toast.info`). Lista: «Vincular a un gasto…», «Omitir…» y «Limpiar»;
+  Omitidos: «Deshacer la omisión…» y «Limpiar». Los diálogos los monta la
+  TABLA con una copia CONGELADA de la selección.
 - **«Vincular a un gasto…»** (paso 3c, invariante 76): con UN cargo la tabla
   abre el «Vincular gasto» de siempre (`vincular-gasto-dialog.tsx`, sin
   editarlo); con 2..50 cargos de UNA moneda (la barra ya lo exige con sus
@@ -8815,8 +8827,10 @@ Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
 - **«Clasificar»** (de paso): el selector filtra la canónica, la lectura
   caída dice «No se pudieron cargar las clasificaciones: cierra y vuelve a
   abrir.» (nunca «Aún no hay clasificaciones») y, con el API nuevo, manda
-  `esperado_clasificacion_id` (lo que el panel VIO); 409 MOVIMIENTO_CAMBIO /
-  MOVIMIENTO_OMITIDO ⇒ el texto del API, cerrar y refresh.
+  `esperado_clasificacion_id` (lo que el panel VIO, CAPTURADO al abrir el
+  diálogo o la confirmación de «Quitar clasificación»; regla PURA
+  `esperadoClasificacionDe`); 409 MOVIMIENTO_CAMBIO / MOVIMIENTO_OMITIDO ⇒
+  el texto del API, cerrar y refresh.
 - **Pruebas**: `lib/admin/__tests__/conciliacion-seleccion.test.ts`,
   `conciliacion-omision.test.ts`, `conciliacion-cargos-gasto.test.ts` (con
   el paso 4 y su paridad con el API),
@@ -8829,6 +8843,94 @@ Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
   action con y sin la llave) y
   `components/admin/expenses/__tests__/alta-con-cargos-ui.test.tsx` (golden
   `alta-gasto.golden.json` del alta sin las props + el modo con los cargos).
+
+### Revisión adversaria (15-oct-2026)
+
+Hallazgos corregidos (API 0.0.77 sin cambios; ningún número del dinero se
+mueve):
+
+- **Vincular N cargos sin una confirmación falsa** (alta): el gasto elegido
+  se guarda CON los cargos para los que el API calculó su ficha
+  (`ElegidoSuma {idsClave, candidato}`; `fichaElegidaVigente` la da por
+  buena solo con los MISMOS cargos). «Quitar ese cargo de la selección» lo
+  suelta (`setElegido(null)`): con otra suma su `resultado` decía «queda
+  cubierto» cuando el API lo dejaba PARCIAL. «Vincular los N cargos» no llama
+  al API con la lista cargándose, sin gasto de estos cargos o sin el resumen
+  a la vista (`motivoNoVincularCargos`: «Espera a que termine de cargar la
+  lista de gastos.» / «Elige el gasto…» / «Espera a que se actualice la suma
+  de los cargos y vuelve a elegir el gasto.»); el botón nunca se apaga. Con
+  un cargo, los textos van en singular («Vincular 1 cargo a un gasto»,
+  «1 cargo seleccionado», «Vincular el cargo»); «¿No está el gasto? Créalo…»
+  y «Ampliar a ±120 días» con `dark:text-brand-400` (≥ 4.5:1 en oscuro).
+- **La PODA es de verdad** (`podaSeleccion`, ajuste guardado en el render:
+  `if (poda.sel !== sel) setSel(poda.sel)`): lo marcado que deja de calificar
+  SALE de la selección. Antes solo se escondía y, con «Deshacer» del toast,
+  «Deshacer la omisión…» o «Desvincular gasto», la fila reaparecía MARCADA y
+  el siguiente «Omitir…» la incluía. Lo retirado se dice en la barra y en la
+  región viva hasta la siguiente acción del operador.
+- **«Seleccionar los N…» SUMA** (`seleccionarTodas(filas, sel, vista)`):
+  reemplazaba y soltaba en silencio lo marcado en otra búsqueda. El tope de
+  200 cuenta lo ya marcado (`estadoSeleccionarTodas().cupo`); «ya están
+  todas» es SUBCONJUNTO, no igualdad.
+- **Foco** (teclado y lector): el grupo de herramientas está SIEMPRE montado
+  (`role="group"`, `tabIndex=-1`) y es el lugar estable. «Quitar selección» y
+  «Limpiar» llevan el foco a «Seleccionar los N…» (o al grupo); los tres
+  diálogos de la barra van con `finalFocus={false}` y la tabla, DESPUÉS del
+  commit (un efecto que lee `focoPendienteRef`), devuelve el foco al botón
+  que los abrió si sigue ahí (cancelar) o al grupo (éxito: el refresh puede
+  quitar las filas). Si la barra desaparece sola con el foco en <body> (la
+  poda tras «Vincular gasto» de UN cargo), también al grupo.
+- **Región viva PERMANENTE** (`<p aria-live="polite" aria-atomic="true"
+  class="sr-only">` dentro del grupo, `textoAnuncioSeleccion`): una región que
+  nace ya con su texto no se anuncia (NVDA + Chrome): la primera selección,
+  «Seleccionar los N…» y el vaciado («Ningún movimiento seleccionado.») ahora
+  se oyen.
+- **La barra no tapa**: se mide con un ResizeObserver (74 px en escritorio,
+  hasta 170 px en teléfono) y su alto + 32 px (`huecoBarraSeleccionPx`) da el
+  hueco al final de la tabla y, mientras se ve, el `scroll-padding-bottom`
+  del documento (efecto con limpieza): el `scrollIntoView` de ↑/↓ deja la
+  fila activa ENCIMA de la barra (simulado en Chrome: de 33/57 px tapados por
+  paso a 0, y el paginado del teléfono libre). La barra va ANTES de la tabla
+  en el DOM: sus acciones siguen al grupo en el orden del Tab.
+- **Celda marcada**: el tinte es `background-color` de la celda; la capa
+  absoluta de antes se pintaba ENCIMA de la sombra de la fila activa y la
+  barra roja bajaba a 2.4:1 (medido en Chrome con el CSS compilado: ahora
+  3.14:1 contra la celda y 4.0:1 contra la card).
+- **«Clasificar»**: el esperado se captura al abrir (un `router.refresh()`
+  con el diálogo abierto —RefreshOnFocus— lo cambiaba y el 409 nunca
+  saltaba: se pisaba el cambio de otra persona o se deshacía una omisión
+  ajena) y NO viaja para un movimiento conciliado SIN clasificación (con
+  `null` el API respondía 409 siempre y esa fila ya no se podía clasificar).
+- **Omitir**: «Quitar esos N de la selección» de la revisión marca el refresh
+  al cerrar (las filas que ya no estaban pendientes se quedaban como
+  «Pendiente»); el aviso de «todos con aviso» sabe si hay selección
+  (`textoFaltaAceptarRiesgos`: desde el ⋯, «Este movimiento tiene aviso: …
+  o cancela.»).
+- **Vincular con UN cargo sin la moneda de las cuentas**: aplica (el diálogo
+  de siempre la lee del API); el motivo «No se pudo leer la moneda…» solo con
+  2 o más.
+- **Moneda en «Conciliados»**: «Deshacer la omisión…» del ⋯ de una omitida
+  decía «$19.72» de un cargo en dólares; la página pasa `monedaPorCuenta` a
+  la tabla en todas las pestañas.
+- **Pre-cierre**: el renglón INFORMATIVO `movimientos_omitidos` del API lleva
+  «Revisar los omitidos →» a Conciliación → «Omitidos» DEL PERIODO
+  (`lib/admin/pre-cierre-omitidos.ts`; sin las fechas no cuadraba con el
+  «· N»).
+- **Pruebas**: `conciliacion-seleccion.test.ts` (SUMA, subconjunto y cupo,
+  la poda pendiente → omitida → pendiente, UN cargo sin moneda, región viva,
+  hueco), `conciliacion-omision.test.ts` (`textoFaltaAceptarRiesgos`,
+  `esperadoClasificacionDe`), `conciliacion-cargos-gasto.test.ts`
+  (singulares, `fichaElegidaVigente`, `motivoNoVincularCargos`),
+  `seleccion.test.tsx` (grupo y región viva, celda, cableado de la poda, el
+  foco, la barra antes de la tabla, la moneda y —fuera de
+  `filas-activas-cableado.test.ts`, que no se toca— el `tipoEntrada` del
+  hook), `omitir.test.tsx`, `vincular-cargos.test.tsx`,
+  `pre-cierre-omitidos.test.ts(x)`.
+- **No hecho**: el «Vincular gasto» de UN cargo abierto desde la barra no
+  recibe `finalFocus` (es `vincular-gasto-dialog.tsx`); la red de seguridad
+  del foco lo cubre cuando la barra desaparece. El texto de «¿Ligar la
+  factura…?» en la tarjeta de los marcados (`pfm`) sigue diciendo «sale de
+  «Por facturar»» (anterior a este lote).
 
 ## Repartir entre aviones desde «Verificar / editar» (14-oct-2026)
 

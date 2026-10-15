@@ -6,6 +6,15 @@
  * debajo de los diálogos (z-40 < z-50) y sin scroll horizontal a 360 px (los
  * botones se acomodan con `flex-wrap`).
  *
+ * Revisión del 15-oct-2026: el conteo YA NO es la región viva (nacía junto
+ * con la barra, ya con su texto, y el lector no anunciaba la primera
+ * selección): la región `aria-live` permanente vive en la tabla. La barra
+ * reporta su alto REAL (`alMedir`, ResizeObserver): la tabla reserva ese
+ * hueco y el `scroll-padding-bottom` del documento para que la barra no tape
+ * el paginado ni la fila activa. La tabla la monta ANTES de la tabla en el
+ * DOM (sigue `fixed`): en el orden del Tab sus acciones siguen al grupo de
+ * herramientas de arriba, no a todas las filas y al paginado.
+ *
  * La barra NO decide nada: el resumen por tipo y moneda (guía visual en
  * centavos; la suma que decide la calcula el API) y qué acción aplica salen
  * de `lib/admin/conciliacion-seleccion.ts`. Ningún botón se apaga por una
@@ -14,7 +23,7 @@
  * monta la tabla (con una copia congelada de la selección), no la barra.
  */
 
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ArrowUturnLeftIcon, LinkIcon, NoSymbolIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
@@ -42,11 +51,23 @@ export interface BarraSeleccionMovimientosProps {
   onLimpiar: () => void;
   /** «Vincular a un gasto…» (varios cargos → un gasto): sin él no se ofrece. */
   onVincular?: () => void;
+  /** El alto REAL de la barra (cambia con el ancho y con los motivos): la tabla reserva ese hueco. Debe ser estable (un setter de estado). */
+  alMedir?: (alto: number) => void;
 }
 
 export function BarraSeleccionMovimientos(p: BarraSeleccionMovimientosProps) {
   const acciones = accionesDeSeleccion(p.resumen, p.vista);
   const retirada = textoSeleccionRetirada(p.retirados, p.vista);
+  const { alMedir } = p;
+  const medir = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el || !alMedir || typeof ResizeObserver === "undefined") return;
+      const ro = new ResizeObserver(() => alMedir(el.getBoundingClientRect().height));
+      ro.observe(el);
+      return () => ro.disconnect();
+    },
+    [alMedir],
+  );
 
   /** El botón de una acción: si no aplica, repite su motivo (nunca se apaga). */
   const boton = (accion: AccionSeleccion, texto: string, icono: ReactNode, abrir: () => void) => (
@@ -74,13 +95,13 @@ export function BarraSeleccionMovimientos(p: BarraSeleccionMovimientosProps) {
 
   return (
     <div
+      ref={medir}
       role="region"
       aria-label={ETIQUETA_REGION_SELECCION}
       className="fixed bottom-6 left-1/2 z-40 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2 rounded-xl border border-border bg-card px-4 py-2 shadow-lg"
     >
-      <p aria-live="polite" className="text-sm font-medium">
-        {textoResumenSeleccion(p.resumen)}
-      </p>
+      {/* Sin `aria-live`: lo anuncia la región viva PERMANENTE de la tabla. */}
+      <p className="text-sm font-medium">{textoResumenSeleccion(p.resumen)}</p>
       <div className="flex flex-wrap items-center gap-2">
         {vincular &&
           p.onVincular &&

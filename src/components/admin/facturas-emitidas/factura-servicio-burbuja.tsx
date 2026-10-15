@@ -77,7 +77,9 @@ import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas
  *    0.0.77): el API la pidió sola por un cobro que exigía factura y el
  *    dinero se devolvió (o se corrigió o eliminó el cobro). No se retira
  *    sola: chip GRIS «… — ya no aplica: el vuelo ya no exige factura» con
- *    «Retirar» (confirma). «Marcada Facturado» gana, como en el API.
+ *    «Retirar» (confirma) como el botón PRINCIPAL y «Registrar factura» en
+ *    segundo plano (revisión del 15-oct-2026: un anticipo devuelto no lleva
+ *    CFDI). «Marcada Facturado» gana, como en el API.
  *
  * `bloque` ausente o `null` (API previo o sin la migración) ⇒ no se pinta
  * NADA: ofrecer un botón que el API rechazaría es peor que no tenerlo.
@@ -249,18 +251,31 @@ export function FacturaServicioBurbuja({
               Paga contra factura
             </span>
           )}
-          {puedePedir && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[11px] text-muted-foreground"
-              onClick={() => setConfirmarRetirar(true)}
-              disabled={pendiente}
-            >
-              Retirar
-            </Button>
-          )}
+          {puedePedir &&
+            (yaNoAplica ? (
+              // Ya no aplica: retirarla ES lo que toca (botón principal).
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => setConfirmarRetirar(true)}
+                disabled={pendiente}
+              >
+                Retirar
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[11px] text-muted-foreground"
+                onClick={() => setConfirmarRetirar(true)}
+                disabled={pendiente}
+              >
+                Retirar
+              </Button>
+            ))}
         </>
       ) : (
         <>
@@ -295,8 +310,9 @@ export function FacturaServicioBurbuja({
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="ml-auto h-7"
+          // Con la solicitud que ya no aplica, «Retirar» es lo principal.
+          variant={yaNoAplica ? "ghost" : "outline"}
+          className={yaNoAplica ? "ml-auto h-7 text-muted-foreground" : "ml-auto h-7"}
           onClick={() => setRegistrarAbierto(true)}
           title="Registra la factura que se le hizo al cliente (con su PDF)"
         >

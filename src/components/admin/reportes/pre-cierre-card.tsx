@@ -58,6 +58,11 @@ import {
   esDiferenciaCambiaria,
   hrefPrecierrePermisosSinAvion,
 } from "@/lib/admin/pre-cierre-anticipo-afac";
+import {
+  CLAVE_PRECIERRE_MOVIMIENTOS_OMITIDOS,
+  ETIQUETA_REVISAR_OMITIDOS,
+  hrefPrecierreMovimientosOmitidos,
+} from "@/lib/admin/pre-cierre-omitidos";
 
 interface PreCierreVuelo {
   id: string;
@@ -128,7 +133,8 @@ interface PreCierreItem {
       a taco-live. Ausente con un API sin desplegar = card como antes. */
   tramos?: PreCierreTacoTramo[];
   /** ADITIVO: aviso informativo (el dinero YA cuenta; nada que resolver
-      salvo confirmar). Se pinta en azul, sin "Resolver". */
+      salvo confirmar). Se pinta en azul, sin "Resolver" (salvo el enlace
+      para REVISAR que algunos llevan: los omitidos de la conciliación). */
   informativo?: boolean;
   /** ADITIVO (29-sep-2026, hoy en seguimiento_cotizacion_pendiente): el API
       NO pudo leer el dato y manda count 0. El renglón se pinta igual con
@@ -219,6 +225,15 @@ const LINK_POR_CLAVE: Record<
   // NO bloquea): se revisan en Conciliación, pestaña conciliados, del
   // periodo (cada renglón lleva además su cargo y su vuelo).
   [CLAVE_PRECIERRE_LIGAS_USD_TC]: hrefLigasUsdTcPeriodo,
+  // Movimientos del banco omitidos de la conciliación (14-oct-2026, API
+  // 0.0.77, INFORMATIVO): la pestaña «Omitidos» DEL PERIODO (el API cuenta
+  // por la fecha del movimiento; sin las fechas no cuadraría con el «· N»).
+  [CLAVE_PRECIERRE_MOVIMIENTOS_OMITIDOS]: hrefPrecierreMovimientosOmitidos,
+};
+
+/** El texto del enlace cuando no es «Resolver →» (un renglón informativo se REVISA). */
+const ETIQUETA_LINK_POR_CLAVE: Record<string, string> = {
+  [CLAVE_PRECIERRE_MOVIMIENTOS_OMITIDOS]: ETIQUETA_REVISAR_OMITIDOS,
 };
 
 /**
@@ -596,7 +611,7 @@ export async function PreCierreCard({
                     href={href}
                     className="text-xs font-medium underline underline-offset-2 shrink-0"
                   >
-                    Resolver →
+                    {ETIQUETA_LINK_POR_CLAVE[item.clave] ?? "Resolver →"}
                   </Link>
                 )}
               </div>

@@ -228,8 +228,24 @@ describe("cableado (regex sobre los fuentes)", () => {
     const iVacio = acciones.indexOf("Aún no hay clasificaciones: crea la primera abajo");
     expect(iError).toBeGreaterThan(-1);
     expect(iError).toBeLessThan(iVacio);
-    expect(acciones).toMatch(/const esperadoClasificacion = conOmision\s*\?\s*\{ esperado_clasificacion_id: movimiento\.clasificacion_id \?\? null \}\s*:\s*\{\};/);
-    expect(veces(acciones, "...esperadoClasificacion,")).toBe(2);
+    // `esperado` se CAPTURA al abrir (revisión del 15-oct-2026): un refresh con el
+    // diálogo abierto ya no lo cambia; la regla de cuándo viaja es PURA.
+    expect(acciones).toMatch(/const abrirClasificar = \(\) => \{\s*esperadoClasificarRef\.current = esperadoClasificacionDe\(movimiento\);/);
+    expect(acciones).toMatch(
+      /const abrirQuitarClasificacion = \(\) => \{\s*esperadoQuitarRef\.current = esperadoClasificacionDe\(movimiento\);\s*setConfirmarQuitarClasif\(true\);/,
+    );
+    expect(acciones).toContain("onClick={abrirQuitarClasificacion}");
+    expect(veces(acciones, "setConfirmarQuitarClasif(true)")).toBe(1);
+    expect(veces(acciones, "...esperadoClasificarRef.current,")).toBe(1);
+    expect(veces(acciones, "...esperadoQuitarRef.current,")).toBe(1);
+    // Nada del render viaja como esperado.
+    expect(acciones).not.toContain("esperado_clasificacion_id: movimiento.clasificacion_id");
+  });
+
+  it("omitir: «Quitar…» de la revisión refresca al cerrar y el aviso sin aceptar sabe si hay selección", () => {
+    expect(dlg).toMatch(/p\.onQuitarDeSeleccion\?\.\(ids\);\s*refrescarAlCerrarRef\.current = true;/);
+    expect(dlg).toContain("setAviso(textoFaltaAceptarRiesgos({ n, conSeleccion }));");
+    expect(dlg).not.toContain("TEXTO_FALTA_ACEPTAR_RIESGOS");
   });
 
   it("todo <button> y <DropdownMenuItem> de lo nuevo lleva cursor-pointer", () => {

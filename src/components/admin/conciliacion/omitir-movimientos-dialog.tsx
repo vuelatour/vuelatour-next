@@ -26,7 +26,7 @@
  * textos en `lib/admin/conciliacion-omision.ts`.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowPathIcon, NoSymbolIcon } from "@heroicons/react/24/outline";
@@ -58,7 +58,6 @@ import {
   NOTA_OMITIDO_NO_SE_CRUZA,
   PLACEHOLDER_MOTIVO_OMISION,
   SUGERENCIAS_MOTIVO_OMISION,
-  TEXTO_FALTA_ACEPTAR_RIESGOS,
   TEXTO_OMITIENDO,
   TEXTO_REVISANDO,
   TEXTO_YA_NO_EXISTE,
@@ -76,6 +75,7 @@ import {
   requiereCasillaMuchos,
   resumenOmitir,
   textoAvisoRiesgos,
+  textoFaltaAceptarRiesgos,
   textoIncierto,
   textoNoPendientesRevision,
   toastOmitidos,
@@ -129,6 +129,8 @@ export interface OmitirMovimientosDialogProps {
   onOmitidos?: (ids: string[]) => void;
   /** Solo desde la barra: sacar de la selección los que tienen aviso o ya no están pendientes. */
   onQuitarDeSeleccion?: (ids: string[]) => void;
+  /** A dónde vuelve el foco al cerrar (Base UI); la tabla pasa `false` y lo pone ella tras el commit. Sin él, el de siempre. */
+  finalFocus?: ComponentProps<typeof DialogContent>["finalFocus"];
 }
 
 export function OmitirMovimientosDialog(p: OmitirMovimientosDialogProps) {
@@ -242,11 +244,18 @@ export function OmitirMovimientosDialog(p: OmitirMovimientosDialogProps) {
     p.onOpenChange(abierto);
   };
 
-  /** Saca movimientos de la lista del diálogo Y de la selección (sin lista, cierra). */
+  /**
+   * Saca movimientos de la lista del diálogo Y de la selección (sin lista,
+   * cierra). La tabla se pone al día UNA vez al cerrar, como en «Vincular N
+   * cargos» (revisión del 15-oct-2026: tras quitar los que ya no estaban
+   * pendientes, `noPendientes` quedaba vacío con la lista nueva y el refresh
+   * no salía: seguían pintados como «Pendiente» y con casilla).
+   */
   const quitar = (ids: string[]) => {
     const fuera = new Set(ids);
     const resto = lista.filter((m) => !fuera.has(m.id));
     p.onQuitarDeSeleccion?.(ids);
+    refrescarAlCerrarRef.current = true;
     setError(null);
     setAviso(null);
     if (resto.length === 0) {
@@ -264,7 +273,8 @@ export function OmitirMovimientosDialog(p: OmitirMovimientosDialogProps) {
       return;
     }
     if (aEnviar.length === 0) {
-      setAviso(TEXTO_FALTA_ACEPTAR_RIESGOS);
+      // Desde el ⋯ (uno, sin selección) no hay «Quitar…»: el texto lo sabe.
+      setAviso(textoFaltaAceptarRiesgos({ n, conSeleccion }));
       return;
     }
     if (muchos && !revisoMuchos) {
@@ -318,7 +328,7 @@ export function OmitirMovimientosDialog(p: OmitirMovimientosDialogProps) {
 
   return (
     <Dialog open={p.open} onOpenChange={cambiarAbierto}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl" finalFocus={p.finalFocus}>
         <DialogHeader>
           <DialogTitle>{tituloOmitir(n)}</DialogTitle>
           <DialogDescription>{DESCRIPCION_OMITIR}</DialogDescription>

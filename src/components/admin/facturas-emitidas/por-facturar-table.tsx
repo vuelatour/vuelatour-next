@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { EllipsisHorizontalIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { DocumentPlusIcon, EllipsisHorizontalIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -99,7 +99,11 @@ function datosFiscales(c: NonNullable<PorFacturarItem["cliente"]>): string {
  * 14-oct-2026 (API 0.0.77): también pinta la tercera tarjeta «Solicitudes
  * automáticas que ya no aplican» (`syncId="pfy"`, `yaNoAplican`): la
  * confirmación y el aviso de «Retirar solicitud» dicen lo que pasa de verdad
- * (esas solicitudes NO están en «Por facturar»).
+ * (esas solicitudes NO están en «Por facturar»). Revisión del 15-oct-2026: en
+ * esa tarjeta la acción VISIBLE es «Retirar solicitud» (lo que la tarjeta
+ * pide: «retíralas aquí»), «Registrar factura» pasa al ⋯ y no se sugiere
+ * «Ligar a A-0440» (un anticipo devuelto no lleva CFDI; su confirmación
+ * decía que el vuelo saldría de «Por facturar», donde no está).
  */
 export function PorFacturarTable({
   items,
@@ -302,8 +306,9 @@ export function PorFacturarTable({
               </span>
             )}
             {/* Parte B (caso #376): el cliente ya tiene una factura
-                registrada que quizá cubre ESTE vuelo. Nunca se liga sola. */}
-            {(it.facturas_del_cliente ?? []).slice(0, MAX_FACTURAS_DEL_CLIENTE).map((f) => (
+                registrada que quizá cubre ESTE vuelo. Nunca se liga sola. En
+                «ya no aplican» no se sugiere: no hay nada que facturar. */}
+            {(yaNoAplican ? [] : (it.facturas_del_cliente ?? [])).slice(0, MAX_FACTURAS_DEL_CLIENTE).map((f) => (
               <span key={f.id} className="inline-flex flex-col gap-0.5" data-factura-del-cliente>
                 <span className="text-[11px] text-muted-foreground">{textoFacturaDelCliente(f)}</span>
                 {puedeRegistrar && (
@@ -331,12 +336,27 @@ export function PorFacturarTable({
       cellClassName: "text-right",
       cell: (it) => (
         <span className="inline-flex items-center justify-end gap-1">
-          {puedeRegistrar && (
-            <Button type="button" size="sm" variant="outline" onClick={() => abrirRegistrar(it)}>
-              Registrar factura
-            </Button>
-          )}
-          {puedeRetirar && (
+          {yaNoAplican
+            ? // Ya no aplica: lo que la tarjeta pide es RETIRARLA (con su
+              // confirmación de siempre); registrar queda en el ⋯.
+              puedeRetirar && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                  onClick={() => setRetirar(it)}
+                >
+                  <XMarkIcon className="h-4 w-4" aria-hidden />
+                  Retirar solicitud
+                </Button>
+              )
+            : puedeRegistrar && (
+                <Button type="button" size="sm" variant="outline" onClick={() => abrirRegistrar(it)}>
+                  Registrar factura
+                </Button>
+              )}
+          {(yaNoAplican ? puedeRegistrar : puedeRetirar) && (
             <DropdownMenu>
               <DropdownMenuTrigger
                 className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -346,13 +366,20 @@ export function PorFacturarTable({
                 <EllipsisHorizontalIcon className="h-5 w-5" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => setRetirar(it)}
-                  className="cursor-pointer gap-2 text-destructive focus:text-destructive"
-                >
-                  <XMarkIcon className="h-4 w-4" />
-                  Retirar solicitud
-                </DropdownMenuItem>
+                {yaNoAplican ? (
+                  <DropdownMenuItem onClick={() => abrirRegistrar(it)} className="cursor-pointer gap-2">
+                    <DocumentPlusIcon className="h-4 w-4" />
+                    Registrar factura
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    onClick={() => setRetirar(it)}
+                    className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+                  >
+                    <XMarkIcon className="h-4 w-4" />
+                    Retirar solicitud
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

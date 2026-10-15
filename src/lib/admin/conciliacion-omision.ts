@@ -238,9 +238,25 @@ export function casillaRevisarMuchos(n: number): string {
 export function avisoFaltaRevisarMuchos(n: number): string {
   return `Marca «${casillaRevisarMuchos(n)}» para continuar.`;
 }
-/** El clic con TODOS con aviso y sin aceptarlos lo explica (nada que mandar). */
-export const TEXTO_FALTA_ACEPTAR_RIESGOS =
-  "Todos tienen aviso: marca «También omitir…» si revisaste que no se concilian, o quítalos de la selección.";
+/**
+ * El clic con TODOS con aviso y sin aceptarlos lo explica (nada que mandar).
+ * Revisión del 15-oct-2026: desde el ⋯ de UNA fila no hay selección ni
+ * «Quitar…» (solo «Cancelar») y el texto iba en plural: «Este movimiento
+ * tiene aviso: marca «También omitir este…» si revisaste que no se concilia,
+ * o cancela.»; desde la barra, «… o quítalo(s) de la selección.».
+ */
+export function textoFaltaAceptarRiesgos(p: { n: number; conSeleccion: boolean }): string {
+  if (p.n === 1) {
+    return `Este movimiento tiene aviso: marca «También omitir este…» si revisaste que no se concilia, o ${
+      p.conSeleccion ? "quítalo de la selección" : "cancela"
+    }.`;
+  }
+  return `Todos tienen aviso: marca «También omitir…» si revisaste que no se concilian, o ${
+    p.conSeleccion ? "quítalos de la selección" : "cancela"
+  }.`;
+}
+/** El de la barra con varios (el texto de siempre). */
+export const TEXTO_FALTA_ACEPTAR_RIESGOS = textoFaltaAceptarRiesgos({ n: 2, conSeleccion: true });
 
 /** Nombre accesible de la lista del diálogo y del de deshacer. */
 export const ETIQUETA_LISTA_OMITIR = "Movimientos a omitir";
@@ -486,6 +502,30 @@ export function fallaListaOmitidos(err: unknown): "NO_ACTIVA" | "NO_CARGO" {
 
 /** La lectura del catálogo falló: nunca «Aún no hay clasificaciones». */
 export const MSG_CLASIFICACIONES_NO_CARGARON = "No se pudieron cargar las clasificaciones: cierra y vuelve a abrir.";
+
+/**
+ * `esperado_clasificacion_id` de «Clasificar» / «Quitar clasificación» (API
+ * 0.0.77): la clasificación que el panel VIO. El API responde 409
+ * MOVIMIENTO_CAMBIO si ya no es la vigente; con `null` entiende «estaba
+ * PENDIENTE» (sin clasificación Y sin conciliar). Revisión del 15-oct-2026:
+ *  - se CAPTURA al abrir el diálogo o la confirmación (no en cada render: un
+ *    `router.refresh()` con el diálogo abierto —RefreshOnFocus— cambiaba el
+ *    esperado y el candado nunca saltaba: «Guardar» pisaba sin aviso el
+ *    cambio de otra persona y «Quitar clasificación» deshacía una omisión
+ *    ajena);
+ *  - NO viaja con un API ≤ 0.0.76 (sin la llave `omision`: su DTO la
+ *    rechaza) ni para un movimiento `conciliado` SIN clasificación (dato
+ *    viejo conciliado sin liga visible): con `null` el API respondería 409
+ *    SIEMPRE y la fila ya no se podría clasificar; sin la llave compara
+ *    contra lo que acaba de leer, como antes del 0.0.77.
+ */
+export function esperadoClasificacionDe(
+  m: Pick<MovimientoBancario, "clasificacion_id" | "conciliado"> & Partial<Pick<MovimientoBancario, "omision">>,
+): { esperado_clasificacion_id?: string | null } {
+  if (!apiConOmision([m])) return {};
+  if (m.conciliado === true && m.clasificacion_id == null) return {};
+  return { esperado_clasificacion_id: m.clasificacion_id ?? null };
+}
 /** `esperado_clasificacion_id` que no es uuid (no sale a la red). */
 export const MSG_CLASIFICACION_ESPERADA_INVALIDA = "Clasificación inválida: recarga la página.";
 

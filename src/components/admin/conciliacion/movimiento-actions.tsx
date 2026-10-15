@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -110,6 +110,7 @@ import {
   apiConOmision,
   esClasificacionOmitida,
   esOmitido,
+  esperadoClasificacionDe,
 } from "@/lib/admin/conciliacion-omision";
 import { esSeleccionable } from "@/lib/admin/conciliacion-seleccion";
 import type { CandidatoCobro, MovimientoBancario } from "@/types/conciliacion";
@@ -247,13 +248,21 @@ export function MovimientoActions({
   const [openOmitir, setOpenOmitir] = useState(false);
   const [openQuitarOmision, setOpenQuitarOmision] = useState(false);
   // Lo que el panel VIO de la clasificación (el API 0.0.77 responde 409
-  // MOVIMIENTO_CAMBIO si cambió mientras tanto); con un API previo no viaja
-  // (su DTO rechaza la llave).
-  const esperadoClasificacion = conOmision
-    ? { esperado_clasificacion_id: movimiento.clasificacion_id ?? null }
-    : {};
+  // MOVIMIENTO_CAMBIO si cambió mientras tanto), CAPTURADO al abrir el diálogo
+  // o la confirmación (revisión del 15-oct-2026: tomado del render, un
+  // refresh con el diálogo abierto lo cambiaba y el candado no saltaba). Con
+  // un API previo, o un conciliado sin clasificación, no viaja
+  // (`esperadoClasificacionDe`).
+  const esperadoClasificarRef = useRef<ReturnType<typeof esperadoClasificacionDe>>({});
+  const esperadoQuitarRef = useRef<ReturnType<typeof esperadoClasificacionDe>>({});
+
+  const abrirQuitarClasificacion = () => {
+    esperadoQuitarRef.current = esperadoClasificacionDe(movimiento);
+    setConfirmarQuitarClasif(true);
+  };
 
   const abrirClasificar = () => {
+    esperadoClasificarRef.current = esperadoClasificacionDe(movimiento);
     setClasifSel(movimiento.clasificacion_id ?? "");
     setClasifNueva("");
     setClasifNotas(movimiento.notas ?? "");
@@ -294,7 +303,7 @@ export function MovimientoActions({
       const r = await clasificarMovimientoAction(movimiento.id, {
         clasificacion_id: clasifId,
         notas: clasifNotas,
-        ...esperadoClasificacion,
+        ...esperadoClasificarRef.current,
       }).catch(sinConexion);
       if (r.ok) {
         toast.success("Movimiento clasificado (deja de estar pendiente)");
@@ -315,7 +324,7 @@ export function MovimientoActions({
     startTransition(async () => {
       const r = await clasificarMovimientoAction(movimiento.id, {
         clasificacion_id: null,
-        ...esperadoClasificacion,
+        ...esperadoQuitarRef.current,
       }).catch(sinConexion);
       if (r.ok) {
         toast.success("Clasificación quitada: el movimiento vuelve a Pendiente");
@@ -710,7 +719,7 @@ export function MovimientoActions({
                 Editar clasificación / notas
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => setConfirmarQuitarClasif(true)}
+                onClick={abrirQuitarClasificacion}
                 className="cursor-pointer gap-2 text-destructive focus:text-destructive"
               >
                 <XMarkIcon className="h-4 w-4" />

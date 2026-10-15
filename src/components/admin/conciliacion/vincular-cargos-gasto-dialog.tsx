@@ -42,7 +42,7 @@
  * abierta con su caja roja.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -102,6 +102,7 @@ import {
   encabezadoCargos,
   estadoDuplicadosSuma,
   estadoListaSuma,
+  fichaElegidaVigente,
   guiaResultado,
   hayCandidatoQueCubre,
   lineaCargoVincular,
@@ -110,6 +111,7 @@ import {
   mensajeErrorCargosGasto,
   mensajeErrorCrearSuma,
   motivoNoCrearSuma,
+  motivoNoVincularCargos,
   notaPrellenadoSuma,
   notaVentanaSuma,
   placeholderBuscarSuma,
@@ -123,6 +125,7 @@ import {
   tituloAbrirCrearSuma,
   tituloCrearSuma,
   tituloVincularCargos,
+  type ElegidoSuma,
   type ErrorCandidatosSuma,
   type ErrorCargosGasto,
   type EstadoDuplicadosSuma,
@@ -199,6 +202,8 @@ export interface VincularCargosGastoDialogProps {
   /** Catálogos del alta de gasto (aviones y proveedores, los de «¿No está el
    *  gasto? Créalo» de un cargo): sin ellos no se ofrece «Créalo por $X». */
   catalogosGasto?: CatalogosGastoDesdeCargo | null;
+  /** A dónde vuelve el foco al cerrar (Base UI); la tabla pasa `false` y lo pone ella tras el commit. Sin él, el de siempre. */
+  finalFocus?: ComponentProps<typeof DialogContent>["finalFocus"];
 }
 
 export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
@@ -215,8 +220,10 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
   // La última respuesta BUENA para ESTOS cargos: su suma, cuentas y avisos no
   // cambian entre búsquedas (el encabezado no parpadea mientras llega otra).
   const [base, setBase] = useState<{ idsClave: string; data: CargosGastosCandidatosResponse } | null>(null);
-  // El gasto elegido (su ficha se conserva aunque la búsqueda lo deje fuera).
-  const [elegido, setElegido] = useState<CandidatoGastoPorSuma | null>(null);
+  // El gasto elegido CON los cargos para los que el API calculó su ficha (se
+  // conserva aunque la búsqueda lo deje fuera; si cambian los cargos, ya no
+  // vale: `fichaElegidaVigente`).
+  const [elegido, setElegido] = useState<ElegidoSuma | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<ErrorCargosGasto | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -271,8 +278,11 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
   const vigente = base && base.idsClave === idsClave ? base.data : null;
   const resumen = vigente?.cargos ?? null;
   const resultados = useMemo(() => data?.candidatos ?? [], [data]);
-  // La ficha MÁS reciente del elegido (sus faltantes pudieron cambiar).
-  const elegidoVigente = elegido ? (resultados.find((c) => c.id === elegido.id) ?? elegido) : null;
+  // La ficha MÁS reciente del elegido (sus faltantes pudieron cambiar) y SOLO
+  // si es de ESTOS cargos (revisión del 15-oct-2026): con otra suma su
+  // `resultado` y su guía dirían «queda cubierto» cuando el API lo dejaría
+  // PARCIAL.
+  const elegidoVigente = fichaElegidaVigente(elegido, idsClave, resultados);
   const filas =
     elegidoVigente && !resultados.some((c) => c.id === elegidoVigente.id)
       ? [elegidoVigente, ...resultados]
@@ -345,7 +355,10 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
     refrescarAlCerrarRef.current = true;
     setError(null);
     setAviso(null);
-    // Con otros cargos cambia la suma: de vuelta a la lista (los duplicados se releen al volver a «Créalo»).
+    // Con otros cargos cambia la suma: el gasto elegido se vuelve a elegir
+    // (su ficha era de la suma anterior) y de vuelta a la lista (los
+    // duplicados se releen al volver a «Créalo»).
+    setElegido(null);
     dupRef.current += 1;
     setDup(null);
     setPaso("lista");
@@ -359,7 +372,7 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
   };
 
   const elegir = (c: CandidatoGastoPorSuma) => {
-    setElegido(c);
+    setElegido({ idsClave, candidato: c });
     setAviso(null);
     setError(null);
   };
@@ -367,13 +380,18 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
   const vincular = () => {
     // Un doble clic o un clic con el diálogo ya cerrándose no corre dos veces.
     if (!p.open || enviandoRef.current) return;
-    if (unSolo) {
-      setAviso(TEXTO_UN_SOLO_CARGO);
-      return;
-    }
+    // El resumen visible ES la confirmación: con la lista cargándose, sin
+    // gasto elegido para ESTOS cargos o sin el resumen, no se llama al API (el
+    // botón nunca se apaga: el clic dice por qué).
+    const motivo = motivoNoVincularCargos({
+      unSolo,
+      cargando,
+      elegido: elegidoVigente !== null,
+      conResumen: resumenTexto !== null,
+    });
     const gasto = elegidoVigente;
-    if (!gasto) {
-      setAviso(TEXTO_ELIGE_GASTO);
+    if (motivo !== null || gasto === null) {
+      setAviso(motivo ?? TEXTO_ELIGE_GASTO);
       return;
     }
     // Se congela lo que se ve: ESE gasto y ESTOS cargos.
@@ -495,7 +513,7 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
 
   return (
     <Dialog open={p.open} onOpenChange={cambiarAbierto}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl" finalFocus={p.finalFocus}>
         <DialogHeader>
           <DialogTitle>{enCrear ? tituloCrearSuma(n) : tituloVincularCargos(n)}</DialogTitle>
           <DialogDescription>{DESCRIPCION_VINCULAR_CARGOS}</DialogDescription>
@@ -611,7 +629,7 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
             {p.catalogosGasto && resumen && !unSolo ? (
               <button
                 type="button"
-                className="cursor-pointer self-center text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                className="cursor-pointer self-center text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-400"
                 onClick={abrirCrear}
                 disabled={enviando}
                 title={tituloAbrirCrearSuma(n)}
@@ -768,7 +786,7 @@ export function ListaGastosPorSuma(p: {
         {p.dias < VENTANA_AMPLIADA_DIAS && (
           <button
             type="button"
-            className="cursor-pointer text-xs text-brand-600 underline-offset-2 hover:underline"
+            className="cursor-pointer text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-400"
             onClick={p.onAmpliar}
           >
             {BOTON_AMPLIAR_120}

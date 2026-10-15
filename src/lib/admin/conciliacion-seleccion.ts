@@ -65,8 +65,8 @@ export const TEXTO_TOPE_SELECCION = `Se pueden seleccionar hasta ${TOPE_SELECCIO
 
 /**
  * Marca o desmarca UNA fila. Al pasar el tope NO marca y lo dice. `sel` debe
- * ser la selección VIGENTE (así la poda de lo que dejó de calificar se
- * consolida en la siguiente interacción).
+ * ser la selección VIGENTE (la tabla ya podó lo que dejó de calificar con
+ * `podaSeleccion`).
  */
 export function alternarSeleccion(
   sel: ReadonlySet<string>,
@@ -84,25 +84,70 @@ export function alternarSeleccion(
 }
 
 /**
- * «Seleccionar los N…»: REEMPLAZA la selección por las filas que deja la
- * búsqueda (todas las páginas, en su orden: fecha desc) ∩ seleccionables,
- * cortando en el tope (las más recientes) y diciéndolo.
+ * «Seleccionar los N…»: SUMA a la selección (como las casillas) las filas que
+ * deja la búsqueda (todas las páginas, en su orden: fecha desc) ∩
+ * seleccionables; lo ya marcado —en esta búsqueda o en otra— se queda.
+ * Revisión del 15-oct-2026: antes REEMPLAZABA y soltaba en silencio lo
+ * marcado en otra búsqueda («comisiones» + «iva» en un solo lote). Al llegar
+ * al tope deja de marcar (las más recientes primero) y lo dice. `sel` = la
+ * selección VIGENTE.
  */
 export function seleccionarTodas(
   filas: readonly MovimientoBancario[],
+  sel: ReadonlySet<string>,
   vista: VistaSeleccion,
   tope: number = TOPE_SELECCION,
 ): { sel: Set<string>; aviso: string | null } {
-  const candidatas = filas.filter((m) => esSeleccionable(m, vista));
-  const sel = new Set(candidatas.slice(0, tope).map((m) => m.id));
-  return { sel, aviso: candidatas.length > tope ? TEXTO_TOPE_SELECCION : null };
+  const nueva = new Set(sel);
+  let cortado = false;
+  for (const m of filas) {
+    if (!esSeleccionable(m, vista) || nueva.has(m.id)) continue;
+    if (nueva.size >= tope) {
+      cortado = true;
+      break;
+    }
+    nueva.add(m.id);
+  }
+  return { sel: nueva, aviso: cortado ? TEXTO_TOPE_SELECCION : null };
+}
+
+/** Lo que pinta el botón «Seleccionar los N…» (ver `estadoSeleccionarTodas`). */
+export interface EstadoSeleccionarTodas {
+  /** Las seleccionables que deja la búsqueda (todas las páginas). */
+  n: number;
+  /** Ya están TODAS marcadas: el botón lo dice y no hace nada (se queda montado: no se pierde el foco). */
+  completo: boolean;
+  /** Cuántas de ellas pueden quedar marcadas con lo ya marcado FUERA de la búsqueda (tope por lote). */
+  cupo: number;
 }
 
 /**
- * La selección que SIGUE valiendo con las filas de hoy (derivada en RENDER,
- * sin efectos): las marcadas que siguen en la lista y siguen calificando, en
- * el orden de la lista; `retirados` = cuántas marcadas ya no (otra persona la
- * concilió, un refresh la sacó de la pestaña…).
+ * El botón «Seleccionar los N…» sobre la selección VIGENTE: cuántas
+ * seleccionables deja la búsqueda, si ya están todas marcadas (SUBCONJUNTO,
+ * no igualdad: lo marcado en otra búsqueda no cuenta) y cuántas caben con el
+ * tope del lote.
+ */
+export function estadoSeleccionarTodas(
+  filas: readonly MovimientoBancario[],
+  sel: ReadonlySet<string>,
+  vista: VistaSeleccion,
+  tope: number = TOPE_SELECCION,
+): EstadoSeleccionarTodas {
+  let n = 0;
+  let marcadas = 0;
+  for (const m of filas) {
+    if (!esSeleccionable(m, vista)) continue;
+    n += 1;
+    if (sel.has(m.id)) marcadas += 1;
+  }
+  return { n, completo: n > 0 && marcadas === n, cupo: Math.max(0, tope - Math.max(0, sel.size - marcadas)) };
+}
+
+/**
+ * La selección que SIGUE valiendo con las filas de hoy: las marcadas que
+ * siguen en la lista y siguen calificando, en el orden de la lista;
+ * `retirados` = cuántas marcadas ya no (otra persona la concilió, un refresh
+ * la sacó de la pestaña…).
  */
 export function seleccionVigente(
   filas: readonly MovimientoBancario[],
@@ -112,6 +157,24 @@ export function seleccionVigente(
   if (sel.size === 0) return { vigentes: [], retirados: 0 };
   const vigentes = filas.filter((m) => sel.has(m.id) && esSeleccionable(m, vista));
   return { vigentes, retirados: Math.max(0, sel.size - vigentes.length) };
+}
+
+/**
+ * La PODA de la selección (revisión del 15-oct-2026): lo marcado que dejó de
+ * calificar SALE de la selección de verdad —antes solo se escondía y, si la
+ * fila volvía a estar pendiente («Deshacer» del toast, «Deshacer la
+ * omisión…», «Desvincular gasto»), reaparecía MARCADA y el siguiente
+ * «Omitir…» la volvía a incluir—. `sel` es la MISMA instancia si no hay nada
+ * que podar (la tabla la aplica en el render con un ajuste guardado: `if
+ * (poda.sel !== sel) setSel(poda.sel)`, sin efectos).
+ */
+export function podaSeleccion(
+  filas: readonly MovimientoBancario[],
+  sel: ReadonlySet<string>,
+  vista: VistaSeleccion,
+): { vigentes: MovimientoBancario[]; retirados: number; sel: ReadonlySet<string> } {
+  const { vigentes, retirados } = seleccionVigente(filas, sel, vista);
+  return { vigentes, retirados, sel: retirados > 0 ? new Set(vigentes.map((m) => m.id)) : sel };
 }
 
 // ───────────────────────────── Resumen ─────────────────────────────
@@ -250,7 +313,8 @@ const NO_ES_DE_ESTA_VISTA: AccionSeleccion = { aplica: false, motivo: null };
  * Qué acción de la barra aplica y, si no, POR QUÉ (la barra NO decide: lee
  * esto). Ningún botón se apaga por una regla de negocio: el motivo se ve y
  * el clic lo repite. Vincular: solo cargos, de UNA moneda (las cuentas
- * pueden ser distintas), hasta 50 (con 1, el diálogo de siempre).
+ * pueden ser distintas), hasta 50 (con 1, el diálogo de siempre, aunque no
+ * se haya podido leer la moneda de las cuentas).
  */
 export function accionesDeSeleccion(
   r: ResumenSeleccion,
@@ -264,8 +328,11 @@ export function accionesDeSeleccion(
   let vincular: AccionSeleccion;
   if (r.n === 0) vincular = { aplica: false, motivo: null };
   else if (r.abonos > 0) vincular = { aplica: false, motivo: MOTIVO_VINCULAR_SOLO_CARGOS };
-  else if (r.cargosSinMoneda > 0) vincular = { aplica: false, motivo: MOTIVO_VINCULAR_SIN_MONEDA };
-  else if (r.monedasCargos.length > 1) vincular = { aplica: false, motivo: motivoVincularMonedas(r.monedasCargos) };
+  // La moneda solo importa con VARIOS cargos (revisión del 15-oct-2026): con
+  // uno, la tabla abre el «Vincular gasto» de siempre, que la lee del API.
+  else if (r.cargos >= MIN_CARGOS_A_GASTO && r.cargosSinMoneda > 0) {
+    vincular = { aplica: false, motivo: MOTIVO_VINCULAR_SIN_MONEDA };
+  } else if (r.monedasCargos.length > 1) vincular = { aplica: false, motivo: motivoVincularMonedas(r.monedasCargos) };
   else if (r.cargos > MAX_CARGOS_A_GASTO) vincular = { aplica: false, motivo: MOTIVO_VINCULAR_TOPE };
   else vincular = { aplica: true, motivo: null };
   return { vincular, omitir: tope, deshacer: NO_ES_DE_ESTA_VISTA };
@@ -274,6 +341,8 @@ export function accionesDeSeleccion(
 // ───────────────────────────── Textos ─────────────────────────────
 
 export const ETIQUETA_REGION_SELECCION = "Movimientos seleccionados";
+/** Nombre del grupo de herramientas de arriba de la tabla («Seleccionar los N…», «Quitar selección»): también es el lugar estable del foco. */
+export const ETIQUETA_HERRAMIENTAS_SELECCION = "Selección de movimientos";
 export const BOTON_VINCULAR_A_GASTO = "Vincular a un gasto…";
 export const BOTON_OMITIR = "Omitir…";
 export const BOTON_DESHACER_OMISION = "Deshacer la omisión…";
@@ -318,6 +387,7 @@ export function etiquetaCasillaMovimiento(
  */
 export function textoSeleccionarTodas(p: {
   n: number;
+  /** Cuántas caben (`cupo` de `estadoSeleccionarTodas`); sin él, el tope del lote. Con 0 (el lote ya está lleno con otras) el texto de siempre: el clic dice el tope. */
   tope?: number;
   conBusqueda: boolean;
   vista: VistaSeleccion;
@@ -326,16 +396,32 @@ export function textoSeleccionarTodas(p: {
   const singular = p.vista === "omitidos" ? "omitido" : "pendiente";
   const plural = p.vista === "omitidos" ? "omitidos" : "pendientes";
   const donde = p.conBusqueda ? "de la búsqueda" : "de la lista";
-  if (p.n > tope) return `Seleccionar los ${tope} más recientes de ${p.n} ${plural} (máximo por lote)`;
+  if (p.n > tope && tope > 0) return `Seleccionar los ${tope} más recientes de ${p.n} ${plural} (máximo por lote)`;
   if (p.n === 1) return `Seleccionar el ${singular} ${donde}`;
   return `Seleccionar los ${p.n} ${plural} ${donde}`;
 }
 
 /**
- * Lo marcado que dejó de calificar (un refresh): «1 movimiento ya no está
- * pendiente: se quitó de la selección.» · «3 movimientos ya no están
- * pendientes: se quitaron de la selección.» (Omitidos: «… omitido(s) …»).
- * null con 0.
+ * El MISMO botón cuando ya están todas marcadas (se queda montado con
+ * `aria-disabled`: si se desmontara, el foco del teclado caería al <body>):
+ * «Los 14 pendientes de la búsqueda ya están seleccionados» · con 1: «El
+ * pendiente de la búsqueda ya está seleccionado». Pestaña Omitidos: «…
+ * omitidos …».
+ */
+export function textoTodasSeleccionadas(p: { n: number; conBusqueda: boolean; vista: VistaSeleccion }): string {
+  const singular = p.vista === "omitidos" ? "omitido" : "pendiente";
+  const plural = p.vista === "omitidos" ? "omitidos" : "pendientes";
+  const donde = p.conBusqueda ? "de la búsqueda" : "de la lista";
+  return p.n === 1
+    ? `El ${singular} ${donde} ya está seleccionado`
+    : `Los ${p.n} ${plural} ${donde} ya están seleccionados`;
+}
+
+/**
+ * Lo marcado que dejó de calificar (un refresh) y que la PODA sacó de la
+ * selección de verdad (`podaSeleccion`): «1 movimiento ya no está pendiente:
+ * se quitó de la selección.» · «3 movimientos ya no están pendientes: se
+ * quitaron de la selección.» (Omitidos: «… omitido(s) …»). null con 0.
  */
 export function textoSeleccionRetirada(n: number, vista: VistaSeleccion): string | null {
   if (!(n > 0)) return null;
@@ -343,4 +429,36 @@ export function textoSeleccionRetirada(n: number, vista: VistaSeleccion): string
   return n === 1
     ? `1 movimiento ya no está ${estado}: se quitó de la selección.`
     : `${n} movimientos ya no están ${estado}s: se quitaron de la selección.`;
+}
+
+/** La región viva cuando no queda nada marcado. */
+export const TEXTO_SIN_SELECCION = "Ningún movimiento seleccionado.";
+
+/**
+ * Lo que anuncia la región VIVA permanente de la tabla (`aria-live` +
+ * `aria-atomic`; revisión del 15-oct-2026: la de la barra nacía junto con la
+ * barra, ya con su texto, y el lector no anunciaba la primera selección ni
+ * el vaciado): «14 seleccionados · 14 cargos $56.84 MXN.» · «Ningún
+ * movimiento seleccionado.» y, si la poda quitó algo, por qué.
+ */
+export function textoAnuncioSeleccion(r: ResumenSeleccion, retirados: number, vista: VistaSeleccion): string {
+  const base = r.n > 0 ? `${textoResumenSeleccion(r)}.` : TEXTO_SIN_SELECCION;
+  const retirada = textoSeleccionRetirada(retirados, vista);
+  return retirada ? `${base} ${retirada}` : base;
+}
+
+// ───────────────────────────── La barra fija y el desplazamiento ─────────────────────────────
+
+/** Aire entre la barra fija y lo que no debe tapar (su `bottom-6` + 8 px). */
+export const HOLGURA_BARRA_PX = 32;
+
+/**
+ * El hueco al final de la tabla y el `scroll-padding-bottom` del documento
+ * mientras la barra se ve (revisión del 15-oct-2026): su alto MEDIDO + la
+ * holgura. Con un `h-24` fijo la barra (74 px en escritorio, hasta 170 px en
+ * teléfono) tapaba el paginado y la fila activa al bajar con ↓ (el
+ * `scrollIntoView` del teclado respeta el `scroll-padding`). null sin medir.
+ */
+export function huecoBarraSeleccionPx(alto: number | null | undefined): number | null {
+  return typeof alto === "number" && Number.isFinite(alto) && alto > 0 ? Math.ceil(alto) + HOLGURA_BARRA_PX : null;
 }

@@ -32,6 +32,8 @@ import {
   NOTA_CANDIDATO_PROPIO_NO_VERIFICADO,
   TEXTO_CANDIDATOS_NO_CARGARON,
   TEXTO_ELIGE_GASTO,
+  TEXTO_ESPERA_LISTA_SUMA,
+  TEXTO_ESPERA_SUMA_CARGOS,
   TEXTO_INCIERTO_VINCULAR,
   TEXTO_NO_SE_VINCULO,
   TEXTO_RECHAZO_VINCULAR,
@@ -46,12 +48,14 @@ import {
   esCargosNoActivo,
   estadoListaSuma,
   etiquetaGastoResumen,
+  fichaElegidaVigente,
   guiaResultado,
   hayCandidatoQueCubre,
   lineaCargoVincular,
   marcaCandidatoPropio,
   mensajeErrorCandidatosSuma,
   mensajeErrorCargosGasto,
+  motivoNoVincularCargos,
   notaVentanaSuma,
   placeholderBuscarSuma,
   textoCargosSinSuma,
@@ -161,6 +165,12 @@ describe("encabezado y cargos (la suma es la del API)", () => {
     expect(tituloVincularCargos(2)).toBe("Vincular 2 cargos a un gasto");
     expect(DESCRIPCION_VINCULAR_CARGOS).toBe("Los cargos se suman y pagan UN gasto (una factura cobrada en varios cargos).");
     expect(textoCargosSinSuma(3)).toBe("3 cargos seleccionados");
+  });
+
+  it("con UN cargo (quitaron los demás de la selección): singular, nunca «1 cargos»", () => {
+    expect(tituloVincularCargos(1)).toBe("Vincular 1 cargo a un gasto");
+    expect(textoCargosSinSuma(1)).toBe("1 cargo seleccionado");
+    expect(botonVincularCargos(1)).toBe("Vincular el cargo");
   });
 
   it("fechas: el mismo día, días, meses y años distintos (días de pared)", () => {
@@ -372,6 +382,37 @@ describe("la confirmación (resumen visible + botón) y el toast", () => {
     );
     expect(botonVincularCargos(2)).toBe("Vincular los 2 cargos");
     expect(TEXTO_ELIGE_GASTO).toBe("Elige el gasto que pagaron los cargos.");
+  });
+
+  it("la ficha del elegido SOLO vale para los cargos con los que se eligió (revisión del 15-oct)", () => {
+    // Se eligió G para A+B+C (suma $550, «Queda cubierto»).
+    const g550 = comida({ monto: 550, faltante: 550, resultado: "CUBRE", faltante_tras: 0 });
+    const elegido = { idsClave: `${A},${B},C`, candidato: g550 };
+    // Mismos cargos: la ficha MÁS reciente de la respuesta vigente…
+    const fresca = { ...g550, monto_vinculado: 10, faltante: 540 };
+    expect(fichaElegidaVigente(elegido, `${A},${B},C`, [fresca])).toBe(fresca);
+    // …o la elegida si la búsqueda lo dejó fuera (es de la MISMA suma).
+    expect(fichaElegidaVigente(elegido, `${A},${B},C`, [])).toBe(g550);
+    // Se quitó C (otra suma: $400): la ficha de $550 ya no sirve, ni siquiera
+    // si G vuelve en la lista nueva con OTRO resultado (hay que volver a elegir).
+    expect(fichaElegidaVigente(elegido, `${A},${B}`, [])).toBeNull();
+    expect(fichaElegidaVigente(elegido, `${A},${B}`, [comida({ monto: 550, resultado: "PARCIAL", faltante_tras: 150 })])).toBeNull();
+    expect(fichaElegidaVigente(null, `${A},${B}`, [g550])).toBeNull();
+  });
+
+  it("«Vincular los N cargos» no llama al API sin la confirmación a la vista (el botón nunca se apaga: el clic dice por qué)", () => {
+    const listo = { unSolo: false, cargando: false, elegido: true, conResumen: true };
+    expect(motivoNoVincularCargos(listo)).toBeNull();
+    expect(motivoNoVincularCargos({ ...listo, unSolo: true })).toBe(TEXTO_UN_SOLO_CARGO);
+    // Se quitó un cargo y llega la suma nueva (o la lista se vuelve a pedir).
+    expect(motivoNoVincularCargos({ ...listo, cargando: true })).toBe("Espera a que termine de cargar la lista de gastos.");
+    expect(TEXTO_ESPERA_LISTA_SUMA).toBe("Espera a que termine de cargar la lista de gastos.");
+    expect(motivoNoVincularCargos({ ...listo, elegido: false })).toBe(TEXTO_ELIGE_GASTO);
+    // Sin el resumen (la suma de ESTOS cargos no llegó o falló): no hay confirmación.
+    expect(motivoNoVincularCargos({ ...listo, conResumen: false })).toBe(
+      "Espera a que se actualice la suma de los cargos y vuelve a elegir el gasto.",
+    );
+    expect(TEXTO_ESPERA_SUMA_CARGOS).toBe(motivoNoVincularCargos({ ...listo, conResumen: false }));
   });
 
   const liga = (extra: Partial<LigarCargosGastoRespuesta> = {}): LigarCargosGastoRespuesta => ({

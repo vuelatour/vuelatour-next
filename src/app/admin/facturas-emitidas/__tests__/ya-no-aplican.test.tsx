@@ -173,8 +173,10 @@ describe("tercera tarjeta «Solicitudes automáticas que ya no aplican»", () =>
     expect(t).toContain("Solicitada automáticamente: cobro en HSBC Pesos");
     expect(t).not.toContain(`id="por-facturar-${V215}"`);
     expect(html.indexOf(`id="por-facturar-${V215}"`)).toBeLessThan(html.indexOf('id="ya-no-aplican"'));
-    // Misma tabla: «Registrar factura» y el menú ⋯ para «Retirar solicitud».
-    expect(t).toContain("Registrar factura");
+    // Misma tabla; lo VISIBLE es «Retirar solicitud» (lo que pide la tarjeta) y
+    // «Registrar factura» queda en el ⋯ (revisión del 15-oct-2026).
+    expect(t).toContain("Retirar solicitud");
+    expect(t).not.toContain("Registrar factura");
     expect(t).toContain("Más acciones del vuelo #341");
   });
 

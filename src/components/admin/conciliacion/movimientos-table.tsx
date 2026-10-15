@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
@@ -65,15 +65,20 @@ import {
 import {
   BOTON_QUITAR_SELECCION,
   ENCABEZADO_SELECCION,
+  ETIQUETA_HERRAMIENTAS_SELECCION,
   MIN_CARGOS_A_GASTO,
   alternarSeleccion,
   esSeleccionable,
+  estadoSeleccionarTodas,
   etiquetaCasillaMovimiento,
+  huecoBarraSeleccionPx,
   monedaDeMovimiento,
+  podaSeleccion,
   resumenSeleccion,
-  seleccionVigente,
   seleccionarTodas,
+  textoAnuncioSeleccion,
   textoSeleccionarTodas,
+  textoTodasSeleccionadas,
   type VistaSeleccion,
 } from "@/lib/admin/conciliacion-seleccion";
 import {
@@ -127,6 +132,16 @@ export interface SeleccionMovimientos {
 type DialogoSeleccion = { tipo: "omitir" | "deshacer" | "vincular"; movimientos: MovimientoBancario[] };
 
 const SIN_SELECCION: ReadonlySet<string> = new Set();
+const SIN_VIGENTES: MovimientoBancario[] = [];
+
+/**
+ * El foco que la tabla pone DESPUÉS del commit (revisión del 15-oct-2026):
+ * `preferido` si sigue en el DOM (el botón que abrió un diálogo cancelado);
+ * si no, «Seleccionar los N…» (salvo `estable`: tras una acción exitosa, el
+ * refresh puede quitar ese botón) y, al final, la barra de herramientas (un
+ * grupo con `tabIndex=-1`, siempre montado con la selección).
+ */
+type FocoPendiente = { preferido: HTMLElement | null; estable: boolean };
 
 /**
  * «Efectivo» junto a un gasto ligado que NO pasó por el banco (6-oct-2026,
@@ -182,6 +197,13 @@ interface MovimientosTableProps {
    * llave `omision`— el marcado sale IDÉNTICO byte a byte al de antes.
    */
   seleccion?: SeleccionMovimientos | null;
+  /**
+   * Moneda por cuenta en CUALQUIER pestaña (revisión del 15-oct-2026,
+   * ADITIVA): «Deshacer la omisión…» del ⋯ de una fila omitida también se
+   * ofrece en «Conciliados» (sin selección) y sin la moneda decía «$19.72»
+   * de un cargo en dólares. Sin ella, la de `seleccion`.
+   */
+  monedaPorCuenta?: Record<string, string> | null;
 }
 
 export function MovimientosTable({
@@ -195,6 +217,7 @@ export function MovimientosTable({
   huboCorte = false,
   abreBalances = true,
   seleccion = null,
+  monedaPorCuenta: monedaPorCuentaProp = null,
 }: MovimientosTableProps) {
   // La fila que se abrió desde Gastos se trae a la vista (mismo patrón que
   // «Por facturar»). El id ya llega validado (uuid).
@@ -212,24 +235,79 @@ export function MovimientosTable({
   );
   const nombreCuenta = (id: string) => cuentas?.[id] ?? "—";
 
-  // ── SELECCIÓN (14-oct-2026): el Set es local; lo VIGENTE se deriva en
-  // render (sin setState en efectos). La página monta la tabla con
+  // ── SELECCIÓN (14-oct-2026): el Set es local. La página monta la tabla con
   // `key={claveVista}`: cambiar de pestaña, cuenta o fechas la reinicia.
   const vista: VistaSeleccion | null = seleccion?.vista ?? null;
-  const monedaPorCuenta = seleccion?.monedaPorCuenta;
+  // La moneda por cuenta propia (todas las pestañas) o, sin ella, la de la selección.
+  const monedaPorCuenta = monedaPorCuentaProp ?? seleccion?.monedaPorCuenta;
   // Con un API ≤ 0.0.76 (sin la llave `omision`) no se ofrece nada de lo nuevo.
   const conSeleccion = vista !== null && apiConOmision(movimientos);
   const [sel, setSel] = useState<ReadonlySet<string>>(SIN_SELECCION);
+  // Lo que la PODA sacó de la selección: la barra y la región viva lo dicen
+  // hasta la siguiente acción del operador sobre la selección.
+  const [retirados, setRetirados] = useState(0);
   const [filtradas, setFiltradas] = useState<MovimientoBancario[] | null>(null);
   const [dialogo, setDialogo] = useState<DialogoSeleccion | null>(null);
-  const { vigentes, retirados } = useMemo(
-    () =>
-      conSeleccion && vista
-        ? seleccionVigente(movimientos, sel, vista)
-        : { vigentes: [] as MovimientoBancario[], retirados: 0 },
+  // Alto REAL de la barra fija (la mide ella misma con un ResizeObserver).
+  const [altoBarra, setAltoBarra] = useState<number | null>(null);
+  const poda = useMemo(
+    () => (conSeleccion && vista ? podaSeleccion(movimientos, sel, vista) : { vigentes: SIN_VIGENTES, retirados: 0, sel }),
     [conSeleccion, vista, movimientos, sel],
   );
+  // PODA consolidada (revisión del 15-oct-2026; ajuste guardado en el render,
+  // sin efectos): lo que dejó de calificar SALE de `sel` de verdad. Antes solo
+  // se escondía: si la fila volvía a estar pendiente («Deshacer» del toast,
+  // «Desvincular gasto»…) reaparecía MARCADA y el siguiente «Omitir…» la
+  // incluía; la barra decía «se quitó de la selección» y no era cierto.
+  if (poda.sel !== sel) {
+    setSel(poda.sel);
+    setRetirados((n) => n + poda.retirados);
+  }
+  const vigentes = poda.vigentes;
   const idsVigentes = useMemo(() => new Set(vigentes.map((m) => m.id)), [vigentes]);
+  // La barra fija tapa lo que queda debajo: su alto MEDIDO + holgura da el
+  // hueco al final de la tabla y, mientras se ve, el `scroll-padding-bottom`
+  // del documento (el `scrollIntoView` de ↑/↓ deja la fila activa ENCIMA de la
+  // barra; con el `h-24` fijo quedaba tapada y, en teléfono, el paginado).
+  const barraVisible = conSeleccion && vigentes.length > 0;
+  const hueco = barraVisible ? huecoBarraSeleccionPx(altoBarra) : null;
+  useEffect(() => {
+    if (hueco == null) return;
+    const raiz = document.documentElement;
+    const antes = raiz.style.scrollPaddingBottom;
+    raiz.style.scrollPaddingBottom = `${hueco}px`;
+    return () => {
+      raiz.style.scrollPaddingBottom = antes;
+    };
+  }, [hueco]);
+  // FOCO (revisión del 15-oct-2026): «Quitar selección», «Limpiar» y la barra
+  // se desmontan al vaciar la selección, y el botón que abrió un diálogo ya no
+  // existe tras una acción exitosa: el foco caía en <body> (o en el ⋯ de otra
+  // fila). La tabla lo pone DESPUÉS del commit en un lugar estable.
+  const herramientasRef = useRef<HTMLDivElement | null>(null);
+  const botonTodasRef = useRef<HTMLButtonElement | null>(null);
+  const disparadorRef = useRef<HTMLElement | null>(null);
+  const exitoRef = useRef(false);
+  const focoPendienteRef = useRef<FocoPendiente | null>(null);
+  useEffect(() => {
+    const p = focoPendienteRef.current;
+    if (!p || dialogo !== null) return;
+    focoPendienteRef.current = null;
+    const boton = p.estable ? null : botonTodasRef.current;
+    const destino = p.preferido?.isConnected ? p.preferido : boton?.isConnected ? boton : herramientasRef.current;
+    destino?.focus({ preventScroll: true });
+  });
+  // Red de seguridad: la barra desapareció SIN que la tabla lo pidiera (la
+  // poda de un refresh tras «Vincular gasto» de UN cargo, o tras omitir desde
+  // el ⋯ la única fila marcada) y el foco quedó en <body>: al grupo.
+  const barraAntesRef = useRef(false);
+  useEffect(() => {
+    const antes = barraAntesRef.current;
+    barraAntesRef.current = barraVisible;
+    if (antes && !barraVisible && dialogo === null && document.activeElement === document.body) {
+      herramientasRef.current?.focus({ preventScroll: true });
+    }
+  }, [barraVisible, dialogo]);
   // Lo que la búsqueda deja (todas las páginas), con los datos de HOY de cada
   // fila (un refresh con los mismos ids no vuelve a avisar desde DataTable).
   const filasVista = useMemo(() => {
@@ -243,18 +321,33 @@ export function MovimientosTable({
     (id: string) => {
       const r = alternarSeleccion(idsVigentes, id);
       if (r.aviso) toast.info(r.aviso);
+      setRetirados(0);
       setSel(r.sel);
     },
     [idsVigentes],
   );
   const quitarDeSeleccion = useCallback((ids: string[]) => {
+    setRetirados(0);
     setSel((prev) => {
       const s = new Set(prev);
       for (const id of ids) s.delete(id);
       return s;
     });
   }, []);
-  const limpiarSeleccion = () => setSel(SIN_SELECCION);
+  const limpiarSeleccion = () => {
+    setRetirados(0);
+    setSel(SIN_SELECCION);
+  };
+  /** «Quitar selección» y «Limpiar»: el botón pulsado se desmonta; el foco va a «Seleccionar los N…» (o al grupo). */
+  const vaciarSeleccion = () => {
+    focoPendienteRef.current = { preferido: null, estable: false };
+    limpiarSeleccion();
+  };
+  /** Un diálogo terminó BIEN (omitir, deshacer, vincular, crear por la suma): limpiar; el foco irá al grupo (estable ante el refresh). */
+  const trasExito = () => {
+    exitoRef.current = true;
+    limpiarSeleccion();
+  };
 
   // Columna de las casillas, PRIMERA y aparte de las de siempre (que no
   // dependen de la selección). Casilla NATIVA solo en filas seleccionables;
@@ -265,29 +358,28 @@ export function MovimientosTable({
       key: "sel",
       header: <span className="sr-only">{ENCABEZADO_SELECCION}</span>,
       headClassName: "w-10",
-      cellClassName: "relative w-10",
+      // Marcada, la CELDA se tiñe con su `background-color` (revisión del
+      // 15-oct-2026): queda DEBAJO de la marca de la fila activa (la sombra
+      // de globals.css). La capa absoluta de antes se pintaba encima y
+      // apagaba la barra roja a ≈2.4:1 (< 3:1).
+      cellClassName: "w-10 has-checked:bg-brand-50 dark:has-checked:bg-brand-900/30",
       noLink: true,
       cell: (m: MovimientoBancario) => {
         if (!esSeleccionable(m, vista)) return null;
         const marcada = idsVigentes.has(m.id);
         return (
-          <>
-            {marcada && (
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-brand-50 dark:bg-brand-900/30" />
+          <input
+            type="checkbox"
+            className="h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
+            checked={marcada}
+            onChange={() => alternar(m.id)}
+            aria-label={etiquetaCasillaMovimiento(
+              m,
+              cuentas?.[m.cuenta_bancaria_id] ?? null,
+              vista,
+              monedaDeMovimiento(m, monedaPorCuenta),
             )}
-            <input
-              type="checkbox"
-              className="relative h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
-              checked={marcada}
-              onChange={() => alternar(m.id)}
-              aria-label={etiquetaCasillaMovimiento(
-                m,
-                cuentas?.[m.cuenta_bancaria_id] ?? null,
-                vista,
-                monedaDeMovimiento(m, monedaPorCuenta),
-              )}
-            />
-          </>
+          />
         );
       },
     };
@@ -817,59 +909,105 @@ export function MovimientosTable({
   // Sin selección (otra pestaña, o un API ≤ 0.0.76): la tabla de siempre, sin envoltura.
   if (!conSeleccion || !vista) return tabla;
 
-  const candidatas = filasVista.filter((m) => esSeleccionable(m, vista));
-  const objetivo = seleccionarTodas(filasVista, vista).sel;
-  const yaTodas = objetivo.size === idsVigentes.size && [...objetivo].every((id) => idsVigentes.has(id));
+  // «Seleccionar los N…» SUMA (revisión del 15-oct-2026: reemplazaba y
+  // soltaba en silencio lo marcado en otra búsqueda); con TODAS ya marcadas
+  // (subconjunto) se queda montado con `aria-disabled` y lo dice.
+  const todas = estadoSeleccionarTodas(filasVista, idsVigentes, vista);
   const seleccionarLasN = () => {
-    const r = seleccionarTodas(filasVista, vista);
+    if (todas.completo) return;
+    const r = seleccionarTodas(filasVista, idsVigentes, vista);
     if (r.aviso) toast.info(r.aviso);
+    setRetirados(0);
     setSel(r.sel);
   };
-  const cerrarDialogo = (abierto: boolean) => {
-    if (!abierto) setDialogo(null);
+  /** Abre un diálogo con una COPIA CONGELADA de la selección y recuerda qué botón lo abrió (para devolverle el foco). */
+  const abrirDialogo = (tipo: DialogoSeleccion["tipo"]) => {
+    const activo = document.activeElement;
+    disparadorRef.current = activo instanceof HTMLElement && activo !== document.body ? activo : null;
+    exitoRef.current = false;
+    setDialogo({ tipo, movimientos: [...vigentes] });
   };
+  const cerrarDialogo = (abierto: boolean) => {
+    if (abierto) return;
+    // El foco lo pone la tabla tras el commit (Base UI no: `finalFocus={false}`).
+    focoPendienteRef.current = exitoRef.current
+      ? { preferido: null, estable: true }
+      : { preferido: disparadorRef.current, estable: false };
+    exitoRef.current = false;
+    setDialogo(null);
+  };
+  const resumen = resumenSeleccion(vigentes, monedaPorCuenta);
+  const hayHerramientas = todas.n > 0 || vigentes.length > 0;
 
   return (
     <>
-      {(candidatas.length > 0 || vigentes.length > 0) && (
-        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border px-3 py-2">
-          {candidatas.length > 0 && !yaTodas && (
-            <button
-              type="button"
-              onClick={seleccionarLasN}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted"
-            >
-              <CheckIcon className="h-3.5 w-3.5" aria-hidden />
-              {textoSeleccionarTodas({ n: candidatas.length, conBusqueda, vista })}
-            </button>
-          )}
-          {vigentes.length > 0 && (
-            <button
-              type="button"
-              onClick={limpiarSeleccion}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <XMarkIcon className="h-3.5 w-3.5" aria-hidden />
-              {BOTON_QUITAR_SELECCION}
-            </button>
-          )}
-        </div>
+      {/* Barra de herramientas de la selección: SIEMPRE montada (es el lugar
+          estable del foco y aloja la región VIVA permanente, que anuncia la
+          primera selección y el vaciado: una región que nace con su texto no
+          se anuncia). Sin botones no ocupa espacio. */}
+      <div
+        ref={herramientasRef}
+        role="group"
+        aria-label={ETIQUETA_HERRAMIENTAS_SELECCION}
+        tabIndex={-1}
+        className={
+          hayHerramientas ? "flex flex-wrap items-center justify-end gap-2 border-b border-border px-3 py-2" : undefined
+        }
+      >
+        <p aria-live="polite" aria-atomic="true" className="sr-only">
+          {textoAnuncioSeleccion(resumen, retirados, vista)}
+        </p>
+        {todas.n > 0 && (
+          <button
+            ref={botonTodasRef}
+            type="button"
+            onClick={seleccionarLasN}
+            aria-disabled={todas.completo || undefined}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted aria-disabled:cursor-default aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent"
+          >
+            <CheckIcon className="h-3.5 w-3.5" aria-hidden />
+            {todas.completo
+              ? textoTodasSeleccionadas({ n: todas.n, conBusqueda, vista })
+              : textoSeleccionarTodas({ n: todas.n, tope: todas.cupo, conBusqueda, vista })}
+          </button>
+        )}
+        {vigentes.length > 0 && (
+          <button
+            type="button"
+            onClick={vaciarSeleccion}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <XMarkIcon className="h-3.5 w-3.5" aria-hidden />
+            {BOTON_QUITAR_SELECCION}
+          </button>
+        )}
+      </div>
+      {/* La barra FIJA va ANTES de la tabla en el DOM (sigue abajo en la
+          pantalla; revisión del 15-oct-2026): en el orden del Tab sus
+          acciones siguen a la barra de herramientas, no a las 100 filas y al
+          paginado (≈200 Tab desde la casilla). */}
+      {vigentes.length > 0 && (
+        <BarraSeleccionMovimientos
+          vista={vista}
+          resumen={resumen}
+          retirados={retirados}
+          onVincular={() => abrirDialogo("vincular")}
+          onOmitir={() => abrirDialogo("omitir")}
+          onDeshacer={() => abrirDialogo("deshacer")}
+          onLimpiar={vaciarSeleccion}
+          alMedir={setAltoBarra}
+        />
       )}
       {tabla}
+      {/* Mientras la barra se ve, el paginado no queda debajo de ella: el
+          hueco mide lo que la barra (h-24 hasta medirla). */}
       {vigentes.length > 0 && (
-        <>
-          {/* Mientras la barra se ve, el paginado no queda debajo de ella. */}
-          <div aria-hidden="true" className="h-24" />
-          <BarraSeleccionMovimientos
-            vista={vista}
-            resumen={resumenSeleccion(vigentes, monedaPorCuenta)}
-            retirados={retirados}
-            onVincular={() => setDialogo({ tipo: "vincular", movimientos: [...vigentes] })}
-            onOmitir={() => setDialogo({ tipo: "omitir", movimientos: [...vigentes] })}
-            onDeshacer={() => setDialogo({ tipo: "deshacer", movimientos: [...vigentes] })}
-            onLimpiar={limpiarSeleccion}
-          />
-        </>
+        <div
+          aria-hidden="true"
+          data-hueco-barra-seleccion=""
+          className={hueco == null ? "h-24" : undefined}
+          style={hueco == null ? undefined : { height: hueco }}
+        />
       )}
       {dialogo?.tipo === "omitir" && (
         <OmitirMovimientosDialog
@@ -878,8 +1016,9 @@ export function MovimientosTable({
           monedaPorCuenta={monedaPorCuenta}
           open
           onOpenChange={cerrarDialogo}
-          onOmitidos={limpiarSeleccion}
+          onOmitidos={trasExito}
           onQuitarDeSeleccion={quitarDeSeleccion}
+          finalFocus={false}
         />
       )}
       {dialogo?.tipo === "deshacer" && (
@@ -889,7 +1028,8 @@ export function MovimientosTable({
           monedaPorCuenta={monedaPorCuenta}
           open
           onOpenChange={cerrarDialogo}
-          onRestaurados={limpiarSeleccion}
+          onRestaurados={trasExito}
+          finalFocus={false}
         />
       )}
       {/* «Vincular a un gasto…» (14-oct-2026, API 0.0.77): con UN cargo, el
@@ -913,8 +1053,9 @@ export function MovimientosTable({
           catalogosGasto={catalogosGasto}
           open
           onOpenChange={cerrarDialogo}
-          onVinculados={limpiarSeleccion}
+          onVinculados={trasExito}
           onQuitarDeSeleccion={quitarDeSeleccion}
+          finalFocus={false}
         />
       )}
     </>

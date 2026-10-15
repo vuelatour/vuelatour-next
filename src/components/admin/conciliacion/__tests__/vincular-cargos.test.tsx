@@ -230,10 +230,14 @@ describe("el diálogo al abrir (antes de la respuesta del API)", () => {
     for (const b of html.match(/<button[^>]*>/g) ?? []) expect(b).toContain("cursor-pointer");
   });
 
-  it("con UN cargo (quitaron los demás): «Con un solo cargo usa «Vincular gasto»…» y no se busca nada", () => {
+  it("con UN cargo (quitaron los demás): «Con un solo cargo usa «Vincular gasto»…», en singular, y no se busca nada", () => {
     const h = dialogo([CARGOS[0]]);
     expect(h).toContain(esc("Con un solo cargo usa «Vincular gasto» desde su menú ⋯."));
     expect(h).not.toContain("Buscando");
+    expect(h).toContain("Vincular 1 cargo a un gasto");
+    expect(h).toContain("1 cargo seleccionado");
+    expect(h).toContain("Vincular el cargo</button>");
+    expect(h).not.toMatch(/1 cargos/);
   });
 });
 
@@ -428,9 +432,33 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(tabla).toMatch(
       /dialogo\?\.tipo === "vincular" && dialogo\.movimientos\.length >= MIN_CARGOS_A_GASTO && \(\s*<VincularCargosGastoDialog/,
     );
-    expect(tabla).toContain('onVincular={() => setDialogo({ tipo: "vincular", movimientos: [...vigentes] })}');
+    expect(tabla).toContain('onVincular={() => abrirDialogo("vincular")}');
+    expect(tabla).toContain("setDialogo({ tipo, movimientos: [...vigentes] });");
     // El diálogo trabaja con su copia CONGELADA y limpia la selección al vincular.
-    expect(tabla).toMatch(/<VincularCargosGastoDialog[\s\S]{0,400}onVinculados=\{limpiarSeleccion\}[\s\S]{0,80}onQuitarDeSeleccion=\{quitarDeSeleccion\}/);
+    expect(tabla).toMatch(/<VincularCargosGastoDialog[\s\S]{0,400}onVinculados=\{trasExito\}[\s\S]{0,80}onQuitarDeSeleccion=\{quitarDeSeleccion\}/);
+    expect(tabla).toMatch(/const trasExito = \(\) => \{\s*exitoRef\.current = true;\s*limpiarSeleccion\(\);/);
+  });
+
+  it("revisión del 15-oct: la ficha del elegido es de ESTOS cargos; quitar uno lo suelta y sin el resumen no se liga", () => {
+    expect(dlg).toContain("const [elegido, setElegido] = useState<ElegidoSuma | null>(null);");
+    expect(dlg).toContain("const elegidoVigente = fichaElegidaVigente(elegido, idsClave, resultados);");
+    expect(dlg).toContain("setElegido({ idsClave, candidato: c });");
+    // `quitar` cambia la suma: el gasto se vuelve a elegir.
+    const quitar = dlg.slice(dlg.indexOf("const quitar = (quitarIds: string[]) => {"), dlg.indexOf("const elegir = "));
+    expect(quitar).toContain("setElegido(null);");
+    // `vincular` no llama al API con la lista cargándose, sin gasto de estos cargos o sin el resumen.
+    const vincular = dlg.slice(dlg.indexOf("const vincular = () => {"), dlg.indexOf("ligarCargosAGastoAction(gasto.id, idsEnvio)"));
+    expect(vincular).toMatch(
+      /const motivo = motivoNoVincularCargos\(\{\s*unSolo,\s*cargando,\s*elegido: elegidoVigente !== null,\s*conResumen: resumenTexto !== null,\s*\}\);/,
+    );
+    expect(vincular).toMatch(/if \(motivo !== null \|\| gasto === null\) \{\s*setAviso\(motivo \?\? TEXTO_ELIGE_GASTO\);\s*return;\s*\}/);
+  });
+
+  it("los dos enlaces de texto se leen en oscuro (brand-400 sobre el popover, ≥ 4.5:1)", () => {
+    const crea = dlg.slice(dlg.indexOf("{p.catalogosGasto && resumen && !unSolo ? ("), dlg.indexOf("{botonAbrirCrearSuma(resumen.suma, resumen.moneda)}"));
+    expect(crea).toContain("dark:text-brand-400");
+    const ampliar = dlg.slice(dlg.indexOf("{p.dias < VENTANA_AMPLIADA_DIAS && ("), dlg.indexOf("{BOTON_AMPLIAR_120}"));
+    expect(ampliar).toContain("dark:text-brand-400");
   });
 
   it("cada acción con .catch(sinConexion): la lista, los duplicados del paso 4 y la liga; ninguna revalida", () => {

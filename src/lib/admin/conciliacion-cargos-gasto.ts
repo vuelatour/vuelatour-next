@@ -94,17 +94,20 @@ export function errorListaCargosGasto(ids: unknown): string | null {
 
 // ───────────────────────────── Encabezado y cargos ─────────────────────────────
 
-/** «Vincular 2 cargos a un gasto». */
+/**
+ * «Vincular 2 cargos a un gasto» · con 1 (quitaron los demás de la selección):
+ * «Vincular 1 cargo a un gasto».
+ */
 export function tituloVincularCargos(n: number): string {
-  return `Vincular ${n} cargos a un gasto`;
+  return n === 1 ? "Vincular 1 cargo a un gasto" : `Vincular ${n} cargos a un gasto`;
 }
 
 export const DESCRIPCION_VINCULAR_CARGOS =
   "Los cargos se suman y pagan UN gasto (una factura cobrada en varios cargos).";
 
-/** Mientras el API no ha sumado (o si no pudo): solo el conteo, nunca una suma del panel. */
+/** Mientras el API no ha sumado (o si no pudo): solo el conteo, nunca una suma del panel. Con 1: «1 cargo seleccionado». */
 export function textoCargosSinSuma(n: number): string {
-  return `${n} cargos seleccionados`;
+  return n === 1 ? "1 cargo seleccionado" : `${n} cargos seleccionados`;
 }
 
 /** Nombre accesible de la lista de cargos del diálogo. */
@@ -348,13 +351,66 @@ export function textoResumenVincularCargos(p: {
   }
 }
 
-/** «Vincular los 2 cargos». */
+/** «Vincular los 2 cargos» · con 1: «Vincular el cargo» (el clic dice que con uno se usa «Vincular gasto»). */
 export function botonVincularCargos(n: number): string {
-  return `Vincular los ${n} cargos`;
+  return n === 1 ? "Vincular el cargo" : `Vincular los ${n} cargos`;
 }
 
 /** El clic sin un gasto elegido lo explica (el botón nunca se apaga por eso). */
 export const TEXTO_ELIGE_GASTO = "Elige el gasto que pagaron los cargos.";
+
+/**
+ * El gasto elegido JUNTO con los cargos (`idsClave`) para los que el API
+ * calculó su ficha: su `resultado`, `faltante_tras` y `excedente` son de ESA
+ * suma.
+ */
+export interface ElegidoSuma {
+  idsClave: string;
+  candidato: CandidatoGastoPorSuma;
+}
+
+/**
+ * La ficha del elegido que vale para ESTOS cargos (revisión del 15-oct-2026):
+ * la más reciente de la respuesta vigente o, si la búsqueda lo dejó fuera, la
+ * que se eligió —calculada para la MISMA suma—. Si los cargos cambiaron (se
+ * quitó uno: OTRA suma y quizá otra ventana de fechas), la ficha vieja ya no
+ * sirve: el resumen diría «queda cubierto» con un `resultado` de la suma
+ * anterior cuando el API lo dejaría PARCIAL ⇒ null (hay que volver a elegir).
+ */
+export function fichaElegidaVigente(
+  elegido: ElegidoSuma | null | undefined,
+  idsClave: string,
+  resultados: readonly CandidatoGastoPorSuma[],
+): CandidatoGastoPorSuma | null {
+  if (!elegido || elegido.idsClave !== idsClave) return null;
+  return resultados.find((c) => c.id === elegido.candidato.id) ?? elegido.candidato;
+}
+
+/** El clic en «Vincular los N cargos» mientras el API vuelve a leer la lista. */
+export const TEXTO_ESPERA_LISTA_SUMA = "Espera a que termine de cargar la lista de gastos.";
+/** Sin la suma del API para ESTOS cargos no hay resumen, y el resumen ES la confirmación. */
+export const TEXTO_ESPERA_SUMA_CARGOS = "Espera a que se actualice la suma de los cargos y vuelve a elegir el gasto.";
+
+/**
+ * Por qué «Vincular los N cargos» todavía no liga (el botón nunca se apaga:
+ * el clic lo dice). El resumen visible («Se vincularán 2 cargos ($400.00) al
+ * gasto «…»…») ES la confirmación de la acción masiva: sin él —o con la lista
+ * cargándose— no se llama al API. null = se puede ligar.
+ */
+export function motivoNoVincularCargos(s: {
+  unSolo: boolean;
+  cargando: boolean;
+  /** Hay un gasto elegido CON ficha para estos cargos (`fichaElegidaVigente`). */
+  elegido: boolean;
+  /** El resumen (la confirmación) está a la vista. */
+  conResumen: boolean;
+}): string | null {
+  if (s.unSolo) return TEXTO_UN_SOLO_CARGO;
+  if (s.cargando) return TEXTO_ESPERA_LISTA_SUMA;
+  if (!s.elegido) return TEXTO_ELIGE_GASTO;
+  if (!s.conResumen) return TEXTO_ESPERA_SUMA_CARGOS;
+  return null;
+}
 
 /**
  * El toast del éxito: «2 cargos vinculados al gasto» + «El gasto quedó

@@ -740,6 +740,7 @@ export default async function ConciliacionPage({
               huboCorte={notaRecorte != null}
               abreBalances={puedeAbrirBalances(me?.rol)}
               seleccion={vistaSeleccion ? { vista: vistaSeleccion, monedaPorCuenta } : null}
+              monedaPorCuenta={monedaPorCuenta}
             />
           </CardContent>
         </Card>

@@ -16,7 +16,7 @@
  * `lib/admin/conciliacion-omision.ts`.
  */
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -58,6 +58,8 @@ export interface QuitarOmisionDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Tras deshacer: el padre limpia la selección (el diálogo ya cerró y refresca). */
   onRestaurados?: (ids: string[]) => void;
+  /** A dónde vuelve el foco al cerrar (Base UI); la tabla pasa `false` y lo pone ella tras el commit. Sin él, el de siempre. */
+  finalFocus?: ComponentProps<typeof AlertDialogContent>["finalFocus"];
 }
 
 export function QuitarOmisionDialog(p: QuitarOmisionDialogProps) {
@@ -112,7 +114,10 @@ export function QuitarOmisionDialog(p: QuitarOmisionDialogProps) {
 
   return (
     <AlertDialog open={p.open} onOpenChange={cambiarAbierto}>
-      <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto data-[size=default]:sm:max-w-lg">
+      <AlertDialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto data-[size=default]:sm:max-w-lg"
+        finalFocus={p.finalFocus}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{tituloQuitarOmision(lista.length)}</AlertDialogTitle>
           <AlertDialogDescription>{TEXTO_QUITAR_OMISION}</AlertDialogDescription>

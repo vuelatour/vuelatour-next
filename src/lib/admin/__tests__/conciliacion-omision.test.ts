@@ -49,6 +49,7 @@ import {
   esClasificacionOmitida,
   esDtoSinOmision,
   esOmitido,
+  esperadoClasificacionDe,
   estadoMotivoOmision,
   fallaListaOmitidos,
   fechaCortaMovimiento,
@@ -61,6 +62,7 @@ import {
   resumenOmitir,
   textoAvisoRiesgos,
   textoBusquedaOmision,
+  textoFaltaAceptarRiesgos,
   textoMotivoFila,
   textoNoPendientesRevision,
   textoPestanaOmitidos,
@@ -211,6 +213,25 @@ describe("el diálogo «Omitir la conciliación»", () => {
     expect(TEXTO_FALTA_ACEPTAR_RIESGOS).toContain("«También omitir…»");
   });
 
+  it("todos con aviso y sin aceptarlos: el texto según el camino (revisión del 15-oct: desde el ⋯ no hay «Quitar…»)", () => {
+    // Desde el ⋯ de UNA fila: singular y «cancela» (el diálogo solo tiene «Cancelar»).
+    expect(textoFaltaAceptarRiesgos({ n: 1, conSeleccion: false })).toBe(
+      "Este movimiento tiene aviso: marca «También omitir este…» si revisaste que no se concilia, o cancela.",
+    );
+    // Desde la barra con uno: singular y «quítalo de la selección».
+    expect(textoFaltaAceptarRiesgos({ n: 1, conSeleccion: true })).toBe(
+      "Este movimiento tiene aviso: marca «También omitir este…» si revisaste que no se concilia, o quítalo de la selección.",
+    );
+    // Desde la barra con varios: el de siempre.
+    expect(textoFaltaAceptarRiesgos({ n: 3, conSeleccion: true })).toBe(
+      "Todos tienen aviso: marca «También omitir…» si revisaste que no se concilian, o quítalos de la selección.",
+    );
+    expect(TEXTO_FALTA_ACEPTAR_RIESGOS).toBe(textoFaltaAceptarRiesgos({ n: 2, conSeleccion: true }));
+    expect(textoFaltaAceptarRiesgos({ n: 2, conSeleccion: false })).toBe(
+      "Todos tienen aviso: marca «También omitir…» si revisaste que no se concilian, o cancela.",
+    );
+  });
+
   it("la casilla «Revisé la lista» desde 20", () => {
     expect(requiereCasillaMuchos(19)).toBe(false);
     expect(requiereCasillaMuchos(20)).toBe(true);
@@ -250,6 +271,24 @@ describe("el diálogo «Omitir la conciliación»", () => {
     expect(MENU_OMITIR).toBe("Omitir la conciliación…");
     expect(MENU_QUITAR_OMISION).toBe("Deshacer la omisión…");
     expect(MSG_CLASIFICACIONES_NO_CARGARON).toBe("No se pudieron cargar las clasificaciones: cierra y vuelve a abrir.");
+  });
+
+  it("«Clasificar»: `esperado_clasificacion_id` (lo que el panel VIO) y cuándo NO viaja", () => {
+    const CLASIF = "c1a51f00-0000-4000-8000-000000000001";
+    // API ≤ 0.0.76 (sin la llave `omision`): no viaja (su DTO la rechaza).
+    expect(esperadoClasificacionDe({ clasificacion_id: null, conciliado: false })).toEqual({});
+    // Pendiente: null = «estaba pendiente».
+    expect(esperadoClasificacionDe({ clasificacion_id: null, conciliado: false, omision: null })).toEqual({
+      esperado_clasificacion_id: null,
+    });
+    // Clasificado (o conciliado POR su clasificación): su id.
+    expect(esperadoClasificacionDe({ clasificacion_id: CLASIF, conciliado: true, omision: null })).toEqual({
+      esperado_clasificacion_id: CLASIF,
+    });
+    // Conciliado SIN clasificación (dato viejo sin liga visible): no viaja —con
+    // null el API respondería 409 MOVIMIENTO_CAMBIO siempre y la fila ya no se
+    // podría clasificar—; sin la llave compara contra lo que lee, como antes.
+    expect(esperadoClasificacionDe({ clasificacion_id: null, conciliado: true, omision: null })).toEqual({});
   });
 });
 

@@ -552,6 +552,19 @@ describe("burbuja con la EXIGENCIA del API 0.0.77 (14-oct-2026: «un anticipo de
     expect(sinNota).toContain("retírala si no hace falta.\"");
   });
 
+  it("ya no aplica: «Retirar» es el botón PRINCIPAL (outline) y «Registrar factura» pasa a segundo plano; pendiente, como siempre", () => {
+    const boton = (html: string, texto: string) => html.match(new RegExp(`<button[^>]*>${texto}</button>`))?.[0] ?? "";
+    const yaNo = vuelo({ facturaServicio: YA_NO_APLICA, rol: "ADMIN" });
+    expect(boton(yaNo, "Retirar")).toContain("border-border");
+    expect(boton(yaNo, "Retirar")).toContain("h-7");
+    expect(boton(yaNo, "Retirar")).not.toContain("text-[11px]");
+    expect(boton(yaNo, "Registrar factura")).not.toContain("border-border");
+    // La solicitud PENDIENTE (ámbar) conserva su «Retirar» discreto y «Registrar factura» outline.
+    const pendiente = vuelo({ facturaServicio: PEDIDA, rol: "ADMIN" });
+    expect(boton(pendiente, "Retirar")).toContain("text-[11px]");
+    expect(boton(pendiente, "Registrar factura")).toContain("border-border");
+  });
+
   it("COORDINADOR la puede retirar; SOCIO solo la ve", () => {
     expect(vuelo({ facturaServicio: YA_NO_APLICA, rol: "COORDINADOR" })).toContain(">Retirar<");
     const socio = cotizacion({ facturaServicio: YA_NO_APLICA, rol: "SOCIO" });
