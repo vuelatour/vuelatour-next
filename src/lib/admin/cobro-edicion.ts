@@ -22,7 +22,10 @@
  *        T.C. y comisión (400); el panel además deja de solo lectura el
  *        método y la cuenta (son el «dinero» del movimiento);
  *      · CONCILIADO con el banco (liga directa) ⇒ mismo candado del API
- *        (monto, moneda, T.C., comisión) + método y cuenta de solo lectura;
+ *        (monto, moneda, T.C., comisión) + método y cuenta de solo lectura.
+ *        Desde el API 0.0.78 (un cobro, varios abonos) el criterio es
+ *        `ligado_banco` («tiene abonos»): un cobro conciliado PARCIAL también
+ *        bloquea su dinero (409 COBRO_CONCILIADO, trigger E en la BD);
  *      · de un ANTICIPO ⇒ el API rechaza monto, moneda, método y comisión
  *        (409 COBRO_DE_ANTICIPO); el T.C. SÍ se corrige (no toca el saldo
  *        del anticipo); la cuenta queda de solo lectura (es la del anticipo);
@@ -95,13 +98,51 @@ function esParteDeSobre(c: Pick<FlightCobro, "cobro_grupo" | "cobro_grupo_id">):
 }
 
 /**
- * Conciliado por LIGA DIRECTA (o del sobre) con un movimiento del banco. Un
- * cobro conciliado «vía el anticipo» NO cuenta: el candado del API
+ * LIGADO al banco por liga DIRECTA (o la del sobre). Un cobro conciliado
+ * «vía el anticipo» NO cuenta: el candado del API
  * (`assertCobroSinConciliar` → `movimientoDeCobro`) solo mira la liga
  * directa y la del sobre, y ahí el T.C. sí se corrige.
+ *
+ * UN COBRO, VARIOS ABONOS (API 0.0.78, invariante 77): `conciliado` pasó a
+ * ser CUBIERTO y un PARCIAL dice `conciliado: false` — pero su dinero
+ * SIGUE bloqueado (tiene abonos). El candado se decide con `ligado_banco`
+ * («tiene ≥ 1 abono directo o su sobre ligado»), como el API; con un API
+ * previo (sin `ligado_banco`), con `conciliado` de siempre.
  */
-function conciliadoDirecto(c: Pick<FlightCobro, "conciliado" | "conciliado_via">): boolean {
-  return c.conciliado === true && c.conciliado_via !== "ANTICIPO";
+function conciliadoDirecto(
+  c: Pick<FlightCobro, "conciliado" | "conciliado_via" | "ligado_banco">,
+): boolean {
+  return (c.ligado_banco ?? c.conciliado) === true && c.conciliado_via !== "ANTICIPO";
+}
+
+/** Un PARCIAL del API 0.0.78: con abonos que todavía no cubren el cobro. */
+function esParcialBanco(c: Pick<FlightCobro, "conciliacion_estado">): boolean {
+  return c.conciliacion_estado === "PARCIAL";
+}
+
+/**
+ * Por qué el dinero de un cobro LIGADO al banco no se corrige (textos del
+ * API 0.0.78): un PARCIAL dice cuánto respalda el banco («$1,700 MXN de
+ * $3,400 MXN», números del API); con 2+ abonos, «desvincúlalos»; con uno, el
+ * de siempre.
+ */
+function explicacionCobroLigado(c: FlightCobro): string {
+  const lo = "su dinero (monto, moneda, método, T.C., comisión y cuenta) no se corrige";
+  const aqui = "Aquí puedes corregir la fecha, la referencia y las notas.";
+  if (esParcialBanco(c)) {
+    const mv = numeroDe(c.monto_vinculado);
+    const neto = numeroDe(c.neto_banco);
+    const cuanto =
+      mv != null
+        ? ` (${fmtMonto(mv, c.moneda)}${neto != null ? ` de ${fmtMonto(neto, c.moneda)}` : ""})`
+        : "";
+    return `Está conciliado PARCIAL con el banco${cuanto}: ${lo} mientras tenga abonos ligados. Si está mal, desvincúlalos primero en Conciliación. ${aqui}`;
+  }
+  const n = c.abonos_banco?.length ?? 0;
+  if (n >= 2) {
+    return `Está conciliado con ${n} abonos del banco: ${lo} mientras tenga abonos ligados. Si está mal, desvincúlalos primero en Conciliación. ${aqui}`;
+  }
+  return `Está conciliado con un movimiento del banco: ${lo} mientras siga ligado. Si está mal, desvincúlalo primero en Conciliación. ${aqui}`;
 }
 
 export function edicionDeCobro(c: FlightCobro): EdicionCobro {
@@ -133,8 +174,7 @@ export function edicionDeCobro(c: FlightCobro): EdicionCobro {
       dineroBloqueado: true,
       tcBloqueado: true,
       motivo: "CONCILIADO",
-      explicacion:
-        "Está conciliado con un movimiento del banco: su dinero (monto, moneda, método, T.C., comisión y cuenta) no se corrige mientras siga ligado. Si está mal, desvincúlalo primero en Conciliación. Aquí puedes corregir la fecha, la referencia y las notas.",
+      explicacion: explicacionCobroLigado(c),
     };
   }
   if (c.anticipo) {
@@ -164,7 +204,9 @@ export function tituloBotonEditarCobro(c: FlightCobro, e: EdicionCobro = edicion
     case "REEMBOLSO":
       return "Corregir este reembolso: fecha, referencia y notas";
     case "CONCILIADO":
-      return "Corregir este cobro: está conciliado con el banco, solo fecha, referencia y notas";
+      return esParcialBanco(c)
+        ? "Corregir este cobro: está conciliado (parcial) con el banco, solo fecha, referencia y notas"
+        : "Corregir este cobro: está conciliado con el banco, solo fecha, referencia y notas";
     case "ANTICIPO":
       return c.moneda === "MXN"
         ? "Corregir este cobro: viene de un anticipo, solo T.C., fecha, referencia y notas"
@@ -728,6 +770,15 @@ export function resumenCambiosCobro(lineas: readonly LineaCambioCobro[]): string
 
 // ═══════════════════════ Errores del API en es-MX ═══════════════════════
 
+/**
+ * Respaldo del 409 COBRO_CONCILIADO (API 0.0.78, candado E) cuando no trae
+ * texto: el genérico del API (`mensajeCobroConciliado()` de
+ * conciliacion/cobros-lote.util.ts). Con texto, se pinta TAL CUAL (parcial,
+ * 2+ abonos, 1 abono o sobre).
+ */
+export const MSG_COBRO_CONCILIADO =
+  "El cobro tiene abonos del banco vinculados: su monto, moneda, comisión, sobre o anticipo no cambian mientras esté conciliado; desvincúlalo en Conciliación primero.";
+
 /** Heurística: el texto viene del framework (inglés), no de una regla del API. */
 function pareceTextoTecnico(msg: string): boolean {
   return /\b(must|should|expected|failed|not found|is not|internal server error|request failed|bad request|bad gateway|service unavailable)\b/i.test(
@@ -747,6 +798,8 @@ export function mensajeErrorEdicionCobro(res: {
 }): string {
   const msg = (res.error ?? "").trim();
   switch (res.code) {
+    case "COBRO_CONCILIADO":
+      return msg || MSG_COBRO_CONCILIADO;
     case "COBRO_DE_GRUPO":
       return msg || "Este cobro es parte de un sobre de grupo: se corrige desde el grupo (Cobros del grupo).";
     case "COBRO_DE_ANTICIPO":

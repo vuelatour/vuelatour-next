@@ -814,6 +814,12 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             // previsto nunca se reescribe porque define el IVA cotizado.
             metodoCobroFinal={snapshot.metodo_cobro_final ?? null}
             cobros={snapshot.cobros}
+            // «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, ADITIVO): excedente,
+            // causa y qué hacer los arma el API; ausente/null ⇒ nada.
+            cobradoDeMas={snapshot.cobrado_de_mas ?? null}
+            // Cotización abierta: la vista previa del formulario de cobro no
+            // dice «cobrado de más» (el total todavía no es el final).
+            cotizacionAbierta={snapshot.cotizacion_abierta === true}
             voucherUrls={voucherUrls}
             tcCotizacion={snapshot.tc_usd_mxn ? Number(snapshot.tc_usd_mxn) : null}
             // Los pesos EXACTOS de la cotización (fuente única del API): el

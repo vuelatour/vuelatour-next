@@ -321,6 +321,35 @@ export interface FlightCobro {
   anticipo?: { ingreso_id: string; etiqueta: string } | null;
   /** Por qué está conciliado: liga directa, la del sobre, o la del anticipo. */
   conciliado_via?: "DIRECTO" | "SOBRE" | "ANTICIPO" | null;
+  /**
+   * UN COBRO, VARIOS ABONOS (14-oct-2026, API 0.0.78, invariante 77,
+   * ADITIVOS; ausentes = API previo ⇒ la card se pinta como antes). Desde el
+   * 0.0.78 `conciliado` = CUBIERTO (Σ de sus abonos ≥ neto − $1.00): un
+   * PARCIAL ya no dice «Conciliado». Nada de esto se calcula en el panel: lo
+   * pinta `lib/admin/cobro-banco.ts`.
+   * - `conciliacion_estado`: CONCILIADO | PARCIAL | VIA_ANTICIPO |
+   *   SIN_CONCILIAR | NO_BANCARIO.
+   * - `ligado_banco`: tiene ≥ 1 abono directo o su sobre ligado (un anticipo
+   *   NO cuenta): el criterio del CANDADO de dinero, también para un parcial.
+   * - `neto_banco`: lo que el banco debe depositar (monto − comisión).
+   * - `monto_vinculado` / `faltante` / `sobrante`: en la moneda del cobro;
+   *   null sin abonos directos.
+   * - `abonos_banco[]`: sus abonos directos por antigüedad (la llave se OMITE
+   *   para PILOTO/MECANICO/VISITANTE).
+   */
+  conciliacion_estado?: EstadoBancoCobro;
+  ligado_banco?: boolean;
+  neto_banco?: number;
+  monto_vinculado?: number | null;
+  faltante?: number | null;
+  sobrante?: number | null;
+  abonos_banco?: AbonoBancoDeCobro[];
+  /**
+   * SOLO del snapshot (D21, API 0.0.78): el USD de ESTE cobro con la MISMA
+   * cadena de T.C. que `total_cobrado`; null = MXN sin T.C. Lo usa la vista
+   * previa «Rebasa el pendiente» al corregir un cobro.
+   */
+  monto_usd?: number | null;
 }
 
 /** Resumen del sobre de grupo que viaja en cada parte (aditivo del API). */
@@ -372,6 +401,14 @@ export interface FlightSnapshot extends FlightListItem, SeguimientoContadores {
    * `null` = API sin la migración. En ambos casos la burbuja NO se pinta.
    */
   factura_servicio?: FacturaServicioBloque | null;
+  /**
+   * «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, invariante 77, ADITIVO):
+   * excedente, causa probable y qué hacer, ARMADOS por el API (la cifra es
+   * la misma que el balance manda a «otros movimientos» de VuelaTour).
+   * `null` = sin aviso; ausente = API previo u omitido para
+   * PILOTO/MECANICO/VISITANTE. Jamás se calcula en el panel.
+   */
+  cobrado_de_mas?: CobradoDeMasVuelo | null;
 }
 
 /** Foto de tacómetro con URL firmada: GET /v1/flights/:id/taco-photos. */
@@ -424,4 +461,79 @@ export function apoyosEfectivosDeTramo(
     ...apoyosVuelo.map((a) => ({ ...a, origen: "vuelo" as const })),
     ...(escala.apoyos_tramo ?? []).map((a) => ({ ...a, origen: "tramo" as const })),
   ];
+}
+
+// ═══════════ UN COBRO, VARIOS ABONOS y «COBRADO DE MÁS» (API 0.0.78) ═══════════
+// 14-oct-2026, invariante 77 del API. Formas 1:1 con
+// `common/cobro-banco.util.ts` y `common/cobrado-de-mas.util.ts` del API.
+
+/**
+ * Estado de un cobro contra el banco (`estadoBancoCobro` del API): CONCILIADO
+ * (cubierto, o vía su sobre) · PARCIAL (con abonos que no lo cubren) ·
+ * VIA_ANTICIPO · SIN_CONCILIAR (método bancario sin abonos) · NO_BANCARIO.
+ */
+export type EstadoBancoCobro =
+  | "CONCILIADO"
+  | "PARCIAL"
+  | "VIA_ANTICIPO"
+  | "SIN_CONCILIAR"
+  | "NO_BANCARIO";
+
+/** Un abono del banco ligado DIRECTO a un cobro (`cobro.abonos_banco[]`). */
+export interface AbonoBancoDeCobro {
+  movimiento_id: string;
+  /** DATE del banco (YYYY-MM-DD). */
+  fecha: string | null;
+  /** Lo que ESTE abono aporta al cobro (en la moneda de SU cuenta). */
+  monto_parte: number;
+  /** |monto| del abono completo. */
+  monto_abono: number | null;
+  /** Cuántos cobros paga ese abono (≥ 2 = un lote). */
+  cobros_n: number | null;
+  cuenta_bancaria_id: string | null;
+  cuenta_alias: string | null;
+  /** La cuenta del abono es la PASARELA (Paywise). */
+  pasarela: boolean;
+}
+
+/** Causa probable de «Cobrado de más» (en el orden en que la evalúa el API). */
+export type CausaCobradoDeMas =
+  | "SOBRE_DE_GRUPO"
+  | "COMISION_PAGADA_POR_CLIENTE"
+  | "IVA_NO_COTIZADO"
+  | "COBRO_DUPLICADO"
+  | "REDONDEO_TC"
+  | "OTRO_VUELO_DEL_CLIENTE"
+  | "SIN_CAUSA_CLARA";
+
+/** A qué apunta la causa: el cobro de OTRO vuelo del cliente o los cobros duplicados. */
+export interface ReferenciaCobradoDeMas {
+  vuelo_id?: string;
+  folio?: number | null;
+  cobro_id?: string;
+  cobro_ids?: string[];
+  monto?: number;
+  moneda?: string;
+}
+
+/**
+ * `snapshot.cobrado_de_mas` (forma `CobradoDeMas` del API). Los TEXTOS
+ * (`titulo`, `explicacion`, `que_hacer`) los arma el API en es-MX («Posible
+ * causa», nunca afirma); el panel solo elige el tono y arma el enlace.
+ */
+export interface CobradoDeMasVuelo {
+  excedente_usd: number;
+  cobrado_usd: number;
+  total_usd: number;
+  causa: CausaCobradoDeMas;
+  causa_etiqueta: string;
+  /** false SOLO en COMISION_PAGADA_POR_CLIENTE y REDONDEO_TC (explicados). */
+  requiere_revision: boolean;
+  tono: "AVISO" | "INFO";
+  titulo: string;
+  explicacion: string;
+  que_hacer: string;
+  referencia: ReferenciaCobradoDeMas | null;
+  /** Cobros en pesos que no entraron a la cuenta (sin T.C.). */
+  sin_tc: { n: number; mxn: number } | null;
 }

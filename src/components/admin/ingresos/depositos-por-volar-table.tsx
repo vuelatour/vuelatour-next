@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
-import { BadgeEstadoConciliacion, ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
+import { CeldaConciliacionEntrada, ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -58,7 +58,8 @@ const COLUMNS: DataTableColumn<EntradaDinero>[] = [
   {
     key: "conciliacion",
     header: "Conciliación",
-    cell: (e) => <BadgeEstadoConciliacion estado={e.conciliacion.estado} />,
+    // «Parcial · faltan $X» (API 0.0.78) junto al badge de un cobro parcial.
+    cell: (e) => <CeldaConciliacionEntrada entrada={e} />,
   },
 ];
 

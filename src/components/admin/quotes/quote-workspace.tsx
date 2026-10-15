@@ -49,7 +49,7 @@ import { puntosRuta } from "@/lib/admin/ruta-comercial";
 import { bannerSeguimiento } from "@/lib/admin/seguimiento";
 import { tramosCotizadosDeCotizacion } from "@/lib/admin/tramos-cotizados";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
-import { combinadoFolio, type FlightCobro } from "@/types/flights";
+import { combinadoFolio, type CobradoDeMasVuelo, type FlightCobro } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
 import type { CotizacionInterna } from "@/types/quotes-interno";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
@@ -112,6 +112,7 @@ export function QuoteWorkspace({
   permisoEditarCobrada = false,
   editoresCobrada = null,
   seguimientoRespaldo = null,
+  cobradoDeMas = null,
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -178,6 +179,11 @@ export function QuoteWorkspace({
    * manda); sin contadores en ninguno de los dos, no hay banner.
    */
   seguimientoRespaldo?: SeguimientoContadores | null;
+  /**
+   * «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, ADITIVO): `snapshot.cobrado_de_mas`
+   * del vuelo para la card de cobros. null/ausente ⇒ sin aviso.
+   */
+  cobradoDeMas?: CobradoDeMasVuelo | null;
 }) {
   // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
   // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
@@ -669,6 +675,9 @@ export function QuoteWorkspace({
         tcOficial={tcOficial}
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
+        // Cotización abierta: el total no es el final ⇒ la vista previa no
+        // dice «cobrado de más» (el API tampoco avisa).
+        cotizacionAbierta={quote.cotizacion_abierta === true}
       />
 
       {/* «Se actualizó la fecha de la cotización» (5-oct-2026): modal FUERA
@@ -730,6 +739,9 @@ export function QuoteWorkspace({
             tcOficial={tcOficial}
             tcOficialFecha={tcOficialFecha}
             paywiseComisionPct={paywiseComisionPct}
+            // «Cobrado de más» (API 0.0.78): el aviso lo arma el API.
+            cobradoDeMas={cobradoDeMas}
+            cotizacionAbierta={quote.cotizacion_abierta === true}
           />
         </div>
 

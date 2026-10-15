@@ -32,17 +32,19 @@ import { CobroFormSheet } from "./cobro-form-sheet";
 import { EditarCobroBoton } from "./editar-cobro-boton";
 import { ReembolsoButton } from "./reembolso-dialog";
 import {
+  CobroBancoDetalle,
   CobroConciliadoBadge,
   CobroSobreNota,
   esParteDeSobre,
 } from "./cobro-sobre-nota";
+import { CobradoDeMasAviso } from "./cobrado-de-mas-aviso";
 import { fmtMonto, fmtUsd } from "@/lib/format";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import { puedeAdjuntarComprobante } from "@/lib/admin/facturas-emitidas";
 import { FacturaServicioBurbuja } from "@/components/admin/facturas-emitidas/factura-servicio-burbuja";
 import { ComprobanteCobro } from "./comprobante-cobro";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
-import type { FlightCobro } from "@/types/flights";
+import type { CobradoDeMasVuelo, FlightCobro } from "@/types/flights";
 import {
   TITULO_REGISTRO_COBRO,
   textoRegistroCobro,
@@ -151,6 +153,14 @@ interface CobrosCardProps {
   paywiseComisionPct?: number;
   /** Rol de oficina (ADMIN/COORDINADOR): habilita "Registrar reembolso". */
   puedeReembolsar?: boolean;
+  /**
+   * «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, ADITIVO): `snapshot.cobrado_de_mas`
+   * tal cual (excedente, causa y qué hacer los arma el API). null/ausente ⇒
+   * nada (sin aviso, API previo o rol de campo).
+   */
+  cobradoDeMas?: CobradoDeMasVuelo | null;
+  /** Cotización ABIERTA (`snapshot.cotizacion_abierta`): la vista previa del formulario nunca dice «cobrado de más». */
+  cotizacionAbierta?: boolean;
 }
 
 export function CobrosCard({
@@ -184,6 +194,8 @@ export function CobrosCard({
   tcOficialFecha = null,
   paywiseComisionPct,
   puedeReembolsar = false,
+  cobradoDeMas = null,
+  cotizacionAbierta = false,
 }: CobrosCardProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -316,6 +328,10 @@ export function CobrosCard({
               </span>
             </Dato>
           </div>
+          {/* «COBRADO DE MÁS» (API 0.0.78): excedente, causa probable y qué
+              hacer, ARMADOS por el API; ámbar si requiere revisión, una línea
+              gris si está explicado. Sin bloque, nada. */}
+          <CobradoDeMasAviso aviso={cobradoDeMas} />
           <ParticipacionAvionesNota
             aviones={participacionAviones}
             fuente={participacionFuente}
@@ -468,6 +484,10 @@ export function CobrosCard({
                         {registro}
                       </p>
                     )}
+                    {/* Renglón «Banco» (API 0.0.78): un PARCIAL, 2+ abonos o
+                        un abono que trae de más; ligas a Conciliación solo
+                        para quien concilia. */}
+                    <CobroBancoDetalle cobro={c} puedeConciliar={puedeConciliarIngresos(rol)} />
                     {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
                     <CobroSobreNota cobro={c} />
                     {/* Cobro que salió de un ANTICIPO (24-sep-2026): su dinero
@@ -666,6 +686,7 @@ export function CobrosCard({
         tcOficial={tcOficial}
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
+        cotizacionAbierta={cotizacionAbierta}
       />
 
       {/* El MISMO formulario, en modo «Corregir cobro». */}
@@ -684,6 +705,12 @@ export function CobrosCard({
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
         cobroEditar={editando}
+        // Vista previa «Rebasa el pendiente» al corregir (API 0.0.78): el
+        // saldo SIN este cobro sale de números del API (total − cobrado +
+        // su `monto_usd`); sin `monto_usd`, el texto de siempre.
+        montoUsdOriginal={editando?.monto_usd ?? null}
+        saldoUsd={montoTotalUsd - cobradoUsd}
+        cotizacionAbierta={cotizacionAbierta}
       />
     </>
   );

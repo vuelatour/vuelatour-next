@@ -62,6 +62,11 @@ import {
   type InicialEdicionCobro,
   type ValoresEdicionCobro,
 } from "@/lib/admin/cobro-edicion";
+import {
+  CLASE_CAJA_VISTA_PREVIA,
+  CLASE_TEXTO_VISTA_PREVIA,
+  vistaPreviaMontoCobro,
+} from "@/lib/admin/cobrado-de-mas";
 import { registerCobroAction, updateCobroAction } from "@/app/admin/flights/actions";
 import {
   cuentaSugeridaPorMetodo,
@@ -200,6 +205,18 @@ interface CobroFormSheetProps {
    * explicación. Reglas: `lib/admin/cobro-edicion.ts`.
    */
   cobroEditar?: FlightCobro | null;
+  /**
+   * CORREGIR (14-oct-2026, API 0.0.78, D21): el `monto_usd` del cobro que se
+   * corrige (snapshot; null/ausente = API previo o pesos sin T.C.) y el saldo
+   * del vuelo SIN topar (monto total − cobrado, números del API). Con los
+   * dos, la ficha dice si con el cambio el vuelo quedará cobrado de más,
+   * cubierto o con pendiente; sin ellos, «El saldo del vuelo se recalcula al
+   * guardar», como siempre.
+   */
+  montoUsdOriginal?: number | null;
+  saldoUsd?: number | null;
+  /** Cotización ABIERTA (el precio se cierra al final del viaje): nunca dice «cobrado de más». */
+  cotizacionAbierta?: boolean;
   /** Tras registrar (o corregir) con éxito (además del router.refresh() propio). */
   onRegistrado?: () => void;
 }
@@ -303,6 +320,9 @@ export function CobroFormSheet({
   paywiseComisionPct = PAYWISE_COMISION_PCT_DEFAULT,
   prefill = null,
   cobroEditar = null,
+  montoUsdOriginal = null,
+  saldoUsd = null,
+  cotizacionAbierta = false,
   onRegistrado,
 }: CobroFormSheetProps) {
   const diaTcOficial = tcOficialFecha ? fmtDateOnly(tcOficialFecha) : null;
@@ -657,6 +677,22 @@ export function CobroFormSheet({
   // dinero bloqueado, solo el T.C. de un cobro en pesos).
   const mostrarEquivalencia =
     usdEquivalente !== null && (!dineroBloqueado || mostrarTc);
+  // Lo que dice la ficha bajo «Equivale a…» (D21, API 0.0.78): rebasa /
+  // cubre / queda pendiente, con la tolerancia de la bandera `cobrado`.
+  // Texto y regla: `vistaPreviaMontoCobro` (lib/admin/cobrado-de-mas).
+  const vistaPrevia =
+    usdEquivalente !== null
+      ? vistaPreviaMontoCobro({
+          usdEquivalente,
+          pendingUsd,
+          montoTotalUsd,
+          cancelado,
+          enEdicion,
+          cotizacionAbierta,
+          saldoUsd,
+          montoUsdOriginal,
+        })
+      : null;
 
   return (
     <>
@@ -853,32 +889,24 @@ export function CobroFormSheet({
             </Field>
           )}
 
-          {mostrarEquivalencia && usdEquivalente !== null && (
-            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
+          {mostrarEquivalencia && usdEquivalente !== null && vistaPrevia && (
+            <div
+              className={cn("rounded-lg border px-3 py-2 text-xs", CLASE_CAJA_VISTA_PREVIA[vistaPrevia.tono])}
+              data-vista-previa-cobro={vistaPrevia.tono}
+            >
               <span className="text-muted-foreground">Equivale a </span>
               <span className="font-mono font-semibold">
                 {fmtUsd(usdEquivalente)}
               </span>
               <span className="text-muted-foreground"> USD. </span>
-              {enEdicion ? (
-                // Al corregir no se promete «cubre el pendiente»: el
-                // pendiente de la página YA descuenta este mismo cobro. El
-                // cobrado lo recalcula el API al guardar.
-                <span className="text-muted-foreground">
-                  El saldo del vuelo se recalcula al guardar.
-                </span>
-              ) : cancelado ? (
-                <span className="text-muted-foreground">
-                  Queda como cobro retenido del vuelo cancelado.
-                </span>
-              ) : usdEquivalente >= pendingUsd ? (
-                <span className="text-green-600 dark:text-green-400">
-                  Cubre el pendiente — el vuelo se marcará como cobrado.
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  Quedará pendiente {fmtUsd(pendingUsd - usdEquivalente)} USD.
-                </span>
+              {/* Alta: contra el pendiente de la página. Corrección: contra
+                  el saldo SIN este cobro (total − cobrado + su `monto_usd`,
+                  números del API); sin `monto_usd`, «El saldo del vuelo se
+                  recalcula al guardar» como siempre (el pendiente de la
+                  página YA descuenta este mismo cobro). */}
+              <span className={CLASE_TEXTO_VISTA_PREVIA[vistaPrevia.tono]}>{vistaPrevia.texto}</span>
+              {vistaPrevia.ayuda && (
+                <span className="mt-1 block text-muted-foreground">{vistaPrevia.ayuda}</span>
               )}
             </div>
           )}

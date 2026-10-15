@@ -36,17 +36,19 @@ import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
 import { EditarCobroBoton } from "@/components/admin/flights/editar-cobro-boton";
 import { hayCobrosEditables, TEXTO_SOBRE_NO_SE_EDITA } from "@/lib/admin/cobro-edicion";
 import {
+  CobroBancoDetalle,
   CobroConciliadoBadge,
   CobroSobreNota,
   esParteDeSobre,
 } from "@/components/admin/flights/cobro-sobre-nota";
+import { CobradoDeMasAviso } from "@/components/admin/flights/cobrado-de-mas-aviso";
 import { ComprobanteCobro } from "@/components/admin/flights/comprobante-cobro";
 import { FacturaServicioBurbuja } from "@/components/admin/facturas-emitidas/factura-servicio-burbuja";
 import { puedeAdjuntarComprobante } from "@/lib/admin/facturas-emitidas";
 import { ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
 import { desaplicarAnticipoAction } from "@/app/admin/ingresos/actions";
 import { puedeConciliarIngresos } from "@/lib/admin/ingresos-ui";
-import type { FlightCobro } from "@/types/flights";
+import type { CobradoDeMasVuelo, FlightCobro } from "@/types/flights";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import {
   TITULO_REGISTRO_COBRO,
@@ -103,6 +105,8 @@ export function QuoteCobrosCard({
   tcOficial = null,
   tcOficialFecha = null,
   paywiseComisionPct,
+  cobradoDeMas = null,
+  cotizacionAbierta = false,
 }: {
   quoteId: string;
   /** Folio del vuelo (encabezado del diálogo de reembolso). */
@@ -139,6 +143,13 @@ export function QuoteCobrosCard({
   tcOficial?: number | null;
   tcOficialFecha?: string | null;
   paywiseComisionPct?: number;
+  /**
+   * «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, ADITIVO del snapshot): lo arma
+   * el API; null/ausente ⇒ nada.
+   */
+  cobradoDeMas?: CobradoDeMasVuelo | null;
+  /** Cotización ABIERTA: la vista previa de «Corregir cobro» nunca dice «cobrado de más». */
+  cotizacionAbierta?: boolean;
 }) {
   const router = useRouter();
   const [toDelete, setToDelete] = useState<FlightCobro | null>(null);
@@ -230,6 +241,9 @@ export function QuoteCobrosCard({
         )}
       </CardHeader>
       <CardContent className="space-y-2">
+        {/* «COBRADO DE MÁS» (API 0.0.78): lo arma el API; ámbar si requiere
+            revisión, una línea gris si está explicado. */}
+        <CobradoDeMasAviso aviso={cobradoDeMas} />
         {/* FACTURA del servicio: número ⇒ PDF, «pedida» o «Necesito factura». */}
         <FacturaServicioBurbuja
           vueloId={quoteId}
@@ -303,6 +317,9 @@ export function QuoteCobrosCard({
                   {registro}
                 </p>
               )}
+              {/* Renglón «Banco» (API 0.0.78): un PARCIAL, 2+ abonos o un
+                  abono que trae de más; ligas solo para quien concilia. */}
+              <CobroBancoDetalle cobro={c} puedeConciliar={puedeConciliarIngresos(rol)} />
               {/* Parte de un SOBRE de grupo: se gestiona desde el grupo. */}
               <CobroSobreNota cobro={c} />
               {/* Cobro que salió de un ANTICIPO (24-sep-2026). */}
@@ -493,6 +510,12 @@ export function QuoteCobrosCard({
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
         cobroEditar={editando}
+        // Vista previa «Rebasa el pendiente» al corregir (API 0.0.78):
+        // saldo SIN este cobro = total − cobrado + su `monto_usd` (números
+        // del API); sin `monto_usd`, el texto de siempre.
+        montoUsdOriginal={editando?.monto_usd ?? null}
+        saldoUsd={montoTotalUsd - totalCobrado}
+        cotizacionAbierta={cotizacionAbierta}
       />
     </Card>
   );

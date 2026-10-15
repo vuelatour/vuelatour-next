@@ -1,5 +1,13 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import {
+  claseBadgeCobro,
+  estadoBancoCobro,
+  lineaBancoCobro,
+  textoBadgeCobro,
+  tituloBadgeCobro,
+} from "@/lib/admin/cobro-banco";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { fmtUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -46,23 +54,79 @@ export function esParteDeSobre(cobro: FlightCobro): boolean {
 }
 
 /**
- * Badge "Conciliado" de un cobro: SOLO cuando el API lo dice
- * (`cobro.conciliado === true`, liga directa o la del sobre). Nunca se
- * deduce en el panel.
+ * Badge del cobro contra el BANCO (UN COBRO, VARIOS ABONOS: 14-oct-2026, API
+ * 0.0.78, invariante 77): «Conciliado» (verde; también vía su sobre o su
+ * anticipo), «Conciliado parcial · faltan $1,700 MXN» (ámbar) o «Sin
+ * conciliar» (rosa). El ESTADO lo manda el API (`conciliacion_estado`); con
+ * un API previo, `conciliado === true` ⇒ «Conciliado» como siempre y nada
+ * más. No bancario (efectivo, dólares, BillPocket, reembolso) ⇒ sin badge.
+ * Texto, clases y tooltip: `lib/admin/cobro-banco.ts`; nunca se deduce aquí.
  */
 export function CobroConciliadoBadge({ cobro }: { cobro: FlightCobro }) {
-  if (cobro.conciliado !== true) return null;
+  const texto = textoBadgeCobro(cobro);
+  if (!texto) return null;
+  const estado = estadoBancoCobro(cobro);
   return (
     <Badge
       variant="outline"
-      className="ml-2 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-sans font-medium"
-      title={
-        esParteDeSobre(cobro)
-          ? "El sobre del grupo está conciliado con un movimiento bancario"
-          : "Conciliado con un movimiento bancario"
-      }
+      className={cn(
+        `ml-2 ${claseBadgeCobro(estado)} font-sans font-medium`,
+        // «Conciliado parcial · faltan $68,205.55 MXN» es largo: en un
+        // celular envuelve en vez de encimarse con los botones del cobro.
+        estado === "PARCIAL" && "h-auto max-w-full whitespace-normal text-left",
+      )}
+      title={tituloBadgeCobro(cobro) ?? undefined}
     >
-      Conciliado
+      {texto}
     </Badge>
+  );
+}
+
+/**
+ * Renglón «Banco» debajo del cobro (API 0.0.78), SOLO cuando dice algo que el
+ * badge no dice: un PARCIAL (lo vinculado, sus abonos, lo que falta y
+ * «Buscar el abono que falta»), un cobro completo con 2+ abonos, o un abono
+ * que trae de más (liga vieja). Los enlaces a Conciliación (pestaña nueva)
+ * solo para quien concilia (ADMIN/FACTURACION, `puedeConciliar`); los demás
+ * leen el mismo texto sin ligas. Textos y URLs: `lineaBancoCobro`.
+ */
+export function CobroBancoDetalle({
+  cobro,
+  puedeConciliar = false,
+  className,
+}: {
+  cobro: FlightCobro;
+  puedeConciliar?: boolean;
+  className?: string;
+}) {
+  const linea = lineaBancoCobro(cobro, { conEnlaces: puedeConciliar });
+  if (!linea) return null;
+  return (
+    <p
+      className={cn(
+        "text-[11px]",
+        linea.tono === "aviso" ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+        className,
+      )}
+      data-cobro-banco={linea.tono}
+    >
+      {linea.piezas.map((p, i) =>
+        p.tipo === "texto" ? (
+          <Fragment key={i}>{p.texto}</Fragment>
+        ) : (
+          <Link
+            key={i}
+            href={p.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            prefetch={false}
+            title={p.titulo}
+            className="cursor-pointer font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            {p.texto}
+          </Link>
+        ),
+      )}
+    </p>
   );
 }

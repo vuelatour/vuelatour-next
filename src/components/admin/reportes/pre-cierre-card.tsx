@@ -63,6 +63,14 @@ import {
   ETIQUETA_REVISAR_OMITIDOS,
   hrefPrecierreMovimientosOmitidos,
 } from "@/lib/admin/pre-cierre-omitidos";
+import {
+  CLAVE_PRECIERRE_COBRADOS_DE_MAS,
+  hrefPrecierreCobradosDeMas,
+  lineaExplicadosPreCierre,
+  sufijoCausaPreCierre,
+  tituloCausaPreCierre,
+} from "@/lib/admin/cobrado-de-mas";
+import { chipParcialPreCierre } from "@/lib/admin/cobro-banco";
 
 interface PreCierreVuelo {
   id: string;
@@ -90,6 +98,25 @@ interface PreCierreVuelo {
       aplica): el dinero ya se devolvió completo y lo que el reparto cuenta
       es la diferencia cambiaria ⇒ chip «#215 (diferencia cambiaria)». */
   diferencia_cambiaria?: boolean;
+  /** ADITIVOS (vuelos_cobrados_de_mas, 14-oct-2026, API 0.0.78, NO bloquea):
+      la causa probable del excedente (`saldo_usd` = el excedente) ⇒ chip
+      «#217 ($495.99) · IVA». */
+  causa?: string;
+  causa_etiqueta?: string;
+  excedente_usd?: number;
+}
+
+/** Cobro sin banco al corte (cobros_bancarios_sin_conciliar). Montos del API. */
+interface PreCierreCobroBanco {
+  tipo?: string;
+  id: string;
+  folio?: number | null;
+  grupo_folio?: number | null;
+  moneda?: string;
+  /** ADITIVOS (API 0.0.78): con abonos que no lo completan y lo que falta. */
+  parcial?: boolean;
+  faltante?: number;
+  monto_vinculado?: number;
 }
 
 /** Grupo con saldo por cobrar (clave grupo_con_saldo). Montos del API. */
@@ -153,6 +180,15 @@ interface PreCierreItem {
       no se pudieron revisar (sin T.C. oficial de su día). */
   ligas?: LigaUsdTcPreCierre[];
   sin_verificar?: number;
+  /** ADITIVOS (vuelos_cobrados_de_mas, API 0.0.78): los vuelos cuya
+      diferencia está EXPLICADA (comisión del link, redondeo del T.C.): no
+      cuentan; van en una línea gris. */
+  explicados?: PreCierreVuelo[];
+  explicados_n?: number;
+  /** ADITIVOS (cobros_bancarios_sin_conciliar): los cobros y, desde el API
+      0.0.78, cuántos son PARCIALES. */
+  cobros?: PreCierreCobroBanco[];
+  parciales?: number;
 }
 
 interface PreCierre {
@@ -229,6 +265,10 @@ const LINK_POR_CLAVE: Record<
   // 0.0.77, INFORMATIVO): la pestaña «Omitidos» DEL PERIODO (el API cuenta
   // por la fecha del movimiento; sin las fechas no cuadraría con el «· N»).
   [CLAVE_PRECIERRE_MOVIMIENTOS_OMITIDOS]: hrefPrecierreMovimientosOmitidos,
+  // Vuelos cobrados de más (14-oct-2026, API 0.0.78, NO bloquea): la lista de
+  // vuelos del periodo; cada chip lleva a la card de cobros de su vuelo, donde
+  // el aviso dice la causa y qué hacer.
+  [CLAVE_PRECIERRE_COBRADOS_DE_MAS]: hrefPrecierreCobradosDeMas,
 };
 
 /** El texto del enlace cuando no es «Resolver →» (un renglón informativo se REVISA). */
@@ -359,6 +399,17 @@ export async function PreCierreCard({
               item.clave === CLAVE_PRECIERRE_LIGAS_USD_TC
                 ? lineasLigasUsdTc(item.ligas, item.count)
                 : { lineas: [], restantes: 0 };
+            // Vuelos cobrados de más (API 0.0.78): los EXPLICADOS no cuentan;
+            // van en una línea gris («Además: #81 y #84 (…) no requieren acción.»).
+            const esCobradosDeMas = item.clave === CLAVE_PRECIERRE_COBRADOS_DE_MAS;
+            const explicados = esCobradosDeMas ? lineaExplicadosPreCierre(item.explicados) : null;
+            // Cobros sin banco: los PARCIALES (API 0.0.78) dicen lo que falta.
+            const parciales =
+              item.clave === "cobros_bancarios_sin_conciliar"
+                ? (item.cobros ?? [])
+                    .map((c) => ({ id: c.id, texto: chipParcialPreCierre(c) }))
+                    .filter((c): c is { id: string; texto: string } => c.texto !== null)
+                : [];
             return (
               <div
                 key={item.clave}
@@ -434,8 +485,15 @@ export async function PreCierreCard({
                               : `/admin/flights/${v.id}`
                           }
                           // Cancelado cuyo dinero ya se devolvió (API 0.0.77):
-                          // el chip dice por qué todavía cuenta.
-                          title={esDiferenciaCambiaria(v) ? AYUDA_DIFERENCIA_CAMBIARIA : undefined}
+                          // el chip dice por qué todavía cuenta. Cobrado de
+                          // más (API 0.0.78): la causa probable completa.
+                          title={
+                            esDiferenciaCambiaria(v)
+                              ? AYUDA_DIFERENCIA_CAMBIARIA
+                              : esCobradosDeMas
+                                ? tituloCausaPreCierre(v)
+                                : undefined
+                          }
                           className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
                         >
                           {v.folio > 0 ? `#${v.folio}` : "vuelo"}
@@ -448,6 +506,10 @@ export async function PreCierreCard({
                                 : v.estado
                                   ? ` (${v.estado})`
                                   : ""}
+                          {/* «#217 ($495.99) · IVA»: la causa del API. */}
+                          {esCobradosDeMas && sufijoCausaPreCierre(v.causa)
+                            ? ` ${sufijoCausaPreCierre(v.causa)}`
+                            : ""}
                           {/* Hijo de un grupo: "G-12" junto al folio. */}
                           {v.grupo_folio != null && (
                             <span
@@ -464,6 +526,25 @@ export async function PreCierreCard({
                         <span className="text-muted-foreground">
                           y {item.vuelos.length - 8} más…
                         </span>
+                      )}
+                    </p>
+                  )}
+                  {/* Vuelos cobrados de más: los explicados (no cuentan) en gris. */}
+                  {explicados && (
+                    <p className="text-[11px] text-muted-foreground mt-1" data-precierre-explicados>
+                      {explicados}
+                    </p>
+                  )}
+                  {/* Cobros sin banco PARCIALES (API 0.0.78): lo que falta de cada uno. */}
+                  {parciales.length > 0 && (
+                    <p className="text-xs mt-1 flex flex-wrap gap-1.5" data-precierre-parciales>
+                      {parciales.slice(0, 8).map((c) => (
+                        <span key={c.id} className="text-amber-700 dark:text-amber-300">
+                          {c.texto}
+                        </span>
+                      ))}
+                      {parciales.length > 8 && (
+                        <span className="text-muted-foreground">y {parciales.length - 8} más…</span>
                       )}
                     </p>
                   )}

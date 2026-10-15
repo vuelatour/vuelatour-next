@@ -10,6 +10,8 @@
  * formulario prellenado, el DIFF que viaja (solo lo que cambió) con sus
  * líneas «antes → después», la validación y los errores en es-MX.
  */
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { FlightCobro } from "@/types/flights";
 import {
@@ -25,6 +27,7 @@ import {
   hintCuentaLegada,
   hintTcEdicion,
   mensajeErrorEdicionCobro,
+  MSG_COBRO_CONCILIADO,
   MSG_MOTIVO_REEMBOLSO,
   MSG_TC_REQUERIDO,
   numeroDe,
@@ -528,5 +531,97 @@ describe("numeroDe", () => {
     expect(numeroDe("abc")).toBeNull();
     expect(numeroDe("68205.55")).toBe(68205.55);
     expect(numeroDe(0)).toBe(0);
+  });
+});
+
+describe("UN COBRO, VARIOS ABONOS (API 0.0.78): el candado es «ligado al banco»", () => {
+  // El cobro de $3,400 de la #315 con UN abono de $1,700: `conciliado` ya es
+  // CUBIERTO (false), pero tiene abonos ⇒ su dinero sigue bloqueado.
+  const PARCIAL: FlightCobro = {
+    ...COBRO_3400,
+    conciliado: false,
+    conciliado_via: "DIRECTO",
+    conciliacion_estado: "PARCIAL",
+    ligado_banco: true,
+    neto_banco: 3400,
+    monto_vinculado: 1700,
+    faltante: 1700,
+    sobrante: 0,
+  };
+
+  it("un PARCIAL (ligado_banco true, conciliado false) bloquea el dinero con el texto del parcial", () => {
+    const e = edicionDeCobro(PARCIAL);
+    expect(e).toMatchObject({ ofrecer: true, dineroBloqueado: true, tcBloqueado: true, motivo: "CONCILIADO" });
+    expect(e.explicacion).toBe(
+      "Está conciliado PARCIAL con el banco ($1,700 MXN de $3,400 MXN): su dinero (monto, moneda, método, T.C., comisión y cuenta) no se corrige mientras tenga abonos ligados. Si está mal, desvincúlalos primero en Conciliación. Aquí puedes corregir la fecha, la referencia y las notas.",
+    );
+    expect(tituloBotonEditarCobro(PARCIAL)).toBe(
+      "Corregir este cobro: está conciliado (parcial) con el banco, solo fecha, referencia y notas",
+    );
+    expect(datosSoloLecturaCobro(PARCIAL).map((f) => f.etiqueta)).toContain("Monto");
+  });
+
+  it("conciliado con 2 abonos: «desvincúlalos»; con uno, el texto de siempre", () => {
+    const abono = {
+      movimiento_id: "m-1",
+      fecha: "2026-09-15",
+      monto_parte: 1700,
+      monto_abono: 1700,
+      cobros_n: 1,
+      cuenta_bancaria_id: null,
+      cuenta_alias: "EJE SCOTIA",
+      pasarela: false,
+    };
+    const dos = edicionDeCobro({
+      ...PARCIAL,
+      conciliado: true,
+      conciliacion_estado: "CONCILIADO",
+      abonos_banco: [abono, { ...abono, movimiento_id: "m-2" }],
+    });
+    expect(dos.explicacion).toContain("Está conciliado con 2 abonos del banco");
+    expect(dos.explicacion).toContain("desvincúlalos primero en Conciliación");
+    const uno = edicionDeCobro({ ...PARCIAL, conciliado: true, conciliacion_estado: "CONCILIADO", abonos_banco: [abono] });
+    expect(uno.explicacion).toBe(
+      "Está conciliado con un movimiento del banco: su dinero (monto, moneda, método, T.C., comisión y cuenta) no se corrige mientras siga ligado. Si está mal, desvincúlalo primero en Conciliación. Aquí puedes corregir la fecha, la referencia y las notas.",
+    );
+    expect(tituloBotonEditarCobro({ ...PARCIAL, conciliacion_estado: "CONCILIADO" })).toBe(
+      "Corregir este cobro: está conciliado con el banco, solo fecha, referencia y notas",
+    );
+  });
+
+  it("`ligado_banco` manda sobre `conciliado`: sin abonos se corrige; vía anticipo sigue siendo anticipo", () => {
+    expect(edicionDeCobro({ ...COBRO_3400, conciliado: false, conciliacion_estado: "SIN_CONCILIAR", ligado_banco: false }))
+      .toMatchObject({ dineroBloqueado: false, motivo: null });
+    const anticipo = edicionDeCobro({
+      ...COBRO_3400,
+      anticipo: { ingreso_id: "i-1", etiqueta: "ING-12" },
+      conciliado: true,
+      conciliado_via: "ANTICIPO",
+      conciliacion_estado: "VIA_ANTICIPO",
+      ligado_banco: false,
+    });
+    expect(anticipo).toMatchObject({ dineroBloqueado: true, tcBloqueado: false, motivo: "ANTICIPO" });
+  });
+
+  it("API previo (sin `ligado_banco`): `conciliado` de siempre", () => {
+    expect(edicionDeCobro({ ...COBRO_3400, conciliado: true }).motivo).toBe("CONCILIADO");
+    expect(edicionDeCobro({ ...COBRO_3400, conciliado: false }).motivo).toBeNull();
+  });
+
+  it("el 409 COBRO_CONCILIADO del API se pinta TAL CUAL; sin texto, el genérico del API", () => {
+    const parcial =
+      "Este cobro está conciliado PARCIAL con el banco ($1,700.00 MXN de $3,400.00 MXN, abono del 15 sep). Para cambiar su monto, moneda, tipo de cambio o comisión, o para eliminarlo, primero desvincula ese abono en Conciliación.";
+    expect(mensajeErrorEdicionCobro({ code: "COBRO_CONCILIADO", error: parcial })).toBe(parcial);
+    expect(mensajeErrorEdicionCobro({ code: "COBRO_CONCILIADO", error: "" })).toBe(MSG_COBRO_CONCILIADO);
+    // Un API previo (409 de texto, code genérico) sigue igual.
+    const viejo = "Este cobro está conciliado con un movimiento bancario. Desvincúlalo primero en Conciliación.";
+    expect(mensajeErrorEdicionCobro({ code: "CONFLICTEXCEPTION", error: viejo })).toBe(viejo);
+  });
+
+  it("paridad: el genérico es el `mensajeCobroConciliado()` del API (si el repo hermano ya trae el 0.0.78)", () => {
+    const raiz = path.resolve(__dirname, "../../../../../vuelatour-api/src");
+    if (!existsSync(path.join(raiz, "common/cobro-banco.util.ts"))) return;
+    const src = readFileSync(path.join(raiz, "modules/conciliacion/cobros-lote.util.ts"), "utf8");
+    expect(src).toContain(MSG_COBRO_CONCILIADO);
   });
 });

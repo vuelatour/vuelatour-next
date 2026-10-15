@@ -10,6 +10,7 @@ import {
   hrefIngresos,
   type FiltrosIngresos,
 } from "@/lib/admin/ingresos-ui";
+import { chipParcialEntrada } from "@/lib/admin/cobro-banco";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -29,6 +30,49 @@ export function BadgeEstadoConciliacion({
     <Badge variant="outline" className={cn(CLASE_TONO[e.tono], className)} title={e.titulo}>
       {e.texto}
     </Badge>
+  );
+}
+
+/**
+ * Chip ámbar «Parcial · faltan $1,700 MXN» junto al badge «Sin conciliar» de
+ * un cobro con abonos del banco que no lo completan (14-oct-2026, API 0.0.78:
+ * `conciliacion.parcial`; texto y tooltip de `chipParcialEntrada`).
+ * Informativo: no es botón. Sin el campo, nada (como hoy).
+ */
+export function ChipParcialEntrada({
+  entrada,
+}: {
+  entrada: Pick<EntradaDinero, "moneda" | "conciliacion">;
+}) {
+  const chip = chipParcialEntrada(entrada);
+  if (!chip) return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-1.5 text-[10px] font-medium whitespace-nowrap text-amber-700 dark:text-amber-300"
+      title={chip.titulo}
+      data-chip-parcial
+    >
+      {chip.texto}
+    </span>
+  );
+}
+
+/**
+ * La celda «Conciliación» de una entrada: el badge de siempre y, si el cobro
+ * es PARCIAL (API 0.0.78), el chip al lado. Sin parcial, el marcado de hoy.
+ */
+export function CeldaConciliacionEntrada({
+  entrada,
+}: {
+  entrada: Pick<EntradaDinero, "moneda" | "conciliacion">;
+}) {
+  const badge = <BadgeEstadoConciliacion estado={entrada.conciliacion.estado} />;
+  if (!entrada.conciliacion.parcial) return badge;
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {badge}
+      <ChipParcialEntrada entrada={entrada} />
+    </span>
   );
 }
 
@@ -175,7 +219,8 @@ export function EntradasTable({
       {
         key: "conciliacion",
         header: "Conciliación",
-        cell: (e) => <BadgeEstadoConciliacion estado={e.conciliacion.estado} />,
+        // «Parcial · faltan $X» (API 0.0.78) junto al badge de un cobro parcial.
+        cell: (e) => <CeldaConciliacionEntrada entrada={e} />,
       },
       {
         key: "registro",

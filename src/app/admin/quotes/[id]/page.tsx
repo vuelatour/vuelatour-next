@@ -199,6 +199,9 @@ export default async function QuoteDetailPage({
       // página ya avisa que no cargaron y el API vuelve a decidir al guardar).
       permisoEditarCobrada={puedeEditarCobrada && cobrosVuelo != null}
       editoresCobrada={editoresCobrada}
+      // «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, ADITIVO del snapshot): el
+      // aviso de la card de cobros lo arma el API; ausente/null ⇒ nada.
+      cobradoDeMas={cobrosVuelo?.cobrado_de_mas ?? null}
       // SEGUIMIENTO (29-sep-2026, ADITIVO): los contadores del snapshot solo
       // RESPALDAN a los de la cotización para el banner ámbar del cotizador.
       seguimientoRespaldo={
