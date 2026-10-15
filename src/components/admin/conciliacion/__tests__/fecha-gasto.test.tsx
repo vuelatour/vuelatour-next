@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { GastoCandidato, MovimientoBancario } from "@/types/conciliacion";
 
 vi.mock("next/navigation", () => ({
@@ -55,10 +55,12 @@ vi.mock("@/components/ui/dialog", () => {
 const { CorregirFechaGastoDialog, CuerpoCorregirFecha } = await import("../corregir-fecha-gasto-dialog");
 type Estado = Parameters<typeof CuerpoCorregirFecha>[0]["estado"];
 
-beforeAll(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date("2026-10-14T17:00:00Z"));
-});
+// El «hoy» de Cancún queda en el 14-oct-2026 AL CARGAR el módulo, no en un
+// beforeAll: los `describe` de abajo pintan el diálogo al RECOLECTAR (antes
+// de cualquier hook) y con el reloj real sus límites de fecha cambiaban cada
+// día (desde el 15-oct-2026 fallaba «de hace 365 días a hoy»).
+vi.useFakeTimers({ toFake: ["Date"] });
+vi.setSystemTime(new Date("2026-10-14T17:00:00Z"));
 afterAll(() => vi.useRealTimers());
 
 const WINJET: GastoCandidato = {
