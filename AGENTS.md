@@ -570,6 +570,15 @@ editables, para ellas desapareció.
   `quote-pantalla-completa.test.tsx` («Copiar como nueva cotización» en el
   candado: ADMIN sí, SOCIO no).
 
+### IVA manual al reabrir (14-oct-2026)
+
+#341 (transferencia con IVA manual 0 %, cobrada exacta: $800.00) volvía al
+16 % ($928.00) al primer `/calculate`, sin salir en el diff. Regla: se
+rehidrata `iva.porcentaje` del snapshot (sin él, `iva_pct` + `metodo_cobro`)
+si difiere a 4 decimales del default del método (`aplica_por_metodo_pago ?
+0.16 : 0`), incluido el 0; igual ⇒ null. Fuente única: `ivaOverrideRehidratado`
+(`lib/admin/iva.ts`, paridad con el API). El grupo no tiene IVA manual.
+
 ## Cotización cobrada: editable con permiso POR PERSONA (26-sep-2026, API 0.0.37)
 
 Pedido de los dueños por WhatsApp (capturas de #305 y #317 con el chip

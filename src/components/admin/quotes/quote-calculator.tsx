@@ -76,6 +76,7 @@ import {
 } from "@/lib/admin/extras";
 import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { preferirHorasPersistidas } from "@/lib/admin/horas";
+import { ivaOverrideRehidratado } from "@/lib/admin/iva";
 import {
   overrideTarifaCapturado,
   segmentoTarifa,
@@ -1056,14 +1057,17 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
           Number(q.calculo_snapshot?.tuas?.usd_pax_default) > 0
             ? Number(q.calculo_snapshot!.tuas.usd_pax_default)
             : null,
-        // IVA manual DETECTABLE: se cobró IVA aunque el método de pago no lo
-        // pide → era override y se rehidrata. (Un % custom sobre un método
-        // CON IVA no es distinguible del estándar: ese caso se re-resuelve.)
-        iva_pct_override:
-          q.calculo_snapshot?.iva?.aplica_por_metodo_pago === false &&
-          Number(q.iva_pct) > 0
-            ? Number(q.iva_pct)
-            : null,
+        // IVA MANUAL (14-oct-2026, #341): se rehidrata como override el % con
+        // el que se compuso el dinero SIEMPRE que difiera del default de su
+        // método, INCLUIDO el 0 % sobre un método CON IVA. Sí es distinguible
+        // del estándar: el snapshot guarda el default del método
+        // (`iva.aplica_por_metodo_pago`) y el % aplicado (`iva.porcentaje`).
+        // Antes solo se rehidrataba sobre métodos SIN IVA y la #341
+        // (transferencia al 0 %, $800.00 cobrados exactos) volvía al 16 % en
+        // el primer `/calculate` (teclear el T.C.): $928.00 sin que el diff lo
+        // dijera. Igual al default ⇒ null (se re-resuelve por método, como
+        // siempre). Fuente única: `ivaOverrideRehidratado` (`lib/admin/iva.ts`).
+        iva_pct_override: ivaOverrideRehidratado(q),
         notas: q.notas ?? "",
         notas_internas: q.notas_internas ?? "",
         motivo: "",
