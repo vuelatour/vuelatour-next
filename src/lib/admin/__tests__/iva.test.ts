@@ -101,21 +101,59 @@ describe("ivaOverrideRehidratado — la regla", () => {
     }
   });
 
-  it("sin snapshot: la columna `iva_pct` y el default de `metodo_cobro`", () => {
-    const sinSnapshot = (metodo: MetodoPago | null, iva_pct: string): CotizacionIvaPersistido => ({
+  it("sin snapshot ⇒ null, tenga el método que tenga: el vuelo nunca se cotizó y su `iva_pct` es el default de la columna", () => {
+    const sinSnapshot = (metodo: MetodoPago | null, iva_pct: string | number): CotizacionIvaPersistido => ({
       calculo_snapshot: null,
       metodo_cobro: metodo,
       iva_pct,
     });
-    expect(ivaOverrideRehidratado(sinSnapshot("TRANSFERENCIA", "0.0000"))).toBe(0);
+    // Ni sobre un método CON IVA: una columna en 0 sin la foto del motor NO
+    // es «IVA manual 0 %» (la regresión de la primera versión del arreglo).
+    for (const m of ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE"] as const) {
+      expect(ivaOverrideRehidratado(sinSnapshot(m, "0.0000")), m).toBeNull();
+      expect(ivaOverrideRehidratado(sinSnapshot(m, 0)), m).toBeNull();
+    }
     expect(ivaOverrideRehidratado(sinSnapshot("TRANSFERENCIA", "0.1600"))).toBeNull();
-    expect(ivaOverrideRehidratado(sinSnapshot("CHEQUE", "0.0800"))).toBe(0.08);
     expect(ivaOverrideRehidratado(sinSnapshot("EFECTIVO", "0.0000"))).toBeNull();
-    expect(ivaOverrideRehidratado(sinSnapshot("BILLPOCKET", "0.1600"))).toBe(0.16);
+    // Sin motor la columna no guarda nada pactado, valga lo que valga (en
+    // prod el API la inserta en 0: `createReserva`, `createExternal`).
+    expect(ivaOverrideRehidratado(sinSnapshot("CHEQUE", "0.0800"))).toBeNull();
+    expect(ivaOverrideRehidratado(sinSnapshot("BILLPOCKET", "0.1600"))).toBeNull();
     // `metodo_cobro` null = vuelo SIN cotizar (reserva, servicio; 68 en prod
-    // el 14-oct-2026, todos con `iva_pct` 0): ese 0 es el default de la
-    // columna, no un IVA pactado — no se inventa un «IVA manual 0 %».
+    // el 14-oct-2026, todos con `iva_pct` 0).
     expect(ivaOverrideRehidratado(sinSnapshot(null, "0.0000"))).toBeNull();
+    // Sin la clave del snapshot, igual.
+    expect(ivaOverrideRehidratado({ metodo_cobro: "TRANSFERENCIA", iva_pct: "0.0000" })).toBeNull();
+  });
+
+  it("externo SIN cotizar con el método fijado en «Editar» ⇒ null: su primera cotización sale con el IVA del método", () => {
+    // Camino real (revisión del 14-oct-2026): la RESERVA #398 (sin snapshot,
+    // `metodo_cobro` null, `iva_pct` 0) → «Cubrir con externo» (no toca
+    // método ni IVA) → «Editar» → Método de cobro previsto = Transferencia
+    // (`metodoCobroEditable`: externo SIN snapshot) → «Cotizar».
+    const q398: CotizacionIvaPersistido = {
+      calculo_snapshot: null,
+      metodo_cobro: "TRANSFERENCIA",
+      iva_pct: "0.0000",
+    };
+    const casos: [string, CotizacionIvaPersistido][] = [
+      ["#398 cubierta con externo y con Transferencia en «Editar»", q398],
+      // Lo mismo con el método todavía en null: el cotizador lo abre en
+      // Transferencia y la primera cotización sale IGUAL que con él fijado.
+      ["#398 sin método", { ...q398, metodo_cobro: null }],
+      // Alta por `POST /flights/external` (`createExternal`): TRANSFERENCIA
+      // por default e `iva_pct: 0`, sin snapshot.
+      ["alta de externo", { calculo_snapshot: null, metodo_cobro: "TRANSFERENCIA", iva_pct: 0 }],
+    ];
+    for (const [nombre, q] of casos) {
+      const override = ivaOverrideRehidratado(q);
+      expect(override, nombre).toBeNull();
+      // El cotizador manda Transferencia (`metodo_cobro ?? "TRANSFERENCIA"`)
+      // sin override: el motor pone el 16 %. Con la primera versión viajaba
+      // un 0 «manual» y, sobre una base de $800.00, la v2 se guardaba en
+      // $800.00 en vez de $928.00.
+      expect(ivaDelMotor(override, q.metodo_cobro ?? "TRANSFERENCIA"), nombre).toBe(0.16);
+    }
   });
 
   it("valores como texto de PostgREST (con ceros de cola y espacios) valen lo mismo", () => {
@@ -133,14 +171,22 @@ describe("ivaOverrideRehidratado — la regla", () => {
     expect(ivaOverrideRehidratado(q("EFECTIVO", " 0.0000 "))).toBeNull();
   });
 
-  it("snapshot sin `iva` ⇒ las columnas", () => {
+  it("snapshot sin `iva` (o con un `iva` sin el % ni la marca) ⇒ null: no hay foto del IVA", () => {
     const q: CotizacionIvaPersistido = {
       calculo_snapshot: {},
       metodo_cobro: "TRANSFERENCIA",
       iva_pct: "0.0000",
     };
-    expect(ivaOverrideRehidratado(q)).toBe(0);
-    expect(ivaOverrideRehidratado({ ...q, calculo_snapshot: { iva: null } })).toBe(0);
+    expect(ivaOverrideRehidratado(q)).toBeNull();
+    expect(ivaOverrideRehidratado({ ...q, calculo_snapshot: { iva: null } })).toBeNull();
+    expect(ivaOverrideRehidratado({ ...q, calculo_snapshot: { iva: {} } })).toBeNull();
+    expect(
+      ivaOverrideRehidratado({
+        ...q,
+        calculo_snapshot: { iva: { aplica_por_metodo_pago: null, porcentaje: null } },
+      }),
+    ).toBeNull();
+    expect(ivaOverrideRehidratado({ ...q, metodo_cobro: "CHEQUE", iva_pct: "0.0800" })).toBeNull();
     expect(ivaOverrideRehidratado({ ...q, iva_pct: "0.1600" })).toBeNull();
   });
 
@@ -201,7 +247,7 @@ describe("ivaOverrideRehidratado — la regla", () => {
       ["#233 BillPocket 16 %", cotizacion("BILLPOCKET", 0.16), 0.16],
       ["#314 Paywise 5 %", cotizacion("PAYWISE", 0.05), 0.05],
       ["efectivo", cotizacion("EFECTIVO", 0), 0],
-      ["sin snapshot, transferencia 0 %", { calculo_snapshot: null, metodo_cobro: "TRANSFERENCIA", iva_pct: "0.0000" }, 0],
+      // Sin snapshot no hay % pactado que reproducir: ver «sin snapshot ⇒ null».
     ];
     for (const [nombre, q, persistido] of casos) {
       const override = ivaOverrideRehidratado(q);

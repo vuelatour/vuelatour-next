@@ -20,6 +20,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * se envuelve en un mock conmutable que, con `modo.reglaVieja`, devuelve la
  * expresión que tenía el cotizador antes del arreglo (copiada tal cual). Sin
  * la bandera delega en la implementación REAL.
+ *
+ * Revisión del 14-oct-2026: un externo SIN cotizar (sin snapshot) con el
+ * método fijado en «Editar» abre su PRIMERA cotización con el IVA del método.
+ * `modo.columnasSinSnapshot` reproduce la primera versión del arreglo, que
+ * leía las columnas sin snapshot y la arrancaba con «IVA 0 % manual».
  */
 
 const modo = vi.hoisted(() => ({
@@ -32,6 +37,12 @@ const modo = vi.hoisted(() => ({
     q.calculo_snapshot?.iva?.aplica_por_metodo_pago === false && Number(q.iva_pct) > 0
       ? Number(q.iva_pct)
       : null,
+  /**
+   * La PRIMERA versión del arreglo (14-oct-2026, corregida en la revisión
+   * del mismo día): sin snapshot leía `iva_pct` + `metodo_cobro`, así que el
+   * 0 de default de la columna se volvía «IVA manual 0 %».
+   */
+  columnasSinSnapshot: false,
 }));
 
 /** Lo que el cotizador entrega en el render: defaults del form y payload. */
@@ -42,10 +53,30 @@ const capturas = vi.hoisted(() => ({
 
 vi.mock("@/lib/admin/iva", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/admin/iva")>();
+  type Persistido = Parameters<typeof real.ivaOverrideRehidratado>[0];
+  /** `modo.columnasSinSnapshot`: el cuerpo de esa versión, copiado tal cual. */
+  const deColumnas = (q: Persistido): number | null => {
+    if (!q) return null;
+    const iva = q.calculo_snapshot?.iva ?? null;
+    const pct = real.normalizarIvaPct(iva?.porcentaje) ?? real.normalizarIvaPct(q.iva_pct);
+    if (pct === null) return null;
+    const aplicaPorMetodo =
+      typeof iva?.aplica_por_metodo_pago === "boolean"
+        ? iva.aplica_por_metodo_pago
+        : real.metodoLlevaIva(q.metodo_cobro);
+    const porDefault = aplicaPorMetodo ? real.IVA_DEFAULT : 0;
+    return real.mismoIvaPct(pct, porDefault) ? null : pct;
+  };
   return {
     ...real,
-    ivaOverrideRehidratado: (q: Parameters<typeof real.ivaOverrideRehidratado>[0]) =>
-      modo.reglaVieja ? (q ? modo.viejo(q) : null) : real.ivaOverrideRehidratado(q),
+    ivaOverrideRehidratado: (q: Persistido) =>
+      modo.reglaVieja
+        ? q
+          ? modo.viejo(q)
+          : null
+        : modo.columnasSinSnapshot
+          ? deColumnas(q)
+          : real.ivaOverrideRehidratado(q),
   };
 });
 vi.mock("@/hooks/use-quote-preview-html", async (importOriginal) => {
@@ -347,10 +378,45 @@ function quote341({ metodo, porcentaje }: IvaCaso = { metodo: "TRANSFERENCIA", p
 }
 
 /**
+ * Externo que NUNCA pasó por el motor (revisión del 14-oct-2026), como queda
+ * la RESERVA #398 de prod tras «Cubrir con externo» (`cubrirConExterno`
+ * suelta el avión propio y no toca método, IVA ni snapshot) y «Editar» →
+ * Método de cobro previsto (`metodoCobroEditable`: externo SIN snapshot). Las
+ * columnas de dinero son los ceros con los que `createReserva` inserta; los
+ * tramos son los de la #341 (con ellos `armarCalcPayload` arma el cuerpo
+ * real).
+ */
+function externoSinCotizar(metodo: MetodoPago | null = "TRANSFERENCIA"): PersistedQuote {
+  return {
+    ...quote341(),
+    estado: "RESERVA",
+    es_externo: true,
+    operador_externo: "Operador externo",
+    aeronave_id: null,
+    cotizacion_version: 1,
+    tiempo_cobrable_hr: "0.00000000",
+    tarifa_tipo: "PUBLICO",
+    tarifa_hora_usd: "0.000000",
+    subtotal_vuelo_usd: "0.00",
+    iva_pct: "0.0000",
+    iva_usd: "0.00",
+    monto_total_usd: "0.00",
+    extras_total_usd: "0.00",
+    tc_usd_mxn: null,
+    monto_total_mxn: null,
+    metodo_cobro: metodo,
+    extras: [],
+    cobrado: false,
+    calculo_snapshot: null,
+  } as unknown as PersistedQuote;
+}
+
+/**
  * Abre la cotización como la abre quien tiene el permiso de editar una
  * cotización cobrada (la #341 lo está) y devuelve lo que salió del render.
+ * `conCobros: false` = un vuelo sin cobros (sin la banda de edición).
  */
-function abrir(q: PersistedQuote, rol: "ADMIN" | "SOCIO" = "ADMIN") {
+function abrir(q: PersistedQuote, rol: "ADMIN" | "SOCIO" = "ADMIN", { conCobros = true } = {}) {
   capturas.valores.length = 0;
   capturas.payloads.length = 0;
   const html = renderToStaticMarkup(
@@ -360,7 +426,9 @@ function abrir(q: PersistedQuote, rol: "ADMIN" | "SOCIO" = "ADMIN") {
       rol={rol}
       initialQuote={q}
       clientName="Cliente de la #341"
-      edicionConCobros={{ cobradoUsd: Number(q.monto_total_usd), cobrosSinTc: 0 }}
+      edicionConCobros={
+        conCobros ? { cobradoUsd: Number(q.monto_total_usd), cobrosSinTc: 0 } : undefined
+      }
     />,
   );
   return { html, valores: capturas.valores.at(-1), payload: capturas.payloads.at(-1) };
@@ -388,6 +456,7 @@ const MARCA_IVA_MANUAL = 'title="IVA forzado a mano (vacío = según método de 
 
 afterEach(() => {
   modo.reglaVieja = false;
+  modo.columnasSinSnapshot = false;
 });
 
 describe("#341 — transferencia con IVA manual 0 % (cobrada exacta: $800.00 / $14,000.00 MXN)", () => {
@@ -461,6 +530,40 @@ describe("lo que ya funcionaba sigue igual", () => {
     expect(valores?.iva_pct_override).toBeNull();
     expect(payload).not.toHaveProperty("iva_pct_override");
     expect(ivaDelMotor(payload)).toBe(0);
+  });
+});
+
+describe("externo SIN cotizar con el método fijado en «Editar» (revisión del 14-oct-2026)", () => {
+  it("con la primera versión del arreglo (reproducido): el 0 de default de la columna arrancaba como «IVA 0 % manual» y viajaba al motor", () => {
+    modo.columnasSinSnapshot = true;
+    const { valores, payload, html } = abrir(externoSinCotizar(), "ADMIN", { conCobros: false });
+    expect(valores?.iva_pct_override).toBe(0);
+    expect(payload?.escalas).toHaveLength(2);
+    expect(payload).toMatchObject({ es_externo: true, metodo_pago: "TRANSFERENCIA", iva_pct_override: 0 });
+    // Ese 0 «manual» le quitaba el 16 % a un método facturable (sobre $800.00
+    // de base, la v2 se guardaba en $800.00 en vez de $928.00).
+    expect(ivaDelMotor(payload)).toBe(0);
+    expect(html).toContain(MARCA_IVA_MANUAL);
+  });
+
+  it("sin foto del motor no hay IVA que preservar: sin override, el motor pone el 16 % de la transferencia", () => {
+    const { valores, payload, html } = abrir(externoSinCotizar(), "ADMIN", { conCobros: false });
+    expect(valores?.iva_pct_override).toBeNull();
+    expect(valores?.metodo_pago).toBe("TRANSFERENCIA");
+    // Es el cuerpo REAL de `armarCalcPayload`: trae los tramos y el externo.
+    expect(payload?.escalas).toHaveLength(2);
+    expect(payload).toMatchObject({ es_externo: true, metodo_pago: "TRANSFERENCIA" });
+    expect(payload).not.toHaveProperty("iva_pct_override");
+    expect(ivaDelMotor(payload)).toBe(0.16);
+    expect(html).not.toContain(MARCA_IVA_MANUAL);
+  });
+
+  it("el MISMO vuelo con el método todavía en null sale igual (el cotizador lo abre en Transferencia)", () => {
+    const { valores, payload } = abrir(externoSinCotizar(null), "ADMIN", { conCobros: false });
+    expect(valores?.metodo_pago).toBe("TRANSFERENCIA");
+    expect(valores?.iva_pct_override).toBeNull();
+    expect(payload).not.toHaveProperty("iva_pct_override");
+    expect(ivaDelMotor(payload)).toBe(0.16);
   });
 });
 

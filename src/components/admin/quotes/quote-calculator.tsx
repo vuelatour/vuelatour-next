@@ -1066,7 +1066,11 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         // (transferencia al 0 %, $800.00 cobrados exactos) volvía al 16 % en
         // el primer `/calculate` (teclear el T.C.): $928.00 sin que el diff lo
         // dijera. Igual al default ⇒ null (se re-resuelve por método, como
-        // siempre). Fuente única: `ivaOverrideRehidratado` (`lib/admin/iva.ts`).
+        // siempre). SOLO con esa foto del motor, como la tarifa y las horas:
+        // sin snapshot (reserva, externo sin cotizar aunque «Editar» ya le
+        // haya puesto Transferencia) el `iva_pct` 0 es el default de la
+        // columna ⇒ null, y su primera cotización sale con el IVA del método.
+        // Fuente única: `ivaOverrideRehidratado` (`lib/admin/iva.ts`).
         iva_pct_override: ivaOverrideRehidratado(q),
         notas: q.notas ?? "",
         notas_internas: q.notas_internas ?? "",

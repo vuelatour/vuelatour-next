@@ -30,6 +30,20 @@
  * rehidrata es el % persistido SIEMPRE que difiera del default de su método;
  * igual al default ⇒ `null` (se re-resuelve por método, como siempre).
  *
+ * SOLO CON LA FOTO DEL MOTOR (revisión del 14-oct-2026). Sin
+ * `calculo_snapshot.iva` el vuelo nunca se cotizó (reserva, servicio,
+ * externo cubierto o dado de alta sin cotizar) y no hay dinero que
+ * preservar: su `iva_pct` 0 es el default de la columna (`createReserva`,
+ * `createExternal`), no un IVA pactado, AUNQUE `metodo_cobro` ya diga
+ * TRANSFERENCIA — «Editar» deja fijar el método justo en externos sin
+ * snapshot y `createExternal` lo pone por default. La primera versión de
+ * este arreglo leía esas columnas: la PRIMERA cotización de ese externo
+ * arrancaba con «IVA 0 % manual» (sobre una base de $800.00, $800.00 en vez
+ * de $928.00) sin salir en el diff. Sin foto ⇒ `null`: el motor la resuelve
+ * por método, como siempre. Es el mismo candado que la tarifa
+ * (`tarifa.proviene_de_override === true`) y las horas
+ * (`tiempos.cobrable_proviene_de_override === true`).
+ *
  * Todo en FRACCIÓN (0.16), como el API: la hoja lo PINTA en % (16).
  *
  * El cotizador de GRUPO (`components/admin/grupos/grupo-form/**`) no tiene
@@ -100,8 +114,8 @@ export function mismoIvaPct(a: number, b: number): boolean {
 
 /**
  * Lo que la rehidratación necesita de una cotización persistida
- * (`PersistedQuote` lo cumple): el snapshot del cálculo y, como respaldo,
- * las columnas del vuelo.
+ * (`PersistedQuote` lo cumple): el snapshot del cálculo —sin su `iva` no hay
+ * nada que rehidratar— y, como respaldo DENTRO de él, las columnas del vuelo.
  */
 export interface CotizacionIvaPersistido {
   calculo_snapshot?: {
@@ -118,13 +132,18 @@ export interface CotizacionIvaPersistido {
  * IVA MANUAL que hay que REHIDRATAR en el cotizador (`iva_pct_override`), en
  * fracción, o `null` (el motor lo re-resuelve por método de pago).
  *
- * - **Qué % se usó**: `calculo_snapshot.iva.porcentaje` (la foto del cálculo
- *   con el que se compuso el dinero) o, si el snapshot no lo trae, la columna
- *   `iva_pct` (mismo número, `decimal(6,4)`).
+ * - **Solo con la foto del motor** (`calculo_snapshot.iva` con su % o su
+ *   marca del método): sin snapshot, sin `iva` o con un `iva` que no trae
+ *   ninguno de los dos ⇒ `null`, tenga el método que tenga. Un vuelo SIN
+ *   cotizar (reserva, servicio, externo) guarda `iva_pct` 0 por default de
+ *   la columna, no un IVA pactado (ver el encabezado).
+ * - **Qué % se usó**: `iva.porcentaje` (la foto del cálculo con el que se
+ *   compuso el dinero) o, si la foto no lo trae utilizable, la columna
+ *   `iva_pct` (la escribe el MISMO guardado, `decimal(6,4)`).
  * - **Qué habría puesto el método solo**: `iva.aplica_por_metodo_pago ?
- *   0.16 : 0`; sin esa marca (sin snapshot), el default de `metodo_cobro`. Un
- *   `metodo_cobro` null es un vuelo SIN cotizar (reserva, servicio): su
- *   `iva_pct` 0 es el default de la columna, no un IVA pactado ⇒ `null`.
+ *   0.16 : 0`; un `iva` legado sin esa marca toma el default de
+ *   `metodo_cobro` (con desglose, el API solo deja cambiar el método
+ *   revisando la cotización: es el método con el que se calculó).
  * - Difieren a 4 decimales ⇒ ese % ES el override (INCLUIDO el 0: la
  *   transferencia al 0 % de la #341). Iguales ⇒ `null`.
  *
@@ -135,14 +154,17 @@ export interface CotizacionIvaPersistido {
 export function ivaOverrideRehidratado(
   q: CotizacionIvaPersistido | null | undefined,
 ): number | null {
-  if (!q) return null;
-  const iva = q.calculo_snapshot?.iva ?? null;
-  const pct = normalizarIvaPct(iva?.porcentaje) ?? normalizarIvaPct(q.iva_pct);
+  // Sin la foto del motor no hubo dinero compuesto con un IVA: las columnas
+  // solas (`iva_pct` 0 de default + `metodo_cobro`) NO dicen «IVA manual».
+  const iva = q?.calculo_snapshot?.iva;
+  if (!q || !iva) return null;
+  const pctFoto = normalizarIvaPct(iva.porcentaje);
+  const marca =
+    typeof iva.aplica_por_metodo_pago === "boolean" ? iva.aplica_por_metodo_pago : null;
+  // Un `iva` sin el % ni la marca no es foto de nada: igual que sin snapshot.
+  if (pctFoto === null && marca === null) return null;
+  const pct = pctFoto ?? normalizarIvaPct(q.iva_pct);
   if (pct === null) return null;
-  const aplicaPorMetodo =
-    typeof iva?.aplica_por_metodo_pago === "boolean"
-      ? iva.aplica_por_metodo_pago
-      : metodoLlevaIva(q.metodo_cobro);
-  const porDefault = aplicaPorMetodo ? IVA_DEFAULT : 0;
+  const porDefault = (marca ?? metodoLlevaIva(q.metodo_cobro)) ? IVA_DEFAULT : 0;
   return mismoIvaPct(pct, porDefault) ? null : pct;
 }

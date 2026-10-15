@@ -574,10 +574,17 @@ editables, para ellas desapareció.
 
 #341 (transferencia con IVA manual 0 %, cobrada exacta: $800.00) volvía al
 16 % ($928.00) al primer `/calculate`, sin salir en el diff. Regla: se
-rehidrata `iva.porcentaje` del snapshot (sin él, `iva_pct` + `metodo_cobro`)
-si difiere a 4 decimales del default del método (`aplica_por_metodo_pago ?
-0.16 : 0`), incluido el 0; igual ⇒ null. Fuente única: `ivaOverrideRehidratado`
-(`lib/admin/iva.ts`, paridad con el API). El grupo no tiene IVA manual.
+rehidrata `iva.porcentaje` del snapshot si difiere a 4 decimales del default
+del método (`aplica_por_metodo_pago ? 0.16 : 0`), incluido el 0; igual ⇒
+null. SOLO con esa foto del motor (`calculo_snapshot.iva`), como la tarifa
+(`proviene_de_override`) y las horas: sin ella el vuelo nunca se cotizó
+(reserva, externo cubierto o dado de alta) y su `iva_pct` 0 es el default de
+la columna aunque «Editar» ya le haya puesto Transferencia ⇒ null, y su
+primera cotización sale con el IVA del método. (La primera versión leía
+`iva_pct` + `metodo_cobro` sin snapshot y la arrancaba con «IVA 0 % manual»:
+$800.00 en vez de $928.00, sin salir en el diff.) Fuente única:
+`ivaOverrideRehidratado` (`lib/admin/iva.ts`, paridad con el API). El grupo
+no tiene IVA manual.
 
 ## Cotización cobrada: editable con permiso POR PERSONA (26-sep-2026, API 0.0.37)
 
