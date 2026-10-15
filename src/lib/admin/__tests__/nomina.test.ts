@@ -20,14 +20,17 @@ import {
   CATEGORIAS_FILTRO_GASTO,
   CATEGORIAS_REPARTIBLES,
   categoriaGastoLabel,
+  hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
 import { leerFiltrosGastos } from "@/lib/admin/gastos-vista";
+import { ROLES_ELIMINAN_GASTO, puedeEliminarGasto } from "@/lib/admin/gasto-acciones";
+import { queryCambioDeMes } from "@/lib/admin/url-params";
 import { RUTA_SECCION, TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import {
+  AYUDA_ALTA_NOMINA,
   AYUDA_CAPTURA_NOMINA,
   CATEGORIA_NOMINA,
   DESCRIPCION_ERROR_NOMINA,
-  DESCRIPCION_LISTA_NOMINA,
   DESCRIPCION_NOMINA,
   DESCRIPCION_VACIO_NOMINA,
   ETIQUETA_LISTA_NOMINA,
@@ -46,6 +49,7 @@ import {
   TITULO_NOMINA,
   avisoResumenIncompleto,
   centavosDeMonto,
+  descripcionListaNomina,
   esMesFuturoNomina,
   esMesNomina,
   etiquetaMedioNomina,
@@ -406,6 +410,32 @@ describe("enlaces y Excel", () => {
     expect(mesNominaDeUrl(mes, HOY)).toBe("2025-12");
   });
 
+  it("«‹ mes» / «mes ›» conservan la búsqueda `tq` y sueltan la página `tp` (revisión 15-oct-2026)", () => {
+    // La oficina buscó «luis» en la tabla de octubre (DataTable escribió
+    // tq con replaceState) y pulsa «‹ septiembre 2026»: la búsqueda se queda.
+    const href = hrefMesNomina("2026-09", "mes=2026-10&tq=luis&tp=3");
+    expect(href).toBe("/admin/nomina?mes=2026-09&tq=luis");
+    const params = new URLSearchParams(href.split("?")[1]);
+    expect(params.get("tq")).toBe("luis");
+    expect(params.has("tp")).toBe(false);
+    expect(mesNominaDeUrl(params.get("mes"), HOY)).toBe("2026-09");
+    // De ida y vuelta: el regreso a octubre trae la MISMA búsqueda.
+    expect(hrefMesNomina("2026-10", href.split("?")[1])).toBe("/admin/nomina?mes=2026-10&tq=luis");
+    // Búsqueda con espacios y acentos: se codifica y se lee igual.
+    const conAcentos = hrefMesNomina("2026-11", new URLSearchParams({ mes: "2026-10", tq: "Itzel Villalobos ñ" }).toString());
+    expect(new URLSearchParams(conAcentos.split("?")[1]).get("tq")).toBe("Itzel Villalobos ñ");
+    // Un `?mes=` previo inválido se reemplaza por el mes del enlace.
+    expect(hrefMesNomina("2026-09", "mes=basura&tq=imss")).toBe("/admin/nomina?mes=2026-09&tq=imss");
+  });
+
+  it("enlace y campo «Mes» cambian de mes con la MISMA regla (queryCambioDeMes)", () => {
+    for (const actuales of ["", "mes=2026-10", "mes=2026-10&tq=luis", "tq=luis&tp=2", "mes=2026-10&tq=luis&tp=4"]) {
+      expect(hrefMesNomina("2026-09", actuales), actuales).toBe(
+        `/admin/nomina?${queryCambioDeMes(actuales, "2026-09")}`,
+      );
+    }
+  });
+
   it("Excel: la query de /v1/expenses/export y el nombre del archivo", () => {
     expect(queryExcelNomina("2026-10")).toEqual({ categoria: "NOMINA", desde: "2026-10-01", hasta: "2026-10-31" });
     expect(queryExcelNomina("2028-02")).toEqual({ categoria: "NOMINA", desde: "2028-02-01", hasta: "2028-02-29" });
@@ -414,6 +444,19 @@ describe("enlaces y Excel", () => {
 });
 
 describe("textos EXACTOS de la pantalla", () => {
+  it("ayuda del alta con «Nómina»: de EMPRESA aunque traiga avión; a un avión solo repartida (revisión 15-oct-2026)", () => {
+    expect(AYUDA_ALTA_NOMINA).toBe(
+      "sin vuelo. Es gasto de VuelaTour (va a «otros gastos» del Balance general) aunque elijas un avión: el avión queda solo como referencia y no le resta nada. Para cargarla a uno o varios aviones usa «Repartir entre aviones» (aquí al guardar si no eliges avión, o después desde su menú ⋯ o «Verificar / editar»). Su seguimiento vive en la pantalla «Nómina».",
+    );
+    // El texto viejo invitaba a ligar el sueldo al avión del piloto como si
+    // con eso se lo cargara (invariante 10 del API: no le resta nada).
+    expect(AYUDA_ALTA_NOMINA).not.toMatch(/piloto de un solo avión|el avión\s+es opcional/);
+    // Dice lo mismo que el hint «Con lo elegido cae en: …» del MISMO formulario.
+    expect(hojaDestinoGasto(CATEGORIA_NOMINA, false, true)).toContain("el avión queda solo como referencia");
+    expect(AYUDA_ALTA_NOMINA).toContain("el avión queda solo como referencia");
+    expect(AYUDA_ALTA_NOMINA).toContain(`la pantalla «${TITULO_NOMINA}»`);
+  });
+
   it("cabecera, alta y ayuda", () => {
     expect(TITULO_NOMINA).toBe("Nómina");
     expect(DESCRIPCION_NOMINA).toBe(
@@ -448,9 +491,6 @@ describe("textos EXACTOS de la pantalla", () => {
     expect(tituloTotalMesNomina("2026-10")).toBe("Total de octubre 2026");
     expect(tituloListaNomina("2026-10")).toBe("Pagos de nómina · octubre 2026");
     expect(ETIQUETA_LISTA_NOMINA).toBe("Pagos de nómina");
-    expect(DESCRIPCION_LISTA_NOMINA).toBe(
-      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar», «Repartir entre aviones» y «Eliminar», y en su renglón están el comprobante, la facturación y el banco.",
-    );
     expect(ETIQUETA_RESUMEN_NOMINA).toBe("Resumen de la nómina del mes");
     expect(ETIQUETA_POR_MEDIO_NOMINA).toBe("Por medio de pago");
     expect(ETIQUETA_NAV_MESES_NOMINA).toBe("Cambiar de mes");
@@ -463,12 +503,45 @@ describe("textos EXACTOS de la pantalla", () => {
   });
 });
 
+describe("descripción de la tabla según el rol (revisión 15-oct-2026)", () => {
+  it("ADMIN y COORDINADOR: el menú ⋯ trae «Eliminar»; «Repartir» solo en los pagos sin vuelo", () => {
+    const texto =
+      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar», «Repartir entre aviones» (en los pagos sin vuelo) y «Eliminar», y en su renglón están el comprobante, la facturación y el banco.";
+    expect(descripcionListaNomina("ADMIN")).toBe(texto);
+    expect(descripcionListaNomina("COORDINADOR")).toBe(texto);
+  });
+
+  it("FACTURACION ve Nómina pero el menú le esconde «Eliminar»: el texto no se lo promete", () => {
+    expect(descripcionListaNomina("FACTURACION")).toBe(
+      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar» y «Repartir entre aviones» (en los pagos sin vuelo), y en su renglón están el comprobante, la facturación y el banco.",
+    );
+    expect(descripcionListaNomina("FACTURACION")).not.toContain("Eliminar");
+  });
+
+  it("la MISMA regla del menú ⋯ (puedeEliminarGasto) para cada rol que ve la pantalla", () => {
+    for (const rol of ROLES_NOMINA) {
+      expect(descripcionListaNomina(rol).includes("«Eliminar»"), rol).toBe(puedeEliminarGasto(rol));
+      expect(descripcionListaNomina(rol).includes("«Eliminar»"), rol).toBe(
+        (ROLES_ELIMINAN_GASTO as readonly string[]).includes(rol),
+      );
+    }
+    // Sin rol el menú no esconde nada (el API es el candado): el texto tampoco.
+    expect(descripcionListaNomina(null)).toContain("«Eliminar»");
+  });
+});
+
 describe("pureza (la usa también el menú)", () => {
   const fuente = readFileSync(path.resolve(__dirname, "../nomina.ts"), "utf8");
 
   it("sin React, red ni Next: solo libs puras", () => {
     const origenes = [...fuente.matchAll(/^import[^;]*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
-    expect(origenes).toEqual(["@/lib/datetime", "@/lib/format", "@/lib/admin/medios-pago"]);
+    expect(origenes).toEqual([
+      "@/lib/datetime",
+      "@/lib/format",
+      "@/lib/admin/medios-pago",
+      "@/lib/admin/gasto-acciones",
+      "@/lib/admin/url-params",
+    ]);
     expect(fuente).not.toMatch(/["']react["']|@\/lib\/api|next\//);
   });
 

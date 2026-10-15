@@ -120,3 +120,21 @@ export function rangoFiltro(
   if (d && h && d > h) return { desde: h, hasta: d };
   return { desde: d, hasta: h };
 }
+
+/**
+ * Cambio de MES de una pantalla con `?mes=YYYY-MM` y una tabla `DataTable`
+ * (búsqueda `tq`, página `tp`) — 15-oct-2026, Nómina. UNA sola regla para
+ * todo lo que cambia el mes (el campo «Mes» de `GastosPersonalesFilterBar` y
+ * los enlaces «‹ mes» / «mes ›» de Nómina, por `hrefMesNomina`): conserva los
+ * parámetros actuales salvo `tp` (otro mes arranca en la página 1; la tabla
+ * la restauraría de la URL al remontarse) y la búsqueda `tq` se queda, como
+ * en la barra de Gastos. Mes vacío ⇒ sin `?mes=` (vale el mes de hoy).
+ * Devuelve la query SIN «?» («mes=2026-09&tq=luis»).
+ */
+export function queryCambioDeMes(actuales: string, mes: string): string {
+  const sp = new URLSearchParams(actuales);
+  if (mes) sp.set("mes", mes);
+  else sp.delete("mes");
+  sp.delete("tp");
+  return sp.toString();
+}

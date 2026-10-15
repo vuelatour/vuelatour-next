@@ -19,6 +19,7 @@ import type { Gasto } from "@/types/expenses";
 import { NAV_GROUPS, filterNavGroupsForRole, itemNavActivo } from "@/lib/admin/nav-items";
 import { getPageTitleFromPathname } from "@/lib/admin/page-title";
 import {
+  AYUDA_ALTA_NOMINA,
   AYUDA_CAPTURA_NOMINA,
   ETIQUETA_REGISTRAR_NOMINA,
   NOTA_QUINCENA,
@@ -26,10 +27,13 @@ import {
   type GastoNominaResumen,
 } from "@/lib/admin/nomina";
 
+/** Query VIVA de la página (lo que `useSearchParams` devuelve en cada prueba). */
+const urlViva = vi.hoisted(() => ({ query: "" }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
   usePathname: () => "/admin/nomina",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(urlViva.query),
 }));
 vi.mock("sonner", () => ({
   toast: Object.assign(() => {}, { error: () => {}, success: () => {}, info: () => {}, warning: () => {} }),
@@ -102,6 +106,7 @@ const { NominaResumen } = await import("../nomina-resumen");
 const { ExpensesTable } = await import("@/components/admin/expenses/expenses-table");
 const { ExpenseCreateDialog } = await import("@/components/admin/expenses/expense-create-dialog");
 const { GastosPersonalesFilterBar } = await import("@/components/admin/expenses/gastos-personales-filter-bar");
+const { NominaNavMeses } = await import("../nomina-nav-meses");
 
 const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -161,6 +166,13 @@ describe("resumen del mes (presentacional, montos REALES de prod)", () => {
     expect(t.mes).toMatch(/>Paywise<\/span><span[^>]*>\$3,565\.80 MXN</);
     expect(t.mes.indexOf(">Transferencia<")).toBeLessThan(t.mes.indexOf(">Efectivo<"));
     expect(t.mes.indexOf(">Efectivo<")).toBeLessThan(t.mes.indexOf(">Paywise<"));
+    // Si el renglón envuelve (tarjeta angosta), el monto sigue a la DERECHA:
+    // `ml-auto` en cada monto del desglose (revisión 15-oct-2026).
+    const montosMedio = [...t.mes.matchAll(/<li[^>]*><span[^>]*>[^<]*<\/span><span class="([^"]*)">/g)].map((m) => m[1]);
+    expect(montosMedio).toHaveLength(3);
+    for (const clase of montosMedio) {
+      expect(clase.split(" ")).toEqual(expect.arrayContaining(["ml-auto", "text-right", "tabular-nums"]));
+    }
     expect(t.q1).toContain(">1ª quincena · 1–15 oct<");
     expect(t.q1).toContain(">$109,921.46 MXN<");
     expect(t.q1).toContain(">12 pagos<");
@@ -304,7 +316,7 @@ describe("alta: botón con etiqueta propia (prop ADITIVA) y la ayuda de NÓMINA"
     expect(html.replace(ETIQUETA_REGISTRAR_NOMINA, "Nuevo gasto")).toBe(GOLDEN.boton_primario);
   });
 
-  it("abierto con NÓMINA: el título, la ayuda de captura y «Su seguimiento vive en la pantalla Nómina»", () => {
+  it("abierto con NÓMINA: el título, la ayuda de captura y el cuadro de la fuente única (empresa aunque traiga avión)", () => {
     const html = renderToStaticMarkup(
       <ExpenseCreateDialog
         aircraft={[]}
@@ -319,9 +331,13 @@ describe("alta: botón con etiqueta propia (prop ADITIVA) y la ayuda de NÓMINA"
     expect(html).toContain(`<div>${ETIQUETA_REGISTRAR_NOMINA}</div>`);
     expect(html).toMatch(/<p class="[^"]*" data-contexto-alta="[^"]*">En «Notas» escribe/);
     expect(html).toContain(`>${esc(AYUDA_CAPTURA_NOMINA)}</p>`);
-    expect(html).toMatch(
-      /repartirse desde <span class="font-medium">Otros gastos<\/span>\. Su seguimiento vive en la pantalla <span class="font-medium">Nómina<\/span>\.<\/p>/,
+    // El cuadro de NÓMINA es `AYUDA_ALTA_NOMINA` tal cual (revisión
+    // 15-oct-2026): ya no sugiere ligar el sueldo al avión del piloto.
+    expect(html).toContain(
+      `<p data-ayuda-nomina="" class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground"><span class="font-medium">Nómina</span>: ${esc(AYUDA_ALTA_NOMINA)}</p>`,
     );
+    expect(html).not.toContain("piloto de un solo avión");
+    expect(html).toContain("el avión queda solo como referencia");
   });
 
   it("cableado del diálogo: la prop es opcional y el contexto se pinta también sin el modo controlado", () => {
@@ -423,30 +439,81 @@ describe("página /admin/nomina (cableado por regex)", () => {
   });
 
   it("periodo: el selector de Gastos personales entre «‹ anterior» y «siguiente ›» (no hacia el futuro)", () => {
-    expect(page).toContain("<GastosPersonalesFilterBar mes={mes} />");
-    expect(page).toContain("{esMesNomina(anterior) && (");
-    expect(page).toContain("{!esMesFuturoNomina(siguiente, hoy) && (");
-    expect(page).toContain("href={hrefMesNomina(anterior)}");
-    expect(page).toContain("href={hrefMesNomina(siguiente)}");
-    expect(page.match(/prefetch=\{false\}/g)).toHaveLength(3);
-    expect(page).toMatch(/const CLASE_ENLACE_MES = cn\(buttonVariants\(\{ variant: "outline" \}\), "cursor-pointer"\);/);
-    expect(page.indexOf("hrefMesNomina(anterior)")).toBeLessThan(page.indexOf("<GastosPersonalesFilterBar"));
-    expect(page.indexOf("<GastosPersonalesFilterBar")).toBeLessThan(page.indexOf("hrefMesNomina(siguiente)"));
+    expect(page).toMatch(
+      /<NominaNavMeses\s+mes=\{mes\}\s+anterior=\{esMesNomina\(anterior\) \? anterior : null\}\s+siguiente=\{esMesFuturoNomina\(siguiente, hoy\) \? null : siguiente\}\s*\/>/,
+    );
+    // Los enlaces del mes viven en el componente de cliente (leen la query
+    // VIVA): la página ya no arma ningún `hrefMesNomina`.
+    expect(page).not.toContain("hrefMesNomina");
+    expect(page.match(/prefetch=\{false\}/g)).toHaveLength(1);
+    const nav = leer("../nomina-nav-meses.tsx");
+    expect(nav.startsWith('"use client";')).toBe(true);
+    expect(nav).toContain("const actuales = useSearchParams().toString();");
+    expect(nav).toContain("href={hrefMesNomina(anterior, actuales)}");
+    expect(nav).toContain("href={hrefMesNomina(siguiente, actuales)}");
+    expect(nav.match(/prefetch=\{false\}/g)).toHaveLength(2);
+    expect(nav).toMatch(/const CLASE_ENLACE_MES = cn\(buttonVariants\(\{ variant: "outline" \}\), "cursor-pointer"\);/);
+    expect(nav.indexOf("hrefMesNomina(anterior")).toBeLessThan(nav.indexOf("<GastosPersonalesFilterBar"));
+    expect(nav.indexOf("<GastosPersonalesFilterBar")).toBeLessThan(nav.indexOf("hrefMesNomina(siguiente"));
     const barra = leer("../../expenses/gastos-personales-filter-bar.tsx");
     expect(barra).toContain("usePathname");
     expect(barra).toContain("Nómina (`/admin/nomina`");
     // Otro mes ⇒ página 1 de la tabla (la clave = mes la remonta y DataTable
-    // restauraría `tp` de la URL); la búsqueda `tq` se conserva.
-    expect(barra).toMatch(/else sp\.delete\("mes"\);\s*sp\.delete\("tp"\);/);
-    expect(barra).not.toContain('sp.delete("tq")');
+    // restauraría `tp` de la URL); la búsqueda `tq` se conserva. La regla es
+    // `queryCambioDeMes`, la MISMA de los enlaces (`hrefMesNomina`).
+    expect(barra).toContain('import { queryCambioDeMes } from "@/lib/admin/url-params";');
+    expect(barra).toContain("const qs = queryCambioDeMes(params.toString(), valor);");
+    expect(barra).not.toMatch(/sp\.delete\("t[pq]"\)/);
     // La etiqueta «Mes» ligada al campo (antes el campo no tenía nombre accesible).
     expect(barra).toMatch(/<Label htmlFor=\{idMes\}/);
     expect(barra).toContain('import { Label } from "@/components/ui/label";');
     expect(barra).toMatch(/id=\{idMes\}\s*type="month"/);
   });
 
+  it("«‹ mes» / «mes ›» conservan la búsqueda de la tabla (`tq`) y sueltan la página (`tp`), como el campo «Mes»", () => {
+    // La oficina buscó «luis» en octubre: DataTable escribió `tq` (y `tp`)
+    // con replaceState; los enlaces leen esa query VIVA.
+    urlViva.query = "mes=2026-10&tq=luis&tp=3";
+    try {
+      const html = renderToStaticMarkup(<NominaNavMeses mes="2026-10" anterior="2026-09" siguiente="2026-11" />);
+      const enlaces = [...html.matchAll(/<a\b[^>]*>/g)].map((m) => m[0]);
+      expect(enlaces).toHaveLength(2);
+      expect(enlaces[0]).toContain('href="/admin/nomina?mes=2026-09&amp;tq=luis"');
+      expect(enlaces[1]).toContain('href="/admin/nomina?mes=2026-11&amp;tq=luis"');
+      for (const a of enlaces) {
+        expect(a).not.toContain("tp=");
+        expect(a).toMatch(/class="[^"]*cursor-pointer/);
+      }
+      expect(enlaces[0]).toContain('aria-label="Ver la nómina de septiembre 2026"');
+      expect(enlaces[1]).toContain('aria-label="Ver la nómina de noviembre 2026"');
+      expect(html).toMatch(/^<nav aria-label="Cambiar de mes"/);
+      // El campo «Mes» va ENTRE los dos enlaces.
+      expect(html.indexOf("septiembre 2026")).toBeLessThan(html.indexOf('type="month"'));
+      expect(html.indexOf('type="month"')).toBeLessThan(html.indexOf("noviembre 2026"));
+    } finally {
+      urlViva.query = "";
+    }
+  });
+
+  it("sin búsqueda: «‹ mes» va a ?mes= a secas; un vecino en null no se pinta (el siguiente no va al futuro)", () => {
+    urlViva.query = "mes=2026-10";
+    try {
+      const html = renderToStaticMarkup(<NominaNavMeses mes="2026-10" anterior="2026-09" siguiente={null} />);
+      const enlaces = [...html.matchAll(/<a\b[^>]*>/g)].map((m) => m[0]);
+      expect(enlaces).toHaveLength(1);
+      expect(enlaces[0]).toContain('href="/admin/nomina?mes=2026-09"');
+      expect(html).not.toContain("noviembre");
+    } finally {
+      urlViva.query = "";
+    }
+  });
+
   it("el selector de mes reutilizado: «Mes» es la etiqueta LIGADA al campo (nombre accesible) y con manita", () => {
     const html = renderToStaticMarkup(<GastosPersonalesFilterBar mes="2026-10" />);
+    // w-52 (208 px): con w-44 el ícono del calendario tapaba el año de
+    // «septiembre/noviembre/diciembre de 2026» a 16 px (teléfono).
+    expect(html).toMatch(/<div class="w-52"><label/);
+    expect(html).not.toContain("w-44");
     const id = /<label[^>]*for="([^"]+)"[^>]*>Mes<\/label>/.exec(html)?.[1];
     expect(id).toBeTruthy();
     const input = /<input[^>]*>/.exec(html)?.[0] ?? "";
@@ -488,6 +555,10 @@ describe("página /admin/nomina (cableado por regex)", () => {
     expect(page).not.toMatch(/ExpensesSeleccionProvider|UnirCompraToggle/);
     expect(page).toContain('<Card role="region" aria-label={ETIQUETA_LISTA_NOMINA}');
     expect(page).toContain("{tituloListaNomina(mes)}");
+    // La descripción nombra solo lo que el menú ⋯ de ESE rol trae (la MISMA
+    // `rol` que recibe la tabla y, con ella, `ExpenseActions`).
+    expect(page).toContain("<CardDescription>{descripcionListaNomina(me?.rol ?? null)}</CardDescription>");
+    expect(page).not.toContain("DESCRIPCION_LISTA_NOMINA");
   });
 
   it("textos desde la fuente única (nada de dinero calculado aquí: solo resumenNomina)", () => {

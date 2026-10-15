@@ -7,6 +7,7 @@ import {
   esUuid,
   estadoFiltro,
   fechaFiltro,
+  queryCambioDeMes,
   rangoFiltro,
   uuidFiltro,
   valorDeCatalogo,
@@ -97,5 +98,18 @@ describe("fechas de filtro", () => {
       desde: undefined,
       hasta: undefined,
     });
+  });
+});
+
+describe("cambio de mes con tabla (Nómina y Gastos personales, 15-oct-2026)", () => {
+  it("pone el mes, conserva la búsqueda `tq` y suelta la página `tp`", () => {
+    expect(queryCambioDeMes("mes=2026-10&tq=luis&tp=3", "2026-09")).toBe("mes=2026-09&tq=luis");
+    expect(queryCambioDeMes("tq=luis", "2026-09")).toBe("tq=luis&mes=2026-09");
+    expect(queryCambioDeMes("", "2026-09")).toBe("mes=2026-09");
+  });
+
+  it("mes vacío (el campo borrado) quita `?mes=`; lo demás se conserva", () => {
+    expect(queryCambioDeMes("mes=2026-10&tq=imss&tp=2", "")).toBe("tq=imss");
+    expect(queryCambioDeMes("mes=2026-10", "")).toBe("");
   });
 });

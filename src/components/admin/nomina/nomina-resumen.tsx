@@ -50,7 +50,12 @@ export function NominaResumen({
                     className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs"
                   >
                     <span className="text-muted-foreground">{etiquetaMedioNomina(m.medio)}</span>
-                    <span className="font-mono font-medium tabular-nums">{montoNomina(m.total, m.moneda)}</span>
+                    {/* `ml-auto`: si el renglón envuelve (tarjeta angosta: 640–~715 px,
+                        o 7 cifras), el monto sigue a la DERECHA y la columna de
+                        montos no queda dentada. */}
+                    <span className="ml-auto text-right font-mono font-medium tabular-nums">
+                      {montoNomina(m.total, m.moneda)}
+                    </span>
                   </li>
                 ))}
               </ul>

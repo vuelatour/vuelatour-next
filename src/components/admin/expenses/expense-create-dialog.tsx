@@ -80,7 +80,7 @@ import {
   type InventarioPayload,
 } from "@/lib/admin/refaccion-inventario";
 import { hintFolioGasto } from "@/lib/admin/gasto-folio";
-import { TITULO_NOMINA } from "@/lib/admin/nomina";
+import { AYUDA_ALTA_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { Gasto } from "@/types/expenses";
 import {
@@ -1698,13 +1698,16 @@ export function ExpenseCreateDialog({
                 <span className="font-medium">Otros gastos</span>.
               </p>
             )}
+            {/* NÓMINA (15-oct-2026): texto en la fuente única pura
+                (`AYUDA_ALTA_NOMINA`): gasto de EMPRESA aunque traiga avión
+                (invariante 10 del API; dice lo mismo que el hint de
+                `hojaDestinoGasto`) y a un avión solo llega repartida. */}
             {!defaultVueloId && watch("categoria") === "NOMINA" && (
-              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                <span className="font-medium">Nómina</span>: sin vuelo; el avión
-                es opcional (p. ej. piloto de un solo avión). Sin avión puede
-                repartirse desde <span className="font-medium">Otros gastos</span>.
-                Su seguimiento vive en la pantalla{" "}
-                <span className="font-medium">{TITULO_NOMINA}</span>.
+              <p
+                data-ayuda-nomina=""
+                className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+              >
+                <span className="font-medium">{TITULO_NOMINA}</span>: {AYUDA_ALTA_NOMINA}
               </p>
             )}
             {!defaultVueloId && watch("categoria") === "SERVICIOS" && (

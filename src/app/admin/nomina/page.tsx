@@ -14,12 +14,12 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExpensesTable } from "@/components/admin/expenses/expenses-table";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
-import { GastosPersonalesFilterBar } from "@/components/admin/expenses/gastos-personales-filter-bar";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { EmptyState } from "@/components/admin/empty-state";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { NominaResumen } from "@/components/admin/nomina/nomina-resumen";
+import { NominaNavMeses } from "@/components/admin/nomina/nomina-nav-meses";
 import { listGastosAll, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
@@ -33,21 +33,18 @@ import {
   AYUDA_CAPTURA_NOMINA,
   CATEGORIA_NOMINA,
   DESCRIPCION_ERROR_NOMINA,
-  DESCRIPCION_LISTA_NOMINA,
   DESCRIPCION_NOMINA,
   DESCRIPCION_VACIO_NOMINA,
   ETIQUETA_LISTA_NOMINA,
-  ETIQUETA_NAV_MESES_NOMINA,
   ETIQUETA_REGISTRAR_NOMINA,
   ETIQUETA_VER_EN_GASTOS,
   TITULO_ERROR_NOMINA,
   TITULO_NOMINA,
   avisoResumenIncompleto,
+  descripcionListaNomina,
   esMesFuturoNomina,
   esMesNomina,
-  etiquetaMesNomina,
   hrefGastosNomina,
-  hrefMesNomina,
   mesNominaDeUrl,
   mesesVecinos,
   nombreExcelNomina,
@@ -55,7 +52,6 @@ import {
   queryExcelNomina,
   rangoMesNomina,
   resumenNomina,
-  tituloIrAMesNomina,
   tituloListaNomina,
   tituloVacioNomina,
   tituloVerEnGastos,
@@ -64,9 +60,6 @@ import {
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: TITULOS_SECCION.nomina };
-
-/** Clase de los enlaces «‹ mes» / «mes ›»: a la altura del campo «Mes» (h-8). */
-const CLASE_ENLACE_MES = cn(buttonVariants({ variant: "outline" }), "cursor-pointer");
 
 /**
  * Nómina: un espacio propio (15-oct-2026). Pedido del cliente: «Necesitamos un
@@ -169,32 +162,14 @@ export default async function NominaPage({
       </div>
 
       {/* El mes: el selector de Gastos personales (genérico: `usePathname` y
-          `?mes=`) entre «‹ anterior» y «siguiente ›»; hacia el futuro no. */}
-      <nav aria-label={ETIQUETA_NAV_MESES_NOMINA} className="flex flex-wrap items-end gap-2">
-        {esMesNomina(anterior) && (
-          <Link
-            href={hrefMesNomina(anterior)}
-            prefetch={false}
-            aria-label={tituloIrAMesNomina(anterior)}
-            title={tituloIrAMesNomina(anterior)}
-            className={CLASE_ENLACE_MES}
-          >
-            <span aria-hidden="true">‹</span> {etiquetaMesNomina(anterior)}
-          </Link>
-        )}
-        <GastosPersonalesFilterBar mes={mes} />
-        {!esMesFuturoNomina(siguiente, hoy) && (
-          <Link
-            href={hrefMesNomina(siguiente)}
-            prefetch={false}
-            aria-label={tituloIrAMesNomina(siguiente)}
-            title={tituloIrAMesNomina(siguiente)}
-            className={CLASE_ENLACE_MES}
-          >
-            {etiquetaMesNomina(siguiente)} <span aria-hidden="true">›</span>
-          </Link>
-        )}
-      </nav>
+          `?mes=`) entre «‹ anterior» y «siguiente ›»; hacia el futuro no.
+          De cliente: los enlaces leen la búsqueda VIVA de la tabla (`tq`) y
+          la conservan igual que el campo (`queryCambioDeMes`). */}
+      <NominaNavMeses
+        mes={mes}
+        anterior={esMesNomina(anterior) ? anterior : null}
+        siguiente={esMesFuturoNomina(siguiente, hoy) ? null : siguiente}
+      />
 
       {/* Catálogos o fotos que no cargaron: se dice en vez de pintar vacío. */}
       <AvisoDegradado faltantes={degradado.faltantes} />
@@ -229,12 +204,13 @@ export default async function NominaPage({
                 {tituloListaNomina(mes)}{" "}
                 <span className="text-sm font-normal text-muted-foreground">({gastos.length})</span>
               </CardTitle>
-              <CardDescription>{DESCRIPCION_LISTA_NOMINA}</CardDescription>
+              {/* Solo lo que el menú ⋯ de ESTE rol trae (FACTURACION no elimina). */}
+              <CardDescription>{descripcionListaNomina(me?.rol ?? null)}</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {/* La MISMA tabla de Gastos: cada pago con «Verificar / editar»,
-                  «Repartir entre aviones», «Eliminar» (con confirmación),
-                  comprobante, facturación y banco. Sin el proveedor de «Unir
+                  «Repartir entre aviones» (sin vuelo), «Eliminar» (con
+                  confirmación, según el rol), comprobante, facturación y banco. Sin el proveedor de «Unir
                   en compra»: NOMINA no es categoría de compra y la tabla
                   funciona sin él (`useSeleccionGastos` ⇒ null). La clave
                   remonta la tabla al cambiar de mes (página 1, sin fila

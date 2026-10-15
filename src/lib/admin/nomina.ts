@@ -2,7 +2,8 @@
  * Nómina: un espacio propio (15-oct-2026) — FUENTE ÚNICA PURA de la pantalla
  * `/admin/nomina`: sin React ni red (lo prueba `__tests__/nomina.test.ts`).
  * Solo importa libs puras (`lib/datetime`, `lib/format`,
- * `lib/admin/medios-pago`) porque también la usa el menú (`nav-items.ts`).
+ * `lib/admin/medios-pago`, `lib/admin/gasto-acciones` y
+ * `lib/admin/url-params`) porque también la usa el menú (`nav-items.ts`).
  *
  * Pedido del cliente (textual): «Necesitamos un nuevo espacio debajo de Gastos
  * y Otros Gastos que se llame Nomina para tener en ese apartado todo lo de
@@ -24,6 +25,8 @@
 import { MESES_LARGOS_ES } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
+import { puedeEliminarGasto } from "@/lib/admin/gasto-acciones";
+import { queryCambioDeMes } from "@/lib/admin/url-params";
 
 // ═══════════════════════════════ Categoría, ruta y roles ═══════════════════════════════
 
@@ -339,9 +342,15 @@ export function etiquetaMedioNomina(medio: string): string {
 
 // ═══════════════════════════════ Enlaces y Excel ═══════════════════════════════
 
-/** «/admin/nomina?mes=2026-09». */
-export function hrefMesNomina(mes: string): string {
-  return `${RUTA_NOMINA}?mes=${claveMes(partes(mes))}`;
+/**
+ * «/admin/nomina?mes=2026-09» (+ lo que ya traía la URL). `actuales` = la
+ * query VIVA de la página (`useSearchParams`: la búsqueda de la tabla se
+ * escribe con `replaceState` y el server no la ve). Misma regla que el campo
+ * «Mes» (`queryCambioDeMes`): conserva la búsqueda `tq` y suelta la página
+ * `tp`. Así «‹ mes» / «mes ›» y el campo cambian de mes IGUAL.
+ */
+export function hrefMesNomina(mes: string, actuales = ""): string {
+  return `${RUTA_NOMINA}?${queryCambioDeMes(actuales, claveMes(partes(mes)))}`;
 }
 
 /**
@@ -373,6 +382,17 @@ export const DESCRIPCION_NOMINA =
   "Todo lo de la nómina en un solo lugar: sueldos del personal y de los pilotos, cuotas del IMSS e INFONAVIT y la asesoría de la nómina (los gastos con categoría «Nómina»). Es gasto de VuelaTour: va a «otros gastos» del Balance general; si una parte le toca a un avión, repártela desde «Verificar / editar».";
 
 export const ETIQUETA_REGISTRAR_NOMINA = "Registrar pago de nómina";
+
+/**
+ * Cuadro de ayuda del alta con la categoría «Nómina» (va tras «Nómina:» en
+ * negritas). Dice la regla del API (invariante 10): es gasto de EMPRESA
+ * aunque traiga avión —el avión queda solo como referencia, igual que el
+ * hint de `hojaDestinoGasto`— y a un avión solo llega REPARTIDA. «Repartir
+ * entre aviones» del alta solo sale sin avión; el menú ⋯ y «Verificar /
+ * editar» reparten también con avión (el API lo permite sin vuelo).
+ */
+export const AYUDA_ALTA_NOMINA =
+  "sin vuelo. Es gasto de VuelaTour (va a «otros gastos» del Balance general) aunque elijas un avión: el avión queda solo como referencia y no le resta nada. Para cargarla a uno o varios aviones usa «Repartir entre aviones» (aquí al guardar si no eliges avión, o después desde su menú ⋯ o «Verificar / editar»). Su seguimiento vive en la pantalla «Nómina».";
 
 export const AYUDA_CAPTURA_NOMINA =
   "En «Notas» escribe a quién se le pagó y qué quincena (p. ej. «Luis · 1a oct»): así lo encuentras con la búsqueda de la tabla.";
@@ -420,8 +440,20 @@ export function tituloListaNomina(mes: string): string {
 /** Nombre accesible de la región de la tabla. */
 export const ETIQUETA_LISTA_NOMINA = "Pagos de nómina";
 
-export const DESCRIPCION_LISTA_NOMINA =
-  "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar», «Repartir entre aviones» y «Eliminar», y en su renglón están el comprobante, la facturación y el banco.";
+/**
+ * Descripción de la tabla: nombra SOLO lo que el menú ⋯ de ese rol trae.
+ * «Eliminar» con `puedeEliminarGasto` (la MISMA regla con la que
+ * `ExpenseActions` lo esconde: FACTURACION ve Nómina pero no elimina
+ * gastos) y «Repartir entre aviones» solo en los pagos sin vuelo (el menú
+ * no lo ofrece a un gasto ligado a un vuelo).
+ */
+export function descripcionListaNomina(rol: string | null | undefined): string {
+  const repartir = "«Repartir entre aviones» (en los pagos sin vuelo)";
+  const acciones = puedeEliminarGasto(rol)
+    ? `«Verificar / editar», ${repartir} y «Eliminar»`
+    : `«Verificar / editar» y ${repartir}`;
+  return `Cada pago es un gasto completo: su menú ⋯ trae ${acciones}, y en su renglón están el comprobante, la facturación y el banco.`;
+}
 
 /** Nombre accesible del resumen del mes. */
 export const ETIQUETA_RESUMEN_NOMINA = "Resumen de la nómina del mes";

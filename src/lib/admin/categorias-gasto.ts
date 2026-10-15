@@ -45,7 +45,9 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   // Indirectos" del balance del avión (o repartible desde la pantalla
   // Otros gastos; cada parcial cae en esa misma hoja del avión elegido).
   INDIRECTO: "Gastos indirectos de avión",
-  // Nómina del personal: sin vuelo; avión opcional (piloto de un solo avión).
+  // Nómina del personal: sin vuelo. De EMPRESA («otros gastos» del Balance
+  // general) aunque traiga avión, que queda solo como referencia; a un avión
+  // solo llega REPARTIDA (`AYUDA_ALTA_NOMINA`, invariante 10 del API).
   NOMINA: "Nómina",
   // Servicio/mantenimiento DE UN AVIÓN sin vuelo (taller, seguros del avión…).
   SERVICIOS: "Servicios (avión)",

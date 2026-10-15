@@ -4545,8 +4545,9 @@ PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
   es referencia)», **PERMISO** «Balance del avión · Permisos», lo demás «hoja
   del vuelo» → sin avión → GAS/PERMISO con avión → Gastos Indirectos. Antes
   todo gasto con vuelo decía «hoja del vuelo» aunque desde el 11-sep las de
-  empresa van SIEMPRE a «otros gastos». (El cuadro de NÓMINA del alta conserva
-  su texto viejo: otra pasada.)
+  empresa van SIEMPRE a «otros gastos». (El cuadro de NÓMINA del alta ya dice
+  lo mismo desde el 15-oct-2026: `AYUDA_ALTA_NOMINA` en `lib/admin/nomina.ts`,
+  ver «Nómina: un espacio propio».)
 - **Pruebas**: `lib/admin/__tests__/categorias-gasto.test.ts` (tabla
   canónica == API, orden en el selector, no repartible, vuelo obligatorio y su
   mensaje, ventanas, `iaPuedeCambiarCategoria`, ayuda, `hojaDestinoGasto` por
@@ -10142,7 +10143,8 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   renglón en la guardiana `titulos-pestana-cableado.test.ts`.
 - **Fuente única PURA** `lib/admin/nomina.ts` (sin React ni red; solo
   importa `lib/datetime`, `lib/format` y `lib/admin/medios-pago` porque la
-  usa también el menú): `CATEGORIA_NOMINA`, `ROLES_NOMINA`,
+  usa también el menú; desde la revisión del 15-oct-2026 también las puras
+  `lib/admin/gasto-acciones` y `lib/admin/url-params`): `CATEGORIA_NOMINA`, `ROLES_NOMINA`,
   `puedeVerNomina`; el mes (`mesNominaDeUrl`: «YYYY-MM» con mes 01–12 y
   año 2000–2100, cualquier otra cosa se IGNORA y vale el mes de hoy en
   Cancún —regla de `url-params`, nunca un 400 ni un throw—,
@@ -10192,26 +10194,45 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
     (`/v1/expenses/export`) con `queryExcelNomina(mes)` y el `title` de
     `tituloExcelGastos(rol)`; «Ver en Gastos» (`hrefGastosNomina`: la
     categoría y las fechas del mes, que Gastos lee con `leerFiltrosGastos`).
-  - **Periodo**: el selector de MES de Gastos personales
+  - **Periodo** (`components/admin/nomina/nomina-nav-meses.tsx`, de
+    CLIENTE): el selector de MES de Gastos personales
     (`GastosPersonalesFilterBar`, genérico: `usePathname` + `?mes=`; su
     comentario lo dice) entre «‹ septiembre 2026» y «noviembre 2026 ›»
     (`Link` con `prefetch={false}`, `cursor-pointer` y `aria-label`
-    «Ver la nómina de …»; la flecha va `aria-hidden`); el siguiente no se
-    ofrece hacia el futuro. Al reutilizarlo, su etiqueta «Mes» quedó ligada
-    al campo (`htmlFor`/`id`: antes no tenía nombre accesible) con manita, y
-    al cambiar de mes borra `tp` (la tabla, remontada por `key={mes}`,
-    arranca en la página 1; la búsqueda `tq` se conserva, como en Gastos);
-    aplica también a Gastos personales.
+    «Ver la nómina de …»; la flecha va `aria-hidden`); la página decide los
+    vecinos (`null` = no se pinta: el siguiente no se ofrece hacia el
+    futuro). Al reutilizarlo, su etiqueta «Mes» quedó ligada al campo
+    (`htmlFor`/`id`: antes no tenía nombre accesible) con manita y el campo
+    pasó de `w-44` a `w-52` (a 16 px, en teléfono, el ícono del calendario
+    tapaba el año de «septiembre/noviembre/diciembre de 2026»). **Cambiar
+    de mes conserva la búsqueda por los DOS caminos** (revisión
+    15-oct-2026): una sola regla pura, `queryCambioDeMes`
+    (`lib/admin/url-params.ts`), que conserva los parámetros actuales salvo
+    `tp` (la tabla, remontada por `key={mes}`, arranca en la página 1; la
+    búsqueda `tq` se queda, como en Gastos). La usan el campo y
+    `hrefMesNomina(mes, actuales)`; los enlaces leen la query VIVA con
+    `useSearchParams` porque `DataTable` escribe `tq` con `replaceState` y
+    el server no la ve (antes «‹ mes» armaba `?mes=` a secas y tiraba la
+    búsqueda que el campo sí conservaba). El campo hace `router.replace` y
+    los enlaces `push` (diferencia en «Atrás» aceptada). Aplica también a
+    Gastos personales.
   - **Resumen** (`components/admin/nomina/nomina-resumen.tsx`,
     PRESENTACIONAL sin hooks): 3 tarjetas (1 columna en teléfono, 3 desde
     `sm`): «Total de octubre 2026» (cada moneda en su renglón, «N pagos» y el
-    desglose por medio con las etiquetas de `medios-pago.ts`) y las dos
+    desglose por medio con las etiquetas de `medios-pago.ts`; cada monto con
+    `ml-auto text-right`: si el renglón envuelve —tarjeta angosta entre 640
+    y ~715 px o montos de 7 cifras— sigue a la DERECHA) y las dos
     quincenas («Sin pagos» si no hubo); debajo, «La quincena sale de la
     fecha del gasto (la del pago).». Solo con la lista cargada y con pagos.
   - **Lista**: la MISMA `ExpensesTable` de Gastos (`key={mes}`) en una
     tarjeta «Pagos de nómina · octubre 2026 (12)»: cada pago con TODO lo de
-    un gasto («Verificar / editar», «Repartir entre aviones», «Eliminar» con
-    su confirmación, comprobante, facturación y banco). SIN
+    un gasto («Verificar / editar», «Repartir entre aviones» en los pagos sin
+    vuelo, «Eliminar» con su confirmación según el rol, comprobante,
+    facturación y banco). La descripción de la tarjeta es
+    `descripcionListaNomina(me?.rol)`: nombra «Eliminar» SOLO si
+    `puedeEliminarGasto(rol)` —la MISMA regla con la que `ExpenseActions` lo
+    esconde; FACTURACION ve Nómina pero no elimina gastos— y aclara que
+    «Repartir» es para los pagos sin vuelo (`repartible` del menú). SIN
     `ExpensesSeleccionProvider` ni «Unir en compra» (NOMINA no es categoría
     de compra; `useSeleccionGastos` devuelve null y la tabla funciona sin
     él). Lista vacía ⇒ `EmptyState` (`UserGroupIcon`) con «Sin pagos de
@@ -10220,8 +10241,17 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
 - **Alta** (`expense-create-dialog.tsx`): prop ADITIVA `etiquetaBoton?:
   string` (sin ella, «Nuevo gasto» / «Registrar gasto» byte a byte: el
   golden `alta-gasto.golden.json` no se regeneró) y el cuadro de NÓMINA
-  agrega «Su seguimiento vive en la pantalla «Nómina».» (mismo patrón que
-  el del gasto personal del dueño).
+  (`data-ayuda-nomina`) es «Nómina: » + `AYUDA_ALTA_NOMINA` de la fuente
+  única: gasto de VuelaTour («otros gastos» del Balance general) AUNQUE
+  elijas un avión, que queda solo como referencia y no le resta nada (lo
+  mismo que el hint «Con lo elegido cae en: …» de `hojaDestinoGasto`); a
+  uno o varios aviones solo llega con «Repartir entre aviones» (en el alta
+  si no hay avión; después desde el menú ⋯ o «Verificar / editar»); y «Su
+  seguimiento vive en la pantalla «Nómina»». Antes decía «el avión es
+  opcional (p. ej. piloto de un solo avión)», que invitaba a ligar el
+  sueldo al avión del piloto como si con eso se lo cargara (revisión
+  15-oct-2026). El comentario de `NOMINA` en `categorias-gasto.ts` dice lo
+  mismo.
 - **Revalidación**: donde las actions de Gastos revalidan «Otros gastos»
   ahora revalidan también `/admin/nomina` (`revalidarVerificacion`, también
   el PATCH incierto; `saveRepartoAction`, `revalidarReparto`,
@@ -10235,7 +10265,8 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   MXN que suman $109,921.46, todos en la 1.ª quincena; septiembre 2026 = 5
   pagos del 30-sep que suman $21,757.80, todos en la 2.ª; notas genéricas),
   `components/admin/nomina/__tests__/nomina-pagina.test.tsx` (resumen
-  renderizado, MXN y USD sin mezclar, la tabla sin el proveedor, el botón
+  renderizado con los montos a la derecha, los enlaces del mes que
+  conservan `tq` y sueltan `tp`, el ancho del campo «Mes», MXN y USD sin mezclar, la tabla sin el proveedor, el botón
   del alta con y sin `etiquetaBoton` contra el golden, la ayuda de NÓMINA,
   el menú y el cableado de la página por regex),
   `app/admin/expenses/__tests__/nomina-revalidacion.test.ts`
@@ -10248,5 +10279,8 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   COORDINADOR y FACTURACION (SOCIO ⇒ 404), octubre y septiembre con sus
   totales, «‹ septiembre» / «noviembre ›» (este último no sale en el mes
   en curso), el alta con «Registrar pago de nómina», «Exportar Excel» y
-  «Ver en Gastos», y teléfono a 390 px.
+  «Ver en Gastos», teléfono a 390 px (el año completo en el campo «Mes» de
+  septiembre/noviembre/diciembre), las tarjetas del resumen a 640–720 px y
+  buscar «luis» y cambiar de mes con el campo y con «‹ mes» (la búsqueda se
+  queda las dos veces).
 - **Deploy: solo panel.**
