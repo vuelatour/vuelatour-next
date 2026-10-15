@@ -6,6 +6,8 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { MovimientoActions } from "./movimiento-actions";
 import { DescargarReposicionIcon } from "./excel-caja-buttons";
+import { GastoFondoDetalle } from "./gasto-fondo-detalle";
+import { busquedaDetalleGastoFondo, type DetalleGastoFondo } from "@/lib/admin/caja-chica-gasto";
 import { esReposicionDescargable } from "@/lib/admin/caja-chica-excel";
 import type { Gasto } from "@/types/expenses";
 import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
@@ -32,6 +34,13 @@ export interface MovimientoFondoRow {
   movimiento?: CajaMovimiento | null;
   /** URL firmada de la foto del comprobante, si tiene. */
   fotoUrl?: string;
+  /**
+   * Lo que el renglón dice del GASTO (15-oct-2026): categoría, avión,
+   * proveedor, comprobante, la hoja del Excel del balance y los enlaces
+   * «Ver en balance…» (`detalleGastoFondo`). null/ausente en los renglones
+   * de caja: esos quedan como siempre.
+   */
+  detalleGasto?: DetalleGastoFondo | null;
 }
 
 export function FondoHistorialTable({
@@ -111,7 +120,7 @@ export function FondoHistorialTable({
             {m.vueloId && m.vueloFolio != null && (
               <Link
                 href={`/admin/flights/${m.vueloId}`}
-                className="font-mono text-xs text-brand-600 hover:underline"
+                className="cursor-pointer font-mono text-xs text-brand-600 hover:underline"
                 title="Abrir el detalle del vuelo de este gasto"
               >
                 #{m.vueloFolio}
@@ -122,6 +131,11 @@ export function FondoHistorialTable({
             <span className="text-xs text-muted-foreground whitespace-pre-line break-words">
               {m.descripcion}
             </span>
+          )}
+          {/* Más datos del gasto y «Ver en balance…» (15-oct-2026): HERMANOS
+              del <Link> del folio, nunca dentro. */}
+          {m.detalleGasto && (
+            <GastoFondoDetalle detalle={m.detalleGasto} gasto={m.gasto} descripcion={m.descripcion} />
           )}
         </div>
       ),
@@ -180,9 +194,9 @@ export function FondoHistorialTable({
       searchText={(m) =>
         `${m.fechaFmt} ${m.tipoLabel} ${m.descripcion ?? ""} ${
           m.vueloFolio != null ? `#${m.vueloFolio}` : ""
-        }`
+        } ${busquedaDetalleGastoFondo(m.detalleGasto)}`
       }
-      searchPlaceholder="Buscar movimiento (concepto, descripción, vuelo, fecha)…"
+      searchPlaceholder="Buscar movimiento (concepto, categoría, matrícula, proveedor, vuelo, fecha)…"
     />
   );
 }

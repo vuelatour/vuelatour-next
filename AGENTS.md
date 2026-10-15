@@ -216,9 +216,11 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `lib/admin/clave-cliente.ts`. Ver «ID de vuelo por cliente junto al folio».
 - Abrir el balance EN LA CELDA de un gasto (13-oct-2026, API 0.0.75): la
   llegada (`?gasto=`, celda, franja) sale SOLO de `lib/admin/libro-vinculos.ts`
-  y los enlaces «Ver en balance…» de Conciliación SOLO de
-  `lib/admin/conciliacion-balance.ts`. Ver «Desde Conciliación: el libro abre
-  en la celda del gasto».
+  y los enlaces «Ver en balance…» de Conciliación y de Caja chica SOLO de
+  `lib/admin/conciliacion-balance.ts` (también el NOMBRE de la pestaña del
+  Excel donde vive el gasto, `NOMBRE_HOJA_BALANCE_*`). Ver «Desde
+  Conciliación: el libro abre en la celda del gasto» y «Caja chica: el gasto
+  con más datos y «Ver en balance»».
 - Compras en DÓLARES contra cargos en PESOS (13-oct-2026, API 0.0.75): la
   regla del T.C. oficial del día es del API; el panel la PINTA solo con
   `lib/admin/conciliacion-tc.ts` (3.ª línea del candidato, marca de la liga,
@@ -10287,3 +10289,61 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   buscar «luis» y cambiar de mes con el campo y con «‹ mes» (la búsqueda se
   queda las dos veces).
 - **Deploy: solo panel.**
+
+## Caja chica: el gasto con más datos y «Ver en balance» (15-oct-2026)
+
+Pedido del cliente con la captura del fondo de Pablo Canales: «aquí necesito
+más información en la fila sobre el gasto y estaría genial que se mande a la
+celda en los balances» y «que diga en qué hoja del excel del balance está».
+
+- **Fuente única del renglón**: `lib/admin/caja-chica-gasto.ts`
+  (`detalleGastoFondo`, PURO y serializable; la página lo arma en
+  `MovimientoFondoRow.detalleGasto` y la tabla lo pinta con
+  `components/admin/caja-chica/gasto-fondo-detalle.tsx`). No decide nada:
+  categoría con `categoriaGastoLabel`, avión con `estadoAvionGasto` (los
+  MISMOS textos y titles de la columna «Avión · vuelo» de Gastos, en línea;
+  el vuelo no se repite: el folio del renglón sigue ligando a él), proveedor
+  (o el lugar), comprobante con `textoComprobante` y el semáforo
+  `FacturacionBadge compacta` (el de un clic de Gastos). La categoría no se
+  repite si ya es la descripción del renglón (gasto sin notas). Sin el gasto
+  completo (no llegó en `listGastos`) igual se dicen la hoja y los enlaces.
+  Renglones de caja (reposición, reintegro, ajuste): `detalleGasto: null`,
+  marcado de siempre.
+- **Libro, mes y hoja: SOLO del API** (`balance` de cada entrada
+  `origen: "gasto"` del historial, la misma forma que Conciliación;
+  invariante 72 del API). El panel NUNCA decide libro ni mes.
+  - **Enlaces** «Ver en balance del avión X» / «Ver en balance general» con
+    `enlacesBalanceDeGasto({ id, balance })` + `EnlacesBalanceGasto`
+    (pestaña nueva, `?gasto=`, hermanos del `<Link>` del folio). Corte por
+    rol: `puedeAbrirBalances(me?.rol)` en la página (ADMIN/ANALISTA; sin
+    `/me` se ofrecen, el API es el candado).
+  - **Línea de la hoja** (`textoHojaBalanceDeGasto`), para CUALQUIER rol
+    que vea la fila: «Balance de N4142R (oct 2026): hoja «reporte horas
+    N4142R» · Balance general: hoja «reporte horas FLOTA»»; máx.
+    `MAX_ENLACES_AVION` matrículas y «y N aviones más»; mes corto es-MX
+    («oct 2026»). El `title` de los enlaces (también en Conciliación) termina
+    en «, hoja «…»».
+  - **Nombres de pestaña** = `NOMBRE_HOJA_BALANCE_AVION` /
+    `NOMBRE_HOJA_BALANCE_GENERAL`, EXACTOS de pyservices
+    (`balance_avion_xlsx.py`; la de vuelos del avión es «reporte horas
+    <MATRÍCULA>» con el espejo de `sheet_title`, sin matrícula ⇒ sin
+    nombre). Hoja desconocida (API más nuevo) ⇒ se calla, jamás inventa.
+    Renombrar una pestaña en pyservices obliga a tocar la tabla: la congela
+    `conciliacion-balance.test.ts` (con paridad contra los tipos del panel,
+    del API y el texto de pyservices cuando el repo hermano existe).
+  - `balance: null` NO significa «no cuenta en ningún balance» (el pago al
+    vendedor resta en COMISIONES sin vínculo, inv. 72 (v)): sin línea ni
+    enlaces, sin texto.
+- **Búsqueda rápida** suma categoría, matrículas (también las del reparto)
+  y proveedor/lugar (`busquedaDetalleGastoFondo`).
+- **Skew**: panel nuevo + API previo ⇒ sin `balance` ⇒ sin línea ni
+  enlaces, los demás datos sí (salen del gasto que la página ya leía); API
+  nuevo + panel previo ⇒ ignora el campo. Ningún número cambia.
+- **Pruebas**: `components/admin/caja-chica/__tests__/gasto-balance.test.tsx`
+  (detalle puro, fila con y sin `balance`, sin rol ⇒ sin enlaces y con
+  hoja, sin `<a>` anidado, textos y titles de «Avión · vuelo», renglón de
+  caja intacto, cableado de la página) y
+  `lib/admin/__tests__/conciliacion-balance.test.ts` (tabla de pestañas
+  congelada, `textoHojaBalanceDeGasto`, title con la hoja, paridad con
+  pyservices). `excel-caja.test.tsx` mockea `@/app/admin/expenses/actions`
+  (la fila monta `FacturacionBadge`).

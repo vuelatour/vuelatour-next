@@ -1,3 +1,5 @@
+import type { UbicacionBalanceGasto } from "@/types/conciliacion";
+
 export type TipoMovimientoCaja = "REPOSICION" | "REINTEGRO" | "AJUSTE";
 export type MonedaCaja = "MXN" | "USD";
 
@@ -61,6 +63,15 @@ export interface HistorialEntry {
   /** Vuelo del gasto en efectivo (null en movimientos de caja). */
   vuelo_id?: string | null;
   vuelo_folio?: number | null;
+  /**
+   * ¿En qué balance, mes y hoja vive el gasto? (15-oct-2026, ADITIVO; solo en
+   * las entradas `origen: "gasto"`). Lo decide SOLO el API
+   * (`ubicacionBalanceDeGasto`, invariante 72): la misma forma que
+   * `GET /v1/conciliacion/movimientos`. Sin la llave (API previo o lectura
+   * caída) ⇒ sin línea ni enlaces; `null` ⇒ no vive en ninguna celda con
+   * vínculo (sin enlaces).
+   */
+  balance?: UbicacionBalanceGasto | null;
 }
 
 export interface CajaFondoListResponse {

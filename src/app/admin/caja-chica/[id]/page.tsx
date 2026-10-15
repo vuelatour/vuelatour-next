@@ -26,6 +26,8 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { getMe } from "@/lib/api/me";
 import { porReponerDeFondo, puedeDescargarExcelCaja } from "@/lib/admin/caja-chica-excel";
 import { DescargarPorReponerButton } from "@/components/admin/caja-chica/excel-caja-buttons";
+import { puedeAbrirBalances } from "@/lib/admin/balance-vista";
+import { detalleGastoFondo } from "@/lib/admin/caja-chica-gasto";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +76,10 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
   // API). Sin `/me` no se ofrece: un botón que responde 403 es peor que nada.
   const me = await getMe().catch(() => null);
   const puedeExcel = puedeDescargarExcelCaja(me?.rol);
+  // «Ver en balance…» de cada gasto (15-oct-2026): los libros son de
+  // ADMIN/ANALISTA (mismo corte que Conciliación); la línea «en qué hoja del
+  // Excel está» la ve cualquiera que vea la fila.
+  const abreBalances = puedeAbrirBalances(me?.rol);
 
   const [gastosRes, aircraftRes, providersRes] = await Promise.all([
     listGastos({
@@ -117,6 +123,9 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
       saldoFmt: money(e.saldo),
       gasto,
       fotoUrl: gasto?.foto_url ? fotoUrls[gasto.foto_url] : undefined,
+      // Libro, mes y hoja salen SOLO del `balance` del API (invariante 72);
+      // `detalleGastoFondo` arma los enlaces con `enlacesBalanceDeGasto`.
+      detalleGasto: detalleGastoFondo(e, gasto, { abreBalances }),
     };
   });
 

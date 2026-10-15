@@ -23,6 +23,11 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("@/components/admin/expenses/expense-actions", () => ({ ExpenseActions: () => null }));
+// La fila de un gasto monta el semáforo de facturación (15-oct-2026), que
+// importa la server action (y con ella el cliente de Supabase del servidor).
+vi.mock("@/app/admin/expenses/actions", () => ({
+  marcarFacturacionAction: async () => ({ ok: true }),
+}));
 vi.mock("../movimiento-actions", () => ({
   MovimientoActions: () => <span data-menu="1">⋯</span>,
 }));

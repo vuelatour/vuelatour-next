@@ -161,7 +161,7 @@ describe("1↔1: los enlaces van como HERMANOS del enlace al gasto", () => {
     expect(enlaces[0]).toContain(`href="/admin/reportes/balance?avion=${N4142R}&amp;desde=2026-10-01&amp;hasta=2026-10-31&amp;gasto=${G_430}"`);
     expect(enlaces[1]).toContain(`href="/admin/reportes/balance?modo=mensual&amp;desde=2026-10-01&amp;hasta=2026-10-31&amp;gasto=${G_430}"`);
     expect(enlaces[0]).toContain(
-      'title="Abre en una pestaña nueva el balance de N4142R (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto"',
+      'title="Abre en una pestaña nueva el balance de N4142R (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas N4142R»"',
     );
     expect(cuenta(html, '<span class="sr-only"> (se abre en una pestaña nueva)</span>')).toBe(2);
     // El ícono es decorativo.

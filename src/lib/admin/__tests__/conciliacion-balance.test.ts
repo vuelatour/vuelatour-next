@@ -12,11 +12,16 @@ import {
   ETIQUETA_VER_BALANCE_GENERAL,
   MAX_ENLACES_AVION,
   MODO_BALANCE_DESDE_GASTO,
+  NOMBRE_HOJA_BALANCE_AVION,
+  NOMBRE_HOJA_BALANCE_GENERAL,
   TEXTO_PESTANA_NUEVA_SR,
   enlacesBalanceDeGasto,
   etiquetaVerBalanceAvion,
   hayEnlacesBalance,
+  nombreHojaBalanceAvion,
+  nombreHojaBalanceGeneral,
   textoEjeBalance,
+  textoHojaBalanceDeGasto,
 } from "../conciliacion-balance";
 
 // Caso de QA: OPERACIONES $1,899.09 del vuelo #430 de N4142R (10-oct-2026).
@@ -70,7 +75,7 @@ describe("enlacesBalanceDeGasto", () => {
         href: `${RUTA_VISTA_BALANCE}?avion=${N4142R}&desde=2026-10-01&hasta=2026-10-31&gasto=${G_430}`,
         etiqueta: "Ver en balance del avión N4142R",
         title:
-          "Abre en una pestaña nueva el balance de N4142R (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto",
+          "Abre en una pestaña nueva el balance de N4142R (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas N4142R»",
       },
     ]);
     expect(e.general).toEqual({
@@ -78,7 +83,7 @@ describe("enlacesBalanceDeGasto", () => {
       href: `${RUTA_VISTA_BALANCE}?modo=mensual&desde=2026-10-01&hasta=2026-10-31&gasto=${G_430}`,
       etiqueta: "Ver en balance general",
       title:
-        "Abre en una pestaña nueva el Balance mensual de la flota (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto",
+        "Abre en una pestaña nueva el Balance mensual de la flota (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas FLOTA»",
     });
     expect(e.masAviones).toBeNull();
     expect(hayEnlacesBalance(e)).toBe(true);
@@ -213,6 +218,165 @@ describe("textos", () => {
   it("el eje dice de qué fecha sale el mes", () => {
     expect(textoEjeBalance("vuelo")).toBe("mes del vuelo");
     expect(textoEjeBalance("gasto")).toBe("mes de la fecha del gasto");
+  });
+});
+
+describe("en qué hoja del Excel del balance está (pedido del cliente, 15-oct-2026)", () => {
+  it("la tabla de pestañas CONGELADA: los nombres EXACTOS de pyservices, una por cada hoja del API", () => {
+    expect(NOMBRE_HOJA_BALANCE_AVION).toEqual({
+      reporte_horas: "reporte horas",
+      combustible: "combustible",
+      gastos_indirectos: "Gastos Indirectos",
+      refacciones: "refacciones",
+      permisos: "permisos",
+    });
+    expect(NOMBRE_HOJA_BALANCE_GENERAL).toEqual({
+      reporte_horas: "reporte horas FLOTA",
+      combustible: "combustible",
+      otros_gastos: "otros gastos",
+      repartidos: "repartidos a aviones",
+      inventario: "inventario",
+    });
+    // Cada valor de los tipos del panel tiene nombre: un valor nuevo sin
+    // nombre truena aquí (y en tsc, por el Record).
+    expect(Object.keys(NOMBRE_HOJA_BALANCE_AVION).sort()).toEqual(literales(TIPOS_PANEL, "HojaBalanceAvion"));
+    expect(Object.keys(NOMBRE_HOJA_BALANCE_GENERAL).sort()).toEqual(literales(TIPOS_PANEL, "HojaBalanceGeneral"));
+  });
+
+  it("la hoja de vuelos del avión lleva la matrícula; sin ella o con una hoja desconocida ⇒ null (jamás un nombre inventado)", () => {
+    expect(nombreHojaBalanceAvion("reporte_horas", "N4142R")).toBe("reporte horas N4142R");
+    expect(nombreHojaBalanceAvion("reporte_horas", " XA-VGV ")).toBe("reporte horas XA-VGV");
+    expect(nombreHojaBalanceAvion("reporte_horas", null)).toBeNull();
+    expect(nombreHojaBalanceAvion("gastos_indirectos", null)).toBe("Gastos Indirectos");
+    expect(nombreHojaBalanceAvion("hoja_nueva_del_api", "N4142R")).toBeNull();
+    expect(nombreHojaBalanceAvion("toString", "N4142R")).toBeNull();
+    expect(nombreHojaBalanceAvion(null, "N4142R")).toBeNull();
+    expect(nombreHojaBalanceGeneral("repartidos")).toBe("repartidos a aviones");
+    expect(nombreHojaBalanceGeneral("hoja_nueva_del_api")).toBeNull();
+    expect(nombreHojaBalanceGeneral(undefined)).toBeNull();
+    // Espejo de `sheet_title`: ilegales → «-», máx. 31.
+    expect(nombreHojaBalanceAvion("reporte_horas", "AB/CD")).toBe("reporte horas AB-CD");
+    expect(nombreHojaBalanceAvion("reporte_horas", "X".repeat(40))).toHaveLength(31);
+  });
+
+  it("#430 de N4142R: «Balance de N4142R (oct 2026): hoja «reporte horas N4142R» · Balance general: hoja «reporte horas FLOTA»»", () => {
+    expect(
+      textoHojaBalanceDeGasto(
+        ubicacion({
+          aviones: [{ id: N4142R, matricula: "N4142R" }],
+          general: true,
+          hoja_avion: "reporte_horas",
+          hoja_general: "reporte_horas",
+        }),
+      ),
+    ).toBe("Balance de N4142R (oct 2026): hoja «reporte horas N4142R» · Balance general: hoja «reporte horas FLOTA»");
+  });
+
+  it("gasto de empresa (solo general) ⇒ el mes va con «Balance general»", () => {
+    expect(
+      textoHojaBalanceDeGasto(ubicacion({ eje: "gasto", general: true, hoja_general: "otros_gastos" })),
+    ).toBe("Balance general (oct 2026): hoja «otros gastos»");
+  });
+
+  it("dos aviones (INDIRECTO al 50/50) y cinco (OTRO de $890 de sep): máx. 2 matrículas y «y N aviones más», como los enlaces", () => {
+    expect(
+      textoHojaBalanceDeGasto(
+        ubicacion({
+          eje: "gasto",
+          aviones: [
+            { id: XA_VGV, matricula: "XA-VGV" },
+            { id: XB_PEV, matricula: "XB-PEV" },
+          ],
+          hoja_avion: "gastos_indirectos",
+        }),
+      ),
+    ).toBe("Balance de XA-VGV y XB-PEV (oct 2026): hoja «Gastos Indirectos»");
+    const cinco = ubicacion({
+      periodo: SEPTIEMBRE,
+      eje: "gasto",
+      aviones: [N4142R, N621TX, N990GG, XA_VGV, XB_PEV].map((id, i) => ({
+        id,
+        matricula: ["N4142R", "N621TX", "N990GG", "XA-VGV", "XB-PEV"][i],
+      })),
+      general: true,
+      hoja_avion: "gastos_indirectos",
+      hoja_general: "repartidos",
+    });
+    expect(textoHojaBalanceDeGasto(cinco)).toBe(
+      "Balance de N4142R, N621TX y 3 aviones más (sep 2026): hoja «Gastos Indirectos» · Balance general: hoja «repartidos a aviones»",
+    );
+    expect(
+      textoHojaBalanceDeGasto({ ...cinco, aviones: cinco.aviones.slice(0, 3) }),
+    ).toContain("Balance de N4142R, N621TX y 1 avión más (sep 2026)");
+  });
+
+  it("matrícula ilegible, hoja desconocida (API más nuevo) ⇒ sin nombre de hoja, el resto sí", () => {
+    expect(
+      textoHojaBalanceDeGasto(
+        ubicacion({ aviones: [{ id: N4142R, matricula: null }], hoja_avion: "reporte_horas" }),
+      ),
+    ).toBe("Balance del avión (oct 2026)");
+    expect(
+      textoHojaBalanceDeGasto(
+        ubicacion({
+          aviones: [{ id: N4142R, matricula: "N4142R" }],
+          hoja_avion: "nueva" as unknown as UbicacionBalanceGasto["hoja_avion"],
+          general: true,
+          hoja_general: "nueva" as unknown as UbicacionBalanceGasto["hoja_general"],
+        }),
+      ),
+    ).toBe("Balance de N4142R (oct 2026) · Balance general");
+  });
+
+  it("sin `balance` (API previo), `balance: null`, periodo inválido o sin libros ⇒ sin línea (null no es «no cuenta en ningún balance»)", () => {
+    expect(textoHojaBalanceDeGasto(undefined)).toBeNull();
+    expect(textoHojaBalanceDeGasto(null)).toBeNull();
+    expect(
+      textoHojaBalanceDeGasto(ubicacion({ general: true, hoja_general: "otros_gastos", periodo: { desde: "x", hasta: "2026-10-31" } })),
+    ).toBeNull();
+    expect(textoHojaBalanceDeGasto(ubicacion({}))).toBeNull();
+  });
+
+  it("el title de los enlaces nombra la hoja", () => {
+    const e = enlacesBalanceDeGasto(
+      gasto(
+        ubicacion({
+          eje: "gasto",
+          aviones: [{ id: XA_VGV, matricula: "XA-VGV" }],
+          general: true,
+          hoja_avion: "gastos_indirectos",
+          hoja_general: "repartidos",
+        }),
+      ),
+    );
+    expect(e.aviones[0].title).toMatch(/en la celda de este gasto, hoja «Gastos Indirectos»$/);
+    expect(e.general?.title).toMatch(/en la celda de este gasto, hoja «repartidos a aviones»$/);
+    // Sin hoja conocida, el title de siempre.
+    const sinHoja = enlacesBalanceDeGasto(gasto(ubicacion({ aviones: [{ id: XA_VGV, matricula: "XA-VGV" }] })));
+    expect(sinHoja.aviones[0].title).toMatch(/en la celda de este gasto$/);
+  });
+});
+
+/**
+ * PARIDAD con pyservices (repo hermano; en Vercel y en un worktree suelto no
+ * existe y se omite): cada nombre de la tabla es una pestaña que de verdad
+ * crea `balance_avion_xlsx.py`.
+ */
+const PY = path.resolve(__dirname, "../../../../../vuelatour-pyservices/app/services/balance_avion_xlsx.py");
+const libroPy = existsSync(PY) ? readFileSync(PY, "utf8") : null;
+describe("paridad con pyservices (lectura del repo hermano)", () => {
+  it.skipIf(!libroPy)("cada pestaña de la tabla la crea el libro de pyservices", () => {
+    for (const [hoja, nombre] of Object.entries(NOMBRE_HOJA_BALANCE_AVION)) {
+      if (hoja === "reporte_horas") {
+        expect(libroPy, hoja).toContain('sheet_title(f"reporte horas {req.matricula}")');
+      } else {
+        expect(libroPy, hoja).toContain(`create_sheet("${nombre}")`);
+      }
+    }
+    for (const [hoja, nombre] of Object.entries(NOMBRE_HOJA_BALANCE_GENERAL)) {
+      if (hoja === "reporte_horas") expect(libroPy, hoja).toContain('"reporte horas FLOTA"');
+      else expect(libroPy, hoja).toContain(`create_sheet("${nombre}")`);
+    }
   });
 });
 
