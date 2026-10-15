@@ -8634,8 +8634,9 @@ Pedido textual: «Necesitamos una opción de pendientes de conciliar venga una
 opción de Omitir la conciliación.» y «Necesitamos poder seleccionar varias
 filas de conciliaciones pendientes para todo eso ponerlas a un solo gasto…».
 Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
-(pasos 3a/3b del despliegue); «Vincular a un gasto…» con varios cargos y
-«Créalo por la suma» llegan en su fase (la barra ya admite `onVincular`).
+(pasos 3a/3b del despliegue) y «Vincular a un gasto…» con varios cargos
+(paso 3c); «Créalo por la suma» llega en su fase (paso 4: el pie del diálogo
+de varios cargos ya tiene el punto de enganche).
 
 - **Qué es un omitido**: la clasificación canónica «Omitido de la
   conciliación» + la línea firmada al inicio de las notas, escritas SOLO por
@@ -8678,8 +8679,41 @@ Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
   seleccionados», fija abajo al centro (z-40, bajo los diálogos), conteo en
   `aria-live`. No decide: lee los helpers; ningún botón se apaga por regla de
   negocio (el motivo se ve y el clic lo repite en `toast.info`). Lista:
-  «Omitir…» y «Limpiar»; Omitidos: «Deshacer la omisión…» y «Limpiar». Los
-  diálogos los monta la TABLA con una copia CONGELADA de la selección.
+  «Vincular a un gasto…», «Omitir…» y «Limpiar»; Omitidos: «Deshacer la
+  omisión…» y «Limpiar». Los diálogos los monta la TABLA con una copia
+  CONGELADA de la selección.
+- **«Vincular a un gasto…»** (paso 3c, invariante 76): con UN cargo la tabla
+  abre el «Vincular gasto» de siempre (`vincular-gasto-dialog.tsx`, sin
+  editarlo); con 2..50 cargos de UNA moneda (la barra ya lo exige con sus
+  motivos), `vincular-cargos-gasto-dialog.tsx` (`next/dynamic` sin SSR,
+  montado solo al abrirse). La SUMA, los candidatos, su orden y el resultado
+  CUBRE/PARCIAL/EXCEDE de cada gasto los calcula el API
+  (`gastosCandidatosDeCargosAction`, al abrir y con cada búsqueda a 300 ms,
+  «Ampliar a ±120 días»): el encabezado pinta `cargos` DEL API (mientras no
+  llega, solo el conteo: el panel no suma dinero que decide) y la guía
+  verde/ámbar/roja NUNCA apaga el botón. Avisos ámbar: cargos con su PROPIO
+  gasto (`cargos_con_candidato_propio` del API, caso Cozumel 62.91 × 2; con
+  `null`, nota gris «No se pudo revisar…») y cuentas distintas. Se elige UN
+  gasto (radio; nada viene marcado, ni el que «Queda cubierto»: los falsos
+  positivos de sumas existen y elige la persona); el resumen visible («Se vincularán 2 cargos ($400.00) al
+  gasto «…»…») y «Vincular los 2 cargos» SON la confirmación (sin AlertDialog
+  extra, como «Mover a…»). La liga es UNA transacción del API
+  (`ligarCargosAGastoAction`, todo o nada; un re-envío idéntico es
+  `idempotente`). Éxito ⇒ toast con cómo quedó el gasto (`gasto_estado`),
+  cerrar, limpiar la selección y UN `router.refresh()`. 4xx ⇒ caja roja con
+  el texto del API + «No se vinculó ningún cargo.» y la lista se vuelve a
+  pedir sin perder lo elegido; MOVIMIENTO_NO_PENDIENTE / MOVIMIENTO_NO_EXISTE
+  / SOLO_CARGOS / MOVIMIENTO_OMITIDO ⇒ «Quitar esos N de la selección» (con
+  uno solo, «Con un solo cargo usa «Vincular gasto»…») y refresh al cerrar;
+  red o 5xx ⇒ «No se pudo confirmar si se vincularon…» + refresh; ruta
+  inexistente o 503 de la migración ⇒ «Esta opción todavía no está activa…».
+  La lectura que falla dice «No se pudo cargar la lista de gastos…» con
+  «Reintentar» (jamás el vacío). Los gastos del monto de la suma que NO
+  entraron (`excluidos`, que el API manda siempre) se pintan bajo el vacío o
+  cuando ninguno de la lista queda cubierto, con
+  `textoExcluidosCandidatos(…, { variosCargos: true })`: «de los cargos» y el
+  efectivo se liga cargo por cargo (nunca «Mostrar estos gastos»). Textos y
+  reglas PUROS en `lib/admin/conciliacion-cargos-gasto.ts`.
 - **«Omitir la conciliación…»** (`omitir-movimientos-dialog.tsx`, `next/dynamic`
   sin SSR, montado solo al abrirse; desde la barra con N y desde el ⋯ de un
   pendiente libre —también en los `extras` del abono— con 1): al abrir pide la
@@ -8700,10 +8734,12 @@ Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
   ? (` ANTES del par de reverso, con SOLO esa opción). Corre solo desde
   `AlertDialogAction` con `preventDefault`.
 - **Server actions** (al FINAL de `actions.ts`): `revisarOmisionAction`,
-  `omitirMovimientosAction`, `quitarOmisionAction`. NO revalidan (lección de
-  la fecha del gasto); validan lista/motivo/avisos antes de la red con los
-  textos del DTO; conservan code/status/details; nunca lanzan. Toda llamada
-  del cliente va con `.catch(sinConexion)`.
+  `omitirMovimientosAction`, `quitarOmisionAction`,
+  `gastosCandidatosDeCargosAction` y `ligarCargosAGastoAction`. NO revalidan
+  (lección de la fecha del gasto); validan lista (1..200 para omitir, 2..50
+  cargos para un gasto), motivo, avisos y el uuid del gasto antes de la red
+  con los textos del DTO; conservan code/status/details; nunca lanzan. Toda
+  llamada del cliente va con `.catch(sinConexion)`.
 - **Página**: pestaña «Omitidos (N)» (N = Σ `omitidos` del resumen o el de la
   cuenta filtrada; sin dato, sin número: el resumen caído ahora es `null`,
   no `[]`) con `solo_omitidos=true` del API; si la lista falla, «Esta
@@ -8721,11 +8757,11 @@ Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
   `esperado_clasificacion_id` (lo que el panel VIO); 409 MOVIMIENTO_CAMBIO /
   MOVIMIENTO_OMITIDO ⇒ el texto del API, cerrar y refresh.
 - **Pruebas**: `lib/admin/__tests__/conciliacion-seleccion.test.ts`,
-  `conciliacion-omision.test.ts`,
+  `conciliacion-omision.test.ts`, `conciliacion-cargos-gasto.test.ts`,
   `app/admin/conciliacion/__tests__/omitir-cargos-actions.test.ts`,
   `components/admin/conciliacion/__tests__/seleccion.test.tsx` (golden
   `seleccion.golden.html` congelado ANTES del cambio + fixtures
-  `seleccion.fixtures.ts`) y `omitir.test.tsx`.
+  `seleccion.fixtures.ts`), `omitir.test.tsx` y `vincular-cargos.test.tsx`.
 
 ## Repartir entre aviones desde «Verificar / editar» (14-oct-2026)
 

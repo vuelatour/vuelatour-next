@@ -11,6 +11,7 @@ import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-ac
 import { FacturaConceptoChip } from "@/components/admin/conciliacion/factura-concepto-chip";
 import { EnlacesBalanceGasto } from "@/components/admin/conciliacion/enlaces-balance-gasto";
 import { BarraSeleccionMovimientos } from "@/components/admin/conciliacion/barra-seleccion-movimientos";
+import { VincularGastoDialog } from "@/components/admin/conciliacion/vincular-gasto-dialog";
 import { enlacesBalanceDeGasto } from "@/lib/admin/conciliacion-balance";
 import { textoBusquedaFacturaConcepto } from "@/lib/admin/conciliacion-factura-concepto";
 import { marcaLigaCruzada, sufijoMonedaLigada } from "@/lib/admin/conciliacion-tc";
@@ -64,6 +65,7 @@ import {
 import {
   BOTON_QUITAR_SELECCION,
   ENCABEZADO_SELECCION,
+  MIN_CARGOS_A_GASTO,
   alternarSeleccion,
   esSeleccionable,
   etiquetaCasillaMovimiento,
@@ -108,6 +110,12 @@ const QuitarOmisionDialog = dynamic(
   () => import("@/components/admin/conciliacion/quitar-omision-dialog").then((m) => m.QuitarOmisionDialog),
   { ssr: false },
 );
+/** «Vincular a un gasto…» con 2..50 cargos (invariante 76 del API); con UNO, el «Vincular gasto» de siempre. */
+const VincularCargosGastoDialog = dynamic(
+  () =>
+    import("@/components/admin/conciliacion/vincular-cargos-gasto-dialog").then((m) => m.VincularCargosGastoDialog),
+  { ssr: false },
+);
 
 /** La selección de la tabla (ADITIVA): dónde se selecciona y la moneda de cada cuenta. */
 export interface SeleccionMovimientos {
@@ -116,7 +124,7 @@ export interface SeleccionMovimientos {
   monedaPorCuenta: Record<string, string>;
 }
 
-type DialogoSeleccion = { tipo: "omitir" | "deshacer"; movimientos: MovimientoBancario[] };
+type DialogoSeleccion = { tipo: "omitir" | "deshacer" | "vincular"; movimientos: MovimientoBancario[] };
 
 const SIN_SELECCION: ReadonlySet<string> = new Set();
 
@@ -168,9 +176,9 @@ interface MovimientosTableProps {
   abreBalances?: boolean;
   /**
    * SELECCIÓN (14-oct-2026, API 0.0.77, ADITIVA): casillas en las filas
-   * seleccionables, «Seleccionar los N…» y la barra fija con «Omitir…» /
-   * «Deshacer la omisión…». Solo en «Todos»/«Pendientes» (vista 'lista') y
-   * «Omitidos». Sin la prop —o con un API ≤ 0.0.76, cuyas filas no traen la
+   * seleccionables, «Seleccionar los N…» y la barra fija con «Vincular a un
+   * gasto…» / «Omitir…» / «Deshacer la omisión…». Solo en «Todos» /
+   * «Pendientes» (vista 'lista') y «Omitidos». Sin la prop —o con un API ≤ 0.0.76, cuyas filas no traen la
    * llave `omision`— el marcado sale IDÉNTICO byte a byte al de antes.
    */
   seleccion?: SeleccionMovimientos | null;
@@ -856,6 +864,7 @@ export function MovimientosTable({
             vista={vista}
             resumen={resumenSeleccion(vigentes, monedaPorCuenta)}
             retirados={retirados}
+            onVincular={() => setDialogo({ tipo: "vincular", movimientos: [...vigentes] })}
             onOmitir={() => setDialogo({ tipo: "omitir", movimientos: [...vigentes] })}
             onDeshacer={() => setDialogo({ tipo: "deshacer", movimientos: [...vigentes] })}
             onLimpiar={limpiarSeleccion}
@@ -881,6 +890,29 @@ export function MovimientosTable({
           open
           onOpenChange={cerrarDialogo}
           onRestaurados={limpiarSeleccion}
+        />
+      )}
+      {/* «Vincular a un gasto…» (14-oct-2026, API 0.0.77): con UN cargo, el
+          «Vincular gasto» de siempre (sin editarlo); con 2..50, varios cargos
+          → un gasto (la barra ya revisó que sean solo cargos de una moneda). */}
+      {dialogo?.tipo === "vincular" && dialogo.movimientos.length === 1 && (
+        <VincularGastoDialog
+          movimiento={dialogo.movimientos[0]}
+          gastos={gastos}
+          catalogosGasto={catalogosGasto}
+          open
+          onOpenChange={cerrarDialogo}
+        />
+      )}
+      {dialogo?.tipo === "vincular" && dialogo.movimientos.length >= MIN_CARGOS_A_GASTO && (
+        <VincularCargosGastoDialog
+          movimientos={dialogo.movimientos}
+          aliasPorCuenta={cuentas}
+          monedaPorCuenta={monedaPorCuenta}
+          open
+          onOpenChange={cerrarDialogo}
+          onVinculados={limpiarSeleccion}
+          onQuitarDeSeleccion={quitarDeSeleccion}
         />
       )}
     </>

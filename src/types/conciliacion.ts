@@ -1369,3 +1369,81 @@ export interface MovimientoEnErrorOmision {
   riesgo?: RiesgoOmision | null;
   texto?: string | null;
 }
+
+// ===== Varios cargos → un gasto (14-oct-2026, API 0.0.77, invariante 76) =====
+
+/**
+ * Qué le pasaría al gasto si se le ligan los cargos seleccionados (lo calcula
+ * el API en centavos con la tolerancia de 1.00 sobre lo que le FALTA): CUBRE
+ * (queda cubierto), PARCIAL (le faltaría `faltante_tras`) o EXCEDE (se pasaría
+ * por `excedente`: la RPC lo rechaza). El panel solo lo pinta.
+ */
+export type ResultadoSumaCargos = "CUBRE" | "PARCIAL" | "EXCEDE";
+
+/** Un candidato de «Vincular a un gasto» con varios cargos: la ficha de siempre + la cuenta de la suma. */
+export interface CandidatoGastoPorSuma extends GastoCandidato {
+  resultado: ResultadoSumaCargos;
+  /** Lo que le faltaría al gasto DESPUÉS de los cargos (0 si cubre). */
+  faltante_tras: number;
+  /** Lo que se pasarían los cargos (0 si no exceden). */
+  excedente: number;
+}
+
+/** Los cargos tal como el API los SUMÓ (`cargos` de `POST cargos/gastos-candidatos`). */
+export interface CargosResumen {
+  ids: string[];
+  n: number;
+  /** Σ |monto| a 2 decimales (sumada en centavos por el API). */
+  suma: number;
+  /** Moneda de las CUENTAS de los cargos (una sola). */
+  moneda: string;
+  /** Día del primer y del último cargo (YYYY-MM-DD). */
+  fecha_min: string;
+  fecha_max: string;
+  cuentas: Array<{ id: string; alias: string | null }>;
+  /** Terminación de tarjeta que comparten TODOS los cargos (validada contra el catálogo), o null. */
+  terminacion_comun: string | null;
+}
+
+/** Un cargo de la selección que tiene SU propio gasto que cuadra (aviso ámbar). */
+export interface CargoConCandidatoPropio {
+  id: string;
+  motivo: "SE_PUEDE_CRUZAR" | "AMBIGUO";
+  candidatos_n: number | null;
+}
+
+/** `POST /v1/conciliacion/cargos/gastos-candidatos` (SOLO LECTURA). */
+export interface CargosGastosCandidatosResponse {
+  cargos: CargosResumen;
+  ventana: { desde: string; hasta: string };
+  /** En el orden del API: CUBRE → PARCIAL → EXCEDE, luego cercanía. */
+  candidatos: CandidatoGastoPorSuma[];
+  truncado: boolean;
+  /** null = el API no pudo revisarlo (jamás un «ninguno» falso). */
+  cargos_con_candidato_propio: CargoConCandidatoPropio[] | null;
+  /** Gastos del monto de la suma (o del de `q`) que NO entraron a la lista, y por qué. */
+  excluidos?: ExcluidosCandidatos[] | null;
+  excluidos_monto?: number | null;
+}
+
+/** Cómo quedó el gasto tras la liga (`v_gasto_conciliacion`). */
+export interface EstadoGastoTrasCargos {
+  monto: number;
+  moneda: string;
+  n_partes: number;
+  monto_vinculado: number;
+  faltante: number;
+  cubierto: boolean;
+}
+
+/** `POST /v1/conciliacion/gastos/:id/cargos` (todo o nada; re-envío idéntico = `idempotente`). */
+export interface LigarCargosGastoRespuesta {
+  gasto_id: string;
+  idempotente: boolean;
+  /** Los cargos que se ligaron AHORA (los que ya estaban con ese gasto no cuentan). */
+  nuevos: string[];
+  partes: Array<{ movimiento_id: string; monto_parte: number; moneda: string }>;
+  gasto_estado: EstadoGastoTrasCargos;
+  /** Relectura con `omision`. */
+  movimientos: MovimientoBancario[];
+}

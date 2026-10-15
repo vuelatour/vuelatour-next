@@ -937,8 +937,16 @@ function fraseExcluidos(
   motivo: string,
   n: number,
   gastos: readonly GastoExcluidoCandidato[],
-  c: { referencia: number; monedaCuenta: string | null; dias: number; incluyeNoBancarios: boolean },
+  c: {
+    referencia: number;
+    monedaCuenta: string | null;
+    dias: number;
+    incluyeNoBancarios: boolean;
+    /** Varios cargos → un gasto (14-oct-2026): «de los cargos» y sin «muéstralo». */
+    variosCargos: boolean;
+  },
 ): string {
+  const delCargo = c.variosCargos ? "de los cargos" : "del cargo";
   const primero = gastos[0];
   // OTRA_MONEDA dice la moneda con palabras: el monto va sin sufijo.
   const monto = primero
@@ -966,11 +974,17 @@ function fraseExcluidos(
         : "";
       if (c.incluyeNoBancarios) {
         // Con el interruptor ENCENDIDO ya salían: si no entran es por otra regla.
-        return `Hay ${cuantos} ${como}${det} que no ${plural(n, "entra", "entran")} ni con los gastos en efectivo incluidos: ${plural(n, "puede estar ya conciliado", "pueden estar ya conciliados")}, en otra moneda o fuera de ±${c.dias} días del cargo.${bodega}`;
+        return `Hay ${cuantos} ${como}${det} que no ${plural(n, "entra", "entran")} ni con los gastos en efectivo incluidos: ${plural(n, "puede estar ya conciliado", "pueden estar ya conciliados")}, en otra moneda o fuera de ±${c.dias} días ${delCargo}.${bodega}`;
       }
       const banco = soloEfectivo ? "" : ` (${mediosBancariosEnFrase()})`;
-      const salida =
-        n === 1
+      // Varios cargos → un gasto: ese diálogo no muestra gastos en efectivo
+      // (la RPC responde GASTO_NO_BANCARIO): se ligan cargo por cargo, como
+      // dice el API.
+      const salida = c.variosCargos
+        ? n === 1
+          ? "si no, vincúlalo cargo por cargo con su justificación (menú ⋯ → Vincular gasto → «Incluir gastos en efectivo y otros medios»)."
+          : "si no, vincula el que corresponda cargo por cargo con su justificación (menú ⋯ → Vincular gasto → «Incluir gastos en efectivo y otros medios»)."
+        : n === 1
           ? "si no, muéstralo y vincúlalo con una justificación (su medio de pago no cambia)."
           : "si no, muéstralos y vincula el que corresponda con una justificación (su medio de pago no cambia).";
       return `Hay ${cuantos} ${como}${det}: la lista solo muestra gastos pagados por el banco${banco}. Si en realidad se pagó con tarjeta, transferencia o pago domiciliado, corrige el medio de pago del gasto; ${salida}${bodega}`;
@@ -1008,7 +1022,7 @@ function fraseExcluidos(
       return `${cuantos} ${plural(n, "está", "están")} en ${en}${det} y ${cuenta}. Si se ${plural(n, "capturó", "capturaron")} con la moneda equivocada, corrige la moneda del gasto y vuelve a buscar.`;
     }
     case "FUERA_DE_VENTANA": {
-      const fuera = `${cuantos}${det} ${plural(n, "cae", "caen")} fuera de ±${c.dias} días del cargo`;
+      const fuera = `${cuantos}${det} ${plural(n, "cae", "caen")} fuera de ±${c.dias} días ${delCargo}`;
       return c.dias < VENTANA_AMPLIADA_DIAS ? `${fuera}: amplía a ${VENTANA_AMPLIADA_DIAS} días.` : `${fuera}.`;
     }
     default:
@@ -1041,6 +1055,13 @@ export function textoExcluidosCandidatos(
     incluyeNoBancarios?: boolean;
     /** Fecha del cargo (YYYY-MM-DD): decide si «Mostrar estos gastos» amplía la ventana. */
     fechaCargo?: string | null;
+    /**
+     * «Vincular a un gasto…» con VARIOS cargos (14-oct-2026, API 0.0.77): las
+     * frases dicen «de los cargos» y la de efectivo manda a ligarlos cargo
+     * por cargo (ese diálogo no muestra gastos en efectivo: nunca
+     * «Mostrar estos gastos»). Sin la bandera, idénticas a las de siempre.
+     */
+    variosCargos?: boolean;
   } = {},
 ): AvisoExcluidos[] {
   if (!Array.isArray(excluidos)) return [];
@@ -1050,6 +1071,7 @@ export function textoExcluidosCandidatos(
     monedaCuenta: ctx.monedaCuenta ?? null,
     dias: ctx.dias ?? VENTANA_CARGO_DIAS,
     incluyeNoBancarios: ctx.incluyeNoBancarios === true,
+    variosCargos: ctx.variosCargos === true,
   };
   const orden = (motivo: string) => {
     const i = (ORDEN_MOTIVOS_EXCLUIDOS as readonly string[]).indexOf(motivo);
@@ -1079,7 +1101,7 @@ export function textoExcluidosCandidatos(
     const motivo = grupo.motivo.trim();
     const vinculables = gastos.filter((g) => !esMedioBodega(g.medio_pago));
     const mostrar =
-      motivo === "EFECTIVO_U_OTRO_MEDIO" && !c.incluyeNoBancarios && hayVinculables(gastos)
+      motivo === "EFECTIVO_U_OTRO_MEDIO" && !c.incluyeNoBancarios && !c.variosCargos && hayVinculables(gastos)
         ? {
             dias: ventanaParaMostrarNoBancarios(vinculables, ctx.fechaCargo, c.dias),
             monto: centavos(Math.abs(numeroDe(vinculables[0]?.monto ?? c.referencia))),

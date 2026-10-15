@@ -186,7 +186,7 @@ describe("la barra «Movimientos seleccionados»", () => {
     expect(html).toContain("max-w-[calc(100vw-2rem)]");
   });
 
-  it("vista lista: «Omitir…» y «Limpiar» (sin «Vincular» hasta su fase); ningún botón apagado", () => {
+  it("vista lista sin `onVincular`: «Omitir…» y «Limpiar» (con él, ver vincular-cargos.test.tsx); ningún botón apagado", () => {
     const html = barra("lista");
     expect(html).toContain("Omitir…");
     expect(html).toContain("Limpiar");

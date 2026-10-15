@@ -53,16 +53,19 @@ import {
   esDtoSinOmision,
 } from "@/lib/admin/conciliacion-omision";
 import { TOPE_SELECCION } from "@/lib/admin/conciliacion-seleccion";
+import { errorListaCargosGasto } from "@/lib/admin/conciliacion-cargos-gasto";
 import { MSG_DETALLE_BANCO_API_VIEJO } from "@/lib/admin/gasto-banco";
 import type {
   AutoMatchResultado,
   CambioFechaGasto,
   CandidatoReverso,
   CandidatosCobroResponse,
+  CargosGastosCandidatosResponse,
   ConciliacionDeGasto,
   EnriquecimientoDetalle,
   EnriquecimientoOmitido,
   GastosCandidatosResponse,
+  LigarCargosGastoRespuesta,
   MapeoColumnasPaywise,
   MovimientoBancario,
   MovimientoListResponse,
@@ -1095,5 +1098,70 @@ export async function quitarOmisionAction(ids: string[]): Promise<ActionResult<R
     return { ok: true, data };
   } catch (err) {
     return sinRuta<ResultadoQuitarOmision>(err);
+  }
+}
+
+// ===== Varios cargos → un gasto (14-oct-2026, API 0.0.77, invariante 76) =====
+//
+// Las dos acciones NO revalidan (como las de omitir): quien llama hace UN
+// `router.refresh()` al cerrar. Validan la lista (2..50 uuid sin repetir, con
+// los textos del DTO) y el gasto (uuid) ANTES de la red; conservan code,
+// status y details; una ruta inexistente (API ≤ 0.0.76: 404 «Cannot POST …»)
+// o un DTO previo ⇒ `RUTA_NO_DISPONIBLE` con «Esta opción todavía no está
+// activa: avisa a sistemas.»; nunca lanzan.
+
+/**
+ * Gastos que podrían pagar JUNTOS 2..50 cargos (SOLO LECTURA): la SUMA, el
+ * orden (CUBRE → PARCIAL → EXCEDE) y el resultado de cada gasto los calcula el
+ * API, con `cargos_con_candidato_propio` y `excluidos`. `q` se normaliza como
+ * en «Vincular gasto» (un monto viaja limpio) y `dias`/`limite` viajan solo
+ * dentro de los topes del DTO (si no, el default del API). Nunca devuelve
+ * `data` vacía ante un fallo: el diálogo dice «no se pudo».
+ */
+export async function gastosCandidatosDeCargosAction(
+  ids: string[],
+  query: { q?: string | null; dias?: number | null; limite?: number | null } = {},
+): Promise<ActionResult<CargosGastosCandidatosResponse>> {
+  const invalida = errorListaCargosGasto(ids);
+  if (invalida) return LISTA_INVALIDA(invalida);
+  const q = busquedaParaApi(query?.q);
+  const dias = enteroEn(query?.dias, 1, 180);
+  const limite = enteroEn(query?.limite, 1, 300);
+  const body: { movimiento_ids: string[]; q?: string; dias?: number; limite?: number } = { movimiento_ids: ids };
+  if (q) body.q = q;
+  if (dias != null) body.dias = dias;
+  if (limite != null) body.limite = limite;
+  try {
+    const data = await apiServer<CargosGastosCandidatosResponse>("/v1/conciliacion/cargos/gastos-candidatos", {
+      method: "POST",
+      body,
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return sinRuta<CargosGastosCandidatosResponse>(err);
+  }
+}
+
+/**
+ * Liga 2..50 cargos PENDIENTES a UN gasto bancario en UNA transacción (RPC
+ * del API, todo o nada; re-envío idéntico = `idempotente`). Los 4xx
+ * (MOVIMIENTO_NO_PENDIENTE, CARGOS_EXCEDEN_GASTO, LOTE_MONEDA_DISTINTA,
+ * GASTO_NO_BANCARIO…) vuelven con su `details` para el diálogo.
+ */
+export async function ligarCargosAGastoAction(
+  gastoId: string,
+  ids: string[],
+): Promise<ActionResult<LigarCargosGastoRespuesta>> {
+  if (!esUuid(gastoId)) return { ok: false, code: "GASTO_INVALIDO", status: 400, error: MSG_GASTO_INVALIDO };
+  const invalida = errorListaCargosGasto(ids);
+  if (invalida) return LISTA_INVALIDA(invalida);
+  try {
+    const data = await apiServer<LigarCargosGastoRespuesta>(`/v1/conciliacion/gastos/${gastoId}/cargos`, {
+      method: "POST",
+      body: { movimiento_ids: ids },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return sinRuta<LigarCargosGastoRespuesta>(err);
   }
 }
