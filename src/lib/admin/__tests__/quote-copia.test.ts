@@ -216,6 +216,31 @@ describe("urlCopiarComoNueva — la copia reproduce la cotización", () => {
     expect(copia.sobrevuelo_hr).toBe(0.5);
   });
 
+  it("el IVA MANUAL viaja tal cual, INCLUIDO el 0 % (14-oct-2026: la #341, transferencia al 0 %)", () => {
+    // La copia lee el FORM, y el cotizador rehidrata el IVA manual con
+    // `ivaOverrideRehidratado` (`lib/admin/iva.ts`): nace con el «IVA 0 % ·
+    // manual» que se ve en pantalla, como ya nacían las de BillPocket con el
+    // 16 % manual. Un `|| null` en el camino volvería el 0 en «según método»
+    // (16 % con transferencia) sin que nadie lo tecleara.
+    const casos: [string, QuoteFormValues["metodo_pago"], number][] = [
+      ["#341 transferencia al 0 %", "TRANSFERENCIA", 0],
+      ["#374 transferencia al 5 %", "TRANSFERENCIA", 0.05],
+      ["#233 BillPocket al 16 %", "BILLPOCKET", 0.16],
+    ];
+    for (const [nombre, metodo_pago, iva] of casos) {
+      const copia = restaurarEnElAlta(
+        urlCopiarComoNueva(
+          { ...original(), metodo_pago, iva_pct_override: iva },
+          { folio: null, conCambios: false },
+        ),
+      );
+      expect(copia.iva_pct_override, nombre).toBe(iva);
+      expect(copia.metodo_pago, nombre).toBe(metodo_pago);
+    }
+    // Sin IVA manual, sin override: el alta lo resuelve por el método.
+    expect(restaurarEnElAlta(url).iva_pct_override).toBeNull();
+  });
+
   it("el resto de la cotización también viaja (cliente, avión, cobro, comisión, notas)", () => {
     const copia = restaurarEnElAlta(url);
     expect(copia).toMatchObject({

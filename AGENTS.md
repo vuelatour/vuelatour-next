@@ -586,6 +586,16 @@ $800.00 en vez de $928.00, sin salir en el diff.) Fuente única:
 `ivaOverrideRehidratado` (`lib/admin/iva.ts`, paridad con el API). El grupo
 no tiene IVA manual.
 
+«Copiar como nueva» y «Recargar conservando borrador» leen el FORM ya
+rehidratado: la copia de la #341 nace con «IVA 0 % · manual» a la vista,
+como ya nacían las de BillPocket con 16 % manual (`quote-copia.test.ts`). En
+prod (14-oct-2026) 13 cotizaciones tienen un IVA distinto del de su método:
+5 ya se rehidrataban (#91, #96, #233, #260 BillPocket 16 %; #314 Paywise
+5 %) y 8 son nuevas (#219, #253, #341, #349, #358 transferencia 0 %; #374
+transferencia 5 %; #193 y #217 transferencia 0 %, de agosto: mes cerrado,
+se abren en lectura). Ninguna con snapshot tiene el método distinto de la
+marca del motor, y las 68 sin snapshot tienen IVA 0 y método null.
+
 ## Cotización cobrada: editable con permiso POR PERSONA (26-sep-2026, API 0.0.37)
 
 Pedido de los dueños por WhatsApp (capturas de #305 y #317 con el chip
