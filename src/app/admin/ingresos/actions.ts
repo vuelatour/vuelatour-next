@@ -31,6 +31,7 @@ import {
   textoVariosCargosPosibles,
 } from "@/lib/admin/conciliacion-reverso";
 import type { CandidatosCobroResponse, MovimientoBancario } from "@/types/conciliacion";
+import { MSG_API_SIN_CORREGIR_COMISION } from "@/lib/admin/conciliacion-cobros-lote";
 
 /**
  * INGRESOS (24-sep-2026) — server actions SIN archivo. El alta y la edición
@@ -234,12 +235,38 @@ export async function cobroDeVueloDesdeAbonoAction(
   }
 }
 
+/**
+ * UN COBRO, VARIOS ABONOS (14-oct-2026, API 0.0.78, D6): «Corregir la comisión
+ * y vincular». `corregir_comision: true` viaja SOLO cuando se pide (un API
+ * previo lo rechaza con 400 «property corregir_comision should not exist» por
+ * `forbidNonWhitelisted`, que aquí se traduce a `API_SIN_CORREGIR_COMISION`).
+ */
+export interface OpcionesLigaCobro {
+  corregirComision?: boolean;
+}
+
+/** ¿El 400 es el de un API previo que no conoce `corregir_comision`? */
+function esApiSinCorregirComision(err: unknown): boolean {
+  return (
+    isApiError(err) &&
+    err.status === 400 &&
+    /corregir_comision should not exist/i.test(`${err.message ?? ""} ${JSON.stringify(err.details ?? "")}`)
+  );
+}
+
+/** Los vuelos de los cobros que tocó la liga (espejo `cobro` y `cobros_estado[]` del 0.0.78). */
+function vuelosDeRespuesta(data: MovimientoBancario | null | undefined): Array<string | null | undefined> {
+  return [data?.cobro?.vuelo_id, ...(data?.cobros_estado ?? []).map((c) => c.vuelo_id ?? null)];
+}
+
 /** Liga un ABONO a un cobro de vuelo (`{cobro_id}`) o al SOBRE de un grupo (`{cobro_grupo_id}`). */
 export async function ligarAbonoCobroAction(
   movId: string,
   liga: { cobro_id?: string | null; cobro_grupo_id?: string | null },
+  opciones?: OpcionesLigaCobro,
 ): Promise<ActionResult<MovimientoBancario>> {
   if (!esUuid(movId)) return ID_INVALIDO;
+  const corregir = opciones?.corregirComision === true && !!liga.cobro_id;
   try {
     const data = await apiServer<MovimientoBancario>(
       `/v1/conciliacion/movimientos/${movId}/cobro`,
@@ -248,12 +275,16 @@ export async function ligarAbonoCobroAction(
         body: {
           cobro_id: liga.cobro_id ?? null,
           cobro_grupo_id: liga.cobro_grupo_id ?? null,
+          ...(corregir ? { corregir_comision: true } : {}),
         },
       },
     );
-    revalidar([data?.cobro?.vuelo_id]);
+    revalidar(vuelosDeRespuesta(data));
     return { ok: true, data };
   } catch (err) {
+    if (corregir && esApiSinCorregirComision(err)) {
+      return { ok: false, code: "API_SIN_CORREGIR_COMISION", status: 400, error: MSG_API_SIN_CORREGIR_COMISION };
+    }
     return fail(err);
   }
 }
@@ -350,19 +381,25 @@ export async function candidatosAbonoAction(
 export async function ligarAbonoCobrosAction(
   movId: string,
   cobroIds: readonly string[],
+  opciones?: OpcionesLigaCobro,
 ): Promise<ActionResult<MovimientoBancario>> {
   if (!esUuid(movId)) return ID_INVALIDO;
   const ids = [...new Set(cobroIds.filter((x) => typeof x === "string" && esUuid(x)))];
   if (ids.length === 0) return { ok: false, error: "Marca al menos un cobro." };
   if (ids.length > 50) return { ok: false, error: "Un abono paga a lo más 50 cobros." };
+  // «Corregir la comisión y vincular» solo con UN cobro (el API respondería 400 VARIOS_COBROS).
+  const corregir = opciones?.corregirComision === true && ids.length === 1;
   try {
     const data = await apiServer<MovimientoBancario>(
       `/v1/conciliacion/movimientos/${movId}/cobro`,
-      { method: "PATCH", body: { cobro_ids: ids } },
+      { method: "PATCH", body: corregir ? { cobro_ids: ids, corregir_comision: true } : { cobro_ids: ids } },
     );
-    revalidar((data?.cobros_estado ?? []).map((c) => c.vuelo_id ?? null));
+    revalidar(vuelosDeRespuesta(data));
     return { ok: true, data };
   } catch (err) {
+    if (corregir && esApiSinCorregirComision(err)) {
+      return { ok: false, code: "API_SIN_CORREGIR_COMISION", status: 400, error: MSG_API_SIN_CORREGIR_COMISION };
+    }
     if (
       isApiError(err) &&
       err.status === 400 &&

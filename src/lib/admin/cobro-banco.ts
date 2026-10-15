@@ -24,7 +24,8 @@ import { hrefConciliacion } from "@/lib/admin/conciliacion-vista";
 import { montoParaBusquedaTabla } from "@/lib/admin/gasto-banco";
 import { esDiaValido, uuidFiltro } from "@/lib/admin/url-params";
 import { fmtDateOnly, isoToCancunInput } from "@/lib/datetime";
-import { fmtMonto, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMonto, fmtUsd } from "@/lib/format";
+import type { AbonoDeCobroCorto, CobroConciliacionDeAbono, CobroSinBanco } from "@/types/conciliacion";
 import type { AbonoBancoDeCobro, EstadoBancoCobro, FlightCobro } from "@/types/flights";
 import type { ParcialEntrada } from "@/types/ingresos";
 
@@ -516,4 +517,149 @@ export function chipParcialPreCierre(c: {
   const f = numeroONull(c.faltante);
   const quien = typeof c.folio === "number" && c.folio > 0 ? `#${c.folio}` : "cobro";
   return `${quien} · parcial${f != null && f > 0 ? ` · faltan ${fmtMonto(f, c.moneda)}` : ""}`;
+}
+
+// ───────────────────────────── Desvincular UN abono (bandeja) ─────────────────────────────
+
+/** «1 abono más» / «2 abonos más». */
+function abonosMas(n: number): string {
+  return `${n} ${n === 1 ? "abono más" : "abonos más"}`;
+}
+
+/**
+ * Confirmación de «Desvincular este abono del cobro» (D22, textos.desvincular
+ * del 0.0.78) cuando el cobro tiene OTROS abonos: se suelta ESTE abono y el
+ * cobro sigue con los demás; `faltante_sin_este` (del API) dice cuánto le
+ * faltará. «El abono de $1,700 MXN del 15 sep 2026 vuelve a quedar pendiente.
+ * El cobro del vuelo #315 sigue ligado a 1 abono más y queda «Conciliado
+ * parcial»: faltarán $1,700 MXN. No se borra ningún cobro.» null si el cobro
+ * no tiene otros abonos (o sin el dato): la confirmación de siempre.
+ */
+export function textoConfirmarDesvincularAbono(
+  conc: CobroConciliacionDeAbono | null | undefined,
+  abono: { monto: number | string; fecha: string; moneda?: string | null },
+): string | null {
+  if (!conc) return null;
+  const n = Math.trunc(numeroDe(conc.abonos_n));
+  if (n < 2) return null;
+  const dia = typeof abono.fecha === "string" ? abono.fecha.slice(0, 10) : "";
+  const fecha = esDiaValido(dia) ? ` del ${fmtDateOnly(dia)}` : "";
+  const quien = conc.folio != null ? `El cobro del vuelo #${conc.folio}` : "El cobro";
+  const faltara = numeroONull(conc.faltante_sin_este);
+  // Con lo que le falta dentro de la tolerancia de «cubierto» del API, los
+  // otros abonos lo siguen cubriendo (solo se elige la frase).
+  const queda =
+    faltara != null && faltara > TOLERANCIA_COBRO_BANCO
+      ? `queda «Conciliado parcial»: faltarán ${fmtMonto(faltara, abono.moneda)}`
+      : "sigue conciliado completo";
+  return (
+    `El abono de ${fmtMonto(Math.abs(numeroDe(abono.monto)), abono.moneda)}${fecha} vuelve a quedar pendiente. ` +
+    `${quien} sigue ligado a ${abonosMas(n - 1)} y ${queda}. No se borra ningún cobro.`
+  );
+}
+
+/**
+ * Frase extra de la confirmación de siempre cuando el abono es el ÚNICO del
+ * cobro (D22): «El cobro del vuelo #315 vuelve a «Cobros sin banco».». null
+ * si el cobro tiene otros abonos o sin el dato (API previo).
+ */
+export function textoCobroVuelveASinBanco(conc: CobroConciliacionDeAbono | null | undefined): string | null {
+  if (!conc || Math.trunc(numeroDe(conc.abonos_n)) > 1) return null;
+  return conc.folio != null
+    ? `El cobro del vuelo #${conc.folio} vuelve a «Cobros sin banco».`
+    : "El cobro vuelve a «Cobros sin banco».";
+}
+
+// ───────────────────────────── «Cobros sin banco» (API 0.0.78) ─────────────────────────────
+
+export const ENCABEZADO_COLUMNA_BANCO = "Banco";
+export const BADGE_COBRO_PARCIAL = "Parcial";
+export const BADGE_COBRO_SIN_ABONO = "Sin abono";
+export const TITULO_COBRO_SIN_ABONO = "Ningún abono del banco vinculado todavía.";
+export const ETIQUETA_VER_ABONO_SIN_BANCO = "Ver abono";
+export const CLASE_BADGE_SIN_ABONO = "border-border text-muted-foreground";
+
+/**
+ * ¿El API ya manda el estado contra el banco de cada cobro (`parcial`, API
+ * 0.0.78)? Sin él (API previo) la columna «Banco» NO se pinta.
+ */
+export function conColumnaBancoCobrosSinBanco(rows: readonly Pick<CobroSinBanco, "parcial">[]): boolean {
+  return rows.some((c) => typeof c.parcial === "boolean");
+}
+
+function listaFechasAbonos(abonos: readonly AbonoDeCobroCorto[]): string {
+  return listaEs(
+    abonos.map((a) => {
+      const dia = typeof a.fecha === "string" ? a.fecha.slice(0, 10) : "";
+      return esDiaValido(dia) ? fmtDateOnly(dia) : "sin fecha";
+    }),
+  );
+}
+
+export interface CeldaBancoCobroSinBanco {
+  texto: string;
+  clase: string;
+  titulo: string;
+  /** «Ver abono» por cada abono ligado (Conciliación, pestaña «Conciliados», su día, con `?mov=`). */
+  enlaces: Array<{ key: string; texto: string; href: string; titulo: string }>;
+}
+
+/**
+ * La celda «Banco» de «Cobros sin banco» (textos.cobros_sin_banco del 0.0.78):
+ * badge ámbar «Parcial» (title: «Conciliado $1,700 MXN de $3,400 MXN con 1
+ * abono (15 sep 2026): faltan $1,700 MXN.») + «Ver abono», o badge gris «Sin
+ * abono». null sin el dato (API previo).
+ */
+export function celdaBancoCobroSinBanco(
+  c: Pick<CobroSinBanco, "parcial" | "monto_vinculado" | "neto" | "faltante" | "abonos_n" | "abonos" | "moneda">,
+): CeldaBancoCobroSinBanco | null {
+  if (typeof c.parcial !== "boolean") return null;
+  if (!c.parcial) {
+    return { texto: BADGE_COBRO_SIN_ABONO, clase: CLASE_BADGE_SIN_ABONO, titulo: TITULO_COBRO_SIN_ABONO, enlaces: [] };
+  }
+  const abonos = Array.isArray(c.abonos) ? c.abonos : [];
+  const n = Math.max(abonos.length, Math.trunc(numeroDe(c.abonos_n)), 1);
+  const f = numeroONull(c.faltante);
+  const titulo =
+    `Conciliado ${fmtMonto(numeroDe(c.monto_vinculado), c.moneda)} de ${fmtMonto(c.neto, c.moneda)} con ${n} ${n === 1 ? "abono" : "abonos"}` +
+    `${abonos.length > 0 ? ` (${listaFechasAbonos(abonos)})` : ""}${f != null && f > 0 ? `: faltan ${fmtMonto(f, c.moneda)}` : ""}.`;
+  return {
+    texto: BADGE_COBRO_PARCIAL,
+    clase: CLASE_BADGE_COBRO.PARCIAL,
+    titulo,
+    enlaces: abonos.map((a) => {
+      const dia = typeof a.fecha === "string" ? a.fecha.slice(0, 10) : "";
+      return {
+        key: a.movimiento_id,
+        texto:
+          abonos.length > 1 && esDiaValido(dia)
+            ? `${ETIQUETA_VER_ABONO_SIN_BANCO} del ${fmtDateOnly(dia)}`
+            : ETIQUETA_VER_ABONO_SIN_BANCO,
+        // Sin la cuenta (esta lista no la trae): el día y el movimiento bastan.
+        href: hrefAbonoDeCobro({ movimiento_id: a.movimiento_id, cuenta_bancaria_id: null, fecha: a.fecha }),
+        titulo: "Abre el abono en la pestaña «Conciliados» de Conciliación (primero y resaltado)",
+      };
+    }),
+  };
+}
+
+/**
+ * «Neto esperado» de un PARCIAL: «$1,700.00 falta (de $3,400.00)» (los
+ * números del API, con dos decimales como la columna). null si no es parcial.
+ */
+export function netoEsperadoParcial(c: Pick<CobroSinBanco, "parcial" | "faltante" | "neto">): string | null {
+  if (c.parcial !== true) return null;
+  const f = numeroONull(c.faltante);
+  if (f == null) return null;
+  return `$${fmtDecimal(f, 2)} falta (de $${fmtDecimal(c.neto, 2)})`;
+}
+
+/**
+ * La línea sobre la tabla: «2 con pago parcial: un abono cubre solo una
+ * parte; el resto sigue pendiente.» (cuenta filas, no suma dinero). null sin
+ * parciales.
+ */
+export function lineaParcialesCobrosSinBanco(rows: readonly Pick<CobroSinBanco, "parcial">[]): string | null {
+  const n = rows.filter((c) => c.parcial === true).length;
+  return n > 0 ? `${n} con pago parcial: un abono cubre solo una parte; el resto sigue pendiente.` : null;
 }

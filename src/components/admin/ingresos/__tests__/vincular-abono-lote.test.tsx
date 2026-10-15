@@ -20,8 +20,12 @@ describe("Vincular abono · varios cobros (cableado)", () => {
     expect(src).toContain("setSel(seleccionInicial(r.data.movimiento.cobro_ids, lista))");
     expect(src).toContain("setConLote((r.data.movimiento.cobros_n ?? 0) >= 2)");
     expect(src).toContain("ligarAbonoCobrosAction(");
-    // UN cobro sin lote previo sigue por la liga de siempre (API previo).
-    expect(src).toContain("await ligarAbonoCobroAction(abono.id, { cobro_id: unica.c.cobro_id })");
+    // UN cobro sin lote previo sigue por la liga de siempre (API previo); desde
+    // el 0.0.78 lleva el 3.er argumento opcional de «Corregir la comisión»
+    // (solo viaja con la capacidad) y la llamada va envuelta (nunca lanza).
+    expect(src).toContain(
+      "await ligarAbonoCobroAction(abono.id, { cobro_id: unica.c.cobro_id }, corregir).catch(sinConexion)",
+    );
     expect(src).toContain("{ligando ? \"Vinculando…\" : botonVincularAbono(marcadas)}");
     expect(src).toContain("textoSumaLoteAbono(");
     expect(src).toContain("mensajeErrorVincularCobros(r)");
@@ -34,7 +38,8 @@ describe("Vincular abono · varios cobros (cableado)", () => {
   it("la action manda {cobro_ids} al PATCH …/cobro y traduce el 400 de un API previo", () => {
     const src = leer("app/admin/ingresos/actions.ts");
     expect(src).toContain("export async function ligarAbonoCobrosAction(");
-    expect(src).toContain("body: { cobro_ids: ids }");
+    // `corregir_comision` solo viaja con UN cobro y cuando se pide (API 0.0.78).
+    expect(src).toContain("body: corregir ? { cobro_ids: ids, corregir_comision: true } : { cobro_ids: ids }");
     expect(src).toContain('code: "API_SIN_LOTE_COBROS"');
   });
 

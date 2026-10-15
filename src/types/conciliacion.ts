@@ -3,6 +3,7 @@ import type {
   CategoriaIngreso,
   MonedaIngreso,
 } from "@/types/ingresos";
+import type { EstadoBancoCobro } from "@/types/flights";
 
 export type TipoMovimientoBancario = "CARGO" | "ABONO";
 
@@ -128,6 +129,16 @@ export interface MovimientoCobroParte {
   metodo_cobro?: string | null;
   comision_banco_monto?: number | string | null;
   neto?: number | string | null;
+  /** UN COBRO, VARIOS ABONOS (14-oct-2026, API 0.0.78, invariante 77,
+      ADITIVOS; best-effort: ausentes si su lectura falló o con un API
+      previo): el estado del COBRO con TODOS sus abonos (en la bandeja y en
+      `cobros_estado` del PATCH, DESPUÉS de ligar). `cobro_faltante` en la
+      moneda del cobro. Se leen SIEMPRE por `lib/admin/conciliacion-cobros-lote.ts`. */
+  cobro_estado?: EstadoBancoCobro | null;
+  cobro_neto?: number | null;
+  cobro_monto_vinculado?: number | null;
+  cobro_faltante?: number | null;
+  cobro_abonos_n?: number | null;
 }
 
 export interface MovimientoBancario {
@@ -208,6 +219,20 @@ export interface MovimientoBancario {
   cobros_suma?: number | string | null;
   cobros_diferencia?: number | string | null;
   cobros_estado?: MovimientoCobroParte[] | null;
+  /** UN COBRO, VARIOS ABONOS (14-oct-2026, ADITIVOS del API 0.0.78,
+      invariante 77; ausentes = API previo):
+      - `cobro_conciliacion`: en la BANDEJA, un abono de UN cobro trae el
+        estado de ese cobro con TODOS sus abonos (`faltante_sin_este` = lo que
+        le faltaría sin ESTE abono: la confirmación de desvincular).
+      - `cobros_liberados`: SOLO en la respuesta del PATCH …/cobro al
+        DESVINCULAR, cada cobro que soltó el abono con su estado DESPUÉS.
+      - `comision_corregida`: SOLO en la respuesta del PATCH con
+        `corregir_comision` («Corregir la comisión y vincular»).
+      Se leen SIEMPRE por `lib/admin/conciliacion-cobros-lote.ts` y
+      `lib/admin/cobro-banco.ts`. */
+  cobro_conciliacion?: CobroConciliacionDeAbono | null;
+  cobros_liberados?: CobroLiberado[] | null;
+  comision_corregida?: ComisionCorregida | null;
   /** Sobre de grupo conciliado (ABONOS): detalle + navegación al grupo.
       Aditivo; null cuando la liga es por cobro de vuelo o gasto. */
   cobro_grupo?: SobreConciliacion | null;
@@ -633,8 +658,22 @@ export interface CandidatoCobroVuelo {
   comision_banco_monto: number | null;
   /** Lo que depositó el banco (monto − comisión). */
   neto: number;
-  /** |neto − monto del abono| (0 = cuadra exacto). */
+  /** |neto − monto del abono| (0 = cuadra exacto). Un cobro PARCIAL (API
+      0.0.78) se compara contra lo que le FALTA fuera de este abono. */
   dif_monto: number;
+  /** UN COBRO, VARIOS ABONOS (14-oct-2026, ADITIVOS del API 0.0.78,
+      invariante 77), relativos a los OTROS abonos del cobro (no a este):
+      `parcial` = ya tiene abonos que no lo cubren; `monto_vinculado` = Σ de
+      esos abonos en su moneda; `faltante` = lo que le falta fuera de este
+      abono (sin abonos = neto); `abonos` = los primeros 5 por antigüedad;
+      `al_vincular` = qué pasaría al vincular ESTE abono a este cobro (lo
+      decide el API; el panel solo lo pinta con `guiaAlVincular`). */
+  parcial?: boolean;
+  monto_vinculado?: number;
+  faltante?: number;
+  abonos_n?: number;
+  abonos?: AbonoDeCobroCorto[];
+  al_vincular?: AlVincularCobro;
 }
 
 /** SOBRE de grupo candidato. Se manda `{cobro_grupo_id}` al PATCH. */
@@ -646,6 +685,9 @@ export interface CandidatoSobreGrupo extends SobreConciliacion {
   dif_monto: number;
   /** ADITIVO (12-oct-2026): fecha del vuelo del grupo. */
   fecha_vuelo?: string | null;
+  /** ADITIVO (API 0.0.78, D8/D18): un abono de una cuenta de BANCO en la
+      moneda del sobre debe ser su neto ± $1.00 (si no, SOBRE_NO_CUADRA). */
+  al_vincular?: AlVincularSobreGrupo;
 }
 
 export type CandidatoCobro = CandidatoCobroVuelo | CandidatoSobreGrupo;
@@ -664,6 +706,14 @@ export interface CandidatosCobroResponse {
         (para marcarlos al editar un lote). Ausentes = API previo. */
     cobros_n?: number | null;
     cobro_ids?: string[];
+    /** CAPACIDADES (14-oct-2026, API 0.0.78, invariante 77; ausentes = API
+        previo): `cobros_parciales` = un cobro ya acepta varios abonos (la
+        migración 20261014000003 está aplicada); `tipo_cuenta` = BANCO |
+        PASARELA; `corregir_comision` = el PATCH acepta «Corregir la comisión
+        y vincular» (un API previo lo rechazaría con 400). */
+    cobros_parciales?: boolean;
+    tipo_cuenta?: string | null;
+    corregir_comision?: boolean;
   };
   /** Ordenados por dif_monto asc y luego cercanía de fecha (tope 60). */
   candidatos: CandidatoCobro[];
@@ -826,6 +876,9 @@ export interface PaywiseAuditoriaResumen {
   dif_comision_total: number;
   conciliados_ahora: number;
   errores: number;
+  /** ADITIVO (API 0.0.78, D6): abonos de la pasarela que pagan VARIOS cobros
+      (lote): quedan fuera del cruce automático. Ausente = API previo. */
+  movimientos_en_lote?: number | null;
 }
 
 export interface PaywiseAuditoria {
@@ -851,6 +904,16 @@ export interface CobroSinBanco extends PaywiseCobro {
       ADITIVO): se concilia el anticipo (Ingresos → Por conciliar), nunca el
       cobro — el API rechaza ligarlo (409 COBRO_DE_ANTICIPO). */
   anticipo?: { ingreso_id: string; etiqueta: string } | null;
+  /** UN COBRO, VARIOS ABONOS (14-oct-2026, ADITIVOS del API 0.0.78; ausentes
+      = API previo y la tabla se pinta como antes): la lista son los cobros NO
+      CUBIERTOS; `parcial` = ya tiene abonos que no lo completan;
+      `monto_vinculado` (0 sin abonos), `faltante` (sin abonos = neto),
+      `abonos_n` y `abonos[]`. Se leen por `lib/admin/cobro-banco.ts`. */
+  parcial?: boolean;
+  monto_vinculado?: number;
+  faltante?: number;
+  abonos_n?: number;
+  abonos?: AbonoDeCobroCorto[];
 }
 
 export interface CobrosSinBancoResponse {
@@ -858,7 +921,10 @@ export interface CobrosSinBancoResponse {
   total: number;
   desde: string;
   hasta: string;
-  por_moneda: { moneda: string; monto: number }[];
+  /** `faltante` (ADITIVO, API 0.0.78): Σ de lo que FALTA (los sin abonos, su neto). */
+  por_moneda: { moneda: string; monto: number; faltante?: number }[];
+  /** ADITIVO (API 0.0.78): cuántos de `total` son cobros PARCIALES. */
+  parciales?: number;
 }
 
 /** Estado de cuenta importado: el archivo original queda archivado para
@@ -1460,4 +1526,114 @@ export interface ConciliacionAlCrear {
   idempotente: boolean;
   partes: Array<{ movimiento_id: string; monto_parte: number; moneda: string }>;
   gasto_estado: EstadoGastoTrasCargos;
+}
+
+// ═══════════ UN COBRO, VARIOS ABONOS (14-oct-2026, API 0.0.78, invariante 77) ═══════════
+// Formas 1:1 con `common/cobro-banco.util.ts`, `conciliacion/cobros-lote.util.ts`
+// y `conciliacion.service.ts` del API. El panel NO calcula nada de esto: lo
+// pinta con `lib/admin/conciliacion-cobros-lote.ts` y `lib/admin/cobro-banco.ts`.
+
+/**
+ * Qué pasaría al vincular ESTE abono a UN cobro (`alVincularAbono` del API,
+ * espejo del trigger A): CONCILIADO (lo cubre) · PARCIAL (le seguiría
+ * faltando) · EXCEDE (el abono es mayor que lo que falta + $1.00) ·
+ * COMISION_NO_CUADRA (cobro con comisión o de la pasarela que no cuadra con
+ * su neto) · YA_CUBIERTO · UN_SOLO_ABONO · MONEDA_DISTINTA.
+ */
+export type EstadoAlVincularCobro =
+  | "CONCILIADO"
+  | "PARCIAL"
+  | "EXCEDE"
+  | "COMISION_NO_CUADRA"
+  | "YA_CUBIERTO"
+  | "UN_SOLO_ABONO"
+  | "MONEDA_DISTINTA";
+
+export type MotivoAlVincularCobro =
+  | "CUBIERTO"
+  | "MONEDA_DISTINTA"
+  | "PASARELA"
+  | "COMISION"
+  | "TC_FUERA_DE_BANDA"
+  | "TC_LEJOS";
+
+/** Un cobro sugerido para completar un abono que EXCEDE a su cobro (D4; ≤ 3). */
+export interface SugeridoCobro {
+  cobro_id: string;
+  vuelo_id: string | null;
+  folio: number | null;
+  cliente: string | null;
+  fecha_cobro: string | null;
+  monto: number;
+  moneda: string | null;
+  /** Lo que le falta FUERA de este abono (sin abonos = su neto). */
+  faltante: number;
+}
+
+/** `candidato.al_vincular` de un cobro de vuelo (D18). */
+export interface AlVincularCobro {
+  estado: EstadoAlVincularCobro;
+  /** Lo que le falta al cobro FUERA de este abono. */
+  faltante_antes: number;
+  /** Lo que le faltaría después de ligarlo (sin cambio si no se puede ligar). */
+  faltante_despues: number;
+  /** Solo EXCEDE: lo que sobra del abono. */
+  sobrante: number;
+  /** Solo COMISION_NO_CUADRA: max(monto − |abono|, 0). */
+  comision_real: number | null;
+  /** Solo abono en otra moneda. */
+  tc_implicito: number | null;
+  tc_referencia: number | null;
+  desvio_pct: number | null;
+  motivo: MotivoAlVincularCobro | null;
+  /** El cobro se concilia con UN solo abono (comisión, pasarela u otra moneda). */
+  un_solo: boolean;
+  /** Solo EXCEDE: cobros libres a los que les falta ≈ lo que sobra. */
+  sugeridos?: SugeridoCobro[];
+}
+
+/** `candidato.al_vincular` de un SOBRE de grupo (D8): `diferencia` = |abono| − neto del sobre. */
+export interface AlVincularSobreGrupo {
+  estado: "CONCILIADO" | "SOBRE_NO_CUADRA";
+  diferencia: number;
+}
+
+/** Un abono ya ligado a un cobro, en corto. */
+export interface AbonoDeCobroCorto {
+  movimiento_id: string;
+  /** DATE del banco (YYYY-MM-DD). */
+  fecha: string | null;
+  monto_parte: number;
+}
+
+/** `movimiento.cobro_conciliacion` (bandeja, abono de UN cobro). Montos en la moneda del cobro. */
+export interface CobroConciliacionDeAbono {
+  cobro_id: string;
+  folio: number | null;
+  estado: EstadoBancoCobro;
+  neto: number;
+  monto_vinculado: number;
+  faltante: number;
+  sobrante: number;
+  /** Cuántos abonos tiene el cobro (este incluido). */
+  abonos_n: number;
+  /** Lo que le faltaría al cobro SIN este abono (D22). */
+  faltante_sin_este: number;
+  abonos: AbonoDeCobroCorto[];
+}
+
+/** Un cobro que soltó el abono al desvincularlo, con su estado DESPUÉS (D22). */
+export interface CobroLiberado {
+  cobro_id: string;
+  folio: number | null;
+  estado: EstadoBancoCobro;
+  faltante: number;
+  abonos_n: number;
+}
+
+/** La comisión que «Corregir la comisión y vincular» dejó en el cobro (null = sin comisión). */
+export interface ComisionCorregida {
+  cobro_id: string;
+  antes: number | null;
+  despues: number | null;
 }

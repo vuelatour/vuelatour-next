@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -14,6 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,32 +31,56 @@ import {
   ligarAbonoCobroAction,
   ligarAbonoCobrosAction,
   ligarAbonoIngresoAction,
+  type ActionResult,
 } from "@/app/admin/ingresos/actions";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fechasCandidatoCobro } from "@/lib/admin/ingresos-ui";
+import { MSG_SIN_CONEXION } from "@/lib/admin/conciliacion-lote";
 import {
-  NOTA_VARIOS_COBROS,
+  accionToastVinculo,
   alternarSeleccion,
   botonVincularAbono,
+  claveDeCobroVuelo,
   claveOpcion,
   coincideOpcion,
   esOpcionExclusiva,
   estadoLoteAbono,
+  guiaAlVincular,
+  lineaCortaAlVincular,
   mensajeErrorVincularCobros,
+  notaVariosCobros,
+  pasoAlPulsarVincular,
   seleccionInicial,
+  textoConfirmarCorregirComision,
+  textoConfirmarParcial,
+  textoCuadraExactoCandidato,
   textoSumaLoteAbono,
+  textoYaConciliadoCandidato,
   toastVinculoCobros,
+  type AccionGuiaAlVincular,
+  type GuiaAlVincular,
   type OpcionAbono,
+  type TextoConfirmacion,
 } from "@/lib/admin/conciliacion-cobros-lote";
 import { cn } from "@/lib/utils";
-import type { CandidatoCobro } from "@/types/conciliacion";
+import type { CandidatoCobro, MovimientoBancario } from "@/types/conciliacion";
 import type { AbonoPendiente, CandidatoIngresoAbono } from "@/types/ingresos";
 
 /** Ventana ±días alrededor del abono (la de los candidatos manuales del API). */
 const VENTANA_DIAS = 30;
+
+/** La server action ni siquiera respondió (sin red, un deploy de Vercel): nunca lanza. */
+const sinConexion = (): ActionResult<never> => ({ ok: false, code: "SIN_CONEXION", error: MSG_SIN_CONEXION });
+
+/** Lo que el API sabe hacer (capacidades de `candidatos-cobro`, API 0.0.78; ausentes = API previo). */
+interface Capacidades {
+  corregirComision: boolean;
+  cobrosParciales: boolean;
+}
+const SIN_CAPACIDADES: Capacidades = { corregirComision: false, cobrosParciales: false };
 
 const CLASE_TONO = {
   verde: "text-emerald-600 dark:text-emerald-400",
@@ -67,6 +101,18 @@ const CLASE_TONO = {
  * varios vuelos (caso #379 + #380); un sobre de grupo o un ingreso van
  * solos. La suma de los netos contra el abono es GUÍA (el API valida con la
  * misma tolerancia). Los cobros que el abono YA paga llegan marcados.
+ *
+ * UN COBRO, VARIOS ABONOS (14-oct-2026, API 0.0.78, invariante 77): con UN
+ * cobro marcado manda el veredicto del API para ESTE abono (`al_vincular`,
+ * `guiaAlVincular`): PARCIAL ⇒ «Vincular como parcial…» con confirmación;
+ * EXCEDE, COMISION_NO_CUADRA y los demás rechazos APAGAN el botón con la
+ * razón a la vista y salidas de un clic («Agregar el cobro del vuelo #332»,
+ * «Buscar $977.45», «Corregir la comisión a $X y vincular» —con su
+ * confirmación y solo con la capacidad del API—). Con 2+ cobros la suma guía
+ * va por lo que le FALTA a cada uno y nunca apaga el botón. Los candidatos se
+ * vuelven a pedir al abrir y tras cualquier 409 (sin soltar lo marcado, salvo
+ * que la lista haya cambiado). Si la comisión de un cobro cambió (o no se sabe
+ * si la liga quedó), la página se pone al día UNA vez al cerrar.
  */
 export function VincularAbonoDialog({
   abono,
@@ -82,8 +128,20 @@ export function VincularAbonoDialog({
    *  vuelo» del menú; el cliente lo pidió dentro de Vincular). */
   onRegistrarCobro?: () => void;
 }) {
+  const router = useRouter();
+  // Algo cambió en el servidor con el diálogo abierto (una liga, la comisión
+  // de un cobro o una liga que no se pudo confirmar): `router.refresh()` UNA
+  // vez al cerrar (las actions no repintan un diálogo abierto).
+  const refrescarAlCerrarRef = useRef(false);
+  const cambiarAbierto = (abierto: boolean) => {
+    if (!abierto && refrescarAlCerrarRef.current) {
+      refrescarAlCerrarRef.current = false;
+      router.refresh();
+    }
+    onOpenChange(abierto);
+  };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={cambiarAbierto}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Vincular a un cobro o ingreso</DialogTitle>
@@ -96,8 +154,11 @@ export function VincularAbonoDialog({
         {open && (
           <Selector
             abono={abono}
-            onCerrar={() => onOpenChange(false)}
+            onCerrar={() => cambiarAbierto(false)}
             onRegistrarCobro={onRegistrarCobro}
+            alCambiarDatos={() => {
+              refrescarAlCerrarRef.current = true;
+            }}
           />
         )}
       </DialogContent>
@@ -122,6 +183,8 @@ function etiquetaOpcion(o: OpcionAbono): string {
 }
 
 function descripcionOpcion(o: OpcionAbono): { texto: string; clase?: string; bloqueada: boolean } {
+  // UN COBRO, VARIOS ABONOS (API 0.0.78): un cobro PARCIAL dice cuánto ya
+  // tiene de otros abonos y cuánto le falta; «exacto» es contra lo que falta.
   const exacto = o.c.dif_monto === 0;
   if (o.tipo === "INGRESO") {
     const i = o.c;
@@ -146,13 +209,15 @@ function descripcionOpcion(o: OpcionAbono): { texto: string; clase?: string; blo
     };
   }
   const c = o.c;
+  const deVuelo = c.tipo === "COBRO_VUELO" ? c : null;
   return {
     texto: [
       c.tipo === "SOBRE_GRUPO" ? c.grupo_nombre : null,
       c.cliente,
       fechasCandidatoCobro(c),
       c.neto !== c.monto ? `neto ${fmtMonto(c.neto)}` : null,
-      exacto ? "cuadra exacto con el abono" : `diferencia ${fmtMonto(c.dif_monto)}`,
+      deVuelo ? textoYaConciliadoCandidato(deVuelo) : null,
+      exacto ? textoCuadraExactoCandidato(deVuelo ?? {}) : `diferencia ${fmtMonto(c.dif_monto)}`,
     ]
       .filter(Boolean)
       .join(" · "),
@@ -165,13 +230,17 @@ function Selector({
   abono,
   onCerrar,
   onRegistrarCobro,
+  alCambiarDatos,
 }: {
   abono: AbonoPendiente;
   onCerrar: () => void;
   onRegistrarCobro?: () => void;
+  /** Algo cambió en el servidor (o no se sabe): el diálogo refresca la página al cerrar. */
+  alCambiarDatos: () => void;
 }) {
-  const router = useRouter();
   const idBuscar = useId();
+  const idGuia = useId();
+  const buscarRef = useRef<HTMLInputElement | null>(null);
   const [opciones, setOpciones] = useState<OpcionAbono[] | null>(null);
   const [sel, setSel] = useState<string[]>([]);
   const [texto, setTexto] = useState("");
@@ -185,6 +254,15 @@ function Selector({
   // falló (el operador creería que no hay nada y lo registraría como ingreso).
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
+  // Capacidades del API (0.0.78): «Corregir la comisión y vincular» y si un
+  // cobro ya acepta varios abonos (la nota bajo la lista).
+  const [capacidades, setCapacidades] = useState<Capacidades>(SIN_CAPACIDADES);
+  // Confirmaciones de dinero (AlertDialog): vincular como PARCIAL o corregir la comisión.
+  const [confirmar, setConfirmar] = useState<"parcial" | "comision" | null>(null);
+  // Tras un 409 la lista se vuelve a pedir SIN soltar lo marcado: lo que había (se poda a lo que siga en la lista).
+  const conservarRef = useRef<string[] | null>(null);
+  // Un doble clic (o el clic de la confirmación más el del botón) no liga dos veces.
+  const enviandoRef = useRef(false);
 
   useEffect(() => {
     let vivo = true;
@@ -192,6 +270,7 @@ function Selector({
       .then((r) => {
         if (!vivo) return;
         if (!r.ok || !r.data) {
+          conservarRef.current = null;
           setOpciones([]);
           setErrorCarga(r.error ?? "No se pudieron buscar los candidatos.");
           return;
@@ -205,12 +284,25 @@ function Selector({
         // Exactos primero (★), luego por diferencia.
         const lista = [...cobros, ...ingresos].sort((a, b) => a.c.dif_monto - b.c.dif_monto);
         setOpciones(lista);
-        // Los cobros que el abono YA paga (editar un lote) llegan marcados.
-        setSel(seleccionInicial(r.data.movimiento.cobro_ids, lista));
+        const conservar = conservarRef.current;
+        conservarRef.current = null;
+        if (conservar) {
+          // Tras un 409: lo marcado sigue marcado (si sigue en la lista).
+          const claves = new Set(lista.map(claveOpcion));
+          setSel(conservar.filter((k) => claves.has(k)));
+        } else {
+          // Los cobros que el abono YA paga (editar un lote) llegan marcados.
+          setSel(seleccionInicial(r.data.movimiento.cobro_ids, lista));
+        }
         setConLote((r.data.movimiento.cobros_n ?? 0) >= 2);
+        setCapacidades({
+          corregirComision: r.data.movimiento.corregir_comision === true,
+          cobrosParciales: r.data.movimiento.cobros_parciales === true,
+        });
       })
       .catch(() => {
         if (!vivo) return;
+        conservarRef.current = null;
         setOpciones([]);
         setErrorCarga("No se pudieron buscar los candidatos (sin conexión con el servidor).");
       });
@@ -231,17 +323,35 @@ function Selector({
   );
   const exactos = (opciones ?? []).filter((o) => o.c.dif_monto === 0).length;
   const hayExclusiva = marcadas.some(esOpcionExclusiva);
-  const suma = hayExclusiva
-    ? null
-    : textoSumaLoteAbono(
-        estadoLoteAbono({
-          montoAbono: abono.monto,
-          monedaCuenta: abono.cuenta_moneda,
-          cobros: marcadas
-            .filter((o): o is Extract<OpcionAbono, { tipo: "COBRO" }> => o.tipo === "COBRO")
-            .map((o) => o.c),
-        }),
-      );
+  // Los cobros de vuelo de la lista: un sugerido que no está no se ofrece.
+  const idsEnLista = useMemo(
+    () =>
+      new Set(
+        (opciones ?? []).flatMap((o) => (o.tipo === "COBRO" && o.c.tipo === "COBRO_VUELO" ? [o.c.cobro_id] : [])),
+      ),
+    [opciones],
+  );
+  const abonoGuia = { monto: abono.monto, moneda: abono.cuenta_moneda, fecha: abono.fecha };
+  // UN cobro (o sobre) marcado: el veredicto del API para ESTE abono (API
+  // 0.0.78). null ⇒ la suma de siempre (API previo, ingreso o sobre que cuadra).
+  const marcadaUnica = marcadas.length === 1 ? marcadas[0] : null;
+  const guia = marcadaUnica
+    ? guiaAlVincular(marcadaUnica, abonoGuia, { corregirComision: capacidades.corregirComision, enLista: idsEnLista })
+    : null;
+  const suma =
+    hayExclusiva || guia
+      ? null
+      : textoSumaLoteAbono(
+          estadoLoteAbono({
+            montoAbono: abono.monto,
+            monedaCuenta: abono.cuenta_moneda,
+            cobros: marcadas
+              .filter((o): o is Extract<OpcionAbono, { tipo: "COBRO" }> => o.tipo === "COBRO")
+              .map((o) => o.c),
+          }),
+        );
+  const confirmacionParcial = marcadaUnica ? textoConfirmarParcial(marcadaUnica, abonoGuia) : null;
+  const confirmacionComision = marcadaUnica ? textoConfirmarCorregirComision(marcadaUnica, abonoGuia) : null;
 
   const alternar = (o: OpcionAbono) => {
     const r = alternarSeleccion(sel, o, opciones ?? []);
@@ -249,45 +359,105 @@ function Selector({
     if (r.aviso) toast.info(r.aviso);
   };
 
-  const vincular = async () => {
-    if (marcadas.length === 0) {
-      toast.error("Marca un cobro, un pago de grupo o un ingreso.");
+  /** Pide otra vez los candidatos; `conservar` = sin soltar lo marcado. */
+  const recargar = (conservar: boolean) => {
+    conservarRef.current = conservar ? sel : null;
+    if (!conservar) setSel([]);
+    setOpciones(null);
+    setRecarga((n) => n + 1);
+  };
+
+  /** Salidas de un clic de la guía (EXCEDE, COMISION_NO_CUADRA). */
+  const aplicarAccion = (a: AccionGuiaAlVincular) => {
+    if (a.tipo === "MARCAR_SUGERIDO" && a.cobro_id) {
+      const o = porClave.get(claveDeCobroVuelo(a.cobro_id));
+      if (o && !sel.includes(claveOpcion(o))) alternar(o);
       return;
     }
+    if (a.tipo === "BUSCAR" && a.buscar) {
+      setTexto(a.buscar);
+      buscarRef.current?.focus();
+      return;
+    }
+    if (a.tipo === "CORREGIR_COMISION" && confirmacionComision) setConfirmar("comision");
+  };
+
+  const vincular = () => {
+    switch (pasoAlPulsarVincular(marcadas.length, guia)) {
+      case "ELEGIR":
+        toast.error("Marca un cobro, un pago de grupo o un ingreso.");
+        return;
+      case "BLOQUEADO":
+        // El API rechazaría ESTE abono con ESTE cobro (el botón ya está apagado).
+        return;
+      case "CONFIRMAR_PARCIAL":
+        // Un abono MENOR que lo que falta deja el cobro PARCIAL: se confirma
+        // (es dinero) y el API no se llama hasta «Sí, vincular como parcial».
+        if (confirmacionParcial) {
+          setConfirmar("parcial");
+          return;
+        }
+        void ligar();
+        return;
+      case "LIGAR":
+        void ligar();
+    }
+  };
+
+  const ligar = async (opcionesLiga?: { corregirComision?: boolean }) => {
+    if (enviandoRef.current || marcadas.length === 0) return;
+    enviandoRef.current = true;
     setLigando(true);
     setError(null);
-    const unica = marcadas.length === 1 ? marcadas[0] : null;
-    let r;
+    const enviadas = marcadas;
+    const unica = enviadas.length === 1 ? enviadas[0] : null;
+    const corregir = opcionesLiga?.corregirComision === true ? { corregirComision: true } : undefined;
+    let r: ActionResult<MovimientoBancario>;
     if (unica && unica.tipo === "INGRESO") {
-      r = await ligarAbonoIngresoAction(abono.id, unica.c.id);
+      r = await ligarAbonoIngresoAction(abono.id, unica.c.id).catch(sinConexion);
     } else if (unica && unica.tipo === "COBRO" && unica.c.tipo === "SOBRE_GRUPO") {
-      r = await ligarAbonoCobroAction(abono.id, { cobro_grupo_id: unica.c.cobro_grupo_id });
+      r = await ligarAbonoCobroAction(abono.id, { cobro_grupo_id: unica.c.cobro_grupo_id }).catch(sinConexion);
     } else if (unica && unica.tipo === "COBRO" && unica.c.tipo === "COBRO_VUELO" && !conLote) {
-      // UN cobro sin lote previo: la liga de siempre (también con un API previo).
-      r = await ligarAbonoCobroAction(abono.id, { cobro_id: unica.c.cobro_id });
+      // UN cobro sin lote previo: la liga de siempre (también con un API previo);
+      // `corregir_comision` solo viaja con «Corregir la comisión y vincular».
+      r = await ligarAbonoCobroAction(abono.id, { cobro_id: unica.c.cobro_id }, corregir).catch(sinConexion);
     } else {
       r = await ligarAbonoCobrosAction(
         abono.id,
-        marcadas
+        enviadas
           .filter((o): o is Extract<OpcionAbono, { tipo: "COBRO" }> => o.tipo === "COBRO")
           .map((o) => o.c.id),
-      );
+        corregir,
+      ).catch(sinConexion);
     }
+    enviandoRef.current = false;
     setLigando(false);
     if (r.ok) {
-      toast.success(toastVinculoCobros(marcadas));
-      router.refresh();
+      const accion = accionToastVinculo(enviadas, r.data);
+      toast.success(
+        toastVinculoCobros(enviadas, r.data),
+        accion
+          ? { action: { label: accion.etiqueta, onClick: () => window.open(accion.href, "_blank", "noopener") } }
+          : undefined,
+      );
+      // La liga quedó: la página se pone al día al cerrar (UNA vez).
+      alCambiarDatos();
       onCerrar();
       return;
     }
     const e = mensajeErrorVincularCobros(r);
     setError(e.titulo);
     toast.error(e.titulo, e.descripcion ? { description: e.descripcion } : undefined);
+    // La comisión del cobro YA cambió (la liga falló después) o no se sabe si
+    // quedó ligado: la página se pone al día al cerrar.
+    if (e.comisionCorregida || e.incierto) alCambiarDatos();
     if (e.recargar) {
       // Ocupado por otra persona o el abono cambió: la lista se vuelve a pedir.
-      setSel([]);
-      setOpciones(null);
-      setRecarga((n) => n + 1);
+      recargar(false);
+    } else if (r.status === 409 || e.comisionCorregida) {
+      // Nada se escribió (o solo la comisión) y los veredictos pudieron
+      // cambiar: la lista se vuelve a pedir SIN soltar lo marcado.
+      recargar(true);
     }
   };
 
@@ -316,6 +486,7 @@ function Selector({
               type="button"
               size="sm"
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setErrorCarga(null);
                 setOpciones(null);
@@ -331,6 +502,7 @@ function Selector({
           <>
             <Input
               id={idBuscar}
+              ref={buscarRef}
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
               placeholder="Busca por folio, ING-n, cliente o monto"
@@ -341,6 +513,8 @@ function Selector({
                 const clave = claveOpcion(o);
                 const marcada = sel.includes(clave);
                 const desc = descripcionOpcion(o);
+                // Qué pasaría con ESE cobro si se vincula este abono (API 0.0.78).
+                const corta = lineaCortaAlVincular(o);
                 return (
                   <label
                     key={clave}
@@ -364,6 +538,11 @@ function Selector({
                           {desc.texto}
                         </span>
                       )}
+                      {corta && (
+                        <span className={cn("block truncate text-xs font-medium", CLASE_TONO[corta.tono])}>
+                          {corta.texto}
+                        </span>
+                      )}
                     </span>
                   </label>
                 );
@@ -376,7 +555,13 @@ function Selector({
                 </p>
               )}
             </div>
-            {suma && <p className={cn("text-xs font-medium", CLASE_TONO[suma.tono])}>{suma.texto}</p>}
+            {guia ? (
+              // UN cobro marcado (API 0.0.78): el veredicto del API, su razón
+              // A LA VISTA y las salidas de un clic.
+              <GuiaVincularAbono guia={guia} id={idGuia} deshabilitada={ligando} onAccion={aplicarAccion} />
+            ) : (
+              suma && <p className={cn("text-xs font-medium", CLASE_TONO[suma.tono])}>{suma.texto}</p>
+            )}
             {marcadas.length === 1 && marcadas[0].tipo === "INGRESO" && marcadas[0].c.es_anticipo && (
               <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
@@ -389,7 +574,7 @@ function Selector({
             )}
           </>
         )}
-        <p className="text-[11px] text-muted-foreground">{NOTA_VARIOS_COBROS}</p>
+        <p className="text-[11px] text-muted-foreground">{notaVariosCobros(capacidades.cobrosParciales)}</p>
         <p className="text-[11px] text-muted-foreground">
           Se muestran cobros de vuelo y pagos de grupo (transferencia, link de pago, cheque,
           BillPocket) e ingresos registrados, de la moneda de la cuenta y ±{VENTANA_DIAS} días. Los
@@ -421,14 +606,163 @@ function Selector({
           <span />
         )}
         <div className="flex gap-2">
-          <Button variant="outline" onClick={onCerrar} disabled={ligando}>
+          <Button variant="outline" className="cursor-pointer" onClick={onCerrar} disabled={ligando}>
             Cancelar
           </Button>
-          <Button onClick={() => void vincular()} disabled={ligando || marcadas.length === 0}>
-            {ligando ? "Vinculando…" : botonVincularAbono(marcadas)}
-          </Button>
+          <BotonVincularConGuia
+            etiqueta={ligando ? "Vinculando…" : botonVincularAbono(marcadas)}
+            guia={guia}
+            idGuia={idGuia}
+            deshabilitado={ligando || marcadas.length === 0}
+            onClick={vincular}
+          />
         </div>
       </DialogFooter>
+
+      {/* Vincular como PARCIAL (D3): cambia el estado del cobro, se confirma;
+          «Cancelar» solo cierra (el API no se llama). */}
+      <ConfirmacionVincular
+        abierta={confirmar === "parcial"}
+        texto={confirmacionParcial}
+        onCancelar={() => setConfirmar(null)}
+        onConfirmar={() => {
+          setConfirmar(null);
+          void ligar();
+        }}
+      />
+
+      {/* «Corregir la comisión y vincular» (D6): escribe la comisión del cobro, se confirma. */}
+      <ConfirmacionVincular
+        abierta={confirmar === "comision"}
+        texto={confirmacionComision}
+        onCancelar={() => setConfirmar(null)}
+        onConfirmar={() => {
+          setConfirmar(null);
+          void ligar({ corregirComision: true });
+        }}
+      />
     </>
+  );
+}
+
+/**
+ * La guía de UN cobro marcado (API 0.0.78): el texto del veredicto (con su
+ * tono) y las salidas de un clic («Agregar el cobro del vuelo #332», «Buscar
+ * $977.45», «Corregir la comisión a $X y vincular»). Presentacional.
+ */
+export function GuiaVincularAbono({
+  guia,
+  id,
+  deshabilitada = false,
+  onAccion,
+}: {
+  guia: GuiaAlVincular;
+  id?: string;
+  deshabilitada?: boolean;
+  onAccion: (a: AccionGuiaAlVincular) => void;
+}) {
+  return (
+    <div id={id} className="space-y-1.5" data-guia-al-vincular={guia.tono} aria-live="polite">
+      <p className={cn("text-xs font-medium", CLASE_TONO[guia.tono])}>{guia.texto}</p>
+      {guia.acciones.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {guia.acciones.map((a) => (
+            <Button
+              key={`${a.tipo}:${a.cobro_id ?? a.buscar ?? a.comision ?? ""}`}
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-auto cursor-pointer whitespace-normal py-1 text-left text-xs"
+              data-accion-guia={a.tipo}
+              disabled={deshabilitada}
+              onClick={() => onAccion(a)}
+            >
+              {a.etiqueta}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * El botón principal del diálogo. EXCEPCIÓN deliberada a «nunca apagar el
+ * botón» (D18): con UN cobro, si el API ya dijo que rechazaría ESTE abono
+ * (`guia.bloquea`), se apaga con la razón en el `title` (el envoltorio lo
+ * muestra: un botón apagado no recibe el puntero) y la guía a la vista
+ * (`aria-describedby`). Con 2+ cobros no hay `guia` y nunca se apaga por la suma.
+ */
+export function BotonVincularConGuia({
+  etiqueta,
+  guia,
+  idGuia,
+  deshabilitado,
+  onClick,
+}: {
+  etiqueta: string;
+  guia: GuiaAlVincular | null;
+  idGuia?: string;
+  deshabilitado: boolean;
+  onClick: () => void;
+}) {
+  const bloqueado = guia?.bloquea === true;
+  return (
+    <span className="inline-flex" title={bloqueado ? (guia?.razon ?? undefined) : undefined}>
+      <Button
+        className="cursor-pointer"
+        onClick={onClick}
+        disabled={deshabilitado || bloqueado}
+        aria-describedby={guia && idGuia ? idGuia : undefined}
+      >
+        {etiqueta}
+      </Button>
+    </span>
+  );
+}
+
+/**
+ * Confirmación de dinero (AlertDialog): «¿Vincular como pago parcial?» o
+ * «¿Corregir la comisión y vincular?» con los textos de
+ * `textoConfirmarParcial` / `textoConfirmarCorregirComision` (y su aviso
+ * ámbar). «Cancelar» SOLO cierra; únicamente la acción llama al API.
+ */
+export function ConfirmacionVincular({
+  abierta,
+  texto,
+  onCancelar,
+  onConfirmar,
+}: {
+  abierta: boolean;
+  texto: TextoConfirmacion | null;
+  onCancelar: () => void;
+  onConfirmar: () => void;
+}) {
+  return (
+    <AlertDialog open={abierta && texto !== null} onOpenChange={(o) => !o && onCancelar()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{texto?.titulo ?? ""}</AlertDialogTitle>
+          <AlertDialogDescription>{texto?.cuerpo ?? ""}</AlertDialogDescription>
+        </AlertDialogHeader>
+        {texto?.aviso && (
+          <p role="alert" className="text-sm font-medium text-amber-700 dark:text-amber-300">
+            {texto.aviso}
+          </p>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel className="cursor-pointer">Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="cursor-pointer"
+            onClick={(e) => {
+              e.preventDefault();
+              onConfirmar();
+            }}
+          >
+            {texto?.boton ?? ""}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

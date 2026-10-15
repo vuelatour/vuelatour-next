@@ -62,6 +62,7 @@ import {
 import { ReversoDialog } from "@/components/admin/conciliacion/reverso-dialog";
 import { VincularGastoDialog } from "@/components/admin/conciliacion/vincular-gasto-dialog";
 import { AbonoAcciones } from "@/components/admin/ingresos/abono-acciones";
+import { ConfirmacionVincular } from "@/components/admin/ingresos/vincular-abono-dialog";
 import {
   abonoPendienteDeMovimiento,
   esAbonoPendiente,
@@ -84,11 +85,23 @@ import {
 } from "@/lib/admin/conciliacion-lote";
 import { textoDesvincularNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
+  MENU_DESVINCULAR_ESTE_ABONO,
+  TITULO_DESVINCULAR_ESTE_ABONO,
+  abonoConOtrosAbonosDelCobro,
+  botonVincularAbono,
+  guiaAlVincular,
+  mensajeErrorVincularCobros,
   menuDesvincularCobros,
   numeroCobrosDe,
+  pistaDialogoLegado,
   textoConfirmarDesvincularCobros,
+  textoConfirmarParcial,
+  textoExtraDesvincularLote,
+  toastDesvinculoCobros,
+  toastVinculoCobros,
   tituloDesvincularCobros,
 } from "@/lib/admin/conciliacion-cobros-lote";
+import { textoCobroVuelveASinBanco, textoConfirmarDesvincularAbono } from "@/lib/admin/cobro-banco";
 import {
   BOTON_QUITAR_REVERSO,
   MENU_ABONO_DEVOLUCION,
@@ -192,6 +205,8 @@ export function MovimientoActions({
   // vuelo Y sobres de grupo, armados por el API.
   const [candidatos, setCandidatos] = useState<CandidatoCobro[] | null>(null);
   const [exactos, setExactos] = useState(0);
+  // «Vincular como parcial…» del diálogo legado (API 0.0.78): se confirma.
+  const [confirmarParcial, setConfirmarParcial] = useState(false);
   const [pending, startTransition] = useTransition();
   // CARGO (2-oct-2026): su diálogo propio (uno o varios gastos) se monta
   // solo al abrir, como el de devoluciones. `conIa` = se abrió desde
@@ -208,6 +223,21 @@ export function MovimientoActions({
   // la liga se lee de `cobros_n`.
   const cobrosDelLote = numeroCobrosDe(movimiento);
   const vinculadoACobro = movimiento.cobro_id != null || vinculadoASobre || cobrosDelLote > 0;
+  // UN COBRO, VARIOS ABONOS (API 0.0.78, D22): el cobro de este abono tiene
+  // OTROS abonos ⇒ «Desvincular este abono del cobro» y la confirmación dice
+  // cómo queda (con `faltante_sin_este` del API). Sin el dato, lo de siempre.
+  const monedaAbono = monedaPorCuenta?.[movimiento.cuenta_bancaria_id] ?? null;
+  const abonoConOtros = vinculadoACobro && !vinculadoASobre && abonoConOtrosAbonosDelCobro(movimiento);
+  const textoDesvincularConOtros = abonoConOtros
+    ? textoConfirmarDesvincularAbono(movimiento.cobro_conciliacion, {
+        monto: movimiento.monto,
+        fecha: movimiento.fecha,
+        moneda: movimiento.cobro?.moneda ?? monedaAbono,
+      })
+    : null;
+  const extraDesvincularUnico =
+    vinculadoACobro && !vinculadoASobre && cobrosDelLote < 2 ? textoCobroVuelveASinBanco(movimiento.cobro_conciliacion) : null;
+  const extraDesvincularLote = vinculadoACobro && cobrosDelLote >= 2 ? textoExtraDesvincularLote(movimiento) : null;
   // Ligado a gasto = `gasto_id` (espejo con UNA parte) o `gastos_n > 0`: un
   // cargo que paga VARIOS gastos trae `gasto_id` NULL (2-oct-2026).
   const vinculadoAGastoOCobro = tieneGastoLigado(movimiento) || vinculadoACobro;
@@ -441,7 +471,8 @@ export function MovimientoActions({
           vinculadoASobre
             ? "Cobro de grupo desvinculado"
             : vinculadoACobro
-              ? "Cobro desvinculado"
+              ? // Cómo quedó cada cobro DESPUÉS (API 0.0.78: `cobros_liberados`).
+                (toastDesvinculoCobros(r.data?.cobros_liberados, movimiento) ?? "Cobro desvinculado")
               : conLote
                 ? toastDesvinculoGastos(gastosDelLote)
                 : "Gasto desvinculado",
@@ -454,10 +485,27 @@ export function MovimientoActions({
     });
   };
 
+  // UN COBRO, VARIOS ABONOS (API 0.0.78): el veredicto del API para ESTE
+  // abono con el cobro elegido (sin salidas de un clic: este diálogo elige UNO).
+  const opcionSeleccionada = seleccionado ? ({ tipo: "COBRO", c: seleccionado } as const) : null;
+  const guiaSeleccionado = opcionSeleccionada
+    ? guiaAlVincular(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono }, { conAcciones: false })
+    : null;
+  const confirmacionParcial = opcionSeleccionada
+    ? textoConfirmarParcial(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono, fecha: movimiento.fecha })
+    : null;
+
   /** Liga del ABONO (el CARGO vive en `VincularGastoDialog`). */
-  const vincular = () => {
+  const vincular = (confirmado = false) => {
     if (!seleccion || !seleccionado) {
       toast.error("Selecciona un cobro o un sobre de grupo");
+      return;
+    }
+    // El API rechazaría este abono con ese cobro (el botón ya está apagado).
+    if (guiaSeleccionado?.bloquea) return;
+    // Un abono MENOR que lo que falta deja el cobro PARCIAL: se confirma.
+    if (!confirmado && guiaSeleccionado?.parcial && confirmacionParcial) {
+      setConfirmarParcial(true);
       return;
     }
     startTransition(async () => {
@@ -472,7 +520,8 @@ export function MovimientoActions({
         toast.success(
           seleccionado.tipo === "SOBRE_GRUPO"
             ? `Cobro de grupo ${folioTexto(seleccionado.grupo_folio)} vinculado`
-            : "Cobro vinculado",
+            : // API 0.0.78: «… queda conciliado PARCIAL (faltan $X)» / «… completo con 2 abonos».
+              toastVinculoCobros([{ tipo: "COBRO", c: seleccionado }], r.data),
         );
         setOpenLink(false);
         setSeleccion("");
@@ -485,12 +534,11 @@ export function MovimientoActions({
         });
         cargarCandidatos();
       } else if (r.status === 409) {
-        // Ya conciliado con OTRO movimiento (carrera entre dos personas):
-        // se refresca la lista para que desaparezca el ocupado.
-        toast.error(r.error ?? "Ya está conciliado con otro movimiento.", {
-          description:
-            "Desvincúlalo en el otro movimiento si fue un error, o elige otro candidato.",
-        });
+        // Ya conciliado con OTRO movimiento (carrera entre dos personas) o,
+        // con el API 0.0.78, una regla del monto (excede, comisión…): el
+        // texto del API y la lista se vuelve a pedir (veredictos frescos).
+        const e = mensajeErrorVincularCobros(r);
+        toast.error(e.titulo, e.descripcion ? { description: e.descripcion } : undefined);
         setSeleccion("");
         cargarCandidatos();
       } else {
@@ -686,7 +734,9 @@ export function MovimientoActions({
                 : vinculadoACobro
                   ? cobrosDelLote >= 2
                     ? menuDesvincularCobros(cobrosDelLote)
-                    : "Desvincular cobro"
+                    : abonoConOtros
+                      ? MENU_DESVINCULAR_ESTE_ABONO
+                      : "Desvincular cobro"
                   : conLote
                     ? menuDesvincularGastos(gastosDelLote)
                     : "Desvincular gasto"}
@@ -858,12 +908,28 @@ export function MovimientoActions({
                     >
                       Cuadra exacto
                     </Badge>
-                  ) : (
+                  ) : guiaSeleccionado ? null : (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
                       Diferencia ${fmtMoney(seleccionado.dif_monto)} contra el abono
                     </span>
                   )}
                 </div>
+                {guiaSeleccionado && (
+                  // El veredicto del API para ESTE abono (API 0.0.78), a la vista.
+                  <p
+                    data-guia-al-vincular={guiaSeleccionado.tono}
+                    className={
+                      guiaSeleccionado.tono === "verde"
+                        ? "text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                        : guiaSeleccionado.tono === "ambar"
+                          ? "text-xs font-medium text-amber-700 dark:text-amber-300"
+                          : "text-xs font-medium text-destructive"
+                    }
+                  >
+                    {guiaSeleccionado.texto}
+                    {opcionSeleccionada && pistaDialogoLegado(opcionSeleccionada) && ` ${pistaDialogoLegado(opcionSeleccionada)}`}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   {[
                     seleccionado.tipo === "SOBRE_GRUPO" ? seleccionado.grupo_nombre : null,
@@ -895,15 +961,35 @@ export function MovimientoActions({
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenLink(false)} disabled={pending}>
+            <Button variant="outline" className="cursor-pointer" onClick={() => setOpenLink(false)} disabled={pending}>
               Cancelar
             </Button>
-            <Button onClick={vincular} disabled={pending}>
-              {pending ? "Vinculando…" : "Vincular"}
-            </Button>
+            {/* Con el veredicto del API (0.0.78) que rechaza este abono, el
+                botón se apaga con la razón (excepción deliberada, D18). */}
+            <span className="inline-flex" title={guiaSeleccionado?.bloquea ? (guiaSeleccionado.razon ?? undefined) : undefined}>
+              <Button className="cursor-pointer" onClick={() => vincular()} disabled={pending || guiaSeleccionado?.bloquea === true}>
+                {pending
+                  ? "Vinculando…"
+                  : guiaSeleccionado?.parcial && opcionSeleccionada
+                    ? botonVincularAbono([opcionSeleccionada])
+                    : "Vincular"}
+              </Button>
+            </span>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* «Vincular como parcial…» del diálogo legado (D3): la MISMA confirmación
+          del diálogo de Ingresos; «Cancelar» solo cierra. */}
+      <ConfirmacionVincular
+        abierta={confirmarParcial}
+        texto={confirmacionParcial}
+        onCancelar={() => setConfirmarParcial(false)}
+        onConfirmar={() => {
+          setConfirmarParcial(false);
+          vincular(true);
+        }}
+      />
 
       {/* CARGO ↔ uno o VARIOS gastos (2-oct-2026): se monta solo al abrir,
           como el de devoluciones (busca candidatos en el servidor). */}
@@ -1012,14 +1098,20 @@ export function MovimientoActions({
                       : vinculadoACobro
                         ? cobrosDelLote >= 2
                           ? tituloDesvincularCobros(cobrosDelLote)
-                          : "¿Desvincular este cobro?"
+                          : abonoConOtros
+                            ? TITULO_DESVINCULAR_ESTE_ABONO
+                            : "¿Desvincular este cobro?"
                         : "¿Desvincular este gasto?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {vinculadoACobro && cobrosDelLote >= 2
                     ? textoConfirmarDesvincularCobros(cobrosDelLote)
                     : null}
-                  {!(vinculadoACobro && cobrosDelLote >= 2) && (
+                  {/* Lote (API 0.0.78): los cobros con otros abonos quedan parciales. */}
+                  {extraDesvincularLote && ` ${extraDesvincularLote}`}
+                  {/* El cobro tiene OTROS abonos (D22): sale ESTE abono y el cobro sigue con los demás. */}
+                  {textoDesvincularConOtros}
+                  {!(vinculadoACobro && cobrosDelLote >= 2) && !textoDesvincularConOtros && (
                     <>
                       El movimiento bancario volverá a quedar pendiente de conciliar y el{" "}
                       {vinculadoAIngreso
@@ -1034,6 +1126,8 @@ export function MovimientoActions({
                   )}
                   {vinculadoASobre &&
                     " Las partes por avión del sobre dejan de verse como conciliadas."}
+                  {/* El ÚNICO abono del cobro (API 0.0.78): «El cobro del vuelo #315 vuelve a «Cobros sin banco».» */}
+                  {!textoDesvincularConOtros && extraDesvincularUnico && ` ${extraDesvincularUnico}`}
                   {!vinculadoACobro && !vinculadoAIngreso &&
                     " Si el gasto se pagó en varios cargos, los demás siguen ligados: el gasto queda como pago parcial hasta que lo cubran."}
                   {!vinculadoAIngreso && notaDesvincularNoBancario && ` ${notaDesvincularNoBancario}`}

@@ -6,6 +6,13 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDate } from "@/lib/datetime";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import {
+  ENCABEZADO_COLUMNA_BANCO,
+  celdaBancoCobroSinBanco,
+  conColumnaBancoCobrosSinBanco,
+  lineaParcialesCobrosSinBanco,
+  netoEsperadoParcial,
+} from "@/lib/admin/cobro-banco";
 import type { CobroSinBanco } from "@/types/conciliacion";
 
 const fmtMoney = (n: number) =>
@@ -99,16 +106,61 @@ const COLUMNS: DataTableColumn<CobroSinBanco>[] = [
     header: "Neto esperado",
     headClassName: "text-right",
     cellClassName: "text-right",
-    cell: (c) => (
-      <span className="font-mono tabular-nums text-muted-foreground">
-        ${fmtMoney(c.neto)}
-        {c.comision_banco_monto != null && c.comision_banco_monto > 0 && (
-          <span className="block text-[10px]">comisión ${fmtMoney(c.comision_banco_monto)}</span>
-        )}
-      </span>
-    ),
+    cell: (c) => {
+      // Un PARCIAL (API 0.0.78): lo que FALTA de su neto (los números del API).
+      const parcial = netoEsperadoParcial(c);
+      return (
+        <span className="font-mono tabular-nums text-muted-foreground">
+          {parcial ? <span className="text-amber-700 dark:text-amber-300">{parcial}</span> : <>${fmtMoney(c.neto)}</>}
+          {c.comision_banco_monto != null && c.comision_banco_monto > 0 && (
+            <span className="block text-[10px]">comisión ${fmtMoney(c.comision_banco_monto)}</span>
+          )}
+        </span>
+      );
+    },
   },
 ];
+
+/**
+ * UN COBRO, VARIOS ABONOS (14-oct-2026, API 0.0.78): la columna «Banco» entre
+ * «Método» y «Referencia» — badge ámbar «Parcial» (title con lo vinculado, los
+ * abonos y lo que falta) con «Ver abono», o gris «Sin abono». Solo con un API
+ * que manda `parcial` (`conColumnaBancoCobrosSinBanco`): con uno previo la
+ * tabla queda como antes.
+ */
+const COLUMNA_BANCO: DataTableColumn<CobroSinBanco> = {
+  key: "banco",
+  header: ENCABEZADO_COLUMNA_BANCO,
+  noLink: true,
+  cell: (c) => {
+    const celda = celdaBancoCobroSinBanco(c);
+    if (!celda) return <span className="text-muted-foreground">—</span>;
+    return (
+      <span className="block" data-banco-cobro={celda.texto}>
+        <Badge variant="outline" className={celda.clase} title={celda.titulo}>
+          {celda.texto}
+        </Badge>
+        {celda.enlaces.map((e) => (
+          <Link
+            key={e.key}
+            href={e.href}
+            title={e.titulo}
+            className="mt-0.5 block w-fit cursor-pointer text-[10px] font-medium text-brand-600 hover:underline"
+          >
+            {e.texto}
+          </Link>
+        ))}
+      </span>
+    );
+  },
+};
+
+/** Las columnas con «Banco» antes de «Referencia» (o las de siempre con un API previo). */
+function columnasDe(conBanco: boolean): DataTableColumn<CobroSinBanco>[] {
+  if (!conBanco) return COLUMNS;
+  const i = COLUMNS.findIndex((c) => c.key === "referencia");
+  return i < 0 ? [...COLUMNS, COLUMNA_BANCO] : [...COLUMNS.slice(0, i), COLUMNA_BANCO, ...COLUMNS.slice(i)];
+}
 
 /**
  * Cobros bancarios (transferencia / HSBC link / cheque / Paywise; cobros de
@@ -117,16 +169,30 @@ const COLUMNS: DataTableColumn<CobroSinBanco>[] = [
  * cree cobrado.
  */
 export function CobrosSinBancoTable({ rows }: { rows: CobroSinBanco[] }) {
-  return (
+  const conBanco = conColumnaBancoCobrosSinBanco(rows);
+  // «2 con pago parcial: …» (cuenta filas; los montos son los del API).
+  const lineaParciales = conBanco ? lineaParcialesCobrosSinBanco(rows) : null;
+  const tabla = (
     <DataTable
       rows={rows}
-      columns={COLUMNS}
+      columns={columnasDe(conBanco)}
       rowKey={(c) => `${c.tipo}:${c.id}`}
       searchText={(c) =>
-        `${c.folio ?? ""} ${c.grupo_folio ?? ""} ${c.cliente ?? ""} ${c.metodo_label ?? ""} ${c.referencia ?? ""} ${c.monto} ${c.anticipo?.etiqueta ?? ""}`
+        `${c.folio ?? ""} ${c.grupo_folio ?? ""} ${c.cliente ?? ""} ${c.metodo_label ?? ""} ${c.referencia ?? ""} ${c.monto} ${c.anticipo?.etiqueta ?? ""}${
+          c.parcial === true ? ` parcial ${c.faltante ?? ""}` : ""
+        }`
       }
       searchPlaceholder="Buscar cobro (folio, cliente, método, referencia, monto)…"
       syncId="csb"
     />
+  );
+  if (!lineaParciales) return tabla;
+  return (
+    <>
+      <p className="px-4 pt-3 text-xs text-amber-700 dark:text-amber-300" data-cobros-parciales="">
+        {lineaParciales}
+      </p>
+      {tabla}
+    </>
   );
 }

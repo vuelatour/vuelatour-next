@@ -13,12 +13,19 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { CobroSinBanco } from "@/types/conciliacion";
 import type { AbonoBancoDeCobro, FlightCobro } from "@/types/flights";
 import {
+  celdaBancoCobroSinBanco,
   chipParcialEntrada,
   chipParcialPreCierre,
   CLASE_BADGE_COBRO,
   claseBadgeCobro,
+  conColumnaBancoCobrosSinBanco,
+  lineaParcialesCobrosSinBanco,
+  netoEsperadoParcial,
+  textoCobroVuelveASinBanco,
+  textoConfirmarDesvincularAbono,
   estadoBancoCobro,
   hrefAbonoDeCobro,
   hrefBuscarAbonoQueFalta,
@@ -375,5 +382,130 @@ describe("guarda: el panel no calcula dinero del banco", () => {
     const src = readFileSync(path.resolve(__dirname, "../cobro-banco.ts"), "utf8");
     expect(src).not.toMatch(/\.reduce\(/);
     expect(src).not.toMatch(/\+=/);
+  });
+});
+
+// ═══════════ Paso 2 (diálogo y bandeja): desvincular UN abono y «Cobros sin banco» ═══════════
+
+describe("desvincular UN abono de un cobro con varios (D22)", () => {
+  // Bandeja: el abono de $1,700 del 15-sep de la #315; el cobro tiene otro de $1,700.
+  const CONC = {
+    cobro_id: COBRO_3400.id,
+    folio: 315,
+    estado: "CONCILIADO" as const,
+    neto: 3400,
+    monto_vinculado: 3400,
+    faltante: 0,
+    sobrante: 0,
+    abonos_n: 2,
+    faltante_sin_este: 1700,
+    abonos: [
+      { movimiento_id: MOV_1, fecha: "2026-09-15", monto_parte: 1700 },
+      { movimiento_id: MOV_2, fecha: "2026-09-16", monto_parte: 1700 },
+    ],
+  };
+
+  it("con OTROS abonos: textos.desvincular.cuerpo_con_otros con `faltante_sin_este` del API", () => {
+    expect(textoConfirmarDesvincularAbono(CONC, { monto: "1700.00", fecha: "2026-09-15", moneda: "MXN" })).toBe(
+      "El abono de $1,700 MXN del 15 sep 2026 vuelve a quedar pendiente. El cobro del vuelo #315 sigue ligado a 1 abono más y queda «Conciliado parcial»: faltarán $1,700 MXN. No se borra ningún cobro.",
+    );
+    // Con 3 abonos y lo que falta dentro de la tolerancia del API: sigue completo.
+    expect(
+      textoConfirmarDesvincularAbono(
+        { ...CONC, abonos_n: 3, faltante_sin_este: 0.4 },
+        { monto: "1700", fecha: "2026-09-15", moneda: "MXN" },
+      ),
+    ).toContain("sigue ligado a 2 abonos más y sigue conciliado completo.");
+  });
+
+  it("el ÚNICO abono del cobro: null (la confirmación de siempre) + «vuelve a «Cobros sin banco»»", () => {
+    const solo = { ...CONC, abonos_n: 1, faltante_sin_este: 3400 };
+    expect(textoConfirmarDesvincularAbono(solo, { monto: "3400", fecha: "2026-09-15", moneda: "MXN" })).toBeNull();
+    expect(textoCobroVuelveASinBanco(solo)).toBe("El cobro del vuelo #315 vuelve a «Cobros sin banco».");
+    expect(textoCobroVuelveASinBanco({ ...solo, folio: null })).toBe("El cobro vuelve a «Cobros sin banco».");
+    // Con otros abonos no se dice (el cobro no se va de «Cobros sin banco» por este).
+    expect(textoCobroVuelveASinBanco(CONC)).toBeNull();
+    // API previo (sin `cobro_conciliacion`): nada nuevo.
+    expect(textoConfirmarDesvincularAbono(null, { monto: "1", fecha: "2026-09-15" })).toBeNull();
+    expect(textoCobroVuelveASinBanco(undefined)).toBeNull();
+  });
+});
+
+describe("«Cobros sin banco»: columna «Banco» (textos.cobros_sin_banco del 0.0.78)", () => {
+  const fila = (over: Partial<CobroSinBanco> = {}): CobroSinBanco => ({
+    tipo: "COBRO_VUELO",
+    id: COBRO_3400.id,
+    fecha_cobro: "2026-09-15T17:00:00.000Z",
+    monto: 3400,
+    moneda: "MXN",
+    metodo_cobro: "TRANSFERENCIA",
+    comision_banco_monto: null,
+    referencia: null,
+    vuelo_id: COBRO_3400.vuelo_id,
+    folio: 315,
+    cliente: "Beh Kay",
+    metodo_label: "Transferencia",
+    neto: 3400,
+    parcial: true,
+    monto_vinculado: 1700,
+    faltante: 1700,
+    abonos_n: 1,
+    abonos: [{ movimiento_id: MOV_1, fecha: "2026-09-15", monto_parte: 1700 }],
+    ...over,
+  });
+
+  it("PARCIAL: badge ámbar «Parcial» con el title del API y «Ver abono» al abono (Conciliados, su día, `mov`)", () => {
+    const c = celdaBancoCobroSinBanco(fila());
+    expect(c?.texto).toBe("Parcial");
+    expect(c?.clase).toBe(CLASE_BADGE_COBRO.PARCIAL);
+    expect(c?.titulo).toBe("Conciliado $1,700 MXN de $3,400 MXN con 1 abono (15 sep 2026): faltan $1,700 MXN.");
+    expect(c?.enlaces).toEqual([
+      {
+        key: MOV_1,
+        texto: "Ver abono",
+        href: `/admin/conciliacion?f=conciliados&desde=2026-09-15&hasta=2026-09-15&mov=${MOV_1}`,
+        titulo: expect.stringContaining("Conciliados"),
+      },
+    ]);
+  });
+
+  it("PARCIAL con 2 abonos: un «Ver abono del …» por abono", () => {
+    const c = celdaBancoCobroSinBanco(
+      fila({
+        monto: 5100,
+        neto: 5100,
+        monto_vinculado: 3400,
+        abonos_n: 2,
+        abonos: [
+          { movimiento_id: MOV_1, fecha: "2026-09-15", monto_parte: 1700 },
+          { movimiento_id: MOV_2, fecha: "2026-09-16", monto_parte: 1700 },
+        ],
+      }),
+    );
+    expect(c?.titulo).toBe("Conciliado $3,400 MXN de $5,100 MXN con 2 abonos (15 sep 2026 y 16 sep 2026): faltan $1,700 MXN.");
+    expect(c?.enlaces.map((e) => e.texto)).toEqual(["Ver abono del 15 sep 2026", "Ver abono del 16 sep 2026"]);
+  });
+
+  it("sin abonos: badge gris «Sin abono»; API previo (sin `parcial`): null y la columna no se pinta", () => {
+    const sin = celdaBancoCobroSinBanco(fila({ parcial: false, monto_vinculado: 0, faltante: 3400, abonos_n: 0, abonos: [] }));
+    expect(sin).toEqual({
+      texto: "Sin abono",
+      clase: "border-border text-muted-foreground",
+      titulo: "Ningún abono del banco vinculado todavía.",
+      enlaces: [],
+    });
+    const previo = fila({ parcial: undefined, monto_vinculado: undefined, faltante: undefined, abonos: undefined });
+    expect(celdaBancoCobroSinBanco(previo)).toBeNull();
+    expect(conColumnaBancoCobrosSinBanco([previo])).toBe(false);
+    expect(conColumnaBancoCobrosSinBanco([previo, fila()])).toBe(true);
+  });
+
+  it("«Neto esperado» de un parcial y la línea sobre la tabla (cuenta filas, no suma)", () => {
+    expect(netoEsperadoParcial(fila())).toBe("$1,700.00 falta (de $3,400.00)");
+    expect(netoEsperadoParcial(fila({ parcial: false }))).toBeNull();
+    expect(lineaParcialesCobrosSinBanco([fila(), fila({ id: "x" }), fila({ parcial: false })])).toBe(
+      "2 con pago parcial: un abono cubre solo una parte; el resto sigue pendiente.",
+    );
+    expect(lineaParcialesCobrosSinBanco([fila({ parcial: false })])).toBeNull();
   });
 });

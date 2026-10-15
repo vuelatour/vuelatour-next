@@ -49,6 +49,7 @@ import {
   TITULO_VER_VUELO_COBRO,
   TOOLTIP_LOTE_COBROS_SIN_DETALLE,
   esAbonoConLote,
+  lineaCobroUnicoBandeja,
   numeroCobrosDe,
   resumenLoteCobrosFila,
   textoBusquedaCobros,
@@ -159,6 +160,54 @@ function BadgeMedioLigado({ badge }: { badge: BadgeVinculoNoBancario | null }) {
     >
       {badge.texto}
     </Badge>
+  );
+}
+
+/**
+ * La liga de un abono con UN cobro de vuelo (columna «Conciliación»): al
+ * vuelo, con método y fecha del cobro. Con el API 0.0.78 (invariante 77) una
+ * tercera línea dice cómo está el COBRO con todos sus abonos: «Pago parcial:
+ * este abono $1,700 de $3,400 · faltan $1,700 MXN» (ámbar) o «Completa el
+ * cobro junto con 1 abono más» (gris). Sin `cobro_conciliacion` (API previo o
+ * lectura caída) el marcado de siempre.
+ */
+function LigaCobroDeVuelo({ m }: { m: MovimientoBancario }) {
+  if (!m.cobro?.vuelo_id) return <span className="text-sm text-emerald-600">Cobro de vuelo</span>;
+  const estado = lineaCobroUnicoBandeja(m);
+  return (
+    <Link
+      href={`/admin/flights/${m.cobro.vuelo_id}`}
+      className="block text-sm text-emerald-600 hover:underline"
+      title="Ver el vuelo cuyo cobro se concilió"
+    >
+      Cobro de vuelo
+      {m.cobro.vuelo?.folio != null && <> #{m.cobro.vuelo.folio}</>}
+      {m.cobro.monto != null && (
+        <span className="text-muted-foreground"> · ${fmtMoney(m.cobro.monto)}</span>
+      )}
+      <span className="block text-[10px] text-muted-foreground">
+        {[
+          metodoPagoLabel(m.cobro.metodo_cobro),
+          // fecha_cobro es timestamptz: formatear en hora Cancún
+          // (recortar la fecha UTC correría el día en la noche).
+          m.cobro.fecha_cobro ? fmtDateCancun(m.cobro.fecha_cobro) : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Ver vuelo"}
+      </span>
+      {estado && (
+        <span
+          data-estado-cobro={estado.tono}
+          className={
+            estado.tono === "aviso"
+              ? "block text-[10px] text-amber-700 dark:text-amber-300"
+              : "block text-[10px] text-muted-foreground"
+          }
+        >
+          {estado.texto}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -564,6 +613,15 @@ export function MovimientosTable({
                     {l.principal}
                     <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
                       {l.secundaria}
+                      {/* El estado del COBRO con todos sus abonos (API 0.0.78). */}
+                      {l.sufijo && (
+                        <span
+                          data-estado-cobro-lote={l.sufijo.tono}
+                          className={l.sufijo.tono === "aviso" ? "text-amber-700 dark:text-amber-300" : undefined}
+                        >
+                          {l.sufijo.texto}
+                        </span>
+                      )}
                     </span>
                   </Link>
                 ))}
@@ -693,31 +751,8 @@ export function MovimientosTable({
               <span className="text-sm text-emerald-600">Cobro de grupo</span>
             )
           ) : m.conciliado && m.cobro_id ? (
-            m.cobro?.vuelo_id ? (
-              <Link
-                href={`/admin/flights/${m.cobro.vuelo_id}`}
-                className="block text-sm text-emerald-600 hover:underline"
-                title="Ver el vuelo cuyo cobro se concilió"
-              >
-                Cobro de vuelo
-                {m.cobro.vuelo?.folio != null && <> #{m.cobro.vuelo.folio}</>}
-                {m.cobro.monto != null && (
-                  <span className="text-muted-foreground"> · ${fmtMoney(m.cobro.monto)}</span>
-                )}
-                <span className="block text-[10px] text-muted-foreground">
-                  {[
-                    metodoPagoLabel(m.cobro.metodo_cobro),
-                    // fecha_cobro es timestamptz: formatear en hora Cancún
-                    // (recortar la fecha UTC correría el día en la noche).
-                    m.cobro.fecha_cobro ? fmtDateCancun(m.cobro.fecha_cobro) : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "Ver vuelo"}
-                </span>
-              </Link>
-            ) : (
-              <span className="text-sm text-emerald-600">Cobro de vuelo</span>
-            )
+            // UN cobro de vuelo: al vuelo y, con el API 0.0.78, cómo quedó el cobro.
+            <LigaCobroDeVuelo m={m} />
           ) : m.conciliado && m.ingreso_id ? (
             // ABONO conciliado contra un INGRESO registrado (otro ingreso o
             // anticipo, 24-sep-2026): se verifica en Ingresos.

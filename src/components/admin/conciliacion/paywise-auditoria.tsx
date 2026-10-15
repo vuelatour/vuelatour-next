@@ -48,6 +48,7 @@ import { descargarDelApi } from "@/lib/download";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { pendienteCobro } from "@/lib/admin/cobros";
+import { textoPaywiseEnLote } from "@/lib/admin/conciliacion-cobros-lote";
 import { cn } from "@/lib/utils";
 import type {
   PaywiseAmbiguo,
@@ -587,6 +588,13 @@ export function PaywiseAuditoriaPanel({
               {r.cobros_conciliados_fuera > 0 && (
                 <>{r.cobros_conciliados_fuera} cobros ya conciliados en otro periodo</>
               )}
+            </p>
+          )}
+          {/* UN COBRO, VARIOS ABONOS (API 0.0.78, D6): los depósitos que pagan
+              varios cobros (lote) no entran al cruce automático. */}
+          {textoPaywiseEnLote(r.movimientos_en_lote) && (
+            <p className="text-xs text-muted-foreground" data-paywise-en-lote="">
+              {textoPaywiseEnLote(r.movimientos_en_lote)}
             </p>
           )}
 
