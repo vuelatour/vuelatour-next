@@ -31,6 +31,7 @@ import {
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
+import { ROLES_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
 
 export interface NavItem {
   label: string;
@@ -92,6 +93,18 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/admin/otros-gastos",
         icon: BanknotesIcon,
         roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
+      },
+      {
+        // Nómina (15-oct-2026), pedido del cliente: «Necesitamos un nuevo
+        // espacio debajo de Gastos y Otros Gastos que se llame Nomina para
+        // tener en ese apartado todo lo de nomina». Los gastos de categoría
+        // NOMINA del mes. Mismos roles que «Gastos» y «Otros gastos» (ya
+        // enseñan esos gastos: no se abre exposición nueva), desde la fuente
+        // única `lib/admin/nomina.ts` (pura: sin React).
+        label: TITULO_NOMINA,
+        href: "/admin/nomina",
+        icon: UserGroupIcon,
+        roles: [...ROLES_NOMINA],
       },
       {
         // Gastos PERSONALES del dueño (PERSONAL_DUENO): dinero personal, no

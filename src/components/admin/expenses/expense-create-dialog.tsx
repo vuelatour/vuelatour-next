@@ -80,6 +80,7 @@ import {
   type InventarioPayload,
 } from "@/lib/admin/refaccion-inventario";
 import { hintFolioGasto } from "@/lib/admin/gasto-folio";
+import { TITULO_NOMINA } from "@/lib/admin/nomina";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { Gasto } from "@/types/expenses";
 import {
@@ -234,6 +235,7 @@ export function ExpenseCreateDialog({
   titulo,
   contexto,
   varianteBoton = "outline",
+  etiquetaBoton,
   conciliarConMovimientos,
   clientRequestId,
   textoExito,
@@ -251,7 +253,10 @@ export function ExpenseCreateDialog({
   prefill?: Partial<GastoCreateValues>;
   /** Avisa con el gasto creado (antes de cerrar): quien lo montó lo liga. */
   onCreado?: (gasto: Gasto) => void;
-  /** Título y nota de contexto bajo la descripción (modo controlado). */
+  /** Título y nota de contexto bajo la descripción. No dependen del modo
+      controlado: los pone Conciliación (controlado) y, desde el 15-oct-2026,
+      la pantalla Nómina con su propio botón («Registrar pago de nómina» y
+      la ayuda de captura). */
   titulo?: string;
   contexto?: React.ReactNode;
   /** Con vuelo: el gasto queda LIGADO (reporte por vuelo, reparto, pre-cierre). */
@@ -267,6 +272,10 @@ export function ExpenseCreateDialog({
   /** Estilo del botón propio (14-oct-2026): «default» = primario, como en
       Gastos; las demás pantallas lo dejan «outline». */
   varianteBoton?: "default" | "outline";
+  /** Texto del botón propio (15-oct-2026, ADITIVA: «Registrar pago de
+      nómina» en la pantalla Nómina). Sin ella, el de siempre: «Registrar
+      gasto» con vuelo prefijado, «Nuevo gasto» sin él. */
+  etiquetaBoton?: string;
   /** «Créalo por la suma» (Conciliación, 14-oct-2026, API 0.0.77, invariante
       76 del API; props ADITIVAS): el gasto nace YA vinculado a estos 2..50
       cargos del banco o no se registra (el API lo crea SIN auto-cruce, liga
@@ -1068,7 +1077,7 @@ export function ExpenseCreateDialog({
           className="gap-2"
         >
           <PlusIcon className="h-4 w-4" />
-          {defaultVueloId ? "Registrar gasto" : "Nuevo gasto"}
+          {etiquetaBoton ?? (defaultVueloId ? "Registrar gasto" : "Nuevo gasto")}
         </Button>
       )}
 
@@ -1694,6 +1703,8 @@ export function ExpenseCreateDialog({
                 <span className="font-medium">Nómina</span>: sin vuelo; el avión
                 es opcional (p. ej. piloto de un solo avión). Sin avión puede
                 repartirse desde <span className="font-medium">Otros gastos</span>.
+                Su seguimiento vive en la pantalla{" "}
+                <span className="font-medium">{TITULO_NOMINA}</span>.
               </p>
             )}
             {!defaultVueloId && watch("categoria") === "SERVICIOS" && (

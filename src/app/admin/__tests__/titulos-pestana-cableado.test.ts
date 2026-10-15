@@ -83,6 +83,7 @@ const ESTATICAS: Record<string, string> = {
   "inventory/page.tsx": "TITULOS_SECCION.inventario",
   "issuing-entities/page.tsx": "TITULOS_SECCION.entidadesFiscales",
   "multas/page.tsx": "TITULOS_SECCION.multas",
+  "nomina/page.tsx": "TITULOS_SECCION.nomina",
   "otros-gastos/page.tsx": "TITULOS_SECCION.otrosGastos",
   "pilots/[id]/page.tsx": "TITULOS_DETALLE.piloto",
   "pilots/page.tsx": "TITULOS_SECCION.pilotos",

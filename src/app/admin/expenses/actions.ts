@@ -134,6 +134,10 @@ export async function createGastoAction(
       revalidatePath("/admin/expenses");
       revalidatePath("/admin/caja-chica", "layout");
       revalidatePath("/admin/gastos-personales");
+      // «Registrar pago de nómina» (15-oct-2026) da de alta desde la pantalla
+      // Nómina: se revalida a mano, como Gastos personales (también cubre el
+      // alta con reparto, que además revalida Otros gastos).
+      revalidatePath("/admin/nomina");
       // Alta desde «Gastos del vuelo» (p. ej. la «Comisión del vendedor»,
       // 28-sep-2026): el detalle del vuelo también se refresca, igual que al
       // verificar, ligar o borrar un gasto.
@@ -485,6 +489,8 @@ function revalidarVerificacion() {
   revalidatePath("/admin/expenses");
   // Una reclasificación entre categorías repartibles se ve en Otros gastos.
   revalidatePath("/admin/otros-gastos");
+  // Nómina (15-oct-2026) monta la MISMA tabla con su «Verificar / editar».
+  revalidatePath("/admin/nomina");
   // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).
   revalidatePath("/admin/combustibles");
   revalidatePath("/admin/caja-chica", "layout");
@@ -736,6 +742,8 @@ export async function deleteGastoAction(id: string): Promise<ActionResult> {
     revalidatePath("/admin/combustibles");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");
+    // Nómina (15-oct-2026): «Eliminar» desde su tabla.
+    revalidatePath("/admin/nomina");
     revalidatePath("/admin/flights", "layout");
     return { ok: true };
   } catch (err) {
@@ -891,6 +899,8 @@ export async function saveRepartoAction(
       body: { items },
     });
     revalidatePath("/admin/otros-gastos");
+    // Nómina (15-oct-2026): «Repartir entre aviones» desde su tabla.
+    revalidatePath("/admin/nomina");
     revalidatePath("/admin/expenses");
     // Caja chica también monta el menú ⋯ (y «Verificar / editar»).
     revalidatePath("/admin/caja-chica", "layout");
@@ -925,6 +935,7 @@ async function releerRepartoSinLanzar(id: string): Promise<RepartoResponse | nul
 function revalidarReparto() {
   revalidatePath("/admin/expenses");
   revalidatePath("/admin/otros-gastos");
+  revalidatePath("/admin/nomina");
   revalidatePath("/admin/caja-chica", "layout");
 }
 
@@ -1139,6 +1150,7 @@ export async function saveRepartoMasivoAction(
       },
     );
     revalidatePath("/admin/otros-gastos");
+    revalidatePath("/admin/nomina");
     revalidatePath("/admin/expenses");
     return { ok: true, data };
   } catch (err) {

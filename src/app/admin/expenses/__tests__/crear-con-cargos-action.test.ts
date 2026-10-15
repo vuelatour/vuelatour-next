@@ -158,7 +158,7 @@ describe("createGastoAction con los cargos («Créalo por la suma»)", () => {
 });
 
 describe("createGastoAction SIN los cargos: la de siempre", () => {
-  it("revalida Gastos, Caja chica, Gastos personales y el vuelo; con reparto también Otros gastos", async () => {
+  it("revalida Gastos, Caja chica, Gastos personales, Nómina y el vuelo; con reparto también Otros gastos", async () => {
     apiServer.mockResolvedValueOnce({ id: GASTO }).mockResolvedValueOnce({ items: [] });
     await createGastoAction({ ...base, categoria: "OTRO" }, [{ aeronave_id: AVION, monto: 100 }]);
     expect(revalidatePath.mock.calls).toEqual([
@@ -166,6 +166,8 @@ describe("createGastoAction SIN los cargos: la de siempre", () => {
       ["/admin/expenses"],
       ["/admin/caja-chica", "layout"],
       ["/admin/gastos-personales"],
+      // «Registrar pago de nómina» (15-oct-2026) da de alta desde Nómina.
+      ["/admin/nomina"],
       ["/admin/flights", "layout"],
     ]);
     expect(apiServer.mock.calls[0][1].body).not.toHaveProperty("conciliar_con_movimientos");

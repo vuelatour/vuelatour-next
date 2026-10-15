@@ -10111,3 +10111,142 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   `main`, después del API y en cuanto se pueda). El aviso a la oficina de
   «Conciliado parcial» y de «Cobrado de más» en la tarjeta va SOLO con el
   panel en prod.
+
+## Nómina: un espacio propio (15-oct-2026)
+
+Pedido del cliente (textual): «Necesitamos un nuevo espacio debajo de Gastos
+y Otros Gastos que se llame Nomina para tener en ese apartado todo lo de
+nomina». Fase 1, **solo panel**: sin API ni migración (el DTO de
+`GET /v1/expenses` y de `/v1/expenses/export` ya aceptaba `categoria`,
+`desde` y `hasta`). En prod (15-oct-2026) hay 17 gastos NOMINA, todos MXN,
+sin vuelo, avión ni proveedor: sueldos quincenales del personal y de los
+pilotos (la persona va en las NOTAS), una cuota IMSS/INFONAVIT y la asesoría
+de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
+
+- **Las reglas del dinero NO cambian (son del API, invariante 10 y
+  «Pendientes» de su CLAUDE.md)**: «Nómina» (`NOMINA`) es categoría de
+  EMPRESA (`CATEGORIAS_GASTO_EMPRESA` = OTRO, NOMINA, GASOLINA, FIJO,
+  VISITA): va a la hoja «otros gastos» del Balance general VuelaTour aunque
+  traiga avión o vuelo; no resta en ningún avión ni en el reparto salvo que
+  se REPARTA a mano (`gasto_reparto`, desde «Verificar / editar» o desde
+  «Otros gastos»); no pide avión (no es pendiente de la bandeja: la columna
+  «Avión · vuelo» dice «VuelaTour»). La fecha del gasto es la del PAGO
+  (decisión del 13-oct-2026).
+- **Menú** (`lib/admin/nav-items.ts`): «Nómina» (`/admin/nomina`,
+  `UserGroupIcon`) JUSTO después de «Otros gastos» y antes de «Gastos
+  personales», con los MISMOS roles de «Gastos» y «Otros gastos» (ADMIN,
+  COORDINADOR, FACTURACION: ya enseñan esos gastos, no se abre exposición
+  nueva). Etiqueta y roles salen de la fuente única (`TITULO_NOMINA`,
+  `[...ROLES_NOMINA]`). Pestaña del navegador: título FIJO
+  `TITULOS_SECCION.nomina` («Nómina») + `RUTA_SECCION.nomina`, con su
+  renglón en la guardiana `titulos-pestana-cableado.test.ts`.
+- **Fuente única PURA** `lib/admin/nomina.ts` (sin React ni red; solo
+  importa `lib/datetime`, `lib/format` y `lib/admin/medios-pago` porque la
+  usa también el menú): `CATEGORIA_NOMINA`, `ROLES_NOMINA`,
+  `puedeVerNomina`; el mes (`mesNominaDeUrl`: «YYYY-MM» con mes 01–12 y
+  año 2000–2100, cualquier otra cosa se IGNORA y vale el mes de hoy en
+  Cancún —regla de `url-params`, nunca un 400 ni un throw—,
+  `rangoMesNomina` con el último día REAL por aritmética de calendario,
+  sin `Date` con zona; `etiquetaMesNomina` con `MESES_LARGOS_ES`;
+  `mesesVecinos` con cruce de año; `esMesFuturoNomina`); la quincena
+  (`quincenaDeFecha` por el TEXTO del día —jamás `new Date` sobre
+  «YYYY-MM-DD», que en UTC−5 corre el día— y `etiquetaQuincena` «1ª
+  quincena · 1–15 oct» / «2ª quincena · 16–31 oct»); el dinero
+  (`centavosDeMonto`, `resumenNomina`, `montoNomina` con `fmtMonto`,
+  `etiquetaMedioNomina` con `medios-pago`); enlaces y Excel
+  (`hrefGastosNomina`, `hrefMesNomina`, `queryExcelNomina`,
+  `nombreExcelNomina` = «nomina-2026-10.xlsx») y TODOS los textos de la
+  pantalla. Ningún componente los redacta.
+- **El panel solo SUMA lo ya registrado**: `resumenNomina` suma en
+  CENTAVOS enteros (el texto de PostgREST se lee dígito a dígito: 0.1 + 0.2
+  = 0.30 exacto) y POR MONEDA (MXN, USD, el resto; jamás una suma entre
+  monedas). Total del mes, pagos, desglose por medio de pago (de mayor a
+  menor dentro de cada moneda) y las dos quincenas. Un monto ilegible cuenta
+  0 (el pago sí se cuenta) y una fecha ilegible no cae en ninguna quincena
+  (`sinQuincena`, se DICE en ámbar; con `fecha_gasto` DATE NOT NULL no
+  debería pasar). No se convierte nada ni se decide nada del dinero.
+- **La persona NO se infiere de las notas**: agrupar «por empleado» leyendo
+  texto libre («luis 1a oct», «Proveedor: …») sería una heurística sobre
+  dinero sensible. La fase 2 es un campo «Beneficiario» (o un catálogo de
+  personal) que decide el cliente. Mientras, el alta pide escribir en
+  «Notas» a quién y qué quincena (`AYUDA_CAPTURA_NOMINA`) y la búsqueda de la
+  tabla encuentra por las notas (`textoBusquedaGasto` ya las incluye).
+- **La pantalla** (`app/admin/nomina/page.tsx`, `force-dynamic`, + su
+  `loading.tsx`, idéntico al de Gastos personales):
+  - **Falla CERRADO**: `getMe().catch(() => null)` + `puedeVerNomina` ⇒
+    `notFound()` antes de leer nada, como Gastos personales (los sueldos son
+    dato sensible: sin `/me` la pantalla no existe).
+  - **Carga con el patrón de `/admin/expenses`**: la lista
+    `principal(listGastosAll({ categoria: CATEGORIA_NOMINA, desde, hasta }))`
+    (sin cap); si falla, `TarjetaErrorCarga` («No se pudo cargar la
+    nómina»: jamás «Sin pagos» ni un resumen en ceros) con la cabecera y el
+    mes vivos; aeronaves (`avionCatalogoGasto`), proveedores y la firma de
+    las fotos degradan con `<AvisoDegradado>`; el corte del anti-cap avisa
+    con `textoCorteGastos` y el resumen dice que suma solo lo que cargó
+    (`avisoResumenIncompleto`).
+  - **Cabecera**: «Operación» · «Nómina» · la descripción; acciones:
+    `ExpenseCreateDialog` de siempre con `defaultCategoria={CATEGORIA_NOMINA}`
+    (la IA no la pisa), botón primario «Registrar pago de nómina», ese mismo
+    título y la ayuda de captura en `contexto` (se pinta también sin el modo
+    controlado); «Exportar Excel» = el Excel de Gastos
+    (`/v1/expenses/export`) con `queryExcelNomina(mes)` y el `title` de
+    `tituloExcelGastos(rol)`; «Ver en Gastos» (`hrefGastosNomina`: la
+    categoría y las fechas del mes, que Gastos lee con `leerFiltrosGastos`).
+  - **Periodo**: el selector de MES de Gastos personales
+    (`GastosPersonalesFilterBar`, genérico: `usePathname` + `?mes=`; su
+    comentario lo dice) entre «‹ septiembre 2026» y «noviembre 2026 ›»
+    (`Link` con `prefetch={false}`, `cursor-pointer` y `aria-label`
+    «Ver la nómina de …»; la flecha va `aria-hidden`); el siguiente no se
+    ofrece hacia el futuro. Al reutilizarlo, su etiqueta «Mes» quedó ligada
+    al campo (`htmlFor`/`id`: antes no tenía nombre accesible) con manita, y
+    al cambiar de mes borra `tp` (la tabla, remontada por `key={mes}`,
+    arranca en la página 1; la búsqueda `tq` se conserva, como en Gastos);
+    aplica también a Gastos personales.
+  - **Resumen** (`components/admin/nomina/nomina-resumen.tsx`,
+    PRESENTACIONAL sin hooks): 3 tarjetas (1 columna en teléfono, 3 desde
+    `sm`): «Total de octubre 2026» (cada moneda en su renglón, «N pagos» y el
+    desglose por medio con las etiquetas de `medios-pago.ts`) y las dos
+    quincenas («Sin pagos» si no hubo); debajo, «La quincena sale de la
+    fecha del gasto (la del pago).». Solo con la lista cargada y con pagos.
+  - **Lista**: la MISMA `ExpensesTable` de Gastos (`key={mes}`) en una
+    tarjeta «Pagos de nómina · octubre 2026 (12)»: cada pago con TODO lo de
+    un gasto («Verificar / editar», «Repartir entre aviones», «Eliminar» con
+    su confirmación, comprobante, facturación y banco). SIN
+    `ExpensesSeleccionProvider` ni «Unir en compra» (NOMINA no es categoría
+    de compra; `useSeleccionGastos` devuelve null y la tabla funciona sin
+    él). Lista vacía ⇒ `EmptyState` (`UserGroupIcon`) con «Sin pagos de
+    nómina en octubre 2026» y cómo registrarlos o reclasificarlos; jamás la
+    tabla vacía.
+- **Alta** (`expense-create-dialog.tsx`): prop ADITIVA `etiquetaBoton?:
+  string` (sin ella, «Nuevo gasto» / «Registrar gasto» byte a byte: el
+  golden `alta-gasto.golden.json` no se regeneró) y el cuadro de NÓMINA
+  agrega «Su seguimiento vive en la pantalla «Nómina».» (mismo patrón que
+  el del gasto personal del dueño).
+- **Revalidación**: donde las actions de Gastos revalidan «Otros gastos»
+  ahora revalidan también `/admin/nomina` (`revalidarVerificacion`, también
+  el PATCH incierto; `saveRepartoAction`, `revalidarReparto`,
+  `saveRepartoMasivoAction`), más el alta (`createGastoAction` sin cargos,
+  junto a Gastos personales) y la baja (`deleteGastoAction`). Las demás del
+  menú ⋯ (duplicado, visto bueno, facturación, factura) repintan igual la
+  pantalla abierta: en Next 16 cualquier `revalidatePath` dentro de una
+  server action vuelve a pintar la página actual.
+- **Pruebas**: `lib/admin/__tests__/nomina.test.ts` (todo lo puro y los
+  textos exactos, con los montos REALES de prod: octubre 2026 = 12 pagos
+  MXN que suman $109,921.46, todos en la 1.ª quincena; septiembre 2026 = 5
+  pagos del 30-sep que suman $21,757.80, todos en la 2.ª; notas genéricas),
+  `components/admin/nomina/__tests__/nomina-pagina.test.tsx` (resumen
+  renderizado, MXN y USD sin mezclar, la tabla sin el proveedor, el botón
+  del alta con y sin `etiquetaBoton` contra el golden, la ayuda de NÓMINA,
+  el menú y el cableado de la página por regex),
+  `app/admin/expenses/__tests__/nomina-revalidacion.test.ts`
+  (comportamiento de las revalidaciones) y las ampliadas
+  `gasto-con-reparto-action.test.ts`, `crear-con-cargos-action.test.ts`,
+  `titulos-pestana.test.ts` y `titulos-pestana-cableado.test.ts`.
+- **Fase 2 (decide el cliente)**: campo «Beneficiario» o catálogo de
+  personal y el resumen por persona; ¿filtro por quincena en la tabla?
+  **QA manual** (sin DOM en el runner): `/admin/nomina` como ADMIN,
+  COORDINADOR y FACTURACION (SOCIO ⇒ 404), octubre y septiembre con sus
+  totales, «‹ septiembre» / «noviembre ›» (este último no sale en el mes
+  en curso), el alta con «Registrar pago de nómina», «Exportar Excel» y
+  «Ver en Gastos», y teléfono a 390 px.
+- **Deploy: solo panel.**

@@ -376,7 +376,7 @@ describe("fallas a medias: se relee y se dice cómo quedó", () => {
       const r = await guardarGastoConRepartoAction(STARLINK, payloadReparto(), { base: BASE_STARLINK, nuevo: NUEVO_STARLINK }, { riesgoConciliado: false });
       expect(r.codigo).toBe("GASTO_INCIERTO");
       const rutas = revalidatePath.mock.calls.map((c) => c.join(" "));
-      for (const ruta of ["/admin/expenses", "/admin/otros-gastos", "/admin/combustibles", "/admin/caja-chica layout", "/admin/flights layout"]) {
+      for (const ruta of ["/admin/expenses", "/admin/otros-gastos", "/admin/nomina", "/admin/combustibles", "/admin/caja-chica layout", "/admin/flights layout"]) {
         expect(rutas, ruta).toContain(ruta);
       }
     }
@@ -479,7 +479,7 @@ describe("nunca lanza y dice el error en español", () => {
 });
 
 describe("revalidaciones", () => {
-  it("con el reparto escrito: Gastos, Otros gastos y Caja chica (layout)", async () => {
+  it("con el reparto escrito: Gastos, Otros gastos, Nómina y Caja chica (layout)", async () => {
     secuencia(
       devuelve(reparto(BASE_STARLINK, 4733.76)),
       devuelve({ id: STARLINK, aeronave_id: null }),
@@ -489,10 +489,13 @@ describe("revalidaciones", () => {
     const rutas = revalidatePath.mock.calls.map((c) => c.join(" "));
     expect(rutas).toContain("/admin/expenses");
     expect(rutas).toContain("/admin/otros-gastos");
+    // Nómina (15-oct-2026) monta la MISMA tabla: donde se revalida Otros
+    // gastos, se revalida también Nómina.
+    expect(rutas).toContain("/admin/nomina");
     expect(rutas).toContain("/admin/caja-chica layout");
   });
 
-  it("verifyGastoAction: la forma de SIEMPRE ({ ok: false, error } sin status) y revalida Otros gastos", async () => {
+  it("verifyGastoAction: la forma de SIEMPRE ({ ok: false, error } sin status) y revalida Otros gastos y Nómina", async () => {
     const msg = "categoria must be one of the following values: GAS, ATERRIZAJE";
     apiServer.mockRejectedValueOnce(api400(msg));
     const r = await verifyGastoAction(STARLINK, { categoria: "INDIRECTO", verificado: true });
@@ -505,6 +508,7 @@ describe("revalidaciones", () => {
     expect(rutas).toEqual([
       "/admin/expenses",
       "/admin/otros-gastos",
+      "/admin/nomina",
       "/admin/combustibles",
       "/admin/caja-chica layout",
       "/admin/gastos-personales",

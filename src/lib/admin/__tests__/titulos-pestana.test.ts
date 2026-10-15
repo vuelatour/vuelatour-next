@@ -89,6 +89,9 @@ describe("secciones = las etiquetas del menú (nav-items)", () => {
     expect(TITULOS_SECCION.rutas).toBe("Rutas");
     expect(TITULOS_SECCION.estadisticas).toBe("Estadísticas");
     expect(TITULOS_SECCION.pagosSocios).toBe("Pagos a socios");
+    // Nómina (15-oct-2026): debajo de «Otros gastos» en el menú.
+    expect(TITULOS_SECCION.nomina).toBe("Nómina");
+    expect(RUTA_SECCION.nomina).toBe("/admin/nomina");
   });
 
   it("pantallas fuera del menú (incluidas las de sesión, fuera de /admin)", () => {
