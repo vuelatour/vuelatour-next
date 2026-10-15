@@ -102,8 +102,10 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `/admin/inventory/<no-uuid>`, `/admin/flights?cobro=…`,
   `/admin/quotes?estado=…`, `/admin/expenses?desde=2026-13-45`,
   `/admin/profit-sharing?desde=nada`. Conciliación acepta además `?mov=` y
-  `?gasto=` (13-oct-2026, enfoque desde Gastos; `uuidFiltro` vía
-  `enfoqueConciliacionDeUrl`): un valor que no es uuid se ignora.
+  `?gasto=` (13-oct-2026, enfoque desde Gastos) y `?cobro=` (API 0.0.78,
+  desde la hoja «Conciliación con el banco» de una entrada de dinero), los
+  tres con `uuidFiltro` vía `enfoqueConciliacionDeUrl`: un valor que no es
+  uuid se ignora.
 - **Verificado de punta a punta con el arnés** (build de PRODUCCIÓN contra
   una copia del API y un proxy que finge el 502/503 de Railway, 21-sep-2026):
   (a) con el API de vuelta dentro de la ventana, las 7 pantallas de muestra
@@ -223,6 +225,16 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   aviso «Vincular de todos modos», sufijo de moneda) y
   `lib/admin/pre-cierre-tc-usd.ts` (renglones del pre-cierre). Ver
   «Conciliación: compras en dólares contra el T.C. oficial del día».
+- Un COBRO contra el banco (14-oct-2026, API 0.0.78): el estado del cobro,
+  el badge de 3 estados, el renglón «Banco», el chip «Parcial · faltan $X»
+  de Ingresos y las URLs al abono salen SOLO de `lib/admin/cobro-banco.ts`;
+  «Cobrado de más» y la vista previa del formulario de cobro, de
+  `lib/admin/cobrado-de-mas.ts`; la guía `al_vincular` del diálogo
+  «Vincular», de `lib/admin/conciliacion-cobros-lote.ts`; la hoja
+  «Conciliación con el banco» de una entrada de dinero, de
+  `lib/admin/entrada-banco.ts` (lo común con la de Gastos, en
+  `lib/admin/hoja-banco.ts`). Ver «Cobros: un cobro con varios abonos…» e
+  «Ingresos: «Conciliado» abre su conciliación con el banco» al final.
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
   `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
   ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
@@ -3779,8 +3791,12 @@ ingresos». Contrato INGRESOS con el API 0.0.34 (migración
   migración (503 `INGRESOS_NO_DISPONIBLE`) o con un API previo (404 «Cannot
   GET») la página pinta una tarjeta ámbar, nunca la pantalla rota. El
   detalle (`?ingreso=<uuid>`) es un Sheet con ficha, conciliación
-  («Desvincular del abono»), aplicaciones («Desaplicar»), comprobante y
-  bitácora; desvincular y desaplicar solo ADMIN/FACTURACION y confirman.
+  («Desvincular del abono»; desde el API 0.0.78, para ADMIN/FACTURACION,
+  EMBEBE el cuerpo de la hoja «Conciliación con el banco»), aplicaciones
+  («Desaplicar»), comprobante y bitácora; desvincular y desaplicar solo
+  ADMIN/FACTURACION y confirman. Desde el 0.0.78 el badge «Conciliación» de
+  cada lista abre esa hoja: ver «Ingresos: «Conciliado» abre su conciliación
+  con el banco».
 - **Diálogos**: `registrar-ingreso-dialog` (DIVULGACIÓN PROGRESIVA: a la
   vista categoría, fecha, concepto, monto, «¿Dónde entró el dinero?», cliente
   o «Quién pagó», comprobante —desde el 13-oct-2026 también «Avión
@@ -3792,7 +3808,9 @@ ingresos». Contrato INGRESOS con el API 0.0.34 (migración
   llave); `cobro-desde-abono-dialog` («Es el pago de un vuelo»: registra el
   cobro y lo concilia en UNA operación del API); `vincular-abono-dialog`
   (cobros, sobres e INGRESOS; ★ exactos; un ingreso de otra cuenta se ve pero
-  no se elige); `sugerencias-abonos-dialog` (la IA PROPONE, nada se liga
+  no se elige; desde el API 0.0.78, con UN cobro marcado manda el veredicto
+  `al_vincular` del API: ver «Cobros: un cobro con varios abonos…»);
+  `sugerencias-abonos-dialog` (la IA PROPONE, nada se liga
   solo; solo van marcadas las ligas con `monto_exacto` y confianza ≥ 85 % y
   las clasificaciones por regla; un posible duplicado nunca; «Aceptar las
   marcadas» confirma y corre SECUENCIAL; `disponible=false` dice que el
@@ -4192,8 +4210,14 @@ corregirlo». La única salida era borrar y recapturar.
   instancia en modo edición (la del vuelo conserva además la del alta); el
   cobro se guarda en estado aparte del `open` para que la ficha no cambie de
   modo mientras se anima la salida. En edición NO hay sugerencias de monto
-  (el pendiente ya descuenta ese cobro) ni «cubre el pendiente»: la ficha dice
-  «El saldo del vuelo se recalcula al guardar». El reset de la edición es un
+  (el pendiente ya descuenta ese cobro). La ficha decía siempre «El saldo
+  del vuelo se recalcula al guardar»; desde el API 0.0.78, con el
+  `monto_usd` del cobro que manda el snapshot, compara contra el saldo SIN
+  este cobro (total − cobrado + `monto_usd`): «Con este cambio el vuelo
+  quedará cobrado de más por $X USD.» / «Cubre el pendiente — el vuelo se
+  marcará como cobrado.» / «Quedará pendiente $Y USD.»
+  (`vistaPreviaMontoCobro`); sin `monto_usd`, el texto de siempre. El reset
+  de la edición es un
   efecto APARTE que solo depende de abrir y del cobro: un `router.refresh()`
   (p. ej. `RefreshOnFocus`) no borra una corrección a medio capturar.
 - **Qué se corrige por TIPO** (`edicionDeCobro`, espejo EXACTO de los candados
@@ -4203,9 +4227,16 @@ corregirlo». La única salida era borrar y recapturar.
   |---|---|---|---|
   | Normal | editable | editable | editable |
   | Reembolso (monto < 0) | solo lectura (API: 400) | solo lectura (API: 400) | editable |
-  | Conciliado directo (`conciliado` y `conciliado_via ≠ ANTICIPO`) | solo lectura (API: 409) | solo lectura (API: 409) | editable |
+  | Ligado al banco (`ligado_banco` —con un API previo, `conciliado`— y `conciliado_via ≠ ANTICIPO`; desde el 0.0.78 también un «Conciliado parcial») | solo lectura (API: 409 `COBRO_CONCILIADO`) | solo lectura (API: 409) | editable |
   | De un anticipo | solo lectura (API: 409 `COBRO_DE_ANTICIPO`) | **editable** (no toca el saldo del anticipo) | editable |
   | Parte de sobre de grupo | — sin botón (API: 409 `COBRO_DE_GRUPO`) | — | — |
+
+  Desde el API 0.0.78 (un cobro, varios abonos) el candado es «tiene
+  abonos» (`ligado_banco`), no «cubierto»: un parcial también congela su
+  dinero (candado E de la BD). Su explicación dice cuánto respalda el banco
+  («Está conciliado PARCIAL con el banco ($1,700 MXN de $3,400 MXN): …») o
+  cuántos abonos tiene, y el 409 `COBRO_CONCILIADO` (ahora estructurado) se
+  pinta con el texto del API o, sin texto, con `MSG_COBRO_CONCILIADO`.
 
   Lo bloqueado se LEE en un recuadro «Lo que no se corrige aquí»
   (`datosSoloLecturaCobro`, montos con su moneda) + la explicación de qué
@@ -7566,7 +7597,13 @@ parte (con 2+ vienen NULL).
 - **La regla es del API**: 1 cobro = la liga de siempre; 2+ cobros en la
   moneda de la cuenta y Σ netos (monto − comisión) = abono ± tolerancia (1 ¢
   por cobro, 0.02–1.00); un sobre de grupo o un ingreso van SOLOS. El panel
-  NUNCA decide si cuadra: la suma en pantalla es GUÍA.
+  NUNCA decide si cuadra: la suma en pantalla es GUÍA. **Desde el API 0.0.78
+  (invariante 77) un cobro también acepta VARIOS abonos**: en un lote cada
+  cobro entra por lo que le FALTA fuera de ese abono (su neto si no tiene
+  otros abonos) y, con UN cobro marcado, manda el veredicto `al_vincular`
+  del API (un abono menor deja el cobro «Conciliado parcial», con
+  confirmación; uno mayor apaga el botón con la razón). Ver «Cobros: un
+  cobro con varios abonos…» al final.
 - **FUENTE ÚNICA `lib/admin/conciliacion-cobros-lote.ts`** (PURA, prueba
   `__tests__/conciliacion-cobros-lote.test.ts`): `numeroCobrosDe`,
   `tieneCobroLigado`, `esAbonoConLote`; la selección del diálogo
@@ -7590,8 +7627,10 @@ parte (con 2+ vienen NULL).
   «¿No está el cobro? Regístralo».
 - **Bandeja** (`movimientos-table.tsx`): rama NUEVA antes de las de siempre
   para `esAbonoConLote` — «2 cobros · $3,500 MXN» + una línea por cobro con
-  liga al vuelo («Vuelo #379 · Maqar», fechas y monto) + «diferencia $0.01»;
-  sin `cobros[]` (skew) «2 cobros conciliados», JAMÁS «Pendiente». La
+  liga al vuelo («Vuelo #379 · Maqar», fechas y monto; desde el 0.0.78 con
+  «· parcial: faltan $X» o «· completa el cobro (2 abonos)» según el cobro)
+  + «diferencia $0.01»; sin `cobros[]` (skew) «2 cobros conciliados», JAMÁS
+  «Pendiente». La
   búsqueda rápida encuentra el abono por folio o cliente de sus cobros. El
   menú ⋯ (`movimiento-actions.tsx`) ve el lote como «vinculado a cobro»,
   ofrece «Desvincular los 2 cobros» con confirmación y `esAbonoPendiente`
@@ -8486,6 +8525,18 @@ SIN migración.
 - **API previo**: la hoja dice «El servidor todavía no tiene este detalle
   (falta actualizar el API). Mientras, búscalo en Conciliación.» con el
   enlace de búsqueda; `?mov=`/`?gasto=` ya funcionan (son solo del panel).
+- **Mecánica COMPARTIDA con la hoja de una entrada de dinero** (API 0.0.78;
+  ver «Ingresos: «Conciliado» abre su conciliación con el banco»):
+  `useDetalleBancoGasto` es el hook GENÉRICO
+  `components/admin/banco/use-detalle-banco.ts` con el gasto; lo que no
+  depende de la entidad (roles con `puedeVerDetalleBanco`, textos fijos, la
+  descarga, `archivoDeMovimiento`, `montoParaBusquedaTabla`) se MUDÓ a
+  `lib/admin/hoja-banco.ts` y `gasto-banco.ts` lo re-exporta con el mismo
+  nombre (`ROLES_DETALLE_BANCO_GASTO` y `puedeVerDetalleBancoGasto` son
+  alias); el marcado común (`EnlaceNuevaPestana`, `ArchivoEstadoCuenta`)
+  vive en `components/admin/banco/partes-hoja.tsx`. La hoja de Gastos sale
+  igual (`gasto-banco-sheet.test.tsx`; `banco-cableado.test.ts` apunta al
+  hook genérico). Conciliación ganó `?cobro=` junto a `?mov=` y `?gasto=`.
 - **Pruebas**: `lib/admin/__tests__/gasto-banco.test.ts` (fixtures reales en
   `gasto-banco.fixtures.ts`), `conciliacion-vista.test.ts` y
   `conciliacion-lote.test.ts` (ampliadas),
@@ -9391,13 +9442,23 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   `DESTINO_VUELATOUR_REPARTIBLE_TABLA`), ya no a «la pantalla Otros gastos».
   `HOJA_OTROS_GASTOS_SIN_NADA` NO se tocó (la pista de destino del alta) y la
   guarda PROHIBIDO de `gasto-avion.test.ts` recorre todas las categorías.
-- **Pendiente de API (NO hecho: el API era de solo lectura)**: la columna
-  «Avión» del Excel (`listXlsx`) contradice la tabla —«Repartido (N)», la
-  matrícula o «(pendiente)»: un OTRO sin avión sale «(pendiente)» donde la
-  tabla dice «VuelaTour», y un gasto de empresa con avión sellado sale con la
-  matrícula—. Arreglarlo exige que el API use `CATEGORIAS_GASTO_SIN_AVION`
-  con la precedencia de `estadoAvionGasto` (reparto → personal → empresa o
-  comisión VuelaTour → avión → sin avión por diseño → «Falta avión»).
+- **Columna «Avión» del Excel = la de la tabla (RESUELTO en el API 0.0.78,
+  paso 6; antes «Pendiente de API»)**: `listXlsx` escribía «Repartido (N)»,
+  la matrícula o «(pendiente)» y contradecía la tabla. Hoy la celda sale de
+  `celdaAvionGasto` (`expenses/gasto-avion.util.ts` del API) con la MISMA
+  precedencia que `estadoAvionGasto`: reparto ⇒ «Repartido: N4142R,
+  N621TX» (y «VuelaTour» si queda remanente) → PERSONAL_DUENO ⇒ «Personal»
+  → empresa o «Comisión del vendedor (VuelaTour)» ⇒ «VuelaTour» (con
+  «(ref. N4142R)» si trae avión sellado) → con avión ⇒ la matrícula →
+  INDIRECTO sin avión ⇒ «VuelaTour» → «Falta avión» (= la bandeja
+  `?pendientes=true`). **PARIDAD OBLIGATORIA**: `gasto-avion.paridad.spec`
+  del API EJECUTA `lib/admin/gasto-avion.ts` de este repo (transpilado)
+  contra 3,360 combinaciones + filas reales y revisa cómo pinta cada rama
+  `expenses-table.tsx`; corre cuando `../vuelatour-next` está al lado (o
+  con `VUELATOUR_NEXT_DIR`), lee el ÁRBOL DE TRABAJO y truena solo por una
+  regla o un texto. Si cambia esa columna, `lib/admin/gasto-avion.ts`,
+  `categorias-gasto.ts` o `lib/format.ts`, se cambian los dos repos en el
+  MISMO lote.
 
 ## Títulos de las pestañas del navegador (14-oct-2026)
 
@@ -9462,3 +9523,434 @@ páginas de `/admin` decían «Vuelatour Admin».
   `comingSoon` (hoy ninguno). Antes el «empieza con» de «Inicio» hacía que
   TODA ruta desconocida dijera «Inicio — Este módulo aún no se ha
   construido» (`app/admin/__tests__/comodin-admin.test.tsx`).
+
+## Cobros: un cobro con varios abonos, «Conciliado parcial» y «Cobrado de más» (14-oct-2026, API 0.0.78)
+
+Pedido del cliente: «que un cobro acepte varios abonos, el aviso de
+«Conciliado parcial», la alerta al vincular un abono de otro monto y la de
+«cobrado de más» en la card» (casos #315/#332: dos camionetas de $1,700
+contra un cobro de $3,400, y un abono de $69,183 = $68,205.55 + $977.45).
+Contrato: invariante 77 del API (migración `20261014000003` por el SQL
+Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
+
+- **El panel no calcula dinero que decide el API.** Estado del cobro, neto,
+  lo vinculado, faltante, sobrante, sus abonos, `al_vincular` (con
+  `sugeridos` y la comisión real) y «cobrado de más» vienen del API; aquí
+  solo se formatea (`fmtMonto` / `fmtUsd`: sin decimales si el monto es
+  entero; fechas del banco con `fmtDateOnly`, las de los cobros en hora
+  Cancún) y se eligen textos y clases. Única resta: la vista previa del
+  formulario de cobro, con números del API (el API recalcula al guardar).
+  La suma de un lote en el diálogo «Vincular» es GUÍA.
+- **«Conciliado» de un cobro = CUBIERTO**: Σ de sus abonos en su moneda ≥
+  neto − $1.00 (`TOLERANCIA_COBRO_BANCO`). Estados (`conciliacion_estado`):
+  CONCILIADO · PARCIAL · VIA_ANTICIPO · SIN_CONCILIAR · NO_BANCARIO; el
+  `conciliado` de siempre = CONCILIADO o VIA_ANTICIPO (un PARCIAL ya dice
+  `false`). El CANDADO del dinero del cobro es otra cosa: `ligado_banco`
+  («tiene abonos»), también para un parcial.
+- **Fuentes únicas (PURAS, con prueba)**: `lib/admin/cobro-banco.ts`
+  (estado, badge de 3 estados con texto, clases y tooltip, renglón «Banco»,
+  URLs al abono, texto del sobrante, chip de Ingresos, chip del pre-cierre,
+  textos de desvincular UN abono y la columna «Banco» de «Cobros sin
+  banco»), `lib/admin/cobrado-de-mas.ts` (tono y enlace del aviso, el
+  renglón del pre-cierre y la vista previa del formulario de cobro) y
+  `lib/admin/conciliacion-cobros-lote.ts` (`guiaAlVincular`,
+  `pasoAlPulsarVincular`, `lineaCortaAlVincular`, las dos confirmaciones,
+  la suma del lote por FALTANTE, toasts, los errores nuevos AL FINAL del
+  switch, la bandeja y Paywise). Ningún componente redacta estas frases.
+  Todo lo que se pulsa (badge-botón, ligas, salidas de un clic, botones de
+  las confirmaciones) lleva `cursor-pointer`.
+- **Badge del cobro** (`CobroConciliadoBadge` de `flights/cobro-sobre-nota.tsx`,
+  en las tarjetas «Cobros» del vuelo y de la cotización): «Conciliado»
+  (verde; también vía su sobre o su anticipo), «Conciliado parcial · faltan
+  $1,700 MXN» (ámbar; en un celular envuelve en dos líneas) y «Sin
+  conciliar» (rosa, sin fondo); efectivo, dólares, BillPocket y reembolsos,
+  sin badge. Tooltip con el abono («Conciliado con el banco: abono del 15
+  sep 2026 en EJE SCOTIA por $3,400 MXN.»), con varios («Conciliado con 2
+  abonos del banco: 15 sep 2026 · $1,700 MXN (EJE SCOTIA) y …»), con un
+  lote («Conciliado con el banco: $68,205.55 MXN de un abono de $69,183 MXN
+  del 15 sep 2026 (EJE SCOTIA) que pagó 2 cobros.») o, en un parcial, lo que
+  respalda el banco y qué hacer. «Sin conciliar» usa
+  `TITULO_SIN_CONCILIAR_ENTRADA`, el MISMO title de Ingresos (el de la spec
+  prometía «se cruza solo al importar», falso para un cobro registrado
+  DESPUÉS de importar: los cobros no tienen cruce «al revés»); la parte de
+  un sobre y el cobro de un anticipo llevan su propio title (el abono se
+  liga al sobre o al anticipo, no al cobro). Para ADMIN/FACTURACION el badge
+  abre la hoja «Conciliación con el banco» (sección siguiente).
+- **Renglón «Banco»** (`CobroBancoDetalle`, debajo de cada cobro) SOLO cuando
+  dice algo que el badge no dice: un parcial («Banco: $1,700 de $3,400 ·
+  abono del 15 sep 2026 (ver) · faltan $1,700 MXN · Buscar el abono que
+  falta»), un cobro completo con 2+ abonos («Banco: 2 abonos · 15 sep 2026
+  $1,700 (ver) · …») o un abono que trae de más (liga anterior al 0.0.78:
+  `textoSobranteCobro`, «El abono vinculado ($55,053 MXN) trae $27,526.50
+  MXN más que este cobro: ¿pagó también otro vuelo? …» + «Ver el abono»).
+  Las ligas, en pestaña nueva, SOLO para ADMIN/FACTURACION
+  (`puedeConciliarIngresos`); los demás leen el mismo texto sin ligas. «ver»
+  = `hrefAbonoDeCobro` (Conciliación «Conciliados» de su cuenta y su día con
+  `?mov=`: la fila sale primero y resaltada); «Buscar el abono que falta» =
+  `hrefBuscarAbonoQueFalta` («Pendientes» de 7 días antes a 30 después del
+  cobro, días Cancún, con el faltante en `?mvq=`). El abono de una cuenta en
+  OTRA moneda (1 ↔ 1) pinta su monto sin moneda: `abonos_banco` no la trae.
+- **Ingresos**: la lista nunca trae PARCIAL. Un cobro parcial conserva el
+  badge «Sin conciliar» y, al lado, el chip ámbar INFORMATIVO «Parcial ·
+  faltan $1,700 MXN» (`chipParcialEntrada` + `ChipParcialEntrada` de
+  `ingresos/entradas-table.tsx`, del aditivo `conciliacion.parcial`); el
+  chip nunca es botón.
+- **Corregir un cobro** (`lib/admin/cobro-edicion.ts`): el candado del
+  dinero decide con `ligado_banco`, también para un parcial, y el title del
+  botón agrega «(parcial)». Ver «Corregir un cobro: «Editar» en las cards de
+  cobros» (la tabla por tipo y el 409 `COBRO_CONCILIADO`).
+
+### «Cobrado de más» y la vista previa del formulario de cobro
+
+- **El aviso** (`flights/cobrado-de-mas-aviso.tsx`, `CobradoDeMasAviso`, sin
+  hooks; en las dos tarjetas, debajo del resumen) pinta
+  `snapshot.cobrado_de_mas` TAL CUAL: excedente, causa probable («Posible
+  causa», nunca afirma) y qué hacer los arma el API, y la cifra es la MISMA
+  que el balance manda a «otros movimientos». AVISO (`requiere_revision`) =
+  caja ámbar `role="status"` con el título, la causa, «Qué hacer:» y, si la
+  causa es el pago de otro vuelo del cliente, «Ver el vuelo #332»; INFO
+  (comisión del link pagada por el cliente, redondeo del T.C.) = una línea
+  gris («Cobrado de más: $214.26 USD — es la comisión del link de pago… No
+  hay nada que corregir.»); con cobros en pesos sin T.C., «Además hay N
+  cobro(s) en pesos sin T.C. ($X MXN) que no entraron a la cuenta.». null o
+  ausente ⇒ nada: sin excedente, API previo, PILOTO/MECANICO/VISITANTE, o el
+  API no pudo leer la fila de precios (omite la llave). Llega al vuelo por
+  `CobrosCard` y a la cotización por la página → `QuoteWorkspace` →
+  `QuoteCobrosCard`.
+- **Pre-cierre** (`reportes/pre-cierre-card.tsx`; sus tipos viven ahí):
+  renglón NO bloqueante `vuelos_cobrados_de_mas`
+  (`CLAVE_PRECIERRE_COBRADOS_DE_MAS`) con chips «#217 ($495.99) · IVA»
+  (sufijo por causa; title «Posible causa: … Revisa la card de cobros del
+  vuelo.») y «Resolver →» a los vuelos del periodo; los EXPLICADOS no
+  cuentan y van en una línea gris («Además: #111 (redondeo del tipo de
+  cambio) no requiere acción.», hasta 10 folios y «y N más»). En
+  `cobros_bancarios_sin_conciliar` los parciales salen en ámbar («#315 ·
+  parcial · faltan $1,700 MXN», hasta 8 y «y N más…»).
+- **Vista previa del formulario** (`flights/cobro-form-sheet.tsx` +
+  `vistaPreviaMontoCobro`, con la tolerancia de la bandera `cobrado`,
+  $1.00). ALTA, contra el pendiente de la página: «Rebasa el pendiente por
+  $56.99 USD: el vuelo quedará cobrado de más.» (caja ámbar) + «Si el
+  depósito también pagó otro vuelo, registra aquí solo lo de este vuelo y el
+  resto como cobro del otro; en Conciliación el depósito se vincula a los
+  dos cobros.»; «Cubre el pendiente — el vuelo se marcará como cobrado.»;
+  «Quedará pendiente $Y USD.». CORRECCIÓN, con el `monto_usd` del cobro que
+  manda el snapshot: saldo SIN este cobro = (total − cobrado) + `monto_usd`
+  y los mismos tres casos («Con este cambio el vuelo quedará cobrado de más
+  por $X USD.»); sin `monto_usd`, «El saldo del vuelo se recalcula al
+  guardar.». Vuelo cancelado, lo de siempre. Cotización ABIERTA (prop
+  `cotizacionAbierta`) o total ≤ 0 ⇒ nunca «cobrado de más» (el API
+  tampoco avisa).
+
+### Diálogo «Vincular a un cobro o ingreso» con el veredicto del API (`al_vincular`)
+
+- Cada candidato trae `al_vincular` (el veredicto del API para ESTE abono,
+  espejo del trigger A) y `GET …/movimientos/:id/candidatos-cobro` trae las
+  capacidades `movimiento.cobros_parciales` y `movimiento.corregir_comision`.
+  Con UN cobro marcado, la guía de `ingresos/vincular-abono-dialog.tsx` es
+  `guiaAlVincular`:
+  - CONCILIADO (verde): «1 cobro: cuadra con el abono · el cobro del vuelo
+    #315 queda conciliado.» o, si completa un parcial, «Con este abono el
+    cobro del vuelo #315 queda completo ($3,400 MXN con 2 abonos).».
+  - PARCIAL (ámbar): «Este abono ($1,700 MXN) es menor que lo que falta del
+    cobro del vuelo #315 ($3,400 MXN): el cobro quedará conciliado parcial y
+    faltarán $1,700 MXN. Cuando llegue el resto, vincúlalo a este mismo
+    cobro.». El botón dice «Vincular como parcial…» y abre el AlertDialog
+    «¿Vincular como pago parcial?» («Sí, vincular como parcial»): el API no
+    se llama hasta confirmar (el API no exige bandera).
+  - EXCEDE: botón APAGADO con el title «El abono rebasa este cobro: marca
+    también el otro vuelo» y salidas de un clic: «Agregar el cobro del vuelo
+    #332» (marca el sugerido del API, solo si está en la lista) y «Buscar
+    $977.45» (escribe el excedente en el buscador).
+  - COMISION_NO_CUADRA: apagado; «Corregir la comisión a $1,200 y vincular»
+    SOLO con la capacidad del API, la `comision_real` que manda el API, el
+    cobro sin otros abonos y el depósito ≤ monto (si no, no se ofrece);
+    abre el AlertDialog «¿Corregir la comisión y vincular?» («Sí, corregir
+    y vincular»; arriba de 15 % del cobro agrega «Ojo: la comisión real es
+    mayor que 15 % del cobro…»). Es dinero: SIEMPRE se confirma.
+  - YA_CUBIERTO, UN_SOLO_ABONO, MONEDA_DISTINTA y SOBRE_NO_CUADRA: apagado y
+    la razón a la vista (los candidatos no traen texto: el panel arma la
+    frase con los números del API; un 409 se pinta con el texto del API).
+  - **EXCEPCIÓN deliberada a «la guía nunca apaga el botón»**: solo con UN
+    cobro marcado, porque es el veredicto del API para ese abono. El botón
+    apagado va dentro de un `<span title>` (un `disabled` no recibe el
+    puntero) y con `aria-describedby` a la guía. Con 2+ cobros la suma del
+    lote va por lo que le FALTA a cada uno (con un parcial marcado lo dice:
+    «2 cobros suman $X (lo que le falta a cada uno) · …») y NUNCA apaga:
+    manda el 409 `ABONO_NO_CUADRA`.
+- Bajo cada candidato, `lineaCortaAlVincular` («si lo vinculas, queda
+  parcial: faltarían $1,700 MXN», «el abono rebasa este cobro por $977.45
+  MXN», …); un candidato parcial dice «ya conciliado $1,700 de $3,400 (1
+  abono) · falta $1,700» y «cuadra exacto con lo que falta». La nota bajo la
+  lista es `notaVariosCobros(cobros_parciales)`: con la capacidad explica
+  que un cobro pagado en varias transferencias se vincula transferencia por
+  transferencia; sin ella, la de siempre.
+- **Recarga**: los candidatos se piden al abrir y tras CUALQUIER 409
+  (conservando lo marcado, salvo los errores con `recargar`), NO al cambiar
+  el buscador (filtra en local: el endpoint no busca por texto).
+- **`corregir_comision: true`** viaja SOLO desde esa salida: tercer
+  argumento `{ corregirComision }` de `ligarAbonoCobroAction` /
+  `ligarAbonoCobrosAction` (con UN cobro); el 400 «property
+  corregir_comision should not exist» de un API previo ⇒
+  `API_SIN_CORREGIR_COMISION`.
+- **Errores** (`mensajeErrorVincularCobros`, el texto del API cuando es
+  claro): `ABONO_EXCEDE_COBRO` (+ «Marca también el cobro del vuelo #332 en
+  la lista (busca $977.45).»), `COMISION_NO_CUADRA`, `COBRO_MONEDA_DISTINTA`,
+  `SOBRE_NO_CUADRA`, `CORREGIR_COMISION_NO_APLICA` (suelta lo marcado), el
+  503 `CONCILIACION_COBROS_PARCIALES_NO_DISPONIBLE` (sin la migración) y
+  `SIN_CONEXION` ⇒ «No se pudo confirmar si el abono quedó vinculado…»
+  (jamás «no se vinculó»). Con `details.comision_corregida`, con cualquier
+  código, la comisión del cobro YA cambió.
+- **Toasts** (de `cobros_estado[]` y `comision_corregida`): «Abono
+  vinculado: el cobro del vuelo #315 queda conciliado PARCIAL (faltan $1,700
+  MXN).» con la acción «Buscar el abono que falta» (pestaña nueva), «… quedó
+  conciliado completo con 2 abonos.» y «Comisión corregida a $1,200 y abono
+  vinculado: el cobro del vuelo #293 quedó conciliado.».
+- **Refresco**: el diálogo NO llama `router.refresh()` al ligar: cierra y la
+  página se pone al día UNA vez al cerrar (`refrescarAlCerrarRef`), también
+  si la comisión cambió y la liga falló o si no hubo respuesta. Las actions
+  de ligar revalidan Ingresos, Conciliación y los vuelos de `cobro` y
+  `cobros_estado[]`; toda llamada va con `.catch` y `enviandoRef` impide una
+  doble liga.
+- **Diálogo LEGADO** de Conciliación (sin los catálogos de Ingresos,
+  `conciliacion/movimiento-actions.tsx`): la misma guía sin salidas de un
+  clic (`conAcciones: false`) + «Para marcar varios cobros o corregir la
+  comisión desde aquí, usa «Conciliar en Ingresos».» en EXCEDE o
+  COMISION_NO_CUADRA, la MISMA `ConfirmacionVincular` para el parcial y sus
+  409 por `mensajeErrorVincularCobros` (vuelve a pedir la lista).
+- **Riesgo conocido (fuera de alcance)**: aceptar una propuesta LIGAR de la
+  IA (`aceptarPropuestaAbonoAction`) o «Vincular» desde el 409
+  `ABONO_TIENE_COBRO_CANDIDATO` de `registrar-ingreso-dialog` no pasan por
+  `al_vincular`: con un monto menor el cobro queda parcial sin la
+  confirmación (el API lo acepta sin bandera) y después se ve «Conciliado
+  parcial».
+
+### Bandeja, desvincular, «Cobros sin banco» y Paywise
+
+- **Bandeja** (`conciliacion/movimientos-table.tsx`, solo las ramas de
+  cobro de la columna «Conciliación»; el `searchText` de la tabla no se
+  tocó y el `useMemo` de columnas ganó la dependencia `cobroResaltado`): el
+  abono de UN cobro (`LigaCobroDeVuelo`) gana una tercera línea,
+  `lineaCobroUnicoBandeja`: «Pago parcial: este abono $1,700 de $3,400 ·
+  faltan $1,700 MXN» (ámbar) o «Completa el cobro junto con 1 abono más»
+  (gris); en un lote cada línea lleva `sufijoEstadoCobroLote` («· parcial:
+  faltan $X» / «· completa el cobro (2 abonos)»). La búsqueda rápida
+  encuentra «parcial» y el folio por `textoBusquedaCobros`.
+- **Desvincular** suelta ESE abono: si el cobro tiene otros
+  (`abonoConOtrosAbonosDelCobro`, por `cobro_conciliacion.abonos_n`) el menú
+  dice «Desvincular este abono del cobro» y la confirmación «¿Desvincular
+  este abono del cobro?» avisa ANTES cómo queda, con `faltante_sin_este`
+  del API («El abono de $1,700 MXN del 15 sep 2026 vuelve a quedar
+  pendiente. El cobro del vuelo #315 sigue ligado a 1 abono más y queda
+  «Conciliado parcial»: faltarán $1,700 MXN. No se borra ningún cobro.»);
+  si era el único, «El cobro del vuelo #315 vuelve a «Cobros sin banco».»;
+  en un lote, «Los cobros que tienen otros abonos quedan como «Conciliado
+  parcial».». El toast lee `cobros_liberados[]` (`toastDesvinculoCobros`;
+  sin la llave, el de siempre). `cobros_liberados` no trae `vuelo_id`:
+  desvincular revalida Conciliación e Ingresos, no el vuelo de cada cobro
+  liberado.
+- **«Cobros sin banco»** (`conciliacion/cobros-sin-banco-table.tsx`; desde el
+  0.0.78 son los NO cubiertos, parciales incluidos): columna «Banco» (solo
+  si el API manda `parcial`) con «Parcial» ámbar (title «Conciliado $1,700
+  MXN de $3,400 MXN con 1 abono (15 sep 2026): faltan $1,700 MXN.») y «Ver
+  abono», o «Sin abono» gris; el «Neto esperado» de un parcial dice
+  «$1,700.00 falta (de $3,400.00)» y arriba de la tabla, «N con pago
+  parcial: un abono cubre solo una parte; el resto sigue pendiente.».
+- **Auditoría Paywise**: «N depósitos de Paywise pagan varios cobros (lote):
+  quedan fuera del cruce automático; revísalos en la bandeja.»
+  (`textoPaywiseEnLote`, de `resumen.movimientos_en_lote`).
+- **Tipos ADITIVOS** (bloques propios al final): `types/flights.ts`
+  (`EstadoBancoCobro`, `AbonoBancoDeCobro`, `CausaCobradoDeMas`,
+  `CobradoDeMasVuelo`; `FlightCobro` gana `conciliacion_estado`,
+  `ligado_banco`, `neto_banco`, `monto_vinculado`, `faltante`, `sobrante`,
+  `abonos_banco` y `monto_usd`, y el snapshot `cobrado_de_mas`),
+  `types/conciliacion.ts` (`AlVincularCobro`, `SugeridoCobro`,
+  `AlVincularSobreGrupo`, `AbonoDeCobroCorto`, `CobroConciliacionDeAbono`,
+  `CobroLiberado`, `ComisionCorregida` y los opcionales de
+  `MovimientoBancario`, `MovimientoCobroParte`, `CandidatoCobroVuelo`,
+  `CobroSinBanco` y la respuesta de candidatos) y `types/ingresos.ts`
+  (`ParcialEntrada`).
+- **Pruebas**: `lib/admin/__tests__/cobro-banco.test.ts`,
+  `cobrado-de-mas.test.ts`, `conciliacion-cobros-lote.test.ts`,
+  `cobro-edicion.test.ts`; `components/admin/flights/__tests__/cobros-card-banco.test.tsx`
+  (badge, renglón, aviso y el cableado de `cotizacionAbierta` y
+  `monto_usd`) y `cobrado-de-mas-aviso.test.tsx`;
+  `components/admin/reportes/__tests__/pre-cierre-cobrados-de-mas.test.tsx`;
+  `components/admin/ingresos/__tests__/entradas-parcial.test.tsx`,
+  `vincular-abono-parcial.test.tsx` y `vincular-abono-lote.test.tsx`;
+  `components/admin/conciliacion/__tests__/cobros-parciales-bandeja.test.tsx`
+  y `cobros-sin-banco-table.test.tsx`. El runner no tiene DOM: el diálogo
+  se prueba pintando sus piezas exportadas (`GuiaVincularAbono`,
+  `BotonVincularConGuia`, `ConfirmacionVincular`) y leyendo el cableado.
+- **Pendientes**: el `detalle` del renglón del pre-cierre ya dice «Además
+  hay N vuelo(s) con la diferencia explicada…» (lo manda el API) y el panel
+  pinta además su línea gris con los folios: «Además» sale dos veces (falta
+  decidir). «Registrar cobro» desde la Auditoría Paywise no pasa
+  `cotizacionAbierta` (`VueloParaCobro` no lo trae). Sin QA visual en
+  navegador.
+
+## Ingresos: «Conciliado» abre su conciliación con el banco (14-oct-2026, API 0.0.78)
+
+Pedido textual: «y me hace falta que si doy clic en Conciliado vea el
+detalle de con qué estado de cuenta se concilio y sus detalles». Gemela de
+la de Gastos («Gastos: «conciliación al revés» desde el badge «Banco»»):
+desde un COBRO de vuelo (también la parte de un sobre o el cobro de un
+anticipo) o un INGRESO, sus abonos del banco con la cuenta, el estado de
+cuenta de origen, lo que aporta cada uno, el lote que pagó, quién registró
+la liga y, si sigue pendiente, «¿Qué hacer?». Contrato: invariante 78 del
+API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
+(ADMIN y FACTURACION, solo lectura, SIN migración).
+
+- **Fuentes únicas (PURAS, con prueba)**: `lib/admin/entrada-banco.ts`
+  (filas, encabezado, la frase del estado —17 ramas—, la línea de la
+  comisión, las alertas, la ficha de cada abono, el lote, «¿Qué hacer?», la
+  cobertura importada, URLs y errores), `lib/admin/hoja-banco.ts` (lo común
+  con Gastos), `lib/admin/ingresos-ui.ts` (`etiquetaEstadoConciliacion(estado,
+  contexto?)` —el contexto solo cambia el title de «No se concilia uno a
+  uno» por método—, `tituloConClic`, `TITULO_SIN_CONCILIAR_ENTRADA` y
+  `hrefPorConciliarIngreso`), `lib/admin/cobros.ts`
+  (`esCuentaCobroPasarela`: la ÚNICA inferencia por el texto libre
+  `cuenta_destino`) y la ruta: `conciliacionDeEntrada`
+  (`lib/api/conciliacion-server.ts`) + `conciliacionDeEntradaAction` (al
+  final de `app/admin/conciliacion/actions.ts`: origen y uuid antes de la
+  red ⇒ `ENTRADA_INVALIDA`; 404 «Cannot GET» ⇒ `RUTA_NO_DISPONIBLE`;
+  conserva code, status y details; nunca lanza; NO revalida). Tipos 1:1 con
+  el API en `types/conciliacion-entrada.ts` (archivo propio).
+  `MSG_ENTRADA_INVALIDA` vive en `entrada-banco.ts`: un archivo «use server»
+  solo exporta funciones async.
+- **La regla**: el panel JAMÁS suma. Estado (5 valores), cobertura, lo que
+  aporta cada abono, la diferencia del lote, el cuadre de un ingreso, el
+  T.C. implícito de un cruce, los otros cobros del día con su `suma_netos`,
+  `cruce_no_corrio` y `varios_abonos_por_cobro` vienen del API. Nunca se
+  pintan el número de cuenta, la CLABE ni el `storage_path`.
+- **Roles**: `puedeVerDetalleBanco` (ADMIN, FACTURACION; sin rol conocido se
+  ofrece: el 403 del API trae texto). Para los demás roles el badge queda
+  como antes.
+- **Qué badge es botón** (`abreDetalleEntrada`): Conciliado, Conciliado vía
+  anticipo, Sin conciliar (también el de un parcial de Ingresos; el chip
+  «Parcial · faltan $X» de al lado NO) y, en las tarjetas, «Conciliado
+  parcial · faltan $X». «No se concilia uno a uno», «—» y un ingreso dado de
+  baja, nunca. Botón = `Badge` con `render={<button aria-haspopup="dialog">}`,
+  las mismas clases + `cursor-pointer`, el title de siempre + qué hace el
+  clic (« Clic para ver el abono del banco y su estado de cuenta.» / « Clic
+  para ver los abonos y buscar el que falta.» / « Clic para ver por qué y
+  buscar el abono.») y un nombre accesible que EMPIEZA con el texto visible
+  («Conciliado: ver la conciliación con el banco del cobro del vuelo #332 de
+  $977.45 del 15 sep 2026»; en la tarjeta, «… del cobro de $977.45 …»). La
+  columna lleva `noLink`.
+- **Dónde**: Ingresos «Todos» / «Cobros de vuelos» (`EntradasTable` +
+  `CeldaConciliacionEntrada`), «Otros ingresos» y «Anticipos»
+  (`CeldaConciliacionIngreso`), «Depósitos de vuelos que aún no vuelan»
+  (`DepositosPorVolarTable`: sus columnas pasaron de constante de módulo a
+  `useMemo`) y las tarjetas «Cobros» del vuelo y de la cotización
+  (`CobroConciliadoBadge` con `alAbrir`). La página de Ingresos pasa `rol`.
+- **La hoja** (`ingresos/entrada-banco-sheet.tsx`, UNA por tabla y por
+  tarjeta): `useDetalleBancoEntrada` = el hook GENÉRICO
+  `components/admin/banco/use-detalle-banco.ts` (turno, `.catch`, cerrar sin
+  vaciar, la descarga del estado de cuenta en el MISMO clic); el cuerpo
+  PRESENTACIONAL `ingresos/entrada-banco-detalle.tsx` se carga con
+  `next/dynamic` sin SSR al primer clic (`EntradaBancoDetalleDinamico`) y
+  comparte con Gastos el marcado de `components/admin/banco/partes-hoja.tsx`.
+  Encabezado: «Vuelo #332 · Cobro de vuelo · $977.45 · 15 sep 2026 · Beh
+  Kay», «Cobrado con: …» / «Entró a: …» y «Registró el cobro: Itzi · 8 oct
+  2026, 1:43 p.m.». Cuerpo: la frase del estado, la línea de la comisión,
+  las alertas (ABONO_CON_SOBRANTE con `textoSobranteCobro`, la MISMA función
+  del renglón «Banco»), una ficha por abono (fecha y monto, cuenta y si es
+  pasarela, leyenda, lo que aporta, el T.C. implícito de un cruce, el lote
+  con `lineaCobroLote` —la misma línea de la bandeja— y «(este cobro)» sin
+  enlace, el estado de cuenta con «Descargar» o el motivo real de que no
+  haya archivo, quién ligó y «Ver en Conciliación»). «Registró la liga» de
+  un cobro solo desde el 12-oct-2026 00:00 Cancún («Liga anterior al 12 oct
+  2026: el sistema todavía no guardaba quién la hizo.»).
+- **«¿Qué hacer?»** (SIN_CONCILIAR, PARCIAL o conciliado sin abonos;
+  `accionesPendienteEntrada`): la intro del cruce automático; el aviso de
+  `cruce_no_corrio` («Este cobro se registró el 8 oct 2026, 1:43 p.m.,
+  cuando ya estaban importados 4 abonos pendientes de esas fechas: …» +
+  «Abrir Conciliación del 05 oct 2026 al 11 oct 2026»); los otros cobros
+  del cliente ese día («Ese día Palma tiene 1 cobro más sin conciliar: Vuelo
+  #380 · $29,540.50. Si los pagó juntos, el abono trae la suma de los
+  netos: $59,081.00.» + «Buscar un abono por $59,081.00 (los 2 cobros del
+  día)»); las causas que aplican (la de «varias transferencias» solo con
+  `varios_abonos_por_cobro`); notas (USD, Paywise y la cuenta capturada
+  «Paywise» con otro método); las búsquedas («Buscar el abono en
+  Conciliación», «Buscar el abono que falta en Conciliación», «Ver los
+  abonos ya conciliados de esas fechas», «Ver los omitidos de esas fechas»,
+  «Ir a Auditoría Paywise», «Conciliarlo en «Por conciliar»» y las del
+  sobre y el anticipo) y qué hay importado por cuenta («Movimientos
+  importados por cuenta: HSBC USD del 01 sep 2026 al 06 oct 2026.»). Todas
+  las ligas en pestaña nueva.
+- **Las URLs al abono son las del 0.0.78**: «Ver en Conciliación» y «Buscar
+  el abono que falta» REUTILIZAN `hrefAbonoDeCobro(a, { cobroId })` y
+  `hrefBuscarAbonoQueFalta({ dia, faltante })` de `cobro-banco.ts`; no hay
+  otro constructor de esas URLs. Conciliación acepta `?cobro=`
+  (`PARAM_COBRO_FOCO`): la línea de ese cobro dentro del lote del abono se
+  resalta con « · el que abriste» aunque fuera la 4.ª
+  (`resumenLoteCobrosFila(m, { destacar })`), la franja dice «Primero en la
+  lista y resaltado: el abono del 15 sep 2026 por $69,183.00 (EJE SCOTIA)
+  que abriste.» y, si no está en la vista, el aviso genérico
+  (`textoMovimientoNoEncontrado`).
+- **El detalle `?ingreso=`** (`ingresos/ingreso-detalle-sheet.tsx`): para
+  ADMIN/FACTURACION, si no es efectivo ni está dado de baja, EMBEBE el
+  cuerpo con el MODO CONTROLADO del hook (`fija`: la carga se deriva de la
+  llave ingreso + abono —`claveEntradaConAbono`— y el único setState va en
+  el `.then`, porque `react-hooks/set-state-in-effect` es ERROR); tras
+  «Desvincular del abono», el `router.refresh()` cambia la llave y el cuerpo
+  se vuelve a pedir. Con un API ≤ 0.0.77 (`RUTA_NO_DISPONIBLE`) vuelve el
+  bloque de siempre. Sin abono y sin la hoja (COORDINADOR):
+  `TEXTO_INGRESO_SIN_ABONO` + «lo concilia Administración o Facturación».
+- **Errores** (`mensajeErrorDetalleEntrada`; jamás «sin abonos» cuando la
+  carga falló): API previo ⇒ «El servidor todavía no tiene este detalle
+  (falta actualizar el API). Mientras, búscalo en Conciliación.» con la
+  búsqueda armada desde la fila (`hrefBuscarDesdeFila`); 403 «Solo
+  Administración y Facturación ven el detalle del banco.»; 404 «Ese cobro
+  ya no existe: recarga la página.» (o «Ese ingreso…»); 503
+  `INGRESOS_NO_DISPONIBLE` con el texto del API y «Reintentar»; 401 «Tu
+  sesión expiró…»; lo demás, «No se pudo cargar el detalle del banco.
+  Vuelve a intentarlo.» + «Reintentar». Si el estado del API ya no es el de
+  la fila: «El estado cambió desde que abriste la página: recarga para ver
+  la lista al día.» + «Recargar».
+- **Pruebas**: `lib/admin/__tests__/entrada-banco.test.ts` (respuestas
+  reales en `entrada-banco.fixtures.ts`), `entrada-banco-omitidos.test.ts`,
+  `hoja-banco.test.ts`, `cobros.test.ts`, `ingresos-ui.test.ts`,
+  `conciliacion-vista.test.ts` y `cobro-banco.test.ts`;
+  `components/admin/banco/__tests__/use-detalle-banco.test.ts`;
+  `components/admin/ingresos/__tests__/entrada-banco-detalle.test.tsx`,
+  `badge-estado-conciliacion.test.tsx` y `entrada-banco-cableado.test.ts`;
+  `app/admin/conciliacion/__tests__/conciliacion-entrada-action.test.ts`;
+  `components/admin/conciliacion/__tests__/enfoque.test.tsx`. Gastos sin
+  cambios de comportamiento (`gasto-banco.test.ts`,
+  `gasto-banco-sheet.test.tsx`); `banco-cableado.test.ts` se reapuntó al
+  hook genérico. **Toda prueba que monte `CobrosCard` o `QuoteCobrosCard`
+  mockea `@/app/admin/conciliacion/actions`**: la tarjeta importa la hoja y
+  esa cadena llega a `@/lib/env`, que truena al importarse en vitest.
+
+## Skew del lote 0.0.78: API previo, migración pendiente y panel viejo
+
+- **Todo campo nuevo es OPCIONAL**: con un API ≤ 0.0.77 no viene y la
+  pantalla queda como hoy: `conciliado` ⇒ «Conciliado» y nada más (sin «Sin
+  conciliar», sin renglón «Banco», sin chip «Parcial»), sin aviso de
+  «Cobrado de más», la corrección de un cobro dice «El saldo del vuelo se
+  recalcula al guardar», el diálogo «Vincular» pinta la guía de siempre
+  (sin `al_vincular`) y no ofrece «Corregir la comisión» (sin la capacidad;
+  si viajara, el 400 de `forbidNonWhitelisted` ⇒
+  `API_SIN_CORREGIR_COMISION`), «Cobros sin banco» va sin la columna
+  «Banco» y los toasts son los de siempre.
+- **Una ruta nueva que responde 404 «Cannot GET»** (la hoja de una entrada)
+  dice «El servidor todavía no tiene este detalle (falta actualizar el
+  API). Mientras, búscalo en Conciliación.» con la búsqueda: jamás un error
+  genérico ni «sin datos». El detalle `?ingreso=` vuelve al bloque de
+  siempre.
+- **API 0.0.78 sin la migración `20261014000003`** (o antes de reiniciarlo):
+  `cobros_parciales: false` ⇒ el diálogo no recibe como candidatos los
+  cobros que ya tienen abonos y pinta la nota de siempre; un segundo abono a
+  un parcial responde el 503 `CONCILIACION_COBROS_PARCIALES_NO_DISPONIBLE`
+  con su texto. Las lecturas (estados, parciales, «Cobrado de más» y la
+  hoja) ya funcionan.
+- **Panel viejo con el API 0.0.78**: un parcial pierde su badge verde (dice
+  la verdad) y su «Editar» puede ofrecer el dinero de un parcial ⇒ 409
+  `COBRO_CONCILIADO` con texto (nada se escribe). Por eso el panel va
+  enseguida.
+- **Orden de deploy**: API 0.0.78 → migración `20261014000003` por el SQL
+  Editor → reinicio del API (o ≤ 10 min) → humo como ADMIN → panel (push a
+  `main`, después del API y en cuanto se pueda). El aviso a la oficina de
+  «Conciliado parcial» y de «Cobrado de más» en la tarjeta va SOLO con el
+  panel en prod.
