@@ -97,10 +97,19 @@ describe("la hoja", () => {
   it("el hook genérico con la entrada; el cuerpo con next/dynamic sin SSR; las llaves de MÓDULO", () => {
     expect(hoja).toContain("export const pedirEntrada = (f: EntradaBancoFila) => conciliacionDeEntradaAction(f.origen, f.id);");
     expect(hoja).toContain("export const claveEntrada = (f: EntradaBancoFila) => `${f.origen}:${f.id}`;");
-    expect(hoja).toContain('`${f.origen}:${f.id}:${f.movimiento_id ?? ""}`');
+    // La llave del modo controlado: la de `lib/admin/entrada-banco.ts` (cuenta, día, monto, moneda y estado incluidos).
+    expect(hoja).toContain("export const claveEntradaConAbono = (f: EntradaBancoFila) => claveEntradaControlada(f);");
     expect(hoja).toContain("useDetalleBanco({ pedir: pedirEntrada, clave: claveEntrada })");
     expect(hoja).toMatch(/dynamic\(\s*\(\) => import\("\.\/entrada-banco-detalle"\)[\s\S]{0,120}ssr: false/);
     expect(hoja).toContain('className="w-full p-0 sm:max-w-xl data-[side=right]:sm:max-w-xl"');
+  });
+
+  it("revisión 15-oct-2026: «Recargar» de «El estado cambió…» CIERRA la hoja y pone la lista al día (antes la franja nunca se iba)", () => {
+    expect(hoja).toMatch(/onRecargar=\{\(\) => \{\s*detalle\.cerrar\(\);\s*router\.refresh\(\);\s*\}\}/);
+    const gastos = leer("../../expenses/gasto-banco-sheet.tsx");
+    expect(gastos).toMatch(/onRecargar=\{\(\) => \{\s*detalle\.cerrar\(\);\s*router\.refresh\(\);\s*\}\}/);
+    // El detalle `?ingreso=` (modo controlado) toma la fila nueva de la lista: ahí basta el refresh.
+    expect(leer("../ingreso-detalle-sheet.tsx")).toContain("onRecargar={() => router.refresh()}");
   });
 });
 

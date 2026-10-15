@@ -979,6 +979,10 @@ export interface VueloParaCobro {
   monto_total_mxn: number | null;
   /** ¿El vuelo ya tiene cobros? (decide el monto sugerido al cobrar en MXN). */
   tiene_cobros: boolean;
+  /** Cotización ABIERTA (revisión del 15-oct-2026): la vista previa del
+   *  formulario no dice «cobrado de más» (el API tampoco avisa: el precio se
+   *  cierra al final del viaje). Sin el dato, false (lo de siempre). */
+  cotizacion_abierta: boolean;
 }
 
 export async function vueloParaCobroAction(
@@ -998,6 +1002,7 @@ export async function vueloParaCobroAction(
         monto_total_mxn:
           s.monto_total_mxn != null ? Number(s.monto_total_mxn) : null,
         tiene_cobros: (s.cobros?.length ?? 0) > 0,
+        cotizacion_abierta: s.cotizacion_abierta === true,
       },
     };
   } catch (err) {

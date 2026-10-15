@@ -28,7 +28,8 @@ describe("Vincular abono · varios cobros (cableado)", () => {
     );
     expect(src).toContain("{ligando ? \"Vinculando…\" : botonVincularAbono(marcadas)}");
     expect(src).toContain("textoSumaLoteAbono(");
-    expect(src).toContain("mensajeErrorVincularCobros(r)");
+    // Revisión 15-oct-2026: con «Corregir la comisión» un fallo sin veredicto es incierto.
+    expect(src).toContain("mensajeErrorVincularCobros(r, { corrigiendoComision: corregir !== undefined })");
     // El buscador local filtra con la fuente única de búsqueda.
     expect(src).toContain("coincideOpcion(o, texto)");
     // «¿No está el cobro? Regístralo» sigue ahí.
@@ -60,7 +61,8 @@ describe("Vincular abono · varios cobros (cableado)", () => {
     expect(menu).toContain("movimiento.cobro_id != null || vinculadoASobre || cobrosDelLote > 0");
     expect(menu).toContain("menuDesvincularCobros(cobrosDelLote)");
     expect(menu).toContain("tituloDesvincularCobros(cobrosDelLote)");
-    expect(menu).toContain("textoConfirmarDesvincularCobros(cobrosDelLote)");
+    // Revisión 15-oct-2026: con los cobros del lote («Cobros sin banco» solo si todos salen ahí).
+    expect(menu).toContain("textoConfirmarDesvincularCobros(cobrosDelLote, movimiento.cobros)");
   });
 
   it("un abono con lote ya no cuenta como pendiente para el menú de Ingresos", () => {

@@ -619,18 +619,26 @@ export function MovimientosTable({
                   >
                     {l.principal}
                     {l.destacada && <span className="text-[10px] font-normal">{SUFIJO_GASTO_ENFOCADO}</span>}
-                    <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
+                    <span
+                      className="block max-w-[240px] truncate text-[10px] text-muted-foreground"
+                      title={`${l.secundaria}${l.sufijo?.texto ?? ""}`}
+                    >
                       {l.secundaria}
-                      {/* El estado del COBRO con todos sus abonos (API 0.0.78). */}
-                      {l.sufijo && (
-                        <span
-                          data-estado-cobro-lote={l.sufijo.tono}
-                          className={l.sufijo.tono === "aviso" ? "text-amber-700 dark:text-amber-300" : undefined}
-                        >
-                          {l.sufijo.texto}
-                        </span>
-                      )}
                     </span>
+                    {/* El estado del COBRO con todos sus abonos (API 0.0.78) en
+                        SU renglón, sin cortar (revisión del 15-oct-2026: pegado
+                        a la secundaria, la elipsis de 240 px se lo comía). */}
+                    {l.sufijo && (
+                      <span
+                        data-estado-cobro-lote={l.sufijo.tono}
+                        className={cn(
+                          "block text-[10px]",
+                          l.sufijo.tono === "aviso" ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+                        )}
+                      >
+                        {l.sufijo.linea}
+                      </span>
+                    )}
                   </Link>
                 ))}
                 {lote.mas && <span className="block text-[10px] text-muted-foreground">{lote.mas}</span>}

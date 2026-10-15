@@ -173,15 +173,16 @@ describe("pre-cierre «Vuelos cobrados de más»", () => {
     expect(tituloCausaPreCierre({})).toBeUndefined();
   });
 
-  it("la línea gris de los explicados, agrupada por causa (textos.pre_cierre.explicados)", () => {
+  it("la línea gris de los explicados, agrupada por causa: dice CUÁLES (el «Además hay N…» ya va en el detalle del API)", () => {
+    // Revisión 15-oct-2026: antes empezaba también con «Además:» y repetía «no requiere acción».
     expect(
       lineaExplicadosPreCierre([
         { folio: 81, causa_etiqueta: "comisión del link pagada por el cliente" },
         { folio: 84, causa_etiqueta: "comisión del link pagada por el cliente" },
       ]),
-    ).toBe("Además: #81 y #84 (comisión del link pagada por el cliente) no requieren acción.");
+    ).toBe("Con la diferencia explicada: #81 y #84 (comisión del link pagada por el cliente).");
     expect(lineaExplicadosPreCierre([{ folio: 111, causa_etiqueta: "redondeo del tipo de cambio" }])).toBe(
-      "Además: #111 (redondeo del tipo de cambio) no requiere acción.",
+      "Con la diferencia explicada: #111 (redondeo del tipo de cambio).",
     );
     expect(
       lineaExplicadosPreCierre([
@@ -190,7 +191,7 @@ describe("pre-cierre «Vuelos cobrados de más»", () => {
         { folio: 285, causa_etiqueta: "redondeo del tipo de cambio" },
       ]),
     ).toBe(
-      "Además: #81 (comisión del link pagada por el cliente) y #259 y #285 (redondeo del tipo de cambio) no requieren acción.",
+      "Con la diferencia explicada: #81 (comisión del link pagada por el cliente) y #259 y #285 (redondeo del tipo de cambio).",
     );
     expect(lineaExplicadosPreCierre([])).toBeNull();
     expect(lineaExplicadosPreCierre(undefined)).toBeNull();
@@ -200,7 +201,7 @@ describe("pre-cierre «Vuelos cobrados de más»", () => {
     const muchos = Array.from({ length: 12 }, (_, i) => ({ folio: 100 + i, causa_etiqueta: "redondeo del tipo de cambio" }));
     const l = lineaExplicadosPreCierre(muchos);
     expect(l).toContain("#100, #101");
-    expect(l).toContain("y #109 (redondeo del tipo de cambio) y 2 más no requieren acción.");
+    expect(l).toContain("y #109 (redondeo del tipo de cambio) y 2 más.");
     expect(l).not.toContain("#110");
   });
 

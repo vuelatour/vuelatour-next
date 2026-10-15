@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { EntradaDinero, Ingreso } from "@/types/ingresos";
 import type { FlightCobro } from "@/types/flights";
+import { TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA } from "@/lib/admin/ingresos-ui";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
@@ -79,6 +80,15 @@ describe("BadgeEstadoConciliacion", () => {
     const html = pintar(<BadgeEstadoConciliacion estado="SIN_CONCILIAR" parcial alAbrir={noop} />);
     expect(html).toContain(">Sin conciliar</button>");
     expect(html).toContain("Clic para ver los abonos y buscar el que falta.");
+    // Revisión 15-oct-2026: el title de un parcial dice que YA tiene abonos (jamás «Ningún abono…»),
+    // también sin botón (COORDINADOR).
+    expect(html).toContain(`title="${TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA} Clic para ver los abonos y buscar el que falta."`);
+    expect(html).not.toContain("Ningún abono");
+    const sinBoton = pintar(<BadgeEstadoConciliacion estado="SIN_CONCILIAR" parcial />);
+    expect(sinBoton).toContain(`title="${TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA}"`);
+    expect(sinBoton).not.toContain("Ningún abono");
+    // Sin parcial, el de siempre.
+    expect(pintar(<BadgeEstadoConciliacion estado="SIN_CONCILIAR" />)).toContain("Ningún abono del banco está ligado todavía.");
   });
 
   it("NUNCA botón: «No se concilia uno a uno» (con su title por método) ni «—»", () => {

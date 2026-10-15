@@ -16,6 +16,14 @@ import type { CandidatoIngresoAbono } from "@/types/ingresos";
 import {
   AVISO_COMISION_MAYOR_15,
   BOTON_VINCULAR_PARCIAL,
+  MSG_COMISION_INCIERTA,
+  MSG_DESVINCULO_INCIERTO,
+  MSG_PROPUESTA_COBRO_NO_ESTA,
+  SUFIJO_PROPUESTA_A_MANO,
+  VENTANA_PROPUESTA_DIAS,
+  candidatoConfirmarParcial,
+  pasoPropuestaCobro,
+  respuestaSinVeredicto,
   MAX_COBROS_LOTE,
   MENU_DESVINCULAR_ESTE_ABONO,
   MSG_API_SIN_CORREGIR_COMISION,
@@ -264,8 +272,17 @@ describe("textos", () => {
   it("menú y confirmación de desvincular", () => {
     expect(menuDesvincularCobros(2)).toBe("Desvincular los 2 cobros");
     expect(tituloDesvincularCobros(2)).toBe("¿Desvincular los 2 cobros?");
-    expect(textoConfirmarDesvincularCobros(2)).toContain("2 cobros vuelven a «Cobros sin banco»");
-    expect(textoConfirmarDesvincularCobros(2)).toContain("No se borra ningún cobro");
+    const transferencias = [{ metodo_cobro: "TRANSFERENCIA" }, { metodo_cobro: "HSBC_LINK" }];
+    expect(textoConfirmarDesvincularCobros(2, transferencias)).toBe(
+      "El abono vuelve a quedar pendiente de conciliar y los 2 cobros vuelven a «Cobros sin banco». No se borra ningún cobro.",
+    );
+    // Revisión 15-oct-2026: un BillPocket no sale en «Cobros sin banco»; sin el detalle de los cobros, tampoco se promete.
+    const libres =
+      "El abono vuelve a quedar pendiente de conciliar y los 2 cobros quedan libres para vincularse con otro movimiento. No se borra ningún cobro.";
+    expect(textoConfirmarDesvincularCobros(2, [{ metodo_cobro: "TRANSFERENCIA" }, { metodo_cobro: "BILLPOCKET" }])).toBe(libres);
+    expect(textoConfirmarDesvincularCobros(2, null)).toBe(libres);
+    expect(textoConfirmarDesvincularCobros(2)).toBe(libres);
+    expect(textoConfirmarDesvincularCobros(2, [{}, {}])).toBe(libres);
   });
 
   it("resumen de la fila y texto de búsqueda", () => {
@@ -627,6 +644,17 @@ describe("guiaAlVincular: el veredicto del API con UN cobro marcado (D18)", () =
       "cubre solo una parte de lo que le falta al cobro del vuelo #315 ($3,400 MXN de $5,100 MXN)",
     );
     expect(textoConfirmarParcial(COMPLETA_315, ABONO_1700)).toBeNull();
+    // Revisión 15-oct-2026: un BillPocket NO sale en «Cobros sin banco»: dice dónde se ve lo que falta.
+    const billpocket = cand(C315, 315, 3400, {
+      metodo_cobro: "BILLPOCKET",
+      dif_monto: 1700,
+      al_vincular: al({ estado: "PARCIAL", faltante_antes: 3400, faltante_despues: 1700 }),
+    });
+    const cuerpoBp = textoConfirmarParcial(billpocket, ABONO_1700)?.cuerpo ?? "";
+    expect(cuerpoBp).toContain(
+      "El cobro quedará «Conciliado parcial · faltan $1,700 MXN» hasta que vincules el resto (lo que falta se ve en la tarjeta de cobros del vuelo y en Ingresos).",
+    );
+    expect(cuerpoBp).not.toContain("Cobros sin banco");
     const comision = textoConfirmarCorregirComision(COMISION_293, ABONO_11800);
     expect(comision).toEqual({
       titulo: "¿Corregir la comisión y vincular?",
@@ -799,6 +827,99 @@ describe("errores NUEVOS del API 0.0.78 (al final; el título es el texto del AP
       incierto: true,
     });
   });
+
+  it("revisión 15-oct-2026: «Corregir la comisión» con un fallo SIN veredicto del API ⇒ incierto (la comisión pudo quedar escrita)", () => {
+    // El 500 del filtro del API («fetch failed» hacia la base tras escribir la comisión): sin `comision_corregida`.
+    const quinientos = {
+      code: "ERROR",
+      status: 500,
+      error: "No hay conexión con el servidor de datos. Espera unos segundos e intenta de nuevo.",
+      details: { tecnico: "TypeError: fetch failed" },
+    };
+    const incierto = { titulo: MSG_COMISION_INCIERTA, recargar: true, apiSinLote: false, incierto: true };
+    expect(mensajeErrorVincularCobros(quinientos, { corrigiendoComision: true })).toEqual(incierto);
+    expect(MSG_COMISION_INCIERTA).toContain("No se pudo confirmar si la comisión del cobro y la liga quedaron");
+    // HTML de Railway, sin respuesta o un texto de red: también.
+    expect(mensajeErrorVincularCobros({ code: "PARSE_ERROR", status: 502, error: "Bad Gateway" }, { corrigiendoComision: true })).toEqual(incierto);
+    expect(mensajeErrorVincularCobros({ code: "SIN_CONEXION", error: "x" }, { corrigiendoComision: true })).toEqual(incierto);
+    expect(mensajeErrorVincularCobros({ error: "fetch failed" }, { corrigiendoComision: true })).toEqual(incierto);
+    // Sin la bandera: lo de siempre (el texto del API, sin incierto).
+    expect(mensajeErrorVincularCobros(quinientos)).toEqual({ titulo: quinientos.error, recargar: false, apiSinLote: false });
+    // Un rechazo de negocio dice qué pasó (aunque venga con un 503), y `comision_corregida` manda.
+    expect(
+      mensajeErrorVincularCobros(
+        { code: "CONCILIACION_COBROS_PARCIALES_NO_DISPONIBLE", status: 503, error: "falta la migración" },
+        { corrigiendoComision: true },
+      ),
+    ).toMatchObject({ titulo: "falta la migración", recargar: false });
+    expect(
+      mensajeErrorVincularCobros({ code: "CORREGIR_COMISION_NO_APLICA", status: 400, error: "no aplica" }, { corrigiendoComision: true }),
+    ).toMatchObject({ titulo: "no aplica", recargar: true });
+    expect(
+      mensajeErrorVincularCobros(
+        { code: "ERROR", status: 500, error: "x", details: { comision_corregida: { cobro_id: C293, antes: 1129.76, despues: 1200 } } },
+        { corrigiendoComision: true },
+      ),
+    ).toMatchObject({ comisionCorregida: true });
+    expect(respuestaSinVeredicto({ status: 409, code: "ABONO_EXCEDE_COBRO" })).toBe(false);
+    expect(respuestaSinVeredicto({ status: 400, error: "property x should not exist" })).toBe(false);
+    expect(respuestaSinVeredicto({ status: 504, code: "PARSE_ERROR" })).toBe(true);
+    expect(respuestaSinVeredicto({ error: "Registro inválido." })).toBe(false);
+  });
+
+  it("desvincular sin respuesta: jamás «no se desvinculó»", () => {
+    expect(MSG_DESVINCULO_INCIERTO).toBe(
+      "No se pudo confirmar si el movimiento quedó desvinculado (no hubo respuesta del servidor). La página se vuelve a cargar: revísalo antes de intentarlo de nuevo.",
+    );
+  });
+});
+
+describe("propuestas LIGAR de la IA a un cobro: el veredicto del API ANTES de ligar (revisión del 15-oct-2026, D3)", () => {
+  /** `capacidad`: «si» (0.0.78 con la migración), «sin_migracion» (0.0.78 sin ella) o «previo» (≤ 0.0.77, sin la llave). */
+  const respuesta = (candidatos: OpcionAbono[], capacidad: "si" | "sin_migracion" | "previo" = "si") => ({
+    movimiento: {
+      id: MOV_A,
+      fecha: "2026-09-15",
+      monto: 1700,
+      tipo: "ABONO",
+      moneda: "MXN",
+      cobro_id: null,
+      cobro_grupo_id: null,
+      ...(capacidad === "previo" ? {} : { cobros_parciales: capacidad === "si", corregir_comision: true }),
+    },
+    candidatos: candidatos.flatMap((o) => (o.tipo === "COBRO" ? [o.c] : [])),
+  });
+
+  it("PARCIAL ⇒ confirmar (con el cobro y su `al_vincular`); CONCILIADO ⇒ ligar", () => {
+    const paso = pasoPropuestaCobro(respuesta([PARCIAL_315]), C315, ABONO_1700);
+    expect(paso.tipo).toBe("CONFIRMAR_PARCIAL");
+    expect(paso.tipo === "CONFIRMAR_PARCIAL" && paso.candidato.cobro_id).toBe(C315);
+    expect(pasoPropuestaCobro(respuesta([COMPLETA_315]), C315, ABONO_1700)).toEqual({ tipo: "LIGAR" });
+    // Sin `cobros_parciales` el API todavía no tiene la migración, pero el veredicto ya vale: igual se confirma.
+    expect(pasoPropuestaCobro(respuesta([PARCIAL_315], "sin_migracion"), C315, ABONO_1700).tipo).toBe("CONFIRMAR_PARCIAL");
+    expect(VENTANA_PROPUESTA_DIAS).toBe(30);
+  });
+
+  it("un rechazo ⇒ a mano con la razón del veredicto; el cobro que ya no es candidato ⇒ a mano", () => {
+    const excede = pasoPropuestaCobro(respuesta([EXCEDE_315]), C315, { monto: 69183, moneda: "MXN" });
+    expect(excede.tipo).toBe("A_MANO");
+    expect(excede.tipo === "A_MANO" && excede.texto).toContain("sobran $977.45 MXN");
+    expect(excede.tipo === "A_MANO" && excede.texto.endsWith(SUFIJO_PROPUESTA_A_MANO)).toBe(true);
+    expect(pasoPropuestaCobro(respuesta([COMISION_293]), C293, ABONO_11800).tipo).toBe("A_MANO");
+    expect(pasoPropuestaCobro(respuesta([c379]), C315, ABONO_1700)).toEqual({ tipo: "A_MANO", texto: MSG_PROPUESTA_COBRO_NO_ESTA });
+  });
+
+  it("API ≤ 0.0.77 (sin la capacidad): la liga de siempre (el parcial no existe)", () => {
+    expect(pasoPropuestaCobro(respuesta([PARCIAL_315], "previo"), C315, ABONO_1700)).toEqual({ tipo: "LIGAR" });
+    expect(pasoPropuestaCobro(respuesta([], "previo"), C315, ABONO_1700)).toEqual({ tipo: "LIGAR" });
+  });
+
+  it("`details.candidato` del CONFIRMAR_PARCIAL: solo un cobro de vuelo con veredicto PARCIAL", () => {
+    expect(candidatoConfirmarParcial({ candidato: PARCIAL_315.c })?.cobro_id).toBe(C315);
+    expect(candidatoConfirmarParcial({ candidato: COMPLETA_315.c })).toBeNull();
+    expect(candidatoConfirmarParcial({ candidato: "x" })).toBeNull();
+    expect(candidatoConfirmarParcial(null)).toBeNull();
+  });
 });
 
 describe("la bandeja: estado del cobro de cada abono (textos.bandeja)", () => {
@@ -849,9 +970,10 @@ describe("la bandeja: estado del cobro de cada abono (textos.bandeja)", () => {
         { ...MOV.cobros![1], cobro_estado: "PARCIAL", cobro_faltante: 10000, cobro_abonos_n: 1 },
       ],
     });
+    // `linea` = el mismo estado en SU renglón (la bandeja; revisión del 15-oct-2026: la elipsis se lo comía).
     expect(lote?.lineas.map((l) => l.sufijo)).toEqual([
-      { texto: " · completa el cobro (2 abonos)", tono: "neutro" },
-      { texto: " · parcial: faltan $10,000 MXN", tono: "aviso" },
+      { texto: " · completa el cobro (2 abonos)", linea: "Completa el cobro (2 abonos)", tono: "neutro" },
+      { texto: " · parcial: faltan $10,000 MXN", linea: "Parcial: faltan $10,000 MXN", tono: "aviso" },
     ]);
     expect(resumenLoteCobrosFila(MOV)?.lineas.map((l) => l.sufijo)).toEqual([null, null]);
     expect(
@@ -930,7 +1052,7 @@ describe("la línea del lote, UNA para la bandeja y la hoja de una entrada (15-o
     const l = lineaCobroLote({ ...MOV.cobros![1], cliente: "Beh Kay ", cobro_estado: "PARCIAL", cobro_faltante: 10000 }, "MXN");
     expect(l.principal).toBe("Vuelo #380 · Beh Kay");
     expect(l.secundaria).toContain("$2,500 MXN");
-    expect(l.sufijo).toEqual({ texto: " · parcial: faltan $10,000 MXN", tono: "aviso" });
+    expect(l.sufijo).toEqual({ texto: " · parcial: faltan $10,000 MXN", linea: "Parcial: faltan $10,000 MXN", tono: "aviso" });
     expect(l.href).toBe("/admin/flights/v380");
     // resumenLoteCobrosFila la usa tal cual (sin opciones, idéntica a la de siempre).
     expect(resumenLoteCobrosFila(MOV)?.lineas[1]).toEqual({ ...lineaCobroLote(MOV.cobros![1], "MXN") });

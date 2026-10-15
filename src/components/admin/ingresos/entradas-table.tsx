@@ -9,6 +9,7 @@ import {
   CLASE_TONO,
   etiquetaEstadoConciliacion,
   hrefIngresos,
+  tituloBadgeEntrada,
   tituloConClic,
   type ContextoEstadoConciliacion,
   type FiltrosIngresos,
@@ -38,7 +39,10 @@ import type { EntradaDinero, EstadoConciliacionEntrada, Ingreso } from "@/types/
  * `aria-haspopup="dialog"`, el `title` con lo que hace el clic y un nombre
  * accesible que empieza con el texto visible. «No se concilia uno a uno» y
  * «—» nunca son botón. Sin `alAbrir`, el marcado de siempre. `contexto` solo
- * cambia el `title` de «No se concilia uno a uno» (por método).
+ * cambia el `title` de «No se concilia uno a uno» (por método). Un PARCIAL
+ * lleva su propio `title` (`tituloBadgeEntrada`, revisión del 15-oct-2026: el
+ * de SIN_CONCILIAR decía «Ningún abono… está ligado» junto al chip que dice
+ * cuánto falta); el texto visible sigue siendo «Sin conciliar».
  */
 export function BadgeEstadoConciliacion({
   estado,
@@ -58,12 +62,13 @@ export function BadgeEstadoConciliacion({
 }) {
   const e = etiquetaEstadoConciliacion(estado, contexto);
   const estadoHoja = estado === "SIN_CONCILIAR" && parcial ? "PARCIAL" : estado;
+  const titulo = tituloBadgeEntrada(estado, parcial, contexto);
   if (alAbrir && abreDetalleEntrada(estadoHoja)) {
     return (
       <Badge
         variant="outline"
         className={cn(CLASE_TONO[e.tono], "cursor-pointer hover:bg-muted/60", className)}
-        title={tituloConClic(e.titulo, estadoHoja)}
+        title={tituloConClic(titulo, estadoHoja)}
         render={
           <button type="button" aria-haspopup="dialog" aria-label={nombreAccesible ?? e.texto} onClick={alAbrir} />
         }
@@ -73,7 +78,7 @@ export function BadgeEstadoConciliacion({
     );
   }
   return (
-    <Badge variant="outline" className={cn(CLASE_TONO[e.tono], className)} title={e.titulo}>
+    <Badge variant="outline" className={cn(CLASE_TONO[e.tono], className)} title={titulo}>
       {e.texto}
     </Badge>
   );

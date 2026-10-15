@@ -859,6 +859,19 @@ export function estadoCambioEntrada(r: Pick<ConciliacionDeEntrada, "estado">, fi
   return r.estado !== fila.estado;
 }
 
+/**
+ * La llave del MODO CONTROLADO (el cuerpo embebido del detalle `?ingreso=`):
+ * la respuesta vale mientras la fila de la lista diga lo mismo. Origen + id +
+ * el abono que conoce la lista (tras «Desvincular del abono» cambia) y,
+ * desde la revisión del 15-oct-2026, lo que pinta el cuerpo: la cuenta, el
+ * día, el monto, la moneda y el estado. Editar la cuenta, la fecha o el monto
+ * de un ingreso sin conciliar desde el MISMO detalle no cambiaba la llave y
+ * el cuerpo seguía con la cobertura, las ventanas y las ligas de antes.
+ */
+export function claveEntradaControlada(f: EntradaBancoFila): string {
+  return [f.origen, f.id, f.movimiento_id ?? "", f.cuenta_id ?? "", f.dia ?? "", String(f.monto), f.moneda, f.estado ?? ""].join(":");
+}
+
 // ───────────────────────────── URLs de «¿Qué hacer?» ─────────────────────────────
 
 /**

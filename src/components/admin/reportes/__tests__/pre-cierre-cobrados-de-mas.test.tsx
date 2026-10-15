@@ -75,9 +75,11 @@ describe("pre-cierre: vuelos cobrados de más", () => {
     preCierre.mockResolvedValueOnce({ periodo: PERIODO, listo: true, items: [item()] });
     const html = await pintar();
     expect(html).toMatch(
-      /<p class="text-\[11px\] text-muted-foreground mt-1" data-precierre-explicados="true">Además: #111 \(redondeo del tipo de cambio\) no requiere acción\.<\/p>/,
+      /<p class="text-\[11px\] text-muted-foreground mt-1" data-precierre-explicados="true">Con la diferencia explicada: #111 \(redondeo del tipo de cambio\)\.<\/p>/,
     );
     expect(html).not.toContain('href="/admin/flights/v-111"');
+    // Revisión 15-oct-2026: «Además» sale UNA vez (la del `detalle` del API), no dos.
+    expect(html.match(/Además/g)?.length ?? 0).toBeLessThanOrEqual(1);
   });
 
   it("count 0 (solo explicados): el renglón no se pinta", async () => {

@@ -86,6 +86,7 @@ import {
 import { textoDesvincularNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
   MENU_DESVINCULAR_ESTE_ABONO,
+  MSG_DESVINCULO_INCIERTO,
   TITULO_DESVINCULAR_ESTE_ABONO,
   abonoConOtrosAbonosDelCobro,
   botonVincularAbono,
@@ -207,6 +208,9 @@ export function MovimientoActions({
   const [exactos, setExactos] = useState(0);
   // «Vincular como parcial…» del diálogo legado (API 0.0.78): se confirma.
   const [confirmarParcial, setConfirmarParcial] = useState(false);
+  // La liga del diálogo legado no tuvo respuesta (no se sabe si quedó): la
+  // página se pone al día UNA vez al cerrar el diálogo (revisión del 15-oct-2026).
+  const refrescarAlCerrarLinkRef = useRef(false);
   const [pending, startTransition] = useTransition();
   // CARGO (2-oct-2026): su diálogo propio (uno o varios gastos) se monta
   // solo al abrir, como el de devoluciones. `conIa` = se abrió desde
@@ -235,8 +239,11 @@ export function MovimientoActions({
         moneda: movimiento.cobro?.moneda ?? monedaAbono,
       })
     : null;
+  // «… vuelve a «Cobros sin banco».» SOLO si su método sale ahí (un BillPocket no).
   const extraDesvincularUnico =
-    vinculadoACobro && !vinculadoASobre && cobrosDelLote < 2 ? textoCobroVuelveASinBanco(movimiento.cobro_conciliacion) : null;
+    vinculadoACobro && !vinculadoASobre && cobrosDelLote < 2
+      ? textoCobroVuelveASinBanco(movimiento.cobro_conciliacion, movimiento.cobro?.metodo_cobro)
+      : null;
   const extraDesvincularLote = vinculadoACobro && cobrosDelLote >= 2 ? textoExtraDesvincularLote(movimiento) : null;
   // Ligado a gasto = `gasto_id` (espejo con UNA parte) o `gastos_n > 0`: un
   // cargo que paga VARIOS gastos trae `gasto_id` NULL (2-oct-2026).
@@ -371,7 +378,7 @@ export function MovimientoActions({
 
   const quitarReverso = () => {
     startTransition(async () => {
-      const r = await quitarReversoAction(movimiento.id);
+      const r = await quitarReversoAction(movimiento.id).catch(sinConexion);
       if (r.ok) {
         toast.success(TOAST_REVERSO_QUITADO);
         setConfirmarQuitarReverso(false);
@@ -390,15 +397,18 @@ export function MovimientoActions({
   const cargarCandidatos = () => {
     setCandidatos(null);
     setExactos(0);
-    void candidatosCobroAction(movimiento.id, VENTANA_DIAS).then((r) => {
-      if (r.ok && r.data) {
-        setCandidatos(r.data.candidatos);
-        setExactos(r.data.exactos);
-      } else {
-        setCandidatos([]);
-        toast.error(r.error ?? "No se pudieron buscar cobros");
-      }
-    });
+    // Con `.catch`: sin red la lista ya no se queda «Buscando…» para siempre.
+    void candidatosCobroAction(movimiento.id, VENTANA_DIAS)
+      .catch(sinConexion)
+      .then((r) => {
+        if (r.ok && r.data) {
+          setCandidatos(r.data.candidatos);
+          setExactos(r.data.exactos);
+        } else {
+          setCandidatos([]);
+          toast.error(r.error ?? "No se pudieron buscar cobros");
+        }
+      });
   };
 
   const abrirVincular = (conIa = false) => {
@@ -453,19 +463,34 @@ export function MovimientoActions({
     [candidatos, seleccion],
   );
 
+  /** Sin respuesta al desvincular: no se sabe si quedó (jamás «no se desvinculó»); la fila se pone al día. */
+  const desvinculoIncierto = () => {
+    toast.error(MSG_DESVINCULO_INCIERTO);
+    setConfirmarDesvincular(false);
+    router.refresh();
+  };
+
   const desvincular = () => {
+    // Cada server action con `.catch(sinConexion)` (revisión del 15-oct-2026):
+    // sin red o tras un deploy, un `await` desnudo en `startTransition` mandaba
+    // Conciliación entera al error boundary.
     startTransition(async () => {
       if (vinculadoAIngreso) {
-        const ri = await ligarAbonoIngresoAction(movimiento.id, null);
+        const ri = await ligarAbonoIngresoAction(movimiento.id, null).catch(sinConexion);
         if (ri.ok) {
           toast.success("Ingreso desvinculado: el abono vuelve a quedar pendiente");
           setConfirmarDesvincular(false);
-        } else toast.error(ri.error ?? "Error");
+        } else if (ri.code === "SIN_CONEXION") desvinculoIncierto();
+        else toast.error(ri.error ?? "Error");
         return;
       }
       const r = vinculadoACobro
-        ? await linkMovimientoCobroAction(movimiento.id, null)
-        : await linkMovimientoAction(movimiento.id, null);
+        ? await linkMovimientoCobroAction(movimiento.id, null).catch(sinConexion)
+        : await linkMovimientoAction(movimiento.id, null).catch(sinConexion);
+      if (r.code === "SIN_CONEXION") {
+        desvinculoIncierto();
+        return;
+      }
       if (r.ok) {
         toast.success(
           vinculadoASobre
@@ -509,13 +534,14 @@ export function MovimientoActions({
       return;
     }
     startTransition(async () => {
-      // Cobro de vuelo → {cobro_id}; sobre de grupo → {cobro_grupo_id}.
+      // Cobro de vuelo → {cobro_id}; sobre de grupo → {cobro_grupo_id}. Con
+      // `.catch`: sin respuesta, «No se pudo confirmar si…» (nunca el error boundary).
       const r = await linkMovimientoCobroAction(
         movimiento.id,
         seleccionado.tipo === "SOBRE_GRUPO"
           ? { cobro_grupo_id: seleccionado.cobro_grupo_id }
           : { cobro_id: seleccionado.cobro_id },
-      );
+      ).catch(sinConexion);
       if (r.ok) {
         toast.success(
           seleccionado.tipo === "SOBRE_GRUPO"
@@ -533,12 +559,15 @@ export function MovimientoActions({
           description: `Elige el sobre del grupo ${folioTexto(d?.grupo_folio)} en la lista (aparece como «Grupo …»).`,
         });
         cargarCandidatos();
-      } else if (r.status === 409) {
+      } else if (r.status === 409 || r.code === "SIN_CONEXION") {
         // Ya conciliado con OTRO movimiento (carrera entre dos personas) o,
         // con el API 0.0.78, una regla del monto (excede, comisión…): el
         // texto del API y la lista se vuelve a pedir (veredictos frescos).
+        // Sin respuesta: «No se pudo confirmar si…» y la página se pone al
+        // día al cerrar el diálogo.
         const e = mensajeErrorVincularCobros(r);
         toast.error(e.titulo, e.descripcion ? { description: e.descripcion } : undefined);
+        if (e.incierto) refrescarAlCerrarLinkRef.current = true;
         setSeleccion("");
         cargarCandidatos();
       } else {
@@ -849,7 +878,13 @@ export function MovimientoActions({
       <Dialog
         open={openLink}
         onOpenChange={(o) => {
-          if (!o) setSeleccion("");
+          if (!o) {
+            setSeleccion("");
+            if (refrescarAlCerrarLinkRef.current) {
+              refrescarAlCerrarLinkRef.current = false;
+              router.refresh();
+            }
+          }
           setOpenLink(o);
         }}
       >
@@ -976,20 +1011,24 @@ export function MovimientoActions({
               </Button>
             </span>
           </DialogFooter>
+
+          {/* «Vincular como parcial…» del diálogo legado (D3): la MISMA
+              confirmación del diálogo de Ingresos; «Cancelar» solo cierra.
+              DENTRO del DialogContent (revisión del 15-oct-2026): Base UI la
+              anida y Esc cierra SOLO la de arriba (como hermana del Dialog, un
+              Esc con el foco fuera de ella cerraba también «Vincular cobro» y
+              se perdía lo elegido). */}
+          <ConfirmacionVincular
+            abierta={confirmarParcial}
+            texto={confirmacionParcial}
+            onCancelar={() => setConfirmarParcial(false)}
+            onConfirmar={() => {
+              setConfirmarParcial(false);
+              vincular(true);
+            }}
+          />
         </DialogContent>
       </Dialog>
-
-      {/* «Vincular como parcial…» del diálogo legado (D3): la MISMA confirmación
-          del diálogo de Ingresos; «Cancelar» solo cierra. */}
-      <ConfirmacionVincular
-        abierta={confirmarParcial}
-        texto={confirmacionParcial}
-        onCancelar={() => setConfirmarParcial(false)}
-        onConfirmar={() => {
-          setConfirmarParcial(false);
-          vincular(true);
-        }}
-      />
 
       {/* CARGO ↔ uno o VARIOS gastos (2-oct-2026): se monta solo al abrir,
           como el de devoluciones (busca candidatos en el servidor). */}
@@ -1105,7 +1144,7 @@ export function MovimientoActions({
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {vinculadoACobro && cobrosDelLote >= 2
-                    ? textoConfirmarDesvincularCobros(cobrosDelLote)
+                    ? textoConfirmarDesvincularCobros(cobrosDelLote, movimiento.cobros)
                     : null}
                   {/* Lote (API 0.0.78): los cobros con otros abonos quedan parciales. */}
                   {extraDesvincularLote && ` ${extraDesvincularLote}`}

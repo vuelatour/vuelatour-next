@@ -276,6 +276,19 @@ describe("guardas de código", () => {
     expect(leer("../../../../app/admin/flights/[id]/page.tsx")).toContain(
       "cotizacionAbierta={snapshot.cotizacion_abierta === true}",
     );
+    // Revisión 15-oct-2026: también «Registrar cobro» desde la Auditoría Paywise (el API
+    // nunca dice «cobrado de más» con la cotización abierta).
+    expect(leer("../../conciliacion/paywise-auditoria.tsx")).toContain("cotizacionAbierta={ctx.cotizacion_abierta === true}");
+    const actions = leer("../../../../app/admin/conciliacion/actions.ts");
+    expect(actions).toContain("cotizacion_abierta: s.cotizacion_abierta === true,");
+    expect(actions).toMatch(/export interface VueloParaCobro \{[\s\S]*?cotizacion_abierta: boolean;[\s\S]*?\}/);
+  });
+
+  it("revisión 15-oct-2026: en un celular la fila del cobro ENVUELVE (el badge-botón ya no se corta ni se encima)", () => {
+    const src = leer("../cobros-card.tsx");
+    expect(src).toContain("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border p-3");
+    expect(src).toContain('<div className="text-sm min-w-0 flex-1 basis-64">');
+    expect(src).toContain('<div className="ml-auto flex items-center gap-3 shrink-0">');
   });
 
   it("la ficha de cobro dice rebasa / cubre / queda con `vistaPreviaMontoCobro` (sin la comparación vieja)", () => {

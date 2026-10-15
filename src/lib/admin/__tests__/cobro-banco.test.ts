@@ -10,7 +10,7 @@
  * `conciliacion_estado`) todo queda como antes. Ningún número se calcula
  * aquí: todos vienen del API.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CobroSinBanco } from "@/types/conciliacion";
@@ -23,7 +23,10 @@ import {
   CLASE_BADGE_COBRO,
   claseBadgeCobro,
   conColumnaBancoCobrosSinBanco,
+  encabezadoCobrosSinBanco,
   lineaParcialesCobrosSinBanco,
+  METODOS_COBROS_SIN_BANCO,
+  saleEnCobrosSinBanco,
   netoEsperadoParcial,
   textoCobroVuelveASinBanco,
   textoConfirmarDesvincularAbono,
@@ -37,6 +40,8 @@ import {
   tituloBadgeCobro,
   TITULO_CONCILIADO_MOVIMIENTO,
   TITULO_CONCILIADO_SOBRE,
+  TITULO_COBROS_SIN_BANCO,
+  TITULO_COBROS_SIN_BANCO_CON_PARCIALES,
   TITULO_SIN_CONCILIAR_COBRO,
   TITULO_SIN_CONCILIAR_SOBRE,
 } from "../cobro-banco";
@@ -217,6 +222,27 @@ describe("badge de las cards de cobros", () => {
     expect(tituloBadgeCobro(dos)).toBe(
       "El banco respalda $3,400 MXN de $5,000 MXN (2 abonos: 15 sep 2026 · EJE SCOTIA y 16 sep 2026). Faltan $1,600 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, este cobro sale en «Cobros sin banco».",
     );
+  });
+
+  it("revisión 15-oct-2026: un PARCIAL de BillPocket NO promete «Cobros sin banco» (esa lista no lo trae)", () => {
+    const billpocket = { ...PARCIAL, metodo_cobro: "BILLPOCKET" as const };
+    expect(tituloBadgeCobro(billpocket)).toBe(
+      "El banco respalda $1,700 MXN de $3,400 MXN (1 abono: 15 sep 2026 · EJE SCOTIA). Faltan $1,700 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, lo que falta se ve en esta tarjeta y en Ingresos.",
+    );
+    expect(tituloBadgeCobro(billpocket)).not.toContain("Cobros sin banco");
+    // Los métodos de «Cobros sin banco»: los cuatro del cruce automático, BillPocket no.
+    for (const m of ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE", "PAYWISE"]) expect(saleEnCobrosSinBanco(m), m).toBe(true);
+    for (const m of ["BILLPOCKET", "EFECTIVO", "DOLARES", "OTRO", null, undefined]) expect(saleEnCobrosSinBanco(m), String(m)).toBe(false);
+  });
+
+  it("paridad: los métodos de «Cobros sin banco» = METODOS_COBRO_ABONO_AUTO del API (si el repo hermano está)", () => {
+    const p = path.resolve(__dirname, "../../../../../vuelatour-api/src/common/metodo-cobro.util.ts");
+    if (!existsSync(p)) return;
+    const src = readFileSync(p, "utf8");
+    const m = /export const METODOS_COBRO_ABONO_AUTO: readonly string\[\] = \[([\s\S]*?)\];/.exec(src);
+    expect(m, "METODOS_COBRO_ABONO_AUTO en el API").not.toBeNull();
+    const api = [...(m?.[1] ?? "").matchAll(/'([A-Z_]+)'/g)].map((x) => x[1]);
+    expect([...METODOS_COBROS_SIN_BANCO].sort()).toEqual(api.sort());
   });
 
   it("sobre, anticipo, sin conciliar y API previo: los textos de siempre", () => {
@@ -424,13 +450,20 @@ describe("desvincular UN abono de un cobro con varios (D22)", () => {
   it("el ÚNICO abono del cobro: null (la confirmación de siempre) + «vuelve a «Cobros sin banco»»", () => {
     const solo = { ...CONC, abonos_n: 1, faltante_sin_este: 3400 };
     expect(textoConfirmarDesvincularAbono(solo, { monto: "3400", fecha: "2026-09-15", moneda: "MXN" })).toBeNull();
-    expect(textoCobroVuelveASinBanco(solo)).toBe("El cobro del vuelo #315 vuelve a «Cobros sin banco».");
-    expect(textoCobroVuelveASinBanco({ ...solo, folio: null })).toBe("El cobro vuelve a «Cobros sin banco».");
+    expect(textoCobroVuelveASinBanco(solo, "TRANSFERENCIA")).toBe("El cobro del vuelo #315 vuelve a «Cobros sin banco».");
+    expect(textoCobroVuelveASinBanco({ ...solo, folio: null }, "HSBC_LINK")).toBe("El cobro vuelve a «Cobros sin banco».");
     // Con otros abonos no se dice (el cobro no se va de «Cobros sin banco» por este).
-    expect(textoCobroVuelveASinBanco(CONC)).toBeNull();
+    expect(textoCobroVuelveASinBanco(CONC, "TRANSFERENCIA")).toBeNull();
     // API previo (sin `cobro_conciliacion`): nada nuevo.
     expect(textoConfirmarDesvincularAbono(null, { monto: "1", fecha: "2026-09-15" })).toBeNull();
-    expect(textoCobroVuelveASinBanco(undefined)).toBeNull();
+    expect(textoCobroVuelveASinBanco(undefined, "TRANSFERENCIA")).toBeNull();
+  });
+
+  it("revisión 15-oct-2026: un BillPocket (o sin el método) NO «vuelve a «Cobros sin banco»» (el API lo deja NO_BANCARIO)", () => {
+    const solo = { ...CONC, abonos_n: 1, faltante_sin_este: 3400 };
+    expect(textoCobroVuelveASinBanco(solo, "BILLPOCKET")).toBeNull();
+    expect(textoCobroVuelveASinBanco(solo, null)).toBeNull();
+    expect(textoCobroVuelveASinBanco(solo, undefined)).toBeNull();
   });
 });
 
@@ -501,6 +534,35 @@ describe("«Cobros sin banco»: columna «Banco» (textos.cobros_sin_banco del 0
     expect(celdaBancoCobroSinBanco(previo)).toBeNull();
     expect(conColumnaBancoCobrosSinBanco([previo])).toBe(false);
     expect(conColumnaBancoCobrosSinBanco([previo, fila()])).toBe(true);
+  });
+
+  it("revisión 15-oct-2026: la cabecera dice lo que FALTA en el banco (`por_moneda[].faltante` del API), no la Σ bruta", () => {
+    const VENTANA = "cobros del 17 jul 2026 al 15 oct 2026";
+    // El #315 de $3,400 con un abono de $1,700: el API manda monto 3400 (bruto) y faltante 1700.
+    const nuevo = encabezadoCobrosSinBanco({ por_moneda: [{ moneda: "MXN", monto: 3400, faltante: 1700 }], parciales: 1 }, VENTANA);
+    expect(nuevo).toEqual({
+      titulo: TITULO_COBROS_SIN_BANCO_CON_PARCIALES,
+      descripcion: `Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo) sin ningún abono importado ligado, o con abonos que todavía no los completan (${VENTANA}). Puede faltar el periodo por importar, no coincidir fecha/monto, o el dinero nunca llegó.`,
+      totales: "Falta en el banco: $1,700.00 MXN.",
+    });
+    expect(nuevo.totales).not.toContain("3,400");
+    // Dos monedas y una lista sin parciales: la cifra del API tal cual (la de un cobro con comisión es su neto).
+    expect(
+      encabezadoCobrosSinBanco(
+        { por_moneda: [{ moneda: "MXN", monto: 13000, faltante: 11870.24 }, { moneda: "USD", monto: 500, faltante: 500 }], parciales: 0 },
+        VENTANA,
+      ).totales,
+    ).toBe("Falta en el banco: $11,870.24 MXN · $500.00 USD.");
+    // API previo (sin `parciales` ni `faltante`): el encabezado de siempre, byte a byte.
+    expect(encabezadoCobrosSinBanco({ por_moneda: [{ moneda: "MXN", monto: 3400 }] }, VENTANA)).toEqual({
+      titulo: TITULO_COBROS_SIN_BANCO,
+      descripcion: `Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo) sin cruzar con ningún abono importado (${VENTANA}). Puede faltar el periodo por importar, no coincidir fecha/monto, o el dinero nunca llegó.`,
+      totales: "Sin cruzar: $3,400.00 MXN.",
+    });
+    expect(TITULO_COBROS_SIN_BANCO).toBe("Cobros que no aparecen en ningún estado de cuenta");
+    // Sin montos o sin lectura: sin la cifra (la tabla dice lo que pasó).
+    expect(encabezadoCobrosSinBanco({ por_moneda: [], parciales: 0 }, VENTANA).totales).toBeNull();
+    expect(encabezadoCobrosSinBanco(null, VENTANA).totales).toBeNull();
   });
 
   it("«Neto esperado» de un parcial y la línea sobre la tabla (cuenta filas, no suma)", () => {

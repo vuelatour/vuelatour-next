@@ -178,9 +178,17 @@ describe("lote (un abono, varios cobros): el estado de cada cobro en su línea",
       }),
     ]);
     expect(html).toContain("2 cobros · $69,000 MXN");
-    expect(html).toContain(" · completa el cobro (2 abonos)");
-    expect(html).toContain('data-estado-cobro-lote="aviso"');
-    expect(html).toContain(" · parcial: faltan $10,000 MXN");
+    // Revisión 15-oct-2026: el estado va en SU renglón (sin `truncate`): pegado a la
+    // secundaria de 240 px, la elipsis se comía lo que falta.
+    expect(html).toMatch(/<span data-estado-cobro-lote="neutro" class="block text-\[10px\] text-muted-foreground">Completa el cobro \(2 abonos\)<\/span>/);
+    expect(html).toMatch(
+      /<span data-estado-cobro-lote="aviso" class="block text-\[10px\] text-amber-700 dark:text-amber-300">Parcial: faltan \$10,000 MXN<\/span>/,
+    );
+    // La secundaria cortada lleva el texto completo en su `title` (con el estado).
+    expect(html).toMatch(/class="block max-w-\[240px\] truncate text-\[10px\] text-muted-foreground" title="[^"]* · parcial: faltan \$10,000 MXN"/);
+    expect(html).toMatch(/title="[^"]* · completa el cobro \(2 abonos\)"/);
+    // Dentro de la secundaria truncada ya no va el estado.
+    expect(html).not.toMatch(/truncate[^>]*>[^<]*<span data-estado-cobro-lote/);
   });
 });
 
@@ -192,7 +200,9 @@ describe("cableado del menú ⋯ y del diálogo legado (fuente)", () => {
     expect(src).toMatch(/abonoConOtros\s*\?\s*MENU_DESVINCULAR_ESTE_ABONO\s*:\s*"Desvincular cobro"/);
     expect(src).toMatch(/abonoConOtros\s*\?\s*TITULO_DESVINCULAR_ESTE_ABONO\s*:\s*"¿Desvincular este cobro\?"/);
     expect(src).toContain("textoConfirmarDesvincularAbono(movimiento.cobro_conciliacion, {");
-    expect(src).toContain("textoCobroVuelveASinBanco(movimiento.cobro_conciliacion)");
+    // «vuelve a «Cobros sin banco»» SOLO si su método sale ahí (revisión 15-oct-2026: BillPocket no).
+    expect(src).toContain("textoCobroVuelveASinBanco(movimiento.cobro_conciliacion, movimiento.cobro?.metodo_cobro)");
+    expect(src).toContain("textoConfirmarDesvincularCobros(cobrosDelLote, movimiento.cobros)");
     expect(src).toContain("textoExtraDesvincularLote(movimiento)");
     // El toast dice cómo quedó cada cobro DESPUÉS (`cobros_liberados`); sin la llave, el de siempre.
     expect(src).toContain('(toastDesvinculoCobros(r.data?.cobros_liberados, movimiento) ?? "Cobro desvinculado")');
@@ -216,6 +226,29 @@ describe("cableado del menú ⋯ y del diálogo legado (fuente)", () => {
     expect(src).toContain("onClick={() => vincular()}");
     // Un 409 (excede, comisión…) se dice con el texto del API y la lista se vuelve a pedir.
     expect(src).toMatch(/const e = mensajeErrorVincularCobros\(r\);[\s\S]*?setSeleccion\(""\);\s*cargarCandidatos\(\);/);
+  });
+
+  it("revisión 15-oct-2026: la confirmación del parcial va DENTRO del DialogContent de «Vincular cobro» (Esc cierra solo la de arriba)", () => {
+    const dialogo = src.slice(src.indexOf("<DialogTitle>Vincular cobro</DialogTitle>"));
+    const fin = dialogo.indexOf("</DialogContent>");
+    expect(fin).toBeGreaterThan(0);
+    expect(dialogo.slice(0, fin)).toContain("<ConfirmacionVincular");
+    expect(src.match(/<ConfirmacionVincular\b/g)?.length).toBe(1);
+  });
+
+  it("revisión 15-oct-2026: ninguna server action de vincular / desvincular cae al error boundary (`.catch(sinConexion)`)", () => {
+    expect(src).toContain("await ligarAbonoIngresoAction(movimiento.id, null).catch(sinConexion)");
+    expect(src).toContain("await linkMovimientoCobroAction(movimiento.id, null).catch(sinConexion)");
+    expect(src).toContain("await linkMovimientoAction(movimiento.id, null).catch(sinConexion)");
+    expect(src).toMatch(/: \{ cobro_id: seleccionado\.cobro_id \},\s*\)\.catch\(sinConexion\);/);
+    expect(src).toContain("await quitarReversoAction(movimiento.id).catch(sinConexion)");
+    expect(src).toMatch(/candidatosCobroAction\(movimiento\.id, VENTANA_DIAS\)\s*\.catch\(sinConexion\)/);
+    // Sin respuesta: «No se pudo confirmar si…» (jamás «no se desvinculó») y la página al día.
+    expect(src).toContain("toast.error(MSG_DESVINCULO_INCIERTO);");
+    expect(src).toContain('} else if (r.status === 409 || r.code === "SIN_CONEXION") {');
+    expect(src).toContain("if (e.incierto) refrescarAlCerrarLinkRef.current = true;");
+    // Ningún `await` de server action desnudo dentro de startTransition.
+    expect(src).not.toMatch(/await (ligarAbonoIngresoAction|linkMovimientoCobroAction|linkMovimientoAction|quitarReversoAction)\([^)]*\);/);
   });
 
   it("la bandeja no toca su búsqueda ni el useMemo de columnas: «parcial» entra por `textoBusquedaCobros`", () => {

@@ -163,9 +163,18 @@ describe("el botón principal (excepción deliberada a «nunca apagar», D18)", 
       <BotonVincularConGuia etiqueta="Vincular el cobro" guia={EXCEDE} idGuia="guia" deshabilitado={false} onClick={() => {}} />,
     );
     expect(html).toContain('title="El abono rebasa este cobro: marca también el otro vuelo"');
-    expect(html).toMatch(/<button[^>]*disabled=""/);
+    // Revisión 15-oct-2026: apagado por el veredicto queda ENFOCABLE (aria-disabled, sin
+    // `disabled` nativo): sigue en el Tab y el lector anuncia su aria-describedby.
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"/);
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=""/);
+    expect(html).toContain("aria-disabled:opacity-50");
     expect(html).toContain('aria-describedby="guia"');
     expect(html).toContain("cursor-pointer");
+    // Apagado por «vinculando» (o nada marcado): el `disabled` nativo de siempre.
+    const vinculando = renderToStaticMarkup(
+      <BotonVincularConGuia etiqueta="Vinculando…" guia={EXCEDE} idGuia="guia" deshabilitado onClick={() => {}} />,
+    );
+    expect(vinculando).toMatch(/<button[^>]*\sdisabled=""/);
   });
 
   it("PARCIAL: habilitado («Vincular como parcial…»); 2+ cobros (sin guía): nunca se apaga por la suma", () => {
@@ -250,7 +259,7 @@ describe("cableado del diálogo (fuente)", () => {
 
   it("salidas de un clic: marcar el sugerido con `alternar` y llenar el buscador", () => {
     expect(src).toContain("const o = porClave.get(claveDeCobroVuelo(a.cobro_id));");
-    expect(src).toContain("if (o && !sel.includes(claveOpcion(o))) alternar(o);");
+    expect(src).toMatch(/if \(o && !sel\.includes\(claveOpcion\(o\)\)\) \{[\s\S]*?alternar\(o\);\s*\}/);
     expect(src).toContain("setTexto(a.buscar);");
     expect(src).toContain("ref={buscarRef}");
   });
@@ -262,6 +271,22 @@ describe("cableado del diálogo (fuente)", () => {
     // La comisión ya cambió o no se sabe si ligó: refresh UNA vez al cerrar.
     expect(src).toContain("if (e.comisionCorregida || e.incierto) alCambiarDatos();");
     expect(src).toMatch(/if \(!abierto && refrescarAlCerrarRef\.current\) \{\s*refrescarAlCerrarRef\.current = false;\s*router\.refresh\(\);/);
+  });
+
+  it("revisión 15-oct-2026: región viva PERMANENTE, foco al botón principal y descripción completa en su title", () => {
+    // La región vive con el diálogo (la guía ya no trae aria-live: nacía con su texto y no se anunciaba).
+    expect(src).toContain('<p className="sr-only" aria-live="polite" aria-atomic="true" data-region-viva-vincular="">');
+    expect(src).toContain('{guia?.texto ?? suma?.texto ?? ""}');
+    const guia = renderToStaticMarkup(<GuiaVincularAbono guia={EXCEDE} id="guia" onAccion={() => {}} />);
+    expect(guia).not.toContain("aria-live");
+    // «Agregar el cobro del vuelo #332»: el foco pasa al botón principal ANTES de que la guía se desmonte.
+    expect(src).toMatch(/botonVincularRef\.current\?\.focus\(\);\s*alternar\(o\);/);
+    expect(src).toContain("botonRef={botonVincularRef}");
+    // La descripción de cada candidato (cortada a lo ancho) lleva su texto completo en el title.
+    expect(src).toContain("title={desc.texto}");
+    expect(src).toContain("title={corta.texto}");
+    // «Corregir la comisión»: un fallo sin veredicto del API es incierto (la comisión pudo quedar escrita).
+    expect(src).toContain("mensajeErrorVincularCobros(r, { corrigiendoComision: corregir !== undefined })");
   });
 
   it("las server actions nunca lanzan: cada llamada va con `.catch(sinConexion)`", () => {

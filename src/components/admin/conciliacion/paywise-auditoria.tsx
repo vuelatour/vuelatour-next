@@ -945,6 +945,7 @@ function RegistrarCobroDesdePaywise({
           tcCotizacion={ctx.tc_usd_mxn}
           montoTotalMxn={ctx.monto_total_mxn}
           tieneCobros={ctx.tiene_cobros}
+          cotizacionAbierta={ctx.cotizacion_abierta === true}
           paywiseComisionPct={paywiseComisionPct}
           prefill={prefill}
           onRegistrado={() => {

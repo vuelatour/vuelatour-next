@@ -400,7 +400,9 @@ export async function PreCierreCard({
                 ? lineasLigasUsdTc(item.ligas, item.count)
                 : { lineas: [], restantes: 0 };
             // Vuelos cobrados de más (API 0.0.78): los EXPLICADOS no cuentan;
-            // van en una línea gris («Además: #81 y #84 (…) no requieren acción.»).
+            // el `detalle` del API ya dice «Además hay N vuelo(s) con la
+            // diferencia explicada…» y la línea gris dice CUÁLES («Con la
+            // diferencia explicada: #81 y #84 (…).», revisión del 15-oct-2026).
             const esCobradosDeMas = item.clave === CLAVE_PRECIERRE_COBRADOS_DE_MAS;
             const explicados = esCobradosDeMas ? lineaExplicadosPreCierre(item.explicados) : null;
             // Cobros sin banco: los PARCIALES (API 0.0.78) dicen lo que falta.

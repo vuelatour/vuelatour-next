@@ -29,6 +29,7 @@ import {
   abreDetalleEntrada,
   accionesPendienteEntrada,
   avisoCruceNoCorrio,
+  claveEntradaControlada,
   contextoEntrada,
   descripcionHojaEntrada,
   estadoCambioEntrada,
@@ -275,7 +276,7 @@ describe("la tarjeta de cada abono", () => {
     const f = fichaAbonoEntrada(conAditivos, r);
     const l315 = f.lote!.lineas[0];
     expect(l315.secundaria).toBe(`cobro ${fmtDate("2026-09-15T17:00:00+00:00")} · $68,205.55 MXN de $70,000 MXN`);
-    expect(l315.sufijo).toEqual({ texto: " · completa el cobro (2 abonos)", tono: "neutro" });
+    expect(l315.sufijo).toEqual({ texto: " · completa el cobro (2 abonos)", linea: "Completa el cobro (2 abonos)", tono: "neutro" });
     expect(f.lote!.diferencia).toBe("Diferencia con el abono: $0.01 (el banco depositó de más; ningún cobro se ajusta).");
     const menos = fichaAbonoEntrada({ ...abono, lote: { ...abono.lote!, cobros_diferencia: -0.01 } }, r);
     expect(menos.lote!.diferencia).toBe("Diferencia con el abono: $0.01 (el banco depositó de menos; ningún cobro se ajusta).");
@@ -780,6 +781,38 @@ describe("filas, botón y nombre accesible", () => {
     expect(estadoFilaDeCobroVuelo({ conciliacion_estado: "CONCILIADO", conciliado: true, conciliado_via: "ANTICIPO" })).toBe("CONCILIADO");
     expect(estadoFilaDeCobroVuelo({ conciliacion_estado: "NO_BANCARIO", conciliado: false })).toBe("NO_BANCARIO");
     expect(estadoFilaDeCobroVuelo({ conciliado: false })).toBeNull();
+  });
+
+  it("revisión 15-oct-2026: la llave del modo controlado cambia al editar la cuenta, la fecha o el monto (y al desvincular)", () => {
+    const ingreso = {
+      id: "ffb57607-77e4-4334-8ee9-94afdba75f91",
+      folio: 5,
+      etiqueta: "ING-5",
+      categoria_etiqueta: "Otros ingresos",
+      fecha: "2026-09-10",
+      monto: 78,
+      moneda: "MXN",
+      cliente_nombre: null,
+      pagador: "didi",
+      metodo_etiqueta: "Transferencia",
+      cuenta_bancaria_id: CUENTA_COMBUSTIBLE.id,
+      conciliacion: { estado: "SIN_CONCILIAR", movimiento_id: null, movimiento_fecha: null, movimiento_monto: null },
+      baja: null,
+    } as unknown as Ingreso;
+    const clave = (over: Partial<Ingreso>) => claveEntradaControlada(filaBancoDeIngreso({ ...ingreso, ...over } as Ingreso));
+    const base = clave({});
+    expect(base.startsWith(`INGRESO:${ingreso.id}:`)).toBe(true);
+    // Editar desde el MISMO detalle (sin conciliar): la cuenta, la fecha o el monto ⇒ otra llave ⇒ el cuerpo se vuelve a pedir.
+    // Otra cuenta (la causa «Que el dinero no haya entrado a otra cuenta (corrige la cuenta del ingreso)»).
+    expect(clave({ cuenta_bancaria_id: "3c1d2e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f" })).not.toBe(base);
+    expect(clave({ fecha: "2026-09-12" })).not.toBe(base);
+    expect(clave({ monto: 80 })).not.toBe(base);
+    // Ligar / desvincular el abono o cambiar el estado: también.
+    expect(
+      clave({ conciliacion: { estado: "CONCILIADO", movimiento_id: ABONO_69183, movimiento_fecha: null, movimiento_monto: null } } as never),
+    ).not.toBe(base);
+    // La misma fila (un refresh sin cambios) ⇒ la misma llave: no se vuelve a pedir.
+    expect(clave({})).toBe(base);
   });
 
   it("qué badge es botón: nunca «No se concilia uno a uno», «—» ni un ingreso dado de baja", () => {

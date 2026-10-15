@@ -73,7 +73,13 @@ export function GastoBancoSheet({ detalle }: { detalle: DetalleBancoGasto }) {
               resultado={detalle.resultado}
               descargando={detalle.descargando}
               onReintentar={detalle.reintentar}
-              onRecargar={() => router.refresh()}
+              // «Recargar» de «El estado cambió…» (revisión del 15-oct-2026):
+              // la hoja guarda la fila del clic y un refresh no la cambia (la
+              // franja nunca se iba): se CIERRA y la lista se pone al día.
+              onRecargar={() => {
+                detalle.cerrar();
+                router.refresh();
+              }}
               onDescargar={detalle.descargarEstadoCuenta}
             />
           )}

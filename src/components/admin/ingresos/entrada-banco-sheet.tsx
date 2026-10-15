@@ -7,6 +7,7 @@ import { conciliacionDeEntradaAction } from "@/app/admin/conciliacion/actions";
 import { useDetalleBanco } from "@/components/admin/banco/use-detalle-banco";
 import {
   TEXTO_CARGANDO_ENTRADA,
+  claveEntradaControlada,
   descripcionHojaEntrada,
   lineaPagoEntrada,
   lineaRegistroEntrada,
@@ -37,11 +38,14 @@ export const pedirEntrada = (f: EntradaBancoFila) => conciliacionDeEntradaAction
 /** La llave de una respuesta en la hoja: origen + id. */
 export const claveEntrada = (f: EntradaBancoFila) => `${f.origen}:${f.id}`;
 /**
- * La llave del MODO CONTROLADO (cuerpo embebido en `?ingreso=`): origen + id +
- * el abono que conoce la lista — tras «Desvincular del abono», `router.refresh()`
- * cambia el abono y el cuerpo se vuelve a pedir solo.
+ * La llave del MODO CONTROLADO (cuerpo embebido en `?ingreso=`):
+ * `claveEntradaControlada` — origen + id + el abono que conoce la lista y lo
+ * que pinta el cuerpo (cuenta, día, monto, moneda y estado). Tras
+ * «Desvincular del abono» o tras «Editar» la cuenta, la fecha o el monto en el
+ * MISMO detalle, `router.refresh()` cambia la fila y el cuerpo se vuelve a
+ * pedir solo (revisión del 15-oct-2026).
  */
-export const claveEntradaConAbono = (f: EntradaBancoFila) => `${f.origen}:${f.id}:${f.movimiento_id ?? ""}`;
+export const claveEntradaConAbono = (f: EntradaBancoFila) => claveEntradaControlada(f);
 
 /**
  * Estado de la hoja «Conciliación con el banco» de una ENTRADA de dinero
@@ -83,7 +87,13 @@ export function EntradaBancoSheet({ detalle }: { detalle: DetalleBancoEntrada })
               resultado={detalle.resultado}
               descargando={detalle.descargando}
               onReintentar={detalle.reintentar}
-              onRecargar={() => router.refresh()}
+              // «Recargar» de «El estado cambió…» (revisión del 15-oct-2026):
+              // la hoja guarda la fila del clic y un refresh no la cambia (la
+              // franja nunca se iba): se CIERRA y la lista se pone al día.
+              onRecargar={() => {
+                detalle.cerrar();
+                router.refresh();
+              }}
               onDescargar={detalle.descargarEstadoCuenta}
             />
           )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -241,6 +241,9 @@ function Selector({
   const idBuscar = useId();
   const idGuia = useId();
   const buscarRef = useRef<HTMLInputElement | null>(null);
+  // El botón principal: «Agregar el cobro del vuelo #332» le pasa el foco
+  // ANTES de que su guía se desmonte (revisión del 15-oct-2026).
+  const botonVincularRef = useRef<HTMLButtonElement | null>(null);
   const [opciones, setOpciones] = useState<OpcionAbono[] | null>(null);
   const [sel, setSel] = useState<string[]>([]);
   const [texto, setTexto] = useState("");
@@ -371,7 +374,13 @@ function Selector({
   const aplicarAccion = (a: AccionGuiaAlVincular) => {
     if (a.tipo === "MARCAR_SUGERIDO" && a.cobro_id) {
       const o = porClave.get(claveDeCobroVuelo(a.cobro_id));
-      if (o && !sel.includes(claveOpcion(o))) alternar(o);
+      if (o && !sel.includes(claveOpcion(o))) {
+        // Con 2 cobros la guía (y este botón) se desmonta: el foco pasa ANTES
+        // al botón principal (enfocable aunque esté apagado) y no cae al
+        // contenedor del diálogo (el siguiente Tab iba al buscador).
+        botonVincularRef.current?.focus();
+        alternar(o);
+      }
       return;
     }
     if (a.tipo === "BUSCAR" && a.buscar) {
@@ -445,7 +454,9 @@ function Selector({
       onCerrar();
       return;
     }
-    const e = mensajeErrorVincularCobros(r);
+    // Con «Corregir la comisión» un fallo sin veredicto del API es INCIERTO:
+    // la comisión pudo quedar escrita (revisión del 15-oct-2026).
+    const e = mensajeErrorVincularCobros(r, { corrigiendoComision: corregir !== undefined });
     setError(e.titulo);
     toast.error(e.titulo, e.descripcion ? { description: e.descripcion } : undefined);
     // La comisión del cobro YA cambió (la liga falló después) o no se sabe si
@@ -464,6 +475,12 @@ function Selector({
   return (
     <>
       <div className="space-y-2">
+        {/* Región viva PERMANENTE (revisión del 15-oct-2026): una región que
+            nace ya con su texto no se anuncia (NVDA + Chrome); esta vive
+            mientras el diálogo y dice el veredicto o la suma al marcar. */}
+        <p className="sr-only" aria-live="polite" aria-atomic="true" data-region-viva-vincular="">
+          {guia?.texto ?? suma?.texto ?? ""}
+        </p>
         <div className="flex flex-wrap items-end justify-between gap-2">
           <Label htmlFor={idBuscar} className="text-sm font-medium">
             Cobros, pagos de grupo e ingresos candidatos
@@ -533,13 +550,19 @@ function Selector({
                     />
                     <span className="min-w-0">
                       <span className="block truncate font-medium">{etiquetaOpcion(o)}</span>
+                      {/* Cortada a lo ancho del diálogo: el `title` la dice
+                          completa («… · falta $1,700 · cuadra exacto con lo
+                          que falta», revisión del 15-oct-2026). */}
                       {desc.texto && (
-                        <span className={cn("block truncate text-xs text-muted-foreground", desc.clase)}>
+                        <span
+                          className={cn("block truncate text-xs text-muted-foreground", desc.clase)}
+                          title={desc.texto}
+                        >
                           {desc.texto}
                         </span>
                       )}
                       {corta && (
-                        <span className={cn("block truncate text-xs font-medium", CLASE_TONO[corta.tono])}>
+                        <span className={cn("block truncate text-xs font-medium", CLASE_TONO[corta.tono])} title={corta.texto}>
                           {corta.texto}
                         </span>
                       )}
@@ -615,6 +638,7 @@ function Selector({
             idGuia={idGuia}
             deshabilitado={ligando || marcadas.length === 0}
             onClick={vincular}
+            botonRef={botonVincularRef}
           />
         </div>
       </DialogFooter>
@@ -648,7 +672,9 @@ function Selector({
 /**
  * La guía de UN cobro marcado (API 0.0.78): el texto del veredicto (con su
  * tono) y las salidas de un clic («Agregar el cobro del vuelo #332», «Buscar
- * $977.45», «Corregir la comisión a $X y vincular»). Presentacional.
+ * $977.45», «Corregir la comisión a $X y vincular»). Presentacional. Sin
+ * `aria-live` propio (revisión del 15-oct-2026): se monta ya con su texto y
+ * así no se anunciaba; lo dice la región viva PERMANENTE del diálogo.
  */
 export function GuiaVincularAbono({
   guia,
@@ -662,7 +688,7 @@ export function GuiaVincularAbono({
   onAccion: (a: AccionGuiaAlVincular) => void;
 }) {
   return (
-    <div id={id} className="space-y-1.5" data-guia-al-vincular={guia.tono} aria-live="polite">
+    <div id={id} className="space-y-1.5" data-guia-al-vincular={guia.tono}>
       <p className={cn("text-xs font-medium", CLASE_TONO[guia.tono])}>{guia.texto}</p>
       {guia.acciones.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -689,9 +715,13 @@ export function GuiaVincularAbono({
 /**
  * El botón principal del diálogo. EXCEPCIÓN deliberada a «nunca apagar el
  * botón» (D18): con UN cobro, si el API ya dijo que rechazaría ESTE abono
- * (`guia.bloquea`), se apaga con la razón en el `title` (el envoltorio lo
- * muestra: un botón apagado no recibe el puntero) y la guía a la vista
- * (`aria-describedby`). Con 2+ cobros no hay `guia` y nunca se apaga por la suma.
+ * (`guia.bloquea`), se apaga con la razón en el `title` del envoltorio y la
+ * guía a la vista (`aria-describedby`). Apagado por el veredicto queda
+ * ENFOCABLE (`focusableWhenDisabled`: `aria-disabled`, sin `disabled`
+ * nativo; revisión del 15-oct-2026): sigue en el orden del Tab y el lector
+ * anuncia la razón; Base UI no dispara el clic y `pasoAlPulsarVincular` dice
+ * BLOQUEADO. Apagado por «nada marcado» o «vinculando», el `disabled` de
+ * siempre. Con 2+ cobros no hay `guia` y nunca se apaga por la suma.
  */
 export function BotonVincularConGuia({
   etiqueta,
@@ -699,20 +729,24 @@ export function BotonVincularConGuia({
   idGuia,
   deshabilitado,
   onClick,
+  botonRef,
 }: {
   etiqueta: string;
   guia: GuiaAlVincular | null;
   idGuia?: string;
   deshabilitado: boolean;
   onClick: () => void;
+  botonRef?: Ref<HTMLButtonElement>;
 }) {
   const bloqueado = guia?.bloquea === true;
   return (
     <span className="inline-flex" title={bloqueado ? (guia?.razon ?? undefined) : undefined}>
       <Button
-        className="cursor-pointer"
+        ref={botonRef}
+        className="cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         onClick={onClick}
         disabled={deshabilitado || bloqueado}
+        focusableWhenDisabled={bloqueado && !deshabilitado}
         aria-describedby={guia && idGuia ? idGuia : undefined}
       >
         {etiqueta}

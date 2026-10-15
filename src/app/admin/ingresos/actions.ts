@@ -31,7 +31,16 @@ import {
   textoVariosCargosPosibles,
 } from "@/lib/admin/conciliacion-reverso";
 import type { CandidatosCobroResponse, MovimientoBancario } from "@/types/conciliacion";
-import { MSG_API_SIN_CORREGIR_COMISION } from "@/lib/admin/conciliacion-cobros-lote";
+import {
+  CODE_CONFIRMAR_PARCIAL,
+  CODE_PROPUESTA_A_MANO,
+  CODE_PROPUESTA_SIN_VEREDICTO,
+  MSG_API_SIN_CORREGIR_COMISION,
+  MSG_PROPUESTA_PARCIAL,
+  MSG_PROPUESTA_SIN_VEREDICTO,
+  VENTANA_PROPUESTA_DIAS,
+  pasoPropuestaCobro,
+} from "@/lib/admin/conciliacion-cobros-lote";
 
 /**
  * INGRESOS (24-sep-2026) — server actions SIN archivo. El alta y la edición
@@ -529,17 +538,45 @@ async function aceptarReversoPropuesto(movId: string): Promise<ActionResult> {
   }
 }
 
-/** Acepta UNA propuesta de la IA que liga o clasifica (lote o fila). */
-export async function aceptarPropuestaAbonoAction(p: PropuestaAbono): Promise<ActionResult> {
+/**
+ * Acepta UNA propuesta de la IA que liga o clasifica (lote o fila).
+ *
+ * Una liga a un COBRO de vuelo (revisión del 15-oct-2026, D3) lee ANTES el
+ * veredicto del API para ESE abono (`al_vincular` de `candidatos-cobro`): con
+ * un abono MENOR que lo que falta el API la acepta sin bandera y el cobro
+ * quedaba «Conciliado parcial» sin la confirmación del diálogo «Vincular».
+ * PARCIAL sin `parcialConfirmado` ⇒ `CONFIRMAR_PARCIAL` con el cobro en
+ * `details.candidato` (la ventana pide «¿Vincular como pago parcial?» y vuelve
+ * con la bandera); un rechazo ⇒ `PROPUESTA_A_MANO` con la razón; sin poder
+ * leer el veredicto ⇒ `PROPUESTA_SIN_VEREDICTO` (no se liga nada). Con un API
+ * ≤ 0.0.77 (sin la capacidad) la liga de siempre.
+ */
+export async function aceptarPropuestaAbonoAction(
+  p: PropuestaAbono,
+  opciones: { parcialConfirmado?: boolean } = {},
+): Promise<ActionResult> {
   if (p.accion === "CLASIFICAR_TRASPASO") return clasificarAbonoAction(p.movimiento_id, "TRASPASO");
   if (p.accion === "CLASIFICAR_REVERSO") return aceptarReversoPropuesto(p.movimiento_id);
   if (p.accion === "LIGAR" && p.candidato) {
     const c = p.candidato;
     if (c.tipo === "INGRESO") return ligarAbonoIngresoAction(p.movimiento_id, c.id);
-    return ligarAbonoCobroAction(
-      p.movimiento_id,
-      c.tipo === "SOBRE_GRUPO" ? { cobro_grupo_id: c.id } : { cobro_id: c.id },
-    );
+    if (c.tipo === "SOBRE_GRUPO") return ligarAbonoCobroAction(p.movimiento_id, { cobro_grupo_id: c.id });
+    if (!esUuid(p.movimiento_id) || !esUuid(c.id)) return ID_INVALIDO;
+    const cand = await candidatosAbonoAction(p.movimiento_id, VENTANA_PROPUESTA_DIAS);
+    if (!cand.ok || !cand.data) {
+      return { ok: false, code: CODE_PROPUESTA_SIN_VEREDICTO, error: MSG_PROPUESTA_SIN_VEREDICTO };
+    }
+    const paso = pasoPropuestaCobro(cand.data, c.id, { monto: p.monto, moneda: p.cuenta_moneda });
+    if (paso.tipo === "A_MANO") return { ok: false, code: CODE_PROPUESTA_A_MANO, error: paso.texto };
+    if (paso.tipo === "CONFIRMAR_PARCIAL" && opciones.parcialConfirmado !== true) {
+      return {
+        ok: false,
+        code: CODE_CONFIRMAR_PARCIAL,
+        error: MSG_PROPUESTA_PARCIAL,
+        details: { candidato: paso.candidato },
+      };
+    }
+    return ligarAbonoCobroAction(p.movimiento_id, { cobro_id: c.id });
   }
   return { ok: false, error: "Esta propuesta se revisa a mano." };
 }

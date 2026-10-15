@@ -55,6 +55,8 @@ import {
   TEXTO_INGRESO_LO_CONCILIA_OFICINA,
   TEXTO_INGRESO_SIN_ABONO,
   TITULO_SIN_CONCILIAR_ENTRADA,
+  TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA,
+  tituloBadgeEntrada,
   hrefPorConciliarIngreso,
   sufijoClicEstado,
   tituloConClic,
@@ -576,6 +578,15 @@ describe("sugerencias con IA de abonos", () => {
     expect(aceptableEnLote(propuesta())).toBe(true);
   });
 
+  it("revisión 15-oct-2026: una liga a un COBRO que no cuadra exacto va de una en una (podría quedar PARCIAL y se confirma)", () => {
+    expect(aceptableEnLote(propuesta({ monto_exacto: false }))).toBe(false);
+    // Un sobre o un ingreso que no cuadran: el API los rechaza con su 409 (no hay parcial silencioso).
+    const sobre = propuesta({ monto_exacto: false });
+    expect(aceptableEnLote({ ...sobre, candidato: { ...sobre.candidato!, tipo: "SOBRE_GRUPO" } })).toBe(true);
+    expect(aceptableEnLote({ ...sobre, candidato: { ...sobre.candidato!, tipo: "INGRESO" } })).toBe(true);
+    expect(aceptableEnLote(propuesta({ candidato: null }))).toBe(false);
+  });
+
   it("aceptar en lote es SECUENCIAL y resume los errores con su motivo", async () => {
     const orden: string[] = [];
     let activas = 0;
@@ -872,9 +883,14 @@ describe("badge de conciliación: la conciliación al revés de una entrada (15-
     expect(tituloConClic("Conciliado con un movimiento bancario", "CONCILIADO")).toBe(
       "Conciliado con un movimiento bancario. Clic para ver el abono del banco y su estado de cuenta.",
     );
-    expect(tituloConClic(TITULO_SIN_CONCILIAR_ENTRADA, "PARCIAL")).toBe(
-      `${TITULO_SIN_CONCILIAR_ENTRADA} Clic para ver los abonos y buscar el que falta.`,
+    // Revisión 15-oct-2026: un PARCIAL lleva SU title (ya tiene abonos), no el de «Ningún abono…».
+    expect(tituloConClic(tituloBadgeEntrada("SIN_CONCILIAR", true), "PARCIAL")).toBe(
+      `${TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA} Clic para ver los abonos y buscar el que falta.`,
     );
+    expect(TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA).not.toContain("Ningún abono");
+    expect(tituloBadgeEntrada("SIN_CONCILIAR", false)).toBe(TITULO_SIN_CONCILIAR_ENTRADA);
+    expect(tituloBadgeEntrada("CONCILIADO", true)).toBe(etiquetaEstadoConciliacion("CONCILIADO").titulo);
+    expect(tituloBadgeEntrada("NO_BANCARIO", false, { metodo: "EFECTIVO" })).toBe("Efectivo en mano: no pasa por el banco.");
     expect(tituloConClic("x", "NO_BANCARIO")).toBe("x");
   });
 

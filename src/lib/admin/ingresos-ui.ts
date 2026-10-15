@@ -434,6 +434,16 @@ export interface EtiquetaEstado {
 export const TITULO_SIN_CONCILIAR_ENTRADA =
   "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta (o con «Cruzar pendientes» en Conciliación) y solo liga lo que cuadra sin dudas; lo demás se concilia a mano.";
 
+/**
+ * El `title` de «Sin conciliar» de un cobro PARCIAL de Ingresos (revisión del
+ * 15-oct-2026): YA tiene abonos ligados que no lo completan. El de
+ * SIN_CONCILIAR («Ningún abono del banco está ligado todavía…») era falso
+ * para él y contradecía al chip «Parcial · faltan $X» de al lado. El texto
+ * VISIBLE sigue siendo «Sin conciliar» (RC9).
+ */
+export const TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA =
+  "Ya tiene abonos del banco ligados, pero todavía no completan el cobro. El abono que falta se vincula en Conciliación cuando llegue.";
+
 /** El de siempre de «No se concilia uno a uno» (sin saber el método). */
 export const TITULO_NO_BANCARIO_GENERICO = "Efectivo, dólares en mano o terminal BillPocket (depósito agrupado)";
 
@@ -508,6 +518,20 @@ export function etiquetaEstadoConciliacion(
     default:
       return { texto: "—", tono: "gris", titulo: "Sin dato de conciliación." };
   }
+}
+
+/**
+ * El `title` (sin el sufijo del clic) del badge de una entrada: el de su
+ * estado o, en un cobro PARCIAL de la lista (SIN_CONCILIAR + `parcial`),
+ * `TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA`.
+ */
+export function tituloBadgeEntrada(
+  estado: EstadoConciliacionEntrada | string | null | undefined,
+  parcial: boolean,
+  contexto?: ContextoEstadoConciliacion | null,
+): string {
+  if (estado === "SIN_CONCILIAR" && parcial) return TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA;
+  return etiquetaEstadoConciliacion(estado, contexto).titulo;
 }
 
 /**
@@ -1495,10 +1519,18 @@ export function preseleccionada(p: PropuestaAbono): boolean {
   return false;
 }
 
-/** ¿Se puede aceptar dentro del LOTE? (Registrar abre el alta: va de una en una.) */
+/**
+ * ¿Se puede aceptar dentro del LOTE? (Registrar abre el alta: va de una en una.)
+ * Una liga a un COBRO de vuelo SOLO con monto exacto (revisión del
+ * 15-oct-2026): una que no cuadra puede dejar el cobro PARCIAL y eso se
+ * confirma de una en una con su «Aceptar» (`pasoPropuestaCobro`).
+ */
 export function aceptableEnLote(p: PropuestaAbono): boolean {
   if (p.posible_duplicado) return false;
-  if (p.accion === "LIGAR") return !!p.candidato;
+  if (p.accion === "LIGAR") {
+    if (!p.candidato) return false;
+    return p.candidato.tipo !== "COBRO_VUELO" || p.monto_exacto === true;
+  }
   return p.accion === "CLASIFICAR_TRASPASO" || p.accion === "CLASIFICAR_REVERSO";
 }
 

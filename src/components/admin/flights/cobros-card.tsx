@@ -443,15 +443,19 @@ export function CobrosCard({
                 // «Registró: Itzi» (null si el API no mandó el nombre).
                 const registro = textoRegistroCobro(c);
                 return (
+                // En un celular la fila ENVUELVE (revisión del 15-oct-2026): la
+                // columna de la fecha y los botones (~234 px) se va a su renglón
+                // y el cobro (con su badge, que ahora es botón) usa todo el ancho;
+                // antes le quedaban ~54 px y el badge se cortaba o se encimaba.
                 <div
                   key={c.id}
-                  className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
+                  className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border p-3 ${
                     esReembolso
                       ? "border-red-500/40 bg-red-500/5"
                       : "border-border bg-muted/20"
                   }`}
                 >
-                  <div className="text-sm min-w-0">
+                  <div className="text-sm min-w-0 flex-1 basis-64">
                     <p
                       className={`font-mono font-semibold ${
                         esReembolso ? "text-red-600 dark:text-red-400" : ""
@@ -545,7 +549,7 @@ export function CobrosCard({
                       puedeAdjuntar={puedeAdjuntarComprobante(rol)}
                     />
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="ml-auto flex items-center gap-3 shrink-0">
                     <p className="text-[11px] text-muted-foreground font-mono">
                       {fmtDate(c.fecha_cobro)}
                     </p>

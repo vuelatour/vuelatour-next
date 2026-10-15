@@ -24,10 +24,11 @@ import { esTextoTecnico, MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-t
 import { toleranciaLote } from "@/lib/admin/conciliacion-lote";
 import { coincideBusqueda } from "@/lib/admin/busqueda";
 import { montoParaBusquedaTabla } from "@/lib/admin/gasto-banco";
-import { hrefBuscarAbonoQueFalta } from "@/lib/admin/cobro-banco";
+import { hrefBuscarAbonoQueFalta, saleEnCobrosSinBanco, TEXTO_FALTANTE_FUERA_DE_SIN_BANCO } from "@/lib/admin/cobro-banco";
 import type {
   CandidatoCobro,
   CandidatoCobroVuelo,
+  CandidatosCobroResponse,
   CobroLiberado,
   MovimientoBancario,
   MovimientoCobroParte,
@@ -338,6 +339,17 @@ export const MSG_API_SIN_CORREGIR_COMISION =
 /** La action ni siquiera respondió: no se sabe si la liga quedó (jamás «no se vinculó»). */
 export const MSG_VINCULO_INCIERTO =
   "No se pudo confirmar si el abono quedó vinculado (no hubo respuesta del servidor). La lista se vuelve a cargar: revísala antes de intentarlo de nuevo.";
+/**
+ * «Corregir la comisión y vincular» sin un veredicto del API (revisión del
+ * 15-oct-2026): un 5xx sin código de negocio, HTML o sin respuesta. El API
+ * pudo escribir YA la comisión (y hasta la liga) antes de fallar: jamás «no
+ * se hizo nada».
+ */
+export const MSG_COMISION_INCIERTA =
+  "No se pudo confirmar si la comisión del cobro y la liga quedaron (el servidor no respondió bien). La lista se vuelve a cargar: revisa el cobro antes de intentarlo de nuevo.";
+/** Desvincular sin respuesta del servidor: no se sabe si quedó desvinculado (jamás «no se desvinculó»). */
+export const MSG_DESVINCULO_INCIERTO =
+  "No se pudo confirmar si el movimiento quedó desvinculado (no hubo respuesta del servidor). La página se vuelve a cargar: revísalo antes de intentarlo de nuevo.";
 
 export interface ErrorVincularCobros {
   titulo: string;
@@ -351,10 +363,57 @@ export interface ErrorVincularCobros {
   comisionCorregida?: boolean;
 }
 
-/** Texto es-MX del rechazo (el del API gana cuando es claro) y qué hacer. */
-export function mensajeErrorVincularCobros(r: ResultadoVincularCobros): ErrorVincularCobros {
+/**
+ * Texto es-MX del rechazo (el del API gana cuando es claro) y qué hacer. Con
+ * `corrigiendoComision` (la liga viajó con `corregir_comision`, revisión del
+ * 15-oct-2026) un fallo SIN veredicto del API (`respuestaSinVeredicto`) es
+ * INCIERTO: la comisión pudo quedar escrita aunque el API no lo anotara
+ * (`conNotaComisionCorregida` solo anota los HttpException).
+ */
+export function mensajeErrorVincularCobros(
+  r: ResultadoVincularCobros,
+  opciones: { corrigiendoComision?: boolean } = {},
+): ErrorVincularCobros {
   const e = errorVincularCobrosPorCodigo(r);
-  return detallesDe(r.details).comision_corregida != null ? { ...e, comisionCorregida: true } : e;
+  if (detallesDe(r.details).comision_corregida != null) return { ...e, comisionCorregida: true };
+  if (opciones.corrigiendoComision === true && respuestaSinVeredicto(r)) {
+    return { titulo: MSG_COMISION_INCIERTA, recargar: true, apiSinLote: false, incierto: true };
+  }
+  return e;
+}
+
+/** Los códigos con que el API dice QUÉ pasó (sus rechazos de negocio, aunque vengan con un 503). */
+const CODIGOS_CON_VEREDICTO: ReadonlySet<string> = new Set([
+  "API_SIN_LOTE_COBROS",
+  "CONCILIACION_COBROS_NO_DISPONIBLE",
+  "ABONO_NO_CUADRA",
+  "LOTE_MONEDA_DISTINTA",
+  "COBRO_YA_CONCILIADO",
+  "COBRO_DE_GRUPO",
+  "MOVIMIENTO_CON_LOTE",
+  "MOVIMIENTO_YA_LIGADO",
+  "LOTE_SOLO_API_NUEVO",
+  "ABONO_EXCEDE_COBRO",
+  "COMISION_NO_CUADRA",
+  "COBRO_MONEDA_DISTINTA",
+  "SOBRE_NO_CUADRA",
+  "CORREGIR_COMISION_NO_APLICA",
+  "CONCILIACION_COBROS_PARCIALES_NO_DISPONIBLE",
+  "API_SIN_CORREGIR_COMISION",
+]);
+
+/**
+ * ¿El fallo NO trae el veredicto del API? Sin respuesta (`SIN_CONEXION`, un
+ * texto de red), HTML (`PARSE_ERROR`), la espera cancelada o un 5xx sin
+ * código de negocio (el `ERROR` del filtro del API: «fetch failed» hacia la
+ * base, un deadlock…). Un 4xx o un código de negocio sí dicen qué pasó.
+ */
+export function respuestaSinVeredicto(r: ResultadoVincularCobros): boolean {
+  const code = r.code ?? "";
+  if (code === "SIN_CONEXION" || code === "PARSE_ERROR" || code === "TIEMPO_AGOTADO") return true;
+  if (CODIGOS_CON_VEREDICTO.has(code)) return false;
+  if (typeof r.status === "number") return r.status >= 500;
+  return esTextoTecnico(r.error);
 }
 
 function errorVincularCobrosPorCodigo(r: ResultadoVincularCobros): ErrorVincularCobros {
@@ -443,9 +502,12 @@ export interface LineaLoteCobros {
   secundaria: string;
   /**
    * El estado del COBRO con todos sus abonos (API 0.0.78; null sin el dato):
-   * «· parcial: faltan $X» (aviso) o «· completa el cobro (2 abonos)» (neutro).
+   * «· parcial: faltan $X» (aviso) o «· completa el cobro (2 abonos)» (neutro)
+   * pegado a la secundaria (la hoja), y `linea` («Parcial: faltan $X» /
+   * «Completa el cobro (2 abonos)») para pintarlo en SU renglón (la bandeja,
+   * cuya secundaria se corta a 240 px: revisión del 15-oct-2026).
    */
-  sufijo: { texto: string; tono: "aviso" | "neutro" } | null;
+  sufijo: { texto: string; linea: string; tono: "aviso" | "neutro" } | null;
   /** La línea del cobro que se viene a ver (`?cobro=`, 15-oct-2026): resaltada con « · el que abriste». */
   destacada?: boolean;
 }
@@ -544,13 +606,17 @@ export function sufijoEstadoCobroLote(
 ): LineaLoteCobros["sufijo"] {
   if (p.cobro_estado === "PARCIAL") {
     const f = numeroONull(p.cobro_faltante);
+    const faltan = f != null && f > 0 ? `faltan ${fmtMonto(f, p.moneda ?? monedaLote ?? undefined)}` : null;
     return {
-      texto: f != null && f > 0 ? ` · parcial: faltan ${fmtMonto(f, p.moneda ?? monedaLote ?? undefined)}` : " · parcial",
+      texto: faltan ? ` · parcial: ${faltan}` : " · parcial",
+      linea: faltan ? `Parcial: ${faltan}` : "Parcial",
       tono: "aviso",
     };
   }
   const n = Math.trunc(numeroDe(p.cobro_abonos_n));
-  if (p.cobro_estado === "CONCILIADO" && n >= 2) return { texto: ` · completa el cobro (${n} abonos)`, tono: "neutro" };
+  if (p.cobro_estado === "CONCILIADO" && n >= 2) {
+    return { texto: ` · completa el cobro (${n} abonos)`, linea: `Completa el cobro (${n} abonos)`, tono: "neutro" };
+  }
   return null;
 }
 
@@ -584,8 +650,20 @@ export function tituloDesvincularCobros(n: number): string {
   return `¿Desvincular los ${n} cobros?`;
 }
 
-export function textoConfirmarDesvincularCobros(n: number): string {
-  return `El abono vuelve a quedar pendiente de conciliar y los ${n} ${plural(n, "cobro", "cobros")} vuelven a «Cobros sin banco». No se borra ningún cobro.`;
+/**
+ * Confirmación de desvincular un LOTE. «vuelven a «Cobros sin banco»» SOLO si
+ * todos los cobros del lote salen ahí por su método (revisión del 15-oct-2026:
+ * un BillPocket no sale; sin el detalle de los cobros tampoco se promete).
+ */
+export function textoConfirmarDesvincularCobros(
+  n: number,
+  partes?: ReadonlyArray<Pick<MovimientoCobroParte, "metodo_cobro">> | null,
+): string {
+  const lista = Array.isArray(partes) ? partes : [];
+  const enSinBanco = lista.length > 0 && lista.every((p) => saleEnCobrosSinBanco(p.metodo_cobro));
+  return enSinBanco
+    ? `El abono vuelve a quedar pendiente de conciliar y los ${n} ${plural(n, "cobro", "cobros")} vuelven a «Cobros sin banco». No se borra ningún cobro.`
+    : `El abono vuelve a quedar pendiente de conciliar y los ${n} ${plural(n, "cobro", "cobros")} quedan libres para vincularse con otro movimiento. No se borra ningún cobro.`;
 }
 
 /** UN COBRO, VARIOS ABONOS (API 0.0.78, D22): se suelta ESTE abono; los otros del cobro siguen. */
@@ -1024,11 +1102,16 @@ export function textoConfirmarParcial(
     Math.trunc(numeroDe(c.abonos_n)) > 0
       ? `de lo que le falta al cobro del vuelo #${c.folio ?? "—"} (${fmtMonto(al.faltante_antes, m)} de ${fmtMonto(c.neto, m)})`
       : `del cobro del vuelo #${c.folio ?? "—"} (${fmtMonto(c.neto, m)})`;
+  // «Cobros sin banco» solo lista los métodos de `METODOS_COBROS_SIN_BANCO`:
+  // un BillPocket no sale ahí (revisión del 15-oct-2026), no se promete.
+  const hastaElResto = saleEnCobrosSinBanco(c.metodo_cobro)
+    ? "y seguirá en «Cobros sin banco» hasta que vincules el resto"
+    : `hasta que vincules el resto (${TEXTO_FALTANTE_FUERA_DE_SIN_BANCO})`;
   return {
     titulo: "¿Vincular como pago parcial?",
     cuerpo:
       `El abono de ${abonoTxt}${fecha} cubre solo una parte ${cobro}. ` +
-      `El cobro quedará «Conciliado parcial · faltan ${fmtMonto(al.faltante_despues, m)}» y seguirá en «Cobros sin banco» hasta que vincules el resto. ` +
+      `El cobro quedará «Conciliado parcial · faltan ${fmtMonto(al.faltante_despues, m)}» ${hastaElResto}. ` +
       "Úsalo cuando el cliente pagó el cobro en varias transferencias. Si en realidad son dos cobros distintos, mejor regístralos por separado.",
     aviso: null,
     boton: "Sí, vincular como parcial",
@@ -1199,4 +1282,75 @@ export function textoPaywiseEnLote(n: number | null | undefined): string | null 
 /** Fecha corta del abono para los textos (día Cancún). */
 export function fechaCortaAbono(fecha: string): string {
   return fmtDateOnly(fecha);
+}
+
+// ───────────────────────── Propuestas LIGAR de la IA (revisión del 15-oct-2026) ─────────────────────────
+//
+// Aceptar una propuesta LIGAR de la IA a un COBRO de vuelo ligaba directo con
+// `{cobro_id}`: con un abono MENOR que lo que falta, el API la acepta SIN
+// bandera (D3) y el cobro quedaba «Conciliado parcial» sin la confirmación
+// «¿Vincular como pago parcial?». Ahora la action lee ANTES el veredicto del
+// API para ESE abono (`al_vincular` de `candidatos-cobro`) y decide aquí:
+// conciliado ⇒ liga; parcial ⇒ confirmación; un rechazo ⇒ a mano.
+
+/** Ventana de los candidatos que se leen antes de aceptar (la de la IA de abonos y la del diálogo «Vincular»). */
+export const VENTANA_PROPUESTA_DIAS = 30;
+
+/** El `code` con que la action pide confirmar el parcial (en `details.candidato` va el cobro con su `al_vincular`). */
+export const CODE_CONFIRMAR_PARCIAL = "CONFIRMAR_PARCIAL";
+/** El `code` de una propuesta que el API rechazaría: se revisa a mano. */
+export const CODE_PROPUESTA_A_MANO = "PROPUESTA_A_MANO";
+/** El `code` cuando no se pudo leer el veredicto (no se ligó nada). */
+export const CODE_PROPUESTA_SIN_VEREDICTO = "PROPUESTA_SIN_VEREDICTO";
+
+export const MSG_PROPUESTA_PARCIAL =
+  "Es un pago parcial: acéptalo con su botón «Aceptar» para confirmarlo (no se vinculó).";
+export const MSG_PROPUESTA_SIN_VEREDICTO =
+  "No se pudo revisar el cobro antes de vincular (el servidor no respondió). No se vinculó nada: vuelve a intentarlo.";
+export const MSG_PROPUESTA_COBRO_NO_ESTA =
+  "Ese cobro ya no está entre los candidatos de este abono (pudo conciliarse con otro o cambió su monto). No se vinculó: revísalo a mano con «Vincular a un cobro o ingreso».";
+export const SUFIJO_PROPUESTA_A_MANO = " No se vinculó: revísalo a mano con «Vincular a un cobro o ingreso».";
+
+export type PasoPropuestaCobro =
+  | { tipo: "LIGAR" }
+  | { tipo: "CONFIRMAR_PARCIAL"; candidato: CandidatoCobroVuelo }
+  | { tipo: "A_MANO"; texto: string };
+
+/**
+ * Qué hacer con una propuesta LIGAR de la IA al cobro `cobroId`, con la
+ * respuesta de `candidatos-cobro` de ESE abono:
+ *  - API ≤ 0.0.77 (sin la capacidad `cobros_parciales`): la liga de siempre
+ *    (no existe el parcial);
+ *  - el cobro ya no es candidato ⇒ a mano;
+ *  - CONCILIADO (o sin veredicto) ⇒ ligar; PARCIAL ⇒ confirmar;
+ *  - cualquier rechazo (EXCEDE, COMISION_NO_CUADRA, …) ⇒ a mano, con la razón
+ *    de `guiaAlVincular` (el diálogo tiene las salidas de un clic).
+ */
+export function pasoPropuestaCobro(
+  respuesta: Pick<CandidatosCobroResponse, "movimiento" | "candidatos">,
+  cobroId: string,
+  abono: AbonoGuia,
+): PasoPropuestaCobro {
+  if (typeof respuesta.movimiento?.cobros_parciales !== "boolean") return { tipo: "LIGAR" };
+  const candidatos = Array.isArray(respuesta.candidatos) ? respuesta.candidatos : [];
+  const c = candidatos.find((x): x is CandidatoCobroVuelo => x.tipo === "COBRO_VUELO" && x.cobro_id === cobroId);
+  if (!c) return { tipo: "A_MANO", texto: MSG_PROPUESTA_COBRO_NO_ESTA };
+  const estado = c.al_vincular?.estado;
+  if (estado == null || estado === "CONCILIADO") return { tipo: "LIGAR" };
+  if (estado === "PARCIAL") return { tipo: "CONFIRMAR_PARCIAL", candidato: c };
+  const guia = guiaAlVincular({ tipo: "COBRO", c }, abono, { conAcciones: false });
+  return {
+    tipo: "A_MANO",
+    texto: `${guia?.texto ?? "El servidor no aceptaría este abono con ese cobro."}${SUFIJO_PROPUESTA_A_MANO}`,
+  };
+}
+
+/** El cobro que viaja en `details.candidato` de un `CONFIRMAR_PARCIAL` (null si no viene bien formado). */
+export function candidatoConfirmarParcial(details: unknown): CandidatoCobroVuelo | null {
+  const c = detallesDe(details).candidato;
+  if (!c || typeof c !== "object") return null;
+  const cand = c as Partial<CandidatoCobroVuelo>;
+  return cand.tipo === "COBRO_VUELO" && typeof cand.cobro_id === "string" && cand.al_vincular?.estado === "PARCIAL"
+    ? (cand as CandidatoCobroVuelo)
+    : null;
 }

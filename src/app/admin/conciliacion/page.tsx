@@ -23,6 +23,7 @@ import {
   type GastoSinBancoRow,
 } from "@/components/admin/conciliacion/gastos-sin-banco-table";
 import { CobrosSinBancoTable } from "@/components/admin/conciliacion/cobros-sin-banco-table";
+import { encabezadoCobrosSinBanco } from "@/lib/admin/cobro-banco";
 import { AvisoListaSinBancoNoCargo } from "@/components/admin/conciliacion/lista-sin-banco-no-cargo";
 import { PaywiseAuditoriaPanel } from "@/components/admin/conciliacion/paywise-auditoria";
 import {
@@ -386,6 +387,9 @@ export default async function ConciliacionPage({
     hrefConciliacion({ f, cuenta: cuentaId, desde: desdeVista, hasta: hastaVista });
   const hrefConCuenta = (cuentaId: string) => hrefVista(filtro, cuentaId);
   const ventanaSinBanco = textoVentanaSinBanco(rango);
+  // «Cobros sin banco» (revisión del 15-oct-2026): con el API 0.0.78 la lista
+  // trae los PARCIALES y la cifra es lo que FALTA en el banco (del API).
+  const encabezadoCobros = encabezadoCobrosSinBanco(cobrosSinBanco, ventanaSinBanco);
   const textoRango = textoRangoVista(rango);
   // La lista trae `count`: cuando el tope deja movimientos fuera, se dice.
   const notaRecorte = textoListaRecortada(movs.length, totalMovs);
@@ -617,23 +621,10 @@ export default async function ConciliacionPage({
       ) : filtro === "cobros_sin_banco" ? (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              Cobros que no aparecen en ningún estado de cuenta
-            </CardTitle>
+            <CardTitle className="text-base">{encabezadoCobros.titulo}</CardTitle>
             <CardDescription>
-              Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo)
-              sin cruzar con ningún abono importado ({ventanaSinBanco}). Puede faltar el periodo
-              por importar, no coincidir fecha/monto, o el dinero nunca llegó.
-              {cobrosSinBanco && cobrosSinBanco.por_moneda.length > 0 && (
-                <>
-                  {" "}
-                  Sin cruzar:{" "}
-                  {cobrosSinBanco.por_moneda
-                    .map((m) => `$${fmtMoney(String(m.monto))} ${m.moneda}`)
-                    .join(" · ")}
-                  .
-                </>
-              )}
+              {encabezadoCobros.descripcion}
+              {encabezadoCobros.totales && ` ${encabezadoCobros.totales}`}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">

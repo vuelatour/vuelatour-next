@@ -18,7 +18,11 @@ import { cn } from "@/lib/utils";
  * `gasto-banco-sheet.test.tsx` y `banco-cableado.test.ts`).
  */
 
-/** Toda liga de la hoja: pestaña NUEVA (la hoja y la lista se quedan). */
+/**
+ * Toda liga de la hoja: pestaña NUEVA (la hoja y la lista se quedan). En
+ * oscuro (el admin siempre lo está) `dark:text-brand-400`: el brand-600 sobre
+ * el fondo de la hoja daba 3.03:1 (revisión del 15-oct-2026; ≥ 4.5:1 con el 400).
+ */
 export function EnlaceNuevaPestana({
   href,
   title,
@@ -37,7 +41,7 @@ export function EnlaceNuevaPestana({
       rel="noopener noreferrer"
       prefetch={false}
       title={title}
-      className={cn("cursor-pointer text-brand-600 underline-offset-2 hover:underline", className)}
+      className={cn("cursor-pointer text-brand-600 underline-offset-2 hover:underline dark:text-brand-400", className)}
     >
       {children}
     </Link>

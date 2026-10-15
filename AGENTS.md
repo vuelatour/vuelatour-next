@@ -9562,15 +9562,25 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
 - **Badge del cobro** (`CobroConciliadoBadge` de `flights/cobro-sobre-nota.tsx`,
   en las tarjetas «Cobros» del vuelo y de la cotización): «Conciliado»
   (verde; también vía su sobre o su anticipo), «Conciliado parcial · faltan
-  $1,700 MXN» (ámbar; en un celular envuelve en dos líneas) y «Sin
-  conciliar» (rosa, sin fondo); efectivo, dólares, BillPocket y reembolsos,
-  sin badge. Tooltip con el abono («Conciliado con el banco: abono del 15
+  $1,700 MXN» (ámbar; envuelve dentro de su columna) y «Sin conciliar»
+  (rosa, sin fondo); efectivo, dólares, BillPocket y reembolsos sin liga,
+  sin badge. En un celular la FILA del cobro de la tarjeta del vuelo
+  envuelve (`flex-wrap`: la fecha y los botones, ~234 px, bajan a su
+  renglón con `ml-auto` y el cobro usa todo el ancho con `flex-1
+  basis-64`; revisión del 15-oct-2026: antes al cobro le quedaban ~54 px y
+  el badge, que ahora es botón, se cortaba o se encimaba con la fecha).
+  Tooltip con el abono («Conciliado con el banco: abono del 15
   sep 2026 en EJE SCOTIA por $3,400 MXN.»), con varios («Conciliado con 2
   abonos del banco: 15 sep 2026 · $1,700 MXN (EJE SCOTIA) y …»), con un
   lote («Conciliado con el banco: $68,205.55 MXN de un abono de $69,183 MXN
   del 15 sep 2026 (EJE SCOTIA) que pagó 2 cobros.») o, en un parcial, lo que
-  respalda el banco y qué hacer. «Sin conciliar» usa
-  `TITULO_SIN_CONCILIAR_ENTRADA`, el MISMO title de Ingresos (el de la spec
+  respalda el banco y qué hacer: «Mientras, este cobro sale en «Cobros sin
+  banco».» SOLO si su método sale ahí (`saleEnCobrosSinBanco`, espejo de
+  `METODOS_COBRO_ABONO_AUTO` del API con prueba de paridad); un BillPocket
+  —candidato manual, pero esa lista y el pre-cierre no lo traen— dice
+  «Mientras, lo que falta se ve en esta tarjeta y en Ingresos.». «Sin
+  conciliar» usa `TITULO_SIN_CONCILIAR_ENTRADA`, el MISMO title de Ingresos
+  (el de la spec
   prometía «se cruza solo al importar», falso para un cobro registrado
   DESPUÉS de importar: los cobros no tienen cruce «al revés»); la parte de
   un sobre y el cobro de un anticipo llevan su propio title (el abono se
@@ -9594,7 +9604,13 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   badge «Sin conciliar» y, al lado, el chip ámbar INFORMATIVO «Parcial ·
   faltan $1,700 MXN» (`chipParcialEntrada` + `ChipParcialEntrada` de
   `ingresos/entradas-table.tsx`, del aditivo `conciliacion.parcial`); el
-  chip nunca es botón.
+  chip nunca es botón. El `title` del badge de un parcial es el SUYO
+  (`tituloBadgeEntrada` → `TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA`: «Ya tiene
+  abonos del banco ligados, pero todavía no completan el cobro. El abono
+  que falta se vincula en Conciliación cuando llegue.»), también sin botón
+  (COORDINADOR); el de SIN_CONCILIAR («Ningún abono del banco está ligado
+  todavía…») contradecía al chip. Desviación anotada del texto literal de
+  la spec (RC9 se respeta: el texto visible sigue siendo «Sin conciliar»).
 - **Corregir un cobro** (`lib/admin/cobro-edicion.ts`): el candado del
   dinero decide con `ligado_banco`, también para un parcial, y el title del
   botón agrega «(parcial)». Ver «Corregir un cobro: «Editar» en las cards de
@@ -9622,8 +9638,11 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   (`CLAVE_PRECIERRE_COBRADOS_DE_MAS`) con chips «#217 ($495.99) · IVA»
   (sufijo por causa; title «Posible causa: … Revisa la card de cobros del
   vuelo.») y «Resolver →» a los vuelos del periodo; los EXPLICADOS no
-  cuentan y van en una línea gris («Además: #111 (redondeo del tipo de
-  cambio) no requiere acción.», hasta 10 folios y «y N más»). En
+  cuentan: el `detalle` del API ya cierra con «Además hay N vuelo(s) con la
+  diferencia explicada (…) que no requiere(n) acción.» y la línea gris dice
+  CUÁLES («Con la diferencia explicada: #111 (redondeo del tipo de
+  cambio).», hasta 10 folios y «y N más»; revisión del 15-oct-2026: antes
+  empezaba también con «Además:» y parecían dos grupos de vuelos). En
   `cobros_bancarios_sin_conciliar` los parciales salen en ámbar («#315 ·
   parcial · faltan $1,700 MXN», hasta 8 y «y N más…»).
 - **Vista previa del formulario** (`flights/cobro-form-sheet.tsx` +
@@ -9639,7 +9658,10 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   por $X USD.»); sin `monto_usd`, «El saldo del vuelo se recalcula al
   guardar.». Vuelo cancelado, lo de siempre. Cotización ABIERTA (prop
   `cotizacionAbierta`) o total ≤ 0 ⇒ nunca «cobrado de más» (el API
-  tampoco avisa).
+  tampoco avisa). Los cinco montajes de `CobroFormSheet` la pasan
+  (`cobros-card.tsx` ×2, `quote-cobros-card.tsx`, `quote-workspace.tsx` y,
+  desde la revisión del 15-oct-2026, «Registrar cobro» de la Auditoría
+  Paywise con `VueloParaCobro.cotizacion_abierta`, leída del snapshot).
 
 ### Diálogo «Vincular a un cobro o ingreso» con el veredicto del API (`al_vincular`)
 
@@ -9656,7 +9678,11 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
     faltarán $1,700 MXN. Cuando llegue el resto, vincúlalo a este mismo
     cobro.». El botón dice «Vincular como parcial…» y abre el AlertDialog
     «¿Vincular como pago parcial?» («Sí, vincular como parcial»): el API no
-    se llama hasta confirmar (el API no exige bandera).
+    se llama hasta confirmar (el API no exige bandera). Su cuerpo dice «… y
+    seguirá en «Cobros sin banco» hasta que vincules el resto» SOLO si el
+    método del cobro sale ahí (`saleEnCobrosSinBanco`); un BillPocket: «…
+    hasta que vincules el resto (lo que falta se ve en la tarjeta de cobros
+    del vuelo y en Ingresos)» (revisión del 15-oct-2026).
   - EXCEDE: botón APAGADO con el title «El abono rebasa este cobro: marca
     también el otro vuelo» y salidas de un clic: «Agregar el cobro del vuelo
     #332» (marca el sugerido del API, solo si está en la lista) y «Buscar
@@ -9671,12 +9697,24 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
     la razón a la vista (los candidatos no traen texto: el panel arma la
     frase con los números del API; un 409 se pinta con el texto del API).
   - **EXCEPCIÓN deliberada a «la guía nunca apaga el botón»**: solo con UN
-    cobro marcado, porque es el veredicto del API para ese abono. El botón
-    apagado va dentro de un `<span title>` (un `disabled` no recibe el
-    puntero) y con `aria-describedby` a la guía. Con 2+ cobros la suma del
-    lote va por lo que le FALTA a cada uno (con un parcial marcado lo dice:
-    «2 cobros suman $X (lo que le falta a cada uno) · …») y NUNCA apaga:
-    manda el 409 `ABONO_NO_CUADRA`.
+    cobro marcado, porque es el veredicto del API para ese abono. Apagado por
+    el veredicto, el botón queda ENFOCABLE (`focusableWhenDisabled` de Base
+    UI: `aria-disabled`, sin `disabled` nativo, `aria-disabled:opacity-50`;
+    sigue en el Tab y el lector anuncia su `aria-describedby` a la guía; Base
+    UI no dispara el clic) dentro de un `<span title>` con la razón; apagado
+    por «nada marcado» o «vinculando», el `disabled` de siempre. Con 2+
+    cobros la suma del lote va por lo que le FALTA a cada uno (con un
+    parcial marcado lo dice: «2 cobros suman $X (lo que le falta a cada
+    uno) · …») y NUNCA apaga: manda el 409 `ABONO_NO_CUADRA`.
+  - **Accesibilidad** (revisión del 15-oct-2026): una región viva
+    PERMANENTE (`<p className="sr-only" aria-live="polite" aria-atomic="true">`,
+    montada con el diálogo) dice el veredicto o la suma al marcar; la guía ya
+    no lleva `aria-live` (nacía con su texto y no se anunciaba). «Agregar el
+    cobro del vuelo #332» pasa el foco al botón principal ANTES de marcar (la
+    guía se desmonta con 2 cobros y el foco caía al contenedor: el siguiente
+    Tab iba al buscador). La descripción y la línea corta de cada candidato
+    llevan `title` (se cortan a lo ancho: «… · falta $1,700 · cuadra exacto
+    con lo que falta» no se leía).
 - Bajo cada candidato, `lineaCortaAlVincular` («si lo vinculas, queda
   parcial: faltarían $1,700 MXN», «el abono rebasa este cobro por $977.45
   MXN», …); un candidato parcial dice «ya conciliado $1,700 de $3,400 (1
@@ -9699,7 +9737,14 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   503 `CONCILIACION_COBROS_PARCIALES_NO_DISPONIBLE` (sin la migración) y
   `SIN_CONEXION` ⇒ «No se pudo confirmar si el abono quedó vinculado…»
   (jamás «no se vinculó»). Con `details.comision_corregida`, con cualquier
-  código, la comisión del cobro YA cambió.
+  código, la comisión del cobro YA cambió. Con «Corregir la comisión» un
+  fallo SIN veredicto del API (`respuestaSinVeredicto`: un 5xx sin código de
+  negocio —el `ERROR` del filtro del API, que solo anota la comisión en los
+  HttpException—, `PARSE_ERROR`, sin respuesta o un texto de red) es
+  INCIERTO: `MSG_COMISION_INCIERTA` («No se pudo confirmar si la comisión
+  del cobro y la liga quedaron…»), la lista se vuelve a pedir y la página
+  se pone al día al cerrar (`mensajeErrorVincularCobros(r, {
+  corrigiendoComision })`, revisión del 15-oct-2026).
 - **Toasts** (de `cobros_estado[]` y `comision_corregida`): «Abono
   vinculado: el cobro del vuelo #315 queda conciliado PARCIAL (faltan $1,700
   MXN).» con la acción «Buscar el abono que falta» (pestaña nueva), «… quedó
@@ -9715,14 +9760,40 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   `conciliacion/movimiento-actions.tsx`): la misma guía sin salidas de un
   clic (`conAcciones: false`) + «Para marcar varios cobros o corregir la
   comisión desde aquí, usa «Conciliar en Ingresos».» en EXCEDE o
-  COMISION_NO_CUADRA, la MISMA `ConfirmacionVincular` para el parcial y sus
-  409 por `mensajeErrorVincularCobros` (vuelve a pedir la lista).
-- **Riesgo conocido (fuera de alcance)**: aceptar una propuesta LIGAR de la
-  IA (`aceptarPropuestaAbonoAction`) o «Vincular» desde el 409
-  `ABONO_TIENE_COBRO_CANDIDATO` de `registrar-ingreso-dialog` no pasan por
-  `al_vincular`: con un monto menor el cobro queda parcial sin la
-  confirmación (el API lo acepta sin bandera) y después se ve «Conciliado
-  parcial».
+  COMISION_NO_CUADRA, la MISMA `ConfirmacionVincular` para el parcial —
+  DENTRO de su `DialogContent` (revisión del 15-oct-2026: como hermana del
+  `Dialog`, Base UI no la anidaba y un Esc con el foco fuera de ella cerraba
+  también «Vincular cobro» y soltaba lo elegido)— y sus 409 por
+  `mensajeErrorVincularCobros` (vuelve a pedir la lista). Toda server action
+  del menú va con `.catch(sinConexion)` (vincular, desvincular, quitar el
+  reverso y los candidatos): sin respuesta, la liga dice `MSG_VINCULO_INCIERTO`,
+  vuelve a pedir la lista y refresca al CERRAR el diálogo
+  (`refrescarAlCerrarLinkRef`); desvincular dice `MSG_DESVINCULO_INCIERTO`
+  («No se pudo confirmar si el movimiento quedó desvinculado…»), cierra la
+  confirmación y refresca. Antes un `await` desnudo en `startTransition`
+  mandaba Conciliación entera al error boundary.
+- **Propuestas LIGAR de la IA a un cobro** (revisión del 15-oct-2026, D3;
+  antes «riesgo conocido»): `aceptarPropuestaAbonoAction` lee ANTES
+  `candidatos-cobro` del abono (±30 días, `VENTANA_PROPUESTA_DIAS`) y decide
+  con `pasoPropuestaCobro` (`lib/admin/conciliacion-cobros-lote.ts`, al
+  final): CONCILIADO ⇒ liga; PARCIAL ⇒ `CONFIRMAR_PARCIAL` con el cobro en
+  `details.candidato` y NADA escrito — la ventana de sugerencias abre la
+  MISMA `ConfirmacionVincular` («¿Vincular como pago parcial?», números del
+  API) y vuelve con `{ parcialConfirmado: true }` (toast de
+  `toastVinculoCobros`: «… queda conciliado PARCIAL (faltan $X)»); un rechazo
+  (EXCEDE, COMISION_NO_CUADRA…) o el cobro que ya no es candidato ⇒
+  `PROPUESTA_A_MANO` con la razón de `guiaAlVincular` y «revísalo a mano con
+  «Vincular a un cobro o ingreso»» (sin PATCH); sin poder leer el veredicto ⇒
+  `PROPUESTA_SIN_VEREDICTO` («No se vinculó nada»); API ≤ 0.0.77 (sin
+  `cobros_parciales`) ⇒ la liga de siempre. Vale también para «Vincular a
+  esta» de las alternativas. En «Aceptar las marcadas» una liga a un COBRO
+  solo entra con `monto_exacto` (`aceptableEnLote`): las demás, de una en
+  una con su «Aceptar». Un sobre o un ingreso ligan directo (el API los
+  rechaza con su 409: no hay parcial silencioso). «Vincular» desde el 409
+  `ABONO_TIENE_COBRO_CANDIDATO` de `registrar-ingreso-dialog` sigue sin leer
+  `al_vincular`: el API solo ofrece ahí cobros que CUADRAN con el abono (su
+  neto o bruto a ≤ $1.00, o el faltante exacto de un parcial), así que no
+  deja un parcial.
 
 ### Bandeja, desvincular, «Cobros sin banco» y Paywise
 
@@ -9732,9 +9803,14 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   abono de UN cobro (`LigaCobroDeVuelo`) gana una tercera línea,
   `lineaCobroUnicoBandeja`: «Pago parcial: este abono $1,700 de $3,400 ·
   faltan $1,700 MXN» (ámbar) o «Completa el cobro junto con 1 abono más»
-  (gris); en un lote cada línea lleva `sufijoEstadoCobroLote` («· parcial:
-  faltan $X» / «· completa el cobro (2 abonos)»). La búsqueda rápida
-  encuentra «parcial» y el folio por `textoBusquedaCobros`.
+  (gris); en un lote cada línea lleva el estado de SU cobro
+  (`sufijoEstadoCobroLote`) en SU renglón, sin cortar: `sufijo.linea`
+  «Parcial: faltan $X» (ámbar) / «Completa el cobro (2 abonos)» (gris)
+  (revisión del 15-oct-2026: pegado a la secundaria de 240 px, la elipsis se
+  comía lo que falta; la secundaria cortada lleva en su `title` el texto
+  completo con `sufijo.texto` «· parcial: faltan $X»). La hoja de una
+  entrada sigue con `sufijo.texto` pegado (allá no se corta). La búsqueda
+  rápida encuentra «parcial» y el folio por `textoBusquedaCobros`.
 - **Desvincular** suelta ESE abono: si el cobro tiene otros
   (`abonoConOtrosAbonosDelCobro`, por `cobro_conciliacion.abonos_n`) el menú
   dice «Desvincular este abono del cobro» y la confirmación «¿Desvincular
@@ -9742,19 +9818,36 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   del API («El abono de $1,700 MXN del 15 sep 2026 vuelve a quedar
   pendiente. El cobro del vuelo #315 sigue ligado a 1 abono más y queda
   «Conciliado parcial»: faltarán $1,700 MXN. No se borra ningún cobro.»);
-  si era el único, «El cobro del vuelo #315 vuelve a «Cobros sin banco».»;
-  en un lote, «Los cobros que tienen otros abonos quedan como «Conciliado
-  parcial».». El toast lee `cobros_liberados[]` (`toastDesvinculoCobros`;
-  sin la llave, el de siempre). `cobros_liberados` no trae `vuelo_id`:
-  desvincular revalida Conciliación e Ingresos, no el vuelo de cada cobro
-  liberado.
+  si era el único, «El cobro del vuelo #315 vuelve a «Cobros sin banco».»
+  SOLO si su método sale ahí (`textoCobroVuelveASinBanco(conc,
+  movimiento.cobro?.metodo_cobro)`: un BillPocket —el API lo deja
+  NO_BANCARIO— o sin el método, nada); en un lote, «… vuelven a «Cobros sin
+  banco»» SOLO si todos sus cobros salen ahí (si no, «… quedan libres para
+  vincularse con otro movimiento»: `textoConfirmarDesvincularCobros(n,
+  movimiento.cobros)`) y «Los cobros que tienen otros abonos quedan como
+  «Conciliado parcial».». El toast lee `cobros_liberados[]`
+  (`toastDesvinculoCobros`; sin la llave, el de siempre).
+  `cobros_liberados` no trae `vuelo_id`: desvincular revalida Conciliación
+  e Ingresos, no el vuelo de cada cobro liberado.
 - **«Cobros sin banco»** (`conciliacion/cobros-sin-banco-table.tsx`; desde el
   0.0.78 son los NO cubiertos, parciales incluidos): columna «Banco» (solo
   si el API manda `parcial`) con «Parcial» ámbar (title «Conciliado $1,700
   MXN de $3,400 MXN con 1 abono (15 sep 2026): faltan $1,700 MXN.») y «Ver
-  abono», o «Sin abono» gris; el «Neto esperado» de un parcial dice
+  abono» (con `dark:text-brand-400`: el brand-600 sobre la tarjeta oscura
+  daba 3.03:1), o «Sin abono» gris; el «Neto esperado» de un parcial dice
   «$1,700.00 falta (de $3,400.00)» y arriba de la tabla, «N con pago
-  parcial: un abono cubre solo una parte; el resto sigue pendiente.».
+  parcial: un abono cubre solo una parte; el resto sigue pendiente.». El
+  ENCABEZADO de la pestaña es `encabezadoCobrosSinBanco` (`cobro-banco.ts`,
+  revisión del 15-oct-2026): con el API 0.0.78 (`parciales` numérico) el
+  título «Cobros que el banco todavía no respalda por completo», la
+  descripción «… sin ningún abono importado ligado, o con abonos que todavía
+  no los completan …» y la cifra «Falta en el banco: $1,700.00 MXN» =
+  `por_moneda[].faltante` del API (de un parcial, lo que le falta; de uno
+  sin abonos, su neto). Antes decía «Sin cruzar: $3,400.00 MXN» con
+  `monto` (Σ BRUTA de las filas, parciales incluidos) junto a una fila que
+  decía «$1,700.00 falta». Con un API previo, los textos y la cifra de
+  siempre. «Gastos sin banco» sigue con su «Faltan:» = Σ de `monto` (el API
+  no manda el faltante por moneda; el panel no suma).
 - **Auditoría Paywise**: «N depósitos de Paywise pagan varios cobros (lote):
   quedan fuera del cruce automático; revísalos en la bandeja.»
   (`textoPaywiseEnLote`, de `resumen.movimientos_en_lote`).
@@ -9778,15 +9871,12 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   `components/admin/ingresos/__tests__/entradas-parcial.test.tsx`,
   `vincular-abono-parcial.test.tsx` y `vincular-abono-lote.test.tsx`;
   `components/admin/conciliacion/__tests__/cobros-parciales-bandeja.test.tsx`
-  y `cobros-sin-banco-table.test.tsx`. El runner no tiene DOM: el diálogo
+  y `cobros-sin-banco-table.test.tsx`;
+  `app/admin/ingresos/__tests__/aceptar-propuesta-cobro.test.ts` (la IA y
+  el veredicto antes de ligar). El runner no tiene DOM: el diálogo
   se prueba pintando sus piezas exportadas (`GuiaVincularAbono`,
   `BotonVincularConGuia`, `ConfirmacionVincular`) y leyendo el cableado.
-- **Pendientes**: el `detalle` del renglón del pre-cierre ya dice «Además
-  hay N vuelo(s) con la diferencia explicada…» (lo manda el API) y el panel
-  pinta además su línea gris con los folios: «Además» sale dos veces (falta
-  decidir). «Registrar cobro» desde la Auditoría Paywise no pasa
-  `cotizacionAbierta` (`VueloParaCobro` no lo trae). Sin QA visual en
-  navegador.
+- **Pendientes**: sin QA visual en navegador (lector de pantalla incluido).
 
 ## Ingresos: «Conciliado» abre su conciliación con el banco (14-oct-2026, API 0.0.78)
 
@@ -9833,7 +9923,9 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   las mismas clases + `cursor-pointer`, el title de siempre + qué hace el
   clic (« Clic para ver el abono del banco y su estado de cuenta.» / « Clic
   para ver los abonos y buscar el que falta.» / « Clic para ver por qué y
-  buscar el abono.») y un nombre accesible que EMPIEZA con el texto visible
+  buscar el abono.»; el de un parcial de Ingresos es
+  `TITULO_SIN_CONCILIAR_PARCIAL_ENTRADA`, no el de «Ningún abono…»: ver la
+  sección anterior) y un nombre accesible que EMPIEZA con el texto visible
   («Conciliado: ver la conciliación con el banco del cobro del vuelo #332 de
   $977.45 del 15 sep 2026»; en la tarjeta, «… del cobro de $977.45 …»). La
   columna lleva `noLink`.
@@ -9849,7 +9941,9 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   vaciar, la descarga del estado de cuenta en el MISMO clic); el cuerpo
   PRESENTACIONAL `ingresos/entrada-banco-detalle.tsx` se carga con
   `next/dynamic` sin SSR al primer clic (`EntradaBancoDetalleDinamico`) y
-  comparte con Gastos el marcado de `components/admin/banco/partes-hoja.tsx`.
+  comparte con Gastos el marcado de `components/admin/banco/partes-hoja.tsx`
+  (`EnlaceNuevaPestana` con `dark:text-brand-400`: el admin vive en oscuro y
+  el brand-600 sobre la hoja daba 3.03:1; revisión del 15-oct-2026).
   Encabezado: «Vuelo #332 · Cobro de vuelo · $977.45 · 15 sep 2026 · Beh
   Kay», «Cobrado con: …» / «Entró a: …» y «Registró el cobro: Itzi · 8 oct
   2026, 1:43 p.m.». Cuerpo: la frase del estado, la línea de la comisión,
@@ -9891,12 +9985,17 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
 - **El detalle `?ingreso=`** (`ingresos/ingreso-detalle-sheet.tsx`): para
   ADMIN/FACTURACION, si no es efectivo ni está dado de baja, EMBEBE el
   cuerpo con el MODO CONTROLADO del hook (`fija`: la carga se deriva de la
-  llave ingreso + abono —`claveEntradaConAbono`— y el único setState va en
-  el `.then`, porque `react-hooks/set-state-in-effect` es ERROR); tras
-  «Desvincular del abono», el `router.refresh()` cambia la llave y el cuerpo
-  se vuelve a pedir. Con un API ≤ 0.0.77 (`RUTA_NO_DISPONIBLE`) vuelve el
-  bloque de siempre. Sin abono y sin la hoja (COORDINADOR):
-  `TEXTO_INGRESO_SIN_ABONO` + «lo concilia Administración o Facturación».
+  llave —`claveEntradaConAbono` = `claveEntradaControlada` de
+  `entrada-banco.ts`: origen, id, el abono, la cuenta, el día, el monto, la
+  moneda y el estado— y el único setState va en el `.then`, porque
+  `react-hooks/set-state-in-effect` es ERROR); tras «Desvincular del abono»
+  o tras «Editar» la cuenta, la fecha o el monto en el MISMO detalle, el
+  `router.refresh()` cambia la llave y el cuerpo se vuelve a pedir (revisión
+  del 15-oct-2026: con solo ingreso + abono la edición dejaba la cobertura,
+  las ventanas y «Conciliarlo en «Por conciliar»» de la cuenta vieja). Con
+  un API ≤ 0.0.77 (`RUTA_NO_DISPONIBLE`) vuelve el bloque de siempre. Sin
+  abono y sin la hoja (COORDINADOR): `TEXTO_INGRESO_SIN_ABONO` + «lo
+  concilia Administración o Facturación».
 - **Errores** (`mensajeErrorDetalleEntrada`; jamás «sin abonos» cuando la
   carga falló): API previo ⇒ «El servidor todavía no tiene este detalle
   (falta actualizar el API). Mientras, búscalo en Conciliación.» con la
@@ -9907,7 +10006,11 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   sesión expiró…»; lo demás, «No se pudo cargar el detalle del banco.
   Vuelve a intentarlo.» + «Reintentar». Si el estado del API ya no es el de
   la fila: «El estado cambió desde que abriste la página: recarga para ver
-  la lista al día.» + «Recargar».
+  la lista al día.» + «Recargar», que en la HOJA la CIERRA y pone la lista
+  al día (`detalle.cerrar(); router.refresh()`; revisión del 15-oct-2026: el
+  hook guarda la fila del clic y un refresh solo no la cambiaba —la franja
+  nunca se iba—; igual en la hoja de Gastos). En el detalle `?ingreso=`
+  basta el refresh (la fila es la de la lista).
 - **Pruebas**: `lib/admin/__tests__/entrada-banco.test.ts` (respuestas
   reales en `entrada-banco.fixtures.ts`), `entrada-banco-omitidos.test.ts`,
   `hoja-banco.test.ts`, `cobros.test.ts`, `ingresos-ui.test.ts`,
@@ -9933,7 +10036,10 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   (sin `al_vincular`) y no ofrece «Corregir la comisión» (sin la capacidad;
   si viajara, el 400 de `forbidNonWhitelisted` ⇒
   `API_SIN_CORREGIR_COMISION`), «Cobros sin banco» va sin la columna
-  «Banco» y los toasts son los de siempre.
+  «Banco» y con su encabezado de siempre («Sin cruzar: …», sin
+  `parciales` ni `faltante`), aceptar una propuesta LIGAR de la IA liga como
+  siempre (sin `cobros_parciales` no existe el parcial) y los toasts son los
+  de siempre.
 - **Una ruta nueva que responde 404 «Cannot GET»** (la hoja de una entrada)
   dice «El servidor todavía no tiene este detalle (falta actualizar el
   API). Mientras, búscalo en Conciliación.» con la búsqueda: jamás un error

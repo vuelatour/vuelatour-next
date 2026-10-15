@@ -160,9 +160,12 @@ export const MAX_EXPLICADOS_PRECIERRE = 10;
 
 /**
  * La línea gris de los vuelos con la diferencia EXPLICADA (no cuentan en el
- * renglón): «Además: #81 y #84 (comisión del link pagada por el cliente) no
- * requieren acción.», agrupados por la etiqueta de la causa del API. null sin
- * explicados.
+ * renglón): «Con la diferencia explicada: #81 y #84 (comisión del link pagada
+ * por el cliente).», agrupados por la etiqueta de la causa del API. null sin
+ * explicados. Revisión del 15-oct-2026: el `detalle` del API ya cierra con
+ * «Además hay N vuelo(s) con la diferencia explicada (…) que no requiere(n)
+ * acción.»; esta línea dice CUÁLES (antes empezaba también con «Además:» y
+ * repetía «no requiere acción»: parecían dos grupos de vuelos distintos).
  */
 export function lineaExplicadosPreCierre(
   explicados: ReadonlyArray<{ folio?: number | null; causa_etiqueta?: string | null }> | null | undefined,
@@ -179,7 +182,7 @@ export function lineaExplicadosPreCierre(
   const partes = [...grupos.entries()].map(([etiqueta, folios]) => `${listaEs(folios)} (${etiqueta})`);
   const resto = lista.length - visibles.length;
   const cuerpo = resto > 0 ? `${partes.join(", ")} y ${resto} más` : listaEs(partes);
-  return `Además: ${cuerpo} ${lista.length === 1 ? "no requiere" : "no requieren"} acción.`;
+  return `Con la diferencia explicada: ${cuerpo}.`;
 }
 
 // ───────────────────────────── Formulario de cobro ─────────────────────────────

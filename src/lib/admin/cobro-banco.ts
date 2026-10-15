@@ -26,7 +26,12 @@ import { TITULO_SIN_CONCILIAR_ENTRADA } from "@/lib/admin/ingresos-ui";
 import { esDiaValido, uuidFiltro } from "@/lib/admin/url-params";
 import { fmtDateOnly, isoToCancunInput } from "@/lib/datetime";
 import { fmtDecimal, fmtMonto, fmtUsd } from "@/lib/format";
-import type { AbonoDeCobroCorto, CobroConciliacionDeAbono, CobroSinBanco } from "@/types/conciliacion";
+import type {
+  AbonoDeCobroCorto,
+  CobroConciliacionDeAbono,
+  CobroSinBanco,
+  CobrosSinBancoResponse,
+} from "@/types/conciliacion";
 import type { AbonoBancoDeCobro, EstadoBancoCobro, FlightCobro } from "@/types/flights";
 import type { ParcialEntrada } from "@/types/ingresos";
 
@@ -37,6 +42,7 @@ export type CobroBanco = Pick<
   FlightCobro,
   | "monto"
   | "moneda"
+  | "metodo_cobro"
   | "fecha_cobro"
   | "conciliado"
   | "conciliado_via"
@@ -58,6 +64,23 @@ export type CobroBanco = Pick<
  * del Excel del API usa el mismo corte).
  */
 export const TOLERANCIA_COBRO_BANCO = 1;
+
+/**
+ * Espejo de `METODOS_COBRO_ABONO_AUTO` del API (`common/metodo-cobro.util.ts`,
+ * prueba de paridad): los métodos que lista «Cobros sin banco» y que vigila el
+ * pre-cierre. BillPocket se liga A MANO a un abono (es candidato manual), pero
+ * NO sale ahí (revisión del 15-oct-2026): una frase que lo prometa para un
+ * cobro BillPocket sería falsa.
+ */
+export const METODOS_COBROS_SIN_BANCO: readonly string[] = ["TRANSFERENCIA", "HSBC_LINK", "CHEQUE", "PAYWISE"];
+
+/** ¿Un cobro con este método sale en «Cobros sin banco»? Sin el método no se promete nada (false). */
+export function saleEnCobrosSinBanco(metodo: string | null | undefined): boolean {
+  return typeof metodo === "string" && METODOS_COBROS_SIN_BANCO.includes(metodo);
+}
+
+/** Dónde se ve lo que le falta a un cobro que NO sale en «Cobros sin banco» (BillPocket). */
+export const TEXTO_FALTANTE_FUERA_DE_SIN_BANCO = "lo que falta se ve en la tarjeta de cobros del vuelo y en Ingresos";
 
 const ESTADOS_BANCO_COBRO: readonly EstadoBancoCobro[] = [
   "CONCILIADO",
@@ -269,7 +292,11 @@ export function tituloBadgeCobro(c: CobroBanco): string | null {
         f != null && f > 0
           ? `Faltan ${fmtMonto(f, m)}: vincula el otro abono en Conciliación cuando llegue.`
           : "Vincula el abono que falta en Conciliación cuando llegue.";
-      return `${respaldo}${cuales ? ` (${cuales})` : ""}. ${falta} Mientras, este cobro sale en «Cobros sin banco».`;
+      // BillPocket no sale en «Cobros sin banco» (revisión del 15-oct-2026): no se promete.
+      const mientras = saleEnCobrosSinBanco(c.metodo_cobro)
+        ? "Mientras, este cobro sale en «Cobros sin banco»."
+        : "Mientras, lo que falta se ve en esta tarjeta y en Ingresos.";
+      return `${respaldo}${cuales ? ` (${cuales})` : ""}. ${falta} ${mientras}`;
     }
     case "SIN_CONCILIAR":
       if (esParteDeSobre(c)) return TITULO_SIN_CONCILIAR_SOBRE;
@@ -583,10 +610,16 @@ export function textoConfirmarDesvincularAbono(
 /**
  * Frase extra de la confirmación de siempre cuando el abono es el ÚNICO del
  * cobro (D22): «El cobro del vuelo #315 vuelve a «Cobros sin banco».». null
- * si el cobro tiene otros abonos o sin el dato (API previo).
+ * si el cobro tiene otros abonos, sin el dato (API previo) o si su método no
+ * sale en «Cobros sin banco» (BillPocket, o sin el método: revisión del
+ * 15-oct-2026; el API lo deja NO_BANCARIO y la confirmación de siempre basta).
  */
-export function textoCobroVuelveASinBanco(conc: CobroConciliacionDeAbono | null | undefined): string | null {
+export function textoCobroVuelveASinBanco(
+  conc: CobroConciliacionDeAbono | null | undefined,
+  metodo: string | null | undefined,
+): string | null {
   if (!conc || Math.trunc(numeroDe(conc.abonos_n)) > 1) return null;
+  if (!saleEnCobrosSinBanco(metodo)) return null;
   return conc.folio != null
     ? `El cobro del vuelo #${conc.folio} vuelve a «Cobros sin banco».`
     : "El cobro vuelve a «Cobros sin banco».";
@@ -684,4 +717,46 @@ export function netoEsperadoParcial(c: Pick<CobroSinBanco, "parcial" | "faltante
 export function lineaParcialesCobrosSinBanco(rows: readonly Pick<CobroSinBanco, "parcial">[]): string | null {
   const n = rows.filter((c) => c.parcial === true).length;
   return n > 0 ? `${n} con pago parcial: un abono cubre solo una parte; el resto sigue pendiente.` : null;
+}
+
+/** Título de «Cobros sin banco» con un API previo (la lista no trae parciales). */
+export const TITULO_COBROS_SIN_BANCO = "Cobros que no aparecen en ningún estado de cuenta";
+/** Desde el 0.0.78 la lista trae también los PARCIALES (abonos que no completan el cobro). */
+export const TITULO_COBROS_SIN_BANCO_CON_PARCIALES = "Cobros que el banco todavía no respalda por completo";
+
+export interface EncabezadoCobrosSinBanco {
+  titulo: string;
+  descripcion: string;
+  /** «Falta en el banco: $1,700.00 MXN.» (API 0.0.78) / «Sin cruzar: $3,400.00 MXN.» (previo); null sin montos. */
+  totales: string | null;
+}
+
+/**
+ * El encabezado de la pestaña «Cobros sin banco» (revisión del 15-oct-2026).
+ * Con el API 0.0.78 (`parciales` numérico en la respuesta) la lista incluye
+ * los cobros PARCIALES: título y descripción lo dicen, y la cifra es
+ * `por_moneda[i].faltante` («Falta en el banco: …»: de un parcial, lo que le
+ * falta; de un cobro sin abonos, su neto). Antes se pintaba `monto` (Σ BRUTA
+ * de cada fila) como «Sin cruzar»: con un parcial de $1,700 de $3,400 decía
+ * $3,400 mientras su fila decía «$1,700.00 falta (de $3,400.00)». Con un API
+ * previo, los textos y la cifra de siempre. Las dos cifras son del API: aquí
+ * no se suma nada.
+ */
+export function encabezadoCobrosSinBanco(
+  r: Pick<CobrosSinBancoResponse, "por_moneda" | "parciales"> | null | undefined,
+  ventana: string,
+): EncabezadoCobrosSinBanco {
+  const conParciales = typeof r?.parciales === "number";
+  const porMoneda = Array.isArray(r?.por_moneda) ? r.por_moneda : [];
+  const conFaltante = conParciales && porMoneda.length > 0 && porMoneda.every((m) => numeroONull(m.faltante) != null);
+  const montos = porMoneda.map(
+    (m) => `$${fmtDecimal(conFaltante ? numeroONull(m.faltante) : numeroDe(m.monto), 2)} ${m.moneda}`,
+  );
+  return {
+    titulo: conParciales ? TITULO_COBROS_SIN_BANCO_CON_PARCIALES : TITULO_COBROS_SIN_BANCO,
+    descripcion: conParciales
+      ? `Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo) sin ningún abono importado ligado, o con abonos que todavía no los completan (${ventana}). Puede faltar el periodo por importar, no coincidir fecha/monto, o el dinero nunca llegó.`
+      : `Link de pago (HSBC o Paywise), transferencia o cheque (cobros de vuelo y sobres de grupo) sin cruzar con ningún abono importado (${ventana}). Puede faltar el periodo por importar, no coincidir fecha/monto, o el dinero nunca llegó.`,
+    totales: montos.length > 0 ? `${conFaltante ? "Falta en el banco" : "Sin cruzar"}: ${montos.join(" · ")}.` : null,
+  };
 }

@@ -35,11 +35,19 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   aceptarPropuestaAbonoAction,
   sugerirAbonosAction,
+  type ActionResult,
 } from "@/app/admin/ingresos/actions";
 import {
   RegistrarIngresoDialog,
   type CatalogosIngreso,
 } from "@/components/admin/ingresos/registrar-ingreso-dialog";
+import { ConfirmacionVincular } from "@/components/admin/ingresos/vincular-abono-dialog";
+import {
+  CODE_CONFIRMAR_PARCIAL,
+  candidatoConfirmarParcial,
+  textoConfirmarParcial,
+  toastVinculoCobros,
+} from "@/lib/admin/conciliacion-cobros-lote";
 import {
   aceptableEnLote,
   aceptarEnLote,
@@ -59,6 +67,7 @@ import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { AbonoPendiente, PropuestaAbono, SugerirAbonosRespuesta } from "@/types/ingresos";
+import type { CandidatoCobroVuelo, MovimientoBancario } from "@/types/conciliacion";
 
 export const AVISO_IA_INGRESOS =
   "La IA propone y tú confirmas: nada se liga solo. Cada consulta consume créditos (Configuración → Consumo de IA).";
@@ -202,6 +211,9 @@ function PanelSugerencias({
   const [corriendoLote, setCorriendoLote] = useState(false);
   const [resultadoLote, setResultadoLote] = useState<string | null>(null);
   const [registrar, setRegistrar] = useState<{ p: PropuestaAbono; abono: AbonoPendiente } | null>(null);
+  // Una liga a un cobro que quedaría PARCIAL (revisión del 15-oct-2026, D3):
+  // «¿Vincular como pago parcial?» con el veredicto del API antes de ligar.
+  const [parcial, setParcial] = useState<{ p: PropuestaAbono; candidato: CandidatoCobroVuelo } | null>(null);
 
   const recibir = (data: SugerirAbonosRespuesta) => {
     setRes(data);
@@ -273,21 +285,41 @@ function PanelSugerencias({
       return s;
     });
 
-  const aceptarUna = async (p: PropuestaAbono) => {
+  /**
+   * «Aceptar» de UNA propuesta. Una liga a un COBRO de vuelo pasa por el
+   * veredicto del API (la action): si dejaría el cobro PARCIAL, responde
+   * `CONFIRMAR_PARCIAL` y aquí se pide la confirmación; con ella vuelve con
+   * `parcialConfirmado` (`confirmado` = el cobro que se confirmó).
+   */
+  const aceptarUna = async (p: PropuestaAbono, confirmado?: CandidatoCobroVuelo) => {
     if (p.accion === "REGISTRAR_INGRESO") {
       setRegistrar({ p, abono: abonoDePropuesta(p, abonos) });
       return;
     }
     setTrabajando(p.movimiento_id);
-    const r = await aceptarPropuestaAbonoAction(p).catch((e: unknown) => ({
-      ok: false,
-      error: e instanceof Error ? e.message : "No se pudo",
-    }));
+    const r = await aceptarPropuestaAbonoAction(p, confirmado ? { parcialConfirmado: true } : undefined).catch(
+      (e: unknown): ActionResult => ({ ok: false, error: e instanceof Error ? e.message : "No se pudo" }),
+    );
     setTrabajando(null);
+    const porConfirmar =
+      !r.ok && r.code === CODE_CONFIRMAR_PARCIAL && !confirmado ? candidatoConfirmarParcial(r.details) : null;
+    if (porConfirmar) {
+      // La liga NO sale hasta «Sí, vincular como parcial» (la action solo leyó el veredicto).
+      setParcial({ p, candidato: porConfirmar });
+      return;
+    }
     if (r.ok) {
+      // «Conciliado» es el ABONO (quedó ligado); cómo quedó el cobro lo dice el toast.
       setEstado((e) => ({ ...e, [p.movimiento_id]: { tipo: "ok", texto: "Conciliado" } }));
       marcar(p.movimiento_id, false);
-      toast.success("Abono conciliado");
+      toast.success(
+        confirmado
+          ? toastVinculoCobros(
+              [{ tipo: "COBRO", c: confirmado }],
+              r.data && typeof r.data === "object" ? (r.data as Pick<MovimientoBancario, "cobros_estado">) : null,
+            )
+          : "Abono conciliado",
+      );
       router.refresh();
     } else {
       setEstado((e) => ({
@@ -625,6 +657,26 @@ function PanelSugerencias({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* «¿Vincular como pago parcial?» (D3) de una propuesta LIGAR: los
+          números son los del API (`al_vincular`); «Cancelar» solo cierra. */}
+      <ConfirmacionVincular
+        abierta={parcial !== null}
+        texto={
+          parcial
+            ? textoConfirmarParcial(
+                { tipo: "COBRO", c: parcial.candidato },
+                { monto: parcial.p.monto, moneda: parcial.p.cuenta_moneda, fecha: parcial.p.fecha },
+              )
+            : null
+        }
+        onCancelar={() => setParcial(null)}
+        onConfirmar={() => {
+          const x = parcial;
+          setParcial(null);
+          if (x) void aceptarUna(x.p, x.candidato);
+        }}
+      />
 
       {registrar && (
         <RegistrarIngresoDialog

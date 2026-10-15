@@ -145,7 +145,7 @@ const COLUMNA_BANCO: DataTableColumn<CobroSinBanco> = {
             key={e.key}
             href={e.href}
             title={e.titulo}
-            className="mt-0.5 block w-fit cursor-pointer text-[10px] font-medium text-brand-600 hover:underline"
+            className="mt-0.5 block w-fit cursor-pointer text-[10px] font-medium text-brand-600 hover:underline dark:text-brand-400"
           >
             {e.texto}
           </Link>
