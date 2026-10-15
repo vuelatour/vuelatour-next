@@ -7802,6 +7802,13 @@ panel DEGRADA sin mentir.
   (el blur tras Enter). Lo que se VE sigue saliendo de la URL viva y de los
   borradores. Prueba: la secuencia completa, simulada sin DOM, en
   `quote-navegacion.test.ts`; el cableado en `quotes-filter-bar.test.tsx`.
+  **Caducan** (revisión del 14-oct-2026, la misma regla que la barra de
+  Gastos): la consulta pendiente se suelta en cuanto la URL viva deja su base
+  (`pendienteVigente`, en un efecto sobre `params`) y un borrador en cuanto la
+  URL de SU campo cambia (`borradoresVigentes`, ajuste guardado en el
+  render). Antes revivían cuando la URL regresaba por FUERA de la barra
+  (Atrás, «Limpiar» del vacío): el siguiente clic se perdía («la misma
+  consulta ya pedida») o traía de vuelta lo quitado.
 - **Red** (`lib/api/quotes-server.ts`): `ListQuotesQuery` += `desde?`/`hasta?`
   (solo viajan si existen: `buildUrl` omite `undefined`, así que sin rango un
   API previo no ve nada nuevo). `listQuotesAll` devuelve `{data, count,
@@ -8512,7 +8519,12 @@ opcional y va en otro lote).
   vista— si la categoría no se reparte o el gasto lleva vuelo («Un gasto
   ligado a un vuelo no se reparte: para repartirlo, cambia «Vuelo» a «Sin
   vuelo».»). Sin modos (categoría no repartible y sin reparto) queda el campo
-  de siempre, «Avión (resuelve pendiente)».
+  de siempre con la etiqueta de `etiquetaCampoAvionSinModos`: «Avión
+  (resuelve pendiente)» SOLO si la categoría necesita avión
+  (`categoriaLlevaAvion`, espejo de la bandeja del API); en la «Comisión del
+  vendedor (VuelaTour)», «Avión (solo referencia)»; en el gasto personal del
+  dueño NO hay selector (`HINT_AVION_PERSONAL`: el guardado lo desliga y un
+  selector cuya elección se tira sería un no-op mentiroso).
 - **«Un avión»**: el selector con «Sin avión (gasto de VuelaTour)» y la ayuda
   por categoría (`ayudaModoUno`: un INDIRECTO con un avión resta en su
   balance pero NO en su reparto a socios; un FIJO se prorratea; en OTRO y
@@ -8538,7 +8550,21 @@ opcional y va en otro lote).
   pagado» lleva la cola del reparto (`lineaTotalPagadoReparto`), «Con lo
   elegido cae en:» dice `hojaDestinoReparto` (prop `hoja` de
   `CategoriaDestinoHint`) y la descripción del diálogo es
-  `descripcionVerificarGasto`.
+  `descripcionVerificarGasto({ enReparto, categoria })`, POR CATEGORÍA del
+  formulario (revisión del 14-oct-2026): «el avión es opcional… repartirlo»
+  solo en las repartibles («No lleva avión» en Gasolina y Visita); «la
+  bandeja de pendientes» solo donde sin avión el gasto SÍ cuenta ahí; el
+  personal del dueño y la comisión (VuelaTour) dicen lo suyo. Una guarda
+  recorre TODAS las categorías contra `categoriaLlevaAvion`.
+- **Teclado y foco** (revisión del 14-oct-2026): Enter dentro del editor
+  NUNCA envía el formulario (el «Guardar» implícito): en un monto salta al
+  siguiente avión marcado (`siguienteMontoMarcado`) y en la casilla solo se
+  come. «Editar reparto» lleva el foco a la primera casilla del editor;
+  «Quitar el reparto», a «Un avión» (el botón pulsado se desmonta y Base UI
+  lo regresaba al contenedor del diálogo); el «Reintentar» de los aviones, a
+  «Repartir entre aviones», y el de la lectura fallida, a «Un avión» (los
+  dos persisten mientras se carga; el texto «Cargando…» se desmonta). Siempre
+  en el manejador, en el siguiente tick (`enfocarDespues`), jamás en un efecto.
 - Notas en línea: el monto cambia con el reparto intacto
   (`notaMontoConReparto`: «…VuelaTour absorbería $X…»), reclasificar entre
   dos repartibles (`notaCategoriaEntreRepartibles`), la moneda no cambia con
@@ -8566,7 +8592,13 @@ el banner `textoRepartoDescubierto`.
 
 - **Sin cambio de reparto**: el camino de siempre (`verifyGastoAction`); en
   modo reparto el PATCH va sin `aeronave_id` (o `null` si el gasto guardado
-  aún trae avión) y con `vuelo_id`/`escala_id` null.
+  aún trae avión) y con `vuelo_id`/`escala_id` null. **Ninguna server action
+  del diálogo llega al error boundary** (revisión del 14-oct-2026): el cuerpo
+  del guardado es `ejecutar()` dentro de `try/catch` en la transición
+  (`TEXTO_SIN_RESPUESTA_GUARDAR`; el diálogo sigue abierto con lo
+  capturado), la 2.ª llamada (ligar el vuelo) va con `llamarSinLanzar`
+  (`TEXTO_VUELO_SIN_RESPUESTA`) y «Retirar confirmación» lleva `.catch`
+  (`TEXTO_RETIRAR_SIN_RESPUESTA`).
 - **Con cambio** (crear, editar o quitar): `guardarGastoConRepartoAction(id,
   raw, { base, nuevo }, { riesgoConciliado })`, que NUNCA lanza — y el
   diálogo la llama con `llamarSinLanzar`: una server action que revienta en
@@ -8582,7 +8614,9 @@ el banner `textoRepartoDescubierto`.
   clasifica (`estadoRepartoTrasFalla`: igual a lo pedido ⇒ sigue; igual a la
   base; distinto; no se sabe) y un PATCH con red/5xx es INCIERTO (pudo
   escribir); (6) refuerzo del avión; (7) revalida Gastos, Otros gastos y Caja
-  chica.
+  chica. Un PATCH INCIERTO (red o 5xx: pudo escribir) también revalida, con
+  `revalidarVerificacion()` —la misma lista que `verifyGastoAction`—: sin
+  eso, cerrar y reabrir el gasto enseñaba la fila de ANTES.
 
 | Caso | Orden |
 |---|---|
@@ -8601,7 +8635,11 @@ el banner `textoRepartoDescubierto`.
   SIN_RESPUESTA (la llamada reventó: se relee con `getRepartoAction` para
   decir cómo quedó). Éxito: «Gasto verificado y repartido entre 3 aviones» /
   «Gasto verificado y reparto actualizado (2 aviones)» / «Gasto verificado y
-  reparto quitado: quedó en N4142R» / «…: lo absorbe VuelaTour» / en un FIJO
+  reparto quitado: quedó en N4142R» / «…: lo absorbe VuelaTour» (SOLO si la
+  categoría no necesita avión: una que lo necesita dice «…: queda pendiente
+  de avión (pestaña «Pendientes»)» o, con vuelo, «…: queda en la hoja de su
+  vuelo»; el personal del dueño, «…: queda fuera de los balances (gasto
+  personal del dueño)») / en un FIJO
   «…: el gasto fijo vuelve al prorrateo entre los aviones activos». Las
   fallas parciales y la falta de respuesta van en toast de 15 s
   (`TOAST_LARGO_MS`) y en un banner del bloque «Avión» (`data-reparto-aviso`)
@@ -8617,13 +8655,20 @@ el banner `textoRepartoDescubierto`.
 - **Errores en pantalla** (antes de la red, `errorRepartoEnPantalla`):
   aviones cargando con cambios, ninguno marcado, un marcado sin monto, un
   inactivo marcado, Σ > total pagado y la moneda cambiada con un reparto
-  guardado.
+  guardado. Y, en `onSubmit`, **quitar el reparto pasando a «Gasavión /
+  Turbosina» sin avión** (`errorQuitarRepartoSinAvion`, con el texto del ALTA
+  del API, `MSG_COMBUSTIBLE_NECESITA_AVION`): el planificador pondría el PUT [] primero
+  y el PATCH rebotaría con el reparto ya quitado. Solo cuenta el avión del
+  formulario (el vuelo viaja en la 2.ª llamada, DESPUÉS del PATCH).
 
 ### La UNA confirmación
 
 `confirmacionRepartoAlGuardar` (regla del cliente: lo destructivo confirma,
 en cualquier mes): **quitar** el reparto («¿Quitar el reparto de este
-gasto?», con el reparto de hoy, a dónde pasa el gasto —`destinoTrasQuitar`—,
+gasto?», con el reparto de hoy, a dónde pasa el gasto —`destinoTrasQuitar`;
+sin avión ni vuelo, una categoría que necesita avión va a
+`DESTINO_PENDIENTE_DE_AVION` («la bandeja de «Pendientes»…»), jamás «lo
+absorbe VuelaTour»—,
 la nota de socios de un INDIRECTO con un avión y la del prorrateo de un
 FIJO) o un cambio que **baja o saca** a un avión, **sustituye** al avión
 guardado o es el **primer reparto de un FIJO** («¿Guardar el cambio del
@@ -8643,6 +8688,13 @@ hereda la confirmación del anterior.
   vez por apertura. Jamás en REPARTIDO, POR_CONFIRMAR ni LECTURA_FALLIDA (el
   caso STARLINK). La sugerencia de vuelo, igual: una vez por apertura y solo
   sin reparto.
+- **Una apertura que SUPO de un reparto consume la IA** (revisión del
+  14-oct-2026; `iaConsumidaPorReparto` / `marcarRepartoConocido`, desde el
+  embed, la lectura, el editor y las respuestas del guardado): si un guardado
+  a medias lo quita (PARCIAL_SOLO_REPARTO de un QUITAR), el diálogo queda en
+  «Un avión» sin avión —justo las condiciones del prellenado— y aun así NO
+  prellena la matrícula ni pide la sugerencia de vuelo (antes reimponía
+  N990GG).
 - «Reanalizar con IA» con reparto (guardado o armándose) no aplica la
   moneda, una categoría que no se reparte ni el avión; el toast lo dice
   (`notaIaConReparto`).
@@ -8654,6 +8706,19 @@ hereda la confirmación del anterior.
   `RefreshOnFocus` (o una revalidación) traía un `gasto` nuevo, borraba lo
   capturado y el prellenado reimponía N990GG. Ver la corrección en «El panel
   se pone al día al volver a la pestaña».
+- **Base de la sesión** (`baseFormRef`, revisión del 14-oct-2026): el gasto
+  con que se abrió ESTA apertura (y, tras un guardado PROPIO a medias, lo que
+  devolvió el API). Los candados «viaja SOLO si se cambió en ESTE diálogo»
+  —fecha (con `permitir_fecha_antigua` y el candado de fechas de
+  `onSubmit`), facturación, TUA, tipo/lugar/hora de la carga, hojas y la
+  autocorrección R14 del avión— comparan contra ella, NUNCA contra el `gasto`
+  vivo: el formulario conserva lo de la apertura y un refresh trae lo que
+  otro corrigió (Conciliación, el amarre de factura, otra sesión);
+  compararlo con el vivo tomaba ese cambio como del usuario y lo REVERTÍA en
+  silencio. Lo que el API tiene HOY sigue contra el vivo: borrar la TUA, el
+  dinero (`monedaCambio`, conciliado), el vuelo de la 2.ª llamada y la hoja
+  principal (`gasto.foto_url || baseForm.foto_url`). Se fija junto al reset
+  (`sesionRef` → `baseFormRef` → `reset`) y se lee solo en manejadores.
 - **Ficha de sesión** (`sesionN` estado + `sesionNRef` ref): los efectos del
   reparto, del prellenado y de la sugerencia esperan al render que YA trae el
   estado de la apertura nueva (en el commit del reset corren con el estado
@@ -8665,15 +8730,19 @@ hereda la confirmación del anterior.
   library» por el `watch` de react-hook-form (aviso previo), así que el lint
   NO revisa sus reglas aquí. Se revisó con una copia temporal sin `useForm`:
   0 errores nuevos (quedan 2 previos: el efecto del vuelo elegido y
-  `handleSubmit`). Los efectos nuevos solo hacen setState en callbacks
+  `handleSubmit`; tras la revisión del 14-oct-2026, solo el del vuelo
+  elegido). Los efectos nuevos solo hacen setState en callbacks
   asíncronos o en bloques controlados por ref (reset, prellenado y
   sugerencia, una vez por sesión).
 
 ### Lo que cambió alrededor
 
-- `verifyGastoAction` delega en `patchVerificacion` (declarada DESPUÉS a
-  propósito: la prueba de combustibles busca su `revalidatePath` en ese
-  tramo) y revalida además `/admin/otros-gastos`; `saveRepartoAction`
+- `verifyGastoAction` delega en `patchVerificacion`, que revalida con
+  `revalidarVerificacion()`: Gastos, Otros gastos, Combustibles, Caja chica
+  (layout), Gastos personales y Vuelos (layout). Su prueba es de
+  COMPORTAMIENTO (las rutas exactas, en `gasto-con-reparto-action.test.ts`):
+  la regex de `combustibles-editar-carga.test.tsx` casaba por el TRAMO del
+  archivo, no por la action, y ya no la incluye. `saveRepartoAction`
   revalida también `/admin/caja-chica` (layout).
   `RepartoResponse.items[].matricula` es `string | null`.
 - **RepartoDialog compartido** (menú ⋯ y Otros gastos), 4 arreglos: la
@@ -8683,12 +8752,14 @@ hereda la confirmación del anterior.
   «Quitar reparto» salen de `textoQuitarRepartoDialogo` /
   `toastRepartoQuitadoDialogo` (un FIJO vuelve al prorrateo, ya no «100 %
   VuelaTour»); la matrícula null se pinta «¿?».
-- **Pruebas**: `lib/admin/__tests__/reparto-gasto.test.ts` (63: ids reales,
-  STARLINK, Cramex, f3c625e6, FIJO, GASOLINA, textos exactos, el fuzz y la
-  guarda de que ningún texto mande a «Otros gastos»),
-  `app/admin/expenses/__tests__/gasto-con-reparto-action.test.ts` (22),
-  `components/admin/expenses/__tests__/verificar-reparto-ui.test.tsx` (16),
-  `reparto-aviones-editor.test.tsx` (7) y `reparto-dialog.test.tsx` (4). Las
+- **Pruebas**: `lib/admin/__tests__/reparto-gasto.test.ts` (89: ids reales,
+  STARLINK, Cramex, f3c625e6, FIJO, GASOLINA, textos exactos, el fuzz, la
+  guarda de que ningún texto mande a «Otros gastos» y la de los textos del
+  avión por categoría), `app/admin/expenses/__tests__/gasto-con-reparto-action.test.ts` (23),
+  `components/admin/expenses/__tests__/verificar-reparto-ui.test.tsx` (25:
+  render y cableado, también la base de la sesión, el foco y las llamadas
+  envueltas), `reparto-aviones-editor.test.tsx` (8: Enter por COMPORTAMIENTO,
+  llamando al `onKeyDown` del árbol) y `reparto-dialog.test.tsx` (4). Las
   fábricas de mocks de `@/app/admin/expenses/actions` de los tests que montan
   el diálogo suman `getRepartoAction`, `listAvionesActivosAction`,
   `saveRepartoAction` y `guardarGastoConRepartoAction`: un test nuevo que lo
@@ -8727,14 +8798,15 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   ⇒ la matrícula; INDIRECTO sin avión ⇒ «VuelaTour»; lo demás ⇒ «Falta
   avión» (title y sr-only dicen qué hacer). Así el ámbar de la tabla suma lo
   mismo que la pestaña «Pendientes». El vuelo va debajo («Vuelo #437»).
-- **Columnas** (`expenses-table.tsx`): Fecha (8rem: «14 oct 2026»,
-  «Capturado 14 oct 10:33» y «Mary Cruz · panel» con `CapturadoCompacto`; el
-  nombre se trunca, el origen se conserva) · Concepto (`w-full`, mínimo
+- **Columnas** (`expenses-table.tsx`): Fecha (8rem: «14 oct 2026», «Cap. 14
+  oct 10:33» —el lector oye «Capturado …»— y «Mary Cruz · panel» con
+  `CapturadoCompacto`; el nombre se trunca, el origen se conserva) · Concepto (`w-full`, mínimo
   10rem: categoría + compra/«¿Duplicado?»/«Falta visto bueno» + la primera
   línea de las notas en 2 renglones, sin la matrícula propia al inicio;
   debajo de 768 px la línea de estado `md:hidden`) · Monto (`fmtMonto`, el
   medio corto «Tarjeta ****2865» y la propina) · Avión · vuelo · Comp.
-  (`hidden xl:table-cell`; «Sin vista previa» si la firma de la foto falló)
+  (`hidden xl:table-cell`; «Sin vista previa» si la firma de la foto falló;
+  de 768 a 1279 px —1299 en modo unir— su respaldo va bajo el concepto)
   · Facturación (`FacturacionBadge compacta`: «No requiere») · Banco (igual)
   · ⋯ (la compra: ícono que abre la compra). Desaparecen Categoría,
   Descripción, Pago, Vuelo y Capturó. Tinte de la compra `bg-muted/40` (el de
@@ -8816,6 +8888,69 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   pestaña «Pendientes», `?categoria=PERSONAL_DUENO` y su Excel, «Exportar
   Excel» desde «Pendientes», página 5 + cambiar «Banco» ⇒ página 1 con la
   búsqueda conservada, teclear el año en una fecha sin navegar.
+
+### Revisión adversaria (14-oct-2026)
+
+- **Fecha**: «Capturado 14 oct 10:33» medía hasta 119.08 px en las 112 de la
+  columna (Chrome + Inter, la rejilla de TODO el año, también con «⚠»): se
+  truncaba justo la hora. Visible va «Cap. …» (`PREFIJO_CAPTURA_CORTO`:
+  máximo 91.27 px; «⚠ Cap. …» 103.83) y el lector oye la larga
+  (`cuandoLector`, sr-only; «⚠ año 2025 · Capturado …» cuando aplica). Los
+  pagos de una compra (renglón hijo) van con `pl-3` y sublíneas de 6.25rem
+  (`angosto`): 12 + 100 = 112 px; con `pl-6` + 7rem la columna crecía al
+  desplegar la compra y las demás brincaban.
+- **Respaldo de «Comp.»** (`lineaComprobanteGasto`): entre 768 y 1279 px
+  (1299 en modo unir) nada decía si el gasto trae papel. Bajo el concepto,
+  con el MISMO corte que oculta la columna: «Sin comp.» · «Sin vista previa»
+  · «+2 hojas» · «✓ Confirmado» (quién y cuándo en el `title`:
+  `tituloConfirmadoGasto`, el mismo del ✓ de la columna). Sin nada que decir
+  no se pinta; debajo de 768 px lo dice la línea del teléfono.
+- **Categoría** (filtro): `anchoFiltroCategoria` — con una etiqueta de más
+  de 22 caracteres elegida, `sm:w-72`; si no, `sm:w-52` de siempre (las dos
+  comisiones se veían iguales: «Comisión del vended…»).
+- **La barra CADUCA lo que ya no es de la URL**: la consulta pendiente
+  (`pendienteVigente`, en un efecto sobre `sp`), los borradores de las fechas
+  (`borradoresVigentes`, ajuste guardado en el render) y «Rango…» abierto
+  sin fechas (`RangoCapturaAbierto { vista, esperada }`: sigue mientras la
+  URL de filtros —sin `tq`/`tp`, `claveFiltrosUrl`— sea donde se abrió o la
+  que pidió la propia barra, `rangoCapturaTrasUrl` / `rangoCapturaTrasNavegar`;
+  el chip ✕, «Quitar filtros», Atrás o el menú lo cierran). Antes revivían
+  cuando la URL regresaba: el clic al MISMO avión tras el chip ✕ se perdía,
+  un banco quitado volvía con el siguiente filtro y un borrador no aplicado
+  reaparecía con la marca de activo. Lo mismo en `quotes-filter-bar`
+  (pendiente y borradores). Las secuencias, simuladas sin DOM (con la
+  versión vieja como control), en `quote-navegacion.test.ts`.
+- **Barra «Unir en compra»**: `fixed inset-x-4 bottom-6 … mx-auto w-fit
+  max-w-[calc(100vw-2rem)]`. Con `left-1/2` + translate el ancho disponible
+  era MEDIO viewport: a 390 px medía 195 × 218 (28 % de la pantalla) y tapaba
+  «Página anterior» y «Filas por página». Medido en Chrome con el CSS
+  compilado: 358 × 98 a 390 px, 288 × 98 a 320, 718 × 58 a 768; paginador
+  libre en todos los casos. Instrucción corta en teléfono
+  (`INSTRUCCION_MODO_UNIR_CORTA`, `sm:hidden`) y el hueco del final MIDE la
+  barra (`ResizeObserver` en un ref callback con limpieza: alto + 32 px;
+  `h-20` hasta medirla). **Lista caída** (`cargaFallida={!lista.ok}`): el
+  botón del modo no se ofrece, la barra encendida dice `TEXTO_UNIR_SIN_LISTA`
+  (`role="status"`, con «Terminar») en vez de «no hay gastos que se puedan
+  unir» y lo marcado NO se poda.
+- **Sugerir asignaciones**: el API revisa a lo más 15 pendientes, los más
+  recientes (`.limit(15)` en `expenses.service.ts`; espejo
+  `TOPE_SUGERIR_ASIGNACIONES` con prueba de PARIDAD que lee el repo del
+  API). El `title` y «Analizando…» ya no prometen «toda la bandeja» y, bajo
+  el resultado, `textoPendientesSinRevisar` dice cuántos no entraron en la
+  pasada («…otros 21 no se revisaron en esta pasada…»).
+- **«VuelaTour» de la columna Avión**: el `title` de un gasto de VuelaTour
+  sin vuelo ni avión (`tituloFueraDelAvion`) manda al menú ⋯ del renglón
+  («Repartir entre aviones», solo en las repartibles:
+  `DESTINO_VUELATOUR_REPARTIBLE_TABLA`), ya no a «la pantalla Otros gastos».
+  `HOJA_OTROS_GASTOS_SIN_NADA` NO se tocó (la pista de destino del alta) y la
+  guarda PROHIBIDO de `gasto-avion.test.ts` recorre todas las categorías.
+- **Pendiente de API (NO hecho: el API era de solo lectura)**: la columna
+  «Avión» del Excel (`listXlsx`) contradice la tabla —«Repartido (N)», la
+  matrícula o «(pendiente)»: un OTRO sin avión sale «(pendiente)» donde la
+  tabla dice «VuelaTour», y un gasto de empresa con avión sellado sale con la
+  matrícula—. Arreglarlo exige que el API use `CATEGORIAS_GASTO_SIN_AVION`
+  con la precedencia de `estadoAvionGasto` (reparto → personal → empresa o
+  comisión VuelaTour → avión → sin avión por diseño → «Falta avión»).
 ## Títulos de las pestañas del navegador (14-oct-2026)
 
 Pedido del cliente: «estaría genial que en cada pestaña del navegador se

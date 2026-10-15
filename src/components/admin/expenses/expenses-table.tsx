@@ -9,6 +9,7 @@ import {
   ShoppingCartIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { BancoBadge } from "@/components/admin/expenses/banco-badge";
 import { GastoBancoSheet, useDetalleBancoGasto } from "@/components/admin/expenses/gasto-banco-sheet";
@@ -28,7 +29,7 @@ import {
   useSeleccionGastos,
 } from "@/components/admin/expenses/expenses-seleccion";
 import { CapturadoCompacto } from "@/components/admin/expenses/capturado-linea";
-import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { lineaCapturaCompacta } from "@/lib/admin/gastos-captura";
@@ -64,13 +65,15 @@ import {
   altComprobanteGasto,
   descripcionGasto,
   etiquetaCompra,
+  lineaComprobanteGasto,
   lineaEstadoMovilGasto,
   textoBusquedaGasto,
   textoPagosCompra,
   textoPropinaGasto,
   tituloAbrirCompra,
+  tituloConfirmadoGasto,
 } from "@/lib/admin/gastos-vista";
-import { verificadorNombre, type Gasto } from "@/types/expenses";
+import type { Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
 import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 
@@ -245,6 +248,12 @@ export function ExpensesTable({
     const claseComp = seleccion?.modoUnir
       ? "hidden min-[1300px]:table-cell"
       : "hidden xl:table-cell";
+    // Respaldo de «Comp.» bajo el concepto con el MISMO corte que la oculta
+    // (desde 768 px; debajo lo dice la línea del teléfono): entre 768 y
+    // 1279 px nada decía si el gasto trae papel (revisión del 14-oct-2026).
+    const claseRespaldoComp = seleccion?.modoUnir
+      ? "hidden md:block min-[1300px]:hidden"
+      : "hidden md:block xl:hidden";
 
     cols.push(
       {
@@ -269,12 +278,15 @@ export function ExpensesTable({
               {fmtDateOnly(f.fecha)}
             </button>
           ) : (
-            <div className={f.hijo ? "pl-6 text-muted-foreground" : undefined}>
+            // Pago de una compra: sangría de 12 px y sublíneas de 6.25rem
+            // (12 + 100 = 112 px, lo mismo que una fila suelta): la columna
+            // ya no crece al desplegar la compra (revisión del 14-oct-2026).
+            <div className={f.hijo ? "pl-3 text-muted-foreground" : undefined}>
               <span className="block">{fmtDateOnly(f.gasto.fecha_gasto)}</span>
               {/* Cuándo, quién y desde dónde se capturó (7-sep), en hora
                   Cancún, con la pista ámbar del 28-ago y el DISTINTIVO de
                   origen (Oficina / Sistema / Visitante, pedido del 9-jul). */}
-              <CapturadoCompacto captura={lineaCapturaCompacta(f.gasto)} />
+              <CapturadoCompacto captura={lineaCapturaCompacta(f.gasto)} angosto={f.hijo} />
             </div>
           ),
       },
@@ -307,6 +319,7 @@ export function ExpensesTable({
           }
           const g = f.gasto;
           const desc = descripcionGasto(g);
+          const comp = lineaComprobanteGasto(g, !!(g.foto_url && fotoUrls[g.foto_url]));
           return (
             <div className="min-w-[10rem] max-w-[40rem]">
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
@@ -337,6 +350,15 @@ export function ExpensesTable({
                   title={desc.title ?? undefined}
                 >
                   {desc.texto}
+                </p>
+              )}
+              {comp && (
+                <p
+                  className={cn("mt-0.5 text-[11px] text-muted-foreground", claseRespaldoComp)}
+                  title={comp.title ?? undefined}
+                  data-respaldo-comp=""
+                >
+                  {comp.texto}
                 </p>
               )}
               {/* Teléfono (<768 px): lo de las columnas de la derecha, en texto. */}
@@ -553,7 +575,7 @@ export function ExpensesTable({
               {g.verificado_at && (
                 <span
                   className="text-emerald-600 dark:text-emerald-400"
-                  title={`Confirmado por ${verificadorNombre(g) ?? "oficina"} · ${fmtDate(g.verificado_at)}`}
+                  title={tituloConfirmadoGasto(g)}
                 >
                   ✓
                 </span>

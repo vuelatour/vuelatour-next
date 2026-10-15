@@ -12,6 +12,7 @@ import {
   categoriaLlevaAvion,
 } from "@/lib/admin/categorias-gasto";
 import {
+  DESTINO_VUELATOUR_REPARTIBLE_TABLA,
   ETIQUETA_AVION_PERSONAL,
   ETIQUETA_AVION_VUELATOUR,
   ETIQUETA_FALTA_AVION,
@@ -185,10 +186,29 @@ describe("textos de «Avión · vuelo»", () => {
   });
 
   it("tituloFueraDelAvion, referencia, remanente y vuelo", () => {
+    // Revisión del 14-oct-2026: sin vuelo ni avión el reparto está en el
+    // menú ⋯ del MISMO renglón; ya no se manda a «la pantalla Otros gastos».
     expect(tituloFueraDelAvion("OTRO", false, false)).toBe(
-      "Va a: Balance general VuelaTour · Otros gastos (repártelo desde la pantalla Otros gastos para cargarlo a aviones).",
+      "Va a: Balance general VuelaTour · Otros gastos (para cargarlo a aviones, usa «Repartir entre aviones» en el menú ⋯).",
+    );
+    expect(tituloFueraDelAvion("OTRO", false, false)).toBe(`Va a: ${DESTINO_VUELATOUR_REPARTIBLE_TABLA}.`);
+    for (const cat of ["NOMINA", "GASOLINA", "FIJO", "VISITA", "INDIRECTO"]) {
+      expect(tituloFueraDelAvion(cat, false, false), cat).toBe(`Va a: ${DESTINO_VUELATOUR_REPARTIBLE_TABLA}.`);
+    }
+    // Con vuelo o avión, la hoja de siempre (solo referencia).
+    expect(tituloFueraDelAvion("OTRO", true, false)).toBe(
+      "Va a: Balance general VuelaTour · Otros gastos (el vuelo queda solo como referencia).",
     );
     expect(tituloFueraDelAvion("PERSONAL_DUENO", false, false)).toBe("Va a: Fuera de balances (personal).");
+    // Ningún título de la tabla manda a otra pantalla a repartir.
+    const PROHIBIDO = /(pantalla|desde|en) «?otros gastos/i;
+    for (const cat of Object.keys(CATEGORIA_GASTO_LABELS)) {
+      for (const vuelo of [false, true]) {
+        for (const avion of [false, true]) {
+          expect(PROHIBIDO.test(tituloFueraDelAvion(cat, vuelo, avion)), `${cat} ${vuelo} ${avion}`).toBe(false);
+        }
+      }
+    }
     expect(textoReferenciaAvion("N4142R")).toBe("ref. N4142R");
     expect(tituloRemanenteReparto(400, "MXN")).toBe("Parte que absorbe la empresa: $400 MXN");
     expect(tituloRemanenteReparto(0.01, "USD")).toBe("Parte que absorbe la empresa: $0.01 USD");

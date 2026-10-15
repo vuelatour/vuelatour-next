@@ -432,18 +432,27 @@ async function patchVerificacion(
       method: "PATCH",
       body,
     });
-    revalidatePath("/admin/expenses");
-    // Una reclasificación entre categorías repartibles se ve en Otros gastos.
-    revalidatePath("/admin/otros-gastos");
-    // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).
-    revalidatePath("/admin/combustibles");
-    revalidatePath("/admin/caja-chica", "layout");
-    revalidatePath("/admin/gastos-personales");
-    revalidatePath("/admin/flights", "layout");
+    revalidarVerificacion();
     return { ok: true, data: updated };
   } catch (err) {
     return isApiError(err) ? { ...fail<Gasto>(err), status: err.status } : fail<Gasto>(err);
   }
+}
+
+/**
+ * Las pantallas que enseñan un gasto tras el PATCH de «Verificar / editar»
+ * (escribió, o pudo escribir: red o 5xx). Prueba de COMPORTAMIENTO en
+ * `gasto-con-reparto-action.test.ts`.
+ */
+function revalidarVerificacion() {
+  revalidatePath("/admin/expenses");
+  // Una reclasificación entre categorías repartibles se ve en Otros gastos.
+  revalidatePath("/admin/otros-gastos");
+  // Combustibles ofrece el MISMO menú ⋯ por carga (1-oct-2026).
+  revalidatePath("/admin/combustibles");
+  revalidatePath("/admin/caja-chica", "layout");
+  revalidatePath("/admin/gastos-personales");
+  revalidatePath("/admin/flights", "layout");
 }
 
 /**
@@ -996,6 +1005,11 @@ export async function guardarGastoConRepartoAction(
         const r = await patchVerificacion(id, raw);
         if (!r.ok) {
           const incierto = r.status === undefined || r.status >= 500;
+          // Red o 5xx: el PATCH pudo escribir. Se revalida para que «cierra y
+          // vuelve a abrir el gasto» enseñe lo que de verdad quedó (revisión
+          // del 14-oct-2026: sin esto el diálogo se reabría con la fila de
+          // ANTES y no había forma de revisar).
+          if (incierto) revalidarVerificacion();
           if (i === 0) {
             return incierto
               ? resultado("GASTO_INCIERTO", { gastoIncierto: true, error: r.error })

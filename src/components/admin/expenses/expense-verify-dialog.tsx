@@ -78,14 +78,19 @@ import {
   ETIQUETA_MODO_REPARTO,
   ETIQUETA_MODO_SIN_AVION,
   GUARDANDO,
+  HINT_AVION_PERSONAL,
   HINT_VUELO_EN_REPARTO,
   NOTA_DINERO_BLOQUEADO,
   OPCION_SIN_AVION_VUELATOUR,
   TEXTO_FALLO_LECTURA_REPARTO,
   TEXTO_LEYENDO_REPARTO,
+  TEXTO_RETIRAR_SIN_RESPUESTA,
+  TEXTO_SIN_RESPUESTA_GUARDAR,
+  TEXTO_VUELO_SIN_RESPUESTA,
   TITULO_MODO_REPARTO,
   TITULO_REGRESAR_REPARTO,
   TOAST_AVISO_MS,
+  TOAST_LARGO_MS,
   avisoMatriculaFueraDeReparto,
   avisoRepartoSeQuita,
   ayudaModoUno,
@@ -95,11 +100,14 @@ import {
   debePrellenarAvionPorMatricula,
   descripcionVerificarGasto,
   dineroCambia,
+  errorQuitarRepartoSinAvion,
   errorRepartoEnPantalla,
   esRechazoPorReparto,
   estadoRepartoInicial,
+  etiquetaCampoAvionSinModos,
   filasRepartoEditor,
   hojaDestinoReparto,
+  iaConsumidaPorReparto,
   iaRespetaReparto,
   itemsDePartes,
   itemsDeSeleccion,
@@ -417,6 +425,22 @@ export function ExpenseVerifyDialog({
   // Prellenado por matrícula y sugerencia de vuelo: a lo más UNA vez por sesión.
   const prefillSesion = useRef<string | null>(null);
   const sugerenciaSesion = useRef<string | null>(null);
+  // BASE del formulario (revisión del 14-oct-2026): el gasto con que se abrió
+  // ESTA sesión (o lo que devolvió un guardado propio a medias). Los candados
+  // «viaja SOLO si se cambió en ESTE diálogo» —fecha, facturación, TUA, tipo/
+  // lugar/hora de la carga, hojas y la autocorrección R14— comparan contra
+  // ella y NUNCA contra el `gasto` VIVO: el formulario conserva lo de la
+  // apertura y un refresh (RefreshOnFocus, una revalidación) trae lo que otro
+  // corrigió; compararlo con el vivo tomaba ese cambio como del usuario y lo
+  // REVERTÍA en silencio (la fecha que corrigió Conciliación, la factura que
+  // amarró el trigger, la hoja de otra sesión…). Se lee solo en manejadores.
+  const baseFormRef = useRef<Gasto>(gasto);
+  // Botones de modo y bloque «Avión»: a dónde va el foco cuando la acción del
+  // usuario desmonta el botón que pulsó (Base UI lo regresaba al contenedor
+  // del diálogo, arriba del formulario).
+  const botonUnoRef = useRef<HTMLButtonElement>(null);
+  const botonRepartoRef = useRef<HTMLButtonElement>(null);
+  const bloqueAvionRef = useRef<HTMLDivElement>(null);
   // Clave de la última carga de aviones pedida (no se repite al cambiar de modo).
   const avionesClaveRef = useRef<string | null>(null);
   const idAvion = useId();
@@ -502,6 +526,7 @@ export function ExpenseVerifyDialog({
     if (!open) sesionRef.current = null;
     if (open && sesionRef.current !== gasto.id) {
       sesionRef.current = gasto.id;
+      baseFormRef.current = gasto;
       reset(defaults(gasto));
       setAiRaw(null);
       setSelloRetirado(false);
@@ -528,8 +553,12 @@ export function ExpenseVerifyDialog({
       setSugerencia(null);
       setSugiriendo(false);
       setPrefillAvion(null);
-      prefillSesion.current = null;
-      sugerenciaSesion.current = null;
+      // Abrió repartido: la matrícula de la IA y la sugerencia de vuelo NO
+      // corren en esta apertura, ni aunque un guardado a medias deje el gasto
+      // sin reparto (R9/R10, revisión del 14-oct-2026).
+      const iaConsumida = iaConsumidaPorReparto(false, partes) ? gasto.id : null;
+      prefillSesion.current = iaConsumida;
+      sugerenciaSesion.current = iaConsumida;
       avionesClaveRef.current = null;
       sesionNRef.current += 1;
       setSesionN(sesionNRef.current);
@@ -555,6 +584,9 @@ export function ExpenseVerifyDialog({
           toast.error(r.error ?? "No se pudo retirar la confirmación");
         }
       })
+      // Un fallo de transporte (red, deploy) se dice; nunca una promesa
+      // rechazada sin manejar que cierra el cuadro en silencio.
+      .catch(() => toast.error(TEXTO_RETIRAR_SIN_RESPUESTA, { duration: TOAST_LARGO_MS }))
       .finally(() => {
         setRetirando(false);
         setOpenRetirar(false);
@@ -594,6 +626,7 @@ export function ExpenseVerifyDialog({
       return;
     }
     const partes = partesDeRespuesta(r.valor.data);
+    marcarRepartoConocido(partes);
     setRepartoBase(partes);
     setEstadoRep(partes.length > 0 ? "REPARTIDO" : "SIN_REPARTO");
     if (partes.length > 0) {
@@ -633,6 +666,7 @@ export function ExpenseVerifyDialog({
     const vigente = r.ok ? r.valor[1] : null;
     if (vigente && vigente.ok && vigente.data) {
       const actual = partesDeRespuesta(vigente.data);
+      marcarRepartoConocido(actual);
       if (!mismoReparto(itemsDePartes(actual), itemsDePartes(repartoBase))) {
         setRepartoBase(actual);
         setEstadoRep(actual.length > 0 ? "REPARTIDO" : "SIN_REPARTO");
@@ -891,15 +925,55 @@ export function ExpenseVerifyDialog({
       ? ayudaModoUno({ categoria: categoriaForm, matricula: matriculaDe(watch("aeronave_id")) })
       : null;
 
+  /** La sesión supo de un reparto: la IA ya no prellena ni sugiere vuelo en
+   *  esta apertura (aunque un guardado a medias lo quite después). */
+  function marcarRepartoConocido(partes: readonly unknown[]) {
+    if (!iaConsumidaPorReparto(false, partes)) return;
+    prefillSesion.current = gasto.id;
+    sugerenciaSesion.current = gasto.id;
+  }
+
   /** Base conocida del reparto (y el estado que la acompaña). */
   const fijarBase = (partes: ParteReparto[]) => {
+    marcarRepartoConocido(partes);
     setRepartoBase(partes);
     setEstadoRep(partes.length > 0 ? "REPARTIDO" : "SIN_REPARTO");
   };
 
+  /** Foco tras una acción del usuario que desmonta el botón pulsado (en el
+   *  siguiente tick: el elemento destino ya existe). Nunca en un efecto. */
+  const enfocarDespues = (destino: () => HTMLElement | null | undefined) =>
+    window.setTimeout(() => destino()?.focus(), 0);
+
   /** «Un avión» (o «Sin avión»): sobre un gasto repartido, el guardado quita
    *  el reparto (se confirma). Nada se escribe aquí. */
   const elegirUno = () => setModoAvion("UNO");
+
+  /** «Quitar el reparto» del resumen: el resumen se desmonta; el foco va a
+   *  «Un avión» (el modo que quedó elegido). */
+  const quitarRepartoDelResumen = () => {
+    elegirUno();
+    enfocarDespues(() => botonUnoRef.current);
+  };
+
+  /** «Editar reparto»: el foco entra al editor (primera casilla). */
+  const abrirEditorReparto = () => {
+    setEditandoReparto(true);
+    enfocarDespues(
+      () =>
+        bloqueAvionRef.current?.querySelector<HTMLElement>(
+          '[data-reparto-editor] input[type="checkbox"]:not(:disabled)',
+        ) ??
+        bloqueAvionRef.current?.querySelector<HTMLElement>("[data-reparto-editor] button:not(:disabled)"),
+    );
+  };
+
+  /** «Reintentar» de los aviones: el foco queda en «Repartir entre aviones»
+   *  (no se desmonta mientras carga ni al terminar). */
+  const reintentarAviones = () => {
+    setIntentoAviones((n) => n + 1);
+    enfocarDespues(() => botonRepartoRef.current);
+  };
 
   /** «Repartir entre aviones»: la PRIMERA vez sin reparto guardado, la
    *  selección arranca con el avión del formulario y el total pagado. */
@@ -1189,7 +1263,11 @@ export function ExpenseVerifyDialog({
     // vuelo. Reclasificar ENTRE las dos (13-oct-2026) va por aquí también y
     // el API lo permite aunque el gasto esté conciliado.
     const vueloEnPatch = categoriaExigeVueloSiempre(values.categoria);
-    startTransition(async () => {
+    // Contra qué se mide «se cambió en ESTE diálogo» (ver `baseFormRef`).
+    const baseForm = baseFormRef.current;
+    // El cuerpo del guardado; la transición de abajo lo llama SIN dejar que
+    // un fallo de transporte de una server action llegue al error boundary.
+    const ejecutar = async () => {
       // monto guardado = TOTAL PAGADO (ticket + propina): lo que llega al
       // banco. En el formulario se edita el ticket y la propina por separado
       // y aquí se recompone. Ticket vacío + propina vacía = no tocar el monto.
@@ -1263,7 +1341,7 @@ export function ExpenseVerifyDialog({
       const tuaPatch = tuaIncluidaParaPatch({
         visible: tuaVisibleAlGuardar,
         valorForm: values.tua_incluida,
-        actual: gasto.tua_incluida,
+        actual: baseForm.tua_incluida,
         monedaCambio: values.moneda !== gasto.moneda,
         editada: tuaEditada,
       });
@@ -1278,13 +1356,13 @@ export function ExpenseVerifyDialog({
       // el renglón de Combustibles no siga diciendo la fecha vieja).
       delete (payload as { tipo_combustible?: unknown }).tipo_combustible;
       delete (payload as { lugar?: unknown }).lugar;
-      Object.assign(payload, camposCargaParaPatch(gasto, values));
+      Object.assign(payload, camposCargaParaPatch(baseForm, values));
       // Facturación: viaja SOLO si se cambió en ESTE diálogo. El badge de la
       // tabla y el trigger del amarre de factura recibida también escriben
       // este campo — mandar el valor con que se abrió el form (posiblemente
       // stale) pisaría esos cambios en silencio.
       if (
-        values.estatus_facturacion === (gasto.estatus_facturacion ?? "PENDIENTE")
+        values.estatus_facturacion === (baseForm.estatus_facturacion ?? "PENDIENTE")
       ) {
         delete (payload as { estatus_facturacion?: unknown }).estatus_facturacion;
       }
@@ -1294,8 +1372,10 @@ export function ExpenseVerifyDialog({
       // abrió (posiblemente vieja) la revertía en silencio y el PATCH
       // disparaba el cruce automático con la fecha vieja. Sin la llave, el
       // API conserva la guardada (y la hora de la carga tampoco viaja:
-      // `camposCargaParaPatch` solo la muda si la fecha cambió).
-      if (values.fecha_gasto === (gasto.fecha_gasto ?? "").slice(0, 10)) {
+      // `camposCargaParaPatch` solo la muda si la fecha cambió). Se compara
+      // con la BASE de la sesión, no con el `gasto` vivo: tras un refresh el
+      // vivo ya trae la fecha nueva y la del formulario «cambiaba» sola.
+      if (values.fecha_gasto === (baseForm.fecha_gasto ?? "").slice(0, 10)) {
         delete (payload as { fecha_gasto?: unknown }).fecha_gasto;
       }
       // El usuario LIMPIÓ el avión a mano ("Sin avión"): desligar con null
@@ -1333,7 +1413,7 @@ export function ExpenseVerifyDialog({
       // fechas de otro año (auditoría 29-ago).
       if (
         values.fecha_gasto &&
-        values.fecha_gasto !== (gasto.fecha_gasto ?? "").slice(0, 10) &&
+        values.fecha_gasto !== (baseForm.fecha_gasto ?? "").slice(0, 10) &&
         fechaGastoAntigua(values.fecha_gasto)
       ) {
         payload.permitir_fecha_antigua = true;
@@ -1355,7 +1435,7 @@ export function ExpenseVerifyDialog({
       if (enReparto) {
         if (values.categoria === "GASOLINA" || values.categoria === "VISITA") {
           payload.aeronave_id = null;
-        } else if (repartoGuardado && gasto.aeronave_id) {
+        } else if (repartoGuardado && baseForm.aeronave_id) {
           payload.aeronave_id = null;
         } else {
           delete payload.aeronave_id;
@@ -1376,7 +1456,7 @@ export function ExpenseVerifyDialog({
       // `valor_ia_extraido.fotos_adicionales` SOLO si cambió, encima de la
       // lectura de la IA (la fresca o la guardada: nunca se pierde). Sin hoja
       // principal, la primera agregada pasa a ser `foto_url`.
-      if (hojasCambiaron(hojasDe(gasto), hojas, hojasNuevas.length)) {
+      if (hojasCambiaron(hojasDe(baseForm), hojas, hojasNuevas.length)) {
         const subidas: string[] = [];
         for (const archivo of hojasNuevas) {
           try {
@@ -1391,7 +1471,10 @@ export function ExpenseVerifyDialog({
           }
         }
         const todas = [...hojas, ...subidas];
-        if (!gasto.foto_url && todas.length > 0) payload.foto_url = todas.shift();
+        // ¿Ya hay hoja principal? La del vivo o la que dejó un guardado
+        // propio a medias (la base): jamás se reemplaza la principal.
+        const tienePrincipal = !!(gasto.foto_url || baseForm.foto_url);
+        if (!tienePrincipal && todas.length > 0) payload.foto_url = todas.shift();
         const base =
           (payload.valor_ia_extraido as Record<string, unknown> | undefined) ??
           gasto.valor_ia_extraido;
@@ -1414,6 +1497,7 @@ export function ExpenseVerifyDialog({
           matriculaFinal: quitaReparto ? matriculaDe(values.aeronave_id) : null,
           categoria: values.categoria,
           moneda: monedaReparto,
+          tieneVuelo: !!vueloSel,
         };
         const anterior = repartoBase;
         const riesgoConciliado = dineroBloqueado && dineroCambia(payload, gasto);
@@ -1448,8 +1532,10 @@ export function ExpenseVerifyDialog({
             }
           }
           // R21: el gasto SÍ se guardó: el reintento no sube otra vez las
-          // hojas ni reenvía la lectura de la IA.
+          // hojas ni reenvía la lectura de la IA. Lo guardado pasa a ser la
+          // BASE de la sesión (lo que el formulario ya escribió no «cambia»).
           if (res.gastoGuardado && res.data) {
+            baseFormRef.current = { ...baseFormRef.current, ...res.data };
             setHojas(hojasDe(res.data));
             setHojasNuevas([]);
             setAiRaw(null);
@@ -1501,10 +1587,14 @@ export function ExpenseVerifyDialog({
         !vueloEnPatch &&
         vueloSel !== (gasto.vuelo_id ?? "")
       ) {
-        const link = await assignVueloGastoAction(gasto.id, vueloSel || null);
+        // Sin lanzar: el gasto YA se guardó; un fallo de transporte aquí se
+        // dice y jamás tira la pantalla al error boundary.
+        const r = await llamarSinLanzar(() => assignVueloGastoAction(gasto.id, vueloSel || null));
+        const link = r.ok ? r.valor : null;
         // El API explica el rechazo (p. ej. 400: la escala pertenece a
         // otro vuelo): se muestra tal cual, no un genérico.
-        if (!link.ok)
+        if (!link) toast.error(TEXTO_VUELO_SIN_RESPUESTA, { duration: TOAST_LARGO_MS });
+        else if (!link.ok)
           toast.error(
             link.error
               ? `Gasto guardado, pero no se pudo ligar el vuelo: ${link.error}`
@@ -1515,6 +1605,18 @@ export function ExpenseVerifyDialog({
       // El refuerzo del avión individual no pudo quitarlo: aviso, no error.
       for (const aviso of avisosExito) toast.warning(aviso, { duration: TOAST_AVISO_MS });
       onOpenChange(false);
+    };
+    startTransition(async () => {
+      try {
+        await ejecutar();
+      } catch {
+        // Revisión del 14-oct-2026: el camino de siempre llama a la server
+        // action directa (`verifyGastoAction`); si REVIENTA en el cliente
+        // («Failed to find Server Action» tras un deploy de Vercel, red
+        // caída) no se sabe si el PATCH llegó: se dice y el diálogo sigue
+        // abierto con lo capturado (antes caía al error boundary).
+        toast.error(TEXTO_SIN_RESPUESTA_GUARDAR, { duration: TOAST_LARGO_MS });
+      }
     });
   };
 
@@ -1574,10 +1676,22 @@ export function ExpenseVerifyDialog({
       toast.error(errorReparto);
       return;
     }
+    // Quitar el reparto pasando a «Gasavión / Turbosina» sin avión: el PATCH
+    // rebotaría DESPUÉS de quitar el reparto (falla a medias). Antes de la red.
+    const errorGas = errorQuitarRepartoSinAvion({
+      quitaReparto,
+      categoria: values.categoria,
+      aeronaveId: values.aeronave_id,
+    });
+    if (errorGas) {
+      toast.error(errorGas);
+      return;
+    }
     // Candado de fechas (auditoría 29-ago): SOLO si la oficina CAMBIÓ la
     // fecha aquí y quedó > 60 días atrás o > 2 días a futuro se pide
     // confirmación — verificar un gasto viejo sin tocar la fecha no molesta.
-    const original = (gasto.fecha_gasto ?? "").slice(0, 10);
+    // «Cambió AQUÍ» = contra la BASE de la sesión (no el gasto vivo).
+    const original = (baseFormRef.current.fecha_gasto ?? "").slice(0, 10);
     if (
       values.fecha_gasto &&
       values.fecha_gasto !== original &&
@@ -1649,10 +1763,12 @@ export function ExpenseVerifyDialog({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Verificar gasto · {monto}</DialogTitle>
-          {/* Verdadera solo donde hay modos (14-oct-2026): en una categoría
-              repartible sin avión el gasto NO queda en la bandeja. */}
+          {/* Decidida con la CATEGORÍA del formulario (revisión del
+              14-oct-2026): un repartible sin avión NO queda en la bandeja; uno
+              que necesita avión sí; el personal y la comisión que paga
+              VuelaTour no llevan avión. */}
           <DialogDescription>
-            {descripcionVerificarGasto({ enReparto, conModos: cfg.conModos })}
+            {descripcionVerificarGasto({ enReparto, categoria: categoriaForm })}
           </DialogDescription>
         </DialogHeader>
 
@@ -2185,7 +2301,7 @@ export function ExpenseVerifyDialog({
             // reparto guardado arranca en el RESUMEN; «Editar reparto» abre el
             // editor EN LÍNEA (sin diálogo anidado). Nada se escribe aquí: el
             // reparto viaja con el «Guardar» de siempre.
-            <div className="space-y-2" data-bloque-avion="">
+            <div ref={bloqueAvionRef} className="space-y-2" data-bloque-avion="">
               <Label
                 className="text-sm font-medium"
                 htmlFor={!enReparto && cfg.admiteAvion ? idAvion : undefined}
@@ -2194,6 +2310,7 @@ export function ExpenseVerifyDialog({
               </Label>
               <div role="group" aria-label={ARIA_MODO_AVION} className="flex flex-wrap gap-1.5">
                 <button
+                  ref={botonUnoRef}
                   type="button"
                   aria-pressed={!enReparto}
                   title={tituloModoUno(categoriaForm)}
@@ -2204,6 +2321,7 @@ export function ExpenseVerifyDialog({
                   {cfg.etiquetaUno}
                 </button>
                 <button
+                  ref={botonRepartoRef}
                   type="button"
                   aria-pressed={enReparto}
                   title={
@@ -2233,7 +2351,12 @@ export function ExpenseVerifyDialog({
                     size="sm"
                     variant="outline"
                     className="h-7 cursor-pointer text-xs"
-                    onClick={() => releerReparto(false)}
+                    onClick={() => {
+                      // El aviso (y este botón) se desmonta: el foco queda en
+                      // «Un avión», que no se desmonta mientras se lee.
+                      releerReparto(false);
+                      enfocarDespues(() => botonUnoRef.current);
+                    }}
                     disabled={pending}
                   >
                     {BOTON_REINTENTAR}
@@ -2273,8 +2396,8 @@ export function ExpenseVerifyDialog({
                       partes={repartoBase}
                       moneda={gasto.moneda}
                       techoCents={techoCents}
-                      onEditar={() => setEditandoReparto(true)}
-                      onQuitar={elegirUno}
+                      onEditar={abrirEditorReparto}
+                      onQuitar={quitarRepartoDelResumen}
                       disabled={pending}
                     />
                   ) : (
@@ -2290,7 +2413,7 @@ export function ExpenseVerifyDialog({
                           ? textoFalloCargaAviones(repartoGuardado ? resumenBaseTexto : null)
                           : null
                       }
-                      onReintentar={() => setIntentoAviones((n) => n + 1)}
+                      onReintentar={reintentarAviones}
                       idPrefijo={idReparto}
                       cargando={cargandoAviones && repartoGuardado}
                     />
@@ -2356,8 +2479,10 @@ export function ExpenseVerifyDialog({
                 </>
               )}
             </div>
-          ) : (
-            <Field label="Avión (resuelve pendiente)">
+          ) : cfg.admiteAvion ? (
+            // «(resuelve pendiente)» SOLO donde sin avión el gasto cuenta en
+            // «Pendientes»; en la comisión que paga VuelaTour es referencia.
+            <Field label={etiquetaCampoAvionSinModos(categoriaForm)}>
               <SearchableSelect
                 // Opción vacía REAL al frente: el Combobox solo dispara
                 // onChange con un item — sin ella era imposible deseleccionar
@@ -2373,6 +2498,13 @@ export function ExpenseVerifyDialog({
                 placeholder="Sin asignar"
               />
             </Field>
+          ) : (
+            // Gasto personal del dueño: el guardado desliga el avión; un
+            // selector cuya elección se tira sería un no-op mentiroso.
+            <div className="space-y-1" data-avion-no-aplica="">
+              <p className="text-sm font-medium">{ETIQUETA_CAMPO_AVION_MODOS}</p>
+              <p className="text-xs text-muted-foreground">{HINT_AVION_PERSONAL}</p>
+            </div>
           )}
 
           {/* Banner del reparto (falla parcial, otra persona lo cambió…):

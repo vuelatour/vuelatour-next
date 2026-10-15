@@ -6,6 +6,8 @@
  * línea del teléfono, compra, «Sugerir asignaciones» y el modo «Unir en
  * compra». Textos por igualdad exacta.
  */
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { coincideBusqueda } from "@/lib/admin/busqueda";
 import {
@@ -27,12 +29,15 @@ import {
   ETIQUETA_TOTAL_PENDIENTES,
   ETIQUETA_VISTA,
   INSTRUCCION_MODO_UNIR,
+  INSTRUCCION_MODO_UNIR_CORTA,
+  LARGO_MAX_ETIQUETA_CATEGORIA_FILTRO,
   OPCIONES_CAPTURA,
   OPCIONES_ORDEN_GASTOS,
   PISTA_BUSQUEDA_EXCEL,
   PLACEHOLDER_BUSCAR_GASTOS,
   TEXTO_ACTUALIZANDO,
   TEXTO_BOTON_UNIR,
+  TEXTO_CONFIRMADO_CORTO,
   TEXTO_DUPLICADO,
   TEXTO_FALTA_VISTO_BUENO,
   TEXTO_LIMPIAR_FILTROS,
@@ -40,6 +45,7 @@ import {
   TEXTO_QUITAR_FILTROS_GASTOS,
   TEXTO_TERMINAR_BARRA,
   TEXTO_TERMINAR_UNIR,
+  TEXTO_UNIR_SIN_LISTA,
   TITULO_COLUMNA_UNIR,
   TITULO_DUPLICADO,
   TITULO_ENCABEZADO_COMP,
@@ -53,28 +59,36 @@ import {
   TITULO_QUITAR_FILTRO_AVION,
   TITULO_SIN_VISTA_PREVIA,
   TITULO_TERMINAR_UNIR,
+  TOPE_SUGERIR_ASIGNACIONES,
   altComprobanteGasto,
+  anchoFiltroCategoria,
   ariaCampoFecha,
   ariaQuitarFiltroAvion,
   ayudaSugerirAsignaciones,
+  claveFiltrosUrl,
   descripcionGasto,
   etiquetaCompra,
   hayFiltrosGastos,
   hrefQuitarFiltrosGastos,
   leerFiltrosGastos,
+  lineaComprobanteGasto,
   lineaEstadoMovilGasto,
   opcionesAvionFiltroGastos,
   opcionesConTodos,
   queryBaseGastos,
   queryExcelGastos,
   queryListaGastos,
+  rangoCapturaTrasNavegar,
+  rangoCapturaTrasUrl,
   textoAnalizandoPendientes,
   textoBusquedaGasto,
   textoCorteGastos,
   textoGastosSeleccionados,
   textoPagosCompra,
+  textoPendientesSinRevisar,
   textoPropinaGasto,
   tituloAbrirCompra,
+  tituloConfirmadoGasto,
   tituloUnirSinSeleccionables,
   tituloVistaGastos,
   vacioGastos,
@@ -551,20 +565,119 @@ describe("compra, celdas e insignias", () => {
 });
 
 describe("«Sugerir asignaciones»", () => {
-  it("title con el total GLOBAL (36, 1 y null)", () => {
+  // Revisión del 14-oct-2026: el API revisa a lo más 15 por pasada (los de
+  // fecha más reciente); con 36 pendientes los textos prometían «toda la
+  // bandeja» y los otros 21 nunca recibían sugerencia sin que se dijera.
+  it("title con el total GLOBAL y el tope de una pasada (36, 15, 1 y null)", () => {
+    expect(TOPE_SUGERIR_ASIGNACIONES).toBe(15);
     expect(ayudaSugerirAsignaciones(36)).toBe(
-      "Propone el avión de los 36 gastos pendientes de toda la bandeja (no solo de lo filtrado).",
+      "Propone el avión de los 15 pendientes más recientes de la bandeja (hay 36; no solo de lo filtrado).",
+    );
+    expect(ayudaSugerirAsignaciones(15)).toBe(
+      "Propone el avión de los 15 gastos pendientes de toda la bandeja (no solo de lo filtrado).",
     );
     expect(ayudaSugerirAsignaciones(1)).toBe("Propone el avión del gasto pendiente de la bandeja (no solo de lo filtrado).");
     expect(ayudaSugerirAsignaciones(null)).toBe(
-      "No se pudieron contar los pendientes; el análisis revisa toda la bandeja.",
+      "No se pudieron contar los pendientes; el análisis revisa los 15 más recientes de la bandeja (no solo de lo filtrado).",
     );
+    // Ningún texto promete «toda la bandeja» con más pendientes que el tope.
+    expect(ayudaSugerirAsignaciones(16)).not.toContain("toda la bandeja");
   });
 
   it("texto de carga", () => {
-    expect(textoAnalizandoPendientes(36)).toBe("Analizando 36 pendientes… esto toma unos segundos.");
+    expect(textoAnalizandoPendientes(36)).toBe(
+      "Analizando los 15 más recientes de 36 pendientes… esto toma unos segundos.",
+    );
+    expect(textoAnalizandoPendientes(15)).toBe("Analizando 15 pendientes… esto toma unos segundos.");
     expect(textoAnalizandoPendientes(1)).toBe("Analizando 1 pendiente… esto toma unos segundos.");
     expect(textoAnalizandoPendientes(null)).toBe("Analizando los pendientes… esto toma unos segundos.");
+  });
+
+  it("bajo el resultado: cuántos NO revisó la pasada (sin conteo o sin revisados, nada)", () => {
+    expect(textoPendientesSinRevisar(36, 15)).toBe(
+      "Se revisaron los 15 pendientes más recientes; otros 21 no se revisaron en esta pasada (asígnalos a mano o vuelve a pulsar después de aplicar).",
+    );
+    expect(textoPendientesSinRevisar(16, 15)).toBe(
+      "Se revisaron los 15 pendientes más recientes; 1 pendiente más no se revisó en esta pasada (asígnalo a mano).",
+    );
+    expect(textoPendientesSinRevisar(15, 15)).toBeNull();
+    expect(textoPendientesSinRevisar(3, 3)).toBeNull();
+    expect(textoPendientesSinRevisar(null, 15)).toBeNull();
+    expect(textoPendientesSinRevisar(36, 0)).toBeNull();
+  });
+
+  const API = path.resolve(__dirname, "../../../../../vuelatour-api/src/modules/expenses/expenses.service.ts");
+  const fuenteApi = existsSync(API) ? readFileSync(API, "utf8") : null;
+  it.skipIf(!fuenteApi)("PARIDAD: el tope es el `.limit(N)` de `sugerirAsignaciones()` del API", () => {
+    const src = fuenteApi ?? "";
+    const ini = src.indexOf("async sugerirAsignaciones()");
+    expect(ini).toBeGreaterThan(-1);
+    const cuerpo = src.slice(ini, src.indexOf("CONCURRENCIA", ini));
+    const m = /\.limit\((\d+)\)/.exec(cuerpo);
+    expect(m?.[1]).toBe(String(TOPE_SUGERIR_ASIGNACIONES));
+  });
+});
+
+describe("respaldo de «Comp.» bajo el concepto (768–1279 px)", () => {
+  it("«Sin comp.», «Sin vista previa», hojas y «✓ Confirmado» (con quién y cuándo); nada que decir ⇒ null", () => {
+    expect(TEXTO_CONFIRMADO_CORTO).toBe("✓ Confirmado");
+    // Con comprobante y foto firmada, una hoja, sin confirmar: nada (como la columna sin miniatura).
+    expect(lineaComprobanteGasto(gasto({ foto_url: "oficina/1.jpg" }), true)).toBeNull();
+    expect(lineaComprobanteGasto(gasto({ estatus_comprobante: "SIN_COMPROBANTE" }), false)).toEqual({
+      texto: "Sin comp.",
+      title: null,
+    });
+    expect(lineaComprobanteGasto(gasto({ foto_url: "oficina/1.jpg" }), false)?.texto).toBe("Sin vista previa");
+    const conTodo = gasto({
+      foto_url: "oficina/1.jpg",
+      valor_ia_extraido: { fotos_adicionales: ["oficina/2.jpg", "oficina/3.jpg"] },
+      verificado_at: "2026-10-14T16:00:00Z",
+      verificador: { nombre: "Mary Cruz" },
+    } as Partial<Gasto>);
+    expect(lineaComprobanteGasto(conTodo, true)).toEqual({
+      texto: "+2 hojas · ✓ Confirmado",
+      title: tituloConfirmadoGasto(conTodo),
+    });
+    expect(tituloConfirmadoGasto(conTodo)).toMatch(/^Confirmado por Mary Cruz · /);
+    expect(tituloConfirmadoGasto(gasto({ verificado_at: "2026-10-14T16:00:00Z" }))).toMatch(/^Confirmado por oficina · /);
+  });
+});
+
+describe("ancho del filtro «Categoría»", () => {
+  it("crece SOLO con una etiqueta larga elegida (las dos comisiones ya no se ven iguales)", () => {
+    expect(LARGO_MAX_ETIQUETA_CATEGORIA_FILTRO).toBe(22);
+    expect(anchoFiltroCategoria(undefined)).toBe("sm:w-52");
+    expect(anchoFiltroCategoria("COMIDA")).toBe("sm:w-52");
+    expect(anchoFiltroCategoria("TAXI")).toBe("sm:w-52"); // «Taxi / estacionamiento» (22)
+    expect(anchoFiltroCategoria("COMISION_VENDEDOR")).toBe("sm:w-72");
+    expect(anchoFiltroCategoria("COMISION_VENDEDOR_AVION")).toBe("sm:w-72");
+  });
+});
+
+describe("«Rango…» de la fecha de captura: vive con la URL", () => {
+  it("la clave de la URL ignora la búsqueda y la página de la tabla", () => {
+    expect(claveFiltrosUrl("banco=conciliados&tq=saab&tp=3")).toBe("banco=conciliados");
+    expect(claveFiltrosUrl("")).toBe("");
+  });
+
+  it("abierto en la URL donde se pulsó; la barra navega y al llegar sigue abierto", () => {
+    let r = { vista: "", esperada: null as string | null };
+    expect(rangoCapturaTrasUrl(r, "")).toBe(r); // mismo objeto: sin bucle en el render
+    r = rangoCapturaTrasNavegar(r, "banco=conciliados")!;
+    expect(rangoCapturaTrasUrl(r, "")).toBe(r); // en vuelo
+    r = rangoCapturaTrasUrl(r, "banco=conciliados")!;
+    expect(r).toEqual({ vista: "banco=conciliados", esperada: null });
+  });
+
+  it("el caso del reporte: «Rango…» + fecha y luego «Quitar filtros» ⇒ se CIERRA (y no revive)", () => {
+    let r = rangoCapturaTrasNavegar({ vista: "", esperada: null }, "cap_desde=2026-12-01");
+    r = rangoCapturaTrasUrl(r, "cap_desde=2026-12-01"); // llegó la fecha
+    expect(r).toEqual({ vista: "cap_desde=2026-12-01", esperada: null });
+    r = rangoCapturaTrasUrl(r, ""); // «Quitar filtros» (enlace, FUERA de la barra)
+    expect(r).toBeNull();
+    expect(rangoCapturaTrasUrl(r, "")).toBeNull();
+    // Cerrado no espera navegaciones.
+    expect(rangoCapturaTrasNavegar(null, "x=1")).toBeNull();
   });
 });
 
@@ -578,6 +691,10 @@ describe("modo «Unir en compra»", () => {
     expect(TITULO_TERMINAR_UNIR).toBe("Oculta las casillas y limpia la selección.");
     expect(INSTRUCCION_MODO_UNIR).toBe(
       "Marca los gastos que son pagos de una misma compra: la factura de mercancía y al menos otro pago (envío, impuestos…).",
+    );
+    expect(INSTRUCCION_MODO_UNIR_CORTA).toBe("Marca la factura de mercancía y al menos otro pago de la compra.");
+    expect(TEXTO_UNIR_SIN_LISTA).toBe(
+      "No se pudieron cargar los gastos: pulsa «Reintentar» para seguir uniendo (lo marcado se conserva).",
     );
     expect(TEXTO_TERMINAR_BARRA).toBe("Terminar");
     expect(ENCABEZADO_COLUMNA_UNIR).toBe("Unir en compra");

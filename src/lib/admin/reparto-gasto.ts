@@ -25,6 +25,7 @@ import {
   CATEGORIAS_EMPRESA,
   CATEGORIAS_REPARTIBLES,
   categoriaGastoLabel,
+  categoriaLlevaAvion,
   hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
 import { medioPagoAceptadoPorApi } from "@/lib/admin/medios-pago";
@@ -534,6 +535,19 @@ export function debePrellenarAvionPorMatricula(e: {
 }
 
 /**
+ * ¿La IA ya quedó consumida en ESTA apertura por un reparto? (revisión del
+ * 14-oct-2026). En cuanto el diálogo sabe que el gasto tiene o tuvo reparto
+ * —al abrir, al leerlo o con lo que devolvió un guardado—, la matrícula de la
+ * IA y la sugerencia de vuelo ya no corren en la sesión: un guardado a
+ * medias que deja el gasto SIN reparto (PARCIAL_SOLO_REPARTO de un QUITAR)
+ * ya no reimpone el avión de la IA sobre el «Sin avión (gasto de VuelaTour)»
+ * que se confirmó (R9). `yaConsumida` = lo que la sesión ya sabía.
+ */
+export function iaConsumidaPorReparto(yaConsumida: boolean, partes: readonly unknown[]): boolean {
+  return yaConsumida || partes.length > 0;
+}
+
+/**
  * R11: «Reanalizar con IA» sobre un gasto repartido (o que se está
  * repartiendo) no le pone una categoría que no se reparte (SERVICIOS,
  * REFACCION, PERMISO, TAXI: las sugerencias reales de los repartidos).
@@ -690,14 +704,45 @@ export function motivoCategoriaNoRepartible(label: string): string {
 export const HINT_VUELO_EN_REPARTO =
   "Un gasto repartido entre aviones no lleva vuelo. Para ligarlo a uno, elige «Un avión» (el reparto se quita al guardar).";
 
-/** Descripción del diálogo: verdadera solo donde hay modos. */
-export function descripcionVerificarGasto(e: { enReparto: boolean; conModos: boolean }): string {
+/**
+ * Descripción del diálogo, decidida con la CATEGORÍA del formulario (revisión
+ * del 14-oct-2026): un repartido reclasificado a «Servicios (avión)» seguía
+ * prometiendo «el avión es opcional… puedes repartirlo» con «Repartir»
+ * apagado, y el gasto personal y la comisión que paga VuelaTour decían que
+ * sin avión quedan en la bandeja (no cuentan en «Pendientes»).
+ */
+export function descripcionVerificarGasto(e: { enReparto: boolean; categoria: string }): string {
   if (e.enReparto) return "Revisa el reparto entre aviones y confirma categoría y comprobante.";
-  if (e.conModos) {
-    return "Confirma categoría y comprobante. El avión es opcional: sin avión es gasto de VuelaTour, o puedes repartirlo entre aviones.";
+  if (CATEGORIAS_REPARTIBLES.has(e.categoria)) {
+    return categoriaSinAvion(e.categoria)
+      ? "Confirma categoría y comprobante. No lleva avión: sin reparto es gasto de VuelaTour, o puedes repartirlo entre aviones."
+      : "Confirma categoría y comprobante. El avión es opcional: sin avión es gasto de VuelaTour, o puedes repartirlo entre aviones.";
+  }
+  if (e.categoria === "PERSONAL_DUENO") {
+    return "Confirma categoría y comprobante. El gasto personal del dueño no lleva avión: queda fuera de los balances.";
+  }
+  if (!categoriaLlevaAvion(e.categoria)) {
+    return "Confirma categoría, vuelo y comprobante. Esta categoría no lleva avión (el que elijas es solo referencia): no queda en la bandeja de pendientes.";
   }
   return "Asigna el avión y confirma categoría y comprobante. Sin avión, el gasto queda en la bandeja de pendientes.";
 }
+
+/** Campo «Avión» SIN modos (categoría que no se reparte y sin reparto guardado). */
+export const ETIQUETA_AVION_RESUELVE_PENDIENTE = "Avión (resuelve pendiente)";
+export const ETIQUETA_AVION_SOLO_REFERENCIA = "Avión (solo referencia)";
+
+/**
+ * Etiqueta del campo «Avión» sin modos: «(resuelve pendiente)» SOLO en una
+ * categoría que necesita avión (espejo de la bandeja del API); en las que no
+ * lo llevan (la comisión que paga VuelaTour) el avión es solo referencia.
+ */
+export function etiquetaCampoAvionSinModos(categoria: string): string {
+  return categoriaLlevaAvion(categoria) ? ETIQUETA_AVION_RESUELVE_PENDIENTE : ETIQUETA_AVION_SOLO_REFERENCIA;
+}
+
+/** El gasto personal del dueño no lleva avión: el guardado lo desliga (no se ofrece selector). */
+export const HINT_AVION_PERSONAL =
+  "El gasto personal del dueño no lleva avión: al guardar se desliga y queda fuera de los balances.";
 
 export const TITULO_RESUMEN_REPARTO = "Repartido entre aviones";
 export const BOTON_EDITAR_REPARTO = "Editar reparto";
@@ -956,6 +1001,13 @@ export function resumenDeRespuesta(r: RepartoResponse, monedaRespaldo: string): 
 }
 
 /**
+ * Al QUITAR el reparto sin avión ni vuelo en una categoría que NECESITA
+ * avión: no «lo absorbe VuelaTour», queda pendiente (revisión del 14-oct-2026).
+ */
+export const DESTINO_PENDIENTE_DE_AVION =
+  "la bandeja de «Pendientes» (le falta avión; mientras no lo tenga, cuenta en Balance general VuelaTour · Otros gastos)";
+
+/**
  * A dónde pasa el gasto al QUITAR el reparto (confirmación). Nunca llama
  * `hojaDestinoGasto(…, false, false)`: ese texto manda a repartir desde otra
  * pantalla, y el reparto se ajusta aquí.
@@ -969,9 +1021,43 @@ export function destinoTrasQuitar(e: {
   if (e.categoria === "PERSONAL_DUENO") return "fuera de los balances (gasto personal del dueño)";
   const empresa = CATEGORIAS_EMPRESA.has(e.categoria);
   if (empresa && mat) return `Balance general VuelaTour · Otros gastos (${mat} queda solo como referencia)`;
-  if (empresa || (!mat && !e.tieneVuelo)) return "Balance general VuelaTour · Otros gastos (lo absorbe VuelaTour)";
+  if (empresa) return "Balance general VuelaTour · Otros gastos (lo absorbe VuelaTour)";
+  if (!mat && !e.tieneVuelo) {
+    // Una categoría que necesita avión (Servicios, Comida, Gasavión…) sin
+    // avión NO es de VuelaTour: cuenta en «Pendientes» hasta asignárselo.
+    return categoriaLlevaAvion(e.categoria)
+      ? DESTINO_PENDIENTE_DE_AVION
+      : "Balance general VuelaTour · Otros gastos (lo absorbe VuelaTour)";
+  }
   if (e.tieneVuelo) return hojaDestinoGasto(e.categoria, true, !!mat);
   return `${hojaDestinoGasto(e.categoria, false, true)} (${mat})`;
+}
+
+/**
+ * Texto del ALTA en el API (`expenses.service.ts`): la carga de combustible
+ * se controla POR AVIÓN y un GAS sin avión rebota con 400. El PATCH dice
+ * «…asigna la aeronave antes de quitarla.»; aquí va el del alta porque en el
+ * diálogo elegir un vuelo con avión pone el avión.
+ */
+export const MSG_COMBUSTIBLE_NECESITA_AVION =
+  "La carga de combustible necesita el avión: selecciona la aeronave (o un vuelo del cual tomarla).";
+
+/**
+ * Se frena ANTES de la red (revisión del 14-oct-2026): QUITAR el reparto
+ * reclasificando a «Gasavión / Turbosina» sin avión. El planificador manda
+ * primero el PUT [] (la categoría no se reparte) y el PATCH rebotaría con el
+ * 400 del API DESPUÉS: los aviones ya habrían perdido su parte (falla a
+ * medias). El vuelo no basta: en este camino viaja en una 2.ª llamada
+ * DESPUÉS del PATCH, así que solo cuenta el avión del formulario (elegir un
+ * vuelo con avión lo pone).
+ */
+export function errorQuitarRepartoSinAvion(e: {
+  quitaReparto: boolean;
+  categoria: string;
+  aeronaveId: string | null | undefined;
+}): string | null {
+  if (!e.quitaReparto || e.categoria !== "GAS") return null;
+  return e.aeronaveId ? null : MSG_COMBUSTIBLE_NECESITA_AVION;
 }
 
 // ===================== Confirmación única al guardar =====================
@@ -1119,6 +1205,8 @@ export interface ContextoResultadoReparto {
   matriculaFinal: string | null;
   categoria: string;
   moneda: string;
+  /** El gasto queda ligado a un vuelo (al quitar sin avión). */
+  tieneVuelo?: boolean;
 }
 
 export interface MensajeResultadoReparto {
@@ -1140,6 +1228,15 @@ export function textoExitoGastoReparto(ctx: ContextoResultadoReparto): string {
   if (ctx.matriculaFinal) return `Gasto verificado y reparto quitado: quedó en ${ctx.matriculaFinal}`;
   if (ctx.categoria === "FIJO") {
     return "Gasto verificado y reparto quitado: el gasto fijo vuelve al prorrateo entre los aviones activos";
+  }
+  if (ctx.categoria === "PERSONAL_DUENO") {
+    return "Gasto verificado y reparto quitado: queda fuera de los balances (gasto personal del dueño)";
+  }
+  // Una categoría que necesita avión no la «absorbe VuelaTour» (revisión del 14-oct-2026).
+  if (categoriaLlevaAvion(ctx.categoria)) {
+    return ctx.tieneVuelo
+      ? "Gasto verificado y reparto quitado: queda en la hoja de su vuelo"
+      : "Gasto verificado y reparto quitado: queda pendiente de avión (pestaña «Pendientes»)";
   }
   return "Gasto verificado y reparto quitado: lo absorbe VuelaTour";
 }
@@ -1178,7 +1275,7 @@ export function mensajeResultadoGastoReparto(
     return error(
       r.reparto
         ? `No hubo respuesta del servidor al guardar: no sabemos si el gasto se guardó. El reparto ahora está así: ${actual(r.reparto)}. Recarga la página y revisa el gasto antes de volver a guardar.`
-        : "No hubo respuesta del servidor al guardar: no sabemos si se guardó. Recarga la página y revisa el gasto antes de volver a guardar.",
+        : TEXTO_SIN_RESPUESTA_GUARDAR,
     );
   }
   const motivo = motivoLegible(r.error);
@@ -1254,6 +1351,41 @@ export function mensajeResultadoGastoReparto(
     default:
       return error(MSG_REPARTO_INVALIDO, { toastMs: undefined });
   }
+}
+
+// ===================== «Verificar / editar»: llamadas que no contestan =====================
+//
+// Revisión del 14-oct-2026: el camino de siempre (`verifyGastoAction`), la
+// 2.ª llamada del vuelo y «Retirar confirmación» llamaban a la server action
+// desnuda: un fallo de TRANSPORTE («Failed to find Server Action» tras un
+// deploy, red caída) lanzaba en el cliente y la pantalla caía al error
+// boundary sin decir si se guardó.
+
+/** El guardado no contestó (pudo escribir o no). */
+export const TEXTO_SIN_RESPUESTA_GUARDAR =
+  "No hubo respuesta del servidor al guardar: no sabemos si se guardó. Recarga la página y revisa el gasto antes de volver a guardar.";
+
+/** El gasto SÍ se guardó; la 2.ª llamada (ligar el vuelo) no contestó. */
+export const TEXTO_VUELO_SIN_RESPUESTA =
+  "Gasto guardado, pero no hubo respuesta al ligar el vuelo: recarga la página y revisa el vuelo del gasto.";
+
+/** «Retirar confirmación» no contestó. */
+export const TEXTO_RETIRAR_SIN_RESPUESTA =
+  "No hubo respuesta del servidor: no sabemos si se retiró la confirmación. Recarga la página para revisarlo.";
+
+/**
+ * Enter en el monto de un avión (el editor vive DENTRO del formulario de
+ * «Verificar / editar» y Enter lo enviaba como «Guardar»): el foco pasa al
+ * monto del SIGUIENTE avión marcado, en el orden de las filas; null = no hay.
+ */
+export function siguienteMontoMarcado(
+  filas: ReadonlyArray<Pick<AvionReparto, "id">>,
+  seleccion: SeleccionReparto,
+  idActual: string,
+): string | null {
+  const i = filas.findIndex((f) => f.id === idActual);
+  if (i < 0) return null;
+  return filas.slice(i + 1).find((f) => seleccion[f.id]?.incluir)?.id ?? null;
 }
 
 /** Aviso (no error) cuando el refuerzo no pudo quitar el avión individual. */

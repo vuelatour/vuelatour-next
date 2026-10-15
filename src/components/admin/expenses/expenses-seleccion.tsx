@@ -30,11 +30,13 @@ import {
   AYUDA_MODO_UNIR,
   AYUDA_UN_SELECCIONADO,
   INSTRUCCION_MODO_UNIR,
+  INSTRUCCION_MODO_UNIR_CORTA,
   TEXTO_BOTON_UNIR,
   TEXTO_LIMPIAR_SELECCION,
   TEXTO_MODO_UNIR,
   TEXTO_TERMINAR_BARRA,
   TEXTO_TERMINAR_UNIR,
+  TEXTO_UNIR_SIN_LISTA,
   TITULO_MINIMO_UNIR,
   TITULO_TERMINAR_UNIR,
   textoGastosSeleccionados,
@@ -78,6 +80,12 @@ interface SeleccionCtx {
   setModoUnir: (activo: boolean) => void;
   /** ¿La vista tiene gastos que se puedan unir? (la barra lo explica si no). */
   haySeleccionables: boolean;
+  /**
+   * La lista de la página NO cargó (revisión del 14-oct-2026): no se sabe qué
+   * hay, así que la barra no dice «no hay gastos que se puedan unir», el
+   * botón del modo no se ofrece apagado y lo marcado no se poda.
+   */
+  cargaFallida: boolean;
 }
 
 const Ctx = createContext<SeleccionCtx | null>(null);
@@ -93,6 +101,7 @@ export function useSeleccionGastos(): SeleccionCtx | null {
 
 export function ExpensesSeleccionProvider({
   idsVisibles,
+  cargaFallida = false,
   modoInicial = false,
   children,
 }: {
@@ -102,6 +111,8 @@ export function ExpensesSeleccionProvider({
    * poda a estos ids.
    */
   idsVisibles: string[];
+  /** La lista principal NO cargó (`!lista.ok`): `idsVisibles` vacío no significa «no hay». */
+  cargaFallida?: boolean;
   /** Modo «Unir en compra» al montar. SOLO para pruebas (la página no lo pasa). */
   modoInicial?: boolean;
   children: React.ReactNode;
@@ -114,6 +125,8 @@ export function ExpensesSeleccionProvider({
   // conservaba ids que ya no están en pantalla ("Unir" daba 404/409). Se
   // sincroniza con lo que el server mandó en esta vista.
   useEffect(() => {
+    // Con la lista caída no se sabe qué hay: lo marcado se conserva.
+    if (cargaFallida) return;
     const visibles = new Set(idsVisibles);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSeleccion((prev) => {
@@ -125,7 +138,7 @@ export function ExpensesSeleccionProvider({
       }
       return cambio ? next : prev;
     });
-  }, [idsVisibles]);
+  }, [idsVisibles, cargaFallida]);
 
   const toggle = useCallback((g: GastoSeleccionado) => {
     setSeleccion((prev) => {
@@ -145,8 +158,8 @@ export function ExpensesSeleccionProvider({
   const haySeleccionables = idsVisibles.length > 0;
 
   const value = useMemo(
-    () => ({ seleccion, toggle, limpiar, modoUnir, setModoUnir, haySeleccionables }),
-    [seleccion, toggle, limpiar, modoUnir, setModoUnir, haySeleccionables],
+    () => ({ seleccion, toggle, limpiar, modoUnir, setModoUnir, haySeleccionables, cargaFallida }),
+    [seleccion, toggle, limpiar, modoUnir, setModoUnir, haySeleccionables, cargaFallida],
   );
 
   return (
@@ -170,6 +183,9 @@ export function UnirCompraToggle() {
   const ctx = useContext(Ctx);
   if (!ctx) return null;
   const activo = ctx.modoUnir;
+  // Lista caída: no se ofrece ENTRAR al modo (no hay qué unir a la vista);
+  // si ya estaba encendido, sigue para poder terminarlo.
+  if (ctx.cargaFallida && !activo) return null;
   return (
     <Button
       variant={activo ? "secondary" : "outline"}
@@ -196,6 +212,16 @@ export function UnirCompraToggle() {
 function UnirCompraBar() {
   const ctx = useContext(Ctx);
   const [open, setOpen] = useState(false);
+  // Alto REAL de la barra (cambia con el ancho y con lo marcado): el hueco al
+  // final de la página mide lo mismo, así nunca tapa el paginador (revisión
+  // del 14-oct-2026: el h-20 fijo no alcanzaba en teléfono).
+  const [altoBarra, setAltoBarra] = useState(0);
+  const medirBarra = useCallback((el: HTMLDivElement | null) => {
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setAltoBarra(el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   if (!ctx || !ctx.modoUnir) return null;
   const n = ctx.seleccion.size;
   const puedeUnir = n >= MIN_GASTOS_UNIR;
@@ -207,20 +233,42 @@ function UnirCompraBar() {
   return (
     <>
       {/* Hueco al final de la página: con el modo encendido la barra fija no
-          tapa el paginador ni las últimas filas. */}
-      <div aria-hidden="true" className="h-20" />
+          tapa el paginador ni las últimas filas (alto de la barra + su
+          `bottom-6` + aire; h-20 hasta medirla). */}
       <div
+        aria-hidden="true"
+        data-hueco-barra-unir=""
+        className={altoBarra > 0 ? undefined : "h-20"}
+        style={altoBarra > 0 ? { height: Math.ceil(altoBarra) + 32 } : undefined}
+      />
+      {/* Ancho: del teléfono completo (con 1rem de margen) y centrada con
+          `mx-auto` + `w-fit`. Con `left-1/2` + translate el ancho disponible
+          era MEDIO viewport: en 390 px medía 195 × 218 y tapaba «Página
+          anterior» (revisión del 14-oct-2026). */}
+      <div
+        ref={medirBarra}
         data-barra-unir
-        className="fixed bottom-6 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 shadow-lg"
+        className="fixed inset-x-4 bottom-6 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-col items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 shadow-lg"
       >
-        {!ctx.haySeleccionables && n === 0 ? (
-          <div className="flex items-center gap-3">
+        {ctx.cargaFallida ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <p className="max-w-md text-sm text-muted-foreground" role="status">
+              {TEXTO_UNIR_SIN_LISTA}
+            </p>
+            {terminar}
+          </div>
+        ) : !ctx.haySeleccionables && n === 0 ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="max-w-md text-sm text-muted-foreground">{tituloUnirSinSeleccionables()}</p>
             {terminar}
           </div>
         ) : n === 0 ? (
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <p className="max-w-md text-sm text-muted-foreground">{INSTRUCCION_MODO_UNIR}</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              {/* Corta en teléfono: la barra no debe tapar media pantalla. */}
+              <span className="sm:hidden">{INSTRUCCION_MODO_UNIR_CORTA}</span>
+              <span className="hidden sm:inline">{INSTRUCCION_MODO_UNIR}</span>
+            </p>
             <Button size="sm" className="gap-1.5" disabled>
               <ShoppingCartIcon className="h-4 w-4" />
               {TEXTO_BOTON_UNIR}

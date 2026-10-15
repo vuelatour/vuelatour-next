@@ -13,9 +13,11 @@ import { FILTRO_BANCO } from "@/lib/admin/conciliacion-estado";
 import { CATEGORIAS_FILTRO_GASTO, opcionCategoriaGasto } from "@/lib/admin/categorias-gasto";
 import { ESPERA_APLICAR_MS } from "@/lib/admin/periodo-selector";
 import {
+  borradoresVigentes,
   consultaBaseParaNavegar,
   pasoAlSalirCampoFecha,
   pasoCampoFecha,
+  pendienteVigente,
   rangoAlCambiarCampo,
   valorVisibleCampoFecha,
   type BorradorCampoFecha,
@@ -37,12 +39,17 @@ import {
   TITULO_FECHA_CAPTURA,
   TITULO_FECHA_GASTO,
   TITULO_LIMPIAR_FILTROS,
+  anchoFiltroCategoria,
   ariaCampoFecha,
+  claveFiltrosUrl,
   hayFiltrosGastos,
   leerFiltrosGastos,
   opcionesAvionFiltroGastos,
   opcionesConTodos,
+  rangoCapturaTrasNavegar,
+  rangoCapturaTrasUrl,
   type ModoCaptura,
+  type RangoCapturaAbierto,
 } from "@/lib/admin/gastos-vista";
 
 // Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
@@ -85,9 +92,11 @@ type Rango = { desde: string; hasta: string };
  * 13-oct-2026): tecleando el año («0002-10-01») nada navega; solo una fecha
  * COMPLETA tras `ESPERA_APLICAR_MS`, o al salir del campo / Enter. Si el
  * extremo nuevo invierte el rango, el otro lo sigue (`rangoAlCambiarCampo`).
- * El borrador se guarda contra el valor de la URL con el que se escribió:
- * cuando la URL cambia (la navegación llegó) caduca solo. `extra` viaja en
- * cada navegación del rango (la captura apaga «Esta semana»: `cap: null`).
+ * El borrador se guarda contra el valor de la URL con el que se escribió y
+ * CADUCA en cuanto la URL del campo cambia (llegó la navegación, o Atrás /
+ * «Quitar filtros» la movieron): ya no revive si la URL regresa a ese valor
+ * (`borradoresVigentes`, revisión del 14-oct-2026). `extra` viaja en cada
+ * navegación del rango (la captura apaga «Esta semana»: `cap: null`).
  */
 function useRangoBorrador({
   claveDesde,
@@ -109,6 +118,10 @@ function useRangoBorrador({
     desde: null,
     hasta: null,
   });
+  // Un borrador cuya URL ya cambió no vuelve a valer: se suelta aquí mismo
+  // (ajuste en el render, guardado: devuelve el mismo objeto si nada caducó).
+  const vigentes = borradoresVigentes(borradores, deUrl);
+  if (vigentes !== borradores) setBorradores(vigentes);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelarEspera = useCallback(() => {
     if (temporizador.current) {
@@ -210,10 +223,21 @@ export function ExpensesFilterBar({
   const f = leerFiltrosGastos((k) => sp.get(k));
   const [actualizando, startTransition] = useTransition();
   // La última consulta PEDIDA (UNA para toda la barra): mientras la
-  // navegación está en vuelo `sp` sigue siendo la URL ANTERIOR.
+  // navegación está en vuelo `sp` sigue siendo la URL ANTERIOR. Caduca en
+  // cuanto la URL viva deja su base (revisión del 14-oct-2026): si no, un
+  // regreso por FUERA de la barra (chip ✕, «Quitar filtros», Atrás) la
+  // revivía y el siguiente filtro perdía el clic o traía de vuelta uno quitado.
   const pendiente = useRef<ConsultaPendiente | null>(null);
-  // «Rango…» pulsado sin fechas todavía (solo UI: la URL no cambia).
-  const [rangoCapturaAbierto, setRangoCapturaAbierto] = useState(false);
+  useEffect(() => {
+    pendiente.current = pendienteVigente(sp.toString(), pendiente.current);
+  }, [sp]);
+  // «Rango…» pulsado sin fechas todavía (solo UI: la URL no lo dice). Vive
+  // mientras la URL sea donde se abrió o la que pidió la barra; cualquier
+  // otra navegación lo cierra (`rangoCapturaTrasUrl`).
+  const clave = claveFiltrosUrl(sp.toString());
+  const [rangoCapturaAbierto, setRangoCapturaAbierto] = useState<RangoCapturaAbierto | null>(null);
+  const rangoVigente = rangoCapturaTrasUrl(rangoCapturaAbierto, clave);
+  if (rangoVigente !== rangoCapturaAbierto) setRangoCapturaAbierto(rangoVigente);
 
   const paramsParaNavegar = useCallback(
     () => new URLSearchParams(consultaBaseParaNavegar(sp.toString(), pendiente.current)),
@@ -237,11 +261,13 @@ export function ExpensesFilterBar({
       // no se navega (la tabla tampoco pierde su página).
       if (qs === antes.toString()) return;
       pendiente.current = { base: viva, consulta: qs };
+      // Un «Rango…» abierto sigue abierto al llegar ESTA navegación.
+      setRangoCapturaAbierto((r) => rangoCapturaTrasNavegar(r, claveFiltrosUrl(qs)));
       startTransition(() => {
         router.push(qs ? `/admin/expenses?${qs}` : "/admin/expenses", { scroll: false });
       });
     },
-    [sp, paramsParaNavegar, router],
+    [sp, paramsParaNavegar, router, setRangoCapturaAbierto],
   );
 
   const rangoGasto = useRangoBorrador({
@@ -270,15 +296,15 @@ export function ExpensesFilterBar({
   });
 
   const modoCaptura: ModoCaptura =
-    f.captura === "todas" && rangoCapturaAbierto ? "rango" : f.captura;
+    f.captura === "todas" && rangoVigente !== null ? "rango" : f.captura;
 
   const elegirCaptura = (modo: ModoCaptura) => {
     if (modo === "rango") {
-      setRangoCapturaAbierto(true);
+      setRangoCapturaAbierto({ vista: clave, esperada: null });
       if (f.captura === "semana") navegar({ cap: null });
       return;
     }
-    setRangoCapturaAbierto(false);
+    setRangoCapturaAbierto(null);
     rangoCaptura.soltar();
     navegar(
       modo === "semana"
@@ -290,7 +316,7 @@ export function ExpensesFilterBar({
   const limpiar = () => {
     rangoGasto.soltar();
     rangoCaptura.soltar();
-    setRangoCapturaAbierto(false);
+    setRangoCapturaAbierto(null);
     navegar({
       aeronave_id: null,
       categoria: null,
@@ -393,7 +419,9 @@ export function ExpensesFilterBar({
       {selector({
         campo: "categoria",
         etiqueta: ETIQUETAS_FILTRO_GASTOS.categoria,
-        ancho: "sm:w-52",
+        // Con una etiqueta larga elegida («Comisión del vendedor (avión)»)
+        // crece: si no, las dos comisiones se veían iguales.
+        ancho: anchoFiltroCategoria(f.categoria),
         opciones: OPCIONES_CATEGORIA,
         valor: f.categoria ?? "",
         param: "categoria",

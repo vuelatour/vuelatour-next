@@ -336,6 +336,31 @@ export function valorVisibleCampoFecha(
   return borrador && borrador.base === deUrl ? borrador.valor : deUrl;
 }
 
+/**
+ * Los borradores CADUCAN en cuanto la URL del campo deja el valor con el que
+ * se escribieron (revisión del 14-oct-2026): llegó la navegación, o Atrás /
+ * «Quitar filtros» / el menú la cambiaron. Antes solo se OCULTABAN y
+ * revivían cuando la URL volvía a ese valor: el campo enseñaba una fecha que
+ * NO estaba aplicada, con la marca de filtro activo y sin «Limpiar», y salir
+ * del campo la volvía a aplicar. Devuelve el MISMO objeto si nada caducó (la
+ * barra lo usa para ajustar su estado en el render, sin bucles).
+ */
+export function borradoresVigentes<C extends string>(
+  borradores: Record<C, BorradorCampoFecha | null>,
+  deUrl: Record<C, string>,
+): Record<C, BorradorCampoFecha | null> {
+  let caduco = false;
+  const out = { ...borradores };
+  for (const campo of Object.keys(borradores) as C[]) {
+    const b = borradores[campo];
+    if (b && b.base !== deUrl[campo]) {
+      out[campo] = null;
+      caduco = true;
+    }
+  }
+  return caduco ? out : borradores;
+}
+
 // -----------------------------------------------------------------------------
 // Navegaciones ENCADENADAS antes de que la URL se mueva (revisión 13-oct-2026)
 // -----------------------------------------------------------------------------
@@ -365,6 +390,21 @@ export function consultaBaseParaNavegar(
   pendiente: ConsultaPendiente | null,
 ): string {
   return pendiente !== null && pendiente.base === viva ? pendiente.consulta : viva;
+}
+
+/**
+ * La consulta pendiente CADUCA en cuanto la URL viva deja su `base`
+ * (revisión del 14-oct-2026): llegó esa navegación u otra. Antes se quedaba
+ * guardada y `consultaBaseParaNavegar` la REVIVÍA cuando la URL volvía a esa
+ * base por FUERA de la barra (chip «Avión ✕», «Quitar filtros», Atrás, el
+ * menú): el siguiente clic se perdía («nada cambió») o regresaba un filtro que
+ * el operador ya había quitado. La barra la llama en un efecto sobre la URL.
+ */
+export function pendienteVigente(
+  viva: string,
+  pendiente: ConsultaPendiente | null,
+): ConsultaPendiente | null {
+  return pendiente !== null && pendiente.base === viva ? pendiente : null;
 }
 
 // =============================================================================

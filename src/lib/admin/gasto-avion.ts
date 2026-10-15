@@ -2,7 +2,9 @@ import { fmtMonto } from "@/lib/format";
 import {
   CATEGORIA_PAGO_VENDEDOR,
   CATEGORIAS_EMPRESA,
+  CATEGORIAS_REPARTIBLES,
   categoriaLlevaAvion,
+  esCategoriaPagoVendedor,
   hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
 import type { Gasto } from "@/types/expenses";
@@ -62,12 +64,35 @@ export const TEXTO_VER_AVION = "Ver avión";
 /** Parte de un reparto sin matrícula en el join. */
 export const MATRICULA_DESCONOCIDA = "¿?";
 
+/**
+ * Destino de un gasto de VuelaTour SIN vuelo ni avión, dicho para ESTA
+ * tabla (revisión del 14-oct-2026): el texto general de `hojaDestinoGasto`
+ * manda a «repartirlo desde la pantalla Otros gastos», cuando el reparto
+ * está en el menú ⋯ del MISMO renglón («Repartir entre aviones», también en
+ * «Verificar / editar»). `HOJA_OTROS_GASTOS_SIN_NADA` no se toca (lo congela
+ * su prueba y la pista de destino del alta).
+ */
+export const DESTINO_VUELATOUR_REPARTIBLE_TABLA =
+  "Balance general VuelaTour · Otros gastos (para cargarlo a aviones, usa «Repartir entre aviones» en el menú ⋯)";
+export const DESTINO_VUELATOUR_TABLA = "Balance general VuelaTour · Otros gastos";
+
 /** «Va a: Balance general VuelaTour · Otros gastos (…).» */
 export function tituloFueraDelAvion(
   categoria: string,
   tieneVuelo: boolean,
   tieneAvion: boolean,
 ): string {
+  // Sin vuelo ni avión: el texto general mandaría a otra pantalla.
+  if (
+    !tieneVuelo &&
+    !tieneAvion &&
+    categoria !== "PERSONAL_DUENO" &&
+    !esCategoriaPagoVendedor(categoria)
+  ) {
+    return `Va a: ${
+      CATEGORIAS_REPARTIBLES.has(categoria) ? DESTINO_VUELATOUR_REPARTIBLE_TABLA : DESTINO_VUELATOUR_TABLA
+    }.`;
+  }
   return `Va a: ${hojaDestinoGasto(categoria, tieneVuelo, tieneAvion)}.`;
 }
 

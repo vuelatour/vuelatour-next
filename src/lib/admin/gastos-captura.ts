@@ -249,15 +249,27 @@ export function distintivoOrigen(
 }
 
 /**
+ * Prefijo VISIBLE de la sublínea de captura en la celda «Fecha» (revisión del
+ * 14-oct-2026). «Capturado 30 may 04:44» mide 119 px con Inter a 10 px y la
+ * columna da 112: se cortaba la HORA en el 28 % de los días del año (53 % de
+ * los gastos de agosto). «Cap. …» mide a lo más 91.3 px (reja completa del
+ * año, medida en Chrome) y «⚠ Cap. …» 103.8 px. El lector de pantalla oye la
+ * forma larga (`cuandoLector`).
+ */
+export const PREFIJO_CAPTURA_CORTO = "Cap.";
+
+/**
  * Viewmodel de la celda «Fecha» de Gastos en DOS sublíneas cortas (la
- * columna mide 8rem): «Capturado 14 oct 10:33» y «Mary Cruz · panel». El
- * nombre se trunca y el origen se conserva (con el color de su distintivo);
- * `ambar` y `title` son EXACTAMENTE los de `lineaCaptura` (pista del 28-ago y
- * detalle completo).
+ * columna mide 8rem): «Cap. 14 oct 10:33» y «Mary Cruz · panel». El nombre
+ * se trunca y el origen se conserva (con el color de su distintivo); `ambar`
+ * y `title` son EXACTAMENTE los de `lineaCaptura` (pista del 28-ago y detalle
+ * completo).
  */
 export interface CapturaCompacta {
-  /** «Capturado 14 oct 10:33» (con «⚠ año 2025 · » delante si el ticket trae otro año). */
+  /** VISIBLE: «Cap. 14 oct 10:33» (con «⚠ » delante si el ticket trae otro año: el año va en la fecha de arriba y en el title). */
   cuando: string;
+  /** Para el LECTOR de pantalla: «Capturado 14 oct 10:33» (con «⚠ año 2025 · » delante). */
+  cuandoLector: string;
   /** Quién lo capturó (recortado) o null. */
   nombre: string | null;
   /** «panel», «app» o «sistema» (`origenCapturaLabel`); null sin dato. */
@@ -272,13 +284,12 @@ export interface CapturaCompacta {
 export function lineaCapturaCompacta(g: GastoCaptura): CapturaCompacta | null {
   const linea = lineaCaptura(g);
   if (!linea) return null;
-  const base = `Capturado ${fmtCapturaCorta(capturadoEnDe(g))}`;
+  const momento = fmtCapturaCorta(capturadoEnDe(g));
   const desfase = desfaseCaptura(g);
-  const cuando = desfase?.anioRaro
-    ? `⚠ año ${(g.fecha_gasto ?? "").slice(0, 4)} · ${base}`
-    : base;
+  const anio = desfase?.anioRaro ? (g.fecha_gasto ?? "").slice(0, 4) : null;
   return {
-    cuando,
+    cuando: `${anio ? "⚠ " : ""}${PREFIJO_CAPTURA_CORTO} ${momento}`,
+    cuandoLector: `${anio ? `⚠ año ${anio} · ` : ""}Capturado ${momento}`,
     nombre: g.captura?.nombre?.trim() || null,
     origen: origenCapturaLabel(g.origen),
     distintivo: distintivoOrigen(g.origen),

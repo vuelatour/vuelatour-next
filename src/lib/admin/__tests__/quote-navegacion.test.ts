@@ -11,6 +11,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ETIQUETA_GRUPO_FECHAS,
+  borradoresVigentes,
+  pendienteVigente,
+  type BorradorCampoFecha,
+  type ConsultaPendiente,
   FILTROS_LISTA,
   MSG_RANGO_API_VIEJO,
   MSG_SIN_FECHA,
@@ -454,6 +458,117 @@ describe("consultaBaseParaNavegar — dos cambios dentro de una navegación en v
     expect(b.pushQuery({ desde: "2026-10-01", hasta: "2026-10-31" })).toBe("estado=COTIZADO&desde=2026-10-01&hasta=2026-10-31");
     expect(b.pushQuery({ cliente_id: "c1" })).toBe("estado=COTIZADO&desde=2026-10-01&hasta=2026-10-31&cliente_id=c1");
     expect(b.pushQuery({ estado: "" })).toBe("desde=2026-10-01&hasta=2026-10-31&cliente_id=c1");
+  });
+});
+
+describe("la consulta pendiente y los borradores CADUCAN (revisión del 14-oct-2026)", () => {
+  it("pendienteVigente: se conserva solo mientras la URL viva siga en su base", () => {
+    const p: ConsultaPendiente = { base: "", consulta: "aeronave_id=a1" };
+    expect(pendienteVigente("", p)).toBe(p);
+    expect(pendienteVigente("aeronave_id=a1", p)).toBeNull();
+    expect(pendienteVigente("banco=sin_conciliar", p)).toBeNull();
+    expect(pendienteVigente("", null)).toBeNull();
+  });
+
+  it("borradoresVigentes: el MISMO objeto si nada caducó; si la URL del campo cambió, ese campo se suelta", () => {
+    const b: Record<"desde" | "hasta", BorradorCampoFecha | null> = {
+      desde: { base: "2026-10-01", valor: "0002-10-01" },
+      hasta: null,
+    };
+    expect(borradoresVigentes(b, { desde: "2026-10-01", hasta: "" })).toBe(b);
+    expect(borradoresVigentes(b, { desde: "2026-10-05", hasta: "" })).toEqual({ desde: null, hasta: null });
+    // Solo el campo cuya URL cambió (el otro borrador sigue).
+    const dos: Record<"desde" | "hasta", BorradorCampoFecha | null> = {
+      desde: { base: "2026-10-01", valor: "2026-10-0" },
+      hasta: { base: "2026-10-31", valor: "2026-11-3" },
+    };
+    expect(borradoresVigentes(dos, { desde: "2026-10-01", hasta: "" })).toEqual({ desde: dos.desde, hasta: null });
+    const vacio = { desde: null, hasta: null };
+    expect(borradoresVigentes(vacio, { desde: "x", hasta: "y" })).toBe(vacio);
+  });
+
+  it("un borrador ABA ya no revive: A tecleado a medias → URL B (Atrás/«Quitar filtros») → URL A otra vez", () => {
+    let borradores: Record<"desde", BorradorCampoFecha | null> = { desde: { base: "2026-10-01", valor: "0002-10-05" } };
+    const render = (deUrl: string) => {
+      borradores = borradoresVigentes(borradores, { desde: deUrl });
+      return valorVisibleCampoFecha(deUrl, borradores.desde);
+    };
+    expect(render("2026-10-01")).toBe("0002-10-05");
+    expect(render("")).toBe("");
+    // Antes: la URL regresaba a 2026-10-01 y el campo volvía a enseñar
+    // «0002-10-05» (no aplicado, con la marca de activo).
+    expect(render("2026-10-01")).toBe("2026-10-01");
+  });
+
+  /**
+   * La barra de Gastos, sin DOM: `viva` = `useSearchParams().toString()`;
+   * `llega` = la URL cambió (por la barra o por FUERA: chip ✕, «Quitar
+   * filtros», Atrás) y corre el efecto de la barra; `navegar` = el de la barra
+   * (con el «nada cambió ⇒ no navega»). `caduca: false` = la versión de antes.
+   */
+  function barra(urlInicial: string, { caduca }: { caduca: boolean }) {
+    let viva = urlInicial;
+    let pendiente: ConsultaPendiente | null = null;
+    const llega = (qs: string) => {
+      viva = qs;
+      if (caduca) pendiente = pendienteVigente(viva, pendiente);
+    };
+    const navegar = (cambios: Record<string, string | null>): string | null => {
+      const params = new URLSearchParams(consultaBaseParaNavegar(viva, pendiente));
+      const antes = params.toString();
+      for (const [k, v] of Object.entries(cambios)) {
+        if (v == null || v === "") params.delete(k);
+        else params.set(k, v);
+      }
+      const qs = params.toString();
+      if (qs === antes) return null;
+      pendiente = { base: viva, consulta: qs };
+      return qs;
+    };
+    return { llega, navegar };
+  }
+
+  it("avión → chip «Avión ✕» → el MISMO avión otra vez: navega (antes el clic se perdía)", () => {
+    for (const caduca of [true, false]) {
+      const b = barra("", { caduca });
+      b.llega(b.navegar({ aeronave_id: "a1" })!);
+      b.llega(""); // chip ✕ (fuera de la barra)
+      const qs = b.navegar({ aeronave_id: "a1" });
+      if (caduca) expect(qs).toBe("aeronave_id=a1");
+      else expect(qs).toBeNull();
+    }
+  });
+
+  it("avión → chip ✕ → banco: el avión quitado NO regresa", () => {
+    const b = barra("", { caduca: true });
+    b.llega(b.navegar({ aeronave_id: "a1" })!);
+    b.llega("");
+    expect(b.navegar({ banco: "sin_conciliar" })).toBe("banco=sin_conciliar");
+    const viejo = barra("", { caduca: false });
+    viejo.llega(viejo.navegar({ aeronave_id: "a1" })!);
+    viejo.llega("");
+    expect(viejo.navegar({ banco: "sin_conciliar" })).toBe("aeronave_id=a1&banco=sin_conciliar");
+  });
+
+  it("banco → Atrás → categoría: el banco no se cuela", () => {
+    const b = barra("", { caduca: true });
+    b.llega(b.navegar({ banco: "sin_conciliar" })!);
+    b.llega(""); // Atrás
+    expect(b.navegar({ categoria: "COMIDA" })).toBe("categoria=COMIDA");
+  });
+
+  it("«Duplicados» + banco → «Quitar filtros» del vacío → categoría: conserva la pestaña, sin el banco", () => {
+    const b = barra("f=duplicados", { caduca: true });
+    b.llega(b.navegar({ banco: "sin_conciliar" })!);
+    b.llega("f=duplicados"); // hrefQuitarFiltrosGastos("duplicados")
+    expect(b.navegar({ categoria: "COMIDA" })).toBe("f=duplicados&categoria=COMIDA");
+  });
+
+  it("lo que ya funcionaba sigue: dos cambios con la navegación EN VUELO se encadenan", () => {
+    const b = barra("", { caduca: true });
+    expect(b.navegar({ banco: "sin_conciliar" })).toBe("banco=sin_conciliar");
+    // La URL no se ha movido: la segunda parte de la primera.
+    expect(b.navegar({ categoria: "COMIDA" })).toBe("banco=sin_conciliar&categoria=COMIDA");
   });
 });
 

@@ -364,6 +364,23 @@ describe("fallas a medias: se relee y se dice cómo quedó", () => {
     const red = await guardarGastoConRepartoAction(STARLINK, payloadReparto(), { base: BASE_STARLINK, nuevo: NUEVO_STARLINK }, { riesgoConciliado: false });
     expect(red).toMatchObject({ codigo: "GASTO_INCIERTO", gastoIncierto: true, error: "fetch failed" });
   });
+
+  it("GASTO_INCIERTO revalida (el PATCH pudo escribir); un 4xx no (revisión del 14-oct-2026)", async () => {
+    secuencia(devuelve(reparto(BASE_STARLINK, 4733.76)), lanza(api400("La categoría no es válida.")));
+    await guardarGastoConRepartoAction(STARLINK, payloadReparto(), { base: BASE_STARLINK, nuevo: NUEVO_STARLINK }, { riesgoConciliado: false });
+    expect(revalidatePath).not.toHaveBeenCalled();
+    for (const falla of [new TypeError("fetch failed"), api500()]) {
+      apiServer.mockReset();
+      revalidatePath.mockReset();
+      secuencia(devuelve(reparto(BASE_STARLINK, 4733.76)), lanza(falla));
+      const r = await guardarGastoConRepartoAction(STARLINK, payloadReparto(), { base: BASE_STARLINK, nuevo: NUEVO_STARLINK }, { riesgoConciliado: false });
+      expect(r.codigo).toBe("GASTO_INCIERTO");
+      const rutas = revalidatePath.mock.calls.map((c) => c.join(" "));
+      for (const ruta of ["/admin/expenses", "/admin/otros-gastos", "/admin/combustibles", "/admin/caja-chica layout", "/admin/flights layout"]) {
+        expect(rutas, ruta).toContain(ruta);
+      }
+    }
+  });
 });
 
 describe("refuerzo del avión individual (el PATCH lo traía)", () => {
@@ -483,6 +500,15 @@ describe("revalidaciones", () => {
     apiServer.mockResolvedValueOnce({ id: STARLINK });
     const ok = await verifyGastoAction(STARLINK, { categoria: "INDIRECTO", verificado: true });
     expect(ok).toStrictEqual({ ok: true, data: { id: STARLINK } });
-    expect(revalidatePath.mock.calls.map((c) => c[0])).toContain("/admin/otros-gastos");
+    // Comportamiento (no regex sobre el fuente): todas las pantallas del gasto.
+    const rutas = revalidatePath.mock.calls.map((c) => c.join(" "));
+    expect(rutas).toEqual([
+      "/admin/expenses",
+      "/admin/otros-gastos",
+      "/admin/combustibles",
+      "/admin/caja-chica layout",
+      "/admin/gastos-personales",
+      "/admin/flights layout",
+    ]);
   });
 });

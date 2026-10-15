@@ -12,11 +12,13 @@ import { PLACEHOLDER_BARRA_COTIZACIONES } from "@/lib/admin/clave-cliente";
 import {
   ETIQUETA_GRUPO_FECHAS,
   TITULO_FECHA_VUELO,
+  borradoresVigentes,
   consultaBaseParaNavegar,
   hayRangoLista,
   notaRangoCotizaciones,
   pasoAlSalirCampoFecha,
   pasoCampoFecha,
+  pendienteVigente,
   periodosRapidosCotizaciones,
   rangoAlCambiarCampo,
   rangoListaCotizaciones,
@@ -84,6 +86,11 @@ export function QuotesFilterBar({
   // (también el temporizador de `onCambio`) y no cambia lo que se pinta —lo
   // que se VE sigue saliendo de la URL viva y de los borradores.
   const pendiente = useRef<ConsultaPendiente | null>(null);
+  // Caduca en cuanto la URL viva deja su base (revisión del 14-oct-2026): un
+  // regreso por FUERA de la barra (Atrás, «Limpiar» del vacío) ya no la revive.
+  useEffect(() => {
+    pendiente.current = pendienteVigente(params.toString(), pendiente.current);
+  }, [params]);
   /** Los parámetros sobre los que se arma la siguiente navegación (`consultaBaseParaNavegar`). */
   const paramsParaNavegar = useCallback(
     () => new URLSearchParams(consultaBaseParaNavegar(params.toString(), pendiente.current)),
@@ -121,6 +128,10 @@ export function QuotesFilterBar({
   const [borradores, setBorradores] = useState<
     Record<CampoRangoLista, BorradorCampoFecha | null>
   >({ desde: null, hasta: null });
+  // Un borrador cuya URL ya cambió no revive si la URL regresa a ese valor
+  // (revisión del 14-oct-2026; ajuste en el render, guardado).
+  const vigentes = borradoresVigentes(borradores, deUrl);
+  if (vigentes !== borradores) setBorradores(vigentes);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelarEspera = useCallback(() => {
     if (temporizador.current) {

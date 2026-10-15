@@ -1,12 +1,19 @@
 /**
  * Línea de CAPTURA de los gastos (7-sep-2026) y su variante COMPACTA para la
- * celda «Fecha» de la tabla única de Gastos (14-oct-2026): «Capturado 14 oct
- * 10:33» y «Mary Cruz · panel», con el COLOR del distintivo de origen que
- * pidió el cliente el 9-jul (Oficina / Sistema / Visitante). Hora Cancún.
+ * celda «Fecha» de la tabla única de Gastos (14-oct-2026): «Cap. 14 oct
+ * 10:33» (el lector oye «Capturado 14 oct 10:33») y «Mary Cruz · panel», con
+ * el COLOR del distintivo de origen que pidió el cliente el 9-jul (Oficina /
+ * Sistema / Visitante). Hora Cancún.
+ *
+ * Revisión del 14-oct-2026: «Capturado 30 may 04:44» medía 119 px (Inter
+ * 10 px) y la columna da 112: se cortaba la hora en el 28 % de los días del
+ * año. «Cap. …» mide a lo más 91.3 px y «⚠ Cap. …» 103.8 px (reja completa
+ * del año, medida en Chrome con la Inter del build).
  */
 import { describe, expect, it } from "vitest";
 import {
   DISTINTIVO_ORIGEN,
+  PREFIJO_CAPTURA_CORTO,
   TITULO_DISTINTIVO_ORIGEN,
   distintivoOrigen,
   lineaCaptura,
@@ -24,9 +31,11 @@ const g = (over: Partial<GastoCaptura> = {}): GastoCaptura => ({
 });
 
 describe("lineaCapturaCompacta", () => {
-  it("«Capturado 5 sep 14:32» en hora Cancún y nombre/origen separados", () => {
+  it("«Cap. 5 sep 14:32» (el lector oye «Capturado 5 sep 14:32») en hora Cancún y nombre/origen separados", () => {
+    expect(PREFIJO_CAPTURA_CORTO).toBe("Cap.");
     expect(lineaCapturaCompacta(g())).toEqual({
-      cuando: "Capturado 5 sep 14:32",
+      cuando: "Cap. 5 sep 14:32",
+      cuandoLector: "Capturado 5 sep 14:32",
       nombre: "Luis Pérez",
       origen: "app",
       distintivo: null,
@@ -37,7 +46,8 @@ describe("lineaCapturaCompacta", () => {
 
   it("cruce de medianoche UTC: 03:10Z del 6 es el 5 a las 22:10 en Cancún", () => {
     const c = lineaCapturaCompacta(g({ capturado_en: "2026-09-06T03:10:00Z", created_at: "2026-09-06T03:10:00Z" }));
-    expect(c?.cuando).toBe("Capturado 5 sep 22:10");
+    expect(c?.cuando).toBe("Cap. 5 sep 22:10");
+    expect(c?.cuandoLector).toBe("Capturado 5 sep 22:10");
   });
 
   it("origen: OFICINA «panel», PILOTO/MECANICO/VISITANTE «app», SISTEMA «sistema», null sin dato", () => {
@@ -78,8 +88,8 @@ describe("lineaCapturaCompacta", () => {
   });
 
   it("sin capturado_en usa created_at; sin ningún instante ⇒ null", () => {
-    expect(lineaCapturaCompacta(g({ capturado_en: undefined }))?.cuando).toBe("Capturado 5 sep 14:32");
-    expect(lineaCapturaCompacta(g({ capturado_en: null }))?.cuando).toBe("Capturado 5 sep 14:32");
+    expect(lineaCapturaCompacta(g({ capturado_en: undefined }))?.cuando).toBe("Cap. 5 sep 14:32");
+    expect(lineaCapturaCompacta(g({ capturado_en: null }))?.cuandoLector).toBe("Capturado 5 sep 14:32");
     expect(lineaCapturaCompacta(g({ capturado_en: null, created_at: null as unknown as string }))).toBeNull();
   });
 
@@ -89,13 +99,14 @@ describe("lineaCapturaCompacta", () => {
     expect(c.ambar).toBe(true);
     expect(c.ambar).toBe(lineaCaptura(x)!.ambar);
     expect(c.title).toBe(lineaCaptura(x)!.title);
-    expect(c.cuando).toBe("Capturado 5 sep 14:32");
+    expect(c.cuando).toBe("Cap. 5 sep 14:32");
   });
 
-  it("año raro: «⚠ año 2025 · Capturado …» en ámbar", () => {
+  it("año raro: «⚠ Cap. …» visible (el año va en la fecha de arriba), «⚠ año 2025 · Capturado …» al lector, en ámbar", () => {
     const x = g({ fecha_gasto: "2025-09-05" });
     const c = lineaCapturaCompacta(x)!;
-    expect(c.cuando).toBe("⚠ año 2025 · Capturado 5 sep 14:32");
+    expect(c.cuando).toBe("⚠ Cap. 5 sep 14:32");
+    expect(c.cuandoLector).toBe("⚠ año 2025 · Capturado 5 sep 14:32");
     expect(c.ambar).toBe(true);
     expect(c.title).toBe(lineaCaptura(x)!.title);
     expect(c.title.startsWith("Ojo: el ticket quedó fechado en 2025")).toBe(true);

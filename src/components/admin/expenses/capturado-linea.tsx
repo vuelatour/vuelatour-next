@@ -45,16 +45,27 @@ const CLASE_DISTINTIVO: Record<OrigenConDistintivo, string> = {
 /**
  * Variante COMPACTA para la celda «Fecha» de Gastos (14-oct-2026, una sola
  * tabla; las otras 4 tablas siguen con `CapturadoLinea`). Dos sublíneas de
- * 10 px que nunca ensanchan la columna (8rem): «Capturado 14 oct 10:33»
- * (ámbar, con «⚠ año 2025 · » delante, cuando `lineaCaptura` lo marca) y
- * «Mary Cruz · panel» — el NOMBRE se trunca y el origen se conserva. El origen
- * de oficina, sistema o visitante lleva el COLOR de su distintivo (el que
- * pidió el cliente el 9-jul) con su etiqueta en el `title` y para el lector
- * de pantalla; piloto y mecánico dicen «app» en gris. `title` de las dos
- * líneas = el detalle completo de `lineaCaptura`.
+ * 10 px que nunca ensanchan la columna (8rem): «Cap. 14 oct 10:33» (ámbar,
+ * con «⚠ » delante, cuando `lineaCaptura` lo marca; el lector oye «Capturado
+ * …») y «Mary Cruz · panel» — el NOMBRE se trunca y el origen se conserva. El
+ * origen de oficina, sistema o visitante lleva el COLOR de su distintivo (el
+ * que pidió el cliente el 9-jul) con su etiqueta en el `title` y para el
+ * lector de pantalla; piloto y mecánico dicen «app» en gris. `title` de las
+ * dos líneas = el detalle completo de `lineaCaptura`.
+ *
+ * `angosto` (los pagos de una compra, con sangría): las sublíneas miden
+ * 6.25rem para que sangría + texto no pasen de las 8rem de la columna (con
+ * 7rem la columna crecía al desplegar una compra y las demás brincaban).
  */
-export function CapturadoCompacto({ captura }: { captura: CapturaCompacta | null }) {
+export function CapturadoCompacto({
+  captura,
+  angosto = false,
+}: {
+  captura: CapturaCompacta | null;
+  angosto?: boolean;
+}) {
   if (!captura) return null;
+  const ancho = angosto ? "max-w-[6.25rem]" : "max-w-[7rem]";
   const d = captura.distintivo;
   const origen = captura.origen ? (
     d ? (
@@ -74,16 +85,17 @@ export function CapturadoCompacto({ captura }: { captura: CapturaCompacta | null
     <>
       <span
         className={
-          "block max-w-[7rem] truncate text-[10px] font-normal leading-tight " +
+          `block ${ancho} truncate text-[10px] font-normal leading-tight ` +
           (captura.ambar ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")
         }
         title={captura.title}
       >
-        {captura.cuando}
+        <span aria-hidden="true">{captura.cuando}</span>
+        <span className="sr-only">{captura.cuandoLector}</span>
       </span>
       {(captura.nombre || origen) && (
         <span
-          className="flex max-w-[7rem] items-center text-[10px] font-normal leading-tight text-muted-foreground"
+          className={`flex ${ancho} items-center text-[10px] font-normal leading-tight text-muted-foreground`}
           title={captura.title}
         >
           {captura.nombre && <span className="min-w-0 truncate">{captura.nombre}</span>}

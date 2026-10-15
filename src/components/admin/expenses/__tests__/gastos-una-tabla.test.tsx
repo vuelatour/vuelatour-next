@@ -12,6 +12,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Gasto } from "@/types/expenses";
+import { CapturadoCompacto } from "../capturado-linea";
+import { lineaCapturaCompacta } from "@/lib/admin/gastos-captura";
 
 const testigos = vi.hoisted(() => ({ facturacion: [] as Array<{ id: string; compacta: boolean }> }));
 
@@ -271,10 +273,14 @@ describe("Monto, Fecha y Concepto", () => {
     expect(fila(html, "g-1")).toContain(">Efectivo<");
   });
 
-  it("fecha: «Capturado 14 oct 10:33», el nombre y el origen «panel» con el COLOR del distintivo Oficina", () => {
+  it("fecha: «Cap. 14 oct 10:33» (el lector oye «Capturado …»), el nombre y el origen «panel» con el COLOR del distintivo Oficina", () => {
     const f = fila(html, "g-1");
     expect(f).toContain("14 oct 2026");
-    expect(f).toContain(">Capturado 14 oct 10:33<");
+    // «Capturado …» medía hasta 119 px en las 112 de la columna (revisión del
+    // 14-oct-2026): visible la forma corta, el lector la larga.
+    expect(f).toContain(
+      '<span aria-hidden="true">Cap. 14 oct 10:33</span><span class="sr-only">Capturado 14 oct 10:33</span>',
+    );
     expect(f).toContain(">Mary Cruz<");
     expect(f).toMatch(/<span data-distintivo="OFICINA" class="[^"]*text-sky-600 dark:text-sky-400[^"]*" title="Oficina: lo capturó administración desde el panel.">panel<span class="sr-only"> \(Oficina\)<\/span><\/span>/);
     // Ya no hay columna ni insignia aparte «Oficina».
@@ -295,6 +301,55 @@ describe("Monto, Fecha y Concepto", () => {
 
   it("línea de estado SOLO en teléfono (md:hidden)", () => {
     expect(fila(html, "g-dup")).toMatch(/<p class="[^"]*md:hidden[^"]*">\$295\.67 MXN · XA-VGV · Factura: Pendiente<\/p>/);
+  });
+
+  it("pago de una compra: sangría pl-3 y sublíneas de 6.25rem (12 + 100 = 112 px, lo de una fila suelta)", () => {
+    const angosto = renderToStaticMarkup(<CapturadoCompacto captura={lineaCapturaCompacta(gasto())} angosto />);
+    expect(angosto.match(/max-w-\[6\.25rem\]/g)).toHaveLength(2);
+    expect(angosto).not.toContain("max-w-[7rem]");
+    const suelta = renderToStaticMarkup(<CapturadoCompacto captura={lineaCapturaCompacta(gasto())} />);
+    expect(suelta.match(/max-w-\[7rem\]/g)).toHaveLength(2);
+    const tabla = leer("../expenses-table.tsx");
+    expect(tabla).toContain('<div className={f.hijo ? "pl-3 text-muted-foreground" : undefined}>');
+    expect(tabla).toContain("<CapturadoCompacto captura={lineaCapturaCompacta(f.gasto)} angosto={f.hijo} />");
+    expect(tabla).not.toContain('"pl-6');
+  });
+});
+
+describe("respaldo de «Comp.» bajo el concepto (768–1279 px; 1299 en modo unir)", () => {
+  const casos = [
+    gasto(),
+    gasto({ id: "g-sin", estatus_comprobante: "SIN_COMPROBANTE" }),
+    gasto({ id: "g-sin-firma", foto_url: "piloto/a.jpg" }),
+    gasto({
+      id: "g-conf",
+      foto_url: "piloto/b.jpg",
+      valor_ia_extraido: { fotos_adicionales: ["piloto/c.jpg", "piloto/d.jpg"] },
+      verificado_at: "2026-10-14T16:00:00Z",
+      verificador: { nombre: "Mary Cruz" },
+    }),
+  ];
+
+  it("dice lo que pintaría la columna (sin la miniatura), con el MISMO corte que la oculta", () => {
+    const html = pintar({ gastos: casos });
+    // FACTURA, sin foto ni hojas, sin confirmar: nada que decir.
+    expect(fila(html, "g-1")).not.toContain("data-respaldo-comp");
+    expect(fila(html, "g-sin")).toContain(
+      '<p class="mt-0.5 text-[11px] text-muted-foreground hidden md:block xl:hidden" data-respaldo-comp="">Sin comp.</p>',
+    );
+    expect(fila(html, "g-sin-firma")).toContain('data-respaldo-comp="">Sin vista previa</p>');
+    expect(fila(html, "g-conf")).toMatch(
+      /title="Confirmado por Mary Cruz · [^"]+" data-respaldo-comp="">\+2 hojas · ✓ Confirmado<\/p>/,
+    );
+    // El ✓ de la columna lleva el MISMO title (una sola fuente).
+    const titulo = /title="(Confirmado por Mary Cruz · [^"]+)" data-respaldo-comp/.exec(fila(html, "g-conf"))?.[1];
+    expect(fila(html, "g-conf")).toContain(`title="${titulo}">✓</span>`);
+  });
+
+  it("en modo «Unir en compra» se oculta desde 1300 px, igual que la columna", () => {
+    const html = pintar({ modo: true, gastos: casos });
+    expect(fila(html, "g-sin")).toContain("hidden md:block min-[1300px]:hidden");
+    expect(fila(html, "g-sin")).not.toContain("xl:hidden");
   });
 });
 

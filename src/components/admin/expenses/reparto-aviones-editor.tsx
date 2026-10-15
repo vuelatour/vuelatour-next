@@ -21,6 +21,7 @@ import {
   lineaResumenReparto,
   montoReparto,
   resumenReparto,
+  siguienteMontoMarcado,
   textoRepartoInactivos,
   textoRepartoSinMonto,
   type AvionReparto,
@@ -34,7 +35,9 @@ import {
  * (`expense-create-dialog.tsx`). Todos los textos salen de
  * `lib/admin/reparto-gasto.ts`; las sumas son GUÍA (la regla Σ ≤ monto es
  * del API). Vive DENTRO del formulario del diálogo: todo botón es
- * `type="button"` y lleva `cursor-pointer`.
+ * `type="button"` y lleva `cursor-pointer`, y Enter en una casilla o en un
+ * monto NO envía el formulario (era «Guardar» con el reparto a medias):
+ * en un monto pasa al del siguiente avión marcado.
  */
 export function RepartoAvionesEditor({
   filas,
@@ -99,6 +102,14 @@ export function RepartoAvionesEditor({
     const actual = seleccion[id] ?? { incluir: false, monto: "" };
     onSeleccion({ ...seleccion, [id]: { ...actual, ...cambio } });
   };
+  /** Enter dentro del editor: nunca el «Guardar» implícito del formulario. */
+  const sinEnviar = (e: React.KeyboardEvent<HTMLInputElement>, id: string, enMonto: boolean) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (!enMonto) return;
+    const siguiente = siguienteMontoMarcado(filas, seleccion, id);
+    if (siguiente) document.getElementById(`${idPrefijo}-monto-${siguiente}`)?.focus();
+  };
   const dividir = () => {
     const partes = dividirIgualesCents(techoCents, resumen.incluidos.length);
     const next: SeleccionReparto = { ...seleccion };
@@ -140,6 +151,7 @@ export function RepartoAvionesEditor({
                 checked={sel.incluir}
                 disabled={disabled}
                 onChange={(e) => fijar(f.id, { incluir: e.target.checked })}
+                onKeyDown={(e) => sinEnviar(e, f.id, false)}
                 className="h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
               />
               <span className="font-mono text-sm font-medium">{f.matricula}</span>
@@ -162,6 +174,7 @@ export function RepartoAvionesEditor({
                 placeholder="0.00"
                 disabled={disabled || !sel.incluir}
                 onChange={(e) => fijar(f.id, { monto: e.target.value })}
+                onKeyDown={(e) => sinEnviar(e, f.id, true)}
                 className="ml-auto h-8 w-28 text-right"
               />
             </label>

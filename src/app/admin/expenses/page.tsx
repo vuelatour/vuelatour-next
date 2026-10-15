@@ -131,8 +131,9 @@ export default async function ExpensesPage({
         listGastos({ ...base, duplicados: true, limit: 1 }),
         { count: null as number | null },
       ),
-      // «Sugerir asignaciones» barre TODA la bandeja: con filtros puestos, su
-      // title lleva el total GLOBAL (una lectura más, solo entonces).
+      // «Sugerir asignaciones» no mira los filtros (revisa los 15 pendientes
+      // más recientes de la bandeja): con filtros puestos, su title lleva el
+      // total GLOBAL (una lectura más, solo entonces).
       conFiltros
         ? degradado.opcional(
             ETIQUETA_TOTAL_PENDIENTES,
@@ -280,7 +281,9 @@ export default async function ExpensesPage({
         </div>
       </div>
 
-      <ExpensesSeleccionProvider idsVisibles={idsSeleccionables}>
+      {/* Con la lista caída el modo «Unir en compra» no dice «no hay gastos
+          que se puedan unir» ni poda lo marcado (no se sabe qué hay). */}
+      <ExpensesSeleccionProvider idsVisibles={idsSeleccionables} cargaFallida={!lista.ok}>
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <nav aria-label="Vistas de gastos" className="flex flex-wrap gap-2">

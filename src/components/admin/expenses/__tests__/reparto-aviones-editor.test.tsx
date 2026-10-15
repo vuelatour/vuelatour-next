@@ -6,7 +6,8 @@
  * que se pulsa, botones `type="button"` (vive DENTRO del formulario de
  * «Verificar / editar») e ids únicos por gasto.
  */
-import { describe, expect, it } from "vitest";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   RepartoAvionesEditor,
@@ -120,6 +121,65 @@ describe("RepartoAvionesEditor", () => {
     expect(new Set(ids).size).toBe(ids.length);
     // El checkbox también lleva la manita.
     expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*class="[^"]*cursor-pointer/);
+  });
+});
+
+/** Los elementos del árbol (sin montar) que reciben teclas: el editor no usa hooks. */
+function conTeclas(nodo: ReactNode, acc: ReactElement<Record<string, unknown>>[] = []) {
+  if (Array.isArray(nodo)) {
+    for (const n of nodo) conTeclas(n, acc);
+    return acc;
+  }
+  if (!isValidElement<Record<string, unknown>>(nodo)) return acc;
+  if (typeof nodo.props.onKeyDown === "function") acc.push(nodo);
+  conTeclas(nodo.props.children as ReactNode, acc);
+  return acc;
+}
+
+describe("Enter dentro del editor (revisión del 14-oct-2026): jamás envía el formulario", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const arbol = (seleccion: Parameters<typeof RepartoAvionesEditor>[0]["seleccion"]) =>
+    conTeclas(
+      RepartoAvionesEditor({
+        filas: FILAS,
+        seleccion,
+        onSeleccion: () => {},
+        techoCents: 473376,
+        moneda: "MXN",
+        idPrefijo: "rep-g1",
+      }),
+    );
+  const tecla = (el: ReactElement<Record<string, unknown>>, key: string) => {
+    const preventDefault = vi.fn();
+    (el.props.onKeyDown as (e: unknown) => void)({ key, preventDefault });
+    return preventDefault;
+  };
+
+  it("en un monto: Enter se come y salta al siguiente avión MARCADO; las demás teclas pasan", () => {
+    const enfocados: string[] = [];
+    vi.stubGlobal("document", { getElementById: (id: string) => ({ focus: () => enfocados.push(id) }) });
+    const els = arbol({
+      [N4142R]: { incluir: true, monto: "2366.88" },
+      [N621TX]: { incluir: false, monto: "" },
+      [N990GG]: { incluir: true, monto: "2366.88" },
+    });
+    // Casilla y monto por fila (4 filas).
+    expect(els).toHaveLength(8);
+    const monto = (id: string) => els.find((e) => e.props.id === `rep-g1-monto-${id}`)!;
+    const casilla = (id: string) => els.find((e) => e.props.id === `rep-g1-incluir-${id}`)!;
+
+    expect(tecla(monto(N4142R), "Enter")).toHaveBeenCalledTimes(1);
+    expect(enfocados).toEqual([`rep-g1-monto-${N990GG}`]);
+    // El último marcado: se come el Enter y no salta a ninguna parte.
+    expect(tecla(monto(N990GG), "Enter")).toHaveBeenCalledTimes(1);
+    expect(enfocados).toHaveLength(1);
+    // En la casilla: se come el Enter (no «Guardar»), sin mover el foco.
+    expect(tecla(casilla(N621TX), "Enter")).toHaveBeenCalledTimes(1);
+    expect(enfocados).toHaveLength(1);
+    // Cualquier otra tecla sigue su camino.
+    expect(tecla(monto(N4142R), "1")).not.toHaveBeenCalled();
+    expect(tecla(casilla(N4142R), " ")).not.toHaveBeenCalled();
   });
 });
 

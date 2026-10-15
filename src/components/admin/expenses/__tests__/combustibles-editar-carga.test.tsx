@@ -330,8 +330,11 @@ describe("las server actions del menú refrescan Combustibles", () => {
     return actions.slice(i, j === -1 ? undefined : j);
   };
 
+  // `verifyGastoAction` ya no va aquí (revisión del 14-oct-2026): revalida
+  // por `revalidarVerificacion()` y esta regex casaba por el tramo del
+  // archivo, no por la action. Su prueba es de COMPORTAMIENTO (las rutas
+  // exactas que revalida) en `app/admin/expenses/__tests__/gasto-con-reparto-action.test.ts`.
   it.each([
-    "verifyGastoAction",
     "deleteGastoAction",
     "dismissDuplicadoAction",
     "vistoBuenoGastoAction",

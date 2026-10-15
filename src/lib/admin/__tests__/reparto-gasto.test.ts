@@ -5,10 +5,18 @@
  * af52d6f4 = INDIRECTO N621TX 100 %; Cramex 37471011 = $16,240.00 en XA-VGV y
  * XB-PEV 8,120/8,120; f3c625e6 = INDIRECTO $64,342.00 con N4142R, septiembre).
  */
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import * as mod from "@/lib/admin/reparto-gasto";
+import { CATEGORIA_GASTO_LABELS, categoriaLlevaAvion } from "@/lib/admin/categorias-gasto";
 import {
   AVISO_REPARTO_FIJO,
+  DESTINO_PENDIENTE_DE_AVION,
+  ETIQUETA_AVION_RESUELVE_PENDIENTE,
+  ETIQUETA_AVION_SOLO_REFERENCIA,
+  HINT_AVION_PERSONAL,
+  MSG_COMBUSTIBLE_NECESITA_AVION,
   MSG_REPARTO_CARGANDO,
   MSG_REPARTO_CONCILIADO,
   MSG_REPARTO_EXCEDE,
@@ -16,6 +24,9 @@ import {
   MSG_REPARTO_SIN_AVIONES,
   MSG_REPARTO_SIN_AVIONES_GUARDADO,
   MSG_SERVIDOR_NO_RESPONDIO,
+  TEXTO_RETIRAR_SIN_RESPUESTA,
+  TEXTO_SIN_RESPUESTA_GUARDAR,
+  TEXTO_VUELO_SIN_RESPUESTA,
   TOAST_AVISO_MS,
   TOAST_LARGO_MS,
   avisoMatriculaFueraDeReparto,
@@ -28,12 +39,15 @@ import {
   destinoTrasQuitar,
   dineroCambia,
   dividirIgualesCents,
+  errorQuitarRepartoSinAvion,
   errorRepartoEnPantalla,
   esRechazoPorReparto,
   estadoRepartoInicial,
   estadoRepartoTrasFalla,
+  etiquetaCampoAvionSinModos,
   filasRepartoEditor,
   hojaDestinoReparto,
+  iaConsumidaPorReparto,
   iaRespetaReparto,
   itemsDePartes,
   itemsDeSeleccion,
@@ -59,6 +73,7 @@ import {
   resumenRepartoTexto,
   seleccionDesdePartes,
   seleccionInicialAlRepartir,
+  siguienteMontoMarcado,
   techoRepartoCents,
   textoConfirmarRegresar,
   textoExitoGastoReparto,
@@ -630,6 +645,43 @@ describe("reglas del diálogo", () => {
     expect(iaRespetaReparto(null, false)).toBe(false);
   });
 
+  it("iaConsumidaPorReparto: tras PARCIAL_SOLO_REPARTO de un QUITAR la IA NO prellena (revisión del 14-oct-2026)", () => {
+    // Abre repartido (STARLINK, 3 partes): la sesión consume la IA.
+    let consumida = iaConsumidaPorReparto(false, STARLINK);
+    expect(consumida).toBe(true);
+    // «Un avión» → «Sin avión» → Guardar: el PUT [] entra y el PATCH falla
+    // (PARCIAL_SOLO_REPARTO). El diálogo queda SIN_REPARTO, «Un avión», sin
+    // avión: justo las condiciones del prellenado.
+    consumida = iaConsumidaPorReparto(consumida, []);
+    const tras = {
+      estadoRep: "SIN_REPARTO" as const,
+      modoAvion: "UNO" as const,
+      matriculaIa: "N990GG",
+      categoria: "INDIRECTO",
+      vetado: false,
+      avionActual: "",
+      yaPrellenado: consumida,
+    };
+    expect(debePrellenarAvionPorMatricula(tras)).toBe(false);
+    // Control: el MISMO estado en una sesión que jamás supo de un reparto sí prellena.
+    expect(debePrellenarAvionPorMatricula({ ...tras, yaPrellenado: iaConsumidaPorReparto(false, []) })).toBe(true);
+    // Abrió sin embed y la LECTURA trajo el reparto: también la consume.
+    expect(iaConsumidaPorReparto(false, [{ aeronave_id: N621TX, matricula: "N621TX", monto: 1 }])).toBe(true);
+  });
+
+  it("siguienteMontoMarcado: Enter en un monto salta al siguiente avión MARCADO (no envía el formulario)", () => {
+    const sel = {
+      [N4142R]: { incluir: true, monto: "1000.00" },
+      [N58BT]: { incluir: false, monto: "" },
+      [N621TX]: { incluir: true, monto: "733.76" },
+    };
+    expect(siguienteMontoMarcado(ACTIVOS, sel, N4142R)).toBe(N621TX);
+    // El último marcado: no hay a dónde saltar (y tampoco se envía).
+    expect(siguienteMontoMarcado(ACTIVOS, sel, N621TX)).toBeNull();
+    expect(siguienteMontoMarcado(ACTIVOS, sel, "no-existe")).toBeNull();
+    expect(siguienteMontoMarcado(ACTIVOS, {}, N4142R)).toBeNull();
+  });
+
   it("mesesTerminados: meses anteriores al de hoy (Cancún), sin repetir", () => {
     expect(mesesTerminados(["2026-09-01", "2026-10-05"], "2026-10-14")).toEqual(["septiembre 2026"]);
     expect(mesesTerminados(["2026-10-31", null], "2026-11-01")).toEqual(["octubre 2026"]);
@@ -765,14 +817,45 @@ describe("textos EXACTOS", () => {
       "La gasolina de vehículos y las visitas no llevan avión: para cargarlas a aviones, elige «Repartir entre aviones».",
     );
     expect(ayudaModoUno({ categoria: "SERVICIOS", matricula: "N4142R" })).toBeNull();
-    expect(descripcionVerificarGasto({ enReparto: true, conModos: true })).toBe(
+    expect(descripcionVerificarGasto({ enReparto: true, categoria: "INDIRECTO" })).toBe(
       "Revisa el reparto entre aviones y confirma categoría y comprobante.",
     );
-    expect(descripcionVerificarGasto({ enReparto: false, conModos: true })).toBe(
-      "Confirma categoría y comprobante. El avión es opcional: sin avión es gasto de VuelaTour, o puedes repartirlo entre aviones.",
-    );
-    expect(descripcionVerificarGasto({ enReparto: false, conModos: false })).toBe(
+    for (const categoria of ["OTRO", "INDIRECTO", "NOMINA", "FIJO"]) {
+      expect(descripcionVerificarGasto({ enReparto: false, categoria }), categoria).toBe(
+        "Confirma categoría y comprobante. El avión es opcional: sin avión es gasto de VuelaTour, o puedes repartirlo entre aviones.",
+      );
+    }
+    for (const categoria of ["GASOLINA", "VISITA"]) {
+      expect(descripcionVerificarGasto({ enReparto: false, categoria }), categoria).toBe(
+        "Confirma categoría y comprobante. No lleva avión: sin reparto es gasto de VuelaTour, o puedes repartirlo entre aviones.",
+      );
+    }
+    expect(descripcionVerificarGasto({ enReparto: false, categoria: "COMIDA" })).toBe(
       "Asigna el avión y confirma categoría y comprobante. Sin avión, el gasto queda en la bandeja de pendientes.",
+    );
+    // Revisión del 14-oct-2026: STARLINK (INDIRECTO repartido) reclasificado a
+    // «Servicios (avión)»: ya no promete «el avión es opcional… repartirlo».
+    expect(descripcionVerificarGasto({ enReparto: false, categoria: "SERVICIOS" })).toBe(
+      "Asigna el avión y confirma categoría y comprobante. Sin avión, el gasto queda en la bandeja de pendientes.",
+    );
+    // No llevan avión: ni «la bandeja de pendientes» ni «resuelve pendiente».
+    expect(descripcionVerificarGasto({ enReparto: false, categoria: "PERSONAL_DUENO" })).toBe(
+      "Confirma categoría y comprobante. El gasto personal del dueño no lleva avión: queda fuera de los balances.",
+    );
+    expect(descripcionVerificarGasto({ enReparto: false, categoria: "COMISION_VENDEDOR" })).toBe(
+      "Confirma categoría, vuelo y comprobante. Esta categoría no lleva avión (el que elijas es solo referencia): no queda en la bandeja de pendientes.",
+    );
+    // La «(avión)» SÍ necesita avión (espejo de la bandeja del API).
+    expect(descripcionVerificarGasto({ enReparto: false, categoria: "COMISION_VENDEDOR_AVION" })).toContain(
+      "Sin avión, el gasto queda en la bandeja de pendientes.",
+    );
+    expect(ETIQUETA_AVION_RESUELVE_PENDIENTE).toBe("Avión (resuelve pendiente)");
+    expect(ETIQUETA_AVION_SOLO_REFERENCIA).toBe("Avión (solo referencia)");
+    expect(etiquetaCampoAvionSinModos("COMIDA")).toBe("Avión (resuelve pendiente)");
+    expect(etiquetaCampoAvionSinModos("COMISION_VENDEDOR_AVION")).toBe("Avión (resuelve pendiente)");
+    expect(etiquetaCampoAvionSinModos("COMISION_VENDEDOR")).toBe("Avión (solo referencia)");
+    expect(HINT_AVION_PERSONAL).toBe(
+      "El gasto personal del dueño no lleva avión: al guardar se desliga y queda fuera de los balances.",
     );
   });
 
@@ -943,6 +1026,49 @@ describe("textos EXACTOS", () => {
     expect(destinoTrasQuitar({ categoria: "SERVICIOS", matricula: "N621TX", tieneVuelo: true })).toBe(
       "Balance del avión · hoja del vuelo",
     );
+    // Revisión del 14-oct-2026: una categoría que NECESITA avión, sin avión ni
+    // vuelo, no «la absorbe VuelaTour»: queda pendiente.
+    expect(DESTINO_PENDIENTE_DE_AVION).toBe(
+      "la bandeja de «Pendientes» (le falta avión; mientras no lo tenga, cuenta en Balance general VuelaTour · Otros gastos)",
+    );
+    for (const categoria of ["SERVICIOS", "COMIDA", "GAS", "REFACCION"]) {
+      expect(destinoTrasQuitar({ categoria, matricula: null, tieneVuelo: false }), categoria).toBe(
+        DESTINO_PENDIENTE_DE_AVION,
+      );
+    }
+  });
+
+  it("GAS sin avión al quitar el reparto: se frena ANTES de la red con el texto del API", () => {
+    expect(MSG_COMBUSTIBLE_NECESITA_AVION).toBe(
+      "La carga de combustible necesita el avión: selecciona la aeronave (o un vuelo del cual tomarla).",
+    );
+    expect(errorQuitarRepartoSinAvion({ quitaReparto: true, categoria: "GAS", aeronaveId: "" })).toBe(
+      MSG_COMBUSTIBLE_NECESITA_AVION,
+    );
+    expect(errorQuitarRepartoSinAvion({ quitaReparto: true, categoria: "GAS", aeronaveId: null })).toBe(
+      MSG_COMBUSTIBLE_NECESITA_AVION,
+    );
+    expect(errorQuitarRepartoSinAvion({ quitaReparto: true, categoria: "GAS", aeronaveId: N4142R })).toBeNull();
+    // Solo al QUITAR (sin reparto el PATCH rebota sin escribir nada) y solo GAS.
+    expect(errorQuitarRepartoSinAvion({ quitaReparto: false, categoria: "GAS", aeronaveId: "" })).toBeNull();
+    expect(errorQuitarRepartoSinAvion({ quitaReparto: true, categoria: "SERVICIOS", aeronaveId: "" })).toBeNull();
+    // PARIDAD: es el texto del ALTA del API (si el API lo cambia, aquí truena).
+    const api = path.resolve(__dirname, "../../../../../vuelatour-api/src/modules/expenses/expenses.service.ts");
+    if (existsSync(api)) expect(readFileSync(api, "utf8")).toContain(`'${MSG_COMBUSTIBLE_NECESITA_AVION}'`);
+    // Y el planificador, sin el freno, habría puesto el PUT [] primero (la falla a medias).
+    const plan = planGuardadoReparto({
+      sumaActualCents: 300000,
+      montoActualCents: 300000,
+      monedaActual: "MXN",
+      montoNuevoCents: 300000,
+      monedaNueva: "MXN",
+      categoriaNueva: "GAS",
+      patchConAvion: false,
+      patchConVuelo: false,
+      nuevo: [],
+      riesgoConciliado: false,
+    });
+    expect(plan).toEqual({ tipo: "PASOS", pasos: ["REPARTO", "GASTO"] });
   });
 
   it("textos del RepartoDialog: no FIJO idénticos a los de hoy; FIJO vuelve al prorrateo", () => {
@@ -1232,6 +1358,32 @@ describe("mensajeResultadoGastoReparto: cada código y variante", () => {
     expect(textoExitoGastoReparto(ctx({ modo: "QUITAR", nuevo: [], categoria: "FIJO" }))).toBe(
       "Gasto verificado y reparto quitado: el gasto fijo vuelve al prorrateo entre los aviones activos",
     );
+    // Revisión del 14-oct-2026: ya no «lo absorbe VuelaTour» lo que no es de VuelaTour.
+    expect(textoExitoGastoReparto(ctx({ modo: "QUITAR", nuevo: [], categoria: "SERVICIOS" }))).toBe(
+      "Gasto verificado y reparto quitado: queda pendiente de avión (pestaña «Pendientes»)",
+    );
+    expect(textoExitoGastoReparto(ctx({ modo: "QUITAR", nuevo: [], categoria: "COMIDA", tieneVuelo: true }))).toBe(
+      "Gasto verificado y reparto quitado: queda en la hoja de su vuelo",
+    );
+    expect(textoExitoGastoReparto(ctx({ modo: "QUITAR", nuevo: [], categoria: "PERSONAL_DUENO" }))).toBe(
+      "Gasto verificado y reparto quitado: queda fuera de los balances (gasto personal del dueño)",
+    );
+    expect(textoExitoGastoReparto(ctx({ modo: "QUITAR", nuevo: [], categoria: "OTRO" }))).toBe(
+      "Gasto verificado y reparto quitado: lo absorbe VuelaTour",
+    );
+  });
+
+  it("sin respuesta del servidor: textos únicos (el de SIN_RESPUESTA sin reparto es el MISMO)", () => {
+    expect(TEXTO_SIN_RESPUESTA_GUARDAR).toBe(
+      "No hubo respuesta del servidor al guardar: no sabemos si se guardó. Recarga la página y revisa el gasto antes de volver a guardar.",
+    );
+    expect(mensajeResultadoGastoReparto({ codigo: "SIN_RESPUESTA" }, ctx()).texto).toBe(TEXTO_SIN_RESPUESTA_GUARDAR);
+    expect(TEXTO_VUELO_SIN_RESPUESTA).toBe(
+      "Gasto guardado, pero no hubo respuesta al ligar el vuelo: recarga la página y revisa el vuelo del gasto.",
+    );
+    expect(TEXTO_RETIRAR_SIN_RESPUESTA).toBe(
+      "No hubo respuesta del servidor: no sabemos si se retiró la confirmación. Recarga la página para revisarlo.",
+    );
   });
 
   it("BLOQUEO, LECTURA y REPARTO_CAMBIO", () => {
@@ -1383,6 +1535,35 @@ describe("mensajeResultadoGastoReparto: cada código y variante", () => {
       conRegresar: false,
     });
   });
+});
+
+describe("GUARDIA: los textos del avión siguen a categoriaLlevaAvion (TODAS las categorías)", () => {
+  // Revisión del 14-oct-2026: «(resuelve pendiente)», «la bandeja de
+  // pendientes» y «lo absorbe VuelaTour» decían lo contrario en algunas
+  // categorías (la comisión que paga VuelaTour, Servicios sin avión…).
+  for (const categoria of Object.keys(CATEGORIA_GASTO_LABELS)) {
+    it(categoria, () => {
+      const lleva = categoriaLlevaAvion(categoria);
+      const d = descripcionVerificarGasto({ enReparto: false, categoria });
+      expect(d.includes("Sin avión, el gasto queda en la bandeja de pendientes"), d).toBe(lleva);
+      if (!lleva) expect(d, d).not.toMatch(/(?<!no )queda en la bandeja de pendientes/);
+      expect(etiquetaCampoAvionSinModos(categoria) === ETIQUETA_AVION_RESUELVE_PENDIENTE).toBe(lleva);
+      const destino = destinoTrasQuitar({ categoria, matricula: null, tieneVuelo: false });
+      if (lleva) {
+        expect(destino).toBe(DESTINO_PENDIENTE_DE_AVION);
+        expect(destino).not.toContain("lo absorbe VuelaTour");
+      }
+      const exito = textoExitoGastoReparto({
+        modo: "QUITAR",
+        base: STARLINK,
+        nuevo: [],
+        matriculaFinal: null,
+        categoria,
+        moneda: "MXN",
+      });
+      if (lleva) expect(exito).not.toContain("lo absorbe VuelaTour");
+    });
+  }
 });
 
 describe("GUARDIA: nada manda a «Otros gastos» a editar el reparto", () => {

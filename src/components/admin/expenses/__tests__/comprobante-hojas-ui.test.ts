@@ -37,9 +37,13 @@ describe("comprobante con varias hojas: cableado", () => {
     // Las URLs de las hojas guardadas se piden al abrir (la página solo firma la principal).
     expect(src).toMatch(/pedirUrlFirmada\("gasto-fotos", p\)/);
     // Al guardar: subida, foto_url si no había principal y la lista completa.
-    expect(src).toMatch(/hojasCambiaron\(hojasDe\(gasto\), hojas, hojasNuevas\.length\)/);
+    // «¿Cambiaron las hojas?» contra la BASE de la sesión (revisión del
+    // 14-oct-2026): una hoja que agregó otra sesión ya no se borra al guardar.
+    expect(src).toMatch(/hojasCambiaron\(hojasDe\(baseForm\), hojas, hojasNuevas\.length\)/);
+    expect(src).not.toContain("hojasCambiaron(hojasDe(gasto)");
     expect(src).toMatch(/subidas\.push\(await uploadGastoComprobante\(archivo\)\)/);
-    expect(src).toMatch(/if \(!gasto\.foto_url && todas\.length > 0\) payload\.foto_url = todas\.shift\(\);/);
+    // La principal: la del vivo o la que dejó un guardado propio a medias.
+    expect(src).toMatch(/const tienePrincipal = !!\(gasto\.foto_url \|\| baseForm\.foto_url\);\s*if \(!tienePrincipal && todas\.length > 0\) payload\.foto_url = todas\.shift\(\);/);
     expect(src).toMatch(/payload\.valor_ia_extraido = valorIaConHojas\(base, todas\) \?\? \{\};/);
     // Quitar una hoja guardada CONFIRMA (regla de la casa).
     expect(src).toMatch(/<AlertDialogTitle>\{TITULO_QUITAR_HOJA\}<\/AlertDialogTitle>/);

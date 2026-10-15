@@ -319,10 +319,13 @@ describe("cableado", () => {
   });
 
   it("verificación: el PATCH manda solo lo que cambió (el API reajusta con la categoría, que siempre viaja)", () => {
-    expect(verif).toContain("Object.assign(payload, camposCargaParaPatch(gasto, values));");
+    // Contra la BASE de la sesión (revisión del 14-oct-2026): con el `gasto`
+    // vivo, un refresh hacía «cambiar» tipo, lugar u hora que otro corrigió.
+    expect(verif).toContain("Object.assign(payload, camposCargaParaPatch(baseForm, values));");
+    expect(verif).not.toContain("camposCargaParaPatch(gasto,");
     // Sin tercer argumento: mandar el tipo sin cambio cambiaría la nota del
     // API («se capturó …» en vez de «el gasto traía …»).
-    expect(verif).not.toMatch(/camposCargaParaPatch\(\s*gasto,\s*values,\s*\S/);
+    expect(verif).not.toMatch(/camposCargaParaPatch\(\s*baseForm,\s*values,\s*\S/);
     // La categoría viaja siempre (el payload parte de TODOS los valores).
     expect(verif).toContain("let payload: Record<string, unknown> = { ...values, verificado: true };");
   });

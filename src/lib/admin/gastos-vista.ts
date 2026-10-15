@@ -1,9 +1,11 @@
 import type { ListGastosQuery } from "@/lib/api/expenses-server";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
-import type { Gasto } from "@/types/expenses";
+import { verificadorNombre, type Gasto } from "@/types/expenses";
 import { CATEGORIAS_COMPRA } from "@/types/compras";
 import { unirEtiquetas } from "@/lib/api/degradar";
 import { fmtMonto } from "@/lib/format";
+import { fmtDate } from "@/lib/datetime";
+import { hojasDe, textoHojas } from "@/lib/admin/comprobante-hojas";
 import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "@/lib/admin/url-params";
 import { CATEGORIAS_FILTRO_GASTO, categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { MEDIOS_CAPTURA_VALUES, medioPagoLabel, textoPagoCorto } from "@/lib/admin/medios-pago";
@@ -322,6 +324,22 @@ export const TITULO_LIMPIAR_FILTROS =
 export const PISTA_BUSQUEDA_EXCEL =
   "La búsqueda de la tabla solo filtra lo que ves: el Excel sale con la pestaña y los filtros de arriba.";
 
+/**
+ * Ancho del selector «Categoría» (revisión del 14-oct-2026): con `sm:w-52` el
+ * texto visible es de ~158 px y «Comisión del vendedor (VuelaTour)» y
+ * «Comisión del vendedor (avión)» se veían IGUALES («Comisión del vended…»):
+ * se cortaba justo quién paga. Con una categoría de etiqueta larga elegida,
+ * el selector crece a `sm:w-72` (~238 px de texto: las dos caben completas);
+ * sin filtro o con una corta, el ancho de siempre (la barra no se reacomoda
+ * para nada).
+ */
+export const LARGO_MAX_ETIQUETA_CATEGORIA_FILTRO = 22;
+export function anchoFiltroCategoria(categoria: string | null | undefined): string {
+  return categoria && categoriaGastoLabel(categoria).length > LARGO_MAX_ETIQUETA_CATEGORIA_FILTRO
+    ? "sm:w-72"
+    : "sm:w-52";
+}
+
 /** Etiquetas visibles de los campos de la barra (sin cambio de nombre). */
 export const ETIQUETAS_FILTRO_GASTOS = {
   categoria: "Categoría",
@@ -348,6 +366,50 @@ export const OPCIONES_CAPTURA: ReadonlyArray<{ valor: ModoCaptura; etiqueta: str
   },
   { valor: "rango", etiqueta: "Rango…", titulo: "Elige desde y hasta qué día se capturó (hora Cancún)" },
 ];
+
+/**
+ * «Rango…» de la fecha de captura pulsado SIN fechas todavía (solo UI: la
+ * URL no lo dice). `vista` = la URL de filtros donde quedó abierto;
+ * `esperada` = la que la PROPIA barra pidió después (mientras viaja).
+ */
+export interface RangoCapturaAbierto {
+  vista: string;
+  esperada: string | null;
+}
+
+/** La URL de filtros sin la búsqueda ni la página de la tabla (`tq`/`tp` no abren ni cierran nada). */
+export function claveFiltrosUrl(qs: string): string {
+  const p = new URLSearchParams(qs);
+  p.delete("tq");
+  p.delete("tp");
+  return p.toString();
+}
+
+/**
+ * ¿Sigue abierto «Rango…» con la URL de AHORA? (revisión del 14-oct-2026).
+ * Se queda mientras la URL sea donde se abrió o la que la propia barra pidió
+ * (al llegar, esa pasa a ser la vista); cualquier otra —el enlace «Quitar
+ * filtros» del vacío, Atrás, el menú «Gastos»— lo CIERRA para siempre. Antes
+ * era un booleano que solo apagaba la barra: «Rango…» quedaba presionado, con
+ * dos campos vacíos y «Todas» apagado, sin ningún filtro de captura puesto.
+ * Devuelve el MISMO objeto si nada cambió (se ajusta en el render, sin bucles).
+ */
+export function rangoCapturaTrasUrl(
+  estado: RangoCapturaAbierto | null,
+  clave: string,
+): RangoCapturaAbierto | null {
+  if (estado === null || clave === estado.vista) return estado;
+  if (estado.esperada !== null && clave === estado.esperada) return { vista: clave, esperada: null };
+  return null;
+}
+
+/** La barra pidió navegar a `destino`: un «Rango…» abierto lo espera. */
+export function rangoCapturaTrasNavegar(
+  estado: RangoCapturaAbierto | null,
+  destino: string,
+): RangoCapturaAbierto | null {
+  return estado === null ? null : { vista: estado.vista, esperada: destino };
+}
 
 /** Orden del listado (lo aplica el API y el Excel sale igual). No es un filtro. */
 export const OPCIONES_ORDEN_GASTOS: ReadonlyArray<{ value: "fecha" | "captura"; label: string }> = [
@@ -388,6 +450,36 @@ export const ETIQUETA_SIN_VISTA_PREVIA = "Sin vista previa";
 export const TITULO_SIN_VISTA_PREVIA =
   "No se pudo cargar la foto del comprobante; recarga la página o ábrelo en «Verificar / editar».";
 export const TEXTO_SIN_COMPROBANTE_CORTO = "Sin comp.";
+export const TEXTO_CONFIRMADO_CORTO = "✓ Confirmado";
+
+/** Title del ✓ de confirmación del panel (quién y cuándo). */
+export function tituloConfirmadoGasto(g: Pick<Gasto, "verificador" | "verificado_at">): string {
+  return `Confirmado por ${verificadorNombre(g) ?? "oficina"} · ${fmtDate(g.verificado_at)}`;
+}
+
+/**
+ * Respaldo de la columna «Comp.» bajo el concepto (revisión del 14-oct-2026):
+ * la columna se oculta debajo de 1280 px (1300 en modo unir) y la línea del
+ * teléfono solo vive debajo de 768 px; entre los dos nada decía si el gasto
+ * trae papel. Dice lo que la columna pintaría salvo la miniatura: «Sin
+ * comp.», «Sin vista previa» (`firmada` = la foto sí tiene URL firmada),
+ * «+2 hojas» y «✓ Confirmado» (con quién y cuándo en el title). Como en la
+ * línea del teléfono, la AUSENCIA de «Sin comp.» = sí trae comprobante.
+ * null = nada que decir.
+ */
+export function lineaComprobanteGasto(
+  g: Gasto,
+  firmada: boolean,
+): { texto: string; title: string | null } | null {
+  const partes = [
+    !hayComprobante(g.estatus_comprobante) ? TEXTO_SIN_COMPROBANTE_CORTO : null,
+    g.foto_url && !firmada ? ETIQUETA_SIN_VISTA_PREVIA : null,
+    textoHojas(hojasDe(g).length),
+    g.verificado_at ? TEXTO_CONFIRMADO_CORTO : null,
+  ].filter((p): p is string => !!p);
+  if (partes.length === 0) return null;
+  return { texto: partes.join(" · "), title: g.verificado_at ? tituloConfirmadoGasto(g) : null };
+}
 
 /** Alt de la miniatura del comprobante. */
 export function altComprobanteGasto(categoria: string): string {
@@ -536,18 +628,51 @@ export function textoPagosCompra(
 // Encabezado: «Sugerir asignaciones» y carga
 // =============================================================================
 
-/** Title de «Sugerir asignaciones»: el total GLOBAL de la bandeja (no lo filtrado). */
+/**
+ * Cuántos pendientes revisa UNA pasada de «Sugerir asignaciones»: espejo del
+ * `.limit(15)` de `sugerirAsignaciones()` del API (los 15 de `fecha_gasto`
+ * más reciente; la prueba de paridad lee el repo hermano). Revisión del
+ * 14-oct-2026: los textos prometían «toda la bandeja» y con 36 pendientes el
+ * API revisaba 15; los otros 21 nunca recibían sugerencia y nadie lo decía.
+ */
+export const TOPE_SUGERIR_ASIGNACIONES = 15;
+
+/** Title de «Sugerir asignaciones»: el total GLOBAL de la bandeja (no lo filtrado) y el tope de una pasada. */
 export function ayudaSugerirAsignaciones(n: number | null): string {
-  if (n === null) return "No se pudieron contar los pendientes; el análisis revisa toda la bandeja.";
+  if (n === null) {
+    return `No se pudieron contar los pendientes; el análisis revisa los ${TOPE_SUGERIR_ASIGNACIONES} más recientes de la bandeja (no solo de lo filtrado).`;
+  }
   if (n === 1) return "Propone el avión del gasto pendiente de la bandeja (no solo de lo filtrado).";
   if (n <= 0) return "No hay gastos pendientes en la bandeja.";
+  if (n > TOPE_SUGERIR_ASIGNACIONES) {
+    return `Propone el avión de los ${TOPE_SUGERIR_ASIGNACIONES} pendientes más recientes de la bandeja (hay ${n}; no solo de lo filtrado).`;
+  }
   return `Propone el avión de los ${n} gastos pendientes de toda la bandeja (no solo de lo filtrado).`;
 }
 
 /** Texto mientras corre el análisis. */
 export function textoAnalizandoPendientes(n: number | null): string {
   if (n === null || n <= 0) return "Analizando los pendientes… esto toma unos segundos.";
+  if (n > TOPE_SUGERIR_ASIGNACIONES) {
+    return `Analizando los ${TOPE_SUGERIR_ASIGNACIONES} más recientes de ${n} pendientes… esto toma unos segundos.`;
+  }
   return `Analizando ${n} ${n === 1 ? "pendiente" : "pendientes"}… esto toma unos segundos.`;
+}
+
+/**
+ * Bajo el resultado: cuántos pendientes NO revisó esta pasada (el API revisa
+ * a lo más `TOPE_SUGERIR_ASIGNACIONES`). `pendientes` = el total global de la
+ * bandeja (null = no se pudo contar ⇒ no se afirma nada); `revisados` = los
+ * que devolvió el API. null = no quedó ninguno fuera (o no se sabe: sin
+ * conteo, o sin nada revisado —un conteo viejo no se contradice con «No hay
+ * gastos pendientes por revisar»—).
+ */
+export function textoPendientesSinRevisar(pendientes: number | null, revisados: number): string | null {
+  if (pendientes === null || revisados <= 0 || !(pendientes > revisados)) return null;
+  const faltan = pendientes - revisados;
+  return faltan === 1
+    ? `Se revisaron los ${revisados} pendientes más recientes; 1 pendiente más no se revisó en esta pasada (asígnalo a mano).`
+    : `Se revisaron los ${revisados} pendientes más recientes; otros ${faltan} no se revisaron en esta pasada (asígnalos a mano o vuelve a pulsar después de aplicar).`;
 }
 
 export const ETIQUETA_FOTOS_COMPROBANTES = "las fotos de los comprobantes";
@@ -567,6 +692,14 @@ export const AYUDA_MODO_UNIR =
 export const TITULO_TERMINAR_UNIR = "Oculta las casillas y limpia la selección.";
 export const INSTRUCCION_MODO_UNIR =
   "Marca los gastos que son pagos de una misma compra: la factura de mercancía y al menos otro pago (envío, impuestos…).";
+/** La misma instrucción en teléfono (la barra fija no debe tapar media pantalla). */
+export const INSTRUCCION_MODO_UNIR_CORTA = "Marca la factura de mercancía y al menos otro pago de la compra.";
+/**
+ * La lista NO cargó: la barra no dice «no hay gastos que se puedan unir»
+ * (jamás «sin datos» cuando la carga falló; revisión del 14-oct-2026).
+ */
+export const TEXTO_UNIR_SIN_LISTA =
+  "No se pudieron cargar los gastos: pulsa «Reintentar» para seguir uniendo (lo marcado se conserva).";
 export const TEXTO_TERMINAR_BARRA = "Terminar";
 export const ENCABEZADO_COLUMNA_UNIR = "Unir en compra";
 export const TITULO_COLUMNA_UNIR = "Marca los pagos de una misma compra";

@@ -203,6 +203,14 @@ describe("QuotesFilterBar · cableado", () => {
     expect(src).not.toMatch(/useState<ConsultaPendiente/);
   });
 
+  it("la consulta pendiente y los borradores CADUCAN al moverse la URL: Atrás o «Limpiar» del vacío ya no los reviven (revisión del 14-oct-2026)", () => {
+    expect(src).toMatch(
+      /useEffect\(\(\) => \{\s*pendiente\.current = pendienteVigente\(params\.toString\(\), pendiente\.current\);\s*\}, \[params\]\);/,
+    );
+    expect(src).toContain("const vigentes = borradoresVigentes(borradores, deUrl);");
+    expect(src).toContain("if (vigentes !== borradores) setBorradores(vigentes);");
+  });
+
   it("«Limpiar» suelta también desde/hasta y lleva cursor-pointer", () => {
     expect(src).toContain('pushQuery({ estado: "", cliente_id: "", q: "", desde: "", hasta: "" })');
     expect(src).toMatch(/onClick=\{limpiarTodo\}[\s\S]{0,200}cursor-pointer/);

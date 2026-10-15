@@ -175,6 +175,18 @@ describe("con filtros", () => {
     expect(pintar("tq=%20%20")).not.toContain(PISTA_BUSQUEDA_EXCEL);
   });
 
+  it("categoría: con una etiqueta larga el selector crece (las dos comisiones ya no se ven iguales)", () => {
+    /** El contenedor del selector (lleva el ancho), por su <label for>. */
+    const caja = (html: string) => {
+      const i = html.indexOf('for="gasto-filtro-categoria"');
+      return html.slice(html.lastIndexOf("<div", i), html.indexOf(">", html.lastIndexOf("<div", i)) + 1);
+    };
+    expect(caja(pintar("categoria=COMISION_VENDEDOR_AVION"))).toBe('<div class="min-w-0 sm:w-72">');
+    expect(caja(pintar("categoria=COMISION_VENDEDOR"))).toBe('<div class="min-w-0 sm:w-72">');
+    expect(caja(pintar("categoria=COMIDA"))).toBe('<div class="min-w-0 sm:w-52">');
+    expect(caja(pintar(""))).toBe('<div class="min-w-0 sm:w-52">');
+  });
+
   it("el orden por captura no es un filtro: sin marca ni «Limpiar»", () => {
     const html = pintar("orden=captura");
     expect(valorDe(html, "gasto-filtro-orden")).toBe("Fecha de captura");
@@ -201,6 +213,22 @@ describe("cableado (regex sobre el fuente)", () => {
     ]) {
       expect(src, s).toContain(s);
     }
+  });
+
+  it("caducan (revisión del 14-oct-2026): la consulta pendiente, los borradores y «Rango…» no reviven", () => {
+    expect(src).toMatch(
+      /useEffect\(\(\) => \{\s*pendiente\.current = pendienteVigente\(sp\.toString\(\), pendiente\.current\);\s*\}, \[sp\]\);/,
+    );
+    expect(src).toContain("const vigentes = borradoresVigentes(borradores, deUrl);");
+    expect(src).toContain("if (vigentes !== borradores) setBorradores(vigentes);");
+    expect(src).toContain("const clave = claveFiltrosUrl(sp.toString());");
+    expect(src).toContain("const rangoVigente = rangoCapturaTrasUrl(rangoCapturaAbierto, clave);");
+    expect(src).toContain("if (rangoVigente !== rangoCapturaAbierto) setRangoCapturaAbierto(rangoVigente);");
+    expect(src).toContain("setRangoCapturaAbierto((r) => rangoCapturaTrasNavegar(r, claveFiltrosUrl(qs)));");
+    expect(src).toContain('f.captura === "todas" && rangoVigente !== null ? "rango" : f.captura');
+    expect(src).toContain("setRangoCapturaAbierto({ vista: clave, esperada: null });");
+    expect(src).not.toContain("setRangoCapturaAbierto(true)");
+    expect(src).toContain("ancho: anchoFiltroCategoria(f.categoria),");
   });
 
   it("adiós a las etiquetas <p> y a navegar a media tecla", () => {
