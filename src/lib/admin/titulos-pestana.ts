@@ -303,6 +303,7 @@ export const PESTANAS_CONCILIACION: Readonly<Record<FiltroConciliacion, string>>
   todos: "Todos",
   pendientes: "Pendientes",
   conciliados: "Conciliados",
+  omitidos: "Omitidos",
   sin_banco: "Gastos sin banco",
   cobros_sin_banco: "Cobros sin banco",
   paywise: "Auditoría Paywise",

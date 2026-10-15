@@ -111,6 +111,8 @@ function contextoDeTecla(
     esFila: objetivo === r.fila,
     etiqueta: objetivo.tagName,
     editable: (objetivo as HTMLElement).isContentEditable === true,
+    // La casilla de la selección (Conciliación, 14-oct-2026) no es un campo.
+    tipoEntrada: objetivo instanceof HTMLInputElement ? objetivo.type : null,
     rol: rolDentroDe(objetivo, r.renglon),
     conDesplegable: dentroDe(r.renglon, objetivo.closest(SELECTOR_DESPLEGABLE)),
     hayActiva,

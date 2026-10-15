@@ -55,7 +55,7 @@ import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { esMedioNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import { isApiError } from "@/lib/api/errors";
 import type { PaywiseAuditoria } from "@/types/conciliacion";
-import { Degradaciones } from "@/lib/api/degradar";
+import { Degradaciones, esErrorDeNext } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { RangoFechasConciliacion } from "@/components/admin/conciliacion/rango-fechas-bar";
 import {
@@ -65,6 +65,7 @@ import {
   enfoqueConciliacionDeUrl,
   filasConFoco,
   filtroConciliacionDeUrl,
+  filtroReporteDeVista,
   hrefConciliacion,
   rangoParaSinBanco,
   rangoVistaConciliacion,
@@ -74,6 +75,18 @@ import {
   textoVentanaSinBanco,
   type FiltroConciliacion,
 } from "@/lib/admin/conciliacion-vista";
+import {
+  TEXTO_OMITIDOS_NO_CARGO,
+  TEXTO_OMITIDOS_NO_DISPONIBLE,
+  TITULO_ENLACE_OMITIDOS,
+  TITULO_VACIO_OMITIDOS,
+  conteoOmitidosDeResumen,
+  fallaListaOmitidos,
+  partesTarjetaOmitidos,
+  textoPestanaOmitidos,
+  textoVacioOmitidos,
+} from "@/lib/admin/conciliacion-omision";
+import { vistaSeleccionDeFiltro } from "@/lib/admin/conciliacion-seleccion";
 
 export const dynamic = "force-dynamic";
 // Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
@@ -143,6 +156,9 @@ export default async function ConciliacionPage({
   const query: Omit<ListConciliacionQuery, "limit" | "offset"> = {};
   if (filtro === "pendientes") query.conciliado = false;
   if (filtro === "conciliados") query.conciliado = true;
+  // Pestaña «Omitidos» (14-oct-2026, API 0.0.77): el API filtra por la
+  // clasificación canónica (no un filtro del panel sobre la lista recortada).
+  if (filtro === "omitidos") query.solo_omitidos = true;
   // La bandeja mezclaba TODAS las cuentas: ?cuenta= la filtra (el API ya lo
   // soportaba) y los chips de arriba la cambian.
   if (pwCuenta) query.cuenta_bancaria_id = pwCuenta;
@@ -155,8 +171,24 @@ export default async function ConciliacionPage({
   const sinBancoRango = rangoParaSinBanco(rango);
 
   const degradado = new Degradaciones();
+  // La lista de «Omitidos» degrada SIN tumbar la pantalla (14-oct-2026): un API
+  // previo rechaza la llave (400) ⇒ «todavía no está activa»; otra falla ⇒ «no
+  // se pudo consultar». Jamás la lista vacía ni el error de página. Las demás
+  // pestañas, como siempre: la lista es el dato del dinero y su falla sube al
+  // boundary (que reintenta).
+  const listaVista =
+    filtro === "omitidos"
+      ? listMovimientosBancariosTodos(query).then(
+          (r) => ({ ...r, fallaOmitidos: null }),
+          (err: unknown) => {
+            if (esErrorDeNext(err)) throw err;
+            console.error("[admin] no se pudo cargar la lista de omitidos", err);
+            return { data: [], count: 0, truncado: false, fallaOmitidos: fallaListaOmitidos(err) };
+          },
+        )
+      : listMovimientosBancariosTodos(query).then((r) => ({ ...r, fallaOmitidos: null }));
   const [
-    { data: movs, count: totalMovs },
+    { data: movs, count: totalMovs, fallaOmitidos },
     cuentasRes,
     gastosRes,
     resumen,
@@ -169,7 +201,7 @@ export default async function ConciliacionPage({
     providersRes,
     me,
   ] = await Promise.all([
-    listMovimientosBancariosTodos(query),
+    listaVista,
     // Catálogos: chips de cuenta y opciones de «Vincular gasto». Degradan
     // con aviso; los MOVIMIENTOS (el dato del dinero) nunca (21-sep-2026).
     // DEUDA (2-oct-2026): desde 1 cargo ↔ N gastos el diálogo del CARGO
@@ -186,7 +218,9 @@ export default async function ConciliacionPage({
     // lote 2, 14-oct-2026): el API ya no manda un total recortado — con más
     // de 20,000 movimientos en el periodo responde 400 RESUMEN_MUY_GRANDE —
     // y un `[]` callado se leía como «no hay cuentas».
-    degradado.opcional("el resumen por cuenta", conciliacionResumen(desdeVista, hastaVista), []),
+    // null (no `[]`) cuando falla (14-oct-2026): el conteo de «Omitidos» no
+    // inventa un 0 de un resumen que no llegó.
+    degradado.opcional("el resumen por cuenta", conciliacionResumen(desdeVista, hastaVista), null),
     // Best-effort: la página no se cae si el archivado aún no responde.
     listEstadosCuenta().catch(() => ({ data: [] })),
     // El INVERSO de la bandeja (28-ago): gastos bancarios del sistema que
@@ -217,6 +251,7 @@ export default async function ConciliacionPage({
     degradado.opcional("tu usuario", getMe(), null),
   ]);
   const estadosCuenta = estadosRes.data;
+  const resumenCuentas = resumen ?? [];
 
   // Auditoría Paywise solo en su pestaña (cruce completo del periodo). El
   // 400 «sin cuenta PASARELA» se muestra como guía, no como error de página.
@@ -364,11 +399,20 @@ export default async function ConciliacionPage({
       : filtro === "conciliados"
         ? "movimientos conciliados"
         : "movimientos";
+  // SELECCIÓN (14-oct-2026): casillas en «Todos»/«Pendientes» (pendientes
+  // libres) y «Omitidos»; la tabla se reinicia (y su selección) al cambiar de
+  // pestaña, cuenta o fechas.
+  const vistaSeleccion = vistaSeleccionDeFiltro(filtro);
+  const claveVista = `${filtro}|${pwCuenta}|${desdeVista ?? ""}|${hastaVista ?? ""}`;
+  const monedaPorCuenta = Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.moneda]));
+  // «Omitidos (N)»: del resumen del API (o de la cuenta filtrada); sin dato, sin número.
+  const conteoOmitidos = conteoOmitidosDeResumen(resumen, pwCuenta || null);
 
   const tabs: { key: Filtro; label: string }[] = [
     { key: "todos", label: "Todos" },
     { key: "pendientes", label: "Pendientes" },
     { key: "conciliados", label: "Conciliados" },
+    { key: "omitidos", label: textoPestanaOmitidos(conteoOmitidos) },
     {
       key: "sin_banco",
       label: `Gastos sin banco${sinBanco ? ` (${sinBanco.total})` : ""}`,
@@ -436,9 +480,9 @@ export default async function ConciliacionPage({
           )}
           <ReporteConciliacionButton
             cuentas={cuentas}
-            filtroActivo={
-              filtro === "cobros_sin_banco" || filtro === "paywise" ? "todos" : filtro
-            }
+            // «Omitidos» ⇒ «Conciliados» (los omitidos son conciliados con
+            // estatus «Omitido» en el Excel); «Cobros sin banco» y Paywise ⇒ «Todos».
+            filtroActivo={filtroReporteDeVista(filtro)}
             desde={desdeVista}
             hasta={hastaVista}
           />
@@ -448,33 +492,52 @@ export default async function ConciliacionPage({
 
       <AvisoDegradado faltantes={degradado.faltantes} />
 
-      {resumen.length > 0 && (
+      {resumenCuentas.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {resumen.map((c) => (
-            <Card key={c.cuenta_bancaria_id}>
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground truncate">
-                  {c.alias ?? "Cuenta"} · {c.banco ?? ""} ({c.moneda ?? ""})
-                </p>
-                <p className="text-lg font-semibold mt-1">
-                  {c.conciliados}/{c.total}{" "}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    conciliados
-                  </span>
-                </p>
-                {c.pendientes > 0 ? (
-                  <p className="text-xs text-amber-600 mt-0.5">
-                    Faltan {c.pendientes} · $
-                    {c.monto_pendiente.toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
+          {resumenCuentas.map((c) => {
+            // Los «conciliados» INCLUYEN a los omitidos y la tarjeta lo dice
+            // (14-oct-2026); «14 omitidos» lleva a la pestaña de esa cuenta.
+            // Sin el dato (`omitidos: null` o API previo) no se pinta la frase.
+            const omitidos = partesTarjetaOmitidos(c.omitidos);
+            return (
+              <Card key={c.cuenta_bancaria_id}>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground truncate">
+                    {c.alias ?? "Cuenta"} · {c.banco ?? ""} ({c.moneda ?? ""})
                   </p>
-                ) : (
-                  <p className="text-xs text-emerald-600 mt-0.5">Al corriente</p>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                  <p className="text-lg font-semibold mt-1">
+                    {c.conciliados}/{c.total}{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      conciliados
+                      {omitidos && (
+                        <>
+                          {" · "}
+                          {omitidos.antes}
+                          <Link
+                            href={hrefVista("omitidos", c.cuenta_bancaria_id)}
+                            className="cursor-pointer underline underline-offset-2 hover:text-foreground"
+                            title={TITULO_ENLACE_OMITIDOS}
+                          >
+                            {omitidos.enlace}
+                          </Link>
+                        </>
+                      )}
+                    </span>
+                  </p>
+                  {c.pendientes > 0 ? (
+                    <p className="text-xs text-amber-600 mt-0.5">
+                      Faltan {c.pendientes} · $
+                      {c.monto_pendiente.toLocaleString("es-MX", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-emerald-600 mt-0.5">Al corriente</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -612,18 +675,40 @@ export default async function ConciliacionPage({
             )}
           </CardContent>
         </Card>
+      ) : fallaOmitidos ? (
+        // «Omitidos» que no se pudo leer: se DICE (jamás «no hay omitidos»).
+        <Card>
+          <CardContent className="p-0 pt-4">
+            {fallaOmitidos === "NO_ACTIVA" ? (
+              <p role="status" className="px-4 pb-4 text-sm text-muted-foreground">
+                {TEXTO_OMITIDOS_NO_DISPONIBLE}
+              </p>
+            ) : (
+              <AvisoListaSinBancoNoCargo texto={TEXTO_OMITIDOS_NO_CARGO} />
+            )}
+          </CardContent>
+        </Card>
       ) : movs.length === 0 ? (
         <Card>
           <CardHeader className="text-center py-12">
             <div className="flex justify-center mb-4">
               <ArrowsRightLeftIcon className="h-12 w-12 text-muted-foreground" />
             </div>
-            <CardTitle>{textoRango ? "Sin movimientos en el periodo" : "Sin movimientos"}</CardTitle>
-            <CardDescription>
-              {textoRango
-                ? `No hay ${queHay} ${textoRango}${pwCuenta ? " en esta cuenta" : ""}. Cambia o limpia el rango de fechas.`
-                : "Importa un estado de cuenta para cruzar los movimientos con los gastos capturados."}
-            </CardDescription>
+            {filtro === "omitidos" ? (
+              <>
+                <CardTitle>{TITULO_VACIO_OMITIDOS}</CardTitle>
+                <CardDescription>{textoVacioOmitidos(textoRango, !!pwCuenta)}</CardDescription>
+              </>
+            ) : (
+              <>
+                <CardTitle>{textoRango ? "Sin movimientos en el periodo" : "Sin movimientos"}</CardTitle>
+                <CardDescription>
+                  {textoRango
+                    ? `No hay ${queHay} ${textoRango}${pwCuenta ? " en esta cuenta" : ""}. Cambia o limpia el rango de fechas.`
+                    : "Importa un estado de cuenta para cruzar los movimientos con los gastos capturados."}
+                </CardDescription>
+              </>
+            )}
           </CardHeader>
         </Card>
       ) : (
@@ -644,6 +729,7 @@ export default async function ConciliacionPage({
               </p>
             )}
             <MovimientosTable
+              key={claveVista}
               movimientos={foco.filas}
               gastos={gastosOpts}
               cuentas={aliasPorCuenta}
@@ -653,6 +739,7 @@ export default async function ConciliacionPage({
               gastoResaltado={enfoque.gasto}
               huboCorte={notaRecorte != null}
               abreBalances={puedeAbrirBalances(me?.rol)}
+              seleccion={vistaSeleccion ? { vista: vistaSeleccion, monedaPorCuenta } : null}
             />
           </CardContent>
         </Card>

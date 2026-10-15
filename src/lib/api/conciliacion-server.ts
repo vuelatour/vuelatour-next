@@ -28,6 +28,12 @@ export interface ListConciliacionQuery {
   hasta?: string;
   limit?: number;
   offset?: number;
+  /** ADITIVO (14-oct-2026, API 0.0.77, invariante 75): pestaña «Omitidos»
+      (el API filtra por la clasificación canónica). Viaja SOLO en true: un
+      API previo responde 400 «property solo_omitidos should not exist»
+      (`fallaListaOmitidos`); sin poder leer la canónica, 503
+      OMITIDOS_NO_DISPONIBLE (jamás un vacío falso). */
+  solo_omitidos?: boolean;
 }
 
 export function listMovimientosBancarios(query: ListConciliacionQuery = {}) {

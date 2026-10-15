@@ -10,6 +10,7 @@ import {
   textoMovimientoEnfocado,
   FILTROS_CONCILIACION,
   filtroConciliacionDeUrl,
+  filtroReporteDeVista,
   fusionarPaginaMovimientos,
   hayRango,
   hrefConciliacion,
@@ -166,6 +167,33 @@ describe("hrefConciliacion: la URL de la vista (fuente única)", () => {
     expect(filtroConciliacionDeUrl("nada")).toBe("todos");
     expect(filtroConciliacionDeUrl(null)).toBe("todos");
     expect(filtroConciliacionDeUrl(undefined)).toBe("todos");
+  });
+
+  it("«omitidos» (14-oct-2026, API 0.0.77): en el catálogo, después de «conciliados», y su URL", () => {
+    expect(FILTROS_CONCILIACION).toEqual([
+      "todos",
+      "pendientes",
+      "conciliados",
+      "omitidos",
+      "sin_banco",
+      "cobros_sin_banco",
+      "paywise",
+    ]);
+    expect(filtroConciliacionDeUrl("omitidos")).toBe("omitidos");
+    expect(filtroConciliacionDeUrl("Omitidos")).toBe("todos");
+    expect(hrefConciliacion({ f: "omitidos", cuenta: "76a931e0-7c06-47c6-a574-6c7d4a698c14" })).toBe(
+      "/admin/conciliacion?f=omitidos&cuenta=76a931e0-7c06-47c6-a574-6c7d4a698c14",
+    );
+  });
+
+  it("filtroReporteDeVista: «Omitidos» preselecciona «Conciliados» en el Excel", () => {
+    expect(filtroReporteDeVista("omitidos")).toBe("conciliados");
+    expect(filtroReporteDeVista("conciliados")).toBe("conciliados");
+    expect(filtroReporteDeVista("pendientes")).toBe("pendientes");
+    expect(filtroReporteDeVista("todos")).toBe("todos");
+    expect(filtroReporteDeVista("sin_banco")).toBe("sin_banco");
+    expect(filtroReporteDeVista("cobros_sin_banco")).toBe("todos");
+    expect(filtroReporteDeVista("paywise")).toBe("todos");
   });
 });
 

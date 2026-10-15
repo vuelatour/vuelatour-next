@@ -44,6 +44,15 @@ import {
   ordenarCargosParaAbono,
 } from "@/lib/admin/conciliacion-reverso";
 import { MSG_API_SIN_ENRIQUECER, esDtoSinEnriquecer } from "@/lib/admin/conciliacion-importacion";
+import {
+  MSG_ACEPTAR_RIESGO_INVALIDO,
+  MSG_CLASIFICACION_ESPERADA_INVALIDA,
+  MSG_OPCION_NO_ACTIVA,
+  errorListaMovimientos,
+  errorMotivoOmision,
+  esDtoSinOmision,
+} from "@/lib/admin/conciliacion-omision";
+import { TOPE_SELECCION } from "@/lib/admin/conciliacion-seleccion";
 import { MSG_DETALLE_BANCO_API_VIEJO } from "@/lib/admin/gasto-banco";
 import type {
   AutoMatchResultado,
@@ -62,6 +71,9 @@ import type {
   ParejaReverso,
   ParsedStatement,
   PaywiseAuditoria,
+  ResultadoOmision,
+  ResultadoQuitarOmision,
+  RevisionOmision,
   ReversosAutoResultado,
   SugerenciaConciliacion,
   SugerirLoteResponse,
@@ -429,11 +441,22 @@ export async function crearClasificacionAction(
 /**
  * Concilia por clasificación (movimiento que no corresponde a ningún vuelo)
  * con notas; clasificacion_id null la quita y vuelve a Pendiente.
+ *
+ * `esperado_clasificacion_id` (ADITIVO, 14-oct-2026, API 0.0.77, invariante
+ * 75): la clasificación que el panel VIO (null = estaba pendiente). Si la
+ * vigente es otra (alguien lo vinculó, lo clasificó o lo omitió) el API
+ * responde 409 MOVIMIENTO_CAMBIO sin escribir. Viaja SOLO si la trae el
+ * llamador (el diálogo la manda únicamente con un API que ya sabe omitir: el
+ * DTO de un API previo rechaza la llave) y se valida ANTES de la red.
  */
 export async function clasificarMovimientoAction(
   movId: string,
-  payload: { clasificacion_id: string | null; notas?: string },
+  payload: { clasificacion_id: string | null; notas?: string; esperado_clasificacion_id?: string | null },
 ): Promise<ActionResult> {
+  const esperado = payload?.esperado_clasificacion_id;
+  if (esperado !== undefined && esperado !== null && !esUuid(esperado)) {
+    return { ok: false, code: "CLASIFICACION_INVALIDA", status: 400, error: MSG_CLASIFICACION_ESPERADA_INVALIDA };
+  }
   try {
     await apiServer(`/v1/conciliacion/movimientos/${movId}/clasificar`, {
       method: "PATCH",
@@ -973,5 +996,104 @@ export async function vueloParaCobroAction(
     };
   } catch (err) {
     return fail(err);
+  }
+}
+
+// ===== Omitir la conciliación (14-oct-2026, API 0.0.77, invariante 75) =====
+//
+// Las tres acciones NO revalidan (lección de la fecha del gasto: en Next 16
+// un `revalidatePath` repinta la página abierta y desmontaría el diálogo o la
+// barra de la selección): quien llama hace UN `router.refresh()` al cerrar.
+// Validan la lista (1..200 uuid sin repetir), el motivo y los avisos
+// confirmados ANTES de la red con los textos del DTO; conservan code, status
+// y details; una ruta inexistente (API ≤ 0.0.76: 404 «Cannot POST …») o un
+// DTO previo (400 «property … should not exist») ⇒ `RUTA_NO_DISPONIBLE` con
+// «Esta opción todavía no está activa: avisa a sistemas.»; nunca lanzan.
+
+const LISTA_INVALIDA = (error: string) => ({ ok: false as const, code: "LOTE_INVALIDO", status: 400, error });
+
+function sinRuta<T>(err: unknown): ActionResult<T> {
+  const r = fail<T>(err);
+  if (esRutaInexistente(r) || esDtoSinOmision(r)) {
+    return { ok: false, code: "RUTA_NO_DISPONIBLE", status: r.status ?? 404, error: MSG_OPCION_NO_ACTIVA };
+  }
+  return r;
+}
+
+/**
+ * Revisión previa de «Omitir…» (SOLO LECTURA): el estado de cada movimiento
+ * (pendiente o por qué ya no) y, de los pendientes, si podría conciliarse de
+ * verdad (gasto o cobro que cuadra, traspaso, devolución, «sin verificar»).
+ * La calcula el API con las MISMAS reglas que vuelve a aplicar al omitir.
+ */
+export async function revisarOmisionAction(ids: string[]): Promise<ActionResult<RevisionOmision>> {
+  const invalida = errorListaMovimientos(ids, TOPE_SELECCION);
+  if (invalida) return LISTA_INVALIDA(invalida);
+  try {
+    const data = await apiServer<RevisionOmision>("/v1/conciliacion/movimientos/omitir/revisar", {
+      method: "POST",
+      body: { movimiento_ids: ids },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return sinRuta<RevisionOmision>(err);
+  }
+}
+
+/**
+ * «Omitir la conciliación» de 1..200 PENDIENTES (todo o nada, RPC del API):
+ * quedan conciliados con la clasificación canónica y la línea firmada por el
+ * API (usuario + día Cancún). Un movimiento con aviso solo se omite si viene
+ * en `aceptarRiesgoIds` (⊆ ids; viaja solo si no está vacío). 409
+ * OMITIR_CON_RIESGO / MOVIMIENTO_NO_PENDIENTE y 404 MOVIMIENTO_NO_EXISTE
+ * vuelven con su `details` para el diálogo.
+ */
+export async function omitirMovimientosAction(input: {
+  ids: string[];
+  motivo: string;
+  aceptarRiesgoIds?: string[];
+}): Promise<ActionResult<ResultadoOmision>> {
+  const ids = input?.ids;
+  const invalida = errorListaMovimientos(ids, TOPE_SELECCION);
+  if (invalida) return LISTA_INVALIDA(invalida);
+  const motivoMalo = errorMotivoOmision(input?.motivo);
+  if (motivoMalo) return { ok: false, code: "MOTIVO_INVALIDO", status: 400, error: motivoMalo };
+  const aceptar = input?.aceptarRiesgoIds ?? [];
+  if (aceptar.length > 0) {
+    const enLista = new Set(ids.map((x) => x.toLowerCase()));
+    const aceptarMalo = errorListaMovimientos(aceptar, TOPE_SELECCION);
+    if (aceptarMalo || !aceptar.every((x) => enLista.has(x.toLowerCase()))) {
+      return { ok: false, code: "ACEPTAR_RIESGO_INVALIDO", status: 400, error: MSG_ACEPTAR_RIESGO_INVALIDO };
+    }
+  }
+  const body: { movimiento_ids: string[]; motivo: string; aceptar_riesgo_ids?: string[] } = {
+    movimiento_ids: ids,
+    motivo: input.motivo.trim(),
+  };
+  if (aceptar.length > 0) body.aceptar_riesgo_ids = aceptar;
+  try {
+    const data = await apiServer<ResultadoOmision>("/v1/conciliacion/movimientos/omitir", { method: "POST", body });
+    return { ok: true, data };
+  } catch (err) {
+    return sinRuta<ResultadoOmision>(err);
+  }
+}
+
+/**
+ * «Deshacer la omisión» de 1..200 omitidos (todo o nada): vuelven a
+ * Pendientes y de sus notas se quita SOLO la línea canónica. 409
+ * MOVIMIENTO_NO_OMITIDO trae los que ya no lo están.
+ */
+export async function quitarOmisionAction(ids: string[]): Promise<ActionResult<ResultadoQuitarOmision>> {
+  const invalida = errorListaMovimientos(ids, TOPE_SELECCION);
+  if (invalida) return LISTA_INVALIDA(invalida);
+  try {
+    const data = await apiServer<ResultadoQuitarOmision>("/v1/conciliacion/movimientos/quitar-omision", {
+      method: "POST",
+      body: { movimiento_ids: ids },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return sinRuta<ResultadoQuitarOmision>(err);
   }
 }

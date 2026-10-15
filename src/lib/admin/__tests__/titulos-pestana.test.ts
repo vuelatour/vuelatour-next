@@ -218,6 +218,7 @@ describe("pestañas de una sección: «Sección · Pestaña»", () => {
     expect(tituloConciliacion(null)).toBe("Conciliación");
     expect(tituloConciliacion("pendientes")).toBe("Conciliación · Pendientes");
     expect(tituloConciliacion("conciliados")).toBe("Conciliación · Conciliados");
+    expect(tituloConciliacion("omitidos")).toBe("Conciliación · Omitidos");
     expect(tituloConciliacion("sin_banco")).toBe("Conciliación · Gastos sin banco");
     expect(tituloConciliacion("cobros_sin_banco")).toBe("Conciliación · Cobros sin banco");
     expect(tituloConciliacion("paywise")).toBe("Conciliación · Auditoría Paywise");

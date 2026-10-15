@@ -7,6 +7,10 @@
  * hace `router.refresh()` (vuelve a correr el Server Component sin recargar
  * toda la aplicación), como `TarjetaErrorCarga`. Textos en
  * `lib/admin/conciliacion-vista.ts`.
+ *
+ * `texto` (ADITIVO, 14-oct-2026): la pestaña «Omitidos» lo reutiliza con su
+ * propio texto («No se pudo consultar la lista de omitidos…»). Sin él, el de
+ * siempre.
  */
 
 import { useTransition } from "react";
@@ -19,12 +23,12 @@ import {
 } from "@/lib/admin/conciliacion-vista";
 import { cn } from "@/lib/utils";
 
-export function AvisoListaSinBancoNoCargo() {
+export function AvisoListaSinBancoNoCargo({ texto = MSG_LISTA_SIN_BANCO_NO_CARGO }: { texto?: string } = {}) {
   const router = useRouter();
   const [refrescando, empezar] = useTransition();
   return (
     <div role="alert" data-lista-no-cargo="" className="space-y-2 px-4 pb-4 text-sm">
-      <p className="text-amber-700 dark:text-amber-300">{MSG_LISTA_SIN_BANCO_NO_CARGO}</p>
+      <p className="text-amber-700 dark:text-amber-300">{texto}</p>
       <button
         type="button"
         onClick={() => empezar(() => router.refresh())}

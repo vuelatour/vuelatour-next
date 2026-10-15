@@ -19,10 +19,16 @@ import { diaMas } from "./conciliacion-auto";
 import { fmtMontoConciliacion, numeroDe } from "./conciliacion-parcial";
 import { esDiaValido, uuidFiltro } from "./url-params";
 
+/**
+ * Pestañas de la vista. «omitidos» (14-oct-2026, API 0.0.77, invariante 75)
+ * = los movimientos que la oficina omitió de la conciliación con un motivo:
+ * la lista la filtra el API (`solo_omitidos`), no el panel.
+ */
 export type FiltroConciliacion =
   | "todos"
   | "pendientes"
   | "conciliados"
+  | "omitidos"
   | "sin_banco"
   | "cobros_sin_banco"
   | "paywise";
@@ -31,6 +37,7 @@ export const FILTROS_CONCILIACION: readonly FiltroConciliacion[] = [
   "todos",
   "pendientes",
   "conciliados",
+  "omitidos",
   "sin_banco",
   "cobros_sin_banco",
   "paywise",
@@ -41,6 +48,19 @@ export function filtroConciliacionDeUrl(f: string | null | undefined): FiltroCon
   return (FILTROS_CONCILIACION as readonly string[]).includes(f ?? "")
     ? (f as FiltroConciliacion)
     : "todos";
+}
+
+/**
+ * La pestaña que preselecciona el Reporte Excel (sus 4 estados). «Omitidos»
+ * ⇒ «Conciliados» (14-oct-2026): los omitidos SON conciliados (el Excel los
+ * marca con estatus «Omitido»); «Cobros sin banco» y Paywise ⇒ «Todos».
+ */
+export function filtroReporteDeVista(
+  filtro: FiltroConciliacion,
+): "todos" | "pendientes" | "conciliados" | "sin_banco" {
+  if (filtro === "omitidos") return "conciliados";
+  if (filtro === "cobros_sin_banco" || filtro === "paywise") return "todos";
+  return filtro;
 }
 
 export interface RangoVista {

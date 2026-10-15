@@ -197,8 +197,9 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   **Filas que el operador está viendo** (opcional, 25-sep-2026): prop
   `alCambiarFiltradas(filas)` — DataTable avisa, en un EFECTO y solo cuando
   cambia el conjunto (clave = ids unidos), las filas que quedan tras la
-  búsqueda rápida (todas las páginas). Lo usa «Mover a…» del inventario;
-  nadie más cambia.
+  búsqueda rápida (todas las páginas). Lo usan «Mover a…» del inventario y,
+  desde el 14-oct-2026, la selección de Conciliación («Seleccionar los N
+  pendientes de la búsqueda»; solo cuando la tabla trae `seleccion`).
   **Fila activa y teclado** (13-oct-2026): toda DataTable trae fila activa
   con clic/foco y ↑/↓/Home/End/Enter/Esc; fuente única
   `lib/admin/filas-activas.ts` + `lib/admin/desplazamiento-visible.ts` +
@@ -8050,7 +8051,11 @@ tablas de resumen auditables del reparto (`profit-sharing/desglose-section.tsx`
   enlace o botón Enter es el nativo. Esc suelta el resaltado SOLO si hay
   activa (sin activa no se traga la tecla); el foco se queda.
 - **Cuándo NO**: modificadores, `defaultPrevented`, foco en INPUT/TEXTAREA/
-  SELECT/contenteditable, roles con flechas propias (listbox, option,
+  SELECT/contenteditable (un INPUT **checkbox** NO cuenta como campo,
+  14-oct-2026: con el foco en la casilla de la selección de Conciliación,
+  ↑/↓/Home/End mueven la activa y Esc la suelta —`ContextoTeclaFila.tipoEntrada`,
+  que el hook llena con el `type` del INPUT—; Espacio sigue siendo de la
+  casilla), roles con flechas propias (listbox, option,
   combobox, menu*, slider, spinbutton, radio*, tab*, tree*, grid*, textbox,
   searchbox, scrollbar), disparadores `[aria-haspopup]` (el ⋯, un select, un
   combobox, un diálogo o un popover de Base UI; un `aria-expanded` SUELTO —el
@@ -8622,6 +8627,105 @@ SPEI), no la de la factura; el cruce automático sigue a ±3 días
   `components/admin/expenses/__tests__/verificar-fecha-ui.test.ts`.
 - **Orden de deploy**: API 0.0.76 → panel. Con el panel antes, «Fecha» abre
   el diálogo y guardar dice «falta actualizar el API» (nada escrito).
+
+## Conciliación: omitir la conciliación y varios cargos → un gasto (14-oct-2026, API 0.0.77)
+
+Pedido textual: «Necesitamos una opción de pendientes de conciliar venga una
+opción de Omitir la conciliación.» y «Necesitamos poder seleccionar varias
+filas de conciliaciones pendientes para todo eso ponerlas a un solo gasto…».
+Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
+(pasos 3a/3b del despliegue); «Vincular a un gasto…» con varios cargos y
+«Créalo por la suma» llegan en su fase (la barra ya admite `onVincular`).
+
+- **Qué es un omitido**: la clasificación canónica «Omitido de la
+  conciliación» + la línea firmada al inicio de las notas, escritas SOLO por
+  las RPC del API (todo o nada). El panel NO arma la línea ni decide estados
+  ni riesgos: pinta la `omision {motivo, por, fecha}` que el API manda en
+  CADA fila (`MovimientoBancario.omision`) y traduce las respuestas.
+  **Skew**: el panel detecta el API nuevo por la PRESENCIA de la llave
+  (`apiConOmision`); sin ella (API ≤ 0.0.76) no hay casillas, ni «Omitir…»,
+  ni «Deshacer…», ni `esperado_clasificacion_id`, y la tabla sale byte a byte
+  como antes (golden). Una ruta nueva que responde 404 «Cannot POST …» o un
+  400 «property … should not exist» ⇒ `RUTA_NO_DISPONIBLE` con «Esta opción
+  todavía no está activa: avisa a sistemas.»; el 503
+  `CONCILIACION_OMITIR_NO_DISPONIBLE` (API nuevo sin la migración) dice lo
+  mismo.
+- **Fuentes únicas (PURAS, con prueba)**: `lib/admin/conciliacion-seleccion.ts`
+  (predicado ÚNICO `esSeleccionable(m, 'lista'|'omitidos')` —pendiente y
+  LIBRE / trae su omisión— que comparten la casilla, «Seleccionar los N…»,
+  la poda y el ⋯; tope 200 = `OMITIR_MAX`; `seleccionVigente` derivada en
+  render; resumen por tipo y moneda EN CENTAVOS —MXN primero, nunca suma
+  monedas, «(moneda desconocida)» si no cargaron las cuentas—;
+  `accionesDeSeleccion` con cada motivo; los textos) y
+  `lib/admin/conciliacion-omision.ts` (la fila, el motivo 10–300, el diálogo,
+  `mensajeErrorOmision` por código, la pestaña, las tarjetas y la validación
+  de las server actions). `conciliacion-omision` importa de
+  `conciliacion-seleccion`, nunca al revés. Paridad con el API (nombre
+  canónico, topes, textos del DTO) cuando el repo hermano está al lado.
+- **Tabla** (`movimientos-table.tsx`, prop ADITIVA `seleccion {vista,
+  monedaPorCuenta}`): columna `sel` PRIMERA (casilla NATIVA solo en filas
+  seleccionables, `aria-label` único de `etiquetaCasillaMovimiento`; marcada,
+  se tiñe la CELDA con una capa absoluta —la línea `rowClassName` no se
+  toca—); botón «Seleccionar los N pendientes de la búsqueda / de la lista»
+  arriba (REEMPLAZA la selección con lo que deja la búsqueda en todas las
+  páginas ∩ seleccionables, las 200 más recientes como máximo) y «Quitar
+  selección»; `alCambiarFiltradas` solo con la selección; rama «Omitido»
+  (badge gris + motivo, tooltip «Omitido por … el …: …») ANTES de la de
+  clasificación; `searchText` con «Omitido <motivo> <por>»; espaciador `h-24`
+  mientras se ve la barra. Sin selección devuelve la `DataTable` TAL CUAL
+  (sin envoltura: cambiaría los ids de `useId` del ⋯).
+- **Barra** (`barra-seleccion-movimientos.tsx`): región «Movimientos
+  seleccionados», fija abajo al centro (z-40, bajo los diálogos), conteo en
+  `aria-live`. No decide: lee los helpers; ningún botón se apaga por regla de
+  negocio (el motivo se ve y el clic lo repite en `toast.info`). Lista:
+  «Omitir…» y «Limpiar»; Omitidos: «Deshacer la omisión…» y «Limpiar». Los
+  diálogos los monta la TABLA con una copia CONGELADA de la selección.
+- **«Omitir la conciliación…»** (`omitir-movimientos-dialog.tsx`, `next/dynamic`
+  sin SSR, montado solo al abrirse; desde la barra con N y desde el ⋯ de un
+  pendiente libre —también en los `extras` del abono— con 1): al abrir pide la
+  revisión de riesgos al API (`revisarOmisionAction`) y pinta riesgos y
+  no-pendientes; «Quitar esos N de la selección» (solo desde la barra) y la
+  casilla «También omitir estos N…» (vale para los avisos que se VIERON: si
+  cambian, se vuelve a marcar). Sin la casilla, el botón omite SOLO los que no
+  tienen aviso y lo dice («Omitir 12 (sin los 2 con aviso)»); con ella viajan
+  en `aceptar_riesgo_ids`. Motivo obligatorio con chips; desde 20, «Revisé la
+  lista…» (atada al número a omitir). Éxito ⇒ toast con «Deshacer» (10 s,
+  revierte lo que el mismo usuario acaba de omitir), cerrar, limpiar la
+  selección y UN `router.refresh()`. 409 OMITIR_CON_RIESGO ⇒ se pintan los
+  avisos y se CONSERVAN motivo y selección; 409 MOVIMIENTO_NO_PENDIENTE / 404
+  ⇒ el texto del API + «Quitar esos N…» y refresh al cerrar; red o 5xx ⇒ «No
+  se pudo confirmar si se omitieron…» + refresh (jamás «no se omitió»).
+- **«¿Deshacer la omisión…?»** (`quitar-omision-dialog.tsx`, AlertDialog):
+  desde la barra de «Omitidos» o el ⋯ de una fila omitida (rama `) : omitido
+  ? (` ANTES del par de reverso, con SOLO esa opción). Corre solo desde
+  `AlertDialogAction` con `preventDefault`.
+- **Server actions** (al FINAL de `actions.ts`): `revisarOmisionAction`,
+  `omitirMovimientosAction`, `quitarOmisionAction`. NO revalidan (lección de
+  la fecha del gasto); validan lista/motivo/avisos antes de la red con los
+  textos del DTO; conservan code/status/details; nunca lanzan. Toda llamada
+  del cliente va con `.catch(sinConexion)`.
+- **Página**: pestaña «Omitidos (N)» (N = Σ `omitidos` del resumen o el de la
+  cuenta filtrada; sin dato, sin número: el resumen caído ahora es `null`,
+  no `[]`) con `solo_omitidos=true` del API; si la lista falla, «Esta
+  pestaña todavía no está activa…» (400 de la llave) o «No se pudo consultar
+  la lista de omitidos…» (lo demás), jamás el vacío ni el error de página.
+  Tarjetas «386/624 conciliados · incluye 14 omitidos» (el número enlaza a
+  la pestaña de esa cuenta). El Excel desde «Omitidos» preselecciona
+  «Conciliados» (`filtroReporteDeVista`). `<MovimientosTable key={claveVista}
+  seleccion={…}>` en Todos/Pendientes/Omitidos: cambiar de pestaña, cuenta o
+  fechas reinicia la selección. La línea `pestanaDeLista` no cambia
+  («Omitidos» no participa del `?mov=`).
+- **«Clasificar»** (de paso): el selector filtra la canónica, la lectura
+  caída dice «No se pudieron cargar las clasificaciones: cierra y vuelve a
+  abrir.» (nunca «Aún no hay clasificaciones») y, con el API nuevo, manda
+  `esperado_clasificacion_id` (lo que el panel VIO); 409 MOVIMIENTO_CAMBIO /
+  MOVIMIENTO_OMITIDO ⇒ el texto del API, cerrar y refresh.
+- **Pruebas**: `lib/admin/__tests__/conciliacion-seleccion.test.ts`,
+  `conciliacion-omision.test.ts`,
+  `app/admin/conciliacion/__tests__/omitir-cargos-actions.test.ts`,
+  `components/admin/conciliacion/__tests__/seleccion.test.tsx` (golden
+  `seleccion.golden.html` congelado ANTES del cambio + fixtures
+  `seleccion.fixtures.ts`) y `omitir.test.tsx`.
 
 ## Repartir entre aviones desde «Verificar / editar» (14-oct-2026)
 

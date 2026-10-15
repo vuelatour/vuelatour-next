@@ -1,12 +1,16 @@
 "use client";
 
-import { Fragment, useEffect, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import { toast } from "sonner";
+import { CheckIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { MovimientoActions } from "@/components/admin/conciliacion/movimiento-actions";
 import { FacturaConceptoChip } from "@/components/admin/conciliacion/factura-concepto-chip";
 import { EnlacesBalanceGasto } from "@/components/admin/conciliacion/enlaces-balance-gasto";
+import { BarraSeleccionMovimientos } from "@/components/admin/conciliacion/barra-seleccion-movimientos";
 import { enlacesBalanceDeGasto } from "@/lib/admin/conciliacion-balance";
 import { textoBusquedaFacturaConcepto } from "@/lib/admin/conciliacion-factura-concepto";
 import { marcaLigaCruzada, sufijoMonedaLigada } from "@/lib/admin/conciliacion-tc";
@@ -57,6 +61,27 @@ import {
   textoParejaReverso,
   tituloParejaReverso,
 } from "@/lib/admin/conciliacion-reverso";
+import {
+  BOTON_QUITAR_SELECCION,
+  ENCABEZADO_SELECCION,
+  alternarSeleccion,
+  esSeleccionable,
+  etiquetaCasillaMovimiento,
+  monedaDeMovimiento,
+  resumenSeleccion,
+  seleccionVigente,
+  seleccionarTodas,
+  textoSeleccionarTodas,
+  type VistaSeleccion,
+} from "@/lib/admin/conciliacion-seleccion";
+import {
+  ETIQUETA_BADGE_OMITIDO,
+  apiConOmision,
+  esOmitido,
+  textoBusquedaOmision,
+  textoMotivoFila,
+  tituloOmision,
+} from "@/lib/admin/conciliacion-omision";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { etiquetaCategoriaIngreso, etiquetaIngreso } from "@/lib/admin/categorias-ingreso";
@@ -69,6 +94,31 @@ import type { CatalogosGastoDesdeCargo } from "@/lib/admin/gasto-desde-cargo";
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
 const fmtDate = fmtDateOnly;
+
+/**
+ * Los diálogos de la selección (14-oct-2026, API 0.0.77): `next/dynamic` sin
+ * SSR y montados SOLO al abrirse, con una COPIA CONGELADA de la selección (un
+ * refresh que la pode no los desmonta ni les cambia la lista).
+ */
+const OmitirMovimientosDialog = dynamic(
+  () => import("@/components/admin/conciliacion/omitir-movimientos-dialog").then((m) => m.OmitirMovimientosDialog),
+  { ssr: false },
+);
+const QuitarOmisionDialog = dynamic(
+  () => import("@/components/admin/conciliacion/quitar-omision-dialog").then((m) => m.QuitarOmisionDialog),
+  { ssr: false },
+);
+
+/** La selección de la tabla (ADITIVA): dónde se selecciona y la moneda de cada cuenta. */
+export interface SeleccionMovimientos {
+  vista: VistaSeleccion;
+  /** Moneda por cuenta (los totales de la barra nunca suman monedas). */
+  monedaPorCuenta: Record<string, string>;
+}
+
+type DialogoSeleccion = { tipo: "omitir" | "deshacer"; movimientos: MovimientoBancario[] };
+
+const SIN_SELECCION: ReadonlySet<string> = new Set();
 
 /**
  * «Efectivo» junto a un gasto ligado que NO pasó por el banco (6-oct-2026,
@@ -116,6 +166,14 @@ interface MovimientosTableProps {
    *  balances son de ADMIN/ANALISTA (`puedeAbrirBalances`); sin la prop se
    *  ofrecen y el candado es el API. */
   abreBalances?: boolean;
+  /**
+   * SELECCIÓN (14-oct-2026, API 0.0.77, ADITIVA): casillas en las filas
+   * seleccionables, «Seleccionar los N…» y la barra fija con «Omitir…» /
+   * «Deshacer la omisión…». Solo en «Todos»/«Pendientes» (vista 'lista') y
+   * «Omitidos». Sin la prop —o con un API ≤ 0.0.76, cuyas filas no traen la
+   * llave `omision`— el marcado sale IDÉNTICO byte a byte al de antes.
+   */
+  seleccion?: SeleccionMovimientos | null;
 }
 
 export function MovimientosTable({
@@ -128,6 +186,7 @@ export function MovimientosTable({
   gastoResaltado = null,
   huboCorte = false,
   abreBalances = true,
+  seleccion = null,
 }: MovimientosTableProps) {
   // La fila que se abrió desde Gastos se trae a la vista (mismo patrón que
   // «Por facturar»). El id ya llega validado (uuid).
@@ -144,6 +203,87 @@ export function MovimientosTable({
     [movimientos],
   );
   const nombreCuenta = (id: string) => cuentas?.[id] ?? "—";
+
+  // ── SELECCIÓN (14-oct-2026): el Set es local; lo VIGENTE se deriva en
+  // render (sin setState en efectos). La página monta la tabla con
+  // `key={claveVista}`: cambiar de pestaña, cuenta o fechas la reinicia.
+  const vista: VistaSeleccion | null = seleccion?.vista ?? null;
+  const monedaPorCuenta = seleccion?.monedaPorCuenta;
+  // Con un API ≤ 0.0.76 (sin la llave `omision`) no se ofrece nada de lo nuevo.
+  const conSeleccion = vista !== null && apiConOmision(movimientos);
+  const [sel, setSel] = useState<ReadonlySet<string>>(SIN_SELECCION);
+  const [filtradas, setFiltradas] = useState<MovimientoBancario[] | null>(null);
+  const [dialogo, setDialogo] = useState<DialogoSeleccion | null>(null);
+  const { vigentes, retirados } = useMemo(
+    () =>
+      conSeleccion && vista
+        ? seleccionVigente(movimientos, sel, vista)
+        : { vigentes: [] as MovimientoBancario[], retirados: 0 },
+    [conSeleccion, vista, movimientos, sel],
+  );
+  const idsVigentes = useMemo(() => new Set(vigentes.map((m) => m.id)), [vigentes]);
+  // Lo que la búsqueda deja (todas las páginas), con los datos de HOY de cada
+  // fila (un refresh con los mismos ids no vuelve a avisar desde DataTable).
+  const filasVista = useMemo(() => {
+    if (!filtradas) return movimientos;
+    const porId = new Map(movimientos.map((m) => [m.id, m]));
+    return filtradas.map((f) => porId.get(f.id)).filter((m): m is MovimientoBancario => m != null);
+  }, [filtradas, movimientos]);
+  const conBusqueda = filtradas !== null && filtradas.length < movimientos.length;
+
+  const alternar = useCallback(
+    (id: string) => {
+      const r = alternarSeleccion(idsVigentes, id);
+      if (r.aviso) toast.info(r.aviso);
+      setSel(r.sel);
+    },
+    [idsVigentes],
+  );
+  const quitarDeSeleccion = useCallback((ids: string[]) => {
+    setSel((prev) => {
+      const s = new Set(prev);
+      for (const id of ids) s.delete(id);
+      return s;
+    });
+  }, []);
+  const limpiarSeleccion = () => setSel(SIN_SELECCION);
+
+  // Columna de las casillas, PRIMERA y aparte de las de siempre (que no
+  // dependen de la selección). Casilla NATIVA solo en filas seleccionables;
+  // marcada, la CELDA se tiñe (la línea `rowClassName` no se toca).
+  const columnaSel = useMemo<DataTableColumn<MovimientoBancario> | null>(() => {
+    if (!conSeleccion || !vista) return null;
+    return {
+      key: "sel",
+      header: <span className="sr-only">{ENCABEZADO_SELECCION}</span>,
+      headClassName: "w-10",
+      cellClassName: "relative w-10",
+      noLink: true,
+      cell: (m: MovimientoBancario) => {
+        if (!esSeleccionable(m, vista)) return null;
+        const marcada = idsVigentes.has(m.id);
+        return (
+          <>
+            {marcada && (
+              <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-brand-50 dark:bg-brand-900/30" />
+            )}
+            <input
+              type="checkbox"
+              className="relative h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
+              checked={marcada}
+              onChange={() => alternar(m.id)}
+              aria-label={etiquetaCasillaMovimiento(
+                m,
+                cuentas?.[m.cuenta_bancaria_id] ?? null,
+                vista,
+                monedaDeMovimiento(m, monedaPorCuenta),
+              )}
+            />
+          </>
+        );
+      },
+    };
+  }, [conSeleccion, vista, idsVigentes, alternar, cuentas, monedaPorCuenta]);
 
   const columns = useMemo<Array<DataTableColumn<MovimientoBancario>>>(
     () => [
@@ -512,6 +652,18 @@ export function MovimientosTable({
                 {textoParejaReverso(m)}
               </span>
             </span>
+          ) : m.conciliado && esOmitido(m) ? (
+            // OMITIDO de la conciliación (14-oct-2026, API 0.0.77): badge gris
+            // y el motivo; quién y cuándo, en el tooltip. ANTES de la rama de
+            // la clasificación (la omisión ES una clasificación canónica).
+            <span className="block text-sm" title={tituloOmision(m.omision)}>
+              <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
+                {ETIQUETA_BADGE_OMITIDO}
+              </Badge>
+              <span className="mt-0.5 block max-w-[220px] truncate text-[10px] text-muted-foreground">
+                {textoMotivoFila(m.omision)}
+              </span>
+            </span>
           ) : m.conciliado && m.clasificacion_id ? (
             // Conciliado por CLASIFICACIÓN: no corresponde a ningún vuelo
             // (comisión del banco, impuestos, personal…).
@@ -603,21 +755,24 @@ export function MovimientosTable({
             gastos={gastos}
             abonos={abonos}
             catalogosGasto={catalogosGasto}
+            cuentas={cuentas}
+            monedaPorCuenta={monedaPorCuenta}
           />
         ),
       },
     ],
     // `nombreCuenta` deriva de `cuentas`: se recalcula con ella.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, gastoResaltado, abreBalances],
+    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, monedaPorCuenta, gastoResaltado, abreBalances],
   );
+  const columnas = useMemo(() => (columnaSel ? [columnaSel, ...columns] : columns), [columnaSel, columns]);
 
-  return (
+  const tabla = (
     <DataTable
       // /admin/conciliacion tiene dos tablas: prefijo propio para no chocar
       // (su búsqueda `?mvq=` la prellenan las ligas de `hrefConciliacion`).
       syncId={SYNC_ID_MOVIMIENTOS}
-      columns={columns}
+      columns={columnas}
       rows={movimientos}
       rowKey={(m) => m.id}
       // La fila que se abrió desde Gastos (13-oct-2026): el MISMO anillo de
@@ -640,9 +795,94 @@ export function MovimientosTable({
         } ${
           // «factura 7360» encuentra el SPEI aunque el banco diga «fact».
           textoBusquedaFacturaConcepto(m)
+        } ${
+          // «omitido» o el motivo de la omisión los encuentran (14-oct-2026).
+          textoBusquedaOmision(m)
         }`
       }
       searchPlaceholder="Buscar movimiento (descripción, monto, referencia)…"
+      // Solo con la selección: las filas que deja la búsqueda (todas las
+      // páginas) para «Seleccionar los N…». Sin ella no se pasa.
+      alCambiarFiltradas={conSeleccion ? setFiltradas : undefined}
     />
+  );
+  // Sin selección (otra pestaña, o un API ≤ 0.0.76): la tabla de siempre, sin envoltura.
+  if (!conSeleccion || !vista) return tabla;
+
+  const candidatas = filasVista.filter((m) => esSeleccionable(m, vista));
+  const objetivo = seleccionarTodas(filasVista, vista).sel;
+  const yaTodas = objetivo.size === idsVigentes.size && [...objetivo].every((id) => idsVigentes.has(id));
+  const seleccionarLasN = () => {
+    const r = seleccionarTodas(filasVista, vista);
+    if (r.aviso) toast.info(r.aviso);
+    setSel(r.sel);
+  };
+  const cerrarDialogo = (abierto: boolean) => {
+    if (!abierto) setDialogo(null);
+  };
+
+  return (
+    <>
+      {(candidatas.length > 0 || vigentes.length > 0) && (
+        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border px-3 py-2">
+          {candidatas.length > 0 && !yaTodas && (
+            <button
+              type="button"
+              onClick={seleccionarLasN}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted"
+            >
+              <CheckIcon className="h-3.5 w-3.5" aria-hidden />
+              {textoSeleccionarTodas({ n: candidatas.length, conBusqueda, vista })}
+            </button>
+          )}
+          {vigentes.length > 0 && (
+            <button
+              type="button"
+              onClick={limpiarSeleccion}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <XMarkIcon className="h-3.5 w-3.5" aria-hidden />
+              {BOTON_QUITAR_SELECCION}
+            </button>
+          )}
+        </div>
+      )}
+      {tabla}
+      {vigentes.length > 0 && (
+        <>
+          {/* Mientras la barra se ve, el paginado no queda debajo de ella. */}
+          <div aria-hidden="true" className="h-24" />
+          <BarraSeleccionMovimientos
+            vista={vista}
+            resumen={resumenSeleccion(vigentes, monedaPorCuenta)}
+            retirados={retirados}
+            onOmitir={() => setDialogo({ tipo: "omitir", movimientos: [...vigentes] })}
+            onDeshacer={() => setDialogo({ tipo: "deshacer", movimientos: [...vigentes] })}
+            onLimpiar={limpiarSeleccion}
+          />
+        </>
+      )}
+      {dialogo?.tipo === "omitir" && (
+        <OmitirMovimientosDialog
+          movimientos={dialogo.movimientos}
+          aliasPorCuenta={cuentas}
+          monedaPorCuenta={monedaPorCuenta}
+          open
+          onOpenChange={cerrarDialogo}
+          onOmitidos={limpiarSeleccion}
+          onQuitarDeSeleccion={quitarDeSeleccion}
+        />
+      )}
+      {dialogo?.tipo === "deshacer" && (
+        <QuitarOmisionDialog
+          movimientos={dialogo.movimientos}
+          aliasPorCuenta={cuentas}
+          monedaPorCuenta={monedaPorCuenta}
+          open
+          onOpenChange={cerrarDialogo}
+          onRestaurados={limpiarSeleccion}
+        />
+      )}
+    </>
   );
 }

@@ -2,12 +2,14 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   ArrowTrendingUpIcon,
   ArrowUturnLeftIcon,
   LinkIcon,
   EllipsisHorizontalIcon,
   EyeIcon,
+  NoSymbolIcon,
   SparklesIcon,
   TagIcon,
   XMarkIcon,
@@ -54,6 +56,7 @@ import {
   linkMovimientoCobroAction,
   listClasificacionesAction,
   quitarReversoAction,
+  type ActionResult,
   type Clasificacion,
 } from "@/app/admin/conciliacion/actions";
 import { ReversoDialog } from "@/components/admin/conciliacion/reverso-dialog";
@@ -99,10 +102,37 @@ import {
 } from "@/lib/admin/conciliacion-reverso";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import { MSG_SIN_CONEXION } from "@/lib/admin/conciliacion-lote";
+import {
+  MENU_OMITIR,
+  MENU_QUITAR_OMISION,
+  MSG_CLASIFICACIONES_NO_CARGARON,
+  apiConOmision,
+  esClasificacionOmitida,
+  esOmitido,
+} from "@/lib/admin/conciliacion-omision";
+import { esSeleccionable } from "@/lib/admin/conciliacion-seleccion";
 import type { CandidatoCobro, MovimientoBancario } from "@/types/conciliacion";
 
 const fmtMoney = (monto: string | number) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
+
+/**
+ * «Omitir la conciliación…» y «Deshacer la omisión…» de UNA fila (14-oct-2026,
+ * API 0.0.77): los MISMOS diálogos de la barra de la selección, con
+ * `next/dynamic` sin SSR y montados solo al abrirse.
+ */
+const OmitirMovimientosDialog = dynamic(
+  () => import("@/components/admin/conciliacion/omitir-movimientos-dialog").then((m) => m.OmitirMovimientosDialog),
+  { ssr: false },
+);
+const QuitarOmisionDialog = dynamic(
+  () => import("@/components/admin/conciliacion/quitar-omision-dialog").then((m) => m.QuitarOmisionDialog),
+  { ssr: false },
+);
+
+/** La server action ni siquiera salió (sin red, un deploy de Vercel): nunca lanza. */
+const sinConexion = (): ActionResult<never> => ({ ok: false, code: "SIN_CONEXION", error: MSG_SIN_CONEXION });
 
 /** Ventana ±días de candidatos (la misma que usaba el panel antes). */
 const VENTANA_DIAS = 60;
@@ -132,6 +162,10 @@ interface MovimientoActionsProps {
   /** Catálogos del alta de gasto para «¿No está el gasto? Créalo» del
    *  diálogo del CARGO (12-oct-2026). Sin ellos no se ofrece crear. */
   catalogosGasto?: CatalogosGastoDesdeCargo | null;
+  /** Alias y moneda por cuenta (14-oct-2026, ADITIVOS): el renglón y el
+   *  resumen de «Omitir…» / «Deshacer la omisión…» de esta fila. */
+  cuentas?: Readonly<Record<string, string>> | null;
+  monedaPorCuenta?: Readonly<Record<string, string | null | undefined>> | null;
 }
 
 /**
@@ -146,6 +180,8 @@ export function MovimientoActions({
   gastos,
   abonos,
   catalogosGasto = null,
+  cuentas = null,
+  monedaPorCuenta = null,
 }: MovimientoActionsProps) {
   const esAbono = movimiento.tipo === "ABONO";
   const [openLink, setOpenLink] = useState(false);
@@ -198,6 +234,24 @@ export function MovimientoActions({
   const [clasifNueva, setClasifNueva] = useState("");
   const [clasifNotas, setClasifNotas] = useState("");
   const [confirmarQuitarClasif, setConfirmarQuitarClasif] = useState(false);
+  // La lectura del catálogo FALLÓ (14-oct-2026): se dice, nunca «Aún no hay
+  // clasificaciones» (eso es solo cuando el catálogo de verdad está vacío).
+  const [errorClasificaciones, setErrorClasificaciones] = useState(false);
+
+  // OMITIR LA CONCILIACIÓN (14-oct-2026, API 0.0.77): solo con un API que ya
+  // sabe omitir (la fila trae la llave `omision`) y solo a un pendiente LIBRE
+  // de verdad (el MISMO predicado de las casillas de la selección).
+  const conOmision = apiConOmision([movimiento]);
+  const omitible = conOmision && esSeleccionable(movimiento, "lista");
+  const omitido = esOmitido(movimiento);
+  const [openOmitir, setOpenOmitir] = useState(false);
+  const [openQuitarOmision, setOpenQuitarOmision] = useState(false);
+  // Lo que el panel VIO de la clasificación (el API 0.0.77 responde 409
+  // MOVIMIENTO_CAMBIO si cambió mientras tanto); con un API previo no viaja
+  // (su DTO rechaza la llave).
+  const esperadoClasificacion = conOmision
+    ? { esperado_clasificacion_id: movimiento.clasificacion_id ?? null }
+    : {};
 
   const abrirClasificar = () => {
     setClasifSel(movimiento.clasificacion_id ?? "");
@@ -205,13 +259,19 @@ export function MovimientoActions({
     setClasifNotas(movimiento.notas ?? "");
     setOpenClasificar(true);
     setClasificaciones(null);
-    void listClasificacionesAction().then((r) => {
-      if (r.ok) setClasificaciones(r.data ?? []);
-      else {
-        setClasificaciones([]);
-        toast.error(r.error ?? "No se pudieron cargar las clasificaciones");
-      }
-    });
+    setErrorClasificaciones(false);
+    void listClasificacionesAction()
+      .catch(sinConexion)
+      .then((r) => {
+        if (r.ok) {
+          // La canónica «Omitido de la conciliación» jamás se elige aquí:
+          // omitir pide motivo firmado (el API 0.0.77 ya no la manda).
+          setClasificaciones((r.data ?? []).filter((c) => !esClasificacionOmitida(c.nombre)));
+        } else {
+          setClasificaciones([]);
+          setErrorClasificaciones(true);
+        }
+      });
   };
 
   const guardarClasificacion = () => {
@@ -224,7 +284,7 @@ export function MovimientoActions({
       let clasifId = clasifSel;
       if (nueva) {
         // Crear (o recuperar la existente con ese nombre) en el mismo paso.
-        const creada = await crearClasificacionAction(nueva);
+        const creada = await crearClasificacionAction(nueva).catch(sinConexion);
         if (!creada.ok || !creada.data) {
           toast.error(creada.error ?? "No se pudo crear la clasificación");
           return;
@@ -234,12 +294,19 @@ export function MovimientoActions({
       const r = await clasificarMovimientoAction(movimiento.id, {
         clasificacion_id: clasifId,
         notas: clasifNotas,
-      });
+        ...esperadoClasificacion,
+      }).catch(sinConexion);
       if (r.ok) {
         toast.success("Movimiento clasificado (deja de estar pendiente)");
         setOpenClasificar(false);
       } else {
         toast.error(r.error ?? "Error al clasificar");
+        // Alguien lo vinculó, lo clasificó o lo omitió mientras tanto: la
+        // fila se pone al día (el texto del API lo dice).
+        if (r.code === "MOVIMIENTO_CAMBIO" || r.code === "MOVIMIENTO_OMITIDO") {
+          setOpenClasificar(false);
+          router.refresh();
+        }
       }
     });
   };
@@ -248,12 +315,17 @@ export function MovimientoActions({
     startTransition(async () => {
       const r = await clasificarMovimientoAction(movimiento.id, {
         clasificacion_id: null,
-      });
+        ...esperadoClasificacion,
+      }).catch(sinConexion);
       if (r.ok) {
         toast.success("Clasificación quitada: el movimiento vuelve a Pendiente");
         setConfirmarQuitarClasif(false);
       } else {
         toast.error(r.error ?? "Error");
+        if (r.code === "MOVIMIENTO_CAMBIO" || r.code === "MOVIMIENTO_OMITIDO") {
+          setConfirmarQuitarClasif(false);
+          router.refresh();
+        }
       }
     });
   };
@@ -437,6 +509,10 @@ export function MovimientoActions({
           <Label className="text-sm font-medium">Clasificación</Label>
           {clasificaciones === null ? (
             <p className="text-sm text-muted-foreground">Cargando…</p>
+          ) : errorClasificaciones ? (
+            <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">
+              {MSG_CLASIFICACIONES_NO_CARGARON}
+            </p>
           ) : (
             <SearchableSelect
               options={clasificaciones.map((c) => ({
@@ -505,12 +581,38 @@ export function MovimientoActions({
   </Dialog>
   );
 
+  // «Omitir la conciliación…» (pendiente) y «Deshacer la omisión…» (omitido)
+  // de ESTA fila: se montan en los dos caminos (menú de Ingresos y menú de
+  // siempre), como `dialogoClasificar`, y solo al abrirse.
+  const dialogosOmision = (
+    <>
+      {openOmitir && (
+        <OmitirMovimientosDialog
+          movimientos={[movimiento]}
+          aliasPorCuenta={cuentas}
+          monedaPorCuenta={monedaPorCuenta}
+          open
+          onOpenChange={setOpenOmitir}
+        />
+      )}
+      {openQuitarOmision && (
+        <QuitarOmisionDialog
+          movimientos={[movimiento]}
+          aliasPorCuenta={cuentas}
+          monedaPorCuenta={monedaPorCuenta}
+          open
+          onOpenChange={setOpenQuitarOmision}
+        />
+      )}
+    </>
+  );
+
   // ABONO sin identificar con el MISMO menú de Ingresos → «Por conciliar»
   // (12-oct-2026): Vincular (y ahí «¿No está el cobro? Regístralo»),
   // anticipo, otro ingreso, traspaso, devolución de un cargo, Sugerir con
-  // IA; más «Clasificar», que es de Conciliación. Fuente única del menú:
-  // `AbonoAcciones`. Sin catálogos (la página no los pudo cargar) sigue el
-  // menú de siempre, abajo.
+  // IA; más «Clasificar» y «Omitir la conciliación…» (14-oct-2026), que son
+  // de Conciliación. Fuente única del menú: `AbonoAcciones`. Sin catálogos
+  // (la página no los pudo cargar) sigue el menú de siempre, abajo.
   if (abonos && esAbonoPendiente(movimiento)) {
     return (
       <>
@@ -519,13 +621,22 @@ export function MovimientoActions({
           catalogos={abonos.catalogos}
           cuentasIa={abonos.cuentasIa}
           extras={
-            <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
-              <TagIcon className="h-4 w-4" />
-              Clasificar (no es de un vuelo)
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem onClick={abrirClasificar} className="cursor-pointer gap-2">
+                <TagIcon className="h-4 w-4" />
+                Clasificar (no es de un vuelo)
+              </DropdownMenuItem>
+              {omitible && (
+                <DropdownMenuItem onClick={() => setOpenOmitir(true)} className="cursor-pointer gap-2">
+                  <NoSymbolIcon className="h-4 w-4" />
+                  {MENU_OMITIR}
+                </DropdownMenuItem>
+              )}
+            </>
           }
         />
         {dialogoClasificar}
+        {dialogosOmision}
       </>
     );
   }
@@ -570,6 +681,17 @@ export function MovimientoActions({
                   : conLote
                     ? menuDesvincularGastos(gastosDelLote)
                     : "Desvincular gasto"}
+            </DropdownMenuItem>
+          ) : omitido ? (
+            // OMITIDO de la conciliación (14-oct-2026): lo ÚNICO que se ofrece
+            // es deshacer la omisión (con confirmación). Nunca «Editar
+            // clasificación / notas»: la omisión se firma con su motivo.
+            <DropdownMenuItem
+              onClick={() => setOpenQuitarOmision(true)}
+              className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+            >
+              <ArrowUturnLeftIcon className="h-4 w-4" />
+              {MENU_QUITAR_OMISION}
             </DropdownMenuItem>
           ) : emparejadoPorReverso ? (
             // Pareja cargo ↔ devolución: editar la clasificación de UNO la
@@ -625,6 +747,15 @@ export function MovimientoActions({
                 <TagIcon className="h-4 w-4" />
                 Clasificar (no es de un vuelo)
               </DropdownMenuItem>
+              {/* «Omitir la conciliación…» (14-oct-2026, API 0.0.77): con
+                  motivo firmado y la revisión de riesgos del API; se deshace
+                  en la pestaña «Omitidos». Solo con un API que ya sabe omitir. */}
+              {omitible && (
+                <DropdownMenuItem onClick={() => setOpenOmitir(true)} className="cursor-pointer gap-2">
+                  <NoSymbolIcon className="h-4 w-4" />
+                  {MENU_OMITIR}
+                </DropdownMenuItem>
+              )}
               {/* Un ABONO sin identificar se resuelve mejor en Ingresos →
                   «Por conciliar»: ahí están el anticipo, otro ingreso, «Es el
                   pago de un vuelo» y la IA de abonos (24-sep-2026). */}
@@ -818,6 +949,7 @@ export function MovimientoActions({
       </AlertDialog>
 
       {dialogoClasificar}
+      {dialogosOmision}
 
       {/* Confirmación antes de quitar la clasificación (vuelve a Pendiente). */}
       <AlertDialog

@@ -265,6 +265,13 @@ export interface MovimientoBancario {
       `lib/admin/conciliacion-factura-concepto.ts`. Ausente = API previo o
       el texto no cita factura: la celda de siempre. */
   factura_concepto?: FacturaConceptoMovimiento | null;
+  /** OMITIR LA CONCILIACIÓN (14-oct-2026, ADITIVO del API 0.0.77, invariante
+      75): la omisión leída de la línea firmada de las notas (clasificación
+      canónica «Omitido de la conciliación»); null = no está omitido. El API
+      0.0.77 la manda SIEMPRE: el panel detecta el API nuevo por la PRESENCIA
+      de la llave (`apiConOmision`); ausente = API ≤ 0.0.76 y no se ofrece
+      nada de lo nuevo. Se lee SIEMPRE por `lib/admin/conciliacion-omision.ts`. */
+  omision?: OmisionMovimiento | null;
 }
 
 // ===== Cargo devuelto ↔ devolución (30-sep-2026, API 0.0.44) =====
@@ -680,6 +687,12 @@ export interface ConciliacionResumenCuenta {
   /** ADITIVO (2-oct-2026, API 0.0.52): Σ `gastos_diferencia` de los cargos
       que pagan 2+ gastos (los centavos del lote; jamás se ajusta el gasto). */
   diferencia_lotes?: number | null;
+  /** ADITIVOS (14-oct-2026, API 0.0.77, invariante 75): cuántos de los
+      «conciliados» son OMITIDOS (los INCLUYEN) y Σ |monto| en la moneda de la
+      cuenta. null = el API no pudo leer la clasificación canónica (no se
+      pinta nada); ausentes = API previo. */
+  omitidos?: number | null;
+  monto_omitido?: number | null;
 }
 
 export interface MovimientoListResponse {
@@ -1261,4 +1274,98 @@ export interface ConfirmarCambioFechaDetalle {
   mes_despues: string;
   etiqueta_mes_despues: string;
   meses_terminados: string[];
+}
+
+// ===== Omitir la conciliación (14-oct-2026, API 0.0.77, invariante 75) =====
+
+/**
+ * La omisión de un movimiento, leída por el API de la PRIMERA línea de sus
+ * notas («Omitido de la conciliación: <motivo> — <usuario>, dd-mmm-aaaa»).
+ * Con la línea dañada, los tres en null (sigue siendo un omitido).
+ */
+export interface OmisionMovimiento {
+  motivo: string | null;
+  por: string | null;
+  /** dd-mmm-aaaa (día Cancún de la omisión, como se escribió). */
+  fecha: string | null;
+}
+
+/** Aviso antes de omitir: el movimiento podría conciliarse de verdad (lo decide el API). */
+export type RiesgoOmision =
+  | "GASTO_QUE_CUADRA"
+  | "GASTOS_AMBIGUOS"
+  | "COBRO_QUE_CUADRA"
+  | "TRASPASO"
+  | "DEVOLUCION"
+  | "SIN_VERIFICAR";
+
+/** Estado de un movimiento para omitirlo (espejo del CASE de la RPC, lo calcula el API). */
+export type EstadoParaOmitir =
+  | "PENDIENTE"
+  | "CON_GASTO"
+  | "CON_COBRO"
+  | "CON_SOBRE"
+  | "CON_INGRESO"
+  | "REVERSO"
+  | "OMITIDO"
+  | "CLASIFICADO"
+  | "CONCILIADO";
+
+/** Un movimiento revisado antes de omitirlo (`POST movimientos/omitir/revisar`). */
+export interface MovimientoRevisadoOmision {
+  id: string;
+  fecha: string | null;
+  /** 'CARGO' | 'ABONO' (texto de la BD). */
+  tipo: string;
+  /** |monto| a 2 decimales. */
+  monto: number;
+  /** Moneda de la CUENTA (null si no se pudo leer). */
+  moneda: string | null;
+  descripcion: string | null;
+  cuenta_alias: string | null;
+  estado: EstadoParaOmitir;
+  /** «ya está vinculado a un gasto»… (null si está pendiente). */
+  texto_estado: string | null;
+  riesgo: RiesgoOmision | null;
+  /** El texto del API para el riesgo (null sin riesgo). */
+  texto_riesgo: string | null;
+  candidatos_n: number | null;
+}
+
+/** `POST /v1/conciliacion/movimientos/omitir/revisar` (SOLO LECTURA). */
+export interface RevisionOmision {
+  movimientos: MovimientoRevisadoOmision[];
+  /** Ids que ya no existen. */
+  no_existen: string[];
+  resumen: { n: number; pendientes: number; no_pendientes: number; con_riesgo: number };
+}
+
+/** `POST /v1/conciliacion/movimientos/omitir` (todo o nada). */
+export interface ResultadoOmision {
+  omitidos: number;
+  clasificacion_id: string;
+  /** Relectura con `omision`. */
+  movimientos: MovimientoBancario[];
+}
+
+/** `POST /v1/conciliacion/movimientos/quitar-omision` (todo o nada). */
+export interface ResultadoQuitarOmision {
+  restaurados: number;
+  /** Relectura (`omision: null`). */
+  movimientos: MovimientoBancario[];
+}
+
+/** Fila nombrada en `details.movimientos` de un 409 de omitir / deshacer. */
+export interface MovimientoEnErrorOmision {
+  id: string;
+  fecha: string | null;
+  tipo: string | null;
+  monto: number;
+  moneda: string | null;
+  descripcion: string | null;
+  /** 409 MOVIMIENTO_NO_PENDIENTE / MOVIMIENTO_NO_OMITIDO. */
+  estado?: string | null;
+  /** 409 OMITIR_CON_RIESGO. */
+  riesgo?: RiesgoOmision | null;
+  texto?: string | null;
 }

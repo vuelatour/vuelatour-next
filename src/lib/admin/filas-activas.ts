@@ -124,6 +124,13 @@ export interface ContextoTeclaFila {
   etiqueta: string | null;
   /** `isContentEditable` del elemento con el foco. */
   editable: boolean;
+  /**
+   * `type` del INPUT con el foco (null en cualquier otra etiqueta). ADITIVO
+   * (14-oct-2026, selección de Conciliación): una CASILLA (`checkbox`) no es
+   * un campo — ↑/↓ no le significan nada (Espacio la marca) y deben seguir
+   * moviendo la activa; Esc la suelta. Ausente = la regla de siempre.
+   */
+  tipoEntrada?: string | null;
   /** `role` del elemento con el foco o de su contenedor más cercano DENTRO del renglón. */
   rol: string | null;
   /** El foco está en (o dentro de) un disparador `[aria-haspopup]`. */
@@ -135,7 +142,8 @@ export interface ContextoTeclaFila {
 /**
  * Qué hace una tecla con el foco dentro de una fila. Modificadores o
  * `defaultPrevented` ⇒ nada. ↑/↓/Home/End mueven la activa salvo en un campo
- * (INPUT/TEXTAREA/SELECT/contenteditable), en un rol con flechas propias o en
+ * (INPUT —menos la casilla `checkbox`, 14-oct-2026—, TEXTAREA, SELECT o
+ * contenteditable), en un rol con flechas propias o en
  * un desplegable; la autorrepetición SÍ vale (mantener ↓ recorre la tabla).
  * Enter abre SOLO con el foco en el <tr> (en un enlace o botón es el nativo) y
  * sin repetición. Esc suelta SOLO si hay activa y no es un campo (ahí Esc es
@@ -145,9 +153,14 @@ export interface ContextoTeclaFila {
 export function accionDeTeclaFila(t: TeclaPulsada, ctx: ContextoTeclaFila): AccionFila | null {
   if (t.altKey || t.ctrlKey || t.metaKey || t.shiftKey) return null;
   if (t.defaultPrevented) return null;
+  const etiqueta = ctx.etiqueta?.toUpperCase() ?? null;
+  // Una casilla nativa (la selección de Conciliación) NO es un campo: con el
+  // foco en ella ↑/↓/Home/End mueven la activa y Esc la suelta.
   const enCampo =
     ctx.editable ||
-    (ctx.etiqueta !== null && ETIQUETAS_CON_FLECHAS_VERTICALES.has(ctx.etiqueta.toUpperCase()));
+    (etiqueta !== null &&
+      ETIQUETAS_CON_FLECHAS_VERTICALES.has(etiqueta) &&
+      !(etiqueta === "INPUT" && ctx.tipoEntrada?.toLowerCase() === "checkbox"));
   switch (t.key) {
     case "ArrowUp":
     case "ArrowDown":

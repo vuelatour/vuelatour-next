@@ -84,6 +84,37 @@ describe("accionDeTeclaFila", () => {
     }
   });
 
+  it("INPUT checkbox (la casilla de la selección de Conciliación, 14-oct-2026): ↑/↓/Home/End/Esc actúan", () => {
+    // Flujo: ↓ (fila) → Tab (casilla) → Espacio (la marca, nativo) → ↓.
+    for (const etiqueta of ["INPUT", "input"]) {
+      for (const tipoEntrada of ["checkbox", "CHECKBOX"]) {
+        const ctx = { ...LIBRE, esFila: false, etiqueta, tipoEntrada };
+        expect(accionDeTeclaFila(tecla("ArrowDown"), ctx), `${etiqueta} ${tipoEntrada} ↓`).toBe("abajo");
+        expect(accionDeTeclaFila(tecla("ArrowUp"), ctx)).toBe("arriba");
+        expect(accionDeTeclaFila(tecla("Home"), ctx)).toBe("primera");
+        expect(accionDeTeclaFila(tecla("End"), ctx)).toBe("ultima");
+        expect(accionDeTeclaFila(tecla("Escape"), ctx)).toBe("soltar");
+        // Enter en la casilla NO abre la fila (el foco no está en el <tr>) y
+        // Espacio es de la casilla: jamás se toca.
+        expect(accionDeTeclaFila(tecla("Enter"), ctx)).toBeNull();
+        expect(accionDeTeclaFila(tecla(" "), ctx)).toBeNull();
+      }
+    }
+    // Sin activa, Esc no se traga.
+    expect(
+      accionDeTeclaFila(tecla("Escape"), { ...LIBRE, esFila: false, etiqueta: "INPUT", tipoEntrada: "checkbox", hayActiva: false }),
+    ).toBeNull();
+    // Un INPUT de texto (o de otro tipo) sigue siendo un campo, igual que antes.
+    for (const tipoEntrada of ["text", "search", "number", null, undefined]) {
+      const ctx = { ...LIBRE, esFila: false, etiqueta: "INPUT", tipoEntrada };
+      for (const k of ["ArrowUp", "ArrowDown", "Home", "End", "Escape"]) {
+        expect(accionDeTeclaFila(tecla(k), ctx), `${String(tipoEntrada)} ${k}`).toBeNull();
+      }
+    }
+    // «checkbox» solo exime a un INPUT: un SELECT o TEXTAREA con ese dato no.
+    expect(accionDeTeclaFila(tecla("ArrowDown"), { ...LIBRE, esFila: false, etiqueta: "SELECT", tipoEntrada: "checkbox" })).toBeNull();
+  });
+
   it("roles con flechas propias ⇒ null para las flechas", () => {
     const roles = [
       "listbox",
