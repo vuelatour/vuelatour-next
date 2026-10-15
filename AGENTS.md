@@ -8951,6 +8951,7 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   matrícula—. Arreglarlo exige que el API use `CATEGORIAS_GASTO_SIN_AVION`
   con la precedencia de `estadoAvionGasto` (reparto → personal → empresa o
   comisión VuelaTour → avión → sin avión por diseño → «Falta avión»).
+
 ## Títulos de las pestañas del navegador (14-oct-2026)
 
 Pedido del cliente: «estaría genial que en cada pestaña del navegador se

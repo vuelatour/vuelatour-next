@@ -19,6 +19,7 @@ import { diaMas } from "@/lib/admin/conciliacion-auto";
 import { hayComprobante } from "@/lib/admin/comprobante-badge";
 import { distintivoOrigen, origenCapturaLabel } from "@/lib/admin/gastos-captura";
 import { estadoAvionGasto, etiquetaAvionGasto } from "@/lib/admin/gasto-avion";
+import { PESTANAS_GASTOS } from "@/lib/admin/titulos-pestana";
 
 /**
  * Vista de GASTOS en UNA sola tabla (14-oct-2026). Pedido del cliente: «unir
@@ -192,11 +193,12 @@ export function hayFiltrosGastos(f: FiltrosGastos): boolean {
 // Pestañas y estados
 // =============================================================================
 
-export const ETIQUETA_VISTA: Readonly<Record<VistaGastos, string>> = {
-  todos: "Todos",
-  pendientes: "Pendientes",
-  duplicados: "Duplicados",
-};
+/**
+ * Etiquetas de las pestañas: el MISMO mapa que nombra la pestaña del
+ * navegador (`PESTANAS_GASTOS` de `titulos-pestana`): si una cambia, cambian
+ * las dos.
+ */
+export const ETIQUETA_VISTA: Readonly<Record<VistaGastos, string>> = PESTANAS_GASTOS;
 
 export const AYUDA_VISTA: Readonly<Record<VistaGastos, string>> = {
   todos: "Todos los gastos con los filtros de abajo.",

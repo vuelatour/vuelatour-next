@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { PESTANAS_GASTOS, tituloGastos } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   BanknotesIcon,
@@ -39,7 +41,6 @@ import {
   ETIQUETA_FOTOS_COMPROBANTES,
   ETIQUETA_LISTA_GASTOS,
   ETIQUETA_TOTAL_PENDIENTES,
-  ETIQUETA_VISTA,
   TEXTO_QUITAR_FILTROS_GASTOS,
   TITULO_ERROR_LISTA_GASTOS,
   TITULO_QUITAR_FILTRO_AVION,
@@ -53,10 +54,30 @@ import {
   textoCorteGastos,
   tituloVistaGastos,
   vacioGastos,
+  type FiltrosGastos,
   type VistaGastos,
 } from "@/lib/admin/gastos-vista";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Filtros de la URL (`?f=`, avión, categoría…) con la MISMA lectura y
+ * validación que la barra de filtros (`leerFiltrosGastos`): la pantalla y su
+ * título de pestaña no pueden divergir.
+ */
+function filtroGastosDeUrl(sp: Record<string, string | undefined>): FiltrosGastos {
+  return leerFiltrosGastos((k) => sp[k]);
+}
+
+/** «Gastos» (Todos) · «Gastos · Pendientes» · «Gastos · Duplicados». */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}): Promise<Metadata> {
+  const sp = await searchParams;
+  return { title: tituloGastos(filtroGastosDeUrl(sp).vista) };
+}
 
 /**
  * Gastos: UNA sola tabla (14-oct-2026). Pedido del cliente: unir en una sola
@@ -100,7 +121,7 @@ export default async function ExpensesPage({
   // Lectura y validación de la URL: la MISMA función que usa la barra de
   // filtros en el navegador (un filtro inválido se IGNORA: jamás viaja al API
   // ni provoca un 400 que tumbe la pantalla, 21-sep-2026).
-  const filtros = leerFiltrosGastos((k) => (sp as Record<string, string | undefined>)[k]);
+  const filtros = filtroGastosDeUrl(sp as Record<string, string | undefined>);
   const filtro = filtros.vista;
   const conFiltros = hayFiltrosGastos(filtros);
   // Filtro por avión (link desde el expediente del avión); lo respetan las
@@ -301,7 +322,7 @@ export default async function ExpensesPage({
                       : "bg-muted text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {ETIQUETA_VISTA[t.key]}
+                  {PESTANAS_GASTOS[t.key]}
                   {t.count != null && t.count > 0 && (
                     <span
                       className={cn(
