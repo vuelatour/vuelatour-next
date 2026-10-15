@@ -357,6 +357,57 @@ export function descripcionPorFacturar(marcados: unknown): string {
   return Array.isArray(marcados) ? DESCRIPCION_POR_FACTURAR : DESCRIPCION_POR_FACTURAR_API_PREVIO;
 }
 
+// =============================================================================
+// Solicitud AUTOMÁTICA que YA NO APLICA (14-oct-2026, API 0.0.77, invariante
+// 60 del API; decisión del cliente: «¿Un anticipo devuelto lleva CFDI?» ⇒
+// «eso no»)
+// =============================================================================
+//
+// La solicitud que el API pide SOLA al registrar un cobro en una cuenta que
+// exige factura NO se retira sola cuando el dinero se devuelve (o se corrige
+// o elimina ese cobro): retirar es destructivo y lo confirma una persona. El
+// API la saca de «Por facturar» (y del badge) y la manda aparte en
+// `ya_no_aplican`; la burbuja la pinta con `factura_servicio.
+// solicitud_ya_no_aplica`. Aquí solo los textos: quién va en cada lista lo
+// DERIVA el API.
+
+/** Chip GRIS de la burbuja: «Factura pedida por Itzi · 5 oct — ya no aplica: el vuelo ya no exige factura». */
+export function textoSolicitudYaNoAplica(s: SolicitudFactura): string {
+  return `Factura pedida${quienYCuando(s)} — ya no aplica: el vuelo ya no exige factura`;
+}
+
+/** Tooltip del chip gris (la burbuja le agrega « Nota: …» si hay nota). */
+export const AYUDA_SOLICITUD_YA_NO_APLICA =
+  "Se pidió sola al registrar un cobro que exigía factura, pero el dinero se devolvió (o se corrigió o eliminó ese cobro): un anticipo devuelto no lleva factura. Ya no cuenta en «Por facturar»; retírala si no hace falta.";
+
+/** Tercera tarjeta de la página (sin el conteo; la página agrega « (n)»). */
+export const TITULO_YA_NO_APLICAN = "Solicitudes automáticas que ya no aplican";
+
+export const DESCRIPCION_YA_NO_APLICAN =
+  "Se pidieron solas al registrar un cobro en una cuenta que exige factura, pero el dinero se devolvió o el cobro se corrigió o se eliminó: ya no llevan factura (un anticipo devuelto no lleva CFDI). No cuentan en «Por facturar»; retíralas aquí.";
+
+/** Ancla de la tercera tarjeta (`/admin/facturas-emitidas#ya-no-aplican`). */
+export const ANCLA_YA_NO_APLICAN = "ya-no-aplican";
+
+/**
+ * Cuerpo de la confirmación «¿Retirar la solicitud de factura?» (burbuja y
+ * bandeja). La de siempre dice que el vuelo sale de «Por facturar»; una
+ * solicitud automática que ya no aplica NO está ahí (mentiría), así que dice
+ * lo que de verdad pasa.
+ */
+export function descripcionRetirarSolicitud(folio: number, yaNoAplica = false): string {
+  return yaNoAplica
+    ? `La solicitud de factura del vuelo #${folio} se pidió sola y ya no aplica: el vuelo ya no exige factura. Al retirarla se borra del vuelo y deja de aparecer en Facturas emitidas.`
+    : `El vuelo #${folio} sale de «Por facturar». Si ya le avisaste a facturación, dile que ya no hace falta.`;
+}
+
+/** Aviso al retirar (mismo criterio que `descripcionRetirarSolicitud`). */
+export function textoSolicitudRetirada(folio: number, yaNoAplica = false): string {
+  return yaNoAplica
+    ? `Se retiró la solicitud de factura del vuelo #${folio}.`
+    : `El vuelo #${folio} salió de «Por facturar».`;
+}
+
 // ---- Parte B: «el cliente ya tiene registrada la factura A-0440» ----
 //
 // Caso real: A-0440 cubría #375 y #376 (mismo cliente, $904.51 USD cada uno)

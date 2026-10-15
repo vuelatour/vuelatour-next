@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ANCLA_YA_NO_APLICAN,
+  AYUDA_SOLICITUD_YA_NO_APLICA,
+  DESCRIPCION_YA_NO_APLICAN,
+  TITULO_YA_NO_APLICAN,
+  descripcionRetirarSolicitud,
+  textoSolicitudRetirada,
+  textoSolicitudYaNoAplica,
   AYUDA_SOLICITUD_MARCADA,
   DESCRIPCION_MARCADOS_SIN_REGISTRO,
   DESCRIPCION_POR_FACTURAR,
@@ -767,6 +774,57 @@ describe("«Por facturar» y «Marcados «Facturado» sin factura registrada»",
     expect(descripcionPorFacturar([{}])).toBe(DESCRIPCION_POR_FACTURAR);
     expect(descripcionPorFacturar(undefined)).toBe(DESCRIPCION_POR_FACTURAR_API_PREVIO);
     expect(DESCRIPCION_POR_FACTURAR_API_PREVIO).not.toContain("marcados");
+  });
+});
+
+// =============================================================================
+// Solicitud AUTOMÁTICA que ya no aplica (14-oct-2026, API 0.0.77, invariante
+// 60 del API): «¿Un anticipo devuelto lleva CFDI?» ⇒ «eso no».
+// =============================================================================
+
+describe("solicitud automática que YA NO APLICA: textos exactos", () => {
+  const s = {
+    // 6-oct 03:00 UTC = 5-oct 22:00 en Cancún: el día que se pinta es el 5.
+    solicitada_at: "2026-10-06T03:00:00.000Z",
+    solicitada_por: { id: "u", nombre: "Itzi" },
+    nota: "Solicitada automáticamente: cobro en HSBC Pesos",
+    paga_contra_factura: false,
+  };
+
+  it("chip gris de la burbuja (quién y cuándo en hora Cancún; sin nombre no se inventa nadie)", () => {
+    expect(textoSolicitudYaNoAplica(s)).toBe(
+      "Factura pedida por Itzi · 5 oct — ya no aplica: el vuelo ya no exige factura",
+    );
+    expect(textoSolicitudYaNoAplica({ ...s, solicitada_por: null })).toBe(
+      "Factura pedida · 5 oct — ya no aplica: el vuelo ya no exige factura",
+    );
+    expect(textoSolicitudYaNoAplica({ ...s, solicitada_por: { id: "u", nombre: "  " } })).toBe(
+      "Factura pedida · 5 oct — ya no aplica: el vuelo ya no exige factura",
+    );
+  });
+
+  it("ayuda del chip, título, descripción y ancla de la tercera tarjeta", () => {
+    expect(AYUDA_SOLICITUD_YA_NO_APLICA).toBe(
+      "Se pidió sola al registrar un cobro que exigía factura, pero el dinero se devolvió (o se corrigió o eliminó ese cobro): un anticipo devuelto no lleva factura. Ya no cuenta en «Por facturar»; retírala si no hace falta.",
+    );
+    expect(TITULO_YA_NO_APLICAN).toBe("Solicitudes automáticas que ya no aplican");
+    expect(DESCRIPCION_YA_NO_APLICAN).toBe(
+      "Se pidieron solas al registrar un cobro en una cuenta que exige factura, pero el dinero se devolvió o el cobro se corrigió o se eliminó: ya no llevan factura (un anticipo devuelto no lleva CFDI). No cuentan en «Por facturar»; retíralas aquí.",
+    );
+    expect(ANCLA_YA_NO_APLICAN).toBe("ya-no-aplican");
+  });
+
+  it("«Retirar»: la de siempre dice que sale de «Por facturar»; la que ya no aplica NO está ahí y no lo dice", () => {
+    expect(descripcionRetirarSolicitud(341)).toBe(
+      "El vuelo #341 sale de «Por facturar». Si ya le avisaste a facturación, dile que ya no hace falta.",
+    );
+    expect(descripcionRetirarSolicitud(341, false)).toBe(descripcionRetirarSolicitud(341));
+    expect(descripcionRetirarSolicitud(341, true)).toBe(
+      "La solicitud de factura del vuelo #341 se pidió sola y ya no aplica: el vuelo ya no exige factura. Al retirarla se borra del vuelo y deja de aparecer en Facturas emitidas.",
+    );
+    expect(descripcionRetirarSolicitud(341, true)).not.toContain("Por facturar");
+    expect(textoSolicitudRetirada(341)).toBe("El vuelo #341 salió de «Por facturar».");
+    expect(textoSolicitudRetirada(341, true)).toBe("Se retiró la solicitud de factura del vuelo #341.");
   });
 });
 

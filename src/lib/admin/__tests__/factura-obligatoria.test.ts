@@ -1,10 +1,16 @@
 /**
- * FACTURA OBLIGATORIA POR CUENTA DE COBRO — espejo del API (`common/
- * cuentas-cobro.ts`, invariante 60; decisión 4 del lote del 13-oct-2026).
- * La tabla de verdad es la MISMA que congela `cuentas-cobro.spec.ts` del API
- * (cuenta manda, sin cuenta decide el método, reembolsos nunca, NETO por
- * cuenta y moneda) y, si el repo hermano está al lado, las dos listas se
- * comparan por regex con su código.
+ * FACTURA OBLIGATORIA POR CUENTA DE COBRO.
+ *
+ * Desde el API 0.0.77 (14-oct-2026, «un anticipo devuelto no lleva CFDI»)
+ * la exigencia la DECIDE el API (`factura_servicio.exigencia` /
+ * `origenes_exigen`) y el panel la pinta con `obligatoriaDeBloque` (último
+ * bloque de este archivo). El espejo queda como RESPALDO de un API ≤ 0.0.76
+ * y la tabla de verdad de abajo DOCUMENTA ESA regla (la de
+ * `cuentas-cobro.spec.ts` del API ≤ 0.0.76: cuenta manda, sin cuenta decide
+ * el método, reembolsos nunca, NETO por cuenta y moneda; «devuelto en
+ * efectivo ⇒ sigue EXIGE» es justo lo que el 0.0.77 cambió y por eso aquí NO
+ * se actualiza). Si el repo hermano está al lado, las dos listas y la
+ * tolerancia se comparan por regex con su código (no cambiaron en 0.0.77).
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,15 +21,18 @@ import {
   AYUDA_FACTURA_OBLIGATORIA_CANCELADO,
   CUENTAS_COBRO_EXIGEN_FACTURA,
   METODOS_COBRO_EXIGEN_FACTURA_SIN_CUENTA,
+  TEXTO_FACTURA_OBLIGATORIA,
   avisoRetirarFacturaObligatoria,
   cobroExigeFactura,
   cuentaDeCobroTexto,
   cuentaExigeFactura,
   cuentasQueExigenFactura,
   facturaRegistradaFuera,
+  obligatoriaDeBloque,
   origenCobroTexto,
   origenesQueExigenFactura,
   textoFacturaObligatoria,
+  textoFacturaObligatoriaDeOrigenes,
   vueloExigeFactura,
 } from "@/lib/admin/factura-obligatoria";
 
@@ -209,7 +218,120 @@ describe("textos (con las etiquetas de método del panel, == `etiquetaMetodoCobr
     expect(avisoRetirarFacturaObligatoria("Factura obligatoria: cobro en HSBC Pesos")).toBe(
       "Ojo: la factura es obligatoria (cobro en HSBC Pesos); el pre-cierre seguirá marcando el vuelo mientras no se registre.",
     );
+    expect(avisoRetirarFacturaObligatoria("Factura obligatoria: cobros en HSBC Pesos y por Transferencia")).toBe(
+      "Ojo: la factura es obligatoria (cobros en HSBC Pesos y por Transferencia); el pre-cierre seguirá marcando el vuelo mientras no se registre.",
+    );
+    // «Factura obligatoria» a secas (el API dijo EXIGE sin orígenes): sin paréntesis vacíos ni repetidos.
+    expect(avisoRetirarFacturaObligatoria(TEXTO_FACTURA_OBLIGATORIA)).toBe(
+      "Ojo: la factura es obligatoria; el pre-cierre seguirá marcando el vuelo mientras no se registre.",
+    );
     expect(avisoRetirarFacturaObligatoria(null)).toBeNull();
+  });
+});
+
+// =============================================================================
+// API 0.0.77 (14-oct-2026): la exigencia la decide el API y el panel la PINTA
+// =============================================================================
+
+describe("textoFacturaObligatoriaDeOrigenes — el texto ÚNICO del chip", () => {
+  it("uno, dos o tres orígenes (los del API: «en HSBC Pesos» / «por Transferencia»)", () => {
+    expect(textoFacturaObligatoriaDeOrigenes(["en HSBC Pesos"])).toBe("Factura obligatoria: cobro en HSBC Pesos");
+    expect(textoFacturaObligatoriaDeOrigenes(["en HSBC Pesos", "por Transferencia"])).toBe(
+      "Factura obligatoria: cobros en HSBC Pesos y por Transferencia",
+    );
+    expect(textoFacturaObligatoriaDeOrigenes(["en HSBC Pesos", "en Scotiabank Dólares", "por Link de pago (HSBC)"])).toBe(
+      "Factura obligatoria: cobros en HSBC Pesos, en Scotiabank Dólares y por Link de pago (HSBC)",
+    );
+  });
+
+  it("recorta, quita vacíos, repetidos y lo que no es texto; sin orígenes ⇒ null", () => {
+    expect(textoFacturaObligatoriaDeOrigenes(["  en HSBC Pesos ", "en HSBC Pesos", "", "   ", null, 7])).toBe(
+      "Factura obligatoria: cobro en HSBC Pesos",
+    );
+    expect(textoFacturaObligatoriaDeOrigenes([])).toBeNull();
+    expect(textoFacturaObligatoriaDeOrigenes(null)).toBeNull();
+    expect(textoFacturaObligatoriaDeOrigenes(undefined)).toBeNull();
+  });
+
+  it("el espejo usa el MISMO texto (mismos orígenes ⇒ mismo chip, byte a byte)", () => {
+    const cobros = [
+      { cuenta_destino: "HSBC Pesos", moneda: "MXN", monto: 100 },
+      { metodo_cobro: "TRANSFERENCIA", moneda: "MXN", monto: 100 },
+    ];
+    expect(textoFacturaObligatoria(cobros)).toBe(textoFacturaObligatoriaDeOrigenes(origenesQueExigenFactura(cobros)));
+    expect(textoFacturaObligatoria(cobros)).toBe("Factura obligatoria: cobros en HSBC Pesos y por Transferencia");
+  });
+});
+
+describe("obligatoriaDeBloque — con la llave `exigencia` manda el API; sin ella, el respaldo de 0.0.76", () => {
+  // Caso T5/N1 de la decisión del 14-oct: anticipo en HSBC devuelto COMPLETO
+  // en EFECTIVO. El API 0.0.77 dice NO_EXIGE; el espejo (regla de 0.0.76)
+  // todavía dice EXIGE: con la llave presente gana el API.
+  const DEVUELTO_EN_EFECTIVO = [
+    { cuenta_destino: "HSBC Pesos", metodo_cobro: "TRANSFERENCIA", moneda: "MXN", monto: 30000 },
+    { metodo_cobro: "EFECTIVO", moneda: "MXN", monto: -30000 },
+  ];
+  const HSBC = [{ cuenta_destino: "HSBC Pesos", metodo_cobro: "TRANSFERENCIA", moneda: "MXN", monto: 30000 }];
+
+  it("EXIGE ⇒ el texto de `origenes_exigen` (aunque los cobros de la card digan otra cosa)", () => {
+    expect(obligatoriaDeBloque({ exigencia: "EXIGE", origenes_exigen: ["en HSBC Pesos"] }, [])).toBe(
+      "Factura obligatoria: cobro en HSBC Pesos",
+    );
+    expect(
+      obligatoriaDeBloque({ exigencia: "EXIGE", origenes_exigen: ["en HSBC Dólares", "por Transferencia"] }, HSBC),
+    ).toBe("Factura obligatoria: cobros en HSBC Dólares y por Transferencia");
+  });
+
+  it("EXIGE sin orígenes (no debería pasar) ⇒ «Factura obligatoria» a secas: el API dijo que exige y no se calla", () => {
+    expect(obligatoriaDeBloque({ exigencia: "EXIGE", origenes_exigen: [] }, [])).toBe(TEXTO_FACTURA_OBLIGATORIA);
+    expect(obligatoriaDeBloque({ exigencia: "EXIGE" }, [])).toBe("Factura obligatoria");
+  });
+
+  it("NO_EXIGE, SIN_COBROS, null (no se pudo leer) o un valor desconocido ⇒ nada, ni con el espejo diciendo EXIGE", () => {
+    for (const exigencia of ["NO_EXIGE", "SIN_COBROS", null, "OTRA_COSA"]) {
+      expect(obligatoriaDeBloque({ exigencia, origenes_exigen: [] }, DEVUELTO_EN_EFECTIVO), String(exigencia)).toBeNull();
+      expect(obligatoriaDeBloque({ exigencia, origenes_exigen: ["en HSBC Pesos"] }, HSBC), String(exigencia)).toBeNull();
+    }
+    // El espejo de 0.0.76 SÍ diría «Factura obligatoria» de esos cobros.
+    expect(textoFacturaObligatoria(DEVUELTO_EN_EFECTIVO)).toBe("Factura obligatoria: cobro en HSBC Pesos");
+  });
+
+  it("sin la llave (API ≤ 0.0.76, skew o rollback) ⇒ el espejo de siempre, que es la regla de ESE API", () => {
+    expect(obligatoriaDeBloque({}, HSBC)).toBe("Factura obligatoria: cobro en HSBC Pesos");
+    expect(obligatoriaDeBloque({ exigencia: undefined }, HSBC)).toBe("Factura obligatoria: cobro en HSBC Pesos");
+    expect(obligatoriaDeBloque({}, DEVUELTO_EN_EFECTIVO)).toBe("Factura obligatoria: cobro en HSBC Pesos");
+    expect(obligatoriaDeBloque({}, [])).toBeNull();
+    expect(obligatoriaDeBloque(null, HSBC)).toBe("Factura obligatoria: cobro en HSBC Pesos");
+    expect(obligatoriaDeBloque(undefined, undefined)).toBeNull();
+    // `origenes_exigen` sin `exigencia` no basta: decide el espejo.
+    expect(obligatoriaDeBloque({ origenes_exigen: ["en HSBC Dólares"] }, [])).toBeNull();
+  });
+});
+
+describe("respaldo CONGELADO en la regla del API ≤ 0.0.76 (no se actualiza a la del 0.0.77)", () => {
+  const fuente = readFileSync(path.resolve(__dirname, "../factura-obligatoria.ts"), "utf8");
+  // El comentario en un solo renglón (sin los « * » del bloque).
+  const cabecera = fuente.slice(0, fuente.indexOf("*/")).replace(/\s*\n\s*\*\s?/g, " ");
+
+  it("la cabecera lo dice y el espejo no replica la devolución cruzada del 0.0.77", () => {
+    expect(cabecera).toContain(
+      "RESPALDO para un API ≤ 0.0.76: desde el 0.0.77 la exigencia la decide el API (`factura_servicio.exigencia` y `origenes_exigen`) y el panel solo la pinta",
+    );
+    expect(cabecera).toContain("Esta regla es la de ESE API y NO se actualiza a la nueva (rompería el skew).");
+    expect(cabecera).toContain("Retirable cuando ya no haya rollback posible a ≤ 0.0.76.");
+    // Sin la regla 2 del API (`cobrosEnUsd` / TOLERANCIA_COBRO_USD): es dinero y lo decide el API.
+    expect(fuente).not.toMatch(/devolucionCruzadaCompleta|TOLERANCIA_COBRO_USD|cobrosEnUsd\(/);
+  });
+
+  it("devuelto en EFECTIVO, en otra cuenta o en otra moneda: el espejo sigue diciendo EXIGE (la regla de 0.0.76)", () => {
+    const hsbc = { cuenta_destino: "HSBC Pesos", metodo_cobro: "TRANSFERENCIA", moneda: "MXN", monto: 30000 };
+    for (const reembolso of [
+      { metodo_cobro: "EFECTIVO", moneda: "MXN", monto: -30000 },
+      { cuenta_destino: "Scotiabank Pesos", moneda: "MXN", monto: -30000 },
+      { metodo_cobro: "TRANSFERENCIA", moneda: "MXN", monto: -30000 },
+    ]) {
+      expect(vueloExigeFactura([hsbc, reembolso]), JSON.stringify(reembolso)).toBe("EXIGE");
+    }
   });
 });
 

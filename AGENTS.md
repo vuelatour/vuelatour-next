@@ -3473,6 +3473,12 @@ cambio (agente NAV).
     las dos cards; sin el campo, ámbar) y `lib/api/__tests__/
     facturas-emitidas-browser.test.ts` (relee y manda la unión, idempotente,
     no vigente, relectura fallida sin escribir).
+  - **Solicitud automática que ya no aplica (API 0.0.77, invariante 60 del
+    API; 14-oct-2026)**: chip GRIS en la burbuja (`textoSolicitudYaNoAplica`,
+    `AYUDA_SOLICITUD_YA_NO_APLICA`) y TERCERA tarjeta `ya_no_aplican` con el
+    ancla `ya-no-aplican` y `syncId="pfy"`; el badge sigue leyendo SOLO
+    `por_facturar`. Detalle en «Anticipo devuelto sin CFDI y permisos sin
+    avión» (dentro de la sección siguiente).
 
 ## Factura obligatoria por la cuenta de cobro (13-oct-2026, invariante 60 del API)
 
@@ -3481,8 +3487,15 @@ HSBC Dólares / HSBC Pesos / Scotiabank Dólares / Scotiabank Pesos EXIGE
 factura del servicio). El API ya la aplica (solicitud automática, columna
 «FACTURA VUELATOUR», pre-cierre); el panel la DICE. **Sin cambios de API.**
 
-- **Regla espejo PURA** `lib/admin/factura-obligatoria.ts` (copia de
-  `common/cuentas-cobro.ts` del API, con la MISMA tabla de verdad en
+- **Regla espejo PURA** `lib/admin/factura-obligatoria.ts` — **desde el API
+  0.0.77 (14-oct-2026) es solo RESPALDO**: la exigencia la decide el API y
+  viaja en `factura_servicio.exigencia` y `origenes_exigen`; el panel la
+  pinta (`obligatoriaDeBloque`). El espejo queda con la regla del API ≤
+  0.0.76 (corre SOLO si la llave falta: skew o rollback) y NO se actualiza a
+  la regla nueva (rompería el skew; retirable cuando ya no haya rollback
+  posible a ≤ 0.0.76). Ver «Anticipo devuelto sin CFDI y permisos sin
+  avión» abajo. La regla del respaldo (copia de
+  `common/cuentas-cobro.ts` del API ≤ 0.0.76, con la MISMA tabla de verdad en
   `__tests__/factura-obligatoria.test.ts` y comparación por regex de las dos
   listas contra el repo hermano): la CUENTA manda (las cuatro de banco ⇒ sí;
   Paywise ⇒ no; vacía o fuera del catálogo ⇒ decide el método: link de pago
@@ -3505,7 +3518,11 @@ factura del servicio). El API ya la aplica (solicitud automática, columna
   que el pre-cierre. «Retirar» la solicitud agrega «Ojo: la factura es
   obligatoria (…); el pre-cierre seguirá marcando el vuelo mientras no se
   registre.». La cotización recibe `facturaRegistradaFuera` de su página
-  (snapshot del vuelo) a través de `QuoteWorkspace`.
+  (snapshot del vuelo) a través de `QuoteWorkspace`. Desde el API 0.0.77 el
+  chip sale de `obligatoriaDeBloque(bloque, cobros)` (con la llave
+  `exigencia` manda el API; sin ella, el espejo con los cobros de la card) y,
+  con `solicitud_ya_no_aplica`, en lugar del chip ámbar va el chip gris «ya
+  no aplica».
 - **Pre-cierre** (`reportes/pre-cierre-card.tsx` + `lib/admin/pre-cierre-factura.ts`):
   el renglón `vuelos_cobrados_sin_factura` pinta cada vuelo como «#341
   (HSBC Pesos · pedida)» / «#430 (CANCELADO · HSBC Dólares)» (`cuentas`,
@@ -3520,6 +3537,101 @@ factura del servicio). El API ya la aplica (solicitud automática, columna
   (cuentas, Paywise, devuelto completo / en efectivo, cumplida por vigente,
   estatus manual, CFDI o la prop de la cotización, cancelado, sin bloque, el
   aviso de «Retirar»).
+
+### Anticipo devuelto sin CFDI y permisos sin avión (14-oct-2026, API 0.0.77)
+
+Decisiones del cliente del 14-oct-2026: «¿Un anticipo devuelto lleva CFDI?»
+⇒ «eso no» y «el AFAC lo cargan al Avión» (invariantes 60 y 62 del API). El
+API decide TODO (regla 1 por moneda sin T.C.; regla 2 solo en devolución
+CRUZADA, con `cobrosEnUsd` del vuelo: dinero que el panel no replica); el
+panel lo pinta. Contrato ADITIVO (`types/facturas-emitidas.ts`):
+`FacturaServicioBloque` += `exigencia` (EXIGE | NO_EXIGE | SIN_COBROS |
+null), `origenes_exigen`, `solicitud_ya_no_aplica` (últimas llaves);
+`ListaPorFacturar` += `ya_no_aplican: PorFacturarItem[]`;
+`ConteoPorFacturar` += `ya_no_aplican` (el badge sigue leyendo SOLO
+`por_facturar`); pre-cierre `cobros_en_cancelados.vuelos[].
+diferencia_cambiaria?: true` y el renglón BLOQUEANTE `permisos_sin_avion`.
+
+- **Chip «Factura obligatoria»** (`obligatoriaDeBloque`, PURO): con la
+  llave `exigencia` presente MANDA EL API — 'EXIGE' ⇒ el texto de
+  `origenes_exigen` (`textoFacturaObligatoriaDeOrigenes`, fuente ÚNICA del
+  texto; sin orígenes, «Factura obligatoria» a secas: el API dijo que exige
+  y eso no se calla); 'NO_EXIGE', 'SIN_COBROS', `null` («no se pudo leer») o
+  un valor desconocido ⇒ nada. Sin la llave (API ≤ 0.0.76) ⇒ el espejo de
+  siempre. Así panel y API no dicen cosas opuestas del mismo vuelo en
+  ninguna ventana: con el API 0.0.77 y el panel viejo, la burbuja vieja usa
+  su espejo unos minutos (un devuelto en efectivo diría «Factura
+  obligatoria»; 0 casos en prod).
+- **Solicitud AUTOMÁTICA que ya no aplica** (`solicitud_ya_no_aplica`): el
+  API pidió la factura SOLA al registrar un cobro en una cuenta que la exige
+  y luego el dinero se devolvió (o se corrigió o eliminó el cobro). No se
+  retira sola (retirar es destructivo y lo confirma una persona). Burbuja:
+  chip GRIS «Factura pedida por Itzi · 5 oct — ya no aplica: el vuelo ya no
+  exige factura» (`textoSolicitudYaNoAplica`) con el tooltip
+  `AYUDA_SOLICITUD_YA_NO_APLICA` (+ « Nota: …»), «Retirar» para quien puede
+  pedir factura y «Registrar factura» para facturación; también en un vuelo
+  CANCELADO (el API no mira el estado); «marcada Facturado» GANA (como
+  `estadoSolicitud` del API) y con factura VIGENTE va el chip verde.
+- **Bandeja** (`app/admin/facturas-emitidas/page.tsx`): tercera tarjeta
+  «Solicitudes automáticas que ya no aplican (n)» (`TITULO_YA_NO_APLICAN`,
+  `DESCRIPCION_YA_NO_APLICAN`) dentro de la sección «Por facturar», debajo de
+  la de los marcados, con `id="ya-no-aplican"` (`ANCLA_YA_NO_APLICAN`,
+  `scroll-mt-24`), borde neutro, la MISMA `PorFacturarTable` con
+  `syncId="pfy"` y el `resaltar` de los avisos (las TRES tarjetas resaltan la
+  fila). Solo con el arreglo presente y no vacío; si «Por facturar» no se
+  pudo leer, la tarjeta de error de siempre (nunca «nada pendiente»).
+- **«Retirar» dice lo que pasa** (`descripcionRetirarSolicitud` /
+  `textoSolicitudRetirada`, PUROS; prop `yaNoAplican` de `PorFacturarTable`
+  y el `yaNoAplica` de la burbuja): la confirmación de siempre dice «El
+  vuelo #341 sale de «Por facturar»…» (byte a byte la de antes), pero una
+  que ya no aplica NO está ahí: «La solicitud de factura del vuelo #341 se
+  pidió sola y ya no aplica: el vuelo ya no exige factura. Al retirarla se
+  borra del vuelo y deja de aparecer en Facturas emitidas.» y el aviso «Se
+  retiró la solicitud de factura del vuelo #341.». La llamada a
+  `retirarSolicitudFacturaAction` va con `.catch` (red caída o deploy ⇒
+  `MSG_SERVIDOR_NO_RESPONDIO`, jamás el error boundary).
+- **Avisos del API** (la campana no filtra por tipo): «Ya no aplica: factura
+  del vuelo #341» (`factura_solicitud_ya_no_aplica`) enlaza al DETALLE del
+  vuelo, `/admin/flights/<id>#cobros` (la card de cobros tiene
+  `id="cobros"` y ahí está «Retirar» en CUALQUIER panel — revisión del API:
+  con el API 0.0.77 y el panel viejo el ancla de la bandeja no existía);
+  «Vuelve a aplicar» (`factura_solicitud_vuelve_a_aplicar`) enlaza a
+  `/admin/facturas-emitidas?resaltar=<id>#por-facturar`. El ancla
+  `#ya-no-aplican` queda para enlaces a la tarjeta.
+- **Pre-cierre** (`reportes/pre-cierre-card.tsx` +
+  `lib/admin/pre-cierre-anticipo-afac.ts`, PURO): `permisos_sin_avion`
+  (BLOQUEA; `listo` lo manda el API) con «Resolver →»
+  `hrefPrecierrePermisosSinAvion` = `/admin/expenses?categoria=PERMISO&
+  desde=…&hasta=…` (los permisos del periodo, mismo eje `fecha_gasto` del
+  API; el que no tiene avión dice «Falta avión»). El monto del renglón
+  (`textoMontoItem`) dice dólares Y pesos cuando el API manda los dos
+  («$100.50 USD · $5,000 MXN»; antes solo salían los dólares y los pesos se
+  perdían de la vista). `cobros_en_cancelados`: el chip
+  «#215 (diferencia cambiaria)» (`ETIQUETA_DIFERENCIA_CAMBIARIA`) con el
+  title `AYUDA_DIFERENCIA_CAMBIARIA` cuando el API manda
+  `diferencia_cambiaria: true` (solo `true`); sin él, el chip de siempre.
+- **Skew / rollback**: con un API ≤ 0.0.76 no llega ninguna llave y todo se
+  pinta como antes (el respaldo dice lo mismo que ese API); el panel se
+  regresa en cualquier orden. Sin rutas nuevas ni server actions nuevas.
+- **No hecho (requiere API)**: el 409 «aceptar el T.C.» para una devolución
+  cruzada tecleada a un T.C. bajo (límite conocido de la regla 2 en la
+  invariante 60 del API, sin corregir en el 0.0.77) y prellenar el diálogo
+  de reembolso con moneda/método/cuenta/T.C. del cobro (pregunta abierta).
+- **Pruebas**: `lib/admin/__tests__/factura-obligatoria.test.ts`
+  (`textoFacturaObligatoriaDeOrigenes`, `obligatoriaDeBloque` con
+  EXIGE / NO_EXIGE / SIN_COBROS / null / desconocido / sin llave, el aviso de
+  «Retirar» sin orígenes y la cabecera del respaldo; la tabla de 0.0.76 se
+  queda), `lib/admin/__tests__/facturas-emitidas.test.ts` (textos exactos),
+  `flights/__tests__/cobros-card-facturas-emitidas.test.tsx` (devuelto en
+  efectivo con NO_EXIGE ⇒ sin chip y el control sin llave ⇒ con chip;
+  EXIGE con los orígenes del API; null; chip gris con su tooltip, «Retirar»
+  y roles; cancelado; precedencias), `facturas-emitidas/__tests__/
+  registro-facturas.test.tsx` (`pfy`, `yaNoAplican`, cableado),
+  `app/admin/facturas-emitidas/__tests__/ya-no-aplican.test.tsx` (la
+  PÁGINA real con el API simulado: tarjeta, ancla, orden, `resaltar`, sin
+  llave / vacía / carga caída) y `reportes/__tests__/
+  pre-cierre-anticipo-afac.test.tsx` (renglón bloqueante, las dos monedas,
+  «Resolver →», el chip de diferencia cambiaria).
 
 ## Flechas «‹ Anterior» / «Siguiente ›» entre cotizaciones (24-sep-2026)
 

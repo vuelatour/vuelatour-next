@@ -265,6 +265,24 @@ export interface FacturaServicioBloque {
    * ámbar de siempre).
    */
   marcado_sin_registro?: boolean;
+  /**
+   * ADITIVOS (14-oct-2026, API 0.0.77, invariante 60 del API), ÚLTIMAS
+   * llaves y en este orden. `exigencia` la DECIDE el API (neto por cuenta y
+   * moneda; un anticipo devuelto completo, por cualquier vía, NO exige —
+   * decisión del cliente del 14-oct-2026—); `null` = el API no la pudo leer
+   * (no se anuncia nada). Ausente = API ≤ 0.0.76: el panel usa su espejo
+   * `lib/admin/factura-obligatoria.ts` (`obligatoriaDeBloque`).
+   */
+  exigencia?: "EXIGE" | "NO_EXIGE" | "SIN_COBROS" | null;
+  /** Orígenes de lo que exige («en HSBC Pesos», «por Transferencia»): el chip. */
+  origenes_exigen?: string[];
+  /**
+   * La solicitud viva es AUTOMÁTICA y el vuelo ya no exige factura (dinero
+   * devuelto, cobro corregido o eliminado): ya no cuenta en «Por facturar»;
+   * la burbuja pinta el chip gris «ya no aplica» con «Retirar». NO mira el
+   * estado del vuelo (también en un cancelado). Una manual, nunca.
+   */
+  solicitud_ya_no_aplica?: boolean;
 }
 
 /** Campo ADITIVO por fila de GET /flights y GET /quotes. */
@@ -397,6 +415,13 @@ export interface ListaPorFacturar {
    * Ausente = API previo (no se pinta la segunda tarjeta).
    */
   marcados_sin_registro?: PorFacturarItem[];
+  /**
+   * ADITIVO (14-oct-2026, API 0.0.77): solicitudes AUTOMÁTICAS cuyo vuelo ya
+   * no exige factura (anticipo devuelto, cobro corregido o eliminado); misma
+   * forma y orden que `data`. No cuentan en «Por facturar»; se retiran desde
+   * su tarjeta (con confirmación). Ausente = API previo (sin tercera tarjeta).
+   */
+  ya_no_aplican?: PorFacturarItem[];
 }
 
 /** Respuesta de GET /v1/facturas-emitidas/por-facturar/conteo. */
@@ -405,4 +430,6 @@ export interface ConteoPorFacturar {
   paga_contra_factura: number;
   /** ADITIVO (13-oct-2026): el badge del menú sigue leyendo SOLO `por_facturar`. */
   marcados_sin_registro?: number;
+  /** ADITIVO (14-oct-2026, API 0.0.77): el badge sigue leyendo SOLO `por_facturar`. */
+  ya_no_aplican?: number;
 }

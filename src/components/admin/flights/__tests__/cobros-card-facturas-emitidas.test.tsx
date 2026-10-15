@@ -440,9 +440,165 @@ describe("burbuja: FACTURA OBLIGATORIA por la cuenta de cobro (13-oct-2026, inva
     );
     expect(fuente).toContain("const avisoRetirar = avisoRetirarFacturaObligatoria(obligatoria);");
     expect(fuente).toMatch(/\{avisoRetirar && \(\s*<span[^>]*>\s*\{avisoRetirar\}/);
+    // Desde el API 0.0.77 el chip sale de `obligatoriaDeBloque` (manda el API
+    // con la llave; sin ella, el espejo de 0.0.76 con los cobros de la card).
     expect(fuente).toContain(
-      "vigentes.length === 0 && !facturaRegistradaFuera ? textoFacturaObligatoria(cobros) : null;",
+      "vigentes.length === 0 && !facturaRegistradaFuera ? obligatoriaDeBloque(bloque, cobros) : null;",
     );
+    expect(fuente).not.toContain("textoFacturaObligatoria(cobros)");
+  });
+});
+
+describe("burbuja con la EXIGENCIA del API 0.0.77 (14-oct-2026: «un anticipo devuelto no lleva CFDI»)", () => {
+  // Los fixtures de arriba NO traen `exigencia` = API ≤ 0.0.76 (espejo). Aquí
+  // la llave viaja y MANDA: el chip ya no sale de los cobros de la card.
+  const DEVUELTO_EN_EFECTIVO: FlightCobro[] = [
+    COBRO,
+    { ...COBRO, id: "c-2", monto: "-136856.8", metodo_cobro: "EFECTIVO", cuenta_destino: null },
+  ];
+
+  it("devuelto COMPLETO en EFECTIVO con `exigencia: 'NO_EXIGE'` ⇒ sin «Factura obligatoria» (el espejo de 0.0.76 sí la diría)", () => {
+    const bloque: FacturaServicioBloque = { ...SIN_NADA, exigencia: "NO_EXIGE", origenes_exigen: [], solicitud_ya_no_aplica: false };
+    for (const html of [
+      vuelo({ facturaServicio: bloque, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO }),
+      cotizacion({ facturaServicio: bloque, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO }),
+    ]) {
+      expect(html).not.toContain("Factura obligatoria");
+      expect(html).toContain("Sin factura");
+    }
+    // Control: los MISMOS cobros sin la llave (API previo) ⇒ el espejo la dice.
+    expect(vuelo({ facturaServicio: SIN_NADA, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO })).toContain(
+      "Factura obligatoria: cobro en Scotiabank Pesos",
+    );
+  });
+
+  it("`EXIGE` + `origenes_exigen` ⇒ el chip con los orígenes DEL API (no los de la card)", () => {
+    const bloque: FacturaServicioBloque = {
+      ...SIN_NADA,
+      exigencia: "EXIGE",
+      origenes_exigen: ["en HSBC Pesos"],
+      solicitud_ya_no_aplica: false,
+    };
+    for (const html of [
+      vuelo({ facturaServicio: bloque, rol: "COORDINADOR" }),
+      cotizacion({ facturaServicio: bloque, rol: "COORDINADOR" }),
+    ]) {
+      expect(html).toContain("Factura obligatoria: cobro en HSBC Pesos");
+      // La card tiene un cobro en Scotiabank Pesos: el espejo diría eso.
+      expect(html).not.toContain("Factura obligatoria: cobro en Scotiabank Pesos");
+      expect(html).toContain("data-factura-obligatoria");
+      expect(html).toContain("el pre-cierre lo marca");
+    }
+    // Cancelado con dinero retenido: el tooltip manda a registrarla directo.
+    expect(vuelo({ facturaServicio: bloque, rol: "ADMIN", estado: "CANCELADO" })).toContain(
+      "Vuelo cancelado: regístrala directo en Facturas emitidas.",
+    );
+    // Cumplida (factura VIGENTE): no se anuncia aunque el API diga EXIGE.
+    expect(vuelo({ facturaServicio: { ...FACTURADA, exigencia: "EXIGE", origenes_exigen: ["en HSBC Pesos"] }, rol: "ADMIN" })).not.toContain(
+      "Factura obligatoria",
+    );
+  });
+
+  it("`exigencia: null` (el API no la pudo leer) o `SIN_COBROS` ⇒ nada, aunque la card tenga un cobro en Scotiabank", () => {
+    for (const exigencia of [null, "SIN_COBROS"] as const) {
+      const html = vuelo({
+        facturaServicio: { ...SIN_NADA, exigencia, origenes_exigen: [], solicitud_ya_no_aplica: false },
+        rol: "ADMIN",
+      });
+      expect(html, String(exigencia)).not.toContain("Factura obligatoria");
+      expect(html).toContain("Sin factura");
+    }
+  });
+
+  const YA_NO_APLICA: FacturaServicioBloque = {
+    solicitud: {
+      // 5 oct 2026, 13:00 hora Cancún.
+      solicitada_at: "2026-10-05T18:00:00.000Z",
+      solicitada_por: { id: "u-itzi", nombre: "Itzi" },
+      nota: "Solicitada automáticamente: cobro en HSBC Pesos",
+      paga_contra_factura: false,
+    },
+    por_facturar: false,
+    facturas: [],
+    canceladas: 0,
+    marcado_sin_registro: false,
+    exigencia: "NO_EXIGE",
+    origenes_exigen: [],
+    solicitud_ya_no_aplica: true,
+  };
+
+  it("solicitud automática que ya no aplica: chip GRIS «ya no aplica» con su tooltip (+ nota), «Retirar» y sin «Factura obligatoria»", () => {
+    for (const html of [
+      vuelo({ facturaServicio: YA_NO_APLICA, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO }),
+      cotizacion({ facturaServicio: YA_NO_APLICA, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO }),
+    ]) {
+      expect(html).toContain("Factura pedida por Itzi · 5 oct — ya no aplica: el vuelo ya no exige factura");
+      expect(html).toContain("data-solicitud-ya-no-aplica");
+      expect(html).toContain(
+        "Se pidió sola al registrar un cobro que exigía factura, pero el dinero se devolvió (o se corrigió o eliminó ese cobro): un anticipo devuelto no lleva factura. Ya no cuenta en «Por facturar»; retírala si no hace falta. Nota: Solicitada automáticamente: cobro en HSBC Pesos",
+      );
+      // Ni el ámbar «— pendiente» ni el chip de obligatoria.
+      expect(html).not.toContain("— pendiente");
+      expect(html).not.toContain("Factura obligatoria");
+      expect(html).toMatch(/<button[^>]*cursor-pointer[^>]*>Retirar<\/button>/);
+      expect(html).toContain("Registrar factura");
+      expect(html).not.toContain("Necesito factura");
+    }
+    // Sin nota: la ayuda sola.
+    const sinNota = vuelo({
+      facturaServicio: { ...YA_NO_APLICA, solicitud: { ...YA_NO_APLICA.solicitud!, nota: null } },
+      rol: "ADMIN",
+    });
+    expect(sinNota).toContain("retírala si no hace falta.\"");
+  });
+
+  it("COORDINADOR la puede retirar; SOCIO solo la ve", () => {
+    expect(vuelo({ facturaServicio: YA_NO_APLICA, rol: "COORDINADOR" })).toContain(">Retirar<");
+    const socio = cotizacion({ facturaServicio: YA_NO_APLICA, rol: "SOCIO" });
+    expect(socio).toContain("— ya no aplica: el vuelo ya no exige factura");
+    expect(socio).not.toContain(">Retirar<");
+  });
+
+  it("también en un vuelo CANCELADO (el API no mira el estado)", () => {
+    const html = vuelo({ facturaServicio: YA_NO_APLICA, rol: "ADMIN", estado: "CANCELADO" });
+    expect(html).toContain("— ya no aplica: el vuelo ya no exige factura");
+    expect(html).toContain(">Retirar<");
+  });
+
+  it("«marcada Facturado» gana (el API la clasifica así primero); con factura VIGENTE, el chip verde", () => {
+    const marcada = vuelo({ facturaServicio: { ...YA_NO_APLICA, marcado_sin_registro: true }, rol: "ADMIN" });
+    expect(marcada).toContain("data-solicitud-marcada");
+    expect(marcada).not.toContain("data-solicitud-ya-no-aplica");
+    const facturada = vuelo({
+      facturaServicio: { ...YA_NO_APLICA, facturas: FACTURADA.facturas },
+      rol: "ADMIN",
+    });
+    expect(facturada).toContain("A-123");
+    expect(facturada).toContain("Pedida por Itzi · 5 oct");
+    expect(facturada).not.toContain("data-solicitud-ya-no-aplica");
+  });
+
+  it("`solicitud_ya_no_aplica` false o ausente (API previo) ⇒ el chip ámbar de siempre", () => {
+    for (const bloque of [
+      { ...YA_NO_APLICA, solicitud_ya_no_aplica: false },
+      { ...PEDIDA },
+    ]) {
+      const html = vuelo({ facturaServicio: bloque, rol: "ADMIN" });
+      expect(html).toContain("— pendiente");
+      expect(html).not.toContain("data-solicitud-ya-no-aplica");
+    }
+  });
+
+  it("«Retirar» confirma con el texto que dice lo que pasa y el aviso de siempre (cableado: el diálogo es un portal)", () => {
+    const fuente = readFileSync(
+      path.resolve(__dirname, "../../facturas-emitidas/factura-servicio-burbuja.tsx"),
+      "utf8",
+    );
+    expect(fuente).toContain("onClick={() => setConfirmarRetirar(true)}");
+    expect(fuente).toContain("{descripcionRetirarSolicitud(vueloFolio, yaNoAplica)}");
+    expect(fuente).toContain("toast.success(textoSolicitudRetirada(vueloFolio, yaNoAplica));");
+    // La llamada a la server action no puede tumbar la pantalla.
+    expect(fuente).toMatch(/retirarSolicitudFacturaAction\(vueloId\)\.catch\(\(\) => \(\{\s*ok: false as const,\s*error: MSG_SERVIDOR_NO_RESPONDIO,/);
   });
 });
 

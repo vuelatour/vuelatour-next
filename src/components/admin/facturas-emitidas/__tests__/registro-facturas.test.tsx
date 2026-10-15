@@ -321,6 +321,37 @@ describe("Por facturar", () => {
     expect(pagina).toContain("{marcados.length > 0 && (");
   });
 
+  // ---- Solicitudes automáticas que ya no aplican (14-oct-2026, API 0.0.77) ----
+
+  it("ya no aplican: la MISMA tabla (`syncId=\"pfy\"`, `yaNoAplican`) con su página propia y el `resaltar` de los avisos", () => {
+    const html = renderToStaticMarkup(
+      <PorFacturarTable items={[item]} rol="FACTURACION" resaltar={VUELO} syncId="pfy" yaNoAplican />,
+    );
+    expect(html).toContain("Registrar factura");
+    expect(html).toContain("Más acciones del vuelo #341");
+    expect(html).toContain("ring-amber-400");
+    const pagina = leerFuente("../../../../app/admin/facturas-emitidas/page.tsx");
+    expect(pagina).toContain("porFacturar.datos.ya_no_aplican ?? []");
+    expect(pagina).toContain("{yaNoAplican.length > 0 && (");
+    expect(pagina).toContain('<Card id={ANCLA_YA_NO_APLICAN} className="mt-4 scroll-mt-24" data-ya-no-aplican>');
+    expect(pagina).toContain("{TITULO_YA_NO_APLICAN} ({yaNoAplican.length})");
+    expect(pagina).toContain("{DESCRIPCION_YA_NO_APLICAN}");
+    expect(pagina).toMatch(/items=\{yaNoAplican\}[\s\S]{0,200}resaltar=\{filtros\.resaltar\}[\s\S]{0,200}syncId="pfy"\s*yaNoAplican\s*\/>/);
+    // Las tres tarjetas resaltan la fila del aviso.
+    expect(pagina.match(/resaltar=\{filtros\.resaltar\}/g)?.length).toBe(3);
+  });
+
+  it("«Retirar solicitud» confirma con el texto de SU tarjeta y la llamada nunca tumba la pantalla (cableado: el diálogo es un portal)", () => {
+    const fuente = leerFuente("../por-facturar-table.tsx");
+    expect(fuente).toContain("onClick={() => setRetirar(it)}");
+    expect(fuente).toContain('{retirar ? descripcionRetirarSolicitud(retirar.vuelo.folio, yaNoAplican) : ""}');
+    expect(fuente).toContain("toast.success(textoSolicitudRetirada(it.vuelo.folio, yaNoAplican));");
+    expect(fuente).toMatch(
+      /retirarSolicitudFacturaAction\(it\.vuelo\.id\)\.catch\(\(\) => \(\{\s*ok: false as const,\s*error: MSG_SERVIDOR_NO_RESPONDIO,/,
+    );
+    expect(fuente).toContain("yaNoAplican = false,");
+  });
+
   const conSugerencia: PorFacturarItem = {
     ...item,
     vuelo: { ...item.vuelo, folio: 376, estatus_manual: "SIN_FACTURA", grupo: null },

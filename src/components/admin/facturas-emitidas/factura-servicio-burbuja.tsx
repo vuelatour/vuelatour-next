@@ -20,8 +20,10 @@ import { retirarSolicitudFacturaAction } from "@/app/admin/flights/actions";
 import { urlArchivoFacturaAction } from "@/app/admin/facturas-emitidas/actions";
 import {
   AYUDA_SOLICITUD_MARCADA,
+  AYUDA_SOLICITUD_YA_NO_APLICA,
   abrirArchivoFirmado,
   avisarCambioPorFacturar,
+  descripcionRetirarSolicitud,
   puedePedirFactura,
   puedeRegistrarFactura,
   puedeVerPdfFactura,
@@ -29,14 +31,17 @@ import {
   textoPedidaPor,
   textoSolicitud,
   textoSolicitudMarcada,
+  textoSolicitudRetirada,
+  textoSolicitudYaNoAplica,
 } from "@/lib/admin/facturas-emitidas";
 import {
   AYUDA_FACTURA_OBLIGATORIA,
   AYUDA_FACTURA_OBLIGATORIA_CANCELADO,
   avisoRetirarFacturaObligatoria,
-  textoFacturaObligatoria,
+  obligatoriaDeBloque,
   type CobroExigeFacturaRow,
 } from "@/lib/admin/factura-obligatoria";
+import { MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
 import { NecesitoFacturaDialog } from "./necesito-factura-dialog";
 import { RegistrarFacturaDialog } from "./registrar-factura-dialog";
 import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas-emitidas";
@@ -61,10 +66,18 @@ import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas
  *    de los cobros quedó en una cuenta que exige factura (HSBC/Scotiabank, o
  *    link HSBC/transferencia/cheque sin cuenta; por el NETO de cada cuenta)
  *    y todavía no hay factura registrada, chip «Factura obligatoria: cobro en
- *    HSBC Pesos» (espejo `lib/admin/factura-obligatoria.ts`, con los cobros
- *    de la card: el API no manda nada nuevo). Con una factura VIGENTE o
- *    registrada por fuera (CFDI, folio o estatus manual) ya está cumplida y
- *    no se anuncia — igual que el pre-cierre.
+ *    HSBC Pesos». Desde el API 0.0.77 (14-oct-2026; «un anticipo devuelto no
+ *    lleva CFDI») lo DECIDE el API: `obligatoriaDeBloque` pinta
+ *    `factura_servicio.exigencia` / `origenes_exigen`; sin esas llaves (API
+ *    ≤ 0.0.76) usa el espejo `lib/admin/factura-obligatoria.ts` con los
+ *    cobros de la card, que es la regla de ESE API. Con una factura VIGENTE
+ *    o registrada por fuera (CFDI, folio o estatus manual) ya está cumplida
+ *    y no se anuncia — igual que el pre-cierre.
+ *  - Solicitud AUTOMÁTICA que ya no aplica (`solicitud_ya_no_aplica`, API
+ *    0.0.77): el API la pidió sola por un cobro que exigía factura y el
+ *    dinero se devolvió (o se corrigió o eliminó el cobro). No se retira
+ *    sola: chip GRIS «… — ya no aplica: el vuelo ya no exige factura» con
+ *    «Retirar» (confirma). «Marcada Facturado» gana, como en el API.
  *
  * `bloque` ausente o `null` (API previo o sin la migración) ⇒ no se pinta
  * NADA: ofrecer un botón que el API rechazaría es peor que no tenerlo.
@@ -113,10 +126,18 @@ export function FacturaServicioBurbuja({
   const vigentes = bloque.facturas;
   const solicitud = bloque.solicitud;
   // «Factura obligatoria: cobro en HSBC Pesos» SOLO mientras no haya factura
-  // registrada (ni en el registro ni por fuera): cumplida no se anuncia.
+  // registrada (ni en el registro ni por fuera): cumplida no se anuncia. Lo
+  // decide el API ≥ 0.0.77 (`exigencia`); sin la llave, el espejo de 0.0.76.
   const obligatoria =
-    vigentes.length === 0 && !facturaRegistradaFuera ? textoFacturaObligatoria(cobros) : null;
+    vigentes.length === 0 && !facturaRegistradaFuera ? obligatoriaDeBloque(bloque, cobros) : null;
   const avisoRetirar = avisoRetirarFacturaObligatoria(obligatoria);
+  // Solicitud AUTOMÁTICA que ya no aplica (API 0.0.77): chip gris en vez del
+  // ámbar. «Marcada Facturado» gana (el API la clasifica así primero).
+  const yaNoAplica =
+    vigentes.length === 0 &&
+    solicitud != null &&
+    bloque.marcado_sin_registro !== true &&
+    bloque.solicitud_ya_no_aplica === true;
 
   const verPdf = (f: FacturaEmitidaMini) => {
     void abrirArchivoFirmado(() => urlArchivoFacturaAction(f.id, "pdf")).then((r) => {
@@ -131,10 +152,15 @@ export function FacturaServicioBurbuja({
 
   const retirar = () => {
     startTransition(async () => {
-      const res = await retirarSolicitudFacturaAction(vueloId);
+      // La llamada misma puede LANZAR (red caída, deploy de Vercel): jamás
+      // al error boundary.
+      const res = await retirarSolicitudFacturaAction(vueloId).catch(() => ({
+        ok: false as const,
+        error: MSG_SERVIDOR_NO_RESPONDIO,
+      }));
       setConfirmarRetirar(false);
       if (res.ok) {
-        toast.success(`El vuelo #${vueloFolio} salió de «Por facturar».`);
+        toast.success(textoSolicitudRetirada(vueloFolio, yaNoAplica));
         avisarCambioPorFacturar();
         router.refresh();
       } else {
@@ -197,6 +223,18 @@ export function FacturaServicioBurbuja({
               title={solicitud.nota ? `${AYUDA_SOLICITUD_MARCADA} Nota: ${solicitud.nota}` : AYUDA_SOLICITUD_MARCADA}
             >
               {textoSolicitudMarcada(solicitud)}
+            </span>
+          ) : yaNoAplica ? (
+            <span
+              data-solicitud-ya-no-aplica
+              className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+              title={
+                solicitud.nota
+                  ? `${AYUDA_SOLICITUD_YA_NO_APLICA} Nota: ${solicitud.nota}`
+                  : AYUDA_SOLICITUD_YA_NO_APLICA
+              }
+            >
+              {textoSolicitudYaNoAplica(solicitud)}
             </span>
           ) : (
             <span
@@ -299,8 +337,7 @@ export function FacturaServicioBurbuja({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Retirar la solicitud de factura?</AlertDialogTitle>
             <AlertDialogDescription>
-              El vuelo #{vueloFolio} sale de «Por facturar». Si ya le avisaste a facturación, dile
-              que ya no hace falta.
+              {descripcionRetirarSolicitud(vueloFolio, yaNoAplica)}
               {avisoRetirar && (
                 <span className="mt-2 block font-medium text-rose-700 dark:text-rose-300">
                   {avisoRetirar}

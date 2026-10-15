@@ -32,8 +32,11 @@ import {
 import { Degradaciones, esErrorDeNext } from "@/lib/api/degradar";
 import { isApiError } from "@/lib/api/errors";
 import {
+  ANCLA_YA_NO_APLICAN,
   DESCRIPCION_MARCADOS_SIN_REGISTRO,
+  DESCRIPCION_YA_NO_APLICAN,
   TITULO_MARCADOS_SIN_REGISTRO,
+  TITULO_YA_NO_APLICAN,
   descripcionPorFacturar,
   esNoDisponible,
   filtrosFacturasDeUrl,
@@ -154,6 +157,11 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
   // a mano ya no van en «Por facturar»; el API los manda aparte. Sin la llave
   // (API previo) no hay segunda tarjeta y la descripción es la de siempre.
   const marcados = porFacturar.ok ? (porFacturar.datos.marcados_sin_registro ?? []) : [];
+  // API 0.0.77 (14-oct-2026, «un anticipo devuelto no lleva CFDI»): las
+  // solicitudes AUTOMÁTICAS cuyo vuelo ya no exige factura salen de «Por
+  // facturar» y llegan aparte; no se retiran solas. Sin la llave (API
+  // previo) no hay tercera tarjeta.
+  const yaNoAplican = porFacturar.ok ? (porFacturar.datos.ya_no_aplican ?? []) : [];
 
   return (
     <div className="space-y-6">
@@ -227,6 +235,31 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
                 clientes={clientes}
                 emisoras={emisoras}
                 syncId="pfm"
+              />
+            </CardContent>
+          </Card>
+        )}
+        {/* Solicitudes automáticas que ya no aplican (API 0.0.77): la MISMA
+            tabla con su propia paginación y el `resaltar` de los avisos;
+            «Retirar solicitud» (⋯) confirma. Borde neutro: no hay nada que
+            facturar, solo limpiar. Ancla `#ya-no-aplican`. */}
+        {yaNoAplican.length > 0 && (
+          <Card id={ANCLA_YA_NO_APLICAN} className="mt-4 scroll-mt-24" data-ya-no-aplican>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-sm">
+                {TITULO_YA_NO_APLICAN} ({yaNoAplican.length})
+              </CardTitle>
+              <CardDescription className="text-xs">{DESCRIPCION_YA_NO_APLICAN}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <PorFacturarTable
+                items={yaNoAplican}
+                rol={me.rol}
+                resaltar={filtros.resaltar}
+                clientes={clientes}
+                emisoras={emisoras}
+                syncId="pfy"
+                yaNoAplican
               />
             </CardContent>
           </Card>

@@ -33,6 +33,7 @@ import {
   avisarCambioPorFacturar,
   botonLigarFactura,
   descripcionLigarFactura,
+  descripcionRetirarSolicitud,
   fechaCortaCancun,
   puedePedirFactura,
   puedeRegistrarFactura,
@@ -40,8 +41,10 @@ import {
   textoFacturaDelCliente,
   textoFacturaLigada,
   textoFaltanDatosFiscales,
+  textoSolicitudRetirada,
   tituloLigarFactura,
 } from "@/lib/admin/facturas-emitidas";
+import { MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
 import { ligarVueloAFactura } from "@/lib/api/facturas-emitidas-browser";
 import {
   RegistrarFacturaDialog,
@@ -92,6 +95,11 @@ function datosFiscales(c: NonNullable<PorFacturarItem["cliente"]>): string {
  * aparte) y, en cada fila, las facturas YA registradas del cliente que el API
  * sugiere (`facturas_del_cliente`) con «Ligar a A-0440» (ADMIN/FACTURACION,
  * con confirmación; `ligarVueloAFactura` relee la factura y manda la unión).
+ *
+ * 14-oct-2026 (API 0.0.77): también pinta la tercera tarjeta «Solicitudes
+ * automáticas que ya no aplican» (`syncId="pfy"`, `yaNoAplican`): la
+ * confirmación y el aviso de «Retirar solicitud» dicen lo que pasa de verdad
+ * (esas solicitudes NO están en «Por facturar»).
  */
 export function PorFacturarTable({
   items,
@@ -100,14 +108,17 @@ export function PorFacturarTable({
   clientes,
   emisoras,
   syncId,
+  yaNoAplican = false,
 }: {
   items: PorFacturarItem[];
   rol: string | null;
   resaltar?: string;
   clientes?: ClienteOpcion[];
   emisoras?: EmisoraOpcion[];
-  /** Llave de paginación de la DataTable (dos tablas en la misma página). */
+  /** Llave de paginación de la DataTable (varias tablas en la misma página). */
   syncId?: string;
+  /** Tarjeta de las solicitudes automáticas que ya no aplican (`ya_no_aplican`). */
+  yaNoAplican?: boolean;
 }) {
   const router = useRouter();
   const [registrarPara, setRegistrarPara] = useState<VueloSeleccionado[] | null>(null);
@@ -147,9 +158,14 @@ export function PorFacturarTable({
     if (!retirar) return;
     const it = retirar;
     startTransition(async () => {
-      const res = await retirarSolicitudFacturaAction(it.vuelo.id);
+      // La llamada misma puede LANZAR (red caída, deploy de Vercel): jamás
+      // al error boundary.
+      const res = await retirarSolicitudFacturaAction(it.vuelo.id).catch(() => ({
+        ok: false as const,
+        error: MSG_SERVIDOR_NO_RESPONDIO,
+      }));
       if (res.ok) {
-        toast.success(`El vuelo #${it.vuelo.folio} salió de «Por facturar».`);
+        toast.success(textoSolicitudRetirada(it.vuelo.folio, yaNoAplican));
         setRetirar(null);
         avisarCambioPorFacturar();
         router.refresh();
@@ -393,8 +409,7 @@ export function PorFacturarTable({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Retirar la solicitud de factura?</AlertDialogTitle>
             <AlertDialogDescription>
-              El vuelo #{retirar?.vuelo.folio} sale de «Por facturar». Si ya le avisaste a
-              facturación, dile que ya no hace falta.
+              {retirar ? descripcionRetirarSolicitud(retirar.vuelo.folio, yaNoAplican) : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,25 +1,38 @@
 /**
- * FACTURA OBLIGATORIA POR CUENTA DE COBRO — espejo PURO de la regla del API
- * (`common/cuentas-cobro.ts`, invariante 60; decisión 4 del lote del cliente
- * del 13-oct-2026): un cobro que cae en HSBC Dólares / HSBC Pesos /
- * Scotiabank Dólares / Scotiabank Pesos EXIGE factura del servicio. Paywise
- * NO. Sin cuenta capturada decide el MÉTODO: link de pago HSBC,
- * transferencia y cheque exigen; BillPocket, efectivo, Paywise, dólares
- * directo y «otro» no. Los reembolsos (monto ≤ 0) nunca exigen por sí solos.
+ * FACTURA OBLIGATORIA POR CUENTA DE COBRO.
  *
- * A nivel VUELO se decide por el NETO de cada cuenta (o método sin cuenta) y
- * moneda (revisión del 13-oct-2026): un anticipo en HSBC devuelto COMPLETO
- * en la misma cuenta ya no exige; devuelto en parte, en efectivo, en otra
- * cuenta o en otra moneda, sí (conservador). USD y MXN NUNCA se suman: un
- * reembolso sin moneda no netea.
+ * RESPALDO para un API ≤ 0.0.76: desde el 0.0.77 la exigencia la decide el
+ * API (`factura_servicio.exigencia` y `origenes_exigen`) y el panel solo la
+ * pinta (`obligatoriaDeBloque`). Esta regla es la de ESE API y NO se
+ * actualiza a la nueva (rompería el skew). Retirable cuando ya no haya
+ * rollback posible a ≤ 0.0.76.
  *
- * Por qué hay un espejo en el panel: la burbuja de FACTURA de las cards de
- * cobros (vuelo y cotización) dice «Factura obligatoria: cobro en HSBC
- * Pesos» con los cobros que YA tiene a la mano, sin pedirle nada nuevo al
- * API (el lote del 13-oct no cambia el contrato). No es dinero: es la MISMA
- * clasificación, con la MISMA tabla, y `__tests__/factura-obligatoria.test.ts`
- * la compara contra el archivo del API cuando el repo hermano está al lado.
- * Si la regla cambia allá, cambia aquí en el mismo cambio.
+ * Por qué manda el API (decisión 2 del cliente del 14-oct-2026: «¿Un
+ * anticipo devuelto lleva CFDI?» ⇒ «eso no»): el dinero devuelto COMPLETO no
+ * exige factura salga por donde salga (efectivo, otra cuenta, otra moneda), y
+ * la devolución CRUZADA se decide con lo cobrado del vuelo en USD
+ * (`cobrosEnUsd` con su T.C.): un cálculo de dinero que el panel NO replica.
+ * Con la llave `exigencia` presente el panel obedece al API —también con
+ * `null` («no se pudo leer»: no se anuncia nada)—; sin la llave usa este
+ * espejo, que dice justo lo que dice ese API. Así panel y API no pueden decir
+ * cosas opuestas del mismo vuelo en ninguna ventana del deploy ni del
+ * rollback.
+ *
+ * La regla del respaldo (espejo PURO de `common/cuentas-cobro.ts` del API
+ * ≤ 0.0.76, invariante 60; decisión 4 del lote del cliente del 13-oct-2026):
+ * un cobro que cae en HSBC Dólares / HSBC Pesos / Scotiabank Dólares /
+ * Scotiabank Pesos EXIGE factura del servicio. Paywise NO. Sin cuenta
+ * capturada decide el MÉTODO: link de pago HSBC, transferencia y cheque
+ * exigen; BillPocket, efectivo, Paywise, dólares directo y «otro» no. Los
+ * reembolsos (monto ≤ 0) nunca exigen por sí solos. A nivel VUELO se decide
+ * por el NETO de cada cuenta (o método sin cuenta) y moneda (revisión del
+ * 13-oct-2026): un anticipo en HSBC devuelto COMPLETO en la misma cuenta ya
+ * no exige; devuelto en parte, en efectivo, en otra cuenta o en otra moneda,
+ * sí (conservador). USD y MXN NUNCA se suman: un reembolso sin moneda no
+ * netea. No es dinero: es la MISMA clasificación de ese API, con su tabla, y
+ * `__tests__/factura-obligatoria.test.ts` compara las dos listas y la
+ * tolerancia contra el archivo del API cuando el repo hermano está al lado
+ * (esas tres piezas no cambiaron en el 0.0.77).
  *
  * Lo que NO vive aquí: la columna «FACTURA VUELATOUR» de los Excel, la
  * solicitud automática y el pre-cierre (`vuelos_cobrados_sin_factura`) —
@@ -184,17 +197,65 @@ function unir(partes: string[]): string {
   return `${partes.slice(0, -1).join(", ")} y ${partes[partes.length - 1]}`;
 }
 
+/** Inicio de todo chip de factura obligatoria (y el chip entero si no hay orígenes). */
+export const TEXTO_FACTURA_OBLIGATORIA = "Factura obligatoria";
+
 /**
- * Chip de la burbuja: «Factura obligatoria: cobro en HSBC Pesos» (dos o más:
- * «cobros en HSBC Pesos y por Transferencia»). `null` = el vuelo no la exige
- * (sin cobros, o ninguno quedó en una cuenta que la exija).
+ * Chip de la burbuja a partir de los ORÍGENES de lo que exige («en HSBC
+ * Pesos», «por Transferencia»): «Factura obligatoria: cobro en HSBC Pesos»
+ * (dos o más: «cobros en HSBC Pesos y por Transferencia»). Recorta, quita
+ * vacíos y repetidos (en orden). `null` = sin orígenes. Fuente ÚNICA del
+ * texto: la usan el espejo (`textoFacturaObligatoria`) y lo que manda el
+ * API ≥ 0.0.77 (`origenes_exigen`, vía `obligatoriaDeBloque`).
+ */
+export function textoFacturaObligatoriaDeOrigenes(
+  origenes: ReadonlyArray<unknown> | null | undefined,
+): string | null {
+  const lista: string[] = [];
+  for (const o of origenes ?? []) {
+    const t = texto(o);
+    if (t && !lista.includes(t)) lista.push(t);
+  }
+  if (lista.length === 0) return null;
+  return `${TEXTO_FACTURA_OBLIGATORIA}: ${lista.length === 1 ? "cobro" : "cobros"} ${unir(lista)}`;
+}
+
+/**
+ * Chip de la burbuja con el ESPEJO (API ≤ 0.0.76): «Factura obligatoria:
+ * cobro en HSBC Pesos». `null` = el vuelo no la exige (sin cobros, o ninguno
+ * quedó en una cuenta que la exija).
  */
 export function textoFacturaObligatoria(
   cobros: ReadonlyArray<CobroExigeFacturaRow> | null | undefined,
 ): string | null {
-  const origenes = origenesQueExigenFactura(cobros);
-  if (origenes.length === 0) return null;
-  return `Factura obligatoria: ${origenes.length === 1 ? "cobro" : "cobros"} ${unir(origenes)}`;
+  return textoFacturaObligatoriaDeOrigenes(origenesQueExigenFactura(cobros));
+}
+
+/** Lo que el API ≥ 0.0.77 manda en `factura_servicio` para decidir el chip. */
+export interface ExigenciaDelBloque {
+  /** Ausente = API ≤ 0.0.76; `null` = el API no la pudo leer. */
+  exigencia?: string | null;
+  origenes_exigen?: ReadonlyArray<unknown> | null;
+}
+
+/**
+ * Chip «Factura obligatoria…» del bloque `factura_servicio` (14-oct-2026,
+ * API 0.0.77). Con la llave `exigencia` presente MANDA EL API: 'EXIGE' ⇒ el
+ * texto de `origenes_exigen` (sin orígenes, «Factura obligatoria» a secas:
+ * el API dijo que exige y eso no se calla); 'NO_EXIGE', 'SIN_COBROS', `null`
+ * (no se pudo leer) o cualquier otro valor ⇒ nada. Sin la llave (API ≤
+ * 0.0.76, skew o rollback) ⇒ el espejo de siempre sobre los cobros de la
+ * card, que es la regla de ESE API.
+ */
+export function obligatoriaDeBloque(
+  bloque: ExigenciaDelBloque | null | undefined,
+  cobros: ReadonlyArray<CobroExigeFacturaRow> | null | undefined,
+): string | null {
+  if (bloque != null && bloque.exigencia !== undefined) {
+    if (bloque.exigencia !== "EXIGE") return null;
+    return textoFacturaObligatoriaDeOrigenes(bloque.origenes_exigen) ?? TEXTO_FACTURA_OBLIGATORIA;
+  }
+  return textoFacturaObligatoria(cobros);
 }
 
 /** Tooltip del chip: por qué es obligatoria y qué pasa si no se registra. */
@@ -207,8 +268,10 @@ export const AYUDA_FACTURA_OBLIGATORIA_CANCELADO = `${AYUDA_FACTURA_OBLIGATORIA}
 /** Línea extra del diálogo «Retirar» cuando la factura es obligatoria. */
 export function avisoRetirarFacturaObligatoria(textoObligatoria: string | null): string | null {
   if (!textoObligatoria) return null;
-  const motivo = textoObligatoria.replace(/^Factura obligatoria: /, "");
-  return `Ojo: la factura es obligatoria (${motivo}); el pre-cierre seguirá marcando el vuelo mientras no se registre.`;
+  const prefijo = `${TEXTO_FACTURA_OBLIGATORIA}: `;
+  // «Factura obligatoria» a secas (el API dijo EXIGE sin orígenes): sin paréntesis.
+  const motivo = textoObligatoria.startsWith(prefijo) ? textoObligatoria.slice(prefijo.length) : "";
+  return `Ojo: la factura es obligatoria${motivo ? ` (${motivo})` : ""}; el pre-cierre seguirá marcando el vuelo mientras no se registre.`;
 }
 
 /**

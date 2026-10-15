@@ -51,6 +51,13 @@ import {
   lineasLigasUsdTc,
 } from "@/lib/admin/pre-cierre-tc-usd";
 import type { LigaUsdTcPreCierre } from "@/types/conciliacion";
+import {
+  AYUDA_DIFERENCIA_CAMBIARIA,
+  CLAVE_PRECIERRE_PERMISOS_SIN_AVION,
+  ETIQUETA_DIFERENCIA_CAMBIARIA,
+  esDiferenciaCambiaria,
+  hrefPrecierrePermisosSinAvion,
+} from "@/lib/admin/pre-cierre-anticipo-afac";
 
 interface PreCierreVuelo {
   id: string;
@@ -74,6 +81,10 @@ interface PreCierreVuelo {
       al cliente (sin IVA, USD) del vuelo que no tiene gasto que la pague.
       El renderer genérico pinta el chip #folio; el total va en `monto_usd`. */
   tua_cobrada_usd?: number;
+  /** ADITIVO (cobros_en_cancelados, 14-oct-2026, API 0.0.77; solo cuando
+      aplica): el dinero ya se devolvió completo y lo que el reparto cuenta
+      es la diferencia cambiaria ⇒ chip «#215 (diferencia cambiaria)». */
+  diferencia_cambiaria?: boolean;
 }
 
 /** Grupo con saldo por cobrar (clave grupo_con_saldo). Montos del API. */
@@ -163,6 +174,9 @@ const LINK_POR_CLAVE: Record<
   cobros_pendientes: (p) =>
     `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
   gastos_sin_avion: () => "/admin/expenses",
+  // Permisos sin avión (14-oct-2026, API 0.0.77, BLOQUEA: «el AFAC lo cargan
+  // al Avión»): Gastos con los permisos del periodo, donde se asigna el avión.
+  [CLAVE_PRECIERRE_PERMISOS_SIN_AVION]: hrefPrecierrePermisosSinAvion,
   gastos_sin_tc: () => "/admin/expenses",
   // Cobros MXN sin TC que ni el TC oficial convierte: se captura el TC en
   // el vuelo (los folios del item llevan directo a cada uno).
@@ -211,11 +225,15 @@ const LINK_POR_CLAVE: Record<
  * Monto del renglón con la regla de `lib/format` (revisión del lote 2,
  * 14-oct-2026): entero sin decimales o EXACTAMENTE 2 — nunca «$172.4 USD»
  * (`toLocaleString` daba 0 a 3 decimales; el renglón de TUA cobrada lo
- * estrenó con sumas que casi nunca son cerradas).
+ * estrenó con sumas que casi nunca son cerradas). Con dólares Y pesos (p. ej.
+ * `permisos_sin_avion`, API 0.0.77: el API los manda por separado y jamás los
+ * suma) se dicen LOS DOS — antes solo salían los dólares y los pesos se
+ * perdían de la vista.
  */
 function textoMontoItem(item: PreCierreItem): string | null {
-  if (item.monto_usd != null && item.monto_usd > 0) return fmtMonto(item.monto_usd, "USD");
-  if (item.monto_mxn != null && item.monto_mxn > 0) return fmtMonto(item.monto_mxn, "MXN");
+  const usd = item.monto_usd != null && item.monto_usd > 0 ? fmtMonto(item.monto_usd, "USD") : null;
+  const mxn = item.monto_mxn != null && item.monto_mxn > 0 ? fmtMonto(item.monto_mxn, "MXN") : null;
+  if (usd || mxn) return [usd, mxn].filter(Boolean).join(" · ");
   if (item.monto != null && item.monto > 0) return fmtUsd(item.monto);
   return null;
 }
@@ -400,6 +418,9 @@ export async function PreCierreCard({
                               ? hrefSeguimientoVuelo(v.id)
                               : `/admin/flights/${v.id}`
                           }
+                          // Cancelado cuyo dinero ya se devolvió (API 0.0.77):
+                          // el chip dice por qué todavía cuenta.
+                          title={esDiferenciaCambiaria(v) ? AYUDA_DIFERENCIA_CAMBIARIA : undefined}
                           className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
                         >
                           {v.folio > 0 ? `#${v.folio}` : "vuelo"}
@@ -407,9 +428,11 @@ export async function PreCierreCard({
                             ? ` (${fmtUsd(v.saldo_usd)})`
                             : v.notas != null && v.notas > 0
                               ? ` (${textoAjustesPrecierre(v.notas)})`
-                              : v.estado
-                                ? ` (${v.estado})`
-                                : ""}
+                              : esDiferenciaCambiaria(v)
+                                ? ` (${ETIQUETA_DIFERENCIA_CAMBIARIA})`
+                                : v.estado
+                                  ? ` (${v.estado})`
+                                  : ""}
                           {/* Hijo de un grupo: "G-12" junto al folio. */}
                           {v.grupo_folio != null && (
                             <span
