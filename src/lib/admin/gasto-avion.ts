@@ -54,6 +54,13 @@ export type EstadoAvionGasto =
 export const ETIQUETA_FALTA_AVION = "Falta avión";
 export const TITULO_FALTA_AVION =
   "Este gasto necesita avión y no lo tiene: cuenta en la pestaña «Pendientes». Asígnalo en «Verificar / editar» (menú ⋯) o con «Sugerir asignaciones».";
+/**
+ * El MISMO aviso fuera de Gastos (historial del fondo de caja chica,
+ * 15-oct-2026): ahí no existen la pestaña «Pendientes» ni «Sugerir
+ * asignaciones»; solo el menú ⋯ del renglón con «Verificar / editar».
+ */
+export const TITULO_FALTA_AVION_FUERA_DE_GASTOS =
+  "Este gasto necesita avión y no lo tiene. Asígnalo en «Verificar / editar» (menú ⋯).";
 export const ETIQUETA_AVION_VUELATOUR = "VuelaTour";
 export const ETIQUETA_AVION_PERSONAL = "Personal";
 export const ETIQUETA_REPARTIDO = "Repartido:";

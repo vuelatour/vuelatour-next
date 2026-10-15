@@ -10302,7 +10302,10 @@ celda en los balances» y «que diga en qué hoja del excel del balance está».
   `components/admin/caja-chica/gasto-fondo-detalle.tsx`). No decide nada:
   categoría con `categoriaGastoLabel`, avión con `estadoAvionGasto` (los
   MISMOS textos y titles de la columna «Avión · vuelo» de Gastos, en línea;
-  el vuelo no se repite: el folio del renglón sigue ligando a él), proveedor
+  salvo el title de «Falta avión», que aquí es
+  `TITULO_FALTA_AVION_FUERA_DE_GASTOS`: el fondo no tiene pestaña
+  «Pendientes» ni «Sugerir asignaciones», solo «Verificar / editar» del
+  menú ⋯; el vuelo no se repite: el folio del renglón sigue ligando a él), proveedor
   (o el lugar), comprobante con `textoComprobante` y el semáforo
   `FacturacionBadge compacta` (el de un clic de Gastos). La categoría no se
   repite si ya es la descripción del renglón (gasto sin notas). Sin el gasto
@@ -10330,7 +10333,12 @@ celda en los balances» y «que diga en qué hoja del excel del balance está».
     nombre). Hoja desconocida (API más nuevo) ⇒ se calla, jamás inventa.
     Renombrar una pestaña en pyservices obliga a tocar la tabla: la congela
     `conciliacion-balance.test.ts` (con paridad contra los tipos del panel,
-    del API y el texto de pyservices cuando el repo hermano existe).
+    del API y el texto de pyservices cuando el repo hermano existe; cada
+    tabla se busca SOLO en el cuerpo de SU libro —`construir_balance_avion`
+    / el bloque `if cons is not None:` de `construir_balance_general`—,
+    porque «combustible» y «refacciones» existen en los dos. Desde un
+    worktree suelto: `VUELATOUR_WORKSPACE=<carpeta con los repos>` activa
+    esas paridades, que si no se omiten).
   - `balance: null` NO significa «no cuenta en ningún balance» (el pago al
     vendedor resta en COMISIONES sin vínculo, inv. 72 (v)): sin línea ni
     enlaces, sin texto.

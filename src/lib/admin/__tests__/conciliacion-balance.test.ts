@@ -359,24 +359,63 @@ describe("en qué hoja del Excel del balance está (pedido del cliente, 15-oct-2
 
 /**
  * PARIDAD con pyservices (repo hermano; en Vercel y en un worktree suelto no
- * existe y se omite): cada nombre de la tabla es una pestaña que de verdad
- * crea `balance_avion_xlsx.py`.
+ * existe y se omite; `VUELATOUR_WORKSPACE=<carpeta con los repos>` la activa
+ * desde un worktree): cada nombre de la tabla es una pestaña que de verdad
+ * crea `balance_avion_xlsx.py` EN SU LIBRO. «combustible» y «refacciones»
+ * existen en los dos libros: cada tabla se busca SOLO en el cuerpo de su
+ * libro (`construir_balance_avion` / el bloque `if cons is not None:` de
+ * `construir_balance_general`), para que renombrar la pestaña de uno solo
+ * truene (revisión del 15-oct-2026).
  */
-const PY = path.resolve(__dirname, "../../../../../vuelatour-pyservices/app/services/balance_avion_xlsx.py");
+const WORKSPACE = process.env.VUELATOUR_WORKSPACE
+  ? path.resolve(process.env.VUELATOUR_WORKSPACE)
+  : path.resolve(__dirname, "../../../../..");
+const PY = path.join(WORKSPACE, "vuelatour-pyservices/app/services/balance_avion_xlsx.py");
 const libroPy = existsSync(PY) ? readFileSync(PY, "utf8") : null;
+/** Cuerpo de una función top-level de Python (hasta el siguiente `def` de columna 0). */
+const cuerpoPy = (src: string, funcion: string): string => {
+  const i = src.indexOf(`\ndef ${funcion}(`);
+  expect(i, funcion).toBeGreaterThanOrEqual(0);
+  const fin = src.indexOf("\ndef ", i + 1);
+  return src.slice(i, fin < 0 ? undefined : fin);
+};
 describe("paridad con pyservices (lectura del repo hermano)", () => {
-  it.skipIf(!libroPy)("cada pestaña de la tabla la crea el libro de pyservices", () => {
+  it.skipIf(!libroPy)("cada pestaña de la tabla la crea SU libro de pyservices (no el otro)", () => {
+    const py = libroPy!;
+    const individual = cuerpoPy(py, "construir_balance_avion");
+    const generalFn = cuerpoPy(py, "construir_balance_general");
+    const iCons = generalFn.indexOf("\n    if cons is not None:\n");
+    expect(iCons, "bloque `if cons is not None:` del general").toBeGreaterThanOrEqual(0);
+    const general = generalFn.slice(iCons);
+    // La hoja de vuelos de los dos libros la titula `_hoja_maestra` con la matrícula.
+    expect(cuerpoPy(py, "_hoja_maestra")).toContain('sheet_title(f"reporte horas {req.matricula}")');
     for (const [hoja, nombre] of Object.entries(NOMBRE_HOJA_BALANCE_AVION)) {
       if (hoja === "reporte_horas") {
-        expect(libroPy, hoja).toContain('sheet_title(f"reporte horas {req.matricula}")');
+        expect(nombre).toBe("reporte horas");
+        expect(individual, hoja).toContain("_hoja_maestra(wb.active, req)");
       } else {
-        expect(libroPy, hoja).toContain(`create_sheet("${nombre}")`);
+        expect(individual, hoja).toContain(`create_sheet("${nombre}")`);
       }
     }
     for (const [hoja, nombre] of Object.entries(NOMBRE_HOJA_BALANCE_GENERAL)) {
-      if (hoja === "reporte_horas") expect(libroPy, hoja).toContain('"reporte horas FLOTA"');
-      else expect(libroPy, hoja).toContain(`create_sheet("${nombre}")`);
+      if (hoja === "reporte_horas") {
+        expect(nombre).toBe("reporte horas FLOTA");
+        expect(general, hoja).toMatch(/_hoja_maestra\(\s*wb\.create_sheet\(\),\s*cons,/);
+      } else {
+        expect(general, hoja).toContain(`create_sheet("${nombre}")`);
+      }
     }
+    // Las exclusivas de un libro NO están en el otro (si no, la tabla equivocada pasaría).
+    for (const nombre of ["Gastos Indirectos", "permisos"]) {
+      expect(general, nombre).not.toContain(`create_sheet("${nombre}")`);
+    }
+    for (const nombre of ["otros gastos", "repartidos a aviones", "inventario"]) {
+      expect(individual, nombre).not.toContain(`create_sheet("${nombre}")`);
+    }
+  });
+  const balanceApi = path.join(WORKSPACE, "vuelatour-api/src/modules/aircraft/aircraft-balance.service.ts");
+  it.skipIf(!existsSync(balanceApi))("el consolidado de la flota llega con matrícula «FLOTA» (⇒ «reporte horas FLOTA»)", () => {
+    expect(readFileSync(balanceApi, "utf8")).toContain("matricula: 'FLOTA'");
   });
 });
 
@@ -385,7 +424,7 @@ describe("paridad con pyservices (lectura del repo hermano)", () => {
  * omite también hasta que el API traiga el punto 5
  * (`common/ubicacion-balance-gasto.util.ts`): ahí se vuelven obligatorias.
  */
-const API = path.resolve(__dirname, "../../../../../vuelatour-api/src");
+const API = path.join(WORKSPACE, "vuelatour-api/src");
 const leerApi = (rel: string): string | null => {
   const p = path.join(API, rel);
   return existsSync(p) ? readFileSync(p, "utf8") : null;

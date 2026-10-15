@@ -285,8 +285,9 @@ describe("la fila del gasto en el historial", () => {
     expect(veces(html, ">Operaciones<")).toBe(1);
   });
 
-  it("«Falta avión» y «VuelaTour» con los MISMOS textos y titles de la columna de Gastos", async () => {
-    const { TITULO_FALTA_AVION, ETIQUETA_FALTA_AVION } = await import("@/lib/admin/gasto-avion");
+  it("«Falta avión» y «VuelaTour» con los MISMOS textos de la columna de Gastos (el title de «Falta avión» sin salidas que aquí no existen)", async () => {
+    const { TITULO_FALTA_AVION, TITULO_FALTA_AVION_FUERA_DE_GASTOS, ETIQUETA_FALTA_AVION } =
+      await import("@/lib/admin/gasto-avion");
     const falta = filaGasto(undefined, true, {
       ...GASTO_436,
       aeronave_id: null,
@@ -294,7 +295,14 @@ describe("la fila del gasto en el historial", () => {
       vuelo_id: null,
     } as Gasto);
     const html = tabla([falta]);
-    expect(html).toContain(`title="${TITULO_FALTA_AVION}"`);
+    expect(html).toContain(`title="${TITULO_FALTA_AVION_FUERA_DE_GASTOS}"`);
+    expect(TITULO_FALTA_AVION_FUERA_DE_GASTOS).toBe(
+      "Este gasto necesita avión y no lo tiene. Asígnalo en «Verificar / editar» (menú ⋯).",
+    );
+    // En el fondo no hay pestaña «Pendientes» ni «Sugerir asignaciones».
+    expect(html).not.toContain(TITULO_FALTA_AVION);
+    expect(html).not.toContain("Sugerir asignaciones");
+    expect(html).not.toContain("«Pendientes»");
     expect(html).toContain(ETIQUETA_FALTA_AVION);
     const empresa = filaGasto(undefined, true, {
       ...GASTO_436,

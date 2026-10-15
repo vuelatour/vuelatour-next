@@ -11,7 +11,7 @@ import {
   ETIQUETA_REPARTIDO,
   MATRICULA_DESCONOCIDA,
   TEXTO_VER_AVION,
-  TITULO_FALTA_AVION,
+  TITULO_FALTA_AVION_FUERA_DE_GASTOS,
   TITULO_REFERENCIA_AVION,
   textoReferenciaAvion,
   tituloRemanenteReparto,
@@ -26,8 +26,10 @@ const CLASE_AVION_LINK =
 /**
  * «Avión · vuelo» EN LÍNEA: los MISMOS textos y titles de la columna de
  * Gastos (`expenses-table.tsx`, constantes de `lib/admin/gasto-avion.ts`),
- * compactos para caber en «Concepto». El vuelo NO se repite: el folio del
- * renglón ya liga a su detalle.
+ * compactos para caber en «Concepto». Salvo el title de «Falta avión»:
+ * aquí va `TITULO_FALTA_AVION_FUERA_DE_GASTOS` (en el fondo no hay pestaña
+ * «Pendientes» ni «Sugerir asignaciones», solo el menú ⋯ del renglón). El
+ * vuelo NO se repite: el folio del renglón ya liga a su detalle.
  */
 function AvionEnLinea({ e, moneda }: { e: EstadoAvionGasto; moneda: string }) {
   if (e.tipo === "REPARTIDO") {
@@ -71,9 +73,9 @@ function AvionEnLinea({ e, moneda }: { e: EstadoAvionGasto; moneda: string }) {
     );
   }
   return (
-    <span className="text-amber-600 dark:text-amber-400" title={TITULO_FALTA_AVION}>
+    <span className="text-amber-600 dark:text-amber-400" title={TITULO_FALTA_AVION_FUERA_DE_GASTOS}>
       {ETIQUETA_FALTA_AVION}
-      <span className="sr-only"> · {TITULO_FALTA_AVION}</span>
+      <span className="sr-only"> · {TITULO_FALTA_AVION_FUERA_DE_GASTOS}</span>
     </span>
   );
 }
