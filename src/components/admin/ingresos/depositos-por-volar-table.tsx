@@ -1,9 +1,13 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { CeldaConciliacionEntrada, ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
+import { EntradaBancoSheet, useDetalleBancoEntrada } from "@/components/admin/ingresos/entrada-banco-sheet";
+import { filaBancoDeEntrada } from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -11,71 +15,91 @@ import { cn } from "@/lib/utils";
 import type { EntradaDinero } from "@/types/ingresos";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
-const COLUMNS: DataTableColumn<EntradaDinero>[] = [
-  { key: "dia", header: "Fecha del pago", cellClassName: "whitespace-nowrap", cell: (e) => fmtDateOnly(e.dia) },
-  {
-    key: "vuelo",
-    header: "Vuelo",
-    noLink: true,
-    cell: (e) =>
-      e.vuelo_id ? (
-        <span className="block">
-          <Link href={`/admin/flights/${e.vuelo_id}#cobros`} className="font-medium text-brand-600 hover:underline">
-            {e.etiqueta}
-          </Link>
-          {e.anticipo_etiqueta && (
-            <span className="block">
-              <ChipDelAnticipo etiqueta={e.anticipo_etiqueta} />
-            </span>
-          )}
-        </span>
-      ) : (
-        e.etiqueta
-      ),
-  },
-  { key: "cliente", header: "Cliente", cell: (e) => e.cliente_nombre ?? "—" },
-  {
-    key: "estado",
-    header: "Estado del vuelo",
-    cell: (e) => {
-      const est = e.vuelo_estado as EstadoVuelo | null;
-      return est && ESTADO_LABELS[est] ? (
-        <Badge variant="outline" className={cn("text-[10px]", ESTADO_STYLES[est])}>
-          {ESTADO_LABELS[est]}
-        </Badge>
-      ) : (
-        <span className="text-xs text-muted-foreground">{e.vuelo_estado ?? "—"}</span>
-      );
-    },
-  },
-  {
-    key: "monto",
-    header: "Monto",
-    headClassName: "text-right",
-    cellClassName: "text-right tabular-nums whitespace-nowrap font-mono",
-    cell: (e) => fmtMonto(e.monto, e.moneda),
-  },
-  {
-    key: "conciliacion",
-    header: "Conciliación",
-    // «Parcial · faltan $X» (API 0.0.78) junto al badge de un cobro parcial.
-    cell: (e) => <CeldaConciliacionEntrada entrada={e} />,
-  },
-];
-
 /**
  * «Depósitos de vuelos que aún no vuelan» (SOLO LECTURA, 24-sep-2026). En esta
  * operación el depósito normal llega cuando la RESERVA ya existe (DOCX flujos
  * §5.5: «depósito de 25–50 % al reservar»): ese dinero YA es un cobro del
  * vuelo. Se muestra aquí para que nadie lo vuelva a registrar como anticipo.
+ *
+ * 15-oct-2026 (API 0.0.78): el badge de «Conciliación» abre la hoja
+ * «Conciliación con el banco» del cobro (UNA por tabla) para ADMIN y
+ * FACTURACION; por eso las columnas viven en un `useMemo` con `abrirBanco`
+ * (antes eran una constante de módulo y el clic no tenía a quién llamar).
  */
 export function DepositosPorVolarTable({
   depositos,
+  rol,
   huboCorte,
 }: {
   depositos: EntradaDinero[];
+  /** Rol de quien mira (`/me`): el clic del badge solo con `puedeVerDetalleBanco`. */
+  rol?: string | null;
   huboCorte?: boolean;
 }) {
+  const detalleBanco = useDetalleBancoEntrada();
+  const abrirBanco = puedeVerDetalleBanco(rol) ? detalleBanco.abrir : null;
+  const columns = useMemo<Array<DataTableColumn<EntradaDinero>>>(
+    () => [
+      { key: "dia", header: "Fecha del pago", cellClassName: "whitespace-nowrap", cell: (e) => fmtDateOnly(e.dia) },
+      {
+        key: "vuelo",
+        header: "Vuelo",
+        noLink: true,
+        cell: (e) =>
+          e.vuelo_id ? (
+            <span className="block">
+              <Link href={`/admin/flights/${e.vuelo_id}#cobros`} className="font-medium text-brand-600 hover:underline">
+                {e.etiqueta}
+              </Link>
+              {e.anticipo_etiqueta && (
+                <span className="block">
+                  <ChipDelAnticipo etiqueta={e.anticipo_etiqueta} />
+                </span>
+              )}
+            </span>
+          ) : (
+            e.etiqueta
+          ),
+      },
+      { key: "cliente", header: "Cliente", cell: (e) => e.cliente_nombre ?? "—" },
+      {
+        key: "estado",
+        header: "Estado del vuelo",
+        cell: (e) => {
+          const est = e.vuelo_estado as EstadoVuelo | null;
+          return est && ESTADO_LABELS[est] ? (
+            <Badge variant="outline" className={cn("text-[10px]", ESTADO_STYLES[est])}>
+              {ESTADO_LABELS[est]}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">{e.vuelo_estado ?? "—"}</span>
+          );
+        },
+      },
+      {
+        key: "monto",
+        header: "Monto",
+        headClassName: "text-right",
+        cellClassName: "text-right tabular-nums whitespace-nowrap font-mono",
+        cell: (e) => fmtMonto(e.monto, e.moneda),
+      },
+      {
+        key: "conciliacion",
+        header: "Conciliación",
+        // El badge abre la hoja (botón): la celda no navega. «Parcial ·
+        // faltan $X» (API 0.0.78) junto al badge de un cobro parcial.
+        noLink: true,
+        cell: (e) => (
+          <CeldaConciliacionEntrada
+            entrada={e}
+            alAbrir={abrirBanco ? () => abrirBanco(filaBancoDeEntrada(e)) : undefined}
+          />
+        ),
+      },
+    ],
+    [abrirBanco],
+  );
+
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
@@ -89,7 +113,7 @@ export function DepositosPorVolarTable({
         <div className="rounded-lg border border-border">
           <DataTable
             syncId="dv"
-            columns={COLUMNS}
+            columns={columns}
             rows={depositos}
             rowKey={(e) => `${e.origen}:${e.id}`}
             searchText={(e) => `${e.etiqueta} ${e.cliente_nombre ?? ""} ${e.monto}`}
@@ -98,6 +122,7 @@ export function DepositosPorVolarTable({
           />
         </div>
       )}
+      <EntradaBancoSheet detalle={detalleBanco} />
     </div>
   );
 }

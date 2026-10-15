@@ -53,6 +53,7 @@ import {
   menuDesvincularCobros,
   numeroCobrosDe,
   resumenLoteCobrosFila,
+  lineaCobroLote,
   seleccionInicial,
   textoBusquedaCobros,
   textoConfirmarDesvincularCobros,
@@ -921,5 +922,43 @@ describe("desvincular un abono (D22) y Paywise (D6)", () => {
     expect(textoPaywiseEnLote(2)).toBe(
       "2 depósitos de Paywise pagan varios cobros (lote): quedan fuera del cruce automático; revísalos en la bandeja.",
     );
+  });
+});
+
+describe("la línea del lote, UNA para la bandeja y la hoja de una entrada (15-oct-2026, API 0.0.78)", () => {
+  it("lineaCobroLote: el cliente con trim(), las fechas y el monto de la parte; el sufijo del 0.0.78 se conserva", () => {
+    const l = lineaCobroLote({ ...MOV.cobros![1], cliente: "Beh Kay ", cobro_estado: "PARCIAL", cobro_faltante: 10000 }, "MXN");
+    expect(l.principal).toBe("Vuelo #380 · Beh Kay");
+    expect(l.secundaria).toContain("$2,500 MXN");
+    expect(l.sufijo).toEqual({ texto: " · parcial: faltan $10,000 MXN", tono: "aviso" });
+    expect(l.href).toBe("/admin/flights/v380");
+    // resumenLoteCobrosFila la usa tal cual (sin opciones, idéntica a la de siempre).
+    expect(resumenLoteCobrosFila(MOV)?.lineas[1]).toEqual({ ...lineaCobroLote(MOV.cobros![1], "MXN") });
+  });
+
+  it("`destacar`: la línea de ese cobro va destacada aunque fuera la 4.ª (se ven las 2 primeras más ESA)", () => {
+    const cuatro = {
+      ...MOV,
+      cobros_n: 4,
+      cobros: [
+        ...MOV.cobros!,
+        { cobro_id: "c381", monto_parte: 500, vuelo_id: "v381", folio: 381, cliente: "Maqar", moneda: "MXN", neto: 500 },
+        { cobro_id: "c382", monto_parte: 700, vuelo_id: "v382", folio: 382, cliente: "Maqar", moneda: "MXN", neto: 700 },
+      ],
+      cobros_suma: 4700,
+    };
+    const r = resumenLoteCobrosFila(cuatro, { destacar: "C382" })!;
+    expect(r.lineas.map((l) => [l.principal, l.destacada === true])).toEqual([
+      ["Vuelo #379 · Maqar", false],
+      ["Vuelo #380 · Maqar", false],
+      ["Vuelo #382 · Maqar", true],
+    ]);
+    expect(r.mas).toBe("y 1 más");
+    const sinOpciones = resumenLoteCobrosFila(cuatro)!;
+    expect(sinOpciones.lineas.map((l) => l.principal)).toEqual(["Vuelo #379 · Maqar", "Vuelo #380 · Maqar", "Vuelo #381 · Maqar"]);
+    expect(sinOpciones.lineas.some((l) => l.destacada)).toBe(false);
+    expect(resumenLoteCobrosFila(cuatro, { destacar: null })).toEqual(sinOpciones);
+    // Dentro de las 3 primeras: se marca en su lugar.
+    expect(resumenLoteCobrosFila(cuatro, { destacar: "c380" })!.lineas[1].destacada).toBe(true);
   });
 });

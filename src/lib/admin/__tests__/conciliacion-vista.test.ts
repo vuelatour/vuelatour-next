@@ -8,6 +8,9 @@ import {
   enfoqueConciliacionDeUrl,
   filasConFoco,
   textoMovimientoEnfocado,
+  textoMovimientoNoEncontrado,
+  TEXTO_MOVIMIENTO_NO_ENCONTRADO,
+  PARAM_COBRO_FOCO,
   FILTROS_CONCILIACION,
   filtroConciliacionDeUrl,
   filtroReporteDeVista,
@@ -334,10 +337,11 @@ describe("enfoque desde Gastos: ?mov= y ?gasto= (13-oct-2026, conciliación al r
   });
 
   it("enfoqueConciliacionDeUrl: válido, inválido, ausente y en mayúsculas", () => {
-    expect(enfoqueConciliacionDeUrl({ mov: MOV, gasto: GASTO })).toEqual({ mov: MOV, gasto: GASTO });
-    expect(enfoqueConciliacionDeUrl({ mov: "nada", gasto: "123" })).toEqual({ mov: null, gasto: null });
-    expect(enfoqueConciliacionDeUrl({})).toEqual({ mov: null, gasto: null });
-    expect(enfoqueConciliacionDeUrl({ mov: MOV.toUpperCase() })).toEqual({ mov: MOV, gasto: null });
+    // 15-oct-2026: también `cobro` (null sin él).
+    expect(enfoqueConciliacionDeUrl({ mov: MOV, gasto: GASTO })).toEqual({ mov: MOV, gasto: GASTO, cobro: null });
+    expect(enfoqueConciliacionDeUrl({ mov: "nada", gasto: "123" })).toEqual({ mov: null, gasto: null, cobro: null });
+    expect(enfoqueConciliacionDeUrl({})).toEqual({ mov: null, gasto: null, cobro: null });
+    expect(enfoqueConciliacionDeUrl({ mov: MOV.toUpperCase() })).toEqual({ mov: MOV, gasto: null, cobro: null });
   });
 
   it("filasConFoco: la enfocada PRIMERO sin mover a las demás; sin foco o sin encontrarla, el mismo arreglo", () => {
@@ -363,5 +367,45 @@ describe("enfoque desde Gastos: ?mov= y ?gasto= (13-oct-2026, conciliación al r
     expect(PARAM_BUSQUEDA_MOVIMIENTOS).toBe("mvq");
     expect(SYNC_ID_MOVIMIENTOS).toBe("mv");
     expect(CLASE_FILA_ENFOCADA).toBe("ring-2 ring-inset ring-amber-400 bg-amber-500/5");
+  });
+});
+
+describe("enfoque desde la hoja de una ENTRADA: ?cobro= (15-oct-2026, API 0.0.78)", () => {
+  const MOV = "8a7eff81-6b8c-469e-a74d-2b0f4b631b08";
+  const COBRO = "d7b0890c-9d0f-441f-a5cd-edd27fa50f0f";
+  const CUENTA = "212add6c-c4e5-44cc-a30c-0635c0ab3036";
+  const GASTO = "4e29c476-a956-440f-bd83-2c70f78279d4";
+
+  it("hrefConciliacion: `cobro` después de `gasto` y antes de `mvq`; sin él, la URL de antes byte a byte", () => {
+    expect(PARAM_COBRO_FOCO).toBe("cobro");
+    expect(
+      hrefConciliacion({ f: "conciliados", cuenta: CUENTA, desde: "2026-09-15", hasta: "2026-09-15", mov: MOV, cobro: COBRO }),
+    ).toBe(`/admin/conciliacion?f=conciliados&cuenta=${CUENTA}&desde=2026-09-15&hasta=2026-09-15&mov=${MOV}&cobro=${COBRO}`);
+    expect(hrefConciliacion({ mov: MOV, gasto: GASTO, cobro: COBRO, buscar: "977.45" })).toBe(
+      `/admin/conciliacion?mov=${MOV}&gasto=${GASTO}&cobro=${COBRO}&mvq=977.45`,
+    );
+    expect(hrefConciliacion({ f: "conciliados", mov: MOV, cobro: null })).toBe(`/admin/conciliacion?f=conciliados&mov=${MOV}`);
+    expect(hrefConciliacion({ cobro: "1 OR 1=1" })).toBe("/admin/conciliacion");
+  });
+
+  it("enfoqueConciliacionDeUrl devuelve el `cobro` validado y en minúsculas", () => {
+    expect(enfoqueConciliacionDeUrl({ mov: MOV, cobro: COBRO.toUpperCase() })).toEqual({ mov: MOV, gasto: null, cobro: COBRO });
+    expect(enfoqueConciliacionDeUrl({ cobro: "nada" })).toEqual({ mov: null, gasto: null, cobro: null });
+  });
+
+  it("textoMovimientoEnfocado decide por `tipo`: ABONO ⇒ «el abono … que abriste.»; CARGO, el de Gastos", () => {
+    expect(textoMovimientoEnfocado({ fecha: "2026-09-15", monto: "69183", tipo: "ABONO" }, "EJE SCOTIA")).toBe(
+      `Primero en la lista y resaltado: el abono del ${fmtDateOnly("2026-09-15")} por $69,183.00 (EJE SCOTIA) que abriste.`,
+    );
+    expect(textoMovimientoEnfocado({ fecha: "2026-09-30", monto: "-11205.60", tipo: "CARGO" }, "EJE SCOTIA")).toBe(
+      `Primero en la lista y resaltado: el cargo del ${fmtDateOnly("2026-09-30")} por $11,205.60 (EJE SCOTIA) que abriste desde Gastos.`,
+    );
+  });
+
+  it("no encontrado: con `?gasto=` el texto de Gastos de siempre; sin él, el genérico", () => {
+    expect(textoMovimientoNoEncontrado({ gasto: GASTO })).toBe(TEXTO_MOVIMIENTO_NO_ENCONTRADO);
+    expect(textoMovimientoNoEncontrado({ gasto: null })).toBe(
+      "No encontramos en esta vista el movimiento que abriste: puede estar en otra cuenta u otras fechas, o ya lo desvincularon. Quita los filtros para buscarlo.",
+    );
   });
 });

@@ -17,14 +17,45 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/admin/ingresos",
   useSearchParams: () => new URLSearchParams(),
 }));
+// La tabla monta la hoja «Conciliación con el banco» (15-oct-2026): sus
+// actions no se llaman al pintar.
+vi.mock("@/app/admin/conciliacion/actions", () => ({
+  conciliacionDeEntradaAction: vi.fn(),
+  estadoCuentaUrlAction: vi.fn(),
+}));
 
 const { BadgeEstadoConciliacion, CeldaConciliacionEntrada } = await import("../entradas-table");
 
-type Celda = Pick<EntradaDinero, "moneda" | "conciliacion">;
-
-const SIN_CONCILIAR: Celda = { moneda: "MXN", conciliacion: { estado: "SIN_CONCILIAR", movimiento_id: null } };
-const PARCIAL: Celda = {
+const BASE: EntradaDinero = {
+  origen: "COBRO_VUELO",
+  id: "0f3c2b1a-1111-4a7b-8c9d-0e1f2a3b4c5d",
+  dia: "2026-09-15",
+  etiqueta: "Vuelo #315",
+  categoria: "COBRO_VUELO",
+  categoria_etiqueta: "Cobro de vuelo",
+  cliente_nombre: "Beh Kay",
+  concepto: null,
+  monto: 3400,
+  comision: null,
+  neto: 3400,
   moneda: "MXN",
+  metodo: "TRANSFERENCIA",
+  metodo_etiqueta: "Transferencia",
+  vuelo_id: "v-315",
+  vuelo_folio: 315,
+  grupo_folio: null,
+  vuelo_estado: "CONFIRMADO",
+  por_volar: false,
+  anticipo_etiqueta: null,
+  cuenta_en_total: true,
+  es_reembolso: false,
+  conciliacion: { estado: "SIN_CONCILIAR", movimiento_id: null },
+  registrado_por_nombre: "Itzi",
+};
+
+const SIN_CONCILIAR: EntradaDinero = BASE;
+const PARCIAL: EntradaDinero = {
+  ...BASE,
   conciliacion: {
     estado: "SIN_CONCILIAR",
     movimiento_id: null,
@@ -54,9 +85,12 @@ describe("Ingresos: chip «Parcial · faltan $X» junto al badge", () => {
     ).toBe(hoy);
   });
 
-  it("las dos tablas de entradas usan la celda (con el chip)", () => {
+  it("las dos tablas de entradas usan la celda (con el chip y, desde el 15-oct-2026, el clic a la hoja)", () => {
     const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
-    expect(leer("../entradas-table.tsx")).toContain("<CeldaConciliacionEntrada entrada={e} />");
-    expect(leer("../depositos-por-volar-table.tsx")).toContain("<CeldaConciliacionEntrada entrada={e} />");
+    for (const src of [leer("../entradas-table.tsx"), leer("../depositos-por-volar-table.tsx")]) {
+      expect(src).toMatch(
+        /<CeldaConciliacionEntrada\s+entrada=\{e\}\s+alAbrir=\{abrirBanco \? \(\) => abrirBanco\(filaBancoDeEntrada\(e\)\) : undefined\}\s+\/>/,
+      );
+    }
   });
 });

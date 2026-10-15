@@ -130,6 +130,39 @@ describe("la línea del gasto dentro del lote", () => {
   });
 });
 
+describe("la línea del COBRO dentro del lote de un abono (`?cobro=`, 15-oct-2026)", () => {
+  const cobro = (folio: number) => ({
+    cobro_id: `c${folio}0000-0000-4000-8000-000000000${folio}`,
+    monto_parte: 1000,
+    vuelo_id: `f${folio}0000-0000-4000-8000-000000000${folio}`,
+    folio,
+    cliente: "Maqar",
+    fecha_cobro: "2026-10-06T15:00:00Z",
+    moneda: "MXN",
+    neto: 1000,
+  });
+  const lote = mov("c4000000-0000-4000-8000-000000000001", {
+    tipo: "ABONO",
+    monto: "4000.00",
+    conciliado: true,
+    cobros_n: 4,
+    cobros: [cobro(379), cobro(380), cobro(381), cobro(382)],
+    cobros_suma: 4000,
+    cobros_diferencia: 0,
+  });
+
+  it("el 4.º cobro (antes en «y 1 más») se ve, resaltado y con « · el que abriste»; sin la prop, el de siempre", () => {
+    const html = tabla([lote], { cobroResaltado: cobro(382).cobro_id });
+    expect(html).toContain("Vuelo #382 · Maqar");
+    expect(html).toContain(CLASE_LINEA_ENFOCADA);
+    expect(html).toContain('<span class="text-[10px] font-normal"> · el que abriste</span>');
+    expect(html).toContain("y 1 más");
+    const hoy = tabla([lote]);
+    expect(hoy).not.toContain("Vuelo #382");
+    expect(tabla([lote], { cobroResaltado: null })).toBe(hoy);
+  });
+});
+
 describe("cableado (regex sobre los fuentes)", () => {
   it("la tabla: syncId de la fuente única, el anillo por rowClassName y huboCorte", () => {
     const src = leer("../movimientos-table.tsx");
@@ -145,7 +178,8 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(page).toContain("const enfoque = enfoqueConciliacionDeUrl(sp);");
     expect(page).toContain('const pestanaDeLista = filtro === "todos" || filtro === "pendientes" || filtro === "conciliados";');
     expect(page).toContain("filasConFoco(movs, enfoque.mov)");
-    expect(page).toContain("{TEXTO_MOVIMIENTO_NO_ENCONTRADO}");
+    // 15-oct-2026: con `?gasto=` el texto de Gastos de siempre; sin él (un abono), el genérico.
+    expect(page).toContain("{textoMovimientoNoEncontrado(enfoque)}");
     expect(page).toContain("resaltar={foco.encontrado ? enfoque.mov : null}");
     expect(page).toContain("gastoResaltado={enfoque.gasto}");
     expect(page).toContain("huboCorte={notaRecorte != null}");

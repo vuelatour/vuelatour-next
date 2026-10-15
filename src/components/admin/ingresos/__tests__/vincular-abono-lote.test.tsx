@@ -49,7 +49,8 @@ describe("Vincular abono · varios cobros (cableado)", () => {
     const espejo = tabla.indexOf("const gasto = m.conciliado ? gastoUnicoDe(m) : null;");
     expect(lote).toBeGreaterThan(0);
     expect(lote).toBeLessThan(espejo);
-    expect(tabla).toContain("resumenLoteCobrosFila(m)");
+    // 15-oct-2026: con `?cobro=` (la hoja de una entrada) la línea de ese cobro se resalta.
+    expect(tabla).toContain("resumenLoteCobrosFila(m, { destacar: cobroResaltado })");
     expect(tabla).toContain("textoBusquedaCobros(m)");
   });
 

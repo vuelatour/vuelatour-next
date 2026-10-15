@@ -1277,6 +1277,8 @@ export interface CargoDeGasto {
 
 export interface UltimoMovimientoCuenta {
   cuenta: CuentaDeCargo;
+  /** ADITIVO (15-oct-2026, API 0.0.78; solo la conciliación al revés de una ENTRADA lo pide): DATE del PRIMER movimiento importado (null = sin movimientos). */
+  primera_fecha?: string | null;
   /** DATE del último movimiento importado (null = sin movimientos). */
   ultima_fecha: string | null;
 }

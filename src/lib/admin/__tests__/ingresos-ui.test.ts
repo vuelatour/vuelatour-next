@@ -50,8 +50,18 @@ import {
   textoSaldoAnticipo,
   textoValorBitacora,
   tituloDuplicado,
+  ETIQUETA_FILTRO_CONCILIACION,
+  ENLACE_INGRESO_POR_CONCILIAR,
+  TEXTO_INGRESO_LO_CONCILIA_OFICINA,
+  TEXTO_INGRESO_SIN_ABONO,
+  TITULO_SIN_CONCILIAR_ENTRADA,
+  hrefPorConciliarIngreso,
+  sufijoClicEstado,
+  tituloConClic,
+  tituloNoBancario,
   type FormIngreso,
 } from "@/lib/admin/ingresos-ui";
+import { diaMas } from "@/lib/admin/conciliacion-auto";
 import type { AbonoPendiente, Ingreso, PropuestaAbono } from "@/types/ingresos";
 
 const HOY = "2026-09-24";
@@ -818,5 +828,80 @@ describe("avión del ingreso (13-oct-2026, API 0.0.75)", () => {
       aeronave_id: AV,
       if_updated_at: sin.updated_at,
     });
+  });
+});
+
+describe("badge de conciliación: la conciliación al revés de una entrada (15-oct-2026, API 0.0.78)", () => {
+  it("«Sin conciliar» CORREGIDO (ya no promete que «se cruza solo»); texto y tono de siempre", () => {
+    const e = etiquetaEstadoConciliacion("SIN_CONCILIAR");
+    expect(e).toEqual({ texto: "Sin conciliar", tono: "ambar", titulo: TITULO_SIN_CONCILIAR_ENTRADA });
+    expect(TITULO_SIN_CONCILIAR_ENTRADA).toBe(
+      "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta (o con «Cruzar pendientes» en Conciliación) y solo liga lo que cuadra sin dudas; lo demás se concilia a mano.",
+    );
+    expect(e.titulo).not.toMatch(/se cruza solo|Todavía no aparece/);
+    // La lista nunca trae PARCIAL: un parcial es «Sin conciliar» + el chip del 0.0.78.
+    expect(etiquetaEstadoConciliacion("PARCIAL").texto).toBe("—");
+    expect(ETIQUETA_FILTRO_CONCILIACION).toEqual({
+      conciliado: "Conciliado",
+      sin_conciliar: "Sin conciliar",
+      no_bancario: "No se concilia uno a uno",
+      via_anticipo: "Conciliado vía anticipo",
+    });
+  });
+
+  it("«No se concilia uno a uno»: el title por método (sin contexto, el de siempre)", () => {
+    const t = (contexto: Parameters<typeof tituloNoBancario>[0]) => etiquetaEstadoConciliacion("NO_BANCARIO", contexto).titulo;
+    expect(t({ metodo: "EFECTIVO" })).toBe("Efectivo en mano: no pasa por el banco.");
+    expect(t({ metodo: "DOLARES" })).toBe("Dólares en mano: no pasan por el banco.");
+    expect(t({ metodo: "BILLPOCKET" })).toBe(
+      "Terminal BillPocket: el banco deposita varios cobros juntos y descuenta la comisión, por eso no se cruza solo. Si identificas el depósito, vincúlalo a mano en Conciliación.",
+    );
+    expect(t({ metodo: "OTRO" })).toBe("Método «Otro»: no se concilia uno a uno con el banco.");
+    expect(t({ metodo: "TRANSFERENCIA", esReembolso: true })).toBe("Reembolso al cliente: sale del banco como un cargo; no se concilia aquí.");
+    expect(t({ metodo: "EFECTIVO", ingresoSinCuenta: true })).toBe("Efectivo / caja: no pasa por el banco.");
+    expect(t(null)).toBe("Efectivo, dólares en mano o terminal BillPocket (depósito agrupado)");
+    expect(etiquetaEstadoConciliacion("NO_BANCARIO", { metodo: "EFECTIVO" })).toMatchObject({ texto: "No se concilia uno a uno", tono: "gris" });
+  });
+
+  it("el sufijo del clic por estado DE LA HOJA (parcial: «ver los abonos y buscar el que falta») y el title con su punto", () => {
+    expect(sufijoClicEstado("CONCILIADO")).toBe(" Clic para ver el abono del banco y su estado de cuenta.");
+    expect(sufijoClicEstado("VIA_ANTICIPO")).toBe(" Clic para ver el abono del anticipo y su estado de cuenta.");
+    expect(sufijoClicEstado("PARCIAL")).toBe(" Clic para ver los abonos y buscar el que falta.");
+    expect(sufijoClicEstado("SIN_CONCILIAR")).toBe(" Clic para ver por qué y buscar el abono.");
+    expect(sufijoClicEstado("NO_BANCARIO")).toBe("");
+    expect(tituloConClic("Conciliado con un movimiento bancario", "CONCILIADO")).toBe(
+      "Conciliado con un movimiento bancario. Clic para ver el abono del banco y su estado de cuenta.",
+    );
+    expect(tituloConClic(TITULO_SIN_CONCILIAR_ENTRADA, "PARCIAL")).toBe(
+      `${TITULO_SIN_CONCILIAR_ENTRADA} Clic para ver los abonos y buscar el que falta.`,
+    );
+    expect(tituloConClic("x", "NO_BANCARIO")).toBe("x");
+  });
+
+  it("hrefPorConciliarIngreso = la URL que el detalle del ingreso armaba a mano (−7 / +30, hasta hoy, su cuenta)", () => {
+    const CUENTA = "0752514c-6e08-455d-a1bd-d5ed4c7ca689";
+    const f = filtrosIngresosDeUrl({ tab: "otros", ingreso: "ffb57607-77e4-4334-8ee9-94afdba75f91", moneda: "MXN" }, "ADMIN", "2026-10-15");
+    const antes = hrefIngresos(f, {
+      tab: "por-conciliar",
+      desde: diaMas("2026-09-10", -7),
+      hasta: diaMas("2026-09-10", 30) < "2026-10-15" ? diaMas("2026-09-10", 30) : "2026-10-15",
+      cuenta: CUENTA,
+    });
+    expect(hrefPorConciliarIngreso({ fecha: "2026-09-10", cuenta_bancaria_id: CUENTA }, "2026-10-15", f)).toBe(antes);
+    // Sin filtros (la hoja): solo esos parámetros.
+    expect(hrefPorConciliarIngreso({ fecha: "2026-09-10", cuenta_bancaria_id: CUENTA }, "2026-10-15")).toBe(
+      `/admin/ingresos?tab=por-conciliar&desde=2026-09-03&hasta=2026-10-10&cuenta=${CUENTA}`,
+    );
+    // «hasta» no pasa de hoy; sin cuenta, sin el parámetro.
+    expect(hrefPorConciliarIngreso({ fecha: "2026-10-12", cuenta_bancaria_id: null }, "2026-10-15")).toBe(
+      "/admin/ingresos?tab=por-conciliar&desde=2026-10-05&hasta=2026-10-15",
+    );
+  });
+
+  it("el detalle de un ingreso sin abono (COORDINADOR): la 1.ª frase corregida", () => {
+    expect(`${TEXTO_INGRESO_SIN_ABONO} ${TEXTO_INGRESO_LO_CONCILIA_OFICINA}.`).toBe(
+      "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta y solo liga lo que cuadra sin dudas; si no, lo concilia Administración o Facturación.",
+    );
+    expect(ENLACE_INGRESO_POR_CONCILIAR).toBe("concílialo en «Por conciliar»");
   });
 });

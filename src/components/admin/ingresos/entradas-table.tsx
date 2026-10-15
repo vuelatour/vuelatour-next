@@ -4,33 +4,84 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import { EntradaBancoSheet, useDetalleBancoEntrada } from "@/components/admin/ingresos/entrada-banco-sheet";
 import {
   CLASE_TONO,
   etiquetaEstadoConciliacion,
   hrefIngresos,
+  tituloConClic,
+  type ContextoEstadoConciliacion,
   type FiltrosIngresos,
 } from "@/lib/admin/ingresos-ui";
 import { chipParcialEntrada } from "@/lib/admin/cobro-banco";
+import {
+  abreDetalleEntrada,
+  filaBancoDeEntrada,
+  filaBancoDeIngreso,
+  nombreAccesibleEntrada,
+} from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import type { EntradaDinero, EstadoConciliacionEntrada } from "@/types/ingresos";
+import type { EntradaDinero, EstadoConciliacionEntrada, Ingreso } from "@/types/ingresos";
 
-/** Badge de conciliación (fuente única de texto y color: `etiquetaEstadoConciliacion`). */
+/**
+ * Badge de conciliación (fuente única de texto y color: `etiquetaEstadoConciliacion`).
+ *
+ * 15-oct-2026 («conciliación al revés» de una entrada, API 0.0.78): con
+ * `alAbrir` (solo ADMIN/FACTURACION, o rol desconocido) Conciliado,
+ * Conciliado vía anticipo y Sin conciliar —también el de un parcial, que
+ * sigue diciendo «Sin conciliar» con el chip del 0.0.78 al lado— son un BOTÓN
+ * que abre la hoja «Conciliación con el banco»: mismo color, cursor de mano,
+ * `aria-haspopup="dialog"`, el `title` con lo que hace el clic y un nombre
+ * accesible que empieza con el texto visible. «No se concilia uno a uno» y
+ * «—» nunca son botón. Sin `alAbrir`, el marcado de siempre. `contexto` solo
+ * cambia el `title` de «No se concilia uno a uno» (por método).
+ */
 export function BadgeEstadoConciliacion({
   estado,
+  parcial = false,
+  contexto,
+  alAbrir,
+  nombreAccesible,
   className,
 }: {
   estado: EstadoConciliacionEntrada | string | null | undefined;
+  /** El cobro tiene abonos que no lo completan (el chip del 0.0.78): la hoja dice PARCIAL. */
+  parcial?: boolean;
+  contexto?: ContextoEstadoConciliacion | null;
+  alAbrir?: (() => void) | null;
+  nombreAccesible?: string;
   className?: string;
 }) {
-  const e = etiquetaEstadoConciliacion(estado);
+  const e = etiquetaEstadoConciliacion(estado, contexto);
+  const estadoHoja = estado === "SIN_CONCILIAR" && parcial ? "PARCIAL" : estado;
+  if (alAbrir && abreDetalleEntrada(estadoHoja)) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(CLASE_TONO[e.tono], "cursor-pointer hover:bg-muted/60", className)}
+        title={tituloConClic(e.titulo, estadoHoja)}
+        render={
+          <button type="button" aria-haspopup="dialog" aria-label={nombreAccesible ?? e.texto} onClick={alAbrir} />
+        }
+      >
+        {e.texto}
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className={cn(CLASE_TONO[e.tono], className)} title={e.titulo}>
       {e.texto}
     </Badge>
   );
+}
+
+/** El `title` por método de «No se concilia uno a uno» de una fila de «Todos» / «Cobros de vuelos». */
+function contextoDeEntrada(e: Pick<EntradaDinero, "origen" | "metodo" | "es_reembolso">): ContextoEstadoConciliacion {
+  return { metodo: e.metodo, esReembolso: e.es_reembolso === true, ingresoSinCuenta: e.origen === "INGRESO" };
 }
 
 /**
@@ -59,20 +110,59 @@ export function ChipParcialEntrada({
 
 /**
  * La celda «Conciliación» de una entrada: el badge de siempre y, si el cobro
- * es PARCIAL (API 0.0.78), el chip al lado. Sin parcial, el marcado de hoy.
+ * es PARCIAL (API 0.0.78), el chip al lado (informativo: un solo control
+ * pulsable por celda). Con `alAbrir` (15-oct-2026) el badge abre la hoja
+ * «Conciliación con el banco». Sin parcial ni `alAbrir`, el marcado de hoy.
  */
 export function CeldaConciliacionEntrada({
   entrada,
+  alAbrir,
 }: {
-  entrada: Pick<EntradaDinero, "moneda" | "conciliacion">;
+  entrada: EntradaDinero;
+  alAbrir?: (() => void) | null;
 }) {
-  const badge = <BadgeEstadoConciliacion estado={entrada.conciliacion.estado} />;
+  const visible = etiquetaEstadoConciliacion(entrada.conciliacion.estado).texto;
+  const badge = (
+    <BadgeEstadoConciliacion
+      estado={entrada.conciliacion.estado}
+      parcial={!!entrada.conciliacion.parcial}
+      contexto={contextoDeEntrada(entrada)}
+      alAbrir={alAbrir}
+      nombreAccesible={alAbrir ? nombreAccesibleEntrada(visible, filaBancoDeEntrada(entrada)) : undefined}
+    />
+  );
   if (!entrada.conciliacion.parcial) return badge;
   return (
     <span className="flex flex-wrap items-center gap-1">
       {badge}
       <ChipParcialEntrada entrada={entrada} />
     </span>
+  );
+}
+
+/**
+ * La celda «Conciliación» de un ingreso o un anticipo («Otros ingresos» y
+ * «Anticipos»): el badge con su `title` por método y, con `alAbrir`, el botón
+ * que abre la hoja. Un ingreso dado de baja nunca es botón.
+ */
+export function CeldaConciliacionIngreso({
+  ingreso,
+  alAbrir,
+}: {
+  ingreso: Ingreso;
+  alAbrir?: (() => void) | null;
+}) {
+  const fila = filaBancoDeIngreso(ingreso);
+  const abre = !!alAbrir && abreDetalleEntrada(fila.estado, { baja: fila.baja });
+  return (
+    <BadgeEstadoConciliacion
+      estado={ingreso.conciliacion.estado}
+      contexto={{ metodo: ingreso.metodo, ingresoSinCuenta: ingreso.cuenta_bancaria_id == null }}
+      alAbrir={abre ? alAbrir : undefined}
+      nombreAccesible={
+        abre ? nombreAccesibleEntrada(etiquetaEstadoConciliacion(ingreso.conciliacion.estado).texto, fila) : undefined
+      }
+    />
   );
 }
 
@@ -105,18 +195,27 @@ export function ChipDelAnticipo({
  * periodo — cobros de vuelos (solo lectura: se registran en cada vuelo) e
  * ingresos. Un cobro que salió de un anticipo se ve en gris: no suma al total
  * porque ese dinero ya entró como anticipo. Los reembolsos van en rojo.
+ *
+ * 15-oct-2026 (API 0.0.78): el badge de «Conciliación» abre la hoja
+ * «Conciliación con el banco» (UNA por tabla) para ADMIN y FACTURACION
+ * (`puedeVerDetalleBanco(rol)`); para COORDINADOR, el marcado de siempre.
  */
 export function EntradasTable({
   entradas,
   filtros,
+  rol,
   huboCorte,
   syncId = "en",
 }: {
   entradas: EntradaDinero[];
   filtros: FiltrosIngresos;
+  /** Rol de quien mira (`/me`): el clic del badge solo con `puedeVerDetalleBanco`. */
+  rol?: string | null;
   huboCorte?: boolean;
   syncId?: string;
 }) {
+  const detalleBanco = useDetalleBancoEntrada();
+  const abrirBanco = puedeVerDetalleBanco(rol) ? detalleBanco.abrir : null;
   const columns = useMemo<Array<DataTableColumn<EntradaDinero>>>(
     () => [
       {
@@ -219,8 +318,15 @@ export function EntradasTable({
       {
         key: "conciliacion",
         header: "Conciliación",
-        // «Parcial · faltan $X» (API 0.0.78) junto al badge de un cobro parcial.
-        cell: (e) => <CeldaConciliacionEntrada entrada={e} />,
+        // El badge abre la hoja «Conciliación con el banco» (botón): la
+        // celda no navega. «Parcial · faltan $X» (API 0.0.78) al lado.
+        noLink: true,
+        cell: (e) => (
+          <CeldaConciliacionEntrada
+            entrada={e}
+            alAbrir={abrirBanco ? () => abrirBanco(filaBancoDeEntrada(e)) : undefined}
+          />
+        ),
       },
       {
         key: "registro",
@@ -229,22 +335,25 @@ export function EntradasTable({
         cell: (e) => e.registrado_por_nombre ?? "—",
       },
     ],
-    [filtros],
+    [filtros, abrirBanco],
   );
 
   return (
-    <DataTable
-      syncId={syncId}
-      columns={columns}
-      rows={entradas}
-      rowKey={(e) => `${e.origen}:${e.id}`}
-      searchText={(e) =>
-        `${e.etiqueta} ${e.categoria_etiqueta} ${e.cliente_nombre ?? ""} ${e.concepto ?? ""} ${e.metodo_etiqueta} ${e.monto} ${
-          e.anticipo_etiqueta ?? ""
-        }`
-      }
-      searchPlaceholder="Buscar (vuelo, ING-n, cliente, concepto, monto)…"
-      huboCorte={huboCorte}
-    />
+    <>
+      <DataTable
+        syncId={syncId}
+        columns={columns}
+        rows={entradas}
+        rowKey={(e) => `${e.origen}:${e.id}`}
+        searchText={(e) =>
+          `${e.etiqueta} ${e.categoria_etiqueta} ${e.cliente_nombre ?? ""} ${e.concepto ?? ""} ${e.metodo_etiqueta} ${e.monto} ${
+            e.anticipo_etiqueta ?? ""
+          }`
+        }
+        searchPlaceholder="Buscar (vuelo, ING-n, cliente, concepto, monto)…"
+        huboCorte={huboCorte}
+      />
+      <EntradaBancoSheet detalle={detalleBanco} />
+    </>
   );
 }

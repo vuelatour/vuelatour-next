@@ -63,6 +63,12 @@ vi.mock("@/lib/api/facturas-emitidas-browser", () => ({
   buscarVuelosCandidatos: async () => ({ ok: true, data: [] }),
 }));
 vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }));
+// La card monta la hoja «Conciliación con el banco» del cobro (15-oct-2026,
+// API 0.0.78): sus actions no se llaman al pintar.
+vi.mock("@/app/admin/conciliacion/actions", () => ({
+  conciliacionDeEntradaAction: vi.fn(),
+  estadoCuentaUrlAction: vi.fn(),
+}));
 
 const { CobrosCard } = await import("../cobros-card");
 const { QuoteCobrosCard } = await import("@/components/admin/quotes/quote-cobros-card");

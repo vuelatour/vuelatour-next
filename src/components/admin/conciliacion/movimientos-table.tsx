@@ -232,6 +232,10 @@ interface MovimientosTableProps {
    *  marca su línea dentro del lote. Sin ellos, el marcado de siempre. */
   resaltar?: string | null;
   gastoResaltado?: string | null;
+  /** «Conciliación al revés» de una ENTRADA (15-oct-2026, ADITIVO): el cobro
+   *  que se viene a ver (`?cobro=`) marca su línea dentro del lote del abono
+   *  (« · el que abriste», aunque fuera la 4.ª). Sin él, el de siempre. */
+  cobroResaltado?: string | null;
   /** La lista llegó al tope de la vista: la búsqueda vacía lo dice. */
   huboCorte?: boolean;
   /** «Ver en balance…» bajo cada gasto ligado (13-oct-2026, punto 5): los
@@ -263,6 +267,7 @@ export function MovimientosTable({
   catalogosGasto,
   resaltar = null,
   gastoResaltado = null,
+  cobroResaltado = null,
   huboCorte = false,
   abreBalances = true,
   seleccion = null,
@@ -592,7 +597,9 @@ export function MovimientosTable({
           // detalle en `cobros[]`. Antes de las ramas de siempre, o el lote
           // se pintaba «Pendiente».
           if (m.conciliado && esAbonoConLote(m)) {
-            const lote = resumenLoteCobrosFila(m);
+            // Con `?cobro=` (15-oct-2026) la línea de ese cobro se resalta y,
+            // si quedaba en «y N más», se trae a la vista.
+            const lote = resumenLoteCobrosFila(m, { destacar: cobroResaltado });
             if (!lote) {
               return (
                 <span className="block text-sm text-emerald-600" title={TOOLTIP_LOTE_COBROS_SIN_DETALLE}>
@@ -607,10 +614,11 @@ export function MovimientosTable({
                   <Link
                     key={l.key}
                     href={l.href}
-                    className="block text-xs text-emerald-600 hover:underline"
+                    className={cn("block text-xs text-emerald-600 hover:underline", l.destacada && CLASE_LINEA_ENFOCADA)}
                     title={TITULO_VER_VUELO_COBRO}
                   >
                     {l.principal}
+                    {l.destacada && <span className="text-[10px] font-normal">{SUFIJO_GASTO_ENFOCADO}</span>}
                     <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
                       {l.secundaria}
                       {/* El estado del COBRO con todos sus abonos (API 0.0.78). */}
@@ -898,7 +906,7 @@ export function MovimientosTable({
     ],
     // `nombreCuenta` deriva de `cuentas`: se recalcula con ella.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, monedaPorCuenta, gastoResaltado, abreBalances],
+    [gastos, cuentas, variasCuentas, abonos, catalogosGasto, monedaPorCuenta, cobroResaltado, gastoResaltado, abreBalances],
   );
   const columnas = useMemo(() => (columnaSel ? [columnaSel, ...columns] : columns), [columnaSel, columns]);
 

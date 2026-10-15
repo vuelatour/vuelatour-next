@@ -46,8 +46,11 @@ import { ComprobanteCobro } from "@/components/admin/flights/comprobante-cobro";
 import { FacturaServicioBurbuja } from "@/components/admin/facturas-emitidas/factura-servicio-burbuja";
 import { puedeAdjuntarComprobante } from "@/lib/admin/facturas-emitidas";
 import { ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
+import { EntradaBancoSheet, useDetalleBancoEntrada } from "@/components/admin/ingresos/entrada-banco-sheet";
 import { desaplicarAnticipoAction } from "@/app/admin/ingresos/actions";
 import { puedeConciliarIngresos } from "@/lib/admin/ingresos-ui";
+import { filaBancoDeCobroVuelo } from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import type { CobradoDeMasVuelo, FlightCobro } from "@/types/flights";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import {
@@ -162,6 +165,11 @@ export function QuoteCobrosCard({
     setEditando(c);
     setEditarAbierto(true);
   };
+  // «Conciliación al revés» (15-oct-2026, API 0.0.78): el badge del cobro
+  // abre la hoja «Conciliación con el banco» (UNA por tarjeta) para ADMIN y
+  // FACTURACION; rol desconocido se ofrece (el 403 del API trae texto).
+  const detalleBanco = useDetalleBancoEntrada();
+  const abrirBanco = puedeVerDetalleBanco(rol) ? detalleBanco.abrir : null;
 
   const sinCobros = cobros.length === 0;
   // Misma tolerancia que el API (1 USD): los centavos de la conversión
@@ -299,7 +307,14 @@ export function QuoteCobrosCard({
                   </Badge>
                 )}
                 {/* Conciliado con el banco: SOLO si el API lo dice. */}
-                <CobroConciliadoBadge cobro={c} />
+                <CobroConciliadoBadge
+                  cobro={c}
+                  alAbrir={
+                    abrirBanco
+                      ? () => abrirBanco(filaBancoDeCobroVuelo(c, { folio: quoteFolio, cliente: clienteNombre }))
+                      : undefined
+                  }
+                />
               </p>
               <p className="text-xs text-muted-foreground">
                 {metodoPagoLabel(c.metodo_cobro)}
@@ -517,6 +532,8 @@ export function QuoteCobrosCard({
         saldoUsd={montoTotalUsd - totalCobrado}
         cotizacionAbierta={cotizacionAbierta}
       />
+
+      <EntradaBancoSheet detalle={detalleBanco} />
     </Card>
   );
 }

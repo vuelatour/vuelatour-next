@@ -446,6 +446,8 @@ export interface LineaLoteCobros {
    * «· parcial: faltan $X» (aviso) o «· completa el cobro (2 abonos)» (neutro).
    */
   sufijo: { texto: string; tono: "aviso" | "neutro" } | null;
+  /** La línea del cobro que se viene a ver (`?cobro=`, 15-oct-2026): resaltada con « · el que abriste». */
+  destacada?: boolean;
 }
 
 export interface ResumenLoteCobros {
@@ -467,32 +469,66 @@ export function textoLoteCobrosSinDetalle(n: number): string {
 }
 
 /**
- * «2 cobros · $3,500.00» + una línea por cobro (vuelo, cliente; fechas y
- * monto). null si el API no mandó `cobros[]` (skew de deploy).
+ * UNA línea del lote de un abono (15-oct-2026: se EXTRAJO de
+ * `resumenLoteCobrosFila` para que la bandeja y la hoja «Conciliación con el
+ * banco» de una entrada digan lo MISMO): principal «Vuelo #315 · Beh Kay» (el
+ * cliente con `trim()`), secundaria «cobro 15 sep 2026 · $68,205.55 MXN» y el
+ * sufijo del 0.0.78 («· parcial: faltan $X» / «· completa el cobro (2
+ * abonos)»). `href` al vuelo (la bandeja; la hoja usa el ancla `#cobros`).
  */
-export function resumenLoteCobrosFila(m: MovimientoBancario): ResumenLoteCobros | null {
-  const partes: MovimientoCobroParte[] = Array.isArray(m.cobros) ? m.cobros : [];
-  if (partes.length === 0) return null;
-  const moneda = partes.find((p) => p.moneda)?.moneda ?? undefined;
-  const suma = m.cobros_suma != null ? numeroDe(m.cobros_suma) : partes.reduce((a, p) => a + numeroDe(p.monto_parte), 0);
-  const lineas = partes.slice(0, MAX_LINEAS_LOTE_COBROS).map((p) => ({
+export function lineaCobroLote(p: MovimientoCobroParte, moneda?: string | null): LineaLoteCobros {
+  const cliente = typeof p.cliente === "string" ? p.cliente.trim() : "";
+  return {
     key: p.cobro_id,
     href: p.vuelo_id ? `/admin/flights/${p.vuelo_id}` : "/admin/ingresos",
-    principal: [`Vuelo #${p.folio ?? "—"}`, p.cliente].filter(Boolean).join(" · "),
+    principal: [`Vuelo #${p.folio ?? "—"}`, cliente].filter(Boolean).join(" · "),
     secundaria:
       [
         fechasCandidatoCobro({ fecha_vuelo: p.fecha_vuelo ?? null, fecha_cobro: p.fecha_cobro ?? null }),
-        fmtMonto(numeroDe(p.monto_parte), p.moneda ?? moneda),
+        fmtMonto(numeroDe(p.monto_parte), p.moneda ?? moneda ?? undefined),
       ]
         .filter(Boolean)
         .join(" · ") || "Cobro conciliado",
     sufijo: sufijoEstadoCobroLote(p, moneda),
-  }));
+  };
+}
+
+/** Mismo objeto de opciones que `resumenLoteFila` (gastos). */
+export interface OpcionesResumenLoteCobros {
+  /** Id del cobro que se viene a ver (`?cobro=`): su línea se marca `destacada` y, si quedaba en «y N más», se trae a la vista. */
+  destacar?: string | null;
+}
+
+/**
+ * «2 cobros · $3,500.00» + una línea por cobro (vuelo, cliente; fechas y
+ * monto). null si el API no mandó `cobros[]` (skew de deploy). Con
+ * `destacar` (15-oct-2026, `?cobro=` desde la hoja de una entrada) la línea
+ * de ese cobro va `destacada`; si quedaba más allá de las 3 primeras, se ven
+ * las 2 primeras más ESA. Sin opciones, idéntica a la de siempre.
+ */
+export function resumenLoteCobrosFila(
+  m: MovimientoBancario,
+  opciones: OpcionesResumenLoteCobros = {},
+): ResumenLoteCobros | null {
+  const partes: MovimientoCobroParte[] = Array.isArray(m.cobros) ? m.cobros : [];
+  if (partes.length === 0) return null;
+  const moneda = partes.find((p) => p.moneda)?.moneda ?? undefined;
+  const suma = m.cobros_suma != null ? numeroDe(m.cobros_suma) : partes.reduce((a, p) => a + numeroDe(p.monto_parte), 0);
+  const destacar = (opciones.destacar ?? "").toLowerCase();
+  const iDestacado = destacar ? partes.findIndex((p) => (p.cobro_id ?? "").toLowerCase() === destacar) : -1;
+  const visibles =
+    iDestacado >= MAX_LINEAS_LOTE_COBROS
+      ? [...Array.from({ length: MAX_LINEAS_LOTE_COBROS - 1 }, (_, i) => i), iDestacado]
+      : Array.from({ length: Math.min(MAX_LINEAS_LOTE_COBROS, partes.length) }, (_, i) => i);
+  const lineas = visibles.map((i) => {
+    const l = lineaCobroLote(partes[i], moneda);
+    return i === iDestacado ? { ...l, destacada: true } : l;
+  });
   const dif = m.cobros_diferencia != null ? numeroDe(m.cobros_diferencia) : null;
   return {
     titulo: `${partes.length} cobros · ${fmtMonto(suma, moneda)}`,
     lineas,
-    mas: partes.length > MAX_LINEAS_LOTE_COBROS ? `y ${partes.length - MAX_LINEAS_LOTE_COBROS} más` : null,
+    mas: partes.length > lineas.length ? `y ${partes.length - lineas.length} más` : null,
     diferencia: dif != null && Math.abs(dif) >= 0.005 ? `diferencia ${fmtMonto(Math.abs(dif), moneda)}` : null,
   };
 }

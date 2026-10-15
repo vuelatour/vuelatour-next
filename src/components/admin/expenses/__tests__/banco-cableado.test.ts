@@ -5,6 +5,11 @@
  * transición), descarga con `abrirArchivoFirmado` y carga su cuerpo con
  * `next/dynamic`; Compras usa el MISMO badge; `?banco=` se conserva y el
  * Excel lleva su título a quien recibe el detalle del banco.
+ *
+ * 15-oct-2026 (API 0.0.78): el turno, el `.catch`, «cerrar no vacía» y la
+ * descarga viven en el hook GENÉRICO `components/admin/banco/use-detalle-banco.ts`
+ * (compartido con la hoja de las entradas de dinero); la hoja de Gastos solo
+ * le pasa `pedir` (el gasto) y `clave`.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -36,22 +41,31 @@ describe("Gastos", () => {
 
 describe("la hoja", () => {
   const hoja = leer("../gasto-banco-sheet.tsx");
+  const hook = leer("../../banco/use-detalle-banco.ts");
+
+  it("la hoja de Gastos = el hook genérico con el gasto (pedir y clave de MÓDULO)", () => {
+    expect(hoja).toContain("const pedirGasto = (g: GastoBancoFila) => conciliacionDeGastoAction(g.id);");
+    expect(hoja).toContain("const claveGasto = (g: GastoBancoFila) => g.id;");
+    expect(hoja).toContain("useDetalleBanco({ pedir: pedirGasto, clave: claveGasto })");
+  });
 
   it("pide con turno y .catch, nunca con un await dentro de start(", () => {
-    expect(hoja).toMatch(/const n = \+\+turno\.current;[\s\S]{0,80}setCarga\(null\);[\s\S]{0,80}void conciliacionDeGastoAction\(g\.id\)\s*\.catch\(sinConexion\)/);
-    expect(hoja).toContain("if (turno.current === n) setCarga({ id: g.id, r });");
-    expect(hoja).not.toMatch(/start\w*\(async/);
-    expect(hoja).not.toContain("useTransition");
+    expect(hook).toMatch(/const n = \+\+turno\.current;[\s\S]{0,80}setCarga\(null\);[\s\S]{0,80}void pedir\(f\)\s*\.catch\(sinConexion\)/);
+    expect(hook).toContain("if (turno.current === n) setCarga({ id: clave(f), r });");
+    for (const src of [hoja, hook]) {
+      expect(src).not.toMatch(/start\w*\(async/);
+      expect(src).not.toContain("useTransition");
+    }
   });
 
   it("descarga con abrirArchivoFirmado y el cuerpo con next/dynamic sin SSR", () => {
-    expect(hoja).toContain("abrirArchivoFirmado(");
-    expect(hoja).toContain("estadoCuentaUrlAction(id).catch(sinConexion)");
+    expect(hook).toContain("abrirArchivoFirmado(");
+    expect(hook).toContain("estadoCuentaUrlAction(id).catch(sinConexion)");
     expect(hoja).toMatch(/dynamic\(\s*\(\) => import\("\.\/gasto-banco-detalle"\)[\s\S]{0,120}ssr: false/);
   });
 
   it("cerrar no vacía la fila (la animación de salida conserva el texto)", () => {
-    const cerrar = hoja.slice(hoja.indexOf("const cerrar = useCallback"), hoja.indexOf("const reintentar"));
+    const cerrar = hook.slice(hook.indexOf("const cerrar = useCallback"), hook.indexOf("// ── MODO CONTROLADO"));
     expect(cerrar).toContain("turno.current += 1;");
     expect(cerrar).toContain("setAbierto(false);");
     expect(cerrar).not.toContain("setFila(");

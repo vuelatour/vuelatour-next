@@ -1,9 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-import Link from "next/link";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
+import { ArchivoEstadoCuenta, EnlaceNuevaPestana } from "@/components/admin/banco/partes-hoja";
 import {
   BOTON_BUSCAR_CARGO,
   BOTON_RECARGAR,
@@ -12,9 +11,7 @@ import {
   NOTA_CRUZAR_PENDIENTES,
   NOTA_ESPEJO,
   TEXTO_CARGANDO_BANCO,
-  TEXTO_DESCARGANDO,
   TEXTO_ESTADO_CAMBIO,
-  TITULO_DESCARGAR_ESTADO_CUENTA,
   TITULO_QUE_HACER,
   TITULO_REGISTRO_LIGA,
   TITULO_VER_EN_CONCILIACION,
@@ -47,32 +44,6 @@ const CLASE_TONO: Record<TonoEstadoBanco, string> = {
   pendiente: "text-rose-600 dark:text-rose-400",
   neutro: "text-muted-foreground",
 };
-
-/** Toda liga de la hoja: pestaña NUEVA (la hoja y la lista de Gastos se quedan). */
-function EnlaceNuevaPestana({
-  href,
-  title,
-  className,
-  children,
-}: {
-  href: string;
-  title?: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      prefetch={false}
-      title={title}
-      className={cn("cursor-pointer text-brand-600 underline-offset-2 hover:underline", className)}
-    >
-      {children}
-    </Link>
-  );
-}
 
 /**
  * Cuerpo de la hoja «Conciliación con el banco» (13-oct-2026, «conciliación
@@ -194,28 +165,7 @@ export function GastoBancoDetalle({
             )}
             {f.justificacion && <p className="text-xs">{f.justificacion}</p>}
             {f.notas && <p className="text-xs text-muted-foreground">{f.notas}</p>}
-            {f.archivo.tipo === "ARCHIVO" ? (
-              <div className="space-y-1 text-xs">
-                <p>
-                  Estado de cuenta: <span className="font-medium">{f.archivo.nombre}</span>
-                </p>
-                <p className="text-muted-foreground">{f.archivo.detalle}</p>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  className="cursor-pointer"
-                  title={TITULO_DESCARGAR_ESTADO_CUENTA}
-                  disabled={descargando === f.archivo.estadoCuentaId}
-                  onClick={() => {
-                    if (f.archivo.tipo === "ARCHIVO") onDescargar(f.archivo.estadoCuentaId);
-                  }}
-                >
-                  {descargando === f.archivo.estadoCuentaId ? TEXTO_DESCARGANDO : f.archivo.etiquetaDescarga}
-                </Button>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">{f.archivo.texto}</p>
-            )}
+            <ArchivoEstadoCuenta archivo={f.archivo} descargando={descargando} onDescargar={onDescargar} />
             {f.registro && (
               <p className="text-xs text-muted-foreground" title={TITULO_REGISTRO_LIGA}>
                 {f.registro}

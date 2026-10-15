@@ -63,8 +63,11 @@ import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
 import { ParticipacionAvionesNota } from "@/components/admin/flights/participacion-aviones-nota";
 import { BannerAnticiposCliente } from "@/components/admin/ingresos/banner-anticipos-cliente";
 import { ChipDelAnticipo } from "@/components/admin/ingresos/entradas-table";
+import { EntradaBancoSheet, useDetalleBancoEntrada } from "@/components/admin/ingresos/entrada-banco-sheet";
 import { desaplicarAnticipoAction } from "@/app/admin/ingresos/actions";
 import { puedeConciliarIngresos } from "@/lib/admin/ingresos-ui";
+import { filaBancoDeCobroVuelo } from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import type {
   EstadoVuelo,
   ParticipacionAvion,
@@ -210,6 +213,11 @@ export function CobrosCard({
     setEditando(c);
     setEditarAbierto(true);
   };
+  // «Conciliación al revés» (15-oct-2026, API 0.0.78): el badge del cobro
+  // abre la hoja «Conciliación con el banco» (UNA por tarjeta) para ADMIN y
+  // FACTURACION; rol desconocido se ofrece (el 403 del API trae texto).
+  const detalleBanco = useDetalleBancoEntrada();
+  const abrirBanco = puedeVerDetalleBanco(rol) ? detalleBanco.abrir : null;
   const haySobre = cobros.some(esParteDeSobre);
   // Regla del cliente (28-ago): un vuelo CANCELADO puede tener dinero real —
   // anticipo retenido o cargo por cancelación que NO se reembolsa — y entra
@@ -460,7 +468,14 @@ export function CobrosCard({
                         </Badge>
                       )}
                       {/* Conciliado con el banco: SOLO si el API lo dice. */}
-                      <CobroConciliadoBadge cobro={c} />
+                      <CobroConciliadoBadge
+                        cobro={c}
+                        alAbrir={
+                          abrirBanco
+                            ? () => abrirBanco(filaBancoDeCobroVuelo(c, { folio: flightFolio, cliente: clienteNombre }))
+                            : undefined
+                        }
+                      />
                       {c.moneda === "MXN" && c.tc_usd_mxn && (
                         <span className="text-[10px] text-muted-foreground ml-2 font-normal">
                           (≈ {fmtMonto(Number(c.monto) / Number(c.tc_usd_mxn), "USD")})
@@ -712,6 +727,8 @@ export function CobrosCard({
         saldoUsd={montoTotalUsd - cobradoUsd}
         cotizacionAbierta={cotizacionAbierta}
       />
+
+      <EntradaBancoSheet detalle={detalleBanco} />
     </>
   );
 }

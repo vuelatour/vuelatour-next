@@ -61,7 +61,6 @@ import { RangoFechasConciliacion } from "@/components/admin/conciliacion/rango-f
 import {
   ETIQUETA_QUITAR_RESALTADO,
   ETIQUETA_VER_TODOS_MOVIMIENTOS,
-  TEXTO_MOVIMIENTO_NO_ENCONTRADO,
   enfoqueConciliacionDeUrl,
   filasConFoco,
   filtroConciliacionDeUrl,
@@ -71,6 +70,7 @@ import {
   rangoVistaConciliacion,
   textoListaRecortada,
   textoMovimientoEnfocado,
+  textoMovimientoNoEncontrado,
   textoRangoVista,
   textoVentanaSinBanco,
   type FiltroConciliacion,
@@ -129,6 +129,9 @@ export default async function ConciliacionPage({
         Gastos (va PRIMERO y resaltado) y el gasto que se viene a ver. */
     mov?: string;
     gasto?: string;
+    /** Desde la hoja de una ENTRADA (15-oct-2026): el cobro cuya línea del
+        lote del abono se resalta. */
+    cobro?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -585,14 +588,15 @@ export default async function ConciliacionPage({
         </div>
       )}
 
-      {/* El cargo que se abrió desde Gastos no está en esta vista: se dice (también
-          con la lista vacía), jamás se inventa la fila. */}
+      {/* El movimiento que se abrió (el cargo desde Gastos o el abono desde la
+          hoja de una entrada) no está en esta vista: se dice (también con la
+          lista vacía), jamás se inventa la fila. */}
       {pestanaDeLista && enfoque.mov && !foco.encontrado && (
         <p
           role="status"
           className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-300"
         >
-          {TEXTO_MOVIMIENTO_NO_ENCONTRADO}{" "}
+          {textoMovimientoNoEncontrado(enfoque)}{" "}
           <Link href="/admin/conciliacion" className="cursor-pointer font-medium underline underline-offset-2">
             {ETIQUETA_VER_TODOS_MOVIMIENTOS}
           </Link>
@@ -737,6 +741,7 @@ export default async function ConciliacionPage({
               catalogosGasto={catalogosGasto}
               resaltar={foco.encontrado ? enfoque.mov : null}
               gastoResaltado={enfoque.gasto}
+              cobroResaltado={enfoque.cobro}
               huboCorte={notaRecorte != null}
               abreBalances={puedeAbrirBalances(me?.rol)}
               seleccion={vistaSeleccion ? { vista: vistaSeleccion, monedaPorCuenta } : null}

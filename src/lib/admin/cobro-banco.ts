@@ -21,7 +21,8 @@
 import { diaMas } from "@/lib/admin/conciliacion-auto";
 import { numeroDe } from "@/lib/admin/conciliacion-parcial";
 import { hrefConciliacion } from "@/lib/admin/conciliacion-vista";
-import { montoParaBusquedaTabla } from "@/lib/admin/gasto-banco";
+import { montoParaBusquedaTabla } from "@/lib/admin/hoja-banco";
+import { TITULO_SIN_CONCILIAR_ENTRADA } from "@/lib/admin/ingresos-ui";
 import { esDiaValido, uuidFiltro } from "@/lib/admin/url-params";
 import { fmtDateOnly, isoToCancunInput } from "@/lib/datetime";
 import { fmtDecimal, fmtMonto, fmtUsd } from "@/lib/format";
@@ -163,9 +164,14 @@ export function claseBadgeCobro(estado: EstadoBancoCobro | null | undefined): st
 /** Tooltip de siempre (API previo o sin el detalle de los abonos). */
 export const TITULO_CONCILIADO_MOVIMIENTO = "Conciliado con un movimiento bancario";
 export const TITULO_CONCILIADO_SOBRE = "El sobre del grupo está conciliado con un movimiento bancario";
-/** «Sin conciliar» de la TARJETA (textos.badge.SIN_CONCILIAR del 0.0.78). */
-export const TITULO_SIN_CONCILIAR_COBRO =
-  "Todavía no hay ningún abono del banco vinculado a este cobro. Se cruza solo al importar el estado de cuenta (Conciliación) o a mano desde el abono.";
+/**
+ * «Sin conciliar» de la TARJETA = el de Ingresos (R11 de la conciliación al
+ * revés de una entrada, 15-oct-2026): UN solo texto para el mismo estado. El
+ * del 0.0.78 («… Se cruza solo al importar el estado de cuenta…») era falso
+ * para un cobro registrado DESPUÉS de importar (#383, #404): los cobros no
+ * tienen cruce «al revés».
+ */
+export const TITULO_SIN_CONCILIAR_COBRO = TITULO_SIN_CONCILIAR_ENTRADA;
 /** «Sin conciliar» de la PARTE de un sobre: el abono se liga al sobre, nunca a la parte. */
 export const TITULO_SIN_CONCILIAR_SOBRE =
   "El sobre del grupo todavía no tiene ningún abono del banco vinculado: en Conciliación el abono se vincula al sobre completo, no a cada vuelo.";
@@ -283,10 +289,15 @@ export const VENTANA_ABONO_DESPUES_DIAS = 30;
 /**
  * El abono en Conciliación (pestaña «Conciliados», su cuenta y su día, con
  * `?mov=` para que salga PRIMERO y resaltado). Sin fecha o sin cuenta válidas
- * esos filtros no van (la URL nunca lleva basura).
+ * esos filtros no van (la URL nunca lleva basura). `cobroId` (15-oct-2026, R12
+ * de la conciliación al revés de una entrada, opcional): agrega `?cobro=` para
+ * que la línea de ESE cobro dentro del lote del abono salga resaltada; sin
+ * él, la URL del 0.0.78 byte a byte. La hoja «Conciliación con el banco» de
+ * cobros e ingresos la REUTILIZA (no hay otro constructor de esta URL).
  */
 export function hrefAbonoDeCobro(
   a: Pick<AbonoBancoDeCobro, "movimiento_id" | "cuenta_bancaria_id" | "fecha">,
+  opts: { cobroId?: string | null } = {},
 ): string {
   const dia = typeof a.fecha === "string" && esDiaValido(a.fecha.slice(0, 10)) ? a.fecha.slice(0, 10) : null;
   return hrefConciliacion({
@@ -295,6 +306,7 @@ export function hrefAbonoDeCobro(
     desde: dia,
     hasta: dia,
     mov: a.movimiento_id,
+    cobro: opts.cobroId ?? null,
   });
 }
 
@@ -304,15 +316,25 @@ function diaCancunDeCobro(iso: string | null | undefined): string | null {
   return esDiaValido(dia) ? dia : null;
 }
 
+/** La entrada de «Buscar el abono que falta»: el cobro de la tarjeta (`fecha_cobro`) o la entrada de la hoja (`dia`, ya día Cancún). */
+export interface FaltanteDeCobro {
+  fecha_cobro?: string | null;
+  /** YYYY-MM-DD Cancún (la hoja: `entrada.dia`); manda sobre `fecha_cobro`. */
+  dia?: string | null;
+  faltante?: number | string | null;
+}
+
 /**
  * «Buscar el abono que falta» de un PARCIAL: pendientes de 7 días antes a 30
  * después del cobro (días de Cancún) con lo que falta ya escrito en el
- * buscador (`?mvq=`, «1700» o «977.45»). null sin faltante.
+ * buscador (`?mvq=`, «1700» o «977.45»). null sin faltante. La entrada se
+ * generalizó (15-oct-2026, R12) a `{ dia, faltante }` para que la hoja de la
+ * entrada la REUTILICE: con `dia` la URL es la misma que la de la tarjeta.
  */
-export function hrefBuscarAbonoQueFalta(c: Pick<CobroBanco, "fecha_cobro" | "faltante">): string | null {
+export function hrefBuscarAbonoQueFalta(c: FaltanteDeCobro): string | null {
   const f = numeroONull(c.faltante);
   if (f == null || !(f > 0)) return null;
-  const dia = diaCancunDeCobro(c.fecha_cobro);
+  const dia = c.dia && esDiaValido(c.dia) ? c.dia : diaCancunDeCobro(c.fecha_cobro);
   return hrefConciliacion({
     f: "pendientes",
     desde: dia ? diaMas(dia, -VENTANA_ABONO_ANTES_DIAS) : null,

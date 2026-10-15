@@ -247,6 +247,12 @@ const LARGO_MAX_BUSCAR = 80;
  */
 export const PARAM_MOVIMIENTO_FOCO = "mov";
 export const PARAM_GASTO_FOCO = "gasto";
+/**
+ * `?cobro=` (15-oct-2026, API 0.0.78, conciliación al revés de una ENTRADA):
+ * el cobro que se viene a ver desde la hoja de Ingresos o de la tarjeta de
+ * cobros; su línea dentro del lote del abono se resalta (como `?gasto=`).
+ */
+export const PARAM_COBRO_FOCO = "cobro";
 /** El anillo de la fila enfocada: el MISMO de «Por facturar». */
 export const CLASE_FILA_ENFOCADA = "ring-2 ring-inset ring-amber-400 bg-amber-500/5";
 /** La línea del gasto que se abrió dentro del lote del cargo. */
@@ -254,6 +260,14 @@ export const CLASE_LINEA_ENFOCADA = "rounded-sm bg-amber-500/10 font-semibold ri
 export const SUFIJO_GASTO_ENFOCADO = " · el que abriste";
 export const TEXTO_MOVIMIENTO_NO_ENCONTRADO =
   "No encontramos en esta vista el cargo que abriste desde Gastos: puede estar en otra cuenta u otras fechas, o ya lo desvincularon. Quita los filtros para buscarlo.";
+/** Sin `?gasto=` (se llegó desde la hoja de una ENTRADA: un abono). */
+export const TEXTO_MOVIMIENTO_NO_ENCONTRADO_GENERICO =
+  "No encontramos en esta vista el movimiento que abriste: puede estar en otra cuenta u otras fechas, o ya lo desvincularon. Quita los filtros para buscarlo.";
+
+/** El aviso de «no está en esta vista»: con `?gasto=` el de Gastos (de siempre); si no, el genérico. */
+export function textoMovimientoNoEncontrado(enfoque: { gasto?: string | null }): string {
+  return enfoque.gasto ? TEXTO_MOVIMIENTO_NO_ENCONTRADO : TEXTO_MOVIMIENTO_NO_ENCONTRADO_GENERICO;
+}
 export const ETIQUETA_QUITAR_RESALTADO = "Quitar resaltado";
 export const ETIQUETA_VER_TODOS_MOVIMIENTOS = "Ver todos los movimientos";
 
@@ -263,6 +277,8 @@ export const ETIQUETA_VER_TODOS_MOVIMIENTOS = "Ver todos los movimientos";
  * ADITIVOS del 13-oct-2026 (sin ellos la URL es byte a byte la de antes),
  * al final y en este orden:
  *  - `mov` / `gasto`: el enfoque desde Gastos (solo si son uuid);
+ *  - `cobro` (15-oct-2026): el cobro que se viene a ver desde la hoja de una
+ *    entrada (solo si es uuid);
  *  - `buscar`: prellena la búsqueda rápida de la tabla (`?mvq=`, recortada a
  *    80). La tabla la lee AL MONTAR, por eso estas ligas se abren en una
  *    pestaña nueva (el chip «Factura 7360», «Buscar el cargo»).
@@ -274,6 +290,7 @@ export function hrefConciliacion(v: {
   hasta?: string | null;
   mov?: string | null;
   gasto?: string | null;
+  cobro?: string | null;
   buscar?: string | null;
 }): string {
   const q = new URLSearchParams();
@@ -286,20 +303,28 @@ export function hrefConciliacion(v: {
   if (mov) q.set(PARAM_MOVIMIENTO_FOCO, mov);
   const gasto = uuidFiltro(v.gasto);
   if (gasto) q.set(PARAM_GASTO_FOCO, gasto);
+  const cobro = uuidFiltro(v.cobro);
+  if (cobro) q.set(PARAM_COBRO_FOCO, cobro);
   const buscar = typeof v.buscar === "string" ? v.buscar.trim().slice(0, LARGO_MAX_BUSCAR).trim() : "";
   if (buscar) q.set(PARAM_BUSQUEDA_MOVIMIENTOS, buscar);
   const qs = q.toString();
   return qs ? `/admin/conciliacion?${qs}` : "/admin/conciliacion";
 }
 
-/** `?mov=` / `?gasto=` de la URL, validados (uuid) y en minúsculas; lo demás ⇒ null. */
+/** `?mov=` / `?gasto=` / `?cobro=` de la URL, validados (uuid) y en minúsculas; lo demás ⇒ null. */
 export function enfoqueConciliacionDeUrl(sp: {
   mov?: string | null;
   gasto?: string | null;
-}): { mov: string | null; gasto: string | null } {
+  cobro?: string | null;
+}): { mov: string | null; gasto: string | null; cobro: string | null } {
   const mov = uuidFiltro(sp?.mov ?? undefined);
   const gasto = uuidFiltro(sp?.gasto ?? undefined);
-  return { mov: mov ? mov.toLowerCase() : null, gasto: gasto ? gasto.toLowerCase() : null };
+  const cobro = uuidFiltro(sp?.cobro ?? undefined);
+  return {
+    mov: mov ? mov.toLowerCase() : null,
+    gasto: gasto ? gasto.toLowerCase() : null,
+    cobro: cobro ? cobro.toLowerCase() : null,
+  };
 }
 
 /**
@@ -318,15 +343,23 @@ export function filasConFoco<T extends { id: string }>(
   return { filas: [filas[i], ...filas.slice(0, i), ...filas.slice(i + 1)], encontrado: true };
 }
 
-/** «Primero en la lista y resaltado: el cargo del 30 sep 2026 por $11,205.60 (EJE SCOTIA) que abriste desde Gastos.» */
+/**
+ * La franja de la fila enfocada, por `m.tipo`: un CARGO (desde Gastos) ⇒
+ * «Primero en la lista y resaltado: el cargo del 30 sep 2026 por $11,205.60
+ * (EJE SCOTIA) que abriste desde Gastos.» (el de siempre); un ABONO (desde la
+ * hoja de una entrada de dinero, 15-oct-2026) ⇒ «Primero en la lista y
+ * resaltado: el abono del 15 sep 2026 por $69,183.00 (EJE SCOTIA) que
+ * abriste.».
+ */
 export function textoMovimientoEnfocado(
-  m: { fecha: string; monto: string | number },
+  m: { fecha: string; monto: string | number; tipo?: string | null },
   alias?: string | null,
 ): string {
   const cuenta = (alias ?? "").trim();
-  return `Primero en la lista y resaltado: el cargo del ${fmtDateOnly(m.fecha)} por ${fmtMontoConciliacion(
+  const abono = m.tipo === "ABONO";
+  return `Primero en la lista y resaltado: el ${abono ? "abono" : "cargo"} del ${fmtDateOnly(m.fecha)} por ${fmtMontoConciliacion(
     Math.abs(numeroDe(m.monto)),
-  )}${cuenta ? ` (${cuenta})` : ""} que abriste desde Gastos.`;
+  )}${cuenta ? ` (${cuenta})` : ""} que abriste${abono ? "" : " desde Gastos"}.`;
 }
 
 /** Periodos rápidos del filtro (mismos cortes que Ingresos): días Cancún. */

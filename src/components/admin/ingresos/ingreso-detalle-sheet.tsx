@@ -26,6 +26,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BadgeEstadoConciliacion } from "@/components/admin/ingresos/entradas-table";
+import { useDetalleBanco } from "@/components/admin/banco/use-detalle-banco";
+import {
+  EntradaBancoDetalleDinamico,
+  claveEntradaConAbono,
+  pedirEntrada,
+} from "@/components/admin/ingresos/entrada-banco-sheet";
 import {
   DialogosIngreso,
   verComprobanteIngreso,
@@ -42,9 +48,15 @@ import {
   esAnticipo,
   etiquetaIngreso,
 } from "@/lib/admin/categorias-ingreso";
+import { filaBancoDeIngreso } from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import {
   ACCION_BITACORA_INGRESO,
+  ENLACE_INGRESO_POR_CONCILIAR,
+  TEXTO_INGRESO_LO_CONCILIA_OFICINA,
+  TEXTO_INGRESO_SIN_ABONO,
   hrefIngresos,
+  hrefPorConciliarIngreso,
   puedeConciliarIngresos,
   textoAvionDetalleIngreso,
   textoCampoBitacora,
@@ -53,13 +65,9 @@ import {
   textoValorBitacora,
   type FiltrosIngresos,
 } from "@/lib/admin/ingresos-ui";
-import { diaMas } from "@/lib/admin/conciliacion-auto";
 import { fmtMonto, fmtTc } from "@/lib/format";
 import { fmtDate, fmtDateOnly, fmtDateTime, todayCancun } from "@/lib/datetime";
 import type { IngresoAplicacion, IngresoDetalle } from "@/types/ingresos";
-
-/** El menor de dos días `YYYY-MM-DD` (comparación de texto = de calendario). */
-const minDia = (a: string, b: string) => (a < b ? a : b);
 
 type Confirmacion =
   | { tipo: "desvincular" }
@@ -71,6 +79,14 @@ type Confirmacion =
  * con el banco, aplicaciones a vuelos (anticipos), comprobante y bitácora.
  * Desvincular y desaplicar son SOLO ADMIN/FACTURACION (espejo del API) y
  * confirman; quitar el comprobante también confirma.
+ *
+ * 15-oct-2026 (API 0.0.78, conciliación al revés de una entrada): para ADMIN y
+ * FACTURACION la sección «Conciliación con el banco» EMBEBE el cuerpo de la
+ * hoja (`EntradaBancoDetalle`: el abono, su estado de cuenta, quién ligó y
+ * «¿Qué hacer?») con el MODO CONTROLADO del hook genérico — la carga se deriva
+ * de la llave ingreso + abono (sin setState síncrono en un efecto) y, tras
+ * «Desvincular del abono», `router.refresh()` cambia la llave y el cuerpo se
+ * vuelve a pedir. El badge del encabezado no es botón (el detalle ya está aquí).
  */
 export function IngresoDetalleSheet({
   detalle,
@@ -125,6 +141,13 @@ export function IngresoDetalleSheet({
   const i = detalle?.ingreso ?? null;
   const vivo = i ? !i.baja : false;
   const ant = i ? esAnticipo(i.categoria) : false;
+  // El cuerpo de la hoja EMBEBIDO (ADMIN/FACTURACION; ni efectivo ni dado de baja).
+  const filaBanco =
+    i && puedeVerDetalleBanco(rol) && i.conciliacion.estado !== "NO_BANCARIO" && !i.baja ? filaBancoDeIngreso(i) : null;
+  const banco = useDetalleBanco({ pedir: pedirEntrada, clave: claveEntradaConAbono, fija: filaBanco });
+  // Un API ≤ 0.0.77 no tiene la ruta: el bloque de siempre (con el abono que
+  // ya manda `GET /v1/ingresos/:id`), sin perder nada en el skew de deploy.
+  const embebido = filaBanco !== null && !(banco.resultado?.ok === false && banco.resultado.code === "RUTA_NO_DISPONIBLE");
 
   return (
     <>
@@ -299,6 +322,29 @@ export function IngresoDetalleSheet({
                   <p className="text-sm text-muted-foreground">
                     Efectivo en mano: no se concilia con ningún estado de cuenta.
                   </p>
+                ) : embebido && filaBanco ? (
+                  <div className="space-y-3">
+                    <EntradaBancoDetalleDinamico
+                      fila={filaBanco}
+                      resultado={banco.resultado}
+                      descargando={banco.descargando}
+                      onReintentar={banco.reintentar}
+                      onRecargar={() => router.refresh()}
+                      onDescargar={banco.descargarEstadoCuenta}
+                    />
+                    {conciliador && detalle!.movimiento && i.conciliacion.estado === "CONCILIADO" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-destructive hover:text-destructive"
+                        onClick={() => setConfirmar({ tipo: "desvincular" })}
+                        disabled={pending}
+                      >
+                        <LinkSlashIcon className="h-4 w-4" />
+                        Desvincular del abono
+                      </Button>
+                    )}
+                  </div>
                 ) : detalle!.movimiento ? (
                   <div className="space-y-2">
                     <p className="text-sm">
@@ -324,25 +370,19 @@ export function IngresoDetalleSheet({
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Todavía no aparece en ningún estado de cuenta importado. Al subir el estado de cuenta se
-                    cruza solo si el monto cuadra; si no,{" "}
+                    {TEXTO_INGRESO_SIN_ABONO}{" "}
                     {conciliador ? (
                       <Link
                         // Con la ventana del INGRESO (−7 / +30 días, hasta hoy) y
                         // su cuenta: con el periodo de la vista, el abono de otro
                         // mes no aparecía en «Por conciliar».
-                        href={hrefIngresos(filtros, {
-                          tab: "por-conciliar",
-                          desde: diaMas(i.fecha, -7),
-                          hasta: minDia(diaMas(i.fecha, 30), todayCancun()),
-                          cuenta: i.cuenta_bancaria_id,
-                        })}
+                        href={hrefPorConciliarIngreso(i, todayCancun(), filtros)}
                         className="text-brand-600 hover:underline"
                       >
-                        concílialo en «Por conciliar»
+                        {ENLACE_INGRESO_POR_CONCILIAR}
                       </Link>
                     ) : (
-                      "lo concilia Administración o Facturación"
+                      TEXTO_INGRESO_LO_CONCILIA_OFICINA
                     )}
                     .
                   </p>

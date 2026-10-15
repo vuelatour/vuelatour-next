@@ -6,6 +6,7 @@ import { isApiError } from "@/lib/api/errors";
 import {
   auditoriaPaywise,
   candidatosCobroMovimiento,
+  conciliacionDeEntrada,
   conciliacionDeGasto,
   gastosCandidatosMovimiento,
   type PaywiseAuditoriaQuery,
@@ -55,6 +56,7 @@ import {
 import { TOPE_SELECCION } from "@/lib/admin/conciliacion-seleccion";
 import { errorListaCargosGasto } from "@/lib/admin/conciliacion-cargos-gasto";
 import { MSG_DETALLE_BANCO_API_VIEJO } from "@/lib/admin/gasto-banco";
+import { MSG_ENTRADA_INVALIDA } from "@/lib/admin/entrada-banco";
 import type {
   AutoMatchResultado,
   CambioFechaGasto,
@@ -82,6 +84,7 @@ import type {
   SugerirLoteResponse,
   VistaPreviaImportacion,
 } from "@/types/conciliacion";
+import type { ConciliacionDeEntrada, OrigenEntrada } from "@/types/conciliacion-entrada";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -1163,5 +1166,37 @@ export async function ligarCargosAGastoAction(
     return { ok: true, data };
   } catch (err) {
     return sinRuta<LigarCargosGastoRespuesta>(err);
+  }
+}
+
+// ===== Conciliación AL REVÉS de una ENTRADA (15-oct-2026, API 0.0.78, invariante 78) =====
+
+/**
+ * La hoja «Conciliación con el banco» de una ENTRADA de dinero: el badge de
+ * Ingresos (Todos, Cobros de vuelos, Otros ingresos, Anticipos y «Depósitos de
+ * vuelos que aún no vuelan»), el detalle `?ingreso=` y las tarjetas «Cobros»
+ * del vuelo y de la cotización. Solo lectura: NO revalida. Un origen fuera de
+ * catálogo o un id que no es uuid ⇒ `ENTRADA_INVALIDA` SIN llamar al API; un
+ * 404 «Cannot GET» (API ≤ 0.0.77) ⇒ `RUTA_NO_DISPONIBLE` con
+ * `MSG_DETALLE_BANCO_API_VIEJO` (la hoja ofrece buscar el abono en
+ * Conciliación); cualquier otro error conserva code, status y details (404
+ * `COBRO_NO_EXISTE` / `INGRESO_NO_EXISTE`, 403 por rol, 503
+ * `INGRESOS_NO_DISPONIBLE`…). Nunca lanza.
+ */
+export async function conciliacionDeEntradaAction(
+  origen: OrigenEntrada,
+  id: string,
+): Promise<ActionResult<ConciliacionDeEntrada>> {
+  if ((origen !== "COBRO_VUELO" && origen !== "INGRESO") || !esUuid(id)) {
+    return { ok: false, code: "ENTRADA_INVALIDA", status: 400, error: MSG_ENTRADA_INVALIDA };
+  }
+  try {
+    return { ok: true, data: await conciliacionDeEntrada(origen, id) };
+  } catch (err) {
+    const r = fail<ConciliacionDeEntrada>(err);
+    if (esRutaInexistente(r)) {
+      return { ok: false, code: "RUTA_NO_DISPONIBLE", status: 404, error: MSG_DETALLE_BANCO_API_VIEJO };
+    }
+    return r;
   }
 }

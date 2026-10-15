@@ -353,6 +353,7 @@ export default async function IngresosPage({ searchParams }: PageProps) {
                   <EntradasTable
                     entradas={entradas.datos.data}
                     filtros={f}
+                    rol={me.rol ?? null}
                     huboCorte={entradas.datos.huboCorte}
                   />
                 )}
@@ -383,6 +384,7 @@ export default async function IngresosPage({ searchParams }: PageProps) {
                     ingresos={ingresos.datos.data}
                     filtros={f}
                     catalogos={catalogos}
+                    rol={me.rol ?? null}
                     huboCorte={ingresos.datos.huboCorte}
                   />
                 </CardContent>
@@ -410,6 +412,7 @@ export default async function IngresosPage({ searchParams }: PageProps) {
                   anticipos={ingresos.datos.data}
                   filtros={f}
                   catalogos={catalogos}
+                  rol={me.rol ?? null}
                   huboCorte={ingresos.datos.huboCorte}
                 />
               ) : ingresos ? (
@@ -427,7 +430,11 @@ export default async function IngresosPage({ searchParams }: PageProps) {
             </CardHeader>
             <CardContent>
               {depositos && depositos.ok ? (
-                <DepositosPorVolarTable depositos={depositos.datos.data} huboCorte={depositos.datos.huboCorte} />
+                <DepositosPorVolarTable
+                  depositos={depositos.datos.data}
+                  rol={me.rol ?? null}
+                  huboCorte={depositos.datos.huboCorte}
+                />
               ) : depositos ? (
                 <ErrorDeLista carga={depositos} titulo="No se pudieron cargar los depósitos" />
               ) : null}

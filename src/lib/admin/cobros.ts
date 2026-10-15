@@ -30,6 +30,26 @@ export const CUENTAS_COBRO_VALUES = CUENTAS_COBRO.map((c) => c.value) as [
   ...CuentaCobro[],
 ];
 
+/**
+ * La cuenta del catálogo que NO es un banco: la pasarela (la misma que
+ * `factura-obligatoria.ts` deja fuera de las que exigen factura). Tipada contra
+ * `CuentaCobro`: si el catálogo la renombra, tsc lo dice.
+ */
+export const CUENTA_COBRO_PASARELA: CuentaCobro = "Paywise";
+
+/**
+ * ¿La cuenta CAPTURADA en el cobro es la pasarela («Paywise», recortada)? Fuente
+ * única de D17 de la conciliación al revés de una entrada (15-oct-2026, API
+ * 0.0.78): un cobro «Transferencia» con cuenta «Paywise» no se cruza solo con
+ * Paywise (solo «Link de pago (Paywise)»), y la hoja lo dice. Ninguna otra
+ * inferencia por el texto libre `cuenta_destino`.
+ */
+export function esCuentaCobroPasarela(cuenta: string | null | undefined): boolean {
+  if (typeof cuenta !== "string") return false;
+  const t = cuenta.trim();
+  return t === CUENTA_COBRO_PASARELA && CUENTAS_COBRO.some((c) => c.value === t);
+}
+
 /** Moneda de una cuenta del catálogo (null si es un alias legado / libre). */
 export function monedaDeCuenta(cuenta: string | null | undefined): "USD" | "MXN" | null {
   return CUENTAS_COBRO.find((c) => c.value === cuenta)?.moneda ?? null;

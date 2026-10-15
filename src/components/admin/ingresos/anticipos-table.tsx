@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
-import { BadgeEstadoConciliacion } from "@/components/admin/ingresos/entradas-table";
+import { CeldaConciliacionIngreso } from "@/components/admin/ingresos/entradas-table";
+import { EntradaBancoSheet, useDetalleBancoEntrada } from "@/components/admin/ingresos/entrada-banco-sheet";
 import {
   DialogosIngreso,
   IngresoMenu,
@@ -12,6 +13,8 @@ import {
 } from "@/components/admin/ingresos/ingresos-table";
 import type { CatalogosIngreso } from "@/components/admin/ingresos/registrar-ingreso-dialog";
 import { etiquetaIngreso } from "@/lib/admin/categorias-ingreso";
+import { filaBancoDeIngreso } from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import { hrefIngresos, type FiltrosIngresos } from "@/lib/admin/ingresos-ui";
 import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -23,20 +26,27 @@ import type { Ingreso } from "@/types/ingresos";
  * que existiera su vuelo. Queda FUERA de resultados hasta aplicarse a un vuelo
  * (ahí se vuelve un cobro normal del vuelo). Aplicado y saldo los calcula el
  * API; «Con saldo» (default) lista TODOS los que tienen saldo, de cualquier
- * fecha. Los vuelos a los que se aplicó se ven en el detalle (Ver).
+ * fecha. Los vuelos a los que se aplicó se ven en el detalle (Ver). El badge
+ * de «Conciliación» abre la hoja «Conciliación con el banco» del anticipo y
+ * su abono (15-oct-2026, UNA por tabla) para ADMIN y FACTURACION.
  */
 export function AnticiposTable({
   anticipos,
   filtros,
   catalogos,
+  rol,
   huboCorte,
 }: {
   anticipos: Ingreso[];
   filtros: FiltrosIngresos;
   catalogos: CatalogosIngreso;
+  /** Rol de quien mira (`/me`): el clic del badge solo con `puedeVerDetalleBanco`. */
+  rol?: string | null;
   huboCorte?: boolean;
 }) {
   const [estado, setEstado] = useState<{ accion: AccionIngreso; ingreso: Ingreso } | null>(null);
+  const detalleBanco = useDetalleBancoEntrada();
+  const abrirBanco = puedeVerDetalleBanco(rol) ? detalleBanco.abrir : null;
   const conSaldo = filtros.saldo !== "todos";
 
   const columns = useMemo<Array<DataTableColumn<Ingreso>>>(
@@ -132,7 +142,13 @@ export function AnticiposTable({
       {
         key: "conciliacion",
         header: "Conciliación",
-        cell: (i) => <BadgeEstadoConciliacion estado={i.conciliacion.estado} />,
+        noLink: true,
+        cell: (i) => (
+          <CeldaConciliacionIngreso
+            ingreso={i}
+            alAbrir={abrirBanco ? () => abrirBanco(filaBancoDeIngreso(i)) : undefined}
+          />
+        ),
       },
       {
         key: "acciones",
@@ -148,7 +164,7 @@ export function AnticiposTable({
         ),
       },
     ],
-    [filtros],
+    [filtros, abrirBanco],
   );
 
   return (
@@ -192,6 +208,7 @@ export function AnticiposTable({
         </div>
       )}
       <DialogosIngreso estado={estado} onCerrar={() => setEstado(null)} catalogos={catalogos} />
+      <EntradaBancoSheet detalle={detalleBanco} />
     </div>
   );
 }

@@ -423,12 +423,61 @@ export interface EtiquetaEstado {
 }
 
 /**
+ * «Sin conciliar» de una ENTRADA de dinero (15-oct-2026, API 0.0.78, revisión
+ * crítica de la conciliación al revés): el de antes («Todavía no aparece en
+ * ningún estado de cuenta importado… se cruza solo») era FALSO para un cobro
+ * cuyo depósito sí está importado (#223/#226, pagados en UN depósito con #198)
+ * y para uno registrado DESPUÉS de importar (#383/#404: los cobros no tienen
+ * cruce «al revés»). Es UNO para Ingresos y para la tarjeta de cobros del
+ * vuelo (`TITULO_SIN_CONCILIAR_COBRO` de `cobro-banco.ts` lo reutiliza).
+ */
+export const TITULO_SIN_CONCILIAR_ENTRADA =
+  "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta (o con «Cruzar pendientes» en Conciliación) y solo liga lo que cuadra sin dudas; lo demás se concilia a mano.";
+
+/** El de siempre de «No se concilia uno a uno» (sin saber el método). */
+export const TITULO_NO_BANCARIO_GENERICO = "Efectivo, dólares en mano o terminal BillPocket (depósito agrupado)";
+
+/**
+ * Qué se sabe de la fila para explicar «No se concilia uno a uno» (el `title`
+ * por método): el método real, si es un reembolso y si es un ingreso sin
+ * cuenta (efectivo / caja). Sin contexto, el texto genérico de siempre.
+ */
+export interface ContextoEstadoConciliacion {
+  metodo?: string | null;
+  esReembolso?: boolean;
+  ingresoSinCuenta?: boolean;
+}
+
+/** El `title` de «No se concilia uno a uno» según el contexto (nunca es botón: no hay abono que mostrar). */
+export function tituloNoBancario(contexto?: ContextoEstadoConciliacion | null): string {
+  if (!contexto) return TITULO_NO_BANCARIO_GENERICO;
+  if (contexto.esReembolso) return "Reembolso al cliente: sale del banco como un cargo; no se concilia aquí.";
+  if (contexto.ingresoSinCuenta) return "Efectivo / caja: no pasa por el banco.";
+  switch (contexto.metodo) {
+    case "EFECTIVO":
+      return "Efectivo en mano: no pasa por el banco.";
+    case "DOLARES":
+      return "Dólares en mano: no pasan por el banco.";
+    case "BILLPOCKET":
+      return "Terminal BillPocket: el banco deposita varios cobros juntos y descuenta la comisión, por eso no se cruza solo. Si identificas el depósito, vincúlalo a mano en Conciliación.";
+    case "OTRO":
+      return "Método «Otro»: no se concilia uno a uno con el banco.";
+    default:
+      return TITULO_NO_BANCARIO_GENERICO;
+  }
+}
+
+/**
  * Badge de conciliación de un ingreso o de un cobro de vuelo. El ESTADO lo
  * decide el API (fuente única: la misma regla que «Cobros sin banco»); aquí
- * solo se nombra.
+ * solo se nombra. La lista nunca trae PARCIAL: un cobro parcial es
+ * SIN_CONCILIAR + el chip «Parcial · faltan $X» del 0.0.78 (el badge sigue
+ * diciendo «Sin conciliar»). `contexto` (15-oct-2026) solo cambia el `title`
+ * de «No se concilia uno a uno» (por método); texto y tono, los de siempre.
  */
 export function etiquetaEstadoConciliacion(
   estado: EstadoConciliacionEntrada | string | null | undefined,
+  contexto?: ContextoEstadoConciliacion | null,
 ): EtiquetaEstado {
   switch (estado) {
     case "CONCILIADO":
@@ -441,8 +490,7 @@ export function etiquetaEstadoConciliacion(
       return {
         texto: "Sin conciliar",
         tono: "ambar",
-        titulo:
-          "Todavía no aparece en ningún estado de cuenta importado: al subirlo se cruza solo o se concilia en «Por conciliar».",
+        titulo: TITULO_SIN_CONCILIAR_ENTRADA,
       };
     case "VIA_ANTICIPO":
       return {
@@ -455,12 +503,82 @@ export function etiquetaEstadoConciliacion(
       return {
         texto: "No se concilia uno a uno",
         tono: "gris",
-        titulo: "Efectivo, dólares en mano o terminal BillPocket (depósito agrupado)",
+        titulo: tituloNoBancario(contexto),
       };
     default:
       return { texto: "—", tono: "gris", titulo: "Sin dato de conciliación." };
   }
 }
+
+/**
+ * Lo que se agrega al `title` del badge cuando es BOTÓN (abre la hoja
+ * «Conciliación con el banco»), según el estado DE LA HOJA (un parcial de la
+ * lista ya viene como PARCIAL). «» en lo que nunca es botón.
+ */
+export function sufijoClicEstado(estado: string | null | undefined): string {
+  switch (estado) {
+    case "CONCILIADO":
+      return " Clic para ver el abono del banco y su estado de cuenta.";
+    case "VIA_ANTICIPO":
+      return " Clic para ver el abono del anticipo y su estado de cuenta.";
+    case "PARCIAL":
+      return " Clic para ver los abonos y buscar el que falta.";
+    case "SIN_CONCILIAR":
+      return " Clic para ver por qué y buscar el abono.";
+    default:
+      return "";
+  }
+}
+
+/**
+ * El `title` de un badge que es BOTÓN: el de siempre + qué hace el clic (con
+ * su punto aunque el de siempre no lo traiga: «Conciliado con un movimiento
+ * bancario. Clic para ver…»). Sin sufijo (no abre), el de siempre tal cual.
+ */
+export function tituloConClic(titulo: string, estado: string | null | undefined): string {
+  const sufijo = sufijoClicEstado(estado);
+  if (!sufijo) return titulo;
+  const base = titulo.trim();
+  return `${base}${/[.!?…]$/.test(base) ? "" : "."}${sufijo}`;
+}
+
+/** Días antes y después de la fecha del ingreso que abre «Por conciliar». */
+export const VENTANA_POR_CONCILIAR_ANTES_DIAS = 7;
+export const VENTANA_POR_CONCILIAR_DESPUES_DIAS = 30;
+
+/**
+ * «Conciliarlo en «Por conciliar»» de un ingreso (o de un anticipo): la
+ * pestaña «Por conciliar» con la ventana DEL INGRESO (−7 / +30 días, sin
+ * pasar de hoy en Cancún) y SU cuenta — con el periodo de la vista, el abono
+ * de otro mes no aparecía. Con `filtros` (el detalle `?ingreso=`) conserva los
+ * de la vista: la MISMA URL que el detalle armaba a mano. Sin ellos (la hoja),
+ * solo esos parámetros.
+ */
+export function hrefPorConciliarIngreso(
+  i: { fecha: string; cuenta_bancaria_id: string | null | undefined },
+  hoy: string,
+  filtros?: FiltrosIngresos | null,
+): string {
+  const base: FiltrosIngresos = filtros ?? { tab: "todos", desde: hoy, hasta: hoy, periodoExplicito: false };
+  const hasta = diaMas(i.fecha, VENTANA_POR_CONCILIAR_DESPUES_DIAS);
+  return hrefIngresos(base, {
+    tab: "por-conciliar",
+    desde: diaMas(i.fecha, -VENTANA_POR_CONCILIAR_ANTES_DIAS),
+    hasta: hasta < hoy ? hasta : hoy,
+    cuenta: i.cuenta_bancaria_id ?? null,
+  });
+}
+
+/**
+ * El detalle `?ingreso=` de un ingreso SIN abono, cuando NO se pinta la hoja
+ * embebida (COORDINADOR, o un ingreso dado de baja): la 1.ª frase corregida
+ * (la de antes prometía «al subir el estado de cuenta se cruza solo») y el
+ * cierre según quién mira — quien concilia recibe el enlace a «Por conciliar».
+ */
+export const TEXTO_INGRESO_SIN_ABONO =
+  "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta y solo liga lo que cuadra sin dudas; si no,";
+export const ENLACE_INGRESO_POR_CONCILIAR = "concílialo en «Por conciliar»";
+export const TEXTO_INGRESO_LO_CONCILIA_OFICINA = "lo concilia Administración o Facturación";
 
 export const TEXTO_DUPLICADO = "¿Duplicado?";
 

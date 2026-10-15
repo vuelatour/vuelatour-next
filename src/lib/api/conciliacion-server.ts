@@ -16,6 +16,7 @@ import type {
   PaywiseAuditoria,
   TipoMovimientoBancario,
 } from "@/types/conciliacion";
+import type { ConciliacionDeEntrada, OrigenEntrada } from "@/types/conciliacion-entrada";
 
 export interface ListConciliacionQuery {
   cuenta_bancaria_id?: string;
@@ -235,4 +236,26 @@ export function gastosCandidatosMovimiento(movId: string, q: GastosCandidatosQue
  */
 export function conciliacionDeGasto(gastoId: string) {
   return apiServer<ConciliacionDeGasto>(`/v1/conciliacion/gastos/${gastoId}`, { cache: "no-store" });
+}
+
+// ===== Conciliación AL REVÉS de una ENTRADA (15-oct-2026, API 0.0.78, invariante 78) =====
+
+/**
+ * `GET /v1/conciliacion/cobros/:id` (COBRO_VUELO: también la parte de un sobre
+ * o el cobro de un anticipo) o `GET /v1/conciliacion/ingresos/:id` (INGRESO,
+ * también un anticipo como fila de Ingresos): los abonos del banco de UNA
+ * entrada de dinero (cuenta sin número ni CLABE, leyenda, lo que aporta cada
+ * abono, el lote, su estado de cuenta o por qué no hay archivo, quién
+ * registró la liga) y, si sigue pendiente, qué hay importado por cuenta, los
+ * otros cobros del cliente ese día y si el cruce ya no corrió. Solo lectura.
+ * Roles ADMIN y FACTURACION (403 para los demás); 404 `COBRO_NO_EXISTE` /
+ * `INGRESO_NO_EXISTE`; 503 `INGRESOS_NO_DISPONIBLE` (solo ingresos, sin su
+ * migración); un 404 «Cannot GET» es un API ≤ 0.0.77. Es GET: hereda el
+ * reintento del fetcher ante 502/503/504.
+ */
+export function conciliacionDeEntrada(origen: OrigenEntrada, id: string) {
+  return apiServer<ConciliacionDeEntrada>(
+    origen === "INGRESO" ? `/v1/conciliacion/ingresos/${id}` : `/v1/conciliacion/cobros/${id}`,
+    { cache: "no-store" },
+  );
 }

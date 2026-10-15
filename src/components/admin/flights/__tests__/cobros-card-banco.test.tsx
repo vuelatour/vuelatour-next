@@ -61,6 +61,12 @@ vi.mock("@/lib/api/facturas-emitidas-browser", () => ({
   buscarVuelosCandidatos: async () => ({ ok: true, data: [] }),
 }));
 vi.mock("@/lib/api/browser", () => ({ apiBrowser: async () => ({ data: [] }) }));
+// La card monta la hoja «Conciliación con el banco» del cobro (15-oct-2026,
+// API 0.0.78): sus actions no se llaman al pintar.
+vi.mock("@/app/admin/conciliacion/actions", () => ({
+  conciliacionDeEntradaAction: vi.fn(),
+  estadoCuentaUrlAction: vi.fn(),
+}));
 
 const { CobrosCard } = await import("../cobros-card");
 const { QuoteCobrosCard } = await import("@/components/admin/quotes/quote-cobros-card");
@@ -181,8 +187,13 @@ describe.each([
   ["cotización", cotizacion],
 ] as const)("card de cobros del %s", (_nombre, render) => {
   it("PARCIAL: badge ámbar «Conciliado parcial · faltan $1,700 MXN» con su tooltip", () => {
+    // Para quien ve el banco (ADMIN) el badge es el BOTÓN que abre la hoja
+    // «Conciliación con el banco» (15-oct-2026); para COORDINADOR, el <span> de siempre.
     const html = render([PARCIAL], "ADMIN");
     expect(html).toMatch(
+      /<button[^>]*class="[^"]*border-amber-500\/50 bg-amber-500\/10 text-amber-700 dark:text-amber-300[^"]*"[^>]*title="El banco respalda \$1,700 MXN de \$3,400 MXN \(1 abono: 15 sep 2026 · EJE SCOTIA\)\. Faltan \$1,700 MXN[^"]*"[^>]*>Conciliado parcial · faltan \$1,700 MXN<\/button>/,
+    );
+    expect(render([PARCIAL], "COORDINADOR")).toMatch(
       /<span[^>]*class="[^"]*border-amber-500\/50 bg-amber-500\/10 text-amber-700 dark:text-amber-300[^"]*"[^>]*title="El banco respalda \$1,700 MXN de \$3,400 MXN \(1 abono: 15 sep 2026 · EJE SCOTIA\)\. Faltan \$1,700 MXN[^"]*"[^>]*>Conciliado parcial · faltan \$1,700 MXN<\/span>/,
     );
     expect(html).not.toContain(">Conciliado<");
@@ -220,10 +231,14 @@ describe.each([
     expect(previo).not.toContain("data-cobro-banco");
   });
 
-  it("API previo conciliado: el badge verde de siempre", () => {
-    const html = render([{ ...COBRO_3400, conciliado: true }], "ADMIN");
+  it("API previo conciliado: el badge verde de siempre (botón para quien ve el banco)", () => {
+    const html = render([{ ...COBRO_3400, conciliado: true }], "COORDINADOR");
     expect(html).toMatch(
       /class="[^"]*ml-2 border-emerald-500\/40 bg-emerald-500\/10 text-emerald-700 dark:text-emerald-300 font-sans font-medium"[^>]*title="Conciliado con un movimiento bancario">Conciliado</,
+    );
+    // ADMIN: el mismo verde + cursor de mano y el clic (con un API ≤ 0.0.77 la hoja dice «falta actualizar el API»).
+    expect(render([{ ...COBRO_3400, conciliado: true }], "ADMIN")).toMatch(
+      /<button[^>]*class="[^"]*ml-2 border-emerald-500\/40 bg-emerald-500\/10 text-emerald-700 dark:text-emerald-300 font-sans font-medium cursor-pointer hover:bg-muted\/60"[^>]*title="Conciliado con un movimiento bancario\. Clic para ver el abono del banco y su estado de cuenta\."[^>]*>Conciliado<\/button>/,
     );
   });
 

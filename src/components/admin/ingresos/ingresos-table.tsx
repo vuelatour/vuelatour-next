@@ -22,7 +22,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
-import { BadgeEstadoConciliacion } from "@/components/admin/ingresos/entradas-table";
+import { CeldaConciliacionIngreso } from "@/components/admin/ingresos/entradas-table";
+import { EntradaBancoSheet, useDetalleBancoEntrada } from "@/components/admin/ingresos/entrada-banco-sheet";
 import {
   RegistrarIngresoDialog,
   type CatalogosIngreso,
@@ -32,6 +33,8 @@ import { AplicarAnticipoDialog } from "@/components/admin/ingresos/aplicar-antic
 import { archivoIngresoUrlAction } from "@/app/admin/ingresos/actions";
 import { abrirArchivoFirmado } from "@/lib/admin/facturas-emitidas";
 import { CATEGORIA_INGRESO_DESTINO, esAnticipo, etiquetaIngreso } from "@/lib/admin/categorias-ingreso";
+import { filaBancoDeIngreso } from "@/lib/admin/entrada-banco";
+import { puedeVerDetalleBanco } from "@/lib/admin/hoja-banco";
 import {
   etiquetaChipAvionIngreso,
   hrefIngresos,
@@ -192,20 +195,27 @@ export function CeldaCategoriaIngreso({ ingreso }: { ingreso: Ingreso }) {
 /**
  * «Otros ingresos» (24-sep-2026): todo lo que NO es anticipo — otros
  * ingresos, intereses del banco, reembolsos recibidos, venta de activos y
- * aportaciones. La conciliación y los totales los decide el API.
+ * aportaciones. La conciliación y los totales los decide el API. El badge de
+ * «Conciliación» abre la hoja «Conciliación con el banco» (15-oct-2026, UNA
+ * por tabla) para ADMIN y FACTURACION; un ingreso dado de baja nunca.
  */
 export function IngresosTable({
   ingresos,
   filtros,
   catalogos,
+  rol,
   huboCorte,
 }: {
   ingresos: Ingreso[];
   filtros: FiltrosIngresos;
   catalogos: CatalogosIngreso;
+  /** Rol de quien mira (`/me`): el clic del badge solo con `puedeVerDetalleBanco`. */
+  rol?: string | null;
   huboCorte?: boolean;
 }) {
   const [estado, setEstado] = useState<{ accion: AccionIngreso; ingreso: Ingreso } | null>(null);
+  const detalleBanco = useDetalleBancoEntrada();
+  const abrirBanco = puedeVerDetalleBanco(rol) ? detalleBanco.abrir : null;
 
   const columns = useMemo<Array<DataTableColumn<Ingreso>>>(
     () => [
@@ -278,7 +288,13 @@ export function IngresosTable({
       {
         key: "conciliacion",
         header: "Conciliación",
-        cell: (i) => <BadgeEstadoConciliacion estado={i.conciliacion.estado} />,
+        noLink: true,
+        cell: (i) => (
+          <CeldaConciliacionIngreso
+            ingreso={i}
+            alAbrir={abrirBanco ? () => abrirBanco(filaBancoDeIngreso(i)) : undefined}
+          />
+        ),
       },
       {
         key: "archivo",
@@ -313,7 +329,7 @@ export function IngresosTable({
         ),
       },
     ],
-    [filtros],
+    [filtros, abrirBanco],
   );
 
   return (
@@ -333,6 +349,7 @@ export function IngresosTable({
         huboCorte={huboCorte}
       />
       <DialogosIngreso estado={estado} onCerrar={() => setEstado(null)} catalogos={catalogos} />
+      <EntradaBancoSheet detalle={detalleBanco} />
     </>
   );
 }

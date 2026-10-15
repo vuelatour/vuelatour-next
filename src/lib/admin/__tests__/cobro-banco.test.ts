@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CobroSinBanco } from "@/types/conciliacion";
+import { etiquetaEstadoConciliacion, TITULO_SIN_CONCILIAR_ENTRADA } from "@/lib/admin/ingresos-ui";
 import type { AbonoBancoDeCobro, FlightCobro } from "@/types/flights";
 import {
   celdaBancoCobroSinBanco,
@@ -231,8 +232,10 @@ describe("badge de las cards de cobros", () => {
       TITULO_SIN_CONCILIAR_SOBRE,
     );
     expect(tituloBadgeCobro(SIN_CONCILIAR)).toBe(TITULO_SIN_CONCILIAR_COBRO);
+    // R11 (15-oct-2026): el MISMO texto que el «Sin conciliar» de Ingresos (el de antes
+    // prometía «Se cruza solo al importar…», falso para un cobro registrado después).
     expect(TITULO_SIN_CONCILIAR_COBRO).toBe(
-      "Todavía no hay ningún abono del banco vinculado a este cobro. Se cruza solo al importar el estado de cuenta (Conciliación) o a mano desde el abono.",
+      "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta (o con «Cruzar pendientes» en Conciliación) y solo liga lo que cuadra sin dudas; lo demás se concilia a mano.",
     );
     expect(tituloBadgeCobro({ ...COBRO_3400, conciliado: true })).toBe(TITULO_CONCILIADO_MOVIMIENTO);
     const anticipo = {
@@ -507,5 +510,39 @@ describe("«Cobros sin banco»: columna «Banco» (textos.cobros_sin_banco del 0
       "2 con pago parcial: un abono cubre solo una parte; el resto sigue pendiente.",
     );
     expect(lineaParcialesCobrosSinBanco([fila({ parcial: false })])).toBeNull();
+  });
+});
+
+describe("lo que la conciliación al revés de una entrada REUTILIZA (15-oct-2026, R11–R13)", () => {
+  it("R11: el «Sin conciliar» de la tarjeta = el de Ingresos (un solo texto para el mismo estado)", () => {
+    expect(TITULO_SIN_CONCILIAR_COBRO).toBe(TITULO_SIN_CONCILIAR_ENTRADA);
+    expect(TITULO_SIN_CONCILIAR_COBRO).toBe(etiquetaEstadoConciliacion("SIN_CONCILIAR").titulo);
+    expect(TITULO_SIN_CONCILIAR_COBRO).not.toContain("Se cruza solo");
+  });
+
+  it("R12: `hrefAbonoDeCobro(a, { cobroId })` agrega `&cobro=`; sin él, la URL del 0.0.78 byte a byte", () => {
+    const C332 = "d7b0890c-9d0f-441f-a5cd-edd27fa50f0f";
+    expect(hrefAbonoDeCobro(abono(), { cobroId: C332 })).toBe(
+      `/admin/conciliacion?f=conciliados&cuenta=${CUENTA_EJE}&desde=2026-09-15&hasta=2026-09-15&mov=${MOV_1}&cobro=${C332}`,
+    );
+    expect(hrefAbonoDeCobro(abono(), {})).toBe(hrefAbonoDeCobro(abono()));
+    expect(hrefAbonoDeCobro(abono(), { cobroId: null })).toBe(
+      `/admin/conciliacion?f=conciliados&cuenta=${CUENTA_EJE}&desde=2026-09-15&hasta=2026-09-15&mov=${MOV_1}`,
+    );
+  });
+
+  it("R12: `hrefBuscarAbonoQueFalta({ dia, faltante })` = la liga de la tarjeta (`fecha_cobro`)", () => {
+    expect(hrefBuscarAbonoQueFalta({ dia: "2026-09-15", faltante: 1700 })).toBe(hrefBuscarAbonoQueFalta(PARCIAL));
+    expect(hrefBuscarAbonoQueFalta({ dia: "2026-09-15", faltante: 0 })).toBeNull();
+    // Un día inválido cae a la fecha del cobro (nunca basura en la URL).
+    expect(hrefBuscarAbonoQueFalta({ dia: "nada", fecha_cobro: PARCIAL.fecha_cobro, faltante: 1700 })).toBe(
+      hrefBuscarAbonoQueFalta(PARCIAL),
+    );
+  });
+
+  it("R13: el texto del sobrante es UNO (la hoja de la entrada lo pide a esta función)", () => {
+    const src = readFileSync(path.resolve(__dirname, "../entrada-banco.ts"), "utf8");
+    expect(src).toContain("textoSobranteCobro({");
+    expect(src.match(/más que este cobro/g) ?? []).toHaveLength(0);
   });
 });

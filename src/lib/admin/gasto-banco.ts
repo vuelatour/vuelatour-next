@@ -29,45 +29,91 @@ import { fmtMontoConciliacion, numeroDe } from "@/lib/admin/conciliacion-parcial
 import { hrefConciliacion } from "@/lib/admin/conciliacion-vista";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { esDiaValido } from "@/lib/admin/url-params";
-import { fmtDate, fmtDateOnly, fmtDateTime } from "@/lib/datetime";
+import {
+  ACCION_DESCARGAR,
+  BOTON_RECARGAR,
+  BOTON_REINTENTAR_BANCO,
+  BOTON_VER_EN_CONCILIACION,
+  MSG_DETALLE_BANCO_API_VIEJO,
+  MSG_DETALLE_BANCO_FALLO,
+  MSG_DETALLE_BANCO_SIN_PERMISO,
+  MSG_ESTADO_CUENTA_FALLO,
+  MSG_ESTADO_CUENTA_NO_EXISTE,
+  MSG_SESION_EXPIRO,
+  NOTA_CRUZAR_PENDIENTES,
+  ROLES_DETALLE_BANCO,
+  TEXTO_DESCARGANDO,
+  TEXTO_ESTADO_CAMBIO,
+  TEXTO_NO_ABRIO_PESTANA,
+  TITULO_DESCARGAR_ESTADO_CUENTA,
+  TITULO_HOJA_BANCO,
+  TITULO_QUE_HACER,
+  VENTANA_YA_CONCILIADOS_DIAS,
+  archivoDeMovimiento,
+  etiquetaDescargaEstadoCuenta,
+  mensajeErrorDescargaEstadoCuenta,
+  montoParaBusquedaTabla,
+  puedeVerDetalleBanco,
+  type ArchivoDeMovimiento,
+  type EnlaceHoja,
+  type ResultadoDetalleBanco,
+  type TonoEstadoBanco,
+} from "@/lib/admin/hoja-banco";
+import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { fmtTc } from "@/lib/format";
 import type { CargoDeGasto, ConciliacionDeGasto } from "@/types/conciliacion";
 
+/**
+ * Lo que NO depende de la entidad se MUDÓ a `lib/admin/hoja-banco.ts`
+ * (15-oct-2026, API 0.0.78: la hoja de las ENTRADAS de dinero lo comparte) y
+ * se RE-EXPORTA aquí con el MISMO nombre: los importadores de Gastos y
+ * `gasto-banco.test.ts` no cambian.
+ */
+export {
+  ACCION_DESCARGAR,
+  BOTON_RECARGAR,
+  BOTON_REINTENTAR_BANCO,
+  BOTON_VER_EN_CONCILIACION,
+  MSG_DETALLE_BANCO_API_VIEJO,
+  MSG_DETALLE_BANCO_FALLO,
+  MSG_DETALLE_BANCO_SIN_PERMISO,
+  MSG_ESTADO_CUENTA_FALLO,
+  MSG_ESTADO_CUENTA_NO_EXISTE,
+  MSG_SESION_EXPIRO,
+  NOTA_CRUZAR_PENDIENTES,
+  TEXTO_DESCARGANDO,
+  TEXTO_ESTADO_CAMBIO,
+  TEXTO_NO_ABRIO_PESTANA,
+  TITULO_DESCARGAR_ESTADO_CUENTA,
+  TITULO_HOJA_BANCO,
+  TITULO_QUE_HACER,
+  VENTANA_YA_CONCILIADOS_DIAS,
+  etiquetaDescargaEstadoCuenta,
+  mensajeErrorDescargaEstadoCuenta,
+  montoParaBusquedaTabla,
+};
+export type { EnlaceHoja, ResultadoDetalleBanco, TonoEstadoBanco };
+
 // ───────────────────────────── Roles ─────────────────────────────
 
-/** Espejo de `ROLES_CONCILIACION` del API (= el menú «Conciliación»). */
-export const ROLES_DETALLE_BANCO_GASTO = ["ADMIN", "FACTURACION"] as const;
+/** Espejo de `ROLES_CONCILIACION` del API (= el menú «Conciliación»): alias de `ROLES_DETALLE_BANCO`. */
+export const ROLES_DETALLE_BANCO_GASTO = ROLES_DETALLE_BANCO;
 
 /**
- * ¿Se ofrece el clic del badge? Sin rol conocido (`/me` falló) SÍ: es la
- * convención de `gasto-acciones.ts` — el API es el candado y su 403 tiene
- * texto. Con rol, solo ADMIN y FACTURACION.
+ * ¿Se ofrece el clic del badge? Alias de `puedeVerDetalleBanco` (hoja-banco):
+ * sin rol conocido (`/me` falló) SÍ —el API es el candado y su 403 tiene
+ * texto—; con rol, solo ADMIN y FACTURACION.
  */
-export function puedeVerDetalleBancoGasto(rol: string | null | undefined): boolean {
-  if (rol == null || rol === "") return true;
-  return (ROLES_DETALLE_BANCO_GASTO as readonly string[]).includes(rol);
-}
+export const puedeVerDetalleBancoGasto = puedeVerDetalleBanco;
 
 // ───────────────────────────── Textos fijos ─────────────────────────────
 
-export const TITULO_HOJA_BANCO = "Conciliación con el banco";
 export const TEXTO_CARGANDO_BANCO = "Buscando el cargo en los estados de cuenta…";
-export const TEXTO_ESTADO_CAMBIO =
-  "El estado cambió desde que abriste la página: recarga para ver la lista al día.";
-export const BOTON_RECARGAR = "Recargar";
-export const BOTON_REINTENTAR_BANCO = "Reintentar";
 export const NOTA_ESPEJO = "Detalle simplificado: la base de datos todavía no tiene la conciliación por partes.";
-export const BOTON_VER_EN_CONCILIACION = "Ver en Conciliación";
 export const TITULO_VER_EN_CONCILIACION = "Abre Conciliación en otra pestaña con este cargo primero y resaltado";
-export const TITULO_DESCARGAR_ESTADO_CUENTA =
-  "Descarga el archivo original del banco (el enlace se genera al hacer clic y vence en 1 hora)";
-export const TEXTO_DESCARGANDO = "Abriendo…";
-export const TEXTO_NO_ABRIO_PESTANA = "El navegador no abrió la pestaña";
-export const ACCION_DESCARGAR = "Descargar";
 export const TITULO_REGISTRO_LIGA =
   "Quién hizo la liga: a mano, o quien importó el estado de cuenta o capturó el gasto cuando el sistema la cruzó solo.";
 export const TEXTO_LIGA_ANTERIOR = "Liga anterior al 2 oct 2026: el sistema todavía no guardaba quién la hizo.";
-export const TITULO_QUE_HACER = "¿Qué hacer?";
 export const INTRO_SIN_CONCILIAR =
   "Se cruza solo al importar el estado de cuenta, cuando el monto y la fecha coinciden (hasta 3 días de diferencia). Si no se cruzó, revisa:";
 export const CAUSAS_SIN_CONCILIAR = [
@@ -82,26 +128,15 @@ export const NOTA_USD_PAGADO_EN_PESOS =
 export const INTRO_PARCIAL =
   "Si el resto se pagó en otro cargo del banco, búscalo en Conciliación y vincúlalo a este gasto desde ese cargo.";
 export const NOTA_NO_BANCARIO_PARCIAL = `Al vincular el cargo que falta, enciende «${ETIQUETA_INCLUIR_NO_BANCARIOS}» y escribe la razón.`;
-export const NOTA_CRUZAR_PENDIENTES =
-  "Si el estado de cuenta de ese periodo ya está importado, prueba «Cruzar pendientes» en Conciliación.";
 export const BOTON_BUSCAR_CARGO = "Buscar el cargo en Conciliación";
 export const BOTON_BUSCAR_FALTANTE = "Buscar el cargo que falta en Conciliación";
 export const BOTON_VER_YA_CONCILIADOS = "Ver los cargos ya conciliados de esas fechas";
-export const MSG_DETALLE_BANCO_API_VIEJO =
-  "El servidor todavía no tiene este detalle (falta actualizar el API). Mientras, búscalo en Conciliación.";
-export const MSG_DETALLE_BANCO_SIN_PERMISO = "Solo Administración y Facturación ven el detalle del banco.";
 export const MSG_GASTO_YA_NO_EXISTE = "Ese gasto ya no existe: recarga la página.";
-export const MSG_SESION_EXPIRO = "Tu sesión expiró. Recarga la página e inicia sesión.";
-export const MSG_DETALLE_BANCO_FALLO = "No se pudo cargar el detalle del banco. Vuelve a intentarlo.";
-export const MSG_ESTADO_CUENTA_NO_EXISTE = "El archivo del estado de cuenta ya no existe.";
-export const MSG_ESTADO_CUENTA_FALLO = "No se pudo generar la descarga del estado de cuenta. Vuelve a intentarlo.";
 export const TITULO_EXCEL_GASTOS_CON_BANCO =
   "Exporta con los filtros de la pantalla. Administración y Facturación reciben además el número de factura, el cargo del banco y el estado de cuenta de cada gasto (pestaña «Cargos del banco»).";
 export const TEXTO_LOTE_SIN_DETALLE =
   "No se pudo leer el detalle de los otros gastos que paga el cargo; vuelve a abrir esta ventana.";
 
-/** «Ver los cargos ya conciliados»: ±7 días (hoy, a lo más ~222 movimientos). */
-export const VENTANA_YA_CONCILIADOS_DIAS = 7;
 /** Margen del cruce automático (± días entre el gasto y el cargo). */
 const MARGEN_CRUCE_DIAS = 3;
 
@@ -168,8 +203,6 @@ export function lineaPagoGasto(
 
 // ───────────────────────────── Resumen del estado ─────────────────────────────
 
-export type TonoEstadoBanco = "ok" | "aviso" | "pendiente" | "neutro";
-
 /**
  * Una frase del estado, con su tono (9 ramas). El cruzado va ANTES que «N
  * cargos»: en un cruzado la vista dice `suma` 0 por definición y jamás se
@@ -230,19 +263,8 @@ export function resumenEstadoBanco(r: ConciliacionDeGasto): { texto: string; ton
 
 // ───────────────────────────── Ficha de cada cargo ─────────────────────────────
 
-/** Etiqueta del botón de descarga según el formato del archivo. */
-export function etiquetaDescargaEstadoCuenta(formato: string | null | undefined): string {
-  const f = (formato ?? "").trim().toLowerCase();
-  if (f === "pdf") return "Descargar estado de cuenta (PDF)";
-  if (f === "xlsx" || f === "xls") return "Descargar estado de cuenta (Excel)";
-  if (f === "csv") return "Descargar estado de cuenta (CSV)";
-  return "Descargar estado de cuenta";
-}
-
-export type ArchivoDeCargo =
-  | { tipo: "ARCHIVO"; nombre: string; detalle: string; estadoCuentaId: string; etiquetaDescarga: string }
-  | { tipo: "SIN_ARCHIVO"; texto: string }
-  | { tipo: "NO_LEIDO"; texto: string };
+/** El archivo del que salió el cargo (alias de `ArchivoDeMovimiento` de hoja-banco). */
+export type ArchivoDeCargo = ArchivoDeMovimiento;
 
 export interface LineaLoteHoja extends LineaGastoLote {
   /** Es ESTE gasto (va sin enlace y con «(este gasto)»). */
@@ -293,41 +315,6 @@ export function hrefCargoEnConciliacion(
     mov: c.movimiento_id,
     gasto: gastoId,
   });
-}
-
-/** El archivo del que salió el cargo o, si no hay, el motivo REAL (por origen y día Cancún). */
-function archivoDeCargo(c: CargoDeGasto): ArchivoDeCargo {
-  const ec = c.estado_cuenta;
-  if (ec && ec.id) {
-    const detalle = [
-      `Importado el ${fmtDateTime(ec.importado_at)}${ec.importado_por ? ` por ${ec.importado_por}` : ""}`,
-      c.orden_archivo != null ? `línea ${c.orden_archivo} del archivo` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    return {
-      tipo: "ARCHIVO",
-      nombre: ec.filename,
-      detalle,
-      estadoCuentaId: ec.id,
-      etiquetaDescarga: etiquetaDescargaEstadoCuenta(ec.formato),
-    };
-  }
-  const cuando = c.creado_at ? ` el ${fmtDate(c.creado_at)}` : "";
-  const quien = c.creado_por ? ` por ${c.creado_por}` : "";
-  if (c.sin_archivo === "IMPORTADO_SIN_ARCHIVO") {
-    return {
-      tipo: "SIN_ARCHIVO",
-      texto: `Sin archivo guardado: este cargo se importó${cuando}${quien} sin el archivo original del banco.`,
-    };
-  }
-  if (c.sin_archivo === "CAPTURA_MANUAL") {
-    return {
-      tipo: "SIN_ARCHIVO",
-      texto: `Sin archivo: este cargo se capturó a mano${cuando}${quien}; no viene de un estado de cuenta.`,
-    };
-  }
-  return { tipo: "NO_LEIDO", texto: "Estado de cuenta archivado (no se pudo leer su detalle)." };
 }
 
 /** El lote del cargo con TODAS sus líneas (la de este gasto marcada). */
@@ -394,7 +381,7 @@ export function fichaCargoGasto(c: CargoDeGasto, r: ConciliacionDeGasto): FichaC
       ? `Ligado con justificación (pago en ${j.medio}): «${j.razon}» — ${j.firmante}${j.fecha ? `, ${j.fecha}` : ""}.`
       : null,
     notas: c.notas_oficina ? `Notas del cargo: ${c.notas_oficina}` : null,
-    archivo: archivoDeCargo(c),
+    archivo: archivoDeMovimiento(c, "cargo"),
     registro: reg
       ? `Registró la liga: ${reg.por ?? "sin usuario"} · ${fmtDateTime(reg.at)}`
       : r.fuente === "PUENTE"
@@ -405,11 +392,6 @@ export function fichaCargoGasto(c: CargoDeGasto, r: ConciliacionDeGasto): FichaC
 }
 
 // ───────────────────────────── «¿Qué hacer?» ─────────────────────────────
-
-/** «2801.4», «564», «8939.38»: el monto como lo escribe la búsqueda de la tabla. */
-export function montoParaBusquedaTabla(n: number | string | null | undefined): string {
-  return String(Math.round(numeroDe(n) * 100) / 100);
-}
 
 /**
  * «Buscar el cargo en Conciliación»: pendientes de ±30 días con el monto ya
@@ -444,12 +426,6 @@ export function hrefVerYaConciliados(g: {
     hasta: dia ? diaMas(dia, VENTANA_YA_CONCILIADOS_DIAS) : null,
     buscar: g.moneda === "MXN" ? montoParaBusquedaTabla(g.monto) : null,
   });
-}
-
-export interface EnlaceHoja {
-  etiqueta: string;
-  href: string;
-  titulo: string;
 }
 
 export interface AccionesPendiente {
@@ -568,14 +544,6 @@ export function textoAlertaConciliacionGasto(codigo: string): string {
   }
 }
 
-/** Lo que devuelve la action al fallar. */
-export interface ResultadoDetalleBanco {
-  ok?: boolean;
-  error?: string | null;
-  code?: string | null;
-  status?: number | null;
-}
-
 /** El error al abrir la hoja: qué decir, si «Reintentar» y si ofrecer «Buscar el cargo en Conciliación». */
 export function mensajeErrorDetalleBanco(r: ResultadoDetalleBanco): {
   texto: string;
@@ -592,11 +560,6 @@ export function mensajeErrorDetalleBanco(r: ResultadoDetalleBanco): {
   }
   if (r.status === 401) return { texto: MSG_SESION_EXPIRO, reintentable: false, buscarEnConciliacion: false };
   return { texto: MSG_DETALLE_BANCO_FALLO, reintentable: true, buscarEnConciliacion: false };
-}
-
-/** El error al generar la descarga del estado de cuenta. */
-export function mensajeErrorDescargaEstadoCuenta(r: ResultadoDetalleBanco): string {
-  return r.status === 404 ? MSG_ESTADO_CUENTA_NO_EXISTE : MSG_ESTADO_CUENTA_FALLO;
 }
 
 /**
