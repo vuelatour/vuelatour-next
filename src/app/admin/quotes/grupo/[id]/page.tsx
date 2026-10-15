@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloGrupo } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { notFound } from "next/navigation";
 import { GrupoWorkspace } from "@/components/admin/grupos/detalle/grupo-workspace";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -21,6 +24,10 @@ type AircraftData = Awaited<ReturnType<typeof listAircraft>>["data"];
 type RoutesData = Awaited<ReturnType<typeof listRoutes>>["data"];
 type AirportsData = Awaited<ReturnType<typeof listAirports>>["data"];
 type PilotsData = { id: string; nombre: string; es_piloto_externo: boolean }[];
+
+// Pestaña: «Grupo» mientras carga; «Grupo G-12 · Maqar» lo pone <TituloPestana>
+// con lo que la página ya leyó (el head NO lee el API: regla 5 de titulos-pestana).
+export const metadata: Metadata = { title: TITULOS_DETALLE.grupo };
 
 /**
  * Página ÚNICA de la cotización de GRUPO (5-sep-2026): el formato del
@@ -111,19 +118,22 @@ export default async function GrupoDetailPage({ params, searchParams }: GrupoDet
   }));
 
   return (
-    <GrupoWorkspace
-      grupo={grupo}
-      puedeEditar={puedeEditar}
-      puedeCobrar={puedeCobrar}
-      puedeEliminarCobro={puedeEliminarCobro}
-      tcOficial={puedeCobrar && grupo.tc_usd_mxn == null ? tcDia : null}
-      tcOficialFecha={diaCotizacion}
-      aircraft={aircraft}
-      routes={routes}
-      airports={airports}
-      pilots={pilots}
-      tcSugerido={puedeEditar ? tcDia : null}
-      revisarInicial={sp.revisar === "1"}
-    />
+    <>
+      <TituloPestana titulo={tituloGrupo(grupo.folio_texto, grupo.cliente?.nombre)} />
+      <GrupoWorkspace
+        grupo={grupo}
+        puedeEditar={puedeEditar}
+        puedeCobrar={puedeCobrar}
+        puedeEliminarCobro={puedeEliminarCobro}
+        tcOficial={puedeCobrar && grupo.tc_usd_mxn == null ? tcDia : null}
+        tcOficialFecha={diaCotizacion}
+        aircraft={aircraft}
+        routes={routes}
+        airports={airports}
+        pilots={pilots}
+        tcSugerido={puedeEditar ? tcDia : null}
+        revisarInicial={sp.revisar === "1"}
+      />
+    </>
   );
 }

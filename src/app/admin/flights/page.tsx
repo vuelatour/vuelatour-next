@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   ExclamationTriangleIcon,
@@ -30,6 +32,7 @@ import type { VueloConGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = { title: TITULOS_SECCION.vuelos };
 
 interface FlightsPageProps {
   searchParams: Promise<{

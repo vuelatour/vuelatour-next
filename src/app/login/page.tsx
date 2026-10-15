@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { VtSpinner } from "@/components/ui/vt-loader";
+import { TITULOS_PAGINA } from "@/lib/admin/titulos-pestana";
 import { LoginForm } from "./login-form";
+
+// Pestaña «Iniciar sesión · Vuelatour»: aquí manda el proxy cuando la sesión vence.
+export const metadata: Metadata = { title: TITULOS_PAGINA.iniciarSesion };
 
 export default function LoginPage() {
   return (

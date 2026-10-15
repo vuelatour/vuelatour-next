@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { BeakerIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -25,6 +27,8 @@ import {
 import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.combustibles };
 
 /** Rango completo del mes YYYY-MM (fecha_gasto es DATE: sin zonas horarias). */
 function rangoDeMes(mes: string): { desde: string; hasta: string } {

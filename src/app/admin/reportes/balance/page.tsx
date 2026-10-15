@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { tituloBalance } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
 import {
   ArrowDownTrayIcon,
@@ -48,6 +51,20 @@ export const maxDuration = 300;
 
 interface PageProps {
   searchParams: Promise<{ modo?: string; avion?: string; desde?: string; hasta?: string; gasto?: string }>;
+}
+
+/**
+ * Título de la pestaña del navegador: el libro y su periodo, con los MISMOS
+ * parámetros validados que la pantalla (`?gasto=` no entra), SIN el API:
+ * Reportes enlaza los 7 libros y la precarga de cada enlace resolvía este
+ * head pidiendo el libro completo (regla 5 de titulos-pestana). El del avión
+ * queda «Balance del avión · …» y la página, que ya leyó el libro, pone la
+ * matrícula con <TituloPestana>.
+ */
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  const sp = await searchParams;
+  const { destino, desde, hasta } = parametrosVistaBalance(sp, periodoDefaultVista(todayCancun()));
+  return { title: tituloBalance(destino, desde, hasta) };
 }
 
 /**
@@ -104,6 +121,8 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
     // teléfono, dos desde `sm`, una desde `xl` (la cuenta está en
     // styles/libro-excel.css; el valor de `xl` es el fallback de la regla).
     <div className="flex flex-col gap-2 -mt-3 -mb-3 lg:-mt-5 lg:-mb-5 [--xl-pantalla-offset:297px] sm:[--xl-pantalla-offset:259px] xl:[--xl-pantalla-offset:221px]">
+      {/* No pinta nada (no mueve la cuenta del alto del libro). */}
+      <TituloPestana titulo={tituloBalance(destino, desde, hasta, matricula)} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <BackLink href={hrefReportes}>{ETIQUETA_VOLVER_REPORTES}</BackLink>
         <div className="flex items-center gap-1.5">

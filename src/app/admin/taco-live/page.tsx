@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
+import { tituloTacometros } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { todayCancun } from "@/lib/datetime";
 import { apiServer } from "@/lib/api/server";
 import { TacoLiveBoard, type TacoLiveVuelo } from "@/components/admin/taco-live/taco-live-board";
 import { TacoLiveDatePicker } from "@/components/admin/taco-live/taco-live-date-picker";
@@ -17,6 +20,20 @@ function shiftDay(fecha: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+interface TacoLivePageProps {
+  searchParams: Promise<{ fecha?: string }>;
+}
+
+/**
+ * «Tacómetros en vivo», y el día SOLO cuando no es hoy («… · 13 oct 2026»;
+ * un `?fecha=` inválido no se nombra). Sale de la URL, sin el API: el
+ * tablero lo pide la página.
+ */
+export async function generateMetadata({ searchParams }: TacoLivePageProps): Promise<Metadata> {
+  const sp = await searchParams;
+  return { title: tituloTacometros(sp.fecha, todayCancun()) };
+}
+
 /**
  * Tacómetros en vivo: todas las escalas del día esperando su lectura. El
  * sistema ya NO escribe lecturas estimadas — lo vencido queda sin llegada
@@ -24,11 +41,7 @@ function shiftDay(fecha: string, delta: number): string {
  * minutos_promedio, campos aditivos), y aquí la oficina la confirma con la
  * foto del piloto o la ajusta (confirmTaco, origen OFICINA).
  */
-export default async function TacoLivePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ fecha?: string }>;
-}) {
+export default async function TacoLivePage({ searchParams }: TacoLivePageProps) {
   const sp = await searchParams;
   const data = await apiServer<TacoLiveResponse>("/v1/flights/taco-live", {
     searchParams: { fecha: sp.fecha },

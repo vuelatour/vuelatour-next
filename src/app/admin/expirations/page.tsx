@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { ShieldCheckIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExpirationCreateButton } from "@/components/admin/expirations/expiration-create-button";
@@ -18,6 +20,8 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { uuidFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.vencimientos };
 
 interface ExpirationsPageProps {
   searchParams: Promise<{

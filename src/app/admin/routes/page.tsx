@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { MapIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { RoutesTable } from "@/components/admin/routes/routes-table";
@@ -9,6 +11,8 @@ import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.rutas };
 
 export default async function RoutesPage() {
   // El catálogo de aeropuertos solo alimenta el alta/edición de ruta: si no

@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { tituloReparto } from "@/lib/admin/titulos-pestana";
 import {
   ChartPieIcon,
   ExclamationTriangleIcon,
@@ -42,19 +44,37 @@ interface PageProps {
   searchParams: Promise<{ desde?: string; hasta?: string }>;
 }
 
-export default async function ProfitSharingPage({ searchParams }: PageProps) {
-  const sp = await searchParams;
+/**
+ * Periodo del reparto según la URL: la MISMA regla para la pantalla y para el
+ * título de su pestaña. Fechas VALIDADAS (21-sep-2026): `?desde=nada` viajaba
+ * al API, Nest respondía 400 (`@IsDateString`) y la pantalla caía al error
+ * boundary. Una fecha imposible se ignora y se usa el mes corriente; el rango
+ * invertido (dedazo del selector) se endereza — igual que antes.
+ */
+function periodoDeLaUrl(sp: { desde?: string; hasta?: string }): { desde: string; hasta: string } {
   const fallback = currentMonth();
-  // Fechas VALIDADAS (21-sep-2026): `?desde=nada` viajaba al API, Nest
-  // respondía 400 (`@IsDateString`) y la pantalla caía al error boundary.
-  // Una fecha imposible se ignora y se usa el mes corriente; el rango
-  // invertido (dedazo del selector) se endereza — igual que antes.
   const rango = rangoFiltro(sp.desde, sp.hasta);
   let desde = rango.desde ?? fallback.desde;
   let hasta = rango.hasta ?? fallback.hasta;
   // Un solo extremo válido puede dejar el rango al revés contra el default
   // (p. ej. `?hasta=` de un mes pasado): se endereza aquí también.
   if (desde > hasta) [desde, hasta] = [hasta, desde];
+  return { desde, hasta };
+}
+
+/**
+ * Título de la pestaña del navegador: la sección y su periodo, sin red (no
+ * lee el reparto).
+ */
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  const sp = await searchParams;
+  const { desde, hasta } = periodoDeLaUrl(sp);
+  return { title: tituloReparto(desde, hasta) };
+}
+
+export default async function ProfitSharingPage({ searchParams }: PageProps) {
+  const sp = await searchParams;
+  const { desde, hasta } = periodoDeLaUrl(sp);
 
   // CUENTA CORRIENTE DE LOS SOCIOS (1-oct-2026, API 0.0.50): «Socios · por
   // entregar» con CUALQUIER periodo. La lectura nunca lanza (API previo / sin

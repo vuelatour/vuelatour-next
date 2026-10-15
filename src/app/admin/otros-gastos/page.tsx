@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { BanknotesIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -21,6 +23,8 @@ import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import type { OtrosGastosResumen } from "@/types/expenses";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.otrosGastos };
 
 /** Rango completo del mes YYYY-MM (fecha_gasto es DATE: sin zonas horarias). */
 function rangoDeMes(mes: string): { desde: string; hasta: string } {

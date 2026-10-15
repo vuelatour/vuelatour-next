@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { tituloConciliacion } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { fmtDateOnly, todayCancun } from "@/lib/datetime";
 import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
@@ -87,6 +89,20 @@ const PAYWISE_DIAS = 5;
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
 const fmtDate = fmtDateOnly;
+
+/**
+ * Título de la pestaña del navegador: el chip activo («Todos» no se nombra),
+ * con la MISMA validación de `?f=` que la pantalla. El rango, la cuenta y el
+ * enfoque (`?mov=`/`?gasto=`) no entran al título. Sin red.
+ */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ f?: string }>;
+}): Promise<Metadata> {
+  const sp = await searchParams;
+  return { title: tituloConciliacion(filtroConciliacionDeUrl(sp.f)) };
+}
 
 export default async function ConciliacionPage({
   searchParams,

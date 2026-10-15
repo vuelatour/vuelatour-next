@@ -8249,3 +8249,67 @@ SPEI), no la de la factura; el cruce automático sigue a ±3 días
   `components/admin/expenses/__tests__/verificar-fecha-ui.test.ts`.
 - **Orden de deploy**: API 0.0.76 → panel. Con el panel antes, «Fecha» abre
   el diálogo y guardar dice «falta actualizar el API» (nada escrito).
+
+## Títulos de las pestañas del navegador (14-oct-2026)
+
+Pedido del cliente: «estaría genial que en cada pestaña del navegador se
+ponga el nombre de lo que se está consultando en esa pantalla, para
+guiarnos cuando tengamos varias pestañas abiertas». Hasta hoy TODAS las
+páginas de `/admin` decían «Vuelatour Admin».
+
+- **Fuente única**: `lib/admin/titulos-pestana.ts` (PURO: sin React ni
+  red). Ninguna página arma el texto: `metadata`, `generateMetadata` y
+  `<TituloPestana>` usan sus constantes (`TITULOS_SECCION` = las etiquetas
+  del menú de `nav-items.ts`, `TITULOS_PAGINA`, `TITULOS_DETALLE`) y
+  funciones (`tituloVuelo`, `tituloConciliacion`, `tituloBalance`…). El
+  sufijo « · Vuelatour» lo pone el `template` del layout raíz: ningún
+  título lo trae y el layout de `/admin` no pone título.
+- **Lo distintivo primero** (la pestaña se recorta por la derecha): «Vuelo
+  #315 · Beh Kay», «Cotización #332 · Beh Kay», «Conciliación ·
+  Pendientes», «Balance general · 1–14 oct 2026», «Avión XB-PEV»,
+  «Gastos». La pestaña que muestra todo («Todos») no se nombra; los
+  periodos son días de pared Cancún (`periodoCorto`).
+- **El head NUNCA lee el API (ni `/me`)**: «`generateMetadata` reutiliza el
+  GET de la página» se probó y se descartó. En producción cada `<Link>`
+  visible PRECARGA su ruta y, con `loading.tsx`, la precarga corta en el
+  loading pero SÍ pide el head (`segment-cache/scheduler.js`,
+  `pingRuntimeHead` con `Next-Router-Prefetch: 1`; el servidor responde con
+  `rscHead` en `walk-tree-with-flight-router-state.js`): `generateMetadata`
+  corre SIN la página y no hay render con el cual memoizar el GET.
+  Medido (build de producción + API simulada + Chrome a 1440×900):
+  leyendo el API en `generateMetadata`, `/admin/flights` (20 filas) pasaba
+  de 5 a 41 lecturas (17 snapshots + 17 clientes + 2 `/me` de la precarga
+  del menú) y otra vez en cada `router.refresh()` de RefreshOnFocus;
+  Reportes, de 4 a 13 (los 7 libros completos de los aviones).
+  `generateMetadata` solo valida la URL con la MISMA función que la página
+  (`filtroConciliacionDeUrl`, `parametrosVistaBalance`, `periodoDeLaUrl`…)
+  y NUNCA lanza (ni `throw`, ni `notFound()`, ni `redirect()`): un throw ahí
+  manda la pantalla al error boundary.
+- **Lo que necesita datos reutiliza lo que la página YA leyó** (cero
+  lecturas nuevas): `<TituloPestana titulo={tituloVuelo(snapshot.folio,
+  client?.nombre)} />` (`components/admin/titulo-pestana.tsx`; el lado DOM,
+  `lib/admin/titulo-pestana-dom.ts`). La `metadata` de esa página es el
+  genérico de su familia («Vuelo» = `tituloVuelo()`): lo que se ve mientras
+  carga, sin permiso o si falta el dato. Vigila el `<head>` con un
+  `MutationObserver` porque Next REMONTA su `<title>` genérico en cada
+  respuesta del servidor (el `router.refresh()` de RefreshOnFocus, server
+  actions) y React lo inserta ANTES del anterior; al desmontar repone el
+  último título de Next. En Chrome (misma medición): «Vuelo #301 · Beh Kay
+  · Vuelatour» al cargar y tras el refresh (con `<title>` NUEVO), «Vuelos ·
+  Vuelatour» al volver a la lista y «Vuelo #307 · …» al abrir otra fila.
+- **Prueba guardián**: `app/admin/__tests__/titulos-pestana-cableado.test.ts`
+  clasifica TODA página de `/admin` (más `/login` y `/auth/auth-error`):
+  título fijo, de la URL o EXCEPCIÓN con motivo (solo las que únicamente
+  redirigen: `quotes/[id]/revise`, `quotes/grupo/[id]/editar`); vigila que
+  no haya texto a mano, que `generateMetadata` no lance ni lea el API y que
+  `<TituloPestana>` viva solo en páginas. Los textos los congela
+  `lib/admin/__tests__/titulos-pestana.test.ts` (secciones = etiquetas del
+  menú, plantilla idéntica a la del layout) y el DOM
+  `lib/admin/__tests__/titulo-pestana-dom.test.ts`. **Página nueva ⇒ su
+  título en `titulos-pestana.ts` y su renglón en la guardiana.**
+- **Comodín** (`app/admin/[...slug]`): una ruta que no existe dice «Vuelos
+  · Página no encontrada» (el módulo sale de `itemNavActivo`: gana el href
+  más largo) y regresa a ese módulo; «En construcción» solo para un ítem
+  `comingSoon` (hoy ninguno). Antes el «empieza con» de «Inicio» hacía que
+  TODA ruta desconocida dijera «Inicio — Este módulo aún no se ha
+  construido» (`app/admin/__tests__/comodin-admin.test.tsx`).

@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION, tituloEstadisticas } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
 import {
   Card,
@@ -70,6 +73,12 @@ interface PageProps {
   searchParams: Promise<{ desde?: string; hasta?: string; tab?: string }>;
 }
 
+// Pestaña: «Estadísticas»; el tablero que se ve («Estadísticas · Ejecutivo»)
+// depende del ROL y lo pone la página con <TituloPestana>. El head NO lee `/me`:
+// el menú precarga esta sección desde CUALQUIER pantalla y esa precarga no
+// pasa por el layout (no hay `/me` en caché): era un GET /v1/me por vista.
+export const metadata: Metadata = { title: TITULOS_SECCION.estadisticas };
+
 export default async function DashboardsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const fallback = currentMonth();
@@ -93,6 +102,7 @@ export default async function DashboardsPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloEstadisticas(active)} />
       <div>
         <p className="text-sm text-muted-foreground">Reportes</p>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">

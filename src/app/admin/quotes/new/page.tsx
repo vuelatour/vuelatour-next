@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_PAGINA } from "@/lib/admin/titulos-pestana";
 import { BackLink } from "@/components/admin/back-link";
 import { QuoteCalculator } from "@/components/admin/quotes/quote-calculator";
 import { listClients } from "@/lib/api/clients-server";
@@ -8,6 +10,8 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_PAGINA.cotizacionNueva };
 
 export default async function NewQuotePage() {
   // Los catálogos del cotizador (aeronaves/rutas/aeropuertos) SON la

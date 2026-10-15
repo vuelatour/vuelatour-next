@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { TITULOS_PAGINA } from "@/lib/admin/titulos-pestana";
+
+// Pestaña «No se pudo iniciar sesión · Vuelatour» (la pantalla dice «No pudimos iniciar tu sesión»).
+export const metadata: Metadata = { title: TITULOS_PAGINA.errorSesion };
 
 interface PageProps {
   searchParams: Promise<{ reason?: string }>;

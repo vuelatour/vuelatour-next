@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { ChevronRightIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import {
@@ -17,6 +19,8 @@ import type { DashboardOperativo } from "@/types/dashboards";
 import type { FleetUpcoming } from "@/types/engineering";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.inicio };
 
 function currentPeriod(): { desde: string; hasta: string } {
   const now = new Date();

@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { tituloCalendario } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { getCalendarSyncEstado, listCalendar } from "@/lib/api/calendar-server";
@@ -45,20 +47,39 @@ function cancunKey(d: Date): string {
   return CANCUN_DAY.format(d);
 }
 
-export default async function CalendarPage({
-  searchParams,
-}: {
+interface CalendarPageProps {
   searchParams: Promise<{ y?: string; m?: string }>;
-}) {
+}
+
+/**
+ * Mes que se ve: `?y=AAAA&m=1–12` o, sin ellos, el mes de HOY en Cancún
+ * (`hoyCancun` = `YYYY-MM-DD`). `month` va de 0 a 11, como en `Date`. La
+ * MISMA regla arma la grilla y el título de la pestaña.
+ */
+function mesDeLaUrl(
+  params: { y?: string; m?: string },
+  hoyCancun: string,
+): { year: number; month: number } {
+  return {
+    year: params.y ? Number(params.y) : Number(hoyCancun.slice(0, 4)),
+    // m: 1-12. Default mes actual.
+    month: params.m ? Number(params.m) - 1 : Number(hoyCancun.slice(5, 7)) - 1,
+  };
+}
+
+export async function generateMetadata({ searchParams }: CalendarPageProps): Promise<Metadata> {
+  const { year, month } = mesDeLaUrl(await searchParams, cancunKey(new Date()));
+  return { title: tituloCalendario(year, month + 1) };
+}
+
+export default async function CalendarPage({ searchParams }: CalendarPageProps) {
   const params = await searchParams;
   const now = new Date();
   // Mes por defecto en CANCÚN, no en la TZ del servidor: en Vercel (UTC), de
   // las 19:00 Cancún del último día del mes en adelante ya corre el mes
   // siguiente y el calendario abría en un mes "vacío".
   const hoyCancun = cancunKey(now); // YYYY-MM-DD
-  const year = params.y ? Number(params.y) : Number(hoyCancun.slice(0, 4));
-  // m: 1-12. Default mes actual.
-  const month = params.m ? Number(params.m) - 1 : Number(hoyCancun.slice(5, 7)) - 1;
+  const { year, month } = mesDeLaUrl(params, hoyCancun);
 
   // Rango del fetch ANCLADO a Cancún (UTC−5): con new Date(year, month, …) en
   // la TZ del servidor, los vuelos de 19:00–23:59 Cancún del último día del

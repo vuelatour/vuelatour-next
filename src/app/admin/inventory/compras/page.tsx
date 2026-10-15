@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { tituloCompras } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { ShoppingCartIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,14 +25,27 @@ const FILTRO_ESTADO: Record<Filtro, CompraEstado | undefined> = {
   todas: undefined,
 };
 
+/** Pestaña de la URL (`?f=`): la MISMA regla para la pantalla y su título. */
+function filtroComprasDeUrl(f: string | undefined): Filtro {
+  return f === "recibidas" || f === "todas" ? f : "abiertas";
+}
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ f?: string }>;
+}): Promise<Metadata> {
+  const sp = await searchParams;
+  return { title: tituloCompras(filtroComprasDeUrl(sp.f)) };
+}
+
 export default async function ComprasPage({
   searchParams,
 }: {
   searchParams: Promise<{ f?: string }>;
 }) {
   const sp = await searchParams;
-  const filtro: Filtro =
-    sp.f === "recibidas" || sp.f === "todas" ? sp.f : "abiertas";
+  const filtro: Filtro = filtroComprasDeUrl(sp.f);
 
   // Las COMPRAS son el dato principal; el contador de la pestaña y el
   // catálogo de proveedores degradan con aviso.

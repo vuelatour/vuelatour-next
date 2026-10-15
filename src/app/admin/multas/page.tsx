@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { ReceiptPercentIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { listMultas } from "@/lib/api/multas-server";
@@ -10,6 +12,8 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ErrorState } from "@/components/admin/error-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.multas };
 
 export default async function MultasPage() {
   const [multasRes, aircraftRes, pilotsRes] = await Promise.all([

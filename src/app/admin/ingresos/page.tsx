@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION, tituloIngresos } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
 import {
   ArrowTrendingUpIcon,
@@ -73,6 +76,13 @@ export const maxDuration = 300;
 interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
+
+// Pestaña: «Ingresos»; el chip activo («Ingresos · Por conciliar») depende del
+// ROL (`filtrosIngresosDeUrl`) y lo pone la página con <TituloPestana>. El head
+// NO lee `/me`: el menú precarga esta sección desde CUALQUIER pantalla y esa
+// precarga no pasa por el layout (no hay `/me` en caché): era un GET /v1/me
+// por vista. Sin permiso («Solo oficina») queda «Ingresos».
+export const metadata: Metadata = { title: TITULOS_SECCION.ingresos };
 
 type Carga<T> =
   | { ok: true; datos: T }
@@ -254,6 +264,7 @@ export default async function IngresosPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloIngresos(f.tab)} />
       <Encabezado
         derecha={
           <div className="flex flex-wrap items-center gap-2">

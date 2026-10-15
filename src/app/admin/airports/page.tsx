@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { MapPinIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -11,6 +13,8 @@ import { listAirports } from "@/lib/api/airports-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.aeropuertos };
 
 export default async function AirportsPage() {
   const { data: airports, count } = await listAirports({ limit: 200 });

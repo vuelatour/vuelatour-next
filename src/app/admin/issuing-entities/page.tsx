@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { DocumentTextIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { IssuingEntitiesTable } from "@/components/admin/issuing-entities/issuing-entities-table";
@@ -6,6 +8,8 @@ import { listIssuingEntities } from "@/lib/api/issuing-entities-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.entidadesFiscales };
 
 export default async function IssuingEntitiesPage() {
   const { data: entities, count } = await listIssuingEntities({ limit: 50 });

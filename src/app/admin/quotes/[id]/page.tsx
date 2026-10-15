@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloCotizacion } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { notFound } from "next/navigation";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { QuoteWorkspace } from "@/components/admin/quotes/quote-workspace";
@@ -37,6 +40,11 @@ interface QuoteDetailPageProps {
    */
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
+
+// Pestaña: «Cotización» mientras carga; «Cotización #332 · Beh Kay» lo pone
+// <TituloPestana> con lo que la página ya leyó (el head NO lee el API: las
+// flechas precargan a las vecinas y cada precarga resolvía el head).
+export const metadata: Metadata = { title: TITULOS_DETALLE.cotizacion };
 
 /**
  * PÁGINA ÚNICA de la cotización (5-sep-2026) con EDICIÓN DIRECTA (F0–F3,
@@ -157,6 +165,7 @@ export default async function QuoteDetailPage({
 
   return (
     <>
+      <TituloPestana titulo={tituloCotizacion(quote.folio, client?.nombre)} />
       <AvisoDegradado faltantes={degradado.faltantes} />
     <QuoteWorkspace
       // Una instancia POR cotización: al brincar con las flechas (misma ruta,

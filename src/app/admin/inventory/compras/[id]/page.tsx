@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloCompra } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { notFound } from "next/navigation";
 import { BackLink } from "@/components/admin/back-link";
 import { isApiError } from "@/lib/api/errors";
@@ -23,6 +26,10 @@ import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
+
+// Pestaña: «Compra» mientras carga; «Compra #12 · Aircraft Spruce» lo pone
+// <TituloPestana> con lo que la página ya leyó (el head NO lee el API).
+export const metadata: Metadata = { title: TITULOS_DETALLE.compra };
 
 export default async function CompraDetallePage({
   params,
@@ -72,6 +79,7 @@ export default async function CompraDetallePage({
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloCompra(compra.folio, compra.proveedor?.nombre)} />
       <BackLink
         href="/admin/inventory/compras"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"

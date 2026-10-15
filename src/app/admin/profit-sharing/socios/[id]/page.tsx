@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloSocio } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -65,6 +68,11 @@ interface PageProps {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ desde?: string; hasta?: string }>;
 }
+
+// Pestaña: «Socio» mientras carga, sin permiso o si la cuenta no cargó;
+// «Socio · Mauricio Roque» lo pone <TituloPestana> con la cuenta que la página
+// ya leyó (el head NO lee el API: regla 5 de titulos-pestana).
+export const metadata: Metadata = { title: TITULOS_DETALLE.socio };
 
 function Volver() {
   return (
@@ -174,6 +182,7 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloSocio(datos.socio.nombre)} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
           <Volver />

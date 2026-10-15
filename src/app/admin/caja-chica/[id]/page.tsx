@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { tituloCajaChica, TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { fmtDateOnly } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { BackLink } from "@/components/admin/back-link";
@@ -34,6 +37,10 @@ const CONCEPTO: Record<string, string> = {
 };
 
 const fmtDate = fmtDateOnly;
+
+// Pestaña: «Caja chica» mientras carga; «Caja chica · Diego Ramírez» lo pone
+// <TituloPestana> con lo que la página ya leyó (el head NO lee el API).
+export const metadata: Metadata = { title: TITULOS_SECCION.cajaChica };
 
 export default async function CajaFondoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -115,6 +122,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloCajaChica(fondo.usuario?.nombre)} />
       <BackLink
         href="/admin/caja-chica"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"

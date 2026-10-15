@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { DocumentTextIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { DocumentTypesTable } from "@/components/admin/document-types/document-types-table";
@@ -6,6 +8,8 @@ import { listDocumentTypes } from "@/lib/api/document-types-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.tiposDocumento };
 
 export default async function DocumentTypesPage() {
   const { data: tipos, count } = await listDocumentTypes({ limit: 200 });

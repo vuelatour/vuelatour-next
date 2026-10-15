@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   ArrowRightIcon,
@@ -25,6 +27,8 @@ import type { Rol } from "@/types/me";
 import type { PilotListItem } from "@/types/pilots";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.pilotos };
 
 function initials(name: string): string {
   return name

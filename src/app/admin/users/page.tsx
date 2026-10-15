@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { UsersTable } from "@/components/admin/users/users-table";
@@ -7,6 +9,8 @@ import { listUsers } from "@/lib/api/users-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.usuarios };
 
 export default async function UsersPage() {
   const [usersRes, me] = await Promise.all([listUsers({ limit: 200 }), getMe()]);

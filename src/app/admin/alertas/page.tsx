@@ -1,7 +1,11 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { AlertsConfigClient } from "@/components/admin/alerts/alerts-config-client";
 import { getAlertConfigs } from "@/lib/api/alerts-server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.alertas };
 
 export default async function AlertasPage() {
   const configs = await getAlertConfigs();

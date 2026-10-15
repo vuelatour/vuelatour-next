@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { AircraftCreateButton } from "@/components/admin/aircraft/aircraft-create-button";
@@ -7,6 +9,8 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { apiConCombustible } from "@/lib/admin/combustibles";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.aeronaves };
 
 export default async function AircraftListPage() {
   const { data: aircraft, count } = await listAircraft({ limit: 100 });

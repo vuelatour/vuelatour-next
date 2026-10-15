@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloPiloto } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
 import {
   fmtDate as sharedFmtDate,
@@ -95,6 +98,10 @@ function EstadoBadge({ estado }: { estado: string }) {
   );
 }
 
+// Pestaña: «Piloto» mientras carga; «Piloto · Alexander E. Saab» lo pone
+// <TituloPestana> con lo que la página ya leyó (el head NO lee el API).
+export const metadata: Metadata = { title: TITULOS_DETALLE.piloto };
+
 export default async function PilotDetailPage({
   params,
   searchParams,
@@ -137,6 +144,7 @@ export default async function PilotDetailPage({
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloPiloto(pilot.nombre)} />
       <BackLink
         href="/admin/pilots"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"

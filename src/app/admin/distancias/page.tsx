@@ -1,8 +1,12 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { DistanciasManager } from "@/components/admin/distancias/distancias-manager";
 import { ErrorState } from "@/components/admin/error-state";
 import { getDistanciasAction } from "./actions";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.distancias };
 
 export default async function DistanciasPage() {
   const res = await getDistanciasAction();

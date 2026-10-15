@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   DocumentCheckIcon,
@@ -42,6 +44,8 @@ import {
 import { fmtMonto } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.facturasEmitidas };
 
 interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

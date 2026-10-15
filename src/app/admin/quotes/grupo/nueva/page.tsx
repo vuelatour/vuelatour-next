@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_PAGINA } from "@/lib/admin/titulos-pestana";
 import { BackLink } from "@/components/admin/back-link";
 import { GrupoForm } from "@/components/admin/grupos/grupo-form";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -9,6 +11,8 @@ import { listQuotes } from "@/lib/api/quotes-server";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_PAGINA.grupoNuevo };
 
 /**
  * Alta de una cotización de GRUPO (varios aviones, un cliente, un total).

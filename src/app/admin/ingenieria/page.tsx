@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { fmtDateOnly } from "@/lib/datetime";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
@@ -9,6 +11,8 @@ import { getMe } from "@/lib/api/me";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.ingenieria };
 
 function daysUntil(iso: string): number {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);

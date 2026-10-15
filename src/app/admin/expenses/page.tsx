@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { tituloGastos } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   BanknotesIcon,
@@ -44,6 +46,21 @@ import { avionCatalogoGasto, type AvionCatalogoGasto } from "@/lib/admin/combust
 export const dynamic = "force-dynamic";
 
 type Filtro = "todos" | "pendientes" | "duplicados";
+
+/** Pestaña de la URL (`?f=`): la MISMA regla para la pantalla y su título. */
+function filtroGastosDeUrl(f: string | undefined): Filtro {
+  return f === "pendientes" || f === "duplicados" ? f : "todos";
+}
+
+/** «Gastos» (Todos) · «Gastos · Pendientes» · «Gastos · Duplicados». */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ f?: string }>;
+}): Promise<Metadata> {
+  const sp = await searchParams;
+  return { title: tituloGastos(filtroGastosDeUrl(sp.f)) };
+}
 
 /**
  * Valores que el API acepta en `estatus_facturacion` (los 4 del enum + el
@@ -120,8 +137,7 @@ export default async function ExpensesPage({
       })()
     : capDesdeExplicito;
   const orden = sp.orden === "captura" ? ("captura" as const) : undefined;
-  const filtro: Filtro =
-    sp.f === "pendientes" || sp.f === "duplicados" ? sp.f : "todos";
+  const filtro: Filtro = filtroGastosDeUrl(sp.f);
   // Filtro por avión (link desde el expediente del avión). El API lo soporta
   // nativo en /v1/expenses; los contadores de las pestañas lo respetan.
   const aeronaveId = uuidFiltro(sp.aeronave_id);

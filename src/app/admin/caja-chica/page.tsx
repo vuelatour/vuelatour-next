@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { WalletIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -14,6 +16,8 @@ import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.cajaChica };
 
 export default async function CajaChicaPage() {
   // Los FONDOS son el dato principal; los catálogos de "Abrir fondo" y

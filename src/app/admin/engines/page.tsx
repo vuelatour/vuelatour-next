@@ -1,9 +1,13 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { CpuChipIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EnginesTable, type EngineRow } from "@/components/admin/engines/engines-table";
 import { listEngines } from "@/lib/api/engines-server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.motores };
 
 /** Horas de aviso antes de agotar el TBO. */
 const PROXIMO_HRS = 100;

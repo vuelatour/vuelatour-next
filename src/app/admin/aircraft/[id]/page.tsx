@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloAvion } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { notFound } from "next/navigation";
 import {
   CogIcon,
@@ -78,6 +81,10 @@ interface PageProps {
 
 export const dynamic = "force-dynamic";
 
+// Pestaña: «Avión» mientras carga; «Avión XB-PEV» lo pone <TituloPestana> con
+// lo que la página ya leyó (el head NO lee el API: regla 5 de titulos-pestana).
+export const metadata: Metadata = { title: TITULOS_DETALLE.avion };
+
 export default async function AircraftDetailPage({ params }: PageProps) {
   const { id } = await params;
   // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
@@ -153,6 +160,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloAvion(aircraft.matricula)} />
       <div>
         <BackLink
           href="/admin/aircraft"

@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { WalletIcon } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -30,6 +32,8 @@ import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.gastosPersonales };
 
 // Dinero PERSONAL del dueño: solo ADMIN y COORDINADOR (el nav ya esconde el
 // link, pero la URL directa también debe cerrarse — fail-closed si /me falla).

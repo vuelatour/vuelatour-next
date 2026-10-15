@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   CalculatorIcon,
@@ -37,6 +39,7 @@ import type { VueloConGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = { title: TITULOS_SECCION.cotizaciones };
 
 interface QuotesPageProps {
   searchParams: Promise<{

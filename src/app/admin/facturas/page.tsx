@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import {
   Card,
   CardContent,
@@ -17,6 +19,8 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { rangoFiltro, uuidFiltro } from "@/lib/admin/url-params";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.facturacionAutomatica };
 
 interface PageProps {
   searchParams: Promise<{

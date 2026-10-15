@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { Suspense } from "react";
 import { LockClosedIcon } from "@heroicons/react/24/outline";
 import { ConfiguracionClient } from "@/components/admin/configuracion/configuracion-client";
@@ -35,6 +37,8 @@ import { todayCancun } from "@/lib/datetime";
 import type { LecturaModeloIa } from "@/types/ia-modelo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.configuracion };
 
 /**
  * «Modelo de IA» por STREAMING (2-oct-2026, API 0.0.51): `GET

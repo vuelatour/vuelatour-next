@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { UsersIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,6 +9,8 @@ import { listClients } from "@/lib/api/clients-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.clientes };
 
 export default async function ClientsPage({
   searchParams,

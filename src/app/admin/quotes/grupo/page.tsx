@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_PAGINA } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   ExclamationTriangleIcon,
@@ -17,6 +19,8 @@ import { ESTADOS_GRUPO } from "@/lib/admin/grupos-ui";
 import type { EstadoGrupo } from "@/types/grupos";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_PAGINA.grupos };
 
 interface GruposPageProps {
   searchParams: Promise<{

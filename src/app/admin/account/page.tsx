@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_PAGINA } from "@/lib/admin/titulos-pestana";
 import {
   EnvelopeIcon,
   ShieldCheckIcon,
@@ -16,6 +18,8 @@ import { AccountForm } from "@/components/admin/account/account-form";
 import { getMe } from "@/lib/api/me";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_PAGINA.miCuenta };
 
 const ROL_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Acceso total. Promueve usuarios, edita catálogos y financieros.",

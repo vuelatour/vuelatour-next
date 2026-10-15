@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { Suspense } from "react";
 import { LockClosedIcon } from "@heroicons/react/24/outline";
 import {
@@ -59,6 +61,8 @@ import {
 } from "@/lib/admin/reportes-ui";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.reportes };
 
 interface PageProps {
   searchParams: Promise<{ desde?: string; hasta?: string }>;

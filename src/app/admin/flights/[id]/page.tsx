@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloVuelo } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -80,6 +83,10 @@ interface FlightDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+// Pestaña: «Vuelo» mientras carga; «Vuelo #315 · Beh Kay» lo pone <TituloPestana>
+// con lo que la página ya leyó (el head NO lee el API: regla 5 de titulos-pestana).
+export const metadata: Metadata = { title: TITULOS_DETALLE.vuelo };
+
 export default async function FlightDetailPage({ params }: FlightDetailPageProps) {
   const me = await getMe().catch(() => null);
   const { id } = await params;
@@ -102,6 +109,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   if (snapshot.estado === "SOLICITUD") {
     return (
       <div className="space-y-6">
+        {/* SOLICITUD no lee el cliente: el título tampoco lo nombra. */}
+        <TituloPestana titulo={tituloVuelo(snapshot.folio)} />
         <BackLink href="/admin/flights">Vuelos</BackLink>
         <Card>
           <CardHeader>
@@ -366,6 +375,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloVuelo(snapshot.folio, client?.nombre)} />
       {/* Catálogos de los diálogos que no cargaron: se dice, no se finge. */}
       <AvisoDegradado faltantes={degradado.faltantes} />
       <FechaOperativaBanda

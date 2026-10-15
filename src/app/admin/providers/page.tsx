@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { BuildingOfficeIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent } from "@/components/ui/card";
 import { ProvidersTable } from "@/components/admin/providers/providers-table";
@@ -6,6 +8,8 @@ import { listProviders } from "@/lib/api/providers-server";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.proveedores };
 
 export default async function ProvidersPage() {
   const { data: providers, count } = await listProviders({ limit: 200 });

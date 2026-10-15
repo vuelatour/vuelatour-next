@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+import { TITULOS_DETALLE, tituloProducto } from "@/lib/admin/titulos-pestana";
+import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { notFound } from "next/navigation";
 import { BackLink } from "@/components/admin/back-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +48,11 @@ import type {
 } from "@/types/inventory";
 
 export const dynamic = "force-dynamic";
+
+// Pestaña: «Producto» mientras carga; el nombre lo pone <TituloPestana> con lo
+// que la página ya leyó. El head NO lee el API: en la lista, la precarga de
+// cada fila visible pedía la ficha con TODO su cardex (regla 5 de titulos-pestana).
+export const metadata: Metadata = { title: TITULOS_DETALLE.producto };
 
 /**
  * FICHA del producto — sencilla (pedido del cliente 25-sep-2026: «al entrar
@@ -145,6 +153,7 @@ export default async function InventoryItemPage({
 
   return (
     <div className="space-y-6">
+      <TituloPestana titulo={tituloProducto(item.nombre)} />
       <BackLink
         href="/admin/inventory"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"

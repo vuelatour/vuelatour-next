@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   ArrowLeftIcon,
@@ -29,6 +31,8 @@ import {
 } from "@/lib/admin/reparto-pagos";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.pagosSocios };
 
 /** Roles que abren «Reparto de utilidades» (espejo del menú). */
 const VEN_REPARTO = ["ADMIN", "ANALISTA", "SOCIO"];

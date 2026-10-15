@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import {
   ArchiveBoxIcon,
@@ -50,6 +52,8 @@ import {
 } from "@/lib/admin/inventario-utilidad";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.inventario };
 
 export default async function InventoryPage({
   searchParams,

@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { InboxArrowDownIcon } from "@heroicons/react/24/outline";
 import { fmtDateOnly } from "@/lib/datetime";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +12,8 @@ import type { FacturaRecibida } from "@/types/invoices";
 import { EmptyState } from "@/components/admin/empty-state";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: TITULOS_SECCION.facturasRecibidas };
 
 const fmtDate = fmtDateOnly;
 
