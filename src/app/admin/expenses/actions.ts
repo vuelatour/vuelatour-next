@@ -41,6 +41,12 @@ export interface ActionResult<T = unknown> {
   data?: T;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** SOLO el alta por la suma (`conciliar_con_movimientos`, 14-oct-2026):
+   *  código, status y detalle del API. Sin la llave, el fallo de siempre
+   *  (solo `error`). */
+  code?: string;
+  status?: number;
+  details?: unknown;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
@@ -48,6 +54,25 @@ function fail<T>(err: unknown): ActionResult<T> {
   if (isApiError(err))
     return { ok: false, error: mensajeErrorAccionGasto(err.status, err.message) };
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
+}
+
+/**
+ * El fallo del alta por la suma CON código, status y detalle (14-oct-2026,
+ * invariante 76 del API): Conciliación decide el texto («No se pudo confirmar
+ * si se registró…» ante red o 5xx, «Esta opción todavía no está activa…»,
+ * GASTO_SIN_VINCULAR…). Sin status = no hubo respuesta del API.
+ */
+function failConCodigo<T>(err: unknown): ActionResult<T> {
+  if (isApiError(err)) {
+    return {
+      ok: false,
+      error: mensajeErrorAccionGasto(err.status, err.message),
+      code: err.code,
+      status: err.status,
+      details: err.details,
+    };
+  }
+  return fail<T>(err);
 }
 
 /** Tira "" y undefined del body. null SOBREVIVE a propósito: es el "quitar"
@@ -71,6 +96,15 @@ function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
  * de dinero. Si el PUT falla, el gasto YA creado NO se borra (candados de
  * dinero): queda sin asignar en Otros gastos — estado recuperable con su
  * botón Repartir — y el fallo viaja en `repartoError` para el toast.
+ *
+ * «Créalo por la suma» (Conciliación, 14-oct-2026, API 0.0.77, invariante 76
+ * del API): con `conciliar_con_movimientos` (+ `client_request_id`) el API
+ * crea el gasto SIN auto-cruce y le liga esos cargos en la MISMA petición
+ * (si la liga falla, lo retira). En ese caso la action NO revalida (la llama
+ * un diálogo de Conciliación que sigue montado: en Next 16 un
+ * `revalidatePath` repinta la página abierta; quien la llama hace UN
+ * `router.refresh()` al cerrar) y el fallo conserva code/status/details. Sin
+ * la llave, todo como siempre.
  */
 export async function createGastoAction(
   raw: unknown,
@@ -78,6 +112,7 @@ export async function createGastoAction(
 ): Promise<ActionResult<Gasto> & { repartoError?: string }> {
   const parsed = GastoCreateSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  const conCargos = parsed.data.conciliar_con_movimientos !== undefined;
   try {
     const created = await apiServer<Gasto>("/v1/expenses", {
       method: "POST",
@@ -93,20 +128,22 @@ export async function createGastoAction(
       } catch (err) {
         repartoError = fail(err).error;
       }
-      revalidatePath("/admin/otros-gastos");
+      if (!conCargos) revalidatePath("/admin/otros-gastos");
     }
-    revalidatePath("/admin/expenses");
-    revalidatePath("/admin/caja-chica", "layout");
-    revalidatePath("/admin/gastos-personales");
-    // Alta desde «Gastos del vuelo» (p. ej. la «Comisión del vendedor»,
-    // 28-sep-2026): el detalle del vuelo también se refresca, igual que al
-    // verificar, ligar o borrar un gasto.
-    revalidatePath("/admin/flights", "layout");
+    if (!conCargos) {
+      revalidatePath("/admin/expenses");
+      revalidatePath("/admin/caja-chica", "layout");
+      revalidatePath("/admin/gastos-personales");
+      // Alta desde «Gastos del vuelo» (p. ej. la «Comisión del vendedor»,
+      // 28-sep-2026): el detalle del vuelo también se refresca, igual que al
+      // verificar, ligar o borrar un gasto.
+      revalidatePath("/admin/flights", "layout");
+    }
     return repartoError !== undefined
       ? { ok: true, data: created, repartoError }
       : { ok: true, data: created };
   } catch (err) {
-    return fail(err);
+    return conCargos ? failConCodigo(err) : fail(err);
   }
 }
 

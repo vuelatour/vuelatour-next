@@ -7692,7 +7692,10 @@ visto bueno». Solo panel.
 - **`ExpenseCreateDialog` en modo controlado** (props ADITIVAS `abierto`,
   `onAbiertoChange`, `prefill`, `onCreado`, `titulo`, `contexto`): sin botón
   propio, prellenado al ABRIR encima de los defaults y aviso con el gasto
-  creado antes de cerrar. Sin `abierto`, el diálogo de siempre.
+  creado antes de cerrar. Sin `abierto`, el diálogo de siempre. Desde el
+  14-oct-2026 también `conciliarConMovimientos`, `clientRequestId`,
+  `textoExito` y `textoError` («Créalo por la suma» de varios cargos: ver
+  «Conciliación: omitir la conciliación y varios cargos → un gasto»).
 - **Página**: `app/admin/conciliacion/page.tsx` carga los proveedores
   (`degradado.opcional`) y arma `catalogosGasto` (aviones con su combustible
   vía `avionCatalogoGasto`, como Gastos) → `MovimientosTable` →
@@ -8634,9 +8637,8 @@ Pedido textual: «Necesitamos una opción de pendientes de conciliar venga una
 opción de Omitir la conciliación.» y «Necesitamos poder seleccionar varias
 filas de conciliaciones pendientes para todo eso ponerlas a un solo gasto…».
 Invariantes 75 y 76 del API. Este bloque documenta la SELECCIÓN y «Omitir»
-(pasos 3a/3b del despliegue) y «Vincular a un gasto…» con varios cargos
-(paso 3c); «Créalo por la suma» llega en su fase (paso 4: el pie del diálogo
-de varios cargos ya tiene el punto de enganche).
+(pasos 3a/3b del despliegue), «Vincular a un gasto…» con varios cargos
+(paso 3c) y «¿No está el gasto? Créalo por $X» (paso 4).
 
 - **Qué es un omitido**: la clasificación canónica «Omitido de la
   conciliación» + la línea firmada al inicio de las notas, escritas SOLO por
@@ -8714,6 +8716,65 @@ de varios cargos ya tiene el punto de enganche).
   `textoExcluidosCandidatos(…, { variosCargos: true })`: «de los cargos» y el
   efectivo se liga cargo por cargo (nunca «Mostrar estos gastos»). Textos y
   reglas PUROS en `lib/admin/conciliacion-cargos-gasto.ts`.
+- **«¿No está el gasto? Créalo por $X»** (paso 4, invariante 76): enlace a la
+  izquierda del pie, SOLO con `catalogosGasto` (la tabla se los pasa) y la
+  SUMA DEL API (sin respuesta no se sabe por cuánto). Abre el paso previo
+  «Crear el gasto con la suma» dentro del MISMO diálogo
+  (`PasoCrearGastoSuma`): los cargos con la suma del API (ámbar
+  `avisoCargosConCandidatoPropioCrear`: «quizá ya está capturado por
+  separado»), «Posibles duplicados (mismo monto, ±120 días)» =
+  `gastosCandidatosDeCargosAction(ids, {q: la suma, dias: 120})` →
+  `estadoDuplicadosSuma` (los del MISMO monto con `duplicadosDeCandidatos`,
+  la regla del «Créalo» de un cargo, y en ámbar los `excluidos`: efectivo, ya
+  conciliados…); si la lectura falla —o viene SIN `excluidos`: no se
+  revisaron el efectivo ni los conciliados— «No se pudieron revisar los
+  posibles duplicados…» + «Reintentar» y la casilla queda BLOQUEADA (jamás
+  «no hay ninguno»). Luego la nota de la IA (revisa un cargo a la vez), la
+  casilla obligatoria («…crearlo por $752.84 y vincularle los 2 cargos»), el
+  aviso si los cargos son de días o meses distintos (la fecha del gasto
+  quedó en la del ÚLTIMO pago) y la nota de todo o nada. «Crear el gasto»
+  nunca se apaga: el clic dice por qué no (`motivoNoCrearSuma`). Abre,
+  ANIDADA, el alta de SIEMPRE (`ExpenseCreateDialog`, `next/dynamic` sin SSR
+  y precargada al entrar al paso) en modo controlado con
+  `prefillGastoDesdeCargos` (monto = la suma del API; moneda de las cuentas;
+  fecha = `fecha_max`; «Pago domiciliado» si TODOS los cargos son
+  automáticos, si no tarjeta SOLO con la `terminacion_comun` que validó el
+  API, si no transferencia; notas «Pagado en 2 cargos del banco (HSBC
+  Pesos): 30-sep … $649.00 · …», ≤ 10 + «y N más», ≤ 2,000), `titulo`,
+  `contexto` y las props ADITIVAS `conciliarConMovimientos`,
+  `clientRequestId` (UNA llave por sesión del diálogo: nace al entrar la
+  primera vez al paso y se repite en cada «Guardar», así un reintento —o
+  «vuelve a pulsar Guardar» de GASTO_SIN_VINCULAR— no duplica; cerrar el
+  diálogo da otra), `textoExito` («Gasto registrado y vinculado a 2 cargos ·
+  quedó cubierto» / «… · quedó PARCIAL: faltan $X de $Y», de `conciliacion`
+  de la respuesta) y `textoError` (`mensajeErrorCrearSuma`: red o 5xx ⇒ «No
+  se pudo confirmar si se registró el gasto: vuelve a pulsar «Guardar» (con
+  esta misma captura no se duplica).»; 503 / DTO previo ⇒ «Esta opción
+  todavía no está activa…»; GASTO_SIN_VINCULAR y GASTO_NO_REGISTRADO con su
+  texto; 4xx con el texto del API «No se registró el gasto: …»). El API crea
+  el gasto SIN auto-cruce y le liga los cargos en la MISMA petición; si la
+  liga falla, lo RETIRA. Éxito ⇒ el alta avisa, este diálogo cierra, la
+  selección se limpia y UN `router.refresh()`. Error ⇒ el alta sigue abierta
+  con su caja roja; cargos no pendientes ⇒ refresh al cerrar; si pudo quedar
+  un gasto (incierto, GASTO_SIN_VINCULAR, llave en uso) se releen los
+  duplicados y la lista. Quitar cargos de la selección regresa a la lista
+  (cambia la suma).
+- **El alta con los cargos** (`expense-create-dialog.tsx`, SOLO con
+  `conciliarConMovimientos`): las dos llaves viajan en el payload; la
+  refacción va SOLO «Directo al avión» (sin el segmento ni el sub-formulario
+  de la bodega, con `notaRefaccionDesdeCargos`: el API rechaza `inventario`
+  con 400 INVENTARIO_NO_DESDE_CARGOS); la llamada va con `.catch` (nunca al
+  error boundary); el fallo del API se queda en una caja roja
+  (`data-error-alta-cargos`, se limpia en cada «Guardar» y al cerrar) en vez
+  del toast, y no se cierra a medio guardar. **Sin las props el alta es BYTE
+  A BYTE la de siempre** (golden `alta-gasto.golden.json`, congelado con el
+  código ANTES del cambio: botón, modo controlado, refacción con «A
+  Inventario/Tienda», gasto general y alta del vuelo). `createGastoAction`
+  con `conciliar_con_movimientos` NO revalida (la llama un diálogo que sigue
+  abierto) y su fallo conserva code/status/details (`failConCodigo`); sin la
+  llave, la de siempre (revalida lo mismo y falla con `{ ok, error }`). El
+  schema (`GastoCreateSchema`) acepta las dos llaves con los textos del DTO
+  del API (2..50 uuid sin repetir) y exige la llave con los cargos.
 - **«Omitir la conciliación…»** (`omitir-movimientos-dialog.tsx`, `next/dynamic`
   sin SSR, montado solo al abrirse; desde la barra con N y desde el ⋯ de un
   pendiente libre —también en los `extras` del abono— con 1): al abrir pide la
@@ -8757,11 +8818,17 @@ de varios cargos ya tiene el punto de enganche).
   `esperado_clasificacion_id` (lo que el panel VIO); 409 MOVIMIENTO_CAMBIO /
   MOVIMIENTO_OMITIDO ⇒ el texto del API, cerrar y refresh.
 - **Pruebas**: `lib/admin/__tests__/conciliacion-seleccion.test.ts`,
-  `conciliacion-omision.test.ts`, `conciliacion-cargos-gasto.test.ts`,
+  `conciliacion-omision.test.ts`, `conciliacion-cargos-gasto.test.ts` (con
+  el paso 4 y su paridad con el API),
   `app/admin/conciliacion/__tests__/omitir-cargos-actions.test.ts`,
   `components/admin/conciliacion/__tests__/seleccion.test.tsx` (golden
   `seleccion.golden.html` congelado ANTES del cambio + fixtures
-  `seleccion.fixtures.ts`), `omitir.test.tsx` y `vincular-cargos.test.tsx`.
+  `seleccion.fixtures.ts`), `omitir.test.tsx`, `vincular-cargos.test.tsx`
+  (con el paso previo y el cableado del alta anidada),
+  `app/admin/expenses/__tests__/crear-con-cargos-action.test.ts` (schema y
+  action con y sin la llave) y
+  `components/admin/expenses/__tests__/alta-con-cargos-ui.test.tsx` (golden
+  `alta-gasto.golden.json` del alta sin las props + el modo con los cargos).
 
 ## Repartir entre aviones desde «Verificar / editar» (14-oct-2026)
 

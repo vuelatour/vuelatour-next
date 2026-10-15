@@ -11,6 +11,15 @@
  * Casos reales (prod, 14-oct): C = 402ee224 $120.00 + a78ae15d $280.00 ⇒
  * gasto dd5fcb2b «Comida» $400.00 TARJETA_CORP; Cozumel (falso positivo)
  * 62.91 × 2 = 125.82; HSBC USD 01-oct 17.00 + 2.72 = 19.72 USD.
+ *
+ * Paso 4, «¿No está el gasto? Créalo por $X» (al final): el prellenado con la
+ * SUMA DEL API (mismo día; días y meses distintos ⇒ el último pago + aviso;
+ * terminación común ⇒ tarjeta; sin ella ⇒ transferencia; todos automáticos ⇒
+ * pago domiciliado; USD 19.72), las notas (≤ 10 cargos + «y N más», ≤ 2,000),
+ * los posibles duplicados (jamás «ninguno» con la lectura caída o sin
+ * `excluidos`), los textos exactos y cada error del alta (incierto, no
+ * activa, GASTO_SIN_VINCULAR, cargos no pendientes, llave en uso). Caso real:
+ * HSBC Pesos 30-sep 2f95e45b $649.00 + 61baed07 $103.84 = $752.84.
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -51,11 +60,43 @@ import {
   textoVentanaSuma,
   toastCargosVinculados,
   tituloVincularCargos,
+  MAX_LARGO_NOTAS,
+  MEDIOS_BANCARIOS_ALTA_SUMA,
+  MSG_LLAVE_CAPTURA_REQUERIDA,
+  NOTA_SIN_IA_SUMA,
+  TEXTO_DUPLICADOS_SUMA_NO_LEIDOS,
+  TEXTO_ESPERA_DUPLICADOS,
+  TEXTO_FALTA_CASILLA_SUMA,
+  TEXTO_INCIERTO_CREAR_SUMA,
+  TEXTO_RECHAZO_CREAR_SUMA,
+  avisoCargosConCandidatoPropioCrear,
+  avisoFechasCargos,
+  botonAbrirCrearSuma,
+  casillaCrearSuma,
+  contextoCrearSuma,
+  esDtoSinCargosAlta,
+  estadoDuplicadosSuma,
+  mensajeErrorCrearSuma,
+  motivoNoCrearSuma,
+  notaPrellenadoSuma,
+  notasDeCargos,
+  prefillGastoDesdeCargos,
+  qDuplicadosSuma,
+  textoExitoCrearSuma,
+  tituloAbrirCrearSuma,
+  tituloCrearSuma,
 } from "../conciliacion-cargos-gasto";
-import { textoExcluidosCandidatos } from "../conciliacion-lote";
+import { MSG_SESION_EXPIRADA, textoExcluidosCandidatos } from "../conciliacion-lote";
+import { MSG_OPCION_NO_ACTIVA, MSG_SIN_PERMISO_CONCILIAR } from "../conciliacion-omision";
+import { MEDIOS_BANCARIOS_CONCILIACION } from "../conciliacion-no-bancario";
+import { TEXTO_BUSCANDO_DUPLICADOS } from "../gasto-desde-cargo";
+import { MEDIO_PAGO_LABELS } from "../medios-pago";
+import { NOTA_INVENTARIO_NO_DESDE_CARGOS } from "../refaccion-inventario";
 import type {
   CandidatoGastoPorSuma,
+  CargosGastosCandidatosResponse,
   CargosResumen,
+  ConciliacionAlCrear,
   ExcluidosCandidatos,
   LigarCargosGastoRespuesta,
 } from "@/types/conciliacion";
@@ -653,5 +694,451 @@ describe("paridad con el API (si el repo hermano está al lado)", () => {
     expect(util).toContain(
       "se vincula cargo por cargo con su justificación (menú ⋯ → Vincular gasto → «Incluir gastos en efectivo y otros medios»).",
     );
+  });
+});
+
+// ═════════════════ Paso 4: «¿No está el gasto? Créalo por $X» ═════════════════
+
+const RENTA = "2f95e45b-0000-4000-8000-000000000649";
+const IVA = "61baed07-0000-4000-8000-000000000103";
+const HSBC_MXN = "4c4c4c4c-0000-4000-8000-0000000000a1";
+
+/** Un cargo como lo trae la tabla (el monto del banco viene con signo). */
+const mov = (fecha: string, descripcion: string | null, monto: string) => ({ fecha, descripcion, monto });
+/** HSBC Pesos 30-sep (prod): C ADMINISTRACION RENTA $649.00 + I.V.A. $103.84. */
+const HSBC_30SEP = [mov("2026-09-30", "C ADMINISTRACION RENTA", "-649.00"), mov("2026-09-30", "I.V.A.", "-103.84")];
+const resumenHsbc = (extra: Partial<CargosResumen> = {}): CargosResumen => ({
+  ids: [RENTA, IVA],
+  n: 2,
+  suma: 752.84,
+  moneda: "MXN",
+  fecha_min: "2026-09-30",
+  fecha_max: "2026-09-30",
+  cuentas: [{ id: HSBC_MXN, alias: "HSBC Pesos" }],
+  terminacion_comun: null,
+  ...extra,
+});
+
+describe("paso 4 · textos exactos del enlace, el paso previo y el alta", () => {
+  it("el enlace «Créalo por $X» con la suma del API (« USD» fuera de pesos) y su tooltip", () => {
+    expect(botonAbrirCrearSuma(400, "MXN")).toBe("¿No está el gasto? Créalo por $400.00");
+    expect(botonAbrirCrearSuma(752.84, null)).toBe("¿No está el gasto? Créalo por $752.84");
+    expect(botonAbrirCrearSuma(19.72, "USD")).toBe("¿No está el gasto? Créalo por $19.72 USD");
+    expect(botonAbrirCrearSuma(9591.49, "MXN")).toBe("¿No está el gasto? Créalo por $9,591.49");
+    expect(tituloAbrirCrearSuma(2)).toBe(
+      "El gasto no se capturó: créalo prellenado con la suma de los 2 cargos; al guardar queda vinculado a ellos en un solo paso.",
+    );
+  });
+
+  it("título, nota de la IA, casilla y nota al pie del paso previo", () => {
+    expect(tituloCrearSuma(2)).toBe("Crear el gasto con la suma de 2 cargos");
+    expect(NOTA_SIN_IA_SUMA).toBe("La IA revisa un cargo a la vez: con varios cargos, revisa tú la lista.");
+    expect(casillaCrearSuma(2, 752.84, "MXN")).toBe(
+      "Revisé la lista y este gasto NO está registrado: crearlo por $752.84 y vincularle los 2 cargos.",
+    );
+    expect(casillaCrearSuma(2, 19.72, "USD")).toBe(
+      "Revisé la lista y este gasto NO está registrado: crearlo por $19.72 USD y vincularle los 2 cargos.",
+    );
+    expect(notaPrellenadoSuma(2)).toBe(
+      "El alta se abre con la suma, la fecha del último pago, el medio de pago y las leyendas de los cargos; revisa la categoría, el avión o vuelo y el proveedor. Al guardar se registra el gasto y se vinculan los 2 cargos en un solo paso: si algo falla, no se registra nada.",
+    );
+  });
+
+  it("aviso ámbar del paso «crear»: quizá ya está capturado por separado (null sin ninguno o sin el dato)", () => {
+    expect(avisoCargosConCandidatoPropioCrear(null)).toBeNull();
+    expect(avisoCargosConCandidatoPropioCrear(undefined)).toBeNull();
+    expect(avisoCargosConCandidatoPropioCrear([])).toBeNull();
+    expect(avisoCargosConCandidatoPropioCrear([{ id: IVA, motivo: "SE_PUEDE_CRUZAR", candidatos_n: 1 }])).toBe(
+      "1 de los cargos tiene un gasto que cuadra solo: quizá ya está capturado por separado; vincúlalo uno por uno en vez de crear uno nuevo.",
+    );
+    expect(
+      avisoCargosConCandidatoPropioCrear([
+        { id: RENTA, motivo: "SE_PUEDE_CRUZAR", candidatos_n: 1 },
+        { id: IVA, motivo: "AMBIGUO", candidatos_n: 2 },
+      ]),
+    ).toBe(
+      "2 de los cargos tienen un gasto que cuadra solo: quizá ya están capturados por separado; vincúlalos uno por uno en vez de crear uno nuevo.",
+    );
+  });
+
+  it("el contexto del alta: encabezado con la suma del API + todo o nada + solo medios del banco", () => {
+    expect(contextoCrearSuma(resumenHsbc())).toBe(
+      "2 cargos de HSBC Pesos · suman $752.84 MXN · 30 sep 2026. Al guardar se vinculan los 2 cargos en el mismo paso: si la liga falla, el gasto no se registra. Para vincular varios cargos el gasto debe pagarse por el banco (tarjeta corporativa, transferencia, Paywise o pago domiciliado).",
+    );
+    // La frase nombra TODOS los medios bancarios (espejo de MEDIOS_BANCARIOS del API).
+    for (const m of MEDIOS_BANCARIOS_CONCILIACION) {
+      expect(MEDIOS_BANCARIOS_ALTA_SUMA.toLowerCase()).toContain(MEDIO_PAGO_LABELS[m].toLowerCase());
+    }
+  });
+});
+
+describe("paso 4 · la fecha del gasto = la del ÚLTIMO pago, con aviso", () => {
+  it("mismo día ⇒ sin aviso; días distintos; meses distintos; años distintos", () => {
+    expect(avisoFechasCargos("2026-09-30", "2026-09-30")).toBeNull();
+    expect(avisoFechasCargos("2026-08-10", "2026-08-12")).toBe(
+      "Los cargos son de días distintos (10 y 12 ago): la fecha del gasto quedó en la del último pago (12 ago 2026). Cámbiala si la factura dice otra.",
+    );
+    expect(avisoFechasCargos("2026-09-30", "2026-10-01")).toBe(
+      "Los cargos son de meses distintos (sep y oct): la fecha del gasto quedó en la del último pago (01 oct 2026) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.",
+    );
+    expect(avisoFechasCargos("2025-12-30", "2026-01-02")).toBe(
+      "Los cargos son de meses distintos (dic 2025 y ene 2026): la fecha del gasto quedó en la del último pago (02 ene 2026) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.",
+    );
+    expect(avisoFechasCargos(null, "2026-10-01")).toBeNull();
+    expect(avisoFechasCargos("2026-10-01", "x")).toBeNull();
+  });
+});
+
+describe("paso 4 · las notas del gasto con las leyendas de los cargos", () => {
+  it("«Pagado en 2 cargos del banco (HSBC Pesos): 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84»", () => {
+    expect(notasDeCargos(HSBC_30SEP, "HSBC Pesos", "MXN")).toBe(
+      "Pagado en 2 cargos del banco (HSBC Pesos): 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84",
+    );
+    expect(notasDeCargos(HSBC_30SEP, null, "MXN")).toBe(
+      "Pagado en 2 cargos del banco: 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84",
+    );
+  });
+
+  it("en orden de fecha; USD con su moneda; sin descripción, solo fecha y monto", () => {
+    const usd = [mov("2026-10-01", "CARGO 2", "2.72"), mov("2026-09-30", null, "17.00")];
+    expect(notasDeCargos(usd, "HSBC USD", "USD")).toBe("Pagado en 2 cargos del banco (HSBC USD): 30-sep $17.00 USD · 01-oct CARGO 2 $2.72 USD");
+  });
+
+  it("a lo más 10 cargos nombrados y «y N más»; la leyenda en una línea ≤ 60; nunca más de 2,000", () => {
+    const doce = Array.from({ length: 12 }, (_, i) =>
+      mov(`2026-09-${String(10 + i).padStart(2, "0")}`, `COMISION ${i + 1}\n  ESPACIOS`, "1.12"),
+    );
+    const t = notasDeCargos(doce, "GASTOS GNRAL", "MXN");
+    expect(t.startsWith("Pagado en 12 cargos del banco (GASTOS GNRAL): 10-sep COMISION 1 ESPACIOS $1.12 · 11-sep")).toBe(true);
+    expect(t.endsWith("19-sep COMISION 10 ESPACIOS $1.12 y 2 más")).toBe(true);
+    expect(t.split(" · ")).toHaveLength(10);
+    const larga = notasDeCargos([mov("2026-09-30", "X".repeat(200), "1.00"), mov("2026-09-30", "Y", "2.00")], null, "MXN");
+    expect(larga).toContain(`${"X".repeat(59)}… $1.00`);
+    const enorme = notasDeCargos(HSBC_30SEP, "Z".repeat(3000), "MXN");
+    expect(enorme.length).toBe(MAX_LARGO_NOTAS);
+    expect(enorme.endsWith("…")).toBe(true);
+  });
+});
+
+describe("paso 4 · el alta prellenada con la SUMA DEL API", () => {
+  it("HSBC Pesos 30-sep: $752.84 MXN, la fecha del pago, transferencia y las leyendas", () => {
+    expect(prefillGastoDesdeCargos(HSBC_30SEP, resumenHsbc())).toEqual({
+      monto: "752.84",
+      moneda: "MXN",
+      fecha_gasto: "2026-09-30",
+      medio_pago: "TRANSFERENCIA",
+      tarjeta_terminacion: "",
+      notas: "Pagado en 2 cargos del banco (HSBC Pesos): 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84",
+    });
+  });
+
+  it("días distintos ⇒ la fecha del ÚLTIMO pago (`fecha_max` del API)", () => {
+    const p = prefillGastoDesdeCargos(
+      [mov("2026-08-10", "ASA CANCUN", "3216.27"), mov("2026-08-12", "ASA CANCUN", "6375.22")],
+      resumenHsbc({ suma: 9591.49, fecha_min: "2026-08-10", fecha_max: "2026-08-12" }),
+    );
+    expect(p.fecha_gasto).toBe("2026-08-12");
+    expect(p.monto).toBe("9591.49");
+  });
+
+  it("terminación común VALIDADA por el API ⇒ tarjeta corporativa con esa terminación; sin ella (o inválida) ⇒ transferencia", () => {
+    const conTarjeta = prefillGastoDesdeCargos(HSBC_30SEP, resumenHsbc({ terminacion_comun: "4929" }));
+    expect(conTarjeta.medio_pago).toBe("TARJETA_CORP");
+    expect(conTarjeta.tarjeta_terminacion).toBe("4929");
+    for (const t of [null, "", "12", "49290", "abcd"]) {
+      const p = prefillGastoDesdeCargos(HSBC_30SEP, resumenHsbc({ terminacion_comun: t }));
+      expect(p.medio_pago, String(t)).toBe("TRANSFERENCIA");
+      expect(p.tarjeta_terminacion).toBe("");
+    }
+  });
+
+  it("TODOS los cargos automáticos ⇒ pago domiciliado (gana a la terminación); uno solo no basta", () => {
+    const recur = [mov("2026-10-02", "DLO*STARLINK Carg Recur.", "1200.00"), mov("2026-10-02", "STR*AMAZON RET REC Carg Recur.", "99.00")];
+    const p = prefillGastoDesdeCargos(recur, resumenHsbc({ suma: 1299, terminacion_comun: "4929" }));
+    expect(p.medio_pago).toBe("DOMICILIADO");
+    expect(p.tarjeta_terminacion).toBe("");
+    const mezcla = prefillGastoDesdeCargos([recur[0], mov("2026-10-02", "REST EL TACO LOCO", "99.00")], resumenHsbc({ suma: 1299 }));
+    expect(mezcla.medio_pago).toBe("TRANSFERENCIA");
+  });
+
+  it("USD (HSBC USD 01-oct, 17.00 + 2.72): moneda USD y monto 19.72", () => {
+    const p = prefillGastoDesdeCargos(
+      [mov("2026-10-01", "COMISION", "17.00"), mov("2026-10-01", "IVA COMISION", "2.72")],
+      resumenHsbc({ suma: 19.72, moneda: "USD", fecha_min: "2026-10-01", fecha_max: "2026-10-01", cuentas: [{ id: HSBC_USD, alias: "HSBC USD" }] }),
+    );
+    expect(p.moneda).toBe("USD");
+    expect(p.monto).toBe("19.72");
+    expect(p.notas).toBe("Pagado en 2 cargos del banco (HSBC USD): 01-oct COMISION $17.00 USD · 01-oct IVA COMISION $2.72 USD");
+  });
+
+  it("alias de la página si el API no lo manda; varias cuentas en las notas; sin suma o sin fecha, no se inventa", () => {
+    const sinAlias = resumenHsbc({ cuentas: [{ id: HSBC_MXN, alias: null }] });
+    expect(prefillGastoDesdeCargos(HSBC_30SEP, sinAlias, { [HSBC_MXN]: "HSBC Pesos" }).notas).toContain("(HSBC Pesos):");
+    expect(prefillGastoDesdeCargos(HSBC_30SEP, sinAlias).notas).toContain("Pagado en 2 cargos del banco: ");
+    const dos = resumenHsbc({ cuentas: [{ id: GASTOS, alias: "GASTOS GNRAL" }, { id: EJE, alias: "EJE SCOTIA" }] });
+    expect(prefillGastoDesdeCargos(HSBC_30SEP, dos).notas).toContain("(GASTOS GNRAL, EJE SCOTIA):");
+    expect(prefillGastoDesdeCargos(HSBC_30SEP, resumenHsbc({ suma: 0 })).monto).toBe("");
+    expect(prefillGastoDesdeCargos(HSBC_30SEP, resumenHsbc({ fecha_max: "" }))).not.toHaveProperty("fecha_gasto");
+  });
+});
+
+describe("paso 4 · el aviso del alta al guardar (de `conciliacion` del API)", () => {
+  const estado = (extra: Partial<NonNullable<LigarCargosGastoRespuesta["gasto_estado"]>> = {}) => ({
+    monto: 752.84,
+    moneda: "MXN",
+    n_partes: 2,
+    monto_vinculado: 752.84,
+    faltante: 0,
+    cubierto: true,
+    ...extra,
+  });
+  const conCon = (gasto_estado = estado(), idempotente = false) => ({
+    conciliacion: { movimiento_ids: [RENTA, IVA], idempotente, partes: [], gasto_estado },
+  });
+
+  it("cubierto, PARCIAL (en pesos y en dólares) y el re-envío con la misma llave", () => {
+    expect(textoExitoCrearSuma(conCon())).toBe("Gasto registrado y vinculado a 2 cargos · quedó cubierto");
+    expect(textoExitoCrearSuma(conCon(estado({ monto: 800, monto_vinculado: 752.84, faltante: 47.16, cubierto: false })))).toBe(
+      "Gasto registrado y vinculado a 2 cargos · quedó PARCIAL: faltan $47.16 de $800.00",
+    );
+    expect(
+      textoExitoCrearSuma(conCon(estado({ monto: 20.72, moneda: "USD", monto_vinculado: 19.72, faltante: 1, cubierto: false }))),
+    ).toBe("Gasto registrado y vinculado a 2 cargos · quedó PARCIAL: faltan $1.00 USD de $20.72 USD");
+    expect(textoExitoCrearSuma(conCon(estado(), true))).toBe("Gasto registrado y vinculado a 2 cargos · quedó cubierto");
+  });
+
+  it("sin el bloque `conciliacion` no inventa cuántos ni cómo quedó", () => {
+    expect(textoExitoCrearSuma({})).toBe("Gasto registrado y vinculado a los cargos");
+    expect(textoExitoCrearSuma(null)).toBe("Gasto registrado y vinculado a los cargos");
+    expect(
+      textoExitoCrearSuma({
+        conciliacion: { movimiento_ids: [RENTA, IVA], idempotente: false, partes: [] } as unknown as ConciliacionAlCrear,
+      }),
+    ).toBe("Gasto registrado y vinculado a 2 cargos");
+  });
+});
+
+describe("paso 4 · errores del ALTA por la suma (el alta sigue abierta con este texto)", () => {
+  it("sin conexión, red o 5xx sin código conocido ⇒ «No se pudo confirmar…» (incierto, refresh y releer)", () => {
+    const inc = { texto: TEXTO_INCIERTO_CREAR_SUMA, incierto: true, refrescar: true, releer: true };
+    expect(TEXTO_INCIERTO_CREAR_SUMA).toBe(
+      "No se pudo confirmar si se registró el gasto: vuelve a pulsar «Guardar» (con esta misma captura no se duplica).",
+    );
+    expect(mensajeErrorCrearSuma({ ok: false, code: "SIN_CONEXION", error: "El servidor no respondió." })).toEqual(inc);
+    expect(mensajeErrorCrearSuma({ ok: false, error: "fetch failed" })).toEqual(inc);
+    expect(mensajeErrorCrearSuma({ ok: false, code: "PARSE_ERROR", status: 502, error: "Bad Gateway" })).toEqual(inc);
+    expect(
+      mensajeErrorCrearSuma({
+        ok: false,
+        code: "ERROR",
+        status: 500,
+        error: "Ocurrió un error inesperado al procesar la acción. Intenta de nuevo; si persiste, contacta a soporte.",
+      }),
+    ).toEqual(inc);
+  });
+
+  it("todavía no activo (503 de la migración o de las partes, DTO previo, ruta) ⇒ «Esta opción todavía no está activa…»", () => {
+    for (const r of [
+      { ok: false, code: "CONCILIACION_CARGOS_A_GASTO_NO_DISPONIBLE", status: 503, error: MSG_OPCION_NO_ACTIVA },
+      { ok: false, code: "CONCILIACION_PARTES_NO_DISPONIBLE", status: 503, error: "La conciliación por partes…" },
+      { ok: false, code: "BAD_REQUEST", status: 400, error: "property conciliar_con_movimientos should not exist" },
+      { ok: false, code: "RUTA_NO_DISPONIBLE", status: 404, error: "Cannot POST /v1/expenses" },
+    ]) {
+      expect(mensajeErrorCrearSuma(r)).toEqual({ texto: MSG_OPCION_NO_ACTIVA, incierto: false, refrescar: false, releer: false });
+    }
+    expect(esDtoSinCargosAlta({ status: 400, error: "property conciliar_con_movimientos should not exist" })).toBe(true);
+    expect(esDtoSinCargosAlta({ status: 400, error: "property inventario should not exist" })).toBe(false);
+  });
+
+  it("401 ⇒ sesión; 403 ⇒ el texto del API (o el de siempre si es técnico)", () => {
+    expect(mensajeErrorCrearSuma({ ok: false, status: 401, error: "Unauthorized" }).texto).toBe(MSG_SESION_EXPIRADA);
+    expect(
+      mensajeErrorCrearSuma({
+        ok: false,
+        code: "CONCILIAR_SOLO_ADMIN_FACTURACION",
+        status: 403,
+        error: "Solo Administración y Facturación concilian con el banco.",
+      }).texto,
+    ).toBe("Solo Administración y Facturación concilian con el banco.");
+    expect(mensajeErrorCrearSuma({ ok: false, status: 403, error: "Forbidden" }).texto).toBe(MSG_SIN_PERMISO_CONCILIAR);
+  });
+
+  it("500 GASTO_SIN_VINCULAR: su texto (el gasto SÍ quedó; «Guardar» reintenta la liga), refresh y releer — NO es incierto", () => {
+    const msg =
+      "El gasto se registró pero NO quedó vinculado a los cargos: vuelve a pulsar «Guardar» para reintentar la liga (no se duplica) o cancela y vincúlalo con «Vincular a un gasto».";
+    expect(mensajeErrorCrearSuma({ ok: false, code: "GASTO_SIN_VINCULAR", status: 500, error: msg })).toEqual({
+      texto: msg,
+      incierto: false,
+      refrescar: true,
+      releer: true,
+    });
+  });
+
+  it("500 GASTO_NO_REGISTRADO: el API ya retiró el gasto ⇒ su texto, sin refresh", () => {
+    const msg =
+      "No se registró el gasto: la liga con los cargos del banco falló y el gasto se retiró. Vuelve a intentarlo; si se repite, avisa a sistemas.";
+    expect(mensajeErrorCrearSuma({ ok: false, code: "GASTO_NO_REGISTRADO", status: 500, error: msg })).toEqual({
+      texto: msg,
+      incierto: false,
+      refrescar: false,
+      releer: false,
+    });
+  });
+
+  it("4xx ⇒ el texto del API; cargos no pendientes ⇒ refresh al cerrar; llave en uso ⇒ refresh y releer", () => {
+    const noPend =
+      "No se registró el gasto: 1 de los 2 cargos ya no está pendiente — 30 sep · I.V.A. $103.84 (ya está vinculado a un gasto). Cancela, quita esos cargos de la selección y vuelve a intentarlo.";
+    expect(mensajeErrorCrearSuma({ ok: false, code: "MOVIMIENTO_NO_PENDIENTE", status: 409, error: noPend })).toEqual({
+      texto: noPend,
+      incierto: false,
+      refrescar: true,
+      releer: false,
+    });
+    const efectivo =
+      "No se registró el gasto: el gasto se pagó con Efectivo, que no pasa por el banco: se vincula cargo por cargo con su justificación (menú ⋯ → Vincular gasto → «Incluir gastos en efectivo y otros medios»).";
+    expect(mensajeErrorCrearSuma({ ok: false, code: "GASTO_NO_BANCARIO", status: 409, error: efectivo })).toEqual({
+      texto: efectivo,
+      incierto: false,
+      refrescar: false,
+      releer: false,
+    });
+    const enUso = "Esa captura ya registró un gasto con otros datos: búscalo en Gastos antes de volver a intentarlo.";
+    expect(mensajeErrorCrearSuma({ ok: false, code: "CLIENT_REQUEST_ID_EN_USO", status: 409, error: enUso })).toEqual({
+      texto: enUso,
+      incierto: false,
+      refrescar: true,
+      releer: true,
+    });
+    expect(mensajeErrorCrearSuma({ ok: false, code: "MOVIMIENTO_OMITIDO", status: 409, error: "No se registró el gasto: este movimiento se omitió…" }).refrescar).toBe(true);
+    // Un 4xx sin texto útil (técnico) o con el código pegado.
+    expect(mensajeErrorCrearSuma({ ok: false, status: 409, error: "Conflict" }).texto).toBe(TEXTO_RECHAZO_CREAR_SUMA);
+    expect(
+      mensajeErrorCrearSuma({ ok: false, code: "LOTE_INVALIDO", status: 400, error: "LOTE_INVALIDO: Elige de 2 a 50 cargos sin repetir." }).texto,
+    ).toBe("Elige de 2 a 50 cargos sin repetir.");
+  });
+});
+
+describe("paso 4 · los posibles duplicados (mismo monto, ±120 días) y cuándo se puede crear", () => {
+  const resp = (extra: Partial<CargosGastosCandidatosResponse> = {}) => ({
+    ok: true,
+    data: {
+      cargos: resumenHsbc(),
+      ventana: { desde: "2026-06-02", hasta: "2027-01-28" },
+      candidatos: [] as CandidatoGastoPorSuma[],
+      truncado: false,
+      cargos_con_candidato_propio: [],
+      excluidos: [] as ExcluidosCandidatos[],
+      excluidos_monto: 752.84,
+      ...extra,
+    },
+  });
+
+  it("la búsqueda es la suma del API como monto", () => {
+    expect(qDuplicadosSuma(752.84)).toBe("752.84");
+    expect(qDuplicadosSuma(-19.7)).toBe("19.70");
+    expect(qDuplicadosSuma(null)).toBe("0.00");
+  });
+
+  it("sin respuesta ⇒ «Buscando…»; la lectura caída ⇒ «No se pudieron revisar…» (jamás «no hay ninguno»)", () => {
+    expect(estadoDuplicadosSuma(null, 752.84)).toEqual({ tipo: "cargando", texto: TEXTO_BUSCANDO_DUPLICADOS });
+    expect(estadoDuplicadosSuma({ ok: false, code: "SIN_CONEXION", error: "x" }, 752.84)).toEqual({
+      tipo: "error",
+      texto: TEXTO_DUPLICADOS_SUMA_NO_LEIDOS,
+      quitarIds: [],
+    });
+    expect(TEXTO_DUPLICADOS_SUMA_NO_LEIDOS).toBe("No se pudieron revisar los posibles duplicados: vuelve a intentarlo.");
+    // Vino sin `excluidos`: no se pudieron revisar los de efectivo ni los ya conciliados.
+    const sinExcluidos = resp();
+    delete (sinExcluidos.data as Partial<CargosGastosCandidatosResponse>).excluidos;
+    expect(estadoDuplicadosSuma(sinExcluidos, 752.84)).toEqual({ tipo: "error", texto: TEXTO_DUPLICADOS_SUMA_NO_LEIDOS, quitarIds: [] });
+  });
+
+  it("un cargo que ya no está pendiente: el texto del API y «Quitar…» con su id", () => {
+    const e = estadoDuplicadosSuma(
+      {
+        ok: false,
+        code: "MOVIMIENTO_NO_PENDIENTE",
+        status: 409,
+        error: "No se vinculó ningún cargo: 1 de los 2 ya no está pendiente — 30 sep · I.V.A. $103.84 (ya está vinculado a un gasto). Quítalo de la selección y vuelve a intentarlo.",
+        details: { movimientos: [{ id: IVA }] },
+      },
+      752.84,
+    );
+    expect(e.tipo).toBe("error");
+    if (e.tipo === "error") {
+      expect(e.texto.startsWith("No se vinculó ningún cargo: 1 de los 2 ya no está pendiente")).toBe(true);
+      expect(e.quitarIds).toEqual([IVA]);
+    }
+  });
+
+  it("listo: SOLO los del mismo monto (±0.01) y, en ámbar, los del monto que no son del universo (efectivo…)", () => {
+    const igual = comida({ id: "aaaa0000-0000-4000-8000-000000000752", monto: 752.84, faltante: 752.84, categoria: "OPERACIONES" });
+    const otro = comida({ id: "aaaa0000-0000-4000-8000-000000000750", monto: 750, faltante: 750 });
+    const efectivo: ExcluidosCandidatos = {
+      motivo: "EFECTIVO_U_OTRO_MEDIO",
+      n: 1,
+      gastos: [
+        {
+          id: "e0e0e0e0-0000-4000-8000-000000000752",
+          fecha_gasto: "2026-09-29",
+          monto: 752.84,
+          moneda: "MXN",
+          medio_pago: "EFECTIVO",
+          categoria: "OPERACIONES",
+          vuelo_folio: null,
+          vuelo_id: null,
+        },
+      ],
+    };
+    const e = estadoDuplicadosSuma(resp({ candidatos: [igual, otro], excluidos: [efectivo] }), 752.84);
+    expect(e.tipo).toBe("listo");
+    if (e.tipo === "listo") {
+      expect(e.duplicados.map((d) => d.id)).toEqual([igual.id]);
+      expect(e.avisos).toHaveLength(1);
+      expect(e.avisos[0].texto).toContain("en efectivo");
+      // Frase de VARIOS cargos: el efectivo se liga cargo por cargo (nunca «muéstralo»).
+      expect(e.avisos[0].texto).toContain("vincúlalo cargo por cargo con su justificación");
+      expect(e.avisos[0].mostrar).toBeNull();
+    }
+    const vacio = estadoDuplicadosSuma(resp(), 752.84);
+    expect(vacio).toEqual({ tipo: "listo", duplicados: [], avisos: [] });
+  });
+
+  it("«Crear el gasto» nunca se apaga: el clic dice por qué (revisando, lectura caída, sin casilla); con todo, null", () => {
+    expect(motivoNoCrearSuma({ confirmado: true, duplicados: estadoDuplicadosSuma(null, 1) })).toBe(TEXTO_ESPERA_DUPLICADOS);
+    expect(TEXTO_ESPERA_DUPLICADOS).toBe("Espera a que termine la revisión de los posibles duplicados.");
+    expect(
+      motivoNoCrearSuma({ confirmado: true, duplicados: estadoDuplicadosSuma({ ok: false, error: "fetch failed" }, 1) }),
+    ).toBe(TEXTO_DUPLICADOS_SUMA_NO_LEIDOS);
+    expect(motivoNoCrearSuma({ confirmado: false, duplicados: estadoDuplicadosSuma(resp(), 752.84) })).toBe(TEXTO_FALTA_CASILLA_SUMA);
+    expect(TEXTO_FALTA_CASILLA_SUMA).toBe("Marca la casilla: confirma que revisaste la lista y que el gasto NO está registrado.");
+    expect(motivoNoCrearSuma({ confirmado: true, duplicados: estadoDuplicadosSuma(resp(), 752.84) })).toBeNull();
+  });
+});
+
+describe("paso 4 · paridad con el API (si el repo hermano está al lado)", () => {
+  const API = path.resolve(__dirname, "../../../../../vuelatour-api/src");
+  const leerApi = (rel: string): string | null => {
+    const p = path.join(API, rel);
+    return existsSync(p) ? readFileSync(p, "utf8") : null;
+  };
+
+  it("los textos del alta por la suma, el DTO de la llave y los códigos que el panel distingue", () => {
+    const util = leerApi("modules/conciliacion/cargos-a-gasto.util.ts");
+    const dto = leerApi("modules/expenses/dto/expenses.dto.ts");
+    const servicio = leerApi("modules/expenses/expenses.service.ts");
+    const ctrl = leerApi("modules/expenses/expenses.controller.ts");
+    if (!util || !dto || !servicio || !ctrl) return;
+    expect(util).toContain(`'${MSG_LLAVE_CAPTURA_REQUERIDA}'`);
+    expect(util).toContain(`'${NOTA_INVENTARIO_NO_DESDE_CARGOS}'`);
+    expect(util).toContain("'Esa captura ya registró un gasto con otros datos: búscalo en Gastos antes de volver a intentarlo.'");
+    expect(util).toContain("export const PREFIJO_NO_SE_REGISTRO = 'No se registró el gasto: ';");
+    expect(dto).toContain("conciliar_con_movimientos?: string[];");
+    expect(dto).toContain(`'${MSG_CARGO_INVALIDO}'`);
+    expect(dto).toMatch(/@ArrayMinSize\(CARGOS_A_GASTO_MIN, \{ message: MENSAJE_LOTE_CARGOS_INVALIDO \}\)/);
+    for (const codigo of ["GASTO_SIN_VINCULAR", "GASTO_NO_REGISTRADO", "CLIENT_REQUEST_ID_EN_USO", "CLIENT_REQUEST_ID_REQUERIDO"]) {
+      expect(servicio).toContain(`error: '${codigo}'`);
+    }
+    expect(ctrl).toContain("error: 'CONCILIAR_SOLO_ADMIN_FACTURACION'");
   });
 });

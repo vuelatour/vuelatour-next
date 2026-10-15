@@ -1,4 +1,5 @@
 import type { CompraRef, CompraRol } from "./compras";
+import type { ConciliacionAlCrear } from "./conciliacion";
 
 /**
  * REFACCIÓN A INVENTARIO/TIENDA (12-oct-2026, API 0.0.72, invariante 57):
@@ -79,6 +80,11 @@ export interface Gasto {
   tua_detectada_ia?: number | null;
   /** ADITIVO, solo en la respuesta del alta con `inventario` (ver el tipo). */
   inventario?: GastoInventarioResultado | null;
+  /** ADITIVO (API 0.0.77), solo en la respuesta del alta con
+   *  `conciliar_con_movimientos` («Créalo por la suma» de Conciliación): los
+   *  cargos que quedaron ligados y cómo quedó el gasto. Se lee SIEMPRE por
+   *  `lib/admin/conciliacion-cargos-gasto.ts#textoExitoCrearSuma`. */
+  conciliacion?: ConciliacionAlCrear | null;
   conciliado: boolean;
   /** PAGOS PARCIALES (14-sep-2026, ADITIVOS): un gasto puede tener N cargos
    *  del banco ligados (misma moneda); `conciliado` solo es true cuando lo

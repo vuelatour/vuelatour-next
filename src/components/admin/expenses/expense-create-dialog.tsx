@@ -40,6 +40,7 @@ import {
   leerFacturaIAAction,
   listArticulosRefaccionAction,
   listAvionesActivosAction,
+  type ActionResult,
   type GastoTicketIA,
   type VueloCercano,
 } from "@/app/admin/expenses/actions";
@@ -57,6 +58,7 @@ import {
   HINT_VENDER_AL_AVION,
   NOTA_DIRECTO_AVION,
   NOTA_DIRECTO_AVION_SIN_AVION,
+  NOTA_ELIGE_AVION_REFACCION,
   NOTA_INVENTARIO_SIN_AVION,
   OPCION_ARTICULO_NUEVO,
   PLACEHOLDER_ARTICULO,
@@ -68,6 +70,7 @@ import {
   hojaDestinoRefaccionInventario,
   mensajeErrorInventario,
   notaInventarioConAvion,
+  notaRefaccionDesdeCargos,
   opcionesArticulos,
   payloadInventario,
   toastRefaccionInventario,
@@ -134,6 +137,7 @@ import {
   opcionesComprobante,
 } from "@/lib/admin/comprobante-badge";
 import { opcionesFacturacionForm } from "@/lib/admin/facturacion-estatus";
+import { MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
 import { cn } from "@/lib/utils";
 import {
   ETIQUETA_TIPO_COMBUSTIBLE,
@@ -176,6 +180,13 @@ const FACTURACION = opcionesFacturacionForm();
 function hoyCancun(): string {
   return new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
 }
+
+/** Modo «crear por la suma»: la server action ni siquiera salió (sin red, un deploy de Vercel). */
+const sinConexionAlta = (): ActionResult<Gasto> & { repartoError?: string } => ({
+  ok: false,
+  code: "SIN_CONEXION",
+  error: MSG_SERVIDOR_NO_RESPONDIO,
+});
 
 function emptyValues(defaults?: {
   vueloId?: string;
@@ -223,6 +234,10 @@ export function ExpenseCreateDialog({
   titulo,
   contexto,
   varianteBoton = "outline",
+  conciliarConMovimientos,
+  clientRequestId,
+  textoExito,
+  textoError,
 }: {
   aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
@@ -252,12 +267,35 @@ export function ExpenseCreateDialog({
   /** Estilo del botón propio (14-oct-2026): «default» = primario, como en
       Gastos; las demás pantallas lo dejan «outline». */
   varianteBoton?: "default" | "outline";
+  /** «Créalo por la suma» (Conciliación, 14-oct-2026, API 0.0.77, invariante
+      76 del API; props ADITIVAS): el gasto nace YA vinculado a estos 2..50
+      cargos del banco o no se registra (el API lo crea SIN auto-cruce, liga
+      los cargos en la misma petición y, si la liga falla, lo retira). Sin
+      «A Inventario/Tienda» (400 INVENTARIO_NO_DESDE_CARGOS). Viaja con
+      `clientRequestId`. Sin la prop, el alta de siempre. */
+  conciliarConMovimientos?: readonly string[];
+  /** Llave de idempotencia de ESE flujo (uuid): la MISMA en cada «Guardar»,
+      así un reintento no duplica el gasto. */
+  clientRequestId?: string;
+  /** Aviso al guardar con los cargos (lo arma quien lo montó: «Gasto
+      registrado y vinculado a 2 cargos · quedó cubierto»). */
+  textoExito?: (gasto: Gasto) => string;
+  /** Con los cargos: el texto de la caja roja ante un fallo del API (el alta
+      sigue abierta); quien lo montó decide («No se pudo confirmar…», «Esta
+      opción todavía no está activa…») y anota si su lista quedó vieja. */
+  textoError?: (r: ActionResult<Gasto>) => string;
 }) {
   const [openLocal, setOpenLocal] = useState(false);
   // Modo controlado: abre y cierra quien lo monta (ver props).
   const controlado = abierto !== undefined;
   const open = controlado ? abierto : openLocal;
+  // «Créalo por la suma» (Conciliación): el alta liga los cargos al crear.
+  const conCargos = conciliarConMovimientos !== undefined;
+  // Con los cargos, el fallo del API se queda a la vista (caja roja) hasta el
+  // siguiente «Guardar» o hasta cerrar; sin ellos, el toast de siempre.
+  const [errorConCargos, setErrorConCargos] = useState<string | null>(null);
   const setOpen = (o: boolean) => {
+    if (!o) setErrorConCargos(null);
     if (controlado) onAbiertoChange?.(o);
     else setOpenLocal(o);
   };
@@ -285,9 +323,12 @@ export function ExpenseCreateDialog({
   // unidades, precio de venta OBLIGATORIO y, con avión, salida inmediata
   // vendida a ese avión: la traza queda en el cardex). Regla y textos en
   // lib/admin/refaccion-inventario.ts; la cadena la hace el API.
-  const [refDestino, setRefDestino] = useState<DestinoRefaccion>(() =>
+  const [refDestinoElegido, setRefDestino] = useState<DestinoRefaccion>(() =>
     destinoRefaccionInicial({ conVueloPrefijado: !!defaultVueloId }),
   );
+  // Desde varios cargos del banco la refacción va SIEMPRE «Directo al avión»
+  // (el API rechaza el bloque `inventario` con los cargos).
+  const refDestino: DestinoRefaccion = conCargos ? "AVION" : refDestinoElegido;
   const [inv, setInv] = useState<FormInventarioRefaccion>(() => formInventarioVacio("MXN"));
   // Artículos activos de la bodega: se piden UNA vez, al llegar al modo inventario.
   const [articulos, setArticulos] = useState<ArticuloParaRefaccion[] | null>(null);
@@ -718,6 +759,7 @@ export function ExpenseCreateDialog({
 
   /** Guardado real (fecha ya validada o confirmada por el usuario). */
   const guardarGasto = (values: GastoCreateValues) => {
+    if (conCargos) setErrorConCargos(null);
     startTransition(async () => {
       // monto guardado = TOTAL PAGADO (ticket + propina): es lo que llega al
       // banco y lo que usan reparto/reportes/conciliación. La propina queda
@@ -754,7 +796,7 @@ export function ExpenseCreateDialog({
       let inventarioPayload: InventarioPayload | null = null;
       if (values.categoria === "REFACCION") {
         if (refDestino === "AVION" && !values.aeronave_id) {
-          toast.error(NOTA_DIRECTO_AVION_SIN_AVION);
+          toast.error(conCargos ? NOTA_ELIGE_AVION_REFACCION : NOTA_DIRECTO_AVION_SIN_AVION);
           return;
         }
         if (refDestino === "INVENTARIO") {
@@ -865,7 +907,7 @@ export function ExpenseCreateDialog({
         toast.error("Los litros no son válidos.");
         return;
       }
-      const result = await createGastoAction(
+      const llamada = createGastoAction(
         {
           ...values,
           monto: totalPagado,
@@ -891,10 +933,23 @@ export function ExpenseCreateDialog({
           ...(fechaGastoAntigua(values.fecha_gasto)
             ? { permitir_fecha_antigua: true }
             : {}),
+          // «Créalo por la suma» (invariante 76 del API): los cargos que paga
+          // y la llave de ESTE flujo; el API los liga al crear (todo o nada).
+          ...(conCargos
+            ? {
+                conciliar_con_movimientos: [...(conciliarConMovimientos ?? [])],
+                client_request_id: clientRequestId,
+              }
+            : {}),
         },
         repartoItems,
       );
+      // Con los cargos la llamada NUNCA revienta la pantalla (sin red o un
+      // deploy ⇒ «no se pudo confirmar…»); el alta de siempre, como hoy.
+      const result = conCargos ? await llamada.catch(sinConexionAlta) : await llamada;
       if (result.ok) {
+        // Con los cargos, el aviso dice que quedaron vinculados y cómo quedó.
+        const exito = textoExito && result.data ? textoExito(result.data) : null;
         if (result.repartoError) {
           // El gasto SÍ se creó pero el reparto no se aplicó: estado
           // recuperable A PROPÓSITO (no se borra nada — candados de dinero).
@@ -902,7 +957,7 @@ export function ExpenseCreateDialog({
           // Otros gastos como "VuelaTour (sin asignar)" con botón Repartir.
           toast.warning(
             `El gasto se creó SIN repartir: repártelo desde Otros gastos (o menú ⋯ → Repartir). Motivo: ${result.repartoError}`,
-            { duration: 10000 },
+            exito ? { description: exito, duration: 10000 } : { duration: 10000 },
           );
         } else if (inventarioPayload) {
           const t = toastRefaccionInventario(
@@ -913,15 +968,16 @@ export function ExpenseCreateDialog({
           else toast.warning(t.titulo, { description: t.descripcion, duration: 15000 });
         } else {
           toast.success(
-            repartoItems
-              ? `Gasto registrado y repartido entre ${repartoItems.length} ${
-                  repartoItems.length === 1 ? "avión" : "aviones"
-                }`
-              : aplicarComoPiloto
-                ? "Gasto registrado como del piloto del vuelo"
-                : factura
-                  ? toastGastoConComprobante(archivos.length)
-                  : "Gasto registrado",
+            exito ??
+              (repartoItems
+                ? `Gasto registrado y repartido entre ${repartoItems.length} ${
+                    repartoItems.length === 1 ? "avión" : "aviones"
+                  }`
+                : aplicarComoPiloto
+                  ? "Gasto registrado como del piloto del vuelo"
+                  : factura
+                    ? toastGastoConComprobante(archivos.length)
+                    : "Gasto registrado"),
           );
         }
         setArchivos([]);
@@ -944,6 +1000,10 @@ export function ExpenseCreateDialog({
         // pago"): sin el nombre técnico del campo como prefijo.
         const f = Object.keys(result.fieldErrors)[0];
         toast.error(result.fieldErrors[f]?.[0] ?? `Validación falló (${f})`);
+      } else if (conCargos) {
+        // «Créalo por la suma»: el alta sigue abierta con el texto del API
+        // («No se registró el gasto: …») o «No se pudo confirmar…».
+        setErrorConCargos(textoError ? textoError(result) : (result.error ?? "Error desconocido"));
       } else {
         toast.error(
           inventarioPayload
@@ -1015,6 +1075,8 @@ export function ExpenseCreateDialog({
       <Dialog
         open={open}
         onOpenChange={(o) => {
+          // Con los cargos no se cierra a medio guardar: el resultado se pinta aquí.
+          if (!o && conCargos && pending) return;
           setOpen(o);
           if (!o) {
             setComoPiloto(false);
@@ -1468,30 +1530,43 @@ export function ExpenseCreateDialog({
               <div className="space-y-3 rounded-lg border border-border p-3" data-refaccion-destino>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label className="text-sm font-medium">{TITULO_DESTINO_REFACCION}</Label>
-                  <div role="group" aria-label={TITULO_DESTINO_REFACCION} className="flex gap-1.5">
-                    {(["AVION", "INVENTARIO"] as const).map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-pressed={refDestino === d}
-                        title={AYUDA_DESTINO[d]}
-                        onClick={() => setRefDestino(d)}
-                        className={cn(
-                          "inline-flex h-8 cursor-pointer items-center rounded-lg px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          refDestino === d
-                            ? "bg-brand-600 text-white"
-                            : "bg-muted text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {ETIQUETA_DESTINO[d]}
-                      </button>
-                    ))}
-                  </div>
+                  {conCargos ? (
+                    // Desde varios cargos: solo «Directo al avión».
+                    <span className="text-xs font-medium" data-refaccion-solo-avion>
+                      {ETIQUETA_DESTINO.AVION}
+                    </span>
+                  ) : (
+                    <div role="group" aria-label={TITULO_DESTINO_REFACCION} className="flex gap-1.5">
+                      {(["AVION", "INVENTARIO"] as const).map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          aria-pressed={refDestino === d}
+                          title={AYUDA_DESTINO[d]}
+                          onClick={() => setRefDestino(d)}
+                          className={cn(
+                            "inline-flex h-8 cursor-pointer items-center rounded-lg px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            refDestino === d
+                              ? "bg-brand-600 text-white"
+                              : "bg-muted text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {ETIQUETA_DESTINO[d]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {refDestino === "AVION" ? (
-                  <p className="text-xs text-muted-foreground">
-                    {avionSel ? NOTA_DIRECTO_AVION : NOTA_DIRECTO_AVION_SIN_AVION}
-                  </p>
+                  conCargos ? (
+                    <p className="text-xs text-muted-foreground" data-refaccion-desde-cargos>
+                      {notaRefaccionDesdeCargos(!!avionSel)}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {avionSel ? NOTA_DIRECTO_AVION : NOTA_DIRECTO_AVION_SIN_AVION}
+                    </p>
+                  )
                 ) : (
                   <>
                     <p
@@ -2028,6 +2103,16 @@ export function ExpenseCreateDialog({
                 {...register("notas")}
               />
             </Field>
+
+            {errorConCargos && (
+              <p
+                role="alert"
+                data-error-alta-cargos
+                className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              >
+                {errorConCargos}
+              </p>
+            )}
 
             <DialogFooter>
               <Button

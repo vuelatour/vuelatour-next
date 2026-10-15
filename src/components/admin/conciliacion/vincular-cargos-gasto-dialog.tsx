@@ -27,12 +27,26 @@
  * con un clic. Sin respuesta ⇒ «No se pudo confirmar si se vincularon…» +
  * refresh (jamás «no se vinculó»). Todos los textos en
  * `lib/admin/conciliacion-cargos-gasto.ts`.
+ *
+ * «¿No está el gasto? Créalo por $X» (paso 4, solo con `catalogosGasto` y la
+ * suma del API): el paso previo «Crear el gasto con la suma» dentro de este
+ * diálogo (los POSIBLES DUPLICADOS del mismo monto en ±120 días con los
+ * `excluidos` del API —si la lectura falla, la casilla queda bloqueada—, la
+ * nota de que la IA no revisa varios cargos y la casilla obligatoria) y,
+ * ANIDADA, el alta de SIEMPRE (`ExpenseCreateDialog` en modo controlado)
+ * prellenada con la suma y con `conciliarConMovimientos` + `clientRequestId`
+ * (UNA llave por sesión del diálogo: un reintento no duplica). El API crea el
+ * gasto SIN auto-cruce y le liga los cargos en la MISMA petición; si la liga
+ * falla, retira el gasto. Éxito ⇒ el alta avisa, este diálogo cierra, el
+ * padre limpia la selección y UN `router.refresh()`; error ⇒ el alta sigue
+ * abierta con su caja roja.
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowPathIcon, LinkIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, LinkIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -64,6 +78,7 @@ import {
   fichaCandidatoGasto,
   textoExcluidosCandidatos,
   type AvisoExcluidos,
+  type ResultadoAccionLote,
   type TipoEstadoBuscador,
 } from "@/lib/admin/conciliacion-lote";
 import {
@@ -71,14 +86,21 @@ import {
   DESCRIPCION_VINCULAR_CARGOS,
   ETIQUETA_LISTA_CARGOS,
   NOTA_CANDIDATO_PROPIO_NO_VERIFICADO,
+  NOTA_SIN_IA_SUMA,
   TEXTO_ELIGE_GASTO,
   TEXTO_UN_SOLO_CARGO,
   avisoCargosConCandidatoPropio,
+  avisoCargosConCandidatoPropioCrear,
+  avisoFechasCargos,
   avisoVariasCuentas,
+  botonAbrirCrearSuma,
   botonQuitarNoPendientes,
   botonVincularCargos,
+  casillaCrearSuma,
+  contextoCrearSuma,
   descripcionCandidatoSuma,
   encabezadoCargos,
+  estadoDuplicadosSuma,
   estadoListaSuma,
   guiaResultado,
   hayCandidatoQueCubre,
@@ -86,17 +108,34 @@ import {
   marcaCandidatoPropio,
   mensajeErrorCandidatosSuma,
   mensajeErrorCargosGasto,
+  mensajeErrorCrearSuma,
+  motivoNoCrearSuma,
+  notaPrellenadoSuma,
   notaVentanaSuma,
   placeholderBuscarSuma,
+  prefillGastoDesdeCargos,
+  qDuplicadosSuma,
   textoCargosSinSuma,
+  textoExitoCrearSuma,
   textoResumenVincularCargos,
   textoVentanaSuma,
   toastCargosVinculados,
+  tituloAbrirCrearSuma,
+  tituloCrearSuma,
   tituloVincularCargos,
   type ErrorCandidatosSuma,
   type ErrorCargosGasto,
+  type EstadoDuplicadosSuma,
   type TonoGuia,
 } from "@/lib/admin/conciliacion-cargos-gasto";
+import {
+  BOTON_CREAR,
+  BOTON_VOLVER,
+  DIAS_DUPLICADOS,
+  ETIQUETA_DUPLICADOS,
+  TEXTO_SIN_DUPLICADOS,
+  type CatalogosGastoDesdeCargo,
+} from "@/lib/admin/gasto-desde-cargo";
 import { MIN_CARGOS_A_GASTO, monedaDeMovimiento } from "@/lib/admin/conciliacion-seleccion";
 import { cn } from "@/lib/utils";
 import type {
@@ -111,6 +150,29 @@ import type {
 const sinConexion = (): ActionResult<never> => ({ ok: false, code: "SIN_CONEXION", error: MSG_SIN_CONEXION });
 
 type Carga = { clave: string; r: ActionResult<CargosGastosCandidatosResponse> };
+
+/** Los posibles duplicados del paso «crear» (de ESTOS cargos; `r` null = leyendo). */
+type CargaDuplicados = { idsClave: string; r: ActionResult<CargosGastosCandidatosResponse> | null };
+
+/**
+ * El alta de gasto (el formulario completo de Gastos) se carga SOLO al llegar
+ * al paso «crear» (sin SSR) y su chunk se PRECARGA al entrar a ese paso: un
+ * Esc mientras baja no cierra este diálogo con lo elegido.
+ */
+const ExpenseCreateDialog = dynamic(
+  () => import("@/components/admin/expenses/expense-create-dialog").then((m) => m.ExpenseCreateDialog),
+  { ssr: false },
+);
+const precargarAlta = () => import("@/components/admin/expenses/expense-create-dialog");
+
+/** uuid v4 de la llave de idempotencia (respaldo si el navegador no expone randomUUID). */
+function uuidV4(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 const CLASE_GUIA: Record<TonoGuia, string> = {
   ok: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -134,6 +196,9 @@ export interface VincularCargosGastoDialogProps {
   onVinculados?: (ids: string[]) => void;
   /** Sacar de la selección los que el API dijo que ya no están pendientes. */
   onQuitarDeSeleccion?: (ids: string[]) => void;
+  /** Catálogos del alta de gasto (aviones y proveedores, los de «¿No está el
+   *  gasto? Créalo» de un cargo): sin ellos no se ofrece «Créalo por $X». */
+  catalogosGasto?: CatalogosGastoDesdeCargo | null;
 }
 
 export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
@@ -159,6 +224,18 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
   const pedidoRef = useRef(0);
   const enviandoRef = useRef(false);
   const refrescarAlCerrarRef = useRef(false);
+  // «¿No está el gasto? Créalo por $X» (paso 4): el paso previo, la casilla,
+  // los posibles duplicados (con su turno) y el alta anidada. La LLAVE de la
+  // captura nace al entrar la primera vez al paso y vale para TODA la sesión
+  // del diálogo: cada «Guardar» la repite y un reintento no duplica (aunque se
+  // vuelva a la lista y se regrese); cerrar el diálogo y volver a abrirlo da
+  // otra.
+  const [paso, setPaso] = useState<"lista" | "crear">("lista");
+  const [confirmado, setConfirmado] = useState(false);
+  const [dup, setDup] = useState<CargaDuplicados | null>(null);
+  const [crearAbierto, setCrearAbierto] = useState(false);
+  const [llave, setLlave] = useState<string | null>(null);
+  const dupRef = useRef(0);
 
   const ids = useMemo(() => lista.map((m) => m.id), [lista]);
   const idsClave = ids.join(",");
@@ -228,6 +305,21 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
     elegidoVigente && resumen && !unSolo
       ? textoResumenVincularCargos({ n, suma: resumen.suma, moneda: resumen.moneda, gasto: elegidoVigente })
       : null;
+  // Paso «crear»: los duplicados de ESTOS cargos y el alta prellenada con la SUMA DEL API.
+  const enCrear = paso === "crear" && resumen !== null && !unSolo;
+  const dupVigente = dup && dup.idsClave === idsClave ? dup : null;
+  const duplicados = useMemo(
+    () => estadoDuplicadosSuma(dupVigente?.r ?? null, resumen?.suma ?? 0),
+    [dupVigente, resumen],
+  );
+  const prefill = useMemo(
+    () => (resumen ? prefillGastoDesdeCargos(lista, resumen, p.aliasPorCuenta) : undefined),
+    [lista, resumen, p.aliasPorCuenta],
+  );
+  // «Cargos con su propio gasto»: el de la lectura más reciente (la de los duplicados, si ya llegó).
+  const propiosCrear =
+    (dupVigente?.r?.ok ? dupVigente.r.data?.cargos_con_candidato_propio : undefined) ??
+    vigente?.cargos_con_candidato_propio;
 
   const cambiarAbierto = (abierto: boolean) => {
     // Con la liga en curso no se cierra: su resultado se pinta aquí.
@@ -253,6 +345,12 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
     refrescarAlCerrarRef.current = true;
     setError(null);
     setAviso(null);
+    // Con otros cargos cambia la suma: de vuelta a la lista (los duplicados se releen al volver a «Créalo»).
+    dupRef.current += 1;
+    setDup(null);
+    setPaso("lista");
+    setConfirmado(false);
+    setCrearAbierto(false);
     if (resto.length === 0) {
       cambiarAbierto(false);
       return;
@@ -316,106 +414,250 @@ export function VincularCargosGastoDialog(p: VincularCargosGastoDialogProps) {
       });
   };
 
+  // ===== «¿No está el gasto? Créalo por $X» (paso 4) =====
+
+  /**
+   * Los posibles duplicados: la SUMA como monto, ±120 días (con los
+   * `excluidos` del API). Cada lectura nueva pide volver a marcar la casilla:
+   * se confirma sobre la lista que se VE.
+   */
+  const cargarDuplicados = (suma: number) => {
+    const turno = ++dupRef.current;
+    const deIds = idsClave;
+    setDup({ idsClave: deIds, r: null });
+    setConfirmado(false);
+    void gastosCandidatosDeCargosAction(ids, { q: qDuplicadosSuma(suma), dias: DIAS_DUPLICADOS })
+      .catch(sinConexion)
+      .then((r) => {
+        if (turno !== dupRef.current) return;
+        setDup({ idsClave: deIds, r });
+      });
+  };
+
+  const abrirCrear = () => {
+    if (!p.catalogosGasto || !resumen || unSolo || enviandoRef.current) return;
+    setPaso("crear");
+    setAviso(null);
+    setError(null);
+    if (llave === null) setLlave(uuidV4());
+    // Siempre frescos al entrar: alguien pudo capturar el gasto mientras tanto.
+    cargarDuplicados(resumen.suma);
+    void precargarAlta().catch(() => undefined);
+  };
+
+  const volverALista = () => {
+    setPaso("lista");
+    setConfirmado(false);
+    setAviso(null);
+  };
+
+  /** «Crear el gasto»: nunca se apaga; sin la revisión terminada o sin la casilla, el clic dice por qué. */
+  const crear = () => {
+    const motivo = motivoNoCrearSuma({ confirmado, duplicados });
+    if (motivo) {
+      setAviso(motivo);
+      return;
+    }
+    setAviso(null);
+    setCrearAbierto(true);
+  };
+
+  /**
+   * El API YA registró el gasto Y le ligó los cargos (todo o nada; el alta ya
+   * avisó con `textoExitoCrearSuma`): se cierra TODO, el padre limpia la
+   * selección y UN `router.refresh()` (la action no revalida).
+   */
+  const trasCrearSuma = () => {
+    setCrearAbierto(false);
+    p.onVinculados?.([...ids]);
+    refrescarAlCerrarRef.current = false;
+    p.onOpenChange(false);
+    router.refresh();
+  };
+
+  /**
+   * El fallo del alta: su texto (la caja roja del alta, que sigue abierta).
+   * Si la tabla quedó vieja, refresh al cerrar; si pudo quedar un gasto
+   * registrado, se releen los duplicados y la lista (y la casilla se vuelve a
+   * marcar sobre lo que se lea).
+   */
+  const textoErrorAlta = (r: ResultadoAccionLote): string => {
+    const e = mensajeErrorCrearSuma(r);
+    if (e.refrescar) refrescarAlCerrarRef.current = true;
+    if (e.releer && resumen) {
+      setRecarga((x) => x + 1);
+      cargarDuplicados(resumen.suma);
+    }
+    return e.texto;
+  };
+
   const quedanTrasQuitar = error ? n - error.quitarIds.length : n;
 
   return (
     <Dialog open={p.open} onOpenChange={cambiarAbierto}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{tituloVincularCargos(n)}</DialogTitle>
+          <DialogTitle>{enCrear ? tituloCrearSuma(n) : tituloVincularCargos(n)}</DialogTitle>
           <DialogDescription>{DESCRIPCION_VINCULAR_CARGOS}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <CargosDelLote
-            lista={lista}
-            resumen={resumen}
-            propios={vigente ? vigente.cargos_con_candidato_propio : undefined}
-            aliasPorCuenta={p.aliasPorCuenta}
-            monedaPorCuenta={p.monedaPorCuenta}
-          />
-
-          {unSolo ? (
-            <p role="status" className={CLASE_AVISO_AMBAR}>
-              {TEXTO_UN_SOLO_CARGO}
-            </p>
-          ) : (
-            <ListaGastosPorSuma
-              idBuscar={idBuscar}
-              nombreGrupo={nombreGrupo}
-              texto={texto}
-              onTexto={setTexto}
-              suma={resumen?.suma ?? null}
-              dias={dias}
-              onAmpliar={() => setDias(VENTANA_AMPLIADA_DIAS)}
-              estado={estado}
-              filas={filas}
-              elegidoId={elegidoVigente?.id ?? null}
-              onElegir={elegir}
-              errorLista={errorLista}
-              onReintentar={() => setRecarga((x) => x + 1)}
+        {enCrear && resumen ? (
+          <div className="space-y-3">
+            <PasoCrearGastoSuma
+              lista={lista}
+              resumen={resumen}
+              propios={propiosCrear}
+              aliasPorCuenta={p.aliasPorCuenta}
+              monedaPorCuenta={p.monedaPorCuenta}
+              duplicados={duplicados}
+              confirmado={confirmado}
+              onConfirmado={(v) => {
+                setConfirmado(v);
+                setAviso(null);
+              }}
+              onReintentar={() => cargarDuplicados(resumen.suma)}
               onQuitar={p.onQuitarDeSeleccion ? quitar : undefined}
-              avisos={avisosExcluidos}
-              disabled={enviando}
             />
-          )}
-
-          {resumenTexto && (
-            <p data-resumen-vincular="" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-medium">
-              {resumenTexto}
-            </p>
-          )}
-
-          {aviso && (
-            <p role="alert" className="text-xs font-medium text-amber-700 dark:text-amber-300">
-              {aviso}
-            </p>
-          )}
-
-          {error && (
-            <div
-              role="alert"
-              className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-            >
-              <p>{error.titulo}</p>
-              {error.descripcion && <p className="font-medium">{error.descripcion}</p>}
-              {p.onQuitarDeSeleccion && error.quitarIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => quitar(error.quitarIds)}
-                  className="cursor-pointer rounded-md border border-destructive/40 px-2 py-0.5 font-medium hover:bg-destructive/20"
-                >
-                  {botonQuitarNoPendientes(error.quitarIds.length)}
-                </button>
-              )}
-              {error.quitarIds.length > 0 && quedanTrasQuitar < MIN_CARGOS_A_GASTO && <p>{TEXTO_UN_SOLO_CARGO}</p>}
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="sm:justify-between">
-          {/* PUNTO DE ENGANCHE del paso 4 (FASE «crear por la suma»): aquí, a
-              la izquierda, va «¿No está el gasto? Créalo por $X»
-              (`botonAbrirCrearSuma`, solo con `catalogosGasto` y la suma del
-              API); abre el paso «Crear el gasto con la suma» dentro de este
-              mismo diálogo. Hoy no se ofrece. */}
-          <span />
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="outline"
-              className="cursor-pointer"
-              onClick={() => cambiarAbierto(false)}
-              disabled={enviando}
-            >
-              {BOTON_CANCELAR}
-            </Button>
-            <Button type="button" className="cursor-pointer gap-1.5" onClick={vincular} disabled={enviando}>
-              <LinkIcon className="h-4 w-4" aria-hidden />
-              {enviando ? TEXTO_VINCULANDO : botonVincularCargos(n)}
-            </Button>
+            {aviso && (
+              <p role="alert" className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                {aviso}
+              </p>
+            )}
           </div>
-        </DialogFooter>
+        ) : (
+          <div className="space-y-3">
+            <CargosDelLote
+              lista={lista}
+              resumen={resumen}
+              propios={vigente ? vigente.cargos_con_candidato_propio : undefined}
+              aliasPorCuenta={p.aliasPorCuenta}
+              monedaPorCuenta={p.monedaPorCuenta}
+            />
+
+            {unSolo ? (
+              <p role="status" className={CLASE_AVISO_AMBAR}>
+                {TEXTO_UN_SOLO_CARGO}
+              </p>
+            ) : (
+              <ListaGastosPorSuma
+                idBuscar={idBuscar}
+                nombreGrupo={nombreGrupo}
+                texto={texto}
+                onTexto={setTexto}
+                suma={resumen?.suma ?? null}
+                dias={dias}
+                onAmpliar={() => setDias(VENTANA_AMPLIADA_DIAS)}
+                estado={estado}
+                filas={filas}
+                elegidoId={elegidoVigente?.id ?? null}
+                onElegir={elegir}
+                errorLista={errorLista}
+                onReintentar={() => setRecarga((x) => x + 1)}
+                onQuitar={p.onQuitarDeSeleccion ? quitar : undefined}
+                avisos={avisosExcluidos}
+                disabled={enviando}
+              />
+            )}
+
+            {resumenTexto && (
+              <p data-resumen-vincular="" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-medium">
+                {resumenTexto}
+              </p>
+            )}
+
+            {aviso && (
+              <p role="alert" className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                {aviso}
+              </p>
+            )}
+
+            {error && (
+              <div
+                role="alert"
+                className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              >
+                <p>{error.titulo}</p>
+                {error.descripcion && <p className="font-medium">{error.descripcion}</p>}
+                {p.onQuitarDeSeleccion && error.quitarIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => quitar(error.quitarIds)}
+                    className="cursor-pointer rounded-md border border-destructive/40 px-2 py-0.5 font-medium hover:bg-destructive/20"
+                  >
+                    {botonQuitarNoPendientes(error.quitarIds.length)}
+                  </button>
+                )}
+                {error.quitarIds.length > 0 && quedanTrasQuitar < MIN_CARGOS_A_GASTO && <p>{TEXTO_UN_SOLO_CARGO}</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {enCrear ? (
+          <DialogFooter>
+            <Button type="button" variant="outline" className="cursor-pointer" onClick={volverALista}>
+              {BOTON_VOLVER}
+            </Button>
+            <Button type="button" className="cursor-pointer gap-1.5" onClick={crear}>
+              <PlusIcon className="h-4 w-4" aria-hidden />
+              {BOTON_CREAR}
+            </Button>
+          </DialogFooter>
+        ) : (
+          <DialogFooter className="sm:justify-between">
+            {/* «¿No está el gasto? Créalo por $X» (paso 4): solo con los
+                catálogos del alta y la SUMA DEL API (sin respuesta, no se sabe
+                por cuánto); abre el paso «Crear el gasto con la suma». */}
+            {p.catalogosGasto && resumen && !unSolo ? (
+              <button
+                type="button"
+                className="cursor-pointer self-center text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={abrirCrear}
+                disabled={enviando}
+                title={tituloAbrirCrearSuma(n)}
+              >
+                {botonAbrirCrearSuma(resumen.suma, resumen.moneda)}
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                className="cursor-pointer"
+                onClick={() => cambiarAbierto(false)}
+                disabled={enviando}
+              >
+                {BOTON_CANCELAR}
+              </Button>
+              <Button type="button" className="cursor-pointer gap-1.5" onClick={vincular} disabled={enviando}>
+                <LinkIcon className="h-4 w-4" aria-hidden />
+                {enviando ? TEXTO_VINCULANDO : botonVincularCargos(n)}
+              </Button>
+            </div>
+          </DialogFooter>
+        )}
+
+        {/* El alta de SIEMPRE, en modo controlado y ANIDADA (Base UI apila los
+            diálogos: Esc cierra solo la de arriba), prellenada con la suma y
+            con los cargos: el API la crea y le liga los cargos en un paso. */}
+        {enCrear && p.catalogosGasto && resumen && llave && (
+          <ExpenseCreateDialog
+            aircraft={p.catalogosGasto.aircraft}
+            providers={p.catalogosGasto.providers}
+            abierto={crearAbierto}
+            onAbiertoChange={setCrearAbierto}
+            prefill={prefill}
+            titulo={tituloCrearSuma(n)}
+            contexto={contextoCrearSuma(resumen, p.aliasPorCuenta)}
+            onCreado={trasCrearSuma}
+            conciliarConMovimientos={ids}
+            clientRequestId={llave}
+            textoExito={textoExitoCrearSuma}
+            textoError={textoErrorAlta}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -432,6 +674,7 @@ export function CargosDelLote({
   propios,
   aliasPorCuenta,
   monedaPorCuenta,
+  paraCrear = false,
 }: {
   lista: readonly MovimientoBancario[];
   /** `cargos` del API (null mientras no responde o si falló). */
@@ -440,10 +683,12 @@ export function CargosDelLote({
   propios: readonly CargoConCandidatoPropio[] | null | undefined;
   aliasPorCuenta?: Readonly<Record<string, string>> | null;
   monedaPorCuenta?: Readonly<Record<string, string | null | undefined>> | null;
+  /** Paso «crear» (paso 4): el aviso ámbar dice que quizá ya está capturado por separado. */
+  paraCrear?: boolean;
 }) {
   const propioDe = new Map((propios ?? []).map((x) => [x.id, x]));
   const variasCuentas = new Set(lista.map((m) => m.cuenta_bancaria_id)).size > 1;
-  const avisoPropio = avisoCargosConCandidatoPropio(propios);
+  const avisoPropio = paraCrear ? avisoCargosConCandidatoPropioCrear(propios) : avisoCargosConCandidatoPropio(propios);
   const avisoCuentas = resumen ? avisoVariasCuentas(resumen.cuentas, aliasPorCuenta) : null;
   return (
     <div className="space-y-2">
@@ -624,6 +869,132 @@ export function ListaGastosPorSuma(p: {
       </div>
       {estado.tipo === "lista" && estado.texto && <p className="text-[11px] text-muted-foreground">{estado.texto}</p>}
       <p className="text-[11px] text-muted-foreground">{notaVentanaSuma(p.dias)}</p>
+    </div>
+  );
+}
+
+/**
+ * El paso previo «Crear el gasto con la suma» (paso 4): los cargos con la
+ * SUMA DEL API, los POSIBLES DUPLICADOS (mismo monto, ±120 días; debajo, en
+ * ámbar, los del mismo monto que no son del universo: en efectivo, ya
+ * conciliados…), la nota de que la IA no revisa varios cargos y la casilla
+ * OBLIGATORIA, bloqueada hasta que la revisión de duplicados termine bien (si
+ * falla: su texto y «Reintentar», jamás «no hay ninguno»). Aquí no se crea ni
+ * se liga nada.
+ */
+export function PasoCrearGastoSuma(p: {
+  lista: readonly MovimientoBancario[];
+  /** `cargos` del API: la suma, la moneda y las fechas. */
+  resumen: CargosResumen;
+  propios: readonly CargoConCandidatoPropio[] | null | undefined;
+  aliasPorCuenta?: Readonly<Record<string, string>> | null;
+  monedaPorCuenta?: Readonly<Record<string, string | null | undefined>> | null;
+  duplicados: EstadoDuplicadosSuma;
+  confirmado: boolean;
+  onConfirmado: (v: boolean) => void;
+  onReintentar: () => void;
+  /** Sin él (fuera de la selección) no se ofrece «Quitar…». */
+  onQuitar?: (ids: string[]) => void;
+}) {
+  const idCasilla = useId();
+  const { duplicados: dup, resumen } = p;
+  const n = p.lista.length;
+  const avisoFechas = avisoFechasCargos(resumen.fecha_min, resumen.fecha_max);
+  return (
+    <div className="space-y-3" data-paso-crear-suma="">
+      <CargosDelLote
+        lista={p.lista}
+        resumen={resumen}
+        propios={p.propios}
+        aliasPorCuenta={p.aliasPorCuenta}
+        monedaPorCuenta={p.monedaPorCuenta}
+        paraCrear
+      />
+      <div className="rounded-lg border border-border">
+        <p className="border-b border-border px-3 py-2 text-xs font-medium">{ETIQUETA_DUPLICADOS}</p>
+        {dup.tipo === "cargando" ? (
+          <p role="status" className="px-3 py-4 text-center text-xs text-muted-foreground">
+            {dup.texto}
+          </p>
+        ) : dup.tipo === "error" ? (
+          <div role="alert" data-duplicados-error="" className="space-y-1.5 px-3 py-3 text-center text-xs">
+            <p className="text-amber-700 dark:text-amber-300">{dup.texto}</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-0.5 font-medium hover:bg-muted"
+                onClick={p.onReintentar}
+              >
+                <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden />
+                {BOTON_REINTENTAR}
+              </button>
+              {p.onQuitar && dup.quitarIds.length > 0 && (
+                <button
+                  type="button"
+                  className="cursor-pointer rounded-md border border-border px-2 py-0.5 font-medium hover:bg-muted"
+                  onClick={() => p.onQuitar?.(dup.quitarIds)}
+                >
+                  {botonQuitarNoPendientes(dup.quitarIds.length)}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : dup.duplicados.length === 0 ? (
+          // «No hay ninguno (ni en efectivo, ni ya conciliado)» SOLO si tampoco
+          // hay del monto fuera del universo; si los hay, ellos son el aviso.
+          <VacioCandidatos
+            texto={dup.avisos.length > 0 ? null : TEXTO_SIN_DUPLICADOS}
+            avisos={dup.avisos}
+            onVolverABuscar={p.onReintentar}
+          />
+        ) : (
+          <>
+            <ul className="max-h-56 divide-y divide-border overflow-y-auto">
+              {dup.duplicados.map((c) => {
+                const ficha = fichaCandidatoGasto(c);
+                const desc = descripcionCandidatoSuma(c);
+                return (
+                  <li key={c.id} data-duplicado-suma="" className="px-3 py-2 text-xs">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium">{etiquetaCandidatoGasto(ficha)}</span>
+                      <BadgeMedioCandidato candidato={c} />
+                    </span>
+                    {desc && (
+                      <span
+                        className="block truncate text-muted-foreground"
+                        title={tituloDescripcionCandidatoGasto(ficha) ?? undefined}
+                      >
+                        {desc}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <VacioCandidatos texto={null} avisos={dup.avisos} onVolverABuscar={p.onReintentar} />
+          </>
+        )}
+      </div>
+      <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        {NOTA_SIN_IA_SUMA}
+      </p>
+      <label htmlFor={idCasilla} className="flex cursor-pointer items-start gap-2 text-xs">
+        <input
+          id={idCasilla}
+          type="checkbox"
+          checked={p.confirmado}
+          onChange={(e) => p.onConfirmado(e.target.checked)}
+          disabled={dup.tipo !== "listo"}
+          className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
+        />
+        <span className="font-medium">{casillaCrearSuma(n, resumen.suma, resumen.moneda)}</span>
+      </label>
+      {avisoFechas && (
+        <p role="status" data-aviso-fechas-cargos="" className={CLASE_AVISO_AMBAR}>
+          {avisoFechas}
+        </p>
+      )}
+      <p className="text-[11px] text-muted-foreground">{notaPrellenadoSuma(n)}</p>
     </div>
   );
 }

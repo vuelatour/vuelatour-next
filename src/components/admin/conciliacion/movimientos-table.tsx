@@ -894,7 +894,8 @@ export function MovimientosTable({
       )}
       {/* «Vincular a un gasto…» (14-oct-2026, API 0.0.77): con UN cargo, el
           «Vincular gasto» de siempre (sin editarlo); con 2..50, varios cargos
-          → un gasto (la barra ya revisó que sean solo cargos de una moneda). */}
+          → un gasto (la barra ya revisó que sean solo cargos de una moneda),
+          con «¿No está el gasto? Créalo por $X» si cargaron los catálogos. */}
       {dialogo?.tipo === "vincular" && dialogo.movimientos.length === 1 && (
         <VincularGastoDialog
           movimiento={dialogo.movimientos[0]}
@@ -909,6 +910,7 @@ export function MovimientosTable({
           movimientos={dialogo.movimientos}
           aliasPorCuenta={cuentas}
           monedaPorCuenta={monedaPorCuenta}
+          catalogosGasto={catalogosGasto}
           open
           onOpenChange={cerrarDialogo}
           onVinculados={limpiarSeleccion}

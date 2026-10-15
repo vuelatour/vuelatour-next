@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { MEDIOS_CAPTURA_VALUES } from "@/lib/admin/medios-pago";
+import { esUuid } from "@/lib/admin/url-params";
+import { MAX_CARGOS_A_GASTO, MIN_CARGOS_A_GASTO } from "@/lib/admin/conciliacion-seleccion";
+import {
+  MSG_CARGO_INVALIDO,
+  MSG_LLAVE_CAPTURA_REQUERIDA,
+  MSG_LOTE_CARGOS_INVALIDO,
+} from "@/lib/admin/conciliacion-cargos-gasto";
 
 export const CategoriaEnum = z.enum([
   "GAS",
@@ -267,6 +274,26 @@ export const GastoCreateSchema = z.object({
       vender_al_avion: z.boolean().optional(),
     })
     .optional(),
+  /** «Créalo por la suma» (Conciliación, 14-oct-2026, API 0.0.77, invariante
+   *  76 del API): los 2..50 cargos del banco que paga este gasto; el API lo
+   *  crea SIN auto-cruce y se los liga en la MISMA petición (si la liga
+   *  falla, retira el gasto). Mismos textos que el DTO del API. Sin la llave,
+   *  el alta de siempre. */
+  conciliar_con_movimientos: z
+    .array(z.string().refine(esUuid, MSG_CARGO_INVALIDO))
+    .min(MIN_CARGOS_A_GASTO, MSG_LOTE_CARGOS_INVALIDO)
+    .max(MAX_CARGOS_A_GASTO, MSG_LOTE_CARGOS_INVALIDO)
+    .refine((ids) => new Set(ids.map((x) => x.toLowerCase())).size === ids.length, MSG_LOTE_CARGOS_INVALIDO)
+    .optional(),
+  /** Llave de idempotencia de la captura (uuid): con `conciliar_con_movimientos`
+   *  es OBLIGATORIA (400 CLIENT_REQUEST_ID_REQUERIDO del API) y un reintento
+   *  con la misma llave no duplica el gasto. */
+  client_request_id: z.string().refine(esUuid, MSG_LLAVE_CAPTURA_REQUERIDA).optional(),
+}).superRefine((v, ctx) => {
+  // Espejo del API: los cargos se ligan SOLO con la llave de la captura.
+  if (v.conciliar_con_movimientos !== undefined && !v.client_request_id) {
+    ctx.addIssue({ code: "custom", path: ["client_request_id"], message: MSG_LLAVE_CAPTURA_REQUERIDA });
+  }
 });
 
 export type GastoCreateValues = {

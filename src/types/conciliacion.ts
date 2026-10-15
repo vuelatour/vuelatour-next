@@ -1447,3 +1447,17 @@ export interface LigarCargosGastoRespuesta {
   /** Relectura con `omision`. */
   movimientos: MovimientoBancario[];
 }
+
+/**
+ * «Créalo por la suma» (14-oct-2026, API 0.0.77, invariante 76): `conciliacion`
+ * de la respuesta 201 de `POST /v1/expenses` con `conciliar_con_movimientos`
+ * (ADITIVO; sin la llave, la respuesta de siempre). El gasto nació YA ligado a
+ * esos cargos (o no se registró). `idempotente` = re-envío con la misma
+ * `client_request_id` (el gasto ya existía y la liga no se repitió).
+ */
+export interface ConciliacionAlCrear {
+  movimiento_ids: string[];
+  idempotente: boolean;
+  partes: Array<{ movimiento_id: string; monto_parte: number; moneda: string }>;
+  gasto_estado: EstadoGastoTrasCargos;
+}

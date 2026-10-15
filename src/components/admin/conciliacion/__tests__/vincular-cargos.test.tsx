@@ -4,7 +4,8 @@
  *  1. el diálogo pintado al abrir (sin DOM: `renderToStaticMarkup` con los
  *     primitivos de diálogo pasados de largo): título, descripción, los
  *     cargos (sin una suma del panel: la suma es la del API), «Buscando…»,
- *     el botón «Vincular los 2 cargos» y SIN «Créalo» (la fase siguiente);
+ *     el botón «Vincular los 2 cargos» y SIN «Créalo por $X» mientras el API
+ *     no sumó (no se sabe por cuánto) o sin los catálogos del alta;
  *  2. sus piezas con la respuesta del API: encabezado con la suma DEL API,
  *     avisos ámbar (cargos con su propio gasto, cuentas distintas), la guía
  *     CUBRE/PARCIAL/EXCEDE con su color, un radio por gasto, el vacío con los
@@ -12,11 +13,15 @@
  *     (jamás el vacío) y «Quitar…»;
  *  3. la barra con «Vincular a un gasto…» (nunca apagado: el motivo se ve);
  *  4. el cableado por regex: `next/dynamic` sin SSR y montado solo al abrir,
- *     UN cargo ⇒ el «Vincular gasto» de siempre, cada acción UNA vez y con
+ *     UN cargo ⇒ el «Vincular gasto» de siempre, cada acción con
  *     `.catch(sinConexion)`, sin `revalidatePath`, éxito ⇒ limpiar + cerrar +
- *     UN refresh, sin AlertDialog extra (el diálogo ES la confirmación),
- *     `cursor-pointer` en todo lo que se pulsa y el punto de enganche de
- *     «Créalo por la suma».
+ *     UN refresh, sin AlertDialog extra (el diálogo ES la confirmación) y
+ *     `cursor-pointer` en todo lo que se pulsa;
+ *  5. paso 4, «¿No está el gasto? Créalo por $X»: el paso previo pintado
+ *     (posibles duplicados —jamás «ninguno» con la lectura caída—, la casilla
+ *     bloqueada hasta leerlos, la nota de la IA, el aviso de fechas) y el
+ *     cableado del alta ANIDADA con `conciliarConMovimientos`,
+ *     `clientRequestId` (una llave por sesión), `textoExito` y `textoError`.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -26,6 +31,12 @@ import { describe, expect, it, vi } from "vitest";
 import { ALIAS_CUENTAS, CUENTA_GASTOS, MONEDA_CUENTAS, filasConOmision } from "./seleccion.fixtures";
 import { resumenSeleccion } from "@/lib/admin/conciliacion-seleccion";
 import { textoExcluidosCandidatos } from "@/lib/admin/conciliacion-lote";
+import {
+  TEXTO_DUPLICADOS_SUMA_NO_LEIDOS,
+  avisoFechasCargos,
+  estadoDuplicadosSuma,
+  type EstadoDuplicadosSuma,
+} from "@/lib/admin/conciliacion-cargos-gasto";
 import type { CandidatoGastoPorSuma, CargosResumen, MovimientoBancario } from "@/types/conciliacion";
 
 vi.mock("next/navigation", () => ({
@@ -50,7 +61,9 @@ vi.mock("@/components/ui/dialog", () => {
   };
 });
 
-const { VincularCargosGastoDialog, CargosDelLote, ListaGastosPorSuma } = await import("../vincular-cargos-gasto-dialog");
+const { VincularCargosGastoDialog, CargosDelLote, ListaGastosPorSuma, PasoCrearGastoSuma } = await import(
+  "../vincular-cargos-gasto-dialog"
+);
 const { BarraSeleccionMovimientos } = await import("../barra-seleccion-movimientos");
 
 const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
@@ -138,7 +151,12 @@ const G_EXCEDE = gasto("aaaa0002-0000-4000-8000-000000000380", {
   excedente: 20,
 });
 
-const dialogo = (movs: MovimientoBancario[] = CARGOS) =>
+const CATALOGOS = {
+  aircraft: [{ id: "e1a85e5b-9eaa-4367-9920-68d5d78883e8", matricula: "N621TX", combustible: "TURBOSINA" as const }],
+  providers: [],
+};
+
+const dialogo = (movs: MovimientoBancario[] = CARGOS, extra: { catalogosGasto?: typeof CATALOGOS } = {}) =>
   renderToStaticMarkup(
     <VincularCargosGastoDialog
       movimientos={movs}
@@ -148,6 +166,7 @@ const dialogo = (movs: MovimientoBancario[] = CARGOS) =>
       onOpenChange={() => {}}
       onVinculados={() => {}}
       onQuitarDeSeleccion={() => {}}
+      {...extra}
     />,
   );
 
@@ -198,7 +217,7 @@ describe("el diálogo al abrir (antes de la respuesta del API)", () => {
     expect(html).toContain("Ampliar a ±120 días");
   });
 
-  it("el botón «Vincular los 2 cargos» (nunca apagado sin enviar) y «Cancelar»; SIN «Créalo» todavía", () => {
+  it("el botón «Vincular los 2 cargos» (nunca apagado sin enviar) y «Cancelar»; SIN «Créalo» mientras el API no sumó", () => {
     const i = html.indexOf("Vincular los 2 cargos</button>");
     expect(i).toBeGreaterThan(-1);
     const boton = html.slice(html.lastIndexOf("<button", i), i);
@@ -206,6 +225,8 @@ describe("el diálogo al abrir (antes de la respuesta del API)", () => {
     expect(boton).not.toContain(' disabled=""');
     expect(html).toContain(">Cancelar</button>");
     expect(html).not.toContain("Créalo");
+    // Con los catálogos del alta, pero sin la suma del API todavía: no se sabe por cuánto.
+    expect(dialogo(CARGOS, { catalogosGasto: CATALOGOS })).not.toContain("Créalo");
     for (const b of html.match(/<button[^>]*>/g) ?? []) expect(b).toContain("cursor-pointer");
   });
 
@@ -412,10 +433,13 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(tabla).toMatch(/<VincularCargosGastoDialog[\s\S]{0,400}onVinculados=\{limpiarSeleccion\}[\s\S]{0,80}onQuitarDeSeleccion=\{quitarDeSeleccion\}/);
   });
 
-  it("cada acción UNA vez y con .catch(sinConexion); ninguna revalida", () => {
-    expect(veces(dlg, "gastosCandidatosDeCargosAction(")).toBe(1);
+  it("cada acción con .catch(sinConexion): la lista, los duplicados del paso 4 y la liga; ninguna revalida", () => {
+    expect(veces(dlg, "gastosCandidatosDeCargosAction(")).toBe(2);
     expect(veces(dlg, "ligarCargosAGastoAction(")).toBe(1);
     expect(dlg).toMatch(/gastosCandidatosDeCargosAction\(ids, \{ q: busqueda, dias \}\)\s*\.catch\(sinConexion\)/);
+    expect(dlg).toMatch(
+      /gastosCandidatosDeCargosAction\(ids, \{ q: qDuplicadosSuma\(suma\), dias: DIAS_DUPLICADOS \}\)\s*\.catch\(sinConexion\)/,
+    );
     expect(dlg).toMatch(/ligarCargosAGastoAction\(gasto\.id, idsEnvio\)\s*\.catch\(sinConexion\)/);
     expect(dlg).not.toContain("revalidatePath");
     const acciones = leer("../../../../app/admin/conciliacion/actions.ts");
@@ -431,8 +455,9 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(dlg).toMatch(/if \(e\.incierto\) \{[\s\S]{0,200}p\.onOpenChange\(false\);\s*router\.refresh\(\);/);
     // 4xx: la lista se vuelve a pedir sin perder lo elegido.
     expect(dlg).toContain("if (e.recargarLista) setRecarga((x) => x + 1);");
-    // Tres refresh en el código: éxito, incierto y al cerrar si la tabla quedó vieja.
-    expect(veces(dlg, "router.refresh();")).toBe(3);
+    // Cuatro refresh en el código: liga con éxito, liga incierta, al cerrar si
+    // la tabla quedó vieja y el alta por la suma con éxito.
+    expect(veces(dlg, "router.refresh();")).toBe(4);
   });
 
   it("el diálogo ES la confirmación: sin AlertDialog extra y con el resumen visible antes del botón", () => {
@@ -441,10 +466,9 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(dlg.indexOf("{resumenTexto}")).toBeLessThan(dlg.indexOf("botonVincularCargos(n)"));
   });
 
-  it("reutiliza los exports de «Vincular gasto» SIN editarlo y deja el punto de enganche de «Créalo por la suma»", () => {
+  it("reutiliza los exports de «Vincular gasto» SIN editarlo", () => {
     expect(dlg).toContain('import { BadgeMedioCandidato, VacioCandidatos } from "@/components/admin/conciliacion/vincular-gasto-dialog";');
-    expect(dlg).toContain("PUNTO DE ENGANCHE del paso 4 (FASE «crear por la suma»)");
-    expect(dlg).not.toContain("ExpenseCreateDialog");
+    expect(dlg).not.toContain("PUNTO DE ENGANCHE");
   });
 
   it("todo <button>/<Button> lleva cursor-pointer y ningún texto del operador va escrito a mano", () => {
@@ -458,5 +482,243 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(dlg).not.toContain("No se vinculó");
     expect(dlg).not.toMatch(/aria-label="[^{]/);
     expect(dlg).toMatch(/<label[\s\S]{0,200}"flex cursor-pointer items-start/);
+  });
+});
+
+// ═════════════════ Paso 4: «¿No está el gasto? Créalo por $X» ═════════════════
+
+/** HSBC Pesos 30-sep (prod): C ADMINISTRACION RENTA $649.00 + I.V.A. $103.84 = $752.84. */
+const HSBC = "4c4c4c4c-0000-4000-8000-0000000000a1";
+const RENTA = "2f95e45b-0000-4000-8000-000000000649";
+const IVA = "61baed07-0000-4000-8000-000000000103";
+const CARGOS_HSBC = [
+  cargo(RENTA, { cuenta_bancaria_id: HSBC, fecha: "2026-09-30", monto: "649.00", descripcion: "C ADMINISTRACION RENTA", referencia: null }),
+  cargo(IVA, { cuenta_bancaria_id: HSBC, fecha: "2026-09-30", monto: "103.84", descripcion: "I.V.A.", referencia: null }),
+];
+const RESUMEN_HSBC: CargosResumen = {
+  ids: [RENTA, IVA],
+  n: 2,
+  suma: 752.84,
+  moneda: "MXN",
+  fecha_min: "2026-09-30",
+  fecha_max: "2026-09-30",
+  cuentas: [{ id: HSBC, alias: "HSBC Pesos" }],
+  terminacion_comun: null,
+};
+const listo = (extra: Record<string, unknown> = {}) =>
+  estadoDuplicadosSuma(
+    {
+      ok: true,
+      data: {
+        cargos: RESUMEN_HSBC,
+        ventana: { desde: "2026-06-02", hasta: "2027-01-28" },
+        candidatos: [],
+        truncado: false,
+        cargos_con_candidato_propio: [],
+        excluidos: [],
+        excluidos_monto: 752.84,
+        ...extra,
+      },
+    },
+    752.84,
+  );
+
+const paso = (extra: Partial<Parameters<typeof PasoCrearGastoSuma>[0]> & { duplicados?: EstadoDuplicadosSuma } = {}) =>
+  renderToStaticMarkup(
+    <PasoCrearGastoSuma
+      lista={CARGOS_HSBC}
+      resumen={RESUMEN_HSBC}
+      propios={[]}
+      aliasPorCuenta={{ [HSBC]: "HSBC Pesos" }}
+      monedaPorCuenta={{ [HSBC]: "MXN" }}
+      duplicados={listo()}
+      confirmado={false}
+      onConfirmado={() => {}}
+      onReintentar={() => {}}
+      onQuitar={() => {}}
+      {...extra}
+    />,
+  );
+const casilla = (html: string) => html.match(/<input[^>]*type="checkbox"[^>]*>/)?.[0] ?? "";
+
+describe("paso 4 · el paso previo «Crear el gasto con la suma»", () => {
+  it("los cargos con la SUMA DEL API, la nota de la IA, la casilla con la suma y la nota al pie", () => {
+    const h = paso();
+    expect(h).toContain("2 cargos de HSBC Pesos · suman $752.84 MXN · 30 sep 2026");
+    expect(h).toContain("30 sep · C ADMINISTRACION RENTA");
+    expect(h).toContain("Posibles duplicados (mismo monto, ±120 días)");
+    expect(h).toContain("La IA revisa un cargo a la vez: con varios cargos, revisa tú la lista.");
+    expect(h).toContain("Revisé la lista y este gasto NO está registrado: crearlo por $752.84 y vincularle los 2 cargos.");
+    expect(h).toContain(
+      "Al guardar se registra el gasto y se vinculan los 2 cargos en un solo paso: si algo falla, no se registra nada.",
+    );
+    // Mismo día: sin aviso de fechas.
+    expect(h).not.toContain("data-aviso-fechas-cargos");
+  });
+
+  it("sin duplicados (lectura completa, CON `excluidos`): el vacío de siempre y la casilla habilitada", () => {
+    const h = paso();
+    expect(h).toContain(esc("No hay ningún gasto con este monto en ±120 días (ni en efectivo, ni ya conciliado)."));
+    const c = casilla(h);
+    expect(c).toContain("cursor-pointer");
+    expect(c).not.toContain('disabled=""');
+  });
+
+  it("mientras se revisan: «Buscando…» y la casilla BLOQUEADA (nunca el vacío)", () => {
+    const h = paso({ duplicados: estadoDuplicadosSuma(null, 752.84) });
+    expect(h).toContain("Buscando gastos con el mismo monto…");
+    expect(h).not.toContain("No hay ningún gasto");
+    expect(casilla(h)).toContain('disabled=""');
+  });
+
+  it("la lectura caída: su texto con «Reintentar» y la casilla BLOQUEADA (jamás «no hay ninguno»)", () => {
+    const h = paso({ duplicados: estadoDuplicadosSuma({ ok: false, code: "SIN_CONEXION", error: "x" }, 752.84) });
+    expect(h).toContain(TEXTO_DUPLICADOS_SUMA_NO_LEIDOS);
+    expect(h).toMatch(/data-duplicados-error=""[\s\S]*?<button type="button" class="[^"]*cursor-pointer[^"]*">[\s\S]*?Reintentar<\/button>/);
+    expect(h).not.toContain("No hay ningún gasto");
+    expect(casilla(h)).toContain('disabled=""');
+  });
+
+  it("un cargo que ya no está pendiente: el texto del API y «Quitar ese cargo de la selección»", () => {
+    const h = paso({
+      duplicados: estadoDuplicadosSuma(
+        { ok: false, code: "MOVIMIENTO_NO_PENDIENTE", status: 409, error: "No se vinculó ningún cargo: 1 de los 2 ya no está pendiente.", details: { movimientos: [{ id: IVA }] } },
+        752.84,
+      ),
+    });
+    expect(h).toContain(">Quitar ese cargo de la selección</button>");
+  });
+
+  it("con un duplicado del MISMO monto: su ficha; los del monto en efectivo van debajo, en ámbar", () => {
+    const h = paso({
+      duplicados: listo({
+        candidatos: [
+          gasto("aaaa0000-0000-4000-8000-000000000752", { monto: 752.84, faltante: 752.84, categoria: "OPERACIONES", fecha: "2026-09-29" }),
+        ],
+        excluidos: [
+          {
+            motivo: "EFECTIVO_U_OTRO_MEDIO",
+            n: 1,
+            gastos: [
+              {
+                id: "e0e0e0e0-0000-4000-8000-000000000752",
+                fecha_gasto: "2026-09-29",
+                monto: 752.84,
+                moneda: "MXN",
+                medio_pago: "EFECTIVO",
+                categoria: "OPERACIONES",
+                vuelo_folio: null,
+                vuelo_id: null,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(veces(h, "data-duplicado-suma")).toBe(1);
+    expect(h).toContain("Operaciones · $752.84 MXN · 29 sep 2026");
+    expect(h).toContain("en efectivo");
+    expect(h).not.toContain("No hay ningún gasto");
+  });
+
+  it("sin duplicados bancarios pero con uno del monto en EFECTIVO: el aviso ámbar, sin el «no hay ninguno… ni en efectivo»", () => {
+    const h = paso({
+      duplicados: listo({
+        excluidos: [
+          {
+            motivo: "EFECTIVO_U_OTRO_MEDIO",
+            n: 1,
+            gastos: [
+              {
+                id: "e0e0e0e0-0000-4000-8000-000000000752",
+                fecha_gasto: "2026-09-29",
+                monto: 752.84,
+                moneda: "MXN",
+                medio_pago: "EFECTIVO",
+                categoria: "OPERACIONES",
+                vuelo_folio: null,
+                vuelo_id: null,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(h).toContain("en efectivo");
+    expect(h).not.toContain("No hay ningún gasto con este monto");
+    expect(casilla(h)).not.toContain('disabled=""');
+  });
+
+  it("cargos con su propio gasto (lo dice el API): el ámbar del paso «crear»", () => {
+    const h = paso({ propios: [{ id: IVA, motivo: "SE_PUEDE_CRUZAR", candidatos_n: 1 }] });
+    expect(h).toContain(
+      esc("1 de los cargos tiene un gasto que cuadra solo: quizá ya está capturado por separado; vincúlalo uno por uno en vez de crear uno nuevo."),
+    );
+  });
+
+  it("cargos de días distintos: el aviso de que la fecha quedó en el último pago", () => {
+    const h = paso({ resumen: { ...RESUMEN_HSBC, fecha_min: "2026-08-10", fecha_max: "2026-08-12" } });
+    expect(h).toContain(esc(avisoFechasCargos("2026-08-10", "2026-08-12") ?? "?"));
+    expect(h).toMatch(/data-aviso-fechas-cargos=""[^>]*class="[^"]*amber/);
+  });
+
+  it("todo lo que se pulsa lleva cursor-pointer", () => {
+    for (const h of [paso(), paso({ duplicados: estadoDuplicadosSuma({ ok: false, error: "fetch failed" }, 752.84) })]) {
+      for (const b of h.match(/<button[^>]*>/g) ?? []) expect(b).toContain("cursor-pointer");
+      expect(h).toMatch(/<label[^>]*class="flex cursor-pointer items-start/);
+    }
+  });
+});
+
+describe("paso 4 · cableado del alta ANIDADA (regex sobre los fuentes)", () => {
+  const dlg = leer("../vincular-cargos-gasto-dialog.tsx");
+  const tabla = leer("../movimientos-table.tsx");
+
+  it("«Créalo por $X» solo con los catálogos y la SUMA DEL API; la tabla le pasa los catálogos", () => {
+    expect(dlg).toMatch(
+      /\{p\.catalogosGasto && resumen && !unSolo \? \(\s*<button[\s\S]*?onClick=\{abrirCrear\}[\s\S]*?\{botonAbrirCrearSuma\(resumen\.suma, resumen\.moneda\)\}/,
+    );
+    expect(tabla).toMatch(/<VincularCargosGastoDialog[\s\S]{0,300}catalogosGasto=\{catalogosGasto\}/);
+  });
+
+  it("el alta de SIEMPRE con next/dynamic sin SSR, precargada al entrar al paso", () => {
+    expect(dlg).toMatch(
+      /dynamic\(\s*\(\) => import\("@\/components\/admin\/expenses\/expense-create-dialog"\)\.then\(\(m\) => m\.ExpenseCreateDialog\),\s*\{ ssr: false \},?\s*\)/,
+    );
+    expect(dlg).toContain("void precargarAlta().catch(() => undefined);");
+  });
+
+  it("el alta recibe los cargos, la llave, el aviso de éxito y el texto de error; al crear, cierra TODO y UN refresh", () => {
+    expect(dlg).toMatch(
+      /<ExpenseCreateDialog[\s\S]*?abierto=\{crearAbierto\}[\s\S]*?prefill=\{prefill\}[\s\S]*?titulo=\{tituloCrearSuma\(n\)\}[\s\S]*?contexto=\{contextoCrearSuma\(resumen, p\.aliasPorCuenta\)\}[\s\S]*?onCreado=\{trasCrearSuma\}[\s\S]*?conciliarConMovimientos=\{ids\}[\s\S]*?clientRequestId=\{llave\}[\s\S]*?textoExito=\{textoExitoCrearSuma\}[\s\S]*?textoError=\{textoErrorAlta\}/,
+    );
+    expect(dlg).toContain("prefillGastoDesdeCargos(lista, resumen, p.aliasPorCuenta)");
+    expect(dlg).toMatch(
+      /const trasCrearSuma = \(\) => \{\s*setCrearAbierto\(false\);\s*p\.onVinculados\?\.\(\[\.\.\.ids\]\);\s*refrescarAlCerrarRef\.current = false;\s*p\.onOpenChange\(false\);\s*router\.refresh\(\);/,
+    );
+  });
+
+  it("UNA llave por sesión del diálogo (nace al entrar al paso y se repite en cada «Guardar»)", () => {
+    expect(dlg).toContain("if (llave === null) setLlave(uuidV4());");
+    expect(veces(dlg, "setLlave(")).toBe(1);
+    expect(dlg).toMatch(/typeof crypto\.randomUUID === "function"\) return crypto\.randomUUID\(\);/);
+  });
+
+  it("el error del alta: refresh al cerrar si la tabla quedó vieja y, si pudo quedar un gasto, se releen duplicados y lista", () => {
+    expect(dlg).toMatch(
+      /const textoErrorAlta = \(r: ResultadoAccionLote\): string => \{\s*const e = mensajeErrorCrearSuma\(r\);\s*if \(e\.refrescar\) refrescarAlCerrarRef\.current = true;\s*if \(e\.releer && resumen\) \{\s*setRecarga\(\(x\) => x \+ 1\);\s*cargarDuplicados\(resumen\.suma\);/,
+    );
+    // Cada lectura de duplicados pide volver a marcar la casilla (se confirma sobre lo que se VE).
+    expect(dlg).toMatch(/setDup\(\{ idsClave: deIds, r: null \}\);\s*setConfirmado\(false\);/);
+  });
+
+  it("«Crear el gasto» nunca se apaga: el clic dice por qué; la casilla queda bloqueada hasta leer los duplicados", () => {
+    expect(dlg).toMatch(/const motivo = motivoNoCrearSuma\(\{ confirmado, duplicados \}\);\s*if \(motivo\) \{\s*setAviso\(motivo\);/);
+    expect(dlg).toMatch(/<Button type="button" className="cursor-pointer gap-1\.5" onClick=\{crear\}>/);
+    expect(dlg).toContain('disabled={dup.tipo !== "listo"}');
+  });
+
+  it("quitar cargos (cambia la suma) regresa a la lista y descarta los duplicados leídos", () => {
+    expect(dlg).toMatch(/dupRef\.current \+= 1;\s*setDup\(null\);\s*setPaso\("lista"\);\s*setConfirmado\(false\);\s*setCrearAbierto\(false\);/);
   });
 });

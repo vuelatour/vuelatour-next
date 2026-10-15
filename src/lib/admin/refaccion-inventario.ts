@@ -44,6 +44,22 @@ export const NOTA_DIRECTO_AVION_SIN_AVION =
 export const NOTA_INVENTARIO_SIN_AVION =
   "La pieza entra a Inventario/Tienda como compra recibida (el artículo se crea si no existe) con este gasto como su costo. Se vende al avión cuando le des salida desde Inventario/Tienda.";
 
+/**
+ * «Créalo por la suma» de Conciliación (14-oct-2026, API 0.0.77, invariante 76
+ * del API): desde VARIOS cargos del banco la refacción va SOLO «Directo al
+ * avión». = `MENSAJE_INVENTARIO_NO_DESDE_CARGOS` del API (400
+ * INVENTARIO_NO_DESDE_CARGOS; prueba de paridad).
+ */
+export const NOTA_INVENTARIO_NO_DESDE_CARGOS =
+  "Una refacción que entra a Inventario/Tienda no se registra desde varios cargos: regístrala en Gastos y vincula los cargos después.";
+/** Desde varios cargos y sin avión elegido (sin «o pásala a Inventario/Tienda»: ahí no se puede). */
+export const NOTA_ELIGE_AVION_REFACCION = "Elige el avión al que se carga la refacción.";
+
+/** La nota del bloque «¿A dónde va la refacción?» en el alta por la suma (solo «Directo al avión»). */
+export function notaRefaccionDesdeCargos(conAvion: boolean): string {
+  return `${conAvion ? NOTA_DIRECTO_AVION : NOTA_ELIGE_AVION_REFACCION} ${NOTA_INVENTARIO_NO_DESDE_CARGOS}`;
+}
+
 /** La nota de la TRAZA (punto 1 del cliente): con avión elegido. */
 export function notaInventarioConAvion(p: {
   matricula: string;
