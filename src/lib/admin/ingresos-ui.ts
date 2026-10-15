@@ -599,6 +599,23 @@ export function hrefPorConciliarIngreso(
  * (la de antes prometía «al subir el estado de cuenta se cruza solo») y el
  * cierre según quién mira — quien concilia recibe el enlace a «Por conciliar».
  */
+/**
+ * Detalle `?ingreso=`: la server action de una acción que liga o borra dinero
+ * NO respondió (sin red, o la action ya no existe tras un deploy con la página
+ * abierta). No se sabe si se aplicó: se dice así y la página se pone al día
+ * (revisión 2 del 15-oct-2026; antes un `await` desnudo mandaba Ingresos al
+ * error boundary sin decir nada).
+ */
+export function textoAccionIngresoIncierta(tipo: "desvincular" | "desaplicar" | "quitar-archivo"): string {
+  const que =
+    tipo === "desvincular"
+      ? "si el ingreso se desvinculó del abono"
+      : tipo === "desaplicar"
+        ? "si el cobro del anticipo se desaplicó"
+        : "si el comprobante se quitó";
+  return `No se pudo confirmar ${que}: no hubo respuesta del servidor. La página se actualizó: revísalo antes de intentarlo de nuevo.`;
+}
+
 export const TEXTO_INGRESO_SIN_ABONO =
   "Ningún abono del banco está ligado todavía. El cruce automático corre al importar el estado de cuenta y solo liga lo que cuadra sin dudas; si no,";
 export const ENLACE_INGRESO_POR_CONCILIAR = "concílialo en «Por conciliar»";
@@ -1164,6 +1181,30 @@ export function formularioDesdeAbono(
 }
 
 /** Número capturado («1,234.50» o «1234.5»); null si no es número. */
+/**
+ * «Es el pago de un vuelo»: ¿avisar (en ámbar, sin bloquear) que el cobro
+ * capturado no cuadra con el abono? Espejo del VEREDICTO del API 0.0.78 (que
+ * es quien decide, con su 409): con una comisión tecleada (> 0) el banco debió
+ * depositar el NETO ⇒ |monto − comisión − abono| > $1 avisa aunque el bruto
+ * cuadre (antes se callaba y llegaba el 409 COMISION_NO_CUADRA «el banco no
+ * descontó comisión»; revisión 2 del 15-oct-2026). Sin comisión, como antes:
+ * avisa si ni el monto cuadra con el abono ni con el bruto de la pasarela.
+ */
+export function netoNoCuadraConAbono(p: {
+  monto: number | null;
+  comision: number | null;
+  abono: number;
+  /** `monto_bruto` del abono (pasarela) o null. */
+  bruto: number | null;
+}): boolean {
+  if (p.monto == null) return false;
+  const com = p.comision != null && p.comision > 0 ? p.comision : 0;
+  const abono = Math.abs(p.abono);
+  const neto = p.monto - com;
+  if (com > 0) return Math.abs(neto - abono) > 1;
+  return Math.abs(neto - abono) > 1 && Math.abs(p.monto - (p.bruto ?? abono)) > 1;
+}
+
 export function numeroCapturado(v: string): number | null {
   const limpio = v.replace(/[,\s$]/g, "").trim();
   if (!limpio) return null;
@@ -1367,6 +1408,32 @@ export interface CandidatoCobroConflicto {
   fecha_vuelo: string | null;
   monto: number;
   neto: number;
+  /**
+   * ADITIVO (API 0.0.79): el candidato cuadra solo por el MONTO y la liga
+   * directa rebotaría (comisión capturada o abono de la pasarela: se liga por
+   * su neto ± $1). null = la liga directa sí cuadra (o API previo).
+   */
+  liga_no_cuadra: "COMISION_NO_CUADRA" | "SOBRE_NO_CUADRA" | null;
+  /** Con COMISION_NO_CUADRA: la comisión que dejaría cuadrar el depósito (la del API). */
+  comision_real: number | null;
+}
+
+/**
+ * Por qué NO se ofrece «Vincular a este cobro» (API 0.0.79, `liga_no_cuadra`):
+ * la liga rebotaría con el 409 del API. null = sí se ofrece.
+ */
+export function textoLigaNoCuadraConflicto(
+  c: Pick<CandidatoCobroConflicto, "liga_no_cuadra" | "comision_real">,
+  moneda?: string | null,
+): string | null {
+  if (c.liga_no_cuadra === "COMISION_NO_CUADRA") {
+    const real = c.comision_real != null ? ` (con este depósito la comisión real sería ${fmtMonto(c.comision_real, moneda ?? undefined)})` : "";
+    return `No se puede vincular así: la comisión registrada en el cobro no cuadra con el depósito${real}. Corrige la comisión del cobro y vincúlalo desde «Vincular a un cobro o ingreso».`;
+  }
+  if (c.liga_no_cuadra === "SOBRE_NO_CUADRA") {
+    return "No se puede vincular así: el depósito no cuadra con el neto del pago de grupo. Revísalo en el grupo antes de vincular.";
+  }
+  return null;
 }
 
 /** `details.candidatos` de 409 ABONO_TIENE_COBRO_CANDIDATO (tolerante). */
@@ -1386,6 +1453,10 @@ export function candidatosDeConflicto(details: unknown): CandidatoCobroConflicto
       fecha_vuelo: typeof c.fecha_vuelo === "string" ? c.fecha_vuelo : null,
       monto: Number(c.monto) || 0,
       neto: Number(c.neto ?? c.monto) || 0,
+      liga_no_cuadra:
+        c.liga_no_cuadra === "COMISION_NO_CUADRA" || c.liga_no_cuadra === "SOBRE_NO_CUADRA" ? c.liga_no_cuadra : null,
+      comision_real:
+        c.comision_real != null && Number.isFinite(Number(c.comision_real)) ? Number(c.comision_real) : null,
     });
   }
   return out.slice(0, 5);

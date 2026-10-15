@@ -219,7 +219,9 @@ describe("cableado del menú ⋯ y del diálogo legado (fuente)", () => {
   });
 
   it("diálogo legado «Vincular cobro»: la guía del API sin salidas de un clic, el parcial confirmado y el botón apagado con razón", () => {
-    expect(src).toContain("guiaAlVincular(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono }, { conAcciones: false })");
+    expect(src).toContain(
+      "guiaAlVincular(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono }, { conAcciones: false, cobrosParciales })",
+    );
     expect(src).toMatch(/if \(!confirmado && guiaSeleccionado\?\.parcial && confirmacionParcial\) \{\s*setConfirmarParcial\(true\);\s*return;/);
     expect(src).toContain("<ConfirmacionVincular");
     expect(src).toContain("disabled={pending || guiaSeleccionado?.bloquea === true}");
@@ -249,6 +251,37 @@ describe("cableado del menú ⋯ y del diálogo legado (fuente)", () => {
     expect(src).toContain("if (e.incierto) refrescarAlCerrarLinkRef.current = true;");
     // Ningún `await` de server action desnudo dentro de startTransition.
     expect(src).not.toMatch(/await (ligarAbonoIngresoAction|linkMovimientoCobroAction|linkMovimientoAction|quitarReversoAction)\([^)]*\);/);
+  });
+
+  it("revisión 2 (15-oct-2026): la búsqueda FALLIDA se dice con «Reintentar», jamás la lista vacía", () => {
+    // `[]` solo como relleno: el render pinta el error ANTES que el SearchableSelect.
+    expect(src).toMatch(/setCandidatos\(\[\]\);\s*setErrorCandidatos\(textoCandidatosCobroNoCargaron\(r\)\);/);
+    const render = src.slice(src.indexOf("{errorCandidatos ? ("), src.indexOf('emptyText="Sin cobros ni sobres candidatos'));
+    expect(render).toContain("onClick={cargarCandidatos}");
+    expect(render).toContain("Reintentar");
+    expect(render.indexOf("{errorCandidatos ? (")).toBeLessThan(render.indexOf("<SearchableSelect"));
+    // Ya no un toast efímero como única señal.
+    expect(src).not.toContain('toast.error(r.error ?? "No se pudieron buscar cobros")');
+  });
+
+  it("revisión 2 (15-oct-2026): «Cancelar», Esc/X y el éxito cierran por UNA función que consume el refresco y suelta la confirmación", () => {
+    const cerrar = src.slice(src.indexOf("const cerrarVincular = () => {"), src.indexOf("const cerrarVincular = () => {") + 400);
+    expect(cerrar).toContain('setSeleccion("");');
+    expect(cerrar).toContain("setConfirmarParcial(false);");
+    expect(cerrar).toMatch(/if \(refrescarAlCerrarLinkRef\.current\) \{\s*refrescarAlCerrarLinkRef\.current = false;\s*router\.refresh\(\);/);
+    expect(cerrar).toContain("setOpenLink(false);");
+    // `setOpenLink(false)` SOLO dentro de cerrarVincular.
+    expect(src.match(/setOpenLink\(false\)/g)?.length).toBe(1);
+    expect(src).toContain("onClick={cerrarVincular} disabled={pending}");
+    expect(src).toMatch(/if \(o\) setOpenLink\(true\);\s*else cerrarVincular\(\);/);
+    // Otra elección del select suelta la confirmación del parcial.
+    expect(src).toMatch(/onChange=\{\(v\) => \{[\s\S]{0,120}setConfirmarParcial\(false\);\s*setSeleccion\(v\);/);
+  });
+
+  it("revisión 2 (15-oct-2026): la capacidad `cobros_parciales` del API llega a la guía y el rojo de la guía pasa AA en oscuro", () => {
+    expect(src).toContain("const cp = r.data.movimiento?.cobros_parciales;");
+    expect(src).toContain('setCobrosParciales(typeof cp === "boolean" ? cp : null);');
+    expect(src).toContain('"text-xs font-medium text-destructive dark:text-red-400"');
   });
 
   it("la bandeja no toca su búsqueda ni el useMemo de columnas: «parcial» entra por `textoBusquedaCobros`", () => {

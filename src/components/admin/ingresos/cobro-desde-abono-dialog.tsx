@@ -30,6 +30,7 @@ import { cobroDeVueloDesdeAbonoAction, vuelosCandidatosAction } from "@/app/admi
 import {
   descripcionVueloCandidato,
   etiquetaVueloCandidato,
+  netoNoCuadraConAbono,
   numeroCapturado,
   textoConfirmarCobroDesdeAbono,
   type VueloCandidatoIngreso,
@@ -153,13 +154,9 @@ function FormularioCobro({ abono, onCerrar }: { abono: AbonoPendiente; onCerrar:
     comision.trim() && (comN == null || comN < 0 || (montoN != null && comN >= montoN))
       ? "La comisión debe ser menor que el monto."
       : null;
-  // Aviso (no candado): el API exige que neto o bruto cuadren a ≤ $1 del abono.
-  const neto = montoN != null ? montoN - (comN ?? 0) : null;
-  const noCuadra =
-    montoN != null &&
-    neto != null &&
-    Math.abs(neto - abono.monto) > 1 &&
-    Math.abs(montoN - (bruto ?? abono.monto)) > 1;
+  // Aviso (no candado; el veredicto es el 409 del API): con comisión, el neto
+  // debe cuadrar con el abono; sin ella, el monto o el bruto de la pasarela.
+  const noCuadra = netoNoCuadraConAbono({ monto: montoN, comision: comN, abono: abono.monto, bruto });
 
   const registrar = async () => {
     if (!vuelo || montoN == null) return;

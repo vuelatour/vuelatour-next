@@ -23,6 +23,12 @@ import {
   VENTANA_PROPUESTA_DIAS,
   candidatoConfirmarParcial,
   pasoPropuestaCobro,
+  CODE_PROPUESTA_SIN_VEREDICTO,
+  MSG_PROPUESTA_SIN_VEREDICTO,
+  confirmacionVigente,
+  errorLecturaPropuesta,
+  textoCandidatosCobroNoCargaron,
+  RAZON_BLOQUEO_PARCIAL_SIN_CAPACIDAD,
   respuestaSinVeredicto,
   MAX_COBROS_LOTE,
   MENU_DESVINCULAR_ESTE_ABONO,
@@ -441,6 +447,28 @@ describe("guiaAlVincular: el veredicto del API con UN cobro marcado (D18)", () =
     });
   });
 
+  it("revisión 2 (15-oct-2026): PARCIAL con `cobros_parciales: false` se APAGA con su razón (el resto no se podría vincular)", () => {
+    const g = guiaAlVincular(PARCIAL_315, ABONO_1700, { cobrosParciales: false });
+    expect(g).toEqual({
+      texto:
+        "Este abono ($1,700 MXN) es menor que lo que falta del cobro del vuelo #315 ($3,400 MXN), pero por ahora el sistema no acepta un segundo abono en el mismo cobro (falta aplicar una actualización): si lo vinculas, los $1,700 MXN que faltan ya no se podrán vincular. No lo vincules como parcial ni registres el resto como otro ingreso: avisa a sistemas.",
+      tono: "rojo",
+      bloquea: true,
+      razon: RAZON_BLOQUEO_PARCIAL_SIN_CAPACIDAD,
+      parcial: false,
+      acciones: [],
+    });
+    expect(pasoAlPulsarVincular(1, g)).toBe("BLOQUEADO");
+    // Con la capacidad (o ausente: API previo) no cambia nada.
+    expect(guiaAlVincular(PARCIAL_315, ABONO_1700, { cobrosParciales: true })).toEqual(guiaAlVincular(PARCIAL_315, ABONO_1700));
+    expect(guiaAlVincular(PARCIAL_315, ABONO_1700, { cobrosParciales: null })?.parcial).toBe(true);
+    // La línea corta tampoco promete completarlo.
+    expect(lineaCortaAlVincular(PARCIAL_315, { cobrosParciales: false })).toEqual({
+      texto: "pago parcial: por ahora el resto no se podría vincular",
+      tono: "rojo",
+    });
+  });
+
   it("CONCILIADO: un abono que cuadra y el que COMPLETA un cobro con otro abono", () => {
     const uno = guiaAlVincular(cand(C315, 315, 3400, { al_vincular: al() }), { monto: 3400, moneda: "MXN" });
     expect(uno?.texto).toBe("1 cobro: cuadra con el abono · el cobro del vuelo #315 queda conciliado.");
@@ -611,6 +639,10 @@ describe("guiaAlVincular: el veredicto del API con UN cobro marcado (D18)", () =
     expect(lineaCortaAlVincular(COMISION_293)?.tono).toBe("rojo");
     expect(lineaCortaAlVincular(COMPLETA_315)).toBeNull();
     expect(lineaCortaAlVincular(c379)).toBeNull();
+    // Revisión 2: marcado junto con otros, en él manda la suma del lote (sin línea roja que la contradiga).
+    expect(lineaCortaAlVincular(EXCEDE_315, { enLote: true })).toBeNull();
+    expect(lineaCortaAlVincular(PARCIAL_315, { enLote: true })).toBeNull();
+    expect(lineaCortaAlVincular(EXCEDE_315, { enLote: false })).toEqual(lineaCortaAlVincular(EXCEDE_315));
     expect(textoYaConciliadoCandidato(COMPLETA_315.c as CandidatoCobroVuelo)).toBe(
       "ya conciliado $1,700 de $3,400 (1 abono) · falta $1,700",
     );
@@ -895,8 +927,14 @@ describe("propuestas LIGAR de la IA a un cobro: el veredicto del API ANTES de li
     expect(paso.tipo).toBe("CONFIRMAR_PARCIAL");
     expect(paso.tipo === "CONFIRMAR_PARCIAL" && paso.candidato.cobro_id).toBe(C315);
     expect(pasoPropuestaCobro(respuesta([COMPLETA_315]), C315, ABONO_1700)).toEqual({ tipo: "LIGAR" });
-    // Sin `cobros_parciales` el API todavía no tiene la migración, pero el veredicto ya vale: igual se confirma.
-    expect(pasoPropuestaCobro(respuesta([PARCIAL_315], "sin_migracion"), C315, ABONO_1700).tipo).toBe("CONFIRMAR_PARCIAL");
+    // Revisión 2 (15-oct-2026): con `cobros_parciales: false` el API acepta el
+    // primer abono menor pero NO el segundo: un parcial nuevo va a mano, con la razón.
+    const sinCapacidad = pasoPropuestaCobro(respuesta([PARCIAL_315], "sin_migracion"), C315, ABONO_1700);
+    expect(sinCapacidad.tipo).toBe("A_MANO");
+    expect(sinCapacidad.tipo === "A_MANO" && sinCapacidad.texto).toContain("no acepta un segundo abono en el mismo cobro");
+    expect(sinCapacidad.tipo === "A_MANO" && sinCapacidad.texto.endsWith(SUFIJO_PROPUESTA_A_MANO)).toBe(true);
+    // Un abono que cuadra completo se sigue ligando igual sin la capacidad.
+    expect(pasoPropuestaCobro(respuesta([COMPLETA_315], "sin_migracion"), C315, ABONO_1700)).toEqual({ tipo: "LIGAR" });
     expect(VENTANA_PROPUESTA_DIAS).toBe(30);
   });
 
@@ -1082,5 +1120,54 @@ describe("la línea del lote, UNA para la bandeja y la hoja de una entrada (15-o
     expect(resumenLoteCobrosFila(cuatro, { destacar: null })).toEqual(sinOpciones);
     // Dentro de las 3 primeras: se marca en su lugar.
     expect(resumenLoteCobrosFila(cuatro, { destacar: "c380" })!.lineas[1].destacada).toBe(true);
+  });
+});
+
+describe("revisión 2 (15-oct-2026): confirmaciones ligadas al candidato y errores al leer candidatos", () => {
+  it("la confirmación solo vale para el candidato con que se pidió", () => {
+    const p = { tipo: "parcial" as const, clave: "COBRO_VUELO:c315" };
+    expect(confirmacionVigente(p, "COBRO_VUELO:c315")).toBe("parcial");
+    expect(confirmacionVigente(p, "COBRO_VUELO:c383")).toBeNull();
+    expect(confirmacionVigente(p, null)).toBeNull();
+    expect(confirmacionVigente(null, "COBRO_VUELO:c315")).toBeNull();
+  });
+
+  it("propuesta de la IA: sin respuesta ⇒ «no respondió»; un 4xx dice qué pasó y que no se vinculó nada", () => {
+    expect(errorLecturaPropuesta({ ok: false, code: "SIN_CONEXION", error: "Sin conexión" })).toEqual({
+      ok: false,
+      code: CODE_PROPUESTA_SIN_VEREDICTO,
+      error: MSG_PROPUESTA_SIN_VEREDICTO,
+    });
+    expect(errorLecturaPropuesta({ ok: false, code: "PARSE_ERROR", status: 502, error: "Bad Gateway" }).code).toBe(
+      CODE_PROPUESTA_SIN_VEREDICTO,
+    );
+    expect(
+      errorLecturaPropuesta({
+        ok: false,
+        code: "UNAUTHORIZED",
+        status: 401,
+        error: "Tu sesión expiró. Recarga la página e inicia sesión.",
+      }),
+    ).toEqual({
+      ok: false,
+      code: "UNAUTHORIZED",
+      status: 401,
+      error: "Tu sesión expiró. Recarga la página e inicia sesión. No se vinculó nada.",
+    });
+    expect(errorLecturaPropuesta({ ok: false, code: "NOT_FOUND", status: 404, error: "El movimiento ya no existe" }).error).toBe(
+      "El movimiento ya no existe. No se vinculó nada.",
+    );
+  });
+
+  it("diálogo legado: la búsqueda fallida jamás se lee como «no hay candidatos»", () => {
+    expect(textoCandidatosCobroNoCargaron({ code: "SIN_CONEXION", error: "x" })).toBe(
+      "No se pudieron buscar los cobros (sin conexión con el servidor). Esto no quiere decir que no haya candidatos: vuelve a intentarlo.",
+    );
+    expect(textoCandidatosCobroNoCargaron({ code: "ERROR", error: "El servidor tardó demasiado." })).toBe(
+      "No se pudieron buscar los cobros: El servidor tardó demasiado. Esto no quiere decir que no haya candidatos: vuelve a intentarlo.",
+    );
+    expect(textoCandidatosCobroNoCargaron({})).toBe(
+      "No se pudieron buscar los cobros. Esto no quiere decir que no haya candidatos: vuelve a intentarlo.",
+    );
   });
 });

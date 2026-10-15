@@ -14,6 +14,9 @@ import {
   cambiosDeEdicion,
   candidatosDeConflicto,
   datosAltaDeFormulario,
+  netoNoCuadraConAbono,
+  textoAccionIngresoIncierta,
+  textoLigaNoCuadraConflicto,
   erroresFormularioIngreso,
   etiquetaEstadoConciliacion,
   etiquetaMotivoAbono,
@@ -650,9 +653,52 @@ describe("sugerencias con IA de abonos", () => {
       fecha_vuelo: null,
       monto: 20400,
       neto: 19380,
+      liga_no_cuadra: null,
+      comision_real: null,
     });
     expect(c).toHaveLength(5);
     expect(candidatosDeConflicto(null)).toEqual([]);
+  });
+
+  it("API 0.0.79: un candidato cuya liga directa rebotaría NO ofrece «Vincular»: dice qué corregir", () => {
+    const [c] = candidatosDeConflicto({
+      candidatos: [
+        { tipo: "COBRO_VUELO", id: "c1", monto: 10000, neto: 9650, liga_no_cuadra: "COMISION_NO_CUADRA", comision_real: 0 },
+      ],
+    });
+    expect(c).toMatchObject({ liga_no_cuadra: "COMISION_NO_CUADRA", comision_real: 0 });
+    expect(textoLigaNoCuadraConflicto(c, "MXN")).toBe(
+      "No se puede vincular así: la comisión registrada en el cobro no cuadra con el depósito (con este depósito la comisión real sería $0 MXN). Corrige la comisión del cobro y vincúlalo desde «Vincular a un cobro o ingreso».",
+    );
+    expect(textoLigaNoCuadraConflicto({ liga_no_cuadra: "SOBRE_NO_CUADRA", comision_real: null })).toBe(
+      "No se puede vincular así: el depósito no cuadra con el neto del pago de grupo. Revísalo en el grupo antes de vincular.",
+    );
+    expect(textoLigaNoCuadraConflicto({ liga_no_cuadra: null, comision_real: null })).toBeNull();
+    // Un valor desconocido no inventa nada: se ofrece «Vincular» como siempre.
+    expect(candidatosDeConflicto({ candidatos: [{ id: "c2", liga_no_cuadra: "OTRA" }] })[0].liga_no_cuadra).toBeNull();
+  });
+});
+
+describe("revisión 2 (15-oct-2026): «Es el pago de un vuelo» y acciones del detalle", () => {
+  it("con comisión tecleada avisa si el NETO no cuadra aunque el bruto sí (el 409 COMISION_NO_CUADRA del API)", () => {
+    // SPEI de $10,000 sin bruto; monto 10,000 y comisión 350 ⇒ el banco tendría que haber depositado 9,650.
+    expect(netoNoCuadraConAbono({ monto: 10000, comision: 350, abono: 10000, bruto: null })).toBe(true);
+    expect(netoNoCuadraConAbono({ monto: 10350, comision: 350, abono: 10000, bruto: null })).toBe(false);
+    // Pasarela: monto = bruto, comisión del archivo ⇒ el neto cuadra.
+    expect(netoNoCuadraConAbono({ monto: 20400, comision: 1020, abono: 19380, bruto: 20400 })).toBe(false);
+    // Sin comisión, como siempre: el monto o el bruto.
+    expect(netoNoCuadraConAbono({ monto: 10000, comision: null, abono: 10000, bruto: null })).toBe(false);
+    expect(netoNoCuadraConAbono({ monto: 20400, comision: 0, abono: 19380, bruto: 20400 })).toBe(false);
+    expect(netoNoCuadraConAbono({ monto: 12000, comision: null, abono: 10000, bruto: null })).toBe(true);
+    expect(netoNoCuadraConAbono({ monto: null, comision: 350, abono: 10000, bruto: null })).toBe(false);
+  });
+
+  it("acción sin respuesta del servidor: «no se pudo confirmar si…», nunca «no se hizo»", () => {
+    expect(textoAccionIngresoIncierta("desvincular")).toBe(
+      "No se pudo confirmar si el ingreso se desvinculó del abono: no hubo respuesta del servidor. La página se actualizó: revísalo antes de intentarlo de nuevo.",
+    );
+    expect(textoAccionIngresoIncierta("desaplicar")).toContain("si el cobro del anticipo se desaplicó");
+    expect(textoAccionIngresoIncierta("quitar-archivo")).toContain("si el comprobante se quitó");
   });
 });
 

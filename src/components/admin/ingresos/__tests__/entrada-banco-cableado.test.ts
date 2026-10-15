@@ -111,6 +111,19 @@ describe("la hoja", () => {
     // El detalle `?ingreso=` (modo controlado) toma la fila nueva de la lista: ahí basta el refresh.
     expect(leer("../ingreso-detalle-sheet.tsx")).toContain("onRecargar={() => router.refresh()}");
   });
+
+  it("revisión 2 (15-oct-2026): las acciones de dinero del detalle nunca caen al error boundary (`.catch(sinConexion)`)", () => {
+    const src = leer("../ingreso-detalle-sheet.tsx");
+    expect(src).toContain("await ligarAbonoIngresoAction(detalle.movimiento.id, null).catch(sinConexion)");
+    expect(src).toContain("await desaplicarAnticipoAction(i.id, a.cobro_id, a.vuelo_id).catch(sinConexion)");
+    expect(src).toContain("await quitarArchivoIngresoAction(i.id).catch(sinConexion)");
+    expect(src).not.toMatch(/await (ligarAbonoIngresoAction|desaplicarAnticipoAction|quitarArchivoIngresoAction)\([^)]*\);/);
+    // Sin respuesta: «No se pudo confirmar si…» y la página al día.
+    for (const t of ["desvincular", "desaplicar", "quitar-archivo"]) {
+      expect(src).toContain(`toast.error(textoAccionIngresoIncierta("${t}"))`);
+    }
+    expect(src).toMatch(/setConfirmar\(null\);\s*router\.refresh\(\);/);
+  });
 });
 
 describe("Conciliación con la línea del cobro enfocada", () => {

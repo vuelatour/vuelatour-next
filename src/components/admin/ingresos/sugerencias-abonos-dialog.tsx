@@ -634,7 +634,8 @@ function PanelSugerencias({
       </DialogFooter>
 
       <AlertDialog open={confirmarLote} onOpenChange={setConfirmarLote}>
-        <AlertDialogContent>
+        {/* Anidada en «Sugerencias»: con backdrop, la lista de abajo no recibe clics. */}
+        <AlertDialogContent backdropForceRender>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Aceptar las propuestas marcadas?</AlertDialogTitle>
             <AlertDialogDescription>{textoConfirmarLote(pendientesDeLote)}</AlertDialogDescription>

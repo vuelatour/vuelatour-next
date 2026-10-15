@@ -773,6 +773,15 @@ export function claveDeCobroVuelo(cobroId: string): string {
 export const RAZON_BLOQUEO_EXCEDE = "El abono rebasa este cobro: marca también el otro vuelo";
 export const RAZON_BLOQUEO_COMISION =
   "El depósito no cuadra con la comisión registrada: corrígela antes de vincular";
+/**
+ * PARCIAL con `movimiento.cobros_parciales === false` (API 0.0.78 SIN la
+ * migración 20261014000003, o tras su reversa): el API acepta el PRIMER abono
+ * menor, pero el segundo ya no (el cobro sale de los candidatos y la liga da
+ * 503). Prometer «vincula el resto a este mismo cobro» dejaba un callejón sin
+ * salida (revisión 2 del 15-oct-2026): el botón se apaga con esta razón.
+ */
+export const RAZON_BLOQUEO_PARCIAL_SIN_CAPACIDAD =
+  "Por ahora un cobro no acepta varios abonos: avisa a sistemas antes de vincular un pago parcial";
 
 export type TipoAccionGuia = "MARCAR_SUGERIDO" | "BUSCAR" | "CORREGIR_COMISION";
 
@@ -814,6 +823,12 @@ export interface CapacidadesGuia {
   enLista?: ReadonlySet<string> | null;
   /** false = sin salidas de un clic (el diálogo legado de un solo cobro). */
   conAcciones?: boolean;
+  /**
+   * `movimiento.cobros_parciales` del API (0.0.78). SOLO `false` cambia algo:
+   * un PARCIAL nuevo se apaga (el resto no se podría vincular). `true` o
+   * ausente (API previo, que no manda `al_vincular`) ⇒ como siempre.
+   */
+  cobrosParciales?: boolean | null;
 }
 
 /** «(9.23 %)» de la comisión real sobre el monto del cobro (solo el texto). */
@@ -915,6 +930,15 @@ export function guiaAlVincular(
       };
     }
     case "PARCIAL":
+      if (capacidades.cobrosParciales === false) {
+        return bloqueo(
+          `Este abono (${abonoTxt}) es menor que lo que falta del cobro del vuelo #${folio} (${fmtMonto(al.faltante_antes, m)}), ` +
+            "pero por ahora el sistema no acepta un segundo abono en el mismo cobro (falta aplicar una actualización): " +
+            `si lo vinculas, los ${fmtMonto(al.faltante_despues, m)} que faltan ya no se podrán vincular. ` +
+            "No lo vincules como parcial ni registres el resto como otro ingreso: avisa a sistemas.",
+          RAZON_BLOQUEO_PARCIAL_SIN_CAPACIDAD,
+        );
+      }
       return {
         texto:
           `Este abono (${abonoTxt}) es menor que lo que falta del cobro del vuelo #${folio} (${fmtMonto(al.faltante_antes, m)}): ` +
@@ -1021,8 +1045,22 @@ export function pistaDialogoLegado(op: OpcionAbono): string | null {
  * EXCEDE rojo «el abono rebasa este cobro por $977.45 MXN» y una frase corta
  * para los demás rechazos. null = nada que avisar (o API previo).
  */
-export function lineaCortaAlVincular(op: OpcionAbono): { texto: string; tono: TonoSumaAbono } | null {
+export function lineaCortaAlVincular(
+  op: OpcionAbono,
+  opts: {
+    /**
+     * El candidato está MARCADO junto con otros (2+): la línea habla de ligar
+     * el abono a ESE cobro solo y contradecía la suma del lote en verde
+     * («cuadra con el abono» vs «el abono rebasa este cobro…»): ahí manda la
+     * suma (revisión 2 del 15-oct-2026).
+     */
+    enLote?: boolean;
+    /** `movimiento.cobros_parciales`: con `false` un PARCIAL ya no promete completarse. */
+    cobrosParciales?: boolean | null;
+  } = {},
+): { texto: string; tono: TonoSumaAbono } | null {
   if (op.tipo !== "COBRO") return null;
+  if (opts.enLote) return null;
   if (op.c.tipo === "SOBRE_GRUPO") {
     const al = op.c.al_vincular;
     if (!al || al.estado !== "SOBRE_NO_CUADRA") return null;
@@ -1037,6 +1075,9 @@ export function lineaCortaAlVincular(op: OpcionAbono): { texto: string; tono: To
   if (!al) return null;
   switch (al.estado) {
     case "PARCIAL":
+      if (opts.cobrosParciales === false) {
+        return { texto: "pago parcial: por ahora el resto no se podría vincular", tono: "rojo" };
+      }
       return { texto: `si lo vinculas, queda parcial: faltarían ${fmtMonto(al.faltante_despues, c.moneda)}`, tono: "ambar" };
     case "EXCEDE":
       return { texto: `el abono rebasa este cobro por ${fmtMonto(al.sobrante, c.moneda)}`, tono: "rojo" };
@@ -1337,12 +1378,68 @@ export function pasoPropuestaCobro(
   if (!c) return { tipo: "A_MANO", texto: MSG_PROPUESTA_COBRO_NO_ESTA };
   const estado = c.al_vincular?.estado;
   if (estado == null || estado === "CONCILIADO") return { tipo: "LIGAR" };
-  if (estado === "PARCIAL") return { tipo: "CONFIRMAR_PARCIAL", candidato: c };
-  const guia = guiaAlVincular({ tipo: "COBRO", c }, abono, { conAcciones: false });
+  const cobrosParciales = respuesta.movimiento.cobros_parciales;
+  // Sin la capacidad (`false`) un PARCIAL no se completa: a mano con su razón.
+  if (estado === "PARCIAL" && cobrosParciales === true) return { tipo: "CONFIRMAR_PARCIAL", candidato: c };
+  const guia = guiaAlVincular({ tipo: "COBRO", c }, abono, { conAcciones: false, cobrosParciales });
   return {
     tipo: "A_MANO",
     texto: `${guia?.texto ?? "El servidor no aceptaría este abono con ese cobro."}${SUFIJO_PROPUESTA_A_MANO}`,
   };
+}
+
+/**
+ * La lectura de `candidatos-cobro` FALLÓ antes de aceptar una propuesta.
+ * Sin veredicto (sin red, HTML, 5xx sin código) ⇒ «el servidor no respondió…
+ * vuelve a intentarlo». Un 4xx o un código de negocio SÍ es respuesta
+ * (sesión vencida, el abono ya no existe…): su texto es-MX (`fail()`) + «No
+ * se vinculó nada.», con su `code` y `status` (revisión 2 del 15-oct-2026:
+ * antes todo decía «no respondió» y se reintentaba sin fin).
+ */
+export function errorLecturaPropuesta(r: ResultadoVincularCobros): {
+  ok: false;
+  code: string;
+  error: string;
+  status?: number;
+} {
+  if (respuestaSinVeredicto(r) || !r.error?.trim()) {
+    return { ok: false, code: CODE_PROPUESTA_SIN_VEREDICTO, error: MSG_PROPUESTA_SIN_VEREDICTO };
+  }
+  const base = r.error.trim();
+  const texto = `${base}${/[.!?]$/.test(base) ? "" : "."} No se vinculó nada.`;
+  return {
+    ok: false,
+    code: r.code ?? CODE_PROPUESTA_SIN_VEREDICTO,
+    error: texto,
+    ...(typeof r.status === "number" ? { status: r.status } : {}),
+  };
+}
+
+/**
+ * Una confirmación de dinero («¿Vincular como pago parcial?», «¿Corregir la
+ * comisión y vincular?») vale para el candidato con que se pidió: si lo
+ * marcado cambia, no reaparece sola (revisión 2 del 15-oct-2026: se quedaba
+ * pegada y salía al volver a marcar el mismo cobro).
+ */
+export function confirmacionVigente<T extends string>(
+  pendiente: { tipo: T; clave: string } | null,
+  claveMarcada: string | null,
+): T | null {
+  if (!pendiente || claveMarcada == null) return null;
+  return pendiente.clave === claveMarcada ? pendiente.tipo : null;
+}
+
+/**
+ * Diálogo LEGADO «Vincular cobro»: la búsqueda de candidatos FALLÓ. Jamás el
+ * «Sin cobros ni sobres candidatos» de una lista vacía (el operador creería
+ * que no hay nada, o que la liga sin respuesta sí entró).
+ */
+export function textoCandidatosCobroNoCargaron(r: Pick<ResultadoVincularCobros, "code" | "error">): string {
+  if (r.code === "SIN_CONEXION") {
+    return "No se pudieron buscar los cobros (sin conexión con el servidor). Esto no quiere decir que no haya candidatos: vuelve a intentarlo.";
+  }
+  const base = r.error?.trim();
+  return `No se pudieron buscar los cobros${base ? `: ${base.replace(/[.]$/, "")}` : ""}. Esto no quiere decir que no haya candidatos: vuelve a intentarlo.`;
 }
 
 /** El cobro que viaja en `details.candidato` de un `CONFIRMAR_PARCIAL` (null si no viene bien formado). */

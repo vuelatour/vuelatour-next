@@ -41,13 +41,20 @@ function AlertDialogOverlay({
 function AlertDialogContent({
   className,
   size = "default",
+  backdropForceRender,
   ...props
 }: AlertDialogPrimitive.Popup.Props & {
   size?: "default" | "sm"
+  /**
+   * Pinta el backdrop aunque el diálogo esté ANIDADO en otro: Base UI 1.4 no
+   * lo pinta en un anidado (`forceRender || !nested`) y el diálogo de abajo
+   * seguía recibiendo clics (confirmaciones de dinero dentro de «Vincular»).
+   */
+  backdropForceRender?: boolean
 }) {
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
+      <AlertDialogOverlay forceRender={backdropForceRender} />
       <AlertDialogPrimitive.Popup
         data-slot="alert-dialog-content"
         data-size={size}

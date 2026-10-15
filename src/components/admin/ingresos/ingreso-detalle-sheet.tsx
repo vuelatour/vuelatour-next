@@ -42,7 +42,9 @@ import {
   desaplicarAnticipoAction,
   ligarAbonoIngresoAction,
   quitarArchivoIngresoAction,
+  type ActionResult,
 } from "@/app/admin/ingresos/actions";
+import { MSG_SIN_CONEXION } from "@/lib/admin/conciliacion-lote";
 import {
   CATEGORIA_INGRESO_DESTINO,
   esAnticipo,
@@ -58,6 +60,7 @@ import {
   hrefIngresos,
   hrefPorConciliarIngreso,
   puedeConciliarIngresos,
+  textoAccionIngresoIncierta,
   textoAvionDetalleIngreso,
   textoCampoBitacora,
   textoConfirmarDesaplicar,
@@ -68,6 +71,9 @@ import {
 import { fmtMonto, fmtTc } from "@/lib/format";
 import { fmtDate, fmtDateOnly, fmtDateTime, todayCancun } from "@/lib/datetime";
 import type { IngresoAplicacion, IngresoDetalle } from "@/types/ingresos";
+
+/** La server action ni siquiera respondió (sin red, un deploy de Vercel): nunca lanza. */
+const sinConexion = (): ActionResult<never> => ({ ok: false, code: "SIN_CONEXION", error: MSG_SIN_CONEXION });
 
 type Confirmacion =
   | { tipo: "desvincular" }
@@ -115,22 +121,27 @@ export function IngresoDetalleSheet({
   const ejecutar = () => {
     if (!detalle || !confirmar) return;
     const i = detalle.ingreso;
+    // Cada llamada con `.catch(sinConexion)`: sin respuesta se dice que no se
+    // sabe si se aplicó (nunca el error boundary) y la página se pone al día.
     start(async () => {
       if (confirmar.tipo === "desvincular" && detalle.movimiento) {
-        const r = await ligarAbonoIngresoAction(detalle.movimiento.id, null);
+        const r = await ligarAbonoIngresoAction(detalle.movimiento.id, null).catch(sinConexion);
         if (r.ok) toast.success("Ingreso desvinculado del abono: el abono vuelve a «Por conciliar».");
+        else if (r.code === "SIN_CONEXION") toast.error(textoAccionIngresoIncierta("desvincular"));
         else toast.error(r.error ?? "No se pudo desvincular");
       } else if (confirmar.tipo === "desaplicar") {
         const a = confirmar.aplicacion;
-        const r = await desaplicarAnticipoAction(i.id, a.cobro_id, a.vuelo_id);
+        const r = await desaplicarAnticipoAction(i.id, a.cobro_id, a.vuelo_id).catch(sinConexion);
         if (r.ok) {
           toast.success(
             `Desaplicado: el saldo del anticipo es ${fmtMonto(r.data?.anticipo.saldo ?? 0, i.moneda)}`,
           );
-        } else toast.error(r.error ?? "No se pudo desaplicar");
+        } else if (r.code === "SIN_CONEXION") toast.error(textoAccionIngresoIncierta("desaplicar"));
+        else toast.error(r.error ?? "No se pudo desaplicar");
       } else if (confirmar.tipo === "quitar-archivo") {
-        const r = await quitarArchivoIngresoAction(i.id);
+        const r = await quitarArchivoIngresoAction(i.id).catch(sinConexion);
         if (r.ok) toast.success("Comprobante quitado (queda en el historial del ingreso).");
+        else if (r.code === "SIN_CONEXION") toast.error(textoAccionIngresoIncierta("quitar-archivo"));
         else toast.error(r.error ?? "No se pudo quitar el comprobante");
       }
       setConfirmar(null);

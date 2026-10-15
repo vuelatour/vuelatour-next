@@ -188,6 +188,24 @@ describe("aceptar una propuesta LIGAR de la IA a un cobro de vuelo", () => {
     expect(rutas()).toEqual([LEER]);
   });
 
+  it("revisión 2 (15-oct-2026): un 401 al leer el veredicto dice que la sesión expiró (no «el servidor no respondió») y NADA escrito", async () => {
+    apiServer.mockRejectedValueOnce(new ApiError({ statusCode: 401, code: "UNAUTHORIZED", message: "Unauthorized" }));
+    const r = await aceptarPropuestaAbonoAction(propuesta());
+    expect(r).toMatchObject({ ok: false, code: "UNAUTHORIZED", status: 401 });
+    expect(r.error).toBe("Tu sesión expiró. Recarga la página e inicia sesión. No se vinculó nada.");
+    expect(r.error).not.toContain("no respondió");
+    expect(rutas()).toEqual([LEER]);
+  });
+
+  it("revisión 2 (15-oct-2026): API 0.0.78 SIN la migración (`cobros_parciales: false`): un parcial va a mano, sin PATCH", async () => {
+    const lista = candidatos([candidato(al({ estado: "PARCIAL", faltante_antes: 3400, faltante_despues: 1700 }))]);
+    apiServer.mockResolvedValueOnce({ ...lista, movimiento: { ...lista.movimiento, cobros_parciales: false } });
+    const r = await aceptarPropuestaAbonoAction(propuesta());
+    expect(r).toMatchObject({ ok: false, code: CODE_PROPUESTA_A_MANO });
+    expect(r.error).toContain("no acepta un segundo abono en el mismo cobro");
+    expect(rutas()).toEqual([LEER]);
+  });
+
   it("API ≤ 0.0.77 (sin `cobros_parciales`): la liga de siempre (no existe el parcial)", async () => {
     apiServer.mockResolvedValueOnce(candidatos([candidato(undefined)], true)).mockResolvedValueOnce({ id: ABONO });
     const r = await aceptarPropuestaAbonoAction(propuesta());

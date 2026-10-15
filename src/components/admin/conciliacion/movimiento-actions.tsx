@@ -96,6 +96,7 @@ import {
   numeroCobrosDe,
   pistaDialogoLegado,
   textoConfirmarDesvincularCobros,
+  textoCandidatosCobroNoCargaron,
   textoConfirmarParcial,
   textoExtraDesvincularLote,
   toastDesvinculoCobros,
@@ -206,6 +207,12 @@ export function MovimientoActions({
   // vuelo Y sobres de grupo, armados por el API.
   const [candidatos, setCandidatos] = useState<CandidatoCobro[] | null>(null);
   const [exactos, setExactos] = useState(0);
+  // La búsqueda de candidatos FALLÓ: se dice con «Reintentar» (jamás la lista
+  // vacía «Sin cobros ni sobres candidatos», revisión 2 del 15-oct-2026).
+  const [errorCandidatos, setErrorCandidatos] = useState<string | null>(null);
+  // `movimiento.cobros_parciales` del API (0.0.78): con `false` un PARCIAL
+  // nuevo se apaga (el resto no se podría vincular). null = API previo.
+  const [cobrosParciales, setCobrosParciales] = useState<boolean | null>(null);
   // «Vincular como parcial…» del diálogo legado (API 0.0.78): se confirma.
   const [confirmarParcial, setConfirmarParcial] = useState(false);
   // La liga del diálogo legado no tuvo respuesta (no se sabe si quedó): la
@@ -397,6 +404,7 @@ export function MovimientoActions({
   const cargarCandidatos = () => {
     setCandidatos(null);
     setExactos(0);
+    setErrorCandidatos(null);
     // Con `.catch`: sin red la lista ya no se queda «Buscando…» para siempre.
     void candidatosCobroAction(movimiento.id, VENTANA_DIAS)
       .catch(sinConexion)
@@ -404,11 +412,32 @@ export function MovimientoActions({
         if (r.ok && r.data) {
           setCandidatos(r.data.candidatos);
           setExactos(r.data.exactos);
+          const cp = r.data.movimiento?.cobros_parciales;
+          setCobrosParciales(typeof cp === "boolean" ? cp : null);
         } else {
+          // Falló: «no se pudo» + «Reintentar», nunca la lista vacía.
           setCandidatos([]);
-          toast.error(r.error ?? "No se pudieron buscar cobros");
+          setErrorCandidatos(textoCandidatosCobroNoCargaron(r));
         }
       });
+  };
+
+  /**
+   * Cierra «Vincular cobro» por CUALQUIER camino («Cancelar», Esc, la X, el
+   * clic fuera o el éxito): suelta lo elegido y la confirmación, y si una liga
+   * quedó sin respuesta pone la página al día. Base UI no llama
+   * `onOpenChange` cuando cambia el `open` controlado, así que «Cancelar» con
+   * cerrar el `open` directo se saltaba el refresco (revisión 2 del
+   * 15-oct-2026).
+   */
+  const cerrarVincular = () => {
+    setSeleccion("");
+    setConfirmarParcial(false);
+    if (refrescarAlCerrarLinkRef.current) {
+      refrescarAlCerrarLinkRef.current = false;
+      router.refresh();
+    }
+    setOpenLink(false);
   };
 
   const abrirVincular = (conIa = false) => {
@@ -419,6 +448,7 @@ export function MovimientoActions({
       return;
     }
     setSeleccion("");
+    setConfirmarParcial(false);
     setOpenLink(true);
     // Candidatos del API (cobros de vuelo + sobres de grupo, ±60 días,
     // misma moneda que la cuenta, ordenados por cercanía del neto).
@@ -514,7 +544,7 @@ export function MovimientoActions({
   // abono con el cobro elegido (sin salidas de un clic: este diálogo elige UNO).
   const opcionSeleccionada = seleccionado ? ({ tipo: "COBRO", c: seleccionado } as const) : null;
   const guiaSeleccionado = opcionSeleccionada
-    ? guiaAlVincular(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono }, { conAcciones: false })
+    ? guiaAlVincular(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono }, { conAcciones: false, cobrosParciales })
     : null;
   const confirmacionParcial = opcionSeleccionada
     ? textoConfirmarParcial(opcionSeleccionada, { monto: movimiento.monto, moneda: monedaAbono, fecha: movimiento.fecha })
@@ -549,8 +579,7 @@ export function MovimientoActions({
             : // API 0.0.78: «… queda conciliado PARCIAL (faltan $X)» / «… completo con 2 abonos».
               toastVinculoCobros([{ tipo: "COBRO", c: seleccionado }], r.data),
         );
-        setOpenLink(false);
-        setSeleccion("");
+        cerrarVincular();
       } else if (r.code === "COBRO_DE_GRUPO") {
         // Candado del API: una PARTE de sobre nunca se concilia; se concilia
         // el sobre del grupo (el mensaje del API ya lo dice).
@@ -878,14 +907,8 @@ export function MovimientoActions({
       <Dialog
         open={openLink}
         onOpenChange={(o) => {
-          if (!o) {
-            setSeleccion("");
-            if (refrescarAlCerrarLinkRef.current) {
-              refrescarAlCerrarLinkRef.current = false;
-              router.refresh();
-            }
-          }
-          setOpenLink(o);
+          if (o) setOpenLink(true);
+          else cerrarVincular();
         }}
       >
         <DialogContent className="sm:max-w-lg">
@@ -899,13 +922,27 @@ export function MovimientoActions({
             <div className="flex items-end justify-between gap-2 flex-wrap">
               <Label className="text-sm font-medium">Cobro o sobre de grupo</Label>
             </div>
-            {candidatos === null ? (
+            {errorCandidatos ? (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:text-red-400"
+              >
+                <span>{errorCandidatos}</span>
+                <Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={cargarCandidatos}>
+                  Reintentar
+                </Button>
+              </div>
+            ) : candidatos === null ? (
               <p className="text-sm text-muted-foreground">Buscando cobros cercanos…</p>
             ) : (
               <SearchableSelect
                 options={opcionesCobros}
                 value={seleccion}
-                onChange={setSeleccion}
+                onChange={(v) => {
+                  // Otra elección ⇒ la confirmación del parcial ya no vale.
+                  setConfirmarParcial(false);
+                  setSeleccion(v);
+                }}
                 placeholder="Buscar por folio, grupo, cliente o monto"
                 emptyText="Sin cobros ni sobres candidatos cerca de la fecha del abono"
               />
@@ -958,7 +995,7 @@ export function MovimientoActions({
                         ? "text-xs font-medium text-emerald-600 dark:text-emerald-400"
                         : guiaSeleccionado.tono === "ambar"
                           ? "text-xs font-medium text-amber-700 dark:text-amber-300"
-                          : "text-xs font-medium text-destructive"
+                          : "text-xs font-medium text-destructive dark:text-red-400"
                     }
                   >
                     {guiaSeleccionado.texto}
@@ -996,7 +1033,7 @@ export function MovimientoActions({
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="cursor-pointer" onClick={() => setOpenLink(false)} disabled={pending}>
+            <Button variant="outline" className="cursor-pointer" onClick={cerrarVincular} disabled={pending}>
               Cancelar
             </Button>
             {/* Con el veredicto del API (0.0.78) que rechaza este abono, el

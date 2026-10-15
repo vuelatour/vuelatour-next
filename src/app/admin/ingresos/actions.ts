@@ -39,6 +39,7 @@ import {
   MSG_PROPUESTA_PARCIAL,
   MSG_PROPUESTA_SIN_VEREDICTO,
   VENTANA_PROPUESTA_DIAS,
+  errorLecturaPropuesta,
   pasoPropuestaCobro,
 } from "@/lib/admin/conciliacion-cobros-lote";
 
@@ -548,7 +549,8 @@ async function aceptarReversoPropuesto(movId: string): Promise<ActionResult> {
  * PARCIAL sin `parcialConfirmado` ⇒ `CONFIRMAR_PARCIAL` con el cobro en
  * `details.candidato` (la ventana pide «¿Vincular como pago parcial?» y vuelve
  * con la bandera); un rechazo ⇒ `PROPUESTA_A_MANO` con la razón; sin poder
- * leer el veredicto ⇒ `PROPUESTA_SIN_VEREDICTO` (no se liga nada). Con un API
+ * leer el veredicto ⇒ `PROPUESTA_SIN_VEREDICTO` (no se liga nada; un 4xx de
+ * esa lectura, con su texto: `errorLecturaPropuesta`). Con un API
  * ≤ 0.0.77 (sin la capacidad) la liga de siempre.
  */
 export async function aceptarPropuestaAbonoAction(
@@ -563,9 +565,10 @@ export async function aceptarPropuestaAbonoAction(
     if (c.tipo === "SOBRE_GRUPO") return ligarAbonoCobroAction(p.movimiento_id, { cobro_grupo_id: c.id });
     if (!esUuid(p.movimiento_id) || !esUuid(c.id)) return ID_INVALIDO;
     const cand = await candidatosAbonoAction(p.movimiento_id, VENTANA_PROPUESTA_DIAS);
-    if (!cand.ok || !cand.data) {
-      return { ok: false, code: CODE_PROPUESTA_SIN_VEREDICTO, error: MSG_PROPUESTA_SIN_VEREDICTO };
-    }
+    // Sin respuesta ⇒ «no respondió, vuelve a intentarlo»; un 4xx (sesión
+    // vencida, abono que ya no existe…) dice qué pasó (revisión 2, 15-oct-2026).
+    if (!cand.ok) return errorLecturaPropuesta(cand);
+    if (!cand.data) return { ok: false, code: CODE_PROPUESTA_SIN_VEREDICTO, error: MSG_PROPUESTA_SIN_VEREDICTO };
     const paso = pasoPropuestaCobro(cand.data, c.id, { monto: p.monto, moneda: p.cuenta_moneda });
     if (paso.tipo === "A_MANO") return { ok: false, code: CODE_PROPUESTA_A_MANO, error: paso.texto };
     if (paso.tipo === "CONFIRMAR_PARCIAL" && opciones.parcialConfirmado !== true) {

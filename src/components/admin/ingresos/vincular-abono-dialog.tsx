@@ -46,6 +46,7 @@ import {
   claveDeCobroVuelo,
   claveOpcion,
   coincideOpcion,
+  confirmacionVigente,
   esOpcionExclusiva,
   estadoLoteAbono,
   guiaAlVincular,
@@ -85,7 +86,9 @@ const SIN_CAPACIDADES: Capacidades = { corregirComision: false, cobrosParciales:
 const CLASE_TONO = {
   verde: "text-emerald-600 dark:text-emerald-400",
   ambar: "text-amber-700 dark:text-amber-300",
-  rojo: "text-destructive",
+  // `--destructive` en oscuro (#ef4444) da 3.89:1 sobre el diálogo: con
+  // red-400 pasa AA (revisión 2 del 15-oct-2026), como el verde y el ámbar.
+  rojo: "text-destructive dark:text-red-400",
   neutro: "text-muted-foreground",
 } as const;
 
@@ -182,7 +185,13 @@ function etiquetaOpcion(o: OpcionAbono): string {
     : `${estrella}Vuelo #${c.folio ?? "—"} · ${fmtMonto(c.monto, c.moneda)} · ${metodo}`;
 }
 
-function descripcionOpcion(o: OpcionAbono): { texto: string; clase?: string; bloqueada: boolean } {
+function descripcionOpcion(o: OpcionAbono): {
+  texto: string;
+  /** Cobro: lo que ya tiene del banco y si cuadra, en su PROPIO renglón (no se corta). */
+  estado?: string;
+  clase?: string;
+  bloqueada: boolean;
+} {
   // UN COBRO, VARIOS ABONOS (API 0.0.78): un cobro PARCIAL dice cuánto ya
   // tiene de otros abonos y cuánto le falta; «exacto» es contra lo que falta.
   const exacto = o.c.dif_monto === 0;
@@ -216,6 +225,10 @@ function descripcionOpcion(o: OpcionAbono): { texto: string; clase?: string; blo
       c.cliente,
       fechasCandidatoCobro(c),
       c.neto !== c.monto ? `neto ${fmtMonto(c.neto)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    estado: [
       deVuelo ? textoYaConciliadoCandidato(deVuelo) : null,
       exacto ? textoCuadraExactoCandidato(deVuelo ?? {}) : `diferencia ${fmtMonto(c.dif_monto)}`,
     ]
@@ -260,8 +273,10 @@ function Selector({
   // Capacidades del API (0.0.78): «Corregir la comisión y vincular» y si un
   // cobro ya acepta varios abonos (la nota bajo la lista).
   const [capacidades, setCapacidades] = useState<Capacidades>(SIN_CAPACIDADES);
-  // Confirmaciones de dinero (AlertDialog): vincular como PARCIAL o corregir la comisión.
-  const [confirmar, setConfirmar] = useState<"parcial" | "comision" | null>(null);
+  // Confirmaciones de dinero (AlertDialog): vincular como PARCIAL o corregir la
+  // comisión, LIGADAS al candidato con que se pidieron (`clave`): si lo marcado
+  // cambia no reaparecen solas (revisión 2 del 15-oct-2026).
+  const [confirmar, setConfirmar] = useState<{ tipo: "parcial" | "comision"; clave: string } | null>(null);
   // Tras un 409 la lista se vuelve a pedir SIN soltar lo marcado: lo que había (se poda a lo que siga en la lista).
   const conservarRef = useRef<string[] | null>(null);
   // Un doble clic (o el clic de la confirmación más el del botón) no liga dos veces.
@@ -339,8 +354,14 @@ function Selector({
   // 0.0.78). null ⇒ la suma de siempre (API previo, ingreso o sobre que cuadra).
   const marcadaUnica = marcadas.length === 1 ? marcadas[0] : null;
   const guia = marcadaUnica
-    ? guiaAlVincular(marcadaUnica, abonoGuia, { corregirComision: capacidades.corregirComision, enLista: idsEnLista })
+    ? guiaAlVincular(marcadaUnica, abonoGuia, {
+        corregirComision: capacidades.corregirComision,
+        enLista: idsEnLista,
+        cobrosParciales: capacidades.cobrosParciales,
+      })
     : null;
+  const claveMarcada = marcadaUnica ? claveOpcion(marcadaUnica) : null;
+  const confirmarVigente = confirmacionVigente(confirmar, claveMarcada);
   const suma =
     hayExclusiva || guia
       ? null
@@ -358,6 +379,7 @@ function Selector({
 
   const alternar = (o: OpcionAbono) => {
     const r = alternarSeleccion(sel, o, opciones ?? []);
+    setConfirmar(null);
     setSel(r.seleccion);
     if (r.aviso) toast.info(r.aviso);
   };
@@ -365,6 +387,7 @@ function Selector({
   /** Pide otra vez los candidatos; `conservar` = sin soltar lo marcado. */
   const recargar = (conservar: boolean) => {
     conservarRef.current = conservar ? sel : null;
+    setConfirmar(null);
     if (!conservar) setSel([]);
     setOpciones(null);
     setRecarga((n) => n + 1);
@@ -388,7 +411,9 @@ function Selector({
       buscarRef.current?.focus();
       return;
     }
-    if (a.tipo === "CORREGIR_COMISION" && confirmacionComision) setConfirmar("comision");
+    if (a.tipo === "CORREGIR_COMISION" && confirmacionComision && claveMarcada) {
+      setConfirmar({ tipo: "comision", clave: claveMarcada });
+    }
   };
 
   const vincular = () => {
@@ -402,8 +427,8 @@ function Selector({
       case "CONFIRMAR_PARCIAL":
         // Un abono MENOR que lo que falta deja el cobro PARCIAL: se confirma
         // (es dinero) y el API no se llama hasta «Sí, vincular como parcial».
-        if (confirmacionParcial) {
-          setConfirmar("parcial");
+        if (confirmacionParcial && claveMarcada) {
+          setConfirmar({ tipo: "parcial", clave: claveMarcada });
           return;
         }
         void ligar();
@@ -531,7 +556,11 @@ function Selector({
                 const marcada = sel.includes(clave);
                 const desc = descripcionOpcion(o);
                 // Qué pasaría con ESE cobro si se vincula este abono (API 0.0.78).
-                const corta = lineaCortaAlVincular(o);
+                // Con 2+ marcados, en los marcados manda la suma del lote.
+                const corta = lineaCortaAlVincular(o, {
+                  enLote: marcada && marcadas.length >= 2,
+                  cobrosParciales: capacidades.cobrosParciales,
+                });
                 return (
                   <label
                     key={clave}
@@ -549,20 +578,29 @@ function Selector({
                       className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
                     />
                     <span className="min-w-0">
-                      <span className="block truncate font-medium">{etiquetaOpcion(o)}</span>
-                      {/* Cortada a lo ancho del diálogo: el `title` la dice
-                          completa («… · falta $1,700 · cuadra exacto con lo
-                          que falta», revisión del 15-oct-2026). */}
+                      {/* Envuelven (revisión 2 del 15-oct-2026): cortadas a una línea
+                          el monto y lo nuevo del 0.0.78 («ya conciliado … ·
+                          falta $1,700») se cortaban, y un celular no tiene
+                          hover para leer el `title`. */}
+                      <span className="block break-words font-medium" title={etiquetaOpcion(o)}>
+                        {etiquetaOpcion(o)}
+                      </span>
                       {desc.texto && (
                         <span
-                          className={cn("block truncate text-xs text-muted-foreground", desc.clase)}
+                          className={cn(
+                            "block line-clamp-2 break-words text-xs text-muted-foreground",
+                            desc.estado ? undefined : desc.clase,
+                          )}
                           title={desc.texto}
                         >
                           {desc.texto}
                         </span>
                       )}
+                      {desc.estado && (
+                        <span className={cn("block break-words text-xs text-muted-foreground", desc.clase)}>{desc.estado}</span>
+                      )}
                       {corta && (
-                        <span className={cn("block truncate text-xs font-medium", CLASE_TONO[corta.tono])} title={corta.texto}>
+                        <span className={cn("block break-words text-xs font-medium", CLASE_TONO[corta.tono])}>
                           {corta.texto}
                         </span>
                       )}
@@ -646,7 +684,7 @@ function Selector({
       {/* Vincular como PARCIAL (D3): cambia el estado del cobro, se confirma;
           «Cancelar» solo cierra (el API no se llama). */}
       <ConfirmacionVincular
-        abierta={confirmar === "parcial"}
+        abierta={confirmarVigente === "parcial"}
         texto={confirmacionParcial}
         onCancelar={() => setConfirmar(null)}
         onConfirmar={() => {
@@ -657,7 +695,7 @@ function Selector({
 
       {/* «Corregir la comisión y vincular» (D6): escribe la comisión del cobro, se confirma. */}
       <ConfirmacionVincular
-        abierta={confirmar === "comision"}
+        abierta={confirmarVigente === "comision"}
         texto={confirmacionComision}
         onCancelar={() => setConfirmar(null)}
         onConfirmar={() => {
@@ -743,7 +781,10 @@ export function BotonVincularConGuia({
     <span className="inline-flex" title={bloqueado ? (guia?.razon ?? undefined) : undefined}>
       <Button
         ref={botonRef}
-        className="cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+        // Atenúa relleno y texto, NO el elemento: con `opacity` el anillo de
+        // foco quedaba a 1.13:1 y con el teclado no se veía dónde quedó el
+        // foco (revisión 2 del 15-oct-2026).
+        className="cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:bg-primary/50 aria-disabled:text-primary-foreground/70 aria-disabled:focus-visible:ring-ring"
         onClick={onClick}
         disabled={deshabilitado || bloqueado}
         focusableWhenDisabled={bloqueado && !deshabilitado}
@@ -774,7 +815,10 @@ export function ConfirmacionVincular({
 }) {
   return (
     <AlertDialog open={abierta && texto !== null} onOpenChange={(o) => !o && onCancelar()}>
-      <AlertDialogContent>
+      {/* Siempre se monta DENTRO de otro diálogo: sin `backdropForceRender`
+          Base UI no pinta su backdrop y el diálogo de abajo seguía recibiendo
+          clics (revisión 2 del 15-oct-2026). */}
+      <AlertDialogContent backdropForceRender>
         <AlertDialogHeader>
           <AlertDialogTitle>{texto?.titulo ?? ""}</AlertDialogTitle>
           <AlertDialogDescription>{texto?.cuerpo ?? ""}</AlertDialogDescription>

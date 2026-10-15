@@ -45,6 +45,7 @@ const filaDe = (r: ConciliacionDeEntrada | null, over: Partial<EntradaBancoFila>
   etiqueta: r?.entrada.etiqueta ?? "Vuelo #332",
   categoria_etiqueta: r?.entrada.categoria_etiqueta ?? "Cobro de vuelo",
   monto: r?.entrada.monto ?? 977.45,
+  neto: r?.entrada.neto ?? null,
   moneda: r?.entrada.moneda ?? "MXN",
   dia: r?.entrada.dia ?? "2026-09-15",
   cliente: r?.entrada.cliente_nombre ?? null,

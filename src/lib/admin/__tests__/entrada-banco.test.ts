@@ -815,6 +815,38 @@ describe("filas, botón y nombre accesible", () => {
     expect(clave({})).toBe(base);
   });
 
+  it("revisión 2 (15-oct-2026): editar SOLO la comisión cambia la llave (el cuerpo pinta la comisión y busca el abono por el neto)", () => {
+    const ingreso = {
+      id: "0b6f3d0e-2c11-4a7e-9a55-3f1f2d1c9e01",
+      folio: 9,
+      etiqueta: "ING-9",
+      categoria_etiqueta: "Otros ingresos",
+      fecha: "2026-10-02",
+      monto: 10000,
+      comision_monto: 350,
+      neto: 9650,
+      moneda: "MXN",
+      cliente_nombre: null,
+      pagador: "HSBC link",
+      metodo_etiqueta: "Transferencia",
+      cuenta_bancaria_id: CUENTA_COMBUSTIBLE.id,
+      conciliacion: { estado: "SIN_CONCILIAR", movimiento_id: null, movimiento_fecha: null, movimiento_monto: null },
+      baja: null,
+    } as unknown as Ingreso;
+    const clave = (over: Partial<Ingreso>) => claveEntradaControlada(filaBancoDeIngreso({ ...ingreso, ...over } as Ingreso));
+    const base = clave({});
+    expect(filaBancoDeIngreso(ingreso).neto).toBe(9650);
+    // Comisión a 0: mismo monto, cuenta, día, moneda y estado; solo el neto del API cambia.
+    expect(clave({ comision_monto: null, neto: 10000 })).not.toBe(base);
+    // Agregar comisión a un ingreso que no tenía.
+    expect(clave({ comision_monto: 500, neto: 9500 })).not.toBe(base);
+    expect(clave({})).toBe(base);
+    // El neto viene del API (el de la tarjeta, `neto_banco`); sin él (API previo) ⇒ null, sin inventarlo.
+    const cobro = { id: C332, monto: "977.45", moneda: "MXN", fecha_cobro: "2026-09-16T03:00:00+00:00", conciliado: false } as unknown as FlightCobro;
+    expect(filaBancoDeCobroVuelo(cobro).neto).toBeNull();
+    expect(filaBancoDeCobroVuelo({ ...cobro, neto_banco: 950 } as FlightCobro).neto).toBe(950);
+  });
+
   it("qué badge es botón: nunca «No se concilia uno a uno», «—» ni un ingreso dado de baja", () => {
     for (const e of ["CONCILIADO", "VIA_ANTICIPO", "PARCIAL", "SIN_CONCILIAR"]) expect(abreDetalleEntrada(e), e).toBe(true);
     for (const e of ["NO_BANCARIO", null, undefined, "—"]) expect(abreDetalleEntrada(e), String(e)).toBe(false);

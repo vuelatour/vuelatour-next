@@ -68,6 +68,7 @@ import {
   VALOR_EFECTIVO,
   cambiosDeEdicion,
   candidatosDeConflicto,
+  textoLigaNoCuadraConflicto,
   datosAltaDeFormulario,
   descripcionVueloCandidato,
   duplicadoDeConflicto,
@@ -996,9 +997,22 @@ export function FormularioIngreso({
                       .join(" · ")}
                   </p>
                 </div>
-                <Button size="sm" onClick={() => void vincularAlCobro(c)} disabled={ligando !== null}>
-                  {ligando === c.id ? "Vinculando…" : "Vincular a este cobro"}
-                </Button>
+                {/* API 0.0.79: si la liga directa rebotaría (comisión o sobre
+                    que no cuadran), no se ofrece: se dice qué corregir. */}
+                {textoLigaNoCuadraConflicto(c, abono?.cuenta_moneda) ? (
+                  <p className="w-full text-xs font-medium text-amber-700 dark:text-amber-300">
+                    {textoLigaNoCuadraConflicto(c, abono?.cuenta_moneda)}
+                  </p>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={() => void vincularAlCobro(c)}
+                    disabled={ligando !== null}
+                  >
+                    {ligando === c.id ? "Vinculando…" : "Vincular a este cobro"}
+                  </Button>
+                )}
               </div>
             ))}
           </div>

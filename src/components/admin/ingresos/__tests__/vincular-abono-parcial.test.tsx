@@ -167,7 +167,10 @@ describe("el botón principal (excepción deliberada a «nunca apagar», D18)", 
     // `disabled` nativo): sigue en el Tab y el lector anuncia su aria-describedby.
     expect(html).toMatch(/<button[^>]*aria-disabled="true"/);
     expect(html).not.toMatch(/<button[^>]*\sdisabled=""/);
-    expect(html).toContain("aria-disabled:opacity-50");
+    // Revisión 2: atenúa relleno y texto, no el elemento (el anillo de foco se ve).
+    expect(html).toContain("aria-disabled:bg-primary/50");
+    expect(html).toContain("aria-disabled:focus-visible:ring-ring");
+    expect(html).not.toContain("aria-disabled:opacity-50");
     expect(html).toContain('aria-describedby="guia"');
     expect(html).toContain("cursor-pointer");
     // Apagado por «vinculando» (o nada marcado): el `disabled` nativo de siempre.
@@ -235,21 +238,34 @@ describe("cableado del diálogo (fuente)", () => {
   it("PARCIAL abre la confirmación y el API NO se llama hasta confirmar; «Cancelar» solo cierra", () => {
     expect(src).toContain("switch (pasoAlPulsarVincular(marcadas.length, guia))");
     const caso = src.slice(src.indexOf('case "CONFIRMAR_PARCIAL":'), src.indexOf('case "LIGAR":'));
-    expect(caso).toMatch(/setConfirmar\("parcial"\);\s*return;/);
+    expect(caso).toMatch(/setConfirmar\(\{ tipo: "parcial", clave: claveMarcada \}\);\s*return;/);
     expect(src).toMatch(/case "BLOQUEADO":[\s\S]*?return;/);
     // Las dos confirmaciones: cancelar = setConfirmar(null); confirmar = ligar.
     expect(src.match(/onCancelar=\{\(\) => setConfirmar\(null\)\}/g)?.length).toBe(2);
-    expect(src).toMatch(/abierta=\{confirmar === "parcial"\}[\s\S]*?void ligar\(\);/);
+    expect(src).toMatch(/abierta=\{confirmarVigente === "parcial"\}[\s\S]*?void ligar\(\);/);
     // «Corregir la comisión» viaja SOLO desde su confirmación.
     expect(src.match(/void ligar\(\{ corregirComision: true \}\)/g)?.length).toBe(1);
-    expect(src).toMatch(/abierta=\{confirmar === "comision"\}[\s\S]*?void ligar\(\{ corregirComision: true \}\)/);
-    expect(src).toContain('if (a.tipo === "CORREGIR_COMISION" && confirmacionComision) setConfirmar("comision");');
+    expect(src).toMatch(/abierta=\{confirmarVigente === "comision"\}[\s\S]*?void ligar\(\{ corregirComision: true \}\)/);
+    expect(src).toMatch(/if \(a\.tipo === "CORREGIR_COMISION" && confirmacionComision && claveMarcada\) \{\s*setConfirmar\(\{ tipo: "comision", clave: claveMarcada \}\);/);
+  });
+
+  it("revisión 2 (15-oct-2026): la confirmación va LIGADA al candidato y bloquea el diálogo de abajo", () => {
+    // Vale solo para lo marcado con que se pidió; marcar/desmarcar o recargar la suelta.
+    expect(src).toContain("const confirmarVigente = confirmacionVigente(confirmar, claveMarcada);");
+    expect(src).toMatch(/const r = alternarSeleccion\(sel, o, opciones \?\? \[\]\);\s*setConfirmar\(null\);/);
+    expect(src).toMatch(/conservarRef\.current = conservar \? sel : null;\s*setConfirmar\(null\);/);
+    // Anidada: con su backdrop (Base UI no lo pinta en un diálogo anidado).
+    expect(src).toContain("<AlertDialogContent backdropForceRender>");
+    expect(leer("../../../ui/alert-dialog.tsx")).toContain("<AlertDialogOverlay forceRender={backdropForceRender} />");
+    expect(leer("../sugerencias-abonos-dialog.tsx")).toContain("<AlertDialogContent backdropForceRender>");
   });
 
   it("la capacidad `corregir_comision` del API y la bandera solo con ella", () => {
     expect(src).toContain("corregirComision: r.data.movimiento.corregir_comision === true");
     expect(src).toContain("cobrosParciales: r.data.movimiento.cobros_parciales === true");
-    expect(src).toContain("guiaAlVincular(marcadaUnica, abonoGuia, { corregirComision: capacidades.corregirComision, enLista: idsEnLista })");
+    expect(src).toMatch(
+      /guiaAlVincular\(marcadaUnica, abonoGuia, \{\s*corregirComision: capacidades\.corregirComision,\s*enLista: idsEnLista,\s*cobrosParciales: capacidades\.cobrosParciales,\s*\}\)/,
+    );
     expect(src).toContain('const corregir = opcionesLiga?.corregirComision === true ? { corregirComision: true } : undefined;');
     const actions = leer("../../../../app/admin/ingresos/actions.ts");
     expect(actions).toContain("...(corregir ? { corregir_comision: true } : {})");
@@ -282,9 +298,15 @@ describe("cableado del diálogo (fuente)", () => {
     // «Agregar el cobro del vuelo #332»: el foco pasa al botón principal ANTES de que la guía se desmonte.
     expect(src).toMatch(/botonVincularRef\.current\?\.focus\(\);\s*alternar\(o\);/);
     expect(src).toContain("botonRef={botonVincularRef}");
-    // La descripción de cada candidato (cortada a lo ancho) lleva su texto completo en el title.
+    // Revisión 2: la etiqueta, el estado del 0.0.78 y la línea corta ENVUELVEN (sin
+    // `truncate`: un celular no tiene hover); la descripción, a 2 renglones con su title.
     expect(src).toContain("title={desc.texto}");
-    expect(src).toContain("title={corta.texto}");
+    expect(src).toContain('<span className="block break-words font-medium" title={etiquetaOpcion(o)}>');
+    expect(src).toContain("{desc.estado && (");
+    const lista = src.slice(src.indexOf("{visibles.map((o) => {"), src.indexOf("{visibles.length === 0 && ("));
+    expect(lista).not.toContain("truncate");
+    // Con 2+ marcados, en los marcados manda la suma del lote.
+    expect(lista).toMatch(/lineaCortaAlVincular\(o, \{\s*enLote: marcada && marcadas\.length >= 2,/);
     // «Corregir la comisión»: un fallo sin veredicto del API es incierto (la comisión pudo quedar escrita).
     expect(src).toContain("mensajeErrorVincularCobros(r, { corrigiendoComision: corregir !== undefined })");
   });

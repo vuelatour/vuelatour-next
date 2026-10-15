@@ -201,6 +201,14 @@ export interface EntradaBancoFila {
   etiqueta: string;
   categoria_etiqueta: string | null;
   monto: number;
+  /**
+   * Lo que el banco debe depositar (monto − comisión) según la lista; null =
+   * desconocido (API previo). Entra a la llave del modo controlado: «Editar»
+   * solo la comisión de un ingreso sin conciliar cambia la frase de la
+   * comisión y el «Ver los abonos ya conciliados» del cuerpo (revisión 2,
+   * 15-oct-2026). El panel NO lo calcula: es el `neto` del API.
+   */
+  neto: number | null;
   moneda: string;
   dia: string | null;
   cliente: string | null;
@@ -259,6 +267,7 @@ export function filaBancoDeEntrada(e: EntradaDinero): EntradaBancoFila {
     etiqueta: e.etiqueta,
     categoria_etiqueta: e.categoria_etiqueta ?? null,
     monto: numeroDe(e.monto),
+    neto: numeroONull(e.neto),
     moneda: e.moneda,
     dia: e.dia ?? null,
     cliente: e.cliente_nombre ?? null,
@@ -279,6 +288,7 @@ export function filaBancoDeIngreso(i: Ingreso): EntradaBancoFila {
     etiqueta: i.etiqueta || etiquetaIngreso(i.folio),
     categoria_etiqueta: i.categoria_etiqueta ?? null,
     monto: numeroDe(i.monto),
+    neto: numeroONull(i.neto),
     moneda: i.moneda,
     dia: i.fecha ?? null,
     cliente: i.cliente_nombre ?? i.pagador ?? null,
@@ -303,6 +313,7 @@ export function filaBancoDeCobroVuelo(
     etiqueta: ctx.folio != null ? `Vuelo #${ctx.folio}` : "",
     categoria_etiqueta: "Cobro de vuelo",
     monto: numeroDe(c.monto),
+    neto: numeroONull(c.neto_banco),
     moneda: c.moneda,
     dia: diaCancun(c.fecha_cobro),
     cliente: textoONull(ctx.cliente),
@@ -866,10 +877,22 @@ export function estadoCambioEntrada(r: Pick<ConciliacionDeEntrada, "estado">, fi
  * desde la revisión del 15-oct-2026, lo que pinta el cuerpo: la cuenta, el
  * día, el monto, la moneda y el estado. Editar la cuenta, la fecha o el monto
  * de un ingreso sin conciliar desde el MISMO detalle no cambiaba la llave y
- * el cuerpo seguía con la cobertura, las ventanas y las ligas de antes.
+ * el cuerpo seguía con la cobertura, las ventanas y las ligas de antes. La
+ * revisión 2 agrega el NETO: «Editar» solo la comisión dejaba la frase «al
+ * banco debe llegar el neto: $9,650» y el enlace a los abonos con el neto viejo.
  */
 export function claveEntradaControlada(f: EntradaBancoFila): string {
-  return [f.origen, f.id, f.movimiento_id ?? "", f.cuenta_id ?? "", f.dia ?? "", String(f.monto), f.moneda, f.estado ?? ""].join(":");
+  return [
+    f.origen,
+    f.id,
+    f.movimiento_id ?? "",
+    f.cuenta_id ?? "",
+    f.dia ?? "",
+    String(f.monto),
+    f.neto == null ? "" : String(f.neto),
+    f.moneda,
+    f.estado ?? "",
+  ].join(":");
 }
 
 // ───────────────────────────── URLs de «¿Qué hacer?» ─────────────────────────────

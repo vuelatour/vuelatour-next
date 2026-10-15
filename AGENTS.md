@@ -3806,7 +3806,10 @@ ingresos». Contrato INGRESOS con el API 0.0.34 (migración
   `aplicar-anticipo-dialog` (monto sugerido = menor entre saldos, confirm con
   el texto exacto, 409 `ANTICIPO_OTRO_CLIENTE` ⇒ segundo confirm con la misma
   llave); `cobro-desde-abono-dialog` («Es el pago de un vuelo»: registra el
-  cobro y lo concilia en UNA operación del API); `vincular-abono-dialog`
+  cobro y lo concilia en UNA operación del API; su aviso ámbar «el neto no
+  cuadra» es `netoNoCuadraConAbono`: con comisión tecleada avisa si el NETO
+  no cuadra aunque el bruto sí —el 409 COMISION_NO_CUADRA del API 0.0.78—,
+  revisión 2 del 15-oct-2026; el veredicto sigue siendo el 409); `vincular-abono-dialog`
   (cobros, sobres e INGRESOS; ★ exactos; un ingreso de otra cuenta se ve pero
   no se elige; desde el API 0.0.78, con UN cobro marcado manda el veredicto
   `al_vincular` del API: ver «Cobros: un cobro con varios abonos…»);
@@ -9699,7 +9702,10 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   - **EXCEPCIÓN deliberada a «la guía nunca apaga el botón»**: solo con UN
     cobro marcado, porque es el veredicto del API para ese abono. Apagado por
     el veredicto, el botón queda ENFOCABLE (`focusableWhenDisabled` de Base
-    UI: `aria-disabled`, sin `disabled` nativo, `aria-disabled:opacity-50`;
+    UI: `aria-disabled`, sin `disabled` nativo; se atenúan relleno y texto
+    —`aria-disabled:bg-primary/50`, `…:text-primary-foreground/70`— y NO el
+    elemento: con `opacity` el anillo de foco quedaba a 1.13:1, y su foco
+    lleva `aria-disabled:focus-visible:ring-ring`, revisión 2;
     sigue en el Tab y el lector anuncia su `aria-describedby` a la guía; Base
     UI no dispara el clic) dentro de un `<span title>` con la razón; apagado
     por «nada marcado» o «vinculando», el `disabled` de siempre. Con 2+
@@ -9712,12 +9718,33 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
     no lleva `aria-live` (nacía con su texto y no se anunciaba). «Agregar el
     cobro del vuelo #332» pasa el foco al botón principal ANTES de marcar (la
     guía se desmonta con 2 cobros y el foco caía al contenedor: el siguiente
-    Tab iba al buscador). La descripción y la línea corta de cada candidato
-    llevan `title` (se cortan a lo ancho: «… · falta $1,700 · cuadra exacto
-    con lo que falta» no se leía).
+    Tab iba al buscador). Revisión 2 (15-oct-2026): nada de `truncate` en
+    la lista (un celular no tiene hover para el `title`): la etiqueta
+    envuelve (con `title`), la descripción va a 2 renglones con su `title` y
+    lo del 0.0.78 («ya conciliado … · falta $1,700 · cuadra exacto con lo
+    que falta» o «diferencia …») va en SU renglón (`desc.estado`), como la
+    línea corta. El rojo es `text-destructive dark:text-red-400` (AA en
+    oscuro, también en la guía del diálogo legado).
+  - **Confirmaciones de dinero anidadas** (`ConfirmacionVincular`, aquí, en
+    el legado y en «Sugerencias»; también «¿Aceptar las propuestas
+    marcadas?»): `AlertDialogContent backdropForceRender` — Base UI 1.4 no
+    pinta el backdrop de un diálogo anidado y el de abajo seguía recibiendo
+    clics (revisión 2). Y van LIGADAS al candidato: `confirmar` = `{ tipo,
+    clave }` y se abre solo si `confirmacionVigente(confirmar,
+    claveMarcada)`; marcar/desmarcar o recargar la suelta (antes reaparecía
+    sola al volver a marcar el mismo cobro).
+  - **Sin la capacidad** (`movimiento.cobros_parciales === false`: API
+    0.0.78 sin la migración o tras su reversa): un PARCIAL nuevo se APAGA
+    con `RAZON_BLOQUEO_PARCIAL_SIN_CAPACIDAD` y su guía dice que el resto ya
+    no se podría vincular («avisa a sistemas»; `guiaAlVincular(…, {
+    cobrosParciales })`); la línea corta deja de prometer «faltarían…»; en
+    el diálogo legado igual (la capacidad sale de su `candidatos-cobro`) y
+    `pasoPropuestaCobro` lo manda a mano (revisión 2: antes prometía «vincúlalo
+    a este mismo cobro» y el 2.º abono no aparecía en ningún candidato).
 - Bajo cada candidato, `lineaCortaAlVincular` («si lo vinculas, queda
   parcial: faltarían $1,700 MXN», «el abono rebasa este cobro por $977.45
-  MXN», …); un candidato parcial dice «ya conciliado $1,700 de $3,400 (1
+  MXN», …; con 2+ marcados NO en los marcados —`enLote`—: ahí manda la suma
+  del lote, revisión 2); un candidato parcial dice «ya conciliado $1,700 de $3,400 (1
   abono) · falta $1,700» y «cuadra exacto con lo que falta». La nota bajo la
   lista es `notaVariosCobros(cobros_parciales)`: con la capacidad explica
   que un cobro pagado en varias transferencias se vincula transferencia por
@@ -9768,7 +9795,13 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   del menú va con `.catch(sinConexion)` (vincular, desvincular, quitar el
   reverso y los candidatos): sin respuesta, la liga dice `MSG_VINCULO_INCIERTO`,
   vuelve a pedir la lista y refresca al CERRAR el diálogo
-  (`refrescarAlCerrarLinkRef`); desvincular dice `MSG_DESVINCULO_INCIERTO`
+  (`refrescarAlCerrarLinkRef`, que consume `cerrarVincular()` —«Cancelar»,
+  Esc/X/clic fuera y el éxito—: Base UI no llama `onOpenChange` al cambiar el
+  `open` controlado, así que «Cancelar» con `setOpenLink(false)` directo se
+  saltaba el refresco; revisión 2); si la búsqueda de candidatos FALLA,
+  `textoCandidatosCobroNoCargaron` con «Reintentar» en vez del select vacío
+  «Sin cobros ni sobres candidatos» (jamás «sin datos» cuando la carga
+  falló); desvincular dice `MSG_DESVINCULO_INCIERTO`
   («No se pudo confirmar si el movimiento quedó desvinculado…»), cierra la
   confirmación y refresca. Antes un `await` desnudo en `startTransition`
   mandaba Conciliación entera al error boundary.
@@ -9784,7 +9817,11 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   (EXCEDE, COMISION_NO_CUADRA…) o el cobro que ya no es candidato ⇒
   `PROPUESTA_A_MANO` con la razón de `guiaAlVincular` y «revísalo a mano con
   «Vincular a un cobro o ingreso»» (sin PATCH); sin poder leer el veredicto ⇒
-  `PROPUESTA_SIN_VEREDICTO` («No se vinculó nada»); API ≤ 0.0.77 (sin
+  `PROPUESTA_SIN_VEREDICTO` («No se vinculó nada») SOLO si no hubo respuesta
+  (`respuestaSinVeredicto`); un 4xx de esa lectura (sesión vencida, abono que
+  ya no existe) sale con su texto + «No se vinculó nada.», su `code` y
+  `status` (`errorLecturaPropuesta`, revisión 2); con `cobros_parciales:
+  false` un PARCIAL va a mano; API ≤ 0.0.77 (sin
   `cobros_parciales`) ⇒ la liga de siempre. Vale también para «Vincular a
   esta» de las alternativas. En «Aceptar las marcadas» una liga a un COBRO
   solo entra con `monto_exacto` (`aceptableEnLote`): las demás, de una en
@@ -9793,7 +9830,13 @@ Editor; las LECTURAS del 0.0.78 salen de la puente y no dependen de ella).
   `ABONO_TIENE_COBRO_CANDIDATO` de `registrar-ingreso-dialog` sigue sin leer
   `al_vincular`: el API solo ofrece ahí cobros que CUADRAN con el abono (su
   neto o bruto a ≤ $1.00, o el faltante exacto de un parcial), así que no
-  deja un parcial.
+  deja un parcial. Desde el API 0.0.79 un candidato que cuadra solo por el
+  BRUTO y cuya liga directa rebotaría trae `liga_no_cuadra`
+  (COMISION_NO_CUADRA | SOBRE_NO_CUADRA) y `comision_real`
+  (`candidatosDeConflicto`): ese candidato NO ofrece «Vincular a este
+  cobro» y dice qué corregir (`textoLigaNoCuadraConflicto`). Pendiente (no
+  bloquea): ofrecer ahí «Corregir la comisión a $X y vincular» con su
+  confirmación.
 
 ### Bandeja, desvincular, «Cobros sin banco» y Paywise
 
@@ -9986,16 +10029,23 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   ADMIN/FACTURACION, si no es efectivo ni está dado de baja, EMBEBE el
   cuerpo con el MODO CONTROLADO del hook (`fija`: la carga se deriva de la
   llave —`claveEntradaConAbono` = `claveEntradaControlada` de
-  `entrada-banco.ts`: origen, id, el abono, la cuenta, el día, el monto, la
-  moneda y el estado— y el único setState va en el `.then`, porque
+  `entrada-banco.ts`: origen, id, el abono, la cuenta, el día, el monto, el
+  NETO (el `neto` del API: `EntradaBancoFila.neto`; revisión 2 del
+  15-oct-2026, editar SOLO la comisión dejaba «al banco debe llegar el neto:
+  $9,650» y «Ver los abonos ya conciliados» con el neto viejo), la moneda y
+  el estado— y el único setState va en el `.then`, porque
   `react-hooks/set-state-in-effect` es ERROR); tras «Desvincular del abono»
-  o tras «Editar» la cuenta, la fecha o el monto en el MISMO detalle, el
+  o tras «Editar» la cuenta, la fecha, el monto o la comisión en el MISMO detalle, el
   `router.refresh()` cambia la llave y el cuerpo se vuelve a pedir (revisión
   del 15-oct-2026: con solo ingreso + abono la edición dejaba la cobertura,
   las ventanas y «Conciliarlo en «Por conciliar»» de la cuenta vieja). Con
   un API ≤ 0.0.77 (`RUTA_NO_DISPONIBLE`) vuelve el bloque de siempre. Sin
   abono y sin la hoja (COORDINADOR): `TEXTO_INGRESO_SIN_ABONO` + «lo
-  concilia Administración o Facturación».
+  concilia Administración o Facturación». Sus acciones de dinero
+  («Desvincular del abono», «Desaplicar», «Quitar comprobante») van con
+  `.catch(sinConexion)`: sin respuesta, `textoAccionIngresoIncierta` («No se
+  pudo confirmar si…») y la página al día, jamás el error boundary (revisión
+  2 del 15-oct-2026).
 - **Errores** (`mensajeErrorDetalleEntrada`; jamás «sin abonos» cuando la
   carga falló): API previo ⇒ «El servidor todavía no tiene este detalle
   (falta actualizar el API). Mientras, búscalo en Conciliación.» con la
@@ -10047,7 +10097,8 @@ API, `GET /v1/conciliacion/cobros/:id` y `GET /v1/conciliacion/ingresos/:id`
   siempre.
 - **API 0.0.78 sin la migración `20261014000003`** (o antes de reiniciarlo):
   `cobros_parciales: false` ⇒ el diálogo no recibe como candidatos los
-  cobros que ya tienen abonos y pinta la nota de siempre; un segundo abono a
+  cobros que ya tienen abonos y pinta la nota de siempre; un PARCIAL nuevo
+  se apaga con su razón (no se promete completarlo); un segundo abono a
   un parcial responde el 503 `CONCILIACION_COBROS_PARCIALES_NO_DISPONIBLE`
   con su texto. Las lecturas (estados, parciales, «Cobrado de más» y la
   hoja) ya funcionan.
