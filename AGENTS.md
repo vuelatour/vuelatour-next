@@ -10141,10 +10141,11 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   `[...ROLES_NOMINA]`). Pestaña del navegador: título FIJO
   `TITULOS_SECCION.nomina` («Nómina») + `RUTA_SECCION.nomina`, con su
   renglón en la guardiana `titulos-pestana-cableado.test.ts`.
-- **Fuente única PURA** `lib/admin/nomina.ts` (sin React ni red; solo
-  importa `lib/datetime`, `lib/format` y `lib/admin/medios-pago` porque la
-  usa también el menú; desde la revisión del 15-oct-2026 también las puras
-  `lib/admin/gasto-acciones` y `lib/admin/url-params`): `CATEGORIA_NOMINA`, `ROLES_NOMINA`,
+- **Fuente única PURA** `lib/admin/nomina.ts` (sin React ni red, porque la
+  importa también el menú; solo importa módulos puros: `lib/datetime`,
+  `lib/format`, `lib/admin/medios-pago` y, desde la revisión del
+  15-oct-2026, `lib/admin/gasto-acciones` y `lib/admin/url-params` —que a
+  su vez solo trae `estado-vuelo`, también puro—): `CATEGORIA_NOMINA`, `ROLES_NOMINA`,
   `puedeVerNomina`; el mes (`mesNominaDeUrl`: «YYYY-MM» con mes 01–12 y
   año 2000–2100, cualquier otra cosa se IGNORA y vale el mes de hoy en
   Cancún —regla de `url-params`, nunca un 400 ni un throw—,
@@ -10272,7 +10273,9 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   `app/admin/expenses/__tests__/nomina-revalidacion.test.ts`
   (comportamiento de las revalidaciones) y las ampliadas
   `gasto-con-reparto-action.test.ts`, `crear-con-cargos-action.test.ts`,
-  `titulos-pestana.test.ts` y `titulos-pestana-cableado.test.ts`.
+  `url-params.test.ts` (`queryCambioDeMes`: pone el mes, conserva `tq`,
+  suelta `tp`; mes vacío quita `?mes=`), `titulos-pestana.test.ts` y
+  `titulos-pestana-cableado.test.ts`.
 - **Fase 2 (decide el cliente)**: campo «Beneficiario» o catálogo de
   personal y el resumen por persona; ¿filtro por quincena en la tabla?
   **QA manual** (sin DOM en el runner): `/admin/nomina` como ADMIN,
